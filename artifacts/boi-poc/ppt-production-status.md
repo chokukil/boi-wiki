@@ -1,6 +1,6 @@
 # BoI Wiki PoC PPT Production Status
 
-Updated: 2026-06-17 01:21 KST
+Updated: 2026-06-17 01:29 KST
 
 ## Created Artifacts
 
@@ -9,6 +9,8 @@ Updated: 2026-06-17 01:21 KST
 - `artifacts/boi-poc/evidence.json`
 - `artifacts/boi-poc/evidence-summary.md`
 - `artifacts/boi-poc/capture-manifest.json`
+- `artifacts/boi-poc/capture-targets.json`
+- `artifacts/boi-poc/capture-targets.md`
 - `docs/POC_SCREENSHOT_MANIFEST.md`
 - `scripts/insert_poc_screenshots.py`
 
@@ -17,6 +19,8 @@ Windows copy:
 - `C:\Users\choku\Documents\boi-wiki-poc\boi-wiki-poc-executive-brief.pptx`
 - `C:\Users\choku\Documents\boi-wiki-poc\evidence.json`
 - `C:\Users\choku\Documents\boi-wiki-poc\evidence-summary.md`
+- `C:\Users\choku\Documents\boi-wiki-poc\capture-targets.json`
+- `C:\Users\choku\Documents\boi-wiki-poc\capture-targets.md`
 
 ## Verified
 
@@ -29,6 +33,7 @@ Windows copy:
 - The PowerPoint ChatGPT add-in pane opens in the generated deck.
 - A polish request was entered and submitted to the add-in.
 - Screenshot filenames and URLs are fixed in a manifest.
+- Latest capture URLs are resolved in `capture-targets.md`, including the generated corrective action Private BoI and Langflow flow ID.
 - A screenshot insertion script is ready to create the final screenshot-enriched PPTX after PNG capture files exist.
 
 ## Still Pending

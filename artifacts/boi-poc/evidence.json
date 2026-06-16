@@ -1,6 +1,6 @@
 {
-  "collected_at": "2026-06-16T16:14:25+00:00",
-  "git_commit": "0bda590\n",
+  "collected_at": "2026-06-16T16:29:24+00:00",
+  "git_commit": "3932232\n",
   "health": {
     "boi_api": {
       "status": "ok"
@@ -39,10 +39,10 @@
     },
     "topic": "boi.events",
     "event": {
-      "event_id": "evt-20260617011424-e1464a",
+      "event_id": "evt-20260617012923-8f0437",
       "event_type": "equipment.alarm.raised.v1",
       "event_version": "1",
-      "occurred_at": "2026-06-17T01:14:24+09:00",
+      "occurred_at": "2026-06-17T01:29:23+09:00",
       "producer": "boi-api-web",
       "actor": {
         "type": "human",
@@ -71,7 +71,7 @@
         "owner": "100001",
         "workflow": "equipment-anomaly"
       },
-      "trace_id": "trace-aa400a08a2b442efa3df7ccd87c9ce86"
+      "trace_id": "trace-248ae94e90bc4f0a9221e2cc28eb2106"
     }
   },
   "event_types": {
@@ -587,8 +587,1052 @@
     ]
   },
   "events_log": {
-    "count": 60,
+    "count": 80,
     "items": [
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "status": "processed",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-532aec04b4de4cbeb4b341bbcd75f243",
+        "payload_title": "이상 조치 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-30e29d"
+          }
+        ],
+        "result": {
+          "routed_by": "event-router",
+          "dispatch_result": {
+            "ok": true,
+            "status": "dispatched",
+            "event_type": "corrective_action.requested.v1",
+            "boi_id": "boi:private:100001:20260617012924:08c0f9",
+            "count": 4,
+            "results": [
+              {
+                "action_key": "boi.materialize_event",
+                "type": "boi_materialize",
+                "result": {
+                  "ok": true,
+                  "status": "materialized",
+                  "request_id": "act-20260617012924-9ae6c266",
+                  "action_key": "boi.materialize_event",
+                  "response": {
+                    "ok": true,
+                    "handled_by": "boi-writer-connector",
+                    "item": {
+                      "path": "/data/boi/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+                      "uri": "/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+                      "metadata": {
+                        "okf_version": "0.1",
+                        "boi_profile_version": "0.1",
+                        "type": "boi/action",
+                        "title": "이상 조치 요청 - ETCH-VM-01",
+                        "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                        "tags": [
+                          "SOP",
+                          "AI-Native-Workflow",
+                          "EventBroker",
+                          "ActionGateway",
+                          "BoIWiki"
+                        ],
+                        "timestamp": "2026-06-17T01:29:24+09:00",
+                        "boi_id": "boi:private:100001:20260617012924:08c0f9",
+                        "visibility": "private",
+                        "classification": "internal",
+                        "owner": "100001",
+                        "author": {
+                          "type": "agent",
+                          "agent_id": "boi-writer-v0.4"
+                        },
+                        "acl_policy": "acl:private:100001",
+                        "status": "draft",
+                        "source_event": {
+                          "event_id": "evt-20260617012923-37edef",
+                          "event_type": "corrective_action.requested.v1",
+                          "occurred_at": "2026-06-17T01:29:23+09:00"
+                        },
+                        "event_type": "corrective_action.requested.v1",
+                        "event_label": "이상 조치 요청",
+                        "source_refs": [
+                          {
+                            "type": "event",
+                            "ref": "evt-20260617012923-30e29d"
+                          }
+                        ],
+                        "workflow_stage": "이상 조치",
+                        "recommended_actions": [
+                          "sop.equipment.notify_action_owner",
+                          "sop.equipment.block_process_progress",
+                          "sop.equipment.change_spec_rule"
+                        ]
+                      },
+                      "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `corrective_action.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 이상 조치 요청\n- Workflow Stage: 이상 조치\n- Default Flow: boi-corrective-action-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"이상 조치 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.notify_action_owner`: 이상 조치 담당자 알림 / risk=medium / approval_required=False\n- `sop.equipment.block_process_progress`: 공정 진행 금지 요청 / risk=high / approval_required=True\n- `sop.equipment.change_spec_rule`: Spec / Rule 변경 요청 / risk=high / approval_required=True\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-37edef`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+                      "visibility": "private",
+                      "event_type": "corrective_action.requested.v1"
+                    }
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.notify_action_owner",
+                "type": "mock_api",
+                "result": {
+                  "ok": true,
+                  "status": "dry_run",
+                  "request_id": "act-20260617012924-ca8e9208",
+                  "action_key": "sop.equipment.notify_action_owner",
+                  "action_name": "이상 조치 담당자 알림",
+                  "mock_response": {
+                    "notification_status": "sent",
+                    "recipient": "100001",
+                    "message": "이상 조치 요청 알림을 발송했습니다."
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.block_process_progress",
+                "type": "mock_api",
+                "result": {
+                  "ok": false,
+                  "status": "approval_required",
+                  "request_id": "act-20260617012924-2b6cf7de",
+                  "action_key": "sop.equipment.block_process_progress",
+                  "message": "This action is registered as approval_required. Re-invoke with approved_by after human approval.",
+                  "action": {
+                    "action_key": "sop.equipment.block_process_progress",
+                    "name_ko": "공정 진행 금지 요청",
+                    "risk_level": "high",
+                    "owner": "제조/품질 담당 조직",
+                    "description": "이상 조치 Agent가 공정 진행 금지를 요청하는 고위험 Action. PoC에서는 승인 전 dry-run만 허용.",
+                    "type": "mock_api"
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.change_spec_rule",
+                "type": "mock_api",
+                "result": {
+                  "ok": false,
+                  "status": "approval_required",
+                  "request_id": "act-20260617012924-42418ece",
+                  "action_key": "sop.equipment.change_spec_rule",
+                  "message": "This action is registered as approval_required. Re-invoke with approved_by after human approval.",
+                  "action": {
+                    "action_key": "sop.equipment.change_spec_rule",
+                    "name_ko": "Spec / Rule 변경 요청",
+                    "risk_level": "high",
+                    "owner": "제조/품질 담당 조직",
+                    "description": "Spec/Rule 변경은 고위험 Action으로 승인과 변경관리 절차가 필요. PoC에서는 dry-run만 허용.",
+                    "type": "mock_api"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "event_label": "이상 조치 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "status": "handled",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-532aec04b4de4cbeb4b341bbcd75f243",
+        "payload_title": "이상 조치 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-30e29d"
+          }
+        ],
+        "result": {
+          "boi_id": "boi:private:100001:20260617012924:08c0f9",
+          "boi_uri": "/private/100001/boi-private-100001-20260617012924-08c0f9.md"
+        },
+        "event_label": "이상 조치 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "status": "handling",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-532aec04b4de4cbeb4b341bbcd75f243",
+        "payload_title": "이상 조치 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-30e29d"
+          }
+        ],
+        "event_label": "이상 조치 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "status": "routing",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-532aec04b4de4cbeb4b341bbcd75f243",
+        "payload_title": "이상 조치 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-30e29d"
+          }
+        ],
+        "event_label": "이상 조치 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "status": "processed",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-8fd70ccee48145288be9e8f22e9d25fa",
+        "payload_title": "장비 보전 가이드 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-67ac3a"
+          }
+        ],
+        "result": {
+          "routed_by": "event-router",
+          "dispatch_result": {
+            "ok": true,
+            "status": "dispatched",
+            "event_type": "maintenance.guide.requested.v1",
+            "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+            "count": 4,
+            "results": [
+              {
+                "action_key": "boi.materialize_event",
+                "type": "boi_materialize",
+                "result": {
+                  "ok": true,
+                  "status": "materialized",
+                  "request_id": "act-20260617012923-5536473f",
+                  "action_key": "boi.materialize_event",
+                  "response": {
+                    "ok": true,
+                    "handled_by": "boi-writer-connector",
+                    "item": {
+                      "path": "/data/boi/private/100001/boi-private-100001-20260617012923-8d1c5c.md",
+                      "uri": "/private/100001/boi-private-100001-20260617012923-8d1c5c.md",
+                      "metadata": {
+                        "okf_version": "0.1",
+                        "boi_profile_version": "0.1",
+                        "type": "boi/runbook",
+                        "title": "장비 보전 가이드 요청 - ETCH-VM-01",
+                        "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                        "tags": [
+                          "SOP",
+                          "AI-Native-Workflow",
+                          "EventBroker",
+                          "ActionGateway",
+                          "BoIWiki"
+                        ],
+                        "timestamp": "2026-06-17T01:29:23+09:00",
+                        "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+                        "visibility": "private",
+                        "classification": "internal",
+                        "owner": "100001",
+                        "author": {
+                          "type": "agent",
+                          "agent_id": "boi-writer-v0.4"
+                        },
+                        "acl_policy": "acl:private:100001",
+                        "status": "draft",
+                        "source_event": {
+                          "event_id": "evt-20260617012923-30e29d",
+                          "event_type": "maintenance.guide.requested.v1",
+                          "occurred_at": "2026-06-17T01:29:23+09:00"
+                        },
+                        "event_type": "maintenance.guide.requested.v1",
+                        "event_label": "장비 보전 가이드 요청",
+                        "source_refs": [
+                          {
+                            "type": "event",
+                            "ref": "evt-20260617012923-67ac3a"
+                          }
+                        ],
+                        "workflow_stage": "장비 보전 가이드",
+                        "recommended_actions": [
+                          "sop.equipment.request_raw_data",
+                          "sop.equipment.request_maintenance_guide",
+                          "sop.equipment.create_corrective_action_event"
+                        ]
+                      },
+                      "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `maintenance.guide.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 장비 보전 가이드 요청\n- Workflow Stage: 장비 보전 가이드\n- Default Flow: boi-maintenance-guide-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"장비 보전 가이드 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.request_maintenance_guide`: 장비 보전 가이드 요청 / risk=medium / approval_required=False\n- `sop.equipment.create_corrective_action_event`: 이상 조치 요청 이벤트 발행 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-30e29d`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+                      "visibility": "private",
+                      "event_type": "maintenance.guide.requested.v1"
+                    }
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.request_maintenance_guide",
+                "type": "mock_api",
+                "result": {
+                  "ok": true,
+                  "status": "dry_run",
+                  "request_id": "act-20260617012923-8f3d3934",
+                  "action_key": "sop.equipment.request_maintenance_guide",
+                  "action_name": "장비 보전 가이드 요청",
+                  "mock_response": {
+                    "guide_boi_ref": "boi:public:sop:equipment-abnormal-response",
+                    "recommended_steps": [
+                      "Source Data 확인",
+                      "장비 이력 확인",
+                      "장비 이상 여부 판단"
+                    ],
+                    "message": "장비 보전 가이드를 반환했습니다."
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.request_raw_data",
+                "type": "mock_api",
+                "result": {
+                  "ok": true,
+                  "status": "dry_run",
+                  "request_id": "act-20260617012923-5aea26b8",
+                  "action_key": "sop.equipment.request_raw_data",
+                  "action_name": "Raw / Source Data 확인 요청",
+                  "mock_response": {
+                    "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
+                    "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                    "message": "Raw/Source Data 참조 링크를 생성했습니다."
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.create_corrective_action_event",
+                "type": "event_publish",
+                "result": {
+                  "ok": true,
+                  "status": "event_published",
+                  "request_id": "act-20260617012923-4a313ade",
+                  "action_key": "sop.equipment.create_corrective_action_event",
+                  "response": {
+                    "ok": true,
+                    "topic": "boi.events",
+                    "event": {
+                      "event_id": "evt-20260617012923-37edef",
+                      "event_type": "corrective_action.requested.v1",
+                      "event_version": "1",
+                      "occurred_at": "2026-06-17T01:29:23+09:00",
+                      "producer": "boi-api-web",
+                      "actor": {
+                        "type": "human",
+                        "employee_id_hash": "100001",
+                        "employee_id": "100001"
+                      },
+                      "visibility_hint": "private",
+                      "classification_hint": "internal",
+                      "source_refs": [
+                        {
+                          "type": "event",
+                          "ref": "evt-20260617012923-30e29d"
+                        }
+                      ],
+                      "target": {
+                        "flow_key": "boi-corrective-action-v0.1",
+                        "boi_type": "boi/action"
+                      },
+                      "event_type_label": "이상 조치 요청",
+                      "payload": {
+                        "title": "이상 조치 요청 - ETCH-VM-01",
+                        "equipment_id": "ETCH-VM-01",
+                        "lot_id": "LOT-POC-001",
+                        "wafer_id": "WF-POC-001",
+                        "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+                        "owner": "100001"
+                      },
+                      "trace_id": "trace-532aec04b4de4cbeb4b341bbcd75f243"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "event_label": "장비 보전 가이드 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "published",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-532aec04b4de4cbeb4b341bbcd75f243",
+        "payload_title": "이상 조치 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-30e29d"
+          }
+        ],
+        "event_label": "이상 조치 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "handled",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-8fd70ccee48145288be9e8f22e9d25fa",
+        "payload_title": "장비 보전 가이드 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-67ac3a"
+          }
+        ],
+        "result": {
+          "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+          "boi_uri": "/private/100001/boi-private-100001-20260617012923-8d1c5c.md"
+        },
+        "event_label": "장비 보전 가이드 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "handling",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-8fd70ccee48145288be9e8f22e9d25fa",
+        "payload_title": "장비 보전 가이드 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-67ac3a"
+          }
+        ],
+        "event_label": "장비 보전 가이드 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "routing",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-8fd70ccee48145288be9e8f22e9d25fa",
+        "payload_title": "장비 보전 가이드 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-67ac3a"
+          }
+        ],
+        "event_label": "장비 보전 가이드 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "processed",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-230552e3eeaa46fea2cd10f2db21ad03",
+        "payload_title": "원인 분석 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-8f0437"
+          }
+        ],
+        "result": {
+          "routed_by": "event-router",
+          "dispatch_result": {
+            "ok": true,
+            "status": "dispatched",
+            "event_type": "root_cause.analysis.requested.v1",
+            "boi_id": "boi:private:100001:20260617012923:01121e",
+            "count": 4,
+            "results": [
+              {
+                "action_key": "boi.materialize_event",
+                "type": "boi_materialize",
+                "result": {
+                  "ok": true,
+                  "status": "materialized",
+                  "request_id": "act-20260617012923-3a8ffa9f",
+                  "action_key": "boi.materialize_event",
+                  "response": {
+                    "ok": true,
+                    "handled_by": "boi-writer-connector",
+                    "item": {
+                      "path": "/data/boi/private/100001/boi-private-100001-20260617012923-01121e.md",
+                      "uri": "/private/100001/boi-private-100001-20260617012923-01121e.md",
+                      "metadata": {
+                        "okf_version": "0.1",
+                        "boi_profile_version": "0.1",
+                        "type": "boi/analysis",
+                        "title": "원인 분석 요청 - ETCH-VM-01",
+                        "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                        "tags": [
+                          "SOP",
+                          "AI-Native-Workflow",
+                          "EventBroker",
+                          "ActionGateway",
+                          "BoIWiki"
+                        ],
+                        "timestamp": "2026-06-17T01:29:23+09:00",
+                        "boi_id": "boi:private:100001:20260617012923:01121e",
+                        "visibility": "private",
+                        "classification": "internal",
+                        "owner": "100001",
+                        "author": {
+                          "type": "agent",
+                          "agent_id": "boi-writer-v0.4"
+                        },
+                        "acl_policy": "acl:private:100001",
+                        "status": "draft",
+                        "source_event": {
+                          "event_id": "evt-20260617012923-67ac3a",
+                          "event_type": "root_cause.analysis.requested.v1",
+                          "occurred_at": "2026-06-17T01:29:23+09:00"
+                        },
+                        "event_type": "root_cause.analysis.requested.v1",
+                        "event_label": "원인 분석 요청",
+                        "source_refs": [
+                          {
+                            "type": "event",
+                            "ref": "evt-20260617012923-8f0437"
+                          }
+                        ],
+                        "workflow_stage": "원인 분석",
+                        "recommended_actions": [
+                          "sop.equipment.request_raw_data",
+                          "sop.equipment.request_maintenance_guide",
+                          "sop.equipment.create_maintenance_guide_event"
+                        ]
+                      },
+                      "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `root_cause.analysis.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 원인 분석 요청\n- Workflow Stage: 원인 분석\n- Default Flow: boi-root-cause-analysis-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"원인 분석 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.create_maintenance_guide_event`: 장비 보전 가이드 이벤트 발행 / risk=medium / approval_required=False\n- `sop.equipment.request_maintenance_guide`: 장비 보전 가이드 요청 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-67ac3a`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+                      "visibility": "private",
+                      "event_type": "root_cause.analysis.requested.v1"
+                    }
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.request_trend_history",
+                "type": "mock_api",
+                "result": {
+                  "ok": true,
+                  "status": "dry_run",
+                  "request_id": "act-20260617012923-821c9b96",
+                  "action_key": "sop.equipment.request_trend_history",
+                  "action_name": "Trend / 이력 확인 요청",
+                  "mock_response": {
+                    "trend_status": "anomaly_detected",
+                    "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
+                    "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                    "message": "Trend와 이력 데이터를 확인했습니다."
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.request_raw_data",
+                "type": "mock_api",
+                "result": {
+                  "ok": true,
+                  "status": "dry_run",
+                  "request_id": "act-20260617012923-93cd89d0",
+                  "action_key": "sop.equipment.request_raw_data",
+                  "action_name": "Raw / Source Data 확인 요청",
+                  "mock_response": {
+                    "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
+                    "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                    "message": "Raw/Source Data 참조 링크를 생성했습니다."
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.create_maintenance_guide_event",
+                "type": "event_publish",
+                "result": {
+                  "ok": true,
+                  "status": "event_published",
+                  "request_id": "act-20260617012923-71dc8533",
+                  "action_key": "sop.equipment.create_maintenance_guide_event",
+                  "response": {
+                    "ok": true,
+                    "topic": "boi.events",
+                    "event": {
+                      "event_id": "evt-20260617012923-30e29d",
+                      "event_type": "maintenance.guide.requested.v1",
+                      "event_version": "1",
+                      "occurred_at": "2026-06-17T01:29:23+09:00",
+                      "producer": "boi-api-web",
+                      "actor": {
+                        "type": "human",
+                        "employee_id_hash": "100001",
+                        "employee_id": "100001"
+                      },
+                      "visibility_hint": "private",
+                      "classification_hint": "internal",
+                      "source_refs": [
+                        {
+                          "type": "event",
+                          "ref": "evt-20260617012923-67ac3a"
+                        }
+                      ],
+                      "target": {
+                        "flow_key": "boi-maintenance-guide-v0.1",
+                        "boi_type": "boi/runbook"
+                      },
+                      "event_type_label": "장비 보전 가이드 요청",
+                      "payload": {
+                        "title": "장비 보전 가이드 요청 - ETCH-VM-01",
+                        "equipment_id": "ETCH-VM-01",
+                        "lot_id": "LOT-POC-001",
+                        "wafer_id": "WF-POC-001",
+                        "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+                        "owner": "100001"
+                      },
+                      "trace_id": "trace-8fd70ccee48145288be9e8f22e9d25fa"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "event_label": "원인 분석 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "published",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-8fd70ccee48145288be9e8f22e9d25fa",
+        "payload_title": "장비 보전 가이드 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-67ac3a"
+          }
+        ],
+        "event_label": "장비 보전 가이드 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "handled",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-230552e3eeaa46fea2cd10f2db21ad03",
+        "payload_title": "원인 분석 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-8f0437"
+          }
+        ],
+        "result": {
+          "boi_id": "boi:private:100001:20260617012923:01121e",
+          "boi_uri": "/private/100001/boi-private-100001-20260617012923-01121e.md"
+        },
+        "event_label": "원인 분석 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "handling",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-230552e3eeaa46fea2cd10f2db21ad03",
+        "payload_title": "원인 분석 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-8f0437"
+          }
+        ],
+        "event_label": "원인 분석 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "routing",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-230552e3eeaa46fea2cd10f2db21ad03",
+        "payload_title": "원인 분석 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-8f0437"
+          }
+        ],
+        "event_label": "원인 분석 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "processed",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-248ae94e90bc4f0a9221e2cc28eb2106",
+        "payload_title": "Response Chain 이상 Alarm 발생",
+        "source_refs": [
+          {
+            "type": "demo-workflow",
+            "ref": "equipment-anomaly"
+          }
+        ],
+        "result": {
+          "routed_by": "event-router",
+          "dispatch_result": {
+            "ok": true,
+            "status": "dispatched",
+            "event_type": "equipment.alarm.raised.v1",
+            "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+            "count": 4,
+            "results": [
+              {
+                "action_key": "boi.materialize_event",
+                "type": "boi_materialize",
+                "result": {
+                  "ok": true,
+                  "status": "materialized",
+                  "request_id": "act-20260617012923-2528cff3",
+                  "action_key": "boi.materialize_event",
+                  "response": {
+                    "ok": true,
+                    "handled_by": "boi-writer-connector",
+                    "item": {
+                      "path": "/data/boi/private/100001/boi-private-100001-20260617012923-8cf8ba.md",
+                      "uri": "/private/100001/boi-private-100001-20260617012923-8cf8ba.md",
+                      "metadata": {
+                        "okf_version": "0.1",
+                        "boi_profile_version": "0.1",
+                        "type": "boi/sop-instance",
+                        "title": "Response Chain 이상 Alarm 발생",
+                        "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                        "tags": [
+                          "SOP",
+                          "AI-Native-Workflow",
+                          "EventBroker",
+                          "ActionGateway",
+                          "BoIWiki"
+                        ],
+                        "timestamp": "2026-06-17T01:29:23+09:00",
+                        "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+                        "visibility": "private",
+                        "classification": "internal",
+                        "owner": "100001",
+                        "author": {
+                          "type": "agent",
+                          "agent_id": "boi-writer-v0.4"
+                        },
+                        "acl_policy": "acl:private:100001",
+                        "status": "draft",
+                        "source_event": {
+                          "event_id": "evt-20260617012923-8f0437",
+                          "event_type": "equipment.alarm.raised.v1",
+                          "occurred_at": "2026-06-17T01:29:23+09:00"
+                        },
+                        "event_type": "equipment.alarm.raised.v1",
+                        "event_label": "설비 Alarm 발생",
+                        "source_refs": [
+                          {
+                            "type": "demo-workflow",
+                            "ref": "equipment-anomaly"
+                          }
+                        ],
+                        "workflow_stage": "이상 감지",
+                        "recommended_actions": [
+                          "sop.equipment.request_trend_history",
+                          "sop.equipment.request_raw_data",
+                          "sop.equipment.create_root_cause_event"
+                        ]
+                      },
+                      "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `equipment.alarm.raised.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 설비 Alarm 발생\n- Workflow Stage: 이상 감지\n- Default Flow: boi-equipment-abnormal-detector-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"Response Chain 이상 Alarm 발생\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\",\n  \"workflow\": \"equipment-anomaly\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_trend_history`: Trend / 이력 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.create_root_cause_event`: 원인 분석 이벤트 발행 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-8f0437`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+                      "visibility": "private",
+                      "event_type": "equipment.alarm.raised.v1"
+                    }
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.request_trend_history",
+                "type": "mock_api",
+                "result": {
+                  "ok": true,
+                  "status": "dry_run",
+                  "request_id": "act-20260617012923-6a957a02",
+                  "action_key": "sop.equipment.request_trend_history",
+                  "action_name": "Trend / 이력 확인 요청",
+                  "mock_response": {
+                    "trend_status": "anomaly_detected",
+                    "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
+                    "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                    "message": "Trend와 이력 데이터를 확인했습니다."
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.request_raw_data",
+                "type": "mock_api",
+                "result": {
+                  "ok": true,
+                  "status": "dry_run",
+                  "request_id": "act-20260617012923-a6562c5c",
+                  "action_key": "sop.equipment.request_raw_data",
+                  "action_name": "Raw / Source Data 확인 요청",
+                  "mock_response": {
+                    "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
+                    "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                    "message": "Raw/Source Data 참조 링크를 생성했습니다."
+                  }
+                }
+              },
+              {
+                "action_key": "sop.equipment.create_root_cause_event",
+                "type": "event_publish",
+                "result": {
+                  "ok": true,
+                  "status": "event_published",
+                  "request_id": "act-20260617012923-fe79ed70",
+                  "action_key": "sop.equipment.create_root_cause_event",
+                  "response": {
+                    "ok": true,
+                    "topic": "boi.events",
+                    "event": {
+                      "event_id": "evt-20260617012923-67ac3a",
+                      "event_type": "root_cause.analysis.requested.v1",
+                      "event_version": "1",
+                      "occurred_at": "2026-06-17T01:29:23+09:00",
+                      "producer": "boi-api-web",
+                      "actor": {
+                        "type": "human",
+                        "employee_id_hash": "100001",
+                        "employee_id": "100001"
+                      },
+                      "visibility_hint": "private",
+                      "classification_hint": "internal",
+                      "source_refs": [
+                        {
+                          "type": "event",
+                          "ref": "evt-20260617012923-8f0437"
+                        }
+                      ],
+                      "target": {
+                        "flow_key": "boi-root-cause-analysis-v0.1",
+                        "boi_type": "boi/analysis"
+                      },
+                      "event_type_label": "원인 분석 요청",
+                      "payload": {
+                        "title": "원인 분석 요청 - ETCH-VM-01",
+                        "equipment_id": "ETCH-VM-01",
+                        "lot_id": "LOT-POC-001",
+                        "wafer_id": "WF-POC-001",
+                        "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+                        "owner": "100001"
+                      },
+                      "trace_id": "trace-230552e3eeaa46fea2cd10f2db21ad03"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "event_label": "설비 Alarm 발생"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "published",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-230552e3eeaa46fea2cd10f2db21ad03",
+        "payload_title": "원인 분석 요청 - ETCH-VM-01",
+        "source_refs": [
+          {
+            "type": "event",
+            "ref": "evt-20260617012923-8f0437"
+          }
+        ],
+        "event_label": "원인 분석 요청"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "handled",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-248ae94e90bc4f0a9221e2cc28eb2106",
+        "payload_title": "Response Chain 이상 Alarm 발생",
+        "source_refs": [
+          {
+            "type": "demo-workflow",
+            "ref": "equipment-anomaly"
+          }
+        ],
+        "result": {
+          "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+          "boi_uri": "/private/100001/boi-private-100001-20260617012923-8cf8ba.md"
+        },
+        "event_label": "설비 Alarm 발생"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "handling",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-248ae94e90bc4f0a9221e2cc28eb2106",
+        "payload_title": "Response Chain 이상 Alarm 발생",
+        "source_refs": [
+          {
+            "type": "demo-workflow",
+            "ref": "equipment-anomaly"
+          }
+        ],
+        "event_label": "설비 Alarm 발생"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "routing",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-248ae94e90bc4f0a9221e2cc28eb2106",
+        "payload_title": "Response Chain 이상 Alarm 발생",
+        "source_refs": [
+          {
+            "type": "demo-workflow",
+            "ref": "equipment-anomaly"
+          }
+        ],
+        "event_label": "설비 Alarm 발생"
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "status": "published",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "actor": {
+          "type": "human",
+          "employee_id_hash": "100001",
+          "employee_id": "100001"
+        },
+        "producer": "boi-api-web",
+        "trace_id": "trace-248ae94e90bc4f0a9221e2cc28eb2106",
+        "payload_title": "Response Chain 이상 Alarm 발생",
+        "source_refs": [
+          {
+            "type": "demo-workflow",
+            "ref": "equipment-anomaly"
+          }
+        ],
+        "event_label": "설비 Alarm 발생"
+      },
       {
         "logged_at": "2026-06-17T01:14:25+09:00",
         "status": "processed",
@@ -3724,8 +4768,714 @@
     ]
   },
   "action_logs": {
-    "count": 48,
+    "count": 64,
     "items": [
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "action_key": "sop.equipment.change_spec_rule",
+        "request_id": "act-20260617012924-42418ece",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "boi_id": "boi:private:100001:20260617012924:08c0f9",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "high",
+        "action_type": "mock_api",
+        "status": "approval_required",
+        "payload": {
+          "title": "이상 조치 요청 - ETCH-VM-01",
+          "equipment_id": "ETCH-VM-01",
+          "lot_id": "LOT-POC-001",
+          "wafer_id": "WF-POC-001",
+          "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+          "owner": "100001"
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "action_key": "sop.equipment.block_process_progress",
+        "request_id": "act-20260617012924-2b6cf7de",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "boi_id": "boi:private:100001:20260617012924:08c0f9",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "high",
+        "action_type": "mock_api",
+        "status": "approval_required",
+        "payload": {
+          "title": "이상 조치 요청 - ETCH-VM-01",
+          "equipment_id": "ETCH-VM-01",
+          "lot_id": "LOT-POC-001",
+          "wafer_id": "WF-POC-001",
+          "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+          "owner": "100001"
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "action_key": "sop.equipment.notify_action_owner",
+        "request_id": "act-20260617012924-ca8e9208",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "boi_id": "boi:private:100001:20260617012924:08c0f9",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "medium",
+        "action_type": "mock_api",
+        "status": "dry_run",
+        "result": {
+          "ok": true,
+          "status": "dry_run",
+          "request_id": "act-20260617012924-ca8e9208",
+          "action_key": "sop.equipment.notify_action_owner",
+          "action_name": "이상 조치 담당자 알림",
+          "mock_response": {
+            "notification_status": "sent",
+            "recipient": "100001",
+            "message": "이상 조치 요청 알림을 발송했습니다."
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "action_key": "boi.materialize_event",
+        "request_id": "act-20260617012924-9ae6c266",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-37edef",
+        "event_type": "corrective_action.requested.v1",
+        "boi_id": null,
+        "dry_run": false,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "boi_materialize",
+        "status": "materialized",
+        "result": {
+          "ok": true,
+          "status": "materialized",
+          "request_id": "act-20260617012924-9ae6c266",
+          "action_key": "boi.materialize_event",
+          "response": {
+            "ok": true,
+            "handled_by": "boi-writer-connector",
+            "item": {
+              "path": "/data/boi/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+              "uri": "/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+              "metadata": {
+                "okf_version": "0.1",
+                "boi_profile_version": "0.1",
+                "type": "boi/action",
+                "title": "이상 조치 요청 - ETCH-VM-01",
+                "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                "tags": [
+                  "SOP",
+                  "AI-Native-Workflow",
+                  "EventBroker",
+                  "ActionGateway",
+                  "BoIWiki"
+                ],
+                "timestamp": "2026-06-17T01:29:24+09:00",
+                "boi_id": "boi:private:100001:20260617012924:08c0f9",
+                "visibility": "private",
+                "classification": "internal",
+                "owner": "100001",
+                "author": {
+                  "type": "agent",
+                  "agent_id": "boi-writer-v0.4"
+                },
+                "acl_policy": "acl:private:100001",
+                "status": "draft",
+                "source_event": {
+                  "event_id": "evt-20260617012923-37edef",
+                  "event_type": "corrective_action.requested.v1",
+                  "occurred_at": "2026-06-17T01:29:23+09:00"
+                },
+                "event_type": "corrective_action.requested.v1",
+                "event_label": "이상 조치 요청",
+                "source_refs": [
+                  {
+                    "type": "event",
+                    "ref": "evt-20260617012923-30e29d"
+                  }
+                ],
+                "workflow_stage": "이상 조치",
+                "recommended_actions": [
+                  "sop.equipment.notify_action_owner",
+                  "sop.equipment.block_process_progress",
+                  "sop.equipment.change_spec_rule"
+                ]
+              },
+              "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `corrective_action.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 이상 조치 요청\n- Workflow Stage: 이상 조치\n- Default Flow: boi-corrective-action-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"이상 조치 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.notify_action_owner`: 이상 조치 담당자 알림 / risk=medium / approval_required=False\n- `sop.equipment.block_process_progress`: 공정 진행 금지 요청 / risk=high / approval_required=True\n- `sop.equipment.change_spec_rule`: Spec / Rule 변경 요청 / risk=high / approval_required=True\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-37edef`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+              "visibility": "private",
+              "event_type": "corrective_action.requested.v1"
+            }
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:24+09:00",
+        "action_key": "sop.equipment.create_corrective_action_event",
+        "request_id": "act-20260617012923-4a313ade",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+        "dry_run": false,
+        "approved_by": null,
+        "risk_level": "medium",
+        "action_type": "event_publish",
+        "status": "event_published",
+        "result": {
+          "ok": true,
+          "status": "event_published",
+          "request_id": "act-20260617012923-4a313ade",
+          "action_key": "sop.equipment.create_corrective_action_event",
+          "response": {
+            "ok": true,
+            "topic": "boi.events",
+            "event": {
+              "event_id": "evt-20260617012923-37edef",
+              "event_type": "corrective_action.requested.v1",
+              "event_version": "1",
+              "occurred_at": "2026-06-17T01:29:23+09:00",
+              "producer": "boi-api-web",
+              "actor": {
+                "type": "human",
+                "employee_id_hash": "100001",
+                "employee_id": "100001"
+              },
+              "visibility_hint": "private",
+              "classification_hint": "internal",
+              "source_refs": [
+                {
+                  "type": "event",
+                  "ref": "evt-20260617012923-30e29d"
+                }
+              ],
+              "target": {
+                "flow_key": "boi-corrective-action-v0.1",
+                "boi_type": "boi/action"
+              },
+              "event_type_label": "이상 조치 요청",
+              "payload": {
+                "title": "이상 조치 요청 - ETCH-VM-01",
+                "equipment_id": "ETCH-VM-01",
+                "lot_id": "LOT-POC-001",
+                "wafer_id": "WF-POC-001",
+                "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+                "owner": "100001"
+              },
+              "trace_id": "trace-532aec04b4de4cbeb4b341bbcd75f243"
+            }
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.request_raw_data",
+        "request_id": "act-20260617012923-5aea26b8",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "mock_api",
+        "status": "dry_run",
+        "result": {
+          "ok": true,
+          "status": "dry_run",
+          "request_id": "act-20260617012923-5aea26b8",
+          "action_key": "sop.equipment.request_raw_data",
+          "action_name": "Raw / Source Data 확인 요청",
+          "mock_response": {
+            "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
+            "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+            "message": "Raw/Source Data 참조 링크를 생성했습니다."
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.request_maintenance_guide",
+        "request_id": "act-20260617012923-8f3d3934",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "medium",
+        "action_type": "mock_api",
+        "status": "dry_run",
+        "result": {
+          "ok": true,
+          "status": "dry_run",
+          "request_id": "act-20260617012923-8f3d3934",
+          "action_key": "sop.equipment.request_maintenance_guide",
+          "action_name": "장비 보전 가이드 요청",
+          "mock_response": {
+            "guide_boi_ref": "boi:public:sop:equipment-abnormal-response",
+            "recommended_steps": [
+              "Source Data 확인",
+              "장비 이력 확인",
+              "장비 이상 여부 판단"
+            ],
+            "message": "장비 보전 가이드를 반환했습니다."
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "boi.materialize_event",
+        "request_id": "act-20260617012923-5536473f",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-30e29d",
+        "event_type": "maintenance.guide.requested.v1",
+        "boi_id": null,
+        "dry_run": false,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "boi_materialize",
+        "status": "materialized",
+        "result": {
+          "ok": true,
+          "status": "materialized",
+          "request_id": "act-20260617012923-5536473f",
+          "action_key": "boi.materialize_event",
+          "response": {
+            "ok": true,
+            "handled_by": "boi-writer-connector",
+            "item": {
+              "path": "/data/boi/private/100001/boi-private-100001-20260617012923-8d1c5c.md",
+              "uri": "/private/100001/boi-private-100001-20260617012923-8d1c5c.md",
+              "metadata": {
+                "okf_version": "0.1",
+                "boi_profile_version": "0.1",
+                "type": "boi/runbook",
+                "title": "장비 보전 가이드 요청 - ETCH-VM-01",
+                "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                "tags": [
+                  "SOP",
+                  "AI-Native-Workflow",
+                  "EventBroker",
+                  "ActionGateway",
+                  "BoIWiki"
+                ],
+                "timestamp": "2026-06-17T01:29:23+09:00",
+                "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+                "visibility": "private",
+                "classification": "internal",
+                "owner": "100001",
+                "author": {
+                  "type": "agent",
+                  "agent_id": "boi-writer-v0.4"
+                },
+                "acl_policy": "acl:private:100001",
+                "status": "draft",
+                "source_event": {
+                  "event_id": "evt-20260617012923-30e29d",
+                  "event_type": "maintenance.guide.requested.v1",
+                  "occurred_at": "2026-06-17T01:29:23+09:00"
+                },
+                "event_type": "maintenance.guide.requested.v1",
+                "event_label": "장비 보전 가이드 요청",
+                "source_refs": [
+                  {
+                    "type": "event",
+                    "ref": "evt-20260617012923-67ac3a"
+                  }
+                ],
+                "workflow_stage": "장비 보전 가이드",
+                "recommended_actions": [
+                  "sop.equipment.request_raw_data",
+                  "sop.equipment.request_maintenance_guide",
+                  "sop.equipment.create_corrective_action_event"
+                ]
+              },
+              "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `maintenance.guide.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 장비 보전 가이드 요청\n- Workflow Stage: 장비 보전 가이드\n- Default Flow: boi-maintenance-guide-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"장비 보전 가이드 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.request_maintenance_guide`: 장비 보전 가이드 요청 / risk=medium / approval_required=False\n- `sop.equipment.create_corrective_action_event`: 이상 조치 요청 이벤트 발행 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-30e29d`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+              "visibility": "private",
+              "event_type": "maintenance.guide.requested.v1"
+            }
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.create_maintenance_guide_event",
+        "request_id": "act-20260617012923-71dc8533",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "boi_id": "boi:private:100001:20260617012923:01121e",
+        "dry_run": false,
+        "approved_by": null,
+        "risk_level": "medium",
+        "action_type": "event_publish",
+        "status": "event_published",
+        "result": {
+          "ok": true,
+          "status": "event_published",
+          "request_id": "act-20260617012923-71dc8533",
+          "action_key": "sop.equipment.create_maintenance_guide_event",
+          "response": {
+            "ok": true,
+            "topic": "boi.events",
+            "event": {
+              "event_id": "evt-20260617012923-30e29d",
+              "event_type": "maintenance.guide.requested.v1",
+              "event_version": "1",
+              "occurred_at": "2026-06-17T01:29:23+09:00",
+              "producer": "boi-api-web",
+              "actor": {
+                "type": "human",
+                "employee_id_hash": "100001",
+                "employee_id": "100001"
+              },
+              "visibility_hint": "private",
+              "classification_hint": "internal",
+              "source_refs": [
+                {
+                  "type": "event",
+                  "ref": "evt-20260617012923-67ac3a"
+                }
+              ],
+              "target": {
+                "flow_key": "boi-maintenance-guide-v0.1",
+                "boi_type": "boi/runbook"
+              },
+              "event_type_label": "장비 보전 가이드 요청",
+              "payload": {
+                "title": "장비 보전 가이드 요청 - ETCH-VM-01",
+                "equipment_id": "ETCH-VM-01",
+                "lot_id": "LOT-POC-001",
+                "wafer_id": "WF-POC-001",
+                "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+                "owner": "100001"
+              },
+              "trace_id": "trace-8fd70ccee48145288be9e8f22e9d25fa"
+            }
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.request_raw_data",
+        "request_id": "act-20260617012923-93cd89d0",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "boi_id": "boi:private:100001:20260617012923:01121e",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "mock_api",
+        "status": "dry_run",
+        "result": {
+          "ok": true,
+          "status": "dry_run",
+          "request_id": "act-20260617012923-93cd89d0",
+          "action_key": "sop.equipment.request_raw_data",
+          "action_name": "Raw / Source Data 확인 요청",
+          "mock_response": {
+            "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
+            "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+            "message": "Raw/Source Data 참조 링크를 생성했습니다."
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.request_trend_history",
+        "request_id": "act-20260617012923-821c9b96",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "boi_id": "boi:private:100001:20260617012923:01121e",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "mock_api",
+        "status": "dry_run",
+        "result": {
+          "ok": true,
+          "status": "dry_run",
+          "request_id": "act-20260617012923-821c9b96",
+          "action_key": "sop.equipment.request_trend_history",
+          "action_name": "Trend / 이력 확인 요청",
+          "mock_response": {
+            "trend_status": "anomaly_detected",
+            "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
+            "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+            "message": "Trend와 이력 데이터를 확인했습니다."
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "boi.materialize_event",
+        "request_id": "act-20260617012923-3a8ffa9f",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-67ac3a",
+        "event_type": "root_cause.analysis.requested.v1",
+        "boi_id": null,
+        "dry_run": false,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "boi_materialize",
+        "status": "materialized",
+        "result": {
+          "ok": true,
+          "status": "materialized",
+          "request_id": "act-20260617012923-3a8ffa9f",
+          "action_key": "boi.materialize_event",
+          "response": {
+            "ok": true,
+            "handled_by": "boi-writer-connector",
+            "item": {
+              "path": "/data/boi/private/100001/boi-private-100001-20260617012923-01121e.md",
+              "uri": "/private/100001/boi-private-100001-20260617012923-01121e.md",
+              "metadata": {
+                "okf_version": "0.1",
+                "boi_profile_version": "0.1",
+                "type": "boi/analysis",
+                "title": "원인 분석 요청 - ETCH-VM-01",
+                "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                "tags": [
+                  "SOP",
+                  "AI-Native-Workflow",
+                  "EventBroker",
+                  "ActionGateway",
+                  "BoIWiki"
+                ],
+                "timestamp": "2026-06-17T01:29:23+09:00",
+                "boi_id": "boi:private:100001:20260617012923:01121e",
+                "visibility": "private",
+                "classification": "internal",
+                "owner": "100001",
+                "author": {
+                  "type": "agent",
+                  "agent_id": "boi-writer-v0.4"
+                },
+                "acl_policy": "acl:private:100001",
+                "status": "draft",
+                "source_event": {
+                  "event_id": "evt-20260617012923-67ac3a",
+                  "event_type": "root_cause.analysis.requested.v1",
+                  "occurred_at": "2026-06-17T01:29:23+09:00"
+                },
+                "event_type": "root_cause.analysis.requested.v1",
+                "event_label": "원인 분석 요청",
+                "source_refs": [
+                  {
+                    "type": "event",
+                    "ref": "evt-20260617012923-8f0437"
+                  }
+                ],
+                "workflow_stage": "원인 분석",
+                "recommended_actions": [
+                  "sop.equipment.request_raw_data",
+                  "sop.equipment.request_maintenance_guide",
+                  "sop.equipment.create_maintenance_guide_event"
+                ]
+              },
+              "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `root_cause.analysis.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 원인 분석 요청\n- Workflow Stage: 원인 분석\n- Default Flow: boi-root-cause-analysis-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"원인 분석 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.create_maintenance_guide_event`: 장비 보전 가이드 이벤트 발행 / risk=medium / approval_required=False\n- `sop.equipment.request_maintenance_guide`: 장비 보전 가이드 요청 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-67ac3a`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+              "visibility": "private",
+              "event_type": "root_cause.analysis.requested.v1"
+            }
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.create_root_cause_event",
+        "request_id": "act-20260617012923-fe79ed70",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+        "dry_run": false,
+        "approved_by": null,
+        "risk_level": "medium",
+        "action_type": "event_publish",
+        "status": "event_published",
+        "result": {
+          "ok": true,
+          "status": "event_published",
+          "request_id": "act-20260617012923-fe79ed70",
+          "action_key": "sop.equipment.create_root_cause_event",
+          "response": {
+            "ok": true,
+            "topic": "boi.events",
+            "event": {
+              "event_id": "evt-20260617012923-67ac3a",
+              "event_type": "root_cause.analysis.requested.v1",
+              "event_version": "1",
+              "occurred_at": "2026-06-17T01:29:23+09:00",
+              "producer": "boi-api-web",
+              "actor": {
+                "type": "human",
+                "employee_id_hash": "100001",
+                "employee_id": "100001"
+              },
+              "visibility_hint": "private",
+              "classification_hint": "internal",
+              "source_refs": [
+                {
+                  "type": "event",
+                  "ref": "evt-20260617012923-8f0437"
+                }
+              ],
+              "target": {
+                "flow_key": "boi-root-cause-analysis-v0.1",
+                "boi_type": "boi/analysis"
+              },
+              "event_type_label": "원인 분석 요청",
+              "payload": {
+                "title": "원인 분석 요청 - ETCH-VM-01",
+                "equipment_id": "ETCH-VM-01",
+                "lot_id": "LOT-POC-001",
+                "wafer_id": "WF-POC-001",
+                "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+                "owner": "100001"
+              },
+              "trace_id": "trace-230552e3eeaa46fea2cd10f2db21ad03"
+            }
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.request_raw_data",
+        "request_id": "act-20260617012923-a6562c5c",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "mock_api",
+        "status": "dry_run",
+        "result": {
+          "ok": true,
+          "status": "dry_run",
+          "request_id": "act-20260617012923-a6562c5c",
+          "action_key": "sop.equipment.request_raw_data",
+          "action_name": "Raw / Source Data 확인 요청",
+          "mock_response": {
+            "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
+            "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+            "message": "Raw/Source Data 참조 링크를 생성했습니다."
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "sop.equipment.request_trend_history",
+        "request_id": "act-20260617012923-6a957a02",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+        "dry_run": true,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "mock_api",
+        "status": "dry_run",
+        "result": {
+          "ok": true,
+          "status": "dry_run",
+          "request_id": "act-20260617012923-6a957a02",
+          "action_key": "sop.equipment.request_trend_history",
+          "action_name": "Trend / 이력 확인 요청",
+          "mock_response": {
+            "trend_status": "anomaly_detected",
+            "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
+            "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+            "message": "Trend와 이력 데이터를 확인했습니다."
+          }
+        }
+      },
+      {
+        "logged_at": "2026-06-17T01:29:23+09:00",
+        "action_key": "boi.materialize_event",
+        "request_id": "act-20260617012923-2528cff3",
+        "employee_id": "100001",
+        "event_id": "evt-20260617012923-8f0437",
+        "event_type": "equipment.alarm.raised.v1",
+        "boi_id": null,
+        "dry_run": false,
+        "approved_by": null,
+        "risk_level": "low",
+        "action_type": "boi_materialize",
+        "status": "materialized",
+        "result": {
+          "ok": true,
+          "status": "materialized",
+          "request_id": "act-20260617012923-2528cff3",
+          "action_key": "boi.materialize_event",
+          "response": {
+            "ok": true,
+            "handled_by": "boi-writer-connector",
+            "item": {
+              "path": "/data/boi/private/100001/boi-private-100001-20260617012923-8cf8ba.md",
+              "uri": "/private/100001/boi-private-100001-20260617012923-8cf8ba.md",
+              "metadata": {
+                "okf_version": "0.1",
+                "boi_profile_version": "0.1",
+                "type": "boi/sop-instance",
+                "title": "Response Chain 이상 Alarm 발생",
+                "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+                "tags": [
+                  "SOP",
+                  "AI-Native-Workflow",
+                  "EventBroker",
+                  "ActionGateway",
+                  "BoIWiki"
+                ],
+                "timestamp": "2026-06-17T01:29:23+09:00",
+                "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+                "visibility": "private",
+                "classification": "internal",
+                "owner": "100001",
+                "author": {
+                  "type": "agent",
+                  "agent_id": "boi-writer-v0.4"
+                },
+                "acl_policy": "acl:private:100001",
+                "status": "draft",
+                "source_event": {
+                  "event_id": "evt-20260617012923-8f0437",
+                  "event_type": "equipment.alarm.raised.v1",
+                  "occurred_at": "2026-06-17T01:29:23+09:00"
+                },
+                "event_type": "equipment.alarm.raised.v1",
+                "event_label": "설비 Alarm 발생",
+                "source_refs": [
+                  {
+                    "type": "demo-workflow",
+                    "ref": "equipment-anomaly"
+                  }
+                ],
+                "workflow_stage": "이상 감지",
+                "recommended_actions": [
+                  "sop.equipment.request_trend_history",
+                  "sop.equipment.request_raw_data",
+                  "sop.equipment.create_root_cause_event"
+                ]
+              },
+              "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `equipment.alarm.raised.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 설비 Alarm 발생\n- Workflow Stage: 이상 감지\n- Default Flow: boi-equipment-abnormal-detector-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"Response Chain 이상 Alarm 발생\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\",\n  \"workflow\": \"equipment-anomaly\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_trend_history`: Trend / 이력 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.create_root_cause_event`: 원인 분석 이벤트 발행 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-8f0437`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+              "visibility": "private",
+              "event_type": "equipment.alarm.raised.v1"
+            }
+          }
+        }
+      },
       {
         "logged_at": "2026-06-17T01:14:25+09:00",
         "action_key": "sop.equipment.change_spec_rule",
@@ -5852,7 +7602,7 @@
       "aix-tf",
       "platform"
     ],
-    "count": 10,
+    "count": 14,
     "items": [
       {
         "path": "/data/boi/team/aix-tf/team-aix-tf-cascade-roadmap.md",
@@ -5905,6 +7655,210 @@
         "body": "# Summary\n\nTM → CEO → AIX 확산 TF의 메시지는 하나로 연결된다.\n\n- TM: 개인 AI 활용만으로는 회사 성과가 되지 않으며, 먼저 \"우리 일\"을 정의하고 조직을 이해하는 AI 활용 환경이 필요하다.\n- CEO: DT가 데이터를 연결했다면, AI는 판단과 실행을 연결해야 하며 SK하이닉스는 AI Native Memory Creator로 진화해야 한다.\n- AIX 확산 TF: 구성원이 각자 쓰는 Claude, ChatGPT, M365 Copilot, Langflow, Custom Agent가 회사 방식으로 일하도록 Agent Harness와 BoI Wiki 공통 기반을 제공한다.\n\n# PoC Name\n\n1인 1 Agent를 조직의 지식으로 축적하는 업무 맥락 자산화 PoC\n\n# 2개월 PoC 범위\n\n이번 2개월 PoC는 경영진 방향성과 Align해야 할 전체 과제 중에서 가장 먼저 필요한 최소 공통 기반을 검증한다.\n\n| 범위 | 내용 |\n|---|---|\n| Agent Harness | AI에게 쥐어주는 SK하이닉스 업무 가이던스, Private-first, 출처/권한/승격 원칙 |\n| BoI Wiki | OKF 기반 SK하이닉스형 업무 맥락 저장소, Public/Team/Private 구조 |\n| Langflow | 사내 Agent Builder 역할, BoI 공통 컴포넌트와 Webhook 실행 채널 |\n| Event Broker | Kafka 기반 업무 이벤트 Trigger, meeting/action/report/SOP workflow 이벤트 |\n| Action Gateway | BoI Writer, Langflow, API, Webhook, MCP를 동등한 peer connector로 실행 |\n| Demo | 회의/보고/Action 및 설비 이상 SOP workflow를 실제 이벤트와 BoI로 검증 |\n\n# Roadmap\n\n| Phase | 초점 | 주요 항목 |\n|---|---|---|\n| Now: 2개월 PoC | 업무 맥락 자산화 최소 구조 검증 | Agent Harness v0.1, BoI Wiki Profile v0.1, Langflow Reference Flow, Event Broker, Private → Team/Public draft 승격 |\n| 2026 H2 | 확산 운영모델 정립 | 3~5개 팀 Pilot, BoI Curator 역할, Event Catalog 초안, CSP별 적용 패턴, 보안/검토 체크리스트 |\n| 2027 | 기능 조직 확산 | Staff 업무 고도화, R&D BoI Wiki, 개발 Agentic AI, 고객 요구 변경 BoI, AI 교육/인증, Langflow Template Library |\n| 2028+ | Enterprise Agentic Operating Model | 전사 Event Broker, Enterprise Knowledge Graph, Agentic Workflow, Digital Twin/Operational Physical AI, Management Intelligence |\n\n# Executive Message\n\nAgent는 각자 만들지만, 지식은 회사 방식으로 쌓이게 한다.\n\n이번 PoC는 Claude, ChatGPT, M365 Copilot, Langflow 중 어느 하나를 대체하거나 특정 도구를 강제하는 프로젝트가 아니다. 실행 채널은 계속 바뀔 수 있다. 유지되어야 하는 것은 Event Type, BoI Wiki, Agent Harness, 권한/출처/승격 원칙이다.\n",
         "visibility": "team",
         "event_type": null
+      },
+      {
+        "path": "/data/boi/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+        "uri": "/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+        "metadata": {
+          "okf_version": "0.1",
+          "boi_profile_version": "0.1",
+          "type": "boi/action",
+          "title": "이상 조치 요청 - ETCH-VM-01",
+          "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+          "tags": [
+            "SOP",
+            "AI-Native-Workflow",
+            "EventBroker",
+            "ActionGateway",
+            "BoIWiki"
+          ],
+          "timestamp": "2026-06-17T01:29:24+09:00",
+          "boi_id": "boi:private:100001:20260617012924:08c0f9",
+          "visibility": "private",
+          "classification": "internal",
+          "owner": "100001",
+          "author": {
+            "type": "agent",
+            "agent_id": "boi-writer-v0.4"
+          },
+          "acl_policy": "acl:private:100001",
+          "status": "draft",
+          "source_event": {
+            "event_id": "evt-20260617012923-37edef",
+            "event_type": "corrective_action.requested.v1",
+            "occurred_at": "2026-06-17T01:29:23+09:00"
+          },
+          "event_type": "corrective_action.requested.v1",
+          "event_label": "이상 조치 요청",
+          "source_refs": [
+            {
+              "type": "event",
+              "ref": "evt-20260617012923-30e29d"
+            }
+          ],
+          "workflow_stage": "이상 조치",
+          "recommended_actions": [
+            "sop.equipment.notify_action_owner",
+            "sop.equipment.block_process_progress",
+            "sop.equipment.change_spec_rule"
+          ]
+        },
+        "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `corrective_action.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 이상 조치 요청\n- Workflow Stage: 이상 조치\n- Default Flow: boi-corrective-action-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"이상 조치 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.notify_action_owner`: 이상 조치 담당자 알림 / risk=medium / approval_required=False\n- `sop.equipment.block_process_progress`: 공정 진행 금지 요청 / risk=high / approval_required=True\n- `sop.equipment.change_spec_rule`: Spec / Rule 변경 요청 / risk=high / approval_required=True\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-37edef`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+        "visibility": "private",
+        "event_type": "corrective_action.requested.v1"
+      },
+      {
+        "path": "/data/boi/private/100001/boi-private-100001-20260617012923-01121e.md",
+        "uri": "/private/100001/boi-private-100001-20260617012923-01121e.md",
+        "metadata": {
+          "okf_version": "0.1",
+          "boi_profile_version": "0.1",
+          "type": "boi/analysis",
+          "title": "원인 분석 요청 - ETCH-VM-01",
+          "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+          "tags": [
+            "SOP",
+            "AI-Native-Workflow",
+            "EventBroker",
+            "ActionGateway",
+            "BoIWiki"
+          ],
+          "timestamp": "2026-06-17T01:29:23+09:00",
+          "boi_id": "boi:private:100001:20260617012923:01121e",
+          "visibility": "private",
+          "classification": "internal",
+          "owner": "100001",
+          "author": {
+            "type": "agent",
+            "agent_id": "boi-writer-v0.4"
+          },
+          "acl_policy": "acl:private:100001",
+          "status": "draft",
+          "source_event": {
+            "event_id": "evt-20260617012923-67ac3a",
+            "event_type": "root_cause.analysis.requested.v1",
+            "occurred_at": "2026-06-17T01:29:23+09:00"
+          },
+          "event_type": "root_cause.analysis.requested.v1",
+          "event_label": "원인 분석 요청",
+          "source_refs": [
+            {
+              "type": "event",
+              "ref": "evt-20260617012923-8f0437"
+            }
+          ],
+          "workflow_stage": "원인 분석",
+          "recommended_actions": [
+            "sop.equipment.request_raw_data",
+            "sop.equipment.request_maintenance_guide",
+            "sop.equipment.create_maintenance_guide_event"
+          ]
+        },
+        "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `root_cause.analysis.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 원인 분석 요청\n- Workflow Stage: 원인 분석\n- Default Flow: boi-root-cause-analysis-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"원인 분석 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.create_maintenance_guide_event`: 장비 보전 가이드 이벤트 발행 / risk=medium / approval_required=False\n- `sop.equipment.request_maintenance_guide`: 장비 보전 가이드 요청 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-67ac3a`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+        "visibility": "private",
+        "event_type": "root_cause.analysis.requested.v1"
+      },
+      {
+        "path": "/data/boi/private/100001/boi-private-100001-20260617012923-8cf8ba.md",
+        "uri": "/private/100001/boi-private-100001-20260617012923-8cf8ba.md",
+        "metadata": {
+          "okf_version": "0.1",
+          "boi_profile_version": "0.1",
+          "type": "boi/sop-instance",
+          "title": "Response Chain 이상 Alarm 발생",
+          "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+          "tags": [
+            "SOP",
+            "AI-Native-Workflow",
+            "EventBroker",
+            "ActionGateway",
+            "BoIWiki"
+          ],
+          "timestamp": "2026-06-17T01:29:23+09:00",
+          "boi_id": "boi:private:100001:20260617012923:8cf8ba",
+          "visibility": "private",
+          "classification": "internal",
+          "owner": "100001",
+          "author": {
+            "type": "agent",
+            "agent_id": "boi-writer-v0.4"
+          },
+          "acl_policy": "acl:private:100001",
+          "status": "draft",
+          "source_event": {
+            "event_id": "evt-20260617012923-8f0437",
+            "event_type": "equipment.alarm.raised.v1",
+            "occurred_at": "2026-06-17T01:29:23+09:00"
+          },
+          "event_type": "equipment.alarm.raised.v1",
+          "event_label": "설비 Alarm 발생",
+          "source_refs": [
+            {
+              "type": "demo-workflow",
+              "ref": "equipment-anomaly"
+            }
+          ],
+          "workflow_stage": "이상 감지",
+          "recommended_actions": [
+            "sop.equipment.request_trend_history",
+            "sop.equipment.request_raw_data",
+            "sop.equipment.create_root_cause_event"
+          ]
+        },
+        "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `equipment.alarm.raised.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 설비 Alarm 발생\n- Workflow Stage: 이상 감지\n- Default Flow: boi-equipment-abnormal-detector-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"Response Chain 이상 Alarm 발생\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\",\n  \"workflow\": \"equipment-anomaly\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_trend_history`: Trend / 이력 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.create_root_cause_event`: 원인 분석 이벤트 발행 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-8f0437`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+        "visibility": "private",
+        "event_type": "equipment.alarm.raised.v1"
+      },
+      {
+        "path": "/data/boi/private/100001/boi-private-100001-20260617012923-8d1c5c.md",
+        "uri": "/private/100001/boi-private-100001-20260617012923-8d1c5c.md",
+        "metadata": {
+          "okf_version": "0.1",
+          "boi_profile_version": "0.1",
+          "type": "boi/runbook",
+          "title": "장비 보전 가이드 요청 - ETCH-VM-01",
+          "description": "SOP 기반 AI Native Workflow 실행 인스턴스",
+          "tags": [
+            "SOP",
+            "AI-Native-Workflow",
+            "EventBroker",
+            "ActionGateway",
+            "BoIWiki"
+          ],
+          "timestamp": "2026-06-17T01:29:23+09:00",
+          "boi_id": "boi:private:100001:20260617012923:8d1c5c",
+          "visibility": "private",
+          "classification": "internal",
+          "owner": "100001",
+          "author": {
+            "type": "agent",
+            "agent_id": "boi-writer-v0.4"
+          },
+          "acl_policy": "acl:private:100001",
+          "status": "draft",
+          "source_event": {
+            "event_id": "evt-20260617012923-30e29d",
+            "event_type": "maintenance.guide.requested.v1",
+            "occurred_at": "2026-06-17T01:29:23+09:00"
+          },
+          "event_type": "maintenance.guide.requested.v1",
+          "event_label": "장비 보전 가이드 요청",
+          "source_refs": [
+            {
+              "type": "event",
+              "ref": "evt-20260617012923-67ac3a"
+            }
+          ],
+          "workflow_stage": "장비 보전 가이드",
+          "recommended_actions": [
+            "sop.equipment.request_raw_data",
+            "sop.equipment.request_maintenance_guide",
+            "sop.equipment.create_corrective_action_event"
+          ]
+        },
+        "body": "# Summary\n\n첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `maintenance.guide.requested.v1` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.\n\n# SOP Stage\n\n- Event Label: 장비 보전 가이드 요청\n- Workflow Stage: 장비 보전 가이드\n- Default Flow: boi-maintenance-guide-v0.1\n- SOP Reference: `boi:public:sop:equipment-abnormal-response`\n\n# Payload\n\n```json\n{\n  \"title\": \"장비 보전 가이드 요청 - ETCH-VM-01\",\n  \"equipment_id\": \"ETCH-VM-01\",\n  \"lot_id\": \"LOT-POC-001\",\n  \"wafer_id\": \"WF-POC-001\",\n  \"alarm_code\": \"RESPONSE_CHAIN_ABNORMAL\",\n  \"owner\": \"100001\"\n}\n```\n\n# Recommended Actions\n\n- `sop.equipment.request_raw_data`: Raw / Source Data 확인 요청 / risk=low / approval_required=False\n- `sop.equipment.request_maintenance_guide`: 장비 보전 가이드 요청 / risk=medium / approval_required=False\n- `sop.equipment.create_corrective_action_event`: 이상 조치 요청 이벤트 발행 / risk=medium / approval_required=False\n\n# AI Native Workflow Interpretation\n\n1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.\n2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.\n3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.\n4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.\n5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.\n\n# References\n\n- Source Event: `evt-20260617012923-30e29d`\n- SOP: `boi:public:sop:equipment-abnormal-response`\n",
+        "visibility": "private",
+        "event_type": "maintenance.guide.requested.v1"
       },
       {
         "path": "/data/boi/private/100001/boi-private-100001-20260617011425-0b339a.md",
@@ -6351,11 +8305,11 @@
                 "message": {
                   "text_key": "text",
                   "data": {
-                    "timestamp": "2026-06-16 16:14:33 UTC",
+                    "timestamp": "2026-06-16 16:29:32 UTC",
                     "sender": "Machine",
                     "sender_name": "AI",
                     "session_id": "15b0199d-583a-4b2e-b692-3ec1744a7c75",
-                    "text": "제시해주신 PoC 실행 결과(PoC evidence run)를 바탕으로, 설계된 AI Native Workflow의 핵심 가치를 관통하는 검증 요약 문장입니다.\n\n**[BoI Wiki PoC 검증 결과 요약]**\n\n\"본 PoC는 파편화된 업무 맥락의 자산화를 기반으로 Event Broker를 통한 자동화 트리거와 Action Gateway를 활용한 고위험 액션 통제 메커니즘을 구현하였으며, 데이터 신뢰도 및 재사용성 기준에 따른 Private BoI의 Team BoI 승격 프로세스가 AI Native 워크플로우로서 유효함을 입증하였습니다.\"",
+                    "text": "본 PoC는 **Event Broker**와 **Action Gateway**를 기반으로 업무 맥락을 자산화하고, 고위험 액션에 대한 승인 통제 및 Private BoI의 Team BoI 승격 기준을 검증함으로써 AI Native Workflow의 실효성과 운영 안정성을 입증하였습니다.",
                     "files": [],
                     "error": false,
                     "edit": false,
@@ -6376,17 +8330,17 @@
                     },
                     "category": "message",
                     "content_blocks": [],
-                    "id": "2ce3fca9-909d-4f2b-bcd6-ef45976158d4",
+                    "id": "9c12eb8e-0973-4d86-bfd7-267d8c3e95ed",
                     "flow_id": "15b0199d-583a-4b2e-b692-3ec1744a7c75",
                     "duration": null
                   },
                   "default_value": "",
-                  "text": "제시해주신 PoC 실행 결과(PoC evidence run)를 바탕으로, 설계된 AI Native Workflow의 핵심 가치를 관통하는 검증 요약 문장입니다.\n\n**[BoI Wiki PoC 검증 결과 요약]**\n\n\"본 PoC는 파편화된 업무 맥락의 자산화를 기반으로 Event Broker를 통한 자동화 트리거와 Action Gateway를 활용한 고위험 액션 통제 메커니즘을 구현하였으며, 데이터 신뢰도 및 재사용성 기준에 따른 Private BoI의 Team BoI 승격 프로세스가 AI Native 워크플로우로서 유효함을 입증하였습니다.\"",
+                  "text": "본 PoC는 **Event Broker**와 **Action Gateway**를 기반으로 업무 맥락을 자산화하고, 고위험 액션에 대한 승인 통제 및 Private BoI의 Team BoI 승격 기준을 검증함으로써 AI Native Workflow의 실효성과 운영 안정성을 입증하였습니다.",
                   "sender": "Machine",
                   "sender_name": "AI",
                   "files": [],
                   "session_id": "15b0199d-583a-4b2e-b692-3ec1744a7c75",
-                  "timestamp": "2026-06-16T16:14:33+00:00",
+                  "timestamp": "2026-06-16T16:29:32+00:00",
                   "flow_id": "15b0199d-583a-4b2e-b692-3ec1744a7c75",
                   "error": false,
                   "edit": false,
@@ -6411,7 +8365,7 @@
                 }
               },
               "artifacts": {
-                "message": "제시해주신 PoC 실행 결과(PoC evidence run)를 바탕으로, 설계된 AI Native Workflow의 핵심 가치를 관통하는 검증 요약 문장입니다.\n\n**[BoI Wiki PoC 검증 결과 요약]**\n\n\"본 PoC는 파편화된 업무 맥락의 자산화를 기반으로 Event Broker를 통한 자동화 트리거와 Action Gateway를 활용한 고위험 액션 통제 메커니즘을 구현하였으며, 데이터 신뢰도 및 재사용성 기준에 따른 Private BoI의 Team BoI 승격 프로세스가 AI Native 워크플로우로서 유효함을 입증하였습니다.\"",
+                "message": "본 PoC는 **Event Broker**와 **Action Gateway**를 기반으로 업무 맥락을 자산화하고, 고위험 액션에 대한 승인 통제 및 Private BoI의 Team BoI 승격 기준을 검증함으로써 AI Native Workflow의 실효성과 운영 안정성을 입증하였습니다.",
                 "sender": "Machine",
                 "sender_name": "AI",
                 "files": [],
@@ -6419,7 +8373,7 @@
               },
               "outputs": {
                 "message": {
-                  "message": "제시해주신 PoC 실행 결과(PoC evidence run)를 바탕으로, 설계된 AI Native Workflow의 핵심 가치를 관통하는 검증 요약 문장입니다.\n\n**[BoI Wiki PoC 검증 결과 요약]**\n\n\"본 PoC는 파편화된 업무 맥락의 자산화를 기반으로 Event Broker를 통한 자동화 트리거와 Action Gateway를 활용한 고위험 액션 통제 메커니즘을 구현하였으며, 데이터 신뢰도 및 재사용성 기준에 따른 Private BoI의 Team BoI 승격 프로세스가 AI Native 워크플로우로서 유효함을 입증하였습니다.\"",
+                  "message": "본 PoC는 **Event Broker**와 **Action Gateway**를 기반으로 업무 맥락을 자산화하고, 고위험 액션에 대한 승인 통제 및 Private BoI의 Team BoI 승격 기준을 검증함으로써 AI Native Workflow의 실효성과 운영 안정성을 입증하였습니다.",
                   "type": "text"
                 }
               },
@@ -6428,7 +8382,7 @@
               },
               "messages": [
                 {
-                  "message": "제시해주신 PoC 실행 결과(PoC evidence run)를 바탕으로, 설계된 AI Native Workflow의 핵심 가치를 관통하는 검증 요약 문장입니다.\n\n**[BoI Wiki PoC 검증 결과 요약]**\n\n\"본 PoC는 파편화된 업무 맥락의 자산화를 기반으로 Event Broker를 통한 자동화 트리거와 Action Gateway를 활용한 고위험 액션 통제 메커니즘을 구현하였으며, 데이터 신뢰도 및 재사용성 기준에 따른 Private BoI의 Team BoI 승격 프로세스가 AI Native 워크플로우로서 유효함을 입증하였습니다.\"",
+                  "message": "본 PoC는 **Event Broker**와 **Action Gateway**를 기반으로 업무 맥락을 자산화하고, 고위험 액션에 대한 승인 통제 및 Private BoI의 Team BoI 승격 기준을 검증함으로써 AI Native Workflow의 실효성과 운영 안정성을 입증하였습니다.",
                   "sender": "Machine",
                   "sender_name": "AI",
                   "session_id": "15b0199d-583a-4b2e-b692-3ec1744a7c75",

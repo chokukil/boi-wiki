@@ -15,6 +15,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "boi-poc"
 DEFAULT_DOCKER_EXE = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
+DEFAULT_CAPTURE_MANIFEST = ROOT / "artifacts" / "boi-poc" / "capture-manifest.json"
 
 
 def utc_now() -> str:
@@ -146,6 +147,84 @@ def summarize(evidence: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def latest_doc_uri_for_event(evidence: dict[str, Any], event_type: str) -> str:
+    docs = evidence.get("boi_docs", {}).get("items", [])
+    for doc in docs:
+        if doc.get("event_type") == event_type:
+            return str(doc.get("uri") or "")
+    return ""
+
+
+def base_replace(url: str, old_base: str, new_base: str) -> str:
+    return new_base.rstrip("/") + url[len(old_base) :] if url.startswith(old_base) else url
+
+
+def build_capture_targets(
+    evidence: dict[str, Any],
+    capture_manifest_path: Path,
+    boi_api_url: str,
+    langflow_url: str,
+) -> dict[str, Any]:
+    manifest = json.loads(capture_manifest_path.read_text(encoding="utf-8"))
+    corrective_uri = latest_doc_uri_for_event(evidence, "corrective_action.requested.v1")
+    flow_id = str(evidence.get("langflow_smoke", {}).get("flow", {}).get("id") or "")
+
+    targets = []
+    for entry in manifest["required"]:
+        target = dict(entry)
+        url = str(target["url"])
+        url = base_replace(url, "http://localhost:8000", boi_api_url)
+        url = base_replace(url, "http://localhost:7860", langflow_url)
+        if target["id"] == "private_boi":
+            if corrective_uri:
+                url = f"{boi_api_url.rstrip()}/docs{corrective_uri}"
+            target["resolved_from"] = corrective_uri
+        elif target["id"] == "langflow":
+            if flow_id:
+                url = f"{langflow_url.rstrip()}/flow/{flow_id}"
+            target["resolved_from"] = flow_id
+        target["url"] = url
+        targets.append(target)
+
+    return {
+        "capture_dir": manifest["capture_dir"],
+        "deck_output": manifest["deck_output"],
+        "generated_from": {
+            "evidence_collected_at": evidence.get("collected_at"),
+            "git_commit": str(evidence.get("git_commit", "")).strip(),
+        },
+        "targets": targets,
+    }
+
+
+def capture_targets_markdown(capture_targets: dict[str, Any]) -> str:
+    lines = [
+        "# BoI Wiki PoC Capture Targets",
+        "",
+        f"- Capture dir: `{capture_targets['capture_dir']}`",
+        f"- Final deck output: `{capture_targets['deck_output']}`",
+        f"- Evidence collected at: `{capture_targets['generated_from'].get('evidence_collected_at')}`",
+        f"- Git commit: `{capture_targets['generated_from'].get('git_commit')}`",
+        "",
+        "| File | URL | Purpose |",
+        "|---|---|---|",
+    ]
+    for target in capture_targets["targets"]:
+        lines.append(f"| `{target['file']}` | `{target['url']}` | {target['purpose']} |")
+    lines.extend(
+        [
+            "",
+            "After saving all PNG files, run:",
+            "",
+            "```bash",
+            "python scripts/insert_poc_screenshots.py",
+            "```",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect executable BoI Wiki PoC evidence for documents and slides.")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
@@ -153,6 +232,7 @@ def main() -> None:
     parser.add_argument("--action-gateway-url", default="http://localhost:8100")
     parser.add_argument("--langflow-url", default="http://localhost:7860")
     parser.add_argument("--docker-exe", default=DEFAULT_DOCKER_EXE)
+    parser.add_argument("--capture-manifest", default=str(DEFAULT_CAPTURE_MANIFEST))
     parser.add_argument("--trigger-demo", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--wait-seconds", type=float, default=8.0)
     args = parser.parse_args()
@@ -214,10 +294,27 @@ def main() -> None:
 
     json_path = out_dir / "evidence.json"
     summary_path = out_dir / "evidence-summary.md"
+    capture_targets_path = out_dir / "capture-targets.json"
+    capture_targets_md_path = out_dir / "capture-targets.md"
+    capture_targets = build_capture_targets(evidence, Path(args.capture_manifest), boi_api_url, langflow_url)
     json_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
     summary_path.write_text(summarize(evidence), encoding="utf-8")
+    capture_targets_path.write_text(json.dumps(capture_targets, ensure_ascii=False, indent=2), encoding="utf-8")
+    capture_targets_md_path.write_text(capture_targets_markdown(capture_targets), encoding="utf-8")
 
-    print(json.dumps({"ok": True, "json": str(json_path), "summary": str(summary_path)}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "json": str(json_path),
+                "summary": str(summary_path),
+                "capture_targets": str(capture_targets_path),
+                "capture_targets_md": str(capture_targets_md_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

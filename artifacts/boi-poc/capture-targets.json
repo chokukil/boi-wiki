@@ -1,0 +1,68 @@
+{
+  "capture_dir": "captures/boi-poc",
+  "deck_output": "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx",
+  "generated_from": {
+    "evidence_collected_at": "2026-06-16T16:29:24+00:00",
+    "git_commit": "3932232"
+  },
+  "targets": [
+    {
+      "id": "boi_home",
+      "file": "01-boi-wiki-home.png",
+      "title": "BoI Wiki Home",
+      "url": "http://localhost:8000/",
+      "purpose": "목록, 필터, Event log가 보이는 첫 화면"
+    },
+    {
+      "id": "sop_library",
+      "file": "02-sop-library.png",
+      "title": "SOP Library",
+      "url": "http://localhost:8000/sops",
+      "purpose": "설비 이상 SOP와 Agent Harness SOP"
+    },
+    {
+      "id": "event_type_catalog",
+      "file": "03-event-type-catalog.png",
+      "title": "Event Type Catalog",
+      "url": "http://localhost:8000/event-types",
+      "purpose": "업무 이벤트 정의와 추천 Action"
+    },
+    {
+      "id": "event_stream",
+      "file": "04-event-stream.png",
+      "title": "Event Stream",
+      "url": "http://localhost:8000/events",
+      "purpose": "Alarm에서 Corrective Action까지 이어지는 이벤트 체인"
+    },
+    {
+      "id": "action_logs",
+      "file": "05-action-catalog-logs.png",
+      "title": "Action Catalog / Logs",
+      "url": "http://localhost:8000/actions",
+      "purpose": "materialized, dry_run, approval_required Action 로그"
+    },
+    {
+      "id": "private_boi",
+      "file": "06-private-boi-corrective-action.png",
+      "title": "Generated Private BoI",
+      "url": "http://localhost:8000/docs/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+      "purpose": "실제 생성된 corrective_action.requested.v1 Private BoI",
+      "resolved_from": "/private/100001/boi-private-100001-20260617012924-08c0f9.md"
+    },
+    {
+      "id": "langflow",
+      "file": "07-langflow-boi-reference-flow.png",
+      "title": "Langflow BoI Reference Flow",
+      "url": "http://localhost:7860/flow/15b0199d-583a-4b2e-b692-3ec1744a7c75",
+      "purpose": "Gemma OpenAI-compatible Reference Flow",
+      "resolved_from": "15b0199d-583a-4b2e-b692-3ec1744a7c75"
+    },
+    {
+      "id": "kafka_ui",
+      "file": "08-kafka-ui-topics.png",
+      "title": "Kafka UI Topics",
+      "url": "http://localhost:8081/",
+      "purpose": "boi.events, boi.audit, boi.dead-letter 토픽"
+    }
+  ]
+}
