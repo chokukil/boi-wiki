@@ -5,6 +5,7 @@ actions:
     type: boi_materialize
     enabled: true
     event_types: ["*"]
+    order: 10
     owner: AIX 확산 TF
     risk_level: low
     approval_required: false
@@ -96,6 +97,31 @@ actions:
         - type: event
           ref: ${event.event_id}
 
+  - action_key: sop.equipment.create_maintenance_guide_event
+    name_ko: 장비 보전 가이드 이벤트 발행
+    description: 원인 분석 요청을 보전 가이드 요청 이벤트로 전환하여 SOP 다음 단계를 깨움
+    type: event_publish
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    event_types: [root_cause.analysis.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: maintenance.guide.requested.v1
+      payload:
+        title: 장비 보전 가이드 요청 - ${payload.equipment_id}
+        equipment_id: ${payload.equipment_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        alarm_code: ${payload.alarm_code}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
+
   - action_key: sop.equipment.request_maintenance_guide
     name_ko: 장비 보전 가이드 요청
     description: 장비 이상 가능성이 있을 때 장비 보전 SOP/가이드를 요청하는 API 호출 예시
@@ -114,6 +140,31 @@ actions:
         - 장비 이력 확인
         - 장비 이상 여부 판단
       message: 장비 보전 가이드를 반환했습니다.
+
+  - action_key: sop.equipment.create_corrective_action_event
+    name_ko: 이상 조치 요청 이벤트 발행
+    description: 보전 가이드 요청을 이상 조치 요청 이벤트로 전환하여 담당자 알림과 고위험 후보를 기록
+    type: event_publish
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    event_types: [maintenance.guide.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: corrective_action.requested.v1
+      payload:
+        title: 이상 조치 요청 - ${payload.equipment_id}
+        equipment_id: ${payload.equipment_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        alarm_code: ${payload.alarm_code}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
 
   - action_key: sop.equipment.notify_action_owner
     name_ko: 이상 조치 담당자 알림

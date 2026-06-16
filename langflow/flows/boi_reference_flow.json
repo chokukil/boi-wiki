@@ -1,0 +1,32 @@
+{
+  "name": "BoI Reference Flow",
+  "description": "BoI Wiki PoC reference flow. Uses OpenAI-compatible Gemma settings and BoI custom components for import/smoke verification.",
+  "endpoint_name": "boi-reference-flow",
+  "data": {
+    "nodes": [],
+    "edges": [],
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    }
+  },
+  "boi_reference": {
+    "llm": {
+      "provider": "openai-compatible",
+      "base_url": "${BOI_LLM_BASE_URL}",
+      "model": "${BOI_LLM_MODEL}",
+      "api_key": "${BOI_LLM_API_KEY}"
+    },
+    "expected_components": [
+      "boi_harness_loader",
+      "boi_context_normalizer",
+      "boi_metadata_builder",
+      "boi_policy_guard",
+      "boi_wiki_reader",
+      "boi_wiki_writer",
+      "boi_action_invoker"
+    ],
+    "prompt": "Create a Private BoI draft from the incoming business event. Preserve source refs, owner, visibility, and promotion guardrails."
+  }
+}

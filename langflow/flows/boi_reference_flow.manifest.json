@@ -1,0 +1,9 @@
+{
+  "name": "BoI Reference Flow",
+  "endpoint_name": "boi-reference-flow",
+  "flow_file": "langflow/flows/boi_reference_flow.json",
+  "base_url": "http://mangugil.iptime.org:1236/v1",
+  "model": "google/gemma-4-26b-a4b-qat",
+  "api_key_env": "BOI_LLM_API_KEY",
+  "purpose": "Reference Langflow flow for BoI Wiki PoC screenshots and webhook connector smoke tests."
+}

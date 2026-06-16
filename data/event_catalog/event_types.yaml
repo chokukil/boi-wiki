@@ -53,7 +53,7 @@ event_types:
     recommended_actions:
       - sop.equipment.request_trend_history
       - sop.equipment.request_raw_data
-      - sop.equipment.create_root_cause_boi
+      - sop.equipment.create_root_cause_event
 
   - event_type: trend.anomaly.detected.v1
     name_ko: Trend 이상 감지
@@ -68,7 +68,7 @@ event_types:
     wiki_usage: Trend 이상 여부와 Lot/Wafer 이력을 바탕으로 원인 분석 BoI를 생성
     recommended_actions:
       - sop.equipment.request_trend_history
-      - sop.equipment.create_root_cause_boi
+      - sop.equipment.create_root_cause_event
 
   - event_type: root_cause.analysis.requested.v1
     name_ko: 원인 분석 요청
@@ -84,6 +84,7 @@ event_types:
     recommended_actions:
       - sop.equipment.request_raw_data
       - sop.equipment.request_maintenance_guide
+      - sop.equipment.create_maintenance_guide_event
 
   - event_type: maintenance.guide.requested.v1
     name_ko: 장비 보전 가이드 요청
@@ -99,6 +100,7 @@ event_types:
     recommended_actions:
       - sop.equipment.request_raw_data
       - sop.equipment.request_maintenance_guide
+      - sop.equipment.create_corrective_action_event
 
   - event_type: corrective_action.requested.v1
     name_ko: 이상 조치 요청

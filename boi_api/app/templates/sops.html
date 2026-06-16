@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>SOP Library · BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>SOP Library</h1>
+      <p>Agent Harness, BoI Wiki, 설비 이상 대응 같은 공통 SOP와 실행 가이드를 확인합니다.</p>
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="/?employee_id={{ employee_id }}">BoI 목록</a> ·
+      <a href="/event-types?employee_id={{ employee_id }}">Event Types</a> ·
+      <a href="/actions?employee_id={{ employee_id }}">Actions</a>
+    </div>
+  </header>
+  <main>
+    <h2>SOP Documents ({{ docs|length }})</h2>
+    <div class="doc-list">
+      {% for doc in docs %}
+      {% set m = doc.metadata %}
+      <a class="doc-row {{ m.visibility }}" href="/docs/{{ m.boi_id }}?employee_id={{ employee_id }}">
+        <div>
+          <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
+          <span class="badge status">{{ m.status }}</span>
+          <strong>{{ m.title }}</strong>
+        </div>
+        <p>{{ m.description }}</p>
+        <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
+      </a>
+      {% else %}
+      <p>No SOP documents are accessible for this employee.</p>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

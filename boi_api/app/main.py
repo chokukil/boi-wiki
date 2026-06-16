@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 KST = timezone(timedelta(hours=9))
+APP_DIR = Path(__file__).resolve().parent
 DATA_ROOT = Path(os.getenv("DATA_ROOT", "/data/boi"))
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT", "/data/events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog"))
@@ -31,6 +32,9 @@ DEFAULT_TEAM_ID = os.getenv("DEFAULT_TEAM_ID", "aix-tf")
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
 BOI_EVENTS_TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
 DEMO_EMPLOYEE_ID = os.getenv("DEMO_EMPLOYEE_ID", "100001")
+BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://mangugil.iptime.org:1236/v1").rstrip("/")
+BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
+BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
 
 # PoC user/team map. Replace with SSO/IAM/HR master during internalization.
 USER_TEAMS: dict[str, list[str]] = {
@@ -114,8 +118,8 @@ REQUIRED_FIELDS = [
 ]
 
 app = FastAPI(title="BoI Wiki PoC", version="0.1.0")
-app.mount("/static", StaticFiles(directory="/app/app/static"), name="static")
-templates = Jinja2Templates(directory="/app/app/templates")
+app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
 
 def now_iso() -> str:
@@ -467,6 +471,15 @@ class EventPublishRequest(BaseModel):
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class EquipmentAnomalyStartRequest(BaseModel):
+    equipment_id: str = "ETCH-VM-01"
+    alarm_code: str = "RESPONSE_CHAIN_ABNORMAL"
+    title: str = "Response Chain 이상 Alarm 발생"
+    lot_id: str = "LOT-POC-001"
+    wafer_id: str = "WF-POC-001"
+    owner: str | None = None
+
+
 class EventHandleRequest(BaseModel):
     event_id: str
     event_type: str
@@ -510,6 +523,20 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/runtime/config")
+async def runtime_config() -> dict[str, Any]:
+    return {
+        "llm": {
+            "provider": "openai-compatible",
+            "base_url": BOI_LLM_BASE_URL,
+            "model": BOI_LLM_MODEL,
+            "api_key_configured": bool(BOI_LLM_API_KEY),
+        },
+        "event_broker": {"type": "kafka", "bootstrap": KAFKA_BOOTSTRAP, "topic": BOI_EVENTS_TOPIC},
+        "connectors": {"action_gateway_url": ACTION_GATEWAY_URL, "langflow": "peer_connector"},
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(
     request: Request,
@@ -543,6 +570,25 @@ async def index(
             "boi_type": boi_type,
             "event_types": load_event_types(),
             "event_logs": read_event_logs(limit=8),
+        },
+    )
+
+
+@app.get("/sops", response_class=HTMLResponse)
+async def sops_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+    docs = [
+        d
+        for d in accessible_docs(employee_id)
+        if "sop" in str(d["metadata"].get("boi_id", "")).lower()
+        or "sop" in str(d["metadata"].get("title", "")).lower()
+        or "SOP" in (d["metadata"].get("tags") or [])
+    ]
+    return templates.TemplateResponse(
+        "sops.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "docs": docs,
         },
     )
 
@@ -661,6 +707,38 @@ async def publish_event(req: EventPublishRequest, employee_id: str = Depends(cur
     finally:
         await producer.stop()
     return {"ok": True, "topic": BOI_EVENTS_TOPIC, "event": event}
+
+
+@app.post("/api/workflows/demo/equipment-anomaly/start")
+async def start_equipment_anomaly_demo(req: EquipmentAnomalyStartRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    owner = req.owner or employee_id
+    result = await publish_event(
+        EventPublishRequest(
+            event_type="equipment.alarm.raised.v1",
+            actor_employee_id=owner,
+            payload={
+                "title": req.title,
+                "equipment_id": req.equipment_id,
+                "lot_id": req.lot_id,
+                "wafer_id": req.wafer_id,
+                "alarm_code": req.alarm_code,
+                "owner": owner,
+                "workflow": "equipment-anomaly",
+            },
+            source_refs=[{"type": "demo-workflow", "ref": "equipment-anomaly"}],
+        ),
+        employee_id=employee_id,
+    )
+    return {
+        "ok": True,
+        "workflow": {
+            "name": "equipment-anomaly",
+            "first_event_type": "equipment.alarm.raised.v1",
+            "expected_next": ["root_cause.analysis.requested.v1", "maintenance.guide.requested.v1", "corrective_action.requested.v1"],
+        },
+        "topic": result["topic"],
+        "event": result["event"],
+    }
 
 
 @app.post("/api/webhooks/{source}")

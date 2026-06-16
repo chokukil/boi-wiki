@@ -40,6 +40,12 @@ services:
       LANGFLOW_SUPERUSER: ${LANGFLOW_SUPERUSER:-admin}
       LANGFLOW_SUPERUSER_PASSWORD: ${LANGFLOW_SUPERUSER_PASSWORD:-admin}
       LANGFLOW_SECRET_KEY: ${LANGFLOW_SECRET_KEY:-change-this-secret-before-internal-demo}
+      BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}
+      BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
+      BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
+      OPENAI_API_BASE: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}
+      OPENAI_API_BASE_URL: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}
+      OPENAI_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
     volumes:
       - ./langflow/custom_components:/app/custom_components:ro
       - langflow-data:/app/langflow
@@ -124,6 +130,9 @@ services:
       KAFKA_BOOTSTRAP: kafka:9092
       BOI_EVENTS_TOPIC: boi.events
       DEMO_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
+      BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}
+      BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
+      BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
     volumes:
       - ./data/boi:/data/boi
       - ./data/events:/data/events
@@ -152,6 +161,9 @@ services:
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       ACTION_DRY_RUN_DEFAULT: ${ACTION_DRY_RUN_DEFAULT:-true}
       ACTION_ALLOWED_HOSTS: ${ACTION_ALLOWED_HOSTS:-boi-api,langflow,action-gateway,localhost,127.0.0.1,mcp-bridge}
+      BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}
+      BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
+      BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
     volumes:
       - ./data/action_catalog:/data/action_catalog:ro
       - ./data/actions:/data/actions
