@@ -8,6 +8,9 @@ Updated: 2026-06-17 01:21 KST
 - `artifacts/boi-poc/boi-wiki-poc-executive-brief-notes.md`
 - `artifacts/boi-poc/evidence.json`
 - `artifacts/boi-poc/evidence-summary.md`
+- `artifacts/boi-poc/capture-manifest.json`
+- `docs/POC_SCREENSHOT_MANIFEST.md`
+- `scripts/insert_poc_screenshots.py`
 
 Windows copy:
 
@@ -25,12 +28,28 @@ Windows copy:
 - The generated 15-slide PPTX opens in Microsoft PowerPoint.
 - The PowerPoint ChatGPT add-in pane opens in the generated deck.
 - A polish request was entered and submitted to the add-in.
+- Screenshot filenames and URLs are fixed in a manifest.
+- A screenshot insertion script is ready to create the final screenshot-enriched PPTX after PNG capture files exist.
 
 ## Still Pending
 
 - Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy.
 - The add-in stayed in `Loading` after the polish request; completion or deck mutation has not been verified.
 - Final PPT completion requires actual screenshots to replace the slide 11 placeholders and a final PowerPoint save/export check.
+
+## Finalization Command After Screenshots Exist
+
+Save the required PNG files under `captures/boi-poc/`, then run:
+
+```bash
+python scripts/insert_poc_screenshots.py
+```
+
+Expected final deck:
+
+```text
+artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx
+```
 
 ## Required Screenshots When Chrome Access Is Available
 
@@ -42,4 +61,3 @@ Windows copy:
 6. Generated Private BoI document
 7. Langflow BoI Reference Flow
 8. Kafka UI topics/messages
-
