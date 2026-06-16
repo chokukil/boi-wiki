@@ -1,0 +1,349 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+import httpx
+import yaml
+from fastapi import Depends, FastAPI, Header, HTTPException
+from pydantic import BaseModel, Field
+
+KST = timezone(timedelta(hours=9))
+ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
+ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT", "/data/actions"))
+SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
+BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000")
+LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860")
+LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
+MCP_BRIDGE_URL = os.getenv("MCP_BRIDGE_URL", "")
+DRY_RUN_DEFAULT = os.getenv("ACTION_DRY_RUN_DEFAULT", "true").lower() == "true"
+ALLOWED_HOSTS = {h.strip() for h in os.getenv("ACTION_ALLOWED_HOSTS", "boi-api,langflow,action-gateway,localhost,127.0.0.1").split(",") if h.strip()}
+
+FIRST_CLASS_ACTION_TYPES = {"boi_materialize", "boi_materializer", "event_publish", "boi_event"}
+HTTP_ACTION_TYPES = {"http", "api", "api_call", "webhook", "http_webhook", "internal_webhook", "langflow_webhook"}
+
+app = FastAPI(title="BoI Action Gateway", version="0.4.0")
+
+
+def now_iso() -> str:
+    return datetime.now(KST).replace(microsecond=0).isoformat()
+
+
+def ensure_dirs() -> None:
+    ACTION_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
+    ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def load_catalog() -> list[dict[str, Any]]:
+    ensure_dirs()
+    items: list[dict[str, Any]] = []
+    for p in sorted(ACTION_CATALOG_ROOT.glob("*.yaml")) + sorted(ACTION_CATALOG_ROOT.glob("*.yml")):
+        try:
+            data = yaml.safe_load(p.read_text(encoding="utf-8")) or []
+            if isinstance(data, dict):
+                data = data.get("actions", [data])
+            if isinstance(data, list):
+                items.extend([x for x in data if isinstance(x, dict) and x.get("action_key")])
+        except Exception as exc:
+            items.append({"action_key": f"catalog.load_error.{p.name}", "name_ko": "Catalog load error", "error": repr(exc), "enabled": False})
+    dedup: dict[str, dict[str, Any]] = {}
+    for item in items:
+        dedup[str(item["action_key"])] = item
+    return sorted(dedup.values(), key=lambda x: (int(x.get("order", 100)), str(x.get("action_key"))))
+
+
+def get_action(action_key: str) -> dict[str, Any] | None:
+    for item in load_catalog():
+        if item.get("action_key") == action_key:
+            return item
+    return None
+
+
+def actions_for_event(event_type: str) -> list[dict[str, Any]]:
+    return [a for a in load_catalog() if a.get("enabled", True) and (event_type in (a.get("event_types") or []) or "*" in (a.get("event_types") or [])) and a.get("auto_dispatch", True)]
+
+
+def append_action_log(row: dict[str, Any]) -> None:
+    ensure_dirs()
+    payload = {"logged_at": now_iso(), **row}
+    path = ACTION_LOG_ROOT / f"actions-{datetime.now(KST).strftime('%Y%m%d')}.jsonl"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def read_action_logs(limit: int = 200, action_key: str | None = None) -> list[dict[str, Any]]:
+    ensure_dirs()
+    rows: list[dict[str, Any]] = []
+    for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl"), reverse=True):
+        for line in reversed(p.read_text(encoding="utf-8").splitlines()):
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if action_key and row.get("action_key") != action_key:
+                continue
+            rows.append(row)
+            if len(rows) >= limit:
+                return rows
+    return rows
+
+
+def host_allowed(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.hostname in ALLOWED_HOSTS
+
+
+def render_template(value: Any, context: dict[str, Any]) -> Any:
+    """Tiny template replacement for catalog URLs/payloads: ${key.path}."""
+    if isinstance(value, str):
+        def repl(match: re.Match[str]) -> str:
+            path = match.group(1).split(".")
+            cur: Any = context
+            for part in path:
+                if isinstance(cur, dict):
+                    cur = cur.get(part, "")
+                else:
+                    return ""
+            return str(cur)
+        return re.sub(r"\$\{([A-Za-z0-9_.-]+)\}", repl, value)
+    if isinstance(value, list):
+        return [render_template(v, context) for v in value]
+    if isinstance(value, dict):
+        return {k: render_template(v, context) for k, v in value.items()}
+    return value
+
+
+def extract_boi_id(result: dict[str, Any]) -> str | None:
+    try:
+        return (((result.get("response") or {}).get("item") or {}).get("metadata") or {}).get("boi_id")
+    except Exception:
+        return None
+
+
+async def require_service_token(x_service_token: str | None = Header(None)) -> None:
+    if x_service_token != SERVICE_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid service token")
+
+
+class InvokeRequest(BaseModel):
+    action_key: str = Field(examples=["boi.materialize.event"])
+    employee_id: str = "100001"
+    event: dict[str, Any] = Field(default_factory=dict)
+    boi_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool | None = None
+    approved_by: str | None = None
+    idempotency_key: str | None = None
+
+
+class DispatchRequest(BaseModel):
+    employee_id: str = "100001"
+    event: dict[str, Any] = Field(default_factory=dict)
+    boi_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool | None = None
+    approved_by: str | None = None
+    idempotency_key: str | None = None
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    ensure_dirs()
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/api/actions")
+async def list_actions(event_type: str = "", risk_level: str = "") -> dict[str, Any]:
+    items = [x for x in load_catalog() if x.get("enabled", True)]
+    if event_type:
+        items = [x for x in items if event_type in (x.get("event_types") or []) or "*" in (x.get("event_types") or [])]
+    if risk_level:
+        items = [x for x in items if x.get("risk_level") == risk_level]
+    return {"count": len(items), "items": items}
+
+
+@app.get("/api/actions/logs")
+async def logs(limit: int = 200, action_key: str = "") -> dict[str, Any]:
+    rows = read_action_logs(limit=limit, action_key=action_key or None)
+    return {"count": len(rows), "items": rows}
+
+
+async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str, Any]:
+    request_id = req.idempotency_key or f"act-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    action_type = str(action.get("type", "mock_api"))
+
+    if req.dry_run is not None:
+        dry_run = req.dry_run
+    elif "dry_run" in action:
+        dry_run = bool(action.get("dry_run"))
+    elif action_type in FIRST_CLASS_ACTION_TYPES:
+        dry_run = False
+    else:
+        dry_run = DRY_RUN_DEFAULT
+
+    approval_required = bool(action.get("approval_required"))
+    context = {
+        "request_id": request_id,
+        "employee_id": req.employee_id,
+        "event": req.event,
+        "payload": req.payload or req.event.get("payload") or {},
+        "boi_id": req.boi_id or "",
+    }
+    base_log = {
+        "action_key": action.get("action_key"),
+        "request_id": request_id,
+        "employee_id": req.employee_id,
+        "event_id": req.event.get("event_id"),
+        "event_type": req.event.get("event_type"),
+        "boi_id": req.boi_id,
+        "dry_run": dry_run,
+        "approved_by": req.approved_by,
+        "risk_level": action.get("risk_level"),
+        "action_type": action_type,
+    }
+
+    if approval_required and not req.approved_by:
+        result = {
+            "ok": False,
+            "status": "approval_required",
+            "request_id": request_id,
+            "action_key": action.get("action_key"),
+            "message": "This action is registered as approval_required. Re-invoke with approved_by after human approval.",
+            "action": {k: action.get(k) for k in ["action_key", "name_ko", "risk_level", "owner", "description", "type"]},
+        }
+        append_action_log({**base_log, "status": "approval_required", "payload": req.payload})
+        return result
+
+    try:
+        if dry_run or action_type == "mock_api":
+            result = {
+                "ok": True,
+                "status": "dry_run" if dry_run else "mocked",
+                "request_id": request_id,
+                "action_key": action.get("action_key"),
+                "action_name": action.get("name_ko") or action.get("name"),
+                "mock_response": render_template(action.get("mock_response") or {}, context),
+            }
+
+        elif action_type in {"boi_materialize", "boi_materializer"}:
+            url = f"{BOI_API_URL.rstrip('/')}/api/boi/materialize-event"
+            async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 30))) as client:
+                resp = await client.post(url, headers={"x-service-token": SERVICE_TOKEN}, json=req.event)
+                resp.raise_for_status()
+                result = {"ok": True, "status": "materialized", "request_id": request_id, "action_key": action.get("action_key"), "response": resp.json()}
+
+        elif action_type in {"event_publish", "boi_event"}:
+            url = f"{BOI_API_URL.rstrip('/')}/api/events/publish?employee_id={req.employee_id}"
+            body = render_template(action.get("body") or {}, context)
+            async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 20))) as client:
+                resp = await client.post(url, json=body)
+                resp.raise_for_status()
+                result = {"ok": True, "status": "event_published", "request_id": request_id, "action_key": action.get("action_key"), "response": resp.json()}
+
+        elif action_type in HTTP_ACTION_TYPES:
+            method = str(action.get("method", "POST")).upper()
+            if action_type == "langflow_webhook":
+                flow_id = render_template(str(action.get("flow_id", "")), context)
+                url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/webhook/{flow_id}"
+                headers = {"x-api-key": LANGFLOW_API_KEY, "Content-Type": "application/json"}
+                headers.update(render_template(action.get("headers") or {}, context))
+            else:
+                url = render_template(str(action.get("url", "")), context)
+                headers = render_template(action.get("headers") or {}, context)
+            if not url or not host_allowed(url):
+                raise HTTPException(status_code=400, detail=f"URL is not allowlisted: {url}")
+            body = render_template(action.get("body") or req.payload or req.event, context)
+            async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 20))) as client:
+                resp = await client.request(method, url, headers=headers, json=body)
+                try:
+                    resp_body: Any = resp.json()
+                except Exception:
+                    resp_body = resp.text[:2000]
+                if resp.status_code >= 400:
+                    raise HTTPException(status_code=resp.status_code, detail=resp_body)
+                result = {"ok": True, "status": "invoked", "request_id": request_id, "action_key": action.get("action_key"), "http_status": resp.status_code, "response": resp_body}
+
+        elif action_type in {"mcp_bridge", "mcp_tool"}:
+            bridge_url = render_template(str(action.get("url") or MCP_BRIDGE_URL), context)
+            if not bridge_url:
+                raise HTTPException(status_code=400, detail="MCP bridge URL is not configured")
+            if not host_allowed(bridge_url):
+                raise HTTPException(status_code=400, detail=f"MCP bridge URL is not allowlisted: {bridge_url}")
+            body = {
+                "server": render_template(action.get("server") or {}, context),
+                "tool": render_template(action.get("tool") or action.get("tool_name") or "", context),
+                "arguments": render_template(action.get("arguments") or req.payload, context),
+                "event": req.event,
+                "boi_id": req.boi_id,
+                "request_id": request_id,
+            }
+            async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 30))) as client:
+                resp = await client.post(bridge_url, headers=render_template(action.get("headers") or {}, context), json=body)
+                try:
+                    resp_body = resp.json()
+                except Exception:
+                    resp_body = resp.text[:2000]
+                if resp.status_code >= 400:
+                    raise HTTPException(status_code=resp.status_code, detail=resp_body)
+                result = {"ok": True, "status": "mcp_invoked", "request_id": request_id, "action_key": action.get("action_key"), "response": resp_body}
+
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported action type: {action_type}")
+
+        append_action_log({**base_log, "status": result.get("status"), "result": result})
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        append_action_log({**base_log, "status": "failed", "error": repr(exc)})
+        raise HTTPException(status_code=500, detail=repr(exc))
+
+
+@app.post("/api/actions/invoke", dependencies=[Depends(require_service_token)])
+async def invoke(req: InvokeRequest) -> dict[str, Any]:
+    action = get_action(req.action_key)
+    if not action or not action.get("enabled", True):
+        raise HTTPException(status_code=404, detail=f"Action not found or disabled: {req.action_key}")
+    return await invoke_action(action, req)
+
+
+@app.post("/api/actions/dispatch", dependencies=[Depends(require_service_token)])
+async def dispatch(req: DispatchRequest) -> dict[str, Any]:
+    event_type = str(req.event.get("event_type") or "")
+    if not event_type:
+        raise HTTPException(status_code=400, detail="event.event_type is required")
+    actions = actions_for_event(event_type)
+    results: list[dict[str, Any]] = []
+    current_boi_id = req.boi_id
+    for action in actions:
+        child_req = InvokeRequest(
+            action_key=str(action.get("action_key")),
+            employee_id=req.employee_id,
+            event=req.event,
+            boi_id=current_boi_id,
+            payload=req.payload or req.event.get("payload") or {},
+            dry_run=req.dry_run,
+            approved_by=req.approved_by,
+            idempotency_key=None,
+        )
+        try:
+            result = await invoke_action(action, child_req)
+            new_boi_id = extract_boi_id(result)
+            if new_boi_id and not current_boi_id:
+                current_boi_id = new_boi_id
+            results.append({"action_key": action.get("action_key"), "type": action.get("type"), "result": result})
+        except HTTPException as exc:
+            results.append({"action_key": action.get("action_key"), "type": action.get("type"), "error": exc.detail, "status_code": exc.status_code})
+            if action.get("continue_on_error", True) is False:
+                break
+    return {"ok": True, "status": "dispatched", "event_type": event_type, "boi_id": current_boi_id, "count": len(results), "results": results}

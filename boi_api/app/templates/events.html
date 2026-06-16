@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Event Stream · BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Event Stream</h1>
+      <p>Kafka로 발행/처리된 업무 이벤트를 Wiki에서 업무 맥락으로 확인합니다. Kafka UI는 운영자용, 이 화면은 업무 사용자용입니다.</p>
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="/?employee_id={{ employee_id }}">BoI 목록</a> · <a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>
+    </div>
+  </header>
+  <section class="toolbar">
+    <form method="get" action="/events">
+      <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+      <label>Event Type</label>
+      <select name="event_type">
+        <option value="" {% if not event_type %}selected{% endif %}>전체</option>
+        {% for e in event_types %}
+        <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">조회</button>
+    </form>
+  </section>
+  <main>
+    <h2>Events ({{ events|length }})</h2>
+    <div class="doc-list">
+      {% for e in events %}
+      <article class="doc-row event-row">
+        <div>
+          <span class="badge event">{{ e.event_label }}</span>
+          <span class="badge status">{{ e.status }}</span>
+          <strong>{{ e.payload_title or e.event_id }}</strong>
+        </div>
+        <p>{{ e.event_type }} · {{ e.event_id }}</p>
+        <small>{{ e.logged_at }} · producer={{ e.producer }} · trace={{ e.trace_id }}</small>
+        {% if e.result %}<pre>{{ e.result }}</pre>{% endif %}
+        {% if e.error %}<pre>{{ e.error }}</pre>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

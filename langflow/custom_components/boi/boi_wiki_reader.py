@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+import json
+import urllib.parse
+import urllib.request
+
+from lfx.custom.custom_component.component import Component
+from lfx.io import Output, StrInput
+from lfx.schema import Data
+
+
+class BoIWikiReader(Component):
+    display_name = "BoI Wiki Reader"
+    description = "Read accessible Public, Team, and Web Private BoI documents for an employee."
+    icon = "search"
+    name = "boi_wiki_reader"
+
+    inputs = [
+        StrInput(name="query", display_name="Query", required=False),
+        StrInput(name="employee_id", display_name="Employee ID", value="100001"),
+        StrInput(name="boi_api_url", display_name="BoI API URL", value="http://boi-api:8000"),
+    ]
+    outputs = [Output(name="documents", display_name="Accessible BoI", method="read")]
+
+    def read(self) -> Data:
+        params = urllib.parse.urlencode({"employee_id": self.employee_id, "q": self.query or ""})
+        url = f"{self.boi_api_url.rstrip('/')}/api/boi?{params}"
+        try:
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                return Data(data=json.loads(resp.read().decode("utf-8")))
+        except Exception as e:
+            return Data(data={"ok": False, "error": repr(e)})

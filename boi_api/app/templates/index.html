@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>BoI Wiki PoC</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>BoI Wiki PoC</h1>
+      <p>Public + Team + Web Private BoI를 사번 기준으로 보여줍니다. Local-only Private은 Web에 저장되지 않으므로 표시되지 않습니다.</p>
+    </div>
+    <div class="user-box">
+      <strong>{{ user_name }}</strong><br />
+      사번: {{ employee_id }}<br />
+      Team: {{ teams | join(', ') }}
+    </div>
+  </header>
+
+  <section class="toolbar">
+    <form method="get" action="/">
+      <label>사번</label>
+      <select name="employee_id">
+        <option value="100001" {% if employee_id == '100001' %}selected{% endif %}>100001 / AIX TF</option>
+        <option value="100002" {% if employee_id == '100002' %}selected{% endif %}>100002 / AIX TF</option>
+        <option value="100003" {% if employee_id == '100003' %}selected{% endif %}>100003 / Platform</option>
+      </select>
+      <label>Event Type</label>
+      <select name="event_type">
+        <option value="" {% if not event_type %}selected{% endif %}>전체</option>
+        {% for e in event_types %}
+        <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
+        {% endfor %}
+      </select>
+      <label>Visibility</label>
+      <select name="visibility">
+        <option value="" {% if not visibility %}selected{% endif %}>전체</option>
+        <option value="public" {% if visibility == 'public' %}selected{% endif %}>public</option>
+        <option value="team" {% if visibility == 'team' %}selected{% endif %}>team</option>
+        <option value="private" {% if visibility == 'private' %}selected{% endif %}>private</option>
+      </select>
+      <label>검색</label>
+      <input name="q" value="{{ q }}" placeholder="SOP, 회의, Action, BoI..." />
+      <button type="submit">조회</button>
+    </form>
+    <div class="links">
+      <a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>
+      <a href="/events?employee_id={{ employee_id }}">Event Stream</a>
+    <a href="/actions?employee_id={{ employee_id }}">Actions</a>
+      <a href="http://localhost:7860" target="_blank">Langflow</a>
+      <a href="http://localhost:8081" target="_blank">Kafka UI</a>
+      <a href="/docs" target="_blank">API Docs</a>
+    </div>
+  </section>
+
+  <section class="cards">
+    <article class="card summary-card">
+      <h2>보이는 범위</h2>
+      <ul>
+        <li><strong>Public</strong>: 전 구성원 접근 가능</li>
+        <li><strong>Team</strong>: 사번의 Team ACL 기준</li>
+        <li><strong>Private</strong>: Web/Langflow가 BoI Wiki에 저장한 본인 항목</li>
+        <li><strong>Local Private</strong>: 로컬 Agent에만 저장된 항목은 Web 미노출</li>
+      </ul>
+    </article>
+    <article class="card summary-card">
+      <h2>Event Broker가 보이는 방식</h2>
+      <p>Kafka는 뒤에서 이벤트를 전달하고, Wiki는 업무 사용자가 이해할 수 있도록 Event Type과 Event Stream을 보여줍니다.</p>
+      <ul>
+        <li><a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>: 어떤 업무 이벤트가 어떤 BoI/Flow를 만드는지</li>
+        <li><a href="/events?employee_id={{ employee_id }}">Event Stream</a>
+    <a href="/actions?employee_id={{ employee_id }}">Actions</a>: 어떤 이벤트가 발행/처리되었는지</li>
+        <li>BoI 문서: <code>source_event.event_type</code>으로 업무 맥락과 연결</li>
+      </ul>
+    </article>
+    <article class="card summary-card">
+      <h2>이벤트 발행 테스트</h2>
+      <p>아래 명령 또는 API로 Kafka 이벤트를 발행하면 event-adapter가 처리해 Private BoI를 생성합니다.</p>
+      <pre>python scripts/publish_event.py meeting.closed.v1 --employee {{ employee_id }}</pre>
+    </article>
+  </section>
+
+  <section class="cards compact">
+    {% for e in event_types %}
+    <a class="card event-card" href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}">
+      <strong>{{ e.name_ko }}</strong>
+      <small>{{ e.event_type }}</small>
+      <p>{{ e.description }}</p>
+    </a>
+    {% endfor %}
+  </section>
+
+  <main>
+    <h2>Accessible BoI Documents ({{ docs|length }})</h2>
+    <div class="doc-list">
+      {% for doc in docs %}
+      {% set m = doc.metadata %}
+      <a class="doc-row {{ m.visibility }}" href="/docs/{{ m.boi_id }}?employee_id={{ employee_id }}">
+        <div>
+          <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
+          <span class="badge status">{{ m.status }}</span>
+          {% if m.event_type %}<span class="badge event">{{ m.event_label or m.event_type }}</span>{% endif %}
+          <strong>{{ m.title }}</strong>
+        </div>
+        <p>{{ m.description }}</p>
+        <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
+      </a>
+      {% endfor %}
+    </div>
+  </main>
+
+  <section class="event-stream-preview">
+    <h2>Recent Event Stream</h2>
+    <div class="doc-list">
+      {% for e in event_logs %}
+      <div class="doc-row event-row">
+        <div>
+          <span class="badge event">{{ e.event_label }}</span>
+          <span class="badge status">{{ e.status }}</span>
+          <strong>{{ e.payload_title or e.event_id }}</strong>
+        </div>
+        <small>{{ e.logged_at }} · {{ e.event_type }} · {{ e.trace_id }}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</body>
+</html>

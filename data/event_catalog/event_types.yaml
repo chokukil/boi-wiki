@@ -1,0 +1,128 @@
+event_types:
+  - event_type: meeting.closed.v1
+    name_ko: 회의 종료
+    description: 회의가 종료되어 회의 요약, 결정사항, Action Item을 BoI로 정리해야 하는 시점
+    default_boi_type: boi/meeting
+    default_flow_key: boi-meeting-writer-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    wiki_usage: 회의 종료 후 Private BoI를 만들고, 공유 가치가 있으면 Team BoI draft로 승격
+  - event_type: action.created.v1
+    name_ko: Action Item 생성
+    description: 회의/보고/요청에서 담당자별 Action Item이 생성된 시점
+    default_boi_type: boi/action
+    default_flow_key: boi-action-writer-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    wiki_usage: 담당자 Private BoI로 Action 맥락을 정리하고 진행 상태를 추적
+  - event_type: report.requested.v1
+    name_ko: 보고 요청
+    description: 주간보고/경영진 보고/TF 현황 보고 초안이 필요한 시점
+    default_boi_type: boi/report
+    default_flow_key: boi-report-draft-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    wiki_usage: 권한 있는 Public/Team BoI와 본인 Private BoI를 Lazy Loading하여 보고 초안 작성
+  - event_type: promotion.requested.v1
+    name_ko: BoI 승격 요청
+    description: 사용자가 Private BoI를 Team/Public 공유용 draft로 승격하라고 명시적으로 요청한 시점
+    default_boi_type: boi/reference
+    default_flow_key: boi-promotion-v0.1
+    default_visibility: team
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    wiki_usage: Private 원본은 유지하고 공유용 사본을 만들며 reviewer 검토 상태로 저장
+  - event_type: equipment.alarm.raised.v1
+    name_ko: 설비 Alarm 발생
+    description: 설비/공정에서 이상 Alarm이 발생하여 SOP 기반 이상 감지 Flow를 시작해야 하는 시점
+    default_boi_type: boi/sop-instance
+    default_flow_key: boi-equipment-abnormal-detector-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF / 제조 PoC
+    status: poc
+    topic: boi.events
+    workflow_stage: 이상 감지
+    wiki_usage: SOP의 이상 감지 단계에 따라 Trend/Raw Data 확인과 원인 분석 요청을 시작
+    recommended_actions:
+      - sop.equipment.request_trend_history
+      - sop.equipment.request_raw_data
+      - sop.equipment.create_root_cause_boi
+
+  - event_type: trend.anomaly.detected.v1
+    name_ko: Trend 이상 감지
+    description: Trend 분석 결과 이상 패턴이 감지되어 원인 분석 Agent가 필요한 시점
+    default_boi_type: boi/analysis
+    default_flow_key: boi-root-cause-analysis-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF / 제조 PoC
+    status: poc
+    topic: boi.events
+    workflow_stage: 원인 분석
+    wiki_usage: Trend 이상 여부와 Lot/Wafer 이력을 바탕으로 원인 분석 BoI를 생성
+    recommended_actions:
+      - sop.equipment.request_trend_history
+      - sop.equipment.create_root_cause_boi
+
+  - event_type: root_cause.analysis.requested.v1
+    name_ko: 원인 분석 요청
+    description: 이상 감지 결과에 따라 원인 분석 Agent가 원인 후보와 필요한 추가 데이터를 정리해야 하는 시점
+    default_boi_type: boi/analysis
+    default_flow_key: boi-root-cause-analysis-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF / 제조 PoC
+    status: poc
+    topic: boi.events
+    workflow_stage: 원인 분석
+    wiki_usage: Raw/Source Data, 이력, SOP를 참조하여 원인 분석 BoI를 생성
+    recommended_actions:
+      - sop.equipment.request_raw_data
+      - sop.equipment.request_maintenance_guide
+
+  - event_type: maintenance.guide.requested.v1
+    name_ko: 장비 보전 가이드 요청
+    description: 장비 이상 가능성이 확인되어 보전 가이드와 조치 기준을 참조해야 하는 시점
+    default_boi_type: boi/runbook
+    default_flow_key: boi-maintenance-guide-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF / 제조 PoC
+    status: poc
+    topic: boi.events
+    workflow_stage: 장비 보전 가이드
+    wiki_usage: SOP/Runbook/장비 이력을 Lazy Loading하여 조치 기준을 제안
+    recommended_actions:
+      - sop.equipment.request_raw_data
+      - sop.equipment.request_maintenance_guide
+
+  - event_type: corrective_action.requested.v1
+    name_ko: 이상 조치 요청
+    description: 원인 분석 후 담당자에게 조치를 요청하거나 공정 진행 금지/Spec 변경 후보를 생성하는 시점
+    default_boi_type: boi/action
+    default_flow_key: boi-corrective-action-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF / 제조 PoC
+    status: poc
+    topic: boi.events
+    workflow_stage: 이상 조치
+    wiki_usage: 조치 후보를 Private BoI로 남기고, 고위험 조치는 승인 전 dry-run으로만 기록
+    recommended_actions:
+      - sop.equipment.notify_action_owner
+      - sop.equipment.block_process_progress
+      - sop.equipment.change_spec_rule
+  - event_type: external.webhook.received.v1
+    name_ko: 외부 Webhook 수신
+    description: 사내 시스템, 테스트 스크립트, 외부 도구가 Webhook으로 업무 이벤트를 전달한 시점
+    default_boi_type: boi/reference
+    default_flow_key: boi-external-webhook-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    workflow_stage: Event Ingestion
+    wiki_usage: API/Webhook을 통해 들어온 이벤트를 BoI로 정리하고 필요한 Flow 또는 Action으로 연결

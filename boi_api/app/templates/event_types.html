@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Event Type Catalog · BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Event Type Catalog</h1>
+      <p>Event Broker의 업무 이벤트를 기술 Topic이 아니라 업무 언어로 보여주는 카탈로그입니다.</p>
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="/?employee_id={{ employee_id }}">BoI 목록</a> · <a href="/events?employee_id={{ employee_id }}">Event Stream</a> · <a href="/actions?employee_id={{ employee_id }}">Actions</a>
+    </div>
+  </header>
+  <main>
+    <div class="doc-list">
+      {% for e in event_types %}
+      <article class="doc-row event-row">
+        <div>
+          <span class="badge event">{{ e.name_ko }}</span>
+          <span class="badge status">{{ e.status }}</span>
+          <strong>{{ e.event_type }}</strong>
+        </div>
+        <p>{{ e.description }}</p>
+        <small>BoI: {{ e.default_boi_type }} · Flow: {{ e.default_flow_key }} · Topic: {{ e.topic }} · Owner: {{ e.owner }}</small>
+        <p><strong>Wiki 활용:</strong> {{ e.wiki_usage }}</p>
+        {% if e.recommended_actions %}<p><strong>Recommended Actions:</strong> {{ e.recommended_actions | join(', ') }}</p>{% endif %}
+        <p>
+          <a href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}">이 Event Type의 BoI 보기</a>
+          · <a href="/events?employee_id={{ employee_id }}&event_type={{ e.event_type }}">이 Event Type의 Stream 보기</a>
+          · <a href="/actions?employee_id={{ employee_id }}&event_type={{ e.event_type }}">연결 Action 보기</a>
+        </p>
+      </article>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

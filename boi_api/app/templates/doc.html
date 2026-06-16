@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ doc.metadata.title }} · BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>{{ doc.metadata.title }}</h1>
+      <p>{{ doc.metadata.description }}</p>
+      {% if doc.metadata.event_type %}
+      <p><span class="badge event">{{ doc.metadata.event_label or doc.metadata.event_type }}</span> {{ doc.metadata.event_type }}</p>
+      {% endif %}
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="/?employee_id={{ employee_id }}">목록으로</a>
+      {% if doc.metadata.event_type %}<br /><a href="/?employee_id={{ employee_id }}&event_type={{ doc.metadata.event_type }}">같은 Event Type BoI</a>{% endif %}
+    </div>
+  </header>
+  <main class="doc-page">
+    <section class="metadata">
+      <h2>Metadata</h2>
+      <pre>{{ metadata_yaml }}</pre>
+    </section>
+    <section class="body">
+      <h2>Body</h2>
+      <pre class="markdown-body">{{ doc.body }}</pre>
+    </section>
+    {% if doc.metadata.visibility == 'private' %}
+    <section class="promotion-help">
+      <h2>Promotion API</h2>
+      <p>명시적 요청 기반 Team 승격 테스트:</p>
+      <pre>curl -X POST "http://localhost:8000/api/boi/{{ doc.metadata.boi_id }}/promote?employee_id={{ employee_id }}" \
+  -H "Content-Type: application/json" \
+  -d '{"target_visibility":"team","team_id":"aix-tf","reviewer":"tf-lead","promotion_reason":"PoC demo"}'</pre>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

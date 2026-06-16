@@ -1,0 +1,216 @@
+actions:
+  - action_key: boi.materialize_event
+    name_ko: Event를 BoI로 자산화
+    description: 업무 이벤트를 OKF 기반 BoI 문서로 생성하는 1급 BoI Writer Connector. Langflow/API/Webhook/MCP와 동등한 실행 대상이다.
+    type: boi_materialize
+    enabled: true
+    event_types: ["*"]
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    dry_run_default: false
+
+  - action_key: langflow.meeting_writer.sample
+    name_ko: Langflow 회의 BoI Writer Flow 호출 예시
+    description: Langflow Webhook Flow를 연결하는 1급 Connector 예시. flow_id를 넣고 enabled=true로 바꾸면 Event Router가 직접 호출한다.
+    type: langflow_webhook
+    enabled: false
+    event_types: [meeting.closed.v1]
+    flow_id: ${payload.langflow_flow_id}
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    dry_run_default: false
+
+  - action_key: mcp.boi_search.sample
+    name_ko: MCP 기반 BoI 검색 Tool 호출 예시
+    description: 향후 MCP Bridge를 붙일 때 사용할 Connector 예시. PoC에서는 bridge 미설정 시 planned 상태로만 기록한다.
+    type: mcp_tool
+    enabled: false
+    event_types: [report.requested.v1, maintenance.guide.requested.v1]
+    tool_name: boi.search
+    arguments:
+      query: ${payload.query}
+      employee_id: ${employee_id}
+      allowed_visibility: [public, team, private]
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    dry_run_default: true
+
+  - action_key: sop.equipment.request_trend_history
+    name_ko: Trend / 이력 확인 요청
+    description: 장비/공정 Trend와 Lot/Wafer 이력을 조회하는 시스템 API 호출 예시
+    type: mock_api
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [equipment.alarm.raised.v1, trend.anomaly.detected.v1, root_cause.analysis.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    mock_response:
+      trend_status: anomaly_detected
+      lot_history_ref: /mock/hyvis/lot-history/${payload.lot_id}
+      wafer_history_ref: /mock/hyvis/wafer-history/${payload.wafer_id}
+      message: Trend와 이력 데이터를 확인했습니다.
+
+  - action_key: sop.equipment.request_raw_data
+    name_ko: Raw / Source Data 확인 요청
+    description: HyVIS/TAS/설비 시스템의 Raw Data와 Source Data를 조회하는 API 호출 예시
+    type: mock_api
+    enabled: true
+    auto_dispatch: true
+    order: 30
+    event_types: [equipment.alarm.raised.v1, root_cause.analysis.requested.v1, maintenance.guide.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    mock_response:
+      raw_data_ref: /mock/hyvis/raw-data/${payload.equipment_id}/${payload.lot_id}
+      source_data_ref: /mock/tas/source-data/${payload.equipment_id}
+      message: Raw/Source Data 참조 링크를 생성했습니다.
+
+  - action_key: sop.equipment.create_root_cause_event
+    name_ko: 원인 분석 이벤트 발행
+    description: 이상 징후 이벤트를 root_cause.analysis.requested.v1 이벤트로 전환하여 다음 workflow 단계를 깨움
+    type: event_publish
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    event_types: [equipment.alarm.raised.v1, trend.anomaly.detected.v1]
+    owner: AIX 확산 TF
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: root_cause.analysis.requested.v1
+      payload:
+        title: 원인 분석 요청 - ${payload.equipment_id}
+        equipment_id: ${payload.equipment_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        alarm_code: ${payload.alarm_code}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
+
+  - action_key: sop.equipment.request_maintenance_guide
+    name_ko: 장비 보전 가이드 요청
+    description: 장비 이상 가능성이 있을 때 장비 보전 SOP/가이드를 요청하는 API 호출 예시
+    type: mock_api
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [root_cause.analysis.completed.v1, maintenance.guide.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: medium
+    approval_required: false
+    mock_response:
+      guide_boi_ref: boi:public:sop:equipment-abnormal-response
+      recommended_steps:
+        - Source Data 확인
+        - 장비 이력 확인
+        - 장비 이상 여부 판단
+      message: 장비 보전 가이드를 반환했습니다.
+
+  - action_key: sop.equipment.notify_action_owner
+    name_ko: 이상 조치 담당자 알림
+    description: 조치 담당자에게 이상 조치 요청을 발송하는 Webhook/API 호출 예시
+    type: mock_api
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [corrective_action.requested.v1, promotion.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: medium
+    approval_required: false
+    mock_response:
+      notification_status: sent
+      recipient: ${payload.owner}
+      message: 이상 조치 요청 알림을 발송했습니다.
+
+  - action_key: sop.equipment.block_process_progress
+    name_ko: 공정 진행 금지 요청
+    description: 이상 조치 Agent가 공정 진행 금지를 요청하는 고위험 Action. PoC에서는 승인 전 dry-run만 허용.
+    type: mock_api
+    enabled: true
+    auto_dispatch: true
+    order: 90
+    event_types: [corrective_action.requested.v1]
+    owner: 제조/품질 담당 조직
+    risk_level: high
+    approval_required: true
+    mock_response:
+      requested_state: process_hold
+      equipment_id: ${payload.equipment_id}
+      message: 승인 필요 Action입니다. PoC에서는 dry-run으로만 기록합니다.
+
+  - action_key: sop.equipment.change_spec_rule
+    name_ko: Spec / Rule 변경 요청
+    description: Spec/Rule 변경은 고위험 Action으로 승인과 변경관리 절차가 필요. PoC에서는 dry-run만 허용.
+    type: mock_api
+    enabled: true
+    auto_dispatch: true
+    order: 95
+    event_types: [corrective_action.requested.v1]
+    owner: 제조/품질 담당 조직
+    risk_level: high
+    approval_required: true
+    mock_response:
+      requested_change: spec_rule_change
+      equipment_id: ${payload.equipment_id}
+      message: 변경관리 승인 필요 Action입니다. PoC에서는 dry-run으로만 기록합니다.
+
+  - action_key: langflow.boi.reference_flow
+    name_ko: Langflow Reference Flow 호출 예시
+    description: Langflow Flow ID가 준비되면 활성화하여 Event를 Langflow Webhook으로 전달하는 커넥터 예시
+    type: langflow_webhook
+    enabled: false
+    auto_dispatch: false
+    order: 50
+    event_types: [meeting.closed.v1, action.created.v1, report.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    flow_id: replace-with-langflow-flow-id
+    body:
+      event: ${event}
+      payload: ${payload}
+
+  - action_key: connector.mcp.sample
+    name_ko: MCP Bridge 호출 예시
+    description: MCP 서버/툴 호출은 Action Gateway가 MCP Bridge를 통해 호출하도록 등록한다. PoC 기본값은 비활성화.
+    type: mcp_bridge
+    enabled: false
+    auto_dispatch: false
+    order: 60
+    event_types: [report.requested.v1]
+    owner: AIX 확산 TF
+    risk_level: medium
+    approval_required: false
+    url: http://mcp-bridge:8200/api/mcp/call
+    server:
+      name: boi-wiki-mcp
+    tool: search_boi
+    arguments:
+      query: ${payload.query}
+      employee_id: ${employee_id}
+
+  - action_key: boi.publish_event
+    name_ko: Event Broker로 이벤트 발행
+    description: Agent/Langflow/API에서 업무 이벤트를 Event Broker로 발행하는 공통 Action
+    type: event_publish
+    enabled: true
+    auto_dispatch: false
+    order: 100
+    event_types: [manual.input.v1]
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: ${payload.event_type}
+      payload: ${payload.payload}
+      source_refs: ${payload.source_refs}

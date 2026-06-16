@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>BoI Action Catalog</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header>
+  <h1>Action Catalog</h1>
+  <p>API/Webhook 호출을 임의 URL이 아니라 allow-list Action으로 관리합니다. Agent/Langflow는 이 카탈로그를 보고 필요한 Action을 호출합니다.</p>
+  <nav>
+    <a href="/?employee_id={{ employee_id }}">BoI Wiki</a>
+    <a href="/event-types?employee_id={{ employee_id }}">Event Types</a>
+    <a href="/events?employee_id={{ employee_id }}">Event Stream</a>
+    <a href="/actions?employee_id={{ employee_id }}">Actions</a>
+  </nav>
+</header>
+
+<section class="panel">
+  <h2>Filter by Event Type</h2>
+  <form method="get" action="/actions">
+    <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+    <select name="event_type">
+      <option value="">All Event Types</option>
+      {% for e in event_types %}
+      <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Apply</button>
+  </form>
+</section>
+
+<section class="grid">
+  {% for a in actions %}
+  <article class="card">
+    <div class="badges">
+      <span class="badge">{{ a.risk_level or 'risk' }}</span>
+      {% if a.approval_required %}<span class="badge warning">approval required</span>{% endif %}
+      <span class="badge">{{ a.type or 'action' }}</span>
+    </div>
+    <h3>{{ a.name_ko or a.action_key }}</h3>
+    <p><code>{{ a.action_key }}</code></p>
+    <p>{{ a.description }}</p>
+    <p><strong>Events:</strong> {{ (a.event_types or []) | join(', ') }}</p>
+    <p><strong>Owner:</strong> {{ a.owner }}</p>
+    <pre>curl -X POST "http://localhost:8000/api/actions/invoke?employee_id={{ employee_id }}" \
+  -H "Content-Type: application/json" \
+  -d '{"action_key":"{{ a.action_key }}","payload":{"equipment_id":"EQP-001","lot_id":"LOT-001","owner":"100001"},"dry_run":true}'</pre>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <h2>Recent Action Logs</h2>
+  {% for log in action_logs %}
+    <div class="event-row">
+      <span class="badge">{{ log.status }}</span>
+      <code>{{ log.action_key }}</code>
+      <span>{{ log.logged_at }}</span>
+      <span>{{ log.event_type or '' }}</span>
+    </div>
+  {% else %}
+    <p>No action logs yet.</p>
+  {% endfor %}
+</section>
+</body>
+</html>

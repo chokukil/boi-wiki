@@ -1,0 +1,188 @@
+name: boi-poc
+
+services:
+  langflow-postgres:
+    image: postgres:16-alpine
+    container_name: boi-langflow-postgres
+    environment:
+      POSTGRES_USER: ${LANGFLOW_POSTGRES_USER:-langflow}
+      POSTGRES_PASSWORD: ${LANGFLOW_POSTGRES_PASSWORD:-langflow}
+      POSTGRES_DB: ${LANGFLOW_POSTGRES_DB:-langflow}
+    volumes:
+      - langflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFLOW_POSTGRES_USER:-langflow} -d ${LANGFLOW_POSTGRES_DB:-langflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [boi-net]
+
+  langflow:
+    image: ${LANGFLOW_IMAGE:-langflowai/langflow:latest}
+    container_name: boi-langflow
+    depends_on:
+      langflow-postgres:
+        condition: service_healthy
+    ports:
+      - "${LANGFLOW_PORT:-7860}:7860"
+    environment:
+      LANGFLOW_DATABASE_URL: postgresql://${LANGFLOW_POSTGRES_USER:-langflow}:${LANGFLOW_POSTGRES_PASSWORD:-langflow}@langflow-postgres:5432/${LANGFLOW_POSTGRES_DB:-langflow}
+      LANGFLOW_CONFIG_DIR: /app/langflow
+      LANGFLOW_COMPONENTS_PATH: /app/custom_components
+      LANGFLOW_API_KEY_SOURCE: env
+      LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
+      ACTION_GATEWAY_URL: http://action-gateway:8100
+      ACTION_GATEWAY_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      AUTO_INVOKE_ACTIONS_FOR_EVENTS: ${AUTO_INVOKE_ACTIONS_FOR_EVENTS:-true}
+      LANGFLOW_WEBHOOK_AUTH_ENABLE: "True"
+      # Local PoC convenience. For intranet deployment, set False and put behind SSO/reverse proxy.
+      LANGFLOW_AUTO_LOGIN: ${LANGFLOW_AUTO_LOGIN:-True}
+      LANGFLOW_SUPERUSER: ${LANGFLOW_SUPERUSER:-admin}
+      LANGFLOW_SUPERUSER_PASSWORD: ${LANGFLOW_SUPERUSER_PASSWORD:-admin}
+      LANGFLOW_SECRET_KEY: ${LANGFLOW_SECRET_KEY:-change-this-secret-before-internal-demo}
+    volumes:
+      - ./langflow/custom_components:/app/custom_components:ro
+      - langflow-data:/app/langflow
+    networks: [boi-net]
+
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: boi-kafka
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
+    environment:
+      KAFKA_ENABLE_KRAFT: "yes"
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9094}
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    networks: [boi-net]
+
+  kafka-init:
+    image: bitnami/kafka:3.7
+    container_name: boi-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command: |
+      set -e
+      for topic in boi.events boi.audit boi.dead-letter; do
+        /opt/bitnami/kafka/bin/kafka-topics.sh \
+          --bootstrap-server kafka:9092 \
+          --create --if-not-exists \
+          --topic $$topic \
+          --partitions 3 \
+          --replication-factor 1
+      done
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+    networks: [boi-net]
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: boi-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_UI_PORT:-8081}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: boi-poc
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    networks: [boi-net]
+
+  boi-api:
+    build:
+      context: ./boi_api
+    container_name: boi-api
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${BOI_API_PORT:-8000}:8000"
+    environment:
+      DATA_ROOT: /data/boi
+      EVENTS_ROOT: /data/events
+      EVENT_CATALOG_ROOT: /data/event_catalog
+      ACTION_CATALOG_ROOT: /data/action_catalog
+      ACTION_LOG_ROOT: /data/actions
+      ACTION_GATEWAY_URL: http://action-gateway:8100
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      DEFAULT_TEAM_ID: ${DEFAULT_TEAM_ID:-aix-tf}
+      KAFKA_BOOTSTRAP: kafka:9092
+      BOI_EVENTS_TOPIC: boi.events
+      DEMO_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
+    volumes:
+      - ./data/boi:/data/boi
+      - ./data/events:/data/events
+      - ./data/event_catalog:/data/event_catalog:ro
+      - ./data/action_catalog:/data/action_catalog:ro
+      - ./data/actions:/data/actions
+    networks: [boi-net]
+
+
+  action-gateway:
+    build:
+      context: ./action_gateway
+    container_name: boi-action-gateway
+    depends_on:
+      boi-api:
+        condition: service_started
+    ports:
+      - "${ACTION_GATEWAY_PORT:-8100}:8100"
+    environment:
+      ACTION_CATALOG_ROOT: /data/action_catalog
+      ACTION_LOG_ROOT: /data/actions
+      BOI_API_URL: http://boi-api:8000
+      LANGFLOW_URL: http://langflow:7860
+      LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
+      MCP_BRIDGE_URL: ${MCP_BRIDGE_URL:-}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      ACTION_DRY_RUN_DEFAULT: ${ACTION_DRY_RUN_DEFAULT:-true}
+      ACTION_ALLOWED_HOSTS: ${ACTION_ALLOWED_HOSTS:-boi-api,langflow,action-gateway,localhost,127.0.0.1,mcp-bridge}
+    volumes:
+      - ./data/action_catalog:/data/action_catalog:ro
+      - ./data/actions:/data/actions
+    networks: [boi-net]
+
+  event-router:
+    build:
+      context: ./event_adapter
+    container_name: boi-event-router
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      boi-api:
+        condition: service_started
+      action-gateway:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      BOI_EVENTS_TOPIC: boi.events
+      BOI_API_URL: http://boi-api:8000
+      BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      ACTION_GATEWAY_URL: http://action-gateway:8100
+      ACTION_GATEWAY_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      AUTO_ROUTE_EVENTS: ${AUTO_ROUTE_EVENTS:-true}
+    networks: [boi-net]
+
+volumes:
+  langflow-postgres-data:
+  langflow-data:
+  kafka-data:
+
+networks:
+  boi-net:
+    driver: bridge
