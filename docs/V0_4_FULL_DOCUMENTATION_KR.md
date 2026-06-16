@@ -403,7 +403,7 @@ Private 원본은 이동하지 않는다.
 | `LANGFLOW_AUTO_LOGIN` | `True` | PoC 편의용 자동 로그인 |
 | `LANGFLOW_SUPERUSER` | `admin` | Langflow 관리자 계정 |
 | `LANGFLOW_SUPERUSER_PASSWORD` | `admin` | Langflow 관리자 비밀번호 |
-| `LANGFLOW_SECRET_KEY` | `change-this-secret-before-internal-demo` | Langflow secret key |
+| `LANGFLOW_SECRET_KEY` | `Ym9pLXdpa2ktcG9jLWRldi1zZWNyZXQta2V5LTIwMjY=` | Langflow secret key |
 | `BOI_API_PORT` | `8000` | BoI API / Wiki port |
 | `KAFKA_EXTERNAL_PORT` | `9094` | Host에서 접근할 Kafka port |
 | `KAFKA_UI_PORT` | `8081` | Kafka UI port |

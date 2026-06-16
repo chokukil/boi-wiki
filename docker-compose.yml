@@ -27,7 +27,7 @@ services:
       - "${LANGFLOW_PORT:-7860}:7860"
     environment:
       LANGFLOW_DATABASE_URL: postgresql://${LANGFLOW_POSTGRES_USER:-langflow}:${LANGFLOW_POSTGRES_PASSWORD:-langflow}@langflow-postgres:5432/${LANGFLOW_POSTGRES_DB:-langflow}
-      LANGFLOW_CONFIG_DIR: /app/langflow
+      LANGFLOW_CONFIG_DIR: /tmp/langflow
       LANGFLOW_COMPONENTS_PATH: /app/custom_components
       LANGFLOW_API_KEY_SOURCE: env
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
@@ -37,9 +37,10 @@ services:
       LANGFLOW_WEBHOOK_AUTH_ENABLE: "True"
       # Local PoC convenience. For intranet deployment, set False and put behind SSO/reverse proxy.
       LANGFLOW_AUTO_LOGIN: ${LANGFLOW_AUTO_LOGIN:-True}
+      LANGFLOW_SKIP_AUTH_AUTO_LOGIN: ${LANGFLOW_SKIP_AUTH_AUTO_LOGIN:-true}
       LANGFLOW_SUPERUSER: ${LANGFLOW_SUPERUSER:-admin}
       LANGFLOW_SUPERUSER_PASSWORD: ${LANGFLOW_SUPERUSER_PASSWORD:-admin}
-      LANGFLOW_SECRET_KEY: ${LANGFLOW_SECRET_KEY:-change-this-secret-before-internal-demo}
+      LANGFLOW_SECRET_KEY: ${LANGFLOW_SECRET_KEY:-Ym9pLXdpa2ktcG9jLWRldi1zZWNyZXQta2V5LTIwMjY=}
       BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}
       BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
       BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
@@ -48,52 +49,53 @@ services:
       OPENAI_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
     volumes:
       - ./langflow/custom_components:/app/custom_components:ro
-      - langflow-data:/app/langflow
     networks: [boi-net]
 
   kafka:
-    image: bitnami/kafka:3.7
+    image: apache/kafka:3.7.0
     container_name: boi-kafka
     ports:
       - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
     environment:
-      KAFKA_ENABLE_KRAFT: "yes"
-      KAFKA_CFG_NODE_ID: 0
-      KAFKA_CFG_PROCESS_ROLES: controller,broker
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
-      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9094}
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      ALLOW_PLAINTEXT_LISTENER: "yes"
-    volumes:
-      - kafka-data:/bitnami/kafka
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9094}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     healthcheck:
-      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
       interval: 10s
       timeout: 10s
       retries: 30
     networks: [boi-net]
 
   kafka-init:
-    image: bitnami/kafka:3.7
+    image: apache/kafka:3.7.0
     container_name: boi-kafka-init
     depends_on:
       kafka:
         condition: service_healthy
-    entrypoint: ["/bin/bash", "-lc"]
-    command: |
-      set -e
-      for topic in boi.events boi.audit boi.dead-letter; do
-        /opt/bitnami/kafka/bin/kafka-topics.sh \
-          --bootstrap-server kafka:9092 \
-          --create --if-not-exists \
-          --topic $$topic \
-          --partitions 3 \
-          --replication-factor 1
-      done
-      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        set -e
+        for topic in boi.events boi.audit boi.dead-letter; do
+          /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server kafka:9092 \
+            --create --if-not-exists \
+            --topic $$topic \
+            --partitions 3 \
+            --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
     networks: [boi-net]
 
   kafka-ui:
@@ -192,8 +194,6 @@ services:
 
 volumes:
   langflow-postgres-data:
-  langflow-data:
-  kafka-data:
 
 networks:
   boi-net:
