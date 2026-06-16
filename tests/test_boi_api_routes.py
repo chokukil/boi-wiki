@@ -26,6 +26,17 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert "api_key" not in body["llm"]
 
 
+def test_boi_api_lists_accessible_docs_with_yaml_timestamps(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/api/boi?employee_id=100001")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] >= 1
+    assert any("AIX 확산 TF" in item["metadata"].get("title", "") for item in body["items"])
+
+
 def test_equipment_anomaly_demo_route_publishes_first_event(boi_app_module):
     client = TestClient(boi_app_module.app)
 

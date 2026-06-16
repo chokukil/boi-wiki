@@ -7,7 +7,7 @@ import os
 import re
 import uuid
 import httpx
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -328,8 +328,16 @@ def accessible_docs(employee_id: str) -> list[dict[str, Any]]:
             continue
         if is_accessible(doc, employee_id):
             docs.append(doc)
-    docs.sort(key=lambda d: d["metadata"].get("timestamp", ""), reverse=True)
+    docs.sort(key=lambda d: metadata_sort_value(d["metadata"].get("timestamp")), reverse=True)
     return docs
+
+
+def metadata_sort_value(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value or "")
 
 
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
