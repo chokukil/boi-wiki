@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -14,7 +15,8 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "boi-poc"
-DEFAULT_DOCKER_EXE = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
+DEFAULT_DOCKER_EXE = "auto"
+WINDOWS_DOCKER_EXE = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
 DEFAULT_CAPTURE_MANIFEST = ROOT / "artifacts" / "boi-poc" / "capture-manifest.json"
 
 
@@ -35,13 +37,28 @@ def post_json(client: httpx.Client, url: str, payload: dict[str, Any] | None = N
 
 
 def run_command(args: list[str], cwd: Path | None = None) -> dict[str, Any]:
-    result = subprocess.run(args, cwd=str(cwd) if cwd else None, text=True, capture_output=True, check=False)
+    try:
+        result = subprocess.run(args, cwd=str(cwd) if cwd else None, text=True, capture_output=True, check=False)
+    except OSError as exc:
+        return {
+            "command": args,
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc),
+        }
     return {
         "command": args,
         "returncode": result.returncode,
         "stdout": result.stdout,
         "stderr": result.stderr,
     }
+
+
+def resolve_docker_exe(value: str) -> str:
+    if value != "auto":
+        return value
+    docker = shutil.which("docker")
+    return docker or WINDOWS_DOCKER_EXE
 
 
 def latest_boi_reference_flow(flows: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -242,6 +259,7 @@ def main() -> None:
     boi_api_url = args.boi_api_url.rstrip("/")
     action_gateway_url = args.action_gateway_url.rstrip("/")
     langflow_url = args.langflow_url.rstrip("/")
+    docker_exe = resolve_docker_exe(args.docker_exe)
 
     with httpx.Client(timeout=90) as client:
         before_actions = get_json(client, f"{action_gateway_url}/api/actions/logs")
@@ -281,7 +299,7 @@ def main() -> None:
             "langflow_smoke": langflow_smoke(client, langflow_url),
             "kafka_topics": run_command(
                 [
-                    args.docker_exe,
+                    docker_exe,
                     "exec",
                     "boi-kafka",
                     "/opt/kafka/bin/kafka-topics.sh",

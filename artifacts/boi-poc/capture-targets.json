@@ -2,8 +2,8 @@
   "capture_dir": "captures/boi-poc",
   "deck_output": "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx",
   "generated_from": {
-    "evidence_collected_at": "2026-06-16T16:29:24+00:00",
-    "git_commit": "3932232"
+    "evidence_collected_at": "2026-06-17T01:15:56+00:00",
+    "git_commit": "c7c5376"
   },
   "targets": [
     {
@@ -45,9 +45,9 @@
       "id": "private_boi",
       "file": "06-private-boi-corrective-action.png",
       "title": "Generated Private BoI",
-      "url": "http://localhost:8000/docs/private/100001/boi-private-100001-20260617012924-08c0f9.md",
+      "url": "http://localhost:8000/docs/private/100001/boi-private-100001-20260617101556-754ea8.md",
       "purpose": "실제 생성된 corrective_action.requested.v1 Private BoI",
-      "resolved_from": "/private/100001/boi-private-100001-20260617012924-08c0f9.md"
+      "resolved_from": "/private/100001/boi-private-100001-20260617101556-754ea8.md"
     },
     {
       "id": "langflow",

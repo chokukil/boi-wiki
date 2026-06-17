@@ -1,24 +1,24 @@
 # BoI Wiki PoC Evidence Summary
 
-- Collected at: `2026-06-16T16:29:24+00:00`
-- Git commit: `3932232`
+- Collected at: `2026-06-17T01:15:56+00:00`
+- Git commit: `c7c5376`
 - LLM endpoint: `http://mangugil.iptime.org:1236/v1`
 - LLM model: `google/gemma-4-26b-a4b-qat`
 - Kafka topic: `boi.events`
 - Event catalog count: `10`
 - Action catalog count: `15`
-- Event log count: `80`
-- Action log count: `64`
-- Accessible BoI docs: `14`
-- Private BoI docs in list: `8`
-- Materialized BoI actions in log: `16`
-- Approval-required action records in log: `8`
+- Event log count: `160`
+- Action log count: `128`
+- Accessible BoI docs: `30`
+- Private BoI docs in list: `24`
+- Materialized BoI actions in log: `32`
+- Approval-required action records in log: `16`
 
 ## Demo Run
 
 - First event type: `equipment.alarm.raised.v1`
 - Equipment: `ETCH-VM-01`
-- Trace ID: `trace-248ae94e90bc4f0a9221e2cc28eb2106`
+- Trace ID: `trace-22486c1c8e85410ba6c13e6573775296`
 
 ## Kafka Topics
 
@@ -33,7 +33,7 @@ boi.events
 
 - Flow: `BoI Reference Flow (2)`
 - Flow ID: `15b0199d-583a-4b2e-b692-3ec1744a7c75`
-- Response: 본 PoC는 **Event Broker**와 **Action Gateway**를 기반으로 업무 맥락을 자산화하고, 고위험 액션에 대한 승인 통제 및 Private BoI의 Team BoI 승격 기준을 검증함으로써 AI Native Workflow의 실효성과 운영 안정성을 입증하였습니다.
+- Response: 이번 PoC는 Event Broker를 통한 업무 맥락의 자산화와 Action Gateway 기반의 고위험 액션 통제 체계를 검증함으로써, 안정성이 확보된 Private BoI가 Team BoI로 승격되는 AI Native Workflow의 핵심 메커니즘을 성공적으로 입증하였습니다.
 
 ## Latest Actions
 
