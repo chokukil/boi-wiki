@@ -23,6 +23,8 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from pydantic import BaseModel, Field
 
+from .okf import REQUIRED_FIELDS, iter_jsonl_rows, iter_materialized_items, validate_okf_metadata
+
 KST = timezone(timedelta(hours=9))
 APP_DIR = Path(__file__).resolve().parent
 DATA_ROOT = Path(os.getenv("DATA_ROOT", "/data/boi"))
@@ -104,21 +106,6 @@ BUILTIN_EVENT_TYPES: list[dict[str, Any]] = [
         "topic": "boi.events",
         "wiki_usage": "Private 원본은 유지하고 공유용 사본을 만들며 reviewer 검토 상태로 저장",
     },
-]
-
-REQUIRED_FIELDS = [
-    "okf_version",
-    "boi_profile_version",
-    "type",
-    "title",
-    "description",
-    "timestamp",
-    "boi_id",
-    "visibility",
-    "classification",
-    "owner",
-    "acl_policy",
-    "status",
 ]
 
 app = FastAPI(title="BoI Wiki PoC", version="0.1.0")
@@ -361,6 +348,12 @@ def result_boi_uri(value: dict[str, Any]) -> str:
         return ""
 
 
+def doc_url_if_resolvable(ref: str, employee_id: str) -> str:
+    if not ref:
+        return ""
+    return doc_url_for_ref(ref, employee_id) if find_doc_by_id(ref, employee_id) else ""
+
+
 def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str, Any] | None:
     dispatch = result.get("dispatch_result") if isinstance(result, dict) else None
     if not isinstance(dispatch, dict) or not dispatch.get("results"):
@@ -377,6 +370,7 @@ def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str
         row_boi_id = result_boi_id(action_result)
         if row_boi_id and not boi_id:
             boi_id = row_boi_id
+        row_boi_url = doc_url_if_resolvable(row_boi_id, employee_id)
         rows.append(
             {
                 "action_key": action_key,
@@ -387,15 +381,18 @@ def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str
                 "doc_url": doc_url_for_ref(doc_ref, employee_id) if doc_ref else "",
                 "boi_id": row_boi_id,
                 "boi_uri": result_boi_uri(action_result),
-                "boi_url": doc_url_for_ref(row_boi_id, employee_id) if row_boi_id else "",
+                "boi_url": row_boi_url,
+                "boi_missing": row_boi_id if row_boi_id and not row_boi_url else "",
             }
         )
+    boi_url = doc_url_if_resolvable(boi_id, employee_id)
     return {
         "routed_by": result.get("routed_by"),
         "status": dispatch.get("status"),
         "ok": dispatch.get("ok"),
         "boi_id": boi_id,
-        "boi_url": doc_url_for_ref(boi_id, employee_id) if boi_id else "",
+        "boi_url": boi_url,
+        "boi_missing": boi_id if boi_id and not boi_url else "",
         "actions": rows,
     }
 
@@ -873,6 +870,54 @@ def action_spec_for_template(metadata: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def materialized_log_paths() -> list[Path]:
+    paths: list[Path] = []
+    for root in (EVENTS_ROOT, ACTION_LOG_ROOT):
+        if root.exists():
+            paths.extend(sorted(root.glob("*.jsonl"), reverse=True))
+    return paths
+
+
+def item_to_recovered_doc(item: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = item.get("metadata")
+    body = item.get("body")
+    if not isinstance(metadata, dict) or not isinstance(body, str):
+        return None
+    if validate_okf_metadata(metadata):
+        return None
+    uri = str(item.get("uri") or "")
+    if not uri:
+        owner = str(metadata.get("owner") or DEMO_EMPLOYEE_ID)
+        uri = f"/private/{owner}/{safe_filename(str(metadata.get('boi_id') or 'recovered-boi'))}.md"
+    source_event = metadata.get("source_event") or {}
+    event_type = metadata.get("event_type") or source_event.get("event_type")
+    if event_type:
+        metadata.setdefault("event_type", event_type)
+    return {
+        "path": str(DATA_ROOT / uri.lstrip("/")),
+        "uri": uri,
+        "metadata": metadata,
+        "body": body,
+        "visibility": metadata.get("visibility", "unknown"),
+        "event_type": event_type,
+        "recovered_from_log": True,
+    }
+
+
+def find_recovered_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
+    normalized_uri = boi_id.lstrip("/")
+    for path in materialized_log_paths():
+        for row in iter_jsonl_rows(path):
+            for item in iter_materialized_items(row):
+                doc = item_to_recovered_doc(item)
+                if not doc:
+                    continue
+                if doc["metadata"].get("boi_id") == boi_id or doc.get("uri", "").lstrip("/") == normalized_uri:
+                    if employee_id is None or is_accessible(doc, employee_id):
+                        return doc
+    return None
+
+
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
     for p in all_markdown_files():
@@ -883,7 +928,7 @@ def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any
         if doc["metadata"].get("boi_id") == boi_id or doc.get("uri", "").lstrip("/") == normalized_uri:
             if employee_id is None or is_accessible(doc, employee_id):
                 return doc
-    return None
+    return find_recovered_doc_by_id(boi_id, employee_id)
 
 
 def doc_url_for_ref(ref: str, employee_id: str) -> str:
@@ -930,23 +975,7 @@ def target_dir_for(metadata: dict[str, Any]) -> Path:
 
 
 def validate_metadata(metadata: dict[str, Any], promotion: bool = False) -> list[str]:
-    errors: list[str] = []
-    for field in REQUIRED_FIELDS:
-        if field not in metadata or metadata[field] in (None, ""):
-            errors.append(f"missing required metadata: {field}")
-    if metadata.get("visibility") not in {"private", "team", "public"}:
-        errors.append("visibility must be private/team/public")
-    if metadata.get("status") not in {"draft", "reviewed", "approved", "deprecated"}:
-        errors.append("status must be draft/reviewed/approved/deprecated")
-    if metadata.get("visibility") in {"team", "public"} or promotion:
-        if not metadata.get("source_refs"):
-            errors.append("team/public BoI requires source_refs")
-        review = metadata.get("review") or {}
-        if not review.get("reviewer") and not metadata.get("reviewer"):
-            errors.append("team/public BoI requires reviewer")
-        if metadata.get("status") == "approved" and not review.get("reviewed_at"):
-            errors.append("approved BoI requires review.reviewed_at")
-    return errors
+    return validate_okf_metadata(metadata, promotion=promotion)
 
 
 def write_boi(metadata: dict[str, Any], body: str) -> dict[str, Any]:
@@ -1378,7 +1407,11 @@ async def doc_page(
 ) -> HTMLResponse:
     doc = find_doc_by_id(boi_id, employee_id)
     if not doc:
-        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+        return templates.TemplateResponse(
+            "missing_doc.html",
+            {"request": request, "employee_id": employee_id, "boi_id": boi_id},
+            status_code=404,
+        )
     doc_folder_path = doc_folder(doc)
     return_folder = normalize_folder(folder) or doc_folder_path
     workflow = doc["metadata"].get("workflow") or {}

@@ -21,6 +21,12 @@
     </div>
   </header>
   <main class="doc-page">
+    {% if doc.recovered_from_log %}
+    <section class="recovery-notice">
+      <strong>Recovered from event/action log</strong>
+      <p>원본 Markdown 파일은 현재 저장소에 없지만, materialized BoI log payload에서 OKF 검증을 통과한 내용을 렌더링했습니다.</p>
+    </section>
+    {% endif %}
     {% if action_spec %}
     <section class="executable-spec">
       <div class="spec-heading">

@@ -15,6 +15,13 @@ author:
   agent_id: boi-seed-writer-v0.3
 acl_policy: acl:public
 status: reviewed
+source_refs:
+  - type: user-provided-sop
+    ref: equipment-abnormal-response-sop-image
+review:
+  reviewer: tf-lead
+  reviewed_at: 2026-06-16T14:00:00+09:00
+  review_status: reviewed
 event_type: equipment.alarm.raised.v1
 workflow:
   workflow_key: equipment-anomaly

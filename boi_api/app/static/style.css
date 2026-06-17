@@ -28,6 +28,9 @@ main { margin:16px 24px 28px; }
 .badge.status { background:#ede9fe; color:#5b21b6; }
 .doc-page { display:grid; grid-template-columns: 360px minmax(0, 1fr); gap:18px; align-items:start; }
 .doc-page .promotion-help, .doc-page .workflow-poc { grid-column:1 / -1; }
+.doc-page .recovery-notice { grid-column:1 / -1; background:#fff7ed; border:1px solid #fed7aa; border-radius:var(--radius); padding:12px 14px; color:#7c2d12; }
+.doc-page .recovery-notice p { margin:6px 0 0; color:#9a3412; }
+.missing-doc { display:block; }
 pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1e7ff; padding:14px; border-radius:var(--radius); overflow:auto; }
 .markdown-body { min-height:420px; }
 .rendered-content { margin-top:12px; color:#1f2937; }

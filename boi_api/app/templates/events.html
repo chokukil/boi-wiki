@@ -52,6 +52,7 @@
             <span>route={{ summary.routed_by }}</span>
             <span>ok={{ summary.ok }}</span>
             {% if summary.boi_url %}<a href="{{ summary.boi_url }}">Generated BoI</a>{% endif %}
+            {% if summary.boi_missing %}<span class="badge warning">BoI missing</span><code>{{ summary.boi_missing }}</code>{% endif %}
             {% if e.trace_id %}<a href="/events?employee_id={{ employee_id }}&trace_id={{ e.trace_id }}">Trace 보기</a>{% endif %}
             {% if e.trace_id and e.event_type and ('equipment.' in e.event_type or 'trend.' in e.event_type or 'root_cause.' in e.event_type or 'maintenance.' in e.event_type or 'corrective_action.' in e.event_type) %}
             <a href="/api/workflows/demo/equipment-anomaly/status?employee_id={{ employee_id }}&trace_id={{ e.trace_id }}">Workflow Status</a>
@@ -68,6 +69,7 @@
                   <td>
                     <code>{{ action.action_key }}</code>
                     {% if action.boi_url %}<br /><a href="{{ action.boi_url }}">BoI 보기</a>{% endif %}
+                    {% if action.boi_missing %}<br /><span class="badge warning">BoI missing</span>{% endif %}
                   </td>
                   <td>{{ action.connector_kind }}</td>
                   <td>

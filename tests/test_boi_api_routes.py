@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from urllib.parse import unquote
+
 from fastapi.testclient import TestClient
 
 
@@ -475,7 +478,7 @@ def test_events_page_summarizes_dispatch_results_and_keeps_raw_json_collapsed(bo
                             "request_id": "act-1",
                             "response": {
                                 "item": {
-                                    "metadata": {"boi_id": "boi:private:100001:compact:test"},
+                                    "metadata": recovered_metadata("boi:private:100001:compact:test"),
                                     "uri": "/private/100001/compact-test.md",
                                     "body": "# Should stay inside raw JSON only",
                                 }
@@ -520,3 +523,132 @@ def test_api_event_logs_can_filter_by_trace_id(boi_app_module):
     body = response.json()
     assert body["count"] == 1
     assert body["items"][0]["event_id"] == "evt-trace-a"
+
+
+def recovered_metadata(boi_id: str = "boi:private:100001:recovered:001") -> dict:
+    return {
+        "okf_version": "0.1",
+        "boi_profile_version": "0.1",
+        "type": "boi/action",
+        "title": "Recovered Generated BoI",
+        "description": "Recovered from materialized event log",
+        "tags": ["SOP", "Recovery"],
+        "timestamp": "2026-06-17T15:00:00+09:00",
+        "boi_id": boi_id,
+        "visibility": "private",
+        "classification": "internal",
+        "owner": "100001",
+        "author": {"type": "agent", "agent_id": "boi-writer-v0.4"},
+        "acl_policy": "acl:private:100001",
+        "status": "draft",
+        "source_event": {"event_id": "evt-recovered", "event_type": "corrective_action.requested.v1"},
+        "event_type": "corrective_action.requested.v1",
+    }
+
+
+def append_materialized_log(boi_app_module, *, trace_id: str, boi_id: str, include_item: bool = True) -> None:
+    action_result = {"status": "materialized", "request_id": "act-recovered"}
+    if include_item:
+        action_result["response"] = {
+            "item": {
+                "metadata": recovered_metadata(boi_id),
+                "uri": "/private/100001/boi-private-100001-recovered-001.md",
+                "body": "# Summary\n\nRecovered generated body",
+            }
+        }
+    boi_app_module.append_event_log(
+        status="processed",
+        event={
+            "event_id": "evt-recovered",
+            "event_type": "corrective_action.requested.v1",
+            "producer": "test",
+            "trace_id": trace_id,
+            "payload": {"title": "Recovered Generated BoI"},
+        },
+        result={
+            "routed_by": "event-router",
+            "dispatch_result": {
+                "ok": True,
+                "status": "dispatched",
+                "boi_id": boi_id,
+                "results": [
+                    {"action_key": "boi.materialize_event", "type": "boi_materialize", "result": action_result}
+                ],
+            },
+        },
+    )
+
+
+def test_doc_page_recovers_generated_boi_from_materialized_event_log(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_id = "boi:private:100001:recovered:001"
+    append_materialized_log(boi_app_module, trace_id="trace-recovered-doc", boi_id=boi_id)
+
+    response = client.get(f"/docs/{boi_id}?employee_id=100001")
+
+    assert response.status_code == 200
+    assert "Recovered Generated BoI" in response.text
+    assert "Recovered generated body" in response.text
+    assert "Recovered from event/action log" in response.text
+
+
+def test_recovered_private_boi_is_not_visible_to_other_employee(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_id = "boi:private:100001:recovered:secret"
+    append_materialized_log(boi_app_module, trace_id="trace-recovered-secret", boi_id=boi_id)
+
+    response = client.get(f"/docs/{boi_id}?employee_id=100002")
+
+    assert response.status_code == 404
+    assert "text/html" in response.headers["content-type"]
+    assert "Recovered Generated BoI" not in response.text
+    assert "BoI not found or not accessible" in response.text
+
+
+def test_missing_boi_returns_html_missing_page_instead_of_json_detail(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/docs/boi:private:100001:missing:no-log?employee_id=100001")
+
+    assert response.status_code == 404
+    assert "text/html" in response.headers["content-type"]
+    assert response.text.lstrip().startswith("<!doctype html>")
+    assert '{"detail"' not in response.text
+    assert "BoI not found or not accessible" in response.text
+
+
+def test_events_page_links_recoverable_generated_boi_and_marks_unrecoverable_boi(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    recoverable_id = "boi:private:100001:recoverable:event"
+    missing_id = "boi:private:100001:missing:event"
+    append_materialized_log(boi_app_module, trace_id="trace-event-links", boi_id=recoverable_id)
+    append_materialized_log(boi_app_module, trace_id="trace-event-links", boi_id=missing_id, include_item=False)
+
+    response = client.get("/events?employee_id=100001&trace_id=trace-event-links")
+
+    assert response.status_code == 200
+    assert f"/docs/{recoverable_id}?employee_id=100001" in response.text
+    assert "Generated BoI" in response.text
+    assert "BoI missing" in response.text
+    assert missing_id in response.text
+    assert f'href="/docs/{missing_id}?employee_id=100001"' not in response.text
+
+
+def test_events_page_does_not_render_doc_links_that_return_404(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    recoverable_id = "boi:private:100001:crawl:ok"
+    missing_id = "boi:private:100001:crawl:missing"
+    append_materialized_log(boi_app_module, trace_id="trace-crawl-links", boi_id=recoverable_id)
+    append_materialized_log(boi_app_module, trace_id="trace-crawl-links", boi_id=missing_id, include_item=False)
+
+    response = client.get("/events?employee_id=100001&trace_id=trace-crawl-links")
+    hrefs = [
+        unquote(match)
+        for match in re.findall(r'href="(/docs/[^"]+)"', response.text)
+        if "employee_id=100001" in match
+    ]
+
+    assert hrefs
+    for href in hrefs:
+        linked = client.get(href)
+        assert linked.status_code != 404, href
