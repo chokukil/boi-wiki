@@ -341,12 +341,76 @@ def render_content(value: Any) -> Markup:
     return render_value_html(value)
 
 
+def action_catalog_by_key() -> dict[str, dict[str, Any]]:
+    return {str(action.get("action_key")): action for action in load_action_catalog()}
+
+
+def result_boi_id(value: dict[str, Any]) -> str:
+    if value.get("boi_id"):
+        return str(value["boi_id"])
+    try:
+        return str((((value.get("response") or {}).get("item") or {}).get("metadata") or {}).get("boi_id") or "")
+    except Exception:
+        return ""
+
+
+def result_boi_uri(value: dict[str, Any]) -> str:
+    try:
+        return str(((value.get("response") or {}).get("item") or {}).get("uri") or "")
+    except Exception:
+        return ""
+
+
+def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str, Any] | None:
+    dispatch = result.get("dispatch_result") if isinstance(result, dict) else None
+    if not isinstance(dispatch, dict) or not dispatch.get("results"):
+        return None
+    catalog = action_catalog_by_key()
+    boi_id = str(dispatch.get("boi_id") or "")
+    rows = []
+    for row in dispatch.get("results") or []:
+        action_key = str(row.get("action_key") or "")
+        action = catalog.get(action_key, {})
+        action_result = row.get("result") or {}
+        status = str(action_result.get("status") or row.get("status_code") or row.get("error") or "unknown")
+        doc_ref = str(action_result.get("doc_ref") or action.get("doc_ref") or "")
+        row_boi_id = result_boi_id(action_result)
+        if row_boi_id and not boi_id:
+            boi_id = row_boi_id
+        rows.append(
+            {
+                "action_key": action_key,
+                "connector_kind": action.get("connector_kind") or row.get("type"),
+                "status": status,
+                "request_id": action_result.get("request_id"),
+                "doc_ref": doc_ref,
+                "doc_url": doc_url_for_ref(doc_ref, employee_id) if doc_ref else "",
+                "boi_id": row_boi_id,
+                "boi_uri": result_boi_uri(action_result),
+                "boi_url": doc_url_for_ref(row_boi_id, employee_id) if row_boi_id else "",
+            }
+        )
+    return {
+        "routed_by": result.get("routed_by"),
+        "status": dispatch.get("status"),
+        "ok": dispatch.get("ok"),
+        "boi_id": boi_id,
+        "boi_url": doc_url_for_ref(boi_id, employee_id) if boi_id else "",
+        "actions": rows,
+    }
+
+
 def event_rows_for_template(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rendered_rows = []
     for row in rows:
         item = dict(row)
         if row.get("result") is not None:
-            item["result_html"] = render_content(row["result"])
+            summary = event_dispatch_summary(row["result"], str(row.get("employee_id") or DEMO_EMPLOYEE_ID))
+            if summary:
+                item["dispatch_summary"] = summary
+                item["raw_result_html"] = render_value_html(row["result"])
+            else:
+                item["result_html"] = render_content(row["result"])
         if row.get("error") is not None:
             item["error_html"] = render_content(row["error"])
         rendered_rows.append(item)
@@ -469,7 +533,7 @@ def append_event_log(*, status: str, event: dict[str, Any], result: dict[str, An
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-def read_event_logs(limit: int = 200, event_type: str | None = None) -> list[dict[str, Any]]:
+def read_event_logs(limit: int = 200, event_type: str | None = None, trace_id: str | None = None) -> list[dict[str, Any]]:
     ensure_dirs()
     rows: list[dict[str, Any]] = []
     for p in sorted(EVENTS_ROOT.glob("events-*.jsonl"), reverse=True):
@@ -479,6 +543,8 @@ def read_event_logs(limit: int = 200, event_type: str | None = None) -> list[dic
             except Exception:
                 continue
             if event_type and row.get("event_type") != event_type:
+                continue
+            if trace_id and row.get("trace_id") != trace_id:
                 continue
             row["event_label"] = event_label(row.get("event_type"))
             rows.append(row)
@@ -700,6 +766,36 @@ def with_breadcrumb_urls(
     ]
 
 
+def event_type_url(event_type: str, employee_id: str) -> str:
+    return f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id})
+
+
+def event_run_example(event_type: str, employee_id: str) -> str:
+    if event_type == "equipment.alarm.raised.v1":
+        return (
+            f'curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?employee_id={employee_id}" '
+            '-H "Content-Type: application/json" '
+            '-d \'{"equipment_id":"ETCH-VM-01","alarm_code":"RESPONSE_CHAIN_ABNORMAL","title":"Response Chain 이상 Alarm 발생"}\''
+        )
+    return f"python scripts/publish_event.py {event_type} --employee {employee_id}"
+
+
+def event_context_for_template(event_type: str, employee_id: str) -> dict[str, Any] | None:
+    if not event_type:
+        return None
+    event_def = get_event_type(event_type)
+    if not event_def:
+        return {"event_type": event_type, "name_ko": event_type, "detail_url": event_type_url(event_type, employee_id)}
+    return {
+        **event_def,
+        "detail_url": event_type_url(event_type, employee_id),
+        "stream_url": "/events?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
+        "actions_url": "/actions?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
+        "clear_url": browse_url(employee_id),
+        "run_example": event_run_example(event_type, employee_id),
+    }
+
+
 def filter_docs(
     docs: list[dict[str, Any]],
     *,
@@ -741,6 +837,40 @@ def docs_for_template(docs: list[dict[str, Any]], employee_id: str, folder: str 
 
 def metadata_rows_for_template(metadata: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"key": str(key), "value_html": render_value_html(value)} for key, value in metadata.items()]
+
+
+def action_spec_for_template(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    if metadata.get("type") != "boi/action-spec":
+        return None
+    connector_kind = str(metadata.get("connector_kind") or "")
+    request_fields = ["request_schema", "input_schema", "example_request", "example_tool_call"]
+    response_fields = ["response_schema", "output_schema", "example_response"]
+    return {
+        "action_key": metadata.get("action_key"),
+        "connector_kind": connector_kind,
+        "execution_mode": metadata.get("execution_mode"),
+        "endpoint_label": "MCP Tool" if connector_kind == "mcp" else "Endpoint",
+        "method": metadata.get("method") or "POST",
+        "url": metadata.get("url") or metadata.get("mcp_server"),
+        "protocol": metadata.get("protocol"),
+        "auth_html": render_value_html(metadata.get("auth") or {}),
+        "headers_html": render_value_html(metadata.get("headers") or {}),
+        "request_rows": [
+            {"key": field, "value_html": render_value_html(metadata.get(field))}
+            for field in request_fields
+            if metadata.get(field) is not None
+        ],
+        "response_rows": [
+            {"key": field, "value_html": render_value_html(metadata.get(field))}
+            for field in response_fields
+            if metadata.get(field) is not None
+        ],
+        "gateway_html": render_value_html(metadata.get("action_gateway_mapping") or {}),
+        "curl": metadata.get("curl"),
+        "security_html": render_value_html(metadata.get("security_notes")),
+        "mcp_tool_name": metadata.get("tool_name"),
+        "mcp_transport": metadata.get("transport"),
+    }
 
 
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
@@ -956,6 +1086,24 @@ class ActionInvokeRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+class PocConnectorRequest(BaseModel):
+    payload: dict[str, Any] = Field(default_factory=dict)
+    event: dict[str, Any] = Field(default_factory=dict)
+    boi_id: str | None = None
+    request_id: str | None = None
+    dry_run: bool | None = True
+    approved_by: str | None = None
+
+
+class PocMcpCallRequest(BaseModel):
+    server: dict[str, Any] = Field(default_factory=dict)
+    tool: str = ""
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    event: dict[str, Any] = Field(default_factory=dict)
+    boi_id: str | None = None
+    request_id: str | None = None
+
+
 @app.on_event("startup")
 async def startup() -> None:
     ensure_dirs()
@@ -977,6 +1125,169 @@ async def runtime_config() -> dict[str, Any]:
         },
         "event_broker": {"type": "kafka", "bootstrap": KAFKA_BOOTSTRAP, "topic": BOI_EVENTS_TOPIC},
         "connectors": {"action_gateway_url": ACTION_GATEWAY_URL, "langflow": "peer_connector"},
+    }
+
+
+def poc_payload(req: PocConnectorRequest) -> dict[str, Any]:
+    return req.payload or (req.event.get("payload") if isinstance(req.event, dict) else {}) or {}
+
+
+def poc_result(*, action: str, req: PocConnectorRequest, result: dict[str, Any], status: str = "invoked") -> dict[str, Any]:
+    return {
+        "ok": True,
+        "status": status,
+        "action": action,
+        "request_id": req.request_id,
+        "dry_run": bool(req.dry_run),
+        "approved_by": req.approved_by,
+        "result": result,
+    }
+
+
+def require_poc_approval(req: PocConnectorRequest) -> None:
+    if not req.approved_by:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "ok": False,
+                "status": "approval_required",
+                "message": "approved_by is required for high-risk equipment actions.",
+            },
+        )
+
+
+@app.post("/api/poc/equipment/trend-history", dependencies=[Depends(require_service_token)])
+async def poc_equipment_trend_history(req: PocConnectorRequest) -> dict[str, Any]:
+    payload = poc_payload(req)
+    return poc_result(
+        action="sop.equipment.request_trend_history",
+        req=req,
+        result={
+            "equipment_id": payload.get("equipment_id"),
+            "trend_status": "anomaly_detected",
+            "lot_history_ref": f"/mock/hyvis/lot-history/{payload.get('lot_id', 'LOT-UNKNOWN')}",
+            "wafer_history_ref": f"/mock/hyvis/wafer-history/{payload.get('wafer_id', 'WF-UNKNOWN')}",
+            "message": "Trend와 이력 데이터를 확인했습니다.",
+        },
+    )
+
+
+@app.post("/api/poc/equipment/raw-data", dependencies=[Depends(require_service_token)])
+async def poc_equipment_raw_data(req: PocConnectorRequest) -> dict[str, Any]:
+    payload = poc_payload(req)
+    equipment_id = payload.get("equipment_id", "EQP-UNKNOWN")
+    lot_id = payload.get("lot_id", "LOT-UNKNOWN")
+    return poc_result(
+        action="sop.equipment.request_raw_data",
+        req=req,
+        result={
+            "equipment_id": equipment_id,
+            "raw_data_ref": f"/mock/hyvis/raw-data/{equipment_id}/{lot_id}",
+            "source_data_ref": f"/mock/tas/source-data/{equipment_id}",
+            "message": "Raw/Source Data 참조 링크를 생성했습니다.",
+        },
+    )
+
+
+@app.post("/api/poc/equipment/maintenance-guide", dependencies=[Depends(require_service_token)])
+async def poc_equipment_maintenance_guide(req: PocConnectorRequest) -> dict[str, Any]:
+    payload = poc_payload(req)
+    return poc_result(
+        action="sop.equipment.request_maintenance_guide",
+        req=req,
+        result={
+            "equipment_id": payload.get("equipment_id"),
+            "guide_boi_ref": "boi:public:sop:equipment-abnormal-response",
+            "recommended_steps": ["Source Data 확인", "장비 이력 확인", "장비 이상 여부 판단"],
+            "message": "장비 보전 가이드를 반환했습니다.",
+        },
+    )
+
+
+@app.post("/api/poc/equipment/notify-owner", dependencies=[Depends(require_service_token)])
+async def poc_equipment_notify_owner(req: PocConnectorRequest) -> dict[str, Any]:
+    payload = poc_payload(req)
+    return poc_result(
+        action="sop.equipment.notify_action_owner",
+        req=req,
+        result={
+            "notification_status": "sent",
+            "recipient": payload.get("owner") or payload.get("assignee") or DEMO_EMPLOYEE_ID,
+            "equipment_id": payload.get("equipment_id"),
+            "message": "이상 조치 요청 알림을 발송했습니다.",
+        },
+    )
+
+
+@app.post("/api/poc/equipment/process-hold", dependencies=[Depends(require_service_token)])
+async def poc_equipment_process_hold(req: PocConnectorRequest) -> dict[str, Any]:
+    require_poc_approval(req)
+    payload = poc_payload(req)
+    return poc_result(
+        action="sop.equipment.block_process_progress",
+        req=req,
+        result={
+            "requested_state": "process_hold",
+            "equipment_id": payload.get("equipment_id"),
+            "approved_by": req.approved_by,
+            "message": "승인된 공정 진행 금지 요청을 PoC endpoint가 접수했습니다.",
+        },
+    )
+
+
+@app.post("/api/poc/equipment/spec-rule-change", dependencies=[Depends(require_service_token)])
+async def poc_equipment_spec_rule_change(req: PocConnectorRequest) -> dict[str, Any]:
+    require_poc_approval(req)
+    payload = poc_payload(req)
+    return poc_result(
+        action="sop.equipment.change_spec_rule",
+        req=req,
+        result={
+            "requested_change": "spec_rule_change",
+            "equipment_id": payload.get("equipment_id"),
+            "approved_by": req.approved_by,
+            "message": "승인된 Spec/Rule 변경 요청을 PoC endpoint가 접수했습니다.",
+        },
+    )
+
+
+@app.post("/api/poc/mcp/call", dependencies=[Depends(require_service_token)])
+async def poc_mcp_call(req: PocMcpCallRequest) -> dict[str, Any]:
+    tool = req.tool or str(req.arguments.get("tool") or "")
+    if tool != "boi.search":
+        raise HTTPException(status_code=400, detail=f"Unsupported PoC MCP tool: {tool}")
+    employee_id = str(req.arguments.get("employee_id") or DEMO_EMPLOYEE_ID)
+    query = str(req.arguments.get("query") or "").lower()
+    allowed_visibility = set(req.arguments.get("allowed_visibility") or ["public", "team", "private"])
+    results = []
+    for doc in accessible_docs(employee_id):
+        metadata = doc["metadata"]
+        visibility = str(metadata.get("visibility") or "")
+        haystack = json.dumps(metadata, ensure_ascii=False, default=str).lower() + "\n" + str(doc.get("body", "")).lower()
+        if visibility not in allowed_visibility:
+            continue
+        if query and query not in haystack:
+            continue
+        results.append(
+            {
+                "boi_id": metadata.get("boi_id"),
+                "title": metadata.get("title"),
+                "description": metadata.get("description"),
+                "type": metadata.get("type"),
+                "visibility": visibility,
+                "uri": doc.get("uri"),
+            }
+        )
+        if len(results) >= int(req.arguments.get("limit") or 10):
+            break
+    return {
+        "ok": True,
+        "status": "mcp_invoked",
+        "server": req.server or {"name": "boi-wiki-mcp"},
+        "tool": tool,
+        "request_id": req.request_id,
+        "count": len(results),
+        "results": results,
     }
 
 
@@ -1029,6 +1340,7 @@ async def index(
         "folder": selected_folder,
         "folder_tree": folder_tree,
         "breadcrumbs": breadcrumbs,
+        "event_context": event_context_for_template(event_type, employee_id),
         "selected_folder_label": folder_label(selected_folder),
         "total_filtered_docs": len(filtered_docs),
         "event_types": load_event_types(),
@@ -1087,6 +1399,7 @@ async def doc_page(
             "metadata_rows": metadata_rows_for_template(doc["metadata"]),
             "body_html": render_markdown(doc["body"]),
             "workflow_poc": workflow_poc,
+            "action_spec": action_spec_for_template(doc["metadata"]),
         },
     )
 
@@ -1669,15 +1982,49 @@ async def event_types_page(request: Request, employee_id: str = Depends(current_
     )
 
 
+@app.get("/event-types/{event_type:path}", response_class=HTMLResponse)
+async def event_type_detail_page(request: Request, event_type: str, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+    event_def = get_event_type(event_type)
+    if not event_def:
+        raise HTTPException(status_code=404, detail=f"Event Type not found: {event_type}")
+    docs = filter_docs(accessible_docs(employee_id), event_type=event_type)
+    actions = [
+        action
+        for action in load_action_catalog()
+        if event_type in (action.get("event_types") or []) or "*" in (action.get("event_types") or [])
+    ]
+    recent_events = read_event_logs(limit=20, event_type=event_type)
+    return templates.TemplateResponse(
+        "event_type_detail.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "event_type": event_type,
+            "event": event_def,
+            "docs": docs_for_template(docs, employee_id),
+            "actions": actions_for_template(actions, employee_id),
+            "api_mcp_actions": [
+                action for action in actions_for_template(actions, employee_id) if action.get("connector_kind") in {"api", "mcp", "webhook", "langflow", "boi_writer", "event_broker"}
+            ],
+            "events": event_rows_for_template(recent_events),
+            "stream_url": "/events?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
+            "actions_url": "/actions?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
+            "boi_filter_url": browse_url(employee_id, event_type=event_type),
+            "run_example": event_run_example(event_type, employee_id),
+        },
+    )
+
+
 @app.get("/events", response_class=HTMLResponse)
-async def events_page(request: Request, employee_id: str = Depends(current_employee), event_type: str = "") -> HTMLResponse:
-    events = read_event_logs(limit=200, event_type=event_type or None)
+async def events_page(request: Request, employee_id: str = Depends(current_employee), event_type: str = "", trace_id: str = "") -> HTMLResponse:
+    events = read_event_logs(limit=200, event_type=event_type or None, trace_id=trace_id or None)
     return templates.TemplateResponse(
         "events.html",
         {
             "request": request,
             "employee_id": employee_id,
             "event_type": event_type,
+            "trace_id": trace_id,
             "event_types": load_event_types(),
             "events": event_rows_for_template(events),
         },
@@ -1690,8 +2037,9 @@ async def api_event_types() -> dict[str, Any]:
 
 
 @app.get("/api/events/log")
-async def api_event_logs(event_type: str = "", limit: int = 200) -> dict[str, Any]:
-    return {"count": len(read_event_logs(limit=limit, event_type=event_type or None)), "items": read_event_logs(limit=limit, event_type=event_type or None)}
+async def api_event_logs(event_type: str = "", trace_id: str = "", limit: int = 200) -> dict[str, Any]:
+    rows = read_event_logs(limit=limit, event_type=event_type or None, trace_id=trace_id or None)
+    return {"count": len(rows), "items": rows}
 
 
 @app.post("/api/events/audit", dependencies=[Depends(require_service_token)])

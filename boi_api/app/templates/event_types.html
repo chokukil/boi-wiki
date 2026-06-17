@@ -29,8 +29,9 @@
         <small>BoI: {{ e.default_boi_type }} · Flow: {{ e.default_flow_key }} · Topic: {{ e.topic }} · Owner: {{ e.owner }}</small>
         <p><strong>Wiki 활용:</strong> {{ e.wiki_usage }}</p>
         {% if e.recommended_actions %}<p><strong>Recommended Actions:</strong> {{ e.recommended_actions | join(', ') }}</p>{% endif %}
-        <p>
-          <a href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}">이 Event Type의 BoI 보기</a>
+        <p class="event-card-actions">
+          <a class="primary-link" href="/event-types/{{ e.event_type }}?employee_id={{ employee_id }}">Event Type 상세</a>
+          · <a href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}">BoI 필터 보기</a>
           · <a href="/events?employee_id={{ employee_id }}&event_type={{ e.event_type }}">이 Event Type의 Stream 보기</a>
           · <a href="/actions?employee_id={{ employee_id }}&event_type={{ e.event_type }}">연결 Action 보기</a>
         </p>

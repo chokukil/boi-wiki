@@ -21,6 +21,63 @@
     </div>
   </header>
   <main class="doc-page">
+    {% if action_spec %}
+    <section class="executable-spec">
+      <div class="spec-heading">
+        <div>
+          <h2>Executable Spec</h2>
+          <p><code>{{ action_spec.action_key }}</code> · {{ action_spec.connector_kind }} · {{ action_spec.execution_mode }}</p>
+        </div>
+        <span class="badge status">{{ action_spec.protocol }}</span>
+      </div>
+      <div class="spec-endpoint">
+        <span>{{ action_spec.endpoint_label }}</span>
+        <code>{{ action_spec.method }} {{ action_spec.url }}</code>
+      </div>
+      {% if action_spec.mcp_tool_name %}
+      <div class="spec-endpoint">
+        <span>MCP</span>
+        <code>{{ action_spec.mcp_tool_name }} · {{ action_spec.mcp_transport }}</code>
+      </div>
+      {% endif %}
+      <dl class="metadata-grid spec-grid">
+        <dt class="metadata-key">auth</dt>
+        <dd class="metadata-value">{{ action_spec.auth_html }}</dd>
+        <dt class="metadata-key">headers</dt>
+        <dd class="metadata-value">{{ action_spec.headers_html }}</dd>
+        <dt class="metadata-key">action_gateway_mapping</dt>
+        <dd class="metadata-value">{{ action_spec.gateway_html }}</dd>
+      </dl>
+      <div class="spec-columns">
+        <section>
+          <h3>Request</h3>
+          <dl class="metadata-grid spec-grid">
+            {% for row in action_spec.request_rows %}
+            <dt class="metadata-key">{{ row.key }}</dt>
+            <dd class="metadata-value">{{ row.value_html }}</dd>
+            {% endfor %}
+          </dl>
+        </section>
+        <section>
+          <h3>Response</h3>
+          <dl class="metadata-grid spec-grid">
+            {% for row in action_spec.response_rows %}
+            <dt class="metadata-key">{{ row.key }}</dt>
+            <dd class="metadata-value">{{ row.value_html }}</dd>
+            {% endfor %}
+          </dl>
+        </section>
+      </div>
+      {% if action_spec.curl %}
+      <h3>curl</h3>
+      <pre>{{ action_spec.curl }}</pre>
+      {% endif %}
+      <details class="security-notes">
+        <summary>Security Notes</summary>
+        <div class="rendered-content">{{ action_spec.security_html }}</div>
+      </details>
+    </section>
+    {% endif %}
     <section class="metadata">
       <h2>Metadata</h2>
       <nav class="breadcrumb" aria-label="Document folder">

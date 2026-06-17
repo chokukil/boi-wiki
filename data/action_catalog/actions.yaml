@@ -36,8 +36,12 @@ actions:
     connector_kind: mcp
     execution_mode: gateway
     doc_ref: boi:public:actions:mcp:boi-search-sample
-    enabled: false
+    enabled: true
+    auto_dispatch: false
     event_types: [report.requested.v1, maintenance.guide.requested.v1]
+    url: http://boi-api:8000/api/poc/mcp/call
+    headers:
+      x-service-token: ${service_token}
     tool_name: boi.search
     arguments:
       query: ${payload.query}
@@ -51,13 +55,26 @@ actions:
   - action_key: sop.equipment.request_trend_history
     name_ko: Trend / 이력 확인 요청
     description: 장비/공정 Trend와 Lot/Wafer 이력을 조회하는 시스템 API 호출 예시
-    type: mock_api
+    type: api
     connector_kind: api
     execution_mode: gateway
     doc_ref: boi:public:actions:api:request-trend-history
     enabled: true
     auto_dispatch: true
     order: 20
+    method: POST
+    url: http://boi-api:8000/api/poc/equipment/trend-history
+    headers:
+      x-service-token: ${service_token}
+      Content-Type: application/json
+    dry_run: false
+    body:
+      request_id: ${request_id}
+      employee_id: ${employee_id}
+      event: ${event}
+      payload: ${payload}
+      dry_run: ${dry_run}
+      approved_by: ${approved_by}
     event_types: [equipment.alarm.raised.v1, trend.anomaly.detected.v1, root_cause.analysis.requested.v1]
     owner: AIX 확산 TF
     risk_level: low
@@ -71,13 +88,26 @@ actions:
   - action_key: sop.equipment.request_raw_data
     name_ko: Raw / Source Data 확인 요청
     description: HyVIS/TAS/설비 시스템의 Raw Data와 Source Data를 조회하는 API 호출 예시
-    type: mock_api
+    type: api
     connector_kind: api
     execution_mode: gateway
     doc_ref: boi:public:actions:api:request-raw-data
     enabled: true
     auto_dispatch: true
     order: 30
+    method: POST
+    url: http://boi-api:8000/api/poc/equipment/raw-data
+    headers:
+      x-service-token: ${service_token}
+      Content-Type: application/json
+    dry_run: false
+    body:
+      request_id: ${request_id}
+      employee_id: ${employee_id}
+      event: ${event}
+      payload: ${payload}
+      dry_run: ${dry_run}
+      approved_by: ${approved_by}
     event_types: [equipment.alarm.raised.v1, root_cause.analysis.requested.v1, maintenance.guide.requested.v1]
     owner: AIX 확산 TF
     risk_level: low
@@ -148,13 +178,26 @@ actions:
   - action_key: sop.equipment.request_maintenance_guide
     name_ko: 장비 보전 가이드 요청
     description: 장비 이상 가능성이 있을 때 장비 보전 SOP/가이드를 요청하는 API 호출 예시
-    type: mock_api
+    type: api
     connector_kind: api
     execution_mode: gateway
     doc_ref: boi:public:actions:api:request-maintenance-guide
     enabled: true
     auto_dispatch: true
     order: 20
+    method: POST
+    url: http://boi-api:8000/api/poc/equipment/maintenance-guide
+    headers:
+      x-service-token: ${service_token}
+      Content-Type: application/json
+    dry_run: false
+    body:
+      request_id: ${request_id}
+      employee_id: ${employee_id}
+      event: ${event}
+      payload: ${payload}
+      dry_run: ${dry_run}
+      approved_by: ${approved_by}
     event_types: [root_cause.analysis.completed.v1, maintenance.guide.requested.v1]
     owner: AIX 확산 TF
     risk_level: medium
@@ -199,13 +242,26 @@ actions:
   - action_key: sop.equipment.notify_action_owner
     name_ko: 이상 조치 담당자 알림
     description: 조치 담당자에게 이상 조치 요청을 발송하는 Webhook/API 호출 예시
-    type: mock_api
+    type: api
     connector_kind: api
     execution_mode: gateway
     doc_ref: boi:public:actions:api:notify-action-owner
     enabled: true
     auto_dispatch: true
     order: 20
+    method: POST
+    url: http://boi-api:8000/api/poc/equipment/notify-owner
+    headers:
+      x-service-token: ${service_token}
+      Content-Type: application/json
+    dry_run: false
+    body:
+      request_id: ${request_id}
+      employee_id: ${employee_id}
+      event: ${event}
+      payload: ${payload}
+      dry_run: ${dry_run}
+      approved_by: ${approved_by}
     event_types: [corrective_action.requested.v1, promotion.requested.v1]
     owner: AIX 확산 TF
     risk_level: medium
@@ -218,7 +274,7 @@ actions:
   - action_key: sop.equipment.block_process_progress
     name_ko: 공정 진행 금지 요청
     description: 이상 조치 Agent가 공정 진행 금지를 요청하는 고위험 Action. PoC에서는 승인 전 dry-run만 허용.
-    type: mock_api
+    type: api
     connector_kind: api
     execution_mode: gateway
     doc_ref: boi:public:actions:api:block-process-progress
@@ -226,6 +282,18 @@ actions:
     enabled: true
     auto_dispatch: true
     order: 90
+    method: POST
+    url: http://boi-api:8000/api/poc/equipment/process-hold
+    headers:
+      x-service-token: ${service_token}
+      Content-Type: application/json
+    body:
+      request_id: ${request_id}
+      employee_id: ${employee_id}
+      event: ${event}
+      payload: ${payload}
+      dry_run: ${dry_run}
+      approved_by: ${approved_by}
     event_types: [corrective_action.requested.v1]
     owner: 제조/품질 담당 조직
     risk_level: high
@@ -238,7 +306,7 @@ actions:
   - action_key: sop.equipment.change_spec_rule
     name_ko: Spec / Rule 변경 요청
     description: Spec/Rule 변경은 고위험 Action으로 승인과 변경관리 절차가 필요. PoC에서는 dry-run만 허용.
-    type: mock_api
+    type: api
     connector_kind: api
     execution_mode: gateway
     doc_ref: boi:public:actions:api:change-spec-rule
@@ -246,6 +314,18 @@ actions:
     enabled: true
     auto_dispatch: true
     order: 95
+    method: POST
+    url: http://boi-api:8000/api/poc/equipment/spec-rule-change
+    headers:
+      x-service-token: ${service_token}
+      Content-Type: application/json
+    body:
+      request_id: ${request_id}
+      employee_id: ${employee_id}
+      event: ${event}
+      payload: ${payload}
+      dry_run: ${dry_run}
+      approved_by: ${approved_by}
     event_types: [corrective_action.requested.v1]
     owner: 제조/품질 담당 조직
     risk_level: high

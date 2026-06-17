@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ event.name_ko }} · Event Type · BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>{{ event.name_ko }}</h1>
+      <p><code>{{ event_type }}</code> · {{ event.description }}</p>
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a> · <a href="/?employee_id={{ employee_id }}">BoI 목록</a>
+    </div>
+  </header>
+
+  <main class="event-type-detail">
+    <section class="event-context-bar">
+      <div>
+        <span class="badge event">{{ event.name_ko }}</span>
+        <span class="badge status">{{ event.status }}</span>
+        <strong>{{ event_type }}</strong>
+      </div>
+      <p>BoI: {{ event.default_boi_type }} · Flow: {{ event.default_flow_key }} · Topic: {{ event.topic }} · Owner: {{ event.owner }}</p>
+      <nav>
+        <a href="{{ boi_filter_url }}">이 Event Type의 BoI 보기</a>
+        <a href="{{ stream_url }}">Stream 보기</a>
+        <a href="{{ actions_url }}">연결 Action 보기</a>
+      </nav>
+    </section>
+
+    <section class="panel compact-panel">
+      <h2>Run Example</h2>
+      <pre>{{ run_example }}</pre>
+    </section>
+
+    <section class="panel compact-panel">
+      <h2>Linked BoIs ({{ docs|length }})</h2>
+      <div class="doc-list">
+        {% for doc in docs %}
+        {% set m = doc.metadata %}
+        <a class="doc-row {{ m.visibility }}" href="{{ doc.url }}">
+          <div>
+            <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
+            <span class="badge status">{{ m.status }}</span>
+            <strong>{{ m.title }}</strong>
+          </div>
+          <small>{{ m.type }} · {{ m.boi_id }}</small>
+          <p>{{ m.description }}</p>
+        </a>
+        {% else %}
+        <div class="empty-state event-empty">
+          <strong>아직 이 Event Type으로 생성된 BoI가 없습니다.</strong>
+          <p>위 실행 예시로 이벤트를 발행하면 Event Router와 BoI Writer가 Private BoI를 생성합니다.</p>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel compact-panel">
+      <h2>Recommended Actions</h2>
+      <div class="action-summary-table">
+        <table class="markdown-table">
+          <thead><tr><th>Action</th><th>Connector</th><th>Risk</th><th>Spec</th></tr></thead>
+          <tbody>
+          {% for action in actions %}
+          <tr>
+            <td><code>{{ action.action_key }}</code><br />{{ action.name_ko }}</td>
+            <td>{{ action.connector_kind or action.type }}</td>
+            <td>{{ action.risk_level }}{% if action.approval_required %} · approval{% endif %}</td>
+            <td>{% if action.doc_url %}<a href="{{ action.doc_url }}">{{ action.doc_ref }}</a>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel compact-panel">
+      <h2>API / MCP Specs</h2>
+      <div class="doc-list">
+        {% for action in api_mcp_actions %}
+        <a class="doc-row" href="{{ action.doc_url }}">
+          <div>
+            <span class="badge">{{ action.connector_kind }}</span>
+            <span class="badge">{{ action.type }}</span>
+            <strong>{{ action.name_ko or action.action_key }}</strong>
+          </div>
+          <small>{{ action.doc_ref }}</small>
+          <p>{{ action.description }}</p>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel compact-panel">
+      <h2>Recent Stream</h2>
+      <div class="doc-list">
+        {% for e in events %}
+        <a class="doc-row event-row" href="/events?employee_id={{ employee_id }}&trace_id={{ e.trace_id }}">
+          <div>
+            <span class="badge event">{{ e.event_label }}</span>
+            <span class="badge status">{{ e.status }}</span>
+            <strong>{{ e.payload_title or e.event_id }}</strong>
+          </div>
+          <small>{{ e.logged_at }} · trace={{ e.trace_id }}</small>
+        </a>
+        {% else %}
+        <div class="empty-state">
+          <strong>No recent stream entries.</strong>
+          <p>이 Event Type이 발행되면 여기서 최신 trace를 확인할 수 있습니다.</p>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+</body>
+</html>

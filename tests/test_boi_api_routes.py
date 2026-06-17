@@ -342,3 +342,181 @@ def test_equipment_demo_status_summarizes_trace_context(boi_app_module):
     assert body["sop_uri"] == "/public/sop/equipment-abnormal-response.md"
     assert any(item["event_type"] == "equipment.alarm.raised.v1" for item in body["events"])
     assert "manual.equipment.confirm_alarm_context" in body["manual_handoffs"]
+
+
+def test_poc_equipment_api_endpoints_are_service_token_protected_and_callable(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    unauthorized = client.post(
+        "/api/poc/equipment/trend-history",
+        json={"payload": {"equipment_id": "ETCH-VM-01", "lot_id": "LOT-001", "wafer_id": "WF-001"}},
+    )
+    assert unauthorized.status_code == 401
+
+    response = client.post(
+        "/api/poc/equipment/trend-history",
+        headers={"x-service-token": boi_app_module.SERVICE_TOKEN},
+        json={"payload": {"equipment_id": "ETCH-VM-01", "lot_id": "LOT-001", "wafer_id": "WF-001"}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["status"] == "invoked"
+    assert body["result"]["trend_status"] == "anomaly_detected"
+    assert body["result"]["lot_history_ref"].endswith("/LOT-001")
+
+
+def test_poc_high_risk_api_requires_human_approval_even_if_called_directly(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    rejected = client.post(
+        "/api/poc/equipment/process-hold",
+        headers={"x-service-token": boi_app_module.SERVICE_TOKEN},
+        json={"payload": {"equipment_id": "ETCH-VM-01"}, "dry_run": False},
+    )
+    assert rejected.status_code == 403
+    assert rejected.json()["detail"]["status"] == "approval_required"
+
+    approved = client.post(
+        "/api/poc/equipment/process-hold",
+        headers={"x-service-token": boi_app_module.SERVICE_TOKEN},
+        json={"payload": {"equipment_id": "ETCH-VM-01"}, "dry_run": False, "approved_by": "line-manager-001"},
+    )
+
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "invoked"
+    assert approved.json()["result"]["approved_by"] == "line-manager-001"
+
+
+def test_poc_mcp_call_searches_accessible_boi_docs(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/poc/mcp/call",
+        headers={"x-service-token": boi_app_module.SERVICE_TOKEN},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "boi.search",
+            "arguments": {"query": "Kafka", "employee_id": "100001", "allowed_visibility": ["public", "team", "private"]},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["status"] == "mcp_invoked"
+    assert body["tool"] == "boi.search"
+    assert any("Kafka" in item["title"] for item in body["results"])
+
+
+def test_event_type_detail_page_explains_empty_boi_state_and_links_specs(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/event-types/meeting.closed.v1?employee_id=100001")
+
+    assert response.status_code == 200
+    assert "회의 종료" in response.text
+    assert "meeting.closed.v1" in response.text
+    assert "아직 이 Event Type으로 생성된 BoI가 없습니다" in response.text
+    assert "/events?employee_id=100001&amp;event_type=meeting.closed.v1" in response.text
+    assert "/actions?employee_id=100001&amp;event_type=meeting.closed.v1" in response.text
+    assert "python scripts/publish_event.py meeting.closed.v1 --employee 100001" in response.text
+    assert "boi:public:actions:boi-writer:materialize-event" in response.text
+
+
+def test_event_type_catalog_uses_detail_route_as_primary_cta(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/event-types?employee_id=100001")
+
+    assert response.status_code == 200
+    assert 'href="/event-types/meeting.closed.v1?employee_id=100001"' in response.text
+    assert "Event Type 상세" in response.text
+
+
+def test_index_event_type_filter_has_context_bar_and_specific_empty_state(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001&event_type=meeting.closed.v1")
+
+    assert response.status_code == 200
+    assert 'class="event-context-bar"' in response.text
+    assert "회의 종료" in response.text
+    assert "/event-types/meeting.closed.v1?employee_id=100001" in response.text
+    assert "/events?employee_id=100001&amp;event_type=meeting.closed.v1" in response.text
+    assert "아직 이 Event Type으로 생성된 BoI가 없습니다" in response.text
+
+
+def test_events_page_summarizes_dispatch_results_and_keeps_raw_json_collapsed(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    trace_id = "trace-compact-render-test"
+    boi_app_module.append_event_log(
+        status="handled",
+        event={
+            "event_id": "evt-compact-render-test",
+            "event_type": "maintenance.guide.requested.v1",
+            "producer": "test",
+            "trace_id": trace_id,
+            "payload": {"title": "컴팩트 렌더링 테스트"},
+        },
+        result={
+            "routed_by": "event-router",
+            "dispatch_result": {
+                "ok": True,
+                "status": "dispatched",
+                "boi_id": "boi:private:100001:compact:test",
+                "results": [
+                    {
+                        "action_key": "boi.materialize_event",
+                        "type": "boi_materialize",
+                        "result": {
+                            "status": "materialized",
+                            "request_id": "act-1",
+                            "response": {
+                                "item": {
+                                    "metadata": {"boi_id": "boi:private:100001:compact:test"},
+                                    "uri": "/private/100001/compact-test.md",
+                                    "body": "# Should stay inside raw JSON only",
+                                }
+                            },
+                        },
+                    },
+                    {
+                        "action_key": "sop.equipment.block_process_progress",
+                        "type": "api",
+                        "result": {"status": "approval_required", "request_id": "act-2", "doc_ref": "boi:public:actions:api:block-process-progress"},
+                    },
+                ],
+            },
+        },
+    )
+
+    response = client.get(f"/events?employee_id=100001&trace_id={trace_id}")
+
+    assert response.status_code == 200
+    assert 'class="action-summary-table"' in response.text
+    assert "boi.materialize_event" in response.text
+    assert "approval_required" in response.text
+    assert "/docs/boi:private:100001:compact:test?employee_id=100001" in response.text
+    assert 'class="raw-event-json"' in response.text
+    assert "Should stay inside raw JSON only" not in response.text.split('class="raw-event-json"')[0]
+
+
+def test_api_event_logs_can_filter_by_trace_id(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_app_module.append_event_log(
+        status="published",
+        event={"event_id": "evt-trace-a", "event_type": "meeting.closed.v1", "trace_id": "trace-a", "payload": {"title": "A"}},
+    )
+    boi_app_module.append_event_log(
+        status="published",
+        event={"event_id": "evt-trace-b", "event_type": "meeting.closed.v1", "trace_id": "trace-b", "payload": {"title": "B"}},
+    )
+
+    response = client.get("/api/events/log?trace_id=trace-a")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert body["items"][0]["event_id"] == "evt-trace-a"

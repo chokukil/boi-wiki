@@ -26,6 +26,8 @@
         <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
         {% endfor %}
       </select>
+      <label>Trace</label>
+      <input name="trace_id" value="{{ trace_id }}" placeholder="trace_id" />
       <button type="submit">조회</button>
     </form>
   </section>
@@ -41,6 +43,49 @@
         </div>
         <p>{{ e.event_type }} · {{ e.event_id }}</p>
         <small>{{ e.logged_at }} · producer={{ e.producer }} · trace={{ e.trace_id }}</small>
+        {% if e.dispatch_summary %}
+        {% set summary = e.dispatch_summary %}
+        <section class="event-detail compact-result">
+          <h3>Dispatch Summary</h3>
+          <div class="event-summary-line">
+            <span class="badge status">{{ summary.status }}</span>
+            <span>route={{ summary.routed_by }}</span>
+            <span>ok={{ summary.ok }}</span>
+            {% if summary.boi_url %}<a href="{{ summary.boi_url }}">Generated BoI</a>{% endif %}
+            {% if e.trace_id %}<a href="/events?employee_id={{ employee_id }}&trace_id={{ e.trace_id }}">Trace 보기</a>{% endif %}
+            {% if e.trace_id and e.event_type and ('equipment.' in e.event_type or 'trend.' in e.event_type or 'root_cause.' in e.event_type or 'maintenance.' in e.event_type or 'corrective_action.' in e.event_type) %}
+            <a href="/api/workflows/demo/equipment-anomaly/status?employee_id={{ employee_id }}&trace_id={{ e.trace_id }}">Workflow Status</a>
+            {% endif %}
+          </div>
+          <div class="action-summary-table">
+            <table class="markdown-table">
+              <thead>
+                <tr><th>Action</th><th>Connector</th><th>Status</th><th>Spec</th><th>Request</th></tr>
+              </thead>
+              <tbody>
+                {% for action in summary.actions %}
+                <tr>
+                  <td>
+                    <code>{{ action.action_key }}</code>
+                    {% if action.boi_url %}<br /><a href="{{ action.boi_url }}">BoI 보기</a>{% endif %}
+                  </td>
+                  <td>{{ action.connector_kind }}</td>
+                  <td>
+                    <span class="badge {% if 'approval' in action.status or 'manual' in action.status %}warning{% else %}status{% endif %}">{{ action.status }}</span>
+                  </td>
+                  <td>{% if action.doc_url %}<a href="{{ action.doc_url }}">{{ action.doc_ref }}</a>{% else %}{{ action.doc_ref }}{% endif %}</td>
+                  <td>{{ action.request_id or '-' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <details class="raw-event-json">
+            <summary>Raw JSON</summary>
+            <div class="rendered-content">{{ e.raw_result_html }}</div>
+          </details>
+        </section>
+        {% endif %}
         {% if e.result_html %}
         <section class="event-detail">
           <h3>Result</h3>

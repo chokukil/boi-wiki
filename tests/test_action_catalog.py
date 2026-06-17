@@ -89,6 +89,74 @@ def test_every_catalog_action_has_public_spec_doc_ref():
         assert spec.get("result_contract")
 
 
+def test_public_action_specs_include_executable_contracts_without_secrets():
+    forbidden = [
+        "dev-service-token-change-me",
+        "dev-langflow-key-change-me",
+        "not-needed",
+        "x-service-token: dev",
+    ]
+
+    for spec_id, spec in public_action_specs().items():
+        meta = spec["metadata"]
+        text = spec["path"].read_text(encoding="utf-8")
+
+        assert meta.get("protocol"), spec_id
+        assert meta.get("auth"), spec_id
+        assert meta.get("request_schema"), spec_id
+        assert meta.get("response_schema"), spec_id
+        assert meta.get("example_request"), spec_id
+        assert meta.get("example_response"), spec_id
+        assert meta.get("security_notes"), spec_id
+
+        if meta.get("connector_kind") == "mcp":
+            assert meta.get("mcp_server"), spec_id
+            assert meta.get("tool_name"), spec_id
+            assert meta.get("transport"), spec_id
+            assert meta.get("input_schema"), spec_id
+            assert meta.get("output_schema"), spec_id
+            assert meta.get("example_tool_call"), spec_id
+        else:
+            assert meta.get("method"), spec_id
+            assert meta.get("url"), spec_id
+            assert meta.get("headers"), spec_id
+            assert meta.get("curl"), spec_id
+            assert meta.get("action_gateway_mapping"), spec_id
+            assert meta.get("health_check"), spec_id
+
+        for secret in forbidden:
+            assert secret not in text, f"{spec_id} leaks {secret}"
+
+
+def test_equipment_api_and_mcp_actions_are_wired_to_real_poc_endpoints():
+    actions = {action["action_key"]: action for action in load_actions()}
+
+    equipment_api_urls = {
+        "sop.equipment.request_trend_history": "http://boi-api:8000/api/poc/equipment/trend-history",
+        "sop.equipment.request_raw_data": "http://boi-api:8000/api/poc/equipment/raw-data",
+        "sop.equipment.request_maintenance_guide": "http://boi-api:8000/api/poc/equipment/maintenance-guide",
+        "sop.equipment.notify_action_owner": "http://boi-api:8000/api/poc/equipment/notify-owner",
+        "sop.equipment.block_process_progress": "http://boi-api:8000/api/poc/equipment/process-hold",
+        "sop.equipment.change_spec_rule": "http://boi-api:8000/api/poc/equipment/spec-rule-change",
+    }
+
+    for action_key, url in equipment_api_urls.items():
+        action = actions[action_key]
+        assert action["type"] == "api"
+        assert action["method"] == "POST"
+        assert action["url"] == url
+        assert action["headers"]["x-service-token"] == "${service_token}"
+        assert "payload" in action["body"]
+        assert "dry_run" in action["body"]
+        assert "approved_by" in action["body"]
+
+    mcp_action = actions["mcp.boi_search.sample"]
+    assert mcp_action["enabled"] is True
+    assert mcp_action["type"] == "mcp_tool"
+    assert mcp_action["url"] == "http://boi-api:8000/api/poc/mcp/call"
+    assert mcp_action["tool_name"] == "boi.search"
+
+
 def test_manual_equipment_actions_are_registered_but_not_auto_dispatched():
     manual_actions = {
         action["action_key"]: action

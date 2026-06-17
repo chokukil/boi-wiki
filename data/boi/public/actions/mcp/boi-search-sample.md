@@ -1,11 +1,14 @@
 ---
-okf_version: "0.1"
-boi_profile_version: "0.1"
+okf_version: '0.1'
+boi_profile_version: '0.1'
 type: boi/action-spec
 title: MCP 기반 BoI 검색 Tool 호출 예시
 description: MCP Bridge를 통해 BoI 검색 tool을 호출하는 connector 예시
-tags: [MCP, BoIWiki, Search]
-timestamp: 2026-06-17T12:15:00+09:00
+tags:
+- MCP
+- BoIWiki
+- Search
+timestamp: 2026-06-17 12:15:00+09:00
 boi_id: boi:public:actions:mcp:boi-search-sample
 visibility: public
 classification: internal
@@ -18,22 +21,150 @@ status: reviewed
 action_key: mcp.boi_search.sample
 connector_kind: mcp
 execution_mode: gateway
-event_types: [report.requested.v1, maintenance.guide.requested.v1]
+event_types:
+- report.requested.v1
+- maintenance.guide.requested.v1
 risk_level: low
 approval_required: false
 dry_run_default: true
 payload_contract:
-  required: [query, employee_id]
-  optional: [allowed_visibility]
+  required:
+  - query
+  - employee_id
+  optional:
+  - allowed_visibility
 result_contract:
   status: mcp_invoked
-  fields: [response]
+  fields:
+  - response
 source_refs:
-  - type: action_catalog
-    ref: data/action_catalog/actions.yaml
+- type: action_catalog
+  ref: data/action_catalog/actions.yaml
 review:
   reviewer: tf-lead
   review_status: reviewed
+protocol: mcp-over-http
+method: POST
+url: http://boi-api:8000/api/poc/mcp/call
+auth:
+  type: header
+  header: x-service-token
+  value: $SERVICE_TOKEN
+headers:
+  Content-Type: application/json
+  x-service-token: ${service_token}
+request_schema:
+  type: object
+  required:
+  - server
+  - tool
+  - arguments
+  properties:
+    server:
+      type: object
+    tool:
+      type: string
+    arguments:
+      type: object
+    event:
+      type: object
+    boi_id:
+      type: string
+    request_id:
+      type: string
+response_schema:
+  type: object
+  required:
+  - ok
+  - status
+  properties:
+    ok:
+      type: boolean
+    status:
+      const: mcp_invoked
+    request_id:
+      type: string
+    result:
+      type: object
+example_request:
+  server:
+    name: boi-wiki-mcp
+  tool: boi.search
+  arguments:
+    query: Kafka
+    employee_id: '100001'
+    allowed_visibility:
+    - public
+    - team
+    - private
+example_response:
+  ok: true
+  status: mcp_invoked
+  tool: boi.search
+  count: 1
+  results:
+  - title: Platform Team Kafka Event Broker SOP
+curl: 'curl -X POST ''http://boi-api:8000/api/poc/mcp/call'' -H ''x-service-token:
+  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"payload":{"equipment_id":"ETCH-VM-01"},"dry_run":false}'''
+action_gateway_mapping:
+  invoke_url: http://localhost:8100/api/actions/invoke
+  action_key: mcp.boi_search.sample
+  catalog_type: mcp_tool
+  doc_ref: boi:public:actions:mcp:boi-search-sample
+health_check:
+  type: http
+  command: curl -fsS 'http://boi-api:8000/api/poc/mcp/call' || true
+security_notes:
+- Use environment variables for tokens.
+- Do not store real service tokens or API keys in public BoI docs.
+mcp_server:
+  name: boi-wiki-mcp
+tool_name: boi.search
+transport: http_bridge
+input_schema:
+  type: object
+  required:
+  - server
+  - tool
+  - arguments
+  properties:
+    server:
+      type: object
+    tool:
+      type: string
+    arguments:
+      type: object
+    event:
+      type: object
+    boi_id:
+      type: string
+    request_id:
+      type: string
+output_schema:
+  type: object
+  required:
+  - ok
+  - status
+  properties:
+    ok:
+      type: boolean
+    status:
+      const: mcp_invoked
+    request_id:
+      type: string
+    result:
+      type: object
+example_tool_call:
+  server:
+    name: boi-wiki-mcp
+  tool: boi.search
+  arguments:
+    query: Kafka
+    employee_id: '100001'
+    allowed_visibility:
+    - public
+    - team
+    - private
 ---
 
 # Usage

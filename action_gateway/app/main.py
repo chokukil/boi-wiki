@@ -102,6 +102,16 @@ def host_allowed(url: str) -> bool:
 def render_template(value: Any, context: dict[str, Any]) -> Any:
     """Tiny template replacement for catalog URLs/payloads: ${key.path}."""
     if isinstance(value, str):
+        full_match = re.fullmatch(r"\$\{([A-Za-z0-9_.-]+)\}", value)
+        if full_match:
+            cur: Any = context
+            for part in full_match.group(1).split("."):
+                if isinstance(cur, dict):
+                    cur = cur.get(part, "")
+                else:
+                    return ""
+            return cur
+
         def repl(match: re.Match[str]) -> str:
             path = match.group(1).split(".")
             cur: Any = context
@@ -198,6 +208,9 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         "event": req.event,
         "payload": req.payload or req.event.get("payload") or {},
         "boi_id": req.boi_id or "",
+        "service_token": SERVICE_TOKEN,
+        "dry_run": dry_run,
+        "approved_by": req.approved_by or "",
     }
     base_log = {
         "action_key": action.get("action_key"),

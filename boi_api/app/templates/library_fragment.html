@@ -25,6 +25,28 @@
   </aside>
 
   <section class="library-content">
+    {% if event_context %}
+    <section class="event-context-bar">
+      <div>
+        <span class="badge event">{{ event_context.name_ko or event_context.event_type }}</span>
+        {% if event_context.status %}<span class="badge status">{{ event_context.status }}</span>{% endif %}
+        <strong>{{ event_context.event_type }}</strong>
+      </div>
+      <p>{{ event_context.description or 'Event Type filter is active.' }}</p>
+      <nav>
+        <a href="{{ event_context.detail_url }}">Event Type 상세</a>
+        {% if event_context.stream_url %}<a href="{{ event_context.stream_url }}">Stream 보기</a>{% endif %}
+        {% if event_context.actions_url %}<a href="{{ event_context.actions_url }}">연결 Action 보기</a>{% endif %}
+        {% if event_context.clear_url %}<a href="{{ event_context.clear_url }}">필터 해제</a>{% endif %}
+      </nav>
+      {% if event_context.run_example %}
+      <details class="run-example">
+        <summary>Run Example</summary>
+        <pre>{{ event_context.run_example }}</pre>
+      </details>
+      {% endif %}
+    </section>
+    {% endif %}
     <nav class="breadcrumb" aria-label="Current folder">
       {% for crumb in breadcrumbs %}
       <a href="{{ crumb.url }}" {% if loop.last %}aria-current="page"{% endif %}>{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
@@ -54,8 +76,13 @@
       </a>
       {% else %}
       <div class="empty-state">
+        {% if event_context %}
+        <strong>아직 이 Event Type으로 생성된 BoI가 없습니다.</strong>
+        <p>위 Event Type 상세 또는 실행 예시로 이벤트를 발행하면 연결된 BoI가 이 목록에 나타납니다.</p>
+        {% else %}
         <strong>No accessible BoI documents in this folder.</strong>
         <p>검색 조건을 줄이거나 All Accessible에서 다시 확인하세요.</p>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
