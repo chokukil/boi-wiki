@@ -191,3 +191,53 @@ def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
     assert '<dd class="metadata-value"><span class="scalar string">team</span></dd>' in response.text
     assert '<dt class="metadata-key">acl_policy</dt>' in response.text
     assert '<dd class="metadata-value"><span class="scalar string">acl:team:platform</span></dd>' in response.text
+
+
+def test_index_loads_library_script_and_prioritizes_library_surface(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001&folder=team/platform")
+
+    assert response.status_code == 200
+    assert '<script src="/static/library.js" defer></script>' in response.text
+    assert response.text.index('id="boi-library"') < response.text.index('class="poc-guide"')
+    assert 'href="/?employee_id=100001&amp;folder=team%2Fplatform"' in response.text
+    assert 'aria-current="page"' in response.text
+
+
+def test_index_partial_returns_only_library_fragment(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001&folder=team/platform&partial=library")
+
+    assert response.status_code == 200
+    assert 'id="boi-library"' in response.text
+    assert 'class="library-layout"' in response.text
+    assert "<header>" not in response.text
+    assert "보이는 범위" not in response.text
+    assert "Platform Team Kafka Event Broker SOP" in response.text
+    assert "AIX 확산 TF 업무 맥락 자산화 PoC 계획" not in response.text
+
+
+def test_index_partial_does_not_leak_inaccessible_documents(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100002&folder=private/100001&partial=library")
+
+    assert response.status_code == 200
+    assert 'id="boi-library"' in response.text
+    assert 'class="empty-state"' in response.text
+    assert "개인 Private BoI 예시: Langflow 컴포넌트 확인" not in response.text
+    assert "Platform Team Kafka Event Broker SOP" not in response.text
+
+
+def test_library_static_js_supports_partial_navigation(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/static/library.js")
+
+    assert response.status_code == 200
+    assert "history.pushState" in response.text
+    assert "popstate" in response.text
+    assert "partial" in response.text
+    assert "scrollTo" in response.text

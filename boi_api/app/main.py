@@ -958,6 +958,7 @@ async def index(
     visibility: str = "",
     boi_type: str = "",
     folder: str = "",
+    partial: str = "",
 ) -> HTMLResponse:
     selected_folder = normalize_folder(folder)
     filtered_docs = filter_docs(
@@ -984,27 +985,26 @@ async def index(
         visibility=visibility,
         boi_type=boi_type,
     )
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "employee_id": employee_id,
-            "user_name": USER_NAMES.get(employee_id, employee_id),
-            "teams": teams_for(employee_id),
-            "docs": docs_for_template(docs, employee_id, selected_folder),
-            "q": q,
-            "event_type": event_type,
-            "visibility": visibility,
-            "boi_type": boi_type,
-            "folder": selected_folder,
-            "folder_tree": folder_tree,
-            "breadcrumbs": breadcrumbs,
-            "selected_folder_label": folder_label(selected_folder),
-            "total_filtered_docs": len(filtered_docs),
-            "event_types": load_event_types(),
-            "event_logs": read_event_logs(limit=8),
-        },
-    )
+    context = {
+        "request": request,
+        "employee_id": employee_id,
+        "user_name": USER_NAMES.get(employee_id, employee_id),
+        "teams": teams_for(employee_id),
+        "docs": docs_for_template(docs, employee_id, selected_folder),
+        "q": q,
+        "event_type": event_type,
+        "visibility": visibility,
+        "boi_type": boi_type,
+        "folder": selected_folder,
+        "folder_tree": folder_tree,
+        "breadcrumbs": breadcrumbs,
+        "selected_folder_label": folder_label(selected_folder),
+        "total_filtered_docs": len(filtered_docs),
+        "event_types": load_event_types(),
+        "event_logs": read_event_logs(limit=8),
+    }
+    template_name = "library_fragment.html" if partial == "library" else "index.html"
+    return templates.TemplateResponse(template_name, context)
 
 
 @app.get("/sops", response_class=HTMLResponse)

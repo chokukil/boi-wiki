@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>BoI Wiki PoC</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/library.js" defer></script>
 </head>
 <body>
   <header>
@@ -55,104 +56,47 @@
     </div>
   </section>
 
-  <section class="cards">
-    <article class="card summary-card">
-      <h2>보이는 범위</h2>
-      <ul>
-        <li><strong>Public</strong>: 전 구성원 접근 가능</li>
-        <li><strong>Team</strong>: 사번의 Team ACL 기준</li>
-        <li><strong>Private</strong>: Web/Langflow가 BoI Wiki에 저장한 본인 항목</li>
-        <li><strong>Local Private</strong>: 로컬 Agent에만 저장된 항목은 Web 미노출</li>
-      </ul>
-    </article>
-    <article class="card summary-card">
-      <h2>Event Broker가 보이는 방식</h2>
-      <p>Kafka는 뒤에서 이벤트를 전달하고, Wiki는 업무 사용자가 이해할 수 있도록 Event Type과 Event Stream을 보여줍니다.</p>
-      <ul>
-        <li><a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>: 어떤 업무 이벤트가 어떤 BoI/Flow를 만드는지</li>
-        <li><a href="/events?employee_id={{ employee_id }}">Event Stream</a>
-    <a href="/actions?employee_id={{ employee_id }}">Actions</a>: 어떤 이벤트가 발행/처리되었는지</li>
-        <li>BoI 문서: <code>source_event.event_type</code>으로 업무 맥락과 연결</li>
-      </ul>
-    </article>
-    <article class="card summary-card">
-      <h2>이벤트 발행 테스트</h2>
-      <p>아래 명령 또는 API로 Kafka 이벤트를 발행하면 event-adapter가 처리해 Private BoI를 생성합니다.</p>
-      <pre>python scripts/publish_event.py meeting.closed.v1 --employee {{ employee_id }}</pre>
-    </article>
-  </section>
+  {% include "library_fragment.html" %}
 
-  <section class="cards compact">
-    {% for e in event_types %}
-    <a class="card event-card" href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}{% if folder %}&folder={{ folder }}{% endif %}">
-      <strong>{{ e.name_ko }}</strong>
-      <small>{{ e.event_type }}</small>
-      <p>{{ e.description }}</p>
-    </a>
-    {% endfor %}
-  </section>
-
-  {% macro render_folder_nodes(nodes) %}
-  <ul class="folder-tree">
-    {% for node in nodes %}
-    <li>
-      <a class="folder-link {% if node.selected %}active{% endif %}" href="{{ node.url }}">
-        <span class="folder-label">{{ node.path }}</span>
-        <span class="folder-count">{{ node.count }}</span>
-      </a>
-      {% if node.children %}
-      {{ render_folder_nodes(node.children) }}
-      {% endif %}
-    </li>
-    {% endfor %}
-  </ul>
-  {% endmacro %}
-
-  <main class="library-layout">
-    <aside class="folder-sidebar" aria-label="OKF folder navigation">
-      <h2>OKF Library</h2>
-      <a class="folder-link root {% if folder_tree.selected %}active{% endif %}" href="{{ folder_tree.url }}">
-        <span class="folder-label">All Accessible</span>
-        <span class="folder-count">{{ folder_tree.count }}</span>
-      </a>
-      {{ render_folder_nodes(folder_tree.children) }}
-    </aside>
-
-    <section class="library-content">
-      <nav class="breadcrumb" aria-label="Current folder">
-        {% for crumb in breadcrumbs %}
-        <a href="{{ crumb.url }}">{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
-        {% endfor %}
-      </nav>
-      <div class="library-heading">
-        <div>
-          <h2>{{ selected_folder_label }} ({{ docs|length }})</h2>
-          <p>{{ folder or 'all accessible OKF folders' }} · filtered total {{ total_filtered_docs }}</p>
-        </div>
-      </div>
-      <div class="doc-list">
-        {% for doc in docs %}
-        {% set m = doc.metadata %}
-        <a class="doc-row {{ m.visibility }}" href="{{ doc.url }}">
-          <div>
-            <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
-            <span class="badge status">{{ m.status }}</span>
-            {% if m.event_type %}<span class="badge event">{{ m.event_label or m.event_type }}</span>{% endif %}
-            <strong>{{ m.title }}</strong>
-          </div>
-          <p>{{ m.description }}</p>
-          <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
-          <span class="folder-path">{{ doc.folder or 'root' }}</span>
-        </a>
-        {% else %}
-        <div class="empty-state">
-          <strong>No accessible BoI documents in this folder.</strong>
-          <p>검색 조건을 줄이거나 All Accessible에서 다시 확인하세요.</p>
-        </div>
-        {% endfor %}
-      </div>
+  <details class="poc-guide">
+    <summary>PoC Guide</summary>
+    <section class="cards">
+      <article class="card summary-card">
+        <h2>보이는 범위</h2>
+        <ul>
+          <li><strong>Public</strong>: 전 구성원 접근 가능</li>
+          <li><strong>Team</strong>: 사번의 Team ACL 기준</li>
+          <li><strong>Private</strong>: Web/Langflow가 BoI Wiki에 저장한 본인 항목</li>
+          <li><strong>Local Private</strong>: 로컬 Agent에만 저장된 항목은 Web 미노출</li>
+        </ul>
+      </article>
+      <article class="card summary-card">
+        <h2>Event Broker가 보이는 방식</h2>
+        <p>Kafka는 뒤에서 이벤트를 전달하고, Wiki는 업무 사용자가 이해할 수 있도록 Event Type과 Event Stream을 보여줍니다.</p>
+        <ul>
+          <li><a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>: 어떤 업무 이벤트가 어떤 BoI/Flow를 만드는지</li>
+          <li><a href="/events?employee_id={{ employee_id }}">Event Stream</a>
+      <a href="/actions?employee_id={{ employee_id }}">Actions</a>: 어떤 이벤트가 발행/처리되었는지</li>
+          <li>BoI 문서: <code>source_event.event_type</code>으로 업무 맥락과 연결</li>
+        </ul>
+      </article>
+      <article class="card summary-card">
+        <h2>이벤트 발행 테스트</h2>
+        <p>아래 명령 또는 API로 Kafka 이벤트를 발행하면 event-adapter가 처리해 Private BoI를 생성합니다.</p>
+        <pre>python scripts/publish_event.py meeting.closed.v1 --employee {{ employee_id }}</pre>
+      </article>
     </section>
-  </main>
+
+    <section class="cards compact">
+      {% for e in event_types %}
+      <a class="card event-card" href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}{% if folder %}&folder={{ folder }}{% endif %}">
+        <strong>{{ e.name_ko }}</strong>
+        <small>{{ e.event_type }}</small>
+        <p>{{ e.description }}</p>
+      </a>
+      {% endfor %}
+    </section>
+  </details>
 
   <section class="event-stream-preview">
     <h2>Recent Event Stream</h2>

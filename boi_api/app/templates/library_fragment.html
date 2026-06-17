@@ -1,0 +1,63 @@
+{% macro render_folder_nodes(nodes) %}
+<ul class="folder-tree">
+  {% for node in nodes %}
+  <li>
+    <a class="folder-link {% if node.selected %}active{% endif %}" href="{{ node.url }}" {% if node.selected %}aria-current="page"{% endif %}>
+      <span class="folder-label">{{ node.path }}</span>
+      <span class="folder-count">{{ node.count }}</span>
+    </a>
+    {% if node.children %}
+    {{ render_folder_nodes(node.children) }}
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+<main id="boi-library" class="library-layout" data-library-fragment data-folder="{{ folder }}" aria-busy="false">
+  <aside class="folder-sidebar" aria-label="OKF folder navigation">
+    <h2>OKF Library</h2>
+    <a class="folder-link root {% if folder_tree.selected %}active{% endif %}" href="{{ folder_tree.url }}" {% if folder_tree.selected %}aria-current="page"{% endif %}>
+      <span class="folder-label">All Accessible</span>
+      <span class="folder-count">{{ folder_tree.count }}</span>
+    </a>
+    {{ render_folder_nodes(folder_tree.children) }}
+  </aside>
+
+  <section class="library-content">
+    <nav class="breadcrumb" aria-label="Current folder">
+      {% for crumb in breadcrumbs %}
+      <a href="{{ crumb.url }}" {% if loop.last %}aria-current="page"{% endif %}>{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
+      {% endfor %}
+    </nav>
+    <div class="library-heading">
+      <div>
+        <h2>{{ selected_folder_label }} ({{ docs|length }})</h2>
+        <p>{{ folder or 'all accessible OKF folders' }} · filtered total {{ total_filtered_docs }}</p>
+      </div>
+    </div>
+    <div class="doc-list" data-library-results>
+      {% for doc in docs %}
+      {% set m = doc.metadata %}
+      <a class="doc-row {{ m.visibility }}" href="{{ doc.url }}">
+        <div class="doc-row-main">
+          <div class="doc-row-title">
+            <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
+            <span class="badge status">{{ m.status }}</span>
+            {% if m.event_type %}<span class="badge event">{{ m.event_label or m.event_type }}</span>{% endif %}
+            <strong>{{ m.title }}</strong>
+          </div>
+          <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
+        </div>
+        <p>{{ m.description }}</p>
+        <span class="folder-path">{{ doc.folder or 'root' }}</span>
+      </a>
+      {% else %}
+      <div class="empty-state">
+        <strong>No accessible BoI documents in this folder.</strong>
+        <p>검색 조건을 줄이거나 All Accessible에서 다시 확인하세요.</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</main>
