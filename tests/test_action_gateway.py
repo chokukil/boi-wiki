@@ -115,6 +115,125 @@ class FakeAsyncClient:
         return FakeHttpResponse(body={"ok": True, "status": "mcp_invoked", "tool": "boi.search", "results": [{"title": "Kafka SOP"}]})
 
 
+class FakeLangflowAsyncClient:
+    requests: list[dict] = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def get(self, url, headers=None):
+        self.requests.append({"method": "GET", "url": url, "headers": headers or {}})
+        if url.endswith("/api/v1/auto_login"):
+            return FakeHttpResponse(body={"access_token": "langflow-test-token"})
+        if url.endswith("/api/v1/flows/"):
+            return FakeHttpResponse(
+                body=[
+                    {
+                        "id": "old-flow-id",
+                        "name": "BoI Reference Flow",
+                        "endpoint_name": "boi-reference-flow",
+                        "updated_at": "2026-06-16T16:04:25+00:00",
+                        "data": {"nodes": []},
+                    },
+                    {
+                        "id": "latest-flow-id",
+                        "name": "BoI Reference Flow (3)",
+                        "endpoint_name": "boi-reference-flow-3",
+                        "updated_at": "2026-06-17T05:48:49+00:00",
+                        "data": {
+                            "nodes": [
+                                {"data": {"display_name": "BoI Event Input"}},
+                                {"data": {"template": {"model_name": {"value": "google/gemma-4-26b-a4b-qat"}}}},
+                            ]
+                        },
+                    },
+                ]
+            )
+        return FakeHttpResponse(status_code=404, body={"detail": "not found"})
+
+    async def request(self, method, url, headers=None, json=None):
+        self.requests.append({"method": method, "url": url, "headers": headers or {}, "json": json or {}})
+        return FakeHttpResponse(
+            body={
+                "session_id": "latest-flow-id",
+                "outputs": [
+                    {
+                        "outputs": [
+                            {
+                                "results": {
+                                    "message": {
+                                        "text": "Langflow Gemma response",
+                                        "properties": {
+                                            "source": {
+                                                "source": "google/gemma-4-26b-a4b-qat",
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ],
+            }
+        )
+
+
+def test_langflow_reference_action_is_enabled_for_real_dispatch():
+    import yaml
+
+    catalog = yaml.safe_load((Path.cwd() / "data" / "action_catalog" / "actions.yaml").read_text(encoding="utf-8"))
+    action = next(item for item in catalog["actions"] if item["action_key"] == "langflow.boi.reference_flow")
+
+    assert action["enabled"] is True
+    assert action["auto_dispatch"] is True
+    assert action["type"] == "langflow_run"
+    assert action["dry_run"] is False
+    assert action["flow_name"] == "BoI Reference Flow"
+    assert "equipment.alarm.raised.v1" in action["event_types"]
+
+
+def test_langflow_run_action_resolves_latest_flow_and_invokes_run_endpoint(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakeLangflowAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowAsyncClient)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "langflow.boi.reference_flow",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-langflow-test",
+                "event_type": "equipment.alarm.raised.v1",
+                "trace_id": "trace-langflow-test",
+                "payload": {"title": "Langflow 연결 검증", "equipment_id": "ETCH-VM-01"},
+            },
+            "payload": {"title": "Langflow 연결 검증", "equipment_id": "ETCH-VM-01"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "langflow_invoked"
+    assert body["flow_id"] == "latest-flow-id"
+    assert body["message"] == "Langflow Gemma response"
+    assert FakeLangflowAsyncClient.requests[0]["url"] == "http://langflow:7860/api/v1/auto_login"
+    assert FakeLangflowAsyncClient.requests[1]["headers"]["Authorization"] == "Bearer langflow-test-token"
+    run_request = FakeLangflowAsyncClient.requests[2]
+    assert run_request["url"] == "http://langflow:7860/api/v1/run/latest-flow-id"
+    assert run_request["json"]["input_type"] == "chat"
+    assert "Langflow 연결 검증" in run_request["json"]["input_value"]
+
+
 def test_api_action_invokes_configured_boi_api_endpoint(tmp_path, monkeypatch):
     gateway = load_gateway_module(tmp_path, monkeypatch)
     FakeAsyncClient.requests = []

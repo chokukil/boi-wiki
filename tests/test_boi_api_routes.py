@@ -259,7 +259,7 @@ def test_public_sop_and_action_folders_are_browsable(boi_app_module):
         "public/actions/api": "Trend / 이력 확인 요청",
         "public/actions/webhook": "외부 Webhook 이벤트 수신",
         "public/actions/mcp": "MCP 기반 BoI 검색 Tool 호출 예시",
-        "public/actions/langflow": "Langflow Reference Flow 호출 예시",
+        "public/actions/langflow": "Langflow Reference Flow 호출",
         "public/actions/manual": "공정 진행 금지 승인",
     }
 

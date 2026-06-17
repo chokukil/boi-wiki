@@ -336,23 +336,29 @@ actions:
       message: 변경관리 승인 필요 Action입니다. PoC에서는 dry-run으로만 기록합니다.
 
   - action_key: langflow.boi.reference_flow
-    name_ko: Langflow Reference Flow 호출 예시
-    description: Langflow Flow ID가 준비되면 활성화하여 Event를 Langflow Webhook으로 전달하는 커넥터 예시
-    type: langflow_webhook
+    name_ko: Langflow Reference Flow 호출
+    description: 최신 BoI Reference Flow를 Langflow API에서 resolve해 OpenAI-compatible Gemma LLM으로 이벤트 맥락 요약을 생성하는 실행형 Connector
+    type: langflow_run
     connector_kind: langflow
     execution_mode: gateway
     doc_ref: boi:public:actions:langflow:reference-flow
-    enabled: false
-    auto_dispatch: false
-    order: 50
-    event_types: [meeting.closed.v1, action.created.v1, report.requested.v1]
+    enabled: true
+    auto_dispatch: true
+    order: 35
+    event_types: [meeting.closed.v1, equipment.alarm.raised.v1, report.requested.v1]
     owner: AIX 확산 TF
     risk_level: low
     approval_required: false
-    flow_id: replace-with-langflow-flow-id
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Reference Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Event Input
     body:
-      event: ${event}
-      payload: ${payload}
+      input_value: "BoI Wiki Event를 분석해 Private BoI 초안 요약을 한국어로 작성하세요. event_type=${event.event_type}, trace_id=${event.trace_id}, title=${payload.title}, equipment_id=${payload.equipment_id}, owner=${payload.owner}"
+      input_type: chat
+      output_type: chat
 
   - action_key: connector.mcp.sample
     name_ko: MCP Bridge 호출 예시

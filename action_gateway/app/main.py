@@ -21,12 +21,14 @@ SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000")
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
+LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "auto-login")
 MCP_BRIDGE_URL = os.getenv("MCP_BRIDGE_URL", "")
 DRY_RUN_DEFAULT = os.getenv("ACTION_DRY_RUN_DEFAULT", "true").lower() == "true"
 ALLOWED_HOSTS = {h.strip() for h in os.getenv("ACTION_ALLOWED_HOSTS", "boi-api,langflow,action-gateway,localhost,127.0.0.1").split(",") if h.strip()}
 
 FIRST_CLASS_ACTION_TYPES = {"boi_materialize", "boi_materializer", "event_publish", "boi_event"}
 HTTP_ACTION_TYPES = {"http", "api", "api_call", "webhook", "http_webhook", "internal_webhook", "langflow_webhook"}
+LANGFLOW_RUN_ACTION_TYPES = {"langflow_run", "langflow_flow"}
 
 app = FastAPI(title="BoI Action Gateway", version="0.4.0")
 
@@ -127,6 +129,89 @@ def render_template(value: Any, context: dict[str, Any]) -> Any:
     if isinstance(value, dict):
         return {k: render_template(v, context) for k, v in value.items()}
     return value
+
+
+def is_unresolved_flow_ref(value: str) -> bool:
+    normalized = value.strip()
+    return not normalized or normalized.startswith("${") or normalized.startswith("replace-with")
+
+
+async def langflow_auth_headers(client: httpx.AsyncClient) -> dict[str, str]:
+    if LANGFLOW_AUTH_MODE == "api-key":
+        return {"x-api-key": LANGFLOW_API_KEY}
+    resp = await client.get(f"{LANGFLOW_URL.rstrip('/')}/api/v1/auto_login")
+    resp.raise_for_status()
+    token = (resp.json() or {}).get("access_token")
+    if not token:
+        raise RuntimeError("Langflow auto_login did not return access_token")
+    return {"Authorization": f"Bearer {token}"}
+
+
+def flow_name_matches(flow_name: str, wanted_name: str) -> bool:
+    return flow_name == wanted_name or re.fullmatch(rf"{re.escape(wanted_name)} \(\d+\)", flow_name) is not None
+
+
+def langflow_flow_matches(flow: dict[str, Any], action: dict[str, Any], wanted_name: str) -> bool:
+    if not flow_name_matches(str(flow.get("name") or ""), wanted_name):
+        return False
+    data_text = json.dumps(flow.get("data") or {}, ensure_ascii=False)
+    required_model = str(action.get("require_model") or "")
+    if required_model and required_model not in data_text:
+        return False
+    required_marker = str(action.get("require_marker") or "")
+    if required_marker and required_marker not in data_text:
+        return False
+    return True
+
+
+async def resolve_langflow_run_target(client: httpx.AsyncClient, action: dict[str, Any], context: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, str]]:
+    explicit_flow_id = render_template(str(action.get("flow_id") or ""), context)
+    explicit_endpoint = render_template(str(action.get("endpoint_name") or action.get("flow_endpoint_name") or ""), context)
+    auth_headers = await langflow_auth_headers(client)
+    if not is_unresolved_flow_ref(explicit_flow_id):
+        return explicit_flow_id, {"id": explicit_flow_id}, auth_headers
+    if explicit_endpoint and not is_unresolved_flow_ref(explicit_endpoint) and not action.get("resolve_latest", False):
+        return explicit_endpoint, {"endpoint_name": explicit_endpoint}, auth_headers
+
+    wanted_name = render_template(str(action.get("flow_name") or "BoI Reference Flow"), context)
+    resp = await client.get(f"{LANGFLOW_URL.rstrip('/')}/api/v1/flows/", headers=auth_headers)
+    resp.raise_for_status()
+    flows = resp.json()
+    if not isinstance(flows, list):
+        raise RuntimeError("Langflow flows API did not return a list")
+    matches = [flow for flow in flows if isinstance(flow, dict) and langflow_flow_matches(flow, action, wanted_name)]
+    if not matches:
+        raise RuntimeError(f"Langflow flow not found: {wanted_name}")
+    matches.sort(key=lambda flow: str(flow.get("updated_at") or ""), reverse=True)
+    selected = matches[0]
+    target = str(selected.get("id") or selected.get("endpoint_name") or "")
+    if not target:
+        raise RuntimeError(f"Langflow flow has no id or endpoint_name: {wanted_name}")
+    return target, selected, auth_headers
+
+
+def first_langflow_message(value: Any) -> str:
+    if isinstance(value, dict):
+        text = value.get("text")
+        if isinstance(text, str) and text.strip():
+            return text
+        message = value.get("message")
+        if isinstance(message, str) and message.strip():
+            return message
+        if isinstance(message, dict):
+            found = first_langflow_message(message)
+            if found:
+                return found
+        for child in value.values():
+            found = first_langflow_message(child)
+            if found:
+                return found
+    if isinstance(value, list):
+        for child in value:
+            found = first_langflow_message(child)
+            if found:
+                return found
+    return ""
 
 
 def extract_boi_id(result: dict[str, Any]) -> str | None:
@@ -282,6 +367,43 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 resp = await client.post(url, json=body)
                 resp.raise_for_status()
                 result = {"ok": True, "status": "event_published", "request_id": request_id, "action_key": action.get("action_key"), "response": resp.json()}
+
+        elif action_type in LANGFLOW_RUN_ACTION_TYPES:
+            async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 90))) as client:
+                flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
+                url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
+                if not host_allowed(url):
+                    raise HTTPException(status_code=400, detail=f"Langflow URL is not allowlisted: {url}")
+                headers = {"Content-Type": "application/json", **auth_headers}
+                headers.update(render_template(action.get("headers") or {}, context))
+                body = render_template(
+                    action.get("body")
+                    or {
+                        "input_value": str(req.payload or req.event),
+                        "input_type": "chat",
+                        "output_type": "chat",
+                    },
+                    context,
+                )
+                resp = await client.request("POST", url, headers=headers, json=body)
+                try:
+                    resp_body: Any = resp.json()
+                except Exception:
+                    resp_body = resp.text[:2000]
+                if resp.status_code >= 400:
+                    raise HTTPException(status_code=resp.status_code, detail=resp_body)
+                result = {
+                    "ok": True,
+                    "status": "langflow_invoked",
+                    "request_id": request_id,
+                    "action_key": action.get("action_key"),
+                    "http_status": resp.status_code,
+                    "flow_id": flow_info.get("id") or flow_target,
+                    "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
+                    "flow_name": flow_info.get("name") or action.get("flow_name"),
+                    "message": first_langflow_message(resp_body),
+                    "response": resp_body,
+                }
 
         elif action_type in HTTP_ACTION_TYPES:
             method = str(action.get("method", "POST")).upper()
