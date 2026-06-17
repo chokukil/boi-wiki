@@ -37,6 +37,27 @@ def test_langflow_reference_flow_manifest_is_importable_metadata():
     assert "BoI Event Input" in json.dumps(flow, ensure_ascii=False)
 
 
+def compact_handle(value: dict) -> str:
+    rendered = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return rendered.replace('"', "œ")
+
+
+def test_langflow_reference_flow_edges_match_rendered_handle_ids():
+    manifest = json.loads(Path("langflow/flows/boi_reference_flow.manifest.json").read_text(encoding="utf-8"))
+    flow = json.loads(Path(manifest["flow_file"]).read_text(encoding="utf-8"))
+    nodes = {node["id"] for node in flow["data"]["nodes"]}
+    edges = flow["data"]["edges"]
+
+    assert len(edges) == 3
+    for edge in edges:
+        assert edge["source"] in nodes
+        assert edge["target"] in nodes
+        assert edge["sourceHandle"] == compact_handle(edge["data"]["sourceHandle"])
+        assert edge["targetHandle"] == compact_handle(edge["data"]["targetHandle"])
+        assert ": " not in edge["sourceHandle"]
+        assert ": " not in edge["targetHandle"]
+
+
 def test_langflow_setup_script_documents_upload_and_smoke_endpoints():
     script = Path("scripts/setup_langflow_reference_flows.py").read_text(encoding="utf-8")
 
