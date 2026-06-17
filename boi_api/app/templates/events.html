@@ -41,8 +41,18 @@
         </div>
         <p>{{ e.event_type }} · {{ e.event_id }}</p>
         <small>{{ e.logged_at }} · producer={{ e.producer }} · trace={{ e.trace_id }}</small>
-        {% if e.result %}<pre>{{ e.result }}</pre>{% endif %}
-        {% if e.error %}<pre>{{ e.error }}</pre>{% endif %}
+        {% if e.result_html %}
+        <section class="event-detail">
+          <h3>Result</h3>
+          <div class="rendered-content">{{ e.result_html }}</div>
+        </section>
+        {% endif %}
+        {% if e.error_html %}
+        <section class="event-detail error">
+          <h3>Error</h3>
+          <div class="rendered-content">{{ e.error_html }}</div>
+        </section>
+        {% endif %}
       </article>
       {% endfor %}
     </div>

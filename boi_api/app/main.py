@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import hashlib
 import json
 import os
@@ -8,6 +9,7 @@ import re
 import uuid
 import httpx
 from datetime import date, datetime, timezone, timedelta
+from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,6 +19,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from pydantic import BaseModel, Field
 
 KST = timezone(timedelta(hours=9))
@@ -158,6 +161,195 @@ def split_frontmatter(markdown: str) -> tuple[dict[str, Any], str]:
 
 def compose_markdown(metadata: dict[str, Any], body: str) -> str:
     return "---\n" + yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False) + "---\n\n" + body.lstrip("\n")
+
+
+def parse_structured_string(value: str) -> Any:
+    stripped = value.strip()
+    if len(stripped) < 2 or stripped[0] not in "[{" or stripped[-1] not in "]}":
+        return value
+    for parser in (json.loads, ast.literal_eval):
+        try:
+            parsed = parser(stripped)
+        except Exception:
+            continue
+        if isinstance(parsed, (dict, list)):
+            return parsed
+    return value
+
+
+def is_markdown_like(value: str) -> bool:
+    stripped = value.strip()
+    return (
+        stripped.startswith("#")
+        or "```" in stripped
+        or bool(re.search(r"(^|\n)\s*[-*]\s+\S", stripped))
+        or bool(re.search(r"(^|\n)\s*\d+\.\s+\S", stripped))
+        or bool(re.search(r"(^|\n)\s*\|.+\|\s*(\n|$)", stripped))
+    )
+
+
+def render_inline_markdown(value: str) -> str:
+    rendered = html_escape(value)
+    rendered = re.sub(r"`([^`]+)`", r"<code>\1</code>", rendered)
+    rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", rendered)
+    return rendered
+
+
+def table_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def is_table_separator(line: str) -> bool:
+    cells = table_cells(line)
+    return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells)
+
+
+def render_table(lines: list[str]) -> str:
+    if len(lines) < 2 or not is_table_separator(lines[1]):
+        return render_paragraph(lines)
+    headers = table_cells(lines[0])
+    rows = [table_cells(line) for line in lines[2:]]
+    head = "".join(f"<th>{render_inline_markdown(cell)}</th>" for cell in headers)
+    body_rows = []
+    for row in rows:
+        padded = row + [""] * max(len(headers) - len(row), 0)
+        body_rows.append("<tr>" + "".join(f"<td>{render_inline_markdown(cell)}</td>" for cell in padded[: len(headers)]) + "</tr>")
+    return f'<div class="table-wrap"><table class="markdown-table"><thead><tr>{head}</tr></thead><tbody>{"".join(body_rows)}</tbody></table></div>'
+
+
+def render_paragraph(lines: list[str]) -> str:
+    text = " ".join(line.strip() for line in lines if line.strip())
+    return f"<p>{render_inline_markdown(text)}</p>" if text else ""
+
+
+def render_markdown(value: str) -> Markup:
+    lines = value.splitlines()
+    html_parts: list[str] = []
+    paragraph: list[str] = []
+    list_items: list[str] = []
+    table_lines: list[str] = []
+    index = 0
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            html_parts.append(render_paragraph(paragraph))
+            paragraph.clear()
+
+    def flush_list() -> None:
+        if list_items:
+            html_parts.append("<ul>" + "".join(f"<li>{render_inline_markdown(item)}</li>" for item in list_items) + "</ul>")
+            list_items.clear()
+
+    def flush_table() -> None:
+        if table_lines:
+            html_parts.append(render_table(table_lines))
+            table_lines.clear()
+
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+
+        if stripped.startswith("```"):
+            flush_paragraph()
+            flush_list()
+            flush_table()
+            language = stripped.strip("`").strip().lower()
+            code_lines: list[str] = []
+            index += 1
+            while index < len(lines) and not lines[index].strip().startswith("```"):
+                code_lines.append(lines[index])
+                index += 1
+            code = "\n".join(code_lines)
+            if language == "json":
+                parsed = parse_structured_string(code)
+                if parsed is not code:
+                    html_parts.append(str(render_value_html(parsed)))
+                else:
+                    html_parts.append(f'<pre class="code-block"><code>{html_escape(code)}</code></pre>')
+            else:
+                html_parts.append(f'<pre class="code-block"><code>{html_escape(code)}</code></pre>')
+        elif not stripped:
+            flush_paragraph()
+            flush_list()
+            flush_table()
+        elif stripped.startswith("#"):
+            flush_paragraph()
+            flush_list()
+            flush_table()
+            marker, _, title = stripped.partition(" ")
+            level = min(max(len(marker), 1) + 2, 5)
+            html_parts.append(f"<h{level}>{render_inline_markdown(title or stripped.lstrip('#').strip())}</h{level}>")
+        elif re.match(r"^\s*[-*]\s+\S", line):
+            flush_paragraph()
+            flush_table()
+            list_items.append(re.sub(r"^\s*[-*]\s+", "", line).strip())
+        elif stripped.startswith("|") and stripped.endswith("|"):
+            flush_paragraph()
+            flush_list()
+            table_lines.append(stripped)
+        else:
+            flush_list()
+            flush_table()
+            paragraph.append(line)
+        index += 1
+
+    flush_paragraph()
+    flush_list()
+    flush_table()
+    return Markup(f'<div class="rendered-markdown">{"".join(html_parts)}</div>')
+
+
+def render_value_html(value: Any, key: str = "", depth: int = 0) -> Markup:
+    if isinstance(value, str):
+        parsed = parse_structured_string(value)
+        if parsed is not value:
+            return render_value_html(parsed, key=key, depth=depth)
+        if is_markdown_like(value):
+            return render_markdown(value)
+        if "\n" in value:
+            return Markup(f'<pre class="text-block">{html_escape(value)}</pre>')
+        return Markup(f'<span class="scalar string">{render_inline_markdown(value)}</span>')
+    if value is None:
+        return Markup('<span class="scalar null">null</span>')
+    if isinstance(value, bool):
+        return Markup(f'<span class="scalar bool">{str(value).lower()}</span>')
+    if isinstance(value, (int, float)):
+        return Markup(f'<span class="scalar number">{value}</span>')
+    if isinstance(value, dict):
+        rows = []
+        for item_key, item_value in value.items():
+            rows.append(
+                '<div class="kv-row">'
+                f'<div class="kv-key">{html_escape(str(item_key))}</div>'
+                f'<div class="kv-value">{render_value_html(item_value, key=str(item_key), depth=depth + 1)}</div>'
+                "</div>"
+            )
+        return Markup(f'<div class="structured-data depth-{min(depth, 3)}">{"".join(rows)}</div>')
+    if isinstance(value, list):
+        items = "".join(f"<li>{render_value_html(item, key=key, depth=depth + 1)}</li>" for item in value)
+        return Markup(f'<ol class="structured-list depth-{min(depth, 3)}">{items}</ol>')
+    return Markup(f'<span class="scalar">{html_escape(str(value))}</span>')
+
+
+def render_content(value: Any) -> Markup:
+    if isinstance(value, str):
+        parsed = parse_structured_string(value)
+        if parsed is not value:
+            return render_value_html(parsed)
+        return render_markdown(value) if is_markdown_like(value) else render_value_html(value)
+    return render_value_html(value)
+
+
+def event_rows_for_template(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rendered_rows = []
+    for row in rows:
+        item = dict(row)
+        if row.get("result") is not None:
+            item["result_html"] = render_content(row["result"])
+        if row.get("error") is not None:
+            item["error_html"] = render_content(row["error"])
+        rendered_rows.append(item)
+    return rendered_rows
 
 
 def all_markdown_files() -> list[Path]:
@@ -341,12 +533,13 @@ def metadata_sort_value(value: Any) -> str:
 
 
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
+    normalized_uri = boi_id.lstrip("/")
     for p in all_markdown_files():
         try:
             doc = read_doc(p)
         except Exception:
             continue
-        if doc["metadata"].get("boi_id") == boi_id:
+        if doc["metadata"].get("boi_id") == boi_id or doc.get("uri", "").lstrip("/") == normalized_uri:
             if employee_id is None or is_accessible(doc, employee_id):
                 return doc
     return None
@@ -608,7 +801,13 @@ async def doc_page(request: Request, boi_id: str, employee_id: str = Depends(cur
         raise HTTPException(status_code=404, detail="BoI not found or not accessible")
     return templates.TemplateResponse(
         "doc.html",
-        {"request": request, "employee_id": employee_id, "doc": doc, "metadata_yaml": yaml.safe_dump(doc["metadata"], allow_unicode=True, sort_keys=False)},
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "doc": doc,
+            "metadata_html": render_content(doc["metadata"]),
+            "body_html": render_markdown(doc["body"]),
+        },
     )
 
 
@@ -1012,6 +1211,7 @@ async def event_types_page(request: Request, employee_id: str = Depends(current_
 
 @app.get("/events", response_class=HTMLResponse)
 async def events_page(request: Request, employee_id: str = Depends(current_employee), event_type: str = "") -> HTMLResponse:
+    events = read_event_logs(limit=200, event_type=event_type or None)
     return templates.TemplateResponse(
         "events.html",
         {
@@ -1019,7 +1219,7 @@ async def events_page(request: Request, employee_id: str = Depends(current_emplo
             "employee_id": employee_id,
             "event_type": event_type,
             "event_types": load_event_types(),
-            "events": read_event_logs(limit=200, event_type=event_type or None),
+            "events": event_rows_for_template(events),
         },
     )
 

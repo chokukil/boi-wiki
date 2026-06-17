@@ -23,11 +23,11 @@
   <main class="doc-page">
     <section class="metadata">
       <h2>Metadata</h2>
-      <pre>{{ metadata_yaml }}</pre>
+      <div class="rendered-content">{{ metadata_html }}</div>
     </section>
     <section class="body">
       <h2>Body</h2>
-      <pre class="markdown-body">{{ doc.body }}</pre>
+      <div class="markdown-body rendered-content">{{ body_html }}</div>
     </section>
     {% if doc.metadata.visibility == 'private' %}
     <section class="promotion-help">
