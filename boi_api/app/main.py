@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone, timedelta
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlencode
 
 import yaml
 from aiokafka import AIOKafkaProducer
@@ -532,6 +533,216 @@ def metadata_sort_value(value: Any) -> str:
     return str(value or "")
 
 
+def normalize_folder(folder: str | None) -> str:
+    raw = (folder or "").replace("\\", "/").strip("/")
+    parts = []
+    for part in raw.split("/"):
+        part = part.strip()
+        if not part or part in {".", ".."}:
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
+def doc_folder(doc: dict[str, Any]) -> str:
+    uri = normalize_folder(str(doc.get("uri", "")).lstrip("/"))
+    parts = uri.split("/")
+    return "/".join(parts[:-1]) if len(parts) > 1 else ""
+
+
+def folder_matches(doc: dict[str, Any], folder: str | None) -> bool:
+    normalized = normalize_folder(folder)
+    if not normalized:
+        return True
+    path = doc_folder(doc)
+    return path == normalized or path.startswith(normalized + "/")
+
+
+def folder_label(path: str) -> str:
+    normalized = normalize_folder(path)
+    if not normalized:
+        return "All Accessible"
+    return normalized.split("/")[-1]
+
+
+def folder_sort_key(node: dict[str, Any]) -> tuple[int, str]:
+    first = normalize_folder(node.get("path", "")).split("/")[0]
+    order = {"public": 0, "team": 1, "private": 2}
+    return order.get(first, 99), str(node.get("path") or node.get("label") or "")
+
+
+def build_folder_tree(docs: list[dict[str, Any]], selected_folder: str | None = "") -> dict[str, Any]:
+    selected = normalize_folder(selected_folder)
+    root: dict[str, Any] = {
+        "path": "",
+        "label": "All Accessible",
+        "count": len(docs),
+        "_children": {},
+    }
+    for doc in docs:
+        folder = doc_folder(doc)
+        if not folder:
+            continue
+        node = root
+        parts = folder.split("/")
+        for index, segment in enumerate(parts):
+            path = "/".join(parts[: index + 1])
+            children = node["_children"]
+            if segment not in children:
+                children[segment] = {
+                    "path": path,
+                    "label": folder_label(path),
+                    "count": 0,
+                    "_children": {},
+                }
+            child = children[segment]
+            child["count"] += 1
+            node = child
+
+    def finalize(node: dict[str, Any]) -> dict[str, Any]:
+        children = [finalize(child) for child in sorted(node.pop("_children").values(), key=folder_sort_key)]
+        node["selected"] = node["path"] == selected
+        node["children"] = children
+        return node
+
+    return finalize(root)
+
+
+def folder_breadcrumbs(folder: str | None) -> list[dict[str, str]]:
+    normalized = normalize_folder(folder)
+    breadcrumbs = [{"path": "", "label": "All Accessible"}]
+    if not normalized:
+        return breadcrumbs
+    parts = normalized.split("/")
+    for index, segment in enumerate(parts):
+        breadcrumbs.append({"path": "/".join(parts[: index + 1]), "label": segment})
+    return breadcrumbs
+
+
+def browse_url(
+    employee_id: str,
+    *,
+    folder: str | None = "",
+    q: str = "",
+    event_type: str = "",
+    visibility: str = "",
+    boi_type: str = "",
+) -> str:
+    params = {"employee_id": employee_id}
+    normalized_folder = normalize_folder(folder)
+    if normalized_folder:
+        params["folder"] = normalized_folder
+    for key, value in {
+        "q": q,
+        "event_type": event_type,
+        "visibility": visibility,
+        "boi_type": boi_type,
+    }.items():
+        if value:
+            params[key] = value
+    return "/?" + urlencode(params)
+
+
+def with_folder_urls(
+    node: dict[str, Any],
+    *,
+    employee_id: str,
+    q: str = "",
+    event_type: str = "",
+    visibility: str = "",
+    boi_type: str = "",
+) -> dict[str, Any]:
+    item = dict(node)
+    item["url"] = browse_url(
+        employee_id,
+        folder=item.get("path", ""),
+        q=q,
+        event_type=event_type,
+        visibility=visibility,
+        boi_type=boi_type,
+    )
+    item["children"] = [
+        with_folder_urls(
+            child,
+            employee_id=employee_id,
+            q=q,
+            event_type=event_type,
+            visibility=visibility,
+            boi_type=boi_type,
+        )
+        for child in node.get("children", [])
+    ]
+    return item
+
+
+def with_breadcrumb_urls(
+    breadcrumbs: list[dict[str, str]],
+    *,
+    employee_id: str,
+    q: str = "",
+    event_type: str = "",
+    visibility: str = "",
+    boi_type: str = "",
+) -> list[dict[str, str]]:
+    return [
+        {
+            **crumb,
+            "url": browse_url(
+                employee_id,
+                folder=crumb["path"],
+                q=q,
+                event_type=event_type,
+                visibility=visibility,
+                boi_type=boi_type,
+            ),
+        }
+        for crumb in breadcrumbs
+    ]
+
+
+def filter_docs(
+    docs: list[dict[str, Any]],
+    *,
+    q: str = "",
+    event_type: str = "",
+    visibility: str = "",
+    boi_type: str = "",
+) -> list[dict[str, Any]]:
+    filtered = docs
+    if q:
+        q_lower = q.lower()
+        filtered = [
+            d
+            for d in filtered
+            if q_lower in json.dumps(d["metadata"], ensure_ascii=False).lower() or q_lower in d["body"].lower()
+        ]
+    if event_type:
+        filtered = [d for d in filtered if d["metadata"].get("event_type") == event_type]
+    if visibility:
+        filtered = [d for d in filtered if d["metadata"].get("visibility") == visibility]
+    if boi_type:
+        filtered = [d for d in filtered if d["metadata"].get("type") == boi_type]
+    return filtered
+
+
+def docs_for_template(docs: list[dict[str, Any]], employee_id: str, folder: str | None = "") -> list[dict[str, Any]]:
+    normalized_folder = normalize_folder(folder)
+    items = []
+    for doc in docs:
+        item = dict(doc)
+        item["folder"] = doc_folder(doc)
+        params = {"employee_id": employee_id}
+        if normalized_folder:
+            params["folder"] = normalized_folder
+        item["url"] = f"/docs/{doc['metadata'].get('boi_id', item['uri'].lstrip('/'))}?" + urlencode(params)
+        items.append(item)
+    return items
+
+
+def metadata_rows_for_template(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{"key": str(key), "value_html": render_value_html(value)} for key, value in metadata.items()]
+
+
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
     for p in all_markdown_files():
@@ -746,17 +957,33 @@ async def index(
     event_type: str = "",
     visibility: str = "",
     boi_type: str = "",
+    folder: str = "",
 ) -> HTMLResponse:
-    docs = accessible_docs(employee_id)
-    if q:
-        q_lower = q.lower()
-        docs = [d for d in docs if q_lower in json.dumps(d["metadata"], ensure_ascii=False).lower() or q_lower in d["body"].lower()]
-    if event_type:
-        docs = [d for d in docs if d["metadata"].get("event_type") == event_type]
-    if visibility:
-        docs = [d for d in docs if d["metadata"].get("visibility") == visibility]
-    if boi_type:
-        docs = [d for d in docs if d["metadata"].get("type") == boi_type]
+    selected_folder = normalize_folder(folder)
+    filtered_docs = filter_docs(
+        accessible_docs(employee_id),
+        q=q,
+        event_type=event_type,
+        visibility=visibility,
+        boi_type=boi_type,
+    )
+    folder_tree = with_folder_urls(
+        build_folder_tree(filtered_docs, selected_folder),
+        employee_id=employee_id,
+        q=q,
+        event_type=event_type,
+        visibility=visibility,
+        boi_type=boi_type,
+    )
+    docs = [d for d in filtered_docs if folder_matches(d, selected_folder)]
+    breadcrumbs = with_breadcrumb_urls(
+        folder_breadcrumbs(selected_folder),
+        employee_id=employee_id,
+        q=q,
+        event_type=event_type,
+        visibility=visibility,
+        boi_type=boi_type,
+    )
     return templates.TemplateResponse(
         "index.html",
         {
@@ -764,11 +991,16 @@ async def index(
             "employee_id": employee_id,
             "user_name": USER_NAMES.get(employee_id, employee_id),
             "teams": teams_for(employee_id),
-            "docs": docs,
+            "docs": docs_for_template(docs, employee_id, selected_folder),
             "q": q,
             "event_type": event_type,
             "visibility": visibility,
             "boi_type": boi_type,
+            "folder": selected_folder,
+            "folder_tree": folder_tree,
+            "breadcrumbs": breadcrumbs,
+            "selected_folder_label": folder_label(selected_folder),
+            "total_filtered_docs": len(filtered_docs),
             "event_types": load_event_types(),
             "event_logs": read_event_logs(limit=8),
         },
@@ -795,17 +1027,31 @@ async def sops_page(request: Request, employee_id: str = Depends(current_employe
 
 
 @app.get("/docs/{boi_id:path}", response_class=HTMLResponse)
-async def doc_page(request: Request, boi_id: str, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+async def doc_page(
+    request: Request,
+    boi_id: str,
+    employee_id: str = Depends(current_employee),
+    folder: str = "",
+) -> HTMLResponse:
     doc = find_doc_by_id(boi_id, employee_id)
     if not doc:
         raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    doc_folder_path = doc_folder(doc)
+    return_folder = normalize_folder(folder) or doc_folder_path
     return templates.TemplateResponse(
         "doc.html",
         {
             "request": request,
             "employee_id": employee_id,
             "doc": doc,
-            "metadata_html": render_content(doc["metadata"]),
+            "doc_folder": doc_folder_path,
+            "doc_folder_breadcrumbs": with_breadcrumb_urls(
+                folder_breadcrumbs(doc_folder_path),
+                employee_id=employee_id,
+            ),
+            "doc_list_url": browse_url(employee_id, folder=return_folder),
+            "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
+            "metadata_rows": metadata_rows_for_template(doc["metadata"]),
             "body_html": render_markdown(doc["body"]),
         },
     )
@@ -818,18 +1064,26 @@ async def list_boi(
     event_type: str = "",
     visibility: str = "",
     boi_type: str = "",
+    folder: str = "",
 ) -> dict[str, Any]:
-    docs = accessible_docs(employee_id)
-    if q:
-        q_lower = q.lower()
-        docs = [d for d in docs if q_lower in json.dumps(d["metadata"], ensure_ascii=False).lower() or q_lower in d["body"].lower()]
-    if event_type:
-        docs = [d for d in docs if d["metadata"].get("event_type") == event_type]
-    if visibility:
-        docs = [d for d in docs if d["metadata"].get("visibility") == visibility]
-    if boi_type:
-        docs = [d for d in docs if d["metadata"].get("type") == boi_type]
-    return {"employee_id": employee_id, "teams": teams_for(employee_id), "count": len(docs), "items": docs}
+    selected_folder = normalize_folder(folder)
+    filtered_docs = filter_docs(
+        accessible_docs(employee_id),
+        q=q,
+        event_type=event_type,
+        visibility=visibility,
+        boi_type=boi_type,
+    )
+    docs = [d for d in filtered_docs if folder_matches(d, selected_folder)]
+    return {
+        "employee_id": employee_id,
+        "teams": teams_for(employee_id),
+        "folder": selected_folder,
+        "breadcrumbs": folder_breadcrumbs(selected_folder),
+        "folder_tree": build_folder_tree(filtered_docs, selected_folder),
+        "count": len(docs),
+        "items": docs,
+    }
 
 
 @app.post("/api/boi")

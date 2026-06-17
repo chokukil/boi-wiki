@@ -16,14 +16,24 @@
     </div>
     <div class="user-box">
       사번: {{ employee_id }}<br />
-      <a href="/?employee_id={{ employee_id }}">목록으로</a>
-      {% if doc.metadata.event_type %}<br /><a href="/?employee_id={{ employee_id }}&event_type={{ doc.metadata.event_type }}">같은 Event Type BoI</a>{% endif %}
+      <a href="{{ doc_list_url }}">폴더로 돌아가기</a>
+      {% if doc.metadata.event_type %}<br /><a href="{{ event_type_url }}">같은 Event Type BoI</a>{% endif %}
     </div>
   </header>
   <main class="doc-page">
     <section class="metadata">
       <h2>Metadata</h2>
-      <div class="rendered-content">{{ metadata_html }}</div>
+      <nav class="breadcrumb" aria-label="Document folder">
+        {% for crumb in doc_folder_breadcrumbs %}
+        <a href="{{ crumb.url }}">{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
+        {% endfor %}
+      </nav>
+      <dl class="metadata-grid">
+        {% for row in metadata_rows %}
+        <dt class="metadata-key">{{ row.key }}</dt>
+        <dd class="metadata-value">{{ row.value_html }}</dd>
+        {% endfor %}
+      </dl>
     </section>
     <section class="body">
       <h2>Body</h2>

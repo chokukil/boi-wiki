@@ -20,6 +20,7 @@
 
   <section class="toolbar">
     <form method="get" action="/">
+      {% if folder %}<input type="hidden" name="folder" value="{{ folder }}" />{% endif %}
       <label>사번</label>
       <select name="employee_id">
         <option value="100001" {% if employee_id == '100001' %}selected{% endif %}>100001 / AIX TF</option>
@@ -83,7 +84,7 @@
 
   <section class="cards compact">
     {% for e in event_types %}
-    <a class="card event-card" href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}">
+    <a class="card event-card" href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}{% if folder %}&folder={{ folder }}{% endif %}">
       <strong>{{ e.name_ko }}</strong>
       <small>{{ e.event_type }}</small>
       <p>{{ e.description }}</p>
@@ -91,23 +92,66 @@
     {% endfor %}
   </section>
 
-  <main>
-    <h2>Accessible BoI Documents ({{ docs|length }})</h2>
-    <div class="doc-list">
-      {% for doc in docs %}
-      {% set m = doc.metadata %}
-      <a class="doc-row {{ m.visibility }}" href="/docs/{{ m.boi_id }}?employee_id={{ employee_id }}">
-        <div>
-          <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
-          <span class="badge status">{{ m.status }}</span>
-          {% if m.event_type %}<span class="badge event">{{ m.event_label or m.event_type }}</span>{% endif %}
-          <strong>{{ m.title }}</strong>
-        </div>
-        <p>{{ m.description }}</p>
-        <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
+  {% macro render_folder_nodes(nodes) %}
+  <ul class="folder-tree">
+    {% for node in nodes %}
+    <li>
+      <a class="folder-link {% if node.selected %}active{% endif %}" href="{{ node.url }}">
+        <span class="folder-label">{{ node.path }}</span>
+        <span class="folder-count">{{ node.count }}</span>
       </a>
-      {% endfor %}
-    </div>
+      {% if node.children %}
+      {{ render_folder_nodes(node.children) }}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endmacro %}
+
+  <main class="library-layout">
+    <aside class="folder-sidebar" aria-label="OKF folder navigation">
+      <h2>OKF Library</h2>
+      <a class="folder-link root {% if folder_tree.selected %}active{% endif %}" href="{{ folder_tree.url }}">
+        <span class="folder-label">All Accessible</span>
+        <span class="folder-count">{{ folder_tree.count }}</span>
+      </a>
+      {{ render_folder_nodes(folder_tree.children) }}
+    </aside>
+
+    <section class="library-content">
+      <nav class="breadcrumb" aria-label="Current folder">
+        {% for crumb in breadcrumbs %}
+        <a href="{{ crumb.url }}">{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
+        {% endfor %}
+      </nav>
+      <div class="library-heading">
+        <div>
+          <h2>{{ selected_folder_label }} ({{ docs|length }})</h2>
+          <p>{{ folder or 'all accessible OKF folders' }} · filtered total {{ total_filtered_docs }}</p>
+        </div>
+      </div>
+      <div class="doc-list">
+        {% for doc in docs %}
+        {% set m = doc.metadata %}
+        <a class="doc-row {{ m.visibility }}" href="{{ doc.url }}">
+          <div>
+            <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
+            <span class="badge status">{{ m.status }}</span>
+            {% if m.event_type %}<span class="badge event">{{ m.event_label or m.event_type }}</span>{% endif %}
+            <strong>{{ m.title }}</strong>
+          </div>
+          <p>{{ m.description }}</p>
+          <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
+          <span class="folder-path">{{ doc.folder or 'root' }}</span>
+        </a>
+        {% else %}
+        <div class="empty-state">
+          <strong>No accessible BoI documents in this folder.</strong>
+          <p>검색 조건을 줄이거나 All Accessible에서 다시 확인하세요.</p>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
   </main>
 
   <section class="event-stream-preview">

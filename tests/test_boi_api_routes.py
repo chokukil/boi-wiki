@@ -119,3 +119,75 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert "<code>inline code</code>" in response.text
     assert '<table class="markdown-table">' in response.text
     assert "<pre class=\"markdown-body\">" not in response.text
+
+
+def test_index_renders_okf_folder_tree_for_accessible_docs(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001")
+
+    assert response.status_code == 200
+    assert 'class="library-layout"' in response.text
+    assert "All Accessible" in response.text
+    assert "public" in response.text
+    assert "team/aix-tf" in response.text
+    assert "team/platform" in response.text
+    assert "private/100001" in response.text
+
+
+def test_index_folder_filter_limits_documents_by_uri_prefix(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    platform_response = client.get("/?employee_id=100001&folder=team/platform")
+    private_response = client.get("/?employee_id=100001&folder=private/100001")
+
+    assert platform_response.status_code == 200
+    assert "Platform Team Kafka Event Broker SOP" in platform_response.text
+    assert "AIX 확산 TF 업무 맥락 자산화 PoC 계획" not in platform_response.text
+    assert "개인 Private BoI 예시" not in platform_response.text
+    assert 'class="breadcrumb"' in platform_response.text
+
+    assert private_response.status_code == 200
+    assert "개인 Private BoI 예시: Langflow 컴포넌트 확인" in private_response.text
+    assert "Platform Team Kafka Event Broker SOP" not in private_response.text
+
+
+def test_index_does_not_leak_inaccessible_folder_documents(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100002&folder=private/100001")
+
+    assert response.status_code == 200
+    assert "개인 Private BoI 예시: Langflow 컴포넌트 확인" not in response.text
+    assert "Platform Team Kafka Event Broker SOP" not in response.text
+    assert 'class="empty-state"' in response.text
+
+
+def test_boi_api_filters_by_okf_folder_and_returns_tree_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/api/boi?employee_id=100001&folder=team/platform")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["folder"] == "team/platform"
+    assert body["count"] >= 1
+    assert all(item["uri"].startswith("/team/platform/") for item in body["items"])
+    assert any(item["label"] == "team" for item in body["breadcrumbs"])
+    assert body["folder_tree"]["path"] == ""
+    assert any(child["path"] == "team" for child in body["folder_tree"]["children"])
+
+
+def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/docs/boi:team:platform:kafka-sop-v0.1?employee_id=100001")
+
+    assert response.status_code == 200
+    assert 'class="metadata-grid"' in response.text
+    assert '<dt class="metadata-key">okf_version</dt>' in response.text
+    assert '<dd class="metadata-value"><span class="scalar string">0.1</span></dd>' in response.text
+    assert '<dt class="metadata-key">visibility</dt>' in response.text
+    assert '<dd class="metadata-value"><span class="scalar string">team</span></dd>' in response.text
+    assert '<dt class="metadata-key">acl_policy</dt>' in response.text
+    assert '<dd class="metadata-value"><span class="scalar string">acl:team:platform</span></dd>' in response.text

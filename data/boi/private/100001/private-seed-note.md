@@ -2,7 +2,7 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/action
-title: 개인 Private BoI 예시: Langflow 컴포넌트 확인
+title: "개인 Private BoI 예시: Langflow 컴포넌트 확인"
 description: 100001 사용자에게만 보이는 Web Private BoI 예시
 tags: [Private, Langflow, BoI]
 timestamp: 2026-06-16T11:00:00+09:00
