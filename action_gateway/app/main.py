@@ -205,11 +205,14 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         "employee_id": req.employee_id,
         "event_id": req.event.get("event_id"),
         "event_type": req.event.get("event_type"),
+        "trace_id": req.event.get("trace_id"),
         "boi_id": req.boi_id,
         "dry_run": dry_run,
         "approved_by": req.approved_by,
         "risk_level": action.get("risk_level"),
         "action_type": action_type,
+        "connector_kind": action.get("connector_kind"),
+        "doc_ref": action.get("doc_ref"),
     }
 
     if approval_required and not req.approved_by:
@@ -219,13 +222,30 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
             "request_id": request_id,
             "action_key": action.get("action_key"),
             "message": "This action is registered as approval_required. Re-invoke with approved_by after human approval.",
-            "action": {k: action.get(k) for k in ["action_key", "name_ko", "risk_level", "owner", "description", "type"]},
+            "action": {k: action.get(k) for k in ["action_key", "name_ko", "risk_level", "owner", "description", "type", "doc_ref", "connector_kind"]},
         }
         append_action_log({**base_log, "status": "approval_required", "payload": req.payload})
         return result
 
     try:
-        if dry_run or action_type == "mock_api":
+        if action_type == "manual_task":
+            result = {
+                "ok": True,
+                "status": "manual_required",
+                "request_id": request_id,
+                "action_key": action.get("action_key"),
+                "action_name": action.get("name_ko") or action.get("name"),
+                "manual_handoff": {
+                    "owner": action.get("owner"),
+                    "approved_by": req.approved_by,
+                    "risk_level": action.get("risk_level"),
+                    "doc_ref": action.get("doc_ref"),
+                    "checklist": render_template(action.get("checklist") or [], context),
+                    "payload": req.payload,
+                },
+            }
+
+        elif dry_run or action_type == "mock_api":
             result = {
                 "ok": True,
                 "status": "dry_run" if dry_run else "mocked",

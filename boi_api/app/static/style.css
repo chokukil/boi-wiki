@@ -12,7 +12,7 @@ input, select, button { padding:8px 10px; border:1px solid #cfd5df; border-radiu
 button { background:#111827; color:white; cursor:pointer; }
 .links a { margin-left:14px; color:#1d4ed8; text-decoration:none; font-weight:600; }
 .cards { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:14px 24px 0; }
-.card, main, .metadata, .body, .promotion-help { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
+.card, main, .metadata, .body, .promotion-help, .workflow-poc { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
 .card h2, main h2 { margin-top:0; }
 main { margin:16px 24px 28px; }
 .doc-list { display:flex; flex-direction:column; gap:8px; }
@@ -27,7 +27,7 @@ main { margin:16px 24px 28px; }
 .badge.private { background:#fef3c7; color:#92400e; }
 .badge.status { background:#ede9fe; color:#5b21b6; }
 .doc-page { display:grid; grid-template-columns: 360px minmax(0, 1fr); gap:18px; align-items:start; }
-.doc-page .promotion-help { grid-column:1 / -1; }
+.doc-page .promotion-help, .doc-page .workflow-poc { grid-column:1 / -1; }
 pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1e7ff; padding:14px; border-radius:var(--radius); overflow:auto; }
 .markdown-body { min-height:420px; }
 .rendered-content { margin-top:12px; color:#1f2937; }
@@ -101,4 +101,5 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .panel { margin:22px 36px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; }
 .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; padding:22px 36px; }
 .badge.warning { background:#fee2e2; color:#991b1b; }
+.badge.manual { background:#fef9c3; color:#854d0e; }
 nav a { margin-right:14px; color:#bfdbfe; text-decoration:none; font-weight:600; }

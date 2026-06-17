@@ -39,6 +39,17 @@
       <h2>Body</h2>
       <div class="markdown-body rendered-content">{{ body_html }}</div>
     </section>
+    {% if workflow_poc %}
+    <section class="workflow-poc">
+      <h2>Workflow PoC</h2>
+      <p><strong>SOP:</strong> <code>{{ workflow_poc.sop_ref }}</code> <code>{{ workflow_poc.sop_uri }}</code></p>
+      <p><strong>Expected events:</strong> {{ workflow_poc.expected_event_types | join(', ') }}</p>
+      <p><strong>Manual handoffs:</strong> {{ workflow_poc.expected_manual_actions | join(', ') }}</p>
+      <pre>curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?employee_id={{ employee_id }}" \
+  -H "Content-Type: application/json" \
+  -d '{"equipment_id":"ETCH-VM-01","alarm_code":"RESPONSE_CHAIN_ABNORMAL","title":"Response Chain 이상 Alarm 발생"}'</pre>
+    </section>
+    {% endif %}
     {% if doc.metadata.visibility == 'private' %}
     <section class="promotion-help">
       <h2>Promotion API</h2>

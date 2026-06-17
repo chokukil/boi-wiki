@@ -49,11 +49,15 @@ event_types:
     status: poc
     topic: boi.events
     workflow_stage: 이상 감지
+    sop_ref: boi:public:sop:equipment-abnormal-response
+    sop_stage_id: detect
     wiki_usage: SOP의 이상 감지 단계에 따라 Trend/Raw Data 확인과 원인 분석 요청을 시작
     recommended_actions:
       - sop.equipment.request_trend_history
       - sop.equipment.request_raw_data
       - sop.equipment.create_root_cause_event
+    recommended_manual_actions:
+      - manual.equipment.confirm_alarm_context
 
   - event_type: trend.anomaly.detected.v1
     name_ko: Trend 이상 감지
@@ -65,10 +69,14 @@ event_types:
     status: poc
     topic: boi.events
     workflow_stage: 원인 분석
+    sop_ref: boi:public:sop:equipment-abnormal-response
+    sop_stage_id: detect
     wiki_usage: Trend 이상 여부와 Lot/Wafer 이력을 바탕으로 원인 분석 BoI를 생성
     recommended_actions:
       - sop.equipment.request_trend_history
       - sop.equipment.create_root_cause_event
+    recommended_manual_actions:
+      - manual.equipment.confirm_alarm_context
 
   - event_type: root_cause.analysis.requested.v1
     name_ko: 원인 분석 요청
@@ -80,11 +88,15 @@ event_types:
     status: poc
     topic: boi.events
     workflow_stage: 원인 분석
+    sop_ref: boi:public:sop:equipment-abnormal-response
+    sop_stage_id: analyze
     wiki_usage: Raw/Source Data, 이력, SOP를 참조하여 원인 분석 BoI를 생성
     recommended_actions:
       - sop.equipment.request_raw_data
       - sop.equipment.request_maintenance_guide
       - sop.equipment.create_maintenance_guide_event
+    recommended_manual_actions:
+      - manual.equipment.review_root_cause
 
   - event_type: maintenance.guide.requested.v1
     name_ko: 장비 보전 가이드 요청
@@ -96,11 +108,15 @@ event_types:
     status: poc
     topic: boi.events
     workflow_stage: 장비 보전 가이드
+    sop_ref: boi:public:sop:equipment-abnormal-response
+    sop_stage_id: guide
     wiki_usage: SOP/Runbook/장비 이력을 Lazy Loading하여 조치 기준을 제안
     recommended_actions:
       - sop.equipment.request_raw_data
       - sop.equipment.request_maintenance_guide
       - sop.equipment.create_corrective_action_event
+    recommended_manual_actions:
+      - manual.equipment.review_root_cause
 
   - event_type: corrective_action.requested.v1
     name_ko: 이상 조치 요청
@@ -112,11 +128,17 @@ event_types:
     status: poc
     topic: boi.events
     workflow_stage: 이상 조치
+    sop_ref: boi:public:sop:equipment-abnormal-response
+    sop_stage_id: correct
     wiki_usage: 조치 후보를 Private BoI로 남기고, 고위험 조치는 승인 전 dry-run으로만 기록
     recommended_actions:
       - sop.equipment.notify_action_owner
       - sop.equipment.block_process_progress
       - sop.equipment.change_spec_rule
+    recommended_manual_actions:
+      - manual.equipment.approve_process_hold
+      - manual.equipment.approve_spec_rule_change
+      - manual.equipment.confirm_maintenance_done
   - event_type: external.webhook.received.v1
     name_ko: 외부 Webhook 수신
     description: 사내 시스템, 테스트 스크립트, 외부 도구가 Webhook으로 업무 이벤트를 전달한 시점

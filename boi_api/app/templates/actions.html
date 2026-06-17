@@ -38,12 +38,23 @@
       <span class="badge">{{ a.risk_level or 'risk' }}</span>
       {% if a.approval_required %}<span class="badge warning">approval required</span>{% endif %}
       <span class="badge">{{ a.type or 'action' }}</span>
+      {% if a.connector_kind %}<span class="badge">{{ a.connector_kind }}</span>{% endif %}
+      {% if a.execution_mode == 'human' %}<span class="badge manual">manual handoff</span>{% endif %}
     </div>
     <h3>{{ a.name_ko or a.action_key }}</h3>
     <p><code>{{ a.action_key }}</code></p>
     <p>{{ a.description }}</p>
     <p><strong>Events:</strong> {{ (a.event_types or []) | join(', ') }}</p>
     <p><strong>Owner:</strong> {{ a.owner }}</p>
+    {% if a.doc_url %}
+    <p><strong>Spec:</strong> <a href="{{ a.doc_url }}">{{ a.doc_ref }}</a>{% if a.doc_uri %} <code>{{ a.doc_uri }}</code>{% endif %}</p>
+    {% endif %}
+    {% if a.requires_manual_action %}
+    <p><strong>Manual approval:</strong> <code>{{ a.requires_manual_action }}</code></p>
+    {% endif %}
+    {% if a.execution_mode == 'human' %}
+    <p><strong>Execution:</strong> manual handoff; 자동 실행되지 않고 담당자 판단/승인/완료 확인으로 기록됩니다.</p>
+    {% endif %}
     <pre>curl -X POST "http://localhost:8000/api/actions/invoke?employee_id={{ employee_id }}" \
   -H "Content-Type: application/json" \
   -d '{"action_key":"{{ a.action_key }}","payload":{"equipment_id":"EQP-001","lot_id":"LOT-001","owner":"100001"},"dry_run":true}'</pre>

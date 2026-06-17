@@ -756,6 +756,30 @@ def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any
     return None
 
 
+def doc_url_for_ref(ref: str, employee_id: str) -> str:
+    return f"/docs/{ref}?" + urlencode({"employee_id": employee_id})
+
+
+def action_doc_uri(action: dict[str, Any], employee_id: str) -> str:
+    doc_ref = str(action.get("doc_ref") or "")
+    if not doc_ref:
+        return ""
+    doc = find_doc_by_id(doc_ref, employee_id)
+    return str(doc.get("uri", "")) if doc else ""
+
+
+def actions_for_template(actions: list[dict[str, Any]], employee_id: str) -> list[dict[str, Any]]:
+    items = []
+    for action in actions:
+        item = dict(action)
+        doc_ref = str(item.get("doc_ref") or "")
+        if doc_ref:
+            item["doc_url"] = doc_url_for_ref(doc_ref, employee_id)
+            item["doc_uri"] = action_doc_uri(item, employee_id)
+        items.append(item)
+    return items
+
+
 def target_dir_for(metadata: dict[str, Any]) -> Path:
     visibility = metadata.get("visibility", "private")
     if visibility == "private":
@@ -765,6 +789,12 @@ def target_dir_for(metadata: dict[str, Any]) -> Path:
         team_id = str(metadata.get("team_id") or DEFAULT_TEAM_ID)
         return DATA_ROOT / "team" / team_id
     if visibility == "public":
+        boi_type = str(metadata.get("type") or "")
+        if boi_type == "boi/sop":
+            return DATA_ROOT / "public" / "sop"
+        if boi_type == "boi/action-spec":
+            connector_kind = normalize_folder(str(metadata.get("connector_kind") or "general"))
+            return DATA_ROOT / "public" / "actions" / (connector_kind or "general")
         return DATA_ROOT / "public"
     raise HTTPException(status_code=400, detail=f"Unsupported visibility: {visibility}")
 
@@ -881,6 +911,7 @@ class EventPublishRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     actor_employee_id: str | None = None
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    trace_id: str | None = None
 
 
 class EquipmentAnomalyStartRequest(BaseModel):
@@ -1038,6 +1069,8 @@ async def doc_page(
         raise HTTPException(status_code=404, detail="BoI not found or not accessible")
     doc_folder_path = doc_folder(doc)
     return_folder = normalize_folder(folder) or doc_folder_path
+    workflow = doc["metadata"].get("workflow") or {}
+    workflow_poc = equipment_workflow_context(employee_id) if workflow.get("workflow_key") == "equipment-anomaly" else None
     return templates.TemplateResponse(
         "doc.html",
         {
@@ -1053,6 +1086,7 @@ async def doc_page(
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
             "metadata_rows": metadata_rows_for_template(doc["metadata"]),
             "body_html": render_markdown(doc["body"]),
+            "workflow_poc": workflow_poc,
         },
     )
 
@@ -1158,7 +1192,7 @@ async def publish_event(req: EventPublishRequest, employee_id: str = Depends(cur
         "target": {"flow_key": event_to_flow_key(req.event_type), "boi_type": event_to_boi_type(req.event_type)},
         "event_type_label": event_label(req.event_type),
         "payload": req.payload,
-        "trace_id": f"trace-{uuid.uuid4().hex}",
+        "trace_id": req.trace_id or f"trace-{uuid.uuid4().hex}",
     }
     append_event_log(status="published", event=event)
     producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP, value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode())
@@ -1168,6 +1202,111 @@ async def publish_event(req: EventPublishRequest, employee_id: str = Depends(cur
     finally:
         await producer.stop()
     return {"ok": True, "topic": BOI_EVENTS_TOPIC, "event": event}
+
+
+EQUIPMENT_WORKFLOW_EVENT_SEQUENCE = [
+    "equipment.alarm.raised.v1",
+    "trend.anomaly.detected.v1",
+    "root_cause.analysis.requested.v1",
+    "maintenance.guide.requested.v1",
+    "corrective_action.requested.v1",
+]
+
+
+def unique_values(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def equipment_workflow_event_defs() -> list[dict[str, Any]]:
+    return [event for event_type in EQUIPMENT_WORKFLOW_EVENT_SEQUENCE if (event := get_event_type(event_type))]
+
+
+def workflow_sop_context(employee_id: str) -> dict[str, Any]:
+    event_defs = equipment_workflow_event_defs()
+    sop_ref = next((str(event.get("sop_ref")) for event in event_defs if event.get("sop_ref")), "boi:public:sop:equipment-abnormal-response")
+    sop_doc = find_doc_by_id(sop_ref, employee_id)
+    return {
+        "sop_ref": sop_ref,
+        "sop_uri": str(sop_doc.get("uri", "")) if sop_doc else "",
+        "sop_title": str((sop_doc or {}).get("metadata", {}).get("title", "")),
+        "sop_url": doc_url_for_ref(sop_ref, employee_id),
+    }
+
+
+def action_details_for_keys(action_keys: list[str], employee_id: str) -> list[dict[str, Any]]:
+    catalog = {str(action.get("action_key")): action for action in load_action_catalog()}
+    details = []
+    for action_key in unique_values(action_keys):
+        action = catalog.get(action_key)
+        if not action:
+            details.append({"action_key": action_key, "missing": True})
+            continue
+        details.append(
+            {
+                "action_key": action_key,
+                "name_ko": action.get("name_ko"),
+                "connector_kind": action.get("connector_kind"),
+                "execution_mode": action.get("execution_mode"),
+                "risk_level": action.get("risk_level"),
+                "approval_required": bool(action.get("approval_required")),
+                "doc_ref": action.get("doc_ref"),
+                "doc_uri": action_doc_uri(action, employee_id),
+                "requires_manual_action": action.get("requires_manual_action"),
+            }
+        )
+    return details
+
+
+def action_details_markdown(details: list[dict[str, Any]]) -> str:
+    rows = []
+    for detail in details:
+        if detail.get("missing"):
+            rows.append(f"- `{detail.get('action_key')}`: catalog entry missing")
+            continue
+        manual_note = f" / requires_manual_action=`{detail.get('requires_manual_action')}`" if detail.get("requires_manual_action") else ""
+        rows.append(
+            "- "
+            + f"`{detail.get('action_key')}`: {detail.get('name_ko')} "
+            + f"/ connector={detail.get('connector_kind')} "
+            + f"/ risk={detail.get('risk_level')} "
+            + f"/ approval_required={detail.get('approval_required')} "
+            + f"/ doc_ref=`{detail.get('doc_ref')}` "
+            + f"/ doc_uri=`{detail.get('doc_uri')}`"
+            + manual_note
+        )
+    return "\n".join(rows) if rows else "- 등록된 Action 없음"
+
+
+def equipment_workflow_context(employee_id: str, trace_id: str | None = None) -> dict[str, Any]:
+    event_defs = equipment_workflow_event_defs()
+    automated_keys = unique_values([key for event in event_defs for key in (event.get("recommended_actions") or [])])
+    manual_keys = unique_values([key for event in event_defs for key in (event.get("recommended_manual_actions") or [])])
+    sop = workflow_sop_context(employee_id)
+    context = {
+        **sop,
+        "expected_event_types": [event["event_type"] for event in event_defs],
+        "expected_stages": [
+            {
+                "event_type": event.get("event_type"),
+                "stage": event.get("workflow_stage"),
+                "sop_stage_id": event.get("sop_stage_id"),
+            }
+            for event in event_defs
+        ],
+        "expected_actions": automated_keys,
+        "expected_manual_actions": manual_keys,
+        "action_details": action_details_for_keys(automated_keys, employee_id),
+        "manual_action_details": action_details_for_keys(manual_keys, employee_id),
+    }
+    if trace_id:
+        context["status_url"] = "/api/workflows/demo/equipment-anomaly/status?" + urlencode({"trace_id": trace_id, "employee_id": employee_id})
+    return context
 
 
 @app.post("/api/workflows/demo/equipment-anomaly/start")
@@ -1190,15 +1329,58 @@ async def start_equipment_anomaly_demo(req: EquipmentAnomalyStartRequest, employ
         ),
         employee_id=employee_id,
     )
-    return {
-        "ok": True,
-        "workflow": {
+    trace_id = str(result["event"].get("trace_id") or "")
+    workflow = equipment_workflow_context(employee_id, trace_id=trace_id)
+    workflow.update(
+        {
             "name": "equipment-anomaly",
             "first_event_type": "equipment.alarm.raised.v1",
             "expected_next": ["root_cause.analysis.requested.v1", "maintenance.guide.requested.v1", "corrective_action.requested.v1"],
-        },
+        }
+    )
+    return {
+        "ok": True,
+        "workflow": workflow,
         "topic": result["topic"],
         "event": result["event"],
+    }
+
+
+@app.get("/api/workflows/demo/equipment-anomaly/status")
+async def equipment_anomaly_status(trace_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    context = equipment_workflow_context(employee_id, trace_id=trace_id)
+    events = [row for row in read_event_logs(limit=500) if row.get("trace_id") == trace_id]
+    event_ids = {row.get("event_id") for row in events if row.get("event_id")}
+    action_logs = [row for row in read_action_logs(limit=500) if row.get("trace_id") == trace_id or row.get("event_id") in event_ids]
+    generated_docs = []
+    for row in events:
+        result = row.get("result") or {}
+        boi_id = result.get("boi_id")
+        if boi_id:
+            generated_docs.append(
+                {
+                    "boi_id": boi_id,
+                    "boi_uri": result.get("boi_uri"),
+                    "doc_url": doc_url_for_ref(str(boi_id), employee_id),
+                    "event_id": row.get("event_id"),
+                    "event_type": row.get("event_type"),
+                }
+            )
+    return {
+        "ok": True,
+        "trace_id": trace_id,
+        "sop_ref": context["sop_ref"],
+        "sop_uri": context["sop_uri"],
+        "sop_url": context["sop_url"],
+        "expected_event_types": context["expected_event_types"],
+        "expected_actions": context["expected_actions"],
+        "manual_handoffs": context["expected_manual_actions"],
+        "action_details": context["action_details"],
+        "manual_action_details": context["manual_action_details"],
+        "events": events,
+        "actions": action_logs,
+        "generated_docs": generated_docs,
+        "approval_required_actions": [row for row in action_logs if row.get("status") == "approval_required"],
     }
 
 
@@ -1385,9 +1567,15 @@ Event Broker를 통해 Action 생성 이벤트가 수신되었고, 담당자 Pri
         title = payload.get("title") or f"SOP Workflow Instance - {event_label(req.event_type)}"
         event_def = get_event_type(req.event_type) or {}
         action_keys = event_def.get("recommended_actions") or []
-        actions = [a for a in load_action_catalog() if a.get("action_key") in action_keys]
-        action_md = "\n".join([f"- `{a.get('action_key')}`: {a.get('name_ko')} / risk={a.get('risk_level')} / approval_required={a.get('approval_required')}" for a in actions]) or "- 등록된 추천 Action 없음"
-        sop_ref = "boi:public:sop:equipment-abnormal-response"
+        manual_action_keys = event_def.get("recommended_manual_actions") or []
+        action_details = action_details_for_keys(action_keys, str(actor))
+        manual_action_details = action_details_for_keys(manual_action_keys, str(actor))
+        action_md = action_details_markdown(action_details)
+        manual_action_md = action_details_markdown(manual_action_details)
+        sop_ref = str(event_def.get("sop_ref") or "boi:public:sop:equipment-abnormal-response")
+        sop_doc = find_doc_by_id(sop_ref, str(actor))
+        sop_uri = str(sop_doc.get("uri", "")) if sop_doc else ""
+        sop_title = str((sop_doc or {}).get("metadata", {}).get("title", ""))
         body = f"""# Summary
 
 첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `{req.event_type}` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.
@@ -1396,8 +1584,11 @@ Event Broker를 통해 Action 생성 이벤트가 수신되었고, 담당자 Pri
 
 - Event Label: {event_label(req.event_type)}
 - Workflow Stage: {event_def.get('workflow_stage', 'SOP Workflow')}
+- SOP Stage ID: {event_def.get('sop_stage_id', '')}
 - Default Flow: {event_def.get('default_flow_key', event_to_flow_key(req.event_type))}
 - SOP Reference: `{sop_ref}`
+- SOP Title: {sop_title}
+- SOP URI: `{sop_uri}`
 
 # Payload
 
@@ -1405,34 +1596,49 @@ Event Broker를 통해 Action 생성 이벤트가 수신되었고, 담당자 Pri
 {json.dumps(payload, ensure_ascii=False, indent=2)}
 ```
 
-# Recommended Actions
+# Recommended Automated Actions
 
 {action_md}
+
+# Manual Handoff Actions
+
+{manual_action_md}
 
 # AI Native Workflow Interpretation
 
 1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.
 2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.
 3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.
-4. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.
-5. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.
+4. 사람 판단, 승인, 현장 조치는 manual action으로 남겨 human handoff를 추적합니다.
+5. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.
+6. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.
 
 # References
 
 - Source Event: `{req.event_id}`
 - SOP: `{sop_ref}`
+- SOP URI: `{sop_uri}`
 """
+        source_refs = req.source_refs or [{"type": "boi", "ref": sop_ref}]
+        source_refs = source_refs + [{"type": "sop", "ref": sop_ref, "uri": sop_uri}]
+        for detail in action_details + manual_action_details:
+            if detail.get("doc_ref"):
+                source_refs.append({"type": "action-spec", "ref": detail.get("doc_ref"), "uri": detail.get("doc_uri")})
         meta = make_metadata(
             boi_type=event_to_boi_type(req.event_type),
             title=title,
             description="SOP 기반 AI Native Workflow 실행 인스턴스",
             owner=str(actor),
             source_event=event,
-            source_refs=req.source_refs or [{"type": "boi", "ref": sop_ref}],
+            source_refs=source_refs,
             tags=["SOP", "AI-Native-Workflow", "EventBroker", "ActionGateway", "BoIWiki"],
         )
         meta["workflow_stage"] = event_def.get("workflow_stage")
+        meta["sop_ref"] = sop_ref
+        meta["sop_uri"] = sop_uri
+        meta["sop_stage_id"] = event_def.get("sop_stage_id")
         meta["recommended_actions"] = action_keys
+        meta["recommended_manual_actions"] = manual_action_keys
     else:
         title = payload.get("title") or req.event_type
         body = f"# Summary\n\n이벤트 `{req.event_type}`에서 생성된 Generic Private BoI입니다.\n\n# Payload\n\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```\n"
@@ -1506,7 +1712,7 @@ async def actions_page(request: Request, employee_id: str = Depends(current_empl
             "employee_id": employee_id,
             "event_type": event_type,
             "event_types": load_event_types(),
-            "actions": actions,
+            "actions": actions_for_template(actions, employee_id),
             "action_logs": read_action_logs(limit=100),
         },
     )

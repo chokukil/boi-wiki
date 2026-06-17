@@ -53,6 +53,10 @@ def test_equipment_anomaly_demo_route_publishes_first_event(boi_app_module):
     body = response.json()
     assert body["ok"] is True
     assert body["workflow"]["name"] == "equipment-anomaly"
+    assert body["workflow"]["sop_ref"] == "boi:public:sop:equipment-abnormal-response"
+    assert body["workflow"]["sop_uri"] == "/public/sop/equipment-abnormal-response.md"
+    assert body["workflow"]["status_url"].startswith("/api/workflows/demo/equipment-anomaly/status?trace_id=")
+    assert "manual.equipment.confirm_alarm_context" in body["workflow"]["expected_manual_actions"]
     assert body["event"]["event_type"] == "equipment.alarm.raised.v1"
     assert boi_app_module.AIOKafkaProducer.sent_events[-1]["topic"] == "boi.events"
     assert boi_app_module.AIOKafkaProducer.sent_events[-1]["event"]["payload"]["equipment_id"] == "ETCH-VM-01"
@@ -241,3 +245,100 @@ def test_library_static_js_supports_partial_navigation(boi_app_module):
     assert "popstate" in response.text
     assert "partial" in response.text
     assert "scrollTo" in response.text
+
+
+def test_public_sop_and_action_folders_are_browsable(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    cases = {
+        "public/sop": "설비 이상 감지·원인 분석·이상 조치 SOP",
+        "public/actions": "Public Action Library",
+        "public/actions/api": "Trend / 이력 확인 요청",
+        "public/actions/webhook": "외부 Webhook 이벤트 수신",
+        "public/actions/mcp": "MCP 기반 BoI 검색 Tool 호출 예시",
+        "public/actions/langflow": "Langflow Reference Flow 호출 예시",
+        "public/actions/manual": "공정 진행 금지 승인",
+    }
+
+    for folder, expected_title in cases.items():
+        response = client.get(f"/?employee_id=100001&folder={folder}")
+        assert response.status_code == 200
+        assert expected_title in response.text
+
+
+def test_action_catalog_page_links_public_action_specs(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/actions?employee_id=100001&event_type=corrective_action.requested.v1")
+
+    assert response.status_code == 200
+    assert "manual.equipment.approve_process_hold" in response.text
+    assert "manual handoff" in response.text
+    assert "/docs/boi:public:actions:manual:approve-process-hold" in response.text
+    assert "/docs/boi:public:actions:api:block-process-progress" in response.text
+
+
+def test_materialized_equipment_boi_links_sop_and_action_docs(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/events/handle",
+        headers={"x-service-token": boi_app_module.SERVICE_TOKEN},
+        json={
+            "event_id": "evt-equipment-docref-test",
+            "event_type": "corrective_action.requested.v1",
+            "actor": {"type": "human", "employee_id": "100001"},
+            "payload": {
+                "title": "이상 조치 요청 - ETCH-VM-01",
+                "equipment_id": "ETCH-VM-01",
+                "lot_id": "LOT-POC-001",
+                "wafer_id": "WF-POC-001",
+                "owner": "100001",
+            },
+            "source_refs": [{"type": "event", "ref": "evt-source"}],
+            "trace_id": "trace-equipment-docref-test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()["item"]["body"]
+    assert "SOP URI: `/public/sop/equipment-abnormal-response.md`" in body
+    assert "boi:public:actions:api:block-process-progress" in body
+    assert "boi:public:actions:api:change-spec-rule" in body
+    assert "boi:public:actions:manual:approve-process-hold" in body
+    assert "boi:public:actions:manual:approve-spec-rule-change" in body
+
+
+def test_equipment_demo_status_summarizes_trace_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    trace_id = "trace-status-test"
+
+    boi_app_module.append_event_log(
+        status="published",
+        event={
+            "event_id": "evt-status-test",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": trace_id,
+            "payload": {"title": "상태 조회 테스트"},
+        },
+    )
+    boi_app_module.append_event_log(
+        status="handled",
+        event={
+            "event_id": "evt-status-test",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": trace_id,
+            "payload": {"title": "상태 조회 테스트"},
+        },
+        result={"boi_id": "boi-status-test", "boi_uri": "/private/100001/boi-status-test.md"},
+    )
+
+    response = client.get(f"/api/workflows/demo/equipment-anomaly/status?employee_id=100001&trace_id={trace_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["trace_id"] == trace_id
+    assert body["sop_ref"] == "boi:public:sop:equipment-abnormal-response"
+    assert body["sop_uri"] == "/public/sop/equipment-abnormal-response.md"
+    assert any(item["event_type"] == "equipment.alarm.raised.v1" for item in body["events"])
+    assert "manual.equipment.confirm_alarm_context" in body["manual_handoffs"]
