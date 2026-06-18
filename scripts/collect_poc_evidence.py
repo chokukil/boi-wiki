@@ -18,6 +18,9 @@ DEFAULT_OUT_DIR = ROOT / "artifacts" / "boi-poc"
 DEFAULT_DOCKER_EXE = "auto"
 WINDOWS_DOCKER_EXE = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
 DEFAULT_CAPTURE_MANIFEST = ROOT / "artifacts" / "boi-poc" / "capture-manifest.json"
+DEFAULT_ARTIFACT_DECK_OUTPUT = (
+    "outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx"
+)
 
 
 def utc_now() -> str:
@@ -223,7 +226,8 @@ def build_capture_targets(
 
     return {
         "capture_dir": manifest["capture_dir"],
-        "deck_output": manifest["deck_output"],
+        "artifact_deck_output": DEFAULT_ARTIFACT_DECK_OUTPUT,
+        "legacy_screenshot_deck_output": manifest["deck_output"],
         "generated_from": {
             "evidence_collected_at": evidence.get("collected_at"),
             "git_commit": str(evidence.get("git_commit", "")).strip(),
@@ -237,7 +241,8 @@ def capture_targets_markdown(capture_targets: dict[str, Any]) -> str:
         "# BoI Wiki PoC Capture Targets",
         "",
         f"- Capture dir: `{capture_targets['capture_dir']}`",
-        f"- Final deck output: `{capture_targets['deck_output']}`",
+        f"- Artifact-tool final deck: `{capture_targets['artifact_deck_output']}`",
+        f"- Legacy screenshot insertion output: `{capture_targets['legacy_screenshot_deck_output']}`",
         f"- Evidence collected at: `{capture_targets['generated_from'].get('evidence_collected_at')}`",
         f"- Git commit: `{capture_targets['generated_from'].get('git_commit')}`",
         "",
@@ -252,7 +257,9 @@ def capture_targets_markdown(capture_targets: dict[str, Any]) -> str:
             "After saving all PNG files, run:",
             "",
             "```bash",
-            "python scripts/insert_poc_screenshots.py",
+            "python scripts/insert_poc_screenshots.py --check",
+            "python scripts/build_boi_e2e_ppt.py",
+            "python scripts/check_poc_delivery_readiness.py --out outputs/manual-20260619/e2e-evidence/delivery-readiness.json",
             "```",
             "",
         ]

@@ -16,10 +16,18 @@ Chrome automation currently blocks direct access to `http://localhost:8000` by e
 After the PNG files exist, run:
 
 ```bash
-python scripts/insert_poc_screenshots.py
+python scripts/insert_poc_screenshots.py --check
+python scripts/build_boi_e2e_ppt.py
+python scripts/check_poc_delivery_readiness.py --out outputs/manual-20260619/e2e-evidence/delivery-readiness.json
 ```
 
-Expected output:
+Artifact-tool final deck:
+
+```text
+outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx
+```
+
+Legacy screenshot insertion output:
 
 ```text
 artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx

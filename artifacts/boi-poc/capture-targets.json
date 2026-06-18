@@ -1,6 +1,7 @@
 {
     "capture_dir": "captures/boi-poc",
-    "deck_output": "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx",
+    "artifact_deck_output": "outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx",
+    "legacy_screenshot_deck_output": "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx",
     "generated_from": {
         "evidence_collected_at": "2026-06-19T01:45:00+09:00",
         "git_commit": "2796031"

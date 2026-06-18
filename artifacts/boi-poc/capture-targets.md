@@ -1,7 +1,8 @@
 # BoI Wiki PoC Capture Targets
 
 - Capture dir: `captures/boi-poc`
-- Final deck output: `artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx`
+- Artifact-tool final deck: `outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx`
+- Legacy screenshot insertion output: `artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx`
 - Evidence collected at: `2026-06-19T01:45:00+09:00`
 - Git commit: `2796031`
 
@@ -19,5 +20,7 @@
 After saving all PNG files, run:
 
 ```bash
-python scripts/insert_poc_screenshots.py
+python scripts/insert_poc_screenshots.py --check
+python scripts/build_boi_e2e_ppt.py
+python scripts/check_poc_delivery_readiness.py --out outputs/manual-20260619/e2e-evidence/delivery-readiness.json
 ```

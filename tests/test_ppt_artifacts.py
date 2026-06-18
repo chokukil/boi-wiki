@@ -97,6 +97,10 @@ def test_capture_targets_resolve_latest_private_boi_and_langflow_urls():
 
     assert by_id["private_boi"]["url"] == "http://localhost:8000/docs/private/100001/boi-private-corrective.md"
     assert by_id["langflow"]["url"] == "http://localhost:7860/flow/flow-123"
+    assert targets["artifact_deck_output"].endswith(
+        "outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx"
+    )
+    assert targets["legacy_screenshot_deck_output"] == "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx"
     assert "<latest" not in by_id["private_boi"]["url"]
     assert "<latest" not in by_id["langflow"]["url"]
 
@@ -134,6 +138,17 @@ def test_capture_target_preflight_checks_boi_langflow_and_kafka_urls():
     assert "flow id not found in Langflow API" in script
     assert "trace-609660cf137c4946aaa833c891f704b7" in script
     assert "boi:private:100001:20260619014436:7ff90d" in script
+
+
+def test_capture_docs_name_artifact_tool_deck_as_final_delivery():
+    capture_targets = Path("artifacts/boi-poc/capture-targets.md").read_text(encoding="utf-8")
+    screenshot_manifest = Path("docs/POC_SCREENSHOT_MANIFEST.md").read_text(encoding="utf-8")
+    combined = "\n".join([capture_targets, screenshot_manifest])
+
+    assert "Artifact-tool final deck" in combined
+    assert "outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx" in combined
+    assert "Legacy screenshot insertion output" in combined
+    assert "- Final deck output: `artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx`" not in combined
 
 
 def test_delivery_readiness_summary_requires_full_e2e_evidence():
