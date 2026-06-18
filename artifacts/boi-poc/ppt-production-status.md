@@ -13,6 +13,7 @@ Updated: 2026-06-19 02:05 KST
 - `artifacts/boi-poc/capture-targets.md`
 - `docs/POC_SCREENSHOT_MANIFEST.md`
 - `scripts/insert_poc_screenshots.py`
+- `scripts/check_poc_delivery_readiness.py`
 
 Windows copy:
 
@@ -35,6 +36,7 @@ Windows copy:
 - Screenshot filenames and URLs are fixed in a manifest.
 - Latest capture URLs are resolved in `capture-targets.md`, including the generated corrective action Private BoI and Langflow flow ID.
 - A screenshot insertion script is ready to create the final screenshot-enriched PPTX after PNG capture files exist.
+- A delivery readiness checker now combines E2E evidence, capture URL preflight, screenshot availability, artifact-tool PPT export, and final deck existence into one report.
 
 ## Latest SSO / Langflow E2E Evidence
 
@@ -74,6 +76,16 @@ Latest PPT source package:
 - `outputs/manual-20260619/presentations/boi-e2e-evidence/slides/`
 
 The latest deck source uses artifact-tool slide modules and is ready for export once the Codex primary runtime exposes `@oai/artifact-tool`.
+
+## Delivery Readiness Check
+
+Run the consolidated readiness gate with:
+
+```bash
+python scripts/check_poc_delivery_readiness.py --out outputs/manual-20260619/e2e-evidence/delivery-readiness.json
+```
+
+Current expected status is `ok=false`: E2E evidence and URL preflight pass, but Chrome-captured PNG files, artifact-tool PPTX export, and the final screenshot deck are still missing.
 
 ## Still Pending
 

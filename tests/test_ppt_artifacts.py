@@ -5,6 +5,7 @@ from pathlib import Path
 from pptx import Presentation
 
 from scripts.collect_poc_evidence import build_capture_targets
+from scripts.check_poc_delivery_readiness import evaluate_e2e_summary
 from scripts.insert_poc_screenshots import load_manifest, missing_screenshots
 
 
@@ -103,3 +104,47 @@ def test_capture_target_preflight_checks_boi_langflow_and_kafka_urls():
     assert "flow id not found in Langflow API" in script
     assert "trace-609660cf137c4946aaa833c891f704b7" in script
     assert "boi:private:100001:20260619014436:7ff90d" in script
+
+
+def test_delivery_readiness_summary_requires_full_e2e_evidence():
+    summary = {
+        "trace_id": "trace-ok",
+        "event_count": 24,
+        "action_count": 21,
+        "generated_doc_count": 4,
+        "manual_handoff_count": 5,
+        "failed_count": 0,
+        "langflow_actions": [
+            {"action_key": "langflow.boi.reference_flow", "status": "langflow_invoked"},
+            {"action_key": "langflow.equipment.stage_analysis", "status": "langflow_invoked"},
+        ],
+    }
+
+    ok_report = evaluate_e2e_summary(summary)
+    bad_report = evaluate_e2e_summary(
+        {
+            **summary,
+            "failed_count": 1,
+            "generated_doc_count": 0,
+            "langflow_actions": [{"action_key": "langflow.boi.reference_flow", "status": "failed"}],
+        }
+    )
+
+    assert ok_report["ok"] is True
+    assert ok_report["trace_id"] == "trace-ok"
+    assert bad_report["ok"] is False
+    assert any("failed action" in blocker for blocker in bad_report["blockers"])
+    assert any("generated BoI" in blocker for blocker in bad_report["blockers"])
+    assert any("Langflow" in blocker for blocker in bad_report["blockers"])
+
+
+def test_delivery_readiness_script_composes_existing_capture_and_ppt_gates():
+    script = Path("scripts/check_poc_delivery_readiness.py").read_text(encoding="utf-8")
+
+    assert "check_poc_capture_targets.py" in script
+    assert "insert_poc_screenshots.py" in script
+    assert "build_boi_e2e_ppt.py" in script
+    assert "screenshots" in script
+    assert "ppt_runtime" in script
+    assert "final_deck" in script
+    assert "blockers" in script
