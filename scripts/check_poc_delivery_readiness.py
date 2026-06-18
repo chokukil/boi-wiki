@@ -164,13 +164,21 @@ def evaluate_screenshots(manifest: Path) -> dict[str, Any]:
     result = run_command([sys.executable, "scripts/insert_poc_screenshots.py", "--manifest", str(manifest), "--check"])
     payload = result["json"] or {}
     missing = payload.get("missing") if isinstance(payload.get("missing"), list) else []
-    blockers = [f"required screenshot missing: {path}" for path in missing]
+    issues = payload.get("issues") if isinstance(payload.get("issues"), list) else []
+    blockers = [
+        f"required screenshot not ready: {item.get('file')} ({item.get('reason')})"
+        for item in issues
+        if isinstance(item, dict)
+    ]
+    if not blockers:
+        blockers = [f"required screenshot missing: {path}" for path in missing]
     if result["returncode"] != 0 and not blockers:
         blockers.append("screenshot availability check failed")
     return {
         "ok": result["returncode"] == 0 and bool(payload.get("ok", False)),
         "command": result["command"],
         "missing": missing,
+        "issues": issues,
         "stdout": result["stdout"],
         "blockers": blockers,
     }

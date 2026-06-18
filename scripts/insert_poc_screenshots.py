@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from pptx.util import Inches, Pt
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "artifacts" / "boi-poc" / "capture-manifest.json"
+MIN_CAPTURE_WIDTH = 800
+MIN_CAPTURE_HEIGHT = 600
 
 
 def resolve_project_path(value: str | Path) -> Path:
@@ -42,6 +45,46 @@ def missing_screenshots(manifest: dict[str, Any]) -> list[Path]:
         if not path.exists():
             missing.append(path)
     return missing
+
+
+def png_dimensions(path: Path) -> tuple[int, int]:
+    with path.open("rb") as handle:
+        header = handle.read(24)
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        raise ValueError("not a valid PNG file")
+    width, height = struct.unpack(">II", header[16:24])
+    return int(width), int(height)
+
+
+def screenshot_issues(
+    manifest: dict[str, Any],
+    *,
+    min_width: int = MIN_CAPTURE_WIDTH,
+    min_height: int = MIN_CAPTURE_HEIGHT,
+) -> list[dict[str, Any]]:
+    capture_dir = resolve_project_path(manifest["capture_dir"])
+    issues: list[dict[str, Any]] = []
+    for entry in manifest["required"]:
+        path = capture_dir / entry["file"]
+        if not path.exists():
+            issues.append({"id": entry.get("id"), "file": str(path), "reason": "missing"})
+            continue
+        try:
+            width, height = png_dimensions(path)
+        except ValueError as exc:
+            issues.append({"id": entry.get("id"), "file": str(path), "reason": str(exc)})
+            continue
+        if width < min_width or height < min_height:
+            issues.append(
+                {
+                    "id": entry.get("id"),
+                    "file": str(path),
+                    "reason": f"too small: {width}x{height}; expected at least {min_width}x{min_height}",
+                    "width": width,
+                    "height": height,
+                }
+            )
+    return issues
 
 
 def add_textbox(slide, x, y, w, h, text: str, size=12, color=RGBColor(32, 38, 46), bold=False, align=None):
@@ -145,10 +188,10 @@ def add_appendix_slide(prs: Presentation, manifest: dict[str, Any]) -> None:
 
 
 def insert_screenshots(manifest: dict[str, Any], output: Path | None = None, allow_missing: bool = False) -> Path:
-    missing = missing_screenshots(manifest)
-    if missing and not allow_missing:
-        formatted = "\n".join(str(path) for path in missing)
-        raise FileNotFoundError(f"Missing required screenshots:\n{formatted}")
+    issues = screenshot_issues(manifest)
+    if issues and not allow_missing:
+        formatted = "\n".join(f"{item['file']}: {item['reason']}" for item in issues)
+        raise FileNotFoundError(f"Required screenshots are not ready:\n{formatted}")
 
     deck_input = resolve_project_path(manifest["deck_input"])
     deck_output = output or resolve_project_path(manifest["deck_output"])
@@ -156,7 +199,7 @@ def insert_screenshots(manifest: dict[str, Any], output: Path | None = None, all
     if len(prs.slides) < 11:
         raise ValueError("expected the executive deck to have at least 11 slides")
 
-    if not missing:
+    if not issues:
         update_screenshot_slide(prs, manifest, slide_number=11)
         add_appendix_slide(prs, manifest)
     deck_output.parent.mkdir(parents=True, exist_ok=True)
@@ -173,14 +216,22 @@ def main() -> None:
     args = parser.parse_args()
 
     manifest = load_manifest(resolve_project_path(args.manifest))
-    missing = missing_screenshots(manifest)
+    issues = screenshot_issues(manifest)
     if args.check:
-        print(json.dumps({"ok": not missing, "missing": [str(path) for path in missing]}, ensure_ascii=False, indent=2))
-        raise SystemExit(1 if missing else 0)
+        missing = [issue["file"] for issue in issues if issue["reason"] == "missing"]
+        invalid = [issue for issue in issues if issue["reason"] != "missing"]
+        print(
+            json.dumps(
+                {"ok": not issues, "missing": missing, "invalid": invalid, "issues": issues},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        raise SystemExit(1 if issues else 0)
 
     output = resolve_project_path(args.out) if args.out else None
     deck_output = insert_screenshots(manifest, output=output, allow_missing=args.allow_missing)
-    print(json.dumps({"ok": True, "pptx": str(deck_output), "missing": [str(path) for path in missing]}, ensure_ascii=False, indent=2))
+    print(json.dumps({"ok": True, "pptx": str(deck_output), "issues": issues}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

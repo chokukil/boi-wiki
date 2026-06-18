@@ -6,7 +6,16 @@ from pptx import Presentation
 
 from scripts.collect_poc_evidence import build_capture_targets
 from scripts.check_poc_delivery_readiness import evaluate_e2e_summary
-from scripts.insert_poc_screenshots import load_manifest, missing_screenshots
+from scripts.insert_poc_screenshots import load_manifest, missing_screenshots, screenshot_issues
+
+
+def tiny_png_bytes() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4"
+        b"\x89\x00\x00\x00\nIDATx\x9cc\xf8\x0f\x00\x01\x01"
+        b"\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
 
 
 def test_capture_manifest_lists_required_executive_screenshots():
@@ -30,6 +39,27 @@ def test_insert_script_detects_missing_screenshots_before_final_output():
 
     assert missing
     assert missing[0].name == "01-boi-wiki-home.png"
+
+
+def test_screenshot_check_rejects_tiny_or_invalid_capture_files(tmp_path):
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    (capture_dir / "tiny.png").write_bytes(tiny_png_bytes())
+    (capture_dir / "not-png.png").write_text("not a png", encoding="utf-8")
+    manifest = {
+        "capture_dir": str(capture_dir),
+        "deck_input": "unused.pptx",
+        "deck_output": "unused-output.pptx",
+        "required": [
+            {"id": "tiny", "file": "tiny.png", "title": "Tiny", "url": "http://localhost", "purpose": "tiny"},
+            {"id": "bad", "file": "not-png.png", "title": "Bad", "url": "http://localhost", "purpose": "bad"},
+        ],
+    }
+
+    issues = screenshot_issues(manifest)
+
+    assert any(issue["id"] == "tiny" and "too small" in issue["reason"] for issue in issues)
+    assert any(issue["id"] == "bad" and "not a valid PNG" in issue["reason"] for issue in issues)
 
 
 def test_executive_ppt_contains_capture_slot_and_technical_appendix():

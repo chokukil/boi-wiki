@@ -87,6 +87,8 @@ python scripts/check_poc_delivery_readiness.py --out outputs/manual-20260619/e2e
 
 Current expected status is `ok=false`: E2E evidence and URL preflight pass, but Chrome-captured PNG files, artifact-tool PPTX export, and the final screenshot deck are still missing.
 
+Screenshot readiness is stricter than file existence. `insert_poc_screenshots.py --check` validates that each required file is a PNG and at least `800x600`, so placeholder, corrupt, or tiny images cannot accidentally satisfy the final deck gate.
+
 ## Still Pending
 
 - Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy.
