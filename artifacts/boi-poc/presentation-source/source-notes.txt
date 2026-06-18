@@ -1,0 +1,37 @@
+Primary source package:
+- /home/chokukil/boi-wiki/outputs/manual-20260619/e2e-evidence/summary.json
+- /home/chokukil/boi-wiki/outputs/manual-20260619/e2e-evidence/workflow-status.json
+- /home/chokukil/boi-wiki/outputs/manual-20260619/e2e-evidence/run_equipment_sop_poc.log
+- /home/chokukil/boi-wiki/outputs/manual-20260619/e2e-evidence/runtime-health.txt
+- /home/chokukil/boi-wiki/outputs/manual-20260619/e2e-evidence/langflow-flows.json
+
+Runtime source commit:
+- 2796031 Support SSO auth in equipment SOP smoke
+- aa1f280 Fix Langflow-hynix SSO runtime integration
+- d708745 Add SK hynix SSO auth model
+
+Verified trace:
+- trace_id: trace-609660cf137c4946aaa833c891f704b7
+- workflow_key: equipment-anomaly
+- SOP: boi:public:sop:equipment-abnormal-response
+- smoke command: SERVICE_TOKEN=dev-service-token-change-me POC_SMOKE_TIMEOUT_SECONDS=180 python scripts/run_equipment_sop_poc.py
+
+Exact evidence values:
+- Events: 24
+- Actions: 21
+- Generated BoIs: 4
+- Manual handoffs: 5
+- Failed actions: 0
+- Statuses: approval_required, event_published, invoked, langflow_invoked, materialized
+- Langflow stage analysis flow ID: 422fa3e4-d09b-4d51-b323-e652a13f2792
+- Langflow reference flow ID: 7f1ce7c7-7b6f-49cf-bbf6-c990fed400f4
+
+Generated BoI evidence:
+- corrective_action.requested.v1 -> boi:private:100001:20260619014436:7ff90d
+- maintenance.guide.requested.v1 -> boi:private:100001:20260619014424:bc81ac
+- root_cause.analysis.requested.v1 -> boi:private:100001:20260619014411:b0876e
+- equipment.alarm.raised.v1 -> boi:private:100001:20260619014404:99a3d5
+
+Screenshot caveat:
+- Chrome Browser Use rejected localhost access by enterprise policy.
+- No screenshot should be represented as captured until policy is changed and Chrome capture is rerun.

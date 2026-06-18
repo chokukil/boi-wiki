@@ -5,6 +5,7 @@ from pathlib import Path
 from pptx import Presentation
 
 from scripts.collect_poc_evidence import build_capture_targets
+from scripts.build_boi_e2e_ppt import DEFAULT_SOURCE, prepare_workspace
 from scripts.check_poc_delivery_readiness import DEFAULT_ARTIFACT_PPTX, evaluate_e2e_summary, evaluate_final_deck
 from scripts.insert_poc_screenshots import load_manifest, missing_screenshots, screenshot_issues
 
@@ -118,6 +119,32 @@ def test_e2e_ppt_build_script_preserves_artifact_tool_boundary():
     assert "required screenshot evidence" in script
     assert "python scripts/build_boi_e2e_ppt.py" in status
     assert "artifact-tool runtime preflight" in status
+
+
+def test_e2e_ppt_build_uses_tracked_presentation_source(tmp_path):
+    source = tmp_path / "presentation-source"
+    slides = source / "slides"
+    slides.mkdir(parents=True)
+    for index in range(1, 9):
+        (slides / f"slide-{index:02d}.mjs").write_text(f"export async function slide{index:02d}() {{}}\n", encoding="utf-8")
+    (slides / "common.mjs").write_text("export const C = {};\n", encoding="utf-8")
+    for name in [
+        "profile-plan.txt",
+        "source-notes.txt",
+        "claim-spine.txt",
+        "design-system.txt",
+        "contact-sheet-plan.txt",
+        "package.json",
+    ]:
+        (source / name).write_text(f"{name}\n", encoding="utf-8")
+    workspace = tmp_path / "workspace"
+
+    prepare_workspace(source, workspace)
+
+    assert DEFAULT_SOURCE == Path("artifacts/boi-poc/presentation-source")
+    assert (workspace / "slides" / "slide-08.mjs").exists()
+    assert (workspace / "profile-plan.txt").read_text(encoding="utf-8") == "profile-plan.txt\n"
+    assert not str(DEFAULT_SOURCE).startswith("outputs/")
 
 
 def test_capture_targets_point_to_latest_sso_e2e_trace():

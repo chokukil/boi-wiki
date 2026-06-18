@@ -1,0 +1,26 @@
+Slide count: 8
+
+Macro layout sequence:
+1. Cover with evidence rail and thesis block.
+2. Full-width architecture flow diagram with system boundary lanes.
+3. SOP timeline with stage cards and event/action evidence rows.
+4. Langflow proof table with two flow nodes and four invocation rows.
+5. Generated BoI materialization matrix by event type.
+6. Governance/risk control slide with high-risk action gate diagram.
+7. SSO/runtime readiness slide with auth-mode map and service health rail.
+8. Evidence capture status and screenshot insertion plan.
+
+Rhythm gates:
+- No more than two dense table slides.
+- No three consecutive slides use the same title/table layout.
+- Every slide has one dominant proof object.
+- Screenshot placeholders appear only on slide 8 until real Chrome captures are available.
+
+Proof density:
+- Use exact trace counts on slides 1 and 3.
+- Use concrete flow IDs on slide 4.
+- Use generated BoI IDs on slide 5, truncated only where the full ID also appears in source notes.
+- Use explicit approval_required actions on slide 6.
+
+Known weakness before screenshot pass:
+- The deck can prove runtime execution through evidence files, but not visually demonstrate the browser UI until Chrome Browser Use can access localhost.

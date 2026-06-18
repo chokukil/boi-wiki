@@ -1,0 +1,49 @@
+Thesis:
+BoI Wiki now demonstrates a working, config-driven AI-native operations loop: a SOP event starts in Kafka, routes through Action Gateway, invokes API/Langflow/manual controls, and materializes stage-specific BoI records under SSO-aware permissions.
+
+Audience:
+SK hynix AIX leadership, PoC sponsors, platform engineers, and future SOP/action authors.
+
+One-line arc:
+The PoC moved from concept documentation to a verifiable runtime chain, with governance and manual handoff preserved instead of hidden behind automation.
+
+Slides:
+1. Claim: The PoC can now prove a full SOP execution loop, not just show disconnected components.
+   Proof object: trace evidence rail with event/action/BoI/manual counts.
+   Source: summary.json, run_equipment_sop_poc.log.
+   Omission: no Chrome screenshot due policy block.
+
+2. Claim: The runtime chain keeps each executable surface as a governed connector.
+   Proof object: architecture flow map from Kafka to BoI Wiki.
+   Source: workflow-status.json, action catalog docs.
+   Omission: no graph DB introduced.
+
+3. Claim: The SOP drives the timeline; Python no longer owns equipment-specific stage order.
+   Proof object: stage-by-stage timeline detect -> analyze -> guide -> correct.
+   Source: public SOP workflow metadata and status payload.
+   Omission: only equipment-anomaly has been fully smoke-tested.
+
+4. Claim: Langflow is actually invoked as part of the chain, with concrete flow IDs and action logs.
+   Proof object: Langflow action table with flow names, IDs, request IDs.
+   Source: summary.json, langflow-flows.json.
+   Omission: Chrome canvas screenshot pending.
+
+5. Claim: The system generates useful stage BoIs instead of boilerplate architecture narration.
+   Proof object: four generated BoI records by event type.
+   Source: workflow-status.json, generated-boi.html.
+   Omission: document text excerpts are HTML-derived, not screenshot-derived.
+
+6. Claim: Governance remains in the loop for high-risk actions.
+   Proof object: approval_required actions for process hold and spec/rule change.
+   Source: run_equipment_sop_poc.log, workflow-status.json.
+   Omission: approval completion is intentionally not auto-simulated.
+
+7. Claim: SSO integration is now practical for both user UI and automated harness execution.
+   Proof object: Keycloak/HCP/Langflow SSO overlay and service-token smoke support.
+   Source: recent commits, runtime-health.txt.
+   Omission: corporate production IdP integration is still a replacement target.
+
+8. Claim: The remaining blocker is evidence capture, not runtime execution.
+   Proof object: browser policy note plus next capture checklist.
+   Source: evidence-ledger.md, Chrome Browser Use rejection.
+   Omission: final screenshot-enriched PPT requires policy change.

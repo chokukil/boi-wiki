@@ -68,6 +68,7 @@ SERVICE_TOKEN=dev-service-token-change-me POC_SMOKE_TIMEOUT_SECONDS=180 python s
 
 Latest PPT source package:
 
+- `artifacts/boi-poc/presentation-source/`
 - `outputs/manual-20260619/presentations/boi-e2e-evidence/profile-plan.txt`
 - `outputs/manual-20260619/presentations/boi-e2e-evidence/source-notes.txt`
 - `outputs/manual-20260619/presentations/boi-e2e-evidence/claim-spine.txt`
@@ -75,7 +76,7 @@ Latest PPT source package:
 - `outputs/manual-20260619/presentations/boi-e2e-evidence/contact-sheet-plan.txt`
 - `outputs/manual-20260619/presentations/boi-e2e-evidence/slides/`
 
-The latest deck source uses artifact-tool slide modules and is ready for export once the Codex primary runtime exposes `@oai/artifact-tool`.
+The tracked source package under `artifacts/boi-poc/presentation-source/` is copied into the thread-local `outputs/.../presentations/boi-e2e-evidence` workspace by `scripts/build_boi_e2e_ppt.py` before export. The latest deck source uses artifact-tool slide modules and is ready for export once the Codex primary runtime exposes `@oai/artifact-tool` and the required screenshots exist.
 
 ## Delivery Readiness Check
 

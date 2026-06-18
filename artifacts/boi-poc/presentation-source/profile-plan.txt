@@ -1,0 +1,29 @@
+Task mode: create
+Primary deck-profile: engineering-platform
+Secondary gates: governance/risk, security/SSO, runtime verification
+
+Required proof objects:
+- Workflow architecture map: Kafka Event Broker -> Event Router -> Action Gateway -> API/MCP/Langflow/Manual -> BoI Wiki.
+- Trace evidence: event/action/generated BoI/manual handoff counts from trace-609660cf137c4946aaa833c891f704b7.
+- Langflow proof: action log shows BoI Reference Flow and Equipment Stage Analysis Flow invoked with concrete flow IDs.
+- Governance proof: high-risk process hold/spec-rule actions remained approval_required.
+- Source package: evidence JSON/HTML/log files under outputs/manual-20260619/e2e-evidence.
+
+Source/asset requirements:
+- Use CLI/HTTP evidence files as current authoritative source.
+- Actual browser screenshots are still pending because Chrome Browser Use blocks localhost by enterprise policy.
+- Do not invent screenshots or use alternate browser capture paths to bypass that policy.
+
+Brand/authenticity constraints:
+- Do not create or approximate SK hynix logos.
+- Use neutral technical visual language and explicit source labels.
+
+Profile-specific QA gates:
+- Every diagram edge must encode a real runtime dependency.
+- Every metric must tie to the captured trace or runtime health evidence.
+- Claims must name concrete runtime behavior, not generic AI transformation language.
+
+Known missing inputs:
+- Real Chrome screenshots of BoI Wiki/Langflow/Kafka UI.
+- PowerPoint add-in polish pass is not verifiable while screenshots are pending.
+- artifact-tool runtime is currently missing from this Codex thread, so PPTX export cannot proceed until runtime package is restored.

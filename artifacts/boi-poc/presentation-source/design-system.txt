@@ -1,0 +1,52 @@
+Slide size:
+- 1280 x 720
+
+Background system:
+- Primary: #F7F8F5 warm off-white
+- Dark section/cover: #10151F deep ink
+- Evidence panels: #FFFFFF with #D8DEE8 hairline rules
+
+Typography:
+- Title: Aptos Display, 34-48px
+- Body: Aptos, 16-24px
+- Labels and footers: Aptos, 10-14px
+- Technical IDs: Aptos Mono, 12-16px
+
+Palette:
+- Ink: #10151F
+- Body: #263241
+- Muted: #657083
+- Accent green: #1F8A70 for pass/invoked/materialized
+- Accent blue: #2F6FED for links/flows
+- Risk amber: #C47A00 for approval/manual gates
+- Error red: #C93636 only for failed/blocked states
+
+Chart grammar:
+- Prefer trace count rails, status tables, and stage timelines.
+- Values come from summary.json or workflow-status.json only.
+- Direct labels, no legends unless unavoidable.
+
+Diagram grammar:
+- Horizontal left-to-right runtime flow.
+- Connectors are semantic and direction-bearing only when a call/event moves between systems.
+- Manual/approval nodes use amber fill and clear labels.
+- Langflow nodes use blue border, BoI materialization uses green border.
+
+Container grammar:
+- No default rounded card grids.
+- Use shallow 6px radius only for repeated evidence rows.
+- Grouping boxes mean actual runtime subsystem boundaries.
+
+Source/footer grammar:
+- Bottom-left source line on every evidence slide.
+- Bottom-right slide number.
+- Use trace_id and file path when a slide cites generated evidence.
+
+Screenshot policy:
+- Screenshot slots use dashed borders and explicit "pending Chrome localhost policy" labels.
+- Do not fabricate UI screenshots or use alternate capture tools while Chrome Browser Use policy blocks localhost.
+
+Banned motifs:
+- Decorative gradients, orbs, pseudo-logo marks, decorative icons.
+- Generic "AI layer" boxes without runtime labels.
+- Dense raw JSON pasted as slide body.

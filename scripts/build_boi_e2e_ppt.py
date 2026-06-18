@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,10 +14,20 @@ DEFAULT_SKILL_DIR = Path(
     "/mnt/c/Users/choku/.codex/plugins/cache/openai-primary-runtime/"
     "presentations/26.520.11634/skills/presentations"
 )
+DEFAULT_SOURCE = Path("artifacts/boi-poc/presentation-source")
 DEFAULT_WORKSPACE = ROOT / "outputs/manual-20260619/presentations/boi-e2e-evidence"
 DEFAULT_OUTPUT = DEFAULT_WORKSPACE / "output/boi-wiki-e2e-evidence-brief.pptx"
 DEFAULT_CAPTURE_MANIFEST = ROOT / "artifacts" / "boi-poc" / "capture-manifest.json"
 EXPECTED_SLIDE_COUNT = 8
+SOURCE_ITEMS = [
+    "slides",
+    "profile-plan.txt",
+    "source-notes.txt",
+    "claim-spine.txt",
+    "design-system.txt",
+    "contact-sheet-plan.txt",
+    "package.json",
+]
 
 
 def run(command: list[str], *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -45,9 +56,28 @@ def verify_slide_modules(slides_dir: Path) -> None:
         raise SystemExit(f"Missing slide modules:\n{rendered}")
 
 
+def prepare_workspace(source_dir: Path, workspace: Path) -> None:
+    source_dir = source_dir.resolve()
+    workspace = workspace.resolve()
+    require_file(source_dir, "presentation source directory")
+    workspace.mkdir(parents=True, exist_ok=True)
+    for item in SOURCE_ITEMS:
+        source = source_dir / item
+        target = workspace / item
+        require_file(source, f"presentation source item {item}")
+        if source.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source, target)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the latest BoI Wiki E2E evidence PPTX with artifact-tool.")
     parser.add_argument("--skill-dir", type=Path, default=Path(os.getenv("PRESENTATIONS_SKILL_DIR", DEFAULT_SKILL_DIR)))
+    parser.add_argument("--source", type=Path, default=Path(os.getenv("BOI_E2E_PPT_SOURCE", DEFAULT_SOURCE)))
     parser.add_argument("--workspace", type=Path, default=Path(os.getenv("BOI_E2E_PPT_WORKSPACE", DEFAULT_WORKSPACE)))
     parser.add_argument("--out", type=Path, default=Path(os.getenv("BOI_E2E_PPT_OUT", DEFAULT_OUTPUT)))
     parser.add_argument("--capture-manifest", type=Path, default=Path(os.getenv("BOI_CAPTURE_MANIFEST", DEFAULT_CAPTURE_MANIFEST)))
@@ -57,6 +87,7 @@ def main() -> int:
 
     skill_dir = args.skill_dir.resolve()
     workspace = args.workspace.resolve()
+    source = (ROOT / args.source).resolve() if not args.source.is_absolute() else args.source.resolve()
     slides_dir = workspace / "slides"
     out = args.out.resolve()
     preview_dir = workspace / "preview"
@@ -66,6 +97,7 @@ def main() -> int:
     qa_dir.mkdir(parents=True, exist_ok=True)
 
     require_file(skill_dir / "scripts/build_artifact_deck.mjs", "artifact-tool deck builder")
+    prepare_workspace(source, workspace)
     verify_slide_modules(slides_dir)
 
     if not args.skip_screenshot_check:
