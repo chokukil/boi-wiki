@@ -93,3 +93,13 @@ def test_capture_targets_point_to_latest_sso_e2e_trace():
     assert "422fa3e4-d09b-4d51-b323-e652a13f2792" in combined
     assert "3aba3309-89a8-4171-a153-00db6b16dcba" not in combined
     assert "boi-private-100001-20260618012251-15654c.md" not in combined
+
+
+def test_capture_target_preflight_checks_boi_langflow_and_kafka_urls():
+    script = Path("scripts/check_poc_capture_targets.py").read_text(encoding="utf-8")
+
+    assert "x-service-token" in script
+    assert "/api/v1/flows/" in script
+    assert "flow id not found in Langflow API" in script
+    assert "trace-609660cf137c4946aaa833c891f704b7" in script
+    assert "boi:private:100001:20260619014436:7ff90d" in script
