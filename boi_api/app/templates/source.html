@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ source.path }} · BoI Source</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Source Viewer</h1>
+      <p><code>{{ source.path }}</code></p>
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="{{ source.guide_url }}">Draft editing guide</a>
+    </div>
+  </header>
+  <main class="source-page">
+    <section class="source-status">
+      <div class="section-heading">
+        <h2>Validation</h2>
+        <button id="edit-source" type="button">수정</button>
+      </div>
+      <p>
+        <span class="badge status">{{ "VALID" if source.validation.ok else "INVALID" }}</span>
+        <code>{{ source.sha256 }}</code>
+      </p>
+      {% if source.validation.errors %}
+      <ul class="error-list">
+        {% for error in source.validation.errors %}<li>{{ error }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if source.validation.warnings %}
+      <ul class="warning-list">
+        {% for warning in source.validation.warnings %}<li>{{ warning }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+    <section class="source-viewer" id="source-viewer">
+      <h2>Source Content</h2>
+      <pre class="source-code">{{ source.content }}</pre>
+    </section>
+    <section class="source-editor" id="source-editor" hidden>
+      <section class="draft-notice">
+        <strong>Save Draft는 원본 파일과 Git commit을 변경하지 않습니다.</strong>
+        <p>이 화면에서 저장하면 draft queue에만 기록됩니다. Codex/Claude 같은 agent가 validation, apply, test, commit을 별도로 수행해야 실제 BoI Wiki source에 반영됩니다.</p>
+      </section>
+      <h2>Draft Content</h2>
+      <textarea id="source-content" spellcheck="false">{{ source.content }}</textarea>
+      <div class="source-actions">
+        <button id="save-draft" type="button">Save Draft</button>
+        <button id="cancel-source-edit" class="secondary-action" type="button">Cancel</button>
+        <span id="draft-result" class="draft-result">not applied · not committed</span>
+      </div>
+    </section>
+  </main>
+  <script>
+    const sourcePath = {{ source.path | tojson }};
+    const baseSha = {{ source.sha256 | tojson }};
+    const employeeId = {{ employee_id | tojson }};
+    const sourceViewer = document.getElementById("source-viewer");
+    const sourceEditor = document.getElementById("source-editor");
+    const sourceTextarea = document.getElementById("source-content");
+    const draftResult = document.getElementById("draft-result");
+
+    document.getElementById("edit-source").addEventListener("click", () => {
+      sourceViewer.hidden = true;
+      sourceEditor.hidden = false;
+      sourceTextarea.focus();
+    });
+
+    document.getElementById("cancel-source-edit").addEventListener("click", () => {
+      sourceEditor.hidden = true;
+      sourceViewer.hidden = false;
+      draftResult.textContent = "not applied · not committed";
+      draftResult.classList.remove("error");
+    });
+
+    document.getElementById("save-draft").addEventListener("click", async () => {
+      const result = document.getElementById("draft-result");
+      result.textContent = "saving draft...";
+      result.classList.remove("error");
+      const response = await fetch(`/api/source/drafts?employee_id=${encodeURIComponent(employeeId)}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          path: sourcePath,
+          base_sha256: baseSha,
+          proposed_content: sourceTextarea.value,
+          author: employeeId,
+          note: "web draft editor"
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        result.textContent = `draft failed: ${payload.detail?.message || payload.detail || response.status}`;
+        result.classList.add("error");
+        return;
+      }
+      result.textContent = `${payload.status} · ${payload.draft_id} · not applied · not committed`;
+    });
+  </script>
+</body>
+</html>

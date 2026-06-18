@@ -29,43 +29,71 @@ workflow:
     - id: detect
       name: 이상 감지
       agent: 이상 감지 Agent
+      entry_event: equipment.alarm.raised.v1
+      next_stage: analyze
+      emits_event: root_cause.analysis.requested.v1
       event_types: [equipment.alarm.raised.v1, trend.anomaly.detected.v1]
       source_systems: [VM system monitoring, TAS Agent, Trend alarm, Lot/Wafer 이력, HyVIS]
+      evidence_refs: [Trend alarm, Lot/Wafer 이력]
+      outputs: [boi/sop-instance, root_cause.analysis.requested.v1]
+      failure_modes: [alarm_context_missing, trend_data_unavailable]
       automated_actions:
         - sop.equipment.request_trend_history
         - sop.equipment.request_raw_data
+        - langflow.boi.reference_flow
         - sop.equipment.create_root_cause_event
       manual_actions:
         - manual.equipment.confirm_alarm_context
     - id: analyze
       name: 원인 분석
       agent: 원인 분석 Agent
+      entry_event: root_cause.analysis.requested.v1
+      next_stage: guide
+      emits_event: maintenance.guide.requested.v1
       event_types: [root_cause.analysis.requested.v1]
       source_systems: [HyVIS Raw Data, TAS Source Data, 장비 이력]
+      evidence_refs: [HyVIS Raw Data, TAS Source Data]
+      outputs: [boi/analysis, maintenance.guide.requested.v1]
+      failure_modes: [raw_data_unavailable, root_cause_uncertain]
       automated_actions:
         - sop.equipment.request_raw_data
         - sop.equipment.request_maintenance_guide
+        - langflow.equipment.stage_analysis
         - sop.equipment.create_maintenance_guide_event
       manual_actions:
         - manual.equipment.review_root_cause
     - id: guide
       name: 장비 보전 가이드
       agent: 보전 가이드 Agent
+      entry_event: maintenance.guide.requested.v1
+      next_stage: correct
+      emits_event: corrective_action.requested.v1
       event_types: [maintenance.guide.requested.v1]
       source_systems: [SOP, Runbook, 장비 이력, Source Data]
+      evidence_refs: [SOP, Runbook, 장비 이력]
+      outputs: [boi/runbook, corrective_action.requested.v1]
+      failure_modes: [runbook_missing, maintenance_action_ambiguous]
       automated_actions:
         - sop.equipment.request_raw_data
         - sop.equipment.request_maintenance_guide
+        - langflow.equipment.stage_analysis
         - sop.equipment.create_corrective_action_event
       manual_actions:
         - manual.equipment.review_root_cause
     - id: correct
       name: 이상 조치
       agent: 이상 조치 Agent
+      entry_event: corrective_action.requested.v1
+      next_stage: complete
+      emits_event: null
       event_types: [corrective_action.requested.v1]
       source_systems: [Action Gateway, 담당자 알림, 변경관리 절차]
+      evidence_refs: [Action Gateway, 변경관리 절차]
+      outputs: [boi/action, manual_handoff, approval_required]
+      failure_modes: [approval_missing, owner_unavailable, high_risk_action_blocked]
       automated_actions:
         - sop.equipment.notify_action_owner
+        - langflow.equipment.stage_analysis
         - sop.equipment.block_process_progress
         - sop.equipment.change_spec_rule
       manual_actions:
@@ -88,27 +116,27 @@ workflow:
 
 | 단계 | 업무 의미 | Event Type | Agent / Flow | BoI 결과물 | 주요 Action |
 |---|---|---|---|---|---|
-| 이상 감지 | Alarm 또는 Trend 이상이 발생 | `equipment.alarm.raised.v1` | 이상 감지 Agent | `boi/sop-instance` | Trend/Raw Data 확인 |
-| 원인 분석 | 이력과 Trend를 확인해 원인 후보 생성 | `root_cause.analysis.requested.v1` | 원인 분석 Agent | `boi/analysis` | Raw/Source Data 조회 |
-| 장비 보전 가이드 | 장비 이상 가능성에 대해 SOP/Runbook 참조 | `maintenance.guide.requested.v1` | 보전 가이드 Agent | `boi/runbook` | 장비 이력/가이드 조회 |
-| 이상 조치 | 조치 담당자 요청 또는 고위험 조치 후보 생성 | `corrective_action.requested.v1` | 이상 조치 Agent | `boi/action` | 알림, 공정 Hold, Spec/Rule 변경 후보 |
+| 이상 감지 | Alarm 또는 Trend 이상이 발생 | [equipment.alarm.raised.v1](/public/event-types/equipment.alarm.raised.v1.md) | 이상 감지 Agent / [Langflow Reference Flow](/public/actions/langflow/reference-flow.md) | `boi/sop-instance` | [Trend 확인](/public/actions/api/request-trend-history.md), [Raw Data 확인](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md) |
+| 원인 분석 | 이력과 Trend를 확인해 원인 후보 생성 | [root_cause.analysis.requested.v1](/public/event-types/root_cause.analysis.requested.v1.md) | 원인 분석 Agent | `boi/analysis` | [Raw Data 조회](/public/actions/api/request-raw-data.md), [보전 가이드 요청](/public/actions/api/request-maintenance-guide.md) |
+| 장비 보전 가이드 | 장비 이상 가능성에 대해 SOP/Runbook 참조 | [maintenance.guide.requested.v1](/public/event-types/maintenance.guide.requested.v1.md) | 보전 가이드 Agent | `boi/runbook` | [보전 가이드 요청](/public/actions/api/request-maintenance-guide.md), [이상 조치 이벤트 발행](/public/actions/event-broker/create-corrective-action-event.md) |
+| 이상 조치 | 조치 담당자 요청 또는 고위험 조치 후보 생성 | [corrective_action.requested.v1](/public/event-types/corrective_action.requested.v1.md) | 이상 조치 Agent | `boi/action` | [담당자 알림](/public/actions/api/notify-action-owner.md), [공정 Hold](/public/actions/api/block-process-progress.md), [Spec 변경](/public/actions/api/change-spec-rule.md) |
 
 # Stage Details
 
 | Stage ID | 개발 필요 Agent | Source Systems | Automated Actions | Manual Actions |
 |---|---|---|---|---|
-| `detect` | 이상 감지 Agent | VM system monitoring, TAS Agent, Trend alarm, Lot/Wafer 이력, HyVIS | `sop.equipment.request_trend_history`, `sop.equipment.request_raw_data`, `sop.equipment.create_root_cause_event` | `manual.equipment.confirm_alarm_context` |
-| `analyze` | 원인 분석 Agent | HyVIS Raw Data, TAS Source Data, 장비 이력 | `sop.equipment.request_raw_data`, `sop.equipment.request_maintenance_guide`, `sop.equipment.create_maintenance_guide_event` | `manual.equipment.review_root_cause` |
-| `guide` | 보전 가이드 Agent | SOP, Runbook, 장비 이력, Source Data | `sop.equipment.request_raw_data`, `sop.equipment.request_maintenance_guide`, `sop.equipment.create_corrective_action_event` | `manual.equipment.review_root_cause` |
-| `correct` | 이상 조치 Agent | Action Gateway, 담당자 알림, 변경관리 절차 | `sop.equipment.notify_action_owner`, `sop.equipment.block_process_progress`, `sop.equipment.change_spec_rule` | `manual.equipment.approve_process_hold`, `manual.equipment.approve_spec_rule_change`, `manual.equipment.confirm_maintenance_done` |
+| `detect` | 이상 감지 Agent | VM system monitoring, TAS Agent, Trend alarm, Lot/Wafer 이력, HyVIS | [Trend](/public/actions/api/request-trend-history.md), [Raw](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md), [원인 분석 이벤트](/public/actions/event-broker/create-root-cause-event.md) | [Alarm 맥락 확인](/public/actions/manual/confirm-alarm-context.md) |
+| `analyze` | 원인 분석 Agent | HyVIS Raw Data, TAS Source Data, 장비 이력 | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [보전 이벤트](/public/actions/event-broker/create-maintenance-guide-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |
+| `guide` | 보전 가이드 Agent | SOP, Runbook, 장비 이력, Source Data | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [조치 이벤트](/public/actions/event-broker/create-corrective-action-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |
+| `correct` | 이상 조치 Agent | Action Gateway, 담당자 알림, 변경관리 절차 | [담당자 알림](/public/actions/api/notify-action-owner.md), [공정 Hold](/public/actions/api/block-process-progress.md), [Spec 변경](/public/actions/api/change-spec-rule.md) | [공정 Hold 승인](/public/actions/manual/approve-process-hold.md), [Spec 변경 승인](/public/actions/manual/approve-spec-rule-change.md), [정비 완료 확인](/public/actions/manual/confirm-maintenance-done.md) |
 
 # Public Action Specs
 
-- API Action 명세: `public/actions/api`
-- Webhook Action 명세: `public/actions/webhook`
-- MCP Action 명세: `public/actions/mcp`
-- Langflow Action 명세: `public/actions/langflow`
-- Manual Action 명세: `public/actions/manual`
+- API Action 명세: [API Actions](/public/actions/api/request-trend-history.md)
+- Webhook Action 명세: [Webhook Actions](/public/actions/webhook/inbound-external-event.md)
+- MCP Action 명세: [MCP Actions](/public/actions/mcp/boi-search-sample.md)
+- Langflow Action 명세: [Langflow Reference Flow](/public/actions/langflow/reference-flow.md)
+- Manual Action 명세: [Manual Actions](/public/actions/manual/confirm-alarm-context.md)
 
 # Event Broker 원칙
 
@@ -124,6 +152,7 @@ workflow:
 - 고위험 Action, 예: 공정 진행 금지, Spec/Rule 변경은 대응 manual approval action 없이는 완료 처리하지 않는다.
 - PoC에서 고위험 system action은 승인 전 `approval_required` 또는 dry-run 상태로만 기록한다.
 
-# References
+# Citations
 
 - 첨부 SOP 이미지: 시스템 활용 업무 / 생성형 AI / 분석형 AI / 개발 필요 영역 구분 사례
+- [Public Action Library](/public/actions/overview.md)

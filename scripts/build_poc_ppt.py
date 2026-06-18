@@ -153,6 +153,13 @@ def langflow_message(evidence: dict[str, Any]) -> str:
         return "Langflow smoke 응답 추출 대기"
 
 
+def latest_langflow_action(evidence: dict[str, Any]) -> dict[str, Any]:
+    for row in evidence.get("action_logs", {}).get("items", []):
+        if row.get("action_key") == "langflow.boi.reference_flow" and row.get("status") == "langflow_invoked":
+            return row
+    return {}
+
+
 def slide_notes() -> list[tuple[str, str]]:
     return [
         ("Title", "경영진에게 PoC의 목적은 특정 도구 도입이 아니라 조직 업무 맥락을 축적하는 공통 기반 검증임을 먼저 설명한다."),
@@ -286,10 +293,13 @@ def build_deck(evidence: dict[str, Any], out_path: Path, notes_path: Path) -> No
 
     slide = prs.slides.add_slide(blank)
     add_title(slide, "Langflow / LLM 검증", "OpenAI 호환 API로 지정된 Gemma 모델을 실제 호출")
+    langflow_action = latest_langflow_action(evidence)
+    langflow_result = langflow_action.get("result") or {}
     add_card(slide, 0.9, 2.0, 5.4, 1.35, "LLM 설정", f"Base URL: {evidence['runtime_config']['llm']['base_url']}\nModel: {evidence['runtime_config']['llm']['model']}", fill=PALE_BLUE, accent=BLUE)
-    add_card(slide, 6.65, 2.0, 5.4, 1.35, "Langflow Flow", f"{evidence.get('langflow_smoke', {}).get('flow', {}).get('name', '')}\n{evidence.get('langflow_smoke', {}).get('flow', {}).get('id', '')}", fill=PALE_GREEN, accent=GREEN)
-    msg = langflow_message(evidence)
-    add_card(slide, 0.9, 4.0, 11.15, 1.65, "Smoke 응답", msg[:420], fill=WHITE, accent=CYAN, title_size=13, body_size=10)
+    add_card(slide, 6.65, 2.0, 5.4, 1.35, "Event Trace에서 호출된 Flow", f"{langflow_result.get('flow_name', '')}\n{langflow_result.get('flow_id', '')}", fill=PALE_GREEN, accent=GREEN)
+    add_card(slide, 0.9, 3.65, 5.4, 1.25, "E2E Action Log", f"trace={langflow_action.get('trace_id', '')}\nevent={langflow_action.get('event_type', '')}\nstatus={langflow_action.get('status', '')}", fill=WHITE, accent=BLUE, title_size=13, body_size=9.5)
+    msg = str(langflow_result.get("message") or langflow_message(evidence))
+    add_card(slide, 6.65, 3.65, 5.4, 1.25, "LLM 응답 발췌", msg[:300], fill=WHITE, accent=CYAN, title_size=13, body_size=9)
     add_footer(slide, 9)
     slides.append(slide)
 

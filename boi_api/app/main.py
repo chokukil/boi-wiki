@@ -6,13 +6,14 @@ import hashlib
 import json
 import os
 import re
+import time
 import uuid
 import httpx
 from datetime import date, datetime, timezone, timedelta
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import yaml
 from aiokafka import AIOKafkaProducer
@@ -23,7 +24,18 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from pydantic import BaseModel, Field
 
-from .okf import REQUIRED_FIELDS, iter_jsonl_rows, iter_materialized_items, validate_okf_metadata
+from .okf import (
+    REQUIRED_FIELDS,
+    iter_jsonl_rows,
+    iter_materialized_items,
+    markdown_link_edges,
+    resolve_okf_link,
+    validate_okf_metadata,
+)
+from .workflow_materializer import (
+    build_enriched_body,
+    render_stage_execution_body,
+)
 
 KST = timezone(timedelta(hours=9))
 APP_DIR = Path(__file__).resolve().parent
@@ -32,6 +44,7 @@ EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT", "/data/events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog"))
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
 ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT", "/data/actions"))
+DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT", str(DATA_ROOT.parent / "drafts")))
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 DEFAULT_TEAM_ID = os.getenv("DEFAULT_TEAM_ID", "aix-tf")
@@ -112,6 +125,16 @@ app = FastAPI(title="BoI Wiki PoC", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
+_EVENT_TYPES_CACHE: dict[str, Any] = {"signature": None, "items": []}
+_ACTION_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
+_DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}
+_EVENT_LOG_CACHE: dict[str, Any] = {"signature": None, "rows": []}
+_ACTION_LOG_CACHE: dict[str, Any] = {"signature": None, "rows": []}
+_RECOVERED_DOC_CACHE: dict[str, Any] = {"signature": None, "by_boi_id": {}, "by_uri": {}}
+_FILE_SIGNATURE_CACHE: dict[str, tuple[float, tuple[tuple[str, int, int], ...]]] = {}
+_DOC_BODY_HTML_CACHE: dict[tuple[Any, ...], Markup] = {}
+SIGNATURE_TTL_SECONDS = 1.0
+
 
 def now_iso() -> str:
     return datetime.now(KST).replace(microsecond=0).isoformat()
@@ -136,6 +159,62 @@ def ensure_dirs() -> None:
     EVENT_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    (DRAFT_ROOT / "source_edits").mkdir(parents=True, exist_ok=True)
+    (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
+    (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
+    (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
+
+
+def file_signature(paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
+    signature: list[tuple[str, int, int]] = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        signature.append((str(path), stat.st_mtime_ns, stat.st_size))
+    return tuple(sorted(signature))
+
+
+def cached_signature(key: str, compute: Any) -> tuple[tuple[str, int, int], ...]:
+    now = time.monotonic()
+    cached = _FILE_SIGNATURE_CACHE.get(key)
+    if cached and cached[0] > now:
+        return cached[1]
+    signature = compute()
+    _FILE_SIGNATURE_CACHE[key] = (now + SIGNATURE_TTL_SECONDS, signature)
+    return signature
+
+
+def glob_signature(root: Path, pattern: str) -> tuple[tuple[str, int, int], ...]:
+    if not root.exists():
+        return ()
+    return cached_signature(f"glob:{root}:{pattern}", lambda: file_signature(sorted(root.glob(pattern))))
+
+
+def markdown_signature() -> tuple[tuple[str, int, int], ...]:
+    if not DATA_ROOT.exists():
+        return ()
+    return cached_signature(f"markdown:{DATA_ROOT}", lambda: file_signature(sorted(DATA_ROOT.rglob("*.md"))))
+
+
+def materialized_log_signature() -> tuple[tuple[str, int, int], ...]:
+    return file_signature(materialized_log_paths())
+
+
+def invalidate_doc_caches() -> None:
+    _FILE_SIGNATURE_CACHE.clear()
+    _DOCS_CACHE["signature"] = None
+    _DOCS_CACHE["docs"] = []
+    _DOC_BODY_HTML_CACHE.clear()
+    _OKF_GRAPH_CACHE.clear()
+
+
+def invalidate_event_log_caches() -> None:
+    _FILE_SIGNATURE_CACHE.clear()
+    _EVENT_LOG_CACHE["signature"] = None
+    _EVENT_LOG_CACHE["rows"] = []
+    _RECOVERED_DOC_CACHE["signature"] = None
 
 
 def split_frontmatter(markdown: str) -> tuple[dict[str, Any], str]:
@@ -176,10 +255,88 @@ def is_markdown_like(value: str) -> bool:
     )
 
 
-def render_inline_markdown(value: str) -> str:
+def normalized_doc_lookup_keys(ref: str) -> list[str]:
+    raw = str(ref or "").strip()
+    if not raw:
+        return []
+    keys = [raw, raw.lstrip("/")]
+    if raw.endswith(".md"):
+        keys.append(raw[:-3])
+        keys.append(raw.lstrip("/")[:-3])
+    return list(dict.fromkeys(key for key in keys if key))
+
+
+def build_doc_lookup(docs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        metadata = doc.get("metadata") or {}
+        candidates = [
+            str(metadata.get("boi_id") or ""),
+            str(doc.get("uri") or ""),
+        ]
+        path_value = str(doc.get("path") or "")
+        if path_value:
+            try:
+                candidates.append(str(Path(path_value).relative_to(DATA_ROOT)).replace("\\", "/"))
+            except Exception:
+                pass
+        for candidate in candidates:
+            for key in normalized_doc_lookup_keys(candidate):
+                lookup.setdefault(key, doc)
+    return lookup
+
+
+def doc_from_lookup(ref: str, doc_lookup: dict[str, dict[str, Any]] | None = None) -> dict[str, Any] | None:
+    if not doc_lookup:
+        return None
+    for key in normalized_doc_lookup_keys(ref):
+        doc = doc_lookup.get(key)
+        if doc:
+            return doc
+    return None
+
+
+def markdown_href_for_doc_route(
+    href: str,
+    employee_id: str,
+    source_path: Path | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href) or href.startswith("#"):
+        return href
+    lookup_ref = href
+    if source_path is not None:
+        target, _resolved = resolve_okf_link(href, source_path=source_path, boi_root=DATA_ROOT)
+        lookup_ref = target
+    elif href.startswith("/"):
+        lookup_ref = href.lstrip("/")
+        if lookup_ref.endswith(".md"):
+            lookup_ref = lookup_ref[:-3]
+    doc = doc_from_lookup(lookup_ref, doc_lookup)
+    if doc is None:
+        doc = find_recovered_doc_by_id(lookup_ref, employee_id) if doc_lookup is not None else find_doc_by_id(lookup_ref, employee_id)
+    if doc:
+        return doc_url_for_ref(str(doc["metadata"].get("boi_id") or doc["uri"].lstrip("/")), employee_id)
+    return href
+
+
+def render_inline_markdown(
+    value: str,
+    employee_id: str | None = None,
+    source_path: Path | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
     rendered = html_escape(value)
     rendered = re.sub(r"`([^`]+)`", r"<code>\1</code>", rendered)
     rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", rendered)
+
+    def replace_link(match: re.Match[str]) -> str:
+        label = match.group(1)
+        href = match.group(2)
+        routed_href = markdown_href_for_doc_route(href, employee_id, source_path, doc_lookup) if employee_id else href
+        return f'<a href="{html_escape(routed_href, quote=True)}">{label}</a>'
+
+    rendered = re.sub(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)", replace_link, rendered)
     return rendered
 
 
@@ -192,25 +349,50 @@ def is_table_separator(line: str) -> bool:
     return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells)
 
 
-def render_table(lines: list[str]) -> str:
+def render_table(
+    lines: list[str],
+    employee_id: str | None = None,
+    source_path: Path | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
     if len(lines) < 2 or not is_table_separator(lines[1]):
-        return render_paragraph(lines)
+        return render_paragraph(lines, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)
     headers = table_cells(lines[0])
     rows = [table_cells(line) for line in lines[2:]]
-    head = "".join(f"<th>{render_inline_markdown(cell)}</th>" for cell in headers)
+    head = "".join(
+        f"<th>{render_inline_markdown(cell, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</th>"
+        for cell in headers
+    )
     body_rows = []
     for row in rows:
         padded = row + [""] * max(len(headers) - len(row), 0)
-        body_rows.append("<tr>" + "".join(f"<td>{render_inline_markdown(cell)}</td>" for cell in padded[: len(headers)]) + "</tr>")
+        body_rows.append(
+            "<tr>"
+            + "".join(
+                f"<td>{render_inline_markdown(cell, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</td>"
+                for cell in padded[: len(headers)]
+            )
+            + "</tr>"
+        )
     return f'<div class="table-wrap"><table class="markdown-table"><thead><tr>{head}</tr></thead><tbody>{"".join(body_rows)}</tbody></table></div>'
 
 
-def render_paragraph(lines: list[str]) -> str:
+def render_paragraph(
+    lines: list[str],
+    employee_id: str | None = None,
+    source_path: Path | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
     text = " ".join(line.strip() for line in lines if line.strip())
-    return f"<p>{render_inline_markdown(text)}</p>" if text else ""
+    return f"<p>{render_inline_markdown(text, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</p>" if text else ""
 
 
-def render_markdown(value: str) -> Markup:
+def render_markdown(
+    value: str,
+    employee_id: str | None = None,
+    source_path: Path | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> Markup:
     lines = value.splitlines()
     html_parts: list[str] = []
     paragraph: list[str] = []
@@ -220,17 +402,24 @@ def render_markdown(value: str) -> Markup:
 
     def flush_paragraph() -> None:
         if paragraph:
-            html_parts.append(render_paragraph(paragraph))
+            html_parts.append(render_paragraph(paragraph, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup))
             paragraph.clear()
 
     def flush_list() -> None:
         if list_items:
-            html_parts.append("<ul>" + "".join(f"<li>{render_inline_markdown(item)}</li>" for item in list_items) + "</ul>")
+            html_parts.append(
+                "<ul>"
+                + "".join(
+                    f"<li>{render_inline_markdown(item, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</li>"
+                    for item in list_items
+                )
+                + "</ul>"
+            )
             list_items.clear()
 
     def flush_table() -> None:
         if table_lines:
-            html_parts.append(render_table(table_lines))
+            html_parts.append(render_table(table_lines, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup))
             table_lines.clear()
 
     while index < len(lines):
@@ -266,7 +455,9 @@ def render_markdown(value: str) -> Markup:
             flush_table()
             marker, _, title = stripped.partition(" ")
             level = min(max(len(marker), 1) + 2, 5)
-            html_parts.append(f"<h{level}>{render_inline_markdown(title or stripped.lstrip('#').strip())}</h{level}>")
+            html_parts.append(
+                f"<h{level}>{render_inline_markdown(title or stripped.lstrip('#').strip(), employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</h{level}>"
+            )
         elif re.match(r"^\s*[-*]\s+\S", line):
             flush_paragraph()
             flush_table()
@@ -348,13 +539,22 @@ def result_boi_uri(value: dict[str, Any]) -> str:
         return ""
 
 
-def doc_url_if_resolvable(ref: str, employee_id: str) -> str:
+def doc_url_if_resolvable(ref: str, employee_id: str, doc_lookup: dict[str, dict[str, Any]] | None = None) -> str:
     if not ref:
         return ""
+    doc = doc_from_lookup(ref, doc_lookup)
+    if doc:
+        return doc_url_for_ref(str(doc["metadata"].get("boi_id") or ref), employee_id)
+    if doc_lookup is not None:
+        return doc_url_for_ref(ref, employee_id) if find_recovered_doc_by_id(ref, employee_id) else ""
     return doc_url_for_ref(ref, employee_id) if find_doc_by_id(ref, employee_id) else ""
 
 
-def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str, Any] | None:
+def event_dispatch_summary(
+    result: dict[str, Any],
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     dispatch = result.get("dispatch_result") if isinstance(result, dict) else None
     if not isinstance(dispatch, dict) or not dispatch.get("results"):
         return None
@@ -370,7 +570,7 @@ def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str
         row_boi_id = result_boi_id(action_result)
         if row_boi_id and not boi_id:
             boi_id = row_boi_id
-        row_boi_url = doc_url_if_resolvable(row_boi_id, employee_id)
+        row_boi_url = doc_url_if_resolvable(row_boi_id, employee_id, doc_lookup=doc_lookup)
         rows.append(
             {
                 "action_key": action_key,
@@ -385,7 +585,7 @@ def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str
                 "boi_missing": row_boi_id if row_boi_id and not row_boi_url else "",
             }
         )
-    boi_url = doc_url_if_resolvable(boi_id, employee_id)
+    boi_url = doc_url_if_resolvable(boi_id, employee_id, doc_lookup=doc_lookup)
     return {
         "routed_by": result.get("routed_by"),
         "status": dispatch.get("status"),
@@ -397,15 +597,163 @@ def event_dispatch_summary(result: dict[str, Any], employee_id: str) -> dict[str
     }
 
 
-def event_rows_for_template(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def event_raw_url(log_ref: str, employee_id: str) -> str:
+    return "/api/events/raw/" + quote(log_ref, safe="") + "?" + urlencode({"employee_id": employee_id})
+
+
+def action_raw_api_url(log_ref: str, employee_id: str) -> str:
+    return "/api/actions/raw/" + quote(log_ref, safe="") + "?" + urlencode({"employee_id": employee_id})
+
+
+def action_raw_page_url(log_ref: str, employee_id: str) -> str:
+    return "/actions/raw/" + quote(log_ref, safe="") + "?" + urlencode({"employee_id": employee_id})
+
+
+def event_filter_url(event_id: str, employee_id: str) -> str:
+    return "/events?" + urlencode({"employee_id": employee_id, "event_id": event_id})
+
+
+def trace_events_url(trace_id: str, employee_id: str) -> str:
+    return "/events?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+
+
+def workflow_status_page_url(trace_id: str, employee_id: str) -> str:
+    return workflow_status_page_url_for_key("equipment-anomaly", trace_id, employee_id)
+
+
+def workflow_status_api_url(trace_id: str, employee_id: str, **params: str) -> str:
+    query = {"trace_id": trace_id, "employee_id": employee_id, **params}
+    return "/api/workflows/demo/equipment-anomaly/status?" + urlencode(query)
+
+
+def workflow_status_raw_url(trace_id: str, employee_id: str) -> str:
+    return "/api/workflows/demo/equipment-anomaly/status/raw?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+
+
+def workflow_status_page_url_for_key(workflow_key: str, trace_id: str, employee_id: str) -> str:
+    return f"/workflows/{workflow_key}/status?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+
+
+def workflow_status_api_url_for_key(workflow_key: str, trace_id: str, employee_id: str, **params: str) -> str:
+    query = {"trace_id": trace_id, "employee_id": employee_id, **params}
+    return f"/api/workflows/{workflow_key}/status?" + urlencode(query)
+
+
+def workflow_status_raw_url_for_key(workflow_key: str, trace_id: str, employee_id: str) -> str:
+    return f"/api/workflows/{workflow_key}/status/raw?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+
+
+def workflow_status_page_url_for_event_type(event_type: str, trace_id: str, employee_id: str) -> str:
+    if not event_type or not trace_id:
+        return ""
+    workflow, _stage, _event_def = workflow_for_event_type(event_type, employee_id)
+    if not workflow:
+        return ""
+    return workflow_status_page_url_for_key(str(workflow.get("workflow_key") or ""), trace_id, employee_id)
+
+
+SENSITIVE_KEY_RE = re.compile(r"(authorization|api[_-]?key|password|secret|token)", re.IGNORECASE)
+REFERENCE_TEXT_RE = re.compile(r"(boi:[A-Za-z0-9:._/-]+|trace-[A-Za-z0-9_-]+|evt-[A-Za-z0-9_-]+|act-[A-Za-z0-9_-]+|[A-Za-z0-9_.-]+\.v\d+)")
+
+
+def redact_sensitive(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if SENSITIVE_KEY_RE.search(str(key)):
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = redact_sensitive(item)
+        return redacted
+    if isinstance(value, list):
+        return [redact_sensitive(item) for item in value]
+    return value
+
+
+def url_for_reference_token(token: str, employee_id: str) -> str:
+    if token.startswith("boi:"):
+        return doc_url_if_resolvable(token, employee_id) or doc_url_for_ref(token, employee_id)
+    if token.startswith("trace-"):
+        return workflow_status_page_url(token, employee_id)
+    if token.startswith("evt-"):
+        return event_filter_url(token, employee_id)
+    if token.startswith("act-"):
+        action = find_action_log_row_by_request_id(token, employee_id)
+        if action and action.get("_log_ref"):
+            return action_raw_page_url(str(action["_log_ref"]), employee_id)
+        return "/actions?" + urlencode({"employee_id": employee_id})
+    if get_event_type(token):
+        return f"/event-types/{token}?" + urlencode({"employee_id": employee_id})
+    return ""
+
+
+def linkify_reference_text(value: str, employee_id: str) -> Markup:
+    escaped = html_escape(str(value))
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        url = url_for_reference_token(token, employee_id)
+        if not url:
+            return token
+        return f'<a href="{html_escape(url, quote=True)}">{token}</a>'
+
+    return Markup(REFERENCE_TEXT_RE.sub(replace, escaped))
+
+
+def render_linkified_value_html(value: Any, employee_id: str, depth: int = 0) -> Markup:
+    if isinstance(value, str):
+        if "\n" in value:
+            return Markup(f'<pre class="text-block">{linkify_reference_text(value, employee_id)}</pre>')
+        return Markup(f'<span class="scalar string">{linkify_reference_text(value, employee_id)}</span>')
+    if value is None:
+        return Markup('<span class="scalar null">null</span>')
+    if isinstance(value, bool):
+        return Markup(f'<span class="scalar bool">{str(value).lower()}</span>')
+    if isinstance(value, (int, float)):
+        return Markup(f'<span class="scalar number">{value}</span>')
+    if isinstance(value, dict):
+        rows = []
+        for item_key, item_value in value.items():
+            rows.append(
+                '<div class="kv-row">'
+                f'<div class="kv-key">{html_escape(str(item_key))}</div>'
+                f'<div class="kv-value">{render_linkified_value_html(item_value, employee_id, depth=depth + 1)}</div>'
+                "</div>"
+            )
+        return Markup(f'<div class="structured-data depth-{min(depth, 3)}">{"".join(rows)}</div>')
+    if isinstance(value, list):
+        items = "".join(f"<li>{render_linkified_value_html(item, employee_id, depth=depth + 1)}</li>" for item in value)
+        return Markup(f'<ol class="structured-list depth-{min(depth, 3)}">{items}</ol>')
+    return Markup(f'<span class="scalar">{html_escape(str(value))}</span>')
+
+
+def event_rows_for_template(
+    rows: list[dict[str, Any]],
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+    employee_id: str = DEMO_EMPLOYEE_ID,
+) -> list[dict[str, Any]]:
     rendered_rows = []
+    workflow_url_cache: dict[tuple[str, str], str] = {}
     for row in rows:
         item = dict(row)
+        item["event_url"] = event_filter_url(str(row.get("event_id") or ""), employee_id) if row.get("event_id") else ""
+        item["trace_url"] = trace_events_url(str(row.get("trace_id") or ""), employee_id) if row.get("trace_id") else ""
+        event_type_for_workflow = str(row.get("event_type") or "")
+        trace_id_for_workflow = str(row.get("trace_id") or "")
+        cache_key = (event_type_for_workflow, trace_id_for_workflow)
+        if trace_id_for_workflow and cache_key not in workflow_url_cache:
+            workflow_url_cache[cache_key] = workflow_status_page_url_for_event_type(
+                event_type_for_workflow,
+                trace_id_for_workflow,
+                employee_id,
+            )
+        item["workflow_status_url"] = workflow_url_cache.get(cache_key, "")
+        if row.get("_log_ref") and (row.get("result") is not None or row.get("error") is not None):
+            item["raw_url"] = event_raw_url(str(row["_log_ref"]), employee_id)
         if row.get("result") is not None:
-            summary = event_dispatch_summary(row["result"], str(row.get("employee_id") or DEMO_EMPLOYEE_ID))
+            summary = event_dispatch_summary(row["result"], str(row.get("employee_id") or DEMO_EMPLOYEE_ID), doc_lookup=doc_lookup)
             if summary:
                 item["dispatch_summary"] = summary
-                item["raw_result_html"] = render_value_html(row["result"])
             else:
                 item["result_html"] = render_content(row["result"])
         if row.get("error") is not None:
@@ -439,6 +787,9 @@ def read_doc(path: Path) -> dict[str, Any]:
 
 def load_event_types() -> list[dict[str, Any]]:
     ensure_dirs()
+    signature = glob_signature(EVENT_CATALOG_ROOT, "*.yaml") + glob_signature(EVENT_CATALOG_ROOT, "*.yml")
+    if _EVENT_TYPES_CACHE["signature"] == signature:
+        return [dict(item) for item in _EVENT_TYPES_CACHE["items"]]
     items: list[dict[str, Any]] = []
     for p in sorted(EVENT_CATALOG_ROOT.glob("*.yaml")) + sorted(EVENT_CATALOG_ROOT.glob("*.yml")):
         try:
@@ -455,7 +806,10 @@ def load_event_types() -> list[dict[str, Any]]:
     dedup: dict[str, dict[str, Any]] = {}
     for item in items:
         dedup[str(item["event_type"])] = item
-    return list(dedup.values())
+    result = list(dedup.values())
+    _EVENT_TYPES_CACHE["signature"] = signature
+    _EVENT_TYPES_CACHE["items"] = result
+    return [dict(item) for item in result]
 
 
 def event_type_map() -> dict[str, dict[str, Any]]:
@@ -475,6 +829,9 @@ def event_label(event_type: str | None) -> str:
 
 def load_action_catalog() -> list[dict[str, Any]]:
     ensure_dirs()
+    signature = glob_signature(ACTION_CATALOG_ROOT, "*.yaml") + glob_signature(ACTION_CATALOG_ROOT, "*.yml")
+    if _ACTION_CATALOG_CACHE["signature"] == signature:
+        return [dict(item) for item in _ACTION_CATALOG_CACHE["items"]]
     items: list[dict[str, Any]] = []
     for p in sorted(ACTION_CATALOG_ROOT.glob("*.yaml")) + sorted(ACTION_CATALOG_ROOT.glob("*.yml")):
         try:
@@ -488,24 +845,125 @@ def load_action_catalog() -> list[dict[str, Any]]:
     dedup: dict[str, dict[str, Any]] = {}
     for item in items:
         dedup[str(item["action_key"])] = item
-    return list(dedup.values())
+    result = list(dedup.values())
+    _ACTION_CATALOG_CACHE["signature"] = signature
+    _ACTION_CATALOG_CACHE["items"] = result
+    return [dict(item) for item in result]
 
 
-def read_action_logs(limit: int = 200, action_key: str | None = None) -> list[dict[str, Any]]:
+def cached_jsonl_rows(*, root: Path, pattern: str, cache: dict[str, Any], ref_prefix: str) -> list[dict[str, Any]]:
     ensure_dirs()
+    signature = glob_signature(root, pattern)
+    if cache["signature"] == signature:
+        return cache["rows"]
     rows: list[dict[str, Any]] = []
-    for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl"), reverse=True):
-        for line in reversed(p.read_text(encoding="utf-8").splitlines()):
+    for p in sorted(root.glob(pattern), reverse=True):
+        lines = p.read_text(encoding="utf-8").splitlines()
+        for line_number, line in reversed(list(enumerate(lines, start=1))):
             try:
                 row = json.loads(line)
             except Exception:
                 continue
-            if action_key and row.get("action_key") != action_key:
-                continue
+            row["_log_ref"] = f"{ref_prefix}:{p.name}:{line_number}"
             rows.append(row)
-            if len(rows) >= limit:
-                return rows
+    cache["signature"] = signature
+    cache["rows"] = rows
     return rows
+
+
+def cached_action_log_rows() -> list[dict[str, Any]]:
+    return cached_jsonl_rows(root=ACTION_LOG_ROOT, pattern="actions-*.jsonl", cache=_ACTION_LOG_CACHE, ref_prefix="action")
+
+
+def cached_event_log_rows() -> list[dict[str, Any]]:
+    return cached_jsonl_rows(root=EVENTS_ROOT, pattern="events-*.jsonl", cache=_EVENT_LOG_CACHE, ref_prefix="event")
+
+
+def read_action_logs(limit: int = 200, action_key: str | None = None, offset: int = 0) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in cached_action_log_rows():
+        if action_key and row.get("action_key") != action_key:
+            continue
+        if offset > 0:
+            offset -= 1
+            continue
+        rows.append(dict(row))
+        if len(rows) >= limit:
+            return rows
+    return rows
+
+
+def action_log_visible_to_employee(row: dict[str, Any], employee_id: str) -> bool:
+    row_employee_id = str(row.get("employee_id") or "")
+    if row_employee_id and row_employee_id != employee_id:
+        return False
+    return True
+
+
+def find_action_log_row_by_ref(log_ref: str, employee_id: str | None = None) -> dict[str, Any] | None:
+    for row in cached_action_log_rows():
+        if row.get("_log_ref") != log_ref:
+            continue
+        if employee_id and not action_log_visible_to_employee(row, employee_id):
+            return None
+        return dict(row)
+    return None
+
+
+def find_action_log_row_by_request_id(request_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
+    if not request_id:
+        return None
+    for row in cached_action_log_rows():
+        if row.get("request_id") != request_id:
+            continue
+        if employee_id and not action_log_visible_to_employee(row, employee_id):
+            return None
+        return dict(row)
+    return None
+
+
+def filtered_event_log_rows(
+    event_type: str | None = None,
+    trace_id: str | None = None,
+    event_id: str | None = None,
+) -> list[dict[str, Any]]:
+    event_labels = {str(e["event_type"]): str(e.get("name_ko") or e["event_type"]) for e in load_event_types()}
+    rows: list[dict[str, Any]] = []
+    for row in cached_event_log_rows():
+        if event_type and row.get("event_type") != event_type:
+            continue
+        if trace_id and row.get("trace_id") != trace_id:
+            continue
+        if event_id and row.get("event_id") != event_id:
+            continue
+        item = dict(row)
+        item["event_label"] = event_labels.get(str(row.get("event_type")), str(row.get("event_type") or ""))
+        rows.append(item)
+    return rows
+
+
+def read_event_logs(
+    limit: int = 200,
+    event_type: str | None = None,
+    trace_id: str | None = None,
+    event_id: str | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    rows = filtered_event_log_rows(event_type=event_type, trace_id=trace_id, event_id=event_id)
+    return rows[offset : offset + limit]
+
+
+def count_event_logs(event_type: str | None = None, trace_id: str | None = None, event_id: str | None = None) -> int:
+    return len(filtered_event_log_rows(event_type=event_type, trace_id=trace_id, event_id=event_id))
+
+
+def find_event_log_row_by_ref(log_ref: str) -> dict[str, Any] | None:
+    for row in cached_event_log_rows():
+        if row.get("_log_ref") == log_ref:
+            item = dict(row)
+            item["event_label"] = event_label(item.get("event_type"))
+            return item
+    return None
 
 
 def append_event_log(*, status: str, event: dict[str, Any], result: dict[str, Any] | None = None, error: str | None = None) -> None:
@@ -528,26 +986,7 @@ def append_event_log(*, status: str, event: dict[str, Any], result: dict[str, An
     path = EVENTS_ROOT / f"events-{datetime.now(KST).strftime('%Y%m%d')}.jsonl"
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-
-
-def read_event_logs(limit: int = 200, event_type: str | None = None, trace_id: str | None = None) -> list[dict[str, Any]]:
-    ensure_dirs()
-    rows: list[dict[str, Any]] = []
-    for p in sorted(EVENTS_ROOT.glob("events-*.jsonl"), reverse=True):
-        for line in reversed(p.read_text(encoding="utf-8").splitlines()):
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
-            if event_type and row.get("event_type") != event_type:
-                continue
-            if trace_id and row.get("trace_id") != trace_id:
-                continue
-            row["event_label"] = event_label(row.get("event_type"))
-            rows.append(row)
-            if len(rows) >= limit:
-                return rows
-    return rows
+    invalidate_event_log_caches()
 
 
 def teams_for(employee_id: str) -> list[str]:
@@ -576,14 +1015,18 @@ def is_accessible(doc: dict[str, Any], employee_id: str) -> bool:
 
 
 def accessible_docs(employee_id: str) -> list[dict[str, Any]]:
-    docs = []
-    for p in all_markdown_files():
-        try:
-            doc = read_doc(p)
-        except Exception:
-            continue
-        if is_accessible(doc, employee_id):
-            docs.append(doc)
+    ensure_dirs()
+    signature = markdown_signature()
+    if _DOCS_CACHE["signature"] != signature:
+        parsed_docs = []
+        for p in all_markdown_files():
+            try:
+                parsed_docs.append(read_doc(p))
+            except Exception:
+                continue
+        _DOCS_CACHE["signature"] = signature
+        _DOCS_CACHE["docs"] = parsed_docs
+    docs = [doc for doc in _DOCS_CACHE["docs"] if is_accessible(doc, employee_id)]
     docs.sort(key=lambda d: metadata_sort_value(d["metadata"].get("timestamp")), reverse=True)
     return docs
 
@@ -706,6 +1149,25 @@ def browse_url(
     return "/?" + urlencode(params)
 
 
+def events_url(
+    employee_id: str,
+    *,
+    event_type: str = "",
+    trace_id: str = "",
+    event_id: str = "",
+    page: int = 1,
+    limit: int = 50,
+) -> str:
+    params: dict[str, Any] = {"employee_id": employee_id, "page": page, "limit": limit}
+    if event_type:
+        params["event_type"] = event_type
+    if trace_id:
+        params["trace_id"] = trace_id
+    if event_id:
+        params["event_id"] = event_id
+    return "/events?" + urlencode(params)
+
+
 def with_folder_urls(
     node: dict[str, Any],
     *,
@@ -767,12 +1229,18 @@ def event_type_url(event_type: str, employee_id: str) -> str:
     return f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id})
 
 
+def event_type_okf_uri(event_type: str) -> str:
+    return f"/public/event-types/{event_type}.md"
+
+
 def event_run_example(event_type: str, employee_id: str) -> str:
-    if event_type == "equipment.alarm.raised.v1":
+    workflow, stage, _event_def = workflow_for_event_type(event_type, employee_id)
+    if workflow and event_type == str(workflow.get("entry_event") or workflow.get("first_event_type") or ""):
+        workflow_key = str(workflow.get("workflow_key") or "")
         return (
-            f'curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?employee_id={employee_id}" '
+            f'curl -X POST "http://localhost:8000/api/workflows/{workflow_key}/start?employee_id={employee_id}" '
             '-H "Content-Type: application/json" '
-            '-d \'{"equipment_id":"ETCH-VM-01","alarm_code":"RESPONSE_CHAIN_ABNORMAL","title":"Response Chain 이상 Alarm 발생"}\''
+            f'-d \'{{"payload":{{"title":"{event_label(event_type)}","workflow":"{workflow_key}"}}}}\''
         )
     return f"python scripts/publish_event.py {event_type} --employee {employee_id}"
 
@@ -904,28 +1372,54 @@ def item_to_recovered_doc(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def recovered_doc_indexes() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    signature = materialized_log_signature()
+    if _RECOVERED_DOC_CACHE["signature"] == signature:
+        return _RECOVERED_DOC_CACHE["by_boi_id"], _RECOVERED_DOC_CACHE["by_uri"]
+    by_boi_id: dict[str, dict[str, Any]] = {}
+    by_uri: dict[str, dict[str, Any]] = {}
+    for row in cached_event_log_rows() + cached_action_log_rows():
+        for item in iter_materialized_items(row):
+            doc = item_to_recovered_doc(item)
+            if not doc:
+                continue
+            boi_id = str(doc["metadata"].get("boi_id") or "")
+            uri = str(doc.get("uri") or "").lstrip("/")
+            if boi_id:
+                by_boi_id.setdefault(boi_id, doc)
+            if uri:
+                by_uri.setdefault(uri, doc)
+                if uri.endswith(".md"):
+                    by_uri.setdefault(uri[:-3], doc)
+    _RECOVERED_DOC_CACHE["signature"] = signature
+    _RECOVERED_DOC_CACHE["by_boi_id"] = by_boi_id
+    _RECOVERED_DOC_CACHE["by_uri"] = by_uri
+    return by_boi_id, by_uri
+
+
 def find_recovered_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
-    for path in materialized_log_paths():
-        for row in iter_jsonl_rows(path):
-            for item in iter_materialized_items(row):
-                doc = item_to_recovered_doc(item)
-                if not doc:
-                    continue
-                if doc["metadata"].get("boi_id") == boi_id or doc.get("uri", "").lstrip("/") == normalized_uri:
-                    if employee_id is None or is_accessible(doc, employee_id):
-                        return doc
+    by_boi_id, by_uri = recovered_doc_indexes()
+    candidates = [by_boi_id.get(boi_id), by_uri.get(normalized_uri)]
+    if normalized_uri.endswith(".md"):
+        candidates.append(by_uri.get(normalized_uri[:-3]))
+    for doc in candidates:
+        if doc and (employee_id is None or is_accessible(doc, employee_id)):
+            return doc
     return None
 
 
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
+    normalized_concept_id = normalized_uri[:-3] if normalized_uri.endswith(".md") else normalized_uri
     for p in all_markdown_files():
         try:
             doc = read_doc(p)
         except Exception:
             continue
-        if doc["metadata"].get("boi_id") == boi_id or doc.get("uri", "").lstrip("/") == normalized_uri:
+        doc_uri = doc.get("uri", "").lstrip("/")
+        doc_concept_id = doc_uri[:-3] if doc_uri.endswith(".md") else doc_uri
+        if doc["metadata"].get("boi_id") == boi_id or doc_uri == normalized_uri or doc_concept_id == normalized_concept_id:
             if employee_id is None or is_accessible(doc, employee_id):
                 return doc
     return find_recovered_doc_by_id(boi_id, employee_id)
@@ -935,22 +1429,446 @@ def doc_url_for_ref(ref: str, employee_id: str) -> str:
     return f"/docs/{ref}?" + urlencode({"employee_id": employee_id})
 
 
-def action_doc_uri(action: dict[str, Any], employee_id: str) -> str:
+def okf_concept_id_for_doc(doc: dict[str, Any]) -> str:
+    uri = str(doc.get("uri") or "").lstrip("/")
+    return uri[:-3] if uri.endswith(".md") else uri
+
+
+def okf_graph_for_docs(docs: list[dict[str, Any]], employee_id: str) -> dict[str, Any]:
+    node_map: dict[str, dict[str, Any]] = {}
+    outgoing_by_source: dict[str, list[dict[str, Any]]] = {}
+    incoming_by_target: dict[str, list[dict[str, Any]]] = {}
+    for doc in docs:
+        concept_id = okf_concept_id_for_doc(doc)
+        metadata = doc["metadata"]
+        node_map[concept_id] = {
+            "concept_id": concept_id,
+            "uri": doc.get("uri"),
+            "boi_id": metadata.get("boi_id"),
+            "title": metadata.get("title") or concept_id,
+            "type": metadata.get("type"),
+            "tags": metadata.get("tags") or [],
+            "url": doc_url_for_ref(str(metadata.get("boi_id") or doc.get("uri", "").lstrip("/")), employee_id),
+            "backlinks": [],
+        }
+    edge_by_key: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for doc in docs:
+        path = Path(doc["path"])
+        if not path.exists() or not str(path).startswith(str(DATA_ROOT)):
+            continue
+        for edge in markdown_link_edges(path, doc["body"], DATA_ROOT):
+            key = (
+                str(edge.get("source") or ""),
+                str(edge.get("target") or ""),
+                str(edge.get("href") or ""),
+                str(edge.get("label") or ""),
+            )
+            rendered_edge = edge_by_key.get(key)
+            if rendered_edge is None:
+                rendered_edge = dict(edge)
+                rendered_edge["source_url"] = node_map.get(edge["source"], {}).get("url", "")
+                rendered_edge["target_url"] = node_map.get(edge["target"], {}).get("url", "")
+                rendered_edge["occurrence_count"] = 1
+                edge_by_key[key] = rendered_edge
+            else:
+                rendered_edge["occurrence_count"] = int(rendered_edge.get("occurrence_count") or 1) + 1
+    edges = list(edge_by_key.values())
+    for edge in edges:
+        outgoing_by_source.setdefault(edge["source"], []).append(edge)
+        incoming_by_target.setdefault(edge["target"], []).append(edge)
+        if edge["target"] in node_map and edge["source"] not in node_map[edge["target"]]["backlinks"]:
+            node_map[edge["target"]]["backlinks"].append(edge["source"])
+    nodes = sorted(node_map.values(), key=lambda item: item["concept_id"])
+    edges = sorted(edges, key=lambda item: (item["source"], item["target"], item["label"]))
+    for edge_list in outgoing_by_source.values():
+        edge_list.sort(key=lambda item: (item["target"], item["label"]))
+    for edge_list in incoming_by_target.values():
+        edge_list.sort(key=lambda item: (item["source"], item["label"]))
+    return {
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "nodes": nodes,
+        "edges": edges,
+        "outgoing_by_source": outgoing_by_source,
+        "incoming_by_target": incoming_by_target,
+    }
+
+
+_OKF_GRAPH_CACHE: dict[tuple[str, tuple[tuple[str, str], ...]], dict[str, Any]] = {}
+
+
+def docs_cache_signature(docs: list[dict[str, Any]]) -> tuple[tuple[str, str], ...]:
+    cached_markdown_sig = _DOCS_CACHE.get("signature")
+    if cached_markdown_sig:
+        docset_hash = hashlib.sha1(
+            "\n".join(sorted(str(doc.get("uri") or okf_concept_id_for_doc(doc)) for doc in docs)).encode("utf-8")
+        ).hexdigest()
+        extra: list[tuple[str, str]] = []
+        for doc in docs:
+            if doc.get("recovered_from_log"):
+                payload = json.dumps(doc.get("metadata") or {}, ensure_ascii=False, sort_keys=True, default=str) + "\n" + str(doc.get("body") or "")
+                extra.append((str(doc.get("uri") or okf_concept_id_for_doc(doc)), hashlib.sha1(payload.encode("utf-8")).hexdigest()))
+        return (("docset", docset_hash), ("markdown", hashlib.sha1(repr(cached_markdown_sig).encode("utf-8")).hexdigest()), *tuple(sorted(extra)))
+    signature: list[tuple[str, str]] = []
+    for doc in docs:
+        uri = str(doc.get("uri") or okf_concept_id_for_doc(doc))
+        path_value = str(doc.get("path") or "")
+        version = ""
+        if path_value:
+            path = Path(path_value)
+            try:
+                if path.exists():
+                    version = str(path.stat().st_mtime_ns)
+            except OSError:
+                version = ""
+        if not version:
+            payload = json.dumps(doc.get("metadata") or {}, ensure_ascii=False, sort_keys=True, default=str) + "\n" + str(doc.get("body") or "")
+            version = hashlib.sha1(payload.encode("utf-8")).hexdigest()
+        signature.append((uri, version))
+    return tuple(sorted(signature))
+
+
+def cached_okf_graph_for_docs(docs: list[dict[str, Any]], employee_id: str) -> dict[str, Any]:
+    key = (employee_id, docs_cache_signature(docs))
+    cached = _OKF_GRAPH_CACHE.get(key)
+    if cached is not None:
+        return cached
+    if len(_OKF_GRAPH_CACHE) > 16:
+        _OKF_GRAPH_CACHE.clear()
+    graph = okf_graph_for_docs(docs, employee_id)
+    _OKF_GRAPH_CACHE[key] = graph
+    return graph
+
+
+def citation_rows_for_doc(
+    doc: dict[str, Any],
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in doc["metadata"].get("source_refs") or []:
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("uri") or item.get("ref") or "")
+        url = ""
+        if ref:
+            if ref.startswith("http://") or ref.startswith("https://"):
+                url = ref
+            else:
+                target_doc = doc_from_lookup(ref, doc_lookup)
+                if target_doc is None and doc_lookup is None:
+                    target_doc = find_doc_by_id(ref, employee_id)
+                if target_doc:
+                    url = doc_url_for_ref(str(target_doc["metadata"].get("boi_id")), employee_id)
+                else:
+                    url = source_url_for_ref(ref, employee_id)
+        rows.append({"type": str(item.get("type") or "source"), "ref": ref, "url": url})
+    return rows
+
+
+def source_ref_for_path(path: Path) -> str:
+    try:
+        return "data/boi/" + str(path.resolve().relative_to(DATA_ROOT.resolve())).replace("\\", "/")
+    except ValueError:
+        pass
+    try:
+        return "data/action_catalog/" + str(path.resolve().relative_to(ACTION_CATALOG_ROOT.resolve())).replace("\\", "/")
+    except ValueError:
+        pass
+    try:
+        return "data/event_catalog/" + str(path.resolve().relative_to(EVENT_CATALOG_ROOT.resolve())).replace("\\", "/")
+    except ValueError:
+        pass
+    return str(path)
+
+
+def source_url_for_ref(ref: str, employee_id: str) -> str:
+    if not ref or ref.startswith(("http://", "https://")):
+        return ""
+    try:
+        resolve_source_path(ref)
+    except HTTPException:
+        return ""
+    return "/source?" + urlencode({"employee_id": employee_id, "path": ref})
+
+
+def source_url_for_doc(doc: dict[str, Any], employee_id: str) -> str:
+    path_value = str(doc.get("path") or "")
+    if not path_value:
+        return ""
+    ref = source_ref_for_path(Path(path_value))
+    return source_url_for_ref(ref, employee_id)
+
+
+def resolve_source_path(ref: str) -> Path:
+    raw = str(ref or "").strip().replace("\\", "/")
+    if not raw:
+        raise HTTPException(status_code=400, detail="path is required")
+    if raw.startswith("/"):
+        raw = "data/boi/" + raw.lstrip("/")
+
+    candidates: list[Path] = []
+    if raw.startswith("data/boi/"):
+        candidates.append(DATA_ROOT / raw.removeprefix("data/boi/"))
+    elif raw.startswith("data/action_catalog/"):
+        candidates.append(ACTION_CATALOG_ROOT / raw.removeprefix("data/action_catalog/"))
+    elif raw.startswith("data/event_catalog/"):
+        candidates.append(EVENT_CATALOG_ROOT / raw.removeprefix("data/event_catalog/"))
+    elif raw.startswith("public/") or raw.startswith("team/") or raw.startswith("private/"):
+        candidates.append(DATA_ROOT / raw)
+    else:
+        raise HTTPException(status_code=400, detail="source path is not allowlisted")
+
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        allowed_roots = [DATA_ROOT.resolve(), ACTION_CATALOG_ROOT.resolve(), EVENT_CATALOG_ROOT.resolve()]
+        if not any(resolved == root or root in resolved.parents for root in allowed_roots):
+            raise HTTPException(status_code=400, detail="source path escapes allowlisted roots")
+        if resolved.suffix.lower() not in {".md", ".yaml", ".yml"}:
+            raise HTTPException(status_code=400, detail="source file type is not editable")
+        return resolved
+    raise HTTPException(status_code=404, detail="source path not found")
+
+
+def validate_source_content(path: Path, content: str) -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    parsed: Any = None
+    suffix = path.suffix.lower()
+    if re.search(r"\b(sk-[A-Za-z0-9_-]{12,}|ghp_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})", content):
+        errors.append("potential secret token detected")
+    if suffix == ".md":
+        if path.name in {"index.md", "log.md"}:
+            if content.startswith("---"):
+                errors.append(f"reserved {path.name} must not contain BoI concept frontmatter")
+        else:
+            metadata, _body = split_frontmatter(content)
+            if not metadata:
+                errors.append("missing YAML frontmatter")
+            else:
+                errors.extend(validate_okf_metadata(metadata))
+            parsed = {"metadata": metadata}
+    elif suffix in {".yaml", ".yml"}:
+        try:
+            parsed = yaml.safe_load(content) or {}
+        except yaml.YAMLError as exc:
+            errors.append(f"invalid YAML: {exc}")
+            parsed = None
+        if isinstance(parsed, dict) and path.name in {"actions.yaml", "actions.yml"}:
+            actions = parsed.get("actions")
+            if not isinstance(actions, list):
+                errors.append("actions catalog requires top-level actions list")
+            else:
+                seen: set[str] = set()
+                actions_by_key: dict[str, dict[str, Any]] = {}
+                manual_action_keys: set[str] = set()
+                for index, action in enumerate(actions, start=1):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{index}] must be an object")
+                        continue
+                    key = str(action.get("action_key") or "")
+                    if not key:
+                        errors.append(f"actions[{index}] missing action_key")
+                    if key in seen:
+                        errors.append(f"duplicate action_key: {key}")
+                    seen.add(key)
+                    if key:
+                        actions_by_key[key] = action
+                        if action.get("connector_kind") == "manual":
+                            manual_action_keys.add(key)
+                    for field_name in ("connector_kind", "doc_ref", "type"):
+                        if not action.get(field_name):
+                            errors.append(f"{key or f'actions[{index}]'} missing {field_name}")
+                for action in actions_by_key.values():
+                    key = str(action.get("action_key") or "")
+                    manual_ref = str(action.get("requires_manual_action") or "")
+                    if action.get("risk_level") == "high" and action.get("connector_kind") != "manual":
+                        if not manual_ref:
+                            errors.append(f"{key} high-risk action requires requires_manual_action")
+                        elif manual_ref not in actions_by_key:
+                            errors.append(f"{key} requires_manual_action references missing action: {manual_ref}")
+                        elif manual_ref not in manual_action_keys:
+                            errors.append(f"{key} requires_manual_action must reference a manual action: {manual_ref}")
+        if isinstance(parsed, dict) and path.name in {"event_types.yaml", "event_types.yml"}:
+            event_types = parsed.get("event_types")
+            if not isinstance(event_types, list):
+                errors.append("event catalog requires top-level event_types list")
+            else:
+                seen_events: set[str] = set()
+                for index, event in enumerate(event_types, start=1):
+                    if not isinstance(event, dict):
+                        errors.append(f"event_types[{index}] must be an object")
+                        continue
+                    event_type = str(event.get("event_type") or "")
+                    if not event_type:
+                        errors.append(f"event_types[{index}] missing event_type")
+                    if event_type in seen_events:
+                        errors.append(f"duplicate event_type: {event_type}")
+                    seen_events.add(event_type)
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "parsed": parsed}
+
+
+def source_payload(path: Path, employee_id: str, content: str | None = None) -> dict[str, Any]:
+    actual_content = path.read_text(encoding="utf-8") if content is None else content
+    validation = validate_source_content(path, actual_content)
+    return {
+        "path": source_ref_for_path(path),
+        "exists": path.exists(),
+        "sha256": hashlib.sha256(actual_content.encode("utf-8")).hexdigest(),
+        "content": actual_content,
+        "validation": validation,
+        "draft_only": True,
+        "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
+    }
+
+
+def source_draft_response(
+    *,
+    source_path: Path,
+    base_sha256: str,
+    proposed_content: str,
+    employee_id: str,
+    author: str | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="source file not found")
+    current_content = source_path.read_text(encoding="utf-8")
+    current_sha = hashlib.sha256(current_content.encode("utf-8")).hexdigest()
+    if base_sha256 != current_sha:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "ok": False,
+                "status": "stale_base",
+                "message": "source changed after this draft was opened; reload before saving a draft",
+                "current_sha256": current_sha,
+            },
+        )
+    validation = validate_source_content(source_path, proposed_content)
+    draft_id = f"source-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    draft = {
+        "draft_id": draft_id,
+        "kind": "source_edit",
+        "status": "pending" if validation["ok"] else "validation_failed",
+        "target_path": source_ref_for_path(source_path),
+        "base_sha256": current_sha,
+        "proposed_sha256": hashlib.sha256(proposed_content.encode("utf-8")).hexdigest(),
+        "proposed_content": proposed_content,
+        "author": author or employee_id,
+        "employee_id": employee_id,
+        "note": note,
+        "created_at": now_iso(),
+        "validation": validation,
+        "draft_only": True,
+        "applied": False,
+        "committed": False,
+    }
+    ensure_dirs()
+    draft_path = DRAFT_ROOT / "source_edits" / f"{draft_id}.json"
+    draft_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return {
+        "ok": validation["ok"],
+        "draft_id": draft_id,
+        "status": draft["status"],
+        "draft_path": str(draft_path),
+        "target_path": draft["target_path"],
+        "validation": validation,
+        "draft_only": True,
+        "message": "Draft saved only. An agent must apply, test, and commit this change.",
+    }
+
+
+def body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, Any] | None:
+    path_value = str(doc.get("path") or "")
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.exists() or path.suffix.lower() != ".md":
+        return None
+    try:
+        source_ref_for_path(path)
+    except Exception:
+        return None
+    content = path.read_text(encoding="utf-8")
+    return {
+        "body": doc.get("body") or "",
+        "base_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "save_url": "/api/docs/" + str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/")) + "/body-drafts?" + urlencode({"employee_id": employee_id}),
+        "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
+    }
+
+
+def relationship_context_for_doc(
+    doc: dict[str, Any],
+    employee_id: str,
+    docs: list[dict[str, Any]] | None = None,
+    graph: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    graph = graph or cached_okf_graph_for_docs(docs if docs is not None else accessible_docs(employee_id), employee_id)
+    concept_id = okf_concept_id_for_doc(doc)
+    outgoing = graph.get("outgoing_by_source", {}).get(concept_id)
+    incoming = graph.get("incoming_by_target", {}).get(concept_id)
+    if outgoing is None:
+        outgoing = [edge for edge in graph["edges"] if edge["source"] == concept_id]
+    if incoming is None:
+        incoming = [edge for edge in graph["edges"] if edge["target"] == concept_id]
+    return {"concept_id": concept_id, "outgoing": outgoing, "incoming": incoming}
+
+
+def cached_doc_body_html(doc: dict[str, Any], employee_id: str, doc_lookup: dict[str, dict[str, Any]]) -> Markup:
+    source_path = Path(doc["path"])
+    if source_path.exists():
+        try:
+            doc_version = str(source_path.stat().st_mtime_ns)
+        except OSError:
+            doc_version = hashlib.sha1(str(doc.get("body") or "").encode("utf-8")).hexdigest()
+    else:
+        doc_version = hashlib.sha1(
+            (json.dumps(doc.get("metadata") or {}, ensure_ascii=False, sort_keys=True, default=str) + "\n" + str(doc.get("body") or "")).encode("utf-8")
+        ).hexdigest()
+    key = (
+        employee_id,
+        str(doc.get("uri") or ""),
+        doc_version,
+        hashlib.sha1(repr(_DOCS_CACHE.get("signature")).encode("utf-8")).hexdigest(),
+    )
+    cached = _DOC_BODY_HTML_CACHE.get(key)
+    if cached is not None:
+        return cached
+    if len(_DOC_BODY_HTML_CACHE) > 128:
+        _DOC_BODY_HTML_CACHE.clear()
+    rendered = render_markdown(doc["body"], employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)
+    _DOC_BODY_HTML_CACHE[key] = rendered
+    return rendered
+
+
+def action_doc_uri(
+    action: dict[str, Any],
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
     doc_ref = str(action.get("doc_ref") or "")
     if not doc_ref:
         return ""
-    doc = find_doc_by_id(doc_ref, employee_id)
+    doc = doc_from_lookup(doc_ref, doc_lookup)
+    if doc is None and doc_lookup is None:
+        doc = find_doc_by_id(doc_ref, employee_id)
     return str(doc.get("uri", "")) if doc else ""
 
 
-def actions_for_template(actions: list[dict[str, Any]], employee_id: str) -> list[dict[str, Any]]:
+def actions_for_template(
+    actions: list[dict[str, Any]],
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     items = []
     for action in actions:
         item = dict(action)
         doc_ref = str(item.get("doc_ref") or "")
         if doc_ref:
             item["doc_url"] = doc_url_for_ref(doc_ref, employee_id)
-            item["doc_uri"] = action_doc_uri(item, employee_id)
+            item["doc_uri"] = action_doc_uri(item, employee_id, doc_lookup=doc_lookup)
         items.append(item)
     return items
 
@@ -988,6 +1906,7 @@ def write_boi(metadata: dict[str, Any], body: str) -> dict[str, Any]:
     filename = safe_filename(metadata["boi_id"]) + ".md"
     path = path_dir / filename
     path.write_text(compose_markdown(metadata, body), encoding="utf-8")
+    invalidate_doc_caches()
     return read_doc(path)
 
 
@@ -1097,6 +2016,12 @@ class EventHandleRequest(BaseModel):
     trace_id: str | None = None
 
 
+class BoIEnrichFromDispatchRequest(BaseModel):
+    employee_id: str = DEMO_EMPLOYEE_ID
+    event: dict[str, Any] = Field(default_factory=dict)
+    dispatch_result: dict[str, Any] = Field(default_factory=dict)
+
+
 class EventAuditRequest(BaseModel):
     status: str
     event: dict[str, Any]
@@ -1113,6 +2038,21 @@ class ActionInvokeRequest(BaseModel):
     dry_run: bool | None = None
     approved_by: str | None = None
     idempotency_key: str | None = None
+
+
+class SourceDraftRequest(BaseModel):
+    path: str = Field(examples=["data/boi/public/sop/equipment-abnormal-response.md"])
+    base_sha256: str
+    proposed_content: str
+    author: str | None = None
+    note: str = ""
+
+
+class BodyDraftRequest(BaseModel):
+    base_sha256: str
+    proposed_body: str
+    author: str | None = None
+    note: str = ""
 
 
 class PocConnectorRequest(BaseModel):
@@ -1398,6 +2338,78 @@ async def sops_page(request: Request, employee_id: str = Depends(current_employe
     )
 
 
+@app.get("/source", response_class=HTMLResponse)
+async def source_page(
+    request: Request,
+    path: str,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    source_path = resolve_source_path(path)
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="source file not found")
+    source = source_payload(source_path, employee_id)
+    return templates.TemplateResponse(
+        "source.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "source": source,
+        },
+    )
+
+
+@app.get("/api/source")
+async def get_source(
+    path: str,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    source_path = resolve_source_path(path)
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="source file not found")
+    return source_payload(source_path, employee_id)
+
+
+@app.post("/api/source/drafts")
+async def create_source_draft(
+    req: SourceDraftRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    source_path = resolve_source_path(req.path)
+    return source_draft_response(
+        source_path=source_path,
+        base_sha256=req.base_sha256,
+        proposed_content=req.proposed_content,
+        employee_id=employee_id,
+        author=req.author,
+        note=req.note,
+    )
+
+
+@app.post("/api/docs/{boi_id:path}/body-drafts")
+async def create_doc_body_draft(
+    boi_id: str,
+    req: BodyDraftRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    docs = accessible_docs(employee_id)
+    doc_lookup = build_doc_lookup(docs)
+    doc = doc_from_lookup(boi_id, doc_lookup)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    source_path = Path(str(doc.get("path") or ""))
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="source file not found")
+    proposed_content = compose_markdown(doc["metadata"], req.proposed_body)
+    return source_draft_response(
+        source_path=source_path,
+        base_sha256=req.base_sha256,
+        proposed_content=proposed_content,
+        employee_id=employee_id,
+        author=req.author,
+        note=req.note or "inline body editor",
+    )
+
+
 @app.get("/docs/{boi_id:path}", response_class=HTMLResponse)
 async def doc_page(
     request: Request,
@@ -1405,17 +2417,24 @@ async def doc_page(
     employee_id: str = Depends(current_employee),
     folder: str = "",
 ) -> HTMLResponse:
-    doc = find_doc_by_id(boi_id, employee_id)
+    docs = accessible_docs(employee_id)
+    doc_lookup = build_doc_lookup(docs)
+    doc = doc_from_lookup(boi_id, doc_lookup) or find_recovered_doc_by_id(boi_id, employee_id)
     if not doc:
         return templates.TemplateResponse(
             "missing_doc.html",
             {"request": request, "employee_id": employee_id, "boi_id": boi_id},
             status_code=404,
         )
+    if doc.get("recovered_from_log"):
+        docs = docs + [doc]
+        doc_lookup.update(build_doc_lookup([doc]))
     doc_folder_path = doc_folder(doc)
     return_folder = normalize_folder(folder) or doc_folder_path
     workflow = doc["metadata"].get("workflow") or {}
-    workflow_poc = equipment_workflow_context(employee_id) if workflow.get("workflow_key") == "equipment-anomaly" else None
+    workflow_key = str(workflow.get("workflow_key") or "")
+    workflow_poc = workflow_context(workflow_key, employee_id, doc_lookup=doc_lookup) if workflow_key else None
+    graph_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
     return templates.TemplateResponse(
         "doc.html",
         {
@@ -1428,9 +2447,13 @@ async def doc_page(
                 employee_id=employee_id,
             ),
             "doc_list_url": browse_url(employee_id, folder=return_folder),
+            "source_url": source_url_for_doc(doc, employee_id),
+            "doc_graph_url": "/api/okf/graph/doc/" + graph_ref + "?" + urlencode({"employee_id": employee_id}),
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
             "metadata_rows": metadata_rows_for_template(doc["metadata"]),
-            "body_html": render_markdown(doc["body"]),
+            "body_html": cached_doc_body_html(doc, employee_id, doc_lookup),
+            "body_editor": body_editor_payload_for_doc(doc, employee_id),
+            "citations": citation_rows_for_doc(doc, employee_id, doc_lookup=doc_lookup),
             "workflow_poc": workflow_poc,
             "action_spec": action_spec_for_template(doc["metadata"]),
         },
@@ -1464,6 +2487,23 @@ async def list_boi(
         "count": len(docs),
         "items": docs,
     }
+
+
+@app.get("/api/okf/graph")
+async def api_okf_graph(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return cached_okf_graph_for_docs(accessible_docs(employee_id), employee_id)
+
+
+@app.get("/api/okf/graph/doc/{boi_id:path}")
+async def api_okf_doc_graph(boi_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    docs = accessible_docs(employee_id)
+    doc_lookup = build_doc_lookup(docs)
+    doc = doc_from_lookup(boi_id, doc_lookup) or find_recovered_doc_by_id(boi_id, employee_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    if doc.get("recovered_from_log"):
+        docs = docs + [doc]
+    return relationship_context_for_doc(doc, employee_id, docs=docs)
 
 
 @app.post("/api/boi")
@@ -1550,15 +2590,6 @@ async def publish_event(req: EventPublishRequest, employee_id: str = Depends(cur
     return {"ok": True, "topic": BOI_EVENTS_TOPIC, "event": event}
 
 
-EQUIPMENT_WORKFLOW_EVENT_SEQUENCE = [
-    "equipment.alarm.raised.v1",
-    "trend.anomaly.detected.v1",
-    "root_cause.analysis.requested.v1",
-    "maintenance.guide.requested.v1",
-    "corrective_action.requested.v1",
-]
-
-
 def unique_values(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result = []
@@ -1569,23 +2600,186 @@ def unique_values(values: list[str]) -> list[str]:
     return result
 
 
-def equipment_workflow_event_defs() -> list[dict[str, Any]]:
-    return [event for event_type in EQUIPMENT_WORKFLOW_EVENT_SEQUENCE if (event := get_event_type(event_type))]
+def workflow_docs_for_registry(employee_id: str, doc_lookup: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    if doc_lookup is not None:
+        seen: set[str] = set()
+        docs: list[dict[str, Any]] = []
+        for doc in doc_lookup.values():
+            uri = str(doc.get("uri") or doc.get("path") or id(doc))
+            if uri in seen:
+                continue
+            seen.add(uri)
+            docs.append(doc)
+        return docs
+    return accessible_docs(employee_id)
 
 
-def workflow_sop_context(employee_id: str) -> dict[str, Any]:
-    event_defs = equipment_workflow_event_defs()
-    sop_ref = next((str(event.get("sop_ref")) for event in event_defs if event.get("sop_ref")), "boi:public:sop:equipment-abnormal-response")
-    sop_doc = find_doc_by_id(sop_ref, employee_id)
+def normalize_workflow_stage(stage: dict[str, Any]) -> dict[str, Any]:
+    stage_id = str(stage.get("id") or stage.get("sop_stage_id") or stage.get("stage_id") or "")
+    entry_event = str(stage.get("entry_event") or "")
+    raw_event_types = stage.get("event_types") or []
+    if isinstance(raw_event_types, str):
+        raw_event_types = [raw_event_types]
+    event_types = unique_values([entry_event, *[str(item) for item in raw_event_types if item]])
+    if not event_types and stage.get("event_type"):
+        event_types = [str(stage.get("event_type"))]
+    automated_actions = stage.get("automated_actions") or stage.get("actions") or []
+    manual_actions = stage.get("manual_actions") or []
+    if isinstance(automated_actions, str):
+        automated_actions = [automated_actions]
+    if isinstance(manual_actions, str):
+        manual_actions = [manual_actions]
+    stage_name = str(stage.get("name") or stage.get("stage") or stage_id or "SOP Stage")
     return {
-        "sop_ref": sop_ref,
-        "sop_uri": str(sop_doc.get("uri", "")) if sop_doc else "",
-        "sop_title": str((sop_doc or {}).get("metadata", {}).get("title", "")),
-        "sop_url": doc_url_for_ref(sop_ref, employee_id),
+        **stage,
+        "id": stage_id,
+        "sop_stage_id": stage_id,
+        "stage": stage_name,
+        "name": stage_name,
+        "entry_event": entry_event or (event_types[0] if event_types else ""),
+        "event_type": event_types[0] if event_types else "",
+        "event_types": event_types,
+        "emits_event": str(stage.get("emits_event") or ""),
+        "next_stage": str(stage.get("next_stage") or ""),
+        "automated_actions": [str(item) for item in automated_actions if item],
+        "manual_actions": [str(item) for item in manual_actions if item],
     }
 
 
-def action_details_for_keys(action_keys: list[str], employee_id: str) -> list[dict[str, Any]]:
+def build_workflow_definition(doc: dict[str, Any], employee_id: str) -> dict[str, Any] | None:
+    metadata = doc.get("metadata") or {}
+    workflow = metadata.get("workflow") or {}
+    workflow_key = str(workflow.get("workflow_key") or "")
+    if not workflow_key:
+        return None
+    stages = [normalize_workflow_stage(stage) for stage in workflow.get("stages") or [] if isinstance(stage, dict)]
+    if not stages:
+        return None
+    sop_ref = str(metadata.get("boi_id") or "")
+    sop_uri = str(doc.get("uri") or "")
+    expected_event_types = unique_values([event_type for stage in stages for event_type in stage.get("event_types", [])])
+    expected_actions = unique_values([action for stage in stages for action in stage.get("automated_actions", [])])
+    expected_manual_actions = unique_values([action for stage in stages for action in stage.get("manual_actions", [])])
+    entry_event = str(workflow.get("entry_event") or stages[0].get("entry_event") or stages[0].get("event_type") or "")
+    return {
+        "workflow_key": workflow_key,
+        "name": workflow_key,
+        "sop_ref": sop_ref,
+        "sop_uri": sop_uri,
+        "sop_title": str(metadata.get("title") or sop_ref),
+        "sop_url": doc_url_for_ref(sop_ref, employee_id) if sop_ref else "",
+        "entry_event": entry_event,
+        "first_event_type": entry_event,
+        "stages": stages,
+        "expected_stages": stages,
+        "expected_event_types": expected_event_types,
+        "expected_actions": expected_actions,
+        "expected_manual_actions": expected_manual_actions,
+        "expected_next": [stage.get("event_type") for stage in stages[1:] if stage.get("event_type")],
+        "doc": doc,
+        "workflow": workflow,
+    }
+
+
+def workflow_registry(employee_id: str, doc_lookup: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+    registry: dict[str, dict[str, Any]] = {}
+    for doc in workflow_docs_for_registry(employee_id, doc_lookup=doc_lookup):
+        definition = build_workflow_definition(doc, employee_id)
+        if definition:
+            registry.setdefault(str(definition["workflow_key"]), definition)
+    return registry
+
+
+def workflow_for_key(
+    workflow_key: str,
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    return workflow_registry(employee_id, doc_lookup=doc_lookup).get(workflow_key)
+
+
+def workflow_for_sop_ref(
+    sop_ref: str,
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    if not sop_ref:
+        return None
+    for workflow in workflow_registry(employee_id, doc_lookup=doc_lookup).values():
+        if workflow.get("sop_ref") == sop_ref or workflow.get("sop_uri") == sop_ref:
+            return workflow
+    sop_doc = doc_from_lookup(sop_ref, doc_lookup)
+    if sop_doc is None and doc_lookup is None:
+        sop_doc = find_doc_by_id(sop_ref, employee_id)
+    return build_workflow_definition(sop_doc, employee_id) if sop_doc else None
+
+
+def stage_for_event_type(workflow: dict[str, Any], event_type: str, event_def: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    event_def = event_def or {}
+    stage_id = str(event_def.get("sop_stage_id") or "")
+    stages = workflow.get("stages") or workflow.get("expected_stages") or []
+    if stage_id:
+        for stage in stages:
+            if str(stage.get("sop_stage_id") or stage.get("id") or "") == stage_id:
+                return stage
+    for stage in stages:
+        event_types = [str(item) for item in stage.get("event_types") or []]
+        if event_type in event_types or event_type == str(stage.get("entry_event") or "") or event_type == str(stage.get("emits_event") or ""):
+            return stage
+    return None
+
+
+def workflow_for_event_type(
+    event_type: str,
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any]]:
+    event_def = get_event_type(event_type) or {}
+    workflow = workflow_for_sop_ref(str(event_def.get("sop_ref") or ""), employee_id, doc_lookup=doc_lookup)
+    if workflow is None:
+        for candidate in workflow_registry(employee_id, doc_lookup=doc_lookup).values():
+            if stage_for_event_type(candidate, event_type, event_def):
+                workflow = candidate
+                break
+    stage = stage_for_event_type(workflow, event_type, event_def) if workflow else None
+    return workflow, stage, event_def
+
+
+def workflow_context(
+    workflow_key: str,
+    employee_id: str,
+    trace_id: str | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    workflow = workflow_for_key(workflow_key, employee_id, doc_lookup=doc_lookup)
+    if not workflow:
+        raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_key}")
+    context = dict(workflow)
+    context.pop("doc", None)
+    context["action_details"] = action_details_for_keys(context.get("expected_actions") or [], employee_id, doc_lookup=doc_lookup)
+    context["manual_action_details"] = action_details_for_keys(context.get("expected_manual_actions") or [], employee_id, doc_lookup=doc_lookup)
+    if trace_id:
+        context["status_url"] = workflow_status_api_url_for_key(workflow_key, trace_id, employee_id)
+        context["status_page_url"] = workflow_status_page_url_for_key(workflow_key, trace_id, employee_id)
+        context["status_raw_url"] = workflow_status_raw_url_for_key(workflow_key, trace_id, employee_id)
+    return context
+
+
+def workflow_sop_context(employee_id: str, doc_lookup: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    context = workflow_context("equipment-anomaly", employee_id, doc_lookup=doc_lookup)
+    return {
+        "sop_ref": context["sop_ref"],
+        "sop_uri": context["sop_uri"],
+        "sop_title": context["sop_title"],
+        "sop_url": context["sop_url"],
+    }
+
+
+def action_details_for_keys(
+    action_keys: list[str],
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     catalog = {str(action.get("action_key")): action for action in load_action_catalog()}
     details = []
     for action_key in unique_values(action_keys):
@@ -1602,7 +2796,7 @@ def action_details_for_keys(action_keys: list[str], employee_id: str) -> list[di
                 "risk_level": action.get("risk_level"),
                 "approval_required": bool(action.get("approval_required")),
                 "doc_ref": action.get("doc_ref"),
-                "doc_uri": action_doc_uri(action, employee_id),
+                "doc_uri": action_doc_uri(action, employee_id, doc_lookup=doc_lookup),
                 "requires_manual_action": action.get("requires_manual_action"),
             }
         )
@@ -1616,72 +2810,419 @@ def action_details_markdown(details: list[dict[str, Any]]) -> str:
             rows.append(f"- `{detail.get('action_key')}`: catalog entry missing")
             continue
         manual_note = f" / requires_manual_action=`{detail.get('requires_manual_action')}`" if detail.get("requires_manual_action") else ""
+        action_label = str(detail.get("name_ko") or detail.get("action_key"))
+        action_ref = f"[{action_label}]({detail.get('doc_uri')})" if detail.get("doc_uri") else action_label
         rows.append(
             "- "
-            + f"`{detail.get('action_key')}`: {detail.get('name_ko')} "
+            + f"`{detail.get('action_key')}`: {action_ref} "
             + f"/ connector={detail.get('connector_kind')} "
             + f"/ risk={detail.get('risk_level')} "
             + f"/ approval_required={detail.get('approval_required')} "
-            + f"/ doc_ref=`{detail.get('doc_ref')}` "
-            + f"/ doc_uri=`{detail.get('doc_uri')}`"
             + manual_note
         )
     return "\n".join(rows) if rows else "- 등록된 Action 없음"
 
 
-def equipment_workflow_context(employee_id: str, trace_id: str | None = None) -> dict[str, Any]:
-    event_defs = equipment_workflow_event_defs()
-    automated_keys = unique_values([key for event in event_defs for key in (event.get("recommended_actions") or [])])
-    manual_keys = unique_values([key for event in event_defs for key in (event.get("recommended_manual_actions") or [])])
-    sop = workflow_sop_context(employee_id)
-    context = {
-        **sop,
-        "expected_event_types": [event["event_type"] for event in event_defs],
-        "expected_stages": [
-            {
-                "event_type": event.get("event_type"),
-                "stage": event.get("workflow_stage"),
-                "sop_stage_id": event.get("sop_stage_id"),
-            }
-            for event in event_defs
-        ],
-        "expected_actions": automated_keys,
-        "expected_manual_actions": manual_keys,
-        "action_details": action_details_for_keys(automated_keys, employee_id),
-        "manual_action_details": action_details_for_keys(manual_keys, employee_id),
-    }
+def equipment_workflow_context(
+    employee_id: str,
+    trace_id: str | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    context = workflow_context("equipment-anomaly", employee_id, trace_id=trace_id, doc_lookup=doc_lookup)
     if trace_id:
-        context["status_url"] = "/api/workflows/demo/equipment-anomaly/status?" + urlencode({"trace_id": trace_id, "employee_id": employee_id})
+        context["status_url"] = workflow_status_api_url(trace_id, employee_id)
+        context["status_page_url"] = workflow_status_page_url(trace_id, employee_id)
+        context["status_raw_url"] = workflow_status_raw_url(trace_id, employee_id)
     return context
 
 
-@app.post("/api/workflows/demo/equipment-anomaly/start")
-async def start_equipment_anomaly_demo(req: EquipmentAnomalyStartRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    owner = req.owner or employee_id
+def workflow_trace_graph(
+    *,
+    context: dict[str, Any],
+    events: list[dict[str, Any]],
+    actions: list[dict[str, Any]],
+    generated_docs: list[dict[str, Any]],
+    employee_id: str,
+) -> dict[str, Any]:
+    nodes: dict[str, dict[str, Any]] = {}
+    edges: list[dict[str, str]] = []
+
+    def add_node(node_id: str, node_type: str, label: str, url: str = "") -> None:
+        if not node_id:
+            return
+        nodes.setdefault(node_id, {"id": node_id, "type": node_type, "label": label or node_id, "url": url})
+
+    def add_edge(source: str, target: str, label: str) -> None:
+        if source and target:
+            edges.append({"source": source, "target": target, "label": label})
+
+    sop_id = f"sop:{context.get('sop_ref')}"
+    add_node(sop_id, "sop", str(context.get("sop_ref") or "SOP"), str(context.get("sop_url") or ""))
+    for stage in context.get("expected_stages") or []:
+        stage_id = str(stage.get("sop_stage_id") or stage.get("id") or stage.get("stage") or "stage")
+        event_types = [str(item) for item in (stage.get("event_types") or [stage.get("event_type")]) if item]
+        for event_type in event_types:
+            event_node = f"event_type:{event_type}"
+            add_node(event_node, "event_type", event_label(event_type), f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id}))
+            add_edge(sop_id, event_node, stage_id)
+            for action_key in stage.get("automated_actions") or []:
+                action_node = f"action:{action_key}"
+                action = action_catalog_by_key().get(str(action_key), {})
+                add_node(action_node, "action", str(action_key), doc_url_for_ref(str(action.get("doc_ref") or ""), employee_id) if action.get("doc_ref") else "")
+                add_edge(event_node, action_node, "recommended_action")
+            for action_key in stage.get("manual_actions") or []:
+                action_node = f"manual:{action_key}"
+                action = action_catalog_by_key().get(str(action_key), {})
+                add_node(action_node, "manual_action", str(action_key), doc_url_for_ref(str(action.get("doc_ref") or ""), employee_id) if action.get("doc_ref") else "")
+                add_edge(event_node, action_node, "recommended_manual_action")
+
+    event_node_by_id: dict[str, str] = {}
+    for event in events:
+        event_id = str(event.get("event_id") or "")
+        event_type = str(event.get("event_type") or "")
+        if event_type:
+            event_type_node = f"event_type:{event_type}"
+            add_node(event_type_node, "event_type", event_label(event_type), f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id}))
+        if event_id:
+            event_node = f"event:{event_id}"
+            event_node_by_id[event_id] = event_node
+            add_node(event_node, "event", event.get("payload_title") or event_id, event_filter_url(event_id, employee_id))
+            if event_type:
+                add_edge(f"event_type:{event_type}", event_node, "observed")
+
+    catalog = action_catalog_by_key()
+    for action in actions:
+        action_key = str(action.get("action_key") or "")
+        action_node = f"action:{action_key}"
+        catalog_item = catalog.get(action_key, {})
+        doc_ref = str(action.get("doc_ref") or catalog_item.get("doc_ref") or "")
+        add_node(action_node, "action", action_key, doc_url_for_ref(doc_ref, employee_id) if doc_ref else "")
+        source_event = event_node_by_id.get(str(action.get("event_id") or ""))
+        if source_event:
+            add_edge(source_event, action_node, str(action.get("status") or "invoked"))
+
+    for doc in generated_docs:
+        boi_id = str(doc.get("boi_id") or "")
+        if not boi_id:
+            continue
+        doc_node = f"boi:{boi_id}"
+        add_node(doc_node, "boi", boi_id, str(doc.get("doc_url") or ""))
+        source_event = event_node_by_id.get(str(doc.get("event_id") or ""))
+        if source_event:
+            add_edge(source_event, doc_node, "generated_boi")
+
+    deduped_edges = sorted({(edge["source"], edge["target"], edge["label"]) for edge in edges})
+    rendered_edges = [{"source": source, "target": target, "label": label} for source, target, label in deduped_edges]
+    rendered_nodes = sorted(nodes.values(), key=lambda node: (str(node["type"]), str(node["id"])))
+    return {
+        "node_count": len(rendered_nodes),
+        "edge_count": len(rendered_edges),
+        "nodes": rendered_nodes,
+        "edges": rendered_edges,
+        "outgoing_by_source": {},
+        "incoming_by_target": {},
+    }
+
+
+def workflow_status_payload(
+    workflow_key: str,
+    trace_id: str,
+    employee_id: str,
+    graph_scope: str = "trace",
+) -> dict[str, Any]:
+    docs = accessible_docs(employee_id)
+    doc_lookup = build_doc_lookup(docs)
+    context = workflow_context(workflow_key, employee_id, trace_id=trace_id, doc_lookup=doc_lookup)
+    events = filtered_event_log_rows(trace_id=trace_id)
+    event_ids = {row.get("event_id") for row in events if row.get("event_id")}
+    action_logs = [
+        dict(row)
+        for row in cached_action_log_rows()
+        if row.get("trace_id") == trace_id or (row.get("event_id") and row.get("event_id") in event_ids)
+    ]
+    generated_doc_by_id: dict[str, dict[str, Any]] = {}
+    for row in events:
+        result = row.get("result") or {}
+        boi_id = str(result.get("boi_id") or "")
+        if boi_id:
+            item = {
+                "boi_id": boi_id,
+                "boi_uri": result.get("boi_uri"),
+                "doc_url": doc_url_if_resolvable(boi_id, employee_id, doc_lookup=doc_lookup),
+                "event_id": row.get("event_id"),
+                "event_type": row.get("event_type"),
+            }
+            existing = generated_doc_by_id.get(boi_id)
+            if not existing or (item.get("doc_url") and not existing.get("doc_url")):
+                generated_doc_by_id[boi_id] = item
+    generated_docs = list(generated_doc_by_id.values())
+    relation_graph = (
+        cached_okf_graph_for_docs(docs, employee_id)
+        if graph_scope == "global"
+        else workflow_trace_graph(context=context, events=events, actions=action_logs, generated_docs=generated_docs, employee_id=employee_id)
+    )
+    return {
+        "ok": True,
+        "workflow_key": workflow_key,
+        "trace_id": trace_id,
+        "sop_ref": context["sop_ref"],
+        "sop_uri": context["sop_uri"],
+        "sop_url": context["sop_url"],
+        "status_url": workflow_status_api_url_for_key(workflow_key, trace_id, employee_id),
+        "status_page_url": workflow_status_page_url_for_key(workflow_key, trace_id, employee_id),
+        "status_raw_url": workflow_status_raw_url_for_key(workflow_key, trace_id, employee_id),
+        "expected_event_types": context["expected_event_types"],
+        "expected_stages": context["expected_stages"],
+        "expected_actions": context["expected_actions"],
+        "manual_handoffs": context["expected_manual_actions"],
+        "expected_manual_actions": context["expected_manual_actions"],
+        "action_details": context["action_details"],
+        "manual_action_details": context["manual_action_details"],
+        "events": events,
+        "actions": action_logs,
+        "generated_docs": generated_docs,
+        "generated_boi_refs": generated_docs,
+        "relation_graph": relation_graph,
+        "approval_required_actions": [row for row in action_logs if row.get("status") == "approval_required"],
+    }
+
+
+def equipment_anomaly_status_payload(
+    trace_id: str,
+    employee_id: str,
+    graph_scope: str = "trace",
+) -> dict[str, Any]:
+    return workflow_status_payload("equipment-anomaly", trace_id, employee_id, graph_scope=graph_scope)
+
+
+def workflow_status_action_rows(
+    payload: dict[str, Any],
+    employee_id: str,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    catalog = action_catalog_by_key()
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def add_row(
+        *,
+        action_key: str,
+        status: str,
+        connector_kind: str = "",
+        doc_ref: str = "",
+        request_id: str = "",
+        event_id: str = "",
+        raw_log_ref: str = "",
+        source: str = "",
+        boi_url: str = "",
+    ) -> None:
+        if not action_key:
+            return
+        catalog_item = catalog.get(action_key, {})
+        effective_doc_ref = doc_ref or str(catalog_item.get("doc_ref") or "")
+        if not raw_log_ref and request_id:
+            raw_row = find_action_log_row_by_request_id(request_id, employee_id)
+            raw_log_ref = str((raw_row or {}).get("_log_ref") or "")
+        key = (action_key, request_id, event_id)
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(
+            {
+                "action_key": action_key,
+                "connector_kind": connector_kind or str(catalog_item.get("connector_kind") or ""),
+                "execution_mode": catalog_item.get("execution_mode"),
+                "risk_level": catalog_item.get("risk_level"),
+                "approval_required": bool(catalog_item.get("approval_required")),
+                "status": status or "unknown",
+                "doc_ref": effective_doc_ref,
+                "doc_url": doc_url_for_ref(effective_doc_ref, employee_id) if effective_doc_ref else "",
+                "request_id": request_id,
+                "event_id": event_id,
+                "event_url": event_filter_url(event_id, employee_id) if event_id else "",
+                "raw_log_ref": raw_log_ref,
+                "raw_url": action_raw_page_url(raw_log_ref, employee_id) if raw_log_ref else "",
+                "raw_api_url": action_raw_api_url(raw_log_ref, employee_id) if raw_log_ref else "",
+                "source": source,
+                "boi_url": boi_url,
+            }
+        )
+
+    for action in payload.get("actions") or []:
+        add_row(
+            action_key=str(action.get("action_key") or ""),
+            status=str(action.get("status") or action.get("result", {}).get("status") or "logged"),
+            connector_kind=str(action.get("connector_kind") or action.get("action_type") or ""),
+            doc_ref=str(action.get("doc_ref") or ""),
+            request_id=str(action.get("request_id") or ""),
+            event_id=str(action.get("event_id") or ""),
+            raw_log_ref=str(action.get("_log_ref") or ""),
+            source="action_log",
+            boi_url=doc_url_if_resolvable(str(action.get("boi_id") or ""), employee_id, doc_lookup=doc_lookup) if action.get("boi_id") else "",
+        )
+    for event in payload.get("events") or []:
+        result = event.get("result") if isinstance(event.get("result"), dict) else {}
+        summary = event_dispatch_summary(result, employee_id, doc_lookup=doc_lookup)
+        if not summary:
+            continue
+        for action in summary.get("actions") or []:
+            add_row(
+                action_key=str(action.get("action_key") or ""),
+                status=str(action.get("status") or ""),
+                connector_kind=str(action.get("connector_kind") or ""),
+                doc_ref=str(action.get("doc_ref") or ""),
+                request_id=str(action.get("request_id") or ""),
+                event_id=str(event.get("event_id") or ""),
+                source="event_dispatch",
+                boi_url=str(action.get("boi_url") or ""),
+            )
+    for detail in payload.get("action_details") or []:
+        add_row(
+            action_key=str(detail.get("action_key") or ""),
+            status="expected",
+            connector_kind=str(detail.get("connector_kind") or ""),
+            doc_ref=str(detail.get("doc_ref") or ""),
+            source="expected",
+        )
+    return rows
+
+
+def workflow_status_template_context(request: Request, payload: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    doc_lookup = build_doc_lookup(accessible_docs(employee_id))
+    events_by_type: dict[str, list[dict[str, Any]]] = {}
+    for event in payload.get("events") or []:
+        events_by_type.setdefault(str(event.get("event_type") or ""), []).append(event)
+    timeline = []
+    for stage in payload.get("expected_stages") or []:
+        event_types = [str(item) for item in (stage.get("event_types") or [stage.get("event_type")]) if item]
+        stage_events = sorted(
+            [event for event_type in event_types for event in events_by_type.get(event_type, [])],
+            key=lambda row: str(row.get("logged_at") or ""),
+        )
+        timeline.append(
+            {
+                "stage": stage.get("stage"),
+                "sop_stage_id": stage.get("sop_stage_id"),
+                "event_type": event_types[0] if event_types else "",
+                "event_types": event_types,
+                "event_label": event_label(event_types[0]) if event_types else "",
+                "event_type_url": f"/event-types/{event_types[0]}?" + urlencode({"employee_id": employee_id}) if event_types else "",
+                "event_type_links": [
+                    {
+                        "event_type": event_type,
+                        "label": event_label(event_type),
+                        "url": f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id}),
+                    }
+                    for event_type in event_types
+                ],
+                "events": [
+                    {
+                        "event_id": event.get("event_id"),
+                        "status": event.get("status"),
+                        "title": event.get("payload_title") or event.get("event_id"),
+                        "logged_at": event.get("logged_at"),
+                        "url": event_filter_url(str(event.get("event_id") or ""), employee_id) if event.get("event_id") else "",
+                        "trace_url": trace_events_url(str(event.get("trace_id") or ""), employee_id) if event.get("trace_id") else "",
+                        "workflow_url": str(payload.get("status_page_url") or "") if event.get("trace_id") else "",
+                    }
+                    for event in stage_events
+                ],
+            }
+        )
+    action_rows = workflow_status_action_rows(payload, employee_id, doc_lookup=doc_lookup)
+    manual_rows = []
+    for detail in payload.get("manual_action_details") or []:
+        doc_ref = str(detail.get("doc_ref") or "")
+        manual_rows.append(
+            {
+                **detail,
+                "status": "manual_required" if detail.get("approval_required") else "handoff_needed",
+                "doc_url": doc_url_for_ref(doc_ref, employee_id) if doc_ref else "",
+            }
+        )
+    graph = payload.get("relation_graph") or {}
+    nodes_by_id = {str(node.get("id") or ""): node for node in graph.get("nodes", []) if isinstance(node, dict)}
+    graph_edges = []
+    for edge in graph.get("edges", [])[:80]:
+        if not isinstance(edge, dict):
+            continue
+        source_node = nodes_by_id.get(str(edge.get("source") or ""), {})
+        target_node = nodes_by_id.get(str(edge.get("target") or ""), {})
+        graph_edges.append(
+            {
+                **edge,
+                "source_url": source_node.get("url") or "",
+                "target_url": target_node.get("url") or "",
+            }
+        )
+    return {
+        "request": request,
+        "employee_id": employee_id,
+        "trace_id": payload.get("trace_id"),
+        "payload": payload,
+        "summary": {
+            "event_count": len(payload.get("events") or []),
+            "action_count": len(action_rows),
+            "generated_doc_count": len(payload.get("generated_docs") or []),
+            "manual_count": len(manual_rows),
+            "approval_count": len(payload.get("approval_required_actions") or []),
+            "status": "approval_required" if payload.get("approval_required_actions") else "in_progress",
+        },
+        "timeline": timeline,
+        "action_rows": action_rows,
+        "manual_rows": manual_rows,
+        "approval_rows": payload.get("approval_required_actions") or [],
+        "generated_docs": payload.get("generated_docs") or [],
+        "graph": graph,
+        "graph_edges": graph_edges,
+        "api_json_url": payload.get("status_url") + ("&format=json" if "?" in str(payload.get("status_url") or "") else "?format=json"),
+        "raw_base_url": payload.get("status_raw_url"),
+        "events_url": trace_events_url(str(payload.get("trace_id") or ""), employee_id),
+    }
+
+
+def workflow_status_should_render_html(request: Request, response_format: str) -> bool:
+    if response_format == "html":
+        return True
+    if response_format == "json":
+        return False
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept and "application/json" not in accept
+
+
+WORKFLOW_START_CONTROL_KEYS = {"payload", "event_type", "actor_employee_id", "owner", "source_refs", "trace_id"}
+
+
+async def start_workflow_from_data(
+    workflow_key: str,
+    raw: dict[str, Any],
+    employee_id: str,
+) -> dict[str, Any]:
+    workflow = workflow_context(workflow_key, employee_id)
+    raw_payload = raw.get("payload")
+    payload = dict(raw_payload) if isinstance(raw_payload, dict) else {key: value for key, value in raw.items() if key not in WORKFLOW_START_CONTROL_KEYS}
+    owner = str(raw.get("actor_employee_id") or raw.get("owner") or payload.get("owner") or employee_id)
+    event_type = str(raw.get("event_type") or workflow.get("entry_event") or workflow.get("first_event_type") or "")
+    if not event_type:
+        raise HTTPException(status_code=400, detail=f"Workflow has no entry event: {workflow_key}")
+    payload.setdefault("workflow", workflow_key)
     result = await publish_event(
         EventPublishRequest(
-            event_type="equipment.alarm.raised.v1",
+            event_type=event_type,
             actor_employee_id=owner,
-            payload={
-                "title": req.title,
-                "equipment_id": req.equipment_id,
-                "lot_id": req.lot_id,
-                "wafer_id": req.wafer_id,
-                "alarm_code": req.alarm_code,
-                "owner": owner,
-                "workflow": "equipment-anomaly",
-            },
-            source_refs=[{"type": "demo-workflow", "ref": "equipment-anomaly"}],
+            payload=payload,
+            source_refs=raw.get("source_refs") or [{"type": "workflow", "ref": workflow_key, "sop_ref": workflow.get("sop_ref")}],
+            trace_id=raw.get("trace_id"),
         ),
         employee_id=employee_id,
     )
     trace_id = str(result["event"].get("trace_id") or "")
-    workflow = equipment_workflow_context(employee_id, trace_id=trace_id)
+    workflow = workflow_context(workflow_key, employee_id, trace_id=trace_id)
     workflow.update(
         {
-            "name": "equipment-anomaly",
-            "first_event_type": "equipment.alarm.raised.v1",
-            "expected_next": ["root_cause.analysis.requested.v1", "maintenance.guide.requested.v1", "corrective_action.requested.v1"],
+            "workflow_key": workflow_key,
+            "name": workflow_key,
+            "first_event_type": event_type,
         }
     )
     return {
@@ -1692,42 +3233,124 @@ async def start_equipment_anomaly_demo(req: EquipmentAnomalyStartRequest, employ
     }
 
 
-@app.get("/api/workflows/demo/equipment-anomaly/status")
-async def equipment_anomaly_status(trace_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    context = equipment_workflow_context(employee_id, trace_id=trace_id)
-    events = [row for row in read_event_logs(limit=500) if row.get("trace_id") == trace_id]
-    event_ids = {row.get("event_id") for row in events if row.get("event_id")}
-    action_logs = [row for row in read_action_logs(limit=500) if row.get("trace_id") == trace_id or row.get("event_id") in event_ids]
-    generated_docs = []
-    for row in events:
-        result = row.get("result") or {}
-        boi_id = result.get("boi_id")
-        if boi_id:
-            generated_docs.append(
-                {
-                    "boi_id": boi_id,
-                    "boi_uri": result.get("boi_uri"),
-                    "doc_url": doc_url_for_ref(str(boi_id), employee_id),
-                    "event_id": row.get("event_id"),
-                    "event_type": row.get("event_type"),
-                }
-            )
-    return {
-        "ok": True,
-        "trace_id": trace_id,
-        "sop_ref": context["sop_ref"],
-        "sop_uri": context["sop_uri"],
-        "sop_url": context["sop_url"],
-        "expected_event_types": context["expected_event_types"],
-        "expected_actions": context["expected_actions"],
-        "manual_handoffs": context["expected_manual_actions"],
-        "action_details": context["action_details"],
-        "manual_action_details": context["manual_action_details"],
-        "events": events,
-        "actions": action_logs,
-        "generated_docs": generated_docs,
-        "approval_required_actions": [row for row in action_logs if row.get("status") == "approval_required"],
+@app.post("/api/workflows/{workflow_key}/start")
+async def start_workflow(workflow_key: str, request: Request, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    try:
+        raw = await request.json()
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Workflow start body must be a JSON object")
+    return await start_workflow_from_data(workflow_key, raw, employee_id)
+
+
+@app.post("/api/workflows/demo/equipment-anomaly/start")
+async def start_equipment_anomaly_demo(req: EquipmentAnomalyStartRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    owner = req.owner or employee_id
+    result = await start_workflow_from_data(
+        "equipment-anomaly",
+        {
+            "actor_employee_id": owner,
+            "payload": {
+                "title": req.title,
+                "equipment_id": req.equipment_id,
+                "lot_id": req.lot_id,
+                "wafer_id": req.wafer_id,
+                "alarm_code": req.alarm_code,
+                "owner": owner,
+            },
+            "source_refs": [{"type": "demo-workflow", "ref": "equipment-anomaly"}],
+        },
+        employee_id,
+    )
+    trace_id = str(result["event"].get("trace_id") or "")
+    result["workflow"]["status_url"] = workflow_status_api_url(trace_id, employee_id)
+    result["workflow"]["status_page_url"] = workflow_status_page_url(trace_id, employee_id)
+    result["workflow"]["status_raw_url"] = workflow_status_raw_url(trace_id, employee_id)
+    return result
+
+
+@app.get("/api/workflows/{workflow_key}/status")
+async def generic_workflow_status(
+    workflow_key: str,
+    request: Request,
+    trace_id: str,
+    employee_id: str = Depends(current_employee),
+    format: str = "auto",
+    graph_scope: str = "trace",
+) -> Any:
+    payload = workflow_status_payload(workflow_key, trace_id, employee_id, graph_scope=graph_scope)
+    if workflow_status_should_render_html(request, format):
+        return templates.TemplateResponse("workflow_status.html", workflow_status_template_context(request, payload, employee_id))
+    return payload
+
+
+@app.get("/workflows/{workflow_key}/status", response_class=HTMLResponse)
+async def generic_workflow_status_page(
+    workflow_key: str,
+    request: Request,
+    trace_id: str,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    payload = workflow_status_payload(workflow_key, trace_id, employee_id)
+    return templates.TemplateResponse("workflow_status.html", workflow_status_template_context(request, payload, employee_id))
+
+
+@app.get("/api/workflows/{workflow_key}/status/raw")
+async def generic_workflow_status_raw(
+    workflow_key: str,
+    trace_id: str,
+    employee_id: str = Depends(current_employee),
+    section: Literal["events", "actions", "graph", "all"] = "all",
+) -> dict[str, Any]:
+    payload = workflow_status_payload(workflow_key, trace_id, employee_id)
+    section_map = {
+        "events": payload["events"],
+        "actions": payload["actions"],
+        "graph": payload["relation_graph"],
+        "all": payload,
     }
+    return {"ok": True, "workflow_key": workflow_key, "trace_id": trace_id, "section": section, "data": section_map[section]}
+
+
+@app.get("/api/workflows/demo/equipment-anomaly/status")
+async def equipment_anomaly_status(
+    request: Request,
+    trace_id: str,
+    employee_id: str = Depends(current_employee),
+    format: str = "auto",
+    graph_scope: str = "trace",
+) -> Any:
+    payload = equipment_anomaly_status_payload(trace_id, employee_id, graph_scope=graph_scope)
+    if workflow_status_should_render_html(request, format):
+        return templates.TemplateResponse("workflow_status.html", workflow_status_template_context(request, payload, employee_id))
+    return payload
+
+
+@app.get("/workflows/demo/equipment-anomaly/status", response_class=HTMLResponse)
+async def equipment_anomaly_status_page(
+    request: Request,
+    trace_id: str,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    payload = equipment_anomaly_status_payload(trace_id, employee_id)
+    return templates.TemplateResponse("workflow_status.html", workflow_status_template_context(request, payload, employee_id))
+
+
+@app.get("/api/workflows/demo/equipment-anomaly/status/raw")
+async def equipment_anomaly_status_raw(
+    trace_id: str,
+    employee_id: str = Depends(current_employee),
+    section: Literal["events", "actions", "graph", "all"] = "all",
+) -> dict[str, Any]:
+    payload = equipment_anomaly_status_payload(trace_id, employee_id)
+    section_map = {
+        "events": payload["events"],
+        "actions": payload["actions"],
+        "graph": payload["relation_graph"],
+        "all": payload,
+    }
+    return {"ok": True, "trace_id": trace_id, "section": section, "data": section_map[section]}
 
 
 @app.post("/api/webhooks/{source}")
@@ -1800,6 +3423,81 @@ def event_to_boi_type(event_type: str) -> str:
     return "boi/reference"
 
 
+def dispatch_result_payload(dispatch_result: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(dispatch_result.get("dispatch_result"), dict):
+        return dispatch_result["dispatch_result"]
+    return dispatch_result
+
+
+def dispatch_generated_boi_id(dispatch_result: dict[str, Any]) -> str:
+    dispatch = dispatch_result_payload(dispatch_result)
+    if dispatch.get("boi_id"):
+        return str(dispatch["boi_id"])
+    for row in dispatch.get("results") or []:
+        result = row.get("result") if isinstance(row, dict) else None
+        if not isinstance(result, dict):
+            continue
+        boi_id = result_boi_id(result)
+        if boi_id:
+            return boi_id
+    return ""
+
+
+def generated_private_doc_matches_event(doc: dict[str, Any], event: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    author = metadata.get("author") or {}
+    if metadata.get("visibility") != "private":
+        return False
+    if not str((author or {}).get("agent_id") or "").startswith("boi-writer-"):
+        return False
+    source_event = metadata.get("source_event") or {}
+    event_id = str(event.get("event_id") or "")
+    trace_id = str(event.get("trace_id") or "")
+    if event_id and str(source_event.get("event_id") or "") == event_id:
+        return True
+    if trace_id and str(source_event.get("trace_id") or "") == trace_id:
+        return True
+    return not event_id and not trace_id
+
+
+@app.post("/api/boi/enrich-from-dispatch", dependencies=[Depends(require_service_token)])
+async def enrich_boi_from_dispatch(req: BoIEnrichFromDispatchRequest) -> dict[str, Any]:
+    dispatch_result = dispatch_result_payload(req.dispatch_result or {})
+    boi_id = dispatch_generated_boi_id(dispatch_result)
+    if not boi_id:
+        return {"ok": True, "boi_id": "", "enriched": False, "sections_updated": [], "skipped_reason": "missing_boi_id"}
+
+    doc = find_doc_by_id(boi_id, req.employee_id)
+    if not doc:
+        return {"ok": True, "boi_id": boi_id, "enriched": False, "sections_updated": [], "skipped_reason": "boi_not_found"}
+    path = Path(str(doc.get("path") or ""))
+    if not path.exists() or not generated_private_doc_matches_event(doc, req.event or {}):
+        return {
+            "ok": True,
+            "boi_id": boi_id,
+            "enriched": False,
+            "sections_updated": [],
+            "skipped_reason": "not_generated_private_boi",
+        }
+
+    body, sections_updated = build_enriched_body(str(doc.get("body") or ""), dispatch_result)
+    metadata = dict(doc.get("metadata") or {})
+    metadata["enrichment"] = {
+        "status": "enriched",
+        "enriched_at": now_iso(),
+        "source": "dispatch_result",
+        "sections_updated": sections_updated,
+    }
+    path.write_text(compose_markdown(metadata, body), encoding="utf-8")
+    invalidate_doc_caches()
+    append_event_log(
+        status="enriched",
+        event=req.event or {},
+        result={"boi_id": boi_id, "sections_updated": sections_updated, "source": "dispatch_result"},
+    )
+    return {"ok": True, "boi_id": boi_id, "enriched": True, "sections_updated": sections_updated}
+
+
 @app.post("/api/boi/materialize-event", dependencies=[Depends(require_service_token)])
 @app.post("/api/boi/from-event", dependencies=[Depends(require_service_token)])
 @app.post("/api/boi/materialize-from-event", dependencies=[Depends(require_service_token)])
@@ -1819,6 +3517,9 @@ async def handle_event(req: EventHandleRequest) -> dict[str, Any]:
         "event_type": req.event_type,
         "occurred_at": req.occurred_at or now_iso(),
     }
+    if req.trace_id:
+        event["trace_id"] = req.trace_id
+    workflow_def, workflow_stage, workflow_event_def = workflow_for_event_type(req.event_type, str(actor))
     if req.event_type.startswith("meeting.closed"):
         title = payload.get("title") or "회의 정리"
         body = f"""# Summary
@@ -1909,62 +3610,34 @@ Event Broker를 통해 Action 생성 이벤트가 수신되었고, 담당자 Pri
             source_refs=req.source_refs or [{"type": "boi-search", "ref": d["metadata"].get("boi_id")} for d in visible],
             tags=["AIX", "Report", "BoIWiki"],
         )
-    elif req.event_type.startswith(("equipment.alarm.raised", "trend.anomaly.detected", "root_cause.analysis.requested", "maintenance.guide.requested", "corrective_action.requested")):
+    elif workflow_def and workflow_stage:
         title = payload.get("title") or f"SOP Workflow Instance - {event_label(req.event_type)}"
-        event_def = get_event_type(req.event_type) or {}
-        action_keys = event_def.get("recommended_actions") or []
-        manual_action_keys = event_def.get("recommended_manual_actions") or []
+        event_def = dict(workflow_event_def or {})
+        event_def["sop_ref"] = workflow_def.get("sop_ref")
+        event_def["sop_stage_id"] = workflow_stage.get("sop_stage_id") or workflow_stage.get("id")
+        event_def["workflow_stage"] = workflow_stage.get("stage") or workflow_stage.get("name") or event_def.get("workflow_stage")
+        action_keys = workflow_stage.get("automated_actions") or event_def.get("recommended_actions") or []
+        manual_action_keys = workflow_stage.get("manual_actions") or event_def.get("recommended_manual_actions") or []
         action_details = action_details_for_keys(action_keys, str(actor))
         manual_action_details = action_details_for_keys(manual_action_keys, str(actor))
-        action_md = action_details_markdown(action_details)
-        manual_action_md = action_details_markdown(manual_action_details)
-        sop_ref = str(event_def.get("sop_ref") or "boi:public:sop:equipment-abnormal-response")
-        sop_doc = find_doc_by_id(sop_ref, str(actor))
-        sop_uri = str(sop_doc.get("uri", "")) if sop_doc else ""
-        sop_title = str((sop_doc or {}).get("metadata", {}).get("title", ""))
-        body = f"""# Summary
-
-첨부 SOP 사례를 AI Native Workflow로 실행하기 위한 Private BoI 인스턴스입니다. Event Broker가 `{req.event_type}` 이벤트를 수신했고, Harness는 SOP 단계에 맞춰 필요한 API/Webhook Action 후보와 참조 BoI를 정리했습니다.
-
-# SOP Stage
-
-- Event Label: {event_label(req.event_type)}
-- Workflow Stage: {event_def.get('workflow_stage', 'SOP Workflow')}
-- SOP Stage ID: {event_def.get('sop_stage_id', '')}
-- Default Flow: {event_def.get('default_flow_key', event_to_flow_key(req.event_type))}
-- SOP Reference: `{sop_ref}`
-- SOP Title: {sop_title}
-- SOP URI: `{sop_uri}`
-
-# Payload
-
-```json
-{json.dumps(payload, ensure_ascii=False, indent=2)}
-```
-
-# Recommended Automated Actions
-
-{action_md}
-
-# Manual Handoff Actions
-
-{manual_action_md}
-
-# AI Native Workflow Interpretation
-
-1. Event Broker는 업무 시점, 예: 설비 Alarm 발생 또는 Trend 이상 감지를 발행합니다.
-2. Langflow/Webhook/API Agent는 BoI Wiki에서 SOP와 관련 Runbook을 Lazy Loading합니다.
-3. Agent는 필요한 데이터 조회 Action을 Action Gateway를 통해 호출합니다.
-4. 사람 판단, 승인, 현장 조치는 manual action으로 남겨 human handoff를 추적합니다.
-5. 분석 결과는 Private BoI로 남기고, 팀 재사용 가치가 있으면 명시적 요청으로 Team BoI draft 승격합니다.
-6. 공정 진행 금지, Spec/Rule 변경 같은 고위험 Action은 자동 실행하지 않고 승인 필요 상태로만 기록합니다.
-
-# References
-
-- Source Event: `{req.event_id}`
-- SOP: `{sop_ref}`
-- SOP URI: `{sop_uri}`
-"""
+        sop_ref = str(workflow_def.get("sop_ref") or event_def.get("sop_ref") or "")
+        sop_doc = workflow_def.get("doc") or find_doc_by_id(sop_ref, str(actor))
+        sop_uri = str(workflow_def.get("sop_uri") or (sop_doc or {}).get("uri", ""))
+        sop_title = str(workflow_def.get("sop_title") or (sop_doc or {}).get("metadata", {}).get("title", ""))
+        event_labels = {str(item.get("event_type")): event_label(str(item.get("event_type"))) for item in load_event_types()}
+        body = render_stage_execution_body(
+            event=event,
+            payload=payload,
+            event_def=event_def,
+            sop_doc=sop_doc,
+            sop_ref=sop_ref,
+            sop_uri=sop_uri,
+            sop_title=sop_title,
+            event_label=event_label(req.event_type),
+            action_details=action_details,
+            manual_action_details=manual_action_details,
+            event_labels=event_labels,
+        )
         source_refs = req.source_refs or [{"type": "boi", "ref": sop_ref}]
         source_refs = source_refs + [{"type": "sop", "ref": sop_ref, "uri": sop_uri}]
         for detail in action_details + manual_action_details:
@@ -1973,18 +3646,53 @@ Event Broker를 통해 Action 생성 이벤트가 수신되었고, 담당자 Pri
         meta = make_metadata(
             boi_type=event_to_boi_type(req.event_type),
             title=title,
-            description="SOP 기반 AI Native Workflow 실행 인스턴스",
+            description="SOP stage 기반 업무 실행 기록",
             owner=str(actor),
             source_event=event,
             source_refs=source_refs,
             tags=["SOP", "AI-Native-Workflow", "EventBroker", "ActionGateway", "BoIWiki"],
         )
         meta["workflow_stage"] = event_def.get("workflow_stage")
+        meta["workflow_key"] = workflow_def.get("workflow_key")
         meta["sop_ref"] = sop_ref
         meta["sop_uri"] = sop_uri
         meta["sop_stage_id"] = event_def.get("sop_stage_id")
         meta["recommended_actions"] = action_keys
         meta["recommended_manual_actions"] = manual_action_keys
+        meta["relations"] = [
+            {
+                "type": "triggered_by_event",
+                "target": f"event_type:{req.event_type}",
+                "okf_target": event_type_okf_uri(req.event_type),
+            },
+            {
+                "type": "implements_sop",
+                "target": sop_ref,
+                "okf_target": sop_uri,
+            },
+            {
+                "type": "sop_stage",
+                "target": f"sop_stage:{sop_ref}#{event_def.get('sop_stage_id', '')}",
+            },
+        ]
+        for detail in action_details:
+            if detail.get("doc_ref"):
+                meta["relations"].append(
+                    {
+                        "type": "uses_action_spec",
+                        "target": detail.get("doc_ref"),
+                        "okf_target": detail.get("doc_uri"),
+                    }
+                )
+        for detail in manual_action_details:
+            if detail.get("doc_ref"):
+                meta["relations"].append(
+                    {
+                        "type": "requires_manual_action",
+                        "target": detail.get("doc_ref"),
+                        "okf_target": detail.get("doc_uri"),
+                    }
+                )
     else:
         title = payload.get("title") or req.event_type
         body = f"# Summary\n\n이벤트 `{req.event_type}`에서 생성된 Generic Private BoI입니다.\n\n# Payload\n\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```\n"
@@ -2020,13 +3728,16 @@ async def event_type_detail_page(request: Request, event_type: str, employee_id:
     event_def = get_event_type(event_type)
     if not event_def:
         raise HTTPException(status_code=404, detail=f"Event Type not found: {event_type}")
-    docs = filter_docs(accessible_docs(employee_id), event_type=event_type)
+    accessible = accessible_docs(employee_id)
+    doc_lookup = build_doc_lookup(accessible)
+    docs = filter_docs(accessible, event_type=event_type)
     actions = [
         action
         for action in load_action_catalog()
         if event_type in (action.get("event_types") or []) or "*" in (action.get("event_types") or [])
     ]
     recent_events = read_event_logs(limit=20, event_type=event_type)
+    action_items = actions_for_template(actions, employee_id, doc_lookup=doc_lookup)
     return templates.TemplateResponse(
         "event_type_detail.html",
         {
@@ -2035,11 +3746,11 @@ async def event_type_detail_page(request: Request, event_type: str, employee_id:
             "event_type": event_type,
             "event": event_def,
             "docs": docs_for_template(docs, employee_id),
-            "actions": actions_for_template(actions, employee_id),
+            "actions": action_items,
             "api_mcp_actions": [
-                action for action in actions_for_template(actions, employee_id) if action.get("connector_kind") in {"api", "mcp", "webhook", "langflow", "boi_writer", "event_broker"}
+                action for action in action_items if action.get("connector_kind") in {"api", "mcp", "webhook", "langflow", "boi_writer", "event_broker"}
             ],
-            "events": event_rows_for_template(recent_events),
+            "events": event_rows_for_template(recent_events, doc_lookup=doc_lookup, employee_id=employee_id),
             "stream_url": "/events?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
             "actions_url": "/actions?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
             "boi_filter_url": browse_url(employee_id, event_type=event_type),
@@ -2049,8 +3760,19 @@ async def event_type_detail_page(request: Request, event_type: str, employee_id:
 
 
 @app.get("/events", response_class=HTMLResponse)
-async def events_page(request: Request, employee_id: str = Depends(current_employee), event_type: str = "", trace_id: str = "") -> HTMLResponse:
-    events = read_event_logs(limit=200, event_type=event_type or None, trace_id=trace_id or None)
+async def events_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+    event_type: str = "",
+    trace_id: str = "",
+    event_id: str = "",
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+) -> HTMLResponse:
+    offset = (page - 1) * limit
+    total_events = count_event_logs(event_type=event_type or None, trace_id=trace_id or None, event_id=event_id or None)
+    events = read_event_logs(limit=limit, event_type=event_type or None, trace_id=trace_id or None, event_id=event_id or None, offset=offset)
+    doc_lookup = build_doc_lookup(accessible_docs(employee_id))
     return templates.TemplateResponse(
         "events.html",
         {
@@ -2058,8 +3780,16 @@ async def events_page(request: Request, employee_id: str = Depends(current_emplo
             "employee_id": employee_id,
             "event_type": event_type,
             "trace_id": trace_id,
+            "event_id": event_id,
+            "page": page,
+            "limit": limit,
+            "total_events": total_events,
+            "has_prev": page > 1,
+            "has_next": offset + len(events) < total_events,
+            "prev_url": events_url(employee_id, event_type=event_type, trace_id=trace_id, event_id=event_id, page=max(1, page - 1), limit=limit),
+            "next_url": events_url(employee_id, event_type=event_type, trace_id=trace_id, event_id=event_id, page=page + 1, limit=limit),
             "event_types": load_event_types(),
-            "events": event_rows_for_template(events),
+            "events": event_rows_for_template(events, doc_lookup=doc_lookup, employee_id=employee_id),
         },
     )
 
@@ -2070,9 +3800,90 @@ async def api_event_types() -> dict[str, Any]:
 
 
 @app.get("/api/events/log")
-async def api_event_logs(event_type: str = "", trace_id: str = "", limit: int = 200) -> dict[str, Any]:
-    rows = read_event_logs(limit=limit, event_type=event_type or None, trace_id=trace_id or None)
-    return {"count": len(rows), "items": rows}
+async def api_event_logs(event_type: str = "", trace_id: str = "", event_id: str = "", limit: int = 200, page: int = 1) -> dict[str, Any]:
+    effective_limit = max(1, min(int(limit or 200), 200))
+    effective_page = max(1, int(page or 1))
+    offset = (effective_page - 1) * effective_limit
+    total = count_event_logs(event_type=event_type or None, trace_id=trace_id or None, event_id=event_id or None)
+    rows = read_event_logs(
+        limit=effective_limit,
+        event_type=event_type or None,
+        trace_id=trace_id or None,
+        event_id=event_id or None,
+        offset=offset,
+    )
+    return {"count": len(rows), "total": total, "page": effective_page, "limit": effective_limit, "items": rows}
+
+
+@app.get("/api/events/raw/{log_ref:path}")
+async def api_event_raw(log_ref: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    row = find_event_log_row_by_ref(log_ref)
+    if not row:
+        raise HTTPException(status_code=404, detail="Event log row not found")
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "log_ref": log_ref,
+        "row": row,
+    }
+
+
+@app.get("/api/actions/raw/{log_ref:path}")
+async def api_action_raw(log_ref: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    row = find_action_log_row_by_ref(log_ref, employee_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Action log row not found")
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "log_ref": log_ref,
+        "row": redact_sensitive(row),
+    }
+
+
+@app.get("/actions/raw/{log_ref:path}", response_class=HTMLResponse)
+async def action_raw_page(request: Request, log_ref: str, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+    row = find_action_log_row_by_ref(log_ref, employee_id)
+    if not row:
+        return templates.TemplateResponse(
+            "missing_doc.html",
+            {
+                "request": request,
+                "employee_id": employee_id,
+                "boi_id": log_ref,
+                "title": "Action log row not found",
+                "message": "요청한 action log 원본을 찾을 수 없거나 접근 권한이 없습니다.",
+            },
+            status_code=404,
+        )
+    redacted_row = redact_sensitive(row)
+    doc_ref = str(row.get("doc_ref") or "")
+    trace_id = str(row.get("trace_id") or "")
+    event_id = str(row.get("event_id") or "")
+    result_value = row.get("result") if isinstance(row.get("result"), dict) else {}
+    boi_id = str(row.get("boi_id") or result_boi_id(result_value) or "")
+    return templates.TemplateResponse(
+        "action_raw.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "log_ref": log_ref,
+            "row": redacted_row,
+            "row_html": render_linkified_value_html(redacted_row, employee_id),
+            "action_key": row.get("action_key") or "",
+            "request_id": row.get("request_id") or "",
+            "trace_id": trace_id,
+            "event_id": event_id,
+            "doc_ref": doc_ref,
+            "boi_id": boi_id,
+            "api_url": action_raw_api_url(log_ref, employee_id),
+            "trace_url": workflow_status_page_url(trace_id, employee_id) if trace_id else "",
+            "trace_events_url": trace_events_url(trace_id, employee_id) if trace_id else "",
+            "event_url": event_filter_url(event_id, employee_id) if event_id else "",
+            "doc_url": doc_url_for_ref(doc_ref, employee_id) if doc_ref else "",
+            "boi_url": doc_url_if_resolvable(boi_id, employee_id) if boi_id else "",
+        },
+    )
 
 
 @app.post("/api/events/audit", dependencies=[Depends(require_service_token)])
@@ -2082,18 +3893,27 @@ async def api_event_audit(req: EventAuditRequest) -> dict[str, Any]:
 
 
 @app.get("/actions", response_class=HTMLResponse)
-async def actions_page(request: Request, employee_id: str = Depends(current_employee), event_type: str = "") -> HTMLResponse:
+async def actions_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+    event_type: str = "",
+    action_key: str = "",
+) -> HTMLResponse:
     actions = load_action_catalog()
     if event_type:
         actions = [a for a in actions if event_type in (a.get("event_types") or [])]
+    if action_key:
+        actions = [a for a in actions if a.get("action_key") == action_key]
+    doc_lookup = build_doc_lookup(accessible_docs(employee_id))
     return templates.TemplateResponse(
         "actions.html",
         {
             "request": request,
             "employee_id": employee_id,
             "event_type": event_type,
+            "action_key": action_key,
             "event_types": load_event_types(),
-            "actions": actions_for_template(actions, employee_id),
+            "actions": actions_for_template(actions, employee_id, doc_lookup=doc_lookup),
             "action_logs": read_action_logs(limit=100),
         },
     )

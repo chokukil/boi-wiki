@@ -150,6 +150,7 @@ class FakeLangflowAsyncClient:
                         "data": {
                             "nodes": [
                                 {"data": {"display_name": "BoI Event Input"}},
+                                {"data": {"display_name": "BoI Wiki Writer"}},
                                 {"data": {"template": {"model_name": {"value": "google/gemma-4-26b-a4b-qat"}}}},
                             ]
                         },
@@ -183,6 +184,101 @@ class FakeLangflowAsyncClient:
                 ],
             }
         )
+
+
+class FakeDispatchAsyncClient:
+    requests: list[dict] = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def get(self, url, headers=None):
+        self.requests.append({"method": "GET", "url": url, "headers": headers or {}})
+        if url.endswith("/api/v1/auto_login"):
+            return FakeHttpResponse(body={"access_token": "langflow-test-token"})
+        if url.endswith("/api/v1/flows/"):
+            return FakeHttpResponse(
+                body=[
+                    {
+                        "id": "stage-flow-id",
+                        "name": "BoI Equipment Stage Analysis Flow",
+                        "endpoint_name": "boi-equipment-stage-analysis",
+                        "updated_at": "2026-06-18T00:00:00+00:00",
+                        "data": {
+                            "nodes": [
+                                {"data": {"display_name": "BoI Wiki Writer"}},
+                                {"data": {"template": {"model_name": {"value": "google/gemma-4-26b-a4b-qat"}}}},
+                            ]
+                        },
+                    }
+                ]
+            )
+        return FakeHttpResponse(status_code=404, body={"detail": "not found"})
+
+    async def post(self, url, headers=None, json=None):
+        self.requests.append({"method": "POST", "url": url, "headers": headers or {}, "json": json or {}})
+        if url.endswith("/api/boi/materialize-event"):
+            return FakeHttpResponse(
+                body={
+                    "ok": True,
+                    "item": {
+                        "metadata": {"boi_id": "boi:private:100001:dispatch-prior-results"},
+                        "body": "# Summary\n\npending enrichment",
+                    },
+                }
+            )
+        if "/api/events/publish" in url:
+            return FakeHttpResponse(body={"ok": True, "event": {"event_type": json.get("event_type")}})
+        return FakeHttpResponse(body={"ok": True})
+
+    async def request(self, method, url, headers=None, json=None):
+        self.requests.append({"method": method, "url": url, "headers": headers or {}, "json": json or {}})
+        if url.endswith("/api/poc/equipment/raw-data"):
+            return FakeHttpResponse(
+                body={
+                    "ok": True,
+                    "status": "invoked",
+                    "result": {
+                        "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-001",
+                        "message": "Raw data loaded",
+                    },
+                }
+            )
+        if url.endswith("/api/poc/equipment/maintenance-guide"):
+            return FakeHttpResponse(
+                body={
+                    "ok": True,
+                    "status": "invoked",
+                    "result": {
+                        "guide_boi_ref": "boi:public:sop:equipment-abnormal-response",
+                        "message": "Guide loaded",
+                    },
+                }
+            )
+        if "/api/v1/run/" in url:
+            return FakeHttpResponse(
+                body={
+                    "outputs": [
+                        {
+                            "outputs": [
+                                {
+                                    "results": {
+                                        "message": {"text": "Stage analysis from Langflow"}
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            )
+        return FakeHttpResponse(body={"ok": True, "status": "invoked"})
 
 
 def test_langflow_reference_action_is_enabled_for_real_dispatch():
@@ -232,6 +328,43 @@ def test_langflow_run_action_resolves_latest_flow_and_invokes_run_endpoint(tmp_p
     assert run_request["url"] == "http://langflow:7860/api/v1/run/latest-flow-id"
     assert run_request["json"]["input_type"] == "chat"
     assert "Langflow 연결 검증" in run_request["json"]["input_value"]
+
+
+def test_dispatch_passes_prior_results_to_stage_langflow_action(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakeDispatchAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeDispatchAsyncClient)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/dispatch",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-dispatch-prior-results",
+                "event_type": "root_cause.analysis.requested.v1",
+                "trace_id": "trace-dispatch-prior-results",
+                "payload": {"equipment_id": "ETCH-VM-01", "lot_id": "LOT-001", "owner": "100001"},
+            },
+            "payload": {"equipment_id": "ETCH-VM-01", "lot_id": "LOT-001", "owner": "100001"},
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    result_by_key = {row["action_key"]: row for row in body["results"]}
+    assert "langflow.equipment.stage_analysis" in result_by_key
+    assert result_by_key["langflow.equipment.stage_analysis"]["connector_kind"] == "langflow"
+    assert result_by_key["langflow.equipment.stage_analysis"]["doc_ref"] == "boi:public:actions:langflow:stage-analysis"
+    assert result_by_key["langflow.equipment.stage_analysis"]["request_id"]
+    assert result_by_key["langflow.equipment.stage_analysis"]["summary"]
+    run_request = next(req for req in FakeDispatchAsyncClient.requests if "/api/v1/run/" in req["url"])
+    input_value = run_request["json"]["input_value"]
+    assert "Prior Action Results" in input_value
+    assert "sop.equipment.request_raw_data" in input_value
+    assert "/mock/hyvis/raw-data/ETCH-VM-01/LOT-001" in input_value
 
 
 def test_api_action_invokes_configured_boi_api_endpoint(tmp_path, monkeypatch):

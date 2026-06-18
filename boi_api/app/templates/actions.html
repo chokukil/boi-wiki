@@ -18,7 +18,7 @@
 </header>
 
 <section class="panel">
-  <h2>Filter by Event Type</h2>
+  <h2>Filter</h2>
   <form method="get" action="/actions">
     <input type="hidden" name="employee_id" value="{{ employee_id }}" />
     <select name="event_type">
@@ -27,6 +27,7 @@
       <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
       {% endfor %}
     </select>
+    <input name="action_key" value="{{ action_key }}" placeholder="action_key" />
     <button type="submit">Apply</button>
   </form>
 </section>

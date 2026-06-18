@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Workflow Status · {{ trace_id }} · BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/workflow_status.js" defer></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Workflow Status</h1>
+      <p>Trace가 SOP, Event, Action, Manual Handoff, Generated BoI로 어떻게 이어졌는지 확인합니다.</p>
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="{{ events_url }}">Trace Event Stream</a><br />
+      <a href="{{ payload.sop_url }}">SOP 보기</a><br />
+      <a href="{{ api_json_url }}">JSON 원문 API</a>
+    </div>
+  </header>
+
+  <main class="workflow-status-page">
+    <section class="workflow-status-hero">
+      <div>
+        <span class="badge status">{{ summary.status }}</span>
+        <h2>{{ trace_id }}</h2>
+        <p><strong>SOP</strong> <a href="{{ payload.sop_url }}">{{ payload.sop_ref }}</a> <code>{{ payload.sop_uri }}</code></p>
+      </div>
+      <div class="status-summary-grid">
+        <div class="status-summary-card"><span>Events</span><strong>{{ summary.event_count }}</strong></div>
+        <div class="status-summary-card"><span>Actions</span><strong>{{ summary.action_count }}</strong></div>
+        <div class="status-summary-card"><span>Generated BoIs</span><strong>{{ summary.generated_doc_count }}</strong></div>
+        <div class="status-summary-card"><span>Manual</span><strong>{{ summary.manual_count }}</strong></div>
+        <div class="status-summary-card"><span>Approvals</span><strong>{{ summary.approval_count }}</strong></div>
+      </div>
+    </section>
+
+    <section class="workflow-panel">
+      <div class="section-heading">
+        <h2>Timeline</h2>
+        <a class="button secondary" href="{{ events_url }}">Stream 보기</a>
+      </div>
+      <div class="workflow-timeline">
+        {% for stage in timeline %}
+        <article class="workflow-stage-row">
+          <div class="stage-index">{{ loop.index }}</div>
+          <div class="stage-main">
+            <h3>{{ stage.stage or stage.event_label }}</h3>
+            <p>
+              {% for event_type in stage.event_type_links %}
+              <a class="badge event-type" href="{{ event_type.url }}">{{ event_type.event_type }}</a>
+              {% endfor %}
+              {% if stage.sop_stage_id %}<code>{{ stage.sop_stage_id }}</code>{% endif %}
+            </p>
+            {% if stage.events %}
+            <ul class="workflow-event-list">
+              {% for event in stage.events %}
+              <li>
+                <span class="badge status">{{ event.status }}</span>
+                {% if event.url %}<a href="{{ event.url }}">{{ event.title }}</a>{% else %}{{ event.title }}{% endif %}
+                <small>
+                  {% if event.url %}<a href="{{ event.url }}">{{ event.event_id }}</a>{% else %}{{ event.event_id }}{% endif %}
+                  · {{ event.logged_at }}
+                  {% if event.trace_url %} · <a href="{{ event.trace_url }}">Trace Events</a>{% endif %}
+                </small>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty-state compact">아직 이 stage의 event가 없습니다.</p>
+            {% endif %}
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="workflow-panel">
+      <h2>Actions</h2>
+      {% if action_rows %}
+      <div class="action-summary-table">
+        <table class="markdown-table workflow-actions-table">
+          <thead>
+            <tr><th>Action</th><th>Connector</th><th>Status</th><th>Risk</th><th>Spec</th><th>Request</th><th>Source</th></tr>
+          </thead>
+          <tbody>
+            {% for action in action_rows %}
+            <tr>
+              <td>
+                {% if action.doc_url %}<a href="{{ action.doc_url }}"><code>{{ action.action_key }}</code></a>{% else %}<code>{{ action.action_key }}</code>{% endif %}
+                {% if action.boi_url %}<br /><a href="{{ action.boi_url }}">Generated BoI</a>{% endif %}
+              </td>
+              <td>{{ action.connector_kind or "-" }}</td>
+              <td><span class="badge {% if 'approval' in action.status or 'manual' in action.status %}warning{% else %}status{% endif %}">{{ action.status }}</span></td>
+              <td>{{ action.risk_level or "-" }}</td>
+              <td>{% if action.doc_url %}<a href="{{ action.doc_url }}">{{ action.doc_ref }}</a>{% else %}{{ action.doc_ref or "-" }}{% endif %}</td>
+              <td>
+                {% if action.raw_url %}
+                <a href="{{ action.raw_url }}">{{ action.request_id or action.raw_log_ref }}</a>
+                <button type="button" class="inline-button load-action-raw" data-raw-url="{{ action.raw_api_url }}">Raw</button>
+                <pre class="workflow-action-raw-output" hidden></pre>
+                {% else %}
+                {{ action.request_id or "-" }}
+                {% endif %}
+                {% if action.event_url %}<br /><a href="{{ action.event_url }}">Event</a>{% endif %}
+              </td>
+              <td>{{ action.source or "-" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="empty-state compact">이 trace에서 확인된 action log가 없습니다.</p>
+      {% endif %}
+    </section>
+
+    <section class="workflow-panel">
+      <h2>Manual Handoffs</h2>
+      {% if manual_rows %}
+      <ul class="relationship-list workflow-relationship-list">
+        {% for item in manual_rows %}
+        <li>
+          <span class="badge manual">{{ item.status }}</span>
+          {% if item.doc_url %}<a href="{{ item.doc_url }}">{{ item.action_key }}</a>{% else %}<code>{{ item.action_key }}</code>{% endif %}
+          <small>{{ item.connector_kind }} · risk={{ item.risk_level }} · approval_required={{ item.approval_required }}</small>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state compact">필요한 manual handoff가 없습니다.</p>
+      {% endif %}
+    </section>
+
+    <section class="workflow-panel">
+      <h2>Approvals</h2>
+      {% if approval_rows %}
+      <ul class="relationship-list workflow-relationship-list">
+        {% for item in approval_rows %}
+        <li>
+          <span class="badge warning">{{ item.status }}</span>
+          <code>{{ item.action_key }}</code>
+          <small>{{ item.request_id or item.event_id }} · approved_by={{ item.approved_by or "-" }}</small>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state compact">현재 approval_required action log가 없습니다.</p>
+      {% endif %}
+    </section>
+
+    <section class="workflow-panel">
+      <h2>Generated BoIs</h2>
+      {% if generated_docs %}
+      <ul class="relationship-list workflow-relationship-list">
+        {% for doc in generated_docs %}
+        <li>
+          <span class="badge private">BoI</span>
+          {% if doc.doc_url %}<a href="{{ doc.doc_url }}">{{ doc.boi_id }}</a>{% else %}<code>{{ doc.boi_id }}</code>{% endif %}
+          <small>{{ doc.event_type }} · {{ doc.event_id }} · {{ doc.boi_uri }}</small>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state compact">아직 이 trace에서 생성된 BoI가 없습니다.</p>
+      {% endif %}
+    </section>
+
+    <section class="workflow-panel">
+      <h2>Trace Graph</h2>
+      <p class="muted">{{ graph.node_count }} nodes · {{ graph.edge_count }} edges · 전체 OKF graph가 아니라 이 trace 실행 관계만 표시합니다.</p>
+      {% if graph_edges %}
+      <ul class="relationship-list workflow-relationship-list">
+        {% for edge in graph_edges %}
+        <li>
+          {% if edge.source_url %}<a href="{{ edge.source_url }}"><code>{{ edge.source }}</code></a>{% else %}<code>{{ edge.source }}</code>{% endif %}
+          <span class="badge status">{{ edge.label }}</span>
+          {% if edge.target_url %}<a href="{{ edge.target_url }}"><code>{{ edge.target }}</code></a>{% else %}<code>{{ edge.target }}</code>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state compact">표시할 trace graph edge가 없습니다.</p>
+      {% endif %}
+    </section>
+
+    <section class="workflow-panel workflow-raw-panel" data-raw-url="{{ raw_base_url }}">
+      <div class="section-heading">
+        <h2>Raw JSON</h2>
+        <a class="button secondary" href="{{ api_json_url }}">JSON API 열기</a>
+      </div>
+      <div class="raw-workflow-actions">
+        <button type="button" class="load-workflow-raw" data-section="events">Events Raw JSON 불러오기</button>
+        <button type="button" class="load-workflow-raw" data-section="actions">Actions Raw JSON 불러오기</button>
+        <button type="button" class="load-workflow-raw" data-section="graph">Graph Raw JSON 불러오기</button>
+        <button type="button" class="load-workflow-raw" data-section="all">All Raw JSON 불러오기</button>
+      </div>
+      <pre class="workflow-raw-output" hidden></pre>
+    </section>
+  </main>
+</body>
+</html>

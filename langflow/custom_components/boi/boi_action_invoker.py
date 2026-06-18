@@ -5,7 +5,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from lfx.custom.custom_component.component import Component
+from lfx.custom import Component
 from lfx.io import BoolInput, DataInput, Output, StrInput
 from lfx.schema import Data
 
@@ -25,7 +25,7 @@ class BoIActionInvoker(Component):
         BoolInput(name="dry_run", display_name="Dry Run", value=True),
         StrInput(name="approved_by", display_name="Approved By", value="", required=False),
         StrInput(name="action_gateway_url", display_name="Action Gateway URL", value="http://action-gateway:8100"),
-        StrInput(name="service_token", display_name="Service Token", value="dev-service-token-change-me", password=True),
+        StrInput(name="service_token", display_name="Service Token", value="dev-service-token-change-me"),
     ]
     outputs = [Output(name="result", display_name="Action Result", method="invoke")]
 

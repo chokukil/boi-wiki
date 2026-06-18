@@ -2,8 +2,8 @@
   "capture_dir": "captures/boi-poc",
   "deck_output": "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx",
   "generated_from": {
-    "evidence_collected_at": "2026-06-17T01:15:56+00:00",
-    "git_commit": "c7c5376"
+    "evidence_collected_at": "2026-06-17T16:24:13+00:00",
+    "git_commit": "3dd82b8"
   },
   "targets": [
     {
@@ -45,17 +45,17 @@
       "id": "private_boi",
       "file": "06-private-boi-corrective-action.png",
       "title": "Generated Private BoI",
-      "url": "http://localhost:8000/docs/private/100001/boi-private-100001-20260617101556-754ea8.md",
+      "url": "http://localhost:8000/docs/private/100001/boi-private-100001-20260618012251-15654c.md",
       "purpose": "실제 생성된 corrective_action.requested.v1 Private BoI",
-      "resolved_from": "/private/100001/boi-private-100001-20260617101556-754ea8.md"
+      "resolved_from": "/private/100001/boi-private-100001-20260618012251-15654c.md"
     },
     {
       "id": "langflow",
       "file": "07-langflow-boi-reference-flow.png",
       "title": "Langflow BoI Reference Flow",
-      "url": "http://localhost:7860/flow/15b0199d-583a-4b2e-b692-3ec1744a7c75",
+      "url": "http://localhost:7860/flow/3aba3309-89a8-4171-a153-00db6b16dcba",
       "purpose": "Gemma OpenAI-compatible Reference Flow",
-      "resolved_from": "15b0199d-583a-4b2e-b692-3ec1744a7c75"
+      "resolved_from": "3aba3309-89a8-4171-a153-00db6b16dcba"
     },
     {
       "id": "kafka_ui",

@@ -105,6 +105,13 @@ def extract_langflow_message(smoke: dict[str, Any]) -> str:
         return ""
 
 
+def latest_langflow_action(evidence: dict[str, Any]) -> dict[str, Any]:
+    for row in evidence.get("action_logs", {}).get("items", []):
+        if row.get("action_key") == "langflow.boi.reference_flow" and row.get("status") == "langflow_invoked":
+            return row
+    return {}
+
+
 def summarize(evidence: dict[str, Any]) -> str:
     runtime = evidence["runtime_config"]
     event_types = evidence["event_types"].get("items", [])
@@ -116,6 +123,8 @@ def summarize(evidence: dict[str, Any]) -> str:
     approval_required = [log for log in action_logs if log.get("status") == "approval_required"]
     materialized = [log for log in action_logs if log.get("status") == "materialized"]
     langflow_message = extract_langflow_message(evidence.get("langflow_smoke", {}))
+    langflow_action = latest_langflow_action(evidence)
+    langflow_result = langflow_action.get("result") or {}
 
     lines = [
         "# BoI Wiki PoC Evidence Summary",
@@ -151,6 +160,15 @@ def summarize(evidence: dict[str, Any]) -> str:
         f"- Flow: `{evidence.get('langflow_smoke', {}).get('flow', {}).get('name', '')}`",
         f"- Flow ID: `{evidence.get('langflow_smoke', {}).get('flow', {}).get('id', '')}`",
         f"- Response: {langflow_message or '(no message extracted)'}",
+        "",
+        "## Event-to-Langflow Action",
+        "",
+        f"- Trace ID: `{langflow_action.get('trace_id', '')}`",
+        f"- Event Type: `{langflow_action.get('event_type', '')}`",
+        f"- Status: `{langflow_action.get('status', '')}`",
+        f"- Flow: `{langflow_result.get('flow_name', '')}`",
+        f"- Flow ID: `{langflow_result.get('flow_id', '')}`",
+        f"- Message excerpt: {(langflow_result.get('message') or '')[:260]}",
         "",
         "## Latest Actions",
         "",

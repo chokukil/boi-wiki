@@ -108,6 +108,7 @@ action_gateway_mapping:
   doc_ref: boi:public:actions:langflow:reference-flow
   flow_name: BoI Reference Flow
   resolve_latest: true
+  require_marker: BoI Wiki Writer
 health_check:
   type: http
   command: python scripts/setup_langflow_reference_flows.py
@@ -118,4 +119,4 @@ security_notes:
 
 # Usage
 
-Gemma OpenAI-compatible LLM 설정을 가진 Langflow reference flow와 실제로 연결되는 실행형 action이다. Action Gateway는 Langflow `auto_login`으로 flow 목록을 읽고, `BoI Reference Flow` 이름의 최신 정상 flow를 찾아 `/api/v1/run/{flow_id}`로 호출한다.
+Gemma OpenAI-compatible LLM 설정과 BoI custom component chain을 가진 Langflow reference flow와 실제로 연결되는 실행형 action이다. Action Gateway는 Langflow `auto_login`으로 flow 목록을 읽고, `BoI Reference Flow` 이름이며 `BoI Wiki Writer` marker를 포함한 최신 정상 flow를 찾아 `/api/v1/run/{flow_id}`로 호출한다.

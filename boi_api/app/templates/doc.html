@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <title>{{ doc.metadata.title }} · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/doc_graph.js" defer></script>
+  <script src="/static/doc_edit.js" defer></script>
 </head>
 <body>
   <header>
@@ -17,6 +19,7 @@
     <div class="user-box">
       사번: {{ employee_id }}<br />
       <a href="{{ doc_list_url }}">폴더로 돌아가기</a>
+      {% if source_url %}<br /><a href="{{ source_url }}">Source 보기 / Draft 수정</a>{% endif %}
       {% if doc.metadata.event_type %}<br /><a href="{{ event_type_url }}">같은 Event Type BoI</a>{% endif %}
     </div>
   </header>
@@ -28,14 +31,14 @@
     </section>
     {% endif %}
     {% if action_spec %}
-    <section class="executable-spec">
-      <div class="spec-heading">
+    <details class="executable-spec" {% if request.query_params.get('spec') == 'open' %}open{% endif %}>
+      <summary class="spec-heading">
         <div>
           <h2>Executable Spec</h2>
           <p><code>{{ action_spec.action_key }}</code> · {{ action_spec.connector_kind }} · {{ action_spec.execution_mode }}</p>
         </div>
         <span class="badge status">{{ action_spec.protocol }}</span>
-      </div>
+      </summary>
       <div class="spec-endpoint">
         <span>{{ action_spec.endpoint_label }}</span>
         <code>{{ action_spec.method }} {{ action_spec.url }}</code>
@@ -82,10 +85,37 @@
         <summary>Security Notes</summary>
         <div class="rendered-content">{{ action_spec.security_html }}</div>
       </details>
-    </section>
+    </details>
     {% endif %}
-    <section class="metadata">
-      <h2>Metadata</h2>
+    <section class="body">
+      <div class="section-heading">
+        <h2>Body</h2>
+        {% if body_editor %}<button type="button" class="edit-body-button">Body 수정</button>{% endif %}
+      </div>
+      <div class="markdown-body rendered-content">{{ body_html }}</div>
+      {% if body_editor %}
+      <div class="body-editor-panel" hidden
+        data-save-url="{{ body_editor.save_url }}"
+        data-base-sha="{{ body_editor.base_sha256 }}"
+        data-employee-id="{{ employee_id }}">
+        <div class="editor-toolbar">
+          <strong>Body Draft Editor</strong>
+          <a href="{{ body_editor.guide_url }}">Draft editing guide</a>
+        </div>
+        <textarea class="body-draft-textarea" spellcheck="false">{{ body_editor.body }}</textarea>
+        <div class="source-actions">
+          <button type="button" class="save-body-draft">Save Body Draft</button>
+          <button type="button" class="cancel-body-edit secondary-action">Cancel</button>
+          <span class="draft-result body-draft-result">not applied · not committed</span>
+        </div>
+      </div>
+      {% endif %}
+    </section>
+    <details class="metadata">
+      <summary class="section-heading">
+        <h2>Metadata</h2>
+        <span class="muted">click to expand</span>
+      </summary>
       <nav class="breadcrumb" aria-label="Document folder">
         {% for crumb in doc_folder_breadcrumbs %}
         <a href="{{ crumb.url }}">{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
@@ -97,10 +127,28 @@
         <dd class="metadata-value">{{ row.value_html }}</dd>
         {% endfor %}
       </dl>
+    </details>
+    <section class="citations-panel">
+      <h2>Citations</h2>
+      {% if citations %}
+      <ul class="relationship-list">
+        {% for citation in citations %}
+        <li>
+          <span class="badge">{{ citation.type }}</span>
+          {% if citation.url %}<a href="{{ citation.url }}">{{ citation.ref }}</a>{% else %}<code>{{ citation.ref }}</code>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state">No source_refs or # Citations entries are available for this document.</p>
+      {% endif %}
     </section>
-    <section class="body">
-      <h2>Body</h2>
-      <div class="markdown-body rendered-content">{{ body_html }}</div>
+    <section class="relationship-panel" id="relationship-graph-panel" data-graph-url="{{ doc_graph_url }}">
+      <h2>Relationship Graph</h2>
+      <p class="muted">Graph data is loaded on demand so the document body can render first.</p>
+      <button type="button" class="load-relationship-graph">Load Relationship Graph</button>
+      <a class="graph-api-link" href="{{ doc_graph_url }}">JSON API</a>
+      <div class="relationship-graph-content" hidden></div>
     </section>
     {% if workflow_poc %}
     <section class="workflow-poc">
@@ -108,9 +156,9 @@
       <p><strong>SOP:</strong> <code>{{ workflow_poc.sop_ref }}</code> <code>{{ workflow_poc.sop_uri }}</code></p>
       <p><strong>Expected events:</strong> {{ workflow_poc.expected_event_types | join(', ') }}</p>
       <p><strong>Manual handoffs:</strong> {{ workflow_poc.expected_manual_actions | join(', ') }}</p>
-      <pre>curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?employee_id={{ employee_id }}" \
+      <pre>curl -X POST "http://localhost:8000/api/workflows/{{ workflow_poc.workflow_key }}/start?employee_id={{ employee_id }}" \
   -H "Content-Type: application/json" \
-  -d '{"equipment_id":"ETCH-VM-01","alarm_code":"RESPONSE_CHAIN_ABNORMAL","title":"Response Chain 이상 Alarm 발생"}'</pre>
+  -d '{"payload":{"title":"Workflow start","workflow":"{{ workflow_poc.workflow_key }}"}}'</pre>
     </section>
     {% endif %}
     {% if doc.metadata.visibility == 'private' %}

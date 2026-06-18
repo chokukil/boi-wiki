@@ -43,6 +43,18 @@ Open:
 - Kafka UI: http://localhost:8081
 - Langflow: http://localhost:7860
 
+## Using the BoI Harness
+
+The harness documents define how Codex, Claude, Langflow, and custom agents should create or change curated BoI Wiki knowledge.
+
+- Repo source: `harness/README.md`
+- BoI Wiki entry: http://localhost:8000/docs/boi:public:harness:overview?employee_id=100001
+- SOP authoring: http://localhost:8000/docs/boi:public:harness:sop-authoring-harness?employee_id=100001
+- Action authoring: http://localhost:8000/docs/boi:public:harness:action-authoring-harness?employee_id=100001
+- Web draft editing: http://localhost:8000/docs/boi:public:harness:web-draft-editing-guide?employee_id=100001
+
+Web source edits are draft-only. `Save Draft` does not change the original Markdown/YAML and does not create a Git commit. An agent must validate, apply, test, and commit the draft separately.
+
 ## Key Concepts
 
 ### Event Broker
@@ -162,4 +174,3 @@ Replace PoC pieces with enterprise services:
 - Private BoI is scoped to employee ID.
 - Team/Public promotion is copy-not-move.
 - Team/Public BoI starts as draft.
-

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from lfx.custom.custom_component.component import Component
+from lfx.custom import Component
 from lfx.io import DataInput, MultilineInput, Output
 from lfx.schema import Data
 

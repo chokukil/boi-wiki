@@ -53,6 +53,9 @@ def test_sop_workflow_has_event_publish_chain_to_corrective_action():
     maintenance_keys = action_keys("maintenance.guide.requested.v1")
     corrective_keys = action_keys("corrective_action.requested.v1")
 
+    assert "langflow.equipment.stage_analysis" in root_cause_keys
+    assert "langflow.equipment.stage_analysis" in maintenance_keys
+    assert "langflow.equipment.stage_analysis" in corrective_keys
     assert "sop.equipment.create_maintenance_guide_event" in root_cause_keys
     assert "sop.equipment.create_corrective_action_event" in maintenance_keys
     assert "sop.equipment.notify_action_owner" in corrective_keys
@@ -194,9 +197,32 @@ def test_equipment_events_reference_public_sop_and_manual_actions():
         assert event.get("sop_stage_id")
         assert "recommended_manual_actions" in event
 
+    alarm = next(event for event in equipment_events if event["event_type"] == "equipment.alarm.raised.v1")
+    assert "langflow.boi.reference_flow" in alarm["recommended_actions"]
+
+    trend = next(event for event in equipment_events if event["event_type"] == "trend.anomaly.detected.v1")
+    assert trend["sop_stage_id"] == "detect"
+    assert trend["workflow_stage"] == "이상 감지"
+
+    for event_type in [
+        "root_cause.analysis.requested.v1",
+        "maintenance.guide.requested.v1",
+        "corrective_action.requested.v1",
+    ]:
+        event = next(item for item in equipment_events if item["event_type"] == event_type)
+        assert "langflow.equipment.stage_analysis" in event["recommended_actions"]
+
     corrective = next(event for event in equipment_events if event["event_type"] == "corrective_action.requested.v1")
     assert set(corrective["recommended_manual_actions"]) >= {
         "manual.equipment.approve_process_hold",
         "manual.equipment.approve_spec_rule_change",
         "manual.equipment.confirm_maintenance_done",
     }
+
+
+def test_event_publish_actions_allow_slow_kafka_publish_roundtrips():
+    actions = [action for action in load_actions() if action.get("type") == "event_publish"]
+
+    assert actions
+    for action in actions:
+        assert int(action.get("timeout_seconds", 0)) >= 120

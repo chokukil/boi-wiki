@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lfx.custom.custom_component.component import Component
+from lfx.custom import Component
 from lfx.io import Output
 from lfx.schema import Data
 

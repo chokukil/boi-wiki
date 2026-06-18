@@ -70,12 +70,32 @@ async def dispatch_event(event: dict[str, Any]) -> dict[str, Any]:
         return resp.json()
 
 
+async def enrich_generated_boi(event: dict[str, Any], dispatch_result: dict[str, Any]) -> dict[str, Any]:
+    employee_id = ((event.get("actor") or {}).get("employee_id") or (event.get("actor") or {}).get("employee_id_hash") or "100001")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{BOI_API_URL.rstrip('/')}/api/boi/enrich-from-dispatch",
+                headers={"x-service-token": BOI_API_SERVICE_TOKEN},
+                json={
+                    "employee_id": employee_id,
+                    "event": event,
+                    "dispatch_result": dispatch_result,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as exc:
+        return {"ok": False, "status": "enrichment_failed", "error": repr(exc)}
+
+
 async def process_event(event: dict[str, Any], producer: AIOKafkaProducer) -> None:
     event_type = event.get("event_type", "")
     try:
         await write_boi_event_audit(event, "routing")
         dispatch_result = await dispatch_event(event)
-        result = {"routed_by": "event-router", "dispatch_result": dispatch_result}
+        enrichment_result = await enrich_generated_boi(event, dispatch_result)
+        result = {"routed_by": "event-router", "dispatch_result": dispatch_result, "enrichment_result": enrichment_result}
         await emit(producer, AUDIT_TOPIC, {"status": "processed", "event_id": event.get("event_id"), "event_type": event_type, "result": result})
         await write_boi_event_audit(event, "processed", result=result)
         print(json.dumps({"status": "processed", "event_id": event.get("event_id"), "event_type": event_type, "connector_count": len(dispatch_result.get("results") or [])}, ensure_ascii=False), flush=True)

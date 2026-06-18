@@ -104,7 +104,7 @@ def host_allowed(url: str) -> bool:
 def render_template(value: Any, context: dict[str, Any]) -> Any:
     """Tiny template replacement for catalog URLs/payloads: ${key.path}."""
     if isinstance(value, str):
-        full_match = re.fullmatch(r"\$\{([A-Za-z0-9_.-]+)\}", value)
+        full_match = re.fullmatch(r"\$\{([A-Za-z0-9_.\-_]+)\}", value)
         if full_match:
             cur: Any = context
             for part in full_match.group(1).split("."):
@@ -123,7 +123,7 @@ def render_template(value: Any, context: dict[str, Any]) -> Any:
                 else:
                     return ""
             return str(cur)
-        return re.sub(r"\$\{([A-Za-z0-9_.-]+)\}", repl, value)
+        return re.sub(r"\$\{([A-Za-z0-9_.\-_]+)\}", repl, value)
     if isinstance(value, list):
         return [render_template(v, context) for v in value]
     if isinstance(value, dict):
@@ -221,6 +221,47 @@ def extract_boi_id(result: dict[str, Any]) -> str | None:
         return None
 
 
+def first_summary_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("message", "text", "status"):
+            found = first_summary_text(value.get(key))
+            if found:
+                return found
+        for child in value.values():
+            found = first_summary_text(child)
+            if found:
+                return found
+    if isinstance(value, list):
+        for child in value:
+            found = first_summary_text(child)
+            if found:
+                return found
+    return ""
+
+
+def summarize_action_result(result: dict[str, Any] | None, error: Any = None) -> str:
+    if result:
+        response = result.get("response")
+        if isinstance(response, dict) and isinstance(response.get("result"), dict):
+            for key in (
+                "raw_data_ref",
+                "source_data_ref",
+                "trend_status",
+                "guide_boi_ref",
+                "notification_status",
+                "requested_state",
+                "requested_change",
+            ):
+                if response["result"].get(key):
+                    return f"{key}={response['result'][key]}"
+        return first_summary_text(result)[:500]
+    if error:
+        return first_summary_text(error)[:500] or str(error)[:500]
+    return ""
+
+
 async def require_service_token(x_service_token: str | None = Header(None)) -> None:
     if x_service_token != SERVICE_TOKEN:
         raise HTTPException(status_code=401, detail="invalid service token")
@@ -235,6 +276,7 @@ class InvokeRequest(BaseModel):
     dry_run: bool | None = None
     approved_by: str | None = None
     idempotency_key: str | None = None
+    prior_results: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DispatchRequest(BaseModel):
@@ -245,6 +287,7 @@ class DispatchRequest(BaseModel):
     dry_run: bool | None = None
     approved_by: str | None = None
     idempotency_key: str | None = None
+    prior_results: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @app.on_event("startup")
@@ -296,6 +339,8 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         "service_token": SERVICE_TOKEN,
         "dry_run": dry_run,
         "approved_by": req.approved_by or "",
+        "prior_results": req.prior_results,
+        "prior_results_json": json.dumps(req.prior_results, ensure_ascii=False, indent=2),
     }
     base_log = {
         "action_key": action.get("action_key"),
@@ -480,6 +525,7 @@ async def dispatch(req: DispatchRequest) -> dict[str, Any]:
     actions = actions_for_event(event_type)
     results: list[dict[str, Any]] = []
     current_boi_id = req.boi_id
+    prior_results = list(req.prior_results or [])
     for action in actions:
         child_req = InvokeRequest(
             action_key=str(action.get("action_key")),
@@ -490,15 +536,39 @@ async def dispatch(req: DispatchRequest) -> dict[str, Any]:
             dry_run=req.dry_run,
             approved_by=req.approved_by,
             idempotency_key=None,
+            prior_results=prior_results,
         )
         try:
             result = await invoke_action(action, child_req)
             new_boi_id = extract_boi_id(result)
             if new_boi_id and not current_boi_id:
                 current_boi_id = new_boi_id
-            results.append({"action_key": action.get("action_key"), "type": action.get("type"), "result": result})
+            row = {
+                "action_key": action.get("action_key"),
+                "type": action.get("type"),
+                "order": action.get("order"),
+                "connector_kind": action.get("connector_kind"),
+                "doc_ref": action.get("doc_ref"),
+                "request_id": result.get("request_id"),
+                "summary": summarize_action_result(result),
+                "result": result,
+            }
+            results.append(row)
+            prior_results.append(row)
         except HTTPException as exc:
-            results.append({"action_key": action.get("action_key"), "type": action.get("type"), "error": exc.detail, "status_code": exc.status_code})
+            row = {
+                "action_key": action.get("action_key"),
+                "type": action.get("type"),
+                "order": action.get("order"),
+                "connector_kind": action.get("connector_kind"),
+                "doc_ref": action.get("doc_ref"),
+                "request_id": "",
+                "summary": summarize_action_result(None, exc.detail),
+                "error": exc.detail,
+                "status_code": exc.status_code,
+            }
+            results.append(row)
+            prior_results.append(row)
             if action.get("continue_on_error", True) is False:
                 break
     return {"ok": True, "status": "dispatched", "event_type": event_type, "boi_id": current_boi_id, "count": len(results), "results": results}

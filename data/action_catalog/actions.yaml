@@ -127,6 +127,7 @@ actions:
     enabled: true
     auto_dispatch: true
     order: 40
+    timeout_seconds: 120
     event_types: [equipment.alarm.raised.v1, trend.anomaly.detected.v1]
     owner: AIX 확산 TF
     risk_level: medium
@@ -156,6 +157,7 @@ actions:
     enabled: true
     auto_dispatch: true
     order: 40
+    timeout_seconds: 120
     event_types: [root_cause.analysis.requested.v1]
     owner: AIX 확산 TF
     risk_level: medium
@@ -198,7 +200,7 @@ actions:
       payload: ${payload}
       dry_run: ${dry_run}
       approved_by: ${approved_by}
-    event_types: [root_cause.analysis.completed.v1, maintenance.guide.requested.v1]
+    event_types: [root_cause.analysis.requested.v1, root_cause.analysis.completed.v1, maintenance.guide.requested.v1]
     owner: AIX 확산 TF
     risk_level: medium
     approval_required: false
@@ -220,6 +222,7 @@ actions:
     enabled: true
     auto_dispatch: true
     order: 40
+    timeout_seconds: 120
     event_types: [maintenance.guide.requested.v1]
     owner: AIX 확산 TF
     risk_level: medium
@@ -354,9 +357,51 @@ actions:
     flow_name: BoI Reference Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Event Input
+    require_marker: BoI Wiki Writer
     body:
       input_value: "BoI Wiki Event를 분석해 Private BoI 초안 요약을 한국어로 작성하세요. event_type=${event.event_type}, trace_id=${event.trace_id}, title=${payload.title}, equipment_id=${payload.equipment_id}, owner=${payload.owner}"
+      input_type: chat
+      output_type: chat
+
+  - action_key: langflow.equipment.stage_analysis
+    name_ko: Langflow 설비 SOP Stage 분석
+    description: 설비 SOP stage의 event payload, prior API/action results, manual handoff 요구사항을 받아 분석/가이드/조치 후보 초안을 생성하는 실행형 Connector
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:stage-analysis
+    enabled: true
+    auto_dispatch: true
+    order: 35
+    event_types: [root_cause.analysis.requested.v1, maintenance.guide.requested.v1, corrective_action.requested.v1]
+    owner: AIX 확산 TF / 제조 PoC
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Equipment Stage Analysis Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    body:
+      input_value: |
+        설비 이상 대응 SOP의 현재 stage 실행 기록을 한국어로 작성하세요.
+        범위는 분석/가이드/조치 후보 초안으로 제한하고, 고위험 system action은 승인 필요로만 표시하세요.
+        금지: 업무 맥락 자산화, Event Broker, Action Gateway, Private BoI/Team BoI 승격, PoC 아키텍처, 작성자 문구를 설명하지 마세요.
+        출력 구조: Current Finding, Evidence Used, Recommended Next Check, Manual Handoff, Risk/Approval Notes.
+
+        Event:
+        - event_type=${event.event_type}
+        - trace_id=${event.trace_id}
+        - title=${payload.title}
+        - equipment_id=${payload.equipment_id}
+        - lot_id=${payload.lot_id}
+        - wafer_id=${payload.wafer_id}
+        - alarm_code=${payload.alarm_code}
+        - owner=${payload.owner}
+
+        Prior Action Results:
+        ${prior_results_json}
       input_type: chat
       output_type: chat
 
@@ -392,6 +437,7 @@ actions:
     enabled: true
     auto_dispatch: false
     order: 100
+    timeout_seconds: 120
     event_types: [manual.input.v1]
     owner: AIX 확산 TF
     risk_level: low

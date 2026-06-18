@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Action Raw Detail · {{ request_id or log_ref }} · BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Action Raw Detail</h1>
+      <p>Action Gateway / Langflow / API invocation 원본 로그를 행 단위로 확인합니다.</p>
+    </div>
+    <div class="user-box">
+      사번: {{ employee_id }}<br />
+      <a href="/actions?employee_id={{ employee_id }}">Actions</a><br />
+      {% if trace_url %}<a href="{{ trace_url }}">Workflow Status</a><br />{% endif %}
+      <a href="{{ api_url }}">JSON API</a>
+    </div>
+  </header>
+  <main class="doc-page action-raw-page">
+    <section class="workflow-panel">
+      <h2>{{ action_key or request_id or log_ref }}</h2>
+      <div class="event-summary-line">
+        <span class="badge status">raw</span>
+        {% if request_id %}<a href="{{ api_url }}"><code>{{ request_id }}</code></a>{% endif %}
+        {% if trace_id %}<a href="{{ trace_url }}"><code>{{ trace_id }}</code></a>{% endif %}
+        {% if event_id %}<a href="{{ event_url }}"><code>{{ event_id }}</code></a>{% endif %}
+        {% if doc_ref and doc_url %}<a href="{{ doc_url }}">{{ doc_ref }}</a>{% endif %}
+        {% if boi_id and boi_url %}<a href="{{ boi_url }}">{{ boi_id }}</a>{% endif %}
+      </div>
+      <p class="muted"><code>{{ log_ref }}</code></p>
+    </section>
+
+    <section class="workflow-panel">
+      <h2>Linked Views</h2>
+      <div class="event-summary-line">
+        {% if trace_url %}<a href="{{ trace_url }}">Workflow Status</a>{% endif %}
+        {% if trace_events_url %}<a href="{{ trace_events_url }}">Trace Event Stream</a>{% endif %}
+        {% if event_url %}<a href="{{ event_url }}">Event Filter</a>{% endif %}
+        {% if doc_url %}<a href="{{ doc_url }}">Action Spec</a>{% endif %}
+        {% if boi_url %}<a href="{{ boi_url }}">Generated BoI</a>{% endif %}
+      </div>
+    </section>
+
+    <section class="workflow-panel">
+      <div class="section-heading">
+        <h2>Raw Log Row</h2>
+        <a class="button secondary" href="{{ api_url }}">JSON으로 보기</a>
+      </div>
+      <div class="rendered-content">{{ row_html }}</div>
+    </section>
+  </main>
+</body>
+</html>

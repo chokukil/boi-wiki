@@ -38,6 +38,16 @@ def test_okf_lint_module_accepts_checked_in_boi_docs():
 
     assert result.ok, result.errors[:5]
     assert result.checked_markdown_count >= 1
+    assert result.markdown_link_count > 0
+
+
+def test_okf_core_metadata_accepts_minimal_official_concept():
+    from boi_api.app.okf import validate_boi_profile_metadata, validate_okf_core_metadata
+
+    metadata = {"type": "Playbook"}
+
+    assert validate_okf_core_metadata(metadata) == []
+    assert "missing required metadata: boi_id" in validate_boi_profile_metadata(metadata)
 
 
 def test_okf_lint_reports_invalid_metadata():
@@ -57,6 +67,48 @@ def test_okf_lint_reports_invalid_metadata():
     assert "missing required metadata: description" in errors
     assert "visibility must be private/team/public" in errors
     assert "status must be draft/reviewed/approved/deprecated" in errors
+
+
+def test_okf_lint_rejects_reserved_index_used_as_boi_concept(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    write_markdown(data_root / "boi" / "public" / "actions" / "index.md", valid_private_metadata("boi:private:100001:index"))
+
+    result = lint_data_root(data_root)
+
+    assert not result.ok
+    assert any("reserved index.md must be directory listing, not BoI concept frontmatter" in error for error in result.errors)
+
+
+def test_okf_lint_extracts_bundle_relative_markdown_graph_edges(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    write_markdown(
+        data_root / "boi" / "public" / "sop" / "flow.md",
+        valid_private_metadata("boi:private:100001:flow"),
+        "# Summary\n\nUse [Trend History](/public/actions/api/request-trend-history.md).",
+    )
+    write_markdown(
+        data_root / "boi" / "public" / "actions" / "api" / "request-trend-history.md",
+        valid_private_metadata("boi:private:100001:trend"),
+        "# Summary\n\nTrend API.",
+    )
+
+    result = lint_data_root(data_root, strict_links=True)
+
+    assert result.ok, result.errors
+    assert result.markdown_link_count == 1
+    assert result.link_edges == [
+        {
+            "source": "public/sop/flow",
+            "target": "public/actions/api/request-trend-history",
+            "href": "/public/actions/api/request-trend-history.md",
+            "label": "Trend History",
+            "resolved": True,
+        }
+    ]
 
 
 def test_okf_lint_includes_materialized_log_payloads(tmp_path: Path):

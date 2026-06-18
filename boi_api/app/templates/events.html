@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>Event Stream · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/events.js" defer></script>
 </head>
 <body>
   <header>
@@ -28,11 +29,22 @@
       </select>
       <label>Trace</label>
       <input name="trace_id" value="{{ trace_id }}" placeholder="trace_id" />
+      <label>Event ID</label>
+      <input name="event_id" value="{{ event_id }}" placeholder="event_id" />
+      <label>Limit</label>
+      <input name="limit" value="{{ limit }}" type="number" min="1" max="200" />
       <button type="submit">조회</button>
     </form>
   </section>
   <main>
-    <h2>Events ({{ events|length }})</h2>
+    <div class="pagination-bar">
+      <h2>Events ({{ total_events }})</h2>
+      <div class="pagination-actions">
+        {% if has_prev %}<a class="button secondary" href="{{ prev_url }}">Previous</a>{% endif %}
+        <span>Page {{ page }} · {{ events|length }} shown</span>
+        {% if has_next %}<a class="button secondary" href="{{ next_url }}">Next</a>{% endif %}
+      </div>
+    </div>
     <div class="doc-list">
       {% for e in events %}
       <article class="doc-row event-row">
@@ -41,8 +53,16 @@
           <span class="badge status">{{ e.status }}</span>
           <strong>{{ e.payload_title or e.event_id }}</strong>
         </div>
-        <p>{{ e.event_type }} · {{ e.event_id }}</p>
-        <small>{{ e.logged_at }} · producer={{ e.producer }} · trace={{ e.trace_id }}</small>
+        <p>{{ e.event_type }} · {% if e.event_url %}<a href="{{ e.event_url }}">{{ e.event_id }}</a>{% else %}{{ e.event_id }}{% endif %}</p>
+        <small>{{ e.logged_at }} · producer={{ e.producer }} · trace={% if e.trace_url %}<a href="{{ e.trace_url }}">{{ e.trace_id }}</a>{% else %}{{ e.trace_id }}{% endif %}</small>
+        {% if e.trace_id and not e.dispatch_summary %}
+        <div class="event-summary-line trace-link-row">
+          <a href="{{ e.trace_url }}">Trace 보기</a>
+          {% if e.workflow_status_url %}
+          <a href="{{ e.workflow_status_url|safe }}">Workflow Status</a>
+          {% endif %}
+        </div>
+        {% endif %}
         {% if e.dispatch_summary %}
         {% set summary = e.dispatch_summary %}
         <section class="event-detail compact-result">
@@ -53,9 +73,9 @@
             <span>ok={{ summary.ok }}</span>
             {% if summary.boi_url %}<a href="{{ summary.boi_url }}">Generated BoI</a>{% endif %}
             {% if summary.boi_missing %}<span class="badge warning">BoI missing</span><code>{{ summary.boi_missing }}</code>{% endif %}
-            {% if e.trace_id %}<a href="/events?employee_id={{ employee_id }}&trace_id={{ e.trace_id }}">Trace 보기</a>{% endif %}
-            {% if e.trace_id and e.event_type and ('equipment.' in e.event_type or 'trend.' in e.event_type or 'root_cause.' in e.event_type or 'maintenance.' in e.event_type or 'corrective_action.' in e.event_type) %}
-            <a href="/api/workflows/demo/equipment-anomaly/status?employee_id={{ employee_id }}&trace_id={{ e.trace_id }}">Workflow Status</a>
+            {% if e.trace_url %}<a href="{{ e.trace_url }}">Trace 보기</a>{% endif %}
+            {% if e.workflow_status_url %}
+            <a href="{{ e.workflow_status_url|safe }}">Workflow Status</a>
             {% endif %}
           </div>
           <div class="action-summary-table">
@@ -82,10 +102,13 @@
               </tbody>
             </table>
           </div>
+          {% if e.raw_url %}
           <details class="raw-event-json">
             <summary>Raw JSON</summary>
-            <div class="rendered-content">{{ e.raw_result_html }}</div>
+            <button type="button" class="load-raw-event" data-raw-url="{{ e.raw_url }}">Raw JSON 불러오기</button>
+            <pre class="raw-json-output" hidden></pre>
           </details>
+          {% endif %}
         </section>
         {% endif %}
         {% if e.result_html %}
@@ -99,6 +122,13 @@
           <h3>Error</h3>
           <div class="rendered-content">{{ e.error_html }}</div>
         </section>
+        {% endif %}
+        {% if e.raw_url and not e.dispatch_summary %}
+        <details class="raw-event-json">
+          <summary>Raw JSON</summary>
+          <button type="button" class="load-raw-event" data-raw-url="{{ e.raw_url }}">Raw JSON 불러오기</button>
+          <pre class="raw-json-output" hidden></pre>
+        </details>
         {% endif %}
       </article>
       {% endfor %}

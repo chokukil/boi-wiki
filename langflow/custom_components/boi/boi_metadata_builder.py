@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
-from lfx.custom.custom_component.component import Component
+from lfx.custom import Component
 from lfx.io import DataInput, DropdownInput, MultilineInput, Output, StrInput
 from lfx.schema import Data
 

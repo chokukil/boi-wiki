@@ -5,7 +5,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from lfx.custom.custom_component.component import Component
+from lfx.custom import Component
 from lfx.io import DataInput, MultilineInput, Output, StrInput
 from lfx.schema import Data
 
