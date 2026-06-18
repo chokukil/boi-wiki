@@ -23,7 +23,12 @@ services:
     networks: [boi-net]
 
   langflow:
-    image: ${LANGFLOW_SSO_IMAGE:-dk02315/langflow-hynix:v1.10.0-hynix-sso-rc4}
+    build:
+      context: .
+      dockerfile: docker/langflow-hynix-sso.Dockerfile
+      args:
+        LANGFLOW_HYNIX_BASE_IMAGE: ${LANGFLOW_HYNIX_BASE_IMAGE:-dk02315/langflow-hynix:v1.10.0-hynix-sso-rc4}
+    image: ${LANGFLOW_SSO_IMAGE:-boi-langflow-hynix-sso:local}
     environment:
       LANGFLOW_AUTO_LOGIN: "false"
       LANGFLOW_SKIP_AUTH_AUTO_LOGIN: "false"

@@ -22,6 +22,8 @@ def test_docker_compose_passes_llm_settings_to_langflow_and_gateway():
     assert "BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}" in compose_text
     assert "LANGFLOW_SECRET_KEY: ${LANGFLOW_SECRET_KEY:-Ym9pLXdpa2ktcG9jLWRldi1zZWNyZXQta2V5LTIwMjY=}" in compose_text
     assert "LANGFLOW_SKIP_AUTH_AUTO_LOGIN: ${LANGFLOW_SKIP_AUTH_AUTO_LOGIN:-true}" in compose_text
+    assert "BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}" in compose_text
+    assert "LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}" in compose_text
 
 
 def test_langflow_reference_flow_manifest_is_importable_metadata():
@@ -91,3 +93,13 @@ def test_langflow_custom_components_include_prompt_and_result_composers():
     assert "class BoIResultComposer" in result
     assert "BoIPromptComposer" in init
     assert "BoIResultComposer" in init
+
+
+def test_langflow_reader_writer_attach_boi_api_service_token():
+    reader = Path("langflow/custom_components/boi/boi_wiki_reader.py").read_text(encoding="utf-8")
+    writer = Path("langflow/custom_components/boi/boi_wiki_writer.py").read_text(encoding="utf-8")
+
+    assert 'os.getenv("BOI_API_SERVICE_TOKEN")' in reader
+    assert 'headers=self._headers()' in reader
+    assert 'os.getenv("BOI_API_SERVICE_TOKEN")' in writer
+    assert '"x-service-token"' in writer

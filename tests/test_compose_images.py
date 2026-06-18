@@ -39,6 +39,9 @@ def test_compose_declares_boi_auth_env_and_sso_dev_overlay():
     assert "KEYCLOAK_SERVER_URL" in compose
     assert "HCP_AUTHZ_URL" in compose
     assert "dk02315/langflow-hynix:v1.10.0-hynix-sso-rc4" in overlay
+    assert "docker/langflow-hynix-sso.Dockerfile" in overlay
+    assert Path("docker/langflow-hynix-sso.Dockerfile").read_text(encoding="utf-8").count("limits==5.6.0") == 1
+    assert "slowapi==0.1.9" in Path("docker/langflow-hynix-sso.Dockerfile").read_text(encoding="utf-8")
     assert "infra/keycloak/boi-dev-realm.json" in overlay
     assert "mock-hcp" in overlay
     assert "BOI_AUTH_MODE=dev" in env_example

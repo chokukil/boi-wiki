@@ -33,6 +33,7 @@ services:
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
       ACTION_GATEWAY_URL: http://action-gateway:8100
       ACTION_GATEWAY_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       AUTO_INVOKE_ACTIONS_FOR_EVENTS: ${AUTO_INVOKE_ACTIONS_FOR_EVENTS:-true}
       LANGFLOW_WEBHOOK_AUTH_ENABLE: "True"
       # Local PoC convenience. For intranet deployment, set False and put behind SSO/reverse proxy.
@@ -172,6 +173,7 @@ services:
       BOI_API_URL: http://boi-api:8000
       LANGFLOW_URL: http://langflow:7860
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
+      LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}
       MCP_BRIDGE_URL: ${MCP_BRIDGE_URL:-}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       ACTION_DRY_RUN_DEFAULT: ${ACTION_DRY_RUN_DEFAULT:-true}

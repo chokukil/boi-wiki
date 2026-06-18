@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.parse
 import urllib.request
 
@@ -22,11 +23,16 @@ class BoIWikiReader(Component):
     ]
     outputs = [Output(name="documents", display_name="Accessible BoI", method="read")]
 
+    def _headers(self) -> dict[str, str]:
+        token = os.getenv("BOI_API_SERVICE_TOKEN") or os.getenv("SERVICE_TOKEN") or ""
+        return {"x-service-token": token} if token else {}
+
     def read(self) -> Data:
         params = urllib.parse.urlencode({"employee_id": self.employee_id, "q": self.query or ""})
         url = f"{self.boi_api_url.rstrip('/')}/api/boi?{params}"
+        req = urllib.request.Request(url, headers=self._headers(), method="GET")
         try:
-            with urllib.request.urlopen(url, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 return Data(data=json.loads(resp.read().decode("utf-8")))
         except Exception as e:
             return Data(data={"ok": False, "error": repr(e)})

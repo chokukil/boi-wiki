@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from typing import Any
@@ -25,12 +26,19 @@ class BoIWikiWriter(Component):
     ]
     outputs = [Output(name="result", display_name="Write Result", method="write")]
 
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        token = os.getenv("BOI_API_SERVICE_TOKEN") or os.getenv("SERVICE_TOKEN") or ""
+        if token:
+            headers["x-service-token"] = token
+        return headers
+
     def write(self) -> Data:
         meta: dict[str, Any] = self.metadata.data if hasattr(self.metadata, "data") else dict(self.metadata)
         body = self.body or (getattr(self.body_message, "text", "") if self.body_message else "")
         payload = json.dumps({"metadata": meta, "body": body}, ensure_ascii=False).encode("utf-8")
         url = f"{self.boi_api_url.rstrip('/')}/api/boi?employee_id={self.employee_id}"
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        req = urllib.request.Request(url, data=payload, headers=self._headers(), method="POST")
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 return Data(data=json.loads(resp.read().decode("utf-8")))
