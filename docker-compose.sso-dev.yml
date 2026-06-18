@@ -1,0 +1,57 @@
+services:
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0.7}
+    container_name: boi-keycloak
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "${KEYCLOAK_PORT:-8088}:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./infra/keycloak/boi-dev-realm.json:/opt/keycloak/data/import/boi-dev-realm.json:ro
+    networks: [boi-net]
+
+  mock-hcp:
+    build:
+      context: ./mock_hcp
+    container_name: boi-mock-hcp
+    ports:
+      - "${MOCK_HCP_PORT:-8300}:8300"
+    environment:
+      HCP_PERMISSIONS_JSON: ${HCP_PERMISSIONS_JSON:-}
+    networks: [boi-net]
+
+  langflow:
+    image: ${LANGFLOW_SSO_IMAGE:-dk02315/langflow-hynix:v1.10.0-hynix-sso-rc4}
+    environment:
+      LANGFLOW_AUTO_LOGIN: "false"
+      LANGFLOW_SKIP_AUTH_AUTO_LOGIN: "false"
+      KEYCLOAK_ENABLED: "true"
+      KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://localhost:${KEYCLOAK_PORT:-8088}}
+      EXTERNAL_SERVER_URL: ${LANGFLOW_EXTERNAL_URL:-http://localhost:${LANGFLOW_PORT:-7860}}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-boi-dev}
+      KEYCLOAK_CLIENT_ID: ${LANGFLOW_KEYCLOAK_CLIENT_ID:-langflow}
+      KEYCLOAK_CLIENT_SECRET: ${LANGFLOW_KEYCLOAK_CLIENT_SECRET:-dev-langflow-client-secret}
+      KEYCLOAK_REDIRECT_URI: ${LANGFLOW_KEYCLOAK_REDIRECT_URI:-http://localhost:${LANGFLOW_PORT:-7860}/api/v1/keycloak/callback}
+      HCP_API_URL: ${LANGFLOW_HCP_API_URL:-http://mock-hcp:8300}
+      ALLOWED_EMPLOYEE: ${LANGFLOW_ALLOWED_EMPLOYEE:-}
+
+  boi-api:
+    depends_on:
+      keycloak:
+        condition: service_started
+      mock-hcp:
+        condition: service_started
+    environment:
+      BOI_AUTH_MODE: keycloak
+      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:${BOI_API_PORT:-8000}}
+      BOI_SESSION_SECRET: ${BOI_SESSION_SECRET:-dev-boi-session-secret-change-me}
+      BOI_COOKIE_SECURE: "false"
+      KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://localhost:${KEYCLOAK_PORT:-8088}}
+      KEYCLOAK_INTERNAL_URL: ${KEYCLOAK_INTERNAL_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-boi-dev}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-boi-wiki}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-dev-boi-wiki-client-secret}
+      KEYCLOAK_REDIRECT_URI: ${KEYCLOAK_REDIRECT_URI:-http://localhost:${BOI_API_PORT:-8000}/auth/callback}
+      HCP_AUTHZ_URL: ${HCP_AUTHZ_URL:-http://mock-hcp:8300/api/permissions}

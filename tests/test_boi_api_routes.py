@@ -53,6 +53,110 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert "api_key" not in body["llm"]
 
 
+def test_auth_me_exposes_dev_identity(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/api/auth/me?employee_id=100001")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["auth_mode"] == "dev"
+    assert body["employee_id"] == "100001"
+    assert "platform" in body["teams"]
+    assert "boi.editor" in body["roles"]
+
+
+def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    client = TestClient(boi_app_module.app)
+    headers = {
+        "x-hynix-employee-id": "200001",
+        "x-hynix-name": "SKH SSO User",
+        "x-hynix-teams": "platform",
+        "x-hynix-roles": "boi.viewer,boi.editor",
+    }
+
+    me = client.get("/api/auth/me?employee_id=200001", headers=headers)
+    spoof = client.get("/api/auth/me?employee_id=100001", headers=headers)
+
+    assert me.status_code == 200
+    assert me.json()["employee_id"] == "200001"
+    assert me.json()["teams"] == ["platform"]
+    assert spoof.status_code == 403
+
+
+def test_trusted_header_teams_drive_acl_without_dev_user_map(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    client = TestClient(boi_app_module.app)
+    headers = {
+        "x-hynix-employee-id": "200001",
+        "x-hynix-teams": "platform",
+        "x-hynix-roles": "boi.viewer",
+    }
+
+    response = client.get("/api/boi?employee_id=200001&folder=team/platform", headers=headers)
+    private_response = client.get("/api/boi?employee_id=200001&folder=private/100001", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["count"] >= 1
+    assert all(item["uri"].startswith("/team/platform/") for item in response.json()["items"])
+    assert private_response.status_code == 200
+    assert private_response.json()["count"] == 0
+
+
+def test_trusted_header_editor_role_required_for_source_drafts(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    client = TestClient(boi_app_module.app)
+    viewer_headers = {
+        "x-hynix-employee-id": "200001",
+        "x-hynix-teams": "platform",
+        "x-hynix-roles": "boi.viewer",
+    }
+    editor_headers = {**viewer_headers, "x-hynix-roles": "boi.viewer,boi.editor"}
+    source_ref = "data/boi/public/sop/equipment-abnormal-response.md"
+    source = client.get(f"/api/source?employee_id=200001&path={source_ref}", headers=viewer_headers).json()
+
+    denied = client.post(
+        "/api/source/drafts?employee_id=200001",
+        headers=viewer_headers,
+        json={
+            "path": source_ref,
+            "base_sha256": source["sha256"],
+            "proposed_content": source["content"] + "\n<!-- viewer denied -->\n",
+            "author": "200001",
+        },
+    )
+    allowed = client.post(
+        "/api/source/drafts?employee_id=200001",
+        headers=editor_headers,
+        json={
+            "path": source_ref,
+            "base_sha256": source["sha256"],
+            "proposed_content": source["content"] + "\n<!-- editor allowed -->\n",
+            "author": "200001",
+        },
+    )
+
+    assert denied.status_code == 403
+    assert allowed.status_code == 200
+    assert allowed.json()["draft_only"] is True
+
+
+def test_service_token_delegates_employee_identity_in_sso_mode(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "keycloak")
+    client = TestClient(boi_app_module.app)
+
+    response = client.get(
+        "/api/boi?employee_id=100001&folder=team/platform",
+        headers={"x-service-token": boi_app_module.SERVICE_TOKEN},
+    )
+    no_token = client.get("/api/boi?employee_id=100001&folder=team/platform")
+
+    assert response.status_code == 200
+    assert response.json()["count"] >= 1
+    assert no_token.status_code == 401
+
+
 def test_boi_api_lists_accessible_docs_with_yaml_timestamps(boi_app_module):
     client = TestClient(boi_app_module.app)
 

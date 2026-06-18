@@ -14,11 +14,18 @@ DEFAULT_EMPLOYEE_ID = os.getenv("DEFAULT_EMPLOYEE_ID", "100001")
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100").rstrip("/")
 
 
-async def api_get(path: str, *, employee_id: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def api_get(
+    path: str,
+    *,
+    employee_id: str | None = None,
+    params: dict[str, Any] | None = None,
+    service_token: bool = False,
+) -> dict[str, Any]:
     query = dict(params or {})
     query.setdefault("employee_id", employee_id or DEFAULT_EMPLOYEE_ID)
+    headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(f"{BOI_API_URL}{path}", params=query)
+        resp = await client.get(f"{BOI_API_URL}{path}", params=query, headers=headers)
     try:
         body: Any = resp.json()
     except Exception:
@@ -74,17 +81,34 @@ async def boi_search(
     boi_type: str = "",
 ) -> dict[str, Any]:
     """Search accessible BoI OKF documents."""
+    return await boi_search_impl(query, employee_id, folder, event_type, visibility, boi_type)
+
+
+async def boi_search_impl(
+    query: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    folder: str = "",
+    event_type: str = "",
+    visibility: str = "",
+    boi_type: str = "",
+    service_token: bool = False,
+) -> dict[str, Any]:
     return await api_get(
         "/api/boi",
         employee_id=employee_id,
         params={"q": query, "folder": folder, "event_type": event_type, "visibility": visibility, "boi_type": boi_type},
+        service_token=service_token,
     )
 
 
 @mcp.tool(name="boi_get")
 async def boi_get(boi_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
     """Return a single accessible BoI document by BoI ID or OKF path."""
-    docs = await boi_search(query="", employee_id=employee_id)
+    return await boi_get_impl(boi_id, employee_id)
+
+
+async def boi_get_impl(boi_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID, service_token: bool = False) -> dict[str, Any]:
+    docs = await boi_search_impl(query="", employee_id=employee_id, service_token=service_token)
     for item in docs.get("items", []):
         metadata = item.get("metadata") or {}
         candidates = {str(metadata.get("boi_id") or ""), str(item.get("uri") or "").strip("/")}
@@ -107,7 +131,17 @@ async def actions_search(
     action_key: str = "",
 ) -> dict[str, Any]:
     """Search executable action catalog entries across API, webhook, MCP, Langflow, manual, event broker, and BoI writer connectors."""
-    body = await api_get("/api/actions/catalog", employee_id=employee_id, params={"event_type": event_type})
+    return await actions_search_impl(employee_id, event_type, connector_kind, action_key)
+
+
+async def actions_search_impl(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    event_type: str = "",
+    connector_kind: str = "",
+    action_key: str = "",
+    service_token: bool = False,
+) -> dict[str, Any]:
+    body = await api_get("/api/actions/catalog", employee_id=employee_id, params={"event_type": event_type}, service_token=service_token)
     items = body.get("items", [])
     if connector_kind:
         items = [item for item in items if item.get("connector_kind") == connector_kind]
@@ -173,10 +207,21 @@ async def workflow_status(
     graph_scope: Literal["trace", "global"] = "trace",
 ) -> dict[str, Any]:
     """Return workflow status for a trace."""
+    return await workflow_status_impl(workflow_key, trace_id, employee_id, graph_scope)
+
+
+async def workflow_status_impl(
+    workflow_key: str,
+    trace_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    graph_scope: Literal["trace", "global"] = "trace",
+    service_token: bool = False,
+) -> dict[str, Any]:
     return await api_get(
         f"/api/workflows/{workflow_key}/status",
         employee_id=employee_id,
         params={"trace_id": trace_id, "format": "json", "graph_scope": graph_scope},
+        service_token=service_token,
     )
 
 
@@ -326,13 +371,18 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
     args = dict(req.arguments or {})
     employee_id = str(args.get("employee_id") or DEFAULT_EMPLOYEE_ID)
     if tool_name in {"boi_search", "search_boi", "boi_search_sample"}:
-        result = await boi_search(query=str(args.get("query") or ""), employee_id=employee_id)
+        result = await boi_search_impl(query=str(args.get("query") or ""), employee_id=employee_id, service_token=True)
     elif tool_name == "boi_get":
-        result = await boi_get(str(args.get("boi_id") or req.boi_id or ""), employee_id=employee_id)
+        result = await boi_get_impl(str(args.get("boi_id") or req.boi_id or ""), employee_id=employee_id, service_token=True)
     elif tool_name == "workflow_status":
-        result = await workflow_status(str(args.get("workflow_key") or ""), str(args.get("trace_id") or ""), employee_id=employee_id)
+        result = await workflow_status_impl(
+            str(args.get("workflow_key") or ""),
+            str(args.get("trace_id") or ""),
+            employee_id=employee_id,
+            service_token=True,
+        )
     elif tool_name == "actions_search":
-        result = await actions_search(employee_id=employee_id, connector_kind=str(args.get("connector_kind") or ""))
+        result = await actions_search_impl(employee_id=employee_id, connector_kind=str(args.get("connector_kind") or ""), service_token=True)
     else:
         return JSONResponse({"detail": f"unsupported MCP bridge tool: {req.tool}"}, status_code=400)
     return JSONResponse(

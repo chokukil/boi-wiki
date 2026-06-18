@@ -7,3 +7,4 @@
 * [SOP Workflow Guide](sop-workflows/create-and-connect-sop.md)
 * [OKF Media and Screenshots](media/okf-media-and-screenshots.md)
 * [Draft and Git Policy](operations/draft-and-git-policy.md)
+* [SSO and Permission Model](security/sso-and-permissions.md)

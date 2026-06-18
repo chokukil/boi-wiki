@@ -28,3 +28,18 @@ def test_compose_defines_boi_wiki_mcp_service_and_allowed_host():
     assert "context: ./boi_wiki_mcp" in compose
     assert "BOI_WIKI_MCP_PORT" in compose
     assert "boi-wiki-mcp" in env_example
+
+
+def test_compose_declares_boi_auth_env_and_sso_dev_overlay():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    overlay = Path("docker-compose.sso-dev.yml").read_text(encoding="utf-8")
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "BOI_AUTH_MODE" in compose
+    assert "KEYCLOAK_SERVER_URL" in compose
+    assert "HCP_AUTHZ_URL" in compose
+    assert "dk02315/langflow-hynix:v1.10.0-hynix-sso-rc4" in overlay
+    assert "infra/keycloak/boi-dev-realm.json" in overlay
+    assert "mock-hcp" in overlay
+    assert "BOI_AUTH_MODE=dev" in env_example
+    assert "KEYCLOAK_CLIENT_ID=boi-wiki" in env_example

@@ -25,7 +25,7 @@ def test_boi_wiki_mcp_health(mcp_module):
 
 
 def test_boi_wiki_mcp_bridge_invokes_search_tool(mcp_module, monkeypatch):
-    async def fake_boi_search(**kwargs):
+    async def fake_boi_search_impl(*args, **kwargs):
         return {
             "count": 1,
             "items": [
@@ -39,7 +39,7 @@ def test_boi_wiki_mcp_bridge_invokes_search_tool(mcp_module, monkeypatch):
             "kwargs": kwargs,
         }
 
-    monkeypatch.setattr(mcp_module, "boi_search", fake_boi_search)
+    monkeypatch.setattr(mcp_module, "boi_search_impl", fake_boi_search_impl)
     client = TestClient(mcp_module.app)
 
     response = client.post(
@@ -61,6 +61,7 @@ def test_boi_wiki_mcp_bridge_invokes_search_tool(mcp_module, monkeypatch):
     assert body["request_id"] == "act-mcp-test"
     assert body["response"]["count"] == 1
     assert body["response"]["kwargs"]["query"] == "설비"
+    assert body["response"]["kwargs"]["service_token"] is True
 
 
 def test_boi_wiki_mcp_bridge_requires_service_token(mcp_module):

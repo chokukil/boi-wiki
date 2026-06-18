@@ -43,6 +43,26 @@ Open:
 - Kafka UI: http://localhost:8081
 - Langflow: http://localhost:7860
 
+Default auth is `BOI_AUTH_MODE=dev`, which keeps the local `employee_id` selector/query for PoC and tests.
+
+## SSO Dev Mode
+
+To exercise the SK hynix-style Keycloak/HCP path locally:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.sso-dev.yml up -d --build
+```
+
+Open:
+
+- BoI Wiki SSO login: http://localhost:8000/auth/login
+- Keycloak dev realm: http://localhost:8088
+- Langflow Hynix SSO UI: http://localhost:7860
+
+The dev realm seeds users `100001`, `100002`, and `100003` with password `password`. `100001` has both `aix-tf` and `platform` teams plus admin roles. `100002` has only `aix-tf`; `100003` has only `platform`.
+
+In `BOI_AUTH_MODE=keycloak`, `employee_id` query spoofing is rejected. Internal Event Router, Action Gateway, and MCP bridge calls must use `x-service-token` plus the target actor `employee_id`.
+
 ## Using the BoI Harness
 
 The harness documents define how Codex, Claude, Langflow, and custom agents should create or change curated BoI Wiki knowledge.
@@ -163,12 +183,14 @@ Replace PoC pieces with enterprise services:
 | File-based BoI Wiki | Internal document/Wiki/Git/SharePoint store |
 | Mock APIs | TAS, HyVIS, equipment, approval, notification APIs |
 | Development keys | Secret Manager |
+| `BOI_AUTH_MODE=dev` | Keycloak SSO + HCP permission API |
 | MCP planned connector | Internal MCP bridge/server once approved |
 | Dry-run high-risk actions | Human approval and change-management workflow |
 
 ## Security Defaults
 
 - Webhook/API calls require service token or API key.
+- User identity comes from Keycloak/HCP in SSO mode; query `employee_id` is development-only.
 - Action Gateway uses allowlisted hosts.
 - High-risk actions are approval-required.
 - Private BoI is scoped to employee ID.

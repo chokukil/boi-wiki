@@ -15,19 +15,23 @@
     <div class="user-box">
       <strong>{{ user_name }}</strong><br />
       사번: {{ employee_id }}<br />
-      Team: {{ teams | join(', ') }}
+      Team: {{ teams | join(', ') }}<br />
+      Auth: {{ auth_mode }}
+      {% if auth_mode != 'dev' %}<br /><a href="/auth/logout">Logout</a>{% endif %}
     </div>
   </header>
 
   <section class="toolbar">
     <form method="get" action="/">
       {% if folder %}<input type="hidden" name="folder" value="{{ folder }}" />{% endif %}
-      <label>사번</label>
-      <select name="employee_id">
-        <option value="100001" {% if employee_id == '100001' %}selected{% endif %}>100001 / AIX TF</option>
-        <option value="100002" {% if employee_id == '100002' %}selected{% endif %}>100002 / AIX TF</option>
-        <option value="100003" {% if employee_id == '100003' %}selected{% endif %}>100003 / Platform</option>
-      </select>
+      {% if auth_mode == 'dev' %}
+        <label>사번</label>
+        <select name="employee_id">
+          <option value="100001" {% if employee_id == '100001' %}selected{% endif %}>100001 / AIX TF</option>
+          <option value="100002" {% if employee_id == '100002' %}selected{% endif %}>100002 / AIX TF</option>
+          <option value="100003" {% if employee_id == '100003' %}selected{% endif %}>100003 / Platform</option>
+        </select>
+      {% endif %}
       <label>Event Type</label>
       <select name="event_type">
         <option value="" {% if not event_type %}selected{% endif %}>전체</option>

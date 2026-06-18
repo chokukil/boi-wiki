@@ -431,6 +431,41 @@ def test_mcp_action_invokes_boi_api_bridge_endpoint(tmp_path, monkeypatch):
     assert FakeAsyncClient.requests[0]["json"]["arguments"]["query"] == "Kafka"
 
 
+def test_event_publish_action_delegates_with_service_token(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakeAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeAsyncClient)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "sop.equipment.create_root_cause_event",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-publish-test",
+                "event_type": "equipment.alarm.raised.v1",
+                "trace_id": "trace-publish-test",
+            },
+            "payload": {
+                "equipment_id": "ETCH-VM-01",
+                "lot_id": "LOT-001",
+                "wafer_id": "WF-001",
+                "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+                "owner": "100001",
+            },
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "event_published"
+    assert FakeAsyncClient.requests[0]["url"] == "http://boi-api:8000/api/events/publish?employee_id=100001"
+    assert FakeAsyncClient.requests[0]["headers"]["x-service-token"] == "test-service-token"
+    assert FakeAsyncClient.requests[0]["json"]["event_type"] == "root_cause.analysis.requested.v1"
+
+
 def test_high_risk_api_action_invokes_endpoint_only_after_approval(tmp_path, monkeypatch):
     gateway = load_gateway_module(tmp_path, monkeypatch)
     FakeAsyncClient.requests = []

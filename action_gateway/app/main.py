@@ -428,7 +428,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
             url = f"{BOI_API_URL.rstrip('/')}/api/events/publish?employee_id={req.employee_id}"
             body = render_template(action.get("body") or {}, context)
             async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 20))) as client:
-                resp = await client.post(url, json=body)
+                resp = await client.post(url, headers={"x-service-token": SERVICE_TOKEN}, json=body)
                 resp.raise_for_status()
                 result = {"ok": True, "status": "event_published", "request_id": request_id, "action_key": action.get("action_key"), "response": resp.json()}
 

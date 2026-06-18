@@ -17,8 +17,8 @@ from urllib.parse import quote, urlencode
 
 import yaml
 from aiokafka import AIOKafkaProducer
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
@@ -37,6 +37,30 @@ from .okf import (
 from .workflow_materializer import (
     build_enriched_body,
     render_stage_execution_body,
+)
+from .auth import (
+    AuthError,
+    AuthIdentity,
+    DEFAULT_USER_NAMES as USER_NAMES,
+    DEFAULT_USER_TEAMS as USER_TEAMS,
+    OIDC_STATE_COOKIE_NAME,
+    SESSION_COOKIE_NAME,
+    auth_mode,
+    create_oidc_state,
+    create_session_token,
+    decode_keycloak_bearer,
+    decode_oidc_state,
+    dev_identity,
+    exchange_keycloak_code,
+    has_role,
+    identity_from_claims,
+    keycloak_authorization_url,
+    keycloak_logout_url,
+    name_for_employee,
+    require_role,
+    resolve_identity,
+    service_identity,
+    teams_for_employee,
 )
 
 KST = timezone(timedelta(hours=9))
@@ -57,17 +81,8 @@ BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://mangugil.iptime.org:123
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
 
-# PoC user/team map. Replace with SSO/IAM/HR master during internalization.
-USER_TEAMS: dict[str, list[str]] = {
-    "100001": ["aix-tf", "platform"],
-    "100002": ["aix-tf"],
-    "100003": ["platform"],
-}
-USER_NAMES: dict[str, str] = {
-    "100001": "AIX TF User 100001",
-    "100002": "AIX TF User 100002",
-    "100003": "Platform User 100003",
-}
+# Development fallback user/team maps. In SSO modes, Keycloak/HCP identity
+# resolves teams and roles and these maps are only used for local compatibility.
 
 # Business-facing Event Type Catalog. The UI exposes this catalog so Event Broker is not
 # hidden as a Kafka-only implementation detail. Replace/extend with YAML files under
@@ -1029,7 +1044,19 @@ def append_event_log(*, status: str, event: dict[str, Any], result: dict[str, An
 
 
 def teams_for(employee_id: str) -> list[str]:
-    return USER_TEAMS.get(employee_id, [])
+    return identity_for_employee(employee_id).teams
+
+
+def user_name_for(employee_id: str) -> str:
+    identity = identity_for_employee(employee_id)
+    return identity.display_name or name_for_employee(employee_id)
+
+
+def require_employee_role(employee_id: str, role: str) -> None:
+    try:
+        require_role(identity_for_employee(employee_id), role)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 def is_accessible(doc: dict[str, Any], employee_id: str) -> bool:
@@ -1535,6 +1562,16 @@ def okf_graph_for_docs(docs: list[dict[str, Any]], employee_id: str) -> dict[str
 
 
 _OKF_GRAPH_CACHE: dict[tuple[str, tuple[tuple[str, str], ...]], dict[str, Any]] = {}
+_IDENTITY_CACHE: dict[str, AuthIdentity] = {}
+
+
+def remember_identity(identity: AuthIdentity) -> AuthIdentity:
+    _IDENTITY_CACHE[identity.employee_id] = identity
+    return identity
+
+
+def identity_for_employee(employee_id: str) -> AuthIdentity:
+    return _IDENTITY_CACHE.get(employee_id) or dev_identity(employee_id)
 
 
 def docs_cache_signature(docs: list[dict[str, Any]]) -> tuple[tuple[str, str], ...]:
@@ -2005,11 +2042,40 @@ async def require_service_token(x_service_token: str | None = Header(None)) -> N
         raise HTTPException(status_code=401, detail="invalid service token")
 
 
-def current_employee(
+def current_identity(
     employee_id: str | None = Query(default=None),
     x_employee_id: str | None = Header(default=None),
-) -> str:
-    return employee_id or x_employee_id or DEMO_EMPLOYEE_ID
+    x_service_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    boi_session: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+    x_hynix_employee_id: str | None = Header(default=None),
+    x_hynix_email: str | None = Header(default=None),
+    x_hynix_name: str | None = Header(default=None),
+    x_hynix_teams: str | None = Header(default=None),
+    x_hynix_roles: str | None = Header(default=None),
+) -> AuthIdentity:
+    try:
+        if x_service_token == SERVICE_TOKEN:
+            return remember_identity(service_identity(employee_id or x_employee_id or x_hynix_employee_id or DEMO_EMPLOYEE_ID))
+        return remember_identity(
+            resolve_identity(
+                query_employee_id=employee_id,
+                x_employee_id=x_employee_id,
+                authorization=authorization,
+                session_token=boi_session,
+                x_hynix_employee_id=x_hynix_employee_id,
+                x_hynix_email=x_hynix_email,
+                x_hynix_name=x_hynix_name,
+                x_hynix_teams=x_hynix_teams,
+                x_hynix_roles=x_hynix_roles,
+            )
+        )
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+def current_employee(identity: AuthIdentity = Depends(current_identity)) -> str:
+    return identity.employee_id
 
 
 class BoiCreate(BaseModel):
@@ -2149,6 +2215,97 @@ async def runtime_config() -> dict[str, Any]:
         "event_broker": {"type": "kafka", "bootstrap": KAFKA_BOOTSTRAP, "topic": BOI_EVENTS_TOPIC},
         "connectors": {"action_gateway_url": ACTION_GATEWAY_URL, "langflow": "peer_connector"},
     }
+
+
+@app.get("/api/auth/me")
+async def api_auth_me(identity: AuthIdentity = Depends(current_identity)) -> dict[str, Any]:
+    return {
+        "employee_id": identity.employee_id,
+        "display_name": identity.display_name,
+        "email": identity.email,
+        "teams": identity.teams,
+        "roles": identity.roles,
+        "auth_source": identity.auth_source,
+        "auth_mode": auth_mode(),
+        "is_admin": identity.is_admin,
+    }
+
+
+def cookie_secure() -> bool:
+    return os.getenv("BOI_COOKIE_SECURE", "false").lower() in {"1", "true", "yes"}
+
+
+def safe_next_url(next_url: str | None) -> str:
+    value = next_url or "/"
+    if not value.startswith("/") or value.startswith("//"):
+        return "/"
+    return value
+
+
+@app.get("/auth/login")
+async def auth_login(next: str = "/") -> RedirectResponse:
+    if auth_mode() != "keycloak":
+        return RedirectResponse(safe_next_url(next), status_code=302)
+    try:
+        state_token, state, challenge = create_oidc_state(safe_next_url(next))
+        redirect = RedirectResponse(keycloak_authorization_url(state=state, code_challenge=challenge), status_code=302)
+        redirect.set_cookie(
+            OIDC_STATE_COOKIE_NAME,
+            state_token,
+            max_age=600,
+            httponly=True,
+            secure=cookie_secure(),
+            samesite="lax",
+        )
+        return redirect
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/auth/callback")
+async def auth_callback(
+    code: str = "",
+    state: str = "",
+    oidc_state: str | None = Cookie(default=None, alias=OIDC_STATE_COOKIE_NAME),
+) -> RedirectResponse:
+    if auth_mode() != "keycloak":
+        return RedirectResponse("/", status_code=302)
+    if not code or not state or not oidc_state:
+        raise HTTPException(status_code=400, detail="missing Keycloak callback parameters")
+    try:
+        state_payload = decode_oidc_state(oidc_state)
+        if state_payload.get("state") != state:
+            raise AuthError(401, "OIDC state mismatch")
+        token_body = exchange_keycloak_code(code, state_payload)
+        bearer = str(token_body.get("id_token") or token_body.get("access_token") or "")
+        if not bearer:
+            raise AuthError(401, "Keycloak token response has no usable token")
+        claims = decode_keycloak_bearer(bearer)
+        if token_body.get("id_token") and claims.get("nonce") != state_payload.get("nonce"):
+            raise AuthError(401, "OIDC nonce mismatch")
+        identity = remember_identity(identity_from_claims(claims, auth_source="keycloak", bearer_token=str(token_body.get("access_token") or "")))
+        redirect = RedirectResponse(safe_next_url(str(state_payload.get("next") or "/")), status_code=302)
+        redirect.set_cookie(
+            SESSION_COOKIE_NAME,
+            create_session_token(identity),
+            max_age=int(os.getenv("BOI_SESSION_TTL_SECONDS", "28800")),
+            httponly=True,
+            secure=cookie_secure(),
+            samesite="lax",
+        )
+        redirect.delete_cookie(OIDC_STATE_COOKIE_NAME)
+        return redirect
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/auth/logout")
+async def auth_logout(next: str = "/") -> RedirectResponse:
+    target = keycloak_logout_url(safe_next_url(next)) if auth_mode() == "keycloak" else safe_next_url(next)
+    redirect = RedirectResponse(target, status_code=302)
+    redirect.delete_cookie(SESSION_COOKIE_NAME)
+    redirect.delete_cookie(OIDC_STATE_COOKIE_NAME)
+    return redirect
 
 
 def poc_payload(req: PocConnectorRequest) -> dict[str, Any]:
@@ -2353,7 +2510,8 @@ async def index(
     context = {
         "request": request,
         "employee_id": employee_id,
-        "user_name": USER_NAMES.get(employee_id, employee_id),
+        "user_name": user_name_for(employee_id),
+        "auth_mode": auth_mode(),
         "teams": teams_for(employee_id),
         "docs": docs_for_template(docs, employee_id, selected_folder),
         "q": q,
@@ -2428,6 +2586,7 @@ async def create_source_draft(
     req: SourceDraftRequest,
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
     source_path = resolve_source_path(req.path)
     return source_draft_response(
         source_path=source_path,
@@ -2445,6 +2604,7 @@ async def create_doc_body_draft(
     req: BodyDraftRequest,
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
     docs = accessible_docs(employee_id)
     doc_lookup = build_doc_lookup(docs)
     doc = doc_from_lookup(boi_id, doc_lookup)
@@ -2562,6 +2722,7 @@ async def api_okf_doc_graph(boi_id: str, employee_id: str = Depends(current_empl
 
 @app.post("/api/boi")
 async def create_boi(req: BoiCreate, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
     meta = dict(req.metadata)
     meta.setdefault("owner", employee_id)
     meta.setdefault("visibility", "private")
@@ -2571,6 +2732,7 @@ async def create_boi(req: BoiCreate, employee_id: str = Depends(current_employee
 
 @app.post("/api/boi/{boi_id:path}/promote")
 async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.promoter")
     source = find_doc_by_id(boi_id, employee_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source BoI not found or not accessible")
@@ -2618,6 +2780,7 @@ async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Dep
 
 @app.post("/api/events/publish")
 async def publish_event(req: EventPublishRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.workflow_runner")
     actor = req.actor_employee_id or employee_id
     event = {
         "event_id": f"evt-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
@@ -4000,6 +4163,7 @@ async def api_action_logs(action_key: str = "", limit: int = 200) -> dict[str, A
 
 @app.post("/api/actions/invoke")
 async def api_action_invoke(req: ActionInvokeRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.action_invoker")
     payload = req.model_dump()
     payload["employee_id"] = req.employee_id or employee_id
     async with httpx.AsyncClient(timeout=30) as client:
@@ -4019,4 +4183,7 @@ async def api_action_invoke(req: ActionInvokeRequest, employee_id: str = Depends
 
 @app.get("/api/users")
 async def users() -> dict[str, Any]:
-    return {"users": [{"employee_id": k, "name": USER_NAMES.get(k), "teams": v} for k, v in USER_TEAMS.items()]}
+    return {
+        "auth_mode": auth_mode(),
+        "users": [{"employee_id": k, "name": USER_NAMES.get(k), "teams": v} for k, v in USER_TEAMS.items()],
+    }

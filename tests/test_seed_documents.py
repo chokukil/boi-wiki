@@ -40,6 +40,7 @@ def test_boi_wiki_manual_and_agent_skill_cover_mcp_actions_langflow_and_media():
     assert (manual_root / "actions" / "multi-action-connector-guide.md").exists()
     assert (manual_root / "langflow" / "connected-flow-guide.md").exists()
     assert (manual_root / "media" / "okf-media-and-screenshots.md").exists()
+    assert (manual_root / "security" / "sso-and-permissions.md").exists()
     assert "http://localhost:8200/mcp" in skill
     assert "Langflow is one connector kind" in skill
     assert "_media/" in skill
