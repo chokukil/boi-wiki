@@ -63,6 +63,13 @@ The dev realm seeds users `100001`, `100002`, and `100003` with password `passwo
 
 In `BOI_AUTH_MODE=keycloak`, `employee_id` query spoofing is rejected. Internal Event Router, Action Gateway, and MCP bridge calls must use `x-service-token` plus the target actor `employee_id`.
 
+The SSO dev overlay is aligned with the `langflow-hynix` Keycloak/HCP model:
+
+- Langflow reads `KEYCLOAK_HCP_API_URL`, `KEYCLOAK_ALLOWED_EMPLOYEE`, `KEYCLOAK_EMPLOYEE_CLAIM`, and `KEYCLOAK_SHARED_USERNAME`.
+- BoI Wiki accepts the same `KEYCLOAK_*` aliases while keeping `BOI_*` names for Wiki-specific settings.
+- Mock HCP exposes both `GET /api/permissions?employee_id=...` for BoI Wiki and `GET /v1/projects/{project}/roles` for Langflow-Hynix.
+- Workflow start, action invoke, draft write, and promotion are role-gated by `boi.workflow_runner`, `boi.action_invoker`, `boi.editor`, and `boi.promoter`.
+
 ## Using the BoI Harness
 
 The harness documents define how Codex, Claude, Langflow, and custom agents should create or change curated BoI Wiki knowledge.

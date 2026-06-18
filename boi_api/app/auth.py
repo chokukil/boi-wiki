@@ -34,6 +34,20 @@ DEV_DEFAULT_ROLES = [
     "boi.action_invoker",
 ]
 DEV_ADMIN_ROLES = [*DEV_DEFAULT_ROLES, "boi.admin"]
+HCP_MANAGER_ROLES = [*DEV_DEFAULT_ROLES, "boi.admin"]
+HCP_DEPLOY_APPROVER_ROLES = [
+    "boi.viewer",
+    "boi.editor",
+    "boi.promoter",
+    "boi.workflow_runner",
+    "boi.action_invoker",
+]
+HCP_DEVELOPER_ROLES = [
+    "boi.viewer",
+    "boi.editor",
+    "boi.workflow_runner",
+    "boi.action_invoker",
+]
 
 
 @dataclass(frozen=True)
@@ -71,6 +85,14 @@ def split_csv(value: str | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def env_first(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value.strip():
+            return value.strip()
+    return default
 
 
 def unique(values: list[str]) -> list[str]:
@@ -151,8 +173,10 @@ def service_identity(employee_id: str | None) -> AuthIdentity:
 
 
 def allowed_employee_check(identity: AuthIdentity) -> None:
-    allowed = split_csv(os.getenv("BOI_ALLOWED_EMPLOYEE_IDS"))
-    if allowed and identity.employee_id not in allowed:
+    allowed = split_csv(env_first("BOI_ALLOWED_EMPLOYEE_IDS", "KEYCLOAK_ALLOWED_EMPLOYEE"))
+    admin_employees = {item.upper() for item in split_csv(os.getenv("KEYCLOAK_ADMIN_EMPLOYEES"))}
+    is_admin_employee = identity.employee_id.upper() in admin_employees
+    if allowed and identity.employee_id not in allowed and not identity.is_admin and not is_admin_employee:
         raise AuthError(403, "employee is not allowed to access this BoI Wiki instance")
 
 
@@ -175,24 +199,24 @@ def claim_values(claims: dict[str, Any], env_name: str, default_path: str) -> li
 
 
 def keycloak_base_url() -> str:
-    internal = os.getenv("KEYCLOAK_INTERNAL_URL") or os.getenv("KEYCLOAK_SERVER_URL") or ""
-    realm = os.getenv("KEYCLOAK_REALM", "")
+    internal = env_first("KEYCLOAK_INTERNAL_URL", "KEYCLOAK_SERVER_URL")
+    realm = env_first("KEYCLOAK_REALM")
     if not internal or not realm:
         raise AuthError(500, "Keycloak URL and realm must be configured")
     return f"{internal.rstrip('/')}/realms/{realm}"
 
 
 def keycloak_issuer() -> str:
-    public = os.getenv("KEYCLOAK_SERVER_URL") or os.getenv("KEYCLOAK_INTERNAL_URL") or ""
-    realm = os.getenv("KEYCLOAK_REALM", "")
+    public = env_first("KEYCLOAK_ISSUER_URL", "KEYCLOAK_EXTERNAL_SERVER_URL", "KEYCLOAK_SERVER_URL", "KEYCLOAK_INTERNAL_URL")
+    realm = env_first("KEYCLOAK_REALM")
     if not public or not realm:
         raise AuthError(500, "Keycloak URL and realm must be configured")
     return f"{public.rstrip('/')}/realms/{realm}"
 
 
 def keycloak_browser_base_url() -> str:
-    public = os.getenv("KEYCLOAK_SERVER_URL") or os.getenv("KEYCLOAK_INTERNAL_URL") or ""
-    realm = os.getenv("KEYCLOAK_REALM", "")
+    public = env_first("KEYCLOAK_EXTERNAL_SERVER_URL", "KEYCLOAK_SERVER_URL", "KEYCLOAK_INTERNAL_URL")
+    realm = env_first("KEYCLOAK_REALM")
     if not public or not realm:
         raise AuthError(500, "Keycloak URL and realm must be configured")
     return f"{public.rstrip('/')}/realms/{realm}"
@@ -394,8 +418,59 @@ def parse_mock_bearer(token: str) -> dict[str, Any]:
     return parsed
 
 
+def _contains_employee(values: Any, employee_id: str) -> bool:
+    if not isinstance(values, list):
+        return False
+    normalized = employee_id.upper()
+    return any(str(item).upper() == normalized for item in values)
+
+
+def normalize_hcp_permissions(employee_id: str, raw: Any) -> dict[str, Any]:
+    """Normalize BoI permission and langflow-hynix HCP project-role responses.
+
+    BoI's local Mock HCP can return employee-scoped permissions:
+        {"employee_id": "100001", "teams": [...], "roles": [...], "projects": [...]}
+
+    langflow-hynix uses a project role endpoint:
+        {"response": {"managers": [...], "deployApprovers": [...], "developers": [...]}}
+
+    The latter is converted into BoI roles so BoI Wiki, Langflow, MCP, and
+    Action Gateway can share the same SK hynix-style authorization source.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    if any(key in raw for key in ("teams", "roles", "projects")):
+        return raw
+
+    response = raw.get("response")
+    if not isinstance(response, dict):
+        return raw
+
+    role_groups: list[str] = []
+    roles: list[str] = []
+    if _contains_employee(response.get("managers"), employee_id):
+        role_groups.append("managers")
+        roles.extend(HCP_MANAGER_ROLES)
+    if _contains_employee(response.get("deployApprovers"), employee_id):
+        role_groups.append("deployApprovers")
+        roles.extend(HCP_DEPLOY_APPROVER_ROLES)
+    if _contains_employee(response.get("developers"), employee_id):
+        role_groups.append("developers")
+        roles.extend(HCP_DEVELOPER_ROLES)
+
+    project = str(raw.get("project") or raw.get("project_id") or "").strip()
+    return {
+        "employee_id": employee_id,
+        "allowed": bool(role_groups),
+        "roles": unique(roles),
+        "teams": [str(item) for item in raw.get("teams", []) if item] if isinstance(raw.get("teams"), list) else [],
+        "projects": [project] if project else [],
+        "hcp_role_groups": role_groups,
+    }
+
+
 def hcp_permissions(employee_id: str, bearer_token: str | None = None) -> dict[str, Any]:
-    url = os.getenv("HCP_AUTHZ_URL", "").strip()
+    url = env_first("HCP_AUTHZ_URL", "KEYCLOAK_HCP_API_URL")
     if not url:
         return {}
     ttl = int(os.getenv("HCP_AUTHZ_CACHE_TTL_SECONDS", "60"))
@@ -408,10 +483,14 @@ def hcp_permissions(employee_id: str, bearer_token: str | None = None) -> dict[s
     try:
         response = httpx.get(url, params={"employee_id": employee_id}, headers=headers, timeout=timeout)
         response.raise_for_status()
-        data = response.json()
+        data = normalize_hcp_permissions(employee_id, response.json())
         if not isinstance(data, dict):
             data = {}
+        if data.get("allowed") is False:
+            raise AuthError(403, "employee is not authorized for this HCP project")
     except Exception as exc:
+        if isinstance(exc, AuthError):
+            raise
         if auth_mode() == "dev" and os.getenv("HCP_AUTHZ_FAIL_OPEN_DEV", "true").lower() == "true":
             return {}
         raise AuthError(503, f"HCP authorization lookup failed: {exc}") from exc
@@ -420,7 +499,7 @@ def hcp_permissions(employee_id: str, bearer_token: str | None = None) -> dict[s
 
 
 def identity_from_claims(claims: dict[str, Any], auth_source: str, bearer_token: str | None = None) -> AuthIdentity:
-    employee_claim = os.getenv("BOI_EMPLOYEE_CLAIM", "employee_id")
+    employee_claim = env_first("BOI_EMPLOYEE_CLAIM", "KEYCLOAK_EMPLOYEE_CLAIM", default="employee_id")
     employee_id = str(
         extract_nested_claim(claims, employee_claim)
         or claims.get("preferred_username")

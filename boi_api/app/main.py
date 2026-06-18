@@ -3452,6 +3452,7 @@ async def start_workflow_from_data(
 
 @app.post("/api/workflows/{workflow_key}/start")
 async def start_workflow(workflow_key: str, request: Request, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.workflow_runner")
     try:
         raw = await request.json()
     except Exception:
@@ -3463,6 +3464,7 @@ async def start_workflow(workflow_key: str, request: Request, employee_id: str =
 
 @app.post("/api/workflows/demo/equipment-anomaly/start")
 async def start_equipment_anomaly_demo(req: EquipmentAnomalyStartRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.workflow_runner")
     owner = req.owner or employee_id
     result = await start_workflow_from_data(
         "equipment-anomaly",

@@ -31,6 +31,21 @@ review:
 
 BoI Wiki의 운영 권한은 OKF 문서 ACL과 사용자 identity를 함께 본다. 개발 모드는 사번 selector를 유지하지만, SSO 모드에서는 Keycloak claim과 HCP 권한 응답이 source of truth다.
 
+# SK hynix SSO Baseline
+
+이 PoC의 SSO 기준은 [langflow-hynix](https://github.com/YeonghyeonKO/langflow-hynix)의 Keycloak/HCP 모델과 맞춘다.
+
+| 항목 | BoI Wiki | Langflow-Hynix |
+| --- | --- | --- |
+| Browser SSO | `/auth/login` -> Keycloak Authorization Code + PKCE | `/api/v1/keycloak/login` -> Keycloak Authorization Code + PKCE |
+| Issuer/JWKS split | `KEYCLOAK_ISSUER_URL`, `KEYCLOAK_INTERNAL_URL` | `KEYCLOAK_SERVER_URL`, `KEYCLOAK_EXTERNAL_SERVER_URL` |
+| Employee claim | `BOI_EMPLOYEE_CLAIM` 또는 `KEYCLOAK_EMPLOYEE_CLAIM` | `KEYCLOAK_EMPLOYEE_CLAIM` |
+| Project authorization | `HCP_AUTHZ_URL` 또는 `KEYCLOAK_HCP_API_URL` | `KEYCLOAK_HCP_API_URL` |
+| Per-instance restriction | `BOI_ALLOWED_EMPLOYEE_IDS` 또는 `KEYCLOAK_ALLOWED_EMPLOYEE` | `KEYCLOAK_ALLOWED_EMPLOYEE` |
+| Admin bypass | `boi.admin` 또는 `KEYCLOAK_ADMIN_EMPLOYEES` | `KEYCLOAK_ADMIN_EMPLOYEES` |
+
+Langflow-Hynix는 SSO 성공 사용자를 shared Langflow account에 매핑하고, 접근 가능 여부는 Keycloak employee claim과 HCP project roles로 판단한다. BoI Wiki는 같은 employee/team/role 의미를 사용하되, BoI 문서 ACL과 action/workflow role까지 같이 검증한다.
+
 # Auth Modes
 
 | Mode | 용도 | Identity source | 주의 |
@@ -54,6 +69,30 @@ Action과 workflow 실행은 별도 role을 요구한다.
 - `boi.promoter`: private BoI를 team/public draft로 승격 요청.
 - `boi.admin`: 전체 관리와 break-glass 운영.
 
+# HCP Role Mapping
+
+BoI Wiki는 두 가지 HCP 응답을 모두 지원한다.
+
+Employee-scoped BoI 응답:
+
+```json
+{"employee_id":"100001","teams":["aix-tf","platform"],"roles":["boi.viewer","boi.editor"],"projects":["boi-wiki"]}
+```
+
+Langflow-Hynix project roles 응답:
+
+```json
+{"response":{"managers":["100001"],"deployApprovers":["100001"],"developers":["100002"]}}
+```
+
+Project roles는 BoI role로 다음처럼 변환된다.
+
+| HCP group | BoI roles |
+| --- | --- |
+| `managers` | viewer, editor, promoter, workflow_runner, action_invoker, admin |
+| `deployApprovers` | viewer, editor, promoter, workflow_runner, action_invoker |
+| `developers` | viewer, editor, workflow_runner, action_invoker |
+
 # Local SSO Development
 
 ```bash
@@ -63,6 +102,16 @@ docker compose -f docker-compose.yml -f docker-compose.sso-dev.yml up -d --build
 개발 realm에는 `100001`, `100002`, `100003` 사용자가 있고 비밀번호는 모두 `password`다. `100001`은 `aix-tf`, `platform`, admin 역할을 가진다. `100002`는 `aix-tf`, `100003`은 `platform`만 가진다.
 
 BoI Wiki는 `http://localhost:8000/auth/login`에서 Keycloak으로 이동한다. Langflow는 `langflow-hynix` SSO 이미지로 뜨며 `http://localhost:7860`에서 같은 realm을 사용한다.
+
+SSO overlay는 Langflow-Hynix가 실제로 읽는 환경변수를 사용한다.
+
+- `KEYCLOAK_SERVER_URL`: Langflow container에서 Keycloak으로 가는 내부 URL.
+- `KEYCLOAK_EXTERNAL_SERVER_URL`: 브라우저가 접근하는 Keycloak URL.
+- `KEYCLOAK_HCP_API_URL`: Mock HCP project roles endpoint.
+- `KEYCLOAK_ALLOWED_EMPLOYEE`: per-employee Langflow instance 제한.
+- `KEYCLOAK_SHARED_USERNAME`: SSO 사용자를 매핑할 shared Langflow user.
+
+개발 Mock HCP는 `GET /api/permissions?employee_id=...`와 `GET /v1/projects/{project}/roles`를 모두 제공한다. BoI Wiki는 전자를 기본으로 쓰고, Langflow-Hynix는 후자를 쓴다.
 
 # MCP and Agent Use
 

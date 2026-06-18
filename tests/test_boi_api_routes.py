@@ -6,6 +6,7 @@ import re
 from urllib.parse import quote, unquote
 
 from fastapi.testclient import TestClient
+import pytest
 import yaml
 
 
@@ -140,6 +141,77 @@ def test_trusted_header_editor_role_required_for_source_drafts(boi_app_module, m
     assert denied.status_code == 403
     assert allowed.status_code == 200
     assert allowed.json()["draft_only"] is True
+
+
+def test_hynix_hcp_project_roles_map_to_boi_roles(boi_app_module, monkeypatch):
+    import boi_api.app.auth as auth
+
+    auth._HCP_CACHE.clear()
+    monkeypatch.setenv("KEYCLOAK_HCP_API_URL", "http://mock-hcp/v1/projects/langflow/roles")
+
+    class FakeResponse:
+        status_code = 200
+        text = "ok"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "project": "langflow",
+                "response": {
+                    "managers": ["100001"],
+                    "deployApprovers": ["100003"],
+                    "developers": ["100002"],
+                },
+            }
+
+    monkeypatch.setattr(auth.httpx, "get", lambda *args, **kwargs: FakeResponse())
+
+    manager = auth.hcp_permissions("100001")
+    developer = auth.hcp_permissions("100002")
+    approver = auth.hcp_permissions("100003")
+
+    assert "boi.admin" in manager["roles"]
+    assert "boi.action_invoker" in developer["roles"]
+    assert "boi.promoter" not in developer["roles"]
+    assert "boi.promoter" in approver["roles"]
+    assert approver["hcp_role_groups"] == ["deployApprovers"]
+
+    with pytest.raises(auth.AuthError) as exc:
+        auth.hcp_permissions("100009")
+    assert exc.value.status_code == 403
+
+
+def test_keycloak_allowed_employee_alias_and_admin_bypass(boi_app_module, monkeypatch):
+    import boi_api.app.auth as auth
+
+    monkeypatch.delenv("BOI_ALLOWED_EMPLOYEE_IDS", raising=False)
+    monkeypatch.setenv("KEYCLOAK_ALLOWED_EMPLOYEE", "100001")
+    monkeypatch.setenv("KEYCLOAK_ADMIN_EMPLOYEES", "100003")
+
+    auth.allowed_employee_check(auth.AuthIdentity(employee_id="100001", display_name="allowed"))
+    auth.allowed_employee_check(auth.AuthIdentity(employee_id="100003", display_name="admin-employee"))
+    auth.allowed_employee_check(auth.AuthIdentity(employee_id="100004", display_name="admin-role", roles=["boi.admin"]))
+
+    with pytest.raises(auth.AuthError) as exc:
+        auth.allowed_employee_check(auth.AuthIdentity(employee_id="100002", display_name="denied"))
+    assert exc.value.status_code == 403
+
+
+def test_keycloak_external_server_url_is_used_for_browser_redirect(boi_app_module, monkeypatch):
+    import boi_api.app.auth as auth
+
+    monkeypatch.setenv("KEYCLOAK_SERVER_URL", "http://keycloak:8080")
+    monkeypatch.setenv("KEYCLOAK_EXTERNAL_SERVER_URL", "http://localhost:8088")
+    monkeypatch.setenv("KEYCLOAK_REALM", "boi-dev")
+    monkeypatch.setenv("KEYCLOAK_CLIENT_ID", "boi-wiki")
+    monkeypatch.setenv("KEYCLOAK_REDIRECT_URI", "http://localhost:8000/auth/callback")
+
+    url = auth.keycloak_authorization_url(state="state-1", code_challenge="challenge-1")
+
+    assert url.startswith("http://localhost:8088/realms/boi-dev/protocol/openid-connect/auth?")
+    assert "client_id=boi-wiki" in url
 
 
 def test_service_token_delegates_employee_identity_in_sso_mode(boi_app_module, monkeypatch):
