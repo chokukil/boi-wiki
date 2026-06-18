@@ -4,7 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -236,15 +236,47 @@ ARCHITECTURE_ANALYSIS_TERMS = (
 )
 
 
+WRAPPER_HEADINGS = {
+    "langflow boi execution result",
+    "analysis draft",
+}
+
+DROP_RESULT_HEADINGS = {
+    "boi write result",
+    "policy validation",
+    "action result",
+}
+
+
+def markdown_heading(line: str) -> tuple[int, str] | None:
+    match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line.strip())
+    if not match:
+        return None
+    return len(match.group(1)), match.group(2).strip().strip("#").strip()
+
+
 def sanitize_stage_analysis_message(message: str) -> str:
     lines = message.splitlines()
     cleaned: list[str] = []
     skip_section = False
+    skip_level = 0
     for line in lines:
         stripped = line.strip()
-        is_heading = bool(re.match(r"^#{1,6}\s+", stripped))
-        if is_heading:
+        heading = markdown_heading(stripped)
+        if heading:
+            level, title = heading
+            normalized_title = title.lower()
+            if skip_section and level <= skip_level:
+                skip_section = False
+                skip_level = 0
+            if normalized_title in WRAPPER_HEADINGS:
+                continue
+            if normalized_title in DROP_RESULT_HEADINGS:
+                skip_section = True
+                skip_level = level
+                continue
             skip_section = any(term in stripped for term in ARCHITECTURE_ANALYSIS_TERMS)
+            skip_level = level if skip_section else 0
             if skip_section:
                 continue
         elif skip_section:
@@ -257,10 +289,82 @@ def sanitize_stage_analysis_message(message: str) -> str:
     return text
 
 
+def plain_markdown_text(value: str) -> str:
+    text = re.sub(r"`([^`]+)`", r"\1", value)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"[*#>`]+", "", text)
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def truncate_text(value: str, limit: int = 500) -> str:
+    summary = re.sub(r"\s+", " ", value).strip()
+    if len(summary) <= limit:
+        return summary
+    cutoff = max(0, limit - 3)
+    head = summary[:cutoff].rstrip()
+    boundary = head.rfind(" ")
+    if boundary >= int(cutoff * 0.75):
+        head = head[:boundary].rstrip()
+    return head.rstrip("`*_-[({/:;,") + "..."
+
+
 def table_safe_summary(value: str, limit: int = 500) -> str:
     summary = re.sub(r"\s+", " ", value).strip()
     summary = summary.replace("|", "\\|")
-    return summary[:limit] + ("..." if len(summary) > limit else "")
+    return truncate_text(summary, limit)
+
+
+SECTION_LABELS = (
+    "Current Finding",
+    "Evidence Used",
+    "Recommended Next Check",
+    "Manual Handoff",
+    "Risk/Approval Notes",
+)
+
+
+def section_body_after_label(message: str, label: str) -> str:
+    lines = message.splitlines()
+    collected: list[str] = []
+    capture = False
+    label_re = re.compile(rf"^(?:#+\s*)?(?:[-*]\s*)?(?:\*\*)?{re.escape(label)}(?:\*\*)?\s*:?\s*(.*)$", re.IGNORECASE)
+    any_label_re = re.compile(
+        r"^(?:#+\s*)?(?:[-*]\s*)?(?:\*\*)?("
+        + "|".join(re.escape(item) for item in SECTION_LABELS)
+        + r")(?:\*\*)?\s*:?\s*",
+        re.IGNORECASE,
+    )
+    for line in lines:
+        stripped = line.strip()
+        match = label_re.match(stripped)
+        if match:
+            capture = True
+            rest = match.group(1).strip()
+            if rest:
+                collected.append(rest)
+            continue
+        if capture and any_label_re.match(stripped):
+            break
+        if capture:
+            collected.append(line)
+    return "\n".join(collected).strip()
+
+
+def first_sentence(value: str, limit: int = 220) -> str:
+    text = plain_markdown_text(value)
+    if not text:
+        return ""
+    match = re.search(r"(.+?(?:[.!?。]|습니다\.|입니다\.|합니다\.))(\s|$)", text)
+    sentence = match.group(1).strip() if match else text
+    return truncate_text(sentence, limit)
+
+
+def langflow_table_summary(message: str) -> str:
+    cleaned = sanitize_stage_analysis_message(message)
+    current = section_body_after_label(cleaned, "Current Finding") or cleaned
+    summary = first_sentence(current, limit=220)
+    return f"Current Finding: {summary}" if summary else "Langflow result unavailable"
 
 
 def action_result_summary(action_key: str, result: dict[str, Any]) -> str:
@@ -288,7 +392,10 @@ def action_result_summary(action_key: str, result: dict[str, Any]) -> str:
     return summary or compact_json(payload)
 
 
-def render_action_results(dispatch_result: dict[str, Any]) -> tuple[str, str]:
+RawUrlResolver = Callable[[str, str], str]
+
+
+def render_action_results(dispatch_result: dict[str, Any], raw_url_resolver: RawUrlResolver | None = None) -> tuple[str, str]:
     rows = []
     analysis_messages = []
     for item in dispatch_result.get("results") or []:
@@ -296,21 +403,26 @@ def render_action_results(dispatch_result: dict[str, Any]) -> tuple[str, str]:
         result = item.get("result") if isinstance(item.get("result"), dict) else {}
         status = str(result.get("status") or item.get("status_code") or item.get("error") or "unknown")
         request_id = str(result.get("request_id") or "")
-        summary = str(item.get("summary") or "")
+        raw_log_ref = str(item.get("_log_ref") or result.get("_log_ref") or "")
+        raw_url = raw_url_resolver(request_id, raw_log_ref) if raw_url_resolver else ""
+        raw_cell = f"[Raw]({raw_url})" if raw_url else ""
         if action_key == "langflow.equipment.stage_analysis":
-            summary = sanitize_stage_analysis_message(summary)
+            message = str(result.get("message") or first_text(result.get("response")) or item.get("summary") or "").strip()
+            summary = langflow_table_summary(message)
+        else:
+            summary = str(item.get("summary") or "")
         if not summary:
             summary = action_result_summary(action_key, result) if result else compact_json(item.get("error") or "")
         summary = table_safe_summary(summary)
-        rows.append(f"| `{action_key}` | `{status}` | `{request_id}` | {summary} |")
+        rows.append(f"| `{action_key}` | `{status}` | `{request_id}` | {summary} | {raw_cell} |")
         if action_key == "langflow.equipment.stage_analysis":
             message = str(result.get("message") or first_text(result.get("response")) or "").strip()
             if message:
                 analysis_messages.append(sanitize_stage_analysis_message(message) or "Langflow result unavailable")
             elif status in {"failed", "error"} or item.get("error"):
                 analysis_messages.append("Langflow result unavailable")
-    table = "\n".join(["| Action | Status | Request | Summary |", "|---|---|---|---|", *rows]) if rows else "No action results were recorded."
-    analysis = "\n\n".join(f"- {message}" for message in analysis_messages) if analysis_messages else ""
+    table = "\n".join(["| Action | Status | Request | Summary | Raw |", "|---|---|---|---|---|", *rows]) if rows else "No action results were recorded."
+    analysis = "\n\n".join(message for message in analysis_messages) if analysis_messages else ""
     return table, analysis
 
 
@@ -326,8 +438,12 @@ def replace_or_insert_section(body: str, heading: str, content: str) -> tuple[st
     return body.rstrip() + "\n\n" + replacement, False
 
 
-def build_enriched_body(original_body: str, dispatch_result: dict[str, Any]) -> tuple[str, list[str]]:
-    action_results, analysis = render_action_results(dispatch_result)
+def build_enriched_body(
+    original_body: str,
+    dispatch_result: dict[str, Any],
+    raw_url_resolver: RawUrlResolver | None = None,
+) -> tuple[str, list[str]]:
+    action_results, analysis = render_action_results(dispatch_result, raw_url_resolver=raw_url_resolver)
     body, _ = replace_or_insert_section(original_body, "Action Results", action_results)
     sections = ["Action Results"]
     if analysis:

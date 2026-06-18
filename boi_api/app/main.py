@@ -3534,7 +3534,18 @@ async def enrich_boi_from_dispatch(req: BoIEnrichFromDispatchRequest) -> dict[st
             "skipped_reason": "not_generated_private_boi",
         }
 
-    body, sections_updated = build_enriched_body(str(doc.get("body") or ""), dispatch_result)
+    def raw_url_for_action_result(request_id: str, raw_log_ref: str) -> str:
+        ref = raw_log_ref
+        if not ref and request_id:
+            raw_row = find_action_log_row_by_request_id(request_id, req.employee_id)
+            ref = str((raw_row or {}).get("_log_ref") or "")
+        return action_raw_page_url(ref, req.employee_id) if ref else ""
+
+    body, sections_updated = build_enriched_body(
+        str(doc.get("body") or ""),
+        dispatch_result,
+        raw_url_resolver=raw_url_for_action_result,
+    )
     metadata = dict(doc.get("metadata") or {})
     metadata["enrichment"] = {
         "status": "enriched",

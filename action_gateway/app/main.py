@@ -248,6 +248,18 @@ def first_summary_text(value: Any) -> str:
     return ""
 
 
+def truncate_summary(value: str, limit: int = 500) -> str:
+    summary = " ".join(str(value or "").split())
+    if len(summary) <= limit:
+        return summary
+    cutoff = max(0, limit - 3)
+    head = summary[:cutoff].rstrip()
+    boundary = head.rfind(" ")
+    if boundary >= int(cutoff * 0.75):
+        head = head[:boundary].rstrip()
+    return head.rstrip("`*_-[({/:;,") + "..."
+
+
 def summarize_action_result(result: dict[str, Any] | None, error: Any = None) -> str:
     if result:
         response = result.get("response")
@@ -263,9 +275,9 @@ def summarize_action_result(result: dict[str, Any] | None, error: Any = None) ->
             ):
                 if response["result"].get(key):
                     return f"{key}={response['result'][key]}"
-        return first_summary_text(result)[:500]
+        return truncate_summary(first_summary_text(result))
     if error:
-        return first_summary_text(error)[:500] or str(error)[:500]
+        return truncate_summary(first_summary_text(error) or str(error))
     return ""
 
 

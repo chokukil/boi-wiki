@@ -876,6 +876,41 @@ def test_generated_boi_enrichment_adds_dispatch_results_and_langflow_analysis(bo
         json=event,
     )
     boi_id = materialized.json()["item"]["metadata"]["boi_id"]
+    long_langflow_message = (
+        "# Langflow BoI Execution Result\n\n"
+        "## Analysis Draft\n"
+        "**Current Finding**\n"
+        "ETCH-VM-01 설비에서 RESPONSE_CHAIN_ABNORMAL 알람이 발생하여 원인 분석 단계가 활성화되었습니다.\n\n"
+        "**Evidence Used**\n"
+        "- Event: root_cause.analysis.requested.v1\n"
+        "- SOP Stage: analyze\n"
+        "- Prior Action Result: sop.equipment.request_raw_data\n\n"
+        "**Recommended Next Check**\n"
+        + "\n".join(f"- 상세 점검 항목 {index}: Raw Data와 Trend 근거를 비교합니다." for index in range(1, 35))
+        + "\n\n**Manual Handoff**\n"
+        "- manual.equipment.review_root_cause 담당자가 최종 원인 후보를 확인합니다.\n\n"
+        "**Risk/Approval Notes**\n"
+        "- 승인 선행 필요 최종 문장까지 전문이 보존되어야 합니다.\n\n"
+        "## BoI Write Result\n"
+        "```json\n"
+        '{"ok": true, "body": "internal writer result should not be repeated"}\n'
+        "```"
+    )
+    raw_log_ref = append_action_log_row(
+        boi_app_module,
+        {
+            "logged_at": "2026-06-18T00:00:00+09:00",
+            "action_key": "langflow.equipment.stage_analysis",
+            "request_id": "act-langflow-enrich",
+            "employee_id": "100001",
+            "event_id": event["event_id"],
+            "event_type": event["event_type"],
+            "trace_id": event["trace_id"],
+            "boi_id": boi_id,
+            "status": "langflow_invoked",
+            "result": {"status": "langflow_invoked", "request_id": "act-langflow-enrich", "message": long_langflow_message},
+        },
+    )
     dispatch_result = {
         "ok": True,
         "status": "dispatched",
@@ -902,7 +937,7 @@ def test_generated_boi_enrichment_adds_dispatch_results_and_langflow_analysis(bo
                 "result": {
                     "status": "langflow_invoked",
                     "request_id": "act-langflow-enrich",
-                    "message": "## 업무 맥락 자산화\nEvent Broker는 업무 시점을 발행합니다.\n\n## 원인 후보\n원인 후보: RF 매칭 구간 이상 가능성이 높습니다.\n\n## Team BoI 승격 기준\n반복되면 승격합니다.",
+                    "message": long_langflow_message,
                 },
             },
             {
@@ -935,7 +970,15 @@ def test_generated_boi_enrichment_adds_dispatch_results_and_langflow_analysis(bo
     assert "# Action Results" in enriched_body
     assert "# Analysis Draft" in enriched_body
     assert "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001" in enriched_body
-    assert "원인 후보: RF 매칭 구간 이상 가능성이 높습니다." in enriched_body
+    assert "승인 선행 필요 최종 문장까지 전문이 보존되어야 합니다." in enriched_body
+    action_results = enriched_body.split("# Analysis Draft", 1)[0]
+    assert "# Langflow BoI Execution Result" not in enriched_body
+    assert "BoI Write Result" not in enriched_body
+    assert "internal writer result should not be repeated" not in enriched_body
+    assert "**R |" not in action_results
+    assert "승인 선행 필요 최종 문장" not in action_results
+    assert "Current Finding: ETCH-VM-01 설비에서 RESPONSE_CHAIN_ABNORMAL 알람이 발생" in action_results
+    assert f"/actions/raw/{quote(raw_log_ref, safe='')}?employee_id=100001" in action_results
     assert "Event Broker는 업무 시점을 발행합니다." not in enriched_body
     assert "Team BoI 승격 기준" not in enriched_body
     assert "manual_required" in enriched_body

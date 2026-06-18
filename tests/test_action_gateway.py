@@ -80,6 +80,17 @@ def test_manual_approval_task_requires_approved_by_before_completion(tmp_path, m
     assert approved.json()["manual_handoff"]["approved_by"] == "line-manager-001"
 
 
+def test_fallback_action_summary_truncates_at_word_boundary_with_ellipsis(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    long_message = "Current Finding " + ("stable summary word " * 80)
+
+    summary = gateway.summarize_action_result({"ok": True, "status": "invoked", "message": long_message})
+
+    assert len(summary) <= 503
+    assert summary.endswith("...")
+    assert not summary.endswith(" ...")
+
+
 class FakeHttpResponse:
     def __init__(self, status_code: int = 200, body: dict | None = None):
         self.status_code = status_code
