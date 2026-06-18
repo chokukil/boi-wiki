@@ -15,6 +15,7 @@ DEFAULT_SKILL_DIR = Path(
 )
 DEFAULT_WORKSPACE = ROOT / "outputs/manual-20260619/presentations/boi-e2e-evidence"
 DEFAULT_OUTPUT = DEFAULT_WORKSPACE / "output/boi-wiki-e2e-evidence-brief.pptx"
+DEFAULT_CAPTURE_MANIFEST = ROOT / "artifacts" / "boi-poc" / "capture-manifest.json"
 EXPECTED_SLIDE_COUNT = 8
 
 
@@ -49,7 +50,9 @@ def main() -> int:
     parser.add_argument("--skill-dir", type=Path, default=Path(os.getenv("PRESENTATIONS_SKILL_DIR", DEFAULT_SKILL_DIR)))
     parser.add_argument("--workspace", type=Path, default=Path(os.getenv("BOI_E2E_PPT_WORKSPACE", DEFAULT_WORKSPACE)))
     parser.add_argument("--out", type=Path, default=Path(os.getenv("BOI_E2E_PPT_OUT", DEFAULT_OUTPUT)))
+    parser.add_argument("--capture-manifest", type=Path, default=Path(os.getenv("BOI_CAPTURE_MANIFEST", DEFAULT_CAPTURE_MANIFEST)))
     parser.add_argument("--skip-runtime-check", action="store_true", help="Attempt build without running check_presentation_runtime.mjs first.")
+    parser.add_argument("--skip-screenshot-check", action="store_true", help="Build without validating required screenshot evidence first.")
     args = parser.parse_args()
 
     skill_dir = args.skill_dir.resolve()
@@ -64,6 +67,25 @@ def main() -> int:
 
     require_file(skill_dir / "scripts/build_artifact_deck.mjs", "artifact-tool deck builder")
     verify_slide_modules(slides_dir)
+
+    if not args.skip_screenshot_check:
+        screenshot_check = run(
+            [
+                sys.executable,
+                "scripts/insert_poc_screenshots.py",
+                "--manifest",
+                str(args.capture_manifest.resolve()),
+                "--check",
+            ]
+        )
+        (qa_dir / "screenshot-readiness-check.txt").write_text(screenshot_check.stdout, encoding="utf-8")
+        if screenshot_check.returncode != 0:
+            sys.stderr.write(screenshot_check.stdout)
+            sys.stderr.write(
+                "\nPPTX export stopped before build: required screenshot evidence is not ready. "
+                "Capture the required PNG files or use --skip-screenshot-check only for non-final local drafts.\n"
+            )
+            return screenshot_check.returncode
 
     if not args.skip_runtime_check:
         runtime_check = run(

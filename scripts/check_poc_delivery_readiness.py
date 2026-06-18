@@ -194,7 +194,7 @@ def evaluate_screenshots(manifest: Path) -> dict[str, Any]:
 
 
 def evaluate_ppt_runtime() -> dict[str, Any]:
-    result = run_command([sys.executable, "scripts/build_boi_e2e_ppt.py"])
+    result = run_command([sys.executable, "scripts/build_boi_e2e_ppt.py", "--skip-screenshot-check"])
     blockers: list[str] = []
     if result["returncode"] != 0:
         if "artifact-tool runtime is unavailable" in result["stdout"]:

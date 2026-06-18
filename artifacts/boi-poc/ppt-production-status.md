@@ -110,7 +110,7 @@ The older screenshot insertion helper remains useful for the legacy executive de
 python scripts/build_boi_e2e_ppt.py
 ```
 
-The script runs the artifact-tool runtime preflight, builds the 8-slide deck, renders previews, writes a contact sheet, and stops with a clear blocker message if `@oai/artifact-tool` is still unavailable.
+The script first validates required screenshot evidence with `scripts/insert_poc_screenshots.py --check`, then runs the artifact-tool runtime preflight, builds the 8-slide deck, renders previews, and writes a contact sheet. The delivery readiness checker runs the artifact-tool probe with `--skip-screenshot-check` so screenshot readiness and artifact runtime readiness remain visible as separate blockers.
 
 ## Finalization Command After Screenshots Exist
 

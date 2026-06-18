@@ -113,6 +113,9 @@ def test_e2e_ppt_build_script_preserves_artifact_tool_boundary():
     assert "build_artifact_deck.mjs" in script
     assert "--slide-count" in script
     assert "EXPECTED_SLIDE_COUNT = 8" in script
+    assert "scripts/insert_poc_screenshots.py" in script
+    assert "--check" in script
+    assert "required screenshot evidence" in script
     assert "python scripts/build_boi_e2e_ppt.py" in status
     assert "artifact-tool runtime preflight" in status
 
@@ -189,6 +192,7 @@ def test_delivery_readiness_script_composes_existing_capture_and_ppt_gates():
     assert "check_poc_capture_targets.py" in script
     assert "insert_poc_screenshots.py" in script
     assert "build_boi_e2e_ppt.py" in script
+    assert "--skip-screenshot-check" in script
     assert "screenshots" in script
     assert "ppt_runtime" in script
     assert "final_deck" in script
