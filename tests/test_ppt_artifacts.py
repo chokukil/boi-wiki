@@ -6,7 +6,13 @@ from pptx import Presentation
 
 from scripts.collect_poc_evidence import build_capture_targets
 from scripts.build_boi_e2e_ppt import DEFAULT_SOURCE, prepare_workspace
-from scripts.check_poc_delivery_readiness import DEFAULT_ARTIFACT_PPTX, evaluate_e2e_summary, evaluate_final_deck
+from scripts.check_poc_delivery_readiness import (
+    DEFAULT_ARTIFACT_PPTX,
+    DEFAULT_CAPTURE_BLOCKERS,
+    evaluate_capture_blockers,
+    evaluate_e2e_summary,
+    evaluate_final_deck,
+)
 from scripts.insert_poc_screenshots import load_manifest, missing_screenshots, screenshot_issues
 
 
@@ -218,9 +224,11 @@ def test_delivery_readiness_script_composes_existing_capture_and_ppt_gates():
 
     assert "check_poc_capture_targets.py" in script
     assert "insert_poc_screenshots.py" in script
+    assert "capture-blockers.json" in script
     assert "build_boi_e2e_ppt.py" in script
     assert "--skip-screenshot-check" in script
     assert "screenshots" in script
+    assert "capture_blockers" in script
     assert "ppt_runtime" in script
     assert "final_deck" in script
     assert "blockers" in script
@@ -234,3 +242,25 @@ def test_delivery_readiness_final_deck_targets_artifact_tool_output():
     )
     if not report["ok"]:
         assert "artifact-tool final deck" in report["blockers"][0]
+
+
+def test_delivery_readiness_reports_active_capture_policy_blockers(tmp_path):
+    blockers_file = tmp_path / "capture-blockers.json"
+    blockers_file.write_text(
+        """{
+  "updated_at": "2026-06-19T02:44:16+09:00",
+  "active_blockers": [
+    {"id": "chrome-policy", "reason": "localhost blocked"}
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    report = evaluate_capture_blockers(blockers_file)
+    tracked_report = evaluate_capture_blockers(DEFAULT_CAPTURE_BLOCKERS)
+
+    assert report["ok"] is False
+    assert "chrome-policy" in report["blockers"][0]
+    assert tracked_report["ok"] is False
+    assert "chrome-browser-use-localhost-policy" in tracked_report["blockers"][0]

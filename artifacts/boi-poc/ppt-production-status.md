@@ -1,6 +1,6 @@
 # BoI Wiki PoC PPT Production Status
 
-Updated: 2026-06-19 02:05 KST
+Updated: 2026-06-19 02:44 KST
 
 ## Created Artifacts
 
@@ -11,6 +11,7 @@ Updated: 2026-06-19 02:05 KST
 - `artifacts/boi-poc/capture-manifest.json`
 - `artifacts/boi-poc/capture-targets.json`
 - `artifacts/boi-poc/capture-targets.md`
+- `artifacts/boi-poc/capture-blockers.json`
 - `docs/POC_SCREENSHOT_MANIFEST.md`
 - `scripts/insert_poc_screenshots.py`
 - `scripts/check_poc_delivery_readiness.py`
@@ -86,7 +87,7 @@ Run the consolidated readiness gate with:
 python scripts/check_poc_delivery_readiness.py --out outputs/manual-20260619/e2e-evidence/delivery-readiness.json
 ```
 
-Current expected status is `ok=false`: E2E evidence and URL preflight pass, but Chrome-captured PNG files, artifact-tool PPTX export, and the final screenshot deck are still missing.
+Current expected status is `ok=false`: E2E evidence and URL preflight pass, but Chrome-captured PNG files, Chrome capture policy clearance, artifact-tool PPTX export, and the final screenshot deck are still missing.
 
 Screenshot readiness is stricter than file existence. `insert_poc_screenshots.py --check` validates that each required file is a PNG and at least `800x600`, so placeholder, corrupt, or tiny images cannot accidentally satisfy the final deck gate.
 
@@ -100,10 +101,11 @@ The older screenshot insertion helper remains useful for the legacy executive de
 
 ## Still Pending
 
-- Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy. This was rechecked through the Chrome extension flow on 2026-06-19 and still fails before navigation.
+- Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy. This was rechecked through the approved Chrome extension flow on 2026-06-19 02:44 KST and still fails before navigation. The active blocker is tracked in `artifacts/boi-poc/capture-blockers.json`.
 - The add-in stayed in `Loading` after the polish request; completion or deck mutation has not been verified.
 - Final PPT completion requires actual screenshots to replace the slide 11 placeholders and a final PowerPoint save/export check.
 - Latest artifact-tool PPTX export is blocked because `/home/chokukil/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/@oai/artifact-tool` is missing `package.json` in this Codex thread.
+- `npm view @oai/artifact-tool` against `https://registry.npmjs.org/` returns `E404`, so the package cannot be repaired from the public npm registry in this environment.
 
 ## Finalization Command After Artifact Runtime Is Restored
 
