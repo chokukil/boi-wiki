@@ -12,6 +12,8 @@ from urllib.request import Request, urlopen
 
 BASE_URL = os.getenv("BOI_API_URL", "http://localhost:8000").rstrip("/")
 EMPLOYEE_ID = os.getenv("EMPLOYEE_ID", "100001")
+SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "")
+BOI_AUTH_BEARER = os.getenv("BOI_AUTH_BEARER", "")
 TIMEOUT_SECONDS = int(os.getenv("POC_SMOKE_TIMEOUT_SECONDS", "180"))
 HTTP_TIMEOUT_SECONDS = int(os.getenv("POC_SMOKE_HTTP_TIMEOUT_SECONDS", "180"))
 POLL_SECONDS = float(os.getenv("POC_SMOKE_POLL_SECONDS", "2"))
@@ -32,20 +34,31 @@ REQUIRED_MANUAL_HANDOFFS = {
 REQUIRED_LANGFLOW_ACTIONS = {"langflow.boi.reference_flow", "langflow.equipment.stage_analysis"}
 
 
+def request_headers(content_type: bool = False) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if content_type:
+        headers["Content-Type"] = "application/json"
+    if SERVICE_TOKEN:
+        headers["x-service-token"] = SERVICE_TOKEN
+    if BOI_AUTH_BEARER:
+        headers["Authorization"] = f"Bearer {BOI_AUTH_BEARER}"
+    return headers
+
+
 def request_json(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     body = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8") if payload is not None else None
     req = Request(
         f"{BASE_URL}{path}",
         data=body,
         method=method,
-        headers={"Content-Type": "application/json"},
+        headers=request_headers(content_type=True),
     )
     with urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def request_text(path: str) -> str:
-    req = Request(f"{BASE_URL}{path}", method="GET")
+    req = Request(f"{BASE_URL}{path}", method="GET", headers=request_headers())
     with urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
         return response.read().decode("utf-8")
 

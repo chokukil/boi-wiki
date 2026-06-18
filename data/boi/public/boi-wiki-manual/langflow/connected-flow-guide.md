@@ -48,6 +48,14 @@ python scripts/audit_langflow_flows.py --runtime
 python scripts/run_equipment_sop_poc.py
 ```
 
+SSO dev overlay에서는 BoI API 접근에 service token 또는 사용자 bearer token이 필요하다.
+
+```bash
+SERVICE_TOKEN=dev-service-token-change-me python scripts/run_equipment_sop_poc.py
+```
+
+Langflow custom component도 같은 원칙을 따른다. runtime container에는 `BOI_API_SERVICE_TOKEN`을 넘겨 `BoIWikiReader`와 `BoIWikiWriter`가 SSO 모드에서도 BoI API를 호출하게 한다.
+
 # Completion Criteria
 
 - required BoI components are connected, not isolated.

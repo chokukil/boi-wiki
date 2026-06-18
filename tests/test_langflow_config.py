@@ -103,3 +103,13 @@ def test_langflow_reader_writer_attach_boi_api_service_token():
     assert 'headers=self._headers()' in reader
     assert 'os.getenv("BOI_API_SERVICE_TOKEN")' in writer
     assert '"x-service-token"' in writer
+
+
+def test_equipment_sop_smoke_script_supports_sso_auth_headers():
+    script = Path("scripts/run_equipment_sop_poc.py").read_text(encoding="utf-8")
+
+    assert 'os.getenv("SERVICE_TOKEN", "")' in script
+    assert 'os.getenv("BOI_AUTH_BEARER", "")' in script
+    assert '"x-service-token"' in script
+    assert '"Authorization"' in script
+    assert "request_headers(content_type=True)" in script
