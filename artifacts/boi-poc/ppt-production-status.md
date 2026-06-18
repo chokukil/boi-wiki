@@ -85,19 +85,10 @@ The latest deck source uses artifact-tool slide modules and is ready for export 
 ## Finalization Command After Artifact Runtime Is Restored
 
 ```bash
-SKILL_DIR=/mnt/c/Users/choku/.codex/plugins/cache/openai-primary-runtime/presentations/26.520.11634/skills/presentations
-WORKSPACE=/home/chokukil/boi-wiki/outputs/manual-20260619/presentations/boi-e2e-evidence
-FINAL_PPTX=$WORKSPACE/output/boi-wiki-e2e-evidence-brief.pptx
-
-node "$SKILL_DIR/scripts/build_artifact_deck.mjs" \
-  --workspace "$WORKSPACE" \
-  --slides-dir "$WORKSPACE/slides" \
-  --out "$FINAL_PPTX" \
-  --preview-dir "$WORKSPACE/preview" \
-  --layout-dir "$WORKSPACE/layout/final" \
-  --contact-sheet "$WORKSPACE/preview/contact-sheet.png" \
-  --slide-count 8
+python scripts/build_boi_e2e_ppt.py
 ```
+
+The script runs the artifact-tool runtime preflight, builds the 8-slide deck, renders previews, writes a contact sheet, and stops with a clear blocker message if `@oai/artifact-tool` is still unavailable.
 
 ## Finalization Command After Screenshots Exist
 

@@ -68,3 +68,15 @@ def test_capture_targets_resolve_latest_private_boi_and_langflow_urls():
     assert by_id["langflow"]["url"] == "http://localhost:7860/flow/flow-123"
     assert "<latest" not in by_id["private_boi"]["url"]
     assert "<latest" not in by_id["langflow"]["url"]
+
+
+def test_e2e_ppt_build_script_preserves_artifact_tool_boundary():
+    script = Path("scripts/build_boi_e2e_ppt.py").read_text(encoding="utf-8")
+    status = Path("artifacts/boi-poc/ppt-production-status.md").read_text(encoding="utf-8")
+
+    assert "check_presentation_runtime.mjs" in script
+    assert "build_artifact_deck.mjs" in script
+    assert "--slide-count" in script
+    assert "EXPECTED_SLIDE_COUNT = 8" in script
+    assert "python scripts/build_boi_e2e_ppt.py" in status
+    assert "artifact-tool runtime preflight" in status
