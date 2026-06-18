@@ -80,3 +80,16 @@ def test_e2e_ppt_build_script_preserves_artifact_tool_boundary():
     assert "EXPECTED_SLIDE_COUNT = 8" in script
     assert "python scripts/build_boi_e2e_ppt.py" in status
     assert "artifact-tool runtime preflight" in status
+
+
+def test_capture_targets_point_to_latest_sso_e2e_trace():
+    manifest = Path("artifacts/boi-poc/capture-manifest.json").read_text(encoding="utf-8")
+    targets = Path("artifacts/boi-poc/capture-targets.json").read_text(encoding="utf-8")
+    docs_manifest = Path("docs/POC_SCREENSHOT_MANIFEST.md").read_text(encoding="utf-8")
+    combined = "\n".join([manifest, targets, docs_manifest])
+
+    assert "trace-609660cf137c4946aaa833c891f704b7" in combined
+    assert "boi:private:100001:20260619014436:7ff90d" in combined
+    assert "422fa3e4-d09b-4d51-b323-e652a13f2792" in combined
+    assert "3aba3309-89a8-4171-a153-00db6b16dcba" not in combined
+    assert "boi-private-100001-20260618012251-15654c.md" not in combined

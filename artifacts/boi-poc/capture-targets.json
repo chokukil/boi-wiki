@@ -1,68 +1,68 @@
 {
-  "capture_dir": "captures/boi-poc",
-  "deck_output": "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx",
-  "generated_from": {
-    "evidence_collected_at": "2026-06-17T16:24:13+00:00",
-    "git_commit": "3dd82b8"
-  },
-  "targets": [
-    {
-      "id": "boi_home",
-      "file": "01-boi-wiki-home.png",
-      "title": "BoI Wiki Home",
-      "url": "http://localhost:8000/",
-      "purpose": "목록, 필터, Event log가 보이는 첫 화면"
+    "capture_dir": "captures/boi-poc",
+    "deck_output": "artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx",
+    "generated_from": {
+        "evidence_collected_at": "2026-06-19T01:45:00+09:00",
+        "git_commit": "2796031"
     },
-    {
-      "id": "sop_library",
-      "file": "02-sop-library.png",
-      "title": "SOP Library",
-      "url": "http://localhost:8000/sops",
-      "purpose": "설비 이상 SOP와 Agent Harness SOP"
-    },
-    {
-      "id": "event_type_catalog",
-      "file": "03-event-type-catalog.png",
-      "title": "Event Type Catalog",
-      "url": "http://localhost:8000/event-types",
-      "purpose": "업무 이벤트 정의와 추천 Action"
-    },
-    {
-      "id": "event_stream",
-      "file": "04-event-stream.png",
-      "title": "Event Stream",
-      "url": "http://localhost:8000/events",
-      "purpose": "Alarm에서 Corrective Action까지 이어지는 이벤트 체인"
-    },
-    {
-      "id": "action_logs",
-      "file": "05-action-catalog-logs.png",
-      "title": "Action Catalog / Logs",
-      "url": "http://localhost:8000/actions",
-      "purpose": "materialized, dry_run, approval_required Action 로그"
-    },
-    {
-      "id": "private_boi",
-      "file": "06-private-boi-corrective-action.png",
-      "title": "Generated Private BoI",
-      "url": "http://localhost:8000/docs/private/100001/boi-private-100001-20260618012251-15654c.md",
-      "purpose": "실제 생성된 corrective_action.requested.v1 Private BoI",
-      "resolved_from": "/private/100001/boi-private-100001-20260618012251-15654c.md"
-    },
-    {
-      "id": "langflow",
-      "file": "07-langflow-boi-reference-flow.png",
-      "title": "Langflow BoI Reference Flow",
-      "url": "http://localhost:7860/flow/3aba3309-89a8-4171-a153-00db6b16dcba",
-      "purpose": "Gemma OpenAI-compatible Reference Flow",
-      "resolved_from": "3aba3309-89a8-4171-a153-00db6b16dcba"
-    },
-    {
-      "id": "kafka_ui",
-      "file": "08-kafka-ui-topics.png",
-      "title": "Kafka UI Topics",
-      "url": "http://localhost:8081/",
-      "purpose": "boi.events, boi.audit, boi.dead-letter 토픽"
-    }
-  ]
+    "targets": [
+        {
+            "id": "boi_home",
+            "file": "01-boi-wiki-home.png",
+            "title": "BoI Wiki Home",
+            "url": "http://localhost:8000/?employee_id=100001",
+            "purpose": "\ubaa9\ub85d, \ud544\ud130, Event log\uac00 \ubcf4\uc774\ub294 \uccab \ud654\uba74"
+        },
+        {
+            "id": "sop_library",
+            "file": "02-sop-library.png",
+            "title": "OKF SOP Library",
+            "url": "http://localhost:8000/?employee_id=100001&folder=public%2Fsop",
+            "purpose": "OKF public/sop \ud3f4\ub354\uc640 \uc124\ube44 \uc774\uc0c1 SOP"
+        },
+        {
+            "id": "event_type_catalog",
+            "file": "03-event-type-catalog.png",
+            "title": "Equipment Event Type Detail",
+            "url": "http://localhost:8000/event-types/equipment.alarm.raised.v1?employee_id=100001",
+            "purpose": "\uc124\ube44 Alarm \uc774\ubca4\ud2b8 \uc815\uc758, SOP, \ucd94\ucc9c Action"
+        },
+        {
+            "id": "event_stream",
+            "file": "04-event-stream.png",
+            "title": "Event Stream",
+            "url": "http://localhost:8000/events?employee_id=100001&trace_id=trace-609660cf137c4946aaa833c891f704b7",
+            "purpose": "\ucd5c\uc2e0 SSO E2E trace\uc758 \uc774\ubca4\ud2b8 \uccb4\uc778"
+        },
+        {
+            "id": "action_logs",
+            "file": "05-action-catalog-logs.png",
+            "title": "Workflow Status / Actions",
+            "url": "http://localhost:8000/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-609660cf137c4946aaa833c891f704b7",
+            "purpose": "Action, Langflow, Manual Handoff, Generated BoI \uc0c1\ud0dc"
+        },
+        {
+            "id": "private_boi",
+            "file": "06-private-boi-corrective-action.png",
+            "title": "Generated Private BoI",
+            "url": "http://localhost:8000/docs/boi:private:100001:20260619014436:7ff90d?employee_id=100001",
+            "purpose": "\uc2e4\uc81c \uc0dd\uc131\ub41c corrective_action.requested.v1 Private BoI",
+            "resolved_from": "boi:private:100001:20260619014436:7ff90d"
+        },
+        {
+            "id": "langflow",
+            "file": "07-langflow-boi-reference-flow.png",
+            "title": "Langflow Equipment Stage Analysis Flow",
+            "url": "http://localhost:7860/flow/422fa3e4-d09b-4d51-b323-e652a13f2792",
+            "purpose": "SOP stage analysis\uc5d0 \uc2e4\uc81c \ud638\ucd9c\ub41c Langflow workflow",
+            "resolved_from": "422fa3e4-d09b-4d51-b323-e652a13f2792"
+        },
+        {
+            "id": "kafka_ui",
+            "file": "08-kafka-ui-topics.png",
+            "title": "Kafka UI Topics",
+            "url": "http://localhost:8081/",
+            "purpose": "boi.events, boi.audit, boi.dead-letter \ud1a0\ud53d"
+        }
+    ]
 }
