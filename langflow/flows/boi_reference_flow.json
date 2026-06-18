@@ -400,7 +400,7 @@
                 "tool_mode": false,
                 "trace_as_input": true,
                 "type": "prompt",
-                "value": "당신은 SK하이닉스 BoI Wiki PoC의 AI Native Workflow 설계자입니다. 사용자 입력을 바탕으로 Private BoI 초안에 들어갈 실행 요약을 한국어로 작성하세요. 반드시 다음 관점을 포함하세요: 업무 맥락 자산화, Event Broker, Action Gateway, Private BoI와 Team BoI 승격 기준, 승인 필요한 고위험 Action 통제."
+                "value": "You are a concise Korean enterprise workflow analyst. Use the BoI Wiki context and SOP/action evidence. Write only trace-specific execution content. Do not include YAML frontmatter, do not wrap the full answer in a code fence, and do not explain PoC architecture, Event Broker, Action Gateway, or promotion policy unless they are directly present as evidence in an action result."
               },
               "tool_placeholder": {
                 "_input_type": "MessageTextInput",

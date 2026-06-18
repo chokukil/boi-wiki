@@ -18,17 +18,19 @@ from urllib.parse import quote, urlencode
 import yaml
 from aiokafka import AIOKafkaProducer
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from pydantic import BaseModel, Field
 
 from .okf import (
+    ALLOWED_MEDIA_EXTENSIONS,
     REQUIRED_FIELDS,
     iter_jsonl_rows,
     iter_materialized_items,
     markdown_link_edges,
+    resolve_okf_media_path,
     resolve_okf_link,
     validate_okf_metadata,
 )
@@ -320,6 +322,19 @@ def markdown_href_for_doc_route(
     return href
 
 
+def markdown_media_url_for_doc_route(href: str, source_path: Path | None = None) -> str:
+    if source_path is None:
+        return ""
+    target_path, error = resolve_okf_media_path(href, source_path=source_path, boi_root=DATA_ROOT)
+    if error or target_path is None or not target_path.exists():
+        return ""
+    try:
+        rel_path = str(target_path.relative_to(DATA_ROOT)).replace("\\", "/")
+    except ValueError:
+        return ""
+    return "/okf-media/" + quote(rel_path)
+
+
 def render_inline_markdown(
     value: str,
     employee_id: str | None = None,
@@ -330,12 +345,31 @@ def render_inline_markdown(
     rendered = re.sub(r"`([^`]+)`", r"<code>\1</code>", rendered)
     rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", rendered)
 
+    def replace_image(match: re.Match[str]) -> str:
+        alt = match.group(1)
+        href = match.group(2)
+        media_url = markdown_media_url_for_doc_route(href, source_path)
+        if not media_url:
+            return f'<span class="missing-media">Image unavailable: {html_escape(alt or href)}</span>'
+        safe_alt = html_escape(alt, quote=True)
+        caption = f"<figcaption>{html_escape(alt)}</figcaption>" if alt else ""
+        escaped_url = html_escape(media_url, quote=True)
+        return (
+            '<figure class="okf-image">'
+            f'<a href="{escaped_url}" target="_blank" rel="noopener">'
+            f'<img src="{escaped_url}" alt="{safe_alt}" loading="lazy" />'
+            "</a>"
+            f"{caption}"
+            "</figure>"
+        )
+
     def replace_link(match: re.Match[str]) -> str:
         label = match.group(1)
         href = match.group(2)
         routed_href = markdown_href_for_doc_route(href, employee_id, source_path, doc_lookup) if employee_id else href
         return f'<a href="{html_escape(routed_href, quote=True)}">{label}</a>'
 
+    rendered = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)", replace_image, rendered)
     rendered = re.sub(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)", replace_link, rendered)
     return rendered
 
@@ -466,6 +500,11 @@ def render_markdown(
             flush_paragraph()
             flush_list()
             table_lines.append(stripped)
+        elif re.fullmatch(r"!\[[^\]]*\]\([^)]+\)", stripped):
+            flush_paragraph()
+            flush_list()
+            flush_table()
+            html_parts.append(render_inline_markdown(stripped, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup))
         else:
             flush_list()
             flush_table()
@@ -1275,7 +1314,8 @@ def filter_docs(
         filtered = [
             d
             for d in filtered
-            if q_lower in json.dumps(d["metadata"], ensure_ascii=False).lower() or q_lower in d["body"].lower()
+            if q_lower in json.dumps(d["metadata"], ensure_ascii=False, default=str).lower()
+            or q_lower in d["body"].lower()
         ]
     if event_type:
         filtered = [d for d in filtered if d["metadata"].get("event_type") == event_type]
@@ -2081,6 +2121,20 @@ async def startup() -> None:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/okf-media/{media_path:path}")
+async def okf_media(media_path: str) -> FileResponse:
+    target_path = (DATA_ROOT / media_path).resolve()
+    try:
+        target_path.relative_to(DATA_ROOT.resolve())
+    except ValueError:
+        raise HTTPException(status_code=404, detail="media not found")
+    if "_media" not in target_path.parts or target_path.suffix.lower() not in ALLOWED_MEDIA_EXTENSIONS:
+        raise HTTPException(status_code=404, detail="media not found")
+    if not target_path.exists() or not target_path.is_file():
+        raise HTTPException(status_code=404, detail="media not found")
+    return FileResponse(target_path)
 
 
 @app.get("/api/runtime/config")

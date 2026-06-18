@@ -3,7 +3,7 @@ okf_version: '0.1'
 boi_profile_version: '0.1'
 type: boi/action-spec
 title: MCP 기반 BoI 검색 Tool 호출 예시
-description: MCP Bridge를 통해 BoI 검색 tool을 호출하는 connector 예시
+description: BoI Wiki MCP 서버의 BoI 검색 tool을 호출하는 connector 명세
 tags:
 - MCP
 - BoIWiki
@@ -45,7 +45,7 @@ review:
   review_status: reviewed
 protocol: mcp-over-http
 method: POST
-url: http://boi-api:8000/api/poc/mcp/call
+url: http://boi-wiki-mcp:8200/api/mcp/call
 auth:
   type: header
   header: x-service-token
@@ -104,8 +104,8 @@ example_response:
   count: 1
   results:
   - title: Platform Team Kafka Event Broker SOP
-curl: 'curl -X POST ''http://boi-api:8000/api/poc/mcp/call'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"payload":{"equipment_id":"ETCH-VM-01"},"dry_run":false}'''
+curl: 'curl -X POST ''http://boi-wiki-mcp:8200/api/mcp/call'' -H ''x-service-token:
+  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"server":{"name":"boi-wiki-mcp"},"tool":"boi.search","arguments":{"query":"Kafka","employee_id":"100001"},"request_id":"act-mcp-search"}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: mcp.boi_search.sample
@@ -113,7 +113,7 @@ action_gateway_mapping:
   doc_ref: boi:public:actions:mcp:boi-search-sample
 health_check:
   type: http
-  command: curl -fsS 'http://boi-api:8000/api/poc/mcp/call' || true
+  command: curl -fsS 'http://boi-wiki-mcp:8200/health'
 security_notes:
 - Use environment variables for tokens.
 - Do not store real service tokens or API keys in public BoI docs.

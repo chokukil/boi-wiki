@@ -25,11 +25,11 @@ review:
 
 # Summary
 
-BoI Wiki Web 편집은 원본 Markdown/YAML을 바로 바꾸지 않는다. `Save Draft`는 draft queue에 제안만 저장하며, 실제 파일 반영과 Git commit은 Codex, Claude 같은 agent가 수행한다.
+BoI Wiki Web 편집과 MCP draft tool은 원본 Markdown/YAML을 바로 바꾸지 않는다. `Save Draft`는 draft queue에 제안만 저장하며, 실제 파일 반영과 Git commit은 Codex, Claude 같은 agent가 수행한다.
 
 # User Flow
 
-1. 문서나 source 화면에서 내용을 수정한다.
+1. 문서나 source 화면에서 내용을 수정하거나 MCP draft tool을 호출한다.
 2. `Save Draft`를 누른다.
 3. 화면의 상태가 `not applied · not committed`임을 확인한다.
 4. agent에게 draft 적용을 요청한다.

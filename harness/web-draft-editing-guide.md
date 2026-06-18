@@ -2,7 +2,7 @@
 
 Web editing is intentionally draft-only.
 
-When a user clicks `Save Draft` in BoI Wiki, the app records a draft request under `data/drafts/`. It does not change the original Markdown/YAML file and does not create a Git commit.
+When a user clicks `Save Draft` in BoI Wiki, or an agent calls an MCP draft tool, the app records a draft request under `data/drafts/`. It does not change the original Markdown/YAML file and does not create a Git commit.
 
 Agent apply flow:
 

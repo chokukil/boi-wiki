@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import hashlib
 from pathlib import Path
 
 
@@ -29,6 +30,15 @@ def write_markdown(path: Path, metadata: dict, body: str = "# Summary\n\nOKF bod
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("---\n" + yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False) + "---\n\n" + body + "\n", encoding="utf-8")
+
+
+def tiny_png_bytes() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4"
+        b"\x89\x00\x00\x00\nIDATx\x9cc\xf8\x0f\x00\x01\x01"
+        b"\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
 
 
 def test_okf_lint_module_accepts_checked_in_boi_docs():
@@ -109,6 +119,61 @@ def test_okf_lint_extracts_bundle_relative_markdown_graph_edges(tmp_path: Path):
             "resolved": True,
         }
     ]
+
+
+def test_okf_lint_validates_local_media_assets_with_manifest(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    image_path = data_root / "boi" / "public" / "manual" / "_media" / "browser" / "sample.png"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_bytes = tiny_png_bytes()
+    image_path.write_bytes(image_bytes)
+    digest = hashlib.sha256(image_bytes).hexdigest()
+    (image_path.parents[1] / "media-manifest.yaml").write_text(
+        "media:\n"
+        "  - path: /public/manual/_media/browser/sample.png\n"
+        f"    sha256: {digest}\n"
+        "    source_kind: test\n",
+        encoding="utf-8",
+    )
+    write_markdown(
+        data_root / "boi" / "public" / "manual" / "media-test.md",
+        valid_private_metadata("boi:private:100001:media-test"),
+        "# Summary\n\n![Sample](/public/manual/_media/browser/sample.png)",
+    )
+
+    result = lint_data_root(data_root, strict_media=True)
+
+    assert result.ok, result.errors
+    assert result.media_link_count == 1
+
+
+def test_okf_lint_accepts_relative_data_root_with_strict_media():
+    from boi_api.app.okf import lint_data_root
+
+    result = lint_data_root(Path("data"), strict_media=True)
+
+    assert result.ok, result.errors[:5]
+
+
+def test_okf_lint_rejects_media_outside_media_directory(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    image_path = data_root / "boi" / "public" / "manual" / "sample.png"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(tiny_png_bytes())
+    write_markdown(
+        data_root / "boi" / "public" / "manual" / "media-test.md",
+        valid_private_metadata("boi:private:100001:bad-media-test"),
+        "# Summary\n\n![Sample](/public/manual/sample.png)",
+    )
+
+    result = lint_data_root(data_root, strict_media=True)
+
+    assert not result.ok
+    assert any("image link must target a _media directory" in error for error in result.errors)
 
 
 def test_okf_lint_includes_materialized_log_payloads(tmp_path: Path):

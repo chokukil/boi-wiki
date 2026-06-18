@@ -414,7 +414,7 @@ def test_mcp_action_invokes_boi_api_bridge_endpoint(tmp_path, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "mcp_invoked"
-    assert FakeAsyncClient.requests[0]["url"] == "http://boi-api:8000/api/poc/mcp/call"
+    assert FakeAsyncClient.requests[0]["url"] == "http://boi-wiki-mcp:8200/api/mcp/call"
     assert FakeAsyncClient.requests[0]["headers"]["x-service-token"] == "test-service-token"
     assert FakeAsyncClient.requests[0]["json"]["tool"] == "boi.search"
     assert FakeAsyncClient.requests[0]["json"]["arguments"]["query"] == "Kafka"

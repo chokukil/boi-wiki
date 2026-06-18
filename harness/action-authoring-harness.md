@@ -1,6 +1,6 @@
 # Action Authoring Harness
 
-Use this harness whenever an agent creates or changes an executable action.
+Use this harness whenever an agent creates or changes an executable action. Langflow is one connector kind, not the default connector.
 
 Required common fields:
 
@@ -22,6 +22,7 @@ Connector-specific fields:
 - Langflow: `flow_name`, `endpoint_name`, `run_url`, `required_components`, `input_value_template`, `result_boi_policy`.
 - Manual: `manual_task`, `assignee_role`, `checklist`, `completion_contract`, `approval_policy`.
 - Event Broker: `emits_event_type`, `event_body_template`, `trace_policy`.
+- BoI Writer: `materialization_policy`, `metadata_policy`, `enrichment_policy`.
 
 Defaults for new actions:
 
@@ -30,3 +31,12 @@ Defaults for new actions:
 - `dry_run_default: true`
 
 High-risk actions must include `requires_manual_action`, and the referenced manual action must exist before the system action can be enabled.
+
+Authoring workflow:
+
+1. Search existing action specs via `boi-wiki-mcp` `actions_search`.
+2. Choose the narrowest connector that can actually perform the work.
+3. Write or update the public action-spec BoI document.
+4. Draft the catalog patch.
+5. Add connector-specific tests and runtime smoke evidence.
+6. Keep secrets out of public docs and logs.

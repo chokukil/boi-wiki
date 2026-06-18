@@ -17,10 +17,12 @@ BOI_COMPONENT_KEYS = {
     "harness": "ext:boi:BoIHarnessLoader@extra",
     "reader": "ext:boi:BoIWikiReader@extra",
     "context": "ext:boi:BoIContextNormalizer@extra",
+    "prompt": "ext:boi:BoIPromptComposer@extra",
     "metadata": "ext:boi:BoIMetadataBuilder@extra",
     "policy": "ext:boi:BoIPolicyGuard@extra",
     "writer": "ext:boi:BoIWikiWriter@extra",
     "action": "ext:boi:BoIActionInvoker@extra",
+    "result": "ext:boi:BoIResultComposer@extra",
 }
 
 
@@ -78,6 +80,30 @@ def get_components(client: httpx.Client, langflow_url: str, headers: dict[str, s
     if missing:
         raise RuntimeError(f"BoI Langflow custom components are not loaded: {missing}")
     return components
+
+
+def list_flows(client: httpx.Client, langflow_url: str, headers: dict[str, str]) -> list[dict[str, Any]]:
+    response = client.get(f"{langflow_url}/api/v1/flows/", headers=headers)
+    response.raise_for_status()
+    flows = response.json()
+    if not isinstance(flows, list):
+        raise RuntimeError("Langflow flows API did not return a list")
+    return [flow for flow in flows if isinstance(flow, dict)]
+
+
+def delete_flows_by_name(client: httpx.Client, langflow_url: str, headers: dict[str, str], names: set[str]) -> list[str]:
+    deleted: list[str] = []
+    for flow in list_flows(client, langflow_url, headers):
+        if str(flow.get("name") or "") not in names:
+            continue
+        flow_id = flow.get("id")
+        if not flow_id:
+            continue
+        response = client.delete(f"{langflow_url}/api/v1/flows/{flow_id}", headers=headers)
+        if response.status_code not in {200, 202, 204, 404}:
+            response.raise_for_status()
+        deleted.append(str(flow_id))
+    return deleted
 
 
 def create_custom_node(
@@ -158,6 +184,52 @@ def create_edge(
     }
 
 
+def node_label(node: dict[str, Any]) -> str:
+    data = node.get("data") or {}
+    return str(data.get("display_name") or data.get("type") or node.get("id") or "")
+
+
+def find_node(data: dict[str, Any], label_contains: str) -> dict[str, Any]:
+    for node in data.get("nodes") or []:
+        if label_contains in node_label(node):
+            return node
+    raise RuntimeError(f"base flow node not found: {label_contains}")
+
+
+def compact_base_flow(base_flow: dict[str, Any]) -> dict[str, Any]:
+    data = json.loads(json.dumps(base_flow.get("data") or {}, ensure_ascii=False))
+    nodes = []
+    for node in data.get("nodes") or []:
+        label = node_label(node)
+        node_type = str((node.get("data") or {}).get("type") or "")
+        if not node_type or node_type in {"note"}:
+            continue
+        nodes.append(node)
+    kept = {node["id"] for node in nodes if node.get("id")}
+    data["nodes"] = nodes
+    data["edges"] = [edge for edge in data.get("edges") or [] if edge.get("source") in kept and edge.get("target") in kept]
+    return data
+
+
+def remove_edges_to_fields(data: dict[str, Any], targets: set[tuple[str, str]]) -> None:
+    kept_edges = []
+    for edge in data.get("edges") or []:
+        target_handle = ((edge.get("data") or {}).get("targetHandle") or {})
+        field_name = str(target_handle.get("fieldName") or "")
+        if (str(edge.get("target") or ""), field_name) in targets:
+            continue
+        kept_edges.append(edge)
+    data["edges"] = kept_edges
+
+
+def set_prompt_template(data: dict[str, Any], template: str) -> None:
+    prompt_node = find_node(data, "BoI Workflow Prompt")
+    node = (prompt_node.get("data") or {}).get("node") or {}
+    field = (node.get("template") or {}).get("template")
+    if isinstance(field, dict):
+        field["value"] = template
+
+
 def create_component_reference_flow(
     client: httpx.Client,
     langflow_url: str,
@@ -165,16 +237,21 @@ def create_component_reference_flow(
     base_flow: dict[str, Any],
     *,
     flow_name: str = "BoI Reference Flow",
-    endpoint_name: str = "boi-reference-flow-custom",
+    endpoint_name: str = "boi-reference-flow",
     context_input: str = "equipment.alarm.raised.v1 trace input from Event Broker",
     action_key: str = "manual.equipment.confirm_alarm_context",
+    wiki_query: str = "equipment abnormal response SOP action",
+    prompt_instruction: str = (
+        "Write a Korean BoI workflow execution draft. Use linked SOP/action context, "
+        "avoid PoC architecture boilerplate, and clearly mark manual handoff and approval needs."
+    ),
     description: str = (
         "BoI custom component reference flow: Event context, metadata, policy guard, "
         "wiki writer, action invoker, and Gemma LLM smoke path."
     ),
 ) -> dict[str, Any]:
     components = get_components(client, langflow_url, headers)
-    data = json.loads(json.dumps(base_flow.get("data") or {}, ensure_ascii=False))
+    data = compact_base_flow(base_flow)
     data.setdefault("nodes", [])
     data.setdefault("edges", [])
 
@@ -184,6 +261,26 @@ def create_component_reference_flow(
         if "positionAbsolute" in node:
             node["positionAbsolute"]["y"] = node["positionAbsolute"].get("y", 0) - 520
 
+    chat_input = find_node(data, "BoI Event Input")
+    llm = find_node(data, "Gemma OpenAI-Compatible LLM")
+    chat_output = find_node(data, "BoI Draft Output")
+    set_prompt_template(
+        data,
+        (
+            "You are a concise Korean enterprise workflow analyst. Use the BoI Wiki context and SOP/action evidence. "
+            "Write only trace-specific execution content. Do not include YAML frontmatter, do not wrap the full answer "
+            "in a code fence, and do not explain PoC architecture, Event Broker, Action Gateway, or promotion policy "
+            "unless they are directly present as evidence in an action result."
+        ),
+    )
+    remove_edges_to_fields(
+        data,
+        {
+            (llm["id"], "input_value"),
+            (chat_output["id"], "input_value"),
+        },
+    )
+
     nodes_by_name = {
         "harness": create_custom_node(components, BOI_COMPONENT_KEYS["harness"], "BoIHarnessLoader-boi", 120, 440),
         "reader": create_custom_node(
@@ -192,7 +289,7 @@ def create_component_reference_flow(
             "BoIWikiReader-boi",
             520,
             440,
-            {"query": "equipment abnormal response", "employee_id": "100001", "boi_api_url": "http://boi-api:8000"},
+            {"query": wiki_query, "employee_id": "100001", "boi_api_url": "http://boi-api:8000"},
         ),
         "context": create_custom_node(
             components,
@@ -202,6 +299,14 @@ def create_component_reference_flow(
             760,
             {"manual_input": context_input},
         ),
+        "prompt": create_custom_node(
+            components,
+            BOI_COMPONENT_KEYS["prompt"],
+            "BoIPromptComposer-boi",
+            920,
+            440,
+            {"instruction": prompt_instruction},
+        ),
         "metadata": create_custom_node(
             components,
             BOI_COMPONENT_KEYS["metadata"],
@@ -210,7 +315,7 @@ def create_component_reference_flow(
             760,
             {
                 "title": "Langflow SOP 실행 결과 BoI",
-                "description": "Generated by BoI custom component reference flow",
+                "boi_description": "Generated by BoI custom component reference flow",
                 "visibility": "private",
                 "owner": "100001",
             },
@@ -237,15 +342,34 @@ def create_component_reference_flow(
                 "service_token": "dev-service-token-change-me",
             },
         ),
+        "result": create_custom_node(
+            components,
+            BOI_COMPONENT_KEYS["result"],
+            "BoIResultComposer-boi",
+            2120,
+            760,
+        ),
     }
     data["nodes"].extend(nodes_by_name.values())
     data["edges"].extend(
         [
+            create_edge(chat_input, nodes_by_name["context"], "message"),
+            create_edge(nodes_by_name["harness"], nodes_by_name["prompt"], "harness"),
+            create_edge(nodes_by_name["reader"], nodes_by_name["prompt"], "documents"),
+            create_edge(nodes_by_name["context"], nodes_by_name["prompt"], "work_context"),
+            create_edge(nodes_by_name["prompt"], llm, "input_value"),
             create_edge(nodes_by_name["context"], nodes_by_name["metadata"], "work_context"),
+            create_edge(llm, nodes_by_name["policy"], "body_message"),
             create_edge(nodes_by_name["metadata"], nodes_by_name["policy"], "metadata"),
+            create_edge(llm, nodes_by_name["writer"], "body_message"),
             create_edge(nodes_by_name["metadata"], nodes_by_name["writer"], "metadata"),
             create_edge(nodes_by_name["policy"], nodes_by_name["action"], "payload"),
-            create_edge(nodes_by_name["writer"], nodes_by_name["action"], "event"),
+            create_edge(nodes_by_name["context"], nodes_by_name["action"], "event"),
+            create_edge(llm, nodes_by_name["result"], "analysis"),
+            create_edge(nodes_by_name["policy"], nodes_by_name["result"], "validation"),
+            create_edge(nodes_by_name["writer"], nodes_by_name["result"], "write_result"),
+            create_edge(nodes_by_name["action"], nodes_by_name["result"], "action_result"),
+            create_edge(nodes_by_name["result"], chat_output, "input_value"),
         ]
     )
     data["viewport"] = {"x": -220, "y": -120, "zoom": 0.55}
@@ -280,6 +404,39 @@ def smoke_run(client: httpx.Client, langflow_url: str, headers: dict[str, str], 
     return response.json()
 
 
+def first_message(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("text", "message"):
+            item = value.get(key)
+            if isinstance(item, str) and item:
+                return item
+            found = first_message(item)
+            if found:
+                return found
+        for item in value.values():
+            found = first_message(item)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = first_message(item)
+            if found:
+                return found
+    return ""
+
+
+def summarize_run(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    message = first_message(value)
+    return {
+        "session_id": value.get("session_id"),
+        "message_excerpt": message[:800],
+        "contains_boi_write_result": "BoI Write Result" in message,
+        "contains_manual_required": "manual_required" in message,
+    }
+
+
 def resolve_smoke_target(upload_result: Any, fallback_endpoint_name: str) -> str:
     uploaded_flow = upload_result[0] if isinstance(upload_result, list) and upload_result else upload_result
     if isinstance(uploaded_flow, dict):
@@ -295,6 +452,7 @@ def main() -> None:
     parser.add_argument("--auth-mode", choices=["auto-login", "api-key"], default=os.getenv("LANGFLOW_AUTH_MODE", "auto-login"))
     parser.add_argument("--skip-custom-components", action="store_true")
     parser.add_argument("--skip-smoke", action="store_true")
+    parser.add_argument("--summary", action="store_true")
     args = parser.parse_args()
 
     manifest = load_manifest(Path(args.manifest))
@@ -304,30 +462,52 @@ def main() -> None:
 
     with httpx.Client(timeout=60) as client:
         headers = get_auth_headers(client, langflow_url, args.langflow_api_key, args.auth_mode)
-        upload_result = upload_flow(client, langflow_url, headers, flow_file)
-        smoke_target = resolve_smoke_target(upload_result, endpoint_name)
+        base_flow = json.loads(flow_file.read_text(encoding="utf-8"))
+        deleted = delete_flows_by_name(
+            client,
+            langflow_url,
+            headers,
+            {"BoI Reference Flow", "BoI Equipment Stage Analysis Flow"},
+        )
+        smoke_target = endpoint_name
         custom_flow = None
         stage_flow = None
         if not args.skip_custom_components:
-            custom_flow = create_component_reference_flow(client, langflow_url, headers, first_uploaded_flow(upload_result))
+            custom_flow = create_component_reference_flow(
+                client,
+                langflow_url,
+                headers,
+                base_flow,
+                endpoint_name=endpoint_name,
+                wiki_query="BoI Wiki SOP harness action Langflow",
+            )
             stage_flow = create_component_reference_flow(
                 client,
                 langflow_url,
                 headers,
-                first_uploaded_flow(upload_result),
+                base_flow,
                 flow_name="BoI Equipment Stage Analysis Flow",
                 endpoint_name="boi-equipment-stage-analysis",
                 context_input=(
                     "root_cause.analysis.requested.v1 trace input. Include prior action results, "
                     "SOP stage, manual handoff requirements, and generated BoI enrichment output."
                 ),
-                action_key="langflow.equipment.stage_analysis",
+                action_key="manual.equipment.review_root_cause",
+                wiki_query="equipment abnormal response SOP root cause maintenance guide",
+                prompt_instruction=(
+                    "Write only a stage-specific Korean analysis draft for the equipment SOP. "
+                    "Use Event, SOP stage, prior action results, BoI Wiki context, and manual approval requirements. "
+                    "Do not explain Event Broker, Action Gateway, promotion policy, or PoC architecture."
+                ),
                 description=(
                     "BoI Wiki Writer stage-analysis flow for equipment SOP: context normalizer, "
                     "harness/wiki reader, Gemma LLM, metadata/policy guard, writer, and action invoker."
                 ),
             )
             smoke_target = custom_flow.get("id") or custom_flow.get("endpoint_name") or smoke_target
+        else:
+            upload_result = upload_flow(client, langflow_url, headers, flow_file)
+            smoke_target = resolve_smoke_target(upload_result, endpoint_name)
         result: dict[str, Any] = {
             "ok": True,
             "langflow_url": langflow_url,
@@ -335,7 +515,7 @@ def main() -> None:
             "smoke_target": smoke_target,
             "flow_file": str(flow_file),
             "auth_mode": args.auth_mode,
-            "upload": upload_result,
+            "deleted_flow_ids": deleted,
             "custom_component_flow": {
                 "id": custom_flow.get("id"),
                 "name": custom_flow.get("name"),
@@ -357,6 +537,23 @@ def main() -> None:
         }
         if not args.skip_smoke:
             result["smoke"] = smoke_run(client, langflow_url, headers, smoke_target)
+            if stage_flow:
+                result["stage_smoke"] = smoke_run(
+                    client,
+                    langflow_url,
+                    headers,
+                    stage_flow.get("id") or stage_flow.get("endpoint_name") or "boi-equipment-stage-analysis",
+                )
+        if args.summary:
+            result = {
+                "ok": result["ok"],
+                "langflow_url": result["langflow_url"],
+                "deleted_flow_ids": result["deleted_flow_ids"],
+                "custom_component_flow": result["custom_component_flow"],
+                "equipment_stage_flow": result["equipment_stage_flow"],
+                "smoke": summarize_run(result.get("smoke")),
+                "stage_smoke": summarize_run(result.get("stage_smoke")),
+            }
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

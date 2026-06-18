@@ -29,3 +29,17 @@ def test_ppt_capture_plan_document_lists_real_poc_screens():
     assert "Langflow" in text
     assert "Kafka UI" in text
     assert "실제 화면 캡처" in text
+
+
+def test_boi_wiki_manual_and_agent_skill_cover_mcp_actions_langflow_and_media():
+    manual_root = Path("data/boi/public/boi-wiki-manual")
+    skill = Path("skills/boi-wiki-agent/SKILL.md").read_text(encoding="utf-8")
+
+    assert (manual_root / "overview.md").exists()
+    assert (manual_root / "mcp" / "register-and-use-boi-wiki-mcp.md").exists()
+    assert (manual_root / "actions" / "multi-action-connector-guide.md").exists()
+    assert (manual_root / "langflow" / "connected-flow-guide.md").exists()
+    assert (manual_root / "media" / "okf-media-and-screenshots.md").exists()
+    assert "http://localhost:8200/mcp" in skill
+    assert "Langflow is one connector kind" in skill
+    assert "_media/" in skill

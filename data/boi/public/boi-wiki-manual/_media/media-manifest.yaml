@@ -1,0 +1,33 @@
+media:
+  - path: public/boi-wiki-manual/_media/screenshots/workflow-status-equipment-anomaly-20260618.png
+    sha256: 2058013dda5521a47c00d797f82e63b875a1e4ed3d85053eb14e5267487885d0
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-74d62c851df5488d99a57ad268c6a581
+    captured_at: 2026-06-18T22:25:00+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:langflow:connected-flow-guide
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/screenshots/langflow-equipment-stage-flow-20260618.png
+    sha256: f1bcc764ed6dafa068c24467ac1c1a2e6c3e59e1c000dad07fca8504f375ed96
+    source_kind: browser-screenshot
+    captured_url: http://localhost:7860/flow/fdf4f7d5-f916-453e-b7e7-46df6c64054b
+    captured_at: 2026-06-18T22:25:00+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:langflow:connected-flow-guide
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/screenshots/boi-wiki-mcp-server-spec-20260618.png
+    sha256: 7cac98bd9bd4038955f88b064c67b2fa00d62a67066baa96055b03601f264c0d
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/docs/boi:public:actions:mcp:boi-wiki-server?employee_id=100001
+    captured_at: 2026-06-18T22:25:00+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/screenshots/boi-wiki-langflow-guide-20260618.png
+    sha256: 753e17b5b0cad8a617747d2da7c493b356ce39d084e63faebfb5d732c458b0ac
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/docs/boi:public:boi-wiki-manual:langflow:connected-flow-guide?employee_id=100001
+    captured_at: 2026-06-18T22:25:00+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:media:okf-media-and-screenshots
+    created_by: codex

@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from lfx.custom import Component
-from lfx.io import DataInput, MultilineInput, Output
+from lfx.io import DataInput, MessageInput, MultilineInput, Output
 from lfx.schema import Data
 
 
@@ -16,6 +16,7 @@ class BoIContextNormalizer(Component):
 
     inputs = [
         DataInput(name="event", display_name="Event Payload", required=False),
+        MessageInput(name="message", display_name="Run Input Message", required=False),
         MultilineInput(name="manual_input", display_name="Manual Input", required=False),
     ]
     outputs = [Output(name="work_context", display_name="WorkContext", method="build_context")]
@@ -24,7 +25,8 @@ class BoIContextNormalizer(Component):
         raw: dict[str, Any] = {}
         if self.event:
             raw = self.event.data if hasattr(self.event, "data") else dict(self.event)
-        manual = self.manual_input or ""
+        message_text = getattr(self.message, "text", "") if self.message else ""
+        manual = self.manual_input or message_text or ""
         event_type = raw.get("event_type") or "manual.input.v1"
         work_type = "reference"
         if event_type.startswith("meeting.closed"):

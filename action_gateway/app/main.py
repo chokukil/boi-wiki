@@ -24,7 +24,14 @@ LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
 LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "auto-login")
 MCP_BRIDGE_URL = os.getenv("MCP_BRIDGE_URL", "")
 DRY_RUN_DEFAULT = os.getenv("ACTION_DRY_RUN_DEFAULT", "true").lower() == "true"
-ALLOWED_HOSTS = {h.strip() for h in os.getenv("ACTION_ALLOWED_HOSTS", "boi-api,langflow,action-gateway,localhost,127.0.0.1").split(",") if h.strip()}
+ALLOWED_HOSTS = {
+    h.strip()
+    for h in os.getenv(
+        "ACTION_ALLOWED_HOSTS",
+        "boi-api,langflow,action-gateway,localhost,127.0.0.1,boi-wiki-mcp",
+    ).split(",")
+    if h.strip()
+}
 
 FIRST_CLASS_ACTION_TYPES = {"boi_materialize", "boi_materializer", "event_publish", "boi_event"}
 HTTP_ACTION_TYPES = {"http", "api", "api_call", "webhook", "http_webhook", "internal_webhook", "langflow_webhook"}

@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from urllib.parse import quote, unquote
 
 from fastapi.testclient import TestClient
 import yaml
+
+
+def tiny_png_bytes() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4"
+        b"\x89\x00\x00\x00\nIDATx\x9cc\xf8\x0f\x00\x01\x01"
+        b"\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
 
 
 def append_action_log_row(boi_app_module, row: dict, filename: str = "actions-20990101.jsonl") -> str:
@@ -46,12 +56,12 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
 def test_boi_api_lists_accessible_docs_with_yaml_timestamps(boi_app_module):
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/api/boi?employee_id=100001")
+    response = client.get("/api/boi?employee_id=100001&q=SOP")
 
     assert response.status_code == 200
     body = response.json()
     assert body["count"] >= 1
-    assert any("AIX 확산 TF" in item["metadata"].get("title", "") for item in body["items"])
+    assert any("SOP" in item["metadata"].get("title", "") for item in body["items"])
 
 
 def test_equipment_anomaly_demo_route_publishes_first_event(boi_app_module):
@@ -594,6 +604,59 @@ def test_doc_page_does_not_rescan_docs_for_each_markdown_link(boi_app_module, mo
     assert response.status_code == 200
     assert "boi:public:actions:api:request-trend-history" in response.text
     assert len(calls) <= 1
+
+
+def test_doc_page_renders_okf_media_images_from_media_directory(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    image_path = boi_app_module.DATA_ROOT / "public" / "boi-wiki-manual" / "_media" / "browser" / "media-render-test.png"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_bytes = tiny_png_bytes()
+    image_path.write_bytes(image_bytes)
+    digest = hashlib.sha256(image_bytes).hexdigest()
+    (boi_app_module.DATA_ROOT / "public" / "boi-wiki-manual" / "_media" / "media-manifest.yaml").write_text(
+        "media:\n"
+        "  - path: /public/boi-wiki-manual/_media/browser/media-render-test.png\n"
+        f"    sha256: {digest}\n"
+        "    source_kind: test\n",
+        encoding="utf-8",
+    )
+    metadata = {
+        "okf_version": "0.1",
+        "boi_profile_version": "0.1",
+        "type": "boi/reference",
+        "title": "Media Render Test",
+        "description": "OKF media render test",
+        "tags": ["Media"],
+        "timestamp": boi_app_module.now_iso(),
+        "boi_id": "boi:public:boi-wiki-manual:media-render-test",
+        "visibility": "public",
+        "classification": "internal",
+        "owner": "AIX 확산 TF",
+        "author": {"type": "agent", "agent_id": "test"},
+        "acl_policy": "acl:public",
+        "status": "reviewed",
+        "source_refs": [{"type": "test", "ref": "media-render"}],
+        "review": {"reviewer": "test", "review_status": "reviewed"},
+    }
+    doc_path = boi_app_module.DATA_ROOT / "public" / "boi-wiki-manual" / "media-render-test.md"
+    doc_path.write_text(
+        "---\n"
+        + yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False)
+        + "---\n\n# Summary\n\n![Workflow Status 화면](/public/boi-wiki-manual/_media/browser/media-render-test.png)\n",
+        encoding="utf-8",
+    )
+    boi_app_module.invalidate_doc_caches()
+
+    response = client.get("/docs/boi:public:boi-wiki-manual:media-render-test?employee_id=100001")
+    media_response = client.get("/okf-media/public/boi-wiki-manual/_media/browser/media-render-test.png")
+    blocked_response = client.get("/okf-media/public/boi-wiki-manual/media-render-test.md")
+
+    assert response.status_code == 200
+    assert '<figure class="okf-image">' in response.text
+    assert 'alt="Workflow Status 화면"' in response.text
+    assert "/okf-media/public/boi-wiki-manual/_media/browser/media-render-test.png" in response.text
+    assert media_response.status_code == 200
+    assert blocked_response.status_code == 404
 
 
 def test_doc_graph_api_reuses_okf_graph_between_employee_requests(boi_app_module, monkeypatch):

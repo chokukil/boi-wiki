@@ -21,7 +21,7 @@ class BoIMetadataBuilder(Component):
     inputs = [
         DataInput(name="work_context", display_name="WorkContext", required=False),
         StrInput(name="title", display_name="Title", required=False),
-        StrInput(name="description", display_name="Description", value="BoI generated from Langflow", required=False),
+        StrInput(name="boi_description", display_name="Description", value="BoI generated from Langflow", required=False),
         DropdownInput(name="boi_type", display_name="BoI Type", options=["boi/meeting", "boi/action", "boi/report", "boi/reference", "boi/sop-instance", "boi/analysis", "boi/runbook"], value="boi/reference"),
         DropdownInput(name="visibility", display_name="Visibility", options=["private", "team", "public"], value="private"),
         StrInput(name="owner", display_name="Owner Employee ID", value="100001"),
@@ -54,7 +54,7 @@ class BoIMetadataBuilder(Component):
             "boi_profile_version": "0.1",
             "type": boi_type,
             "title": title,
-            "description": self.description,
+            "description": self.boi_description,
             "tags": tags,
             "timestamp": datetime.now(KST).replace(microsecond=0).isoformat(),
             "boi_id": boi_id,

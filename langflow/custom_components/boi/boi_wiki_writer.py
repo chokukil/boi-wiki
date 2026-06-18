@@ -6,7 +6,7 @@ import urllib.request
 from typing import Any
 
 from lfx.custom import Component
-from lfx.io import DataInput, MultilineInput, Output, StrInput
+from lfx.io import DataInput, MessageInput, MultilineInput, Output, StrInput
 from lfx.schema import Data
 
 
@@ -18,6 +18,7 @@ class BoIWikiWriter(Component):
 
     inputs = [
         DataInput(name="metadata", display_name="Metadata"),
+        MessageInput(name="body_message", display_name="Body Message", required=False),
         MultilineInput(name="body", display_name="Body"),
         StrInput(name="boi_api_url", display_name="BoI API URL", value="http://boi-api:8000"),
         StrInput(name="employee_id", display_name="Employee ID", value="100001"),
@@ -26,7 +27,8 @@ class BoIWikiWriter(Component):
 
     def write(self) -> Data:
         meta: dict[str, Any] = self.metadata.data if hasattr(self.metadata, "data") else dict(self.metadata)
-        payload = json.dumps({"metadata": meta, "body": self.body}, ensure_ascii=False).encode("utf-8")
+        body = self.body or (getattr(self.body_message, "text", "") if self.body_message else "")
+        payload = json.dumps({"metadata": meta, "body": body}, ensure_ascii=False).encode("utf-8")
         url = f"{self.boi_api_url.rstrip('/')}/api/boi?employee_id={self.employee_id}"
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
         try:

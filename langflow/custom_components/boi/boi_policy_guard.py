@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from lfx.custom import Component
-from lfx.io import DataInput, MultilineInput, Output
+from lfx.io import DataInput, MessageInput, MultilineInput, Output
 from lfx.schema import Data
 
 REQUIRED = ["okf_version", "boi_profile_version", "type", "title", "description", "timestamp", "boi_id", "visibility", "classification", "owner", "acl_policy", "status"]
@@ -18,12 +18,14 @@ class BoIPolicyGuard(Component):
 
     inputs = [
         DataInput(name="metadata", display_name="Metadata"),
+        MessageInput(name="body_message", display_name="BoI Body Message", required=False),
         MultilineInput(name="body", display_name="BoI Body", required=False),
     ]
     outputs = [Output(name="validation", display_name="Validation Result", method="validate")]
 
     def validate(self) -> Data:
         meta: dict[str, Any] = self.metadata.data if hasattr(self.metadata, "data") else dict(self.metadata)
+        body = self.body or (getattr(self.body_message, "text", "") if self.body_message else "")
         errors = []
         warnings = []
         for f in REQUIRED:
@@ -40,6 +42,6 @@ class BoIPolicyGuard(Component):
                 errors.append("team/public BoI requires reviewer")
             if meta.get("status") == "approved" and not (meta.get("review") or {}).get("reviewed_at"):
                 errors.append("approved BoI requires review.reviewed_at")
-        if "secret" in (self.body or "").lower():
+        if "secret" in body.lower():
             warnings.append("potential sensitive keyword detected")
-        return Data(data={"ok": len(errors) == 0, "errors": errors, "warnings": warnings, "metadata": meta, "body": self.body or ""})
+        return Data(data={"ok": len(errors) == 0, "errors": errors, "warnings": warnings, "metadata": meta, "body": body})

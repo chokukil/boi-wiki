@@ -3,7 +3,7 @@ okf_version: '0.1'
 boi_profile_version: '0.1'
 type: boi/action-spec
 title: MCP Bridge 호출 예시
-description: MCP 서버와 tool 호출을 Action Gateway allowlist로 관리하는 connector 예시
+description: BoI Wiki MCP 서버와 tool 호출을 Action Gateway allowlist로 관리하는 connector 명세
 tags:
 - MCP
 - Bridge
@@ -45,7 +45,7 @@ review:
   review_status: reviewed
 protocol: mcp-over-http
 method: POST
-url: http://mcp-bridge:8200/api/mcp/call
+url: http://boi-wiki-mcp:8200/api/mcp/call
 auth:
   type: header
   header: x-service-token
@@ -104,8 +104,8 @@ example_response:
   count: 1
   results:
   - title: Platform Team Kafka Event Broker SOP
-curl: 'curl -X POST ''http://mcp-bridge:8200/api/mcp/call'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"payload":{"equipment_id":"ETCH-VM-01"},"dry_run":false}'''
+curl: 'curl -X POST ''http://boi-wiki-mcp:8200/api/mcp/call'' -H ''x-service-token:
+  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"server":{"name":"boi-wiki-mcp"},"tool":"search_boi","arguments":{"query":"Kafka","employee_id":"100001"},"request_id":"act-mcp-bridge"}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: connector.mcp.sample
@@ -113,7 +113,7 @@ action_gateway_mapping:
   doc_ref: boi:public:actions:mcp:bridge-sample
 health_check:
   type: http
-  command: curl -fsS 'http://mcp-bridge:8200/api/mcp/call' || true
+  command: curl -fsS 'http://boi-wiki-mcp:8200/health'
 security_notes:
 - Use environment variables for tokens.
 - Do not store real service tokens or API keys in public BoI docs.
@@ -169,4 +169,4 @@ example_tool_call:
 
 # Usage
 
-PoC 기본값은 비활성화이며 MCP Bridge가 준비되면 활성화한다.
+BoI Wiki MCP 서버가 실행 중이면 Action Gateway에서 이 connector를 호출할 수 있다.

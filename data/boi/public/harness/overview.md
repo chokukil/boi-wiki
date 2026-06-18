@@ -33,10 +33,14 @@ BoI Agent Harness는 Codex, Claude, Langflow, Custom Agent가 BoI Wiki, Event Br
 - [SOP Authoring Harness](/public/harness/sop-authoring-harness.md)
 - [Action Authoring Harness](/public/harness/action-authoring-harness.md)
 - [Agent Harness SOP](/public/public-sop-agent-harness.md)
+- [BoI Wiki Manual Overview](/public/boi-wiki-manual/overview.md)
+- [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)
 
 # Operating Rule
 
 Web에서 생성된 수정은 draft이다. curated source 반영과 Git commit은 agent가 lint, validation, smoke test를 통과한 뒤 수행한다.
+
+Codex skill은 얇은 bootstrap으로 유지하고, 상세 절차는 BoI Wiki MCP resource와 public harness 문서를 우선 읽는다.
 
 # Citations
 

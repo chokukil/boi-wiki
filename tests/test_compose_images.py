@@ -18,3 +18,13 @@ def test_langflow_uses_writable_config_directory():
 
     assert "LANGFLOW_CONFIG_DIR: /tmp/langflow" in compose
     assert "langflow-data:/app/langflow" not in compose
+
+
+def test_compose_defines_boi_wiki_mcp_service_and_allowed_host():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "boi-wiki-mcp:" in compose
+    assert "context: ./boi_wiki_mcp" in compose
+    assert "BOI_WIKI_MCP_PORT" in compose
+    assert "boi-wiki-mcp" in env_example

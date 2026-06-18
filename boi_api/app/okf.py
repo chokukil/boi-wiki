@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -27,6 +28,8 @@ VALID_VISIBILITIES = {"private", "team", "public"}
 VALID_STATUSES = {"draft", "reviewed", "approved", "deprecated"}
 RESERVED_FILENAMES = {"index.md", "log.md"}
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+ALLOWED_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 
 
 @dataclass
@@ -36,6 +39,7 @@ class OkfLintResult:
     checked_markdown_count: int = 0
     checked_log_item_count: int = 0
     markdown_link_count: int = 0
+    media_link_count: int = 0
     link_edges: list[dict[str, Any]] = field(default_factory=list)
 
     @property
@@ -94,8 +98,18 @@ def is_external_href(href: str) -> bool:
     return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href)) or href.startswith("#")
 
 
+def markdown_without_fenced_code(body: str) -> str:
+    return re.sub(r"```.*?```", "", body, flags=re.DOTALL)
+
+
 def extract_markdown_links(body: str) -> list[dict[str, str]]:
+    body = markdown_without_fenced_code(body)
     return [{"label": m.group(1), "href": m.group(2)} for m in MARKDOWN_LINK_RE.finditer(body)]
+
+
+def extract_markdown_images(body: str) -> list[dict[str, str]]:
+    body = markdown_without_fenced_code(body)
+    return [{"alt": m.group(1), "href": m.group(2)} for m in MARKDOWN_IMAGE_RE.finditer(body)]
 
 
 def resolve_okf_link(href: str, *, source_path: Path, boi_root: Path) -> tuple[str, bool]:
@@ -140,6 +154,104 @@ def markdown_link_edges(path: Path, body: str, boi_root: Path, source_concept_id
             }
         )
     return edges
+
+
+def resolve_okf_media_path(href: str, *, source_path: Path, boi_root: Path) -> tuple[Path | None, str | None]:
+    href_without_fragment = href.split("#", 1)[0]
+    if is_external_href(href_without_fragment) or not href_without_fragment:
+        return None, None
+    if Path(href_without_fragment).suffix.lower() not in ALLOWED_MEDIA_EXTENSIONS:
+        return None, f"image link has unsupported extension: {href}"
+    if href_without_fragment.startswith("/"):
+        target_path = boi_root / href_without_fragment.lstrip("/")
+    else:
+        target_path = source_path.parent / href_without_fragment
+    target_path = target_path.resolve()
+    root = boi_root.resolve()
+    try:
+        target_path.relative_to(root)
+    except ValueError:
+        return None, f"image link escapes OKF bundle: {href}"
+    if "_media" not in target_path.parts:
+        return None, f"image link must target a _media directory: {href}"
+    return target_path, None
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_media_manifest(boi_root: Path) -> dict[str, dict[str, Any]]:
+    manifest_by_path: dict[str, dict[str, Any]] = {}
+    for manifest_path in sorted(boi_root.rglob("media-manifest.yaml")):
+        if "_media" not in manifest_path.parts:
+            continue
+        try:
+            data = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        items = data.get("media") if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict) or not item.get("path"):
+                continue
+            manifest_by_path[str(item["path"]).lstrip("/")] = item
+    return manifest_by_path
+
+
+def lint_media_links(path: Path, body: str, boi_root: Path, strict_media: bool = False) -> list[str]:
+    errors: list[str] = []
+    root = boi_root.resolve()
+    manifest = load_media_manifest(root) if strict_media else {}
+    for image in extract_markdown_images(body):
+        href = image["href"]
+        target_path, error = resolve_okf_media_path(href, source_path=path, boi_root=boi_root)
+        if error:
+            errors.append(error)
+            continue
+        if target_path is None:
+            continue
+        if not target_path.exists():
+            errors.append(f"image link target does not exist: {href}")
+            continue
+        if not strict_media:
+            continue
+        rel_path = str(target_path.relative_to(root)).replace("\\", "/")
+        manifest_item = manifest.get(rel_path)
+        if not manifest_item:
+            errors.append(f"image asset missing from media manifest: /{rel_path}")
+            continue
+        expected_sha = str(manifest_item.get("sha256") or "")
+        actual_sha = file_sha256(target_path)
+        if expected_sha and expected_sha != actual_sha:
+            errors.append(f"image asset sha256 mismatch: /{rel_path}")
+    return errors
+
+
+def lint_media_assets(boi_root: Path, strict_media: bool = False) -> list[str]:
+    errors: list[str] = []
+    seen_hashes: dict[str, str] = {}
+    root = boi_root.resolve()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or "_media" not in path.parts:
+            continue
+        if path.name == "media-manifest.yaml":
+            continue
+        if path.suffix.lower() not in ALLOWED_MEDIA_EXTENSIONS:
+            errors.append(f"unsupported media asset extension: {path}")
+            continue
+        digest = file_sha256(path)
+        rel_path = str(path.relative_to(root)).replace("\\", "/")
+        existing = seen_hashes.get(digest)
+        if existing and existing != rel_path and strict_media:
+            errors.append(f"duplicate media asset content: /{existing} and /{rel_path}")
+        seen_hashes.setdefault(digest, rel_path)
+    return errors
 
 
 def materialized_item_from_action_result(result: dict[str, Any]) -> dict[str, Any] | None:
@@ -192,7 +304,12 @@ def lint_reserved_markdown_file(path: Path) -> list[str]:
     return []
 
 
-def lint_markdown_file(path: Path, boi_root: Path | None = None, strict_links: bool = False) -> tuple[list[str], list[dict[str, Any]]]:
+def lint_markdown_file(
+    path: Path,
+    boi_root: Path | None = None,
+    strict_links: bool = False,
+    strict_media: bool = False,
+) -> tuple[list[str], list[dict[str, Any]]]:
     if path.name in RESERVED_FILENAMES:
         return lint_reserved_markdown_file(path), []
     boi_root = boi_root or path.parents[0]
@@ -203,19 +320,31 @@ def lint_markdown_file(path: Path, boi_root: Path | None = None, strict_links: b
     edges = markdown_link_edges(path, body, boi_root)
     if strict_links:
         errors.extend(f"unresolved OKF markdown link: {edge['href']}" for edge in edges if not edge["resolved"])
+    errors.extend(lint_media_links(path, body, boi_root, strict_media=strict_media))
     return errors, edges
 
 
-def lint_data_root(root: Path, include_logs: bool = False, strict_links: bool = False) -> OkfLintResult:
+def lint_data_root(
+    root: Path,
+    include_logs: bool = False,
+    strict_links: bool = False,
+    strict_media: bool = False,
+) -> OkfLintResult:
     root = Path(root)
     result = OkfLintResult()
     boi_root = root / "boi"
     for path in sorted(boi_root.rglob("*.md")):
         result.checked_markdown_count += 1
-        errors, edges = lint_markdown_file(path, boi_root=boi_root, strict_links=strict_links)
+        errors, edges = lint_markdown_file(path, boi_root=boi_root, strict_links=strict_links, strict_media=strict_media)
         result.extend(str(path), errors)
         result.link_edges.extend(edges)
         result.markdown_link_count += len(edges)
+        try:
+            _metadata, body = split_frontmatter(path.read_text(encoding="utf-8"))
+            result.media_link_count += len(extract_markdown_images(body))
+        except Exception:
+            pass
+    result.errors.extend(lint_media_assets(boi_root, strict_media=strict_media))
     if include_logs:
         for log_root_name in ("events", "actions"):
             for path in sorted((root / log_root_name).glob("*.jsonl")):

@@ -156,7 +156,7 @@ def test_equipment_api_and_mcp_actions_are_wired_to_real_poc_endpoints():
     mcp_action = actions["mcp.boi_search.sample"]
     assert mcp_action["enabled"] is True
     assert mcp_action["type"] == "mcp_tool"
-    assert mcp_action["url"] == "http://boi-api:8000/api/poc/mcp/call"
+    assert mcp_action["url"] == "http://boi-wiki-mcp:8200/api/mcp/call"
     assert mcp_action["tool_name"] == "boi.search"
 
 

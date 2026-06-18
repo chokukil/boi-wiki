@@ -31,7 +31,7 @@ actions:
 
   - action_key: mcp.boi_search.sample
     name_ko: MCP 기반 BoI 검색 Tool 호출 예시
-    description: 향후 MCP Bridge를 붙일 때 사용할 Connector 예시. PoC에서는 bridge 미설정 시 planned 상태로만 기록한다.
+    description: BoI Wiki MCP 서버의 BoI 검색 tool을 Action Gateway에서 호출하는 connector 예시.
     type: mcp_tool
     connector_kind: mcp
     execution_mode: gateway
@@ -39,7 +39,7 @@ actions:
     enabled: true
     auto_dispatch: false
     event_types: [report.requested.v1, maintenance.guide.requested.v1]
-    url: http://boi-api:8000/api/poc/mcp/call
+    url: http://boi-wiki-mcp:8200/api/mcp/call
     headers:
       x-service-token: ${service_token}
     tool_name: boi.search
@@ -362,6 +362,14 @@ actions:
       input_value: "BoI Wiki Event를 분석해 Private BoI 초안 요약을 한국어로 작성하세요. event_type=${event.event_type}, trace_id=${event.trace_id}, title=${payload.title}, equipment_id=${payload.equipment_id}, owner=${payload.owner}"
       input_type: chat
       output_type: chat
+      tweaks:
+        BoIContextNormalizer-boi:
+          manual_input: "event_type=${event.event_type}, trace_id=${event.trace_id}, title=${payload.title}, equipment_id=${payload.equipment_id}, owner=${payload.owner}"
+        BoIWikiReader-boi:
+          query: "BoI Wiki SOP harness action Langflow"
+        BoIActionInvoker-boi:
+          action_key: manual.equipment.confirm_alarm_context
+          dry_run: true
 
   - action_key: langflow.equipment.stage_analysis
     name_ko: Langflow 설비 SOP Stage 분석
@@ -404,6 +412,23 @@ actions:
         ${prior_results_json}
       input_type: chat
       output_type: chat
+      tweaks:
+        BoIContextNormalizer-boi:
+          manual_input: |
+            event_type=${event.event_type}
+            trace_id=${event.trace_id}
+            title=${payload.title}
+            equipment_id=${payload.equipment_id}
+            lot_id=${payload.lot_id}
+            wafer_id=${payload.wafer_id}
+            alarm_code=${payload.alarm_code}
+            owner=${payload.owner}
+            prior_results=${prior_results_json}
+        BoIWikiReader-boi:
+          query: "equipment abnormal response SOP root cause maintenance guide"
+        BoIActionInvoker-boi:
+          action_key: manual.equipment.review_root_cause
+          dry_run: true
 
   - action_key: connector.mcp.sample
     name_ko: MCP Bridge 호출 예시
@@ -419,7 +444,7 @@ actions:
     owner: AIX 확산 TF
     risk_level: medium
     approval_required: false
-    url: http://mcp-bridge:8200/api/mcp/call
+    url: http://boi-wiki-mcp:8200/api/mcp/call
     server:
       name: boi-wiki-mcp
     tool: search_boi

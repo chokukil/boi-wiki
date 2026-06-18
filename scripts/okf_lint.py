@@ -17,14 +17,21 @@ def main() -> int:
     parser.add_argument("--root", default="data", help="Data root containing boi/, events/, and actions/ directories.")
     parser.add_argument("--include-logs", action="store_true", help="Also validate materialized BoI payloads in JSONL logs.")
     parser.add_argument("--strict-links", action="store_true", help="Fail when an internal OKF markdown link cannot be resolved.")
+    parser.add_argument("--strict-media", action="store_true", help="Fail when local markdown images are missing manifest/hash validation.")
     args = parser.parse_args()
 
-    result = lint_data_root(Path(args.root), include_logs=args.include_logs, strict_links=args.strict_links)
+    result = lint_data_root(
+        Path(args.root),
+        include_logs=args.include_logs,
+        strict_links=args.strict_links,
+        strict_media=args.strict_media,
+    )
     print(
         "OKF lint checked "
         f"{result.checked_markdown_count} markdown docs"
         + (f" and {result.checked_log_item_count} log materialized items" if args.include_logs else "")
-        + f"; found {result.markdown_link_count} markdown graph links."
+        + f"; found {result.markdown_link_count} markdown graph links"
+        + f" and {result.media_link_count} markdown image links."
     )
     if result.ok:
         print("OKF lint passed")

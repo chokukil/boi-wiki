@@ -162,13 +162,31 @@ services:
       MCP_BRIDGE_URL: ${MCP_BRIDGE_URL:-}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       ACTION_DRY_RUN_DEFAULT: ${ACTION_DRY_RUN_DEFAULT:-true}
-      ACTION_ALLOWED_HOSTS: ${ACTION_ALLOWED_HOSTS:-boi-api,langflow,action-gateway,localhost,127.0.0.1,mcp-bridge}
+      ACTION_ALLOWED_HOSTS: ${ACTION_ALLOWED_HOSTS:-boi-api,langflow,action-gateway,localhost,127.0.0.1,mcp-bridge,boi-wiki-mcp}
       BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}
       BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
       BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
     volumes:
       - ./data/action_catalog:/data/action_catalog:ro
       - ./data/actions:/data/actions
+    networks: [boi-net]
+
+  boi-wiki-mcp:
+    build:
+      context: ./boi_wiki_mcp
+    container_name: boi-wiki-mcp
+    depends_on:
+      boi-api:
+        condition: service_started
+      action-gateway:
+        condition: service_started
+    ports:
+      - "${BOI_WIKI_MCP_PORT:-8200}:8200"
+    environment:
+      BOI_API_URL: http://boi-api:8000
+      ACTION_GATEWAY_URL: http://action-gateway:8100
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      DEFAULT_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
     networks: [boi-net]
 
   event-router:

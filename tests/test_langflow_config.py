@@ -62,7 +62,32 @@ def test_langflow_setup_script_documents_upload_and_smoke_endpoints():
     script = Path("scripts/setup_langflow_reference_flows.py").read_text(encoding="utf-8")
 
     assert "/api/v1/flows/upload/" in script
+    assert "/api/v1/flows/{flow_id}" in script
     assert "/api/v1/run/" in script
     assert "/api/v1/auto_login" in script
     assert "resolve_smoke_target" in script
     assert "boi-reference-flow" in script
+    assert "BoIPromptComposer-boi" in script
+    assert "BoIResultComposer-boi" in script
+
+
+def test_langflow_audit_script_checks_runtime_connected_boi_components():
+    script = Path("scripts/audit_langflow_flows.py").read_text(encoding="utf-8")
+
+    assert "BoI Equipment Stage Analysis Flow" in script
+    assert "require_boi_components" in script
+    assert "BoI custom components are disconnected" in script
+    assert "BoI Prompt Composer is not connected to the Gemma LLM input path" in script
+    assert "BoI Result Composer is not connected to ChatOutput" in script
+    assert "/api/v1/flows/" in script
+
+
+def test_langflow_custom_components_include_prompt_and_result_composers():
+    prompt = Path("langflow/custom_components/boi/boi_prompt_composer.py").read_text(encoding="utf-8")
+    result = Path("langflow/custom_components/boi/boi_result_composer.py").read_text(encoding="utf-8")
+    init = Path("langflow/custom_components/boi/__init__.py").read_text(encoding="utf-8")
+
+    assert "class BoIPromptComposer" in prompt
+    assert "class BoIResultComposer" in result
+    assert "BoIPromptComposer" in init
+    assert "BoIResultComposer" in init
