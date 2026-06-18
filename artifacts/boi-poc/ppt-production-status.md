@@ -1,6 +1,6 @@
 # BoI Wiki PoC PPT Production Status
 
-Updated: 2026-06-17 01:29 KST
+Updated: 2026-06-19 02:05 KST
 
 ## Created Artifacts
 
@@ -36,11 +36,68 @@ Windows copy:
 - Latest capture URLs are resolved in `capture-targets.md`, including the generated corrective action Private BoI and Langflow flow ID.
 - A screenshot insertion script is ready to create the final screenshot-enriched PPTX after PNG capture files exist.
 
+## Latest SSO / Langflow E2E Evidence
+
+Latest evidence package:
+
+- `outputs/manual-20260619/e2e-evidence/evidence-ledger.md`
+- `outputs/manual-20260619/e2e-evidence/summary.json`
+- `outputs/manual-20260619/e2e-evidence/workflow-status.json`
+- `outputs/manual-20260619/e2e-evidence/run_equipment_sop_poc.log`
+
+Latest verified trace:
+
+- Trace ID: `trace-609660cf137c4946aaa833c891f704b7`
+- Workflow key: `equipment-anomaly`
+- Events: `24`
+- Actions: `21`
+- Generated BoIs: `4`
+- Manual handoffs: `5`
+- Failed actions: `0`
+- Langflow actions: `4 / 4` with status `langflow_invoked`
+- Langflow Reference Flow ID: `7f1ce7c7-7b6f-49cf-bbf6-c990fed400f4`
+- Langflow Equipment Stage Analysis Flow ID: `422fa3e4-d09b-4d51-b323-e652a13f2792`
+
+SSO smoke command:
+
+```bash
+SERVICE_TOKEN=dev-service-token-change-me POC_SMOKE_TIMEOUT_SECONDS=180 python scripts/run_equipment_sop_poc.py
+```
+
+Latest PPT source package:
+
+- `outputs/manual-20260619/presentations/boi-e2e-evidence/profile-plan.txt`
+- `outputs/manual-20260619/presentations/boi-e2e-evidence/source-notes.txt`
+- `outputs/manual-20260619/presentations/boi-e2e-evidence/claim-spine.txt`
+- `outputs/manual-20260619/presentations/boi-e2e-evidence/design-system.txt`
+- `outputs/manual-20260619/presentations/boi-e2e-evidence/contact-sheet-plan.txt`
+- `outputs/manual-20260619/presentations/boi-e2e-evidence/slides/`
+
+The latest deck source uses artifact-tool slide modules and is ready for export once the Codex primary runtime exposes `@oai/artifact-tool`.
+
 ## Still Pending
 
 - Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy.
 - The add-in stayed in `Loading` after the polish request; completion or deck mutation has not been verified.
 - Final PPT completion requires actual screenshots to replace the slide 11 placeholders and a final PowerPoint save/export check.
+- Latest artifact-tool PPTX export is blocked because `/home/chokukil/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/@oai/artifact-tool` is missing `package.json` in this Codex thread.
+
+## Finalization Command After Artifact Runtime Is Restored
+
+```bash
+SKILL_DIR=/mnt/c/Users/choku/.codex/plugins/cache/openai-primary-runtime/presentations/26.520.11634/skills/presentations
+WORKSPACE=/home/chokukil/boi-wiki/outputs/manual-20260619/presentations/boi-e2e-evidence
+FINAL_PPTX=$WORKSPACE/output/boi-wiki-e2e-evidence-brief.pptx
+
+node "$SKILL_DIR/scripts/build_artifact_deck.mjs" \
+  --workspace "$WORKSPACE" \
+  --slides-dir "$WORKSPACE/slides" \
+  --out "$FINAL_PPTX" \
+  --preview-dir "$WORKSPACE/preview" \
+  --layout-dir "$WORKSPACE/layout/final" \
+  --contact-sheet "$WORKSPACE/preview/contact-sheet.png" \
+  --slide-count 8
+```
 
 ## Finalization Command After Screenshots Exist
 
