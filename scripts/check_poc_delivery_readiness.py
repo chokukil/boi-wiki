@@ -14,6 +14,15 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EVIDENCE_SUMMARY = ROOT / "outputs" / "manual-20260619" / "e2e-evidence" / "summary.json"
 DEFAULT_CAPTURE_TARGETS = ROOT / "artifacts" / "boi-poc" / "capture-targets.json"
 DEFAULT_CAPTURE_MANIFEST = ROOT / "artifacts" / "boi-poc" / "capture-manifest.json"
+DEFAULT_ARTIFACT_PPTX = (
+    ROOT
+    / "outputs"
+    / "manual-20260619"
+    / "presentations"
+    / "boi-e2e-evidence"
+    / "output"
+    / "boi-wiki-e2e-evidence-brief.pptx"
+)
 DEFAULT_OUTPUT = ROOT / "outputs" / "manual-20260619" / "e2e-evidence" / "delivery-readiness.json"
 DEFAULT_SERVICE_TOKEN = "dev-service-token-change-me"
 DEFAULT_LANGFLOW_API_KEY = "dev-langflow-key-change-me"
@@ -200,22 +209,14 @@ def evaluate_ppt_runtime() -> dict[str, Any]:
     }
 
 
-def final_deck_path_from_manifest(manifest_path: Path) -> Path:
-    manifest = load_json(manifest_path)
-    deck_output = manifest.get("deck_output")
-    if not deck_output:
-        return ROOT / "artifacts" / "boi-poc" / "boi-wiki-poc-executive-brief-with-screenshots.pptx"
-    return project_path(str(deck_output))
-
-
-def evaluate_final_deck(manifest: Path) -> dict[str, Any]:
-    path = final_deck_path_from_manifest(manifest)
+def evaluate_final_deck(path: Path = DEFAULT_ARTIFACT_PPTX) -> dict[str, Any]:
+    path = project_path(path)
     ok = path.exists() and path.stat().st_size > 0
     return {
         "ok": ok,
         "path": str(path),
         "size_bytes": path.stat().st_size if path.exists() else 0,
-        "blockers": [] if ok else [f"final screenshot deck is not present: {path}"],
+        "blockers": [] if ok else [f"artifact-tool final deck is not present: {path}"],
     }
 
 
@@ -230,7 +231,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "screenshots": evaluate_screenshots(args.manifest),
         "ppt_runtime": evaluate_ppt_runtime(),
-        "final_deck": evaluate_final_deck(args.manifest),
+        "final_deck": evaluate_final_deck(args.artifact_pptx),
     }
     blockers = [
         blocker
@@ -249,6 +250,7 @@ def main() -> int:
     parser.add_argument("--summary", type=Path, default=DEFAULT_EVIDENCE_SUMMARY)
     parser.add_argument("--targets", type=Path, default=DEFAULT_CAPTURE_TARGETS)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_CAPTURE_MANIFEST)
+    parser.add_argument("--artifact-pptx", type=Path, default=DEFAULT_ARTIFACT_PPTX)
     parser.add_argument("--service-token", default=os.getenv("SERVICE_TOKEN", DEFAULT_SERVICE_TOKEN))
     parser.add_argument("--langflow-api-key", default=os.getenv("LANGFLOW_API_KEY", DEFAULT_LANGFLOW_API_KEY))
     parser.add_argument("--timeout", type=float, default=20.0)

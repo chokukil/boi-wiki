@@ -89,9 +89,17 @@ Current expected status is `ok=false`: E2E evidence and URL preflight pass, but 
 
 Screenshot readiness is stricter than file existence. `insert_poc_screenshots.py --check` validates that each required file is a PNG and at least `800x600`, so placeholder, corrupt, or tiny images cannot accidentally satisfy the final deck gate.
 
+The delivery readiness gate treats the artifact-tool export as the canonical final PPTX:
+
+```text
+outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx
+```
+
+The older screenshot insertion helper remains useful for the legacy executive deck, but final delivery should be evaluated against the artifact-tool output.
+
 ## Still Pending
 
-- Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy.
+- Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy. This was rechecked through the Chrome extension flow on 2026-06-19 and still fails before navigation.
 - The add-in stayed in `Loading` after the polish request; completion or deck mutation has not been verified.
 - Final PPT completion requires actual screenshots to replace the slide 11 placeholders and a final PowerPoint save/export check.
 - Latest artifact-tool PPTX export is blocked because `/home/chokukil/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/@oai/artifact-tool` is missing `package.json` in this Codex thread.

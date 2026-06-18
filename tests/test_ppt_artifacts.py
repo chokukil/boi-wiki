@@ -5,7 +5,7 @@ from pathlib import Path
 from pptx import Presentation
 
 from scripts.collect_poc_evidence import build_capture_targets
-from scripts.check_poc_delivery_readiness import evaluate_e2e_summary
+from scripts.check_poc_delivery_readiness import DEFAULT_ARTIFACT_PPTX, evaluate_e2e_summary, evaluate_final_deck
 from scripts.insert_poc_screenshots import load_manifest, missing_screenshots, screenshot_issues
 
 
@@ -178,3 +178,13 @@ def test_delivery_readiness_script_composes_existing_capture_and_ppt_gates():
     assert "ppt_runtime" in script
     assert "final_deck" in script
     assert "blockers" in script
+
+
+def test_delivery_readiness_final_deck_targets_artifact_tool_output():
+    report = evaluate_final_deck(DEFAULT_ARTIFACT_PPTX)
+
+    assert report["path"].endswith(
+        "outputs/manual-20260619/presentations/boi-e2e-evidence/output/boi-wiki-e2e-evidence-brief.pptx"
+    )
+    if not report["ok"]:
+        assert "artifact-tool final deck" in report["blockers"][0]
