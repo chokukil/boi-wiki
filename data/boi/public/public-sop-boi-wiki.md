@@ -33,7 +33,13 @@ BoI Wiki는 OKF 기반 SK하이닉스형 업무 맥락 저장소다.
 - Public: 누구나 읽을 수 있는 SOP, 표준, 용어, 가이드
 - Team: 사번의 Team ACL 기준으로 접근 가능한 팀 지식
 - Private: Web/Langflow에 저장된 개인 업무 맥락
-- Local Private: 개인 로컬 Agent에만 저장되며 Web BoI Wiki에는 보이지 않음
+- Local Private: 개인 로컬 Agent와 `boi-wiki-local` workspace에만 저장되며 Web BoI Wiki에는 보이지 않음
+
+# Local Private Policy
+
+Local Private은 shared Web runtime의 `DATA_ROOT` 밖에 있는 개인 OKF workspace다. 기본 metadata는 `visibility: local-private`, `local_only: true`, `promotion_status: local_only`를 사용하고, agent가 lifecycle metadata와 `index.md`/`log.md`를 관리한다.
+
+원격 공유가 필요하면 원본을 직접 publish하지 않고, 사용자 preview와 명시 승인 후 Team/Public draft-only 절차로 넘어간다.
 
 # Promotion
 

@@ -8,7 +8,7 @@
     if (!edges.length) {
       const empty = document.createElement("li");
       empty.className = "empty-state";
-      empty.textContent = title === "Outgoing Links" ? "No outgoing OKF markdown links." : "No backlinks from accessible OKF concepts.";
+      empty.textContent = title === "Outgoing OKF Links" ? "No outgoing OKF document links." : "No backlinks from accessible OKF concepts.";
       list.appendChild(empty);
     }
     for (const edge of edges) {
@@ -57,7 +57,7 @@
       concept.appendChild(code);
       const columns = document.createElement("div");
       columns.className = "relationship-columns";
-      columns.appendChild(edgeList("Outgoing Links", graph.outgoing || [], "target_url", "label"));
+      columns.appendChild(edgeList("Outgoing OKF Links", graph.outgoing || [], "target_url", "label"));
       columns.appendChild(edgeList("Backlinks", graph.incoming || [], "source_url", "source"));
       content.appendChild(concept);
       content.appendChild(columns);

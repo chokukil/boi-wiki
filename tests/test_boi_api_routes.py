@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from pathlib import Path
 import re
 from urllib.parse import quote, unquote
 
@@ -31,6 +32,18 @@ def append_action_log_row(boi_app_module, row: dict, filename: str = "actions-20
     return f"action:{filename}:{line_number}"
 
 
+def append_event_log_row(boi_app_module, row: dict, filename: str = "events-20990101.jsonl") -> str:
+    boi_app_module.ensure_dirs()
+    path = boi_app_module.EVENTS_ROOT / filename
+    line_number = len(path.read_text(encoding="utf-8").splitlines()) + 1 if path.exists() else 1
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    boi_app_module._FILE_SIGNATURE_CACHE.clear()
+    boi_app_module._EVENT_LOG_CACHE["signature"] = None
+    boi_app_module._EVENT_LOG_CACHE["rows"] = []
+    return f"event:{filename}:{line_number}"
+
+
 def test_sops_page_lists_seed_sops(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -39,6 +52,65 @@ def test_sops_page_lists_seed_sops(boi_app_module):
     assert response.status_code == 200
     assert "Agent Harness SOP v0.1" in response.text
     assert "BoI Wiki SOP v0.1" in response.text
+
+
+def test_sops_page_searches_and_keeps_generated_boi_out_of_default_category(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/sop",
+            "title": "검색 설비 SOP 테스트",
+            "description": "SOP 검색 필터 대상",
+            "tags": ["SOP", "Search"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:public:sop:search-equipment-test",
+            "visibility": "public",
+            "classification": "internal",
+            "owner": "public",
+            "author": {"type": "agent", "agent_id": "test"},
+            "acl_policy": "acl:public",
+            "status": "reviewed",
+            "review": {"reviewer": "pytest", "review_status": "reviewed"},
+            "source_refs": [{"type": "test", "ref": "sop-search"}],
+        },
+        "# Summary\n\n설비 검색 대상 SOP 본문",
+    )
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/action",
+            "title": "Generated SOP Instance Should Not Default",
+            "description": "SOP stage 기반 업무 실행 기록",
+            "tags": ["SOP", "AI-Native-Workflow"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:private:100001:sop-generated-filter-test",
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "test"},
+            "acl_policy": "acl:private:100001",
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "sop-generated"}],
+        },
+        "# Summary\n\nGenerated SOP related record",
+    )
+
+    filtered = client.get("/sops?employee_id=100001&q=설비&visibility=public&status=reviewed")
+    default_page = client.get("/sops?employee_id=100001")
+    related = client.get("/sops?employee_id=100001&category=all-related")
+
+    assert filtered.status_code == 200
+    assert "검색 설비 SOP 테스트" in filtered.text
+    assert "Generated SOP Instance Should Not Default" not in filtered.text
+    assert "필터 적용" in filtered.text
+    assert "필터 해제" in filtered.text
+    assert default_page.status_code == 200
+    assert "Generated SOP Instance Should Not Default" not in default_page.text
+    assert related.status_code == 200
+    assert "Generated SOP Instance Should Not Default" in related.text
 
 
 def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
@@ -378,7 +450,16 @@ def test_action_raw_api_and_html_show_single_action_result_with_links(boi_app_mo
             "status": "langflow_invoked",
             "doc_ref": "boi:public:actions:langflow:stage-analysis",
             "result": {
-                "message": "FULL_LANGFLOW_MESSAGE_START " + ("원본 결과 " * 80) + " FULL_LANGFLOW_MESSAGE_END",
+                "message": (
+                    "# Langflow BoI Execution Result\n\n"
+                    "## Analysis Draft\n"
+                    "**Current Finding**\n"
+                    "FULL_LANGFLOW_MESSAGE_START " + ("원본 결과 " * 20) + " FULL_LANGFLOW_MESSAGE_END\n\n"
+                    "**Evidence Used**\n"
+                    "- event_type: root_cause.analysis.requested.v1\n\n"
+                    "## BoI Write Result\n"
+                    "```json\n{\"raw_only_marker\":\"RAW_DETAIL_ONLY\"}\n```"
+                ),
                 "headers": {"x-service-token": "secret-should-redact"},
             },
         },
@@ -399,7 +480,14 @@ def test_action_raw_api_and_html_show_single_action_result_with_links(boi_app_mo
     assert html_response.status_code == 200
     assert html_response.headers["content-type"].startswith("text/html")
     assert "Action Raw Detail" in html_response.text
+    assert "Readable Result" in html_response.text
+    assert 'class="workflow-panel action-readable-result"' in html_response.text
+    readable_section = html_response.text.split("Raw Log Row / Metadata", 1)[0]
     assert "FULL_LANGFLOW_MESSAGE_END" in html_response.text
+    assert "FULL_LANGFLOW_MESSAGE_END" in readable_section
+    assert "BoI Write Result" not in readable_section
+    assert "RAW_DETAIL_ONLY" not in readable_section
+    assert '<details class="workflow-panel raw-log-details">' in html_response.text
     assert "/events?employee_id=100001&amp;event_id=evt-action-raw-link" in html_response.text
     assert "/workflows/equipment-anomaly/status?employee_id=100001&amp;trace_id=trace-action-raw-link" in html_response.text
     assert "/docs/boi:public:actions:langflow:stage-analysis?employee_id=100001" in html_response.text
@@ -446,11 +534,28 @@ def test_index_renders_okf_folder_tree_for_accessible_docs(boi_app_module):
 
     assert response.status_code == 200
     assert 'class="library-layout"' in response.text
+    assert "BoI Wiki Explorer" in response.text
     assert "All Accessible" in response.text
     assert "public" in response.text
     assert "team/aix-tf" in response.text
     assert "team/platform" in response.text
     assert "private/100001" in response.text
+
+
+def test_index_renders_resizable_folder_sidebar_controls(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001")
+    library_js = Path("boi_api/app/static/library.js").read_text(encoding="utf-8")
+    style_css = Path("boi_api/app/static/style.css").read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert 'class="folder-resize-handle"' in response.text
+    assert 'aria-label="BoI Wiki Explorer width 조절"' in response.text
+    assert 'role="separator"' in response.text
+    assert "--folder-sidebar-width" in style_css
+    assert "boiWiki.folderSidebarWidth" in library_js
+    assert "initSidebarResize" in library_js
 
 
 def test_index_folder_filter_limits_documents_by_uri_prefix(boi_app_module):
@@ -512,6 +617,126 @@ def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
     assert '<dd class="metadata-value"><span class="scalar string">team</span></dd>' in response.text
     assert '<dt class="metadata-key">acl_policy</dt>' in response.text
     assert '<dd class="metadata-value"><span class="scalar string">acl:team:platform</span></dd>' in response.text
+
+
+def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    cases = {
+        "/?employee_id=100001": "library",
+        "/events?employee_id=100001": "events",
+        "/event-types?employee_id=100001": "event_types",
+        "/actions?employee_id=100001": "actions",
+        "/sops?employee_id=100001": "sops",
+        "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001": "sops",
+    }
+
+    for url, active_nav in cases.items():
+        response = client.get(url)
+        assert response.status_code == 200
+        assert 'class="app-header"' in response.text
+        assert 'class="global-nav"' in response.text
+        assert "BoI Wiki" in response.text
+        assert "SOP" in response.text
+        assert "Event Types" in response.text
+        assert "Event Stream" in response.text
+        assert "Actions" in response.text
+        assert "Workflows" not in response.text
+        assert 'class="utility-nav"' in response.text
+        assert "Langflow" in response.text
+        assert "Kafka UI" in response.text
+        assert "MCP Status" in response.text
+        assert "DEV" in response.text
+        assert "SSO 가이드" in response.text
+        assert 'class="identity-strip"' in response.text
+        assert 'class="auth-card"' not in response.text
+        assert 'class="auth-mode-banner"' not in response.text
+        assert 'class="dev-employee-switch"' in response.text
+        assert re.search(rf'<a[^>]+data-nav-id="{active_nav}"[^>]+aria-current="page"', response.text)
+
+    home = client.get("/?employee_id=100001")
+    assert "AI Agent의 협업 표준 문서를 업무 단위의 Event와 SOP 기반의 AI Native Workflow 그리고 Action을 기준으로 탐색합니다." in home.text
+    assert "<title>BoI Wiki</title>" in home.text
+
+
+def test_app_shell_shows_sso_state_and_hides_dev_employee_switch_in_non_dev_mode(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    client = TestClient(boi_app_module.app)
+    headers = {
+        "x-hynix-employee-id": "200001",
+        "x-hynix-name": "SKH SSO User",
+        "x-hynix-teams": "platform",
+        "x-hynix-roles": "boi.viewer,boi.editor",
+    }
+
+    response = client.get("/?employee_id=200001", headers=headers)
+
+    assert response.status_code == 200
+    assert "SSO" in response.text
+    assert "SKH SSO User" in response.text
+    assert "platform" in response.text
+    assert "Logout" in response.text
+    assert 'class="identity-strip"' in response.text
+    assert 'class="auth-card"' not in response.text
+    assert 'class="auth-mode-banner"' not in response.text
+    assert ">DEV<" not in response.text
+    assert 'class="dev-employee-switch"' not in response.text
+    assert "employee_id query 허용" not in response.text
+
+
+def test_doc_page_moves_local_links_into_page_actions_bar(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001")
+
+    assert response.status_code == 200
+    header = response.text.split("</header>", 1)[0]
+    assert "폴더로 돌아가기" not in header
+    assert "Source 보기 / Draft 수정" not in header
+    assert 'class="page-actions"' in response.text
+    assert "폴더로 돌아가기" in response.text
+    assert "Source 보기 / Draft 수정" in response.text
+    assert "같은 Event Type BoI" in response.text
+
+
+def test_event_types_page_filters_by_search_sop_and_workflow_stage(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    alarm = client.get("/event-types?employee_id=100001&q=alarm")
+    has_sop = client.get("/event-types?employee_id=100001&has_sop=true")
+    detect_stage = client.get("/event-types?employee_id=100001&workflow_stage=이상%20감지")
+
+    assert alarm.status_code == 200
+    assert "equipment.alarm.raised.v1" in alarm.text
+    assert "meeting.closed.v1" not in alarm.text
+    assert "필터 적용" in alarm.text
+    assert "필터 해제" in alarm.text
+    assert has_sop.status_code == 200
+    assert "equipment.alarm.raised.v1" in has_sop.text
+    assert "meeting.closed.v1" not in has_sop.text
+    assert detect_stage.status_code == 200
+    assert "equipment.alarm.raised.v1" in detect_stage.text
+    assert "trend.anomaly.detected.v1" in detect_stage.text
+    assert "root_cause.analysis.requested.v1" not in detect_stage.text
+
+
+def test_keycloak_login_still_redirects_to_authorization_endpoint(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "keycloak")
+    monkeypatch.setenv("BOI_SESSION_SECRET", "dev-boi-session-secret-change-me")
+    monkeypatch.setenv("KEYCLOAK_SERVER_URL", "http://localhost:8088")
+    monkeypatch.setenv("KEYCLOAK_EXTERNAL_SERVER_URL", "http://localhost:8088")
+    monkeypatch.setenv("KEYCLOAK_ISSUER_URL", "http://localhost:8088")
+    monkeypatch.setenv("KEYCLOAK_INTERNAL_URL", "http://keycloak:8080")
+    monkeypatch.setenv("KEYCLOAK_REALM", "boi-dev")
+    monkeypatch.setenv("KEYCLOAK_CLIENT_ID", "boi-wiki")
+    monkeypatch.setenv("KEYCLOAK_REDIRECT_URI", "http://localhost:8000/auth/callback")
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/auth/login?next=/", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"].startswith(
+        "http://localhost:8088/realms/boi-dev/protocol/openid-connect/auth?"
+    )
 
 
 def test_index_loads_library_script_and_prioritizes_library_surface(boi_app_module):
@@ -913,6 +1138,42 @@ def test_okf_doc_graph_dedupes_repeated_markdown_edges(boi_app_module):
     ]
     assert len(matching) == 1
     assert matching[0]["occurrence_count"] == 2
+
+
+def test_okf_doc_graph_excludes_action_raw_drilldown_links(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    doc = boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/test",
+            "title": "Raw Link Graph Exclusion Test",
+            "description": "Raw action links are operational, not OKF graph edges",
+            "tags": ["Graph"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:private:100001:graph-raw-exclusion",
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "test"},
+            "acl_policy": "acl:private:100001",
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "graph-raw"}],
+        },
+        (
+            "# Summary\n\n"
+            "[Raw](/actions/raw/action%3Aactions-20990101.jsonl%3A1?employee_id=100001)\n\n"
+            "[SOP](/public/sop/equipment-abnormal-response.md)\n"
+        ),
+    )
+
+    response = client.get(f"/api/okf/graph/doc/{doc['metadata']['boi_id']}?employee_id=100001")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert any(edge["target"] == "public/sop/equipment-abnormal-response" for edge in body["outgoing"])
+    assert all(edge["label"] != "Raw" for edge in body["outgoing"])
+    assert all("actions/raw" not in edge["href"] for edge in body["outgoing"])
 
 
 def test_action_catalog_page_links_public_action_specs(boi_app_module):
@@ -1790,6 +2051,174 @@ def test_events_page_and_api_can_filter_by_event_id(boi_app_module):
     assert "Target Event" in html_response.text
     assert "Other Event" not in html_response.text
     assert "/events?employee_id=100001&amp;event_id=evt-filter-target" in html_response.text
+
+
+def test_event_logs_filter_by_time_range_in_api_and_html(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    event_type = "time.range.test.v1"
+    for event_id, logged_at, title in [
+        ("evt-time-old", "2026-06-19T08:30:00+09:00", "Old Event"),
+        ("evt-time-target", "2026-06-19T10:15:00+09:00", "Target Time Event"),
+        ("evt-time-future", "2026-06-19T18:30:00+09:00", "Future Event"),
+    ]:
+        append_event_log_row(
+            boi_app_module,
+            {
+                "logged_at": logged_at,
+                "status": "published",
+                "event_id": event_id,
+                "event_type": event_type,
+                "producer": "pytest",
+                "trace_id": f"trace-{event_id}",
+                "payload_title": title,
+            },
+            filename="events-20990102.jsonl",
+        )
+
+    api_response = client.get(
+        f"/api/events/log?event_type={event_type}&from_time=2026-06-19T09:00&to_time=2026-06-19T18:00"
+    )
+    html_response = client.get(
+        f"/events?employee_id=100001&event_type={event_type}&from_time=2026-06-19T09:00&to_time=2026-06-19T18:00"
+    )
+
+    assert api_response.status_code == 200
+    body = api_response.json()
+    assert body["count"] == 1
+    assert body["items"][0]["event_id"] == "evt-time-target"
+    assert body["time_filter"]["active"] is True
+    assert html_response.status_code == 200
+    assert "Target Time Event" in html_response.text
+    assert "Old Event" not in html_response.text
+    assert "Future Event" not in html_response.text
+    assert 'name="from_time"' in html_response.text
+    assert 'name="to_time"' in html_response.text
+    assert "시간 범위" in html_response.text
+
+
+def test_event_stream_time_preset_preserves_pagination_url(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    event_type = "time.preset.test.v1"
+    for index in range(2):
+        append_event_log_row(
+            boi_app_module,
+            {
+                "logged_at": boi_app_module.now_iso(),
+                "status": "published",
+                "event_id": f"evt-time-preset-{index}",
+                "event_type": event_type,
+                "producer": "pytest",
+                "trace_id": f"trace-time-preset-{index}",
+                "payload_title": f"Preset Event {index}",
+            },
+            filename="events-20990103.jsonl",
+        )
+    append_event_log_row(
+        boi_app_module,
+        {
+            "logged_at": "2000-01-01T00:00:00+09:00",
+            "status": "published",
+            "event_id": "evt-time-preset-old",
+            "event_type": event_type,
+            "producer": "pytest",
+            "trace_id": "trace-time-preset-old",
+            "payload_title": "Preset Old Event",
+        },
+        filename="events-20990103.jsonl",
+    )
+
+    api_response = client.get(f"/api/events/log?event_type={event_type}&time_preset=24h")
+    html_response = client.get(f"/events?employee_id=100001&event_type={event_type}&time_preset=24h&limit=1")
+
+    assert api_response.status_code == 200
+    body = api_response.json()
+    assert body["total"] == 2
+    assert body["time_filter"]["time_preset"] == "24h"
+    assert html_response.status_code == 200
+    assert "최근 24시간" in html_response.text
+    assert "Preset Old Event" not in html_response.text
+    assert "time_preset=24h" in html_response.text
+    assert "Next" in html_response.text
+
+
+def test_event_stream_time_filter_errors_are_not_500s(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    invalid_api = client.get("/api/events/log?from_time=not-a-time")
+    reversed_api = client.get("/api/events/log?from_time=2026-06-19T18:00&to_time=2026-06-19T09:00")
+    invalid_html = client.get("/events?employee_id=100001&from_time=not-a-time")
+
+    assert invalid_api.status_code == 400
+    assert reversed_api.status_code == 400
+    assert invalid_html.status_code == 200
+    assert "시간 필터 오류" in invalid_html.text
+    assert "시간 필터를 적용할 수 없습니다." in invalid_html.text
+
+
+def test_home_recent_event_stream_links_to_trace_and_filters_by_event_type(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_app_module.append_event_log(
+        status="published",
+        event={
+            "event_id": "evt-home-meeting",
+            "event_type": "meeting.closed.v1",
+            "trace_id": "trace-home-meeting",
+            "producer": "pytest",
+            "payload": {"title": "Home Meeting Event"},
+        },
+    )
+    boi_app_module.append_event_log(
+        status="published",
+        event={
+            "event_id": "evt-home-report",
+            "event_type": "report.requested.v1",
+            "trace_id": "trace-home-report",
+            "producer": "pytest",
+            "payload": {"title": "Home Report Event"},
+        },
+    )
+
+    response = client.get("/?employee_id=100003&event_type=meeting.closed.v1")
+
+    assert response.status_code == 200
+    assert "Recent Event Stream" in response.text
+    assert "Home Meeting Event" in response.text
+    assert "Home Report Event" not in response.text
+    assert "/events?employee_id=100003&amp;trace_id=trace-home-meeting" in response.text
+    assert "/events?employee_id=100003&amp;event_id=evt-home-meeting" in response.text
+    assert "Workflow Status" not in response.text
+
+
+def test_home_recent_event_stream_links_workflow_status_for_workflow_events(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_app_module.append_event_log(
+        status="published",
+        event={
+            "event_id": "evt-home-workflow",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": "trace-home-workflow",
+            "producer": "pytest",
+            "payload": {"title": "Home Workflow Event"},
+        },
+    )
+
+    response = client.get("/?employee_id=100001&event_type=equipment.alarm.raised.v1")
+
+    assert response.status_code == 200
+    assert "Home Workflow Event" in response.text
+    assert "Workflow Status" in response.text
+    assert "/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-home-workflow" in response.text
+
+
+def test_home_recent_event_stream_empty_state_for_event_type_filter(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100003&event_type=external.webhook.received.v1")
+
+    assert response.status_code == 200
+    assert "아직 이 Event Type으로 발행된 이벤트가 없습니다." in response.text
+    assert "/events?employee_id=100003&amp;event_type=external.webhook.received.v1" in response.text
+    assert "python scripts/publish_event.py external.webhook.received.v1 --employee 100003" in response.text
 
 
 def recovered_metadata(boi_id: str = "boi:private:100001:recovered:001") -> dict:

@@ -36,6 +36,7 @@ from .okf import (
 )
 from .workflow_materializer import (
     build_enriched_body,
+    sanitize_stage_analysis_message,
     render_stage_execution_body,
 )
 from .auth import (
@@ -138,7 +139,7 @@ BUILTIN_EVENT_TYPES: list[dict[str, Any]] = [
     },
 ]
 
-app = FastAPI(title="BoI Wiki PoC", version="0.1.0")
+app = FastAPI(title="BoI Wiki", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
@@ -671,6 +672,88 @@ def trace_events_url(trace_id: str, employee_id: str) -> str:
     return "/events?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
 
 
+def parse_event_time_value(value: str, *, field_name: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO datetime value") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=KST)
+    return parsed.astimezone(KST).replace(microsecond=0)
+
+
+def datetime_local_value(value: datetime | None) -> str:
+    return value.astimezone(KST).strftime("%Y-%m-%dT%H:%M") if value else ""
+
+
+def event_time_range(
+    *,
+    from_time: str = "",
+    to_time: str = "",
+    time_preset: str = "",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    explicit_range = bool(str(from_time or "").strip() or str(to_time or "").strip())
+    preset = str(time_preset or "").strip()
+    current = (now or datetime.now(KST)).astimezone(KST).replace(microsecond=0)
+    start: datetime | None = None
+    end: datetime | None = None
+    label = ""
+    preset_labels = {"1h": "최근 1시간", "6h": "최근 6시간", "24h": "최근 24시간", "today": "오늘"}
+
+    if explicit_range:
+        start = parse_event_time_value(from_time, field_name="from_time")
+        end = parse_event_time_value(to_time, field_name="to_time")
+        label_parts = []
+        if start:
+            label_parts.append(start.strftime("%Y-%m-%d %H:%M"))
+        else:
+            label_parts.append("처음")
+        label_parts.append("~")
+        if end:
+            label_parts.append(end.strftime("%Y-%m-%d %H:%M"))
+        else:
+            label_parts.append("현재")
+        label = " ".join(label_parts)
+        preset = ""
+    elif preset:
+        if preset == "1h":
+            start = current - timedelta(hours=1)
+            end = current
+        elif preset == "6h":
+            start = current - timedelta(hours=6)
+            end = current
+        elif preset == "24h":
+            start = current - timedelta(hours=24)
+            end = current
+        elif preset == "today":
+            start = datetime.combine(current.date(), datetime.min.time(), tzinfo=KST)
+            end = current
+        elif preset == "all":
+            preset = ""
+        else:
+            raise ValueError("time_preset must be one of 1h, 6h, 24h, today")
+        label = preset_labels.get(preset, "")
+
+    if start and end and start > end:
+        raise ValueError("from_time must be earlier than or equal to to_time")
+
+    return {
+        "from_dt": start,
+        "to_dt": end,
+        "from_value": datetime_local_value(start) if explicit_range else "",
+        "to_value": datetime_local_value(end) if explicit_range else "",
+        "time_preset": preset,
+        "active": bool(start or end),
+        "label": label,
+    }
+
+
 def workflow_status_page_url(trace_id: str, employee_id: str) -> str:
     return workflow_status_page_url_for_key("equipment-anomaly", trace_id, employee_id)
 
@@ -781,6 +864,48 @@ def render_linkified_value_html(value: Any, employee_id: str, depth: int = 0) ->
     return Markup(f'<span class="scalar">{html_escape(str(value))}</span>')
 
 
+def first_result_text(value: Any, *, allow_string: bool = False) -> str:
+    if isinstance(value, str):
+        return value.strip() if allow_string else ""
+    if isinstance(value, dict):
+        for key in ("message", "text", "body"):
+            item = value.get(key)
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+            found = first_result_text(item, allow_string=True)
+            if found:
+                return found
+        for key, item in value.items():
+            if key in {"input", "inputs", "input_value", "prompt"}:
+                continue
+            found = first_result_text(item)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = first_result_text(item)
+            if found:
+                return found
+    return ""
+
+
+def action_raw_readable_markdown(row: dict[str, Any]) -> dict[str, Any]:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    candidates: list[tuple[str, Any]] = [
+        ("result.message", result.get("message")),
+        ("result.response", result.get("response")),
+        ("result.body", result.get("body")),
+    ]
+    for source, value in candidates:
+        text = first_result_text(value, allow_string=True)
+        if not text:
+            continue
+        cleaned = sanitize_stage_analysis_message(text) or text.strip()
+        if cleaned:
+            return {"available": True, "source": source, "markdown": cleaned}
+    return {"available": False, "source": "", "markdown": ""}
+
+
 def event_rows_for_template(
     rows: list[dict[str, Any]],
     doc_lookup: dict[str, dict[str, Any]] | None = None,
@@ -792,6 +917,7 @@ def event_rows_for_template(
         item = dict(row)
         item["event_url"] = event_filter_url(str(row.get("event_id") or ""), employee_id) if row.get("event_id") else ""
         item["trace_url"] = trace_events_url(str(row.get("trace_id") or ""), employee_id) if row.get("trace_id") else ""
+        item["stream_url"] = events_url(employee_id, event_type=str(row.get("event_type") or ""))
         event_type_for_workflow = str(row.get("event_type") or "")
         trace_id_for_workflow = str(row.get("trace_id") or "")
         cache_key = (event_type_for_workflow, trace_id_for_workflow)
@@ -980,9 +1106,12 @@ def filtered_event_log_rows(
     event_type: str | None = None,
     trace_id: str | None = None,
     event_id: str | None = None,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
 ) -> list[dict[str, Any]]:
     event_labels = {str(e["event_type"]): str(e.get("name_ko") or e["event_type"]) for e in load_event_types()}
     rows: list[dict[str, Any]] = []
+    has_time_filter = bool(from_dt or to_dt)
     for row in cached_event_log_rows():
         if event_type and row.get("event_type") != event_type:
             continue
@@ -990,6 +1119,17 @@ def filtered_event_log_rows(
             continue
         if event_id and row.get("event_id") != event_id:
             continue
+        if has_time_filter:
+            try:
+                logged_at = parse_event_time_value(str(row.get("logged_at") or ""), field_name="logged_at")
+            except ValueError:
+                continue
+            if logged_at is None:
+                continue
+            if from_dt and logged_at < from_dt:
+                continue
+            if to_dt and logged_at > to_dt:
+                continue
         item = dict(row)
         item["event_label"] = event_labels.get(str(row.get("event_type")), str(row.get("event_type") or ""))
         rows.append(item)
@@ -1001,14 +1141,22 @@ def read_event_logs(
     event_type: str | None = None,
     trace_id: str | None = None,
     event_id: str | None = None,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    rows = filtered_event_log_rows(event_type=event_type, trace_id=trace_id, event_id=event_id)
+    rows = filtered_event_log_rows(event_type=event_type, trace_id=trace_id, event_id=event_id, from_dt=from_dt, to_dt=to_dt)
     return rows[offset : offset + limit]
 
 
-def count_event_logs(event_type: str | None = None, trace_id: str | None = None, event_id: str | None = None) -> int:
-    return len(filtered_event_log_rows(event_type=event_type, trace_id=trace_id, event_id=event_id))
+def count_event_logs(
+    event_type: str | None = None,
+    trace_id: str | None = None,
+    event_id: str | None = None,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
+) -> int:
+    return len(filtered_event_log_rows(event_type=event_type, trace_id=trace_id, event_id=event_id, from_dt=from_dt, to_dt=to_dt))
 
 
 def find_event_log_row_by_ref(log_ref: str) -> dict[str, Any] | None:
@@ -1221,6 +1369,9 @@ def events_url(
     event_type: str = "",
     trace_id: str = "",
     event_id: str = "",
+    from_time: str = "",
+    to_time: str = "",
+    time_preset: str = "",
     page: int = 1,
     limit: int = 50,
 ) -> str:
@@ -1231,6 +1382,13 @@ def events_url(
         params["trace_id"] = trace_id
     if event_id:
         params["event_id"] = event_id
+    if from_time or to_time:
+        if from_time:
+            params["from_time"] = from_time
+        if to_time:
+            params["to_time"] = to_time
+    elif time_preset:
+        params["time_preset"] = time_preset
     return "/events?" + urlencode(params)
 
 
@@ -1334,6 +1492,7 @@ def filter_docs(
     event_type: str = "",
     visibility: str = "",
     boi_type: str = "",
+    archive_status: str = "active",
 ) -> list[dict[str, Any]]:
     filtered = docs
     if q:
@@ -1350,6 +1509,109 @@ def filter_docs(
         filtered = [d for d in filtered if d["metadata"].get("visibility") == visibility]
     if boi_type:
         filtered = [d for d in filtered if d["metadata"].get("type") == boi_type]
+    if archive_status and archive_status != "all":
+        filtered = [d for d in filtered if d["metadata"].get("archive_status", "active") == archive_status]
+    return filtered
+
+
+def doc_search_blob(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    return "\n".join(
+        [
+            json.dumps(metadata, ensure_ascii=False, default=str),
+            str(metadata.get("title") or ""),
+            str(metadata.get("description") or ""),
+            str(metadata.get("boi_id") or ""),
+            str(doc.get("body") or ""),
+        ]
+    ).lower()
+
+
+def is_sop_related_doc(doc: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    return (
+        str(metadata.get("type") or "") == "boi/sop"
+        or "sop" in str(metadata.get("boi_id") or "").lower()
+        or "sop" in str(metadata.get("title") or "").lower()
+        or "SOP" in (metadata.get("tags") or [])
+    )
+
+
+def is_official_sop_doc(doc: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    boi_id = str(metadata.get("boi_id") or "")
+    uri = str(doc.get("uri") or "")
+    return (
+        str(metadata.get("type") or "") == "boi/sop"
+        or ":sop:" in boi_id
+        or "/sop/" in uri
+        or uri.startswith("/public/sop/")
+    )
+
+
+def filter_sop_docs(
+    docs: list[dict[str, Any]],
+    *,
+    q: str = "",
+    visibility: str = "",
+    status: str = "",
+    category: str = "sop",
+) -> list[dict[str, Any]]:
+    normalized_category = "all-related" if category == "all-related" else "sop"
+    filtered = [
+        doc
+        for doc in docs
+        if is_sop_related_doc(doc)
+        and (normalized_category == "all-related" or is_official_sop_doc(doc))
+    ]
+    if q:
+        q_lower = q.lower()
+        filtered = [doc for doc in filtered if q_lower in doc_search_blob(doc)]
+    if visibility:
+        filtered = [doc for doc in filtered if (doc.get("metadata") or {}).get("visibility") == visibility]
+    if status:
+        filtered = [doc for doc in filtered if (doc.get("metadata") or {}).get("status") == status]
+    return filtered
+
+
+def event_type_search_blob(event_type: dict[str, Any]) -> str:
+    keys = (
+        "event_type",
+        "name_ko",
+        "description",
+        "owner",
+        "topic",
+        "wiki_usage",
+        "workflow_stage",
+        "sop_ref",
+        "sop_stage_id",
+        "recommended_actions",
+        "recommended_manual_actions",
+    )
+    return "\n".join(json.dumps(event_type.get(key) or "", ensure_ascii=False, default=str) for key in keys).lower()
+
+
+def filter_event_types_for_catalog(
+    event_types: list[dict[str, Any]],
+    *,
+    q: str = "",
+    status: str = "",
+    owner: str = "",
+    workflow_stage: str = "",
+    has_sop: str = "",
+) -> list[dict[str, Any]]:
+    filtered = list(event_types)
+    if q:
+        q_lower = q.lower()
+        filtered = [item for item in filtered if q_lower in event_type_search_blob(item)]
+    if status:
+        filtered = [item for item in filtered if str(item.get("status") or "") == status]
+    if owner:
+        filtered = [item for item in filtered if str(item.get("owner") or "") == owner]
+    if workflow_stage:
+        filtered = [item for item in filtered if str(item.get("workflow_stage") or "") == workflow_stage]
+    if str(has_sop or "").lower() in {"true", "1", "yes"}:
+        filtered = [item for item in filtered if item.get("sop_ref") or item.get("sop_stage_id")]
     return filtered
 
 
@@ -1572,6 +1834,85 @@ def remember_identity(identity: AuthIdentity) -> AuthIdentity:
 
 def identity_for_employee(employee_id: str) -> AuthIdentity:
     return _IDENTITY_CACHE.get(employee_id) or dev_identity(employee_id)
+
+
+def app_url(path: str, employee_id: str, **params: str) -> str:
+    query = {"employee_id": employee_id}
+    query.update({key: value for key, value in params.items() if value})
+    return f"{path}?" + urlencode(query)
+
+
+def shell_hidden_query(request: Request) -> list[dict[str, str]]:
+    return [
+        {"name": key, "value": value}
+        for key, value in request.query_params.multi_items()
+        if key != "employee_id"
+    ]
+
+
+def app_shell_context(
+    request: Request,
+    employee_id: str,
+    *,
+    active_nav: str,
+    title: str,
+    description: str = "",
+    page_actions: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    identity = identity_for_employee(employee_id)
+    mode = auth_mode()
+    primary_nav = [
+        {"id": "library", "label": "BoI Wiki", "href": app_url("/", employee_id)},
+        {"id": "sops", "label": "SOP", "href": app_url("/sops", employee_id)},
+        {"id": "event_types", "label": "Event Types", "href": app_url("/event-types", employee_id)},
+        {"id": "events", "label": "Event Stream", "href": app_url("/events", employee_id)},
+        {"id": "actions", "label": "Actions", "href": app_url("/actions", employee_id)},
+    ]
+    return {
+        "title": title,
+        "description": description,
+        "active_nav": active_nav,
+        "primary_nav": primary_nav,
+        "utility_links": [
+            {"label": "Langflow", "href": "http://localhost:7860", "external": True},
+            {"label": "Kafka UI", "href": "http://localhost:8081", "external": True},
+            {"label": "API Docs", "href": "/docs", "external": True},
+            {"label": "MCP Status", "href": "http://localhost:8200/", "external": True},
+        ],
+        "page_actions": page_actions or [],
+        "auth_mode": mode,
+        "dev_mode": mode == "dev",
+        "sso_active": mode != "dev",
+        "auth_label": "DEV 인증" if mode == "dev" else "SSO active",
+        "auth_detail": "SSO 비활성 · employee_id query 허용" if mode == "dev" else "Keycloak/HCP",
+        "identity": identity,
+        "employee_id": identity.employee_id,
+        "display_name": identity.display_name or identity.employee_id,
+        "teams": identity.teams,
+        "roles": identity.roles,
+        "hidden_query": shell_hidden_query(request),
+        "switch_action": request.url.path,
+        "dev_users": [
+            {"employee_id": key, "label": key}
+            for key in sorted(USER_NAMES)
+        ],
+        "logout_url": "/auth/logout?" + urlencode({"next": request.url.path}),
+        "sso_guide_url": app_url("/docs/boi:public:boi-wiki-manual:security:sso-and-permissions", employee_id),
+    }
+
+
+def active_nav_for_doc(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    boi_type = str(metadata.get("type") or "")
+    uri = str(doc.get("uri") or "")
+    boi_id = str(metadata.get("boi_id") or "")
+    if boi_type == "boi/sop" or "/sop/" in uri or ":sop:" in boi_id:
+        return "sops"
+    if boi_type == "boi/action-spec" or "/actions/" in uri or ":actions:" in boi_id:
+        return "actions"
+    if "/event-types/" in uri or ":event-types:" in boi_id:
+        return "event_types"
+    return "library"
 
 
 def docs_cache_signature(docs: list[dict[str, Any]]) -> tuple[tuple[str, str], ...]:
@@ -1973,6 +2314,35 @@ def validate_metadata(metadata: dict[str, Any], promotion: bool = False) -> list
     return validate_okf_metadata(metadata, promotion=promotion)
 
 
+def private_lifecycle_defaults(
+    *,
+    boi_type: str,
+    source_event: dict[str, Any] | None = None,
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    tag_set = {str(tag).lower() for tag in (tags or [])}
+    if source_event:
+        retention_class = "ephemeral"
+        review_days = 30
+        retention_days = 90
+    elif boi_type == "boi/report" or "report" in tag_set or "weekly-report" in tag_set:
+        retention_class = "record"
+        review_days = 180
+        retention_days = None
+    else:
+        retention_class = "working"
+        review_days = 90
+        retention_days = None
+    now = datetime.now(KST)
+    return {
+        "retention_class": retention_class,
+        "retention_until": (now + timedelta(days=retention_days)).date().isoformat() if retention_days else "",
+        "archive_status": "active",
+        "review_after": (now + timedelta(days=review_days)).date().isoformat(),
+        "contains_sensitive": "unknown",
+    }
+
+
 def write_boi(metadata: dict[str, Any], body: str) -> dict[str, Any]:
     ensure_dirs()
     errors = validate_metadata(metadata)
@@ -2034,6 +2404,8 @@ def make_metadata(
         meta["review"] = {"reviewer": reviewer, "review_status": "pending"}
     if promotion:
         meta["promotion"] = promotion
+    if visibility == "private":
+        meta.update(private_lifecycle_defaults(boi_type=boi_type, source_event=source_event, tags=tags))
     return meta
 
 
@@ -2480,15 +2852,18 @@ async def index(
     visibility: str = "",
     boi_type: str = "",
     folder: str = "",
+    archive_status: str = "active",
     partial: str = "",
 ) -> HTMLResponse:
     selected_folder = normalize_folder(folder)
+    accessible = accessible_docs(employee_id)
     filtered_docs = filter_docs(
-        accessible_docs(employee_id),
+        accessible,
         q=q,
         event_type=event_type,
         visibility=visibility,
         boi_type=boi_type,
+        archive_status=archive_status,
     )
     folder_tree = with_folder_urls(
         build_folder_tree(filtered_docs, selected_folder),
@@ -2507,9 +2882,18 @@ async def index(
         visibility=visibility,
         boi_type=boi_type,
     )
+    recent_event_logs = read_event_logs(limit=8, event_type=event_type or None)
+    doc_lookup = build_doc_lookup(accessible)
     context = {
         "request": request,
         "employee_id": employee_id,
+        "shell": app_shell_context(
+            request,
+            employee_id,
+            active_nav="library",
+            title="BoI Wiki",
+            description="AI Agent의 협업 표준 문서를 업무 단위의 Event와 SOP 기반의 AI Native Workflow 그리고 Action을 기준으로 탐색합니다.",
+        ),
         "user_name": user_name_for(employee_id),
         "auth_mode": auth_mode(),
         "teams": teams_for(employee_id),
@@ -2519,33 +2903,56 @@ async def index(
         "visibility": visibility,
         "boi_type": boi_type,
         "folder": selected_folder,
+        "archive_status": archive_status,
         "folder_tree": folder_tree,
         "breadcrumbs": breadcrumbs,
         "event_context": event_context_for_template(event_type, employee_id),
         "selected_folder_label": folder_label(selected_folder),
         "total_filtered_docs": len(filtered_docs),
         "event_types": load_event_types(),
-        "event_logs": read_event_logs(limit=8),
+        "event_logs": event_rows_for_template(recent_event_logs, doc_lookup=doc_lookup, employee_id=employee_id),
     }
     template_name = "library_fragment.html" if partial == "library" else "index.html"
     return templates.TemplateResponse(template_name, context)
 
 
 @app.get("/sops", response_class=HTMLResponse)
-async def sops_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
-    docs = [
-        d
-        for d in accessible_docs(employee_id)
-        if "sop" in str(d["metadata"].get("boi_id", "")).lower()
-        or "sop" in str(d["metadata"].get("title", "")).lower()
-        or "SOP" in (d["metadata"].get("tags") or [])
-    ]
+async def sops_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+    q: str = "",
+    visibility: str = "",
+    status: str = "",
+    category: str = "sop",
+) -> HTMLResponse:
+    accessible = accessible_docs(employee_id)
+    base_docs = [doc for doc in accessible if is_sop_related_doc(doc)]
+    normalized_category = "all-related" if category == "all-related" else "sop"
+    docs = filter_sop_docs(base_docs, q=q, visibility=visibility, status=status, category=normalized_category)
+    visibility_options = sorted({str((doc.get("metadata") or {}).get("visibility") or "") for doc in base_docs if (doc.get("metadata") or {}).get("visibility")})
+    status_options = sorted({str((doc.get("metadata") or {}).get("status") or "") for doc in base_docs if (doc.get("metadata") or {}).get("status")})
     return templates.TemplateResponse(
         "sops.html",
         {
             "request": request,
             "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="sops",
+                title="SOP",
+                description="Agent Harness, BoI Wiki, 설비 이상 대응 같은 공통 SOP와 실행 가이드를 확인합니다.",
+            ),
             "docs": docs,
+            "q": q,
+            "visibility": visibility,
+            "status": status,
+            "category": normalized_category,
+            "total_sop_docs": len(docs),
+            "visibility_options": visibility_options,
+            "status_options": status_options,
+            "has_active_filter": bool(q or visibility or status or normalized_category != "sop"),
+            "clear_url": app_url("/sops", employee_id),
         },
     )
 
@@ -2565,6 +2972,14 @@ async def source_page(
         {
             "request": request,
             "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="library",
+                title="Source Viewer",
+                description=str(source.get("path") or path),
+                page_actions=[{"label": "Draft editing guide", "href": source["guide_url"], "kind": "secondary"}],
+            ),
             "source": source,
         },
     )
@@ -2637,7 +3052,19 @@ async def doc_page(
     if not doc:
         return templates.TemplateResponse(
             "missing_doc.html",
-            {"request": request, "employee_id": employee_id, "boi_id": boi_id},
+            {
+                "request": request,
+                "employee_id": employee_id,
+                "shell": app_shell_context(
+                    request,
+                    employee_id,
+                    active_nav="library",
+                    title="BoI not found or not accessible",
+                    description="요청한 BoI 문서를 찾을 수 없거나 현재 사번으로 접근할 수 없습니다.",
+                    page_actions=[{"label": "BoI 목록", "href": browse_url(employee_id), "kind": "secondary"}],
+                ),
+                "boi_id": boi_id,
+            },
             status_code=404,
         )
     if doc.get("recovered_from_log"):
@@ -2654,6 +3081,18 @@ async def doc_page(
         {
             "request": request,
             "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav=active_nav_for_doc(doc),
+                title=str(doc["metadata"].get("title") or "BoI Document"),
+                description=str(doc["metadata"].get("description") or ""),
+                page_actions=[
+                    {"label": "폴더로 돌아가기", "href": browse_url(employee_id, folder=return_folder), "kind": "secondary"},
+                    *([{"label": "Source 보기 / Draft 수정", "href": source_url_for_doc(doc, employee_id), "kind": "secondary"}] if source_url_for_doc(doc, employee_id) else []),
+                    *([{"label": "같은 Event Type BoI", "href": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")), "kind": "secondary"}] if doc["metadata"].get("event_type") else []),
+                ],
+            ),
             "doc": doc,
             "doc_folder": doc_folder_path,
             "doc_folder_breadcrumbs": with_breadcrumb_urls(
@@ -2682,6 +3121,7 @@ async def list_boi(
     visibility: str = "",
     boi_type: str = "",
     folder: str = "",
+    archive_status: str = "active",
 ) -> dict[str, Any]:
     selected_folder = normalize_folder(folder)
     filtered_docs = filter_docs(
@@ -2690,12 +3130,14 @@ async def list_boi(
         event_type=event_type,
         visibility=visibility,
         boi_type=boi_type,
+        archive_status=archive_status,
     )
     docs = [d for d in filtered_docs if folder_matches(d, selected_folder)]
     return {
         "employee_id": employee_id,
         "teams": teams_for(employee_id),
         "folder": selected_folder,
+        "archive_status": archive_status,
         "breadcrumbs": folder_breadcrumbs(selected_folder),
         "folder_tree": build_folder_tree(filtered_docs, selected_folder),
         "count": len(docs),
@@ -3375,6 +3817,22 @@ def workflow_status_template_context(request: Request, payload: dict[str, Any], 
     return {
         "request": request,
         "employee_id": employee_id,
+        "shell": app_shell_context(
+            request,
+            employee_id,
+            active_nav="sops",
+            title="Workflow Status",
+            description="Trace가 SOP, Event, Action, Manual Handoff, Generated BoI로 어떻게 이어졌는지 확인합니다.",
+            page_actions=[
+                {"label": "Trace Event Stream", "href": trace_events_url(str(payload.get("trace_id") or ""), employee_id), "kind": "secondary"},
+                {"label": "SOP 보기", "href": str(payload.get("sop_url") or "#"), "kind": "secondary"},
+                {
+                    "label": "JSON 원문 API",
+                    "href": payload.get("status_url") + ("&format=json" if "?" in str(payload.get("status_url") or "") else "?format=json"),
+                    "kind": "secondary",
+                },
+            ],
+        ),
         "trace_id": payload.get("trace_id"),
         "payload": payload,
         "summary": {
@@ -3940,16 +4398,58 @@ Event Broker를 통해 Action 생성 이벤트가 수신되었고, 담당자 Pri
 
 
 @app.get("/event-types", response_class=HTMLResponse)
-async def event_types_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+async def event_types_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+    q: str = "",
+    status: str = "",
+    owner: str = "",
+    workflow_stage: str = "",
+    has_sop: str = "",
+) -> HTMLResponse:
     types = load_event_types()
     counts = {t["event_type"]: 0 for t in types}
     for d in accessible_docs(employee_id):
         et = d["metadata"].get("event_type")
         if et in counts:
             counts[et] += 1
+    filtered_types = filter_event_types_for_catalog(
+        types,
+        q=q,
+        status=status,
+        owner=owner,
+        workflow_stage=workflow_stage,
+        has_sop=has_sop,
+    )
+    status_options = sorted({str(item.get("status") or "") for item in types if item.get("status")})
+    owner_options = sorted({str(item.get("owner") or "") for item in types if item.get("owner")})
+    workflow_stage_options = sorted({str(item.get("workflow_stage") or "") for item in types if item.get("workflow_stage")})
     return templates.TemplateResponse(
         "event_types.html",
-        {"request": request, "employee_id": employee_id, "event_types": types, "counts": counts},
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="event_types",
+                title="Event Type Catalog",
+                description="Event Broker의 업무 이벤트를 기술 Topic이 아니라 업무 언어로 보여주는 카탈로그입니다.",
+            ),
+            "event_types": filtered_types,
+            "counts": counts,
+            "q": q,
+            "status": status,
+            "owner": owner,
+            "workflow_stage": workflow_stage,
+            "has_sop": has_sop,
+            "status_options": status_options,
+            "owner_options": owner_options,
+            "workflow_stage_options": workflow_stage_options,
+            "total_event_types": len(filtered_types),
+            "has_active_filter": bool(q or status or owner or workflow_stage or has_sop),
+            "clear_url": app_url("/event-types", employee_id),
+        },
     )
 
 
@@ -3973,6 +4473,18 @@ async def event_type_detail_page(request: Request, event_type: str, employee_id:
         {
             "request": request,
             "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="event_types",
+                title=str(event_def.get("name_ko") or event_type),
+                description=f"{event_type} · {event_def.get('description') or ''}",
+                page_actions=[
+                    {"label": "이 Event Type의 BoI 보기", "href": browse_url(employee_id, event_type=event_type), "kind": "secondary"},
+                    {"label": "Stream 보기", "href": "/events?" + urlencode({"employee_id": employee_id, "event_type": event_type}), "kind": "secondary"},
+                    {"label": "연결 Action 보기", "href": "/actions?" + urlencode({"employee_id": employee_id, "event_type": event_type}), "kind": "secondary"},
+                ],
+            ),
             "event_type": event_type,
             "event": event_def,
             "docs": docs_for_template(docs, employee_id),
@@ -3996,28 +4508,123 @@ async def events_page(
     event_type: str = "",
     trace_id: str = "",
     event_id: str = "",
+    from_time: str = "",
+    to_time: str = "",
+    time_preset: str = "",
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
 ) -> HTMLResponse:
     offset = (page - 1) * limit
-    total_events = count_event_logs(event_type=event_type or None, trace_id=trace_id or None, event_id=event_id or None)
-    events = read_event_logs(limit=limit, event_type=event_type or None, trace_id=trace_id or None, event_id=event_id or None, offset=offset)
+    time_filter_error = ""
+    try:
+        time_filter = event_time_range(from_time=from_time, to_time=to_time, time_preset=time_preset)
+    except ValueError as exc:
+        time_filter_error = str(exc)
+        time_filter = {
+            "from_dt": None,
+            "to_dt": None,
+            "from_value": from_time,
+            "to_value": to_time,
+            "time_preset": time_preset,
+            "active": False,
+            "label": "",
+        }
+    if time_filter_error:
+        total_events = 0
+        events = []
+    else:
+        total_events = count_event_logs(
+            event_type=event_type or None,
+            trace_id=trace_id or None,
+            event_id=event_id or None,
+            from_dt=time_filter["from_dt"],
+            to_dt=time_filter["to_dt"],
+        )
+        events = read_event_logs(
+            limit=limit,
+            event_type=event_type or None,
+            trace_id=trace_id or None,
+            event_id=event_id or None,
+            from_dt=time_filter["from_dt"],
+            to_dt=time_filter["to_dt"],
+            offset=offset,
+        )
     doc_lookup = build_doc_lookup(accessible_docs(employee_id))
+    explicit_from = str(time_filter.get("from_value") or "")
+    explicit_to = str(time_filter.get("to_value") or "")
+    effective_preset = str(time_filter.get("time_preset") or "")
+    preset_options = [
+        {"label": "최근 1시간", "value": "1h"},
+        {"label": "최근 6시간", "value": "6h"},
+        {"label": "최근 24시간", "value": "24h"},
+        {"label": "오늘", "value": "today"},
+    ]
+    time_preset_links = [
+        {
+            **preset,
+            "url": events_url(
+                employee_id,
+                event_type=event_type,
+                trace_id=trace_id,
+                event_id=event_id,
+                time_preset=preset["value"],
+                page=1,
+                limit=limit,
+            ),
+            "active": effective_preset == preset["value"],
+        }
+        for preset in preset_options
+    ]
+    clear_time_url = events_url(employee_id, event_type=event_type, trace_id=trace_id, event_id=event_id, page=1, limit=limit)
     return templates.TemplateResponse(
         "events.html",
         {
             "request": request,
             "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="events",
+                title="Event Stream",
+                description="Kafka로 발행/처리된 업무 이벤트를 Wiki에서 업무 맥락으로 확인합니다.",
+            ),
             "event_type": event_type,
             "trace_id": trace_id,
             "event_id": event_id,
+            "from_time": explicit_from,
+            "to_time": explicit_to,
+            "time_preset": effective_preset,
+            "time_filter": time_filter,
+            "time_filter_error": time_filter_error,
+            "time_preset_links": time_preset_links,
+            "clear_time_url": clear_time_url,
             "page": page,
             "limit": limit,
             "total_events": total_events,
             "has_prev": page > 1,
             "has_next": offset + len(events) < total_events,
-            "prev_url": events_url(employee_id, event_type=event_type, trace_id=trace_id, event_id=event_id, page=max(1, page - 1), limit=limit),
-            "next_url": events_url(employee_id, event_type=event_type, trace_id=trace_id, event_id=event_id, page=page + 1, limit=limit),
+            "prev_url": events_url(
+                employee_id,
+                event_type=event_type,
+                trace_id=trace_id,
+                event_id=event_id,
+                from_time=explicit_from,
+                to_time=explicit_to,
+                time_preset=effective_preset,
+                page=max(1, page - 1),
+                limit=limit,
+            ),
+            "next_url": events_url(
+                employee_id,
+                event_type=event_type,
+                trace_id=trace_id,
+                event_id=event_id,
+                from_time=explicit_from,
+                to_time=explicit_to,
+                time_preset=effective_preset,
+                page=page + 1,
+                limit=limit,
+            ),
             "event_types": load_event_types(),
             "events": event_rows_for_template(events, doc_lookup=doc_lookup, employee_id=employee_id),
         },
@@ -4030,19 +4637,53 @@ async def api_event_types() -> dict[str, Any]:
 
 
 @app.get("/api/events/log")
-async def api_event_logs(event_type: str = "", trace_id: str = "", event_id: str = "", limit: int = 200, page: int = 1) -> dict[str, Any]:
+async def api_event_logs(
+    event_type: str = "",
+    trace_id: str = "",
+    event_id: str = "",
+    from_time: str = "",
+    to_time: str = "",
+    time_preset: str = "",
+    limit: int = 200,
+    page: int = 1,
+) -> dict[str, Any]:
     effective_limit = max(1, min(int(limit or 200), 200))
     effective_page = max(1, int(page or 1))
     offset = (effective_page - 1) * effective_limit
-    total = count_event_logs(event_type=event_type or None, trace_id=trace_id or None, event_id=event_id or None)
+    try:
+        time_filter = event_time_range(from_time=from_time, to_time=to_time, time_preset=time_preset)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    total = count_event_logs(
+        event_type=event_type or None,
+        trace_id=trace_id or None,
+        event_id=event_id or None,
+        from_dt=time_filter["from_dt"],
+        to_dt=time_filter["to_dt"],
+    )
     rows = read_event_logs(
         limit=effective_limit,
         event_type=event_type or None,
         trace_id=trace_id or None,
         event_id=event_id or None,
+        from_dt=time_filter["from_dt"],
+        to_dt=time_filter["to_dt"],
         offset=offset,
     )
-    return {"count": len(rows), "total": total, "page": effective_page, "limit": effective_limit, "items": rows}
+    return {
+        "count": len(rows),
+        "total": total,
+        "page": effective_page,
+        "limit": effective_limit,
+        "time_filter": {
+            "from_time": time_filter["from_dt"].isoformat() if time_filter["from_dt"] else "",
+            "to_time": time_filter["to_dt"].isoformat() if time_filter["to_dt"] else "",
+            "time_preset": time_filter["time_preset"],
+            "active": time_filter["active"],
+            "label": time_filter["label"],
+        },
+        "items": rows,
+    }
 
 
 @app.get("/api/events/raw/{log_ref:path}")
@@ -4080,6 +4721,14 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
             {
                 "request": request,
                 "employee_id": employee_id,
+                "shell": app_shell_context(
+                    request,
+                    employee_id,
+                    active_nav="actions",
+                    title="Action log row not found",
+                    description="요청한 action log 원본을 찾을 수 없거나 접근 권한이 없습니다.",
+                    page_actions=[{"label": "Actions", "href": app_url("/actions", employee_id), "kind": "secondary"}],
+                ),
                 "boi_id": log_ref,
                 "title": "Action log row not found",
                 "message": "요청한 action log 원본을 찾을 수 없거나 접근 권한이 없습니다.",
@@ -4092,14 +4741,29 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
     event_id = str(row.get("event_id") or "")
     result_value = row.get("result") if isinstance(row.get("result"), dict) else {}
     boi_id = str(row.get("boi_id") or result_boi_id(result_value) or "")
+    readable_result = action_raw_readable_markdown(redacted_row)
     return templates.TemplateResponse(
         "action_raw.html",
         {
             "request": request,
             "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="actions",
+                title="Action Raw Detail",
+                description="Action Gateway / Langflow / API invocation 원본 로그를 행 단위로 확인합니다.",
+                page_actions=[
+                    {"label": "Actions", "href": app_url("/actions", employee_id), "kind": "secondary"},
+                    *([{"label": "Workflow Status", "href": workflow_status_page_url(trace_id, employee_id), "kind": "secondary"}] if trace_id else []),
+                    {"label": "JSON API", "href": action_raw_api_url(log_ref, employee_id), "kind": "secondary"},
+                ],
+            ),
             "log_ref": log_ref,
             "row": redacted_row,
             "row_html": render_linkified_value_html(redacted_row, employee_id),
+            "readable_result": readable_result,
+            "readable_result_html": render_markdown(readable_result["markdown"], employee_id=employee_id) if readable_result["available"] else "",
             "action_key": row.get("action_key") or "",
             "request_id": row.get("request_id") or "",
             "trace_id": trace_id,
@@ -4140,6 +4804,13 @@ async def actions_page(
         {
             "request": request,
             "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="actions",
+                title="Action Catalog",
+                description="API/Webhook 호출을 임의 URL이 아니라 allow-list Action으로 관리합니다.",
+            ),
             "event_type": event_type,
             "action_key": action_key,
             "event_types": load_event_types(),

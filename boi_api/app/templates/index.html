@@ -2,36 +2,18 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>BoI Wiki PoC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/library.js" defer></script>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>BoI Wiki PoC</h1>
-      <p>Public + Team + Web Private BoI를 사번 기준으로 보여줍니다. Local-only Private은 Web에 저장되지 않으므로 표시되지 않습니다.</p>
-    </div>
-    <div class="user-box">
-      <strong>{{ user_name }}</strong><br />
-      사번: {{ employee_id }}<br />
-      Team: {{ teams | join(', ') }}<br />
-      Auth: {{ auth_mode }}
-      {% if auth_mode != 'dev' %}<br /><a href="/auth/logout">Logout</a>{% endif %}
-    </div>
-  </header>
+  {% include "_app_shell.html" %}
 
-  <section class="toolbar">
+  <section class="toolbar page-filterbar">
     <form method="get" action="/">
       {% if folder %}<input type="hidden" name="folder" value="{{ folder }}" />{% endif %}
-      {% if auth_mode == 'dev' %}
-        <label>사번</label>
-        <select name="employee_id">
-          <option value="100001" {% if employee_id == '100001' %}selected{% endif %}>100001 / AIX TF</option>
-          <option value="100002" {% if employee_id == '100002' %}selected{% endif %}>100002 / AIX TF</option>
-          <option value="100003" {% if employee_id == '100003' %}selected{% endif %}>100003 / Platform</option>
-        </select>
-      {% endif %}
+      <input type="hidden" name="employee_id" value="{{ employee_id }}" />
       <label>Event Type</label>
       <select name="event_type">
         <option value="" {% if not event_type %}selected{% endif %}>전체</option>
@@ -50,14 +32,6 @@
       <input name="q" value="{{ q }}" placeholder="SOP, 회의, Action, BoI..." />
       <button type="submit">조회</button>
     </form>
-    <div class="links">
-      <a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>
-      <a href="/events?employee_id={{ employee_id }}">Event Stream</a>
-    <a href="/actions?employee_id={{ employee_id }}">Actions</a>
-      <a href="http://localhost:7860" target="_blank">Langflow</a>
-      <a href="http://localhost:8081" target="_blank">Kafka UI</a>
-      <a href="/docs" target="_blank">API Docs</a>
-    </div>
   </section>
 
   {% include "library_fragment.html" %}
@@ -106,13 +80,33 @@
     <h2>Recent Event Stream</h2>
     <div class="doc-list">
       {% for e in event_logs %}
-      <div class="doc-row event-row">
+      <article class="doc-row event-row">
         <div>
           <span class="badge event">{{ e.event_label }}</span>
           <span class="badge status">{{ e.status }}</span>
           <strong>{{ e.payload_title or e.event_id }}</strong>
         </div>
-        <small>{{ e.logged_at }} · {{ e.event_type }} · {{ e.trace_id }}</small>
+        <small>{{ e.logged_at }} · {{ e.event_type }} · trace={{ e.trace_id or '-' }}</small>
+        <div class="event-summary-line trace-link-row">
+          {% if e.trace_url %}<a href="{{ e.trace_url }}">Trace 보기</a>{% endif %}
+          {% if e.event_url %}<a href="{{ e.event_url }}">{{ e.event_id }}</a>{% endif %}
+          {% if e.workflow_status_url %}<a href="{{ e.workflow_status_url|safe }}">Workflow Status</a>{% endif %}
+          {% if e.stream_url %}<a href="{{ e.stream_url }}">Event Type Stream</a>{% endif %}
+        </div>
+      </article>
+      {% else %}
+      <div class="empty-state">
+        {% if event_context %}
+        <strong>아직 이 Event Type으로 발행된 이벤트가 없습니다.</strong>
+        <p>이벤트가 발행되면 이 영역에서 최신 trace와 상세 Event Stream 링크를 바로 확인할 수 있습니다.</p>
+        <p><a href="{{ event_context.stream_url }}">Stream 보기</a></p>
+        {% if event_context.run_example %}
+        <pre>{{ event_context.run_example }}</pre>
+        {% endif %}
+        {% else %}
+        <strong>No recent event stream entries.</strong>
+        <p>이벤트가 발행되면 최신 처리 흐름이 여기에 표시됩니다.</p>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import asyncio
 import importlib
 import sys
 
@@ -21,7 +23,46 @@ def test_boi_wiki_mcp_health(mcp_module):
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["service"] == "boi-wiki-mcp"
+    body = response.json()
+    assert body["service"] == "boi-wiki-mcp"
+    assert body["capabilities"]["tools"] == 10
+    assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
+    assert any(item["uri"] == "boi://docs/{boi_id}" for item in body["capability_lists"]["resource_templates"])
+    assert any(item["name"] == "create_sop_from_source" for item in body["capability_lists"]["prompts"])
+
+
+def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
+    client = TestClient(mcp_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    body = response.text
+    assert "BoI Wiki MCP" in body
+    assert "http://localhost:8200/mcp" in body
+    assert "Streamable HTTP" in body
+    assert "Tools" in body and "10" in body
+    assert "Resource templates" in body and "4" in body
+    assert "Prompts" in body and "5" in body
+    assert "boi_search" in body
+    assert "workflow_status" in body
+    assert "action_invoke" in body
+    assert "boi://docs/{boi_id}" in body
+    assert "create_sop_from_source" in body
+    assert "406" in body
+    assert "Codex" in body
+    assert "Claude Desktop" in body
+    assert "Cursor" in body
+
+
+def test_boi_wiki_mcp_status_alias_works(mcp_module):
+    client = TestClient(mcp_module.app)
+
+    response = client.get("/status")
+
+    assert response.status_code == 200
+    assert "BoI Wiki MCP" in response.text
 
 
 def test_boi_wiki_mcp_bridge_invokes_search_tool(mcp_module, monkeypatch):
@@ -99,3 +140,52 @@ def test_boi_wiki_mcp_streamable_http_initializes(mcp_module):
     assert response.status_code == 200
     body = response.json()
     assert body["result"]["serverInfo"]["name"] == "boi-wiki-mcp"
+
+
+def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
+    import scripts.check_boi_wiki_mcp as script
+
+    async def fake_check_protocol(*args, **kwargs):
+        return {
+            "tools": 10,
+            "resources": 0,
+            "resource_templates": 4,
+            "prompts": 5,
+            "tool_names": ["boi_search", "boi_get", "workflow_status", "action_invoke"],
+            "resource_template_uris": ["boi://docs/{boi_id}"],
+            "prompt_names": ["create_sop_from_source"],
+        }
+
+    async def fake_check_bridge(*args, **kwargs):
+        return {
+            "ok": True,
+            "status": "mcp_invoked",
+            "tool": "boi.search",
+            "request_id": "check-boi-wiki-mcp",
+            "response": {"folder_tree": {"path": ""}},
+        }
+
+    monkeypatch.setattr(script, "check_protocol", fake_check_protocol)
+    monkeypatch.setattr(script, "check_bridge", fake_check_bridge)
+    args = argparse.Namespace(
+        base_url="http://localhost:8200",
+        mcp_url="http://localhost:8200/mcp",
+        service_token="test-service-token",
+        query="SOP",
+        summary=False,
+        details=True,
+        client_checklist=True,
+        full_bridge=False,
+    )
+
+    exit_code = asyncio.run(script.main_async(args))
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "boi_search" in output
+    assert "workflow_status" in output
+    assert "Codex" in output
+    assert "Claude Desktop" in output
+    assert "Cursor" in output
+    assert "http://localhost:8200/mcp" in output
+    assert "folder_tree" not in output

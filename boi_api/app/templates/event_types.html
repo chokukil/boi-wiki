@@ -2,21 +2,76 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Event Type Catalog · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Event Type Catalog</h1>
-      <p>Event Broker의 업무 이벤트를 기술 Topic이 아니라 업무 언어로 보여주는 카탈로그입니다.</p>
-    </div>
-    <div class="user-box">
-      사번: {{ employee_id }}<br />
-      <a href="/?employee_id={{ employee_id }}">BoI 목록</a> · <a href="/events?employee_id={{ employee_id }}">Event Stream</a> · <a href="/actions?employee_id={{ employee_id }}">Actions</a>
-    </div>
-  </header>
+  {% include "_app_shell.html" %}
+  <section class="toolbar page-filterbar catalog-filterbar">
+    <form method="get" action="/event-types" class="catalog-filter-form event-type-filter-form">
+      <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+      <div class="filter-group catalog-search">
+        <label for="event-type-search">검색</label>
+        <input id="event-type-search" name="q" value="{{ q }}" placeholder="Event Type, 이름, 설명, action" />
+      </div>
+      <div class="filter-group">
+        <label for="event-status">Status</label>
+        <select id="event-status" name="status">
+          <option value="" {% if not status %}selected{% endif %}>전체</option>
+          {% for item in status_options %}
+          <option value="{{ item }}" {% if status == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="event-owner">Owner</label>
+        <select id="event-owner" name="owner">
+          <option value="" {% if not owner %}selected{% endif %}>전체</option>
+          {% for item in owner_options %}
+          <option value="{{ item }}" {% if owner == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="event-workflow-stage">Workflow Stage</label>
+        <select id="event-workflow-stage" name="workflow_stage">
+          <option value="" {% if not workflow_stage %}selected{% endif %}>전체</option>
+          {% for item in workflow_stage_options %}
+          <option value="{{ item }}" {% if workflow_stage == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="event-has-sop">SOP</label>
+        <select id="event-has-sop" name="has_sop">
+          <option value="" {% if not has_sop %}selected{% endif %}>전체</option>
+          <option value="true" {% if has_sop == "true" %}selected{% endif %}>SOP 연결 있음</option>
+        </select>
+      </div>
+      <div class="filter-group catalog-submit">
+        <label>&nbsp;</label>
+        <button type="submit">조회</button>
+      </div>
+    </form>
+  </section>
   <main>
+    <div class="pagination-bar">
+      <div>
+        <h2>Event Types ({{ total_event_types }})</h2>
+        {% if has_active_filter %}
+        <div class="active-filter-row">
+          <span class="badge status">필터 적용</span>
+          {% if q %}<span>검색: {{ q }}</span>{% endif %}
+          {% if status %}<span>Status: {{ status }}</span>{% endif %}
+          {% if owner %}<span>Owner: {{ owner }}</span>{% endif %}
+          {% if workflow_stage %}<span>Stage: {{ workflow_stage }}</span>{% endif %}
+          {% if has_sop %}<span>SOP 연결 있음</span>{% endif %}
+          <a href="{{ clear_url }}">필터 해제</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
     <div class="doc-list">
       {% for e in event_types %}
       <article class="doc-row event-row">
@@ -36,6 +91,12 @@
           · <a href="/actions?employee_id={{ employee_id }}&event_type={{ e.event_type }}">연결 Action 보기</a>
         </p>
       </article>
+      {% else %}
+      <section class="empty-state">
+        <strong>조건에 맞는 Event Type이 없습니다.</strong>
+        <p>검색어를 줄이거나 owner, workflow stage, SOP 연결 필터를 해제하세요.</p>
+        <p><a href="{{ clear_url }}">필터 해제</a></p>
+      </section>
       {% endfor %}
     </div>
   </main>

@@ -27,6 +27,8 @@ review:
 
 사용자가 SOP 문서나 이미지를 주면 agent는 관련 BoI Wiki 문서를 먼저 검색하고, 업무 단계와 event/action/manual handoff를 추출해 OKF SOP package를 만든다.
 
+원본 SOP 이미지나 업무 화면 캡처는 해석 결과와 분리한다. 원본 asset은 `_media/source/{source-slug}/...`에 보존하고, agent가 임의로 다시 그리거나 파일명을 덮어쓰지 않는다.
+
 # Package Output
 
 - SOP BoI 문서 with `workflow.workflow_key` and `workflow.stages`
@@ -34,6 +36,7 @@ review:
 - API/Webhook/MCP/Langflow/Manual/Event Broker action spec docs
 - `data/event_catalog/event_types.yaml` and `data/action_catalog/actions.yaml` draft patches
 - OKF links, citations, media references
+- source media manifest entries for user-supplied SOP images or screenshots
 
 # Workflow Rule
 

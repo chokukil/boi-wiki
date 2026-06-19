@@ -40,10 +40,40 @@ Open:
 - Event Stream: http://localhost:8000/events?employee_id=100001
 - SOPs: http://localhost:8000/sops?employee_id=100001
 - Action Gateway: http://localhost:8100/docs
+- BoI Wiki MCP status: http://localhost:8200/
+- BoI Wiki MCP Streamable HTTP: http://localhost:8200/mcp
 - Kafka UI: http://localhost:8081
 - Langflow: http://localhost:7860
 
 Default auth is `BOI_AUTH_MODE=dev`, which keeps the local `employee_id` selector/query for PoC and tests.
+
+## BoI Wiki MCP
+
+BoI Wiki MCP lets Claude Desktop, Cursor, Langflow, and custom agents use BoI Wiki through one MCP server instead of memorizing REST routes.
+
+- Human status page: http://localhost:8200/
+- MCP Streamable HTTP endpoint: http://localhost:8200/mcp
+- Bridge compatibility endpoint: http://localhost:8200/api/mcp/call
+- Manual: http://localhost:8000/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp?employee_id=100001
+
+Do not validate MCP by opening `/mcp` directly in a browser. A direct browser or plain curl request can return `406 Not Acceptable` because it is missing MCP Streamable HTTP headers. Use the status page or the smoke check:
+
+```bash
+python scripts/check_boi_wiki_mcp.py \
+  --base-url http://localhost:8200 \
+  --mcp-url http://localhost:8200/mcp \
+  --summary
+```
+
+For Claude Desktop or Cursor registration details:
+
+```bash
+python scripts/check_boi_wiki_mcp.py \
+  --base-url http://localhost:8200 \
+  --mcp-url http://localhost:8200/mcp \
+  --details \
+  --client-checklist
+```
 
 ## SSO Dev Mode
 
@@ -81,6 +111,31 @@ The harness documents define how Codex, Claude, Langflow, and custom agents shou
 - Web draft editing: http://localhost:8000/docs/boi:public:harness:web-draft-editing-guide?employee_id=100001
 
 Web source edits are draft-only. `Save Draft` does not change the original Markdown/YAML and does not create a Git commit. An agent must validate, apply, test, and commit the draft separately.
+
+## BoI Wiki Local
+
+This repository is the shared runtime: Web UI, BoI API, Kafka/Event Router, Action Gateway, Langflow integration, and BoI Wiki MCP.
+
+Personal Local Private work should use the separate lightweight workspace repository:
+
+```text
+/home/chokukil/boi-wiki-local
+```
+
+`boi-wiki-local` does not include the Web runtime. It is a local OKF Markdown workspace plus Codex/Claude/Cursor harness files. A regular user can give the local repo URL to an agent and say:
+
+```text
+이 repo 설치해줘.
+이 폴더를 BoI Wiki Local로 써줘.
+이 회의 내용을 BoI로 정리해줘.
+```
+
+Local Private documents stay under the user's local workspace and are not scanned by this Web BoI Wiki `DATA_ROOT`. Remote sharing requires an explicit user confirmation and creates only a shared BoI Wiki draft; final source changes still require agent validation, tests, and Git commit in this shared runtime repo.
+
+Manuals:
+
+- Local Private overview: http://localhost:8000/docs/boi:public:boi-wiki-manual:local-private:overview?employee_id=100001
+- Local Private harness: http://localhost:8000/docs/boi:public:harness:local-private-agent-harness?employee_id=100001
 
 ## Key Concepts
 

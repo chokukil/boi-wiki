@@ -1,17 +1,54 @@
 import json
 import os
+from html import escape
 from typing import Any, Literal
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field, ValidationError
 from starlette.requests import Request
+from starlette.responses import HTMLResponse
 from starlette.responses import JSONResponse
 
 BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000").rstrip("/")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 DEFAULT_EMPLOYEE_ID = os.getenv("DEFAULT_EMPLOYEE_ID", "100001")
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100").rstrip("/")
+
+MCP_ENDPOINT = "http://localhost:8200/mcp"
+BRIDGE_ENDPOINT = "http://localhost:8200/api/mcp/call"
+HEALTH_ENDPOINT = "http://localhost:8200/health"
+MCP_TOOL_CAPABILITIES = [
+    {"name": "boi_search", "description": "Search accessible BoI OKF documents by query, folder, event type, visibility, or BoI type."},
+    {"name": "boi_get", "description": "Return one accessible BoI document by BoI ID or OKF path."},
+    {"name": "okf_graph_doc", "description": "Return outgoing links and backlinks for a BoI document."},
+    {"name": "actions_search", "description": "Search API, webhook, MCP, Langflow, manual, event broker, and BoI writer actions."},
+    {"name": "action_get", "description": "Return one action catalog entry and its public action spec reference."},
+    {"name": "action_invoke", "description": "Invoke an allowlisted Action Gateway action with approval policy preserved."},
+    {"name": "workflow_start", "description": "Start a config-driven workflow from SOP metadata."},
+    {"name": "workflow_status", "description": "Return workflow status for a trace."},
+    {"name": "source_create_draft", "description": "Create a draft-only source edit for Markdown/YAML files."},
+    {"name": "doc_body_create_draft", "description": "Create a draft-only body edit for a BoI document."},
+]
+MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
+    {"uri": "boi://docs/{boi_id}", "description": "Single BoI document as JSON text."},
+    {"uri": "boi://folders/{folder}", "description": "BoI search results scoped to an OKF folder."},
+    {"uri": "boi://actions/{action_key}", "description": "Single action catalog entry."},
+    {"uri": "boi://workflows/{workflow_key}/status/{trace_id}", "description": "Workflow status for a trace."},
+]
+MCP_PROMPT_CAPABILITIES = [
+    {"name": "create_sop_from_source", "description": "Create a BoI SOP from source material after checking existing wiki context."},
+    {"name": "connect_sop_to_workflow", "description": "Connect SOP stages to event types, actions, manual handoffs, and generated BoI flow."},
+    {"name": "author_action_spec", "description": "Author executable API/webhook/MCP/Langflow/manual action specs."},
+    {"name": "build_langflow_boi_flow", "description": "Build a connected Langflow BoI workflow using shared components."},
+    {"name": "validate_and_commit_draft", "description": "Validate draft source edits before applying and committing them."},
+]
+MCP_CAPABILITIES = {
+    "tools": len(MCP_TOOL_CAPABILITIES),
+    "resources": 0,
+    "resource_templates": len(MCP_RESOURCE_TEMPLATE_CAPABILITIES),
+    "prompts": len(MCP_PROMPT_CAPABILITIES),
+}
 
 
 async def api_get(
@@ -350,8 +387,112 @@ class McpBridgeRequest(BaseModel):
 app = mcp.streamable_http_app()
 
 
+def status_payload() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "service": "boi-wiki-mcp",
+        "mcp_endpoint": MCP_ENDPOINT,
+        "bridge_endpoint": BRIDGE_ENDPOINT,
+        "health_endpoint": HEALTH_ENDPOINT,
+        "protocol": "MCP Streamable HTTP",
+        "capabilities": MCP_CAPABILITIES,
+        "capability_lists": {
+            "tools": MCP_TOOL_CAPABILITIES,
+            "resources": [],
+            "resource_templates": MCP_RESOURCE_TEMPLATE_CAPABILITIES,
+            "prompts": MCP_PROMPT_CAPABILITIES,
+        },
+        "notes": [
+            "Open / in a browser for this status page.",
+            "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
+            "A direct browser/curl request to /mcp may return 406 even when the server is healthy.",
+            "Static resources are intentionally empty; use resource templates and tools.",
+        ],
+    }
+
+
+async def status_page(_request: Request) -> HTMLResponse:
+    payload = status_payload()
+    capabilities = payload["capabilities"]
+    capability_lists = payload["capability_lists"]
+
+    def render_items(items: list[dict[str, str]], key: str) -> str:
+        if not items:
+            return "<p class=\"muted\">No static resources are exposed. Use resource templates and tools.</p>"
+        rows = []
+        for item in items:
+            name = escape(str(item.get(key) or item.get("name") or ""))
+            description = escape(str(item.get("description") or ""))
+            rows.append(f"<li><code>{name}</code><span>{description}</span></li>")
+        return "<ul class=\"capability-list\">" + "".join(rows) + "</ul>"
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BoI Wiki MCP Status</title>
+  <style>
+    body {{ font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f6f8fb; color: #172033; }}
+    main {{ max-width: 920px; margin: 0 auto; padding: 40px 24px; }}
+    section {{ background: #fff; border: 1px solid #d9e1ec; border-radius: 8px; padding: 20px; margin: 16px 0; }}
+    h1 {{ margin-top: 0; }}
+    code {{ background: #eef3f9; border: 1px solid #d5dfeb; border-radius: 4px; padding: 2px 6px; overflow-wrap: anywhere; word-break: break-word; }}
+    dl {{ display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; }}
+    dt {{ font-weight: 700; }}
+    .capability-list {{ list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }}
+    .capability-list li {{ display: grid; grid-template-columns: minmax(260px, 38%) minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid #eef2f7; }}
+    .capability-list span {{ min-width: 0; }}
+    .muted {{ color: #607086; }}
+    .ok {{ color: #047857; font-weight: 700; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>BoI Wiki MCP</h1>
+    <p class="ok">Status: ok</p>
+    <section>
+      <h2>Endpoints</h2>
+      <dl>
+        <dt>MCP Streamable HTTP</dt><dd><code>{payload["mcp_endpoint"]}</code></dd>
+        <dt>Bridge endpoint</dt><dd><code>{payload["bridge_endpoint"]}</code></dd>
+        <dt>Health check</dt><dd><code>{payload["health_endpoint"]}</code></dd>
+      </dl>
+    </section>
+    <section>
+      <h2>Capabilities</h2>
+      <dl>
+        <dt>Tools</dt><dd>{capabilities["tools"]}</dd>
+        <dt>Resources</dt><dd>{capabilities["resources"]}</dd>
+        <dt>Resource templates</dt><dd>{capabilities["resource_templates"]}</dd>
+        <dt>Prompts</dt><dd>{capabilities["prompts"]}</dd>
+      </dl>
+      <h3>Tools</h3>
+      {render_items(capability_lists["tools"], "name")}
+      <h3>Resource templates</h3>
+      {render_items(capability_lists["resource_templates"], "uri")}
+      <h3>Prompts</h3>
+      {render_items(capability_lists["prompts"], "name")}
+    </section>
+    <section>
+      <h2>Client Registration</h2>
+      <p>Register <code>{payload["mcp_endpoint"]}</code> as a Streamable HTTP MCP server in Codex, Claude Desktop, or Cursor.</p>
+      <p>Opening <code>/mcp</code> directly in a browser is not a valid MCP check. It can return <code>406</code> because the client did not send the required MCP Accept headers.</p>
+    </section>
+  </main>
+</body>
+</html>
+"""
+    return HTMLResponse(html)
+
+
 async def health(_request: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "service": "boi-wiki-mcp"})
+    return JSONResponse(status_payload())
+
+
+async def status_json(_request: Request) -> JSONResponse:
+    return JSONResponse(status_payload())
+
 
 
 def parse_bridge_request(data: Any) -> McpBridgeRequest:
@@ -390,5 +531,8 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
     )
 
 
+app.add_route("/", status_page, methods=["GET"])
+app.add_route("/status", status_page, methods=["GET"])
+app.add_route("/status.json", status_json, methods=["GET"])
 app.add_route("/health", health, methods=["GET"])
 app.add_route("/api/mcp/call", mcp_bridge_call, methods=["POST"])

@@ -32,6 +32,7 @@ BoI Agent Harness는 Codex, Claude, Langflow, Custom Agent가 BoI Wiki, Event Br
 - [Web Draft Editing Guide](/public/harness/web-draft-editing-guide.md)
 - [SOP Authoring Harness](/public/harness/sop-authoring-harness.md)
 - [Action Authoring Harness](/public/harness/action-authoring-harness.md)
+- [Local Private Agent Harness](/public/harness/local-private-agent-harness.md)
 - [Agent Harness SOP](/public/public-sop-agent-harness.md)
 - [BoI Wiki Manual Overview](/public/boi-wiki-manual/overview.md)
 - [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)

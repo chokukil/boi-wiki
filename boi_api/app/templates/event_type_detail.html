@@ -2,20 +2,12 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ event.name_ko }} · Event Type · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <div>
-      <h1>{{ event.name_ko }}</h1>
-      <p><code>{{ event_type }}</code> · {{ event.description }}</p>
-    </div>
-    <div class="user-box">
-      사번: {{ employee_id }}<br />
-      <a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a> · <a href="/?employee_id={{ employee_id }}">BoI 목록</a>
-    </div>
-  </header>
+  {% include "_app_shell.html" %}
 
   <main class="event-type-detail">
     <section class="event-context-bar">

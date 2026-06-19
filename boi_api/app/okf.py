@@ -26,6 +26,9 @@ REQUIRED_FIELDS = [
 
 VALID_VISIBILITIES = {"private", "team", "public"}
 VALID_STATUSES = {"draft", "reviewed", "approved", "deprecated"}
+VALID_RETENTION_CLASSES = {"ephemeral", "working", "record", "promoted_source"}
+VALID_ARCHIVE_STATUSES = {"active", "archived", "exported", "deleted"}
+VALID_SENSITIVE_FLAGS = {"unknown", "yes", "no"}
 RESERVED_FILENAMES = {"index.md", "log.md"}
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -74,6 +77,12 @@ def validate_boi_profile_metadata(metadata: dict[str, Any], promotion: bool = Fa
         errors.append("visibility must be private/team/public")
     if metadata.get("status") not in VALID_STATUSES:
         errors.append("status must be draft/reviewed/approved/deprecated")
+    if metadata.get("retention_class") and metadata.get("retention_class") not in VALID_RETENTION_CLASSES:
+        errors.append("retention_class must be ephemeral/working/record/promoted_source")
+    if metadata.get("archive_status") and metadata.get("archive_status") not in VALID_ARCHIVE_STATUSES:
+        errors.append("archive_status must be active/archived/exported/deleted")
+    if metadata.get("contains_sensitive") and metadata.get("contains_sensitive") not in VALID_SENSITIVE_FLAGS:
+        errors.append("contains_sensitive must be unknown/yes/no")
     if metadata.get("visibility") in {"team", "public"} or promotion:
         if not metadata.get("source_refs"):
             errors.append("team/public BoI requires source_refs")
@@ -96,6 +105,15 @@ def concept_id_for_path(path: Path, boi_root: Path) -> str:
 
 def is_external_href(href: str) -> bool:
     return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href)) or href.startswith("#")
+
+
+def is_okf_concept_href(href: str) -> bool:
+    href_without_fragment = str(href or "").split("#", 1)[0].split("?", 1)[0].strip()
+    if not href_without_fragment or is_external_href(href_without_fragment):
+        return False
+    if href_without_fragment.startswith("/"):
+        return href_without_fragment.startswith(("/public/", "/team/", "/private/")) and href_without_fragment.endswith(".md")
+    return href_without_fragment.endswith(".md")
 
 
 def markdown_without_fenced_code(body: str) -> str:
@@ -141,7 +159,7 @@ def markdown_link_edges(path: Path, body: str, boi_root: Path, source_concept_id
     edges = []
     for link in extract_markdown_links(body):
         href = link["href"]
-        if is_external_href(href):
+        if not is_okf_concept_href(href):
             continue
         target, resolved = resolve_okf_link(href, source_path=path, boi_root=boi_root)
         edges.append(

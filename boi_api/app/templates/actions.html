@@ -2,22 +2,14 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BoI Action Catalog</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<header>
-  <h1>Action Catalog</h1>
-  <p>API/Webhook 호출을 임의 URL이 아니라 allow-list Action으로 관리합니다. Agent/Langflow는 이 카탈로그를 보고 필요한 Action을 호출합니다.</p>
-  <nav>
-    <a href="/?employee_id={{ employee_id }}">BoI Wiki</a>
-    <a href="/event-types?employee_id={{ employee_id }}">Event Types</a>
-    <a href="/events?employee_id={{ employee_id }}">Event Stream</a>
-    <a href="/actions?employee_id={{ employee_id }}">Actions</a>
-  </nav>
-</header>
+{% include "_app_shell.html" %}
 
-<section class="panel">
+<section class="panel page-filterbar">
   <h2>Filter</h2>
   <form method="get" action="/actions">
     <input type="hidden" name="employee_id" value="{{ employee_id }}" />

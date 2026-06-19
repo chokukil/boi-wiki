@@ -2,43 +2,66 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Event Stream · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/events.js" defer></script>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Event Stream</h1>
-      <p>Kafka로 발행/처리된 업무 이벤트를 Wiki에서 업무 맥락으로 확인합니다. Kafka UI는 운영자용, 이 화면은 업무 사용자용입니다.</p>
-    </div>
-    <div class="user-box">
-      사번: {{ employee_id }}<br />
-      <a href="/?employee_id={{ employee_id }}">BoI 목록</a> · <a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>
-    </div>
-  </header>
-  <section class="toolbar">
-    <form method="get" action="/events">
+  {% include "_app_shell.html" %}
+  <section class="toolbar page-filterbar event-filterbar">
+    <form method="get" action="/events" class="event-filter-form">
       <input type="hidden" name="employee_id" value="{{ employee_id }}" />
-      <label>Event Type</label>
-      <select name="event_type">
-        <option value="" {% if not event_type %}selected{% endif %}>전체</option>
-        {% for e in event_types %}
-        <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
-        {% endfor %}
-      </select>
-      <label>Trace</label>
-      <input name="trace_id" value="{{ trace_id }}" placeholder="trace_id" />
-      <label>Event ID</label>
-      <input name="event_id" value="{{ event_id }}" placeholder="event_id" />
-      <label>Limit</label>
-      <input name="limit" value="{{ limit }}" type="number" min="1" max="200" />
-      <button type="submit">조회</button>
+      {% if time_preset %}<input type="hidden" name="time_preset" value="{{ time_preset }}" />{% endif %}
+      <div class="filter-group event-type-filter">
+        <label for="event-type-filter">Event Type</label>
+        <select id="event-type-filter" name="event_type">
+          <option value="" {% if not event_type %}selected{% endif %}>전체</option>
+          {% for e in event_types %}
+          <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group id-filter">
+        <label for="trace-filter">Trace / Event ID</label>
+        <div class="inline-fields">
+          <input id="trace-filter" name="trace_id" value="{{ trace_id }}" placeholder="trace_id" />
+          <input name="event_id" value="{{ event_id }}" placeholder="event_id" />
+        </div>
+      </div>
+      <div class="filter-group time-filter">
+        <label>Time Range</label>
+        <div class="inline-fields">
+          <input name="from_time" value="{{ from_time }}" type="datetime-local" aria-label="from time" />
+          <span class="range-separator">~</span>
+          <input name="to_time" value="{{ to_time }}" type="datetime-local" aria-label="to time" />
+        </div>
+        <div class="quick-filters">
+          {% for preset in time_preset_links %}
+          <a class="{% if preset.active %}active{% endif %}" href="{{ preset.url }}">{{ preset.label }}</a>
+          {% endfor %}
+          <a href="{{ clear_time_url }}">전체</a>
+        </div>
+      </div>
+      <div class="filter-group paging-filter">
+        <label for="event-limit">Limit</label>
+        <div class="inline-fields compact">
+          <input id="event-limit" name="limit" value="{{ limit }}" type="number" min="1" max="200" />
+          <button type="submit">조회</button>
+        </div>
+      </div>
     </form>
   </section>
   <main>
     <div class="pagination-bar">
-      <h2>Events ({{ total_events }})</h2>
+      <div>
+        <h2>Events ({{ total_events }})</h2>
+        {% if time_filter_error %}
+        <div class="active-filter-row"><span class="badge warning">시간 필터 오류</span><span>{{ time_filter_error }}</span><a href="{{ clear_time_url }}">시간 필터 해제</a></div>
+        {% elif time_filter.active %}
+        <div class="active-filter-row"><span class="badge status">시간 범위</span><span>{{ time_filter.label }}</span><a href="{{ clear_time_url }}">시간 필터 해제</a></div>
+        {% endif %}
+      </div>
       <div class="pagination-actions">
         {% if has_prev %}<a class="button secondary" href="{{ prev_url }}">Previous</a>{% endif %}
         <span>Page {{ page }} · {{ events|length }} shown</span>
@@ -131,6 +154,20 @@
         </details>
         {% endif %}
       </article>
+      {% else %}
+      <section class="empty-state">
+        {% if time_filter_error %}
+        <strong>시간 필터를 적용할 수 없습니다.</strong>
+        <p>{{ time_filter_error }}</p>
+        {% elif time_filter.active %}
+        <strong>해당 시간 범위의 이벤트가 없습니다.</strong>
+        <p>시간 범위를 넓히거나 전체 기간으로 전환해 로그를 다시 확인하세요.</p>
+        {% else %}
+        <strong>이벤트 로그가 없습니다.</strong>
+        <p>Event Broker로 이벤트가 발행되면 이 화면에 표시됩니다.</p>
+        {% endif %}
+        <p><a href="{{ clear_time_url }}">시간 필터 해제</a></p>
+      </section>
       {% endfor %}
     </div>
   </main>

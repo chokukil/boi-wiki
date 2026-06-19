@@ -37,6 +37,8 @@ SOP Authoring Harness는 사용자가 업무 문서나 화면 캡처를 주고 S
 - Citations and OKF links
 - `_media` assets, media manifest, and media reference docs when source images or screenshots are supplied
 
+Source images are provenance, not generated illustrations. Preserve the user-supplied original under `_media/source/{source-slug}/...`, add a manifest entry, and link it from `# Citations` before deriving SOP stages or action specs from it.
+
 # Stage Contract
 
 모든 stage는 `id`, `name`, `purpose`, `entry_event`, `next_stage`, `emits_event`, `source_systems`, `automated_actions`, `manual_actions`, `outputs`, `failure_modes`, `acceptance_criteria`를 가져야 한다.

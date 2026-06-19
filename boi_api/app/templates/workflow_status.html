@@ -2,23 +2,13 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Workflow Status · {{ trace_id }} · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/workflow_status.js" defer></script>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Workflow Status</h1>
-      <p>Trace가 SOP, Event, Action, Manual Handoff, Generated BoI로 어떻게 이어졌는지 확인합니다.</p>
-    </div>
-    <div class="user-box">
-      사번: {{ employee_id }}<br />
-      <a href="{{ events_url }}">Trace Event Stream</a><br />
-      <a href="{{ payload.sop_url }}">SOP 보기</a><br />
-      <a href="{{ api_json_url }}">JSON 원문 API</a>
-    </div>
-  </header>
+  {% include "_app_shell.html" %}
 
   <main class="workflow-status-page">
     <section class="workflow-status-hero">

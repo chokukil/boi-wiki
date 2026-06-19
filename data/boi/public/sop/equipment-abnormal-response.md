@@ -155,4 +155,5 @@ workflow:
 # Citations
 
 - 첨부 SOP 이미지: 시스템 활용 업무 / 생성형 AI / 분석형 AI / 개발 필요 영역 구분 사례
+- 원본 SOP 이미지는 현재 repo asset으로 보존되어 있지 않다. 원본이 제공되면 `_media/source/equipment-abnormal-response/...`에 저장하고 manifest와 함께 이 문서에서 인용한다.
 - [Public Action Library](/public/actions/overview.md)

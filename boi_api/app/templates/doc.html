@@ -2,28 +2,21 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ doc.metadata.title }} · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/doc_graph.js" defer></script>
   <script src="/static/doc_edit.js" defer></script>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>{{ doc.metadata.title }}</h1>
-      <p>{{ doc.metadata.description }}</p>
-      {% if doc.metadata.event_type %}
-      <p><span class="badge event">{{ doc.metadata.event_label or doc.metadata.event_type }}</span> {{ doc.metadata.event_type }}</p>
-      {% endif %}
-    </div>
-    <div class="user-box">
-      사번: {{ employee_id }}<br />
-      <a href="{{ doc_list_url }}">폴더로 돌아가기</a>
-      {% if source_url %}<br /><a href="{{ source_url }}">Source 보기 / Draft 수정</a>{% endif %}
-      {% if doc.metadata.event_type %}<br /><a href="{{ event_type_url }}">같은 Event Type BoI</a>{% endif %}
-    </div>
-  </header>
+  {% include "_app_shell.html" %}
   <main class="doc-page">
+    {% if doc.metadata.event_type %}
+    <section class="doc-context-strip">
+      <span class="badge event">{{ doc.metadata.event_label or doc.metadata.event_type }}</span>
+      <a href="{{ event_type_url }}">{{ doc.metadata.event_type }}</a>
+    </section>
+    {% endif %}
     {% if doc.recovered_from_log %}
     <section class="recovery-notice">
       <strong>Recovered from event/action log</strong>

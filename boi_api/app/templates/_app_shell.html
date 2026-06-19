@@ -1,0 +1,56 @@
+<header class="app-header">
+  <div class="app-title">
+    <a class="app-brand" href="/?employee_id={{ shell.employee_id }}">BoI Wiki</a>
+    <h1>{{ shell.title }}</h1>
+    {% if shell.description %}<p>{{ shell.description }}</p>{% endif %}
+  </div>
+  <aside class="identity-strip" aria-label="Authentication status">
+    <span class="auth-mode-chip {% if shell.dev_mode %}dev{% else %}sso{% endif %}">{% if shell.dev_mode %}DEV{% else %}SSO{% endif %}</span>
+    {% if shell.sso_active %}
+    <strong>{{ shell.display_name }}</strong>
+    {% endif %}
+    <span>{{ shell.employee_id }}</span>
+    <span>{{ shell.teams | join(', ') if shell.teams else '-' }}</span>
+    {% if shell.sso_active and shell.roles %}
+    <span>{{ shell.roles[:2] | join(', ') }}</span>
+    {% endif %}
+    {% if shell.dev_mode %}
+    <form class="dev-employee-switch" method="get" action="{{ shell.switch_action }}">
+      {% for item in shell.hidden_query %}
+      <input type="hidden" name="{{ item.name }}" value="{{ item.value }}" />
+      {% endfor %}
+      <label class="sr-only">Dev employee</label>
+      <select name="employee_id">
+        {% for user in shell.dev_users %}
+        <option value="{{ user.employee_id }}" {% if shell.employee_id == user.employee_id %}selected{% endif %}>{{ user.label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">전환</button>
+    </form>
+    <a class="sso-guide-link" href="{{ shell.sso_guide_url }}">SSO 가이드</a>
+    {% else %}
+    <a class="sso-guide-link" href="{{ shell.logout_url }}">Logout</a>
+    {% endif %}
+  </aside>
+</header>
+
+<nav class="global-nav" aria-label="Primary navigation">
+  <div class="primary-nav">
+    {% for item in shell.primary_nav %}
+    <a data-nav-id="{{ item.id }}" class="global-nav-link {% if shell.active_nav == item.id %}active{% endif %}" href="{{ item.href }}" {% if shell.active_nav == item.id %}aria-current="page"{% endif %}>{{ item.label }}</a>
+    {% endfor %}
+  </div>
+  <div class="utility-nav" aria-label="Tools">
+    {% for item in shell.utility_links %}
+    <a href="{{ item.href }}" {% if item.external %}target="_blank" rel="noopener"{% endif %}>{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</nav>
+
+{% if shell.page_actions %}
+<section class="page-actions" aria-label="Page actions">
+  {% for action in shell.page_actions %}
+  <a class="page-action-link {% if action.kind %}{{ action.kind }}{% endif %}" href="{{ action.href }}">{{ action.label }}</a>
+  {% endfor %}
+</section>
+{% endif %}

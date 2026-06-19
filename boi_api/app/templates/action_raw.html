@@ -2,22 +2,12 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Action Raw Detail · {{ request_id or log_ref }} · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Action Raw Detail</h1>
-      <p>Action Gateway / Langflow / API invocation 원본 로그를 행 단위로 확인합니다.</p>
-    </div>
-    <div class="user-box">
-      사번: {{ employee_id }}<br />
-      <a href="/actions?employee_id={{ employee_id }}">Actions</a><br />
-      {% if trace_url %}<a href="{{ trace_url }}">Workflow Status</a><br />{% endif %}
-      <a href="{{ api_url }}">JSON API</a>
-    </div>
-  </header>
+  {% include "_app_shell.html" %}
   <main class="doc-page action-raw-page">
     <section class="workflow-panel">
       <h2>{{ action_key or request_id or log_ref }}</h2>
@@ -32,8 +22,26 @@
       <p class="muted"><code>{{ log_ref }}</code></p>
     </section>
 
+    <section class="workflow-panel action-readable-result">
+      <div class="section-heading">
+        <div>
+          <h2>Readable Result</h2>
+          {% if readable_result.available %}<p class="muted">Source: {{ readable_result.source }}</p>{% endif %}
+        </div>
+        <a class="button secondary" href="{{ api_url }}">JSON으로 보기</a>
+      </div>
+      {% if readable_result.available %}
+      <div class="rendered-content">{{ readable_result_html }}</div>
+      {% else %}
+      <section class="empty-state compact">
+        <strong>Readable result not available.</strong>
+        <p>이 action log에는 상단에 렌더링할 Markdown 본문이 없어 원본 구조화 데이터를 확인해야 합니다.</p>
+      </section>
+      {% endif %}
+    </section>
+
     <section class="workflow-panel">
-      <h2>Linked Views</h2>
+      <h2>Linked Views / Metadata</h2>
       <div class="event-summary-line">
         {% if trace_url %}<a href="{{ trace_url }}">Workflow Status</a>{% endif %}
         {% if trace_events_url %}<a href="{{ trace_events_url }}">Trace Event Stream</a>{% endif %}
@@ -43,13 +51,13 @@
       </div>
     </section>
 
-    <section class="workflow-panel">
-      <div class="section-heading">
-        <h2>Raw Log Row</h2>
-        <a class="button secondary" href="{{ api_url }}">JSON으로 보기</a>
-      </div>
+    <details class="workflow-panel raw-log-details">
+      <summary>
+        <span>Raw Log Row / Metadata</span>
+        <small>감사·디버깅용 전체 action log 원문</small>
+      </summary>
       <div class="rendered-content">{{ row_html }}</div>
-    </section>
+    </details>
   </main>
 </body>
 </html>

@@ -2,24 +2,66 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SOP Library · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <div>
-      <h1>SOP Library</h1>
-      <p>Agent Harness, BoI Wiki, 설비 이상 대응 같은 공통 SOP와 실행 가이드를 확인합니다.</p>
-    </div>
-    <div class="user-box">
-      사번: {{ employee_id }}<br />
-      <a href="/?employee_id={{ employee_id }}">BoI 목록</a> ·
-      <a href="/event-types?employee_id={{ employee_id }}">Event Types</a> ·
-      <a href="/actions?employee_id={{ employee_id }}">Actions</a>
-    </div>
-  </header>
+  {% include "_app_shell.html" %}
+  <section class="toolbar page-filterbar catalog-filterbar">
+    <form method="get" action="/sops" class="catalog-filter-form">
+      <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+      <div class="filter-group catalog-search">
+        <label for="sop-search">검색</label>
+        <input id="sop-search" name="q" value="{{ q }}" placeholder="SOP 제목, 설명, 태그, 본문" />
+      </div>
+      <div class="filter-group">
+        <label for="sop-category">Category</label>
+        <select id="sop-category" name="category">
+          <option value="sop" {% if category == "sop" %}selected{% endif %}>공식 SOP</option>
+          <option value="all-related" {% if category == "all-related" %}selected{% endif %}>SOP 관련 전체</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="sop-visibility">Visibility</label>
+        <select id="sop-visibility" name="visibility">
+          <option value="" {% if not visibility %}selected{% endif %}>전체</option>
+          {% for item in visibility_options %}
+          <option value="{{ item }}" {% if visibility == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="sop-status">Status</label>
+        <select id="sop-status" name="status">
+          <option value="" {% if not status %}selected{% endif %}>전체</option>
+          {% for item in status_options %}
+          <option value="{{ item }}" {% if status == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group catalog-submit">
+        <label>&nbsp;</label>
+        <button type="submit">조회</button>
+      </div>
+    </form>
+  </section>
   <main>
-    <h2>SOP Documents ({{ docs|length }})</h2>
+    <div class="pagination-bar">
+      <div>
+        <h2>SOP Documents ({{ total_sop_docs }})</h2>
+        {% if has_active_filter %}
+        <div class="active-filter-row">
+          <span class="badge status">필터 적용</span>
+          {% if q %}<span>검색: {{ q }}</span>{% endif %}
+          {% if category != "sop" %}<span>범위: SOP 관련 전체</span>{% endif %}
+          {% if visibility %}<span>Visibility: {{ visibility }}</span>{% endif %}
+          {% if status %}<span>Status: {{ status }}</span>{% endif %}
+          <a href="{{ clear_url }}">필터 해제</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
     <div class="doc-list">
       {% for doc in docs %}
       {% set m = doc.metadata %}
@@ -33,7 +75,11 @@
         <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
       </a>
       {% else %}
-      <p>No SOP documents are accessible for this employee.</p>
+      <section class="empty-state">
+        <strong>조건에 맞는 SOP 문서가 없습니다.</strong>
+        <p>검색어를 줄이거나 범위를 SOP 관련 전체로 넓혀 확인하세요.</p>
+        <p><a href="{{ clear_url }}">필터 해제</a></p>
+      </section>
       {% endfor %}
     </div>
   </main>

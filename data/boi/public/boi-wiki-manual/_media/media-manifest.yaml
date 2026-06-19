@@ -31,3 +31,35 @@ media:
     viewport: 1440x1000
     related_doc: boi:public:boi-wiki-manual:media:okf-media-and-screenshots
     created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/boi-wiki-explorer/20260619-150927-boi-wiki-explorer-current-1440x1000-bbb0010f80d7.png
+    sha256: bbb0010f80d7c26be9d896053864ff996790270525eeeea0ea2c68361107a9f4
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/?employee_id=100001
+    captured_at: 2026-06-19T15:09:27+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:media:okf-media-and-screenshots
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-status/20260619-152032-equipment-anomaly-workflow-status-current-1440x1000-399ae96b3b8d.png
+    sha256: 399ae96b3b8d1445b74089f58435ec8fcc4802da47ce4614fd95828ad08de607
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-5557beb5527048bc86bc9c5e66c4a64f
+    captured_at: 2026-06-19T15:20:32+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:langflow:connected-flow-guide
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/langflow-stage-analysis/20260619-150927-langflow-equipment-stage-analysis-connected-flow-current-1440x1000-01d4ad42f1d6.png
+    sha256: 01d4ad42f1d65026a8a825028579377d0a007f5c26aaa2def9d252b8f6ba4f0c
+    source_kind: browser-screenshot
+    captured_url: http://localhost:7860/flow/422fa3e4-d09b-4d51-b323-e652a13f2792
+    captured_at: 2026-06-19T15:09:27+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:langflow:connected-flow-guide
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/mcp-status/20260619-151048-boi-wiki-mcp-status-capabilities-current-1440x1000-89caadae3b92.png
+    sha256: 89caadae3b92b8bc9c5d54179eca875b8fd1377c7d326a4d6940773f87e27cb3
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8200/
+    captured_at: 2026-06-19T15:10:48+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
+    created_by: codex

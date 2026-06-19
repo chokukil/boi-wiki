@@ -35,6 +35,8 @@ OKF v0.1은 이미지 asset 전용 규칙을 정의하지 않는다. BoI Wiki에
 data/boi/public/boi-wiki-manual/_media/browser/{page-slug}/{yyyyMMdd-HHmmss}-{semantic-slug}-{width}x{height}-{sha256_12}.png
 ```
 
+사용자가 제공한 원본 SOP 이미지나 업무 문서는 evidence source로 취급한다. 원본은 에이전트가 재생성하지 않고 `_media/source/{source-slug}/...`에 보존한 뒤, OCR/요약/재구성 결과와 분리해 인용한다.
+
 # Manifest Rule
 
 각 `_media` root에는 `media-manifest.yaml`을 둔다. 항목에는 `path`, `sha256`, `captured_url`, `captured_at`, `viewport`, `source_kind`, `related_doc`, `created_by`를 기록한다.
@@ -53,7 +55,7 @@ data/boi/public/boi-wiki-manual/_media/browser/{page-slug}/{yyyyMMdd-HHmmss}-{se
 
 # Browser Evidence Targets
 
-- Library folder navigation
+- BoI Wiki Explorer folder navigation
 - SOP detail
 - Source/Draft editor
 - Workflow Status
@@ -63,7 +65,7 @@ data/boi/public/boi-wiki-manual/_media/browser/{page-slug}/{yyyyMMdd-HHmmss}-{se
 
 # Example
 
-![Langflow guide rendered with OKF media](/public/boi-wiki-manual/_media/screenshots/boi-wiki-langflow-guide-20260618.png)
+![BoI Wiki Explorer with OKF media](/public/boi-wiki-manual/_media/browser/boi-wiki-explorer/20260619-150927-boi-wiki-explorer-current-1440x1000-bbb0010f80d7.png)
 
 # Citations
 

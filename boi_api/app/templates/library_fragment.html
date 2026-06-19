@@ -16,12 +16,23 @@
 
 <main id="boi-library" class="library-layout" data-library-fragment data-folder="{{ folder }}" aria-busy="false">
   <aside class="folder-sidebar" aria-label="OKF folder navigation">
-    <h2>OKF Library</h2>
+    <h2>BoI Wiki Explorer</h2>
     <a class="folder-link root {% if folder_tree.selected %}active{% endif %}" href="{{ folder_tree.url }}" {% if folder_tree.selected %}aria-current="page"{% endif %}>
       <span class="folder-label">All Accessible</span>
       <span class="folder-count">{{ folder_tree.count }}</span>
     </a>
     {{ render_folder_nodes(folder_tree.children) }}
+    <button
+      class="folder-resize-handle"
+      type="button"
+      aria-label="BoI Wiki Explorer width 조절"
+      aria-orientation="vertical"
+      aria-valuemin="220"
+      aria-valuemax="520"
+      aria-valuenow="270"
+      role="separator"
+      data-folder-resize-handle
+    ></button>
   </aside>
 
   <section class="library-content">

@@ -44,3 +44,29 @@ def test_boi_wiki_manual_and_agent_skill_cover_mcp_actions_langflow_and_media():
     assert "http://localhost:8200/mcp" in skill
     assert "Langflow is one connector kind" in skill
     assert "_media/" in skill
+
+
+def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troubleshooting():
+    text = Path("data/boi/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md").read_text(encoding="utf-8")
+
+    assert "Codex" in text
+    assert "Claude Desktop" in text
+    assert "Cursor" in text
+    assert "http://localhost:8200/mcp" in text
+    assert "Streamable HTTP" in text
+    assert "resources: 0" in text
+    assert "resource_templates: 4" in text
+    assert "tools: 10" in text
+    assert "404" in text
+    assert "406" in text
+    assert "ClosedResourceError" in text
+    assert "python scripts/check_boi_wiki_mcp.py" in text
+
+
+def test_readme_links_mcp_status_and_validation_commands():
+    text = Path("README.md").read_text(encoding="utf-8")
+
+    assert "BoI Wiki MCP" in text
+    assert "http://localhost:8200/" in text
+    assert "http://localhost:8200/mcp" in text
+    assert "python scripts/check_boi_wiki_mcp.py" in text
