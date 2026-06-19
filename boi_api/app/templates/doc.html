@@ -73,6 +73,9 @@
       {% if action_spec.curl %}
       <h3>curl</h3>
       <pre>{{ action_spec.curl }}</pre>
+      {% elif action_spec.curl_note %}
+      <h3>curl</h3>
+      <p class="empty-state">{{ action_spec.curl_note }}</p>
       {% endif %}
       <details class="security-notes">
         <summary>Security Notes</summary>
@@ -149,7 +152,7 @@
       <p><strong>SOP:</strong> <code>{{ workflow_poc.sop_ref }}</code> <code>{{ workflow_poc.sop_uri }}</code></p>
       <p><strong>Expected events:</strong> {{ workflow_poc.expected_event_types | join(', ') }}</p>
       <p><strong>Manual handoffs:</strong> {{ workflow_poc.expected_manual_actions | join(', ') }}</p>
-      <pre>curl -X POST "http://localhost:8000/api/workflows/{{ workflow_poc.workflow_key }}/start?employee_id={{ employee_id }}" \
+      <pre>curl -X POST "{{ public_boi_base_url }}/api/workflows/{{ workflow_poc.workflow_key }}/start?employee_id={{ employee_id }}" \
   -H "Content-Type: application/json" \
   -d '{"payload":{"title":"Workflow start","workflow":"{{ workflow_poc.workflow_key }}"}}'</pre>
     </section>
@@ -158,7 +161,7 @@
     <section class="promotion-help">
       <h2>Promotion API</h2>
       <p>명시적 요청 기반 Team 승격 테스트:</p>
-      <pre>curl -X POST "http://localhost:8000/api/boi/{{ doc.metadata.boi_id }}/promote?employee_id={{ employee_id }}" \
+      <pre>curl -X POST "{{ public_boi_base_url }}/api/boi/{{ doc.metadata.boi_id }}/promote?employee_id={{ employee_id }}" \
   -H "Content-Type: application/json" \
   -d '{"target_visibility":"team","team_id":"aix-tf","reviewer":"tf-lead","promotion_reason":"PoC demo"}'</pre>
     </section>

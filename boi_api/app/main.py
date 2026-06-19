@@ -82,6 +82,8 @@ BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://mangugil.iptime.org:123
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
 
+LOCALHOST_NAMES = {"localhost", "127.0.0.1", "::1", "testserver"}
+
 # Development fallback user/team maps. In SSO modes, Keycloak/HCP identity
 # resolves teams and roles and these maps are only used for local compatibility.
 
@@ -1629,38 +1631,132 @@ def docs_for_template(docs: list[dict[str, Any]], employee_id: str, folder: str 
     return items
 
 
-def metadata_rows_for_template(metadata: dict[str, Any]) -> list[dict[str, Any]]:
-    return [{"key": str(key), "value_html": render_value_html(value)} for key, value in metadata.items()]
+def clean_external_url(value: str | None) -> str:
+    return str(value or "").strip().rstrip("/")
 
 
-def action_spec_for_template(metadata: dict[str, Any]) -> dict[str, Any] | None:
+def is_local_request(request: Request) -> bool:
+    return (request.url.hostname or "").lower() in LOCALHOST_NAMES
+
+
+def request_origin(request: Request) -> str:
+    host = request.headers.get("host") or request.url.netloc
+    return f"{request.url.scheme}://{host}".rstrip("/")
+
+
+def boi_public_base_url(request: Request) -> str:
+    return clean_external_url(os.getenv("BOI_EXTERNAL_URL")) or request_origin(request)
+
+
+def optional_external_url(request: Request, env_name: str, local_default: str) -> str:
+    configured = clean_external_url(os.getenv(env_name))
+    if configured:
+        return configured
+    return local_default.rstrip("/") if is_local_request(request) else ""
+
+
+def action_gateway_public_base_url(request: Request) -> str:
+    return optional_external_url(request, "ACTION_GATEWAY_EXTERNAL_URL", "http://localhost:8100")
+
+
+def langflow_public_base_url(request: Request) -> str:
+    return optional_external_url(request, "LANGFLOW_EXTERNAL_URL", "http://localhost:7860")
+
+
+def mcp_public_base_url(request: Request) -> str:
+    return optional_external_url(request, "BOI_WIKI_MCP_EXTERNAL_URL", "http://localhost:8200")
+
+
+def kafka_ui_public_base_url(request: Request) -> str:
+    return optional_external_url(request, "KAFKA_UI_EXTERNAL_URL", "http://localhost:8081")
+
+
+def external_url_marker(env_name: str) -> str:
+    return f"<{env_name}_NOT_CONFIGURED>"
+
+
+def display_url_replacements(request: Request) -> list[tuple[str, str]]:
+    boi_base = boi_public_base_url(request)
+    action_gateway_base = action_gateway_public_base_url(request) or external_url_marker("ACTION_GATEWAY_EXTERNAL_URL")
+    langflow_base = langflow_public_base_url(request) or external_url_marker("LANGFLOW_EXTERNAL_URL")
+    mcp_base = mcp_public_base_url(request) or external_url_marker("BOI_WIKI_MCP_EXTERNAL_URL")
+    return [
+        ("http://localhost:8000", boi_base),
+        ("http://boi-api:8000", boi_base),
+        ("http://localhost:8100", action_gateway_base),
+        ("http://action-gateway:8100", action_gateway_base),
+        ("http://localhost:7860", langflow_base),
+        ("http://langflow:7860", langflow_base),
+        ("http://localhost:8200", mcp_base),
+        ("http://boi-wiki-mcp:8200", mcp_base),
+    ]
+
+
+def rewrite_display_string(value: str, request: Request) -> str:
+    rewritten = str(value)
+    for source, target in display_url_replacements(request):
+        rewritten = rewritten.replace(source, target)
+    return rewritten
+
+
+def rewrite_display_value(value: Any, request: Request) -> Any:
+    if isinstance(value, str):
+        return rewrite_display_string(value, request)
+    if isinstance(value, dict):
+        return {key: rewrite_display_value(item, request) for key, item in value.items()}
+    if isinstance(value, list):
+        return [rewrite_display_value(item, request) for item in value]
+    return value
+
+
+def display_curl_for_action_spec(curl: str | None, request: Request) -> tuple[str, str]:
+    if not curl:
+        return "", ""
+    rewritten = rewrite_display_string(curl, request)
+    if "_EXTERNAL_URL_NOT_CONFIGURED" in rewritten:
+        return "", "External invoke URL is not configured for this deployment."
+    return rewritten, ""
+
+
+def metadata_rows_for_template(metadata: dict[str, Any], request: Request | None = None) -> list[dict[str, Any]]:
+    display_metadata = metadata
+    if request is not None and metadata.get("type") == "boi/action-spec":
+        display_metadata = rewrite_display_value(metadata, request)
+    return [{"key": str(key), "value_html": render_value_html(value)} for key, value in display_metadata.items()]
+
+
+def action_spec_for_template(metadata: dict[str, Any], request: Request) -> dict[str, Any] | None:
     if metadata.get("type") != "boi/action-spec":
         return None
     connector_kind = str(metadata.get("connector_kind") or "")
     request_fields = ["request_schema", "input_schema", "example_request", "example_tool_call"]
     response_fields = ["response_schema", "output_schema", "example_response"]
+    display_url = rewrite_display_value(metadata.get("url") or metadata.get("mcp_server"), request)
+    gateway_mapping = rewrite_display_value(metadata.get("action_gateway_mapping") or {}, request)
+    curl, curl_note = display_curl_for_action_spec(metadata.get("curl"), request)
     return {
         "action_key": metadata.get("action_key"),
         "connector_kind": connector_kind,
         "execution_mode": metadata.get("execution_mode"),
         "endpoint_label": "MCP Tool" if connector_kind == "mcp" else "Endpoint",
         "method": metadata.get("method") or "POST",
-        "url": metadata.get("url") or metadata.get("mcp_server"),
+        "url": display_url,
         "protocol": metadata.get("protocol"),
         "auth_html": render_value_html(metadata.get("auth") or {}),
         "headers_html": render_value_html(metadata.get("headers") or {}),
         "request_rows": [
-            {"key": field, "value_html": render_value_html(metadata.get(field))}
+            {"key": field, "value_html": render_value_html(rewrite_display_value(metadata.get(field), request))}
             for field in request_fields
             if metadata.get(field) is not None
         ],
         "response_rows": [
-            {"key": field, "value_html": render_value_html(metadata.get(field))}
+            {"key": field, "value_html": render_value_html(rewrite_display_value(metadata.get(field), request))}
             for field in response_fields
             if metadata.get(field) is not None
         ],
-        "gateway_html": render_value_html(metadata.get("action_gateway_mapping") or {}),
-        "curl": metadata.get("curl"),
+        "gateway_html": render_value_html(gateway_mapping),
+        "curl": curl,
+        "curl_note": curl_note,
         "security_html": render_value_html(metadata.get("security_notes")),
         "mcp_tool_name": metadata.get("tool_name"),
         "mcp_transport": metadata.get("transport"),
@@ -1868,17 +1964,23 @@ def app_shell_context(
         {"id": "events", "label": "Event Stream", "href": app_url("/events", employee_id)},
         {"id": "actions", "label": "Actions", "href": app_url("/actions", employee_id)},
     ]
+    utility_links = [
+        {"label": "API Docs", "href": "/docs", "external": True},
+    ]
+    optional_tools = [
+        ("Langflow", langflow_public_base_url(request)),
+        ("Kafka UI", kafka_ui_public_base_url(request)),
+        ("MCP Status", mcp_public_base_url(request)),
+    ]
+    for label, href in optional_tools:
+        if href:
+            utility_links.append({"label": label, "href": href, "external": True})
     return {
         "title": title,
         "description": description,
         "active_nav": active_nav,
         "primary_nav": primary_nav,
-        "utility_links": [
-            {"label": "Langflow", "href": "http://localhost:7860", "external": True},
-            {"label": "Kafka UI", "href": "http://localhost:8081", "external": True},
-            {"label": "API Docs", "href": "/docs", "external": True},
-            {"label": "MCP Status", "href": "http://localhost:8200/", "external": True},
-        ],
+        "utility_links": utility_links,
         "page_actions": page_actions or [],
         "auth_mode": mode,
         "dev_mode": mode == "dev",
@@ -3103,12 +3205,13 @@ async def doc_page(
             "source_url": source_url_for_doc(doc, employee_id),
             "doc_graph_url": "/api/okf/graph/doc/" + graph_ref + "?" + urlencode({"employee_id": employee_id}),
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
-            "metadata_rows": metadata_rows_for_template(doc["metadata"]),
             "body_html": cached_doc_body_html(doc, employee_id, doc_lookup),
             "body_editor": body_editor_payload_for_doc(doc, employee_id),
             "citations": citation_rows_for_doc(doc, employee_id, doc_lookup=doc_lookup),
             "workflow_poc": workflow_poc,
-            "action_spec": action_spec_for_template(doc["metadata"]),
+            "metadata_rows": metadata_rows_for_template(doc["metadata"], request),
+            "public_boi_base_url": boi_public_base_url(request),
+            "action_spec": action_spec_for_template(doc["metadata"], request),
         },
     )
 

@@ -658,6 +658,43 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
     assert "<title>BoI Wiki</title>" in home.text
 
 
+def test_app_shell_hides_unconfigured_localhost_tools_for_external_host(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
+    monkeypatch.delenv("LANGFLOW_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("KAFKA_UI_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("BOI_WIKI_MCP_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001", headers={"host": "mangugil.iptime.org:28000"})
+
+    assert response.status_code == 200
+    assert 'class="utility-nav"' in response.text
+    assert "API Docs" in response.text
+    assert ">Langflow</a>" not in response.text
+    assert ">Kafka UI</a>" not in response.text
+    assert ">MCP Status</a>" not in response.text
+    assert "http://localhost" not in response.text
+
+
+def test_app_shell_uses_configured_external_tool_urls(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
+    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://mangugil.iptime.org:27860")
+    monkeypatch.setenv("KAFKA_UI_EXTERNAL_URL", "http://mangugil.iptime.org:28081")
+    monkeypatch.setenv("BOI_WIKI_MCP_EXTERNAL_URL", "http://mangugil.iptime.org:28200")
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001", headers={"host": "mangugil.iptime.org:28000"})
+
+    assert response.status_code == 200
+    assert "http://mangugil.iptime.org:27860" in response.text
+    assert "http://mangugil.iptime.org:28081" in response.text
+    assert "http://mangugil.iptime.org:28200" in response.text
+    assert "http://localhost:7860" not in response.text
+    assert "http://localhost:8081" not in response.text
+    assert "http://localhost:8200" not in response.text
+
+
 def test_app_shell_shows_sso_state_and_hides_dev_employee_switch_in_non_dev_mode(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
     client = TestClient(boi_app_module.app)
@@ -897,6 +934,46 @@ def test_action_spec_is_collapsed_by_default_and_source_citation_is_clickable(bo
     assert '<section class="executable-spec"' not in response.text
     assert "data/action_catalog/actions.yaml" in response.text
     assert "/source?employee_id=100001&amp;path=data%2Faction_catalog%2Factions.yaml" in response.text
+
+
+def test_action_spec_display_rewrites_localhost_examples_for_external_host(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
+    monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("LANGFLOW_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("BOI_WIKI_MCP_EXTERNAL_URL", raising=False)
+    client = TestClient(boi_app_module.app)
+
+    response = client.get(
+        "/docs/boi:public:actions:api:request-trend-history?employee_id=100001",
+        headers={"host": "mangugil.iptime.org:28000"},
+    )
+
+    assert response.status_code == 200
+    assert "http://mangugil.iptime.org:28000/api/poc/equipment/trend-history" in response.text
+    assert "ACTION_GATEWAY_EXTERNAL_URL_NOT_CONFIGURED" in response.text
+    assert "http://localhost" not in response.text
+    assert "http://boi-api:8000" not in response.text
+
+
+def test_workflow_poc_and_promotion_curls_use_external_boi_url(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
+    client = TestClient(boi_app_module.app)
+
+    sop_response = client.get(
+        "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        headers={"host": "mangugil.iptime.org:28000"},
+    )
+    private_response = client.get(
+        "/docs/boi:private:100001:seed-note-v0.1?employee_id=100001",
+        headers={"host": "mangugil.iptime.org:28000"},
+    )
+
+    assert sop_response.status_code == 200
+    assert 'curl -X POST "http://mangugil.iptime.org:28000/api/workflows/equipment-anomaly/start?employee_id=100001"' in sop_response.text
+    assert 'curl -X POST "http://localhost:8000/api/workflows' not in sop_response.text
+    assert private_response.status_code == 200
+    assert 'curl -X POST "http://mangugil.iptime.org:28000/api/boi/boi:private:100001:seed-note-v0.1/promote?employee_id=100001"' in private_response.text
+    assert 'curl -X POST "http://localhost:8000/api/boi/' not in private_response.text
 
 
 def test_action_catalog_source_api_is_valid_with_manual_high_risk_approvals(boi_app_module):

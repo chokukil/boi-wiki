@@ -66,6 +66,22 @@ docker compose up -d --build
 
 기본 인증 모드는 `BOI_AUTH_MODE=dev`입니다. PoC와 테스트 편의를 위해 `employee_id` selector/query를 허용합니다.
 
+## NAS / 외부 URL 배포
+
+외부 도메인으로 배포할 때는 사용자가 보는 URL과 Docker 내부 실행 URL을 분리합니다. `actions.yaml`의 `http://boi-api:8000`, `http://langflow:7860`, `http://boi-wiki-mcp:8200` 같은 값은 컨테이너 내부 호출용이므로 바꾸지 않습니다.
+
+NAS에서 BoI Wiki만 외부로 연 최소 설정:
+
+```bash
+BOI_EXTERNAL_URL=http://mangugil.iptime.org:28000
+LANGFLOW_EXTERNAL_URL=
+KAFKA_UI_EXTERNAL_URL=
+BOI_WIKI_MCP_EXTERNAL_URL=
+ACTION_GATEWAY_EXTERNAL_URL=
+```
+
+Langflow, Kafka UI, MCP Status, Action Gateway를 외부에 별도 포트로 열면 해당 `*_EXTERNAL_URL`만 추가합니다. 값이 비어 있으면 상단 도구 메뉴와 Action Spec 복사용 예시에서 깨진 `localhost` 링크를 만들지 않습니다.
+
 ## 저장소 분리
 
 | 저장소 | 역할 | 대상 |
