@@ -33,11 +33,11 @@ export async function slide04(presentation, ctx) {
     y: 570,
     width: 1060,
     height: 42,
-    text: "Current screenshot gap: Chrome Browser Use still blocks localhost, so canvas evidence is captured as flow IDs and action logs until policy is opened.",
+    text: "Canvas evidence is now captured with vercel:agent-browser: the connected Langflow flow shows BoI custom components, Gemma OpenAI-compatible LLM settings, and Action Gateway invocation nodes.",
     fontSize: 15,
-    color: C.amber,
+    color: C.green,
     bold: true,
   });
-  footer(slide, ctx, 4, "Source: summary.json, langflow-flows.json");
+  footer(slide, ctx, 4, "Source: summary.json, langflow-flows.json, captures/boi-poc/07-langflow-boi-reference-flow.png");
   return slide;
 }

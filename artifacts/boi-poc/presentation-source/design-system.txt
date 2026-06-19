@@ -43,8 +43,9 @@ Source/footer grammar:
 - Use trace_id and file path when a slide cites generated evidence.
 
 Screenshot policy:
-- Screenshot slots use dashed borders and explicit "pending Chrome localhost policy" labels.
-- Do not fabricate UI screenshots or use alternate capture tools while Chrome Browser Use policy blocks localhost.
+- Use real PNG captures from `captures/boi-poc/`.
+- Never use placeholder screenshot slots in the final artifact-tool deck.
+- Label each screenshot with the source filename so the evidence can be traced back to the capture manifest.
 
 Banned motifs:
 - Decorative gradients, orbs, pseudo-logo marks, decorative icons.

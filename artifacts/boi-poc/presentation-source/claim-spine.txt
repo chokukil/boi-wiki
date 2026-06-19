@@ -43,7 +43,7 @@ Slides:
    Source: recent commits, runtime-health.txt.
    Omission: corporate production IdP integration is still a replacement target.
 
-8. Claim: The remaining blocker is evidence capture, not runtime execution.
-   Proof object: browser policy note plus next capture checklist.
-   Source: evidence-ledger.md, Chrome Browser Use rejection.
-   Omission: final screenshot-enriched PPT requires policy change.
+8. Claim: Runtime execution is backed by browser-visible evidence.
+   Proof object: 8 validated screenshots covering BoI Wiki, Workflow Status, Generated BoI, Langflow canvas, and Kafka topics.
+   Source: captures/boi-poc, capture-targets.json, delivery-readiness.json.
+   Omission: Chrome Browser Use remains unavailable for localhost, but the evidence requirement is satisfied through vercel:agent-browser.

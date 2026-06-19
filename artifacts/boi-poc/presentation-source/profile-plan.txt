@@ -11,8 +11,8 @@ Required proof objects:
 
 Source/asset requirements:
 - Use CLI/HTTP evidence files as current authoritative source.
-- Actual browser screenshots are still pending because Chrome Browser Use blocks localhost by enterprise policy.
-- Do not invent screenshots or use alternate browser capture paths to bypass that policy.
+- Use the captured browser screenshots under `captures/boi-poc/` as visual evidence.
+- BoI Wiki pages were captured with the development service-token header; Langflow was captured after development login; Kafka UI was captured on the topics list.
 
 Brand/authenticity constraints:
 - Do not create or approximate SK hynix logos.
@@ -24,6 +24,4 @@ Profile-specific QA gates:
 - Claims must name concrete runtime behavior, not generic AI transformation language.
 
 Known missing inputs:
-- Real Chrome screenshots of BoI Wiki/Langflow/Kafka UI.
-- PowerPoint add-in polish pass is not verifiable while screenshots are pending.
-- artifact-tool runtime is currently missing from this Codex thread, so PPTX export cannot proceed until runtime package is restored.
+- None for the artifact-tool evidence deck. The PowerPoint add-in polish pass remains outside the canonical artifact-tool export gate.

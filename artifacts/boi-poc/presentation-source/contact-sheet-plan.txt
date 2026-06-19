@@ -22,5 +22,5 @@ Proof density:
 - Use generated BoI IDs on slide 5, truncated only where the full ID also appears in source notes.
 - Use explicit approval_required actions on slide 6.
 
-Known weakness before screenshot pass:
-- The deck can prove runtime execution through evidence files, but not visually demonstrate the browser UI until Chrome Browser Use can access localhost.
+Evidence capture status:
+- The deck includes browser-visible evidence from the validated `captures/boi-poc/` screenshot set.

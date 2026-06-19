@@ -32,6 +32,12 @@ Generated BoI evidence:
 - root_cause.analysis.requested.v1 -> boi:private:100001:20260619014411:b0876e
 - equipment.alarm.raised.v1 -> boi:private:100001:20260619014404:99a3d5
 
-Screenshot caveat:
-- Chrome Browser Use rejected localhost access by enterprise policy.
-- No screenshot should be represented as captured until policy is changed and Chrome capture is rerun.
+Screenshot evidence:
+- `captures/boi-poc/01-boi-wiki-home.png`
+- `captures/boi-poc/02-sop-library.png`
+- `captures/boi-poc/03-event-type-catalog.png`
+- `captures/boi-poc/04-event-stream.png`
+- `captures/boi-poc/05-action-catalog-logs.png`
+- `captures/boi-poc/06-private-boi-corrective-action.png`
+- `captures/boi-poc/07-langflow-boi-reference-flow.png`
+- `captures/boi-poc/08-kafka-ui-topics.png`
