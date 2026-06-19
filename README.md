@@ -1,35 +1,35 @@
 # BoI Wiki
 
-BoI Wiki is an OKF-based AI Native Workflow knowledge/runtime system.
+BoI Wiki는 OKF 기반의 AI Native Workflow 지식/런타임 시스템입니다.
 
-This repository is the shared runtime:
+이 저장소는 공유 런타임입니다.
 
-- BoI Wiki Web UI and BoI API
-- Kafka Event Broker and Event Router
-- Action Gateway for API, Webhook, MCP, Langflow, Manual, Event Broker, and BoI Writer actions
-- BoI Wiki MCP server for agents
-- Langflow reference flows and BoI custom component integration
-- OKF Markdown source documents, action catalog, event catalog, and runtime smoke tests
+- BoI Wiki Web UI와 BoI API
+- Kafka Event Broker와 Event Router
+- API, Webhook, MCP, Langflow, Manual, Event Broker, BoI Writer action을 실행하는 Action Gateway
+- agent가 사용할 BoI Wiki MCP 서버
+- Langflow reference flow와 BoI custom component 연계
+- OKF Markdown 원본 문서, action catalog, event catalog, runtime smoke test
 
-For personal Local Private work, use the separate lightweight workspace repository:
+개인 Local Private 작업은 별도 lightweight workspace 저장소를 사용합니다.
 
 ```text
 /home/chokukil/boi-wiki-local
 ```
 
-`boi-wiki-local` is intentionally not a Web runtime. It is a local OKF Markdown workspace plus Codex/Claude/Cursor harness files.
+`boi-wiki-local`은 Web 런타임이 아닙니다. 개인 PC에 두는 OKF Markdown workspace와 Codex/Claude/Cursor 하네스 파일 묶음입니다.
 
-## Purpose
+## 목적
 
-This PoC demonstrates an AI Native Workflow backbone where:
+이 PoC는 AI Native Workflow backbone을 보여줍니다.
 
-- Kafka acts as the actual Event Broker.
-- Event Router consumes business events from Kafka.
-- Action Gateway dispatches each event to registered connector actions.
-- Connectors can be BoI Writer, Langflow Webhook, HTTP API, generic Webhook, MCP bridge, or future protocols.
-- BoI Wiki stores SOPs, event-linked work context, analysis results, action drafts, reusable organizational knowledge, and draft-only edits that are applied by agents after validation.
+- Kafka가 실제 Event Broker 역할을 합니다.
+- Event Router가 Kafka의 업무 이벤트를 소비합니다.
+- Action Gateway가 이벤트별 등록 connector action을 실행합니다.
+- connector는 BoI Writer, Langflow Webhook, HTTP API, generic Webhook, MCP bridge, Manual, Event Broker 등을 포함합니다.
+- BoI Wiki는 SOP, 이벤트 기반 업무 맥락, 분석 결과, action 초안, 재사용 가능한 조직 지식, draft-only 수정 요청을 저장합니다.
 
-The current design intentionally removes the idea of a secondary path. BoI Writer is not a secondary path. It is a first-class connector equal to Langflow, API, Webhook, MCP, and future connector types.
+현재 설계에서 BoI Writer는 보조 경로가 아닙니다. Langflow, API, Webhook, MCP와 같은 1급 connector입니다.
 
 ```text
 Business Event
@@ -45,50 +45,50 @@ Business Event
   -> BoI Wiki / API Results / Next Events
 ```
 
-## Quick Start
+## 빠른 시작
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
 ```
 
-Open:
+열어볼 화면:
 
 - BoI Wiki: http://localhost:8000/?employee_id=100001
 - Event Types: http://localhost:8000/event-types?employee_id=100001
 - Event Stream: http://localhost:8000/events?employee_id=100001
-- SOPs: http://localhost:8000/sops?employee_id=100001
+- SOP: http://localhost:8000/sops?employee_id=100001
 - Action Gateway: http://localhost:8100/docs
-- BoI Wiki MCP status: http://localhost:8200/
+- BoI Wiki MCP 상태: http://localhost:8200/
 - BoI Wiki MCP Streamable HTTP: http://localhost:8200/mcp
 - Kafka UI: http://localhost:8081
 - Langflow: http://localhost:7860
 
-Default auth is `BOI_AUTH_MODE=dev`, which keeps the local `employee_id` selector/query for PoC and tests.
+기본 인증 모드는 `BOI_AUTH_MODE=dev`입니다. PoC와 테스트 편의를 위해 `employee_id` selector/query를 허용합니다.
 
-## Repository Split
+## 저장소 분리
 
-| Repo | Role | Audience |
+| 저장소 | 역할 | 대상 |
 |---|---|---|
-| `/home/chokukil/boi-wiki` | Shared runtime, source of truth, Web/MCP/API services, test suite | Developers, operators, shared Wiki agents |
-| `/home/chokukil/boi-wiki-local` | Local Private OKF workspace and agent harness | General users using Codex, Claude, Cursor |
+| `/home/chokukil/boi-wiki` | 공유 런타임, source of truth, Web/MCP/API 서비스, 테스트 | 개발자, 운영자, shared Wiki agent |
+| `/home/chokukil/boi-wiki-local` | Local Private OKF workspace와 agent 하네스 | Codex, Claude, Cursor를 쓰는 일반 사용자 |
 
-Shared Web Private and Local Private are different.
+Web Private과 Local Private은 다릅니다.
 
-- Web Private is stored under this runtime's `DATA_ROOT` and is visible only to the authenticated employee in Web BoI Wiki.
-- Local Private is stored in `boi-wiki-local` on the user's PC and is not scanned by this Web BoI Wiki.
-- Local Private sharing requires explicit user confirmation and creates only a remote draft. Final source changes still require shared repo validation and commit.
+- Web Private은 이 런타임의 `DATA_ROOT` 아래에 저장되며, 인증된 사번 사용자에게만 Web BoI Wiki에서 보입니다.
+- Local Private은 사용자 PC의 `boi-wiki-local`에 저장되며, 이 Web BoI Wiki가 scan하지 않습니다.
+- Local Private 공유는 사용자 명시 확인 후 remote draft만 생성합니다. 최종 원본 반영은 shared repo에서 검증과 commit을 거쳐야 합니다.
 
 ## BoI Wiki MCP
 
-BoI Wiki MCP lets Codex, Claude Desktop, Cursor, Langflow, and custom agents use BoI Wiki through one MCP server instead of memorizing REST routes.
+BoI Wiki MCP는 Codex, Claude Desktop, Cursor, Langflow, custom agent가 REST 경로를 외우지 않고 BoI Wiki를 사용할 수 있게 하는 agent-facing 인터페이스입니다.
 
-- Human status page: http://localhost:8200/
+- 사람이 보는 상태 페이지: http://localhost:8200/
 - MCP Streamable HTTP endpoint: http://localhost:8200/mcp
-- Bridge compatibility endpoint: http://localhost:8200/api/mcp/call
-- Manual: http://localhost:8000/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp?employee_id=100001
+- Action Gateway bridge 호환 endpoint: http://localhost:8200/api/mcp/call
+- 매뉴얼: http://localhost:8000/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp?employee_id=100001
 
-Do not validate MCP by opening `/mcp` directly in a browser. A direct browser or plain curl request can return `406 Not Acceptable` because it is missing MCP Streamable HTTP headers. Use the status page or the smoke check:
+`/mcp`를 브라우저 주소창으로 직접 열어 MCP를 검증하지 마세요. 일반 브라우저나 plain `curl`은 MCP Streamable HTTP `Accept` header가 없어서 `406 Not Acceptable`을 받을 수 있습니다. 상태 페이지나 smoke check를 사용합니다.
 
 ```bash
 python scripts/check_boi_wiki_mcp.py \
@@ -97,7 +97,7 @@ python scripts/check_boi_wiki_mcp.py \
   --summary
 ```
 
-For Codex, Claude Desktop, or Cursor registration details:
+Codex, Claude Desktop, Cursor 등록 전 상세 체크:
 
 ```bash
 python scripts/check_boi_wiki_mcp.py \
@@ -107,55 +107,55 @@ python scripts/check_boi_wiki_mcp.py \
   --client-checklist
 ```
 
-## SSO Dev Mode
+## SSO 개발 모드
 
-To exercise the SK hynix-style Keycloak/HCP path locally:
+SK hynix 스타일 Keycloak/HCP 경로를 로컬에서 확인하려면 SSO dev overlay를 사용합니다.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.sso-dev.yml up -d --build
 ```
 
-Open:
+열어볼 화면:
 
 - BoI Wiki SSO login: http://localhost:8000/auth/login
 - Keycloak dev realm: http://localhost:8088
 - Langflow Hynix SSO UI: http://localhost:7860
 
-The dev realm seeds users `100001`, `100002`, and `100003` with password `password`. `100001` has both `aix-tf` and `platform` teams plus admin roles. `100002` has only `aix-tf`; `100003` has only `platform`.
+dev realm은 `100001`, `100002`, `100003` 사용자를 만들고 password는 `password`입니다. `100001`은 `aix-tf`, `platform` 팀과 admin 역할을 모두 갖습니다. `100002`는 `aix-tf`, `100003`은 `platform`만 갖습니다.
 
-In `BOI_AUTH_MODE=keycloak`, `employee_id` query spoofing is rejected. Internal Event Router, Action Gateway, and MCP bridge calls must use `x-service-token` plus the target actor `employee_id`.
+`BOI_AUTH_MODE=keycloak`에서는 query 사번 spoofing이 거부됩니다. 내부 Event Router, Action Gateway, MCP bridge 호출은 `x-service-token`과 대상 `employee_id`를 함께 사용해야 합니다.
 
-The SSO dev overlay is aligned with the `langflow-hynix` Keycloak/HCP model:
+SSO dev overlay는 `langflow-hynix` Keycloak/HCP 모델에 맞춰져 있습니다.
 
-- Langflow reads `KEYCLOAK_HCP_API_URL`, `KEYCLOAK_ALLOWED_EMPLOYEE`, `KEYCLOAK_EMPLOYEE_CLAIM`, and `KEYCLOAK_SHARED_USERNAME`.
-- BoI Wiki accepts the same `KEYCLOAK_*` aliases while keeping `BOI_*` names for Wiki-specific settings.
-- Mock HCP exposes both `GET /api/permissions?employee_id=...` for BoI Wiki and `GET /v1/projects/{project}/roles` for Langflow-Hynix.
-- Workflow start, action invoke, draft write, and promotion are role-gated by `boi.workflow_runner`, `boi.action_invoker`, `boi.editor`, and `boi.promoter`.
+- Langflow는 `KEYCLOAK_HCP_API_URL`, `KEYCLOAK_ALLOWED_EMPLOYEE`, `KEYCLOAK_EMPLOYEE_CLAIM`, `KEYCLOAK_SHARED_USERNAME`을 읽습니다.
+- BoI Wiki는 Wiki 전용 `BOI_*` 이름을 유지하면서 동일한 `KEYCLOAK_*` alias를 받습니다.
+- Mock HCP는 BoI Wiki용 `GET /api/permissions?employee_id=...`와 Langflow-Hynix용 `GET /v1/projects/{project}/roles`를 제공합니다.
+- workflow start, action invoke, draft write, promotion은 `boi.workflow_runner`, `boi.action_invoker`, `boi.editor`, `boi.promoter` 역할로 통제됩니다.
 
-## Using the BoI Harness
+## BoI 하네스
 
-The harness documents define how Codex, Claude, Langflow, and custom agents should create or change curated BoI Wiki knowledge.
+하네스 문서는 Codex, Claude, Langflow, custom agent가 curated BoI Wiki 지식을 만들거나 수정할 때 따라야 하는 기준입니다.
 
-- Repo source: `harness/README.md`
-- BoI Wiki entry: http://localhost:8000/docs/boi:public:harness:overview?employee_id=100001
-- SOP authoring: http://localhost:8000/docs/boi:public:harness:sop-authoring-harness?employee_id=100001
-- Action authoring: http://localhost:8000/docs/boi:public:harness:action-authoring-harness?employee_id=100001
-- Local Private agent harness: http://localhost:8000/docs/boi:public:harness:local-private-agent-harness?employee_id=100001
+- repo 원본: `harness/README.md`
+- BoI Wiki 진입점: http://localhost:8000/docs/boi:public:harness:overview?employee_id=100001
+- SOP 작성: http://localhost:8000/docs/boi:public:harness:sop-authoring-harness?employee_id=100001
+- Action 작성: http://localhost:8000/docs/boi:public:harness:action-authoring-harness?employee_id=100001
+- Local Private agent 하네스: http://localhost:8000/docs/boi:public:harness:local-private-agent-harness?employee_id=100001
 - Web draft editing: http://localhost:8000/docs/boi:public:harness:web-draft-editing-guide?employee_id=100001
 
-Web source edits are draft-only. `Save Draft` does not change the original Markdown/YAML and does not create a Git commit. An agent must validate, apply, test, and commit the draft separately.
+Web source edit는 draft-only입니다. `Save Draft`는 원본 Markdown/YAML을 바꾸지 않고 Git commit도 만들지 않습니다. agent가 draft를 검증, 적용, 테스트, commit해야 curated source에 반영됩니다.
 
 ## BoI Wiki Local
 
-Use BoI Wiki Local when a general user wants a personal Local Private workspace without installing Python, Docker, Git, or MCP.
+일반 사용자가 Python, Docker, Git, MCP를 몰라도 개인 Local Private workspace를 쓰고 싶을 때 BoI Wiki Local을 사용합니다.
 
-The local repository path created in this environment is:
+이 환경에 생성된 local repository 경로:
 
 ```text
 /home/chokukil/boi-wiki-local
 ```
 
-In a user environment, the intended install experience is simple: give the `boi-wiki-local` repo URL to an agent and say:
+사용자 환경에서는 `boi-wiki-local` repo URL을 agent에게 주고 이렇게 말하면 됩니다.
 
 ```text
 이 repo 설치해줘.
@@ -163,16 +163,16 @@ In a user environment, the intended install experience is simple: give the `boi-
 이 회의 내용을 BoI로 정리해줘.
 ```
 
-Local Private documents stay under the user's local workspace and are not scanned by this Web BoI Wiki `DATA_ROOT`. Remote sharing requires an explicit user confirmation and creates only a shared BoI Wiki draft; final source changes still require agent validation, tests, and Git commit in this shared runtime repo.
+Local Private 문서는 사용자 local workspace에만 남고 이 Web BoI Wiki의 `DATA_ROOT`에 scan되지 않습니다. 원격 공유는 사용자 명시 확인이 있어야 하며, shared BoI Wiki draft만 생성합니다. 최종 원본 변경은 이 shared runtime repo에서 agent 검증, 테스트, Git commit을 거쳐야 합니다.
 
-Manuals:
+매뉴얼:
 
-- Local Private overview: http://localhost:8000/docs/boi:public:boi-wiki-manual:local-private:overview?employee_id=100001
-- Local Private harness: http://localhost:8000/docs/boi:public:harness:local-private-agent-harness?employee_id=100001
+- Local Private 시작하기: http://localhost:8000/docs/boi:public:boi-wiki-manual:local-private:overview?employee_id=100001
+- Local Private 하네스: http://localhost:8000/docs/boi:public:harness:local-private-agent-harness?employee_id=100001
 
-## Validation
+## 검증
 
-Shared repo validation:
+shared repo 검증:
 
 ```bash
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
@@ -180,13 +180,13 @@ pytest tests -q -s
 python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --summary
 ```
 
-Local users are not expected to run these commands. In `boi-wiki-local`, the agent harness performs Level 0 self-checks and runs `check.sh` or `check.ps1` when possible.
+일반 Local 사용자는 위 명령을 직접 실행하지 않아도 됩니다. `boi-wiki-local`에서는 agent 하네스가 Level 0 self-check를 수행하고, 가능하면 `check.sh` 또는 `check.ps1`을 실행합니다.
 
-## Key Concepts
+## 핵심 개념
 
 ### Event Broker
 
-Kafka transports business events such as:
+Kafka는 다음과 같은 업무 이벤트를 전달합니다.
 
 - `meeting.closed.v1`
 - `action.created.v1`
@@ -200,44 +200,44 @@ Kafka transports business events such as:
 
 ### Event Router
 
-The Event Router is protocol-agnostic. It does not decide that Langflow is primary or BoI API is secondary. It reads the event type and dispatches to registered connector actions through Action Gateway.
+Event Router는 프로토콜 중립입니다. Langflow를 1차 경로로, BoI API를 2차 경로로 판단하지 않습니다. Event Type을 읽고 Action Gateway를 통해 등록된 connector action을 실행합니다.
 
 ### Action Gateway
 
-Action Gateway is the connector abstraction layer. Connector actions are defined in:
+Action Gateway는 connector abstraction layer입니다. connector action은 다음 파일에 정의됩니다.
 
 ```text
 data/action_catalog/actions.yaml
 ```
 
-Supported connector action types:
+지원 connector action type:
 
-| Type | Meaning |
+| Type | 의미 |
 |---|---|
-| `boi_materialize` | Create a BoI document from a business event |
-| `langflow_webhook` | Call a Langflow Webhook Flow |
-| `http` / `api` | Call a REST-style internal API |
-| `webhook` / `internal_webhook` | Call a generic webhook |
-| `mcp_tool` | Invoke an MCP tool through the BoI Wiki MCP bridge or configured MCP-compatible endpoint |
-| `boi_event` | Publish a next business event into Kafka |
-| `mock_api` | PoC-visible system/API call result |
+| `boi_materialize` | 업무 이벤트에서 BoI 문서 생성 |
+| `langflow_webhook` | Langflow Webhook Flow 호출 |
+| `http` / `api` | REST 스타일 내부 API 호출 |
+| `webhook` / `internal_webhook` | generic webhook 호출 |
+| `mcp_tool` | BoI Wiki MCP bridge 또는 MCP-compatible endpoint 호출 |
+| `boi_event` | 다음 업무 이벤트를 Kafka에 발행 |
+| `mock_api` | PoC에서 보이는 시스템/API 호출 결과 |
 
 ### BoI Wiki
 
-BoI Wiki is the human and agent-facing knowledge surface. It shows:
+BoI Wiki는 사람과 agent가 함께 쓰는 지식 표면입니다.
 
-- Public SOPs and common documents
-- Team BoI documents based on employee/team ACL
-- Web-created Private BoI documents for the current employee
+- Public SOP와 공통 문서
+- 사번/팀 ACL 기반 Team BoI
+- 현재 사번 사용자의 Web-created Private BoI
 - Event Type Catalog
 - Event Stream
-- Event-linked BoI documents
+- Event-linked BoI 문서
 
-Local-only Private BoI created by a local agent is intentionally not shown in the Web BoI Wiki.
+local agent가 만든 Local-only Private BoI는 Web BoI Wiki에 의도적으로 보이지 않습니다.
 
-## Demo: Equipment Anomaly SOP Workflow
+## Demo: 설비 이상 SOP Workflow
 
-Start the SOP workflow:
+SOP workflow 시작:
 
 ```bash
 curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?employee_id=100001" \
@@ -245,13 +245,13 @@ curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?e
   -d '{"equipment_id":"ETCH-VM-01","alarm_code":"RESPONSE_CHAIN_ABNORMAL","title":"Response Chain 이상 Alarm 발생"}'
 ```
 
-Then check:
+확인:
 
 - Event Stream: http://localhost:8000/events?employee_id=100001
 - Event-linked BoI: http://localhost:8000/?employee_id=100001&event_type=equipment.alarm.raised.v1
 - Action logs: http://localhost:8100/api/actions/logs
 
-## Connector Configuration Example
+## Connector 설정 예시
 
 ```yaml
 - action_key: boi.materialize_event
@@ -280,26 +280,26 @@ Then check:
     employee_id: ${employee_id}
 ```
 
-## Intranet Migration Notes
+## Intranet 전환 메모
 
-Replace PoC pieces with enterprise services:
+PoC 요소는 다음 기업 내부 서비스로 교체합니다.
 
 | PoC | Intranet Target |
 |---|---|
-| Hardcoded employee/team map | SSO/IAM/HR organization data |
-| File-based BoI Wiki | Internal document/Wiki/Git/SharePoint store |
-| Mock APIs | TAS, HyVIS, equipment, approval, notification APIs |
-| Development keys | Secret Manager |
+| hardcoded employee/team map | SSO/IAM/HR 조직 데이터 |
+| file-based BoI Wiki | 내부 문서/Wiki/Git/SharePoint 저장소 |
+| mock API | TAS, HyVIS, 설비, 승인, 알림 API |
+| development key | Secret Manager |
 | `BOI_AUTH_MODE=dev` | Keycloak SSO + HCP permission API |
-| MCP bridge/server | Internal MCP bridge/server and approved MCP endpoints |
-| Dry-run high-risk actions | Human approval and change-management workflow |
+| MCP bridge/server | 내부 MCP bridge/server와 승인된 MCP endpoint |
+| dry-run high-risk action | 사람 승인과 change-management workflow |
 
-## Security Defaults
+## 보안 기본값
 
-- Webhook/API calls require service token or API key.
-- User identity comes from Keycloak/HCP in SSO mode; query `employee_id` is development-only.
-- Action Gateway uses allowlisted hosts.
-- High-risk actions are approval-required.
-- Private BoI is scoped to employee ID.
-- Team/Public promotion is copy-not-move.
-- Team/Public BoI starts as draft.
+- Webhook/API 호출에는 service token 또는 API key가 필요합니다.
+- SSO 모드에서는 사용자 identity가 Keycloak/HCP에서 옵니다. query `employee_id`는 개발 모드 전용입니다.
+- Action Gateway는 allowlisted host만 호출합니다.
+- high-risk action은 approval-required입니다.
+- Private BoI는 사번 단위로 scope가 제한됩니다.
+- Team/Public promotion은 copy-not-move입니다.
+- Team/Public BoI는 draft로 시작합니다.
