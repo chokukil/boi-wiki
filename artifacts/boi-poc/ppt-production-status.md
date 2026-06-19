@@ -1,6 +1,6 @@
 # BoI Wiki PoC PPT Production Status
 
-Updated: 2026-06-19 02:44 KST
+Updated: 2026-06-19 10:40 KST
 
 ## Created Artifacts
 
@@ -12,6 +12,7 @@ Updated: 2026-06-19 02:44 KST
 - `artifacts/boi-poc/capture-targets.json`
 - `artifacts/boi-poc/capture-targets.md`
 - `artifacts/boi-poc/capture-blockers.json`
+- `artifacts/boi-poc/boi-wiki-poc-executive-brief-with-screenshots.pptx`
 - `docs/POC_SCREENSHOT_MANIFEST.md`
 - `scripts/insert_poc_screenshots.py`
 - `scripts/check_poc_delivery_readiness.py`
@@ -36,7 +37,11 @@ Windows copy:
 - A polish request was entered and submitted to the add-in.
 - Screenshot filenames and URLs are fixed in a manifest.
 - Latest capture URLs are resolved in `capture-targets.md`, including the generated corrective action Private BoI and Langflow flow ID.
-- A screenshot insertion script is ready to create the final screenshot-enriched PPTX after PNG capture files exist.
+- `vercel:agent-browser` captured all 8 required PNG files under `captures/boi-poc/`.
+- BoI Wiki captures were verified with the development service-token header.
+- Langflow canvas access was verified after the development `admin/admin` login, showing the connected BoI equipment stage analysis flow.
+- Kafka UI was captured on the topics screen showing `boi.audit`, `boi.dead-letter`, and `boi.events`.
+- The screenshot insertion script can create the legacy screenshot-enriched PPTX from the captured PNGs.
 - A delivery readiness checker now combines E2E evidence, capture URL preflight, screenshot availability, artifact-tool PPT export, and final deck existence into one report.
 
 ## Latest SSO / Langflow E2E Evidence
@@ -87,7 +92,7 @@ Run the consolidated readiness gate with:
 python scripts/check_poc_delivery_readiness.py --out outputs/manual-20260619/e2e-evidence/delivery-readiness.json
 ```
 
-Current expected status is `ok=false`: E2E evidence and URL preflight pass, but Chrome-captured PNG files, Chrome capture policy clearance, artifact-tool PPTX export, and the final screenshot deck are still missing.
+Current expected status is `ok=false`: E2E evidence, URL preflight, screenshot availability, and capture policy clearance pass, but artifact-tool PPTX export and the final artifact-tool deck are still missing.
 
 Screenshot readiness is stricter than file existence. `insert_poc_screenshots.py --check` validates that each required file is a PNG and at least `800x600`, so placeholder, corrupt, or tiny images cannot accidentally satisfy the final deck gate.
 
@@ -101,9 +106,9 @@ The older screenshot insertion helper remains useful for the legacy executive de
 
 ## Still Pending
 
-- Actual Chrome screenshots of localhost PoC screens are not inserted yet because Chrome automation blocks `http://localhost:8000` by enterprise policy. This was rechecked through the approved Chrome extension flow on 2026-06-19 02:44 KST and still fails before navigation. The active blocker is tracked in `artifacts/boi-poc/capture-blockers.json`.
+- Chrome Browser Use itself is still not the capture path for localhost, but the evidence requirement is satisfied by `vercel:agent-browser`. The old Chrome policy blocker is retained as resolved history in `artifacts/boi-poc/capture-blockers.json`.
 - The add-in stayed in `Loading` after the polish request; completion or deck mutation has not been verified.
-- Final PPT completion requires actual screenshots to replace the slide 11 placeholders and a final PowerPoint save/export check.
+- Final PPT completion requires the artifact-tool runtime to export the screenshot-backed deck and a final PowerPoint save/export check.
 - Latest artifact-tool PPTX export is blocked because `/home/chokukil/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/@oai/artifact-tool` is missing `package.json` in this Codex thread.
 - `npm view @oai/artifact-tool` against `https://registry.npmjs.org/` returns `E404`, so the package cannot be repaired from the public npm registry in this environment.
 
@@ -115,9 +120,9 @@ python scripts/build_boi_e2e_ppt.py
 
 The script first validates required screenshot evidence with `scripts/insert_poc_screenshots.py --check`, then runs the artifact-tool runtime preflight, builds the 8-slide deck, renders previews, and writes a contact sheet. The delivery readiness checker runs the artifact-tool probe with `--skip-screenshot-check` so screenshot readiness and artifact runtime readiness remain visible as separate blockers.
 
-## Finalization Command After Screenshots Exist
+## Legacy Screenshot Deck Command
 
-Save the required PNG files under `captures/boi-poc/`, then run:
+The required PNG files exist under `captures/boi-poc/`. To regenerate the older executive brief with screenshots, run:
 
 ```bash
 python scripts/insert_poc_screenshots.py

@@ -39,8 +39,21 @@ def test_capture_manifest_lists_required_executive_screenshots():
     assert any(entry["id"] == "kafka_ui" and "8081" in entry["url"] for entry in manifest["required"])
 
 
-def test_insert_script_detects_missing_screenshots_before_final_output():
-    manifest = load_manifest(Path("artifacts/boi-poc/capture-manifest.json"))
+def test_insert_script_detects_missing_screenshots_before_final_output(tmp_path):
+    manifest = {
+        "capture_dir": str(tmp_path / "captures"),
+        "deck_input": "unused.pptx",
+        "deck_output": "unused-output.pptx",
+        "required": [
+            {
+                "id": "boi_home",
+                "file": "01-boi-wiki-home.png",
+                "title": "BoI Wiki Home",
+                "url": "http://localhost",
+                "purpose": "missing capture fixture",
+            }
+        ],
+    }
 
     missing = missing_screenshots(manifest)
 
@@ -262,5 +275,5 @@ def test_delivery_readiness_reports_active_capture_policy_blockers(tmp_path):
 
     assert report["ok"] is False
     assert "chrome-policy" in report["blockers"][0]
-    assert tracked_report["ok"] is False
-    assert "chrome-browser-use-localhost-policy" in tracked_report["blockers"][0]
+    assert tracked_report["ok"] is True
+    assert tracked_report["active_blockers"] == []

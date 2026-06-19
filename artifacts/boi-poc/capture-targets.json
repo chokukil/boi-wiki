@@ -62,7 +62,7 @@
             "id": "kafka_ui",
             "file": "08-kafka-ui-topics.png",
             "title": "Kafka UI Topics",
-            "url": "http://localhost:8081/",
+            "url": "http://localhost:8081/ui/clusters/boi-poc/all-topics?perPage=25",
             "purpose": "boi.events, boi.audit, boi.dead-letter \ud1a0\ud53d"
         }
     ]

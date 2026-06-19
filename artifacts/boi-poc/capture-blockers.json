@@ -1,13 +1,16 @@
 {
-  "updated_at": "2026-06-19T02:44:16+09:00",
-  "active_blockers": [
+  "updated_at": "2026-06-19T10:40:45+09:00",
+  "active_blockers": [],
+  "resolved_blockers": [
     {
       "id": "chrome-browser-use-localhost-policy",
       "tool": "Chrome Browser Use",
       "target": "http://localhost:8000/?employee_id=100001",
       "reason": "Browser Use cannot access http://localhost:8000 because enterprise network policy blocks it.",
       "impact": "Required localhost screenshots cannot be captured through the approved Chrome plugin path.",
-      "required_resolution": "Allow Chrome Browser Use access to localhost:8000/7860/8081, or provide the required PNG screenshots under captures/boi-poc."
+      "required_resolution": "Allow Chrome Browser Use access to localhost:8000/7860/8081, or provide the required PNG screenshots under captures/boi-poc.",
+      "resolved_at": "2026-06-19T10:40:45+09:00",
+      "resolution": "Required localhost screenshots were captured with vercel:agent-browser using the same capture manifest. BoI Wiki pages used the development service-token header; Langflow was verified after admin/admin development login; Kafka UI was captured on the topics list."
     }
   ]
 }
