@@ -1,6 +1,6 @@
 # BoI Wiki PoC PPT Production Status
 
-Updated: 2026-06-19 11:27 KST
+Updated: 2026-06-19 11:45 KST
 
 ## Created Artifacts
 
@@ -39,7 +39,7 @@ Windows copy:
 - A polish request was entered and submitted to the add-in.
 - Screenshot filenames and URLs are fixed in a manifest.
 - Latest capture URLs are resolved in `capture-targets.md`, including the generated corrective action Private BoI and Langflow flow ID.
-- `vercel:agent-browser` captured all 8 required PNG files under `captures/boi-poc/`.
+- `vercel:agent-browser` captured all 8 required PNG files under `captures/boi-poc/` and was rerun as the canonical capture path.
 - BoI Wiki captures were verified with the development service-token header.
 - Langflow canvas access was verified after the development `admin/admin` login, showing the connected BoI equipment stage analysis flow.
 - Kafka UI was captured on the topics screen showing `boi.audit`, `boi.dead-letter`, and `boi.events`.
@@ -111,7 +111,7 @@ The older screenshot insertion helper remains useful for the legacy executive de
 
 ## Remaining Notes
 
-- Chrome Browser Use itself is still not the capture path for localhost, but the evidence requirement is satisfied by `vercel:agent-browser`. The old Chrome policy blocker is retained as resolved history in `artifacts/boi-poc/capture-blockers.json`.
+- `vercel:agent-browser` is the canonical browser capture path for this PoC evidence package.
 - The add-in stayed in `Loading` after the polish request; completion or deck mutation has not been verified.
 - The canonical delivery gate is the artifact-tool PPTX export, not the earlier add-in polish attempt.
 

@@ -82,12 +82,13 @@ def test_screenshot_check_rejects_tiny_or_invalid_capture_files(tmp_path):
     assert any(issue["id"] == "bad" and "not a valid PNG" in issue["reason"] for issue in issues)
 
 
-def test_executive_ppt_contains_capture_slot_and_technical_appendix():
+def test_executive_ppt_contains_capture_evidence_and_technical_appendix():
     prs = Presentation("artifacts/boi-poc/boi-wiki-poc-executive-brief.pptx")
     all_text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
 
     assert len(prs.slides) == 15
-    assert "실제 화면 캡처 삽입 계획" in all_text
+    assert "실제 화면 캡처 증거" in all_text
+    assert "vercel:agent-browser" in all_text
     assert "Appendix A. 기술 구성" in all_text
     assert "google/gemma-4-26b-a4b-qat" in all_text
 

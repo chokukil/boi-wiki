@@ -14,7 +14,7 @@ Rhythm gates:
 - No more than two dense table slides.
 - No three consecutive slides use the same title/table layout.
 - Every slide has one dominant proof object.
-- Screenshot placeholders appear only on slide 8 until real Chrome captures are available.
+- Slide 8 uses real `vercel:agent-browser` screenshot evidence, not placeholders.
 
 Proof density:
 - Use exact trace counts on slides 1 and 3.

@@ -31,7 +31,7 @@ PoC는 Agent Harness, BoI Wiki, Event Broker, Action Gateway, Langflow 연계를
 Private-first와 승인 필요한 고위험 Action 통제를 경영진 리스크 관점으로 설명한다.
 
 ## Slide 11. Screenshots
-Chrome 정책 차단 때문에 실제 화면 캡처는 삽입 슬롯으로 남겼고, 접근 허용 후 대체한다.
+vercel:agent-browser로 실제 화면을 캡처했고, 검증된 PNG를 PPT에 삽입한다.
 
 ## Slide 12. Roadmap 2026
 PoC 이후 2026 H2에는 운영모델과 파일럿 확산에 집중한다.

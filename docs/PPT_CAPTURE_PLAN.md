@@ -2,7 +2,7 @@
 
 ## Purpose
 
-경영진 대상 PPT는 개념 설명만으로 끝내지 않고, 실제 PoC가 동작한 핵심 화면을 증거로 포함한다. 캡처는 Chrome/Computer Use로 실제 브라우저와 PowerPoint 화면에서 수행하고, 원본 이미지와 PPT 반영본을 분리 보관한다.
+경영진 대상 PPT는 개념 설명만으로 끝내지 않고, 실제 PoC가 동작한 핵심 화면을 증거로 포함한다. 브라우저 캡처는 `vercel:agent-browser`로 수행하고, 원본 이미지와 PPT 반영본을 분리 보관한다.
 
 ## Required Screens
 
@@ -17,7 +17,7 @@
 | Private BoI 문서 | 생성된 `/docs/{boi_id}` | 업무 이벤트가 OKF 기반 metadata/body로 materialize되는지 |
 | Team 승격 draft | 생성된 `/docs/{promoted_boi_id}` | Private-first 후 명시적 Team/Public 승격 draft가 생성되는지 |
 | Langflow | `http://localhost:7860` | BoI reference flow 또는 BoI custom components가 실제 Langflow에서 확인되는지 |
-| Kafka UI | `http://localhost:8081` | `boi.events`, `boi.audit`, `boi.dead-letter` topic/message가 실제 Kafka에 있는지 |
+| Kafka UI | `http://localhost:8081/ui/clusters/boi-poc/all-topics?perPage=25` | `boi.events`, `boi.audit`, `boi.dead-letter` topic/message가 실제 Kafka에 있는지 |
 
 ## Capture Rules
 

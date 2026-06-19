@@ -11,7 +11,7 @@ Slides:
 1. Claim: The PoC can now prove a full SOP execution loop, not just show disconnected components.
    Proof object: trace evidence rail with event/action/BoI/manual counts.
    Source: summary.json, run_equipment_sop_poc.log.
-   Omission: no Chrome screenshot due policy block.
+   Omission: none for browser evidence; screenshot capture uses vercel:agent-browser.
 
 2. Claim: The runtime chain keeps each executable surface as a governed connector.
    Proof object: architecture flow map from Kafka to BoI Wiki.
@@ -26,7 +26,7 @@ Slides:
 4. Claim: Langflow is actually invoked as part of the chain, with concrete flow IDs and action logs.
    Proof object: Langflow action table with flow names, IDs, request IDs.
    Source: summary.json, langflow-flows.json.
-   Omission: Chrome canvas screenshot pending.
+   Omission: none for browser evidence; Langflow canvas is captured with vercel:agent-browser.
 
 5. Claim: The system generates useful stage BoIs instead of boilerplate architecture narration.
    Proof object: four generated BoI records by event type.
@@ -46,4 +46,4 @@ Slides:
 8. Claim: Runtime execution is backed by browser-visible evidence.
    Proof object: 8 validated screenshots covering BoI Wiki, Workflow Status, Generated BoI, Langflow canvas, and Kafka topics.
    Source: captures/boi-poc, capture-targets.json, delivery-readiness.json.
-   Omission: Chrome Browser Use remains unavailable for localhost, but the evidence requirement is satisfied through vercel:agent-browser.
+   Omission: none for the browser evidence path; vercel:agent-browser is the canonical capture tool for this package.

@@ -172,7 +172,7 @@ def slide_notes() -> list[tuple[str, str]]:
         ("Evidence", "실제 API, Kafka, Langflow, action log로 확인된 수치를 제시한다."),
         ("Langflow", "지정된 OpenAI 호환 Gemma endpoint로 실제 한국어 응답이 나온 사실을 보여준다."),
         ("Governance", "Private-first와 승인 필요한 고위험 Action 통제를 경영진 리스크 관점으로 설명한다."),
-        ("Screenshots", "Chrome 정책 차단 때문에 실제 화면 캡처는 삽입 슬롯으로 남겼고, 접근 허용 후 대체한다."),
+        ("Screenshots", "vercel:agent-browser로 실제 화면을 캡처했고, 검증된 PNG를 PPT에 삽입한다."),
         ("Roadmap 2026", "PoC 이후 2026 H2에는 운영모델과 파일럿 확산에 집중한다."),
         ("Roadmap 2027+", "중장기에는 기능조직 확산과 Enterprise Agentic Operating Model로 확장한다."),
         ("Appendix Tech", "기술 검토자는 포트, 컨테이너, 토픽, 모델 설정을 확인할 수 있다."),
@@ -196,7 +196,7 @@ def build_deck(evidence: dict[str, Any], out_path: Path, notes_path: Path) -> No
     add_textbox(slide, 0.82, 2.34, 12.5, 0.45, "1인 1 Agent를 조직의 지식으로 축적하는 업무 맥락 자산화 PoC", size=19, color=INK)
     add_card(slide, 0.9, 3.35, 4.25, 1.7, "핵심 결론", "Agent는 각자 만들 수 있지만, 지식은 회사 방식으로 쌓여야 한다.", fill=PALE_BLUE, accent=BLUE, title_size=15, body_size=13)
     add_card(slide, 5.45, 3.35, 4.25, 1.7, "이번 검증", "Event Broker → Action Gateway → BoI Wiki → Langflow LLM 실행까지 실제 동작 확인", fill=PALE_GREEN, accent=GREEN, title_size=15, body_size=12)
-    add_card(slide, 10.0, 3.35, 4.25, 1.7, "남은 조건", "Chrome localhost 정책 허용 후 실제 핵심 화면 캡처를 슬롯에 삽입", fill=PALE_AMBER, accent=AMBER, title_size=15, body_size=12)
+    add_card(slide, 10.0, 3.35, 4.25, 1.7, "증거 캡처", "vercel:agent-browser로 핵심 화면 8개를 캡처하고 PPT에 삽입", fill=PALE_GREEN, accent=GREEN, title_size=15, body_size=12)
     add_footer(slide, 1)
     slides.append(slide)
 
@@ -316,7 +316,7 @@ def build_deck(evidence: dict[str, Any], out_path: Path, notes_path: Path) -> No
     slides.append(slide)
 
     slide = prs.slides.add_slide(blank)
-    add_title(slide, "실제 화면 캡처 삽입 계획", "Chrome 정책 차단 해소 후 핵심 화면 PNG를 이 슬롯에 바로 삽입")
+    add_title(slide, "실제 화면 캡처 증거", "vercel:agent-browser로 캡처한 핵심 화면 PNG를 PPT에 삽입")
     slots = [
         ("BoI Wiki Home", "목록, 필터, Event log가 보이는 첫 화면"),
         ("SOP Library", "설비 이상 SOP와 Agent Harness SOP"),
@@ -368,9 +368,9 @@ def build_deck(evidence: dict[str, Any], out_path: Path, notes_path: Path) -> No
     slide = prs.slides.add_slide(blank)
     add_title(slide, "Appendix B. 현재 갭과 후속 조치", "완료 기준까지 남은 항목을 숨기지 않고 관리")
     add_card(slide, 0.9, 2.0, 3.6, 2.4, "구현/검증", "완료\nAPI, Kafka, Event Router, Action Gateway, Langflow LLM smoke, BoI materialization", fill=PALE_GREEN, accent=GREEN, body_size=11.2)
-    add_card(slide, 4.8, 2.0, 3.6, 2.4, "화면 캡처", "대기\nChrome 자동화가 localhost 접근을 정책 차단\n허용 후 실제 PNG 삽입", fill=PALE_AMBER, accent=AMBER, body_size=11.2)
+    add_card(slide, 4.8, 2.0, 3.6, 2.4, "화면 캡처", "완료\nvercel:agent-browser로 BoI Wiki, Langflow, Kafka UI 캡처\n검증된 PNG 삽입", fill=PALE_GREEN, accent=GREEN, body_size=11.2)
     add_card(slide, 8.7, 2.0, 3.6, 2.4, "PowerPoint Add-in", "다음 단계\nPPT 초안을 PowerPoint에서 열고 ChatGPT 작업창으로 polish 요청", fill=PALE_BLUE, accent=BLUE, body_size=11.2)
-    add_textbox(slide, 1.0, 5.25, 11.7, 0.5, "완료 판단은 실제 핵심 화면 캡처 삽입과 PowerPoint에서의 최종 확인 이후에만 가능하다.", size=14, color=RED, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(slide, 1.0, 5.25, 11.7, 0.5, "완료 판단은 readiness gate, 실제 캡처 삽입, artifact-tool PPTX export가 모두 통과했을 때로 둔다.", size=14, color=GREEN, bold=True, align=PP_ALIGN.CENTER)
     add_footer(slide, 15)
     slides.append(slide)
 
