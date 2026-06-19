@@ -1,4 +1,23 @@
-# BoI PoC Kit v0.4
+# BoI Wiki
+
+BoI Wiki is an OKF-based AI Native Workflow knowledge/runtime system.
+
+This repository is the shared runtime:
+
+- BoI Wiki Web UI and BoI API
+- Kafka Event Broker and Event Router
+- Action Gateway for API, Webhook, MCP, Langflow, Manual, Event Broker, and BoI Writer actions
+- BoI Wiki MCP server for agents
+- Langflow reference flows and BoI custom component integration
+- OKF Markdown source documents, action catalog, event catalog, and runtime smoke tests
+
+For personal Local Private work, use the separate lightweight workspace repository:
+
+```text
+/home/chokukil/boi-wiki-local
+```
+
+`boi-wiki-local` is intentionally not a Web runtime. It is a local OKF Markdown workspace plus Codex/Claude/Cursor harness files.
 
 ## Purpose
 
@@ -8,9 +27,9 @@ This PoC demonstrates an AI Native Workflow backbone where:
 - Event Router consumes business events from Kafka.
 - Action Gateway dispatches each event to registered connector actions.
 - Connectors can be BoI Writer, Langflow Webhook, HTTP API, generic Webhook, MCP bridge, or future protocols.
-- BoI Wiki stores SOPs, event-linked work context, analysis results, action drafts, and reusable organizational knowledge.
+- BoI Wiki stores SOPs, event-linked work context, analysis results, action drafts, reusable organizational knowledge, and draft-only edits that are applied by agents after validation.
 
-The v0.4 design intentionally removes the idea of a secondary path. BoI Writer is not a secondary path. It is a first-class connector equal to Langflow, API, Webhook, MCP, and future connector types.
+The current design intentionally removes the idea of a secondary path. BoI Writer is not a secondary path. It is a first-class connector equal to Langflow, API, Webhook, MCP, and future connector types.
 
 ```text
 Business Event
@@ -47,9 +66,22 @@ Open:
 
 Default auth is `BOI_AUTH_MODE=dev`, which keeps the local `employee_id` selector/query for PoC and tests.
 
+## Repository Split
+
+| Repo | Role | Audience |
+|---|---|---|
+| `/home/chokukil/boi-wiki` | Shared runtime, source of truth, Web/MCP/API services, test suite | Developers, operators, shared Wiki agents |
+| `/home/chokukil/boi-wiki-local` | Local Private OKF workspace and agent harness | General users using Codex, Claude, Cursor |
+
+Shared Web Private and Local Private are different.
+
+- Web Private is stored under this runtime's `DATA_ROOT` and is visible only to the authenticated employee in Web BoI Wiki.
+- Local Private is stored in `boi-wiki-local` on the user's PC and is not scanned by this Web BoI Wiki.
+- Local Private sharing requires explicit user confirmation and creates only a remote draft. Final source changes still require shared repo validation and commit.
+
 ## BoI Wiki MCP
 
-BoI Wiki MCP lets Claude Desktop, Cursor, Langflow, and custom agents use BoI Wiki through one MCP server instead of memorizing REST routes.
+BoI Wiki MCP lets Codex, Claude Desktop, Cursor, Langflow, and custom agents use BoI Wiki through one MCP server instead of memorizing REST routes.
 
 - Human status page: http://localhost:8200/
 - MCP Streamable HTTP endpoint: http://localhost:8200/mcp
@@ -65,7 +97,7 @@ python scripts/check_boi_wiki_mcp.py \
   --summary
 ```
 
-For Claude Desktop or Cursor registration details:
+For Codex, Claude Desktop, or Cursor registration details:
 
 ```bash
 python scripts/check_boi_wiki_mcp.py \
@@ -108,21 +140,22 @@ The harness documents define how Codex, Claude, Langflow, and custom agents shou
 - BoI Wiki entry: http://localhost:8000/docs/boi:public:harness:overview?employee_id=100001
 - SOP authoring: http://localhost:8000/docs/boi:public:harness:sop-authoring-harness?employee_id=100001
 - Action authoring: http://localhost:8000/docs/boi:public:harness:action-authoring-harness?employee_id=100001
+- Local Private agent harness: http://localhost:8000/docs/boi:public:harness:local-private-agent-harness?employee_id=100001
 - Web draft editing: http://localhost:8000/docs/boi:public:harness:web-draft-editing-guide?employee_id=100001
 
 Web source edits are draft-only. `Save Draft` does not change the original Markdown/YAML and does not create a Git commit. An agent must validate, apply, test, and commit the draft separately.
 
 ## BoI Wiki Local
 
-This repository is the shared runtime: Web UI, BoI API, Kafka/Event Router, Action Gateway, Langflow integration, and BoI Wiki MCP.
+Use BoI Wiki Local when a general user wants a personal Local Private workspace without installing Python, Docker, Git, or MCP.
 
-Personal Local Private work should use the separate lightweight workspace repository:
+The local repository path created in this environment is:
 
 ```text
 /home/chokukil/boi-wiki-local
 ```
 
-`boi-wiki-local` does not include the Web runtime. It is a local OKF Markdown workspace plus Codex/Claude/Cursor harness files. A regular user can give the local repo URL to an agent and say:
+In a user environment, the intended install experience is simple: give the `boi-wiki-local` repo URL to an agent and say:
 
 ```text
 이 repo 설치해줘.
@@ -136,6 +169,18 @@ Manuals:
 
 - Local Private overview: http://localhost:8000/docs/boi:public:boi-wiki-manual:local-private:overview?employee_id=100001
 - Local Private harness: http://localhost:8000/docs/boi:public:harness:local-private-agent-harness?employee_id=100001
+
+## Validation
+
+Shared repo validation:
+
+```bash
+python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
+pytest tests -q -s
+python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --summary
+```
+
+Local users are not expected to run these commands. In `boi-wiki-local`, the agent harness performs Level 0 self-checks and runs `check.sh` or `check.ps1` when possible.
 
 ## Key Concepts
 
@@ -165,7 +210,7 @@ Action Gateway is the connector abstraction layer. Connector actions are defined
 data/action_catalog/actions.yaml
 ```
 
-Supported connector action types in v0.4:
+Supported connector action types:
 
 | Type | Meaning |
 |---|---|
@@ -173,7 +218,7 @@ Supported connector action types in v0.4:
 | `langflow_webhook` | Call a Langflow Webhook Flow |
 | `http` / `api` | Call a REST-style internal API |
 | `webhook` / `internal_webhook` | Call a generic webhook |
-| `mcp_tool` | Invoke an MCP tool through a future internal MCP bridge |
+| `mcp_tool` | Invoke an MCP tool through the BoI Wiki MCP bridge or configured MCP-compatible endpoint |
 | `boi_event` | Publish a next business event into Kafka |
 | `mock_api` | PoC-visible system/API call result |
 
@@ -246,7 +291,7 @@ Replace PoC pieces with enterprise services:
 | Mock APIs | TAS, HyVIS, equipment, approval, notification APIs |
 | Development keys | Secret Manager |
 | `BOI_AUTH_MODE=dev` | Keycloak SSO + HCP permission API |
-| MCP planned connector | Internal MCP bridge/server once approved |
+| MCP bridge/server | Internal MCP bridge/server and approved MCP endpoints |
 | Dry-run high-risk actions | Human approval and change-management workflow |
 
 ## Security Defaults
