@@ -15,9 +15,7 @@ SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 DEFAULT_EMPLOYEE_ID = os.getenv("DEFAULT_EMPLOYEE_ID", "100001")
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100").rstrip("/")
 
-MCP_ENDPOINT = "http://localhost:8200/mcp"
-BRIDGE_ENDPOINT = "http://localhost:8200/api/mcp/call"
-HEALTH_ENDPOINT = "http://localhost:8200/health"
+DEFAULT_PUBLIC_BASE_URL = "http://localhost:8200"
 MCP_TOOL_CAPABILITIES = [
     {"name": "boi_search", "description": "Search accessible BoI OKF documents by query, folder, event type, visibility, or BoI type."},
     {"name": "boi_get", "description": "Return one accessible BoI document by BoI ID or OKF path."},
@@ -27,8 +25,12 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "action_invoke", "description": "Invoke an allowlisted Action Gateway action with approval policy preserved."},
     {"name": "workflow_start", "description": "Start a config-driven workflow from SOP metadata."},
     {"name": "workflow_status", "description": "Return workflow status for a trace."},
-    {"name": "source_create_draft", "description": "Create a draft-only source edit for Markdown/YAML files."},
-    {"name": "doc_body_create_draft", "description": "Create a draft-only body edit for a BoI document."},
+    {"name": "source_preview", "description": "Preview and validate a proposed Markdown/YAML source edit before applying it."},
+    {"name": "source_apply", "description": "Apply a user-confirmed validated source edit and auto-commit it."},
+    {"name": "doc_body_preview", "description": "Preview and validate a proposed BoI document body edit before applying it."},
+    {"name": "doc_body_apply", "description": "Apply a user-confirmed validated BoI document body edit and auto-commit it."},
+    {"name": "promotion_submit", "description": "Submit a user-confirmed Team/Public promotion candidate for synchronous validation and immediate publish."},
+    {"name": "promotion_status", "description": "Return promotion publish, validation, HOTL, and commit status."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://docs/{boi_id}", "description": "Single BoI document as JSON text."},
@@ -41,7 +43,7 @@ MCP_PROMPT_CAPABILITIES = [
     {"name": "connect_sop_to_workflow", "description": "Connect SOP stages to event types, actions, manual handoffs, and generated BoI flow."},
     {"name": "author_action_spec", "description": "Author executable API/webhook/MCP/Langflow/manual action specs."},
     {"name": "build_langflow_boi_flow", "description": "Build a connected Langflow BoI workflow using shared components."},
-    {"name": "validate_and_commit_draft", "description": "Validate draft source edits before applying and committing them."},
+    {"name": "validate_and_apply_edit", "description": "Validate source/body edits before applying and committing them."},
 ]
 MCP_CAPABILITIES = {
     "tools": len(MCP_TOOL_CAPABILITIES),
@@ -100,7 +102,7 @@ mcp = FastMCP(
     "boi-wiki-mcp",
     instructions=(
         "BoI Wiki MCP exposes OKF BoI documents, action catalog specs, workflow status, "
-        "draft-only editing, and SOP/action/Langflow authoring prompts."
+        "validated source/body editing, user-confirmed promotion publishing, and SOP/action/Langflow authoring prompts."
     ),
     streamable_http_path="/mcp",
     json_response=True,
@@ -262,18 +264,18 @@ async def workflow_status_impl(
     )
 
 
-@mcp.tool(name="source_create_draft")
-async def source_create_draft(
+@mcp.tool(name="source_preview")
+async def source_preview(
     path: str,
-    base_sha256: str,
     proposed_content: str,
+    base_sha256: str | None = None,
     employee_id: str = DEFAULT_EMPLOYEE_ID,
     author: str = "boi-wiki-mcp",
-    note: str = "MCP source draft",
+    note: str = "MCP source preview",
 ) -> dict[str, Any]:
-    """Create a draft-only source edit. This never mutates source files or commits Git changes."""
+    """Preview and validate a proposed source edit. This does not mutate source files."""
     return await api_post(
-        "/api/source/drafts",
+        "/api/source/preview",
         employee_id=employee_id,
         payload={
             "path": path,
@@ -285,21 +287,119 @@ async def source_create_draft(
     )
 
 
-@mcp.tool(name="doc_body_create_draft")
-async def doc_body_create_draft(
-    boi_id: str,
+@mcp.tool(name="source_apply")
+async def source_apply(
+    path: str,
     base_sha256: str,
-    proposed_body: str,
+    proposed_content: str,
+    user_confirmed: bool,
     employee_id: str = DEFAULT_EMPLOYEE_ID,
     author: str = "boi-wiki-mcp",
-    note: str = "MCP body draft",
+    note: str = "MCP validated source edit",
 ) -> dict[str, Any]:
-    """Create a draft-only body edit for a BoI document."""
+    """Apply a user-confirmed source edit after validation and auto-commit."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before applying a source edit")
     return await api_post(
-        f"/api/docs/{boi_id}/body-drafts",
+        "/api/source/apply",
+        employee_id=employee_id,
+        payload={
+            "path": path,
+            "base_sha256": base_sha256,
+            "proposed_content": proposed_content,
+            "author": author,
+            "note": note,
+        },
+    )
+
+
+@mcp.tool(name="doc_body_preview")
+async def doc_body_preview(
+    boi_id: str,
+    proposed_body: str,
+    base_sha256: str | None = None,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    author: str = "boi-wiki-mcp",
+    note: str = "MCP body preview",
+) -> dict[str, Any]:
+    """Preview and validate a proposed BoI document body edit."""
+    return await api_post(
+        f"/api/docs/{boi_id}/body-preview",
         employee_id=employee_id,
         payload={"base_sha256": base_sha256, "proposed_body": proposed_body, "author": author, "note": note},
     )
+
+
+@mcp.tool(name="doc_body_apply")
+async def doc_body_apply(
+    boi_id: str,
+    base_sha256: str,
+    proposed_body: str,
+    user_confirmed: bool,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    author: str = "boi-wiki-mcp",
+    note: str = "MCP validated body edit",
+) -> dict[str, Any]:
+    """Apply a user-confirmed BoI document body edit after validation and auto-commit."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before applying a body edit")
+    return await api_post(
+        f"/api/docs/{boi_id}/body-apply",
+        employee_id=employee_id,
+        payload={"base_sha256": base_sha256, "proposed_body": proposed_body, "author": author, "note": note},
+    )
+
+
+@mcp.tool(name="promotion_submit")
+async def promotion_submit(
+    title: str,
+    body: str,
+    source_refs: list[dict[str, Any]],
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    target_visibility: Literal["team", "public"] = "team",
+    team_id: str | None = None,
+    description: str = "Promoted BoI",
+    boi_type: str = "boi/reference",
+    classification: str = "internal",
+    tags: list[str] | None = None,
+    source_local_id: str | None = None,
+    source_sha256: str | None = None,
+    reviewer: str = "hotl-curator",
+    promotion_reason: str = "User explicitly requested promotion.",
+    user_confirmed: bool = False,
+    user_confirmed_at: str | None = None,
+) -> dict[str, Any]:
+    """Submit a user-confirmed Team/Public promotion candidate for validation and immediate publish."""
+    return await api_post(
+        "/api/promotions/submit",
+        employee_id=employee_id,
+        payload={
+            "target_visibility": target_visibility,
+            "team_id": team_id,
+            "title": title,
+            "description": description,
+            "body": body,
+            "boi_type": boi_type,
+            "classification": classification,
+            "tags": tags or [],
+            "source_refs": source_refs,
+            "source_local_id": source_local_id,
+            "source_sha256": source_sha256,
+            "reviewer": reviewer,
+            "promotion_reason": promotion_reason,
+            "user_confirmed": user_confirmed,
+            "user_confirmed_at": user_confirmed_at,
+        },
+    )
+
+
+@mcp.tool(name="promotion_status")
+async def promotion_status(
+    promotion_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Return promotion publish, validation, HOTL, and commit status."""
+    return await api_get(f"/api/promotions/{promotion_id}", employee_id=employee_id)
 
 
 @mcp.resource("boi://docs/{boi_id}")
@@ -333,7 +433,7 @@ def create_sop_from_source(domain: str = "", target_visibility: str = "private")
         "Use BoI Wiki MCP resources before writing. Search existing SOPs, event types, actions, manuals, and harness docs. "
         f"Create a {target_visibility} BoI SOP package for domain '{domain}'. Include SOP frontmatter, workflow.stages, "
         "event type docs, action specs for API/Webhook/MCP/Langflow/Manual/Event Broker as needed, citations, OKF links, "
-        "and draft-only source patches. Do not commit until OKF lint, tests, and smoke checks pass."
+        "and validated source edits. For Team/Public publication use promotion_submit only after user preview approval."
     )
 
 
@@ -366,12 +466,12 @@ def build_langflow_boi_flow(flow_purpose: str = "stage analysis") -> str:
     )
 
 
-@mcp.prompt(name="validate_and_commit_draft")
-def validate_and_commit_draft(scope: str = "BoI Wiki change") -> str:
-    """Prompt for validating draft edits before applying and committing."""
+@mcp.prompt(name="validate_and_apply_edit")
+def validate_and_apply_edit(scope: str = "BoI Wiki change") -> str:
+    """Prompt for validating source/body edits before applying and committing."""
     return (
-        f"Validate {scope}: apply draft only after base_sha256 still matches, run source validation, OKF lint, catalog checks, "
-        "secret scan, focused tests, E2E smoke when runtime-affecting, then commit with a concise message."
+        f"Validate {scope}: apply only after base_sha256 still matches and user confirmation is explicit. Run source validation, "
+        "OKF lint, catalog checks, secret scan, focused tests, E2E smoke when runtime-affecting, then commit with a concise message."
     )
 
 
@@ -387,13 +487,35 @@ class McpBridgeRequest(BaseModel):
 app = mcp.streamable_http_app()
 
 
-def status_payload() -> dict[str, Any]:
+def first_forwarded_value(value: str | None) -> str:
+    return str(value or "").split(",", 1)[0].strip()
+
+
+def public_base_url(request: Request | None = None) -> str:
+    configured = str(os.getenv("BOI_WIKI_MCP_EXTERNAL_URL") or "").strip().rstrip("/")
+    if configured:
+        return configured
+    if request is None:
+        return DEFAULT_PUBLIC_BASE_URL
+    proto = first_forwarded_value(request.headers.get("x-forwarded-proto")) or request.url.scheme
+    host = first_forwarded_value(request.headers.get("x-forwarded-host")) or first_forwarded_value(request.headers.get("host"))
+    if not host:
+        host = request.url.netloc
+    forwarded_port = first_forwarded_value(request.headers.get("x-forwarded-port"))
+    if forwarded_port and ":" not in host:
+        host = f"{host}:{forwarded_port}"
+    return f"{proto}://{host}".rstrip("/")
+
+
+def status_payload(request: Request | None = None) -> dict[str, Any]:
+    base_url = public_base_url(request)
     return {
         "status": "ok",
         "service": "boi-wiki-mcp",
-        "mcp_endpoint": MCP_ENDPOINT,
-        "bridge_endpoint": BRIDGE_ENDPOINT,
-        "health_endpoint": HEALTH_ENDPOINT,
+        "public_base_url": base_url,
+        "mcp_endpoint": f"{base_url}/mcp",
+        "bridge_endpoint": f"{base_url}/api/mcp/call",
+        "health_endpoint": f"{base_url}/health",
         "protocol": "MCP Streamable HTTP",
         "capabilities": MCP_CAPABILITIES,
         "capability_lists": {
@@ -411,8 +533,8 @@ def status_payload() -> dict[str, Any]:
     }
 
 
-async def status_page(_request: Request) -> HTMLResponse:
-    payload = status_payload()
+async def status_page(request: Request) -> HTMLResponse:
+    payload = status_payload(request)
     capabilities = payload["capabilities"]
     capability_lists = payload["capability_lists"]
 
@@ -486,12 +608,12 @@ async def status_page(_request: Request) -> HTMLResponse:
     return HTMLResponse(html)
 
 
-async def health(_request: Request) -> JSONResponse:
-    return JSONResponse(status_payload())
+async def health(request: Request) -> JSONResponse:
+    return JSONResponse(status_payload(request))
 
 
-async def status_json(_request: Request) -> JSONResponse:
-    return JSONResponse(status_payload())
+async def status_json(request: Request) -> JSONResponse:
+    return JSONResponse(status_payload(request))
 
 
 

@@ -11,7 +11,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-EXPECTED_PROTOCOL = {"tools": 10, "resource_templates": 4, "prompts": 5}
+EXPECTED_PROTOCOL = {"tools": 14, "resource_templates": 4, "prompts": 5}
 
 
 def attr_any(item: object, *names: str) -> str:
@@ -99,7 +99,18 @@ async def main_async(args: argparse.Namespace) -> int:
             "name": "boi-wiki-mcp",
             "transport": "Streamable HTTP",
             "url": args.mcp_url,
-            "verify_tools": ["boi_search", "boi_get", "workflow_status", "action_invoke"],
+            "verify_tools": [
+                "boi_search",
+                "boi_get",
+                "workflow_status",
+                "action_invoke",
+                "source_preview",
+                "source_apply",
+                "doc_body_preview",
+                "doc_body_apply",
+                "promotion_submit",
+                "promotion_status",
+            ],
         }
         result["client_registration"] = {
             "Codex": client_entry,

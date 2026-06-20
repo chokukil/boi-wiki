@@ -212,6 +212,7 @@ services:
       ACTION_GATEWAY_URL: http://action-gateway:8100
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       DEFAULT_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
+      BOI_WIKI_MCP_EXTERNAL_URL: ${BOI_WIKI_MCP_EXTERNAL_URL:-}
     networks: [boi-net]
 
   event-router:
