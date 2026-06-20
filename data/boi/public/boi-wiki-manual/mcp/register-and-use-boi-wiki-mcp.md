@@ -3,7 +3,7 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: BoI Wiki MCP 등록과 사용
-description: agent가 BoI Wiki를 MCP server 하나로 검색, workflow 실행, action 탐색, draft 생성하도록 등록하는 방법
+description: agent가 BoI Wiki를 MCP server 하나로 검색, workflow 실행, action 탐색, draft 생성, promotion 게시하도록 등록하는 방법
 tags: [Manual, MCP, Agent, BoIWiki]
 timestamp: 2026-06-18T15:05:00+09:00
 boi_id: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
@@ -25,7 +25,7 @@ review:
 
 # Summary
 
-BoI Wiki MCP는 agent-facing 표준 인터페이스다. API를 직접 외우는 대신 MCP server를 등록하면 BoI 문서, OKF graph, workflow status, action catalog, draft 저장 prompt를 같은 방식으로 사용할 수 있다.
+BoI Wiki MCP는 agent-facing 표준 인터페이스다. API를 직접 외우는 대신 MCP server를 등록하면 BoI 문서, OKF graph, workflow status, action catalog, source draft 저장, Team/Public promotion submit을 같은 방식으로 사용할 수 있다.
 
 # Endpoint
 
@@ -97,7 +97,10 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 | `actions_search` / `action_get` | multi-action catalog 탐색 |
 | `action_invoke` | Action Gateway 경유 실행 |
 | `workflow_start` / `workflow_status` | SOP 기반 workflow 실행/상태 확인 |
-| `source_create_draft` / `doc_body_create_draft` | draft-only 수정 요청 |
+| `source_preview` / `doc_body_preview` | source/body 수정 전 preview와 validation feedback |
+| `source_apply` / `doc_body_apply` | 사용자 승인된 source/body 수정 apply와 자동 commit |
+| `promotion_submit` | 사용자 승인된 Team/Public promotion candidate 원격 검증/즉시 게시 |
+| `promotion_status` | promotion validation, publish, HOTL, commit 상태 조회 |
 
 # Resources and Prompts
 
@@ -105,7 +108,7 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 - Resource 예: `boi://actions/mcp.boi_search.sample`
 - Prompt 예: `create_sop_from_source`, `author_action_spec`, `build_langflow_boi_flow`
 
-현재 프로토콜 기준 기대값은 `tools: 10`, `resources: 0`, `resource_templates: 4`, `prompts: 5`다. `resources: 0`은 오류가 아니다. `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`, `boi://workflows/{workflow_key}/status/{trace_id}` resource template으로 필요한 문서를 읽는다.
+현재 프로토콜 기준 기대값은 `tools: 14`, `resources: 0`, `resource_templates: 4`, `prompts: 5`다. `resources: 0`은 오류가 아니다. `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`, `boi://workflows/{workflow_key}/status/{trace_id}` resource template으로 필요한 문서를 읽는다.
 
 # Validation
 
@@ -138,7 +141,7 @@ python scripts/check_boi_wiki_mcp.py \
 
 # Runtime Evidence
 
-상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록을 보여준다. `tools=10`, `resource_templates=4`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다.
+상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록을 보여준다. `tools=12`, `resource_templates=4`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다.
 
 ![BoI Wiki MCP Status capabilities](/public/boi-wiki-manual/_media/browser/mcp-status/20260619-151048-boi-wiki-mcp-status-capabilities-current-1440x1000-89caadae3b92.png)
 

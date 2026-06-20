@@ -25,7 +25,7 @@ review:
 
 # Summary
 
-Local Private은 개인 PC의 agent가 사용하는 로컬 BoI workspace다. Web BoI Wiki에는 보이지 않고, 사용자가 명시적으로 승인한 curated draft만 원격 공유 절차로 넘어간다.
+Local Private은 개인 PC의 agent가 사용하는 로컬 BoI workspace다. Web BoI Wiki에는 보이지 않고, 사용자가 명시적으로 승인한 sanitized promotion candidate만 원격 검증/게시 절차로 넘어간다.
 
 # One Minute Start
 

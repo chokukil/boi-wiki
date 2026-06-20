@@ -32,9 +32,10 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 1. 전체 파일을 먼저 뒤지지 말고 `index.md`에서 시작해 필요한 폴더의 `index.md`와 concept 문서로 좁힌다.
 2. 개인 기록은 local workspace의 `data/boi/private/me/...` 아래에 저장한다.
 3. Local Private 문서에는 `visibility: local-private`, `local_only: true`, `promotion_status`, lifecycle metadata를 넣는다.
-4. 저장 전 Level 0 self-check를 반드시 수행하고, 가능하면 `check.ps1` 또는 `check.sh`도 실행한다.
+4. 저장 전 Level 0 self-check를 반드시 수행하고, promotion 전에는 local preflight와 preview를 같이 만든다.
 5. `index.md`와 `log.md`를 업데이트한다.
-6. 사용자 명시 승인 없이 Local Private 원문을 원격 MCP/API/GitHub/외부 서비스에 전송하지 않는다.
+6. 사용자 명시 승인 없이 Local Private 원문이나 Team/Public promotion candidate를 원격 MCP/API/GitHub/외부 서비스에 전송하지 않는다.
+7. 사용자가 승인한 promotion candidate는 MCP `promotion_submit` 또는 Web promotion API로 원격 동기 검증/게시를 요청한다.
 
 # Validation Levels
 
@@ -43,7 +44,7 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 | 0 | Agent | frontmatter, path, lifecycle, index/log, citation, publish confirmation self-check |
 | 1 | OS shell | `check.ps1` 또는 `check.sh` no-dependency 구조 점검 |
 | 2 | Developer agent | Python이 있을 때 local strict OKF lint |
-| 3 | Shared repo agent | 원격 반영 전 shared BoI Wiki OKF lint, tests, CI |
+| 3 | Shared repo API | 원격 동기 promotion validation, publish status, HOTL watching |
 
 # Citations
 

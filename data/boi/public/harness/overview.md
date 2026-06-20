@@ -3,8 +3,8 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/reference
 title: BoI Agent Harness Overview
-description: SOP, Action, Web draft 작업을 모든 agent가 같은 방식으로 수행하기 위한 public harness 진입점
-tags: [Harness, Agent, SOP, Action, Draft]
+description: SOP, Action, Web validated edit 작업을 모든 agent가 같은 방식으로 수행하기 위한 public harness 진입점
+tags: [Harness, Agent, SOP, Action, Edit]
 timestamp: 2026-06-18T00:45:00+09:00
 boi_id: boi:public:harness:overview
 visibility: public
@@ -29,7 +29,7 @@ BoI Agent Harness는 Codex, Claude, Langflow, Custom Agent가 BoI Wiki, Event Br
 
 # Harness Documents
 
-- [Web Draft Editing Guide](/public/harness/web-draft-editing-guide.md)
+- [Web Validated Editing Guide](/public/harness/web-draft-editing-guide.md)
 - [SOP Authoring Harness](/public/harness/sop-authoring-harness.md)
 - [Action Authoring Harness](/public/harness/action-authoring-harness.md)
 - [Local Private Agent Harness](/public/harness/local-private-agent-harness.md)
@@ -39,7 +39,7 @@ BoI Agent Harness는 Codex, Claude, Langflow, Custom Agent가 BoI Wiki, Event Br
 
 # Operating Rule
 
-Web에서 생성된 수정은 draft이다. curated source 반영과 Git commit은 agent가 lint, validation, smoke test를 통과한 뒤 수행한다.
+Source/body 직접 수정은 preview, validation, apply, auto-commit 경로를 사용한다. Team/Public promotion은 사용자의 preview 승인과 원격 자동 검증을 통과하면 즉시 게시되며, 품질/정책 판단은 HOTL로 사후 개입한다.
 
 Codex skill은 얇은 bootstrap으로 유지하고, 상세 절차는 BoI Wiki MCP resource와 public harness 문서를 우선 읽는다.
 

@@ -3,7 +3,7 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/action-spec
 title: BoI Wiki MCP Server
-description: BoI Wiki 문서, OKF graph, workflow, action catalog, draft tools를 MCP resources/tools/prompts로 노출하는 서버 명세
+description: BoI Wiki 문서, OKF graph, workflow, action catalog, draft tools, promotion tools를 MCP resources/tools/prompts로 노출하는 서버 명세
 tags: [MCP, BoIWiki, Agent, Tooling]
 timestamp: 2026-06-18T15:40:00+09:00
 boi_id: boi:public:actions:mcp:boi-wiki-server
@@ -53,8 +53,10 @@ example_request:
     - boi_search
     - action_invoke
     - workflow_status
+    - promotion_submit
+    - promotion_status
 example_response:
-  tools: [boi_search, boi_get, actions_search, action_invoke, workflow_start, workflow_status]
+  tools: [boi_search, boi_get, actions_search, action_invoke, workflow_start, workflow_status, promotion_submit, promotion_status]
 curl: "python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp"
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
@@ -64,7 +66,8 @@ health_check:
   command: curl -fsS http://localhost:8200/health
 security_notes:
   - Local PoC uses service token only for bridge compatibility endpoint.
-  - Web/MCP draft tools do not mutate source files or create Git commits.
+  - Source/body draft tools do not mutate source files or create Git commits.
+  - promotion_submit requires user confirmation and remote validation before publish.
 mcp_server:
   name: boi-wiki-mcp
   streamable_http_url: http://localhost:8200/mcp
@@ -91,7 +94,8 @@ BoI Wiki MCP 서버는 agent가 BoI Wiki와 workflow runtime을 표준 MCP로 �
 - OKF graph 조회
 - multi-action catalog 탐색과 Action Gateway invoke
 - SOP workflow start/status
-- draft-only source/body 수정 요청
+- source/body preview, validation, apply, auto-commit 요청
+- 사용자 승인 기반 Team/Public promotion submit/status
 - SOP/action/Langflow 작성 prompt
 
 # Citations

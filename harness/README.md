@@ -4,7 +4,7 @@ This directory is the repo-side source for agent harness guidance.
 
 Use these documents before creating or changing curated BoI Wiki knowledge:
 
-- `web-draft-editing-guide.md`: web edits create drafts only; agents apply and commit.
+- `web-draft-editing-guide.md`: source/body edits use preview, validation, apply, and auto-commit; Team/Public promotion uses user-confirmed validated publish.
 - `sop-authoring-harness.md`: create SOP packages with events, actions, citations, and OKF links.
 - `action-authoring-harness.md`: create executable API/Webhook/MCP/Langflow/manual/event-broker/BoI-writer action packages.
 

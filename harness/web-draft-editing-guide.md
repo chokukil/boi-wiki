@@ -1,17 +1,20 @@
-# Web Draft Editing Guide
+# Web Source Validated Editing Guide
 
-Web editing is intentionally draft-only.
+Direct Web/MCP source and body editing uses validated apply and auto-commit.
 
-When a user clicks `Save Draft` in BoI Wiki, or an agent calls an MCP draft tool, the app records a draft request under `data/drafts/`. It does not change the original Markdown/YAML file and does not create a Git commit.
+When a user clicks `Apply & Commit` in BoI Wiki, or an agent calls an MCP apply tool with explicit user confirmation, the app validates the proposed Markdown/YAML change, applies it only if validation passes, and creates a Git commit automatically.
 
-Agent apply flow:
+Apply flow:
 
-1. Read the draft and its `base_sha256`.
-2. Confirm the target file still has the same hash.
+1. Confirm the target file still matches `base_sha256`.
+2. Render Markdown preview when applicable.
 3. Run source validation, OKF lint, catalog validation, and secret scan.
-4. Apply the file change.
-5. Run focused tests and smoke checks.
-6. Commit the curated change to Git.
-7. Update the draft status with `applied_at`, `applied_by`, and `commit_hash`.
+4. If validation fails, return structured errors and fix suggestions without changing the file.
+5. Apply the file change.
+6. Run post-apply validation.
+7. Commit the curated change to Git.
+8. If post-apply validation or commit fails, roll the file back and return failure feedback.
 
-This split keeps quick web edits ergonomic without making every typo or invalid YAML edit part of curated knowledge history.
+This keeps quick web edits ergonomic while preventing invalid YAML, broken OKF links, or uncommitted edits from entering curated source history.
+
+Team/Public promotion is a separate path: after user preview approval, the agent calls promotion submit, the remote wiki validates synchronously, and successful candidates publish immediately with HOTL watching.

@@ -91,18 +91,31 @@
       <div class="markdown-body rendered-content">{{ body_html }}</div>
       {% if body_editor %}
       <div class="body-editor-panel" hidden
-        data-save-url="{{ body_editor.save_url }}"
+        data-preview-url="{{ body_editor.preview_url }}"
+        data-apply-url="{{ body_editor.apply_url }}"
         data-base-sha="{{ body_editor.base_sha256 }}"
         data-employee-id="{{ employee_id }}">
         <div class="editor-toolbar">
-          <strong>Body Draft Editor</strong>
-          <a href="{{ body_editor.guide_url }}">Draft editing guide</a>
+          <strong>Validated Body Editor</strong>
+          <a href="{{ body_editor.guide_url }}">Validated edit guide</a>
         </div>
         <textarea class="body-draft-textarea" spellcheck="false">{{ body_editor.body }}</textarea>
+        <section class="edit-preview-panel body-preview-panel" aria-live="polite">
+          <h3>Preview</h3>
+          <div class="body-edit-preview rendered-content muted">Preview / Validate를 실행하면 미리보기가 표시됩니다.</div>
+        </section>
+        <section class="validation-panel body-validation-panel" hidden>
+          <h3>Validation Feedback</h3>
+          <div class="body-validation-summary muted"></div>
+          <ul class="error-list body-validation-errors"></ul>
+          <ul class="warning-list body-validation-warnings"></ul>
+          <div class="fix-suggestions body-fix-suggestions"></div>
+        </section>
         <div class="source-actions">
-          <button type="button" class="save-body-draft">Save Body Draft</button>
+          <button type="button" class="preview-body-edit">Preview / Validate</button>
+          <button type="button" class="apply-body-edit">Apply & Commit</button>
           <button type="button" class="cancel-body-edit secondary-action">Cancel</button>
-          <span class="draft-result body-draft-result">not applied · not committed</span>
+          <span class="edit-result body-edit-result">ready</span>
         </div>
       </div>
       {% endif %}

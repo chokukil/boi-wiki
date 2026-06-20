@@ -1,11 +1,11 @@
 ---
 name: boi-wiki-agent
-description: Use when working on BoI Wiki SOPs, OKF documents, action specs, MCP integration, Langflow BoI flows, workflow runtime, draft edits, or BoI Wiki validation. This skill bootstraps Codex into BoI Wiki MCP and harness resources instead of duplicating the full domain rules.
+description: Use when working on BoI Wiki SOPs, OKF documents, action specs, MCP integration, Langflow BoI flows, workflow runtime, validated edits, or BoI Wiki validation. This skill bootstraps Codex into BoI Wiki MCP and harness resources instead of duplicating the full domain rules.
 ---
 
 # BoI Wiki Agent
 
-Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, action catalog entries, Langflow BoI flows, MCP tools/resources/prompts, or draft edits.
+Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, action catalog entries, Langflow BoI flows, MCP tools/resources/prompts, or validated edits.
 
 ## Startup
 
@@ -22,7 +22,7 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 ## Operating Rules
 
 - OKF Markdown documents and action catalog are source of truth.
-- Web and MCP writes are draft-only. Do not claim source or Git changed until an agent applies, validates, tests, and commits.
+- Web and MCP source/body edits use preview, validation, apply, and auto-commit. MCP apply tools require explicit `user_confirmed: true`. Team/Public promotion is separate: after user preview approval, call the validated promotion publish path and treat HOTL as post-publication oversight.
 - Langflow is one connector kind, not the default connector.
 - Always search existing SOPs, event types, action specs, manual tasks, and harness docs before creating new ones.
 - Keep images under `_media/`, update `media-manifest.yaml`, and use standard Markdown image syntax.

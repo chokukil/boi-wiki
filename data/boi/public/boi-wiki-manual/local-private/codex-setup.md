@@ -25,7 +25,7 @@ review:
 
 # Summary
 
-Codex는 `AGENTS.md`와 `.agents/skills/boi-wiki-local/SKILL.md`를 읽어 Local Private 작성, 검증, 승격 draft 생성을 수행한다.
+Codex는 `AGENTS.md`와 `.agents/skills/boi-wiki-local/SKILL.md`를 읽어 Local Private 작성, 검증, promotion draft/preflight 생성을 수행한다.
 
 # Setup
 
@@ -43,7 +43,7 @@ Codex는 Git, Python, MCP가 없어도 local Markdown workspace를 만들고 작
 - 저장 전 Level 0 self-check를 수행한다.
 - 가능한 경우 `check.sh` 또는 `check.ps1`을 실행한다.
 - Local Private 원문은 사용자 승인 없이 원격 전송하지 않는다.
-- 공유 요청은 local promotion draft, preview, 사용자 승인, remote draft-only 순서로 처리한다.
+- 공유 요청은 local promotion draft, preflight, preview, 사용자 승인, remote sync validation/publish 순서로 처리한다.
 
 # Citations
 

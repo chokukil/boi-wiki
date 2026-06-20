@@ -6,6 +6,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 import uuid
 import httpx
@@ -30,6 +33,7 @@ from .okf import (
     iter_jsonl_rows,
     iter_materialized_items,
     markdown_link_edges,
+    lint_data_root,
     resolve_okf_media_path,
     resolve_okf_link,
     validate_okf_metadata,
@@ -101,7 +105,7 @@ BUILTIN_EVENT_TYPES: list[dict[str, Any]] = [
         "owner": "AIX 확산 TF",
         "status": "poc",
         "topic": "boi.events",
-        "wiki_usage": "회의 종료 후 Private BoI를 만들고, 공유 가치가 있으면 Team BoI draft로 승격",
+        "wiki_usage": "회의 종료 후 Private BoI를 만들고, 공유 가치가 있으면 사용자 승인과 자동 검증 후 Team BoI로 게시",
     },
     {
         "event_type": "action.created.v1",
@@ -130,14 +134,14 @@ BUILTIN_EVENT_TYPES: list[dict[str, Any]] = [
     {
         "event_type": "promotion.requested.v1",
         "name_ko": "BoI 승격 요청",
-        "description": "사용자가 Private BoI를 Team/Public 공유용 draft로 승격하라고 명시적으로 요청한 시점",
+        "description": "사용자가 Private BoI 또는 Local promotion candidate를 Team/Public로 게시하라고 명시적으로 승인한 시점",
         "default_boi_type": "boi/reference",
         "default_flow_key": "boi-promotion-v0.1",
         "default_visibility": "team",
         "owner": "AIX 확산 TF",
         "status": "poc",
         "topic": "boi.events",
-        "wiki_usage": "Private 원본은 유지하고 공유용 사본을 만들며 reviewer 검토 상태로 저장",
+        "wiki_usage": "Private 원본은 유지하고 공유용 사본을 사용자 승인/자동 검증 후 게시하며 HOTL 상태로 추적",
     },
 ]
 
@@ -179,7 +183,6 @@ def ensure_dirs() -> None:
     EVENT_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
-    (DRAFT_ROOT / "source_edits").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
@@ -792,6 +795,11 @@ def workflow_status_page_url_for_event_type(event_type: str, trace_id: str, empl
 
 
 SENSITIVE_KEY_RE = re.compile(r"(authorization|api[_-]?key|password|secret|token)", re.IGNORECASE)
+SECRET_VALUE_RE = re.compile(
+    r"\b(sk-[A-Za-z0-9_-]{12,}|ghp_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})"
+    r"|(?i:(api[_-]?key|secret|token|password)\s*[:=]\s*['\"]?[A-Za-z0-9_-]{8,})"
+)
+HOTL_HIDDEN_STATUSES = {"hidden", "rolled_back"}
 REFERENCE_TEXT_RE = re.compile(r"(boi:[A-Za-z0-9:._/-]+|trace-[A-Za-z0-9_-]+|evt-[A-Za-z0-9_-]+|act-[A-Za-z0-9_-]+|[A-Za-z0-9_.-]+\.v\d+)")
 
 
@@ -1211,6 +1219,9 @@ def require_employee_role(employee_id: str, role: str) -> None:
 
 def is_accessible(doc: dict[str, Any], employee_id: str) -> bool:
     meta = doc["metadata"]
+    hotl = meta.get("hotl") or {}
+    if str(hotl.get("status") or "") in HOTL_HIDDEN_STATUSES:
+        return False
     visibility = meta.get("visibility")
     path = Path(doc["path"])
     if visibility == "public":
@@ -2228,6 +2239,365 @@ def validate_source_content(path: Path, content: str) -> dict[str, Any]:
     return {"ok": not errors, "errors": errors, "warnings": warnings, "parsed": parsed}
 
 
+def unique_messages(messages: list[str]) -> list[str]:
+    return list(dict.fromkeys(str(message) for message in messages if str(message).strip()))
+
+
+def line_number_for_hint(content: str, hint: str) -> int | None:
+    if not hint:
+        return None
+    for index, line in enumerate(content.splitlines(), start=1):
+        if hint in line:
+            return index
+    return None
+
+
+def normalize_lint_messages(messages: list[str], temp_root: Path | None = None) -> list[str]:
+    normalized: list[str] = []
+    for message in messages:
+        item = str(message)
+        if temp_root is not None:
+            item = item.replace(str((temp_root / "boi").resolve()), "data/boi")
+            item = item.replace(str((temp_root / "events").resolve()), "data/events")
+            item = item.replace(str((temp_root / "actions").resolve()), "data/actions")
+        else:
+            item = item.replace(str(DATA_ROOT.resolve()), "data/boi")
+            item = item.replace(str(EVENTS_ROOT.resolve()), "data/events")
+            item = item.replace(str(ACTION_LOG_ROOT.resolve()), "data/actions")
+        normalized.append(item)
+    return normalized
+
+
+def okf_lint_report(root: Path, temp_root: Path | None = None, include_logs: bool = False) -> dict[str, Any]:
+    result = lint_data_root(root, include_logs=include_logs, strict_links=True, strict_media=True)
+    return {
+        "ok": result.ok,
+        "errors": normalize_lint_messages(result.errors, temp_root),
+        "warnings": normalize_lint_messages(result.warnings, temp_root),
+        "checked_markdown_count": result.checked_markdown_count,
+        "checked_log_item_count": result.checked_log_item_count,
+        "markdown_link_count": result.markdown_link_count,
+        "media_link_count": result.media_link_count,
+    }
+
+
+def copy_optional_tree(source: Path, target: Path) -> None:
+    if source.exists():
+        shutil.copytree(source, target, dirs_exist_ok=True)
+    else:
+        target.mkdir(parents=True, exist_ok=True)
+
+
+def candidate_path_in_temp_data_root(temp_root: Path, source_path: Path) -> Path | None:
+    try:
+        rel_path = source_path.resolve().relative_to(DATA_ROOT.resolve())
+    except ValueError:
+        return None
+    return temp_root / "boi" / rel_path
+
+
+def candidate_okf_lint_report(source_path: Path, proposed_content: str) -> dict[str, Any] | None:
+    with tempfile.TemporaryDirectory(prefix="boi-edit-") as temp_dir:
+        temp_root = Path(temp_dir)
+        copy_optional_tree(DATA_ROOT, temp_root / "boi")
+        copy_optional_tree(EVENTS_ROOT, temp_root / "events")
+        copy_optional_tree(ACTION_LOG_ROOT, temp_root / "actions")
+        candidate_path = candidate_path_in_temp_data_root(temp_root, source_path)
+        if candidate_path is None:
+            return None
+        candidate_path.parent.mkdir(parents=True, exist_ok=True)
+        candidate_path.write_text(proposed_content, encoding="utf-8")
+        return okf_lint_report(temp_root, temp_root=temp_root)
+
+
+def source_edit_validation_report(source_path: Path, proposed_content: str) -> dict[str, Any]:
+    source_validation = validate_source_content(source_path, proposed_content)
+    errors = list(source_validation.get("errors") or [])
+    warnings = list(source_validation.get("warnings") or [])
+    okf_report: dict[str, Any] | None = None
+    try:
+        okf_report = candidate_okf_lint_report(source_path, proposed_content)
+    except Exception as exc:
+        errors.append(f"okf_lint failed: {exc}")
+    if okf_report is not None:
+        errors.extend(okf_report.get("errors") or [])
+        warnings.extend(okf_report.get("warnings") or [])
+    errors = unique_messages(errors)
+    warnings = unique_messages(warnings)
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "source_validation": source_validation,
+        "okf_lint": okf_report,
+    }
+
+
+def current_source_validation_report(source_path: Path) -> dict[str, Any]:
+    content = source_path.read_text(encoding="utf-8")
+    source_validation = validate_source_content(source_path, content)
+    errors = list(source_validation.get("errors") or [])
+    warnings = list(source_validation.get("warnings") or [])
+    okf_report: dict[str, Any] | None = None
+    try:
+        candidate_path_in_temp_data_root(DATA_ROOT.parent, source_path)
+        okf_report = okf_lint_report(DATA_ROOT.parent)
+    except Exception as exc:
+        errors.append(f"okf_lint failed: {exc}")
+    if okf_report is not None:
+        errors.extend(okf_report.get("errors") or [])
+        warnings.extend(okf_report.get("warnings") or [])
+    errors = unique_messages(errors)
+    warnings = unique_messages(warnings)
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "source_validation": source_validation,
+        "okf_lint": okf_report,
+    }
+
+
+def edit_fix_suggestions(source_path: Path, proposed_content: str, validation: dict[str, Any]) -> list[dict[str, Any]]:
+    suggestions: list[dict[str, Any]] = []
+    source_ref = source_ref_for_path(source_path)
+    for index, error in enumerate(validation.get("errors") or [], start=1):
+        lowered = error.lower()
+        title = "검증 오류 확인"
+        description = "표시된 오류가 해결되도록 원문을 수정한 뒤 다시 Preview / Validate를 실행하세요."
+        auto_applicable = False
+        line = None
+        if "missing yaml frontmatter" in lowered:
+            title = "YAML frontmatter 추가"
+            description = "문서 맨 위에 --- 로 감싼 OKF metadata 블록을 추가해야 합니다."
+            line = 1
+        elif "missing required metadata:" in lowered:
+            field_name = error.rsplit(":", 1)[-1].strip()
+            title = f"`{field_name}` metadata 추가"
+            description = f"frontmatter에 `{field_name}` 값을 추가하세요. Public/Team 문서는 source_refs와 review 정보도 필요합니다."
+            line = line_number_for_hint(proposed_content, "---") or 1
+        elif "team/public boi requires source_refs" in lowered:
+            title = "`source_refs` 추가"
+            description = "Team/Public 문서는 출처를 추적할 수 있도록 `source_refs` 배열이 필요합니다."
+            line = line_number_for_hint(proposed_content, "visibility:")
+        elif "requires reviewer" in lowered:
+            title = "reviewer 추가"
+            description = "`review.reviewer` 또는 `reviewer` metadata를 추가하세요."
+            line = line_number_for_hint(proposed_content, "review:")
+        elif "potential secret token detected" in lowered:
+            title = "민감정보 제거"
+            description = "API token, GitHub token, Slack token처럼 보이는 문자열을 제거하거나 안전한 참조로 바꾸세요."
+        elif "invalid yaml" in lowered:
+            title = "YAML 문법 수정"
+            description = "들여쓰기, 콜론 뒤 공백, 리스트 표기, 따옴표 닫힘을 확인하세요."
+            line = line_number_for_hint(proposed_content, ":")
+        elif "unresolved okf markdown link" in lowered:
+            title = "OKF 링크 수정"
+            description = "존재하는 BoI 문서 경로나 `/public/...md`, 상대 경로 링크로 수정하세요."
+        elif "image link" in lowered or "media manifest" in lowered:
+            title = "이미지/미디어 참조 수정"
+            description = "이미지는 `_media` 디렉터리에 두고 `media-manifest.yaml`의 path와 sha256을 맞추세요."
+        elif "reserved" in lowered:
+            title = "예약 파일 frontmatter 제거"
+            description = "`index.md`와 `log.md`는 BoI concept frontmatter를 가지면 안 됩니다."
+            line = 1
+        suggestions.append(
+            {
+                "id": f"fix-{index}",
+                "title": title,
+                "description": description,
+                "target": {"path": source_ref, "line": line},
+                "auto_applicable": auto_applicable,
+                "source_error": error,
+            }
+        )
+    return suggestions
+
+
+def source_preview_html(source_path: Path, proposed_content: str, employee_id: str, validation: dict[str, Any]) -> dict[str, Any]:
+    suffix = source_path.suffix.lower()
+    if suffix == ".md":
+        metadata, body = split_frontmatter(proposed_content)
+        doc_lookup = build_doc_lookup(accessible_docs(employee_id))
+        return {
+            "kind": "markdown",
+            "html": str(render_markdown(body, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)),
+            "metadata": metadata,
+        }
+    parsed = (validation.get("source_validation") or {}).get("parsed")
+    if parsed is not None:
+        return {"kind": "yaml", "html": str(render_content(parsed)), "metadata": {}}
+    return {"kind": "plain", "html": f"<pre>{html_escape(proposed_content)}</pre>", "metadata": {}}
+
+
+def check_source_base_sha(source_path: Path, base_sha256: str | None, *, action: str) -> str:
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="source file not found")
+    current_content = source_path.read_text(encoding="utf-8")
+    current_sha = hashlib.sha256(current_content.encode("utf-8")).hexdigest()
+    if base_sha256 and base_sha256 != current_sha:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "ok": False,
+                "status": "stale_base",
+                "message": f"source changed after this edit was opened; reload before {action}",
+                "current_sha256": current_sha,
+            },
+        )
+    return current_sha
+
+
+def source_preview_response(
+    *,
+    source_path: Path,
+    proposed_content: str,
+    employee_id: str,
+    base_sha256: str | None = None,
+) -> dict[str, Any]:
+    current_sha = check_source_base_sha(source_path, base_sha256, action="previewing")
+    validation = source_edit_validation_report(source_path, proposed_content)
+    proposed_sha = hashlib.sha256(proposed_content.encode("utf-8")).hexdigest()
+    preview = source_preview_html(source_path, proposed_content, employee_id, validation)
+    return {
+        "ok": validation["ok"],
+        "status": "valid" if validation["ok"] else "validation_failed",
+        "path": source_ref_for_path(source_path),
+        "base_sha256": current_sha,
+        "proposed_sha256": proposed_sha,
+        "changed": proposed_sha != current_sha,
+        "validation_report": validation,
+        "validation": validation,
+        "fix_suggestions": edit_fix_suggestions(source_path, proposed_content, validation),
+        "preview": preview,
+        "applied": False,
+        "commit_status": "not_started",
+        "commit_hash": "",
+    }
+
+
+def require_edit_commit_success(commit: dict[str, Any], *, changed: bool) -> None:
+    required = os.getenv("BOI_EDIT_REQUIRE_COMMIT", "true").lower() in {"1", "true", "yes", "on"}
+    status = str(commit.get("status") or "")
+    if not required:
+        return
+    if changed and status != "committed":
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "ok": False,
+                "status": "commit_failed",
+                "message": "validated edit could not be committed; source file was rolled back",
+                "commit": commit,
+            },
+        )
+
+
+def refresh_git_index_for_path(path: Path) -> None:
+    try:
+        root = subprocess.run(
+            ["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        rel_path = str(path.resolve().relative_to(Path(root).resolve()))
+        subprocess.run(["git", "-C", root, "add", rel_path], text=True, capture_output=True, check=False)
+    except Exception:
+        return
+
+
+def rollback_source_file(source_path: Path, content: str) -> None:
+    source_path.write_text(content, encoding="utf-8")
+    refresh_git_index_for_path(source_path)
+    invalidate_doc_caches()
+
+
+def apply_source_edit(
+    *,
+    source_path: Path,
+    base_sha256: str,
+    proposed_content: str,
+    employee_id: str,
+    author: str | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    current_content = source_path.read_text(encoding="utf-8") if source_path.exists() else ""
+    current_sha = check_source_base_sha(source_path, base_sha256, action="applying")
+    preview = source_preview_response(
+        source_path=source_path,
+        proposed_content=proposed_content,
+        employee_id=employee_id,
+        base_sha256=current_sha,
+    )
+    if not preview["ok"]:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "ok": False,
+                "status": "validation_failed",
+                "message": "validated edit failed before applying; source file was not changed",
+                "validation_report": preview["validation_report"],
+                "fix_suggestions": preview["fix_suggestions"],
+            },
+        )
+    if not preview["changed"]:
+        return {
+            **preview,
+            "ok": True,
+            "status": "unchanged",
+            "message": "No source changes to apply.",
+            "commit_status": "unchanged",
+            "commit_hash": "",
+        }
+    source_path.write_text(proposed_content, encoding="utf-8")
+    invalidate_doc_caches()
+    try:
+        post_validation = current_source_validation_report(source_path)
+        if not post_validation["ok"]:
+            rollback_source_file(source_path, current_content)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "ok": False,
+                    "status": "validation_failed",
+                    "message": "post-apply validation failed; source file was rolled back",
+                    "validation_report": post_validation,
+                    "fix_suggestions": edit_fix_suggestions(source_path, proposed_content, post_validation),
+                },
+            )
+        commit = git_commit_for_path(
+            source_path,
+            f"Apply BoI source edit {source_ref_for_path(source_path)}",
+        )
+        try:
+            require_edit_commit_success(commit, changed=True)
+        except HTTPException:
+            rollback_source_file(source_path, current_content)
+            raise
+    except Exception:
+        if source_path.exists() and source_path.read_text(encoding="utf-8") != current_content:
+            rollback_source_file(source_path, current_content)
+        raise
+    refreshed_sha = hashlib.sha256(source_path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    return {
+        **preview,
+        "ok": True,
+        "status": "applied",
+        "message": "Validated edit applied and committed.",
+        "applied": True,
+        "applied_at": now_iso(),
+        "applied_by": author or employee_id,
+        "note": note,
+        "sha256": refreshed_sha,
+        "commit_status": commit.get("status", ""),
+        "commit_hash": commit.get("commit_hash", ""),
+        "commit": commit,
+        "validation_report": post_validation,
+        "validation": post_validation,
+    }
+
+
 def source_payload(path: Path, employee_id: str, content: str | None = None) -> dict[str, Any]:
     actual_content = path.read_text(encoding="utf-8") if content is None else content
     validation = validate_source_content(path, actual_content)
@@ -2237,65 +2607,7 @@ def source_payload(path: Path, employee_id: str, content: str | None = None) -> 
         "sha256": hashlib.sha256(actual_content.encode("utf-8")).hexdigest(),
         "content": actual_content,
         "validation": validation,
-        "draft_only": True,
         "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
-    }
-
-
-def source_draft_response(
-    *,
-    source_path: Path,
-    base_sha256: str,
-    proposed_content: str,
-    employee_id: str,
-    author: str | None = None,
-    note: str = "",
-) -> dict[str, Any]:
-    if not source_path.exists():
-        raise HTTPException(status_code=404, detail="source file not found")
-    current_content = source_path.read_text(encoding="utf-8")
-    current_sha = hashlib.sha256(current_content.encode("utf-8")).hexdigest()
-    if base_sha256 != current_sha:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "ok": False,
-                "status": "stale_base",
-                "message": "source changed after this draft was opened; reload before saving a draft",
-                "current_sha256": current_sha,
-            },
-        )
-    validation = validate_source_content(source_path, proposed_content)
-    draft_id = f"source-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
-    draft = {
-        "draft_id": draft_id,
-        "kind": "source_edit",
-        "status": "pending" if validation["ok"] else "validation_failed",
-        "target_path": source_ref_for_path(source_path),
-        "base_sha256": current_sha,
-        "proposed_sha256": hashlib.sha256(proposed_content.encode("utf-8")).hexdigest(),
-        "proposed_content": proposed_content,
-        "author": author or employee_id,
-        "employee_id": employee_id,
-        "note": note,
-        "created_at": now_iso(),
-        "validation": validation,
-        "draft_only": True,
-        "applied": False,
-        "committed": False,
-    }
-    ensure_dirs()
-    draft_path = DRAFT_ROOT / "source_edits" / f"{draft_id}.json"
-    draft_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    return {
-        "ok": validation["ok"],
-        "draft_id": draft_id,
-        "status": draft["status"],
-        "draft_path": str(draft_path),
-        "target_path": draft["target_path"],
-        "validation": validation,
-        "draft_only": True,
-        "message": "Draft saved only. An agent must apply, test, and commit this change.",
     }
 
 
@@ -2314,7 +2626,8 @@ def body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> dict[s
     return {
         "body": doc.get("body") or "",
         "base_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        "save_url": "/api/docs/" + str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/")) + "/body-drafts?" + urlencode({"employee_id": employee_id}),
+        "preview_url": "/api/docs/" + str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/")) + "/body-preview?" + urlencode({"employee_id": employee_id}),
+        "apply_url": "/api/docs/" + str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/")) + "/body-apply?" + urlencode({"employee_id": employee_id}),
         "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
     }
 
@@ -2562,6 +2875,241 @@ class PromotionRequest(BaseModel):
     team_id: str | None = None
     reviewer: str = "tf-lead"
     promotion_reason: str = "User explicitly requested promotion."
+    user_confirmed: bool = True
+    user_confirmed_at: str | None = None
+
+
+class PromotionSubmitRequest(BaseModel):
+    target_visibility: Literal["team", "public"] = "team"
+    team_id: str | None = None
+    title: str
+    description: str = "Promoted BoI"
+    body: str
+    boi_type: str = "boi/reference"
+    classification: str = "internal"
+    tags: list[str] = Field(default_factory=list)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    source_local_id: str | None = None
+    source_sha256: str | None = None
+    reviewer: str = "hotl-curator"
+    promotion_reason: str = "User explicitly requested promotion."
+    user_confirmed: bool = False
+    user_confirmed_at: str | None = None
+
+
+class HotlUpdateRequest(BaseModel):
+    status: Literal["watching", "hidden", "needs_revision", "rolled_back"]
+    note: str = ""
+    actor: str | None = None
+
+
+def promotion_report_path(promotion_id: str) -> Path:
+    safe_id = safe_filename(promotion_id)
+    return DRAFT_ROOT / "promotions" / f"{safe_id}.json"
+
+
+def write_promotion_report(report: dict[str, Any]) -> None:
+    ensure_dirs()
+    promotion_id = str(report.get("promotion_id") or "")
+    if not promotion_id:
+        raise HTTPException(status_code=500, detail="promotion report is missing promotion_id")
+    promotion_report_path(promotion_id).write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
+def read_promotion_report(promotion_id: str) -> dict[str, Any]:
+    path = promotion_report_path(promotion_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="promotion report not found")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def git_commit_for_path(path: Path, message: str) -> dict[str, str]:
+    if os.getenv("BOI_PROMOTION_AUTO_COMMIT", "true").lower() not in {"1", "true", "yes", "on"}:
+        return {"status": "disabled", "commit_hash": ""}
+    try:
+        root = subprocess.run(
+            ["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+    except Exception:
+        return {"status": "unavailable", "commit_hash": ""}
+    try:
+        rel_path = str(path.resolve().relative_to(Path(root).resolve()))
+    except ValueError:
+        rel_path = str(path)
+    try:
+        subprocess.run(["git", "-C", root, "add", rel_path], text=True, capture_output=True, check=True)
+        commit = subprocess.run(
+            ["git", "-C", root, "commit", "-m", message, "--", rel_path],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if commit.returncode != 0:
+            combined = (commit.stdout + "\n" + commit.stderr).lower()
+            if "nothing to commit" not in combined:
+                return {"status": "failed", "commit_hash": "", "error": (commit.stdout + commit.stderr).strip()}
+        current = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--short", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        return {"status": "committed" if commit.returncode == 0 else "unchanged", "commit_hash": current}
+    except Exception as exc:
+        return {"status": "failed", "commit_hash": "", "error": repr(exc)}
+
+
+def promotion_validation_failure(errors: list[str], warnings: list[str], metadata: dict[str, Any] | None = None) -> None:
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "ok": False,
+            "status": "validation_failed",
+            "validation": {"ok": False, "errors": errors, "warnings": warnings, "metadata": metadata or {}},
+        },
+    )
+
+
+def validate_promotion_candidate(metadata: dict[str, Any], body: str, *, user_confirmed: bool) -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not user_confirmed:
+        errors.append("user confirmation is required before Team/Public promotion")
+    if not str(metadata.get("title") or "").strip():
+        errors.append("promotion title is required")
+    if not body.strip():
+        errors.append("promotion body is required")
+    if metadata.get("visibility") not in {"team", "public"}:
+        errors.append("promotion target_visibility must be team or public")
+    if not metadata.get("source_refs"):
+        errors.append("Team/Public promotion requires source_refs")
+    if not (metadata.get("review") or {}).get("reviewer"):
+        errors.append("Team/Public promotion requires HOTL reviewer")
+    if SECRET_VALUE_RE.search(body) or SECRET_VALUE_RE.search(json.dumps(metadata, ensure_ascii=False, default=str)):
+        errors.append("potential secret token detected")
+    errors.extend(validate_metadata(metadata, promotion=True))
+    if "# Summary" not in body:
+        warnings.append("promotion body has no # Summary heading")
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "metadata": metadata}
+
+
+def publish_promotion(
+    *,
+    employee_id: str,
+    target_visibility: Literal["team", "public"],
+    team_id: str | None,
+    title: str,
+    description: str,
+    body: str,
+    boi_type: str,
+    classification: str,
+    tags: list[str],
+    source_refs: list[dict[str, Any]],
+    source_local_id: str | None,
+    source_sha256: str | None,
+    reviewer: str,
+    promotion_reason: str,
+    user_confirmed: bool,
+    user_confirmed_at: str | None,
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.promoter")
+    effective_team_id = team_id or (teams_for(employee_id)[0] if target_visibility == "team" else None)
+    promotion_id = f"promotion-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    confirmed_at = user_confirmed_at or now_iso()
+    metadata = make_metadata(
+        boi_type=boi_type,
+        title=title,
+        description=description,
+        owner=employee_id,
+        visibility=target_visibility,
+        classification=classification,
+        team_id=effective_team_id,
+        source_refs=source_refs,
+        status="reviewed",
+        tags=list(dict.fromkeys((tags or []) + ["promoted", "user-confirmed"])),
+        promotion={
+            "promotion_id": promotion_id,
+            "source_local_id": source_local_id or "",
+            "source_sha256": source_sha256 or "",
+            "promoted_by": employee_id,
+            "promoted_at": now_iso(),
+            "user_confirmed_at": confirmed_at,
+            "promotion_reason": promotion_reason,
+            "validation_report_id": promotion_id,
+        },
+        reviewer=reviewer,
+    )
+    metadata["review"] = {
+        "reviewer": reviewer,
+        "review_status": "user_confirmed",
+        "user_confirmed_by": employee_id,
+        "user_confirmed_at": confirmed_at,
+    }
+    metadata["hotl"] = {"status": "watching", "owner": reviewer, "updated_at": now_iso()}
+    validation = validate_promotion_candidate(metadata, body, user_confirmed=user_confirmed)
+    if not validation["ok"]:
+        promotion_validation_failure(validation["errors"], validation["warnings"], metadata)
+
+    doc = write_boi(metadata, body)
+    commit = git_commit_for_path(Path(str(doc["path"])), f"Publish BoI promotion {metadata['boi_id']}")
+    report = {
+        "ok": True,
+        "status": "published",
+        "promotion_id": promotion_id,
+        "target_boi_id": metadata["boi_id"],
+        "target_visibility": target_visibility,
+        "target_path": doc["path"],
+        "target_uri": doc["uri"],
+        "published_at": now_iso(),
+        "promoted_by": employee_id,
+        "validation": validation,
+        "hotl": metadata["hotl"],
+        "commit": commit,
+    }
+    write_promotion_report(report)
+    return {
+        "ok": True,
+        "status": "published",
+        "promotion_id": promotion_id,
+        "target": doc,
+        "validation": validation,
+        "hotl": metadata["hotl"],
+        "commit_hash": commit.get("commit_hash", ""),
+        "commit_status": commit.get("status", ""),
+    }
+
+
+def update_hotl_status(promotion_id: str, req: HotlUpdateRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.promoter")
+    report = read_promotion_report(promotion_id)
+    target_path = Path(str(report.get("target_path") or ""))
+    if not target_path.exists():
+        raise HTTPException(status_code=404, detail="promoted document not found")
+    metadata, body = split_frontmatter(target_path.read_text(encoding="utf-8"))
+    hotl = dict(metadata.get("hotl") or {})
+    hotl.update(
+        {
+            "status": req.status,
+            "updated_at": now_iso(),
+            "updated_by": req.actor or employee_id,
+            "note": req.note,
+        }
+    )
+    metadata["hotl"] = hotl
+    target_path.write_text(compose_markdown(metadata, body), encoding="utf-8")
+    invalidate_doc_caches()
+    commit = git_commit_for_path(target_path, f"Update HOTL status for {metadata.get('boi_id')}")
+    report["hotl"] = hotl
+    report["status"] = req.status if req.status in HOTL_HIDDEN_STATUSES else report.get("status", "published")
+    report["hotl_commit"] = commit
+    write_promotion_report(report)
+    return {"ok": True, "promotion_id": promotion_id, "status": report["status"], "hotl": hotl, "commit": commit}
 
 
 class EventPublishRequest(BaseModel):
@@ -2620,19 +3168,27 @@ class ActionInvokeRequest(BaseModel):
     idempotency_key: str | None = None
 
 
-class SourceDraftRequest(BaseModel):
+class SourcePreviewRequest(BaseModel):
     path: str = Field(examples=["data/boi/public/sop/equipment-abnormal-response.md"])
-    base_sha256: str
+    base_sha256: str | None = None
     proposed_content: str
     author: str | None = None
     note: str = ""
 
 
-class BodyDraftRequest(BaseModel):
+class SourceApplyRequest(SourcePreviewRequest):
     base_sha256: str
+
+
+class BodyPreviewRequest(BaseModel):
+    base_sha256: str | None = None
     proposed_body: str
     author: str | None = None
     note: str = ""
+
+
+class BodyApplyRequest(BodyPreviewRequest):
+    base_sha256: str
 
 
 class PocConnectorRequest(BaseModel):
@@ -3080,7 +3636,7 @@ async def source_page(
                 active_nav="library",
                 title="Source Viewer",
                 description=str(source.get("path") or path),
-                page_actions=[{"label": "Draft editing guide", "href": source["guide_url"], "kind": "secondary"}],
+                page_actions=[{"label": "Validated edit guide", "href": source["guide_url"], "kind": "secondary"}],
             ),
             "source": source,
         },
@@ -3098,14 +3654,29 @@ async def get_source(
     return source_payload(source_path, employee_id)
 
 
-@app.post("/api/source/drafts")
-async def create_source_draft(
-    req: SourceDraftRequest,
+@app.post("/api/source/preview")
+async def preview_source_edit(
+    req: SourcePreviewRequest,
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.editor")
     source_path = resolve_source_path(req.path)
-    return source_draft_response(
+    return source_preview_response(
+        source_path=source_path,
+        proposed_content=req.proposed_content,
+        employee_id=employee_id,
+        base_sha256=req.base_sha256,
+    )
+
+
+@app.post("/api/source/apply")
+async def apply_source_edit_api(
+    req: SourceApplyRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    source_path = resolve_source_path(req.path)
+    return apply_source_edit(
         source_path=source_path,
         base_sha256=req.base_sha256,
         proposed_content=req.proposed_content,
@@ -3115,10 +3686,10 @@ async def create_source_draft(
     )
 
 
-@app.post("/api/docs/{boi_id:path}/body-drafts")
-async def create_doc_body_draft(
+@app.post("/api/docs/{boi_id:path}/body-preview")
+async def preview_doc_body_edit(
     boi_id: str,
-    req: BodyDraftRequest,
+    req: BodyPreviewRequest,
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.editor")
@@ -3131,7 +3702,33 @@ async def create_doc_body_draft(
     if not source_path.exists():
         raise HTTPException(status_code=404, detail="source file not found")
     proposed_content = compose_markdown(doc["metadata"], req.proposed_body)
-    return source_draft_response(
+    response = source_preview_response(
+        source_path=source_path,
+        proposed_content=proposed_content,
+        employee_id=employee_id,
+        base_sha256=req.base_sha256,
+    )
+    response["body_preview_html"] = response.get("preview", {}).get("html", "")
+    return response
+
+
+@app.post("/api/docs/{boi_id:path}/body-apply")
+async def apply_doc_body_edit(
+    boi_id: str,
+    req: BodyApplyRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    docs = accessible_docs(employee_id)
+    doc_lookup = build_doc_lookup(docs)
+    doc = doc_from_lookup(boi_id, doc_lookup)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    source_path = Path(str(doc.get("path") or ""))
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="source file not found")
+    proposed_content = compose_markdown(doc["metadata"], req.proposed_body)
+    response = apply_source_edit(
         source_path=source_path,
         base_sha256=req.base_sha256,
         proposed_content=proposed_content,
@@ -3139,6 +3736,8 @@ async def create_doc_body_draft(
         author=req.author,
         note=req.note or "inline body editor",
     )
+    response["body_preview_html"] = response.get("preview", {}).get("html", "")
+    return response
 
 
 @app.get("/docs/{boi_id:path}", response_class=HTMLResponse)
@@ -3191,7 +3790,7 @@ async def doc_page(
                 description=str(doc["metadata"].get("description") or ""),
                 page_actions=[
                     {"label": "폴더로 돌아가기", "href": browse_url(employee_id, folder=return_folder), "kind": "secondary"},
-                    *([{"label": "Source 보기 / Draft 수정", "href": source_url_for_doc(doc, employee_id), "kind": "secondary"}] if source_url_for_doc(doc, employee_id) else []),
+                    *([{"label": "Source 보기 / 검증 편집", "href": source_url_for_doc(doc, employee_id), "kind": "secondary"}] if source_url_for_doc(doc, employee_id) else []),
                     *([{"label": "같은 Event Type BoI", "href": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")), "kind": "secondary"}] if doc["metadata"].get("event_type") else []),
                 ],
             ),
@@ -3277,7 +3876,6 @@ async def create_boi(req: BoiCreate, employee_id: str = Depends(current_employee
 
 @app.post("/api/boi/{boi_id:path}/promote")
 async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    require_employee_role(employee_id, "boi.promoter")
     source = find_doc_by_id(boi_id, employee_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source BoI not found or not accessible")
@@ -3286,41 +3884,74 @@ async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Dep
         raise HTTPException(status_code=400, detail="Only private BoI can be promoted in this PoC")
 
     target_visibility = req.target_visibility
-    team_id = req.team_id or (teams_for(employee_id)[0] if target_visibility == "team" else None)
-    title = source_meta.get("title", "Untitled BoI")
-    description = source_meta.get("description", "Promoted BoI draft")
+    title = str(source_meta.get("title") or "Untitled BoI")
+    description = str(source_meta.get("description") or "Promoted BoI")
     source_refs = source_meta.get("source_refs") or [
-        {"type": "boi", "ref": source_meta.get("boi_id"), "note": "source private BoI; sanitized copy required"}
+        {"type": "boi", "ref": source_meta.get("boi_id"), "note": "source private BoI; user-confirmed sanitized copy"}
     ]
     body = (
         "# Summary\n\n"
-        + f"이 문서는 Private BoI `{source_meta.get('boi_id')}`에서 사용자의 명시적 요청으로 생성된 공유용 draft입니다.\n\n"
-        + "# Shared Content Draft\n\n"
+        + f"이 문서는 Private BoI `{source_meta.get('boi_id')}`에서 사용자의 명시적 승인 후 {target_visibility} 공유본으로 게시되었습니다.\n\n"
+        + "# Shared Content\n\n"
         + source["body"]
-        + "\n\n# Promotion Checklist\n\n- [ ] 민감정보 제거 확인\n- [ ] 출처 확인\n- [ ] Owner/Reviewer 확인\n- [ ] Team/Public 공유 적합성 확인\n"
     )
-    meta = make_metadata(
-        boi_type=source_meta.get("type", "boi/reference"),
-        title=f"[공유 Draft] {title}",
+    result = publish_promotion(
+        employee_id=employee_id,
+        target_visibility=target_visibility,
+        team_id=req.team_id,
+        title=title,
         description=description,
-        owner=employee_id,
-        visibility=target_visibility,
         classification=source_meta.get("classification", "internal"),
-        team_id=team_id,
-        source_event=source_meta.get("source_event"),
+        boi_type=source_meta.get("type", "boi/reference"),
+        body=body,
+        tags=list(source_meta.get("tags") or []),
         source_refs=source_refs,
-        status="draft",
-        tags=list(set((source_meta.get("tags") or []) + ["promoted-draft"])),
-        promotion={
-            "source_boi_id": source_meta.get("boi_id"),
-            "promoted_by": employee_id,
-            "promoted_at": now_iso(),
-            "promotion_reason": req.promotion_reason,
-        },
+        source_local_id=str(source_meta.get("boi_id") or ""),
+        source_sha256=hashlib.sha256(compose_markdown(source_meta, source["body"]).encode("utf-8")).hexdigest(),
         reviewer=req.reviewer,
+        promotion_reason=req.promotion_reason,
+        user_confirmed=req.user_confirmed,
+        user_confirmed_at=req.user_confirmed_at,
     )
-    doc = write_boi(meta, body)
-    return {"ok": True, "source": source_meta.get("boi_id"), "target": doc}
+    result["source"] = source_meta.get("boi_id")
+    return result
+
+
+@app.post("/api/promotions/submit")
+async def submit_promotion(req: PromotionSubmitRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return publish_promotion(
+        employee_id=employee_id,
+        target_visibility=req.target_visibility,
+        team_id=req.team_id,
+        title=req.title,
+        description=req.description,
+        body=req.body,
+        boi_type=req.boi_type,
+        classification=req.classification,
+        tags=req.tags,
+        source_refs=req.source_refs,
+        source_local_id=req.source_local_id,
+        source_sha256=req.source_sha256,
+        reviewer=req.reviewer,
+        promotion_reason=req.promotion_reason,
+        user_confirmed=req.user_confirmed,
+        user_confirmed_at=req.user_confirmed_at,
+    )
+
+
+@app.get("/api/promotions/{promotion_id}")
+async def get_promotion_status(promotion_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    return read_promotion_report(promotion_id)
+
+
+@app.post("/api/promotions/{promotion_id}/hotl")
+async def update_promotion_hotl(
+    promotion_id: str,
+    req: HotlUpdateRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    return update_hotl_status(promotion_id, req, employee_id)
 
 
 @app.post("/api/events/publish")
@@ -4385,7 +5016,7 @@ Event Broker를 통해 Action 생성 이벤트가 수신되었고, 담당자 Pri
 # Key Messages
 
 - 개인 업무 맥락은 Private BoI에 축적됩니다.
-- 명시적 요청과 검토를 거쳐 Team/Public BoI로 승격됩니다.
+- 명시적 요청, 사용자 승인, 자동 검증을 거쳐 Team/Public BoI로 게시됩니다.
 - Agent나 사람이 Web BoI Wiki에 접속하는 것만으로 SOP와 조직 지식을 활용할 수 있습니다.
 
 # References

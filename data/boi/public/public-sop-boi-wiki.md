@@ -39,8 +39,8 @@ BoI Wiki는 OKF 기반 SK하이닉스형 업무 맥락 저장소다.
 
 Local Private은 shared Web runtime의 `DATA_ROOT` 밖에 있는 개인 OKF workspace다. 기본 metadata는 `visibility: local-private`, `local_only: true`, `promotion_status: local_only`를 사용하고, agent가 lifecycle metadata와 `index.md`/`log.md`를 관리한다.
 
-원격 공유가 필요하면 원본을 직접 publish하지 않고, 사용자 preview와 명시 승인 후 Team/Public draft-only 절차로 넘어간다.
+원격 공유가 필요하면 원본을 직접 publish하지 않고, sanitized promotion candidate를 만든다. 사용자 preview와 명시 승인 후 원격 자동 검증을 통과하면 Team/Public에 즉시 게시되고 HOTL이 사후 개입한다.
 
 # Promotion
 
-Private BoI는 자동 공유하지 않는다. 사용자의 명시적 요청이 있을 때 Team/Public 공유용 사본을 draft로 생성한다.
+Private BoI는 자동 공유하지 않는다. 사용자의 명시적 요청이 있을 때 Team/Public 공유용 사본을 만들고, 자동 검증 통과 시 즉시 게시한다. 게시된 문서는 `review.review_status: user_confirmed`, `hotl.status: watching`으로 시작하며 `approved`는 별도 검토 후 사용한다.

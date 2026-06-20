@@ -30,4 +30,4 @@ Default workflow:
 2. Extract stages, triggers, evidence, automated actions, human decisions, approvals, and outputs.
 3. Prefer existing action specs. Create new action package drafts only when no suitable action exists.
 4. Use Langflow only when a stage needs LLM/agent reasoning that cannot be represented as API/MCP/Webhook/manual/event-broker actions alone.
-5. Save web/MCP edits as drafts. Apply and commit only after validation and smoke tests.
+5. For direct source/body edits, use preview, validation, apply, and auto-commit. For Team/Public promotion, use user confirmation plus remote synchronous validation and publish.

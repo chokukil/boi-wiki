@@ -32,9 +32,10 @@ Agent Harness는 구성원이 Claude, ChatGPT, M365 Copilot, Langflow, Custom Ag
 
 1. 기본 저장은 Private BoI Wiki이다.
 2. Team/Public 공유는 사용자의 명시적 요청이 있어야 한다.
-3. Private BoI를 이동하지 않고, 공유용 사본을 draft로 생성한다.
-4. Team/Public 승격 전 민감정보, 출처, Owner, Reviewer를 확인한다.
-5. Agent나 사람이 BoI Wiki에 접속하는 것만으로 SOP와 조직 지식을 활용할 수 있어야 한다.
+3. Private BoI를 이동하지 않고, 공유용 사본 또는 sanitized promotion candidate를 만든다.
+4. Team/Public 승격 전 민감정보, 출처, Owner, target visibility, preview를 확인하고 사용자 승인을 받는다.
+5. 자동 검증을 통과한 Team/Public promotion은 즉시 게시하며 HOTL로 사후 개입한다.
+6. Agent나 사람이 BoI Wiki에 접속하는 것만으로 SOP와 조직 지식을 활용할 수 있어야 한다.
 
 # References
 

@@ -34,27 +34,111 @@
       <pre class="source-code">{{ source.content }}</pre>
     </section>
     <section class="source-editor" id="source-editor" hidden>
-      <section class="draft-notice">
-        <strong>Save Draft는 원본 파일과 Git commit을 변경하지 않습니다.</strong>
-        <p>이 화면에서 저장하면 draft queue에만 기록됩니다. Codex/Claude 같은 agent가 validation, apply, test, commit을 별도로 수행해야 실제 BoI Wiki source에 반영됩니다.</p>
+      <section class="edit-notice">
+        <strong>Preview / Validate 후 Apply & Commit을 실행합니다.</strong>
+        <p>검증을 통과한 변경만 원본 파일에 적용되고 자동 commit됩니다. 오류가 있으면 원본은 유지됩니다.</p>
       </section>
-      <h2>Draft Content</h2>
-      <textarea id="source-content" spellcheck="false">{{ source.content }}</textarea>
+      <div class="editor-toolbar">
+        <h2>Validated Source Edit</h2>
+        <a href="{{ source.guide_url }}">Validated edit guide</a>
+      </div>
+      <div class="edit-grid">
+        <textarea id="source-content" spellcheck="false">{{ source.content }}</textarea>
+        <section class="edit-preview-panel" aria-live="polite">
+          <h3>Preview</h3>
+          <div id="source-preview" class="rendered-content muted">Preview / Validate를 실행하면 미리보기가 표시됩니다.</div>
+        </section>
+      </div>
+      <section id="source-validation-panel" class="validation-panel" hidden>
+        <h3>Validation Feedback</h3>
+        <div id="source-validation-summary" class="muted"></div>
+        <ul id="source-validation-errors" class="error-list"></ul>
+        <ul id="source-validation-warnings" class="warning-list"></ul>
+        <div id="source-fix-suggestions" class="fix-suggestions"></div>
+      </section>
       <div class="source-actions">
-        <button id="save-draft" type="button">Save Draft</button>
+        <button id="preview-source" type="button">Preview / Validate</button>
+        <button id="apply-source" type="button">Apply & Commit</button>
         <button id="cancel-source-edit" class="secondary-action" type="button">Cancel</button>
-        <span id="draft-result" class="draft-result">not applied · not committed</span>
+        <span id="edit-result" class="edit-result">ready</span>
       </div>
     </section>
   </main>
   <script>
     const sourcePath = {{ source.path | tojson }};
-    const baseSha = {{ source.sha256 | tojson }};
+    let baseSha = {{ source.sha256 | tojson }};
     const employeeId = {{ employee_id | tojson }};
     const sourceViewer = document.getElementById("source-viewer");
     const sourceEditor = document.getElementById("source-editor");
     const sourceTextarea = document.getElementById("source-content");
-    const draftResult = document.getElementById("draft-result");
+    const editResult = document.getElementById("edit-result");
+    const previewPanel = document.getElementById("source-preview");
+    const validationPanel = document.getElementById("source-validation-panel");
+    const validationSummary = document.getElementById("source-validation-summary");
+    const validationErrors = document.getElementById("source-validation-errors");
+    const validationWarnings = document.getElementById("source-validation-warnings");
+    const fixSuggestions = document.getElementById("source-fix-suggestions");
+
+    function setResult(text, isError = false) {
+      editResult.textContent = text;
+      editResult.classList.toggle("error", Boolean(isError));
+    }
+
+    function fillList(element, items) {
+      element.replaceChildren();
+      for (const item of items || []) {
+        const li = document.createElement("li");
+        li.textContent = item;
+        element.appendChild(li);
+      }
+    }
+
+    function renderSuggestions(items) {
+      fixSuggestions.replaceChildren();
+      for (const item of items || []) {
+        const box = document.createElement("div");
+        box.className = "fix-suggestion";
+        const title = document.createElement("strong");
+        title.textContent = item.title || "Fix suggestion";
+        const description = document.createElement("p");
+        description.textContent = item.description || "";
+        box.append(title, description);
+        fixSuggestions.appendChild(box);
+      }
+    }
+
+    function renderValidation(payload) {
+      const report = payload.validation_report || payload.validation || {};
+      validationPanel.hidden = false;
+      validationSummary.textContent = `${payload.status || "validated"} · ${report.ok ? "통과" : "수정 필요"}`;
+      fillList(validationErrors, report.errors || []);
+      fillList(validationWarnings, report.warnings || []);
+      renderSuggestions(payload.fix_suggestions || []);
+      if (payload.preview && payload.preview.html) previewPanel.innerHTML = payload.preview.html;
+    }
+
+    async function postSource(url, phase) {
+      setResult(phase);
+      const response = await fetch(`${url}?employee_id=${encodeURIComponent(employeeId)}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", Accept: "application/json"},
+        body: JSON.stringify({
+          path: sourcePath,
+          base_sha256: baseSha,
+          proposed_content: sourceTextarea.value,
+          author: employeeId,
+          note: "web validated source edit"
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        const detail = payload.detail || {};
+        if (detail.validation_report) renderValidation(detail);
+        throw new Error(detail.message || detail.status || detail || `HTTP ${response.status}`);
+      }
+      renderValidation(payload);
+      return payload;
+    }
 
     document.getElementById("edit-source").addEventListener("click", () => {
       sourceViewer.hidden = true;
@@ -65,32 +149,31 @@
     document.getElementById("cancel-source-edit").addEventListener("click", () => {
       sourceEditor.hidden = true;
       sourceViewer.hidden = false;
-      draftResult.textContent = "not applied · not committed";
-      draftResult.classList.remove("error");
+      setResult("ready", false);
     });
 
-    document.getElementById("save-draft").addEventListener("click", async () => {
-      const result = document.getElementById("draft-result");
-      result.textContent = "saving draft...";
-      result.classList.remove("error");
-      const response = await fetch(`/api/source/drafts?employee_id=${encodeURIComponent(employeeId)}`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          path: sourcePath,
-          base_sha256: baseSha,
-          proposed_content: sourceTextarea.value,
-          author: employeeId,
-          note: "web draft editor"
-        })
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        result.textContent = `draft failed: ${payload.detail?.message || payload.detail || response.status}`;
-        result.classList.add("error");
-        return;
+    document.getElementById("preview-source").addEventListener("click", async () => {
+      try {
+        const payload = await postSource("/api/source/preview", "검증 중...");
+        setResult(payload.ok ? "preview valid" : "preview has validation errors", !payload.ok);
+      } catch (error) {
+        setResult("preview failed: " + error.message, true);
       }
-      result.textContent = `${payload.status} · ${payload.draft_id} · not applied · not committed`;
+    });
+
+    document.getElementById("apply-source").addEventListener("click", async () => {
+      const button = document.getElementById("apply-source");
+      button.disabled = true;
+      try {
+        await postSource("/api/source/preview", "검증 중...");
+        const payload = await postSource("/api/source/apply", "적용 및 커밋 중...");
+        if (payload.sha256) baseSha = payload.sha256;
+        setResult(`${payload.status} · ${payload.commit_status} · ${payload.commit_hash || "no commit hash"}`, false);
+      } catch (error) {
+        setResult("apply failed: " + error.message, true);
+      } finally {
+        button.disabled = false;
+      }
     });
   </script>
 </body>

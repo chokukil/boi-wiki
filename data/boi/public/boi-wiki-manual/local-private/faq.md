@@ -31,7 +31,7 @@ Local Private은 일반 사용자가 agent와 함께 개인 업무 맥락을 쌓
 
 ## MCP를 몰라도 되나요?
 
-된다. MCP는 shared BoI Wiki 검색과 draft 요청을 쉽게 만드는 선택 기능이다.
+된다. MCP는 shared BoI Wiki 검색, source draft 요청, promotion submit을 쉽게 만드는 선택 기능이다.
 
 ## Git이 없어도 되나요?
 
@@ -43,7 +43,7 @@ Local Private은 일반 사용자가 agent와 함께 개인 업무 맥락을 쌓
 
 ## Public 공유는 언제 되나요?
 
-agent가 local promotion draft를 만들고, 사용자가 preview를 보고 승인한 뒤 remote draft-only 절차를 거친다.
+agent가 local promotion draft와 preflight 결과를 만들고, 사용자가 preview를 명시 승인한 뒤 원격 자동 검증을 통과하면 즉시 Public에 게시된다. 이후 품질/정책 관리는 HOTL로 사후 개입한다.
 
 # Citations
 

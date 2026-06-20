@@ -57,7 +57,7 @@ data/boi/public/boi-wiki-manual/_media/browser/{page-slug}/{yyyyMMdd-HHmmss}-{se
 
 - BoI Wiki Explorer folder navigation
 - SOP detail
-- Source/Draft editor
+- Source validated editor
 - Workflow Status
 - Action Raw detail
 - BoI Wiki MCP check result

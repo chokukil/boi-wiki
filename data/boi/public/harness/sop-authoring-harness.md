@@ -49,7 +49,7 @@ Source images are provenance, not generated illustrations. Preserve the user-sup
 2. source image 또는 문서에서 stage, trigger, evidence, automated action, manual handoff를 추출한다.
 3. 기존 action spec을 우선 재사용하고, 없을 때만 새 action package draft를 만든다.
 4. Langflow는 LLM/agent reasoning이 필요한 stage에만 사용한다.
-5. Web/MCP 저장은 draft-only로 남기고, 검증 후 agent가 commit한다.
+5. 기존 source/body 직접 수정은 preview, validation, apply, auto-commit 경로를 사용하고, 새 Team/Public SOP promotion은 사용자 승인 후 `promotion_submit` 원격 검증/즉시 게시 경로를 사용한다.
 
 # Example
 

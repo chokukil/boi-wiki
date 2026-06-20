@@ -5,4 +5,4 @@
 * [Equipment SOP](sop/equipment-abnormal-response.md) - 설비 이상 대응 workflow
 * [Actions](actions/) - Action Gateway 실행 명세
 * [Event Types](event-types/) - Event Broker 업무 이벤트 concept
-* [Harness](harness/overview.md) - Agent/SOP/Action/Web Draft 적용 가이드
+* [Harness](harness/overview.md) - Agent/SOP/Action/Web validated edit 적용 가이드

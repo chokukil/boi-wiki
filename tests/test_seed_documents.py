@@ -56,7 +56,10 @@ def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troublesho
     assert "Streamable HTTP" in text
     assert "resources: 0" in text
     assert "resource_templates: 4" in text
-    assert "tools: 10" in text
+    assert "tools: 14" in text
+    assert "source_apply" in text
+    assert "doc_body_apply" in text
+    assert "promotion_submit" in text
     assert "404" in text
     assert "406" in text
     assert "ClosedResourceError" in text

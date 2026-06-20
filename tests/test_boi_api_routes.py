@@ -177,7 +177,7 @@ def test_trusted_header_teams_drive_acl_without_dev_user_map(boi_app_module, mon
     assert private_response.json()["count"] == 0
 
 
-def test_trusted_header_editor_role_required_for_source_drafts(boi_app_module, monkeypatch):
+def test_trusted_header_editor_role_required_for_source_apply(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
     client = TestClient(boi_app_module.app)
     viewer_headers = {
@@ -190,7 +190,7 @@ def test_trusted_header_editor_role_required_for_source_drafts(boi_app_module, m
     source = client.get(f"/api/source?employee_id=200001&path={source_ref}", headers=viewer_headers).json()
 
     denied = client.post(
-        "/api/source/drafts?employee_id=200001",
+        "/api/source/apply?employee_id=200001",
         headers=viewer_headers,
         json={
             "path": source_ref,
@@ -199,8 +199,9 @@ def test_trusted_header_editor_role_required_for_source_drafts(boi_app_module, m
             "author": "200001",
         },
     )
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "abc123"})
     allowed = client.post(
-        "/api/source/drafts?employee_id=200001",
+        "/api/source/apply?employee_id=200001",
         headers=editor_headers,
         json={
             "path": source_ref,
@@ -212,7 +213,8 @@ def test_trusted_header_editor_role_required_for_source_drafts(boi_app_module, m
 
     assert denied.status_code == 403
     assert allowed.status_code == 200
-    assert allowed.json()["draft_only"] is True
+    assert allowed.json()["applied"] is True
+    assert allowed.json()["commit_status"] == "committed"
 
 
 def test_hynix_hcp_project_roles_map_to_boi_roles(boi_app_module, monkeypatch):
@@ -731,7 +733,7 @@ def test_doc_page_moves_local_links_into_page_actions_bar(boi_app_module):
     assert "Source 보기 / Draft 수정" not in header
     assert 'class="page-actions"' in response.text
     assert "폴더로 돌아가기" in response.text
-    assert "Source 보기 / Draft 수정" in response.text
+    assert "Source 보기 / 검증 편집" in response.text
     assert "같은 Event Type BoI" in response.text
 
 
@@ -884,30 +886,47 @@ def test_doc_relationship_graph_api_returns_doc_edges(boi_app_module):
     assert "nodes" not in body
 
 
-def test_doc_page_exposes_draft_only_source_edit_guidance(boi_app_module):
+def test_doc_page_exposes_validated_source_edit_guidance(boi_app_module):
     client = TestClient(boi_app_module.app)
 
     response = client.get("/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001")
 
     assert response.status_code == 200
-    assert "Web edits are draft-only" not in response.text
-    assert "Source 보기 / Draft 수정" in response.text
+    assert "draft-only" not in response.text
+    assert "Source 보기 / 검증 편집" in response.text
     assert "Body 수정" in response.text
-    assert "Save Body Draft" in response.text
+    assert "Preview / Validate" in response.text
+    assert "Apply & Commit" in response.text
     assert "/source?employee_id=100001&amp;path=data%2Fboi%2Fpublic%2Fsop%2Fequipment-abnormal-response.md" in response.text
     assert "/docs/boi:public:harness:web-draft-editing-guide?employee_id=100001" in response.text
 
 
-def test_doc_body_draft_editor_saves_body_without_mutating_source_file(boi_app_module):
+def test_doc_body_editor_previews_and_applies_with_commit(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "body123"})
     client = TestClient(boi_app_module.app)
     source_path = boi_app_module.DATA_ROOT / "public" / "sop" / "equipment-abnormal-response.md"
     before = source_path.read_text(encoding="utf-8")
+    proposed_body = "# Edited Body Apply\n\n본문 apply 테스트"
 
-    response = client.post(
-        "/api/docs/boi:public:sop:equipment-abnormal-response/body-drafts?employee_id=100001",
+    preview = client.post(
+        "/api/docs/boi:public:sop:equipment-abnormal-response/body-preview?employee_id=100001",
         json={
             "base_sha256": boi_app_module.hashlib.sha256(before.encode("utf-8")).hexdigest(),
-            "proposed_body": "# Edited Body Draft\n\n본문 draft 저장 테스트",
+            "proposed_body": proposed_body,
+            "author": "100001",
+            "note": "inline body editor test",
+        },
+    )
+    assert preview.status_code == 200
+    assert preview.json()["ok"] is True
+    assert "Edited Body Apply" in preview.json()["body_preview_html"]
+    assert source_path.read_text(encoding="utf-8") == before
+
+    response = client.post(
+        "/api/docs/boi:public:sop:equipment-abnormal-response/body-apply?employee_id=100001",
+        json={
+            "base_sha256": boi_app_module.hashlib.sha256(before.encode("utf-8")).hexdigest(),
+            "proposed_body": proposed_body,
             "author": "100001",
             "note": "inline body editor test",
         },
@@ -915,13 +934,11 @@ def test_doc_body_draft_editor_saves_body_without_mutating_source_file(boi_app_m
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "pending"
-    assert body["draft_only"] is True
-    assert body["message"] == "Draft saved only. An agent must apply, test, and commit this change."
-    assert source_path.read_text(encoding="utf-8") == before
-    draft_files = list((boi_app_module.DRAFT_ROOT / "source_edits").glob("*.json"))
-    assert draft_files
-    assert any("Edited Body Draft" in path.read_text(encoding="utf-8") for path in draft_files)
+    assert body["status"] == "applied"
+    assert body["applied"] is True
+    assert body["commit_status"] == "committed"
+    assert body["commit_hash"] == "body123"
+    assert "Edited Body Apply" in source_path.read_text(encoding="utf-8")
 
 
 def test_action_spec_is_collapsed_by_default_and_source_citation_is_clickable(boi_app_module):
@@ -998,11 +1015,14 @@ def test_source_page_opens_in_read_mode_before_editing(boi_app_module):
     assert '<section class="source-viewer" id="source-viewer">' in response.text
     assert '<button id="edit-source" type="button">수정</button>' in response.text
     assert '<section class="source-editor" id="source-editor" hidden>' in response.text
-    assert "Save Draft는 원본 파일과 Git commit을 변경하지 않습니다." in response.text
+    assert "Preview / Validate 후 Apply & Commit을 실행합니다." in response.text
+    assert "Apply & Commit" in response.text
+    assert "Save Draft" not in response.text
     assert response.text.index('id="source-viewer"') < response.text.index('id="source-editor"')
 
 
-def test_source_editor_saves_draft_without_mutating_source_file(boi_app_module):
+def test_source_editor_previews_and_applies_with_commit(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "src123"})
     client = TestClient(boi_app_module.app)
     source_ref = "data/boi/public/sop/equipment-abnormal-response.md"
     source_path = boi_app_module.DATA_ROOT / "public" / "sop" / "equipment-abnormal-response.md"
@@ -1011,27 +1031,206 @@ def test_source_editor_saves_draft_without_mutating_source_file(boi_app_module):
     source_response = client.get(f"/api/source?employee_id=100001&path={source_ref}")
     assert source_response.status_code == 200
     source = source_response.json()
-    assert source["draft_only"] is True
+    assert "draft_only" not in source
     assert source["validation"]["ok"] is True
 
-    draft_response = client.post(
-        "/api/source/drafts?employee_id=100001",
+    proposed = before + "\n<!-- validated apply test -->\n"
+    preview_response = client.post(
+        "/api/source/preview?employee_id=100001",
         json={
             "path": source_ref,
             "base_sha256": source["sha256"],
-            "proposed_content": before + "\n<!-- draft-only test -->\n",
+            "proposed_content": proposed,
             "author": "100001",
-            "note": "test draft",
+            "note": "test preview",
+        },
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["ok"] is True
+    assert preview["changed"] is True
+    assert preview["preview"]["kind"] == "markdown"
+    assert source_path.read_text(encoding="utf-8") == before
+
+    apply_response = client.post(
+        "/api/source/apply?employee_id=100001",
+        json={
+            "path": source_ref,
+            "base_sha256": source["sha256"],
+            "proposed_content": proposed,
+            "author": "100001",
+            "note": "test apply",
         },
     )
 
-    assert draft_response.status_code == 200
-    body = draft_response.json()
-    assert body["status"] == "pending"
-    assert body["message"] == "Draft saved only. An agent must apply, test, and commit this change."
+    assert apply_response.status_code == 200
+    body = apply_response.json()
+    assert body["status"] == "applied"
+    assert body["applied"] is True
+    assert body["commit_status"] == "committed"
+    assert body["commit_hash"] == "src123"
+    assert source_path.read_text(encoding="utf-8") == proposed
+
+
+def test_source_apply_validation_failure_does_not_mutate_or_commit(boi_app_module, monkeypatch):
+    commits: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        boi_app_module,
+        "git_commit_for_path",
+        lambda path, message: commits.append({"path": str(path), "message": message}) or {"status": "committed", "commit_hash": "bad"},
+    )
+    client = TestClient(boi_app_module.app)
+    source_ref = "data/boi/public/sop/equipment-abnormal-response.md"
+    source_path = boi_app_module.DATA_ROOT / "public" / "sop" / "equipment-abnormal-response.md"
+    before = source_path.read_text(encoding="utf-8")
+    source = client.get(f"/api/source?employee_id=100001&path={source_ref}").json()
+
+    response = client.post(
+        "/api/source/apply?employee_id=100001",
+        json={
+            "path": source_ref,
+            "base_sha256": source["sha256"],
+            "proposed_content": "# Missing frontmatter\n\ninvalid",
+            "author": "100001",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["status"] == "validation_failed"
+    assert response.json()["detail"]["fix_suggestions"]
     assert source_path.read_text(encoding="utf-8") == before
-    draft_files = list((boi_app_module.DRAFT_ROOT / "source_edits").glob("*.json"))
-    assert draft_files
+    assert commits == []
+
+
+def test_source_apply_stale_base_does_not_mutate(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    source_ref = "data/boi/public/sop/equipment-abnormal-response.md"
+    source_path = boi_app_module.DATA_ROOT / "public" / "sop" / "equipment-abnormal-response.md"
+    before = source_path.read_text(encoding="utf-8")
+
+    response = client.post(
+        "/api/source/apply?employee_id=100001",
+        json={
+            "path": source_ref,
+            "base_sha256": "stale",
+            "proposed_content": before + "\n<!-- stale test -->\n",
+            "author": "100001",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["status"] == "stale_base"
+    assert source_path.read_text(encoding="utf-8") == before
+
+
+def test_source_apply_commit_failure_rolls_back(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "failed", "commit_hash": "", "error": "boom"})
+    client = TestClient(boi_app_module.app)
+    source_ref = "data/boi/public/sop/equipment-abnormal-response.md"
+    source_path = boi_app_module.DATA_ROOT / "public" / "sop" / "equipment-abnormal-response.md"
+    before = source_path.read_text(encoding="utf-8")
+    source = client.get(f"/api/source?employee_id=100001&path={source_ref}").json()
+
+    response = client.post(
+        "/api/source/apply?employee_id=100001",
+        json={
+            "path": source_ref,
+            "base_sha256": source["sha256"],
+            "proposed_content": before + "\n<!-- rollback test -->\n",
+            "author": "100001",
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["status"] == "commit_failed"
+    assert source_path.read_text(encoding="utf-8") == before
+
+
+def test_draft_edit_api_is_removed(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    source_response = client.post("/api/source/drafts?employee_id=100001", json={})
+    body_response = client.post("/api/docs/boi:public:sop:equipment-abnormal-response/body-drafts?employee_id=100001", json={})
+
+    assert source_response.status_code == 404
+    assert body_response.status_code == 404
+
+
+def test_user_confirmed_public_promotion_publishes_and_hotl_can_hide(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/promotions/submit?employee_id=100001",
+        json={
+            "target_visibility": "public",
+            "title": "User Confirmed Public Promotion Test",
+            "description": "사용자 승인 후 즉시 공개되는 promotion 테스트",
+            "body": "# Summary\n\n사용자가 확인한 Public promotion 본문입니다.",
+            "boi_type": "boi/reference",
+            "classification": "internal",
+            "tags": ["Promotion", "HOTL"],
+            "source_refs": [{"type": "local-private", "ref": "local-note-001"}],
+            "source_local_id": "local-note-001",
+            "source_sha256": "abc123",
+            "user_confirmed": True,
+            "reviewer": "hotl-curator",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    metadata = body["target"]["metadata"]
+    assert body["status"] == "published"
+    assert metadata["visibility"] == "public"
+    assert metadata["status"] == "reviewed"
+    assert metadata["review"]["review_status"] == "user_confirmed"
+    assert metadata["hotl"]["status"] == "watching"
+    assert metadata["promotion"]["validation_report_id"] == body["promotion_id"]
+    assert "commit_status" in body
+
+    listed = client.get("/api/boi?employee_id=100001&q=User Confirmed Public Promotion Test")
+    assert listed.status_code == 200
+    assert listed.json()["count"] == 1
+
+    hidden = client.post(
+        f"/api/promotions/{body['promotion_id']}/hotl?employee_id=100001",
+        json={"status": "hidden", "note": "quality issue"},
+    )
+
+    assert hidden.status_code == 200
+    assert hidden.json()["hotl"]["status"] == "hidden"
+    hidden_list = client.get("/api/boi?employee_id=100001&q=User Confirmed Public Promotion Test")
+    assert hidden_list.status_code == 200
+    assert hidden_list.json()["count"] == 0
+    status = client.get(f"/api/promotions/{body['promotion_id']}?employee_id=100001")
+    assert status.status_code == 200
+    assert status.json()["hotl"]["status"] == "hidden"
+
+
+def test_promotion_validation_failure_does_not_publish(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    public_files_before = sorted((boi_app_module.DATA_ROOT / "public").glob("*.md"))
+
+    response = client.post(
+        "/api/promotions/submit?employee_id=100001",
+        json={
+            "target_visibility": "public",
+            "title": "Invalid Public Promotion Secret Test",
+            "description": "검증 실패 테스트",
+            "body": "# Summary\n\nsecret=sk-abcdefghijklmnop",
+            "source_refs": [{"type": "local-private", "ref": "local-secret-note"}],
+            "user_confirmed": True,
+        },
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["status"] == "validation_failed"
+    assert "potential secret token detected" in detail["validation"]["errors"]
+    assert sorted((boi_app_module.DATA_ROOT / "public").glob("*.md")) == public_files_before
+    listed = client.get("/api/boi?employee_id=100001&q=Invalid Public Promotion Secret Test")
+    assert listed.status_code == 200
+    assert listed.json()["count"] == 0
 
 
 def test_public_harness_docs_are_browsable(boi_app_module):
@@ -1043,7 +1242,7 @@ def test_public_harness_docs_are_browsable(boi_app_module):
     assert "BoI Agent Harness Overview" in response.text
     assert "SOP Authoring Harness" in response.text
     assert "Action Authoring Harness" in response.text
-    assert "Web Draft Editing Guide" in response.text
+    assert "Web Validated Editing Guide" in response.text
 
 
 def test_doc_page_does_not_rescan_docs_for_each_markdown_link(boi_app_module, monkeypatch):
