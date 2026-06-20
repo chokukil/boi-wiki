@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 SCRIPT = Path("scripts/nas_auto_pull_deploy.sh").resolve()
+TASK_SCRIPT = Path("scripts/nas_auto_pull_task.sh").resolve()
 
 
 def run(cmd: list[str], cwd: Path, **kwargs):
@@ -86,6 +87,47 @@ def test_script_contains_required_safety_contracts():
     assert "service_started" in text
     assert "cat \"$ENV_FILE\"" not in text
     assert "set -x" not in text
+
+
+def test_task_wrapper_rotates_logs_and_preserves_final_marker(tmp_path: Path):
+    text = TASK_SCRIPT.read_text(encoding="utf-8")
+
+    assert "LOG_MAX_BYTES" in text
+    assert "LOG_ROTATE_KEEP" in text
+    assert "DEPLOY_STATUS=failed" in text
+    assert "set +x" in text
+    assert "set -x" not in text
+
+    app = tmp_path / "app"
+    log_dir = tmp_path / "logs"
+    deploy_script = app / "scripts" / "nas_auto_pull_deploy.sh"
+    write(
+        deploy_script,
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "printf 'deploy body\\n'\n"
+        "printf 'DEPLOY_STATUS=noop\\n'\n",
+    )
+    log_dir.mkdir()
+    log_file = log_dir / "autopull.log"
+    log_file.write_text("x" * 80, encoding="utf-8")
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "APP_DIR": str(app),
+            "LOG_DIR": str(log_dir),
+            "LOG_MAX_BYTES": "64",
+            "LOG_ROTATE_KEEP": "2",
+        }
+    )
+
+    result = run(["bash", str(TASK_SCRIPT)], cwd=tmp_path, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert log_file.read_text(encoding="utf-8").splitlines()[-1] == "DEPLOY_STATUS=noop"
+    assert (log_dir / "autopull.log.1").read_text(encoding="utf-8") == "x" * 80
+    assert "LOG_ROTATED" in log_file.read_text(encoding="utf-8")
 
 
 def test_classify_hot_reload_paths_do_not_require_compose():
