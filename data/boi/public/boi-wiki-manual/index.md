@@ -6,6 +6,7 @@
 * [Langflow Integration Guide](langflow/connected-flow-guide.md)
 * [SOP Workflow Guide](sop-workflows/create-and-connect-sop.md)
 * [Use Cases](use-cases/)
+* [SOP Image to E2E Workflow](use-cases/sop-image-to-e2e-workflow.md)
 * [Local Private 시작하기](local-private/overview.md)
 * [OKF Media and Screenshots](media/okf-media-and-screenshots.md)
 * [Visibility and Promotion Policy](operations/visibility-and-promotion-policy.md)

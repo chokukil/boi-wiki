@@ -1,4 +1,60 @@
 media:
+  - path: public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png
+    sha256: c77e362a06ed0b0d2fb79bf42862a62e4022e1e23cb6b093446d678a55305180
+    source_kind: source-image
+    captured_url: local-file:sop_sample_image.png
+    captured_at: 2026-06-20T21:26:00+09:00
+    viewport: 1292x683
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215602-sop-mermaid-section-viewport-1440x1000-c3953988abdc.png
+    sha256: c3953988abdc89b9d4003d68778028bb7b72220eb2d4e0cbf9d419e21c88339f
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:8000/docs/boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow?employee_id=100001
+    captured_at: 2026-06-20T21:56:02+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215709-sop-mermaid-code-viewport-final-1440x1000-623790c3a200.png
+    sha256: 623790c3a2007a6722fa280863850f49d6352d3f6019a4e6a2e0df50229b4b70
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:8000/docs/boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow?employee_id=100001
+    captured_at: 2026-06-20T21:57:09+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-workflow-status-latest-1440x1000-778dec9a3c1a.png
+    sha256: 778dec9a3c1abc3d2773164b444c0d43b203c61ddbaaa39440f6e4767aac264e
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:8000/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-442fd8c619794e73883ee22833abdab2
+    captured_at: 2026-06-20T21:54:03+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-event-timeline-latest-1440x1000-aa730b882529.png
+    sha256: aa730b882529ef366ffd6034156ac6832f30a7aced3b1bfb4bd1de47eb19470b
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:8000/events?employee_id=100001&trace_id=trace-442fd8c619794e73883ee22833abdab2
+    captured_at: 2026-06-20T21:54:03+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-action-raw-langflow-latest-1440x1000-19f0163a803f.png
+    sha256: 19f0163a803f0b7fe8cf3c775f90220b4dbf81099acb8ec60b357ef4d99611ee
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:8000/actions/raw/action%3Aactions-20260620.jsonl%3A50?employee_id=100001
+    captured_at: 2026-06-20T21:54:03+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-generated-boi-latest-1440x1000-a6b3cbeb2268.png
+    sha256: a6b3cbeb22681d22b2e2db5759fcfb65ef1d2e433e1d022140437bf0235fb37d
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:8000/docs/boi:private:100001:20260620215314:62405a?employee_id=100001
+    captured_at: 2026-06-20T21:54:03+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
   - path: public/boi-wiki-manual/_media/screenshots/workflow-status-equipment-anomaly-20260618.png
     sha256: 2058013dda5521a47c00d797f82e63b875a1e4ed3d85053eb14e5267487885d0
     source_kind: browser-screenshot

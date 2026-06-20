@@ -6,3 +6,4 @@
 * [Agent Context Pack](agent-context-pack.md)
 * [Workflow Simulation](workflow-simulation.md)
 * [Langflow Workflow Planning](langflow-workflow-planning.md)
+* [SOP Image to E2E Workflow](sop-image-to-e2e-workflow.md)
