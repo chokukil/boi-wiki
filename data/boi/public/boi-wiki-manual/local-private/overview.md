@@ -43,10 +43,19 @@ Local Private은 개인 PC의 agent가 사용하는 로컬 BoI workspace다. Web
 
 # What Can Use Remote BoI Wiki
 
-MCP가 연결되어 있으면 agent는 shared BoI Wiki의 SOP, Event Type, Action Spec을 검색할 수 있다. MCP가 없어도 Local Private 작성은 계속 동작한다.
+MCP가 연결되어 있으면 agent는 shared BoI Wiki의 SOP, Event Type, Action Spec, Workflow Status를 검색할 수 있다. MCP가 없어도 Local Private 작성은 계속 동작한다. 공식 경로는 skills-first local workspace이며 local MCP 서버는 요구하지 않는다.
+
+# Typical Requests
+
+- `설비 이상 대응 SOP를 Mermaid 프로세스 플로우로 그려줘`
+- `이 이벤트가 발생하면 어떤 SOP와 Action이 이어지는지 알려줘`
+- `기존 API 문서를 BoI Action Spec 초안으로 만들어줘`
+- `원격 BoI Wiki를 검색해서 이번 업무용 context pack을 만들어줘`
+- `MCP 설정은 모르겠으니 local만 써줘`
 
 # Citations
 
 - [Local Private Agent Harness](/public/harness/local-private-agent-harness.md)
 - [MCP Optional Guide](/public/boi-wiki-manual/local-private/mcp-optional.md)
 - [Promotion Flow](/public/boi-wiki-manual/local-private/promotion-flow.md)
+- [BoI Wiki Use Cases](/public/boi-wiki-manual/use-cases/sop-flow-visualization.md)

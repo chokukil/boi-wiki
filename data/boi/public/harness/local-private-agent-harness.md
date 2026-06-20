@@ -37,6 +37,19 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 6. 사용자 명시 승인 없이 Local Private 원문이나 Team/Public promotion candidate를 원격 MCP/API/GitHub/외부 서비스에 전송하지 않는다.
 7. 사용자가 승인한 promotion candidate는 MCP `promotion_submit` 또는 Web promotion API로 원격 동기 검증/게시를 요청한다.
 
+# Skills-first Use Cases
+
+`boi-wiki-local`은 local MCP를 공식 경로로 요구하지 않는다. Agent는 skills와 이 하네스를 기준으로 다음 작업을 local-only로 완료할 수 있어야 한다.
+
+- SOP를 Mermaid/SVG 도식으로 변환
+- Event 발생 시 SOP stage, action, manual handoff 계획
+- API/Webhook/MCP/Langflow/Manual action spec 초안 작성
+- 업무 단위 agent context pack 작성
+- Event payload 기반 workflow dry-run
+- BoI 연계 Langflow workflow 설계 초안
+
+원격 `boi-wiki-mcp`가 연결되어 있으면 shared SOP, Event Type, Action Spec, Workflow Status 조회에 사용한다. `source_apply`, `doc_body_apply`, `promotion_submit`, `action_invoke` 같은 원격 쓰기/실행 tool은 사용자 명시 승인 후에만 사용한다.
+
 # Validation Levels
 
 | Level | Actor | Description |
@@ -50,3 +63,4 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 
 - [Local Private Overview](/public/boi-wiki-manual/local-private/overview.md)
 - [Promotion Flow](/public/boi-wiki-manual/local-private/promotion-flow.md)
+- [BoI Wiki Use Cases](/public/boi-wiki-manual/use-cases/sop-flow-visualization.md)
