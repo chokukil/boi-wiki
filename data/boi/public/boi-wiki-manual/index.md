@@ -10,5 +10,6 @@
 * [OKF Media and Screenshots](media/okf-media-and-screenshots.md)
 * [Visibility and Promotion Policy](operations/visibility-and-promotion-policy.md)
 * [Edit and Git Policy](operations/draft-and-git-policy.md)
+* [NAS Git Auto-Pull 배포 자동화](operations/nas-git-auto-pull.md)
 * [NAS SERVICE_TOKEN 운영 절차](operations/nas-service-token-rotation.md)
 * [SSO and Permission Model](security/sso-and-permissions.md)

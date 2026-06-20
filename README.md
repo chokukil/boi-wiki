@@ -82,6 +82,12 @@ ACTION_GATEWAY_EXTERNAL_URL=
 
 Langflow, Kafka UI, MCP Status, Action Gateway를 외부에 별도 포트로 열면 해당 `*_EXTERNAL_URL`만 추가합니다. 값이 비어 있으면 상단 도구 메뉴와 Action Spec 복사용 예시에서 깨진 `localhost` 링크를 만들지 않습니다.
 
+### NAS Git 자동 반영
+
+NAS에 Git worktree가 구성되어 있으면 DSM Scheduled Task로 `main` 변경을 주기적으로 가져오게 할 수 있습니다. 기본 운영 방식은 `git pull --ff-only origin main`이고, 문서/catalog 변경은 재기동 없이 반영하며 코드/compose 변경이 있을 때만 NAS compose를 재실행합니다.
+
+- NAS Git Auto-Pull 운영 절차: http://localhost:8000/docs/boi:public:boi-wiki-manual:operations:nas-git-auto-pull?employee_id=100001
+
 ### NAS SERVICE_TOKEN
 
 NAS PoC는 단일 `SERVICE_TOKEN`을 강한 랜덤값으로 유지하고, 변경 시 짧은 maintenance restart로 처리합니다. 무중단 dual-token rotation은 정식 운영 전환 시 별도 검토합니다.
