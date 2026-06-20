@@ -220,6 +220,55 @@ def test_equipment_events_reference_public_sop_and_manual_actions():
     }
 
 
+def test_direct_development_events_actions_and_simulation_metadata_are_wired():
+    event_types = yaml.safe_load(Path("data/event_catalog/event_types.yaml").read_text(encoding="utf-8"))["event_types"]
+    direct_events = [event for event in event_types if str(event["event_type"]).startswith("direct_development.")]
+    actions = {action["action_key"]: action for action in load_actions()}
+
+    assert {event["event_type"] for event in direct_events} >= {
+        "direct_development.result_check.requested.v1",
+        "direct_development.map_view.requested.v1",
+        "direct_development.cross_section.decision_required.v1",
+        "direct_development.cross_section.requested.v1",
+        "direct_development.fab_trend.compare_requested.v1",
+        "direct_development.reporting.requested.v1",
+        "direct_development.share.requested.v1",
+    }
+    for event in direct_events:
+        assert event["sop_ref"] == "boi:public:sop:direct-development-reporting"
+        assert event.get("sop_stage_id")
+        assert "recommended_manual_actions" in event
+
+    simulator_keys = {
+        "direct_development.quality_response_trend.simulate",
+        "direct_development.map_view.simulate",
+        "direct_development.cross_section_request.simulate",
+        "direct_development.cross_section_result.simulate",
+        "direct_development.fab_trend_compare.simulate",
+        "direct_development.reporting.simulate",
+        "direct_development.messenger_share_preview.simulate",
+    }
+    for action_key in simulator_keys:
+        action = actions[action_key]
+        assert action["type"] == "langflow_run"
+        assert action["connector_kind"] == "langflow"
+        assert action["flow_name"] == "BoI Universal Action Simulator Flow"
+        assert action["dry_run"] is False
+        assert action["simulation_mode"] == "langflow_universal"
+        assert action["simulation_label"] == "SIMULATED"
+        assert action["real_system_status"] == "unavailable"
+
+    decision = next(event for event in direct_events if event["event_type"] == "direct_development.cross_section.decision_required.v1")
+    assert decision["recommended_actions"] == []
+    assert decision["recommended_manual_actions"] == ["manual.direct_development.decide_cross_section"]
+
+    share = next(event for event in direct_events if event["event_type"] == "direct_development.share.requested.v1")
+    assert "direct_development.messenger_share.publish" in share["recommended_actions"]
+    assert share["recommended_manual_actions"] == ["manual.direct_development.approve_committee_share"]
+    assert actions["direct_development.messenger_share.publish"]["approval_required"] is True
+    assert actions["direct_development.messenger_share.publish"]["requires_manual_action"] == "manual.direct_development.approve_committee_share"
+
+
 def test_event_publish_actions_allow_slow_kafka_publish_roundtrips():
     actions = [action for action in load_actions() if action.get("type") == "event_publish"]
 

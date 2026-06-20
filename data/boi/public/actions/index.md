@@ -9,3 +9,6 @@
 * [BoI Wiki MCP Server](mcp/boi-wiki-server.md) - agent-facing MCP server 명세
 * [Langflow Actions](langflow/reference-flow.md) - Langflow webhook flow action 명세
 * [Manual Actions](manual/confirm-alarm-context.md) - 사람이 판단, 승인, 현장 조치, 완료 확인하는 action 명세
+* [Direct Development Simulator Actions](langflow/direct-development-quality-response-trend-simulate.md) - 직개발 SOP의 SIMULATED Langflow action 명세
+* [Direct Development Event Broker Actions](event-broker/direct-development-create-map-view-event.md) - 직개발 SOP stage 전환 event 발행 action 명세
+* [Direct Development Manual Actions](manual/direct-development-decide-cross-section.md) - 단면검사 판단과 협의체 공유 승인 handoff 명세

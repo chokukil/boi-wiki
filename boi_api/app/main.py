@@ -649,6 +649,11 @@ def event_dispatch_summary(
                 "boi_uri": result_boi_uri(action_result),
                 "boi_url": row_boi_url,
                 "boi_missing": row_boi_id if row_boi_id and not row_boi_url else "",
+                "simulation": bool(action_result.get("simulation") or action.get("simulation_mode")),
+                "simulation_label": action_result.get("simulation_label") or action.get("simulation_label") or ("SIMULATED" if action.get("simulation_mode") else ""),
+                "simulation_notice": action_result.get("simulation_notice") or action.get("simulation_notice") or "",
+                "real_system_status": action_result.get("real_system_status") or action.get("real_system_status") or "",
+                "simulated_system": action_result.get("simulated_system") or action.get("simulated_system") or "",
             }
         )
     boi_url = doc_url_if_resolvable(boi_id, employee_id, doc_lookup=doc_lookup)
@@ -3427,8 +3432,29 @@ def require_poc_approval(req: PocConnectorRequest) -> None:
                 "ok": False,
                 "status": "approval_required",
                 "message": "approved_by is required for high-risk equipment actions.",
-            },
-        )
+        },
+    )
+
+
+@app.post("/api/poc/direct-development/messenger-share", dependencies=[Depends(require_service_token)])
+async def poc_direct_development_messenger_share(req: PocConnectorRequest) -> dict[str, Any]:
+    require_poc_approval(req)
+    payload = poc_payload(req)
+    return poc_result(
+        action="direct_development.messenger_share.publish",
+        req=req,
+        result={
+            "status": "simulated",
+            "simulation": True,
+            "simulation_label": "SIMULATED",
+            "real_system_connected": False,
+            "real_system_status": "unavailable",
+            "simulated_system": "메신저",
+            "share_target": payload.get("share_target") or "direct-development-council",
+            "approved_by": req.approved_by,
+            "message": "SIMULATED: 승인된 공유 요청을 기록했지만 실제 메신저 발송은 수행하지 않았습니다.",
+        },
+    )
 
 
 @app.post("/api/poc/equipment/trend-history", dependencies=[Depends(require_service_token)])
@@ -4256,6 +4282,12 @@ def action_details_for_keys(
                 "doc_ref": action.get("doc_ref"),
                 "doc_uri": action_doc_uri(action, employee_id, doc_lookup=doc_lookup),
                 "requires_manual_action": action.get("requires_manual_action"),
+                "simulation": bool(action.get("simulation_mode")),
+                "simulation_mode": action.get("simulation_mode"),
+                "simulation_label": action.get("simulation_label") or ("SIMULATED" if action.get("simulation_mode") else ""),
+                "simulation_notice": action.get("simulation_notice"),
+                "real_system_status": action.get("real_system_status"),
+                "simulated_system": action.get("simulated_system"),
             }
         )
     return details
@@ -4473,6 +4505,11 @@ def workflow_status_action_rows(
         raw_log_ref: str = "",
         source: str = "",
         boi_url: str = "",
+        simulation: bool | None = None,
+        simulation_label: str = "",
+        simulation_notice: str = "",
+        real_system_status: str = "",
+        simulated_system: str = "",
     ) -> None:
         if not action_key:
             return
@@ -4503,13 +4540,19 @@ def workflow_status_action_rows(
                 "raw_api_url": action_raw_api_url(raw_log_ref, employee_id) if raw_log_ref else "",
                 "source": source,
                 "boi_url": boi_url,
+                "simulation": bool(simulation) if simulation is not None else bool(catalog_item.get("simulation_mode")),
+                "simulation_label": simulation_label or str(catalog_item.get("simulation_label") or ("SIMULATED" if catalog_item.get("simulation_mode") else "")),
+                "simulation_notice": simulation_notice or str(catalog_item.get("simulation_notice") or ""),
+                "real_system_status": real_system_status or str(catalog_item.get("real_system_status") or ""),
+                "simulated_system": simulated_system or str(catalog_item.get("simulated_system") or ""),
             }
         )
 
     for action in payload.get("actions") or []:
+        result = action.get("result") if isinstance(action.get("result"), dict) else {}
         add_row(
             action_key=str(action.get("action_key") or ""),
-            status=str(action.get("status") or action.get("result", {}).get("status") or "logged"),
+            status=str(action.get("status") or result.get("status") or "logged"),
             connector_kind=str(action.get("connector_kind") or action.get("action_type") or ""),
             doc_ref=str(action.get("doc_ref") or ""),
             request_id=str(action.get("request_id") or ""),
@@ -4517,6 +4560,11 @@ def workflow_status_action_rows(
             raw_log_ref=str(action.get("_log_ref") or ""),
             source="action_log",
             boi_url=doc_url_if_resolvable(str(action.get("boi_id") or ""), employee_id, doc_lookup=doc_lookup) if action.get("boi_id") else "",
+            simulation=bool(action.get("simulation") or result.get("simulation")),
+            simulation_label=str(action.get("simulation_label") or result.get("simulation_label") or ""),
+            simulation_notice=str(action.get("simulation_notice") or result.get("simulation_notice") or ""),
+            real_system_status=str(action.get("real_system_status") or result.get("real_system_status") or ""),
+            simulated_system=str(action.get("simulated_system") or result.get("simulated_system") or ""),
         )
     for event in payload.get("events") or []:
         result = event.get("result") if isinstance(event.get("result"), dict) else {}
@@ -4533,6 +4581,11 @@ def workflow_status_action_rows(
                 event_id=str(event.get("event_id") or ""),
                 source="event_dispatch",
                 boi_url=str(action.get("boi_url") or ""),
+                simulation=bool(action.get("simulation")),
+                simulation_label=str(action.get("simulation_label") or ""),
+                simulation_notice=str(action.get("simulation_notice") or ""),
+                real_system_status=str(action.get("real_system_status") or ""),
+                simulated_system=str(action.get("simulated_system") or ""),
             )
     for detail in payload.get("action_details") or []:
         add_row(
@@ -4541,6 +4594,11 @@ def workflow_status_action_rows(
             connector_kind=str(detail.get("connector_kind") or ""),
             doc_ref=str(detail.get("doc_ref") or ""),
             source="expected",
+            simulation=bool(detail.get("simulation")),
+            simulation_label=str(detail.get("simulation_label") or ""),
+            simulation_notice=str(detail.get("simulation_notice") or ""),
+            real_system_status=str(detail.get("real_system_status") or ""),
+            simulated_system=str(detail.get("simulated_system") or ""),
         )
     return rows
 
@@ -5575,6 +5633,11 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
             "event_url": event_filter_url(event_id, employee_id) if event_id else "",
             "doc_url": doc_url_for_ref(doc_ref, employee_id) if doc_ref else "",
             "boi_url": doc_url_if_resolvable(boi_id, employee_id) if boi_id else "",
+            "simulation": bool(row.get("simulation") or result_value.get("simulation")),
+            "simulation_label": row.get("simulation_label") or result_value.get("simulation_label") or "SIMULATED",
+            "simulation_notice": row.get("simulation_notice") or result_value.get("simulation_notice") or "",
+            "real_system_status": row.get("real_system_status") or result_value.get("real_system_status") or "",
+            "simulated_system": row.get("simulated_system") or result_value.get("simulated_system") or "",
         },
     )
 

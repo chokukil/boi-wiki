@@ -13,12 +13,16 @@
       <h2>{{ action_key or request_id or log_ref }}</h2>
       <div class="event-summary-line">
         <span class="badge status">raw</span>
+        {% if simulation %}<span class="badge warning">{{ simulation_label }}</span>{% endif %}
         {% if request_id %}<a href="{{ api_url }}"><code>{{ request_id }}</code></a>{% endif %}
         {% if trace_id %}<a href="{{ trace_url }}"><code>{{ trace_id }}</code></a>{% endif %}
         {% if event_id %}<a href="{{ event_url }}"><code>{{ event_id }}</code></a>{% endif %}
         {% if doc_ref and doc_url %}<a href="{{ doc_url }}">{{ doc_ref }}</a>{% endif %}
         {% if boi_id and boi_url %}<a href="{{ boi_url }}">{{ boi_id }}</a>{% endif %}
       </div>
+      {% if simulation %}
+      <p class="notice warning"><strong>{{ simulation_label }}</strong> 실제 시스템 호출 아님. {{ simulation_notice or "BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다." }}{% if simulated_system %} 대상: {{ simulated_system }}.{% endif %}{% if real_system_status %} 실제 시스템 상태: {{ real_system_status }}.{% endif %}</p>
+      {% endif %}
       <p class="muted"><code>{{ log_ref }}</code></p>
     </section>
 

@@ -52,7 +52,7 @@ review:
 SSO dev overlay에서 검증할 때는 BoI API가 Keycloak session 또는 service token을 요구한다. 자동 smoke는 browser login을 쓰지 않으므로 다음처럼 service token을 명시한다.
 
 ```bash
-SERVICE_TOKEN=dev-service-token-change-me python scripts/run_equipment_sop_poc.py
+SERVICE_TOKEN="$SERVICE_TOKEN" python scripts/run_equipment_sop_poc.py
 ```
 
 사용자 bearer token으로 검증해야 하면 `BOI_AUTH_BEARER`를 넘긴다. `SERVICE_TOKEN`과 `BOI_AUTH_BEARER`가 모두 있으면 둘 다 헤더에 붙지만, 일반 검증에서는 하나만 사용한다.

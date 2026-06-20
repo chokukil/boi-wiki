@@ -589,3 +589,511 @@ actions:
       - 정비 ticket 또는 현장 조치 기록 확인
       - 장비 상태와 재발 방지 필요 여부 확인
       - 완료 근거를 event-linked BoI에 기록
+
+  - action_key: direct_development.quality_response_trend.simulate
+    name_ko: Response Trend 확인 시뮬레이션
+    description: 품질 시스템 Response Trend 확인을 BoI Universal Action Simulator Flow로 시뮬레이션한다. 실제 품질 시스템 호출이 아니다.
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:direct-development-quality-response-trend-simulate
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [direct_development.result_check.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: 품질 시스템
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 품질 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다."
+    body:
+      input_value: |
+        SIMULATED action request.
+        Action key: direct_development.quality_response_trend.simulate
+        Simulated system: 품질 시스템
+        SOP: boi:public:sop:direct-development-reporting
+        Stage: response_trend
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, trend_status, evidence_ref, recommended_next_event=direct_development.map_view.requested.v1, limitations, human_review_required=false.
+      input_type: chat
+      output_type: chat
+
+  - action_key: direct_development.map_view.simulate
+    name_ko: Map View Image 확인 시뮬레이션
+    description: Map 분석 시스템의 Map View Image 확인을 BoI Universal Action Simulator Flow로 시뮬레이션한다.
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:direct-development-map-view-simulate
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [direct_development.map_view.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: Map 분석 시스템
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 Map 분석 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다."
+    body:
+      input_value: |
+        SIMULATED action request.
+        Action key: direct_development.map_view.simulate
+        Simulated system: Map 분석 시스템
+        SOP: boi:public:sop:direct-development-reporting
+        Stage: map_view
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, map_pattern_summary, evidence_ref, recommended_next_event=direct_development.cross_section.decision_required.v1, limitations, human_review_required=true.
+      input_type: chat
+      output_type: chat
+
+  - action_key: direct_development.cross_section_request.simulate
+    name_ko: 단면검사 의뢰 시뮬레이션
+    description: 단면 검사 시스템 의뢰 절차를 BoI Universal Action Simulator Flow로 시뮬레이션한다.
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:direct-development-cross-section-request-simulate
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [direct_development.cross_section.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: 단면 검사 시스템
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 단면 검사 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다."
+    body:
+      input_value: |
+        SIMULATED action request.
+        Action key: direct_development.cross_section_request.simulate
+        Simulated system: 단면 검사 시스템
+        SOP: boi:public:sop:direct-development-reporting
+        Stage: cross_section_request
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, request_ref, wafer_handling, limitations, human_review_required=true.
+      input_type: chat
+      output_type: chat
+
+  - action_key: direct_development.cross_section_result.simulate
+    name_ko: 단면검사 결과 확인 시뮬레이션
+    description: 단면 검사 시스템 결과 확인을 BoI Universal Action Simulator Flow로 시뮬레이션한다.
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:direct-development-cross-section-result-simulate
+    enabled: true
+    auto_dispatch: true
+    order: 30
+    event_types: [direct_development.cross_section.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: 단면 검사 시스템
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 단면 검사 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다."
+    body:
+      input_value: |
+        SIMULATED action request.
+        Action key: direct_development.cross_section_result.simulate
+        Simulated system: 단면 검사 시스템
+        SOP: boi:public:sop:direct-development-reporting
+        Stage: cross_section_result
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, result_summary, evidence_ref, recommended_next_event=direct_development.fab_trend.compare_requested.v1, limitations, human_review_required=false.
+      input_type: chat
+      output_type: chat
+
+  - action_key: direct_development.fab_trend_compare.simulate
+    name_ko: 연구소-양산 FAB 비교 Trend 확인 시뮬레이션
+    description: 품질 시스템의 연구소-양산 FAB 비교 Trend 확인을 BoI Universal Action Simulator Flow로 시뮬레이션한다.
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:direct-development-fab-trend-compare-simulate
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [direct_development.fab_trend.compare_requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: 품질 시스템
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 품질 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다."
+    body:
+      input_value: |
+        SIMULATED action request.
+        Action key: direct_development.fab_trend_compare.simulate
+        Simulated system: 품질 시스템
+        SOP: boi:public:sop:direct-development-reporting
+        Stage: fab_trend_compare
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, comparison_summary, evidence_ref, recommended_next_event=direct_development.reporting.requested.v1, limitations, human_review_required=false.
+      input_type: chat
+      output_type: chat
+
+  - action_key: direct_development.reporting.simulate
+    name_ko: 직개발 결과 Reporting 시뮬레이션
+    description: 직개발 결과 보고 초안을 BoI Universal Action Simulator Flow로 생성한다.
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:direct-development-reporting-simulate
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [direct_development.reporting.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: BoI Universal Action Simulator
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 보고 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다."
+    body:
+      input_value: |
+        SIMULATED action request.
+        Action key: direct_development.reporting.simulate
+        Simulated system: BoI Universal Action Simulator
+        SOP: boi:public:sop:direct-development-reporting
+        Stage: reporting
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, report_draft, source_refs, recommended_next_event=direct_development.share.requested.v1, limitations, human_review_required=true.
+      input_type: chat
+      output_type: chat
+
+  - action_key: direct_development.messenger_share_preview.simulate
+    name_ko: 협의체 공유 Preview 시뮬레이션
+    description: 메신저 공유 전 preview를 BoI Universal Action Simulator Flow로 생성한다. 실제 메신저 발송이 아니다.
+    type: langflow_run
+    connector_kind: langflow
+    execution_mode: gateway
+    doc_ref: boi:public:actions:langflow:direct-development-messenger-share-preview-simulate
+    enabled: true
+    auto_dispatch: true
+    order: 20
+    event_types: [direct_development.share.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    timeout_seconds: 90
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_model: google/gemma-4-26b-a4b-qat
+    require_marker: BoI Wiki Writer
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: 메신저
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 메신저 발송이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC preview입니다."
+    body:
+      input_value: |
+        SIMULATED action request.
+        Action key: direct_development.messenger_share_preview.simulate
+        Simulated system: 메신저
+        SOP: boi:public:sop:direct-development-reporting
+        Stage: share
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, share_preview, audience, limitations, human_review_required=true.
+      input_type: chat
+      output_type: chat
+
+  - action_key: direct_development.create_map_view_event
+    name_ko: Map View 확인 이벤트 발행
+    description: Response Trend 확인 후 Map View 확인 stage를 시작하는 이벤트를 발행한다.
+    type: event_publish
+    connector_kind: event_broker
+    execution_mode: gateway
+    doc_ref: boi:public:actions:event-broker:direct-development-create-map-view-event
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    timeout_seconds: 120
+    event_types: [direct_development.result_check.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: direct_development.map_view.requested.v1
+      trace_id: ${event.trace_id}
+      payload:
+        title: Map View Image 확인 - ${payload.work_id}
+        product: ${payload.product}
+        tech: ${payload.tech}
+        work_id: ${payload.work_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
+
+  - action_key: direct_development.create_cross_section_decision_event
+    name_ko: 단면검사 판단 이벤트 발행
+    description: Map View 확인 후 사람이 단면검사 필요 여부를 판단해야 하는 이벤트를 발행한다.
+    type: event_publish
+    connector_kind: event_broker
+    execution_mode: gateway
+    doc_ref: boi:public:actions:event-broker:direct-development-create-cross-section-decision-event
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    timeout_seconds: 120
+    event_types: [direct_development.map_view.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: direct_development.cross_section.decision_required.v1
+      trace_id: ${event.trace_id}
+      payload:
+        title: 단면검사 필요 여부 판단 - ${payload.work_id}
+        product: ${payload.product}
+        tech: ${payload.tech}
+        work_id: ${payload.work_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
+
+  - action_key: direct_development.create_fab_compare_event
+    name_ko: 연구소-양산 FAB 비교 이벤트 발행
+    description: 단면검사 결과 확인 후 연구소-양산 FAB 비교 Trend stage를 시작하는 이벤트를 발행한다.
+    type: event_publish
+    connector_kind: event_broker
+    execution_mode: gateway
+    doc_ref: boi:public:actions:event-broker:direct-development-create-fab-compare-event
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    timeout_seconds: 120
+    event_types: [direct_development.cross_section.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: direct_development.fab_trend.compare_requested.v1
+      trace_id: ${event.trace_id}
+      payload:
+        title: 연구소-양산 FAB 비교 Trend 확인 - ${payload.work_id}
+        product: ${payload.product}
+        tech: ${payload.tech}
+        work_id: ${payload.work_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
+
+  - action_key: direct_development.create_reporting_event
+    name_ko: Reporting 요청 이벤트 발행
+    description: 비교 Trend 확인 후 직개발 결과 Reporting stage를 시작하는 이벤트를 발행한다.
+    type: event_publish
+    connector_kind: event_broker
+    execution_mode: gateway
+    doc_ref: boi:public:actions:event-broker:direct-development-create-reporting-event
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    timeout_seconds: 120
+    event_types: [direct_development.fab_trend.compare_requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: low
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: direct_development.reporting.requested.v1
+      trace_id: ${event.trace_id}
+      payload:
+        title: 직개발 결과 Reporting - ${payload.work_id}
+        product: ${payload.product}
+        tech: ${payload.tech}
+        work_id: ${payload.work_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
+
+  - action_key: direct_development.create_share_event
+    name_ko: 협의체 공유 요청 이벤트 발행
+    description: Reporting 초안 생성 후 협의체 공유 preview 및 승인 workflow를 시작하는 이벤트를 발행한다.
+    type: event_publish
+    connector_kind: event_broker
+    execution_mode: gateway
+    doc_ref: boi:public:actions:event-broker:direct-development-create-share-event
+    enabled: true
+    auto_dispatch: true
+    order: 40
+    timeout_seconds: 120
+    event_types: [direct_development.reporting.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: medium
+    approval_required: false
+    dry_run: false
+    body:
+      event_type: direct_development.share.requested.v1
+      trace_id: ${event.trace_id}
+      payload:
+        title: 직개발 결과 협의체 공유 Preview - ${payload.work_id}
+        product: ${payload.product}
+        tech: ${payload.tech}
+        work_id: ${payload.work_id}
+        lot_id: ${payload.lot_id}
+        wafer_id: ${payload.wafer_id}
+        owner: ${payload.owner}
+      source_refs:
+        - type: event
+          ref: ${event.event_id}
+
+  - action_key: direct_development.messenger_share.publish
+    name_ko: 협의체 메신저 공유 실행
+    description: 협의체 공유 preview를 실제 메신저에 발송하는 고위험 action. PoC에서는 승인 전 approval_required로만 기록한다.
+    type: webhook
+    connector_kind: webhook
+    execution_mode: gateway
+    doc_ref: boi:public:actions:webhook:direct-development-messenger-share-publish
+    requires_manual_action: manual.direct_development.approve_committee_share
+    enabled: true
+    auto_dispatch: true
+    order: 90
+    method: POST
+    url: http://boi-api:8000/api/poc/direct-development/messenger-share
+    headers:
+      x-service-token: ${service_token}
+      Content-Type: application/json
+    body:
+      request_id: ${request_id}
+      employee_id: ${employee_id}
+      event: ${event}
+      payload: ${payload}
+      dry_run: ${dry_run}
+      approved_by: ${approved_by}
+    event_types: [direct_development.share.requested.v1]
+    owner: AIX 확산 TF / Direct Development PoC
+    risk_level: high
+    approval_required: true
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: 메신저
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 메신저 발송은 수행하지 않고 approval_required 상태만 기록합니다."
+
+  - action_key: manual.direct_development.decide_cross_section
+    name_ko: 단면검사 필요 여부 판단
+    description: Map View와 Trend 근거를 보고 사람이 단면검사 필요 여부를 판단하는 manual action
+    type: manual_task
+    connector_kind: manual
+    execution_mode: human
+    doc_ref: boi:public:actions:manual:direct-development-decide-cross-section
+    enabled: true
+    auto_dispatch: false
+    order: 120
+    event_types: [direct_development.cross_section.decision_required.v1]
+    owner: 공정 담당자 / Direct Development PoC
+    risk_level: medium
+    approval_required: false
+    dry_run_default: true
+    checklist:
+      - Response Trend와 Map View 근거 확인
+      - 단면검사 필요 여부 판단
+      - 완료 시 direct_development.cross_section.requested.v1 이벤트 발행
+
+  - action_key: manual.direct_development.approve_committee_share
+    name_ko: 협의체 공유 승인
+    description: 메신저 공유 preview를 검토하고 실제 공유 여부를 승인하는 manual approval action
+    type: manual_task
+    connector_kind: manual
+    execution_mode: human
+    doc_ref: boi:public:actions:manual:direct-development-approve-committee-share
+    enabled: true
+    auto_dispatch: false
+    order: 121
+    event_types: [direct_development.share.requested.v1]
+    owner: 공정 담당자 / Direct Development PoC
+    risk_level: high
+    approval_required: true
+    dry_run_default: true
+    checklist:
+      - 공유 preview에서 민감정보와 비식별화 상태 확인
+      - 협의체 공유 대상 확인
+      - 승인 전 실제 메신저 발송 금지

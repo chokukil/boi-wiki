@@ -57,6 +57,7 @@ main { margin:16px 24px 28px; }
 .doc-page .citations-panel, .doc-page .relationship-panel { background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:14px; }
 .doc-page .recovery-notice { background:#fff7ed; border:1px solid #fed7aa; border-radius:var(--radius); padding:12px 14px; color:#7c2d12; }
 .doc-page .recovery-notice p { margin:6px 0 0; color:#9a3412; }
+.notice.warning { background:#fff7ed; border:1px solid #fed7aa; border-radius:var(--radius); padding:10px 12px; color:#7c2d12; }
 .draft-notice, .edit-notice { grid-column:1 / -1; border:1px solid #bfdbfe; background:#eff6ff; border-radius:var(--radius); padding:12px 14px; color:#1e3a8a; }
 .draft-notice p, .edit-notice p { margin:6px 0; color:#334155; }
 .draft-notice a, .edit-notice a { color:#1d4ed8; font-weight:800; }

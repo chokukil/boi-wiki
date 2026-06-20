@@ -1817,6 +1817,33 @@ def test_generic_workflow_status_uses_sop_stage_registry(boi_app_module):
     assert body["status_page_url"].startswith("/workflows/equipment-anomaly/status?")
 
 
+def test_direct_development_workflow_registry_exposes_simulated_actions(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    trace_id = "trace-direct-development-registry"
+
+    response = client.get(f"/api/workflows/direct-development-reporting/status?employee_id=100001&trace_id={trace_id}&format=json")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workflow_key"] == "direct-development-reporting"
+    assert body["sop_ref"] == "boi:public:sop:direct-development-reporting"
+    assert [stage["sop_stage_id"] for stage in body["expected_stages"]] == [
+        "response_trend",
+        "map_view",
+        "cross_section_decision",
+        "cross_section_execution",
+        "fab_trend_compare",
+        "reporting",
+        "share",
+    ]
+    assert "direct_development.quality_response_trend.simulate" in body["expected_actions"]
+    assert "manual.direct_development.decide_cross_section" in body["expected_manual_actions"]
+    action_details = {row["action_key"]: row for row in body["action_details"]}
+    assert action_details["direct_development.quality_response_trend.simulate"]["simulation"] is True
+    assert action_details["direct_development.quality_response_trend.simulate"]["simulation_label"] == "SIMULATED"
+    assert action_details["direct_development.quality_response_trend.simulate"]["real_system_status"] == "unavailable"
+
+
 def test_generic_workflow_start_publishes_sop_entry_event(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -2017,6 +2044,63 @@ def test_equipment_demo_status_renders_human_readable_html_for_browsers(boi_app_
         assert "Raw JSON 불러오기" in text
         assert "INLINE_RAW_BODY_SHOULD_NOT_RENDER" not in text
         assert '"edges"' not in text
+
+
+def test_direct_development_workflow_status_and_raw_pages_mark_simulated_actions(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    trace_id = "trace-direct-development-simulated"
+    boi_app_module.append_event_log(
+        status="handled",
+        event={
+            "event_id": "evt-direct-simulated",
+            "event_type": "direct_development.result_check.requested.v1",
+            "trace_id": trace_id,
+            "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+        },
+        result={"boi_id": "boi:private:100001:direct-development-simulated", "boi_uri": "/private/100001/direct-development-simulated.md"},
+    )
+    log_ref = append_action_log_row(
+        boi_app_module,
+        {
+            "logged_at": "2026-06-21T10:00:00+09:00",
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "request_id": "act-direct-simulated",
+            "employee_id": "100001",
+            "event_id": "evt-direct-simulated",
+            "event_type": "direct_development.result_check.requested.v1",
+            "trace_id": trace_id,
+            "status": "langflow_invoked",
+            "connector_kind": "langflow",
+            "doc_ref": "boi:public:actions:langflow:direct-development-quality-response-trend-simulate",
+            "simulation": True,
+            "simulation_label": "SIMULATED",
+            "simulation_notice": "SIMULATED: 실제 품질 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다.",
+            "real_system_status": "unavailable",
+            "real_system_connected": False,
+            "simulated_system": "품질 시스템",
+            "result": {
+                "status": "langflow_invoked",
+                "message": "SIMULATED Response Trend 확인 결과",
+                "simulation": True,
+                "simulation_label": "SIMULATED",
+                "real_system_connected": False,
+                "simulated_system": "품질 시스템",
+            },
+        },
+    )
+    encoded = quote(log_ref, safe="")
+
+    status = client.get(f"/workflows/direct-development-reporting/status?employee_id=100001&trace_id={trace_id}")
+    raw = client.get(f"/actions/raw/{encoded}?employee_id=100001")
+
+    assert status.status_code == 200
+    assert "SIMULATED" in status.text
+    assert "품질 시스템" in status.text
+    assert "실제 시스템 호출" in status.text
+    assert raw.status_code == 200
+    assert "SIMULATED" in raw.text
+    assert "BoI Universal Action Simulator Flow" in raw.text
+    assert "실제 시스템 호출" in raw.text
 
 
 def test_workflow_status_links_action_raw_ids_and_dedupes_generated_bois(boi_app_module):

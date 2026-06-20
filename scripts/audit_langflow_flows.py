@@ -17,6 +17,7 @@ DEFAULT_FLOW_FILE = ROOT / "langflow" / "flows" / "boi_reference_flow.json"
 REQUIRED_RUNTIME_FLOWS = {
     "BoI Reference Flow": {"endpoint": "boi-reference-flow", "require_boi_components": True},
     "BoI Equipment Stage Analysis Flow": {"endpoint": "boi-equipment-stage-analysis", "require_boi_components": True},
+    "BoI Universal Action Simulator Flow": {"endpoint": "boi-universal-action-simulator", "require_boi_components": True},
 }
 
 

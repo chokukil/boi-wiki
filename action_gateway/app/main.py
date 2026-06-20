@@ -78,6 +78,30 @@ def actions_for_event(event_type: str) -> list[dict[str, Any]]:
     return [a for a in load_catalog() if a.get("enabled", True) and (event_type in (a.get("event_types") or []) or "*" in (a.get("event_types") or [])) and a.get("auto_dispatch", True)]
 
 
+def simulation_metadata(action: dict[str, Any]) -> dict[str, Any]:
+    mode = str(action.get("simulation_mode") or "")
+    if not mode:
+        return {}
+    action_key = str(action.get("action_key") or "")
+    simulated_system = str(action.get("simulated_system") or action.get("system") or action.get("name_ko") or action_key)
+    return {
+        "simulation": True,
+        "simulation_mode": mode,
+        "simulation_label": str(action.get("simulation_label") or "SIMULATED"),
+        "simulation_notice": str(action.get("simulation_notice") or "SIMULATED: 실제 시스템 호출이 아니라 BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다."),
+        "real_system_status": str(action.get("real_system_status") or "unavailable"),
+        "real_system_connected": False,
+        "simulated_system": simulated_system,
+        "simulated_action_key": action_key,
+        "simulation_contract": {
+            "status": "simulated",
+            "simulated_action_key": action_key,
+            "simulated_system": simulated_system,
+            "real_system_connected": False,
+        },
+    }
+
+
 def append_action_log(row: dict[str, Any]) -> None:
     ensure_dirs()
     payload = {"logged_at": now_iso(), **row}
@@ -375,6 +399,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         "action_type": action_type,
         "connector_kind": action.get("connector_kind"),
         "doc_ref": action.get("doc_ref"),
+        **simulation_metadata(action),
     }
 
     if approval_required and not req.approved_by:
@@ -385,6 +410,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
             "action_key": action.get("action_key"),
             "message": "This action is registered as approval_required. Re-invoke with approved_by after human approval.",
             "action": {k: action.get(k) for k in ["action_key", "name_ko", "risk_level", "owner", "description", "type", "doc_ref", "connector_kind"]},
+            **simulation_metadata(action),
         }
         append_action_log({**base_log, "status": "approval_required", "payload": req.payload})
         return result
@@ -405,6 +431,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     "checklist": render_template(action.get("checklist") or [], context),
                     "payload": req.payload,
                 },
+                **simulation_metadata(action),
             }
 
         elif dry_run or action_type == "mock_api":
@@ -415,6 +442,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 "action_key": action.get("action_key"),
                 "action_name": action.get("name_ko") or action.get("name"),
                 "mock_response": render_template(action.get("mock_response") or {}, context),
+                **simulation_metadata(action),
             }
 
         elif action_type in {"boi_materialize", "boi_materializer"}:
@@ -467,6 +495,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     "flow_name": flow_info.get("name") or action.get("flow_name"),
                     "message": first_langflow_message(resp_body),
                     "response": resp_body,
+                    **simulation_metadata(action),
                 }
 
         elif action_type in HTTP_ACTION_TYPES:
@@ -490,7 +519,15 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     resp_body = resp.text[:2000]
                 if resp.status_code >= 400:
                     raise HTTPException(status_code=resp.status_code, detail=resp_body)
-                result = {"ok": True, "status": "invoked", "request_id": request_id, "action_key": action.get("action_key"), "http_status": resp.status_code, "response": resp_body}
+                result = {
+                    "ok": True,
+                    "status": "invoked",
+                    "request_id": request_id,
+                    "action_key": action.get("action_key"),
+                    "http_status": resp.status_code,
+                    "response": resp_body,
+                    **simulation_metadata(action),
+                }
 
         elif action_type in {"mcp_bridge", "mcp_tool"}:
             bridge_url = render_template(str(action.get("url") or MCP_BRIDGE_URL), context)

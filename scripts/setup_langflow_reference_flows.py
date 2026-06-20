@@ -467,11 +467,12 @@ def main() -> None:
             client,
             langflow_url,
             headers,
-            {"BoI Reference Flow", "BoI Equipment Stage Analysis Flow"},
+            {"BoI Reference Flow", "BoI Equipment Stage Analysis Flow", "BoI Universal Action Simulator Flow"},
         )
         smoke_target = endpoint_name
         custom_flow = None
         stage_flow = None
+        simulator_flow = None
         if not args.skip_custom_components:
             custom_flow = create_component_reference_flow(
                 client,
@@ -504,6 +505,32 @@ def main() -> None:
                     "harness/wiki reader, Gemma LLM, metadata/policy guard, writer, and action invoker."
                 ),
             )
+            simulator_flow = create_component_reference_flow(
+                client,
+                langflow_url,
+                headers,
+                base_flow,
+                flow_name="BoI Universal Action Simulator Flow",
+                endpoint_name="boi-universal-action-simulator",
+                context_input=(
+                    "Universal simulation input. Read event payload, SOP stage, action_key, source_refs, "
+                    "expected result contract, prior action results, and simulation reason."
+                ),
+                action_key="manual.direct_development.decide_cross_section",
+                wiki_query="direct development reporting SOP universal simulator action contract",
+                prompt_instruction=(
+                    "You are the official BoI Universal Action Simulator. Generate a Korean PoC simulation result "
+                    "for the requested action. Make it unmistakable that this is SIMULATED and not a real system call. "
+                    "Use BoI Wiki context, SOP stage, prior action results, source_refs, and the expected result contract. "
+                    "Return concise sections plus a JSON block with: status=simulated, simulation=true, simulated_system, "
+                    "simulated_action_key, input_evidence_refs, generated_result, confidence, limitations, "
+                    "recommended_next_event, human_review_required."
+                ),
+                description=(
+                    "Official BoI universal simulator flow: reads BoI context and generates marked SIMULATED "
+                    "action results for unavailable systems or human-step simulations."
+                ),
+            )
             smoke_target = custom_flow.get("id") or custom_flow.get("endpoint_name") or smoke_target
         else:
             upload_result = upload_flow(client, langflow_url, headers, flow_file)
@@ -534,6 +561,15 @@ def main() -> None:
             }
             if stage_flow
             else None,
+            "universal_simulator_flow": {
+                "id": simulator_flow.get("id"),
+                "name": simulator_flow.get("name"),
+                "endpoint_name": simulator_flow.get("endpoint_name"),
+                "nodes": len((simulator_flow.get("data") or {}).get("nodes") or []),
+                "edges": len((simulator_flow.get("data") or {}).get("edges") or []),
+            }
+            if simulator_flow
+            else None,
         }
         if not args.skip_smoke:
             result["smoke"] = smoke_run(client, langflow_url, headers, smoke_target)
@@ -544,6 +580,13 @@ def main() -> None:
                     headers,
                     stage_flow.get("id") or stage_flow.get("endpoint_name") or "boi-equipment-stage-analysis",
                 )
+            if simulator_flow:
+                result["simulator_smoke"] = smoke_run(
+                    client,
+                    langflow_url,
+                    headers,
+                    simulator_flow.get("id") or simulator_flow.get("endpoint_name") or "boi-universal-action-simulator",
+                )
         if args.summary:
             result = {
                 "ok": result["ok"],
@@ -551,8 +594,10 @@ def main() -> None:
                 "deleted_flow_ids": result["deleted_flow_ids"],
                 "custom_component_flow": result["custom_component_flow"],
                 "equipment_stage_flow": result["equipment_stage_flow"],
+                "universal_simulator_flow": result["universal_simulator_flow"],
                 "smoke": summarize_run(result.get("smoke")),
                 "stage_smoke": summarize_run(result.get("stage_smoke")),
+                "simulator_smoke": summarize_run(result.get("simulator_smoke")),
             }
 
     print(json.dumps(result, ensure_ascii=False, indent=2))

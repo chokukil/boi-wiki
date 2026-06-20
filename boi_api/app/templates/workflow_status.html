@@ -79,7 +79,9 @@
             <tr>
               <td>
                 {% if action.doc_url %}<a href="{{ action.doc_url }}"><code>{{ action.action_key }}</code></a>{% else %}<code>{{ action.action_key }}</code>{% endif %}
+                {% if action.simulation %}<br /><span class="badge warning">{{ action.simulation_label or "SIMULATED" }}</span>{% endif %}
                 {% if action.boi_url %}<br /><a href="{{ action.boi_url }}">Generated BoI</a>{% endif %}
+                {% if action.simulation and action.simulated_system %}<br /><small>{{ action.simulated_system }}</small>{% endif %}
               </td>
               <td>{{ action.connector_kind or "-" }}</td>
               <td><span class="badge {% if 'approval' in action.status or 'manual' in action.status %}warning{% else %}status{% endif %}">{{ action.status }}</span></td>
@@ -97,6 +99,11 @@
               </td>
               <td>{{ action.source or "-" }}</td>
             </tr>
+            {% if action.simulation %}
+            <tr>
+              <td colspan="7"><small><strong>{{ action.simulation_label or "SIMULATED" }}</strong> 실제 시스템 호출 아님. {{ action.simulation_notice or "BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다." }}{% if action.real_system_status %} 실제 시스템 상태: {{ action.real_system_status }}.{% endif %}</small></td>
+            </tr>
+            {% endif %}
             {% endfor %}
           </tbody>
         </table>

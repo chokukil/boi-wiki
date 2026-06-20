@@ -39,12 +39,20 @@ def action_detail_line(detail: dict[str, Any]) -> str:
     doc_uri = str(detail.get("doc_uri") or "")
     action_ref = md_link(label, doc_uri)
     manual_note = f" / requires_manual_action=`{detail.get('requires_manual_action')}`" if detail.get("requires_manual_action") else ""
+    simulation_note = ""
+    if detail.get("simulation"):
+        simulation_label = str(detail.get("simulation_label") or "SIMULATED")
+        simulated_system = str(detail.get("simulated_system") or "")
+        simulation_note = f" / **{simulation_label}** / 실제 시스템 호출 아님"
+        if simulated_system:
+            simulation_note += f" / simulated_system={simulated_system}"
     return (
         f"- `{action_key}`: {action_ref}"
         f" / connector={detail.get('connector_kind')}"
         f" / risk={detail.get('risk_level')}"
         f" / approval_required={detail.get('approval_required')}"
         f"{manual_note}"
+        f"{simulation_note}"
     )
 
 

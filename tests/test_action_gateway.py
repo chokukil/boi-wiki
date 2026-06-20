@@ -166,6 +166,18 @@ class FakeLangflowAsyncClient:
                             ]
                         },
                     },
+                    {
+                        "id": "simulator-flow-id",
+                        "name": "BoI Universal Action Simulator Flow",
+                        "endpoint_name": "boi-universal-action-simulator",
+                        "updated_at": "2026-06-21T00:00:00+00:00",
+                        "data": {
+                            "nodes": [
+                                {"data": {"display_name": "BoI Wiki Writer"}},
+                                {"data": {"template": {"model_name": {"value": "google/gemma-4-26b-a4b-qat"}}}},
+                            ]
+                        },
+                    },
                 ]
             )
         return FakeHttpResponse(status_code=404, body={"detail": "not found"})
@@ -339,6 +351,49 @@ def test_langflow_run_action_resolves_latest_flow_and_invokes_run_endpoint(tmp_p
     assert run_request["url"] == "http://langflow:7860/api/v1/run/latest-flow-id"
     assert run_request["json"]["input_type"] == "chat"
     assert "Langflow 연결 검증" in run_request["json"]["input_value"]
+
+
+def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakeLangflowAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowAsyncClient)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-direct-sim-test",
+                "event_type": "direct_development.result_check.requested.v1",
+                "trace_id": "trace-direct-sim-test",
+                "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+            },
+            "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "langflow_invoked"
+    assert body["flow_id"] == "simulator-flow-id"
+    assert body["simulation"] is True
+    assert body["simulation_label"] == "SIMULATED"
+    assert body["real_system_connected"] is False
+    assert body["simulated_system"] == "품질 시스템"
+
+    run_request = next(req for req in FakeLangflowAsyncClient.requests if "/api/v1/run/" in req["url"])
+    assert run_request["url"] == "http://langflow:7860/api/v1/run/simulator-flow-id"
+    assert "SIMULATED action request" in run_request["json"]["input_value"]
+    assert "Tech-A" in run_request["json"]["input_value"]
+
+    logs = client.get("/api/actions/logs", headers={"x-service-token": "test-service-token"}).json()["items"]
+    assert logs[0]["action_key"] == "direct_development.quality_response_trend.simulate"
+    assert logs[0]["status"] == "langflow_invoked"
+    assert logs[0]["simulation"] is True
+    assert logs[0]["simulation_label"] == "SIMULATED"
 
 
 def test_dispatch_passes_prior_results_to_stage_langflow_action(tmp_path, monkeypatch):

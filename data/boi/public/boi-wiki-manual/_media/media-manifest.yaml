@@ -7,6 +7,62 @@ media:
     viewport: 1292x683
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
     created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-source-sop-image.png
+    sha256: ea1480b73b5d78fa235b74e7524ae634a7144776fd5a1a62fc26608e6e14a218
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/okf-media/public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png
+    captured_at: 2026-06-21T00:21:00+09:00
+    viewport: 1440x1200
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-public-sop.png
+    sha256: df06d3ed8ef2c57163a58f3c71713c7c4dde99d712dc151da40f9a889bd065aa
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/docs/boi:public:sop:direct-development-reporting?employee_id=100001&folder=public%2Fsop
+    captured_at: 2026-06-21T00:21:00+09:00
+    viewport: 1440x1200
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-workflow-status.png
+    sha256: 1b9c2bbeca2922917ba227573717cca1cc0af7640257c8ea7399bdb9372b4452
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/workflows/direct-development-reporting/status?employee_id=100001&trace_id=trace-c8649f71e3e44b5b8b6a8f70963af446
+    captured_at: 2026-06-21T00:21:00+09:00
+    viewport: 1440x1200
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-event-timeline.png
+    sha256: 7773668f6400ed53b31b0ad6c4ad593f1671f2358fa3af5f93a0c17b2d8b7941
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/events?employee_id=100001&trace_id=trace-c8649f71e3e44b5b8b6a8f70963af446
+    captured_at: 2026-06-21T00:21:00+09:00
+    viewport: 1440x1200
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-action-raw-simulated.png
+    sha256: 86a744971c62600230859556a3defee666d1353bae0b26feb574b6efc6356015
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/actions/raw/action%3Aactions-20260621.jsonl%3A39?employee_id=100001
+    captured_at: 2026-06-21T00:21:00+09:00
+    viewport: 1440x1200
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-generated-boi-simulated.png
+    sha256: c9fbd9d98649ae1b4762c31421b677ebb9f50f6aefb62a5038aee9be0d9524fb
+    source_kind: browser-screenshot
+    captured_url: http://localhost:8000/docs/boi:private:100001:20260621002041:7f1452?employee_id=100001
+    captured_at: 2026-06-21T00:21:00+09:00
+    viewport: 1440x1200
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-langflow-universal-simulator.png
+    sha256: be66146e9a3be519db5a83df6a250f94b7d729c72edc1e0a2504d47a72cfed71
+    source_kind: browser-screenshot
+    captured_url: http://localhost:7860/flow/9d3e3524-5daa-4ff5-bfae-92d592d1a3c4
+    captured_at: 2026-06-21T00:21:00+09:00
+    viewport: 1440x1200
+    related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
+    created_by: codex
   - path: public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-222808-sop-mermaid-section-viewport-1440x1000-4754ebbddcc3.png
     sha256: 4754ebbddcc310ae462687391771610c154a03a1fddae28489a456dbf50b962d
     source_kind: browser-screenshot
