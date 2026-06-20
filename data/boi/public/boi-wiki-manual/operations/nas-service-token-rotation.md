@@ -56,8 +56,8 @@ sudo env PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
 
 - NAS 내부 `curl http://127.0.0.1:28000/`
 - NAS 내부 `curl http://127.0.0.1:28200/health`
-- 외부 `curl http://mangugil.iptime.org:28000/`
-- 외부 `curl http://mangugil.iptime.org:28200/`
+- 외부 `curl http://boi-wiki.example:28000/`
+- 외부 `curl http://boi-wiki-mcp.example:28200/`
 - MCP protocol tools/resource templates/prompts 확인
 - 실제 token을 환경 변수로만 넘겨 bridge check 확인
 - 잘못된 token은 `/api/mcp/call`에서 401을 반환해야 한다.

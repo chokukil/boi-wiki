@@ -82,7 +82,7 @@ DEFAULT_TEAM_ID = os.getenv("DEFAULT_TEAM_ID", "aix-tf")
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
 BOI_EVENTS_TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
 DEMO_EMPLOYEE_ID = os.getenv("DEMO_EMPLOYEE_ID", "100001")
-BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://mangugil.iptime.org:1236/v1").rstrip("/")
+BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1").rstrip("/")
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
 

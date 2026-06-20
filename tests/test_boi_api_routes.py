@@ -120,7 +120,7 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["llm"]["base_url"] == "http://mangugil.iptime.org:1236/v1"
+    assert body["llm"]["base_url"] == "http://llm-gateway.example:1236/v1"
     assert body["llm"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["llm"]["api_key_configured"] is True
     assert "api_key" not in body["llm"]
@@ -661,14 +661,14 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
 
 
 def test_app_shell_hides_unconfigured_localhost_tools_for_external_host(boi_app_module, monkeypatch):
-    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
     monkeypatch.delenv("LANGFLOW_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("KAFKA_UI_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("BOI_WIKI_MCP_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/?employee_id=100001", headers={"host": "mangugil.iptime.org:28000"})
+    response = client.get("/?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
 
     assert response.status_code == 200
     assert 'class="utility-nav"' in response.text
@@ -680,18 +680,18 @@ def test_app_shell_hides_unconfigured_localhost_tools_for_external_host(boi_app_
 
 
 def test_app_shell_uses_configured_external_tool_urls(boi_app_module, monkeypatch):
-    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
-    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://mangugil.iptime.org:27860")
-    monkeypatch.setenv("KAFKA_UI_EXTERNAL_URL", "http://mangugil.iptime.org:28081")
-    monkeypatch.setenv("BOI_WIKI_MCP_EXTERNAL_URL", "http://mangugil.iptime.org:28200")
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
+    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://langflow.example:27860")
+    monkeypatch.setenv("KAFKA_UI_EXTERNAL_URL", "http://kafka-ui.example:28081")
+    monkeypatch.setenv("BOI_WIKI_MCP_EXTERNAL_URL", "http://boi-wiki-mcp.example:28200")
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/?employee_id=100001", headers={"host": "mangugil.iptime.org:28000"})
+    response = client.get("/?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
 
     assert response.status_code == 200
-    assert "http://mangugil.iptime.org:27860" in response.text
-    assert "http://mangugil.iptime.org:28081" in response.text
-    assert "http://mangugil.iptime.org:28200" in response.text
+    assert "http://langflow.example:27860" in response.text
+    assert "http://kafka-ui.example:28081" in response.text
+    assert "http://boi-wiki-mcp.example:28200" in response.text
     assert "http://localhost:7860" not in response.text
     assert "http://localhost:8081" not in response.text
     assert "http://localhost:8200" not in response.text
@@ -954,7 +954,7 @@ def test_action_spec_is_collapsed_by_default_and_source_citation_is_clickable(bo
 
 
 def test_action_spec_display_rewrites_localhost_examples_for_external_host(boi_app_module, monkeypatch):
-    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
     monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("LANGFLOW_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("BOI_WIKI_MCP_EXTERNAL_URL", raising=False)
@@ -962,34 +962,34 @@ def test_action_spec_display_rewrites_localhost_examples_for_external_host(boi_a
 
     response = client.get(
         "/docs/boi:public:actions:api:request-trend-history?employee_id=100001",
-        headers={"host": "mangugil.iptime.org:28000"},
+        headers={"host": "boi-wiki.example:28000"},
     )
 
     assert response.status_code == 200
-    assert "http://mangugil.iptime.org:28000/api/poc/equipment/trend-history" in response.text
+    assert "http://boi-wiki.example:28000/api/poc/equipment/trend-history" in response.text
     assert "ACTION_GATEWAY_EXTERNAL_URL_NOT_CONFIGURED" in response.text
     assert "http://localhost" not in response.text
     assert "http://boi-api:8000" not in response.text
 
 
 def test_workflow_poc_and_promotion_curls_use_external_boi_url(boi_app_module, monkeypatch):
-    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://mangugil.iptime.org:28000")
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
     client = TestClient(boi_app_module.app)
 
     sop_response = client.get(
         "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
-        headers={"host": "mangugil.iptime.org:28000"},
+        headers={"host": "boi-wiki.example:28000"},
     )
     private_response = client.get(
         "/docs/boi:private:100001:seed-note-v0.1?employee_id=100001",
-        headers={"host": "mangugil.iptime.org:28000"},
+        headers={"host": "boi-wiki.example:28000"},
     )
 
     assert sop_response.status_code == 200
-    assert 'curl -X POST "http://mangugil.iptime.org:28000/api/workflows/equipment-anomaly/start?employee_id=100001"' in sop_response.text
+    assert 'curl -X POST "http://boi-wiki.example:28000/api/workflows/equipment-anomaly/start?employee_id=100001"' in sop_response.text
     assert 'curl -X POST "http://localhost:8000/api/workflows' not in sop_response.text
     assert private_response.status_code == 200
-    assert 'curl -X POST "http://mangugil.iptime.org:28000/api/boi/boi:private:100001:seed-note-v0.1/promote?employee_id=100001"' in private_response.text
+    assert 'curl -X POST "http://boi-wiki.example:28000/api/boi/boi:private:100001:seed-note-v0.1/promote?employee_id=100001"' in private_response.text
     assert 'curl -X POST "http://localhost:8000/api/boi/' not in private_response.text
 
 

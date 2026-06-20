@@ -73,7 +73,7 @@ docker compose up -d --build
 NAS에서 BoI Wiki만 외부로 연 최소 설정:
 
 ```bash
-BOI_EXTERNAL_URL=http://mangugil.iptime.org:28000
+BOI_EXTERNAL_URL=http://boi-wiki.example:28000
 LANGFLOW_EXTERNAL_URL=
 KAFKA_UI_EXTERNAL_URL=
 BOI_WIKI_MCP_EXTERNAL_URL=

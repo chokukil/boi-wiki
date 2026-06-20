@@ -20,14 +20,14 @@ def mcp_module(monkeypatch):
 def test_boi_wiki_mcp_health(mcp_module):
     client = TestClient(mcp_module.app)
 
-    response = client.get("/health", headers={"host": "mangugil.iptime.org:28200"})
+    response = client.get("/health", headers={"host": "boi-wiki-mcp.example:28200"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["service"] == "boi-wiki-mcp"
-    assert body["mcp_endpoint"] == "http://mangugil.iptime.org:28200/mcp"
-    assert body["bridge_endpoint"] == "http://mangugil.iptime.org:28200/api/mcp/call"
-    assert body["health_endpoint"] == "http://mangugil.iptime.org:28200/health"
+    assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
+    assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
+    assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
     assert body["capabilities"]["tools"] == 14
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     tool_names = [item["name"] for item in body["capability_lists"]["tools"]]
@@ -45,13 +45,13 @@ def test_boi_wiki_mcp_health(mcp_module):
 def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     client = TestClient(mcp_module.app)
 
-    response = client.get("/", headers={"host": "mangugil.iptime.org:28200"})
+    response = client.get("/", headers={"host": "boi-wiki-mcp.example:28200"})
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
     assert "BoI Wiki MCP" in body
-    assert "http://mangugil.iptime.org:28200/mcp" in body
+    assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
     assert "Tools" in body and "14" in body

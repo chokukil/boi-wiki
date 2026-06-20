@@ -12,7 +12,7 @@
   "runtime_config": {
     "llm": {
       "provider": "openai-compatible",
-      "base_url": "http://mangugil.iptime.org:1236/v1",
+      "base_url": "http://llm-gateway.example:1236/v1",
       "model": "google/gemma-4-26b-a4b-qat",
       "api_key_configured": true
     },

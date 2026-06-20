@@ -2,7 +2,7 @@
 
 - Collected at: `2026-06-17T16:24:13+00:00`
 - Git commit: `3dd82b8`
-- LLM endpoint: `http://mangugil.iptime.org:1236/v1`
+- LLM endpoint: `http://llm-gateway.example:1236/v1`
 - LLM model: `google/gemma-4-26b-a4b-qat`
 - Kafka topic: `boi.events`
 - Event catalog count: `10`

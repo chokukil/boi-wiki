@@ -46,7 +46,7 @@ def boi_app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("EVENT_CATALOG_ROOT", str(Path.cwd() / "data" / "event_catalog"))
     monkeypatch.setenv("ACTION_CATALOG_ROOT", str(Path.cwd() / "data" / "action_catalog"))
     monkeypatch.setenv("ACTION_LOG_ROOT", str(tmp_path / "actions"))
-    monkeypatch.setenv("BOI_LLM_BASE_URL", "http://mangugil.iptime.org:1236/v1")
+    monkeypatch.setenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1")
     monkeypatch.setenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
     monkeypatch.setenv("BOI_LLM_API_KEY", "not-needed")
 

@@ -7,7 +7,7 @@ from pathlib import Path
 def test_env_example_contains_openai_compatible_gemma_defaults():
     env_text = Path(".env.example").read_text(encoding="utf-8")
 
-    assert "BOI_LLM_BASE_URL=http://mangugil.iptime.org:1236/v1" in env_text
+    assert "BOI_LLM_BASE_URL=http://llm-gateway.example:1236/v1" in env_text
     assert "BOI_LLM_MODEL=google/gemma-4-26b-a4b-qat" in env_text
     assert "BOI_LLM_API_KEY=not-needed" in env_text
     assert "LANGFLOW_SECRET_KEY=Ym9pLXdpa2ktcG9jLWRldi1zZWNyZXQta2V5LTIwMjY=" in env_text
@@ -17,7 +17,7 @@ def test_env_example_contains_openai_compatible_gemma_defaults():
 def test_docker_compose_passes_llm_settings_to_langflow_and_gateway():
     compose_text = Path("docker-compose.yml").read_text(encoding="utf-8")
 
-    assert "BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://mangugil.iptime.org:1236/v1}" in compose_text
+    assert "BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}" in compose_text
     assert "BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}" in compose_text
     assert "BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}" in compose_text
     assert "LANGFLOW_SECRET_KEY: ${LANGFLOW_SECRET_KEY:-Ym9pLXdpa2ktcG9jLWRldi1zZWNyZXQta2V5LTIwMjY=}" in compose_text
@@ -32,7 +32,7 @@ def test_langflow_reference_flow_manifest_is_importable_metadata():
 
     assert manifest["endpoint_name"] == "boi-reference-flow"
     assert manifest["model"] == "google/gemma-4-26b-a4b-qat"
-    assert manifest["base_url"] == "http://mangugil.iptime.org:1236/v1"
+    assert manifest["base_url"] == "http://llm-gateway.example:1236/v1"
     assert Path(manifest["flow_file"]).exists()
     assert flow["data"]["nodes"]
     assert "google/gemma-4-26b-a4b-qat" in json.dumps(flow, ensure_ascii=False)
