@@ -96,7 +96,7 @@ example_request:
   input_value: |
     설비 이상 대응 SOP의 현재 stage 실행 기록을 한국어로 작성하세요.
     Prior Action Results:
-    [{"action_key":"sop.equipment.request_raw_data","summary":"raw_data_ref=/mock/hyvis/raw-data/ETCH-VM-01/LOT-001"}]
+    [{"action_key":"sop.equipment.request_raw_data","summary":"raw_data_ref=/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-001"}]
   input_type: chat
   output_type: chat
 example_response:
@@ -105,7 +105,7 @@ example_response:
   action: langflow.equipment.stage_analysis
   flow_name: BoI Equipment Stage Analysis Flow
   message: Raw Data와 장비 보전 가이드 기준상 원인 후보는 Response Chain 이상이며, manual review가 필요합니다.
-curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token: $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"langflow.equipment.stage_analysis","employee_id":"100001","event":{"event_type":"root_cause.analysis.requested.v1","trace_id":"trace-demo"},"payload":{"title":"원인 분석 요청 - ETCH-VM-01","equipment_id":"ETCH-VM-01","lot_id":"LOT-001","owner":"100001"},"prior_results":[{"action_key":"sop.equipment.request_raw_data","summary":"raw_data_ref=/mock/hyvis/raw-data/ETCH-VM-01/LOT-001"}]}'''
+curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token: $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"langflow.equipment.stage_analysis","employee_id":"100001","event":{"event_type":"root_cause.analysis.requested.v1","trace_id":"trace-demo"},"payload":{"title":"원인 분석 요청 - ETCH-VM-01","equipment_id":"ETCH-VM-01","lot_id":"LOT-001","owner":"100001"},"prior_results":[{"action_key":"sop.equipment.request_raw_data","summary":"raw_data_ref=/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-001"}]}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: langflow.equipment.stage_analysis

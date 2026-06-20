@@ -400,7 +400,7 @@ curl -X POST "http://localhost:8000/api/events/publish?employee_id=100001" \
 외부 Webhook으로 event를 주입할 수도 있다.
 
 ```bash
-curl -X POST "http://localhost:8000/api/webhooks/tas?employee_id=100001" \
+curl -X POST "http://localhost:8000/api/webhooks/quality-system?employee_id=100001" \
   -H "Content-Type: application/json" \
   -H "x-service-token: dev-service-token-change-me" \
   -d '{
@@ -985,7 +985,7 @@ Action Gateway는 외부 호출 대상 host를 allowlist로 제한한다.
 ACTION_ALLOWED_HOSTS=boi-api,langflow,action-gateway,localhost,127.0.0.1,mcp-bridge
 ```
 
-사내 이관 시에는 TAS, HyVIS, 문서 시스템, 승인 시스템, 알림 시스템 등 승인된 내부 도메인만 추가한다.
+사내 이관 시에는 품질 시스템, 비전 검사 시스템, 문서 시스템, 승인 시스템, 알림 시스템 등 승인된 내부 도메인만 추가한다.
 
 ### 19.3 고위험 Action
 
@@ -1014,7 +1014,7 @@ approval_required: true
 | 파일 기반 BoI 저장소 | 사내 Wiki/Git/SharePoint/문서 저장소 |
 | JSONL Event/Action log | 사내 로그 플랫폼 / DB / Observability |
 | Dev API key | Secret Manager / Vault |
-| Mock API | TAS, HyVIS, 설비, 승인, 알림, 문서 API |
+| Mock API | 품질 시스템, 비전 검사 시스템, 설비, 승인, 알림, 문서 API |
 | MCP Extension point | 사내 MCP Bridge / MCP Server |
 | Docker Compose 단일 노드 | 사내 K8s / VM / 플랫폼 표준 |
 | Langflow auto login | SSO 연동 및 권한 통제 |

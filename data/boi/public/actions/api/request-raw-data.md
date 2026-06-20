@@ -3,7 +3,7 @@ okf_version: '0.1'
 boi_profile_version: '0.1'
 type: boi/action-spec
 title: Raw / Source Data 확인 요청
-description: HyVIS/TAS/설비 시스템의 Raw Data와 Source Data를 조회하는 API action
+description: 비전 검사 시스템/품질 시스템/설비 시스템의 Raw Data와 Source Data를 조회하는 API action
 tags:
 - ActionGateway
 - API

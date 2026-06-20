@@ -81,13 +81,13 @@ actions:
     approval_required: false
     mock_response:
       trend_status: anomaly_detected
-      lot_history_ref: /mock/hyvis/lot-history/${payload.lot_id}
-      wafer_history_ref: /mock/hyvis/wafer-history/${payload.wafer_id}
+      lot_history_ref: /mock/vision-inspection/lot-history/${payload.lot_id}
+      wafer_history_ref: /mock/vision-inspection/wafer-history/${payload.wafer_id}
       message: Trend와 이력 데이터를 확인했습니다.
 
   - action_key: sop.equipment.request_raw_data
     name_ko: Raw / Source Data 확인 요청
-    description: HyVIS/TAS/설비 시스템의 Raw Data와 Source Data를 조회하는 API 호출 예시
+    description: 비전 검사 시스템/품질 시스템/설비 시스템의 Raw Data와 Source Data를 조회하는 API 호출 예시
     type: api
     connector_kind: api
     execution_mode: gateway
@@ -113,8 +113,8 @@ actions:
     risk_level: low
     approval_required: false
     mock_response:
-      raw_data_ref: /mock/hyvis/raw-data/${payload.equipment_id}/${payload.lot_id}
-      source_data_ref: /mock/tas/source-data/${payload.equipment_id}
+      raw_data_ref: /mock/vision-inspection/raw-data/${payload.equipment_id}/${payload.lot_id}
+      source_data_ref: /mock/quality-system/source-data/${payload.equipment_id}
       message: Raw/Source Data 참조 링크를 생성했습니다.
 
   - action_key: sop.equipment.create_root_cause_event

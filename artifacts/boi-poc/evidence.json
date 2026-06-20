@@ -591,15 +591,15 @@
         "approval_required": false,
         "mock_response": {
           "trend_status": "anomaly_detected",
-          "lot_history_ref": "/mock/hyvis/lot-history/${payload.lot_id}",
-          "wafer_history_ref": "/mock/hyvis/wafer-history/${payload.wafer_id}",
+          "lot_history_ref": "/mock/vision-inspection/lot-history/${payload.lot_id}",
+          "wafer_history_ref": "/mock/vision-inspection/wafer-history/${payload.wafer_id}",
           "message": "Trend와 이력 데이터를 확인했습니다."
         }
       },
       {
         "action_key": "sop.equipment.request_raw_data",
         "name_ko": "Raw / Source Data 확인 요청",
-        "description": "HyVIS/TAS/설비 시스템의 Raw Data와 Source Data를 조회하는 API 호출 예시",
+        "description": "비전 검사 시스템/품질 시스템/설비 시스템의 Raw Data와 Source Data를 조회하는 API 호출 예시",
         "type": "api",
         "connector_kind": "api",
         "execution_mode": "gateway",
@@ -631,8 +631,8 @@
         "risk_level": "low",
         "approval_required": false,
         "mock_response": {
-          "raw_data_ref": "/mock/hyvis/raw-data/${payload.equipment_id}/${payload.lot_id}",
-          "source_data_ref": "/mock/tas/source-data/${payload.equipment_id}",
+          "raw_data_ref": "/mock/vision-inspection/raw-data/${payload.equipment_id}/${payload.lot_id}",
+          "source_data_ref": "/mock/quality-system/source-data/${payload.equipment_id}",
           "message": "Raw/Source Data 참조 링크를 생성했습니다."
         }
       },
@@ -1755,8 +1755,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -2082,8 +2082,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -2107,8 +2107,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -2445,8 +2445,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -2470,8 +2470,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -3315,8 +3315,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -3642,8 +3642,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -3667,8 +3667,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -4005,8 +4005,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -4030,8 +4030,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -4875,8 +4875,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -5202,8 +5202,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -5227,8 +5227,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -5565,8 +5565,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -5590,8 +5590,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -6435,8 +6435,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -6762,8 +6762,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -6787,8 +6787,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -7125,8 +7125,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -7150,8 +7150,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -7995,8 +7995,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -8322,8 +8322,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -8347,8 +8347,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -8685,8 +8685,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -8710,8 +8710,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -9532,8 +9532,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -9859,8 +9859,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -9884,8 +9884,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -10211,8 +10211,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -10236,8 +10236,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -11058,8 +11058,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -11385,8 +11385,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -11410,8 +11410,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -11737,8 +11737,8 @@
                     "result": {
                       "equipment_id": "ETCH-VM-01",
                       "trend_status": "anomaly_detected",
-                      "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-                      "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+                      "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+                      "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
                       "message": "Trend와 이력 데이터를 확인했습니다."
                     }
                   }
@@ -11762,8 +11762,8 @@
                     "approved_by": "",
                     "result": {
                       "equipment_id": "ETCH-VM-01",
-                      "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                      "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                      "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                      "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                       "message": "Raw/Source Data 참조 링크를 생성했습니다."
                     }
                   }
@@ -12092,8 +12092,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -12131,8 +12131,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -12641,8 +12641,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -12927,8 +12927,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -12966,8 +12966,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -13371,8 +13371,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -13410,8 +13410,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -13920,8 +13920,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -14206,8 +14206,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -14245,8 +14245,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -14650,8 +14650,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -14689,8 +14689,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -15199,8 +15199,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -15485,8 +15485,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -15524,8 +15524,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -15929,8 +15929,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -15968,8 +15968,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -16478,8 +16478,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -16764,8 +16764,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -16803,8 +16803,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -17208,8 +17208,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -17247,8 +17247,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -17757,8 +17757,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -18043,8 +18043,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -18082,8 +18082,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -18464,8 +18464,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -18503,8 +18503,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -19013,8 +19013,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -19299,8 +19299,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -19338,8 +19338,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -19720,8 +19720,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -19759,8 +19759,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -20258,8 +20258,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -20544,8 +20544,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -20583,8 +20583,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -20965,8 +20965,8 @@
             "approved_by": "",
             "result": {
               "equipment_id": "ETCH-VM-01",
-              "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-              "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+              "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+              "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
               "message": "Raw/Source Data 참조 링크를 생성했습니다."
             }
           }
@@ -21004,8 +21004,8 @@
             "result": {
               "equipment_id": "ETCH-VM-01",
               "trend_status": "anomaly_detected",
-              "lot_history_ref": "/mock/hyvis/lot-history/LOT-POC-001",
-              "wafer_history_ref": "/mock/hyvis/wafer-history/WF-POC-001",
+              "lot_history_ref": "/mock/vision-inspection/lot-history/LOT-POC-001",
+              "wafer_history_ref": "/mock/vision-inspection/wafer-history/WF-POC-001",
               "message": "Trend와 이력 데이터를 확인했습니다."
             }
           }
@@ -30941,7 +30941,7 @@
           "boi_profile_version": "0.1",
           "type": "boi/action-spec",
           "title": "Raw / Source Data 확인 요청",
-          "description": "HyVIS/TAS/설비 시스템의 Raw Data와 Source Data를 조회하는 API action",
+          "description": "비전 검사 시스템/품질 시스템/설비 시스템의 Raw Data와 Source Data를 조회하는 API action",
           "tags": [
             "ActionGateway",
             "API",
@@ -32190,10 +32190,10 @@
                 ],
                 "source_systems": [
                   "VM system monitoring",
-                  "TAS Agent",
+                  "품질 시스템 Agent",
                   "Trend alarm",
                   "Lot/Wafer 이력",
-                  "HyVIS"
+                  "비전 검사 시스템"
                 ],
                 "evidence_refs": [
                   "Trend alarm",
@@ -32228,13 +32228,13 @@
                   "root_cause.analysis.requested.v1"
                 ],
                 "source_systems": [
-                  "HyVIS Raw Data",
-                  "TAS Source Data",
+                  "비전 검사 시스템 Raw Data",
+                  "품질 시스템 Source Data",
                   "장비 이력"
                 ],
                 "evidence_refs": [
-                  "HyVIS Raw Data",
-                  "TAS Source Data"
+                  "비전 검사 시스템 Raw Data",
+                  "품질 시스템 Source Data"
                 ],
                 "outputs": [
                   "boi/analysis",
@@ -32341,7 +32341,7 @@
             ]
           }
         },
-        "body": "# Summary\n\n이 BoI는 첨부된 설비 이상 대응 SOP를 PoC에서 실제 workflow로 실행하기 위한 Public SOP 문서다. 원본 이미지는 `시스템 활용 업무`, `생성형 AI`, `분석형 AI`, `개발 필요 영역`을 구분하고 있으며, 설비 이상 감지에서 원인 분석, 장비 보전 가이드, 이상 조치로 이어지는 흐름을 보여준다.\n\n# AI Native Workflow 해석\n\n| 단계 | 업무 의미 | Event Type | Agent / Flow | BoI 결과물 | 주요 Action |\n|---|---|---|---|---|---|\n| 이상 감지 | Alarm 또는 Trend 이상이 발생 | [equipment.alarm.raised.v1](/public/event-types/equipment.alarm.raised.v1.md) | 이상 감지 Agent / [Langflow Reference Flow](/public/actions/langflow/reference-flow.md) | `boi/sop-instance` | [Trend 확인](/public/actions/api/request-trend-history.md), [Raw Data 확인](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md) |\n| 원인 분석 | 이력과 Trend를 확인해 원인 후보 생성 | [root_cause.analysis.requested.v1](/public/event-types/root_cause.analysis.requested.v1.md) | 원인 분석 Agent | `boi/analysis` | [Raw Data 조회](/public/actions/api/request-raw-data.md), [보전 가이드 요청](/public/actions/api/request-maintenance-guide.md) |\n| 장비 보전 가이드 | 장비 이상 가능성에 대해 SOP/Runbook 참조 | [maintenance.guide.requested.v1](/public/event-types/maintenance.guide.requested.v1.md) | 보전 가이드 Agent | `boi/runbook` | [보전 가이드 요청](/public/actions/api/request-maintenance-guide.md), [이상 조치 이벤트 발행](/public/actions/event-broker/create-corrective-action-event.md) |\n| 이상 조치 | 조치 담당자 요청 또는 고위험 조치 후보 생성 | [corrective_action.requested.v1](/public/event-types/corrective_action.requested.v1.md) | 이상 조치 Agent | `boi/action` | [담당자 알림](/public/actions/api/notify-action-owner.md), [공정 Hold](/public/actions/api/block-process-progress.md), [Spec 변경](/public/actions/api/change-spec-rule.md) |\n\n# Stage Details\n\n| Stage ID | 개발 필요 Agent | Source Systems | Automated Actions | Manual Actions |\n|---|---|---|---|---|\n| `detect` | 이상 감지 Agent | VM system monitoring, TAS Agent, Trend alarm, Lot/Wafer 이력, HyVIS | [Trend](/public/actions/api/request-trend-history.md), [Raw](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md), [원인 분석 이벤트](/public/actions/event-broker/create-root-cause-event.md) | [Alarm 맥락 확인](/public/actions/manual/confirm-alarm-context.md) |\n| `analyze` | 원인 분석 Agent | HyVIS Raw Data, TAS Source Data, 장비 이력 | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [보전 이벤트](/public/actions/event-broker/create-maintenance-guide-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |\n| `guide` | 보전 가이드 Agent | SOP, Runbook, 장비 이력, Source Data | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [조치 이벤트](/public/actions/event-broker/create-corrective-action-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |\n| `correct` | 이상 조치 Agent | Action Gateway, 담당자 알림, 변경관리 절차 | [담당자 알림](/public/actions/api/notify-action-owner.md), [공정 Hold](/public/actions/api/block-process-progress.md), [Spec 변경](/public/actions/api/change-spec-rule.md) | [공정 Hold 승인](/public/actions/manual/approve-process-hold.md), [Spec 변경 승인](/public/actions/manual/approve-spec-rule-change.md), [정비 완료 확인](/public/actions/manual/confirm-maintenance-done.md) |\n\n# Public Action Specs\n\n- API Action 명세: [API Actions](/public/actions/api/request-trend-history.md)\n- Webhook Action 명세: [Webhook Actions](/public/actions/webhook/inbound-external-event.md)\n- MCP Action 명세: [MCP Actions](/public/actions/mcp/boi-search-sample.md)\n- Langflow Action 명세: [Langflow Reference Flow](/public/actions/langflow/reference-flow.md)\n- Manual Action 명세: [Manual Actions](/public/actions/manual/confirm-alarm-context.md)\n\n# Event Broker 원칙\n\n- Event Broker는 모든 내용을 담는 저장소가 아니라 “업무가 발생한 시점”을 발행한다.\n- Event payload는 `event_type`, `source_refs`, `payload`, `target.flow_key` 중심으로 가볍게 유지한다.\n- 실제 업무 맥락, 판단 근거, Action 후보는 BoI 문서에 축적한다.\n\n# Action Gateway 원칙\n\n- Agent는 임의 URL을 직접 호출하지 않는다.\n- Agent는 Action Catalog에 등록된 API/Webhook만 호출한다.\n- 사람이 해야 하는 판단, 승인, 현장 조치는 manual action으로 문서화하고 자동 실행하지 않는다.\n- 고위험 Action, 예: 공정 진행 금지, Spec/Rule 변경은 대응 manual approval action 없이는 완료 처리하지 않는다.\n- PoC에서 고위험 system action은 승인 전 `approval_required` 또는 dry-run 상태로만 기록한다.\n\n# Citations\n\n- 첨부 SOP 이미지: 시스템 활용 업무 / 생성형 AI / 분석형 AI / 개발 필요 영역 구분 사례\n- [Public Action Library](/public/actions/overview.md)\n",
+        "body": "# Summary\n\n이 BoI는 첨부된 설비 이상 대응 SOP를 PoC에서 실제 workflow로 실행하기 위한 Public SOP 문서다. 원본 이미지는 `시스템 활용 업무`, `생성형 AI`, `분석형 AI`, `개발 필요 영역`을 구분하고 있으며, 설비 이상 감지에서 원인 분석, 장비 보전 가이드, 이상 조치로 이어지는 흐름을 보여준다.\n\n# AI Native Workflow 해석\n\n| 단계 | 업무 의미 | Event Type | Agent / Flow | BoI 결과물 | 주요 Action |\n|---|---|---|---|---|---|\n| 이상 감지 | Alarm 또는 Trend 이상이 발생 | [equipment.alarm.raised.v1](/public/event-types/equipment.alarm.raised.v1.md) | 이상 감지 Agent / [Langflow Reference Flow](/public/actions/langflow/reference-flow.md) | `boi/sop-instance` | [Trend 확인](/public/actions/api/request-trend-history.md), [Raw Data 확인](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md) |\n| 원인 분석 | 이력과 Trend를 확인해 원인 후보 생성 | [root_cause.analysis.requested.v1](/public/event-types/root_cause.analysis.requested.v1.md) | 원인 분석 Agent | `boi/analysis` | [Raw Data 조회](/public/actions/api/request-raw-data.md), [보전 가이드 요청](/public/actions/api/request-maintenance-guide.md) |\n| 장비 보전 가이드 | 장비 이상 가능성에 대해 SOP/Runbook 참조 | [maintenance.guide.requested.v1](/public/event-types/maintenance.guide.requested.v1.md) | 보전 가이드 Agent | `boi/runbook` | [보전 가이드 요청](/public/actions/api/request-maintenance-guide.md), [이상 조치 이벤트 발행](/public/actions/event-broker/create-corrective-action-event.md) |\n| 이상 조치 | 조치 담당자 요청 또는 고위험 조치 후보 생성 | [corrective_action.requested.v1](/public/event-types/corrective_action.requested.v1.md) | 이상 조치 Agent | `boi/action` | [담당자 알림](/public/actions/api/notify-action-owner.md), [공정 Hold](/public/actions/api/block-process-progress.md), [Spec 변경](/public/actions/api/change-spec-rule.md) |\n\n# Stage Details\n\n| Stage ID | 개발 필요 Agent | Source Systems | Automated Actions | Manual Actions |\n|---|---|---|---|---|\n| `detect` | 이상 감지 Agent | VM system monitoring, 품질 시스템 Agent, Trend alarm, Lot/Wafer 이력, 비전 검사 시스템 | [Trend](/public/actions/api/request-trend-history.md), [Raw](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md), [원인 분석 이벤트](/public/actions/event-broker/create-root-cause-event.md) | [Alarm 맥락 확인](/public/actions/manual/confirm-alarm-context.md) |\n| `analyze` | 원인 분석 Agent | 비전 검사 시스템 Raw Data, 품질 시스템 Source Data, 장비 이력 | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [보전 이벤트](/public/actions/event-broker/create-maintenance-guide-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |\n| `guide` | 보전 가이드 Agent | SOP, Runbook, 장비 이력, Source Data | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [조치 이벤트](/public/actions/event-broker/create-corrective-action-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |\n| `correct` | 이상 조치 Agent | Action Gateway, 담당자 알림, 변경관리 절차 | [담당자 알림](/public/actions/api/notify-action-owner.md), [공정 Hold](/public/actions/api/block-process-progress.md), [Spec 변경](/public/actions/api/change-spec-rule.md) | [공정 Hold 승인](/public/actions/manual/approve-process-hold.md), [Spec 변경 승인](/public/actions/manual/approve-spec-rule-change.md), [정비 완료 확인](/public/actions/manual/confirm-maintenance-done.md) |\n\n# Public Action Specs\n\n- API Action 명세: [API Actions](/public/actions/api/request-trend-history.md)\n- Webhook Action 명세: [Webhook Actions](/public/actions/webhook/inbound-external-event.md)\n- MCP Action 명세: [MCP Actions](/public/actions/mcp/boi-search-sample.md)\n- Langflow Action 명세: [Langflow Reference Flow](/public/actions/langflow/reference-flow.md)\n- Manual Action 명세: [Manual Actions](/public/actions/manual/confirm-alarm-context.md)\n\n# Event Broker 원칙\n\n- Event Broker는 모든 내용을 담는 저장소가 아니라 “업무가 발생한 시점”을 발행한다.\n- Event payload는 `event_type`, `source_refs`, `payload`, `target.flow_key` 중심으로 가볍게 유지한다.\n- 실제 업무 맥락, 판단 근거, Action 후보는 BoI 문서에 축적한다.\n\n# Action Gateway 원칙\n\n- Agent는 임의 URL을 직접 호출하지 않는다.\n- Agent는 Action Catalog에 등록된 API/Webhook만 호출한다.\n- 사람이 해야 하는 판단, 승인, 현장 조치는 manual action으로 문서화하고 자동 실행하지 않는다.\n- 고위험 Action, 예: 공정 진행 금지, Spec/Rule 변경은 대응 manual approval action 없이는 완료 처리하지 않는다.\n- PoC에서 고위험 system action은 승인 전 `approval_required` 또는 dry-run 상태로만 기록한다.\n\n# Citations\n\n- 첨부 SOP 이미지: 시스템 활용 업무 / 생성형 AI / 분석형 AI / 개발 필요 영역 구분 사례\n- [Public Action Library](/public/actions/overview.md)\n",
         "visibility": "public",
         "event_type": "equipment.alarm.raised.v1"
       },

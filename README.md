@@ -70,17 +70,17 @@ docker compose up -d --build
 
 외부 도메인으로 배포할 때는 사용자가 보는 URL과 Docker 내부 실행 URL을 분리합니다. `actions.yaml`의 `http://boi-api:8000`, `http://langflow:7860`, `http://boi-wiki-mcp:8200` 같은 값은 컨테이너 내부 호출용이므로 바꾸지 않습니다.
 
-NAS에서 BoI Wiki만 외부로 연 최소 설정:
+NAS에서 BoI Wiki를 외부로 연 최소 설정:
 
 ```bash
-BOI_EXTERNAL_URL=http://boi-wiki.example:28000
+BOI_EXTERNAL_URL=http://mangugil.iptime.org:28000
 LANGFLOW_EXTERNAL_URL=
 KAFKA_UI_EXTERNAL_URL=
 BOI_WIKI_MCP_EXTERNAL_URL=
 ACTION_GATEWAY_EXTERNAL_URL=
 ```
 
-Langflow, Kafka UI, MCP Status, Action Gateway를 외부에 별도 포트로 열면 해당 `*_EXTERNAL_URL`만 추가합니다. 값이 비어 있으면 상단 도구 메뉴와 Action Spec 복사용 예시에서 깨진 `localhost` 링크를 만들지 않습니다.
+Langflow, Kafka UI, MCP Status, Action Gateway의 `*_EXTERNAL_URL`이 비어 있으면 BoI Wiki는 현재 접속 도메인을 기준으로 포트를 추론해 상단 메뉴를 유지합니다. `BOI_EXTERNAL_URL=http://mangugil.iptime.org:28000` 기준 기본 fallback은 Langflow `27860`, Kafka UI `28081`, Action Gateway `28100`, MCP Status `28200`입니다. reverse proxy나 포트 포워딩이 다른 구조라면 해당 `*_EXTERNAL_URL`을 명시합니다.
 
 ### NAS Git 자동 반영
 
@@ -336,7 +336,7 @@ PoC 요소는 다음 기업 내부 서비스로 교체합니다.
 |---|---|
 | hardcoded employee/team map | SSO/IAM/HR 조직 데이터 |
 | file-based BoI Wiki | 내부 문서/Wiki/Git/SharePoint 저장소 |
-| mock API | TAS, HyVIS, 설비, 승인, 알림 API |
+| mock API | 품질 시스템, 비전 검사 시스템, 설비, 승인, 알림 API |
 | development key | Secret Manager |
 | `BOI_AUTH_MODE=dev` | Keycloak SSO + HCP permission API |
 | MCP bridge/server | 내부 MCP bridge/server와 승인된 MCP endpoint |

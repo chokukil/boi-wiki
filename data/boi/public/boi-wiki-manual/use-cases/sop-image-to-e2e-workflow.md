@@ -21,7 +21,7 @@ source_refs:
   - type: local-repo
     ref: https://github.com/chokukil/boi-wiki-local/tree/main/data/boi/private/0000000/usage-examples/natural-language-poc
   - type: runtime-trace
-    ref: trace-442fd8c619794e73883ee22833abdab2
+    ref: trace-7f03f5a620f540a4b9b7b72c5012bfd8
 review:
   reviewer: tf-lead
   review_status: reviewed
@@ -40,7 +40,7 @@ review:
 | Field | Value |
 |---|---|
 | File | `sop_sample_image.png` |
-| SHA-256 | `c77e362a06ed0b0d2fb79bf42862a62e4022e1e23cb6b093446d678a55305180` |
+| SHA-256 | `002cd35720977227fde31bb523d0a34a0039665e6e891e8ecad7dc907fd1b462` |
 | Title read from image | 직개발 결과 확인 및 Reporting |
 | TAT read from image | 16.5h -> 9.2h, 7.3h 절감 |
 
@@ -67,32 +67,32 @@ review:
 
 | No | Stage | System | Actor | Classification |
 |---|---|---|---|---|
-| 1 | Response Trend 확인 | smartTAS | AI 보조 | missing system action |
-| 2 | Map View Image 확인 | smartYES | 사람 + AI | missing system action |
+| 1 | Response Trend 확인 | 품질 시스템 | AI 보조 | missing system action |
+| 2 | Map View Image 확인 | Map 분석 시스템 | 사람 + AI | missing system action |
 | D1 | 단면검사 필요 여부 판단 | Manual | 사람 | manual_required |
 | 3 | 단면검사 Wafer 대응 검토 | Manual | 사람 | manual_required |
-| 4 | 단면검사 의뢰서 작성 및 Wafer 전달 | smartAPS | 사람 | missing system action |
+| 4 | 단면검사 의뢰서 작성 및 Wafer 전달 | 단면 검사 시스템 | 사람 | missing system action |
 | 6 | 단면검사 요청 | Manual | 사람 + AI | manual + AI candidate |
-| 5 | 단면검사 결과 확인 | smartAPS | 사람 | missing system action |
-| 7 | 연구소-양산FAB 비교 Trend 확인 | smartTAS | AI 보조 | missing system action |
+| 5 | 단면검사 결과 확인 | 단면 검사 시스템 | 사람 | missing system action |
+| 7 | 연구소-양산 FAB 비교 Trend 확인 | 품질 시스템 | AI 보조 | missing system action |
 | 8 | 직개발 결과 Reporting | Manual | AI 자동화 | Langflow candidate |
-| 9 | 직개발 결과 협의체 공유 | CUBE | AI 자동화 | missing system action |
+| 9 | 직개발 결과 협의체 공유 | 메신저 | AI 자동화 | missing system action |
 
 ```mermaid
 flowchart LR
-  S["(1.8) 직개발 수행 및 모니터링"] --> A["1 Response Trend 확인<br/>smartTAS / AI 보조"]
-  A --> B["2 Map View Image 확인<br/>smartYES / 사람+AI"]
+  S["(1.8) 직개발 수행 및 모니터링"] --> A["1 Response Trend 확인<br/>품질 시스템 / AI 보조"]
+  A --> B["2 Map View Image 확인<br/>Map 분석 시스템 / 사람+AI"]
   B --> D{"단면검사 필요 여부"}
   D -- "Y" --> C["3 단면검사 Wafer 대응 검토<br/>Manual / 사람"]
   C --> E{"Wafer 처리"}
-  E -- "In-Line Wafer 필요" --> F["4 의뢰서 작성 및 Wafer 전달<br/>smartAPS / 사람"]
+  E -- "In-Line Wafer 필요" --> F["4 의뢰서 작성 및 Wafer 전달<br/>단면 검사 시스템 / 사람"]
   E -- "FAB-Out" --> G["6 단면검사 요청<br/>Manual / 사람+AI"]
-  F --> H["5 단면검사 결과 확인<br/>smartAPS / 사람"]
+  F --> H["5 단면검사 결과 확인<br/>단면 검사 시스템 / 사람"]
   G --> H
-  D -- "N" --> I["7 연구소-양산FAB 비교 Trend 확인<br/>smartTAS / AI 보조"]
+  D -- "N" --> I["7 연구소-양산 FAB 비교 Trend 확인<br/>품질 시스템 / AI 보조"]
   H --> I
   I --> J["8 직개발 결과 Reporting<br/>Manual / AI 자동화"]
-  J --> K["9 직개발 결과 협의체 공유<br/>CUBE / AI 자동화"]
+  J --> K["9 직개발 결과 협의체 공유<br/>메신저 / AI 자동화"]
   K --> Z["종료"]
 ```
 
@@ -102,22 +102,22 @@ flowchart LR
 
 | Evidence | Value |
 |---|---|
-| Trace ID | `trace-442fd8c619794e73883ee22833abdab2` |
+| Trace ID | `trace-7f03f5a620f540a4b9b7b72c5012bfd8` |
 | Events | `equipment.alarm.raised.v1`, `root_cause.analysis.requested.v1`, `maintenance.guide.requested.v1`, `corrective_action.requested.v1` |
 | Generated BoI count | 4 workflow BoI docs plus Langflow result docs |
 | Langflow invoked | `langflow.boi.reference_flow`, `langflow.equipment.stage_analysis` |
 | Approval guard | `sop.equipment.block_process_progress`, `sop.equipment.change_spec_rule` -> `approval_required` |
 | Manual handoff | `manual.equipment.confirm_alarm_context`, `manual.equipment.review_root_cause`, approval/maintenance manual actions |
 
-![Workflow status trace evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-workflow-status-latest-1440x1000-778dec9a3c1a.png)
+![Workflow status trace evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-222808-workflow-status-latest-1440x1000-9e0751b18852.png)
 
-![Event timeline trace evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-event-timeline-latest-1440x1000-aa730b882529.png)
+![Event timeline trace evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-222808-event-timeline-latest-1440x1000-33da8628974b.png)
 
-![Action raw log evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-action-raw-langflow-latest-1440x1000-19f0163a803f.png)
+![Action raw log evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-222808-action-raw-langflow-latest-1440x1000-1e18d2d5eeb6.png)
 
-![Generated BoI evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215403-generated-boi-latest-1440x1000-a6b3cbeb2268.png)
+![Generated BoI evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-222808-generated-boi-latest-1440x1000-66114f95677d.png)
 
-Langflow UI는 SSO/로그인 상태가 필요하다. 아래 이미지는 같은 stage-analysis flow template이 인증된 세션에서 열린 verified screenshot이고, 이번 smoke의 Action Gateway log는 최신 flow id `36952047-2ec9-47a4-b106-2b54ce823849`를 `langflow_invoked`로 기록했다.
+Langflow UI는 SSO/로그인 상태가 필요하다. 아래 이미지는 같은 stage-analysis flow template이 인증된 세션에서 열린 verified screenshot이고, 이번 smoke의 Action Gateway log는 최신 flow id `4cebafa5-f25f-4dfe-a2a5-e722bcfb01e3`를 `langflow_invoked`로 기록했다.
 
 ![Langflow Equipment Stage Analysis Flow](/public/boi-wiki-manual/_media/browser/langflow-stage-analysis/20260619-150927-langflow-equipment-stage-analysis-connected-flow-current-1440x1000-01d4ad42f1d6.png)
 
@@ -125,11 +125,11 @@ Langflow UI는 SSO/로그인 상태가 필요하다. 아래 이미지는 같은 
 
 아래 캡처는 이 문서가 BoI Wiki에서 SOP stage table을 표시하는 화면이다.
 
-![Generated SOP stage table evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215602-sop-mermaid-section-viewport-1440x1000-c3953988abdc.png)
+![Generated SOP stage table evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-222808-sop-mermaid-section-viewport-1440x1000-4754ebbddcc3.png)
 
 아래 캡처는 Mermaid source가 stage 표와 같은 문서에서 확인되는 화면이다.
 
-![Generated Mermaid source evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-215709-sop-mermaid-code-viewport-final-1440x1000-623790c3a200.png)
+![Generated Mermaid source evidence](/public/boi-wiki-manual/_media/browser/natural-language-poc/20260620-222808-sop-mermaid-code-viewport-final-1440x1000-94dacb456dd4.png)
 
 # Action Classification
 
@@ -138,7 +138,7 @@ Langflow UI는 SSO/로그인 상태가 필요하다. 아래 이미지는 같은 
 | existing live action | catalog에 있고 smoke에서 `invoked`, `materialized`, `event_published`, `langflow_invoked` 등으로 확인됨 | `sop.equipment.request_trend_history`, `langflow.equipment.stage_analysis` |
 | existing manual action | catalog에 있고 사람이 완료해야 하므로 `manual_required`로 남음 | `manual.equipment.review_root_cause` |
 | approval action | catalog에 있고 위험도가 높아 승인 전 `approval_required`로 차단됨 | `sop.equipment.block_process_progress` |
-| missing system action | SOP에는 있으나 live connector가 아직 없음 | `smarttas.response_trend.query`, `smartyes.map_view.inspect`, `smartaps.cross_section.request`, `cube.committee.share` |
+| missing system action | SOP에는 있으나 live connector가 아직 없음 | `quality_system.response_trend.query`, `map_analysis_system.map_view.inspect`, `cross_section_inspection_system.cross_section.request`, `messenger.committee.share` |
 | AI action candidate | Langflow harness로 만들 수 있으나 아직 connected flow가 없음 | `langflow.direct_development.reporting` |
 
 # Human + AI Collaboration Rule
@@ -158,7 +158,7 @@ SSO dev overlay에서는 `/api/v1/auto_login`이 403일 수 있다. 이 경우 f
 # Real vs Simulated
 
 - Real: source image, `boi-wiki-local` Markdown outputs, shared runtime trace, Action Gateway raw log, generated Private BoI, verified Langflow action invocation.
-- Simulated/candidate: direct-development-specific smartTAS/smartYES/smartAPS/CUBE connectors and `langflow.direct_development.reporting`.
+- Simulated/candidate: direct-development-specific 품질 시스템/Map 분석 시스템/단면 검사 시스템/메신저 connectors and `langflow.direct_development.reporting`.
 - Approval required: Public/Team promotion and high-risk action execution.
 
 # Citations

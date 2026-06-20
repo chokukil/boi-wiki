@@ -673,13 +673,13 @@ Langflow Webhook Flow를 호출한다.
   enabled: true
   event_types: [equipment.alarm.raised.v1]
   method: POST
-  url: http://tas.internal/api/alarm-context
+  url: http://quality-system.internal/api/alarm-context
   body:
     equipment_id: ${payload.equipment_id}
     alarm_code: ${payload.alarm_code}
 ```
 
-사내 이관 시 TAS, HyVIS, 설비, 품질, 승인, 알림 API를 이 방식으로 연결한다.
+사내 이관 시 품질 시스템, 비전 검사 시스템, 설비, 품질, 승인, 알림 API를 이 방식으로 연결한다.
 
 ## 9.4 `webhook` / `internal_webhook`
 
@@ -1101,7 +1101,7 @@ curl -X POST "http://localhost:8000/api/events/publish?employee_id=100001" \
 |---|---|
 | 하드코딩된 사용자/팀 매핑 | SSO/IAM/HR 조직정보 |
 | 파일 기반 BoI Wiki | 사내 Wiki/Git/SharePoint/문서 저장소 |
-| Mock API | TAS, HyVIS, 설비, 품질, 승인, 알림 API |
+| Mock API | 품질 시스템, 비전 검사 시스템, 설비, 품질, 승인, 알림 API |
 | 개발용 API key/token | Secret Manager / Vault |
 | Docker bridge network | 사내 Kubernetes 또는 표준 컨테이너 플랫폼 |
 | 단순 검색 | 권한 기반 검색 + Vector/RAG |
@@ -1121,13 +1121,13 @@ curl -X POST "http://localhost:8000/api/events/publish?employee_id=100001" \
 사내 API 연결 시 Action Catalog에 API Connector를 추가한다.
 
 ```yaml
-- action_key: tas.trend.lookup
+- action_key: quality_system.trend.lookup
   type: api
   enabled: true
   auto_dispatch: true
   event_types: [equipment.alarm.raised.v1]
   method: POST
-  url: http://tas.internal/api/trend
+  url: http://quality-system.internal/api/trend
   headers:
     Authorization: Bearer ${secret.tas_token}
   body:
@@ -1239,7 +1239,7 @@ grep -Rni "fallback\|secondary path\|backup" .
 |---|---|
 | PoC용 사용자/팀 매핑 | 코드 내 임시 구현이며 사내 이관 시 IAM/HR 연동 필요 |
 | 파일 기반 저장소 | 동시성/대용량 검색/권한 감사에는 한계 있음 |
-| Mock API | 실제 TAS/HyVIS/설비 시스템 연동 전까지는 동작 시뮬레이션 수준 |
+| Mock API | 실제 품질 시스템/비전 검사 시스템/설비 시스템 연동 전까지는 동작 시뮬레이션 수준 |
 | MCP | Bridge endpoint 미설정 시 실제 MCP 호출은 수행하지 않음 |
 | Langflow Flow | 기본 패키지는 custom component 제공이며, 실제 Flow는 사내 Langflow에서 구성 필요 |
 | Dry-run 기본값 | PoC 안전을 위해 dry-run 기본값이 true |

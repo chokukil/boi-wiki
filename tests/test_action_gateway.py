@@ -257,7 +257,7 @@ class FakeDispatchAsyncClient:
                     "ok": True,
                     "status": "invoked",
                     "result": {
-                        "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-001",
+                        "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-001",
                         "message": "Raw data loaded",
                     },
                 }
@@ -375,7 +375,7 @@ def test_dispatch_passes_prior_results_to_stage_langflow_action(tmp_path, monkey
     input_value = run_request["json"]["input_value"]
     assert "Prior Action Results" in input_value
     assert "sop.equipment.request_raw_data" in input_value
-    assert "/mock/hyvis/raw-data/ETCH-VM-01/LOT-001" in input_value
+    assert "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-001" in input_value
 
 
 def test_api_action_invokes_configured_boi_api_endpoint(tmp_path, monkeypatch):

@@ -92,7 +92,7 @@ MCP_BRIDGE_URL=
 - action_key: fab.eqp.get_alarm_context
   type: api
   event_types: [equipment.alarm.raised.v1]
-  url: http://tas.internal/api/alarm-context
+  url: http://quality-system.internal/api/alarm-context
   method: POST
 
 - action_key: agent.root_cause.langflow

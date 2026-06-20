@@ -16,7 +16,7 @@ from datetime import date, datetime, timezone, timedelta
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 import yaml
 from aiokafka import AIOKafkaProducer
@@ -87,6 +87,12 @@ BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
 
 LOCALHOST_NAMES = {"localhost", "127.0.0.1", "::1", "testserver"}
+DEFAULT_EXTERNAL_TOOL_PORTS = {
+    "ACTION_GATEWAY_EXTERNAL_URL": 28100,
+    "LANGFLOW_EXTERNAL_URL": 27860,
+    "KAFKA_UI_EXTERNAL_URL": 28081,
+    "BOI_WIKI_MCP_EXTERNAL_URL": 28200,
+}
 
 # Development fallback user/team maps. In SSO modes, Keycloak/HCP identity
 # resolves teams and roles and these maps are only used for local compatibility.
@@ -1646,24 +1652,81 @@ def clean_external_url(value: str | None) -> str:
     return str(value or "").strip().rstrip("/")
 
 
+def first_forwarded_header_value(value: str | None) -> str:
+    return str(value or "").split(",", 1)[0].strip()
+
+
+def hostname_from_url_or_host(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urlsplit(raw if "://" in raw else f"//{raw}")
+    return (parsed.hostname or "").lower()
+
+
+def is_local_url(value: str) -> bool:
+    return hostname_from_url_or_host(value) in LOCALHOST_NAMES
+
+
+def request_host(request: Request) -> str:
+    return first_forwarded_header_value(request.headers.get("x-forwarded-host")) or request.headers.get("host") or request.url.netloc
+
+
+def request_scheme(request: Request) -> str:
+    return first_forwarded_header_value(request.headers.get("x-forwarded-proto")) or request.url.scheme or "http"
+
+
 def is_local_request(request: Request) -> bool:
-    return (request.url.hostname or "").lower() in LOCALHOST_NAMES
+    return hostname_from_url_or_host(request_host(request) or (request.url.hostname or "")) in LOCALHOST_NAMES
 
 
 def request_origin(request: Request) -> str:
-    host = request.headers.get("host") or request.url.netloc
-    return f"{request.url.scheme}://{host}".rstrip("/")
+    host = request_host(request)
+    return f"{request_scheme(request)}://{host}".rstrip("/")
 
 
 def boi_public_base_url(request: Request) -> str:
-    return clean_external_url(os.getenv("BOI_EXTERNAL_URL")) or request_origin(request)
+    configured = clean_external_url(os.getenv("BOI_EXTERNAL_URL"))
+    if configured and (is_local_request(request) or not is_local_url(configured)):
+        return configured
+    return request_origin(request)
+
+
+def port_from_url(value: str) -> int | None:
+    try:
+        return urlsplit(value).port
+    except ValueError:
+        return None
+
+
+def derived_same_host_tool_url(request: Request, env_name: str, local_default: str) -> str:
+    boi_base = boi_public_base_url(request)
+    parsed = urlsplit(boi_base)
+    hostname = parsed.hostname or hostname_from_url_or_host(request_host(request))
+    if not hostname:
+        return ""
+    scheme = parsed.scheme or request_scheme(request)
+    current_port = parsed.port
+    local_tool_port = port_from_url(local_default)
+    local_boi_port = int(os.getenv("BOI_API_PORT", "8000") or "8000")
+    target_port = DEFAULT_EXTERNAL_TOOL_PORTS.get(env_name)
+    if current_port and local_tool_port:
+        offset_port = current_port + (local_tool_port - local_boi_port)
+        if 0 < offset_port <= 65535:
+            target_port = offset_port
+    if not target_port:
+        return ""
+    host = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+    return f"{scheme}://{host}:{target_port}"
 
 
 def optional_external_url(request: Request, env_name: str, local_default: str) -> str:
     configured = clean_external_url(os.getenv(env_name))
-    if configured:
+    if configured and (is_local_request(request) or not is_local_url(configured)):
         return configured
-    return local_default.rstrip("/") if is_local_request(request) else ""
+    if is_local_request(request) and is_local_url(boi_public_base_url(request)):
+        return local_default.rstrip("/")
+    return derived_same_host_tool_url(request, env_name, local_default)
 
 
 def action_gateway_public_base_url(request: Request) -> str:
@@ -1698,6 +1761,8 @@ def display_url_replacements(request: Request) -> list[tuple[str, str]]:
         ("http://action-gateway:8100", action_gateway_base),
         ("http://localhost:7860", langflow_base),
         ("http://langflow:7860", langflow_base),
+        ("http://localhost:8081", kafka_ui_public_base_url(request) or external_url_marker("KAFKA_UI_EXTERNAL_URL")),
+        ("http://kafka-ui:8080", kafka_ui_public_base_url(request) or external_url_marker("KAFKA_UI_EXTERNAL_URL")),
         ("http://localhost:8200", mcp_base),
         ("http://boi-wiki-mcp:8200", mcp_base),
     ]
@@ -3375,8 +3440,8 @@ async def poc_equipment_trend_history(req: PocConnectorRequest) -> dict[str, Any
         result={
             "equipment_id": payload.get("equipment_id"),
             "trend_status": "anomaly_detected",
-            "lot_history_ref": f"/mock/hyvis/lot-history/{payload.get('lot_id', 'LOT-UNKNOWN')}",
-            "wafer_history_ref": f"/mock/hyvis/wafer-history/{payload.get('wafer_id', 'WF-UNKNOWN')}",
+            "lot_history_ref": f"/mock/vision-inspection/lot-history/{payload.get('lot_id', 'LOT-UNKNOWN')}",
+            "wafer_history_ref": f"/mock/vision-inspection/wafer-history/{payload.get('wafer_id', 'WF-UNKNOWN')}",
             "message": "Trend와 이력 데이터를 확인했습니다.",
         },
     )
@@ -3392,8 +3457,8 @@ async def poc_equipment_raw_data(req: PocConnectorRequest) -> dict[str, Any]:
         req=req,
         result={
             "equipment_id": equipment_id,
-            "raw_data_ref": f"/mock/hyvis/raw-data/{equipment_id}/{lot_id}",
-            "source_data_ref": f"/mock/tas/source-data/{equipment_id}",
+            "raw_data_ref": f"/mock/vision-inspection/raw-data/{equipment_id}/{lot_id}",
+            "source_data_ref": f"/mock/quality-system/source-data/{equipment_id}",
             "message": "Raw/Source Data 참조 링크를 생성했습니다.",
         },
     )

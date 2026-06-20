@@ -660,22 +660,39 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
     assert "<title>BoI Wiki</title>" in home.text
 
 
-def test_app_shell_hides_unconfigured_localhost_tools_for_external_host(boi_app_module, monkeypatch):
+def test_app_shell_infers_same_host_tool_urls_for_external_host(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
     monkeypatch.delenv("LANGFLOW_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("KAFKA_UI_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("BOI_WIKI_MCP_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
-    client = TestClient(boi_app_module.app)
+    client = TestClient(boi_app_module.app, base_url="http://boi-wiki.example:28000")
 
-    response = client.get("/?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
+    response = client.get("/?employee_id=100001")
 
     assert response.status_code == 200
     assert 'class="utility-nav"' in response.text
     assert "API Docs" in response.text
-    assert ">Langflow</a>" not in response.text
-    assert ">Kafka UI</a>" not in response.text
-    assert ">MCP Status</a>" not in response.text
+    assert 'href="http://boi-wiki.example:27860"' in response.text
+    assert 'href="http://boi-wiki.example:28081"' in response.text
+    assert 'href="http://boi-wiki.example:28200"' in response.text
+    assert "http://localhost" not in response.text
+
+
+def test_app_shell_uses_request_domain_when_external_url_is_blank_or_local(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://localhost:8000")
+    monkeypatch.delenv("LANGFLOW_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("KAFKA_UI_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("BOI_WIKI_MCP_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
+    client = TestClient(boi_app_module.app, base_url="http://mangugil.iptime.org:28000")
+
+    response = client.get("/?employee_id=100001")
+
+    assert response.status_code == 200
+    assert 'href="http://mangugil.iptime.org:27860"' in response.text
+    assert 'href="http://mangugil.iptime.org:28081"' in response.text
+    assert 'href="http://mangugil.iptime.org:28200"' in response.text
     assert "http://localhost" not in response.text
 
 
@@ -967,7 +984,8 @@ def test_action_spec_display_rewrites_localhost_examples_for_external_host(boi_a
 
     assert response.status_code == 200
     assert "http://boi-wiki.example:28000/api/poc/equipment/trend-history" in response.text
-    assert "ACTION_GATEWAY_EXTERNAL_URL_NOT_CONFIGURED" in response.text
+    assert "http://boi-wiki.example:28100/api/actions/invoke" in response.text
+    assert "ACTION_GATEWAY_EXTERNAL_URL_NOT_CONFIGURED" not in response.text
     assert "http://localhost" not in response.text
     assert "http://boi-api:8000" not in response.text
 
@@ -1637,8 +1655,8 @@ def test_generated_boi_enrichment_adds_dispatch_results_and_langflow_analysis(bo
                     "request_id": "act-raw-enrich",
                     "response": {
                         "result": {
-                            "raw_data_ref": "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001",
-                            "source_data_ref": "/mock/tas/source-data/ETCH-VM-01",
+                            "raw_data_ref": "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001",
+                            "source_data_ref": "/mock/quality-system/source-data/ETCH-VM-01",
                             "message": "Raw/Source Data 참조 링크를 생성했습니다.",
                         }
                     },
@@ -1682,7 +1700,7 @@ def test_generated_boi_enrichment_adds_dispatch_results_and_langflow_analysis(bo
     enriched_body = doc["body"]
     assert "# Action Results" in enriched_body
     assert "# Analysis Draft" in enriched_body
-    assert "/mock/hyvis/raw-data/ETCH-VM-01/LOT-POC-001" in enriched_body
+    assert "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-POC-001" in enriched_body
     assert "승인 선행 필요 최종 문장까지 전문이 보존되어야 합니다." in enriched_body
     action_results = enriched_body.split("# Analysis Draft", 1)[0]
     assert "# Langflow BoI Execution Result" not in enriched_body

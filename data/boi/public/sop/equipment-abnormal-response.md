@@ -33,7 +33,7 @@ workflow:
       next_stage: analyze
       emits_event: root_cause.analysis.requested.v1
       event_types: [equipment.alarm.raised.v1, trend.anomaly.detected.v1]
-      source_systems: [VM system monitoring, TAS Agent, Trend alarm, Lot/Wafer 이력, HyVIS]
+      source_systems: [VM system monitoring, 품질 시스템 Agent, Trend alarm, Lot/Wafer 이력, 비전 검사 시스템]
       evidence_refs: [Trend alarm, Lot/Wafer 이력]
       outputs: [boi/sop-instance, root_cause.analysis.requested.v1]
       failure_modes: [alarm_context_missing, trend_data_unavailable]
@@ -51,8 +51,8 @@ workflow:
       next_stage: guide
       emits_event: maintenance.guide.requested.v1
       event_types: [root_cause.analysis.requested.v1]
-      source_systems: [HyVIS Raw Data, TAS Source Data, 장비 이력]
-      evidence_refs: [HyVIS Raw Data, TAS Source Data]
+      source_systems: [비전 검사 시스템 Raw Data, 품질 시스템 Source Data, 장비 이력]
+      evidence_refs: [비전 검사 시스템 Raw Data, 품질 시스템 Source Data]
       outputs: [boi/analysis, maintenance.guide.requested.v1]
       failure_modes: [raw_data_unavailable, root_cause_uncertain]
       automated_actions:
@@ -125,8 +125,8 @@ workflow:
 
 | Stage ID | 개발 필요 Agent | Source Systems | Automated Actions | Manual Actions |
 |---|---|---|---|---|
-| `detect` | 이상 감지 Agent | VM system monitoring, TAS Agent, Trend alarm, Lot/Wafer 이력, HyVIS | [Trend](/public/actions/api/request-trend-history.md), [Raw](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md), [원인 분석 이벤트](/public/actions/event-broker/create-root-cause-event.md) | [Alarm 맥락 확인](/public/actions/manual/confirm-alarm-context.md) |
-| `analyze` | 원인 분석 Agent | HyVIS Raw Data, TAS Source Data, 장비 이력 | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [보전 이벤트](/public/actions/event-broker/create-maintenance-guide-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |
+| `detect` | 이상 감지 Agent | VM system monitoring, 품질 시스템 Agent, Trend alarm, Lot/Wafer 이력, 비전 검사 시스템 | [Trend](/public/actions/api/request-trend-history.md), [Raw](/public/actions/api/request-raw-data.md), [Langflow 요약](/public/actions/langflow/reference-flow.md), [원인 분석 이벤트](/public/actions/event-broker/create-root-cause-event.md) | [Alarm 맥락 확인](/public/actions/manual/confirm-alarm-context.md) |
+| `analyze` | 원인 분석 Agent | 비전 검사 시스템 Raw Data, 품질 시스템 Source Data, 장비 이력 | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [보전 이벤트](/public/actions/event-broker/create-maintenance-guide-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |
 | `guide` | 보전 가이드 Agent | SOP, Runbook, 장비 이력, Source Data | [Raw](/public/actions/api/request-raw-data.md), [보전 가이드](/public/actions/api/request-maintenance-guide.md), [조치 이벤트](/public/actions/event-broker/create-corrective-action-event.md) | [원인 후보 검토](/public/actions/manual/review-root-cause.md) |
 | `correct` | 이상 조치 Agent | Action Gateway, 담당자 알림, 변경관리 절차 | [담당자 알림](/public/actions/api/notify-action-owner.md), [공정 Hold](/public/actions/api/block-process-progress.md), [Spec 변경](/public/actions/api/change-spec-rule.md) | [공정 Hold 승인](/public/actions/manual/approve-process-hold.md), [Spec 변경 승인](/public/actions/manual/approve-spec-rule-change.md), [정비 완료 확인](/public/actions/manual/confirm-maintenance-done.md) |
 
