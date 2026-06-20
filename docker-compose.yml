@@ -130,7 +130,7 @@ services:
       ACTION_GATEWAY_URL: http://action-gateway:8100
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       BOI_AUTH_MODE: ${BOI_AUTH_MODE:-dev}
-      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:${BOI_API_PORT:-8000}}
+      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:8000}
       LANGFLOW_EXTERNAL_URL: ${LANGFLOW_EXTERNAL_URL:-}
       KAFKA_UI_EXTERNAL_URL: ${KAFKA_UI_EXTERNAL_URL:-}
       BOI_WIKI_MCP_EXTERNAL_URL: ${BOI_WIKI_MCP_EXTERNAL_URL:-}
