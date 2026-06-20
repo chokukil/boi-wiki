@@ -21,7 +21,7 @@ source_refs:
   - type: public-sop
     ref: boi:public:sop:direct-development-reporting
   - type: runtime-trace
-    ref: trace-c8649f71e3e44b5b8b6a8f70963af446
+    ref: trace-f91b32904db0434db27c3f84307103ad
   - type: local-repo
     ref: https://github.com/chokukil/boi-wiki-local/tree/main/data/boi/private/0000000/usage-examples/natural-language-poc
 review:
@@ -96,10 +96,10 @@ flowchart TD
 
 | Evidence | Value |
 |---|---|
-| Trace ID | `trace-c8649f71e3e44b5b8b6a8f70963af446` |
-| Workflow status | `/workflows/direct-development-reporting/status?employee_id=100001&trace_id=trace-c8649f71e3e44b5b8b6a8f70963af446` |
-| Raw status API | `/api/workflows/direct-development-reporting/status/raw?employee_id=100001&trace_id=trace-c8649f71e3e44b5b8b6a8f70963af446` |
-| Langflow flow | `BoI Universal Action Simulator Flow` / `boi-universal-action-simulator` / `9d3e3524-5daa-4ff5-bfae-92d592d1a3c4` |
+| Trace ID | `trace-f91b32904db0434db27c3f84307103ad` |
+| Workflow status | `/workflows/direct-development-reporting/status?employee_id=100001&trace_id=trace-f91b32904db0434db27c3f84307103ad` |
+| Raw status API | `/api/workflows/direct-development-reporting/status/raw?employee_id=100001&trace_id=trace-f91b32904db0434db27c3f84307103ad` |
+| Langflow flow | `BoI Universal Action Simulator Flow` / `boi-universal-action-simulator` / `9525919a-aad6-43c1-a944-7cdd05c0e566` |
 | Manual handoff | `manual.direct_development.decide_cross_section` -> `manual_required` |
 | Approval guard | `direct_development.messenger_share.publish` -> `approval_required` |
 
@@ -134,8 +134,8 @@ Observed simulator actions:
 | Field | Value |
 |---|---|
 | Action | `direct_development.messenger_share_preview.simulate` |
-| Request ID | `act-20260621002049-0f263d32` |
-| Raw log ref | `action:actions-20260621.jsonl:39` |
+| Request ID | `act-20260621004811-a985a812` |
+| Raw log ref | `action:actions-20260621.jsonl:20` |
 | Result | `langflow_invoked` |
 | Simulation | `true`, `SIMULATED`, `real_system_connected=false` |
 
@@ -147,9 +147,9 @@ Observed simulator actions:
 
 | Field | Value |
 |---|---|
-| BoI ID | `boi:private:100001:20260621002041:7f1452` |
-| Event | `direct_development.reporting.requested.v1` |
-| Meaning | Reporting stage execution record |
+| BoI ID | `boi:private:100001:20260621004811:69f332` |
+| Event | `direct_development.share.requested.v1` |
+| Meaning | 협의체 공유 preview execution record |
 | Simulation marker | Action plan에 `SIMULATED`와 "실제 시스템 호출 아님"이 들어감 |
 
 ![Generated BoI with SIMULATED action plan](/public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-generated-boi-simulated.png)
@@ -179,8 +179,8 @@ Observed simulator actions:
 # Reproduce
 
 ```bash
-python scripts/setup_langflow_reference_flows.py --auth-mode api-key --summary
-SERVICE_TOKEN="$SERVICE_TOKEN" python scripts/run_direct_development_sop_poc.py
+python scripts/setup_langflow_reference_flows.py --langflow-url http://mangugil.iptime.org:27860 --auth-mode auto-login --summary
+BOI_API_URL=http://mangugil.iptime.org:28000 POC_SMOKE_TIMEOUT_SECONDS=360 python scripts/run_direct_development_sop_poc.py
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
 ```
 

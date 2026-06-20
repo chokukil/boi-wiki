@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 
 
 BASE_URL = os.getenv("BOI_API_URL", "http://localhost:8000").rstrip("/")
-ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://localhost:8100").rstrip("/")
+ACTION_INVOKE_URL = os.getenv("ACTION_INVOKE_URL", f"{BASE_URL}/api/actions/invoke").rstrip("/")
 EMPLOYEE_ID = os.getenv("EMPLOYEE_ID", "100001")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "")
 BOI_AUTH_BEARER = os.getenv("BOI_AUTH_BEARER", "")
@@ -81,10 +81,6 @@ def boi_url(path: str) -> str:
     return f"{BASE_URL}{path}"
 
 
-def action_url(path: str) -> str:
-    return f"{ACTION_GATEWAY_URL}{path}"
-
-
 def start_workflow() -> dict[str, Any]:
     query = urlencode({"employee_id": EMPLOYEE_ID})
     return request_json(
@@ -141,7 +137,7 @@ def invoke_manual_cross_section(decision_event: dict[str, Any]) -> dict[str, Any
     }
     return request_json(
         "POST",
-        action_url("/api/actions/invoke"),
+        ACTION_INVOKE_URL,
         {
             "action_key": "manual.direct_development.decide_cross_section",
             "employee_id": EMPLOYEE_ID,
