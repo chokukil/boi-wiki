@@ -285,17 +285,17 @@ def main() -> int:
             and bool(row.get("simulation") or ((row.get("result") or {}) if isinstance(row.get("result"), dict) else {}).get("simulation", True))
         }
         generated_docs = last_status.get("generated_docs", [])
-        docs_marked_simulated = generated_docs_have_simulated_marker(generated_docs)
-
-        if (
+        workflow_runtime_complete = (
             REQUIRED_EVENTS <= seen_events
             and REQUIRED_SIMULATED_ACTIONS <= seen_simulated_actions
             and REQUIRED_EVENT_ACTIONS <= seen_event_actions
             and REQUIRED_MANUAL_ACTIONS <= seen_manual_actions
             and REQUIRED_APPROVAL_ACTIONS <= seen_approval_actions
-            and generated_docs
-            and docs_marked_simulated
-        ):
+            and bool(generated_docs)
+        )
+        docs_marked_simulated = generated_docs_have_simulated_marker(generated_docs) if workflow_runtime_complete else False
+
+        if workflow_runtime_complete and docs_marked_simulated:
             print("direct-development SOP PoC smoke passed")
             print(
                 json.dumps(
@@ -328,7 +328,7 @@ def main() -> int:
                     "manual_actions": sorted(seen_manual_actions),
                     "approval_actions": sorted(seen_approval_actions),
                     "generated_docs": len(generated_docs),
-                    "docs_marked_simulated": docs_marked_simulated,
+                    "docs_marked_simulated": docs_marked_simulated if workflow_runtime_complete else "not_checked_until_runtime_complete",
                 },
                 ensure_ascii=False,
             ),
