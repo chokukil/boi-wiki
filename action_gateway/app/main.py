@@ -665,6 +665,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 context["simulation_agent"] = simulation_agent
                 context["simulation_agent_json"] = json.dumps(simulation_agent, ensure_ascii=False, indent=2, default=str)
                 agent_fields = simulation_agent_fields(simulation_agent)
+                simulation_agent_ready = isinstance(simulation_agent, dict) and bool(simulation_agent) and simulation_agent.get("ok") is not False
                 flow_target = str(action.get("flow_id") or action.get("flow_name") or "unresolved")
                 flow_info: dict[str, Any] = {}
                 langflow_timeout_seconds = float(action.get("timeout_seconds", 90))
@@ -701,6 +702,8 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     resp, resp_body = await asyncio.wait_for(perform_langflow_request(), timeout=langflow_timeout_seconds)
                     if resp.status_code >= 400:
                         raise HTTPException(status_code=resp.status_code, detail=resp_body)
+                    langflow_message = first_langflow_message(resp_body)
+                    canonical_message = simulation_agent_markdown(simulation_agent) if simulation_agent_ready and str(action.get("simulation_mode") or "") == "langflow_universal" else langflow_message
                     result = {
                         "ok": True,
                         "status": "langflow_invoked",
@@ -710,13 +713,15 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                         "flow_id": flow_info.get("id") or flow_target,
                         "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
                         "flow_name": flow_info.get("name") or action.get("flow_name"),
-                        "message": first_langflow_message(resp_body),
+                        "message": canonical_message,
+                        "langflow_message": langflow_message,
+                        "langflow_renderer_status": "rendered",
                         "response": resp_body,
                         **agent_fields,
                         **simulation_metadata(action),
                     }
                 except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
-                    if not (isinstance(simulation_agent, dict) and simulation_agent.get("ok") is not False):
+                    if not simulation_agent_ready:
                         raise
                     result = {
                         "ok": True,

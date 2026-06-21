@@ -440,6 +440,9 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert body["simulation_label"] == "SIMULATED"
     assert body["real_system_connected"] is False
     assert body["simulated_system"] == "품질 시스템"
+    assert "SIMULATED BoI Wiki Simulation Result" in body["message"]
+    assert body["langflow_message"] == "Langflow Gemma response"
+    assert body["langflow_renderer_status"] == "rendered"
     assert body["retrieval_rounds"] == 3
     assert body["coverage_score"] == 1.0
     assert body["evidence_packets"][0]["evidence_key"] == "response_trend"
