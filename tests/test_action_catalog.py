@@ -159,6 +159,16 @@ def test_equipment_api_and_mcp_actions_are_wired_to_real_poc_endpoints():
     assert mcp_action["url"] == "http://boi-wiki-mcp:8200/api/mcp/call"
     assert mcp_action["tool_name"] == "boi.search"
 
+    timesfm = actions["mcp.timesfm.forecast"]
+    assert timesfm["enabled"] is True
+    assert timesfm["auto_dispatch"] is False
+    assert timesfm["type"] == "mcp_tool"
+    assert timesfm["connector_kind"] == "mcp"
+    assert timesfm["transport"] == "sse"
+    assert timesfm["mcp_server"]["url"] == "${timesfm_mcp_url}"
+    assert timesfm["tool_name"] == "forecast"
+    assert "timeseries.forecast.requested.v1" in timesfm["event_types"]
+
 
 def test_manual_equipment_actions_are_registered_but_not_auto_dispatched():
     manual_actions = {
@@ -275,3 +285,14 @@ def test_event_publish_actions_allow_slow_kafka_publish_roundtrips():
     assert actions
     for action in actions:
         assert int(action.get("timeout_seconds", 0)) >= 120
+
+
+def test_timesfm_forecast_event_is_opt_in_and_documented():
+    event_types = yaml.safe_load(Path("data/event_catalog/event_types.yaml").read_text(encoding="utf-8"))["event_types"]
+    forecast = next(event for event in event_types if event["event_type"] == "timeseries.forecast.requested.v1")
+
+    assert forecast["default_boi_type"] == "boi/analysis"
+    assert forecast["recommended_actions"] == ["mcp.timesfm.forecast"]
+    assert forecast["recommended_manual_actions"] == []
+    assert Path("data/boi/public/event-types/timeseries.forecast.requested.v1.md").exists()
+    assert Path("data/boi/public/actions/mcp/timesfm-forecast.md").exists()

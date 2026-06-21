@@ -6,6 +6,7 @@
 * [API Actions](api/request-trend-history.md) - 설비 workflow용 API action 명세
 * [Webhook Actions](webhook/inbound-external-event.md) - inbound/outbound webhook action 명세
 * [MCP Actions](mcp/boi-search-sample.md) - MCP bridge/tool action 명세
+* [TimesFM Forecast](mcp/timesfm-forecast.md) - 시계열 예측용 TimesFM MCP action 명세
 * [BoI Wiki MCP Server](mcp/boi-wiki-server.md) - agent-facing MCP server 명세
 * [Langflow Actions](langflow/reference-flow.md) - Langflow webhook flow action 명세
 * [Manual Actions](manual/confirm-alarm-context.md) - 사람이 판단, 승인, 현장 조치, 완료 확인하는 action 명세

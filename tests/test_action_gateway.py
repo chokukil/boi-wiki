@@ -668,6 +668,90 @@ def test_mcp_action_invokes_boi_api_bridge_endpoint(tmp_path, monkeypatch):
     assert FakeAsyncClient.requests[0]["json"]["arguments"]["query"] == "Kafka"
 
 
+def test_mcp_sse_action_invokes_timesfm_tool(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIMESFM_MCP_URL", "http://timesfm-mcp:8765/sse")
+    monkeypatch.setenv("ACTION_ALLOWED_HOSTS", "boi-api,langflow,action-gateway,localhost,127.0.0.1,boi-wiki-mcp,timesfm-mcp")
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    calls: list[dict] = []
+
+    async def fake_call_mcp_sse_tool(url, tool_name, arguments, **kwargs):
+        calls.append({"url": url, "tool_name": tool_name, "arguments": arguments, "kwargs": kwargs})
+        return {"forecast": [{"step": 1, "value": 105.0}], "model": "TimesFM"}
+
+    monkeypatch.setattr(gateway, "call_mcp_sse_tool", fake_call_mcp_sse_tool)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "mcp.timesfm.forecast",
+            "employee_id": "100001",
+            "event": {"event_id": "evt-timesfm-test", "event_type": "timeseries.forecast.requested.v1"},
+            "payload": {"series": [101.2, 102.4, 104.1], "horizon": 2, "frequency": "H", "confidence_level": 0.9},
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "mcp_invoked"
+    assert body["transport"] == "sse"
+    assert body["tool"] == "forecast"
+    assert body["response"]["model"] == "TimesFM"
+    assert calls[0]["url"] == "http://timesfm-mcp:8765/sse"
+    assert calls[0]["tool_name"] == "forecast"
+    assert calls[0]["arguments"]["series"] == [101.2, 102.4, 104.1]
+    assert calls[0]["arguments"]["horizon"] == 2
+    assert calls[0]["arguments"]["frequency"] == "H"
+
+
+def test_mcp_sse_action_reports_unavailable_when_url_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIMESFM_MCP_URL", "")
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "mcp.timesfm.forecast",
+            "employee_id": "100001",
+            "event": {"event_id": "evt-timesfm-missing", "event_type": "timeseries.forecast.requested.v1"},
+            "payload": {"series": [1, 2, 3], "horizon": 1, "frequency": "H"},
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["status"] == "mcp_unavailable"
+    assert body["error"] == "MCP SSE URL is not configured"
+
+
+def test_mcp_sse_action_blocks_unallowlisted_host(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIMESFM_MCP_URL", "http://not-allowed.example:8765/sse")
+    monkeypatch.setenv("ACTION_ALLOWED_HOSTS", "boi-api,langflow,action-gateway,localhost,127.0.0.1,boi-wiki-mcp")
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "mcp.timesfm.forecast",
+            "employee_id": "100001",
+            "event": {"event_id": "evt-timesfm-blocked", "event_type": "timeseries.forecast.requested.v1"},
+            "payload": {"series": [1, 2, 3], "horizon": 1, "frequency": "H"},
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not allowlisted" in response.json()["detail"]
+
+
 def test_event_publish_action_delegates_with_service_token(tmp_path, monkeypatch):
     gateway = load_gateway_module(tmp_path, monkeypatch)
     FakeAsyncClient.requests = []

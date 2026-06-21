@@ -39,6 +39,20 @@ event_types:
     status: poc
     topic: boi.events
     wiki_usage: Private 원본은 유지하고 공유용 사본을 만들며 reviewer 검토 상태로 저장
+  - event_type: timeseries.forecast.requested.v1
+    name_ko: 시계열 예측 요청
+    description: 업무 시계열 데이터에 대해 TimesFM 기반 forecast가 명시적으로 필요한 시점
+    default_boi_type: boi/analysis
+    default_flow_key: boi-timeseries-forecast-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    workflow_stage: Forecast
+    wiki_usage: payload의 series, horizon, frequency를 TimesFM MCP action으로 전달하고 예측 결과와 한계를 BoI로 남김
+    recommended_actions:
+      - mcp.timesfm.forecast
+    recommended_manual_actions: []
   - event_type: equipment.alarm.raised.v1
     name_ko: 설비 Alarm 발생
     description: 설비/공정에서 이상 Alarm이 발생하여 SOP 기반 이상 감지 Flow를 시작해야 하는 시점
@@ -75,6 +89,7 @@ event_types:
     wiki_usage: Trend 이상 여부와 Lot/Wafer 이력을 바탕으로 원인 분석 BoI를 생성
     recommended_actions:
       - sop.equipment.request_trend_history
+      - mcp.timesfm.forecast
       - sop.equipment.create_root_cause_event
     recommended_manual_actions:
       - manual.equipment.confirm_alarm_context
@@ -158,6 +173,7 @@ event_types:
     wiki_usage: 품질 시스템 기반 Response Trend를 확인하고 Map View 확인 stage로 넘긴다.
     recommended_actions:
       - direct_development.quality_response_trend.simulate
+      - mcp.timesfm.forecast
       - direct_development.create_map_view_event
     recommended_manual_actions: []
 
@@ -230,6 +246,7 @@ event_types:
     wiki_usage: 연구소-양산 FAB 비교 결과를 BoI로 남기고 Reporting stage로 넘긴다.
     recommended_actions:
       - direct_development.fab_trend_compare.simulate
+      - mcp.timesfm.forecast
       - direct_development.create_reporting_event
     recommended_manual_actions: []
 

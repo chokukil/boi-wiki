@@ -52,6 +52,43 @@ actions:
     approval_required: false
     dry_run_default: true
 
+  - action_key: mcp.timesfm.forecast
+    name_ko: TimesFM 시계열 예측
+    description: TimesFM MCP 서버를 통해 업무 시계열 데이터를 forecast하는 opt-in MCP action. 실제 MCP URL은 runtime 환경변수로만 주입한다.
+    type: mcp_tool
+    connector_kind: mcp
+    execution_mode: gateway
+    doc_ref: boi:public:actions:mcp:timesfm-forecast
+    enabled: true
+    auto_dispatch: false
+    order: 65
+    event_types: [timeseries.forecast.requested.v1, trend.anomaly.detected.v1, direct_development.result_check.requested.v1, direct_development.fab_trend.compare_requested.v1]
+    owner: AIX 확산 TF
+    risk_level: low
+    approval_required: false
+    dry_run_default: false
+    timeout_seconds: 45
+    sse_read_timeout_seconds: 120
+    transport: sse
+    mcp_server:
+      name: timesfm
+      transport: sse
+      url: ${timesfm_mcp_url}
+    tool_name: forecast
+    arguments:
+      series: ${payload.series}
+      horizon: ${payload.horizon}
+      frequency: ${payload.frequency}
+      timestamp_column: ${payload.timestamp_column}
+      target_column: ${payload.target_column}
+      group_id: ${payload.group_id}
+      confidence_level: ${payload.confidence_level}
+      context: ${payload.context}
+    forecast_usage:
+      opt_in: true
+      trigger_field: forecast_required
+      notes: "기존 SOP event에는 자동 dispatch하지 않고, 명시 forecast event 또는 payload.forecast_required=true 경로에서만 호출한다."
+
   - action_key: sop.equipment.request_trend_history
     name_ko: Trend / 이력 확인 요청
     description: 장비/공정 Trend와 Lot/Wafer 이력을 조회하는 시스템 API 호출 예시

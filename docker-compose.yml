@@ -191,6 +191,7 @@ services:
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
       LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}
       MCP_BRIDGE_URL: ${MCP_BRIDGE_URL:-}
+      TIMESFM_MCP_URL: ${TIMESFM_MCP_URL:-}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       ACTION_DRY_RUN_DEFAULT: ${ACTION_DRY_RUN_DEFAULT:-true}
       ACTION_ALLOWED_HOSTS: ${ACTION_ALLOWED_HOSTS:-boi-api,langflow,action-gateway,localhost,127.0.0.1,mcp-bridge,boi-wiki-mcp}

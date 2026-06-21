@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 import httpx
 import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 from pydantic import BaseModel, Field
 
 KST = timezone(timedelta(hours=9))
@@ -25,6 +27,7 @@ LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
 LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "auto-login")
 LANGFLOW_UNIVERSAL_RENDERER_ENABLED = os.getenv("LANGFLOW_UNIVERSAL_RENDERER_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 MCP_BRIDGE_URL = os.getenv("MCP_BRIDGE_URL", "")
+TIMESFM_MCP_URL = os.getenv("TIMESFM_MCP_URL", "")
 DRY_RUN_DEFAULT = os.getenv("ACTION_DRY_RUN_DEFAULT", "true").lower() == "true"
 ALLOWED_HOSTS = {
     h.strip()
@@ -255,6 +258,39 @@ def render_template(value: Any, context: dict[str, Any]) -> Any:
     if isinstance(value, dict):
         return {k: render_template(v, context) for k, v in value.items()}
     return value
+
+
+def jsonable(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {str(k): jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [jsonable(v) for v in value]
+    if isinstance(value, tuple):
+        return [jsonable(v) for v in value]
+    return value
+
+
+async def call_mcp_sse_tool(
+    url: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    headers: dict[str, Any] | None = None,
+    timeout_seconds: float = 30,
+    sse_read_timeout_seconds: float = 60,
+) -> Any:
+    rendered_headers = {str(k): str(v) for k, v in (headers or {}).items() if v is not None and str(v)}
+    async with sse_client(
+        url,
+        headers=rendered_headers or None,
+        timeout=timeout_seconds,
+        sse_read_timeout=sse_read_timeout_seconds,
+    ) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            return jsonable(await session.call_tool(tool_name, arguments))
 
 
 def is_unresolved_flow_ref(value: str) -> bool:
@@ -574,6 +610,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         "prior_results_json": json.dumps(req.prior_results, ensure_ascii=False, indent=2),
         "prior_action_refs": action_refs,
         "prior_action_refs_json": json.dumps(action_refs, ensure_ascii=False, indent=2),
+        "timesfm_mcp_url": TIMESFM_MCP_URL,
     }
     base_log = {
         "action_key": action.get("action_key"),
@@ -824,28 +861,81 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 }
 
         elif action_type in {"mcp_bridge", "mcp_tool"}:
-            bridge_url = render_template(str(action.get("url") or MCP_BRIDGE_URL), context)
-            if not bridge_url:
-                raise HTTPException(status_code=400, detail="MCP bridge URL is not configured")
-            if not host_allowed(bridge_url):
-                raise HTTPException(status_code=400, detail=f"MCP bridge URL is not allowlisted: {bridge_url}")
-            body = {
-                "server": render_template(action.get("server") or {}, context),
-                "tool": render_template(action.get("tool") or action.get("tool_name") or "", context),
-                "arguments": render_template(action.get("arguments") or req.payload, context),
-                "event": req.event,
-                "boi_id": req.boi_id,
-                "request_id": request_id,
-            }
-            async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 30))) as client:
-                resp = await client.post(bridge_url, headers=render_template(action.get("headers") or {}, context), json=body)
-                try:
-                    resp_body = resp.json()
-                except Exception:
-                    resp_body = resp.text[:2000]
-                if resp.status_code >= 400:
-                    raise HTTPException(status_code=resp.status_code, detail=resp_body)
-                result = {"ok": True, "status": "mcp_invoked", "request_id": request_id, "action_key": action.get("action_key"), "response": resp_body}
+            server_cfg = render_template(action.get("mcp_server") or action.get("server") or {}, context)
+            if not isinstance(server_cfg, dict):
+                server_cfg = {}
+            transport = str(action.get("transport") or server_cfg.get("transport") or "http_bridge")
+            tool_name = str(render_template(action.get("tool") or action.get("tool_name") or "", context))
+            arguments = render_template(action.get("arguments") or req.payload, context)
+            if not isinstance(arguments, dict):
+                arguments = {"value": arguments}
+
+            if transport in {"sse", "mcp_sse"}:
+                mcp_url = str(render_template(server_cfg.get("url") or action.get("url") or "", context))
+                if not mcp_url:
+                    result = {
+                        "ok": False,
+                        "status": "mcp_unavailable",
+                        "request_id": request_id,
+                        "action_key": action.get("action_key"),
+                        "transport": transport,
+                        "tool": tool_name,
+                        "error": "MCP SSE URL is not configured",
+                    }
+                elif not host_allowed(mcp_url):
+                    raise HTTPException(status_code=400, detail=f"MCP SSE URL is not allowlisted: {mcp_url}")
+                else:
+                    try:
+                        resp_body = await call_mcp_sse_tool(
+                            mcp_url,
+                            tool_name,
+                            arguments,
+                            headers=render_template(action.get("headers") or server_cfg.get("headers") or {}, context),
+                            timeout_seconds=float(action.get("timeout_seconds", 30)),
+                            sse_read_timeout_seconds=float(action.get("sse_read_timeout_seconds", 60)),
+                        )
+                        result = {
+                            "ok": True,
+                            "status": "mcp_invoked",
+                            "request_id": request_id,
+                            "action_key": action.get("action_key"),
+                            "transport": transport,
+                            "tool": tool_name,
+                            "response": resp_body,
+                        }
+                    except Exception as exc:
+                        result = {
+                            "ok": False,
+                            "status": "mcp_unavailable",
+                            "request_id": request_id,
+                            "action_key": action.get("action_key"),
+                            "transport": transport,
+                            "tool": tool_name,
+                            "error": repr(exc),
+                        }
+            else:
+                bridge_url = render_template(str(action.get("url") or MCP_BRIDGE_URL), context)
+                if not bridge_url:
+                    raise HTTPException(status_code=400, detail="MCP bridge URL is not configured")
+                if not host_allowed(bridge_url):
+                    raise HTTPException(status_code=400, detail=f"MCP bridge URL is not allowlisted: {bridge_url}")
+                body = {
+                    "server": server_cfg,
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "event": req.event,
+                    "boi_id": req.boi_id,
+                    "request_id": request_id,
+                }
+                async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 30))) as client:
+                    resp = await client.post(bridge_url, headers=render_template(action.get("headers") or {}, context), json=body)
+                    try:
+                        resp_body = resp.json()
+                    except Exception:
+                        resp_body = resp.text[:2000]
+                    if resp.status_code >= 400:
+                        raise HTTPException(status_code=resp.status_code, detail=resp_body)
+                    result = {"ok": True, "status": "mcp_invoked", "request_id": request_id, "action_key": action.get("action_key"), "transport": transport, "tool": tool_name, "response": resp_body}
 
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported action type: {action_type}")
