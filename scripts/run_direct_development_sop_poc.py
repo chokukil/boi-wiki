@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 import time
 from http.client import RemoteDisconnected
@@ -23,6 +24,7 @@ POLL_SECONDS = float(os.getenv("POC_SMOKE_POLL_SECONDS", "2"))
 HTTP_RETRY_COUNT = int(os.getenv("POC_SMOKE_HTTP_RETRY_COUNT", "4"))
 HTTP_RETRY_DELAY_SECONDS = float(os.getenv("POC_SMOKE_HTTP_RETRY_DELAY_SECONDS", "2"))
 WORKFLOW_KEY = "direct-development-reporting"
+RETRYABLE_HTTP_ERRORS = (RemoteDisconnected, TimeoutError, socket.timeout, ConnectionResetError, URLError)
 
 REQUIRED_EVENTS = {
     "direct_development.result_check.requested.v1",
@@ -77,7 +79,7 @@ def request_json(method: str, url: str, payload: dict[str, Any] | None = None) -
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError:
             raise
-        except (RemoteDisconnected, TimeoutError, URLError) as exc:
+        except RETRYABLE_HTTP_ERRORS as exc:
             if attempt >= HTTP_RETRY_COUNT:
                 raise
             print(f"retrying request_json attempt={attempt} error={type(exc).__name__}: {exc}", file=sys.stderr)
@@ -93,7 +95,7 @@ def request_text(url: str) -> str:
                 return response.read().decode("utf-8")
         except HTTPError:
             raise
-        except (RemoteDisconnected, TimeoutError, URLError) as exc:
+        except RETRYABLE_HTTP_ERRORS as exc:
             if attempt >= HTTP_RETRY_COUNT:
                 raise
             print(f"retrying request_text attempt={attempt} error={type(exc).__name__}: {exc}", file=sys.stderr)
