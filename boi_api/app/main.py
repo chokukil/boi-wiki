@@ -1379,6 +1379,29 @@ def merge_prior_results(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return merged
 
 
+def trace_event_log_rows(trace_id: str = "", event_id: str = "", *, limit: int = 1000) -> list[dict[str, Any]]:
+    tokens = [token for token in (trace_id, event_id) if token]
+    if not tokens:
+        return []
+    rows: list[dict[str, Any]] = []
+    for p in sorted(EVENTS_ROOT.glob("events-*.jsonl")):
+        with p.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not any(token in line for token in tokens):
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if trace_id and str(row.get("trace_id") or "") != trace_id:
+                    continue
+                if event_id and str(row.get("event_id") or "") != event_id:
+                    continue
+                row["_log_ref"] = f"event:{p.name}:{line_number}"
+                rows.append(row)
+    return rows[-limit:]
+
+
 def filtered_event_log_rows(
     event_type: str | None = None,
     trace_id: str | None = None,
@@ -1389,7 +1412,8 @@ def filtered_event_log_rows(
     event_labels = {str(e["event_type"]): str(e.get("name_ko") or e["event_type"]) for e in load_event_types()}
     rows: list[dict[str, Any]] = []
     has_time_filter = bool(from_dt or to_dt)
-    for row in cached_event_log_rows():
+    source_rows = trace_event_log_rows(trace_id or "", event_id or "") if trace_id or event_id else cached_event_log_rows()
+    for row in source_rows:
         if event_type and row.get("event_type") != event_type:
             continue
         if trace_id and row.get("trace_id") != trace_id:

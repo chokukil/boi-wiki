@@ -1804,7 +1804,7 @@ def test_equipment_demo_status_summarizes_trace_context(boi_app_module):
     assert body["relation_graph"]["node_count"] < 50
 
 
-def test_workflow_status_reads_trace_action_logs_without_full_action_cache(boi_app_module, monkeypatch):
+def test_workflow_status_reads_trace_logs_without_full_jsonl_caches(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     trace_id = "trace-status-streaming-actions"
     boi_app_module.append_event_log(
@@ -1832,9 +1832,13 @@ def test_workflow_status_reads_trace_action_logs_without_full_action_cache(boi_a
         },
     )
 
+    def fail_full_event_cache():
+        raise AssertionError("workflow status should stream trace event logs instead of loading the full event cache")
+
     def fail_full_action_cache():
         raise AssertionError("workflow status should stream trace action logs instead of loading the full action cache")
 
+    monkeypatch.setattr(boi_app_module, "cached_event_log_rows", fail_full_event_cache)
     monkeypatch.setattr(boi_app_module, "cached_action_log_rows", fail_full_action_cache)
 
     response = client.get(f"/api/workflows/direct-development-reporting/status?employee_id=100001&trace_id={trace_id}&format=json")
