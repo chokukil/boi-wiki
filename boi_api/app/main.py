@@ -454,6 +454,11 @@ def is_generated_private_doc(doc: dict[str, Any]) -> bool:
 
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)")
+APP_ROUTE_LINK_PREFIXES = ("/docs", "/events", "/actions", "/api", "/workflows", "/source", "/okf-media")
+
+
+def is_app_route_href(href: str) -> bool:
+    return str(href or "").startswith(APP_ROUTE_LINK_PREFIXES)
 
 
 def referenced_doc_lookup_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, dict[str, Any]]:
@@ -464,6 +469,8 @@ def referenced_doc_lookup_for_doc(doc: dict[str, Any], employee_id: str) -> dict
         for match in MARKDOWN_LINK_RE.finditer(str(doc.get("body") or "")):
             href = match.group(1)
             if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href) or href.startswith("#"):
+                continue
+            if is_app_route_href(href):
                 continue
             target, _resolved = resolve_okf_link(href, source_path=source_path, boi_root=DATA_ROOT)
             refs.add(target)
@@ -493,6 +500,8 @@ def markdown_href_for_doc_route(
 ) -> str:
     if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href) or href.startswith("#"):
         return href
+    if is_app_route_href(href):
+        return href
     lookup_ref = href
     if source_path is not None:
         target, _resolved = resolve_okf_link(href, source_path=source_path, boi_root=DATA_ROOT)
@@ -502,8 +511,8 @@ def markdown_href_for_doc_route(
         if lookup_ref.endswith(".md"):
             lookup_ref = lookup_ref[:-3]
     doc = doc_from_lookup(lookup_ref, doc_lookup)
-    if doc is None:
-        doc = find_recovered_doc_by_id(lookup_ref, employee_id) if doc_lookup is not None else find_doc_by_id(lookup_ref, employee_id)
+    if doc is None and doc_lookup is None:
+        doc = find_doc_by_id(lookup_ref, employee_id)
     if doc:
         return doc_url_for_ref(str(doc["metadata"].get("boi_id") or doc["uri"].lstrip("/")), employee_id)
     return href
