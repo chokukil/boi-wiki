@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from lfx.custom import Component
@@ -21,12 +22,38 @@ class BoIContextNormalizer(Component):
     ]
     outputs = [Output(name="work_context", display_name="WorkContext", method="build_context")]
 
+    def _embedded_simulation_agent(self, text: str) -> dict[str, Any]:
+        marker = "BoI Simulation Agent retrieved context."
+        if marker not in text:
+            return {}
+        start = text.find("{")
+        end_marker = "\n\nOriginal Langflow request follows."
+        end = text.find(end_marker)
+        if start < 0 or end <= start:
+            return {}
+        try:
+            return json.loads(text[start:end].strip())
+        except Exception:
+            return {}
+
     def build_context(self) -> Data:
         raw: dict[str, Any] = {}
         if self.event:
             raw = self.event.data if hasattr(self.event, "data") else dict(self.event)
         message_text = getattr(self.message, "text", "") if self.message else ""
         manual = self.manual_input or message_text or ""
+        simulation_agent = self._embedded_simulation_agent(manual)
+        action_match = re.search(r"Action key:\s*([A-Za-z0-9_.-]+)", manual)
+        trace_match = re.search(r"trace=([A-Za-z0-9_.-]+)", manual)
+        event_match = re.search(r"Event:\s*([A-Za-z0-9_.-]+)", manual)
+        sop_match = re.search(r"SOP:\s*([^\s\n]+)", manual)
+        stage_match = re.search(r"Stage:\s*([^\n]+)", manual)
+        if not raw and event_match:
+            raw = {
+                "event_type": event_match.group(1),
+                "trace_id": trace_match.group(1) if trace_match else "",
+                "payload": {},
+            }
         event_type = raw.get("event_type") or "manual.input.v1"
         work_type = "reference"
         if event_type.startswith("meeting.closed"):
@@ -47,11 +74,19 @@ class BoIContextNormalizer(Component):
         owner = actor.get("employee_id") or actor.get("employee_id_hash") or "100001"
         payload = raw.get("payload") or {}
         title = payload.get("title") or raw.get("title") or manual[:80] or event_type
+        simulation_workflow = simulation_agent.get("workflow") or ((simulation_agent.get("context_pack") or {}).get("workflow") or {})
         return Data(data={
             "work_type": work_type,
             "requested_action": "create_private_boi",
+            "action_key": action_match.group(1) if action_match else "",
             "event": raw,
             "event_type": event_type,
+            "trace_id": raw.get("trace_id") or (trace_match.group(1) if trace_match else ""),
+            "workflow_key": simulation_workflow.get("workflow_key") if simulation_agent else "",
+            "sop_ref": (sop_match.group(1) if sop_match else "") or (simulation_workflow.get("sop_ref") if simulation_agent else ""),
+            "sop_stage_id": (stage_match.group(1).strip() if stage_match else "") or (simulation_workflow.get("sop_stage_id") if simulation_agent else ""),
+            "simulation_agent": simulation_agent,
+            "prior_results": (simulation_agent.get("prior_results") or ((simulation_agent.get("context_pack") or {}).get("prior_results") or [])) if simulation_agent else [],
             "owner": owner,
             "title": title,
             "source_refs": raw.get("source_refs") or [],

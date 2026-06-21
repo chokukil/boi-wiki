@@ -983,6 +983,7 @@ def compact_action_raw_row_for_html(row: dict[str, Any]) -> dict[str, Any]:
         "coverage_score",
         "missing_context",
         "used_docs",
+        "evidence_packets",
     ):
         if key in row:
             compact[key] = row[key]
@@ -1042,6 +1043,10 @@ def compact_action_raw_row_for_html(row: dict[str, Any]) -> dict[str, Any]:
                 "used_docs": (context_pack.get("documents") or [])[:10]
                 if isinstance(context_pack.get("documents"), list)
                 else [],
+                "evidence_packets": simulation_agent.get("evidence_packets")
+                or context_pack.get("evidence_packets")
+                or result.get("evidence_packets")
+                or [],
             }
         omitted = [
             key
@@ -1296,6 +1301,58 @@ def find_action_log_row_by_request_id(request_id: str, employee_id: str | None =
             return None
         return dict(row)
     return None
+
+
+def trace_prior_action_results(trace_id: str, employee_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
+    if not trace_id:
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in reversed(cached_action_log_rows()):
+        if str(row.get("trace_id") or "") != trace_id:
+            continue
+        if not action_log_visible_to_employee(row, employee_id):
+            continue
+        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        rows.append(
+            {
+                "action_key": row.get("action_key"),
+                "status": row.get("status") or result.get("status"),
+                "request_id": row.get("request_id") or result.get("request_id"),
+                "summary": row.get("summary") or result.get("message") or result.get("summary"),
+                "doc_ref": row.get("doc_ref"),
+                "connector_kind": row.get("connector_kind"),
+                "event_id": row.get("event_id"),
+                "event_type": row.get("event_type"),
+                "trace_id": row.get("trace_id"),
+                "_log_ref": row.get("_log_ref"),
+                "simulation": bool(row.get("simulation") or result.get("simulation")),
+                "coverage_score": row.get("coverage_score") if row.get("coverage_score") is not None else result.get("coverage_score"),
+                "evidence_packets": row.get("evidence_packets") or result.get("evidence_packets"),
+                "result": result,
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def merge_prior_results(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for group in groups:
+        for row in group:
+            if not isinstance(row, dict):
+                continue
+            key = (
+                str(row.get("action_key") or ""),
+                str(row.get("request_id") or ""),
+                str(row.get("_log_ref") or row.get("summary") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(row)
+    return merged
 
 
 def filtered_event_log_rows(
@@ -3457,6 +3514,7 @@ class SimulationAgentRequest(BaseModel):
     sop_ref: str | None = None
     sop_stage_id: str | None = None
     max_rounds: int = 4
+    simulation_depth: str = "stage_prerequisites"
 
 
 class SourcePreviewRequest(BaseModel):
@@ -4758,6 +4816,7 @@ def workflow_status_action_rows(
         coverage_score: Any = "",
         missing_context: Any = None,
         used_docs: Any = None,
+        evidence_packets: Any = None,
     ) -> None:
         if not action_key:
             return
@@ -4797,6 +4856,7 @@ def workflow_status_action_rows(
                 "coverage_score": coverage_score if coverage_score is not None else "",
                 "missing_context": missing_context or [],
                 "used_docs": used_docs or [],
+                "evidence_packets": evidence_packets or [],
             }
         )
 
@@ -4821,6 +4881,10 @@ def workflow_status_action_rows(
             coverage_score=action.get("coverage_score") if action.get("coverage_score") is not None else result.get("coverage_score"),
             missing_context=action.get("missing_context") or result.get("missing_context") or ((result.get("simulation_agent") or {}).get("coverage_report") or {}).get("missing_context"),
             used_docs=action.get("used_docs") or result.get("used_docs") or ((result.get("simulation_agent") or {}).get("context_pack") or {}).get("documents"),
+            evidence_packets=action.get("evidence_packets")
+            or result.get("evidence_packets")
+            or ((result.get("simulation_agent") or {}).get("evidence_packets"))
+            or (((result.get("simulation_agent") or {}).get("context_pack") or {}).get("evidence_packets")),
         )
     for event in payload.get("events") or []:
         result = event.get("result") if isinstance(event.get("result"), dict) else {}
@@ -4846,6 +4910,7 @@ def workflow_status_action_rows(
                 coverage_score=action.get("coverage_score") if action.get("coverage_score") is not None else "",
                 missing_context=action.get("missing_context") or [],
                 used_docs=action.get("used_docs") or [],
+                evidence_packets=action.get("evidence_packets") or [],
             )
     for detail in payload.get("action_details") or []:
         add_row(
@@ -5863,6 +5928,13 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
     simulation_agent = result_value.get("simulation_agent") if isinstance(result_value.get("simulation_agent"), dict) else {}
     coverage_report = simulation_agent.get("coverage_report") if isinstance(simulation_agent.get("coverage_report"), dict) else {}
     context_pack = simulation_agent.get("context_pack") if isinstance(simulation_agent.get("context_pack"), dict) else {}
+    evidence_packets = (
+        simulation_agent.get("evidence_packets")
+        or (context_pack.get("evidence_packets") if isinstance(context_pack, dict) else [])
+        or result_value.get("evidence_packets")
+        or row.get("evidence_packets")
+        or []
+    )
     return templates.TemplateResponse(
         "action_raw.html",
         {
@@ -5906,6 +5978,7 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
             "coverage_report": coverage_report,
             "retrieval_trace": simulation_agent.get("retrieval_trace") if simulation_agent else [],
             "used_docs": context_pack.get("documents") if context_pack else [],
+            "evidence_packets": evidence_packets,
         },
     )
 
@@ -5936,11 +6009,13 @@ async def api_universal_simulation_agent(req: SimulationAgentRequest) -> dict[st
         workflow, stage, event_def = workflow_for_event_type(event_type, employee_id, doc_lookup=doc_lookup)
         if workflow and stage and not req.sop_stage_id:
             event_def = {**event_def, "sop_stage_id": stage.get("sop_stage_id") or stage.get("stage_id") or stage.get("stage")}
+    trace_id = str(req.event.get("trace_id") or "")
+    prior_results = merge_prior_results(req.prior_results, trace_prior_action_results(trace_id, employee_id))
     return build_simulation_agent_result(
         action=action,
         event=req.event,
         payload=req.payload or req.event.get("payload") or {},
-        prior_results=req.prior_results,
+        prior_results=prior_results,
         employee_id=employee_id,
         docs=docs,
         event_def=event_def,
@@ -5948,6 +6023,7 @@ async def api_universal_simulation_agent(req: SimulationAgentRequest) -> dict[st
         sop_ref=req.sop_ref or "",
         sop_stage_id=req.sop_stage_id or "",
         max_rounds=max(1, min(int(req.max_rounds or 4), 5)),
+        simulation_depth=req.simulation_depth or "stage_prerequisites",
     )
 
 

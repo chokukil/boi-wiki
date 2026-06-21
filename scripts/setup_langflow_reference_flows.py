@@ -538,12 +538,14 @@ def main() -> None:
                     "Universal simulation input. Read event payload, SOP stage, action_key, source_refs, "
                     "expected result contract, prior action results, and simulation reason."
                 ),
-                action_key="manual.direct_development.decide_cross_section",
+                action_key="",
                 wiki_query="direct development reporting SOP universal simulator action contract",
                 prompt_instruction=(
                     "You are the official BoI Universal Action Simulator. Generate a Korean PoC simulation result "
                     "for the requested action. Make it unmistakable that this is SIMULATED and not a real system call. "
-                    "Use the BoI Simulation Agent context first, then BoI Wiki context, SOP stage, prior action results, source_refs, and the expected result contract. "
+                    "Use the BoI Simulation Agent context first as authoritative context. Do not substitute a stale default action key; "
+                    "the requested action_key from work_context or Action Gateway must be preserved. Then use BoI Wiki context, SOP stage, "
+                    "prior action results, source_refs, and the expected result contract. "
                     "Return concise sections plus a JSON block with: status=simulated, simulation=true, simulated_system, "
                     "simulated_action_key, input_evidence_refs, generated_result, confidence, limitations, "
                     "recommended_next_event, human_review_required."

@@ -95,6 +95,10 @@ def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False, re
     node_ids, edges, node_by_id = flow_graph(flow)
     if not node_ids:
         return ["flow has no nodes"]
+    if require_simulation_agent:
+        flow_text = json.dumps(flow.get("data") or flow, ensure_ascii=False)
+        if "manual.direct_development.decide_cross_section" in flow_text:
+            errors.append("BoI Universal Simulator contains a hardcoded manual.direct_development.decide_cross_section action key")
     for source, target in edges:
         if source not in node_ids:
             errors.append(f"edge source missing node: {source}")

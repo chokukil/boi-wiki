@@ -44,6 +44,24 @@ result_contract:
   - checklist
   - manual_required
   simulation_required: false
+evidence_requirements:
+- evidence_key: response_trend
+  source_action: direct_development.quality_response_trend.simulate
+  required_fields:
+  - trend_status
+  simulated_allowed: true
+- evidence_key: map_view
+  source_action: direct_development.map_view.simulate
+  required_fields:
+  - map_pattern_summary
+  simulated_allowed: true
+- evidence_key: cross_section_decision_rule
+  source_action: manual.direct_development.decide_cross_section
+  required_fields:
+  - decision_rule
+  - manual_handoff
+  - next_event
+  simulated_allowed: true
 source_refs:
 - type: sop
   ref: boi:public:sop:direct-development-reporting
@@ -147,6 +165,18 @@ security_notes:
 - Response Trend와 Map View 근거 확인
 - 단면검사 필요 여부 판단
 - 완료 시 direct_development.cross_section.requested.v1 이벤트 발행
+
+# Prerequisite Evidence
+
+이 manual action은 단순히 "사람 판단 필요"만 남기면 충분하지 않다. 판단 전에는 아래 evidence packet이 있어야 한다.
+
+| Evidence | Source Action | Required Field | Simulation Policy |
+|---|---|---|---|
+| Response Trend | [Response Trend 확인 시뮬레이션](/public/actions/langflow/direct-development-quality-response-trend-simulate.md) | `trend_status` | 실제 품질 시스템이 없으면 `SIMULATED prerequisite`로 생성 가능 |
+| Map View | [Map View 확인 시뮬레이션](/public/actions/langflow/direct-development-map-view-simulate.md) | `map_pattern_summary` | 실제 Map 분석 시스템이 없으면 `SIMULATED prerequisite`로 생성 가능 |
+| 판단 기준 | 이 manual action spec | `decision_rule`, `manual_handoff`, `next_event` | SOP/action spec 근거로 생성 가능 |
+
+`BoI Simulation Agent`는 같은 `trace_id`의 action log와 generated BoI를 먼저 찾고, 누락된 전제는 위 계약에 맞춰 `provenance=simulated_prerequisite` evidence packet으로 만든다. 이는 실제 데이터가 있다는 의미가 아니라, public SOP와 action spec에 근거한 dry-run evidence다.
 
 # Citations
 

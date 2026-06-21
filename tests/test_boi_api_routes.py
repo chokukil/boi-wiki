@@ -2180,6 +2180,125 @@ def test_universal_simulation_agent_builds_context_from_action_event_and_sop(boi
     assert any("direct_development.result_check.requested.v1" in item["uri"] for item in body["citations"])
 
 
+def test_universal_simulation_agent_generates_manual_prerequisite_evidence_without_prior_logs(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/simulations/universal-agent",
+        headers={"x-service-token": "dev-service-token-change-me"},
+        json={
+            "action_key": "manual.direct_development.decide_cross_section",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-agent-manual-no-prior",
+                "event_type": "direct_development.cross_section.decision_required.v1",
+                "trace_id": "trace-agent-manual-no-prior",
+                "payload": {"title": "단면검사 판단", "tech": "Tech-A", "work_id": "1.10", "owner": "100001"},
+            },
+            "payload": {"title": "단면검사 판단", "tech": "Tech-A", "work_id": "1.10", "owner": "100001"},
+            "simulation_depth": "stage_prerequisites",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["coverage_report"]["coverage_score"] >= 0.85
+    assert body["coverage_report"]["passed"] is True
+    assert "trend_status" not in body["coverage_report"]["missing_context"]
+    assert "map_pattern_summary" not in body["coverage_report"]["missing_context"]
+    packets = {packet["evidence_key"]: packet for packet in body["evidence_packets"]}
+    assert packets["response_trend"]["provenance"] == "simulated_prerequisite"
+    assert packets["map_view"]["provenance"] == "simulated_prerequisite"
+    assert packets["cross_section_decision_rule"]["fields"]["next_event"] == "direct_development.cross_section.requested.v1"
+    assert "SIMULATED Evidence Packets" in body["simulation_result"]["markdown"]
+    assert "Response Trend" in body["simulation_result"]["markdown"]
+    assert "Map View" in body["simulation_result"]["markdown"]
+
+
+def test_universal_simulation_agent_reuses_trace_prior_logs_for_manual_decision(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    trace_id = "trace-agent-manual-prior"
+    append_action_log_row(
+        boi_app_module,
+        {
+            "logged_at": "2026-06-21T12:00:00+09:00",
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "request_id": "act-trend-prior",
+            "employee_id": "100001",
+            "trace_id": trace_id,
+            "status": "langflow_invoked",
+            "doc_ref": "boi:public:actions:langflow:direct-development-quality-response-trend-simulate",
+            "simulation": True,
+            "result": {
+                "status": "langflow_invoked",
+                "simulation": True,
+                "evidence_packets": [
+                    {
+                        "evidence_key": "response_trend",
+                        "title": "Response Trend evidence",
+                        "action_key": "direct_development.quality_response_trend.simulate",
+                        "provenance": "real_log",
+                        "simulation": True,
+                        "fields": {"trend_status": "simulated_prior_trend_status"},
+                    }
+                ],
+            },
+        },
+    )
+    append_action_log_row(
+        boi_app_module,
+        {
+            "logged_at": "2026-06-21T12:01:00+09:00",
+            "action_key": "direct_development.map_view.simulate",
+            "request_id": "act-map-prior",
+            "employee_id": "100001",
+            "trace_id": trace_id,
+            "status": "langflow_invoked",
+            "doc_ref": "boi:public:actions:langflow:direct-development-map-view-simulate",
+            "simulation": True,
+            "result": {
+                "status": "langflow_invoked",
+                "simulation": True,
+                "evidence_packets": [
+                    {
+                        "evidence_key": "map_view",
+                        "title": "Map View evidence",
+                        "action_key": "direct_development.map_view.simulate",
+                        "provenance": "real_log",
+                        "simulation": True,
+                        "fields": {"map_pattern_summary": "simulated_prior_map_pattern"},
+                    }
+                ],
+            },
+        },
+    )
+
+    response = client.post(
+        "/api/simulations/universal-agent",
+        headers={"x-service-token": "dev-service-token-change-me"},
+        json={
+            "action_key": "manual.direct_development.decide_cross_section",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-agent-manual-prior",
+                "event_type": "direct_development.cross_section.decision_required.v1",
+                "trace_id": trace_id,
+                "payload": {"title": "단면검사 판단", "tech": "Tech-A", "work_id": "1.10", "owner": "100001"},
+            },
+            "payload": {"title": "단면검사 판단", "tech": "Tech-A", "work_id": "1.10", "owner": "100001"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    packets = {packet["evidence_key"]: packet for packet in body["evidence_packets"]}
+    assert body["coverage_report"]["coverage_score"] >= 0.85
+    assert packets["response_trend"]["provenance"] == "real_log"
+    assert packets["response_trend"]["fields"]["trend_status"] == "simulated_prior_trend_status"
+    assert packets["map_view"]["provenance"] == "real_log"
+    assert packets["map_view"]["fields"]["map_pattern_summary"] == "simulated_prior_map_pattern"
+
+
 def test_workflow_status_links_action_raw_ids_and_dedupes_generated_bois(boi_app_module):
     client = TestClient(boi_app_module.app)
     trace_id = "trace-workflow-raw-links"

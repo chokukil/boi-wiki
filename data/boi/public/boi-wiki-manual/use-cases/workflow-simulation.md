@@ -46,9 +46,11 @@ shared BoI Wiki runtime의 Universal Simulator는 단순 LLM prompt가 아니라
 
 1. action key로 Action Catalog와 public action spec을 exact lookup한다.
 2. event type 문서와 SOP workflow stage를 찾는다.
-3. prior action result와 payload term으로 관련 BoI를 추가 검색한다.
-4. `sop_stage`, `action_contract`, `expected_output_schema`, `prior_evidence`, `manual_or_approval_condition`, `next_stage_or_event` coverage를 평가한다.
-5. 부족한 context는 `missing_context`로 남기고, 근거 없는 simulation을 꾸며내지 않는다.
+3. 같은 `trace_id`의 이전 event/action log와 generated BoI를 먼저 재구성한다.
+4. prior action result와 payload term으로 관련 BoI를 추가 검색한다.
+5. action spec에 `evidence_requirements`가 있으면 action-specific checklist를 적용한다.
+6. 실제 시스템 connector가 없는 PoC에서는 prerequisite action result contract에 맞춰 `SIMULATED evidence packet`을 만들고 provenance를 `simulated_prerequisite`로 표시한다.
+7. 부족한 context는 `missing_context`로 남긴다. 단, "실제 데이터가 없음"은 곧바로 실패가 아니라, SOP/action spec으로도 시뮬레이션 evidence를 구성할 수 없을 때만 실패다.
 
 Langflow는 이 agent가 만든 `context_pack`, `retrieval_trace`, `coverage_report`를 받아 최종 한국어 결과를 렌더링한다. 따라서 Raw Action과 Workflow Status에서 어떤 Wiki 문서를 근거로 삼았는지 확인할 수 있어야 한다.
 
@@ -63,6 +65,7 @@ Langflow는 이 agent가 만든 `context_pack`, `retrieval_trace`, `coverage_rep
 - Mermaid Trace
 - Retrieval Trace
 - Coverage Report
+- Evidence Packets with provenance
 - Citations
 
 # Citations

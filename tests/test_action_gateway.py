@@ -203,6 +203,15 @@ class FakeLangflowAsyncClient:
                     },
                     "retrieval_trace": [{"round": 1, "objective": "Resolve exact references.", "found_docs": []}],
                     "coverage_report": {"coverage_score": 1.0, "missing_context": [], "covered": {"action_contract": True}},
+                    "evidence_packets": [
+                        {
+                            "evidence_key": "response_trend",
+                            "title": "Response Trend evidence",
+                            "action_key": "direct_development.quality_response_trend.simulate",
+                            "provenance": "simulated_prerequisite",
+                            "fields": {"trend_status": "simulated_response_trend_abnormality_reviewed"},
+                        }
+                    ],
                     "citations": [{"label": "action_spec", "title": "Response Trend 확인 시뮬레이션"}],
                     "limitations": ["SIMULATED dry-run result only; no unavailable internal system was called."],
                     "simulation_result": {
@@ -416,11 +425,13 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert body["simulated_system"] == "품질 시스템"
     assert body["retrieval_rounds"] == 3
     assert body["coverage_score"] == 1.0
+    assert body["evidence_packets"][0]["evidence_key"] == "response_trend"
     assert body["used_docs"][0]["role"] == "action_spec"
 
     agent_request = next(req for req in FakeLangflowAsyncClient.requests if req["url"] == "http://boi-api:8000/api/simulations/universal-agent")
     assert agent_request["headers"]["x-service-token"] == "test-service-token"
     assert agent_request["json"]["action_key"] == "direct_development.quality_response_trend.simulate"
+    assert agent_request["json"]["simulation_depth"] == "stage_prerequisites"
     run_request = next(req for req in FakeLangflowAsyncClient.requests if "/api/v1/run/" in req["url"])
     assert run_request["url"] == "http://langflow:7860/api/v1/run/simulator-flow-id"
     assert "BoI Simulation Agent retrieved context" in run_request["json"]["input_value"]
@@ -435,6 +446,7 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert logs[0]["simulation_label"] == "SIMULATED"
     assert logs[0]["retrieval_rounds"] == 3
     assert logs[0]["coverage_score"] == 1.0
+    assert logs[0]["evidence_packets"][0]["provenance"] == "simulated_prerequisite"
     assert logs[0]["used_docs"][0]["role"] == "action_spec"
 
 

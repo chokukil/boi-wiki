@@ -1077,6 +1077,34 @@ actions:
       - Response Trend와 Map View 근거 확인
       - 단면검사 필요 여부 판단
       - 완료 시 direct_development.cross_section.requested.v1 이벤트 발행
+    evidence_requirements:
+      - evidence_key: response_trend
+        title: Response Trend evidence
+        source_action: direct_development.quality_response_trend.simulate
+        doc_ref: boi:public:actions:langflow:direct-development-quality-response-trend-simulate
+        required_fields: [trend_status]
+        simulated_fields:
+          trend_status: simulated_response_trend_abnormality_reviewed
+          evidence_ref: simulated:response-trend
+          recommended_next_event: direct_development.map_view.requested.v1
+      - evidence_key: map_view
+        title: Map View evidence
+        source_action: direct_development.map_view.simulate
+        doc_ref: boi:public:actions:langflow:direct-development-map-view-simulate
+        required_fields: [map_pattern_summary]
+        simulated_fields:
+          map_pattern_summary: simulated_map_view_pattern_requires_cross_section_review
+          evidence_ref: simulated:map-view
+          recommended_next_event: direct_development.cross_section.decision_required.v1
+      - evidence_key: cross_section_decision_rule
+        title: Cross-section decision rule
+        source_action: manual.direct_development.decide_cross_section
+        doc_ref: boi:public:actions:manual:direct-development-decide-cross-section
+        required_fields: [decision_rule, manual_handoff, next_event]
+        simulated_fields:
+          decision_rule: Response Trend와 Map View 모두 이상 패턴이면 단면검사 의뢰, 한쪽 근거가 불충분하면 manual review 유지
+          manual_handoff: 공정 담당자가 최종 판단
+          next_event: direct_development.cross_section.requested.v1
 
   - action_key: manual.direct_development.approve_committee_share
     name_ko: 협의체 공유 승인

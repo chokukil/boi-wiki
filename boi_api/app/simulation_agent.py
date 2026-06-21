@@ -14,6 +14,15 @@ REQUIRED_COVERAGE = [
     "next_stage_or_event",
 ]
 
+COMMON_COVERAGE = [
+    "sop_stage",
+    "action_contract",
+    "event_context",
+    "output_schema",
+    "next_event",
+    "citation",
+]
+
 
 def _stringify(value: Any) -> str:
     if isinstance(value, str):
@@ -34,6 +43,10 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
     return [value]
+
+
+def _dict_items(value: Any) -> list[dict[str, Any]]:
+    return [item for item in _as_list(value) if isinstance(item, dict)]
 
 
 def _doc_ref_candidates(ref: str) -> list[str]:
@@ -114,6 +127,13 @@ def _extract_expected_contract(value: Any) -> str:
     return " ".join(contract.group(1).split()) if contract else ""
 
 
+def _action_output_schema(action: dict[str, Any], action_body: Any) -> str:
+    result_contract = action.get("result_contract") or action.get("response_schema")
+    if result_contract:
+        return _stringify(result_contract)
+    return _extract_expected_contract(action_body)
+
+
 def _extract_stage(value: Any) -> str:
     text = _stringify(value)
     match = re.search(r"Stage:\s*([^\n]+)", text, flags=re.IGNORECASE)
@@ -165,6 +185,213 @@ def _prior_evidence(prior_results: list[dict[str, Any]]) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+def _find_nested_key(value: Any, wanted_keys: set[str]) -> Any:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key) in wanted_keys and item not in (None, ""):
+                return item
+        for item in value.values():
+            found = _find_nested_key(item, wanted_keys)
+            if found not in (None, ""):
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_nested_key(item, wanted_keys)
+            if found not in (None, ""):
+                return found
+    return None
+
+
+def _result_blob(row: dict[str, Any]) -> dict[str, Any]:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    return {
+        "row": row,
+        "result": result,
+        "response": result.get("response") if isinstance(result.get("response"), dict) else {},
+        "simulation_agent": result.get("simulation_agent") if isinstance(result.get("simulation_agent"), dict) else {},
+    }
+
+
+def _evidence_from_existing_packet(packet: dict[str, Any], *, fallback_action_key: str = "") -> dict[str, Any]:
+    return {
+        "evidence_key": str(packet.get("evidence_key") or packet.get("kind") or fallback_action_key or "evidence"),
+        "title": str(packet.get("title") or packet.get("evidence_key") or fallback_action_key or "Evidence"),
+        "action_key": str(packet.get("action_key") or fallback_action_key or ""),
+        "provenance": str(packet.get("provenance") or "real_log"),
+        "simulation": bool(packet.get("simulation")),
+        "status": str(packet.get("status") or "available"),
+        "source_request_id": str(packet.get("source_request_id") or packet.get("request_id") or ""),
+        "source_log_ref": str(packet.get("source_log_ref") or packet.get("_log_ref") or ""),
+        "doc_ref": str(packet.get("doc_ref") or ""),
+        "fields": packet.get("fields") if isinstance(packet.get("fields"), dict) else {},
+        "summary": str(packet.get("summary") or ""),
+    }
+
+
+def _extract_prior_evidence_packets(prior_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    packets: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def add(packet: dict[str, Any]) -> None:
+        key = (
+            str(packet.get("evidence_key") or ""),
+            str(packet.get("action_key") or ""),
+            str(packet.get("source_request_id") or packet.get("source_log_ref") or packet.get("summary") or ""),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        packets.append(packet)
+
+    for row in prior_results:
+        action_key = str(row.get("action_key") or ((row.get("result") or {}) if isinstance(row.get("result"), dict) else {}).get("action_key") or "")
+        blob = _result_blob(row)
+        for source in (
+            row.get("evidence_packets"),
+            blob["result"].get("evidence_packets"),
+            blob["simulation_agent"].get("evidence_packets"),
+            (blob["simulation_agent"].get("context_pack") or {}).get("evidence_packets")
+            if isinstance(blob["simulation_agent"].get("context_pack"), dict)
+            else None,
+        ):
+            for packet in _dict_items(source):
+                add(_evidence_from_existing_packet(packet, fallback_action_key=action_key))
+
+        if action_key == "direct_development.quality_response_trend.simulate":
+            trend_status = _find_nested_key(blob, {"trend_status"}) or "simulated_response_trend_reviewed"
+            add(
+                {
+                    "evidence_key": "response_trend",
+                    "title": "Response Trend evidence",
+                    "action_key": action_key,
+                    "provenance": "real_log",
+                    "simulation": bool(row.get("simulation") or blob["result"].get("simulation")),
+                    "status": "available",
+                    "source_request_id": str(row.get("request_id") or blob["result"].get("request_id") or ""),
+                    "source_log_ref": str(row.get("_log_ref") or ""),
+                    "doc_ref": str(row.get("doc_ref") or ""),
+                    "fields": {
+                        "trend_status": str(trend_status),
+                        "evidence_ref": str(row.get("request_id") or row.get("_log_ref") or ""),
+                    },
+                    "summary": str(row.get("summary") or blob["result"].get("message") or "Response Trend action log evidence"),
+                }
+            )
+        if action_key == "direct_development.map_view.simulate":
+            map_summary = _find_nested_key(blob, {"map_pattern_summary"}) or "simulated_map_pattern_reviewed"
+            add(
+                {
+                    "evidence_key": "map_view",
+                    "title": "Map View evidence",
+                    "action_key": action_key,
+                    "provenance": "real_log",
+                    "simulation": bool(row.get("simulation") or blob["result"].get("simulation")),
+                    "status": "available",
+                    "source_request_id": str(row.get("request_id") or blob["result"].get("request_id") or ""),
+                    "source_log_ref": str(row.get("_log_ref") or ""),
+                    "doc_ref": str(row.get("doc_ref") or ""),
+                    "fields": {
+                        "map_pattern_summary": str(map_summary),
+                        "evidence_ref": str(row.get("request_id") or row.get("_log_ref") or ""),
+                    },
+                    "summary": str(row.get("summary") or blob["result"].get("message") or "Map View action log evidence"),
+                }
+            )
+    return packets
+
+
+def _simulated_prerequisite_packet(
+    *,
+    evidence_key: str,
+    action_key: str,
+    title: str,
+    doc_ref: str,
+    payload: dict[str, Any],
+    fields: dict[str, Any],
+) -> dict[str, Any]:
+    work_id = payload.get("work_id") or payload.get("lot_id") or payload.get("title") or "unknown-work"
+    return {
+        "evidence_key": evidence_key,
+        "title": title,
+        "action_key": action_key,
+        "provenance": "simulated_prerequisite",
+        "simulation": True,
+        "status": "simulated",
+        "source_request_id": "",
+        "source_log_ref": "",
+        "doc_ref": doc_ref,
+        "fields": {
+            **fields,
+            "work_id": str(work_id),
+            "simulation_boundary": "No real internal system was called. Values follow the public action result contract.",
+        },
+        "summary": f"{title} generated as SIMULATED prerequisite evidence for {work_id}.",
+    }
+
+
+def _required_evidence(action: dict[str, Any]) -> list[dict[str, Any]]:
+    return _dict_items(action.get("evidence_requirements") or action.get("simulation_evidence_requirements"))
+
+
+def _ensure_required_evidence_packets(
+    *,
+    action: dict[str, Any],
+    payload: dict[str, Any],
+    packets: list[dict[str, Any]],
+    simulation_depth: str,
+) -> list[dict[str, Any]]:
+    by_key = {str(packet.get("evidence_key") or ""): packet for packet in packets}
+    generated = list(packets)
+    if simulation_depth not in {"stage_prerequisites", "auto", "full"}:
+        return generated
+    for requirement in _required_evidence(action):
+        evidence_key = str(requirement.get("evidence_key") or "")
+        if not evidence_key or evidence_key in by_key:
+            continue
+        source_action = str(requirement.get("source_action") or "")
+        fields = requirement.get("simulated_fields") if isinstance(requirement.get("simulated_fields"), dict) else {}
+        if not source_action or not fields:
+            continue
+        packet = _simulated_prerequisite_packet(
+            evidence_key=evidence_key,
+            action_key=source_action,
+            title=str(requirement.get("title") or evidence_key),
+            doc_ref=str(requirement.get("doc_ref") or ""),
+            payload=payload,
+            fields={key: _stringify(value) for key, value in fields.items()},
+        )
+        generated.append(packet)
+        by_key[evidence_key] = packet
+    return generated
+
+
+def _action_specific_coverage(action: dict[str, Any], evidence_packets: list[dict[str, Any]]) -> dict[str, bool]:
+    covered: dict[str, bool] = {}
+    by_key = {str(packet.get("evidence_key") or ""): packet for packet in evidence_packets}
+    for requirement in _required_evidence(action):
+        evidence_key = str(requirement.get("evidence_key") or "")
+        required_fields = [str(item) for item in _as_list(requirement.get("required_fields")) if item]
+        packet = by_key.get(evidence_key)
+        for field in required_fields:
+            covered[field] = bool(packet and (packet.get("fields") or {}).get(field))
+    return covered
+
+
+def _evidence_markdown(evidence_packets: list[dict[str, Any]]) -> str:
+    if not evidence_packets:
+        return "No evidence packets were available or generated."
+    lines = []
+    for packet in evidence_packets:
+        fields = packet.get("fields") if isinstance(packet.get("fields"), dict) else {}
+        field_text = ", ".join(f"{key}={value}" for key, value in fields.items() if value)
+        lines.append(
+            f"- **{packet.get('title') or packet.get('evidence_key')}** "
+            f"({packet.get('provenance')}, action={packet.get('action_key') or '-'})"
+            + (f": {field_text}" if field_text else "")
+        )
+    return "\n".join(lines)
+
+
 def _find_stage(workflow: dict[str, Any] | None, event_type: str, sop_stage_id: str, stage_hint: str) -> dict[str, Any]:
     workflow = workflow or {}
     stages = workflow.get("stages") or workflow.get("expected_stages") or []
@@ -193,6 +420,7 @@ def build_simulation_agent_result(
     sop_ref: str = "",
     sop_stage_id: str = "",
     max_rounds: int = 4,
+    simulation_depth: str = "stage_prerequisites",
 ) -> dict[str, Any]:
     action_key = str(action.get("action_key") or "")
     event_type = str(event.get("event_type") or "")
@@ -206,10 +434,16 @@ def build_simulation_agent_result(
         or str((workflow or {}).get("sop_ref") or "")
         or _extract_sop_ref(action_body)
     )
-    expected_contract = _extract_expected_contract(action_body)
+    expected_contract = _action_output_schema(action, action_body)
     next_event = _extract_next_event(action_body, stage)
     manual_condition = _manual_or_approval(action, stage)
     prior_evidence = _prior_evidence(prior_results)
+    evidence_packets = _ensure_required_evidence_packets(
+        action=action,
+        payload=payload,
+        packets=_extract_prior_evidence_packets(prior_results),
+        simulation_depth=simulation_depth,
+    )
 
     selected: dict[str, dict[str, Any]] = {}
     context_docs: list[dict[str, str]] = []
@@ -279,13 +513,21 @@ def build_simulation_agent_result(
     covered = {
         "sop_stage": bool(stage or stage_hint or resolved_sop_ref),
         "action_contract": bool(action.get("doc_ref") and any(item["role"] == "action_spec" for item in context_docs)),
+        "event_context": bool(event_type or event),
+        "output_schema": bool(expected_contract),
+        "next_event": bool(next_event),
+        "citation": bool(context_docs),
         "expected_output_schema": bool(expected_contract),
-        "prior_evidence": bool(prior_evidence or prior_results),
+        "prior_evidence": bool(prior_evidence or prior_results or evidence_packets),
         "manual_or_approval_condition": bool(manual_condition or action.get("approval_required") is not None),
         "next_stage_or_event": bool(next_event),
     }
-    missing = [key for key in REQUIRED_COVERAGE if not covered.get(key)]
-    score = round(sum(1 for key in REQUIRED_COVERAGE if covered.get(key)) / len(REQUIRED_COVERAGE), 2)
+    covered.update(_action_specific_coverage(action, evidence_packets))
+    required = list(dict.fromkeys(COMMON_COVERAGE + [str(field) for req in _required_evidence(action) for field in _as_list(req.get("required_fields")) if field]))
+    if not required:
+        required = REQUIRED_COVERAGE
+    missing = [key for key in required if not covered.get(key)]
+    score = round(sum(1 for key in required if covered.get(key)) / len(required), 2)
     for row in trace:
         row["coverage_after"] = {
             "coverage_score": score,
@@ -326,6 +568,7 @@ def build_simulation_agent_result(
             ),
             "## Expected Result Contract\n" + (expected_contract or "명시된 expected result contract가 부족합니다."),
             "## Prior Evidence\n" + (prior_evidence or "이 action 이전에 제공된 prior result가 없습니다."),
+            "## SIMULATED Evidence Packets\n" + _evidence_markdown(evidence_packets),
             "## Simulation Draft\n"
             + (
                 f"- status=simulated\n- simulated_action_key={action_key}\n"
@@ -372,13 +615,17 @@ def build_simulation_agent_result(
                 "stage": stage,
             },
             "prior_results": prior_results,
+            "evidence_packets": evidence_packets,
         },
+        "evidence_packets": evidence_packets,
         "retrieval_trace": trace,
         "coverage_report": {
-            "required": REQUIRED_COVERAGE,
+            "required": required,
             "covered": covered,
             "missing_context": missing,
             "coverage_score": score,
+            "pass_threshold": 0.85,
+            "passed": score >= 0.85,
         },
         "citations": citations,
         "limitations": limitations,
@@ -394,6 +641,7 @@ def build_simulation_agent_result(
                 "missing_context": missing,
                 "recommended_next_event": next_event,
                 "human_review_required": "manual" in manual_condition or action.get("risk_level") in {"medium", "high"},
+                "evidence_packets": evidence_packets,
             },
         },
     }

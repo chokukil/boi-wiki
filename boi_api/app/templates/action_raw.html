@@ -67,6 +67,25 @@
         {% endfor %}
       </ul>
       {% endif %}
+      {% if evidence_packets %}
+      <h3>Evidence Packets</h3>
+      <ul class="relationship-list workflow-relationship-list">
+        {% for packet in evidence_packets[:12] %}
+        <li>
+          <span class="badge warning">{{ packet.provenance or "evidence" }}</span>
+          <strong>{{ packet.title or packet.evidence_key }}</strong>
+          <small>
+            {{ packet.action_key or "-" }}
+            {% if packet.source_request_id %} · {{ packet.source_request_id }}{% endif %}
+            {% if packet.doc_ref %} · {{ packet.doc_ref }}{% endif %}
+          </small>
+          {% if packet.fields %}
+          <div class="metadata-value compact">{{ packet.fields }}</div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
     </section>
     {% endif %}
 

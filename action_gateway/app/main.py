@@ -110,7 +110,7 @@ def append_action_log(row: dict[str, Any]) -> None:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-def read_action_logs(limit: int = 200, action_key: str | None = None) -> list[dict[str, Any]]:
+def read_action_logs(limit: int = 200, action_key: str | None = None, trace_id: str | None = None) -> list[dict[str, Any]]:
     ensure_dirs()
     rows: list[dict[str, Any]] = []
     for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl"), reverse=True):
@@ -121,10 +121,78 @@ def read_action_logs(limit: int = 200, action_key: str | None = None) -> list[di
                 continue
             if action_key and row.get("action_key") != action_key:
                 continue
+            if trace_id and row.get("trace_id") != trace_id:
+                continue
             rows.append(row)
             if len(rows) >= limit:
                 return rows
     return rows
+
+
+def merge_prior_results(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for group in groups:
+        for row in group:
+            if not isinstance(row, dict):
+                continue
+            key = (
+                str(row.get("action_key") or ""),
+                str(row.get("request_id") or ""),
+                str(row.get("_log_ref") or row.get("summary") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(row)
+    return merged
+
+
+def trace_prior_results(trace_id: str, employee_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+    if not trace_id:
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in reversed(read_action_logs(limit=1000, trace_id=trace_id)):
+        if str(row.get("employee_id") or employee_id) != employee_id:
+            continue
+        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        rows.append(
+            {
+                "action_key": row.get("action_key"),
+                "status": row.get("status") or result.get("status"),
+                "request_id": row.get("request_id") or result.get("request_id"),
+                "summary": row.get("summary") or result.get("message") or result.get("summary"),
+                "doc_ref": row.get("doc_ref"),
+                "connector_kind": row.get("connector_kind"),
+                "event_id": row.get("event_id"),
+                "event_type": row.get("event_type"),
+                "trace_id": row.get("trace_id"),
+                "simulation": bool(row.get("simulation") or result.get("simulation")),
+                "coverage_score": row.get("coverage_score") if row.get("coverage_score") is not None else result.get("coverage_score"),
+                "evidence_packets": row.get("evidence_packets") or result.get("evidence_packets"),
+                "result": result,
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def prior_action_refs(prior_results: list[dict[str, Any]]) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in prior_results[-12:]:
+        action_key = str(row.get("action_key") or "")
+        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        request_id = str(row.get("request_id") or result.get("request_id") or "")
+        if not action_key and not request_id:
+            continue
+        key = (action_key, request_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append({"type": "action", "action_key": action_key, "request_id": request_id})
+    return refs
 
 
 def host_allowed(url: str) -> bool:
@@ -323,6 +391,7 @@ async def universal_simulation_agent_context(
         "sop_ref": action.get("sop_ref") or "",
         "sop_stage_id": action.get("sop_stage_id") or "",
         "max_rounds": int(action.get("simulation_agent_max_rounds") or 4),
+        "simulation_depth": action.get("simulation_depth") or "stage_prerequisites",
     }
     try:
         resp = await client.post(url, headers={"x-service-token": SERVICE_TOKEN}, json=body)
@@ -341,11 +410,17 @@ def simulation_agent_prompt_prefix(value: dict[str, Any]) -> str:
     if not value:
         return ""
     compact = {
+        "action_key": value.get("action_key"),
+        "event_type": value.get("event_type"),
+        "trace_id": value.get("trace_id"),
         "agent": value.get("agent"),
         "coverage_report": value.get("coverage_report"),
+        "evidence_packets": value.get("evidence_packets"),
         "citations": value.get("citations"),
         "limitations": value.get("limitations"),
         "retrieval_trace": value.get("retrieval_trace"),
+        "workflow": ((value.get("context_pack") or {}).get("workflow") if isinstance(value.get("context_pack"), dict) else {}),
+        "prior_results": ((value.get("context_pack") or {}).get("prior_results") if isinstance(value.get("context_pack"), dict) else []),
         "context_documents": ((value.get("context_pack") or {}).get("documents") or [])[:8],
         "simulation_result": value.get("simulation_result"),
     }
@@ -405,8 +480,8 @@ async def list_actions(event_type: str = "", risk_level: str = "") -> dict[str, 
 
 
 @app.get("/api/actions/logs")
-async def logs(limit: int = 200, action_key: str = "") -> dict[str, Any]:
-    rows = read_action_logs(limit=limit, action_key=action_key or None)
+async def logs(limit: int = 200, action_key: str = "", trace_id: str = "") -> dict[str, Any]:
+    rows = read_action_logs(limit=limit, action_key=action_key or None, trace_id=trace_id or None)
     return {"count": len(rows), "items": rows}
 
 
@@ -424,6 +499,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         dry_run = DRY_RUN_DEFAULT
 
     approval_required = bool(action.get("approval_required"))
+    action_refs = prior_action_refs(req.prior_results)
     context = {
         "request_id": request_id,
         "employee_id": req.employee_id,
@@ -435,6 +511,8 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         "approved_by": req.approved_by or "",
         "prior_results": req.prior_results,
         "prior_results_json": json.dumps(req.prior_results, ensure_ascii=False, indent=2),
+        "prior_action_refs": action_refs,
+        "prior_action_refs_json": json.dumps(action_refs, ensure_ascii=False, indent=2),
     }
     base_log = {
         "action_key": action.get("action_key"),
@@ -506,6 +584,24 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         elif action_type in {"event_publish", "boi_event"}:
             url = f"{BOI_API_URL.rstrip('/')}/api/events/publish?employee_id={req.employee_id}"
             body = render_template(action.get("body") or {}, context)
+            if isinstance(body, dict):
+                refs = body.get("source_refs") if isinstance(body.get("source_refs"), list) else []
+                seen_refs = {
+                    (
+                        str(item.get("type") if isinstance(item, dict) else ""),
+                        str(item.get("request_id") or item.get("ref") if isinstance(item, dict) else item),
+                    )
+                    for item in refs
+                }
+                for ref in action_refs:
+                    marker = (str(ref.get("type") or ""), str(ref.get("request_id") or ref.get("ref") or ""))
+                    if marker not in seen_refs:
+                        refs.append(ref)
+                        seen_refs.add(marker)
+                body["source_refs"] = refs
+                payload = body.get("payload")
+                if isinstance(payload, dict) and "prior_action_refs" not in payload:
+                    payload["prior_action_refs"] = action_refs
             async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 20))) as client:
                 resp = await client.post(url, headers={"x-service-token": SERVICE_TOKEN}, json=body)
                 resp.raise_for_status()
@@ -558,6 +654,12 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     "used_docs": ((simulation_agent.get("context_pack") or {}).get("documents") if isinstance(simulation_agent, dict) else []),
                     "missing_context": ((simulation_agent.get("coverage_report") or {}).get("missing_context") if isinstance(simulation_agent, dict) else []),
                     "coverage_score": ((simulation_agent.get("coverage_report") or {}).get("coverage_score") if isinstance(simulation_agent, dict) else None),
+                    "evidence_packets": (
+                        simulation_agent.get("evidence_packets")
+                        or ((simulation_agent.get("context_pack") or {}).get("evidence_packets") if isinstance(simulation_agent.get("context_pack"), dict) else [])
+                    )
+                    if isinstance(simulation_agent, dict)
+                    else [],
                     "simulation_boundaries": (simulation_agent.get("limitations") if isinstance(simulation_agent, dict) else []),
                     **simulation_metadata(action),
                 }
@@ -622,7 +724,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
 
         simulation_log = {
             key: result.get(key)
-            for key in ("retrieval_rounds", "used_docs", "missing_context", "coverage_score", "simulation_boundaries")
+            for key in ("retrieval_rounds", "used_docs", "missing_context", "coverage_score", "evidence_packets", "simulation_boundaries")
             if key in result
         }
         append_action_log({**base_log, **simulation_log, "status": result.get("status"), "result": result})
@@ -650,7 +752,7 @@ async def dispatch(req: DispatchRequest) -> dict[str, Any]:
     actions = actions_for_event(event_type)
     results: list[dict[str, Any]] = []
     current_boi_id = req.boi_id
-    prior_results = list(req.prior_results or [])
+    prior_results = merge_prior_results(trace_prior_results(str(req.event.get("trace_id") or ""), req.employee_id), list(req.prior_results or []))
     for action in actions:
         child_req = InvokeRequest(
             action_key=str(action.get("action_key")),

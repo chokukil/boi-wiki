@@ -108,6 +108,13 @@
                   {% if action.real_system_status %} 실제 시스템 상태: {{ action.real_system_status }}.{% endif %}
                   {% if action.retrieval_rounds %}<br />BoI Simulation Agent: retrieval rounds={{ action.retrieval_rounds }}, coverage={{ action.coverage_score }}{% endif %}
                   {% if action.missing_context %}<br />Missing context: {{ action.missing_context|join(", ") }}{% endif %}
+                  {% if action.evidence_packets %}
+                  <br />Evidence:
+                  {% for packet in action.evidence_packets[:4] %}
+                    <span class="badge status">{{ packet.evidence_key or packet.title }}</span>
+                    <span>{{ packet.provenance }}</span>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                  {% endif %}
                 </small>
               </td>
             </tr>

@@ -189,6 +189,7 @@ flowchart TD
 - `SIMULATED` action은 실제 사내 시스템을 호출하지 않는다.
 - `real_system_connected=false`, `real_system_status=unavailable`을 action log와 workflow status에 남긴다.
 - `BoI Universal Action Simulator Flow`는 SOP/action/context를 읽고, 동일한 result contract로 한국어 요약과 구조화 JSON을 생성한다.
+- `단면검사 판단` stage는 Response Trend와 Map View evidence가 필수다. 실제 시스템이 없을 때도 Universal Simulator는 [단면검사 필요 여부 판단](/public/actions/manual/direct-development-decide-cross-section.md)의 evidence contract를 따라 `SIMULATED prerequisite` packet을 만들고 provenance를 표시해야 한다.
 - 사람이 판단해야 하는 단계는 자동 완료하지 않는다. smoke harness에서만 "수동 완료 event를 발행했다"는 별도 evidence를 남겨 end-to-end 흐름을 검증한다.
 - 메신저 공유 실행은 preview와 approval-required를 분리한다. 승인 전에는 실제 발송하지 않는다.
 
