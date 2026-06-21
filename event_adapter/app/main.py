@@ -13,6 +13,8 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
 TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
 AUDIT_TOPIC = os.getenv("BOI_AUDIT_TOPIC", "boi.audit")
 DLQ_TOPIC = os.getenv("BOI_DLQ_TOPIC", "boi.dead-letter")
+GROUP_ID = os.getenv("EVENT_ROUTER_GROUP_ID", "boi-event-router")
+AUTO_OFFSET_RESET = os.getenv("EVENT_ROUTER_AUTO_OFFSET_RESET", "earliest")
 BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000")
 BOI_API_SERVICE_TOKEN = os.getenv("BOI_API_SERVICE_TOKEN", "dev-service-token-change-me")
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
@@ -237,10 +239,10 @@ async def main() -> None:
     consumer = AIOKafkaConsumer(
         TOPIC,
         bootstrap_servers=KAFKA_BOOTSTRAP,
-        group_id="boi-event-router",
+        group_id=GROUP_ID,
         value_deserializer=_decode,
         enable_auto_commit=False,
-        auto_offset_reset="earliest",
+        auto_offset_reset=AUTO_OFFSET_RESET,
         session_timeout_ms=CONSUMER_SESSION_TIMEOUT_MS,
         heartbeat_interval_ms=CONSUMER_HEARTBEAT_INTERVAL_MS,
         max_poll_interval_ms=CONSUMER_MAX_POLL_INTERVAL_MS,

@@ -235,6 +235,8 @@ services:
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       BOI_EVENTS_TOPIC: boi.events
+      EVENT_ROUTER_GROUP_ID: ${EVENT_ROUTER_GROUP_ID:-boi-event-router}
+      EVENT_ROUTER_AUTO_OFFSET_RESET: ${EVENT_ROUTER_AUTO_OFFSET_RESET:-earliest}
       BOI_API_URL: http://boi-api:8000
       BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       ACTION_GATEWAY_URL: http://action-gateway:8100
