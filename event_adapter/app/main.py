@@ -35,6 +35,7 @@ def _env_float(name: str, default: float) -> float:
 AUDIT_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_AUDIT_TIMEOUT_SECONDS", 10)
 DISPATCH_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_DISPATCH_TIMEOUT_SECONDS", 300)
 ENRICH_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_ENRICH_TIMEOUT_SECONDS", 60)
+AUDIT_TEXT_LIMIT = int(_env_float("EVENT_ROUTER_AUDIT_TEXT_LIMIT", 600))
 
 
 def _decode(value: bytes) -> dict[str, Any]:
@@ -43,6 +44,110 @@ def _decode(value: bytes) -> dict[str, Any]:
 
 def _encode(value: dict[str, Any]) -> bytes:
     return json.dumps(value, ensure_ascii=False).encode("utf-8")
+
+
+def _short_text(value: Any, limit: int = AUDIT_TEXT_LIMIT) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip() + " ... [truncated for event audit; use action raw log for full result]"
+
+
+def compact_action_result_for_audit(item: dict[str, Any]) -> dict[str, Any]:
+    result = item.get("result") if isinstance(item.get("result"), dict) else {}
+    simulation_agent = result.get("simulation_agent") if isinstance(result.get("simulation_agent"), dict) else {}
+    compact_result: dict[str, Any] = {}
+    for key in (
+        "ok",
+        "status",
+        "request_id",
+        "action_key",
+        "connector_kind",
+        "boi_id",
+        "boi_uri",
+        "flow_id",
+        "flow_name",
+        "simulation",
+        "simulation_label",
+        "real_system_status",
+        "simulated_system",
+        "retrieval_rounds",
+        "coverage_score",
+        "langflow_renderer_status",
+    ):
+        if key in result:
+            compact_result[key] = _short_text(result[key])
+    if "message" in result:
+        compact_result["message"] = _short_text(result["message"])
+    if simulation_agent:
+        coverage = simulation_agent.get("coverage_report") if isinstance(simulation_agent.get("coverage_report"), dict) else {}
+        context_pack = simulation_agent.get("context_pack") if isinstance(simulation_agent.get("context_pack"), dict) else {}
+        compact_result["simulation_agent"] = {
+            "coverage_score": coverage.get("coverage_score"),
+            "missing_context": coverage.get("missing_context") or [],
+            "retrieval_rounds": (simulation_agent.get("agent") or {}).get("retrieval_rounds")
+            if isinstance(simulation_agent.get("agent"), dict)
+            else None,
+            "used_docs": [
+                {
+                    "role": doc.get("role"),
+                    "boi_id": doc.get("boi_id"),
+                    "uri": doc.get("uri"),
+                    "title": doc.get("title"),
+                }
+                for doc in (context_pack.get("documents") or [])[:12]
+                if isinstance(doc, dict)
+            ],
+            "evidence_packets": [
+                {
+                    "id": packet.get("id"),
+                    "label": packet.get("label"),
+                    "provenance": packet.get("provenance"),
+                    "source_action": packet.get("source_action"),
+                }
+                for packet in (simulation_agent.get("evidence_packets") or [])[:12]
+                if isinstance(packet, dict)
+            ],
+        }
+    compact: dict[str, Any] = {}
+    for key in (
+        "action_key",
+        "type",
+        "connector_kind",
+        "status",
+        "request_id",
+        "doc_ref",
+        "boi_id",
+        "boi_uri",
+        "event_id",
+        "event_type",
+        "simulation",
+        "simulation_label",
+        "real_system_status",
+        "simulated_system",
+        "retrieval_rounds",
+        "coverage_score",
+    ):
+        value = item.get(key)
+        if value is not None:
+            compact[key] = _short_text(value)
+    if compact_result:
+        compact["result"] = compact_result
+    return compact
+
+
+def compact_dispatch_result_for_audit(dispatch_result: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("ok", "status", "handled_by", "boi_id", "boi_uri", "request_id"):
+        if key in dispatch_result:
+            compact[key] = _short_text(dispatch_result[key])
+    results = dispatch_result.get("results")
+    if isinstance(results, list):
+        compact["results"] = [compact_action_result_for_audit(item) for item in results if isinstance(item, dict)]
+        compact["result_count"] = len(results)
+    return compact
 
 
 async def emit(producer: AIOKafkaProducer, topic: str, payload: dict[str, Any]) -> None:
@@ -110,7 +215,11 @@ async def process_event(event: dict[str, Any], producer: AIOKafkaProducer) -> No
         await write_boi_event_audit(event, "routing")
         dispatch_result = await dispatch_event(event)
         enrichment_result = await enrich_generated_boi(event, dispatch_result)
-        result = {"routed_by": "event-router", "dispatch_result": dispatch_result, "enrichment_result": enrichment_result}
+        result = {
+            "routed_by": "event-router",
+            "dispatch_result": compact_dispatch_result_for_audit(dispatch_result),
+            "enrichment_result": enrichment_result,
+        }
         await emit(producer, AUDIT_TOPIC, {"status": "processed", "event_id": event.get("event_id"), "event_type": event_type, "result": result})
         await write_boi_event_audit(event, "processed", result=result)
         print(json.dumps({"status": "processed", "event_id": event.get("event_id"), "event_type": event_type, "connector_count": len(dispatch_result.get("results") or [])}, ensure_ascii=False), flush=True)

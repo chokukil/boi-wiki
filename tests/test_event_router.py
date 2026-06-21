@@ -131,3 +131,53 @@ def test_event_router_uses_manual_offset_commit(monkeypatch):
 
     assert "enable_auto_commit=False" in source
     assert "await consumer.commit()" in source
+
+
+def test_event_router_compacts_dispatch_result_for_audit(monkeypatch):
+    router = load_event_router(monkeypatch)
+    large_message = "SIMULATED evidence " * 1000
+
+    compacted = router.compact_dispatch_result_for_audit(
+        {
+            "ok": True,
+            "status": "dispatched",
+            "results": [
+                {
+                    "action_key": "direct_development.fab_trend_compare.simulate",
+                    "type": "langflow",
+                    "result": {
+                        "status": "langflow_invoked",
+                        "message": large_message,
+                        "simulation_agent": {
+                            "coverage_report": {"coverage_score": 1.0, "missing_context": []},
+                            "agent": {"retrieval_rounds": 4},
+                            "context_pack": {
+                                "documents": [
+                                    {
+                                        "role": "action_spec",
+                                        "boi_id": "boi:public:actions:langflow:direct-development-fab-trend-compare-simulate",
+                                        "uri": "/public/actions/langflow/direct-development-fab-trend-compare-simulate.md",
+                                        "title": "FAB Trend 비교 시뮬레이션",
+                                    }
+                                ]
+                            },
+                            "evidence_packets": [
+                                {
+                                    "id": "fab_trend",
+                                    "label": "FAB Trend",
+                                    "provenance": "simulated_prerequisite",
+                                    "source_action": "direct_development.fab_trend_compare.simulate",
+                                }
+                            ],
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    message = compacted["results"][0]["result"]["message"]
+    assert len(message) < len(large_message)
+    assert "truncated for event audit" in message
+    assert compacted["results"][0]["result"]["simulation_agent"]["coverage_score"] == 1.0
+    assert compacted["result_count"] == 1
