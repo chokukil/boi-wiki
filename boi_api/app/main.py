@@ -931,6 +931,124 @@ def action_raw_readable_markdown(row: dict[str, Any]) -> dict[str, Any]:
     return {"available": False, "source": "", "markdown": ""}
 
 
+def compact_action_raw_row_for_html(row: dict[str, Any]) -> dict[str, Any]:
+    """Keep the HTML raw detail page responsive for large Langflow/action rows.
+
+    The JSON API remains the authoritative full raw row. The HTML page shows
+    metadata and compact evidence only, because rendering a deeply nested
+    Langflow response can monopolize the single NAS PoC worker.
+    """
+
+    def short_text(value: Any, limit: int = 1800) -> Any:
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if len(text) <= limit:
+            return text
+        return text[:limit].rsplit(" ", 1)[0].rstrip() + " ... [truncated in HTML; open JSON API for full value]"
+
+    compact: dict[str, Any] = {}
+    for key in (
+        "_log_ref",
+        "logged_at",
+        "action_key",
+        "request_id",
+        "employee_id",
+        "event_id",
+        "event_type",
+        "trace_id",
+        "boi_id",
+        "status",
+        "connector_kind",
+        "doc_ref",
+        "simulation",
+        "simulation_label",
+        "simulation_notice",
+        "simulated_system",
+        "real_system_status",
+        "retrieval_rounds",
+        "coverage_score",
+        "missing_context",
+        "used_docs",
+    ):
+        if key in row:
+            compact[key] = row[key]
+
+    event = row.get("event")
+    if isinstance(event, dict):
+        compact["event"] = {
+            key: event.get(key)
+            for key in ("event_id", "event_type", "trace_id", "producer", "occurred_at")
+            if event.get(key) is not None
+        }
+        payload = event.get("payload")
+        if isinstance(payload, dict):
+            compact["event"]["payload_keys"] = sorted(str(key) for key in payload.keys())[:30]
+
+    payload = row.get("payload")
+    if isinstance(payload, dict):
+        compact["payload_keys"] = sorted(str(key) for key in payload.keys())[:30]
+
+    result = row.get("result")
+    if isinstance(result, dict):
+        compact_result: dict[str, Any] = {}
+        for key in (
+            "ok",
+            "status",
+            "status_code",
+            "request_id",
+            "action_key",
+            "connector_kind",
+            "flow_id",
+            "flow_name",
+            "simulation",
+            "simulation_label",
+            "simulation_notice",
+            "simulated_system",
+            "real_system_status",
+            "retrieval_rounds",
+            "coverage_score",
+            "missing_context",
+        ):
+            if key in result:
+                compact_result[key] = result[key]
+        for key in ("summary", "message", "text", "body"):
+            if key in result:
+                compact_result[key] = short_text(result[key])
+        simulation_agent = result.get("simulation_agent")
+        if isinstance(simulation_agent, dict):
+            context_pack = simulation_agent.get("context_pack") if isinstance(simulation_agent.get("context_pack"), dict) else {}
+            compact_result["simulation_agent"] = {
+                "agent": simulation_agent.get("agent"),
+                "coverage_report": simulation_agent.get("coverage_report"),
+                "limitations": simulation_agent.get("limitations"),
+                "citations": simulation_agent.get("citations"),
+                "retrieval_trace": (simulation_agent.get("retrieval_trace") or [])[:8]
+                if isinstance(simulation_agent.get("retrieval_trace"), list)
+                else simulation_agent.get("retrieval_trace"),
+                "used_docs": (context_pack.get("documents") or [])[:10]
+                if isinstance(context_pack.get("documents"), list)
+                else [],
+            }
+        omitted = [
+            key
+            for key in ("response", "outputs", "input", "inputs", "prompt", "headers", "request")
+            if key in result
+        ]
+        if omitted:
+            compact_result["_html_omitted_fields"] = omitted
+            compact_result["_full_raw"] = "Open the JSON API link for omitted nested fields."
+        compact["result"] = compact_result
+    elif result is not None:
+        compact["result"] = short_text(result)
+
+    error = row.get("error")
+    if error is not None:
+        compact["error"] = short_text(error) if isinstance(error, str) else error
+
+    return compact
+
+
 def event_rows_for_template(
     rows: list[dict[str, Any]],
     doc_lookup: dict[str, dict[str, Any]] | None = None,
@@ -5631,6 +5749,7 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
     result_value = row.get("result") if isinstance(row.get("result"), dict) else {}
     boi_id = str(row.get("boi_id") or result_boi_id(result_value) or "")
     readable_result = action_raw_readable_markdown(redacted_row)
+    compact_row = compact_action_raw_row_for_html(redacted_row)
     simulation_agent = result_value.get("simulation_agent") if isinstance(result_value.get("simulation_agent"), dict) else {}
     coverage_report = simulation_agent.get("coverage_report") if isinstance(simulation_agent.get("coverage_report"), dict) else {}
     context_pack = simulation_agent.get("context_pack") if isinstance(simulation_agent.get("context_pack"), dict) else {}
@@ -5653,7 +5772,7 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
             ),
             "log_ref": log_ref,
             "row": redacted_row,
-            "row_html": render_linkified_value_html(redacted_row, employee_id),
+            "row_html": render_linkified_value_html(compact_row, employee_id),
             "readable_result": readable_result,
             "readable_result_html": render_markdown(readable_result["markdown"], employee_id=employee_id) if readable_result["available"] else "",
             "action_key": row.get("action_key") or "",

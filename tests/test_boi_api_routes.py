@@ -484,7 +484,7 @@ def test_action_raw_api_and_html_show_single_action_result_with_links(boi_app_mo
     assert "Action Raw Detail" in html_response.text
     assert "Readable Result" in html_response.text
     assert 'class="workflow-panel action-readable-result"' in html_response.text
-    readable_section = html_response.text.split("Raw Log Row / Metadata", 1)[0]
+    readable_section = html_response.text.split("Compact Raw Metadata", 1)[0]
     assert "FULL_LANGFLOW_MESSAGE_END" in html_response.text
     assert "FULL_LANGFLOW_MESSAGE_END" in readable_section
     assert "BoI Write Result" not in readable_section
