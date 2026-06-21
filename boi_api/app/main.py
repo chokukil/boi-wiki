@@ -1299,15 +1299,35 @@ def find_action_log_row_by_request_id(request_id: str, employee_id: str | None =
             continue
         if employee_id and not action_log_visible_to_employee(row, employee_id):
             return None
-        return dict(row)
+            return dict(row)
     return None
+
+
+def trace_action_log_rows(trace_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
+    if not trace_id:
+        return []
+    rows: list[dict[str, Any]] = []
+    for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl")):
+        with p.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if trace_id not in line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if str(row.get("trace_id") or "") != trace_id:
+                    continue
+                row["_log_ref"] = f"action:{p.name}:{line_number}"
+                rows.append(row)
+    return rows[-limit:]
 
 
 def trace_prior_action_results(trace_id: str, employee_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
     if not trace_id:
         return []
     rows: list[dict[str, Any]] = []
-    for row in reversed(cached_action_log_rows()):
+    for row in trace_action_log_rows(trace_id, limit=limit):
         if str(row.get("trace_id") or "") != trace_id:
             continue
         if not action_log_visible_to_employee(row, employee_id):

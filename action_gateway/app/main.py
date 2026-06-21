@@ -114,6 +114,23 @@ def append_action_log(row: dict[str, Any]) -> None:
 def read_action_logs(limit: int = 200, action_key: str | None = None, trace_id: str | None = None) -> list[dict[str, Any]]:
     ensure_dirs()
     rows: list[dict[str, Any]] = []
+    if trace_id:
+        for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl")):
+            with p.open("r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if trace_id not in line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except Exception:
+                        continue
+                    if action_key and row.get("action_key") != action_key:
+                        continue
+                    if row.get("trace_id") != trace_id:
+                        continue
+                    row["_log_ref"] = f"action:{p.name}:{line_number}"
+                    rows.append(row)
+        return list(reversed(rows[-limit:]))
     for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl"), reverse=True):
         for line in reversed(p.read_text(encoding="utf-8").splitlines()):
             try:
