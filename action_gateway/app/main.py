@@ -646,27 +646,29 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 simulation_agent = await universal_simulation_agent_context(client, action, req)
                 context["simulation_agent"] = simulation_agent
                 context["simulation_agent_json"] = json.dumps(simulation_agent, ensure_ascii=False, indent=2, default=str)
-                flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
-                url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
-                if not host_allowed(url):
-                    raise HTTPException(status_code=400, detail=f"Langflow URL is not allowlisted: {url}")
-                headers = {"Content-Type": "application/json", **auth_headers}
-                headers.update(render_template(action.get("headers") or {}, context))
-                body = render_template(
-                    action.get("body")
-                    or {
-                        "input_value": str(req.payload or req.event),
-                        "input_type": "chat",
-                        "output_type": "chat",
-                    },
-                    context,
-                )
-                if simulation_agent and isinstance(body, dict):
-                    prefix = simulation_agent_prompt_prefix(simulation_agent)
-                    if prefix:
-                        body["input_value"] = prefix + str(body.get("input_value") or "")
                 agent_fields = simulation_agent_fields(simulation_agent)
+                flow_target = str(action.get("flow_id") or action.get("flow_name") or "unresolved")
+                flow_info: dict[str, Any] = {}
                 try:
+                    flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
+                    url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
+                    if not host_allowed(url):
+                        raise HTTPException(status_code=400, detail=f"Langflow URL is not allowlisted: {url}")
+                    headers = {"Content-Type": "application/json", **auth_headers}
+                    headers.update(render_template(action.get("headers") or {}, context))
+                    body = render_template(
+                        action.get("body")
+                        or {
+                            "input_value": str(req.payload or req.event),
+                            "input_type": "chat",
+                            "output_type": "chat",
+                        },
+                        context,
+                    )
+                    if simulation_agent and isinstance(body, dict):
+                        prefix = simulation_agent_prompt_prefix(simulation_agent)
+                        if prefix:
+                            body["input_value"] = prefix + str(body.get("input_value") or "")
                     resp = await client.request("POST", url, headers=headers, json=body)
                     try:
                         resp_body: Any = resp.json()

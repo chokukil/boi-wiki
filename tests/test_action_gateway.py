@@ -256,6 +256,16 @@ class FakeLangflowTimeoutAsyncClient(FakeLangflowAsyncClient):
         raise httpx.ReadTimeout("renderer exceeded timeout")
 
 
+class FakeLangflowResolveTimeoutAsyncClient(FakeLangflowAsyncClient):
+    async def get(self, url, headers=None):
+        self.requests.append({"method": "GET", "url": url, "headers": headers or {}})
+        if url.endswith("/api/v1/auto_login"):
+            return FakeHttpResponse(body={"access_token": "langflow-test-token"})
+        if url.endswith("/api/v1/flows/"):
+            raise httpx.ReadTimeout("flow list exceeded timeout")
+        return FakeHttpResponse(status_code=404, body={"detail": "not found"})
+
+
 class FakeDispatchAsyncClient:
     requests: list[dict] = []
 
@@ -493,6 +503,37 @@ def test_universal_simulator_uses_simulation_agent_result_when_langflow_renderer
     assert logs[0]["langflow_renderer_status"] == "timeout_fallback"
     assert logs[0]["coverage_score"] == 1.0
     assert logs[0]["evidence_packets"][0]["provenance"] == "simulated_prerequisite"
+
+
+def test_universal_simulator_uses_simulation_agent_result_when_langflow_flow_resolve_times_out(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakeLangflowResolveTimeoutAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowResolveTimeoutAsyncClient)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-direct-sim-resolve-timeout",
+                "event_type": "direct_development.result_check.requested.v1",
+                "trace_id": "trace-direct-sim-resolve-timeout",
+                "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+            },
+            "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "langflow_invoked"
+    assert body["langflow_renderer_status"] == "timeout_fallback"
+    assert body["response"]["fallback"] == "boi_simulation_agent"
+    assert body["coverage_score"] == 1.0
+    assert body["evidence_packets"][0]["evidence_key"] == "response_trend"
 
 
 def test_dispatch_passes_prior_results_to_stage_langflow_action(tmp_path, monkeypatch):
