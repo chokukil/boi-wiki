@@ -431,6 +431,40 @@ def simulation_agent_prompt_prefix(value: dict[str, Any]) -> str:
     )
 
 
+def simulation_agent_fields(value: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {
+            "simulation_agent": value or {},
+            "retrieval_rounds": None,
+            "used_docs": [],
+            "missing_context": [],
+            "coverage_score": None,
+            "evidence_packets": [],
+            "simulation_boundaries": [],
+        }
+    context_pack = value.get("context_pack") if isinstance(value.get("context_pack"), dict) else {}
+    return {
+        "simulation_agent": value,
+        "retrieval_rounds": ((value.get("agent") or {}).get("retrieval_rounds") if isinstance(value.get("agent"), dict) else None),
+        "used_docs": context_pack.get("documents") or [],
+        "missing_context": ((value.get("coverage_report") or {}).get("missing_context") if isinstance(value.get("coverage_report"), dict) else []),
+        "coverage_score": ((value.get("coverage_report") or {}).get("coverage_score") if isinstance(value.get("coverage_report"), dict) else None),
+        "evidence_packets": value.get("evidence_packets") or context_pack.get("evidence_packets") or [],
+        "simulation_boundaries": value.get("limitations") or [],
+    }
+
+
+def simulation_agent_markdown(value: dict[str, Any] | None) -> str:
+    if not isinstance(value, dict):
+        return ""
+    result = value.get("simulation_result")
+    if isinstance(result, dict):
+        markdown = result.get("markdown")
+        if markdown:
+            return str(markdown)
+    return "# SIMULATED BoI Wiki Simulation Result\n\nSimulation Agent context was generated, but no rendered markdown was returned."
+
+
 async def require_service_token(x_service_token: str | None = Header(None)) -> None:
     if x_service_token != SERVICE_TOKEN:
         raise HTTPException(status_code=401, detail="invalid service token")
@@ -631,38 +665,52 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     prefix = simulation_agent_prompt_prefix(simulation_agent)
                     if prefix:
                         body["input_value"] = prefix + str(body.get("input_value") or "")
-                resp = await client.request("POST", url, headers=headers, json=body)
+                agent_fields = simulation_agent_fields(simulation_agent)
                 try:
-                    resp_body: Any = resp.json()
-                except Exception:
-                    resp_body = resp.text[:2000]
-                if resp.status_code >= 400:
-                    raise HTTPException(status_code=resp.status_code, detail=resp_body)
-                result = {
-                    "ok": True,
-                    "status": "langflow_invoked",
-                    "request_id": request_id,
-                    "action_key": action.get("action_key"),
-                    "http_status": resp.status_code,
-                    "flow_id": flow_info.get("id") or flow_target,
-                    "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
-                    "flow_name": flow_info.get("name") or action.get("flow_name"),
-                    "message": first_langflow_message(resp_body),
-                    "response": resp_body,
-                    "simulation_agent": simulation_agent,
-                    "retrieval_rounds": ((simulation_agent.get("agent") or {}).get("retrieval_rounds") if isinstance(simulation_agent, dict) else None),
-                    "used_docs": ((simulation_agent.get("context_pack") or {}).get("documents") if isinstance(simulation_agent, dict) else []),
-                    "missing_context": ((simulation_agent.get("coverage_report") or {}).get("missing_context") if isinstance(simulation_agent, dict) else []),
-                    "coverage_score": ((simulation_agent.get("coverage_report") or {}).get("coverage_score") if isinstance(simulation_agent, dict) else None),
-                    "evidence_packets": (
-                        simulation_agent.get("evidence_packets")
-                        or ((simulation_agent.get("context_pack") or {}).get("evidence_packets") if isinstance(simulation_agent.get("context_pack"), dict) else [])
-                    )
-                    if isinstance(simulation_agent, dict)
-                    else [],
-                    "simulation_boundaries": (simulation_agent.get("limitations") if isinstance(simulation_agent, dict) else []),
-                    **simulation_metadata(action),
-                }
+                    resp = await client.request("POST", url, headers=headers, json=body)
+                    try:
+                        resp_body: Any = resp.json()
+                    except Exception:
+                        resp_body = resp.text[:2000]
+                    if resp.status_code >= 400:
+                        raise HTTPException(status_code=resp.status_code, detail=resp_body)
+                    result = {
+                        "ok": True,
+                        "status": "langflow_invoked",
+                        "request_id": request_id,
+                        "action_key": action.get("action_key"),
+                        "http_status": resp.status_code,
+                        "flow_id": flow_info.get("id") or flow_target,
+                        "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
+                        "flow_name": flow_info.get("name") or action.get("flow_name"),
+                        "message": first_langflow_message(resp_body),
+                        "response": resp_body,
+                        **agent_fields,
+                        **simulation_metadata(action),
+                    }
+                except httpx.TimeoutException as exc:
+                    if not (isinstance(simulation_agent, dict) and simulation_agent.get("ok") is not False):
+                        raise
+                    result = {
+                        "ok": True,
+                        "status": "langflow_invoked",
+                        "request_id": request_id,
+                        "action_key": action.get("action_key"),
+                        "http_status": None,
+                        "flow_id": flow_info.get("id") or flow_target,
+                        "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
+                        "flow_name": flow_info.get("name") or action.get("flow_name"),
+                        "message": simulation_agent_markdown(simulation_agent),
+                        "response": {
+                            "ok": True,
+                            "status": "langflow_renderer_timeout_fallback",
+                            "timeout_error": repr(exc),
+                            "fallback": "boi_simulation_agent",
+                        },
+                        "langflow_renderer_status": "timeout_fallback",
+                        **agent_fields,
+                        **simulation_metadata(action),
+                    }
 
         elif action_type in HTTP_ACTION_TYPES:
             method = str(action.get("method", "POST")).upper()
@@ -724,7 +772,15 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
 
         simulation_log = {
             key: result.get(key)
-            for key in ("retrieval_rounds", "used_docs", "missing_context", "coverage_score", "evidence_packets", "simulation_boundaries")
+            for key in (
+                "retrieval_rounds",
+                "used_docs",
+                "missing_context",
+                "coverage_score",
+                "evidence_packets",
+                "simulation_boundaries",
+                "langflow_renderer_status",
+            )
             if key in result
         }
         append_action_log({**base_log, **simulation_log, "status": result.get("status"), "result": result})

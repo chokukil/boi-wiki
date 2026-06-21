@@ -4,6 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 
 
@@ -249,6 +250,12 @@ class FakeLangflowAsyncClient:
         )
 
 
+class FakeLangflowTimeoutAsyncClient(FakeLangflowAsyncClient):
+    async def request(self, method, url, headers=None, json=None):
+        self.requests.append({"method": method, "url": url, "headers": headers or {}, "json": json or {}})
+        raise httpx.ReadTimeout("renderer exceeded timeout")
+
+
 class FakeDispatchAsyncClient:
     requests: list[dict] = []
 
@@ -448,6 +455,44 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert logs[0]["coverage_score"] == 1.0
     assert logs[0]["evidence_packets"][0]["provenance"] == "simulated_prerequisite"
     assert logs[0]["used_docs"][0]["role"] == "action_spec"
+
+
+def test_universal_simulator_uses_simulation_agent_result_when_langflow_renderer_times_out(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakeLangflowTimeoutAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowTimeoutAsyncClient)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-direct-sim-timeout",
+                "event_type": "direct_development.result_check.requested.v1",
+                "trace_id": "trace-direct-sim-timeout",
+                "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+            },
+            "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "langflow_invoked"
+    assert body["langflow_renderer_status"] == "timeout_fallback"
+    assert body["response"]["fallback"] == "boi_simulation_agent"
+    assert "SIMULATED BoI Wiki Simulation Result" in body["message"]
+    assert body["coverage_score"] == 1.0
+    assert body["evidence_packets"][0]["evidence_key"] == "response_trend"
+
+    logs = client.get("/api/actions/logs", headers={"x-service-token": "test-service-token"}).json()["items"]
+    assert logs[0]["status"] == "langflow_invoked"
+    assert logs[0]["langflow_renderer_status"] == "timeout_fallback"
+    assert logs[0]["coverage_score"] == 1.0
+    assert logs[0]["evidence_packets"][0]["provenance"] == "simulated_prerequisite"
 
 
 def test_dispatch_passes_prior_results_to_stage_langflow_action(tmp_path, monkeypatch):
