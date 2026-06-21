@@ -23,6 +23,7 @@ BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000")
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
 LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "auto-login")
+LANGFLOW_UNIVERSAL_RENDERER_ENABLED = os.getenv("LANGFLOW_UNIVERSAL_RENDERER_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 MCP_BRIDGE_URL = os.getenv("MCP_BRIDGE_URL", "")
 DRY_RUN_DEFAULT = os.getenv("ACTION_DRY_RUN_DEFAULT", "true").lower() == "true"
 ALLOWED_HOSTS = {
@@ -39,6 +40,14 @@ HTTP_ACTION_TYPES = {"http", "api", "api_call", "webhook", "http_webhook", "inte
 LANGFLOW_RUN_ACTION_TYPES = {"langflow_run", "langflow_flow"}
 
 app = FastAPI(title="BoI Action Gateway", version="0.4.0")
+
+
+def truthy_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def now_iso() -> str:
@@ -680,81 +689,108 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
             simulation_agent_ready = isinstance(simulation_agent, dict) and bool(simulation_agent) and simulation_agent.get("ok") is not False
             flow_target = str(action.get("flow_id") or action.get("flow_name") or "unresolved")
             flow_info: dict[str, Any] = {}
+            renderer_enabled = (
+                truthy_value(action.get("langflow_renderer_enabled"))
+                if "langflow_renderer_enabled" in action
+                else LANGFLOW_UNIVERSAL_RENDERER_ENABLED
+            )
 
-            async with httpx.AsyncClient(timeout=max(langflow_timeout_seconds, 1)) as client:
-                async def perform_langflow_request() -> tuple[Any, Any]:
-                    nonlocal flow_target, flow_info
-                    flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
-                    url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
-                    if not host_allowed(url):
-                        raise HTTPException(status_code=400, detail=f"Langflow URL is not allowlisted: {url}")
-                    headers = {"Content-Type": "application/json", **auth_headers}
-                    headers.update(render_template(action.get("headers") or {}, context))
-                    body = render_template(
-                        action.get("body")
-                        or {
-                            "input_value": str(req.payload or req.event),
-                            "input_type": "chat",
-                            "output_type": "chat",
-                        },
-                        context,
-                    )
-                    if simulation_agent and isinstance(body, dict):
-                        prefix = simulation_agent_prompt_prefix(simulation_agent)
-                        if prefix:
-                            body["input_value"] = prefix + str(body.get("input_value") or "")
-                    resp = await client.request("POST", url, headers=headers, json=body)
+            if simulation_mode == "langflow_universal" and simulation_agent_ready and not renderer_enabled:
+                result = {
+                    "ok": True,
+                    "status": "langflow_invoked",
+                    "request_id": request_id,
+                    "action_key": action.get("action_key"),
+                    "http_status": None,
+                    "flow_id": action.get("flow_id") or flow_target,
+                    "flow_endpoint_name": action.get("flow_endpoint_name") or action.get("endpoint_name") or flow_target,
+                    "flow_name": action.get("flow_name"),
+                    "message": simulation_agent_markdown(simulation_agent),
+                    "response": {
+                        "ok": True,
+                        "status": "langflow_renderer_agent_passthrough",
+                        "fallback": "boi_simulation_agent",
+                        "reason": "Universal Simulator uses trace-aware BoI Simulation Agent as authoritative context.",
+                    },
+                    "langflow_renderer_status": "agent_passthrough",
+                    **agent_fields,
+                    **simulation_metadata(action),
+                }
+            else:
+                async with httpx.AsyncClient(timeout=max(langflow_timeout_seconds, 1)) as client:
+                    async def perform_langflow_request() -> tuple[Any, Any]:
+                        nonlocal flow_target, flow_info
+                        flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
+                        url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
+                        if not host_allowed(url):
+                            raise HTTPException(status_code=400, detail=f"Langflow URL is not allowlisted: {url}")
+                        headers = {"Content-Type": "application/json", **auth_headers}
+                        headers.update(render_template(action.get("headers") or {}, context))
+                        body = render_template(
+                            action.get("body")
+                            or {
+                                "input_value": str(req.payload or req.event),
+                                "input_type": "chat",
+                                "output_type": "chat",
+                            },
+                            context,
+                        )
+                        if simulation_agent and isinstance(body, dict):
+                            prefix = simulation_agent_prompt_prefix(simulation_agent)
+                            if prefix:
+                                body["input_value"] = prefix + str(body.get("input_value") or "")
+                        resp = await client.request("POST", url, headers=headers, json=body)
+                        try:
+                            resp_body: Any = resp.json()
+                        except Exception:
+                            resp_body = resp.text[:2000]
+                        return resp, resp_body
+
                     try:
-                        resp_body: Any = resp.json()
-                    except Exception:
-                        resp_body = resp.text[:2000]
-                    return resp, resp_body
-
-                try:
-                    resp, resp_body = await asyncio.wait_for(perform_langflow_request(), timeout=langflow_timeout_seconds)
-                    if resp.status_code >= 400:
-                        raise HTTPException(status_code=resp.status_code, detail=resp_body)
-                    langflow_message = first_langflow_message(resp_body)
-                    canonical_message = simulation_agent_markdown(simulation_agent) if simulation_agent_ready and str(action.get("simulation_mode") or "") == "langflow_universal" else langflow_message
-                    result = {
-                        "ok": True,
-                        "status": "langflow_invoked",
-                        "request_id": request_id,
-                        "action_key": action.get("action_key"),
-                        "http_status": resp.status_code,
-                        "flow_id": flow_info.get("id") or flow_target,
-                        "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
-                        "flow_name": flow_info.get("name") or action.get("flow_name"),
-                        "message": canonical_message,
-                        "langflow_message": langflow_message,
-                        "langflow_renderer_status": "rendered",
-                        "response": resp_body,
-                        **agent_fields,
-                        **simulation_metadata(action),
-                    }
-                except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
-                    if not simulation_agent_ready:
-                        raise
-                    result = {
-                        "ok": True,
-                        "status": "langflow_invoked",
-                        "request_id": request_id,
-                        "action_key": action.get("action_key"),
-                        "http_status": None,
-                        "flow_id": flow_info.get("id") or flow_target,
-                        "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
-                        "flow_name": flow_info.get("name") or action.get("flow_name"),
-                        "message": simulation_agent_markdown(simulation_agent),
-                        "response": {
+                        resp, resp_body = await asyncio.wait_for(perform_langflow_request(), timeout=langflow_timeout_seconds)
+                        if resp.status_code >= 400:
+                            raise HTTPException(status_code=resp.status_code, detail=resp_body)
+                        langflow_message = first_langflow_message(resp_body)
+                        canonical_message = simulation_agent_markdown(simulation_agent) if simulation_agent_ready and str(action.get("simulation_mode") or "") == "langflow_universal" else langflow_message
+                        result = {
                             "ok": True,
-                            "status": "langflow_renderer_timeout_fallback",
-                            "timeout_error": repr(exc),
-                            "fallback": "boi_simulation_agent",
-                        },
-                        "langflow_renderer_status": "timeout_fallback",
-                        **agent_fields,
-                        **simulation_metadata(action),
-                    }
+                            "status": "langflow_invoked",
+                            "request_id": request_id,
+                            "action_key": action.get("action_key"),
+                            "http_status": resp.status_code,
+                            "flow_id": flow_info.get("id") or flow_target,
+                            "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
+                            "flow_name": flow_info.get("name") or action.get("flow_name"),
+                            "message": canonical_message,
+                            "langflow_message": langflow_message,
+                            "langflow_renderer_status": "rendered",
+                            "response": resp_body,
+                            **agent_fields,
+                            **simulation_metadata(action),
+                        }
+                    except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
+                        if not simulation_agent_ready:
+                            raise
+                        result = {
+                            "ok": True,
+                            "status": "langflow_invoked",
+                            "request_id": request_id,
+                            "action_key": action.get("action_key"),
+                            "http_status": None,
+                            "flow_id": flow_info.get("id") or flow_target,
+                            "flow_endpoint_name": flow_info.get("endpoint_name") or flow_target,
+                            "flow_name": flow_info.get("name") or action.get("flow_name"),
+                            "message": simulation_agent_markdown(simulation_agent),
+                            "response": {
+                                "ok": True,
+                                "status": "langflow_renderer_timeout_fallback",
+                                "timeout_error": repr(exc),
+                                "fallback": "boi_simulation_agent",
+                            },
+                            "langflow_renderer_status": "timeout_fallback",
+                            **agent_fields,
+                            **simulation_metadata(action),
+                        }
 
         elif action_type in HTTP_ACTION_TYPES:
             method = str(action.get("method", "POST")).upper()

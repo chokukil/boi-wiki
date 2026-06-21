@@ -411,6 +411,7 @@ def test_langflow_run_action_resolves_latest_flow_and_invokes_run_endpoint(tmp_p
 
 
 def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGFLOW_UNIVERSAL_RENDERER_ENABLED", "true")
     gateway = load_gateway_module(tmp_path, monkeypatch)
     FakeLangflowAsyncClient.requests = []
     monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowAsyncClient)
@@ -470,7 +471,44 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert logs[0]["used_docs"][0]["role"] == "action_spec"
 
 
+def test_universal_simulator_defaults_to_agent_passthrough_without_langflow_renderer(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakeLangflowAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowAsyncClient)
+    client = TestClient(gateway.app)
+
+    response = client.post(
+        "/api/actions/invoke",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-direct-sim-pass-through",
+                "event_type": "direct_development.result_check.requested.v1",
+                "trace_id": "trace-direct-sim-pass-through",
+                "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+            },
+            "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "langflow_invoked"
+    assert body["langflow_renderer_status"] == "agent_passthrough"
+    assert body["response"]["fallback"] == "boi_simulation_agent"
+    assert body["coverage_score"] == 1.0
+    assert "SIMULATED BoI Wiki Simulation Result" in body["message"]
+    assert [req["url"] for req in FakeLangflowAsyncClient.requests] == ["http://boi-api:8000/api/simulations/universal-agent"]
+
+    logs = client.get("/api/actions/logs", headers={"x-service-token": "test-service-token"}).json()["items"]
+    assert logs[0]["langflow_renderer_status"] == "agent_passthrough"
+    assert logs[0]["coverage_score"] == 1.0
+
+
 def test_universal_simulator_uses_simulation_agent_result_when_langflow_renderer_times_out(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGFLOW_UNIVERSAL_RENDERER_ENABLED", "true")
     gateway = load_gateway_module(tmp_path, monkeypatch)
     FakeLangflowTimeoutAsyncClient.requests = []
     monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowTimeoutAsyncClient)
@@ -509,6 +547,7 @@ def test_universal_simulator_uses_simulation_agent_result_when_langflow_renderer
 
 
 def test_universal_simulator_uses_simulation_agent_result_when_langflow_flow_resolve_times_out(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGFLOW_UNIVERSAL_RENDERER_ENABLED", "true")
     gateway = load_gateway_module(tmp_path, monkeypatch)
     FakeLangflowResolveTimeoutAsyncClient.requests = []
     monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowResolveTimeoutAsyncClient)
