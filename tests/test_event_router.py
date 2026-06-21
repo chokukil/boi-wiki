@@ -30,10 +30,12 @@ class FakeHttpResponse:
 
 class FakeRouterHttpClient:
     requests: list[dict[str, Any]] = []
+    init_kwargs: list[dict[str, Any]] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.args = args
         self.kwargs = kwargs
+        self.init_kwargs.append(dict(kwargs))
 
     async def __aenter__(self) -> "FakeRouterHttpClient":
         return self
@@ -76,6 +78,7 @@ def load_event_router(monkeypatch):
     sys.modules.pop("event_adapter.app.main", None)
     module = importlib.import_module("event_adapter.app.main")
     FakeRouterHttpClient.requests = []
+    FakeRouterHttpClient.init_kwargs = []
     monkeypatch.setattr(module.httpx, "AsyncClient", FakeRouterHttpClient)
     return module
 
@@ -98,3 +101,25 @@ def test_event_router_enriches_generated_boi_after_dispatch(monkeypatch):
     assert enrich_calls[0]["json"]["event"] == event
     assert enrich_calls[0]["json"]["employee_id"] == "100001"
     assert enrich_calls[0]["json"]["dispatch_result"]["boi_id"] == "boi:private:100001:event-router-enrich"
+
+
+def test_event_router_dispatch_timeout_is_configurable(monkeypatch):
+    monkeypatch.setenv("EVENT_ROUTER_DISPATCH_TIMEOUT_SECONDS", "240")
+    router = load_event_router(monkeypatch)
+    event = {
+        "event_id": "evt-router-timeout",
+        "event_type": "direct_development.cross_section.requested.v1",
+        "actor": {"employee_id": "100001"},
+        "payload": {},
+    }
+
+    result = asyncio.run(router.dispatch_event(event))
+
+    assert result["status"] == "dispatched"
+    dispatch_client_kwargs = [
+        kwargs
+        for kwargs, request in zip(FakeRouterHttpClient.init_kwargs, FakeRouterHttpClient.requests, strict=False)
+        if request["url"].endswith("/api/actions/dispatch")
+    ]
+    assert dispatch_client_kwargs
+    assert dispatch_client_kwargs[0]["timeout"] == 240

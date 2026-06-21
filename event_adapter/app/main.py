@@ -22,6 +22,21 @@ AUTO_ROUTE_EVENTS = os.getenv("AUTO_ROUTE_EVENTS", "true").lower() == "true"
 stop_event = asyncio.Event()
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+AUDIT_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_AUDIT_TIMEOUT_SECONDS", 10)
+DISPATCH_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_DISPATCH_TIMEOUT_SECONDS", 300)
+ENRICH_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_ENRICH_TIMEOUT_SECONDS", 60)
+
+
 def _decode(value: bytes) -> dict[str, Any]:
     return json.loads(value.decode("utf-8"))
 
@@ -39,7 +54,7 @@ async def write_boi_event_audit(event: dict[str, Any], status: str, result: dict
     url = f"{BOI_API_URL.rstrip('/')}/api/events/audit"
     payload = {"status": status, "event": event, "result": result, "error": error}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=AUDIT_HTTP_TIMEOUT_SECONDS) as client:
             resp = await client.post(url, headers={"x-service-token": BOI_API_SERVICE_TOKEN}, json=payload)
             resp.raise_for_status()
     except Exception as exc:
@@ -56,7 +71,7 @@ async def dispatch_event(event: dict[str, Any]) -> dict[str, Any]:
     if not AUTO_ROUTE_EVENTS:
         return {"ok": True, "status": "routing_disabled", "results": []}
     employee_id = ((event.get("actor") or {}).get("employee_id") or (event.get("actor") or {}).get("employee_id_hash") or "100001")
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=DISPATCH_HTTP_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             f"{ACTION_GATEWAY_URL.rstrip('/')}/api/actions/dispatch",
             headers={"x-service-token": ACTION_GATEWAY_SERVICE_TOKEN},
@@ -73,7 +88,7 @@ async def dispatch_event(event: dict[str, Any]) -> dict[str, Any]:
 async def enrich_generated_boi(event: dict[str, Any], dispatch_result: dict[str, Any]) -> dict[str, Any]:
     employee_id = ((event.get("actor") or {}).get("employee_id") or (event.get("actor") or {}).get("employee_id_hash") or "100001")
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=ENRICH_HTTP_TIMEOUT_SECONDS) as client:
             resp = await client.post(
                 f"{BOI_API_URL.rstrip('/')}/api/boi/enrich-from-dispatch",
                 headers={"x-service-token": BOI_API_SERVICE_TOKEN},
