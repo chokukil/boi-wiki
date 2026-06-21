@@ -4719,6 +4719,65 @@ def workflow_context(
     return context
 
 
+def simulation_trace_docs(employee_id: str, trace_id: str, *, limit: int = 24) -> list[dict[str, Any]]:
+    if not trace_id:
+        return []
+    root = DATA_ROOT / "private" / employee_id
+    if not root.exists():
+        return []
+    docs: list[dict[str, Any]] = []
+    paths = sorted(root.glob("boi-private-*.md"), key=lambda item: item.stat().st_mtime_ns if item.exists() else 0, reverse=True)
+    for path in paths:
+        if len(docs) >= limit:
+            break
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        if trace_id not in text:
+            continue
+        try:
+            docs.append(read_doc(path))
+        except Exception:
+            continue
+    return list(reversed(docs))
+
+
+def simulation_context_docs(
+    employee_id: str,
+    *,
+    action: dict[str, Any],
+    event_type: str,
+    trace_id: str,
+    sop_ref: str = "",
+) -> list[dict[str, Any]]:
+    docs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(doc: dict[str, Any] | None) -> None:
+        if not doc:
+            return
+        key = str(doc.get("path") or doc.get("uri") or doc["metadata"].get("boi_id") or id(doc))
+        if key in seen:
+            return
+        seen.add(key)
+        docs.append(doc)
+
+    for doc in workflow_docs_for_registry(employee_id):
+        add(doc)
+    for ref in [
+        str(action.get("doc_ref") or ""),
+        f"/public/event-types/{event_type}.md" if event_type else "",
+        sop_ref,
+        str(action.get("sop_ref") or ""),
+    ]:
+        if ref:
+            add(find_doc_by_id(ref, employee_id))
+    for doc in simulation_trace_docs(employee_id, trace_id):
+        add(doc)
+    return docs
+
+
 def workflow_sop_context(employee_id: str, doc_lookup: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     context = workflow_context("equipment-anomaly", employee_id, doc_lookup=doc_lookup)
     return {
@@ -6159,9 +6218,16 @@ async def api_universal_simulation_agent(req: SimulationAgentRequest) -> dict[st
     if not action:
         raise HTTPException(status_code=404, detail=f"Action not found: {req.action_key}")
     employee_id = req.employee_id or DEMO_EMPLOYEE_ID
-    docs = accessible_docs(employee_id)
-    doc_lookup = build_doc_lookup(docs)
     event_type = str(req.event.get("event_type") or "")
+    trace_id = str(req.event.get("trace_id") or "")
+    docs = simulation_context_docs(
+        employee_id,
+        action=action,
+        event_type=event_type,
+        trace_id=trace_id,
+        sop_ref=req.sop_ref or "",
+    )
+    doc_lookup = build_doc_lookup(docs)
     event_def = get_event_type(event_type) or {}
     workflow: dict[str, Any] | None = None
     if req.workflow_key:
@@ -6173,7 +6239,6 @@ async def api_universal_simulation_agent(req: SimulationAgentRequest) -> dict[st
         workflow, stage, event_def = workflow_for_event_type(event_type, employee_id, doc_lookup=doc_lookup)
         if workflow and stage and not req.sop_stage_id:
             event_def = {**event_def, "sop_stage_id": stage.get("sop_stage_id") or stage.get("stage_id") or stage.get("stage")}
-    trace_id = str(req.event.get("trace_id") or "")
     prior_results = merge_prior_results(req.prior_results, trace_prior_action_results(trace_id, employee_id))
     return build_simulation_agent_result(
         action=action,
