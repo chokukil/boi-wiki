@@ -36,6 +36,9 @@ AUDIT_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_AUDIT_TIMEOUT_SECONDS", 10
 DISPATCH_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_DISPATCH_TIMEOUT_SECONDS", 300)
 ENRICH_HTTP_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_ENRICH_TIMEOUT_SECONDS", 60)
 AUDIT_TEXT_LIMIT = int(_env_float("EVENT_ROUTER_AUDIT_TEXT_LIMIT", 600))
+CONSUMER_SESSION_TIMEOUT_MS = int(_env_float("EVENT_ROUTER_CONSUMER_SESSION_TIMEOUT_MS", 300_000))
+CONSUMER_HEARTBEAT_INTERVAL_MS = int(_env_float("EVENT_ROUTER_CONSUMER_HEARTBEAT_INTERVAL_MS", 10_000))
+CONSUMER_MAX_POLL_INTERVAL_MS = int(_env_float("EVENT_ROUTER_CONSUMER_MAX_POLL_INTERVAL_MS", 900_000))
 
 
 def _decode(value: bytes) -> dict[str, Any]:
@@ -238,6 +241,9 @@ async def main() -> None:
         value_deserializer=_decode,
         enable_auto_commit=False,
         auto_offset_reset="earliest",
+        session_timeout_ms=CONSUMER_SESSION_TIMEOUT_MS,
+        heartbeat_interval_ms=CONSUMER_HEARTBEAT_INTERVAL_MS,
+        max_poll_interval_ms=CONSUMER_MAX_POLL_INTERVAL_MS,
     )
     producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP, value_serializer=_encode)
     await consumer.start()
