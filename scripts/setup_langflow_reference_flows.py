@@ -391,7 +391,6 @@ def create_component_reference_flow(
             [
                 create_edge(nodes_by_name["context"], nodes_by_name["simulation_agent"], "work_context"),
                 create_edge(nodes_by_name["simulation_agent"], nodes_by_name["prompt"], "prior_results"),
-                create_edge(nodes_by_name["simulation_agent"], nodes_by_name["result"], "analysis"),
             ]
         )
     data["edges"].extend(edges)
