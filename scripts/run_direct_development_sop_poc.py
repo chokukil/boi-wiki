@@ -5,8 +5,10 @@ import json
 import os
 import sys
 import time
+from http.client import RemoteDisconnected
 from typing import Any
 from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
@@ -18,6 +20,8 @@ BOI_AUTH_BEARER = os.getenv("BOI_AUTH_BEARER", "")
 TIMEOUT_SECONDS = int(os.getenv("POC_SMOKE_TIMEOUT_SECONDS", "240"))
 HTTP_TIMEOUT_SECONDS = int(os.getenv("POC_SMOKE_HTTP_TIMEOUT_SECONDS", "180"))
 POLL_SECONDS = float(os.getenv("POC_SMOKE_POLL_SECONDS", "2"))
+HTTP_RETRY_COUNT = int(os.getenv("POC_SMOKE_HTTP_RETRY_COUNT", "4"))
+HTTP_RETRY_DELAY_SECONDS = float(os.getenv("POC_SMOKE_HTTP_RETRY_DELAY_SECONDS", "2"))
 WORKFLOW_KEY = "direct-development-reporting"
 
 REQUIRED_EVENTS = {
@@ -66,15 +70,35 @@ def request_headers(content_type: bool = False) -> dict[str, str]:
 
 def request_json(method: str, url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     body = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8") if payload is not None else None
-    req = Request(url, data=body, method=method, headers=request_headers(content_type=payload is not None))
-    with urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
-        return json.loads(response.read().decode("utf-8"))
+    for attempt in range(1, HTTP_RETRY_COUNT + 1):
+        req = Request(url, data=body, method=method, headers=request_headers(content_type=payload is not None))
+        try:
+            with urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError:
+            raise
+        except (RemoteDisconnected, TimeoutError, URLError) as exc:
+            if attempt >= HTTP_RETRY_COUNT:
+                raise
+            print(f"retrying request_json attempt={attempt} error={type(exc).__name__}: {exc}", file=sys.stderr)
+            time.sleep(HTTP_RETRY_DELAY_SECONDS * attempt)
+    raise RuntimeError("unreachable request_json retry state")
 
 
 def request_text(url: str) -> str:
-    req = Request(url, method="GET", headers=request_headers())
-    with urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
-        return response.read().decode("utf-8")
+    for attempt in range(1, HTTP_RETRY_COUNT + 1):
+        req = Request(url, method="GET", headers=request_headers())
+        try:
+            with urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
+                return response.read().decode("utf-8")
+        except HTTPError:
+            raise
+        except (RemoteDisconnected, TimeoutError, URLError) as exc:
+            if attempt >= HTTP_RETRY_COUNT:
+                raise
+            print(f"retrying request_text attempt={attempt} error={type(exc).__name__}: {exc}", file=sys.stderr)
+            time.sleep(HTTP_RETRY_DELAY_SECONDS * attempt)
+    raise RuntimeError("unreachable request_text retry state")
 
 
 def boi_url(path: str) -> str:
