@@ -123,3 +123,11 @@ def test_event_router_dispatch_timeout_is_configurable(monkeypatch):
     ]
     assert dispatch_client_kwargs
     assert dispatch_client_kwargs[0]["timeout"] == 240
+
+
+def test_event_router_uses_manual_offset_commit(monkeypatch):
+    router = load_event_router(monkeypatch)
+    source = Path(router.__file__).read_text(encoding="utf-8")
+
+    assert "enable_auto_commit=False" in source
+    assert "await consumer.commit()" in source

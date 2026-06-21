@@ -127,7 +127,7 @@ async def main() -> None:
         bootstrap_servers=KAFKA_BOOTSTRAP,
         group_id="boi-event-router",
         value_deserializer=_decode,
-        enable_auto_commit=True,
+        enable_auto_commit=False,
         auto_offset_reset="earliest",
     )
     producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP, value_serializer=_encode)
@@ -140,6 +140,7 @@ async def main() -> None:
             for _tp, messages in msg_batch.items():
                 for msg in messages:
                     await process_event(msg.value, producer)
+                    await consumer.commit()
     finally:
         await consumer.stop()
         await producer.stop()
