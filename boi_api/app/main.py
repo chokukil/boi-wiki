@@ -1693,6 +1693,12 @@ def filter_docs(
             if q_lower in json.dumps(d["metadata"], ensure_ascii=False, default=str).lower()
             or q_lower in d["body"].lower()
         ]
+        filtered = [
+            item
+            for _score, _index, item in sorted(
+                (-doc_query_score(item, q_lower), index, item) for index, item in enumerate(filtered)
+            )
+        ]
     if event_type:
         filtered = [d for d in filtered if d["metadata"].get("event_type") == event_type]
     if visibility:
@@ -1702,6 +1708,30 @@ def filter_docs(
     if archive_status and archive_status != "all":
         filtered = [d for d in filtered if d["metadata"].get("archive_status", "active") == archive_status]
     return filtered
+
+
+def doc_query_score(doc: dict[str, Any], query: str) -> int:
+    if not query:
+        return 0
+    metadata = doc.get("metadata") or {}
+    title = str(metadata.get("title") or "").lower()
+    boi_id = str(metadata.get("boi_id") or "").lower()
+    uri = str(doc.get("uri") or "").lower()
+    description = str(metadata.get("description") or "").lower()
+    tags = " ".join(str(tag) for tag in metadata.get("tags") or []).lower()
+    body = str(doc.get("body") or "").lower()
+    score = 0
+    if query in title:
+        score += 100
+    if query in boi_id or query in uri:
+        score += 80
+    if query in description:
+        score += 40
+    if query in tags:
+        score += 30
+    if query in body:
+        score += 10
+    return score
 
 
 def doc_search_blob(doc: dict[str, Any]) -> str:
