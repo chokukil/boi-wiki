@@ -3738,27 +3738,50 @@ async def poc_mcp_call(req: PocMcpCallRequest) -> dict[str, Any]:
     employee_id = str(req.arguments.get("employee_id") or DEMO_EMPLOYEE_ID)
     query = str(req.arguments.get("query") or "").lower()
     allowed_visibility = set(req.arguments.get("allowed_visibility") or ["public", "team", "private"])
-    results = []
-    for doc in accessible_docs(employee_id):
+    limit = int(req.arguments.get("limit") or 10)
+    scored_results = []
+    for index, doc in enumerate(accessible_docs(employee_id)):
         metadata = doc["metadata"]
         visibility = str(metadata.get("visibility") or "")
-        haystack = json.dumps(metadata, ensure_ascii=False, default=str).lower() + "\n" + str(doc.get("body", "")).lower()
+        title = str(metadata.get("title") or "")
+        boi_id = str(metadata.get("boi_id") or "")
+        uri = str(doc.get("uri") or "")
+        description = str(metadata.get("description") or "")
+        tags = " ".join(str(tag) for tag in metadata.get("tags") or [])
+        metadata_blob = "\n".join([title, boi_id, uri, description, tags]).lower()
+        body_blob = str(doc.get("body", "")).lower()
+        haystack = metadata_blob + "\n" + body_blob
         if visibility not in allowed_visibility:
             continue
         if query and query not in haystack:
             continue
-        results.append(
-            {
-                "boi_id": metadata.get("boi_id"),
-                "title": metadata.get("title"),
-                "description": metadata.get("description"),
-                "type": metadata.get("type"),
-                "visibility": visibility,
-                "uri": doc.get("uri"),
-            }
+        score = 0
+        if query:
+            if query in title.lower():
+                score += 100
+            if query in boi_id.lower() or query in uri.lower():
+                score += 80
+            if query in description.lower():
+                score += 40
+            if query in tags.lower():
+                score += 30
+            if query in body_blob:
+                score += 10
+        scored_results.append(
+            (
+                -score,
+                index,
+                {
+                    "boi_id": metadata.get("boi_id"),
+                    "title": metadata.get("title"),
+                    "description": metadata.get("description"),
+                    "type": metadata.get("type"),
+                    "visibility": visibility,
+                    "uri": doc.get("uri"),
+                },
+            )
         )
-        if len(results) >= int(req.arguments.get("limit") or 10):
-            break
+    results = [item for _score, _index, item in sorted(scored_results)[:limit]]
     return {
         "ok": True,
         "status": "mcp_invoked",
