@@ -436,6 +436,11 @@ def build_simulation_agent_result(
     )
     expected_contract = _action_output_schema(action, action_body)
     next_event = _extract_next_event(action_body, stage)
+    stage_emits = [str(item) for item in _as_list(stage.get("emits_event")) if item] if stage else []
+    stage_next = str(stage.get("next_stage") or "") if stage else ""
+    terminal_stage = bool(stage) and not stage_emits and not stage_next
+    if terminal_stage and not next_event:
+        next_event = "workflow_terminal"
     manual_condition = _manual_or_approval(action, stage)
     prior_evidence = _prior_evidence(prior_results)
     evidence_packets = _ensure_required_evidence_packets(
