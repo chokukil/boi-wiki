@@ -305,6 +305,57 @@ def summarize_action_result(result: dict[str, Any] | None, error: Any = None) ->
     return ""
 
 
+async def universal_simulation_agent_context(
+    client: httpx.AsyncClient,
+    action: dict[str, Any],
+    req: "InvokeRequest",
+) -> dict[str, Any]:
+    if str(action.get("simulation_mode") or "") != "langflow_universal":
+        return {}
+    url = f"{BOI_API_URL.rstrip('/')}/api/simulations/universal-agent"
+    body = {
+        "action_key": action.get("action_key"),
+        "employee_id": req.employee_id,
+        "event": req.event,
+        "payload": req.payload or req.event.get("payload") or {},
+        "prior_results": req.prior_results,
+        "workflow_key": action.get("workflow_key") or "",
+        "sop_ref": action.get("sop_ref") or "",
+        "sop_stage_id": action.get("sop_stage_id") or "",
+        "max_rounds": int(action.get("simulation_agent_max_rounds") or 4),
+    }
+    try:
+        resp = await client.post(url, headers={"x-service-token": SERVICE_TOKEN}, json=body)
+        try:
+            payload: Any = resp.json()
+        except Exception:
+            payload = {"ok": False, "error": resp.text[:2000]}
+        if resp.status_code >= 400:
+            return {"ok": False, "status": "simulation_agent_failed", "http_status": resp.status_code, "error": payload}
+        return payload if isinstance(payload, dict) else {"ok": False, "status": "simulation_agent_failed", "error": payload}
+    except Exception as exc:
+        return {"ok": False, "status": "simulation_agent_failed", "error": repr(exc)}
+
+
+def simulation_agent_prompt_prefix(value: dict[str, Any]) -> str:
+    if not value:
+        return ""
+    compact = {
+        "agent": value.get("agent"),
+        "coverage_report": value.get("coverage_report"),
+        "citations": value.get("citations"),
+        "limitations": value.get("limitations"),
+        "retrieval_trace": value.get("retrieval_trace"),
+        "context_documents": ((value.get("context_pack") or {}).get("documents") or [])[:8],
+        "simulation_result": value.get("simulation_result"),
+    }
+    return (
+        "BoI Simulation Agent retrieved context. Use this as authoritative context before final rendering.\n"
+        + json.dumps(compact, ensure_ascii=False, indent=2, default=str)
+        + "\n\nOriginal Langflow request follows.\n"
+    )
+
+
 async def require_service_token(x_service_token: str | None = Header(None)) -> None:
     if x_service_token != SERVICE_TOKEN:
         raise HTTPException(status_code=401, detail="invalid service token")
@@ -462,6 +513,9 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
 
         elif action_type in LANGFLOW_RUN_ACTION_TYPES:
             async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 90))) as client:
+                simulation_agent = await universal_simulation_agent_context(client, action, req)
+                context["simulation_agent"] = simulation_agent
+                context["simulation_agent_json"] = json.dumps(simulation_agent, ensure_ascii=False, indent=2, default=str)
                 flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
                 url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
                 if not host_allowed(url):
@@ -477,6 +531,10 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     },
                     context,
                 )
+                if simulation_agent and isinstance(body, dict):
+                    prefix = simulation_agent_prompt_prefix(simulation_agent)
+                    if prefix:
+                        body["input_value"] = prefix + str(body.get("input_value") or "")
                 resp = await client.request("POST", url, headers=headers, json=body)
                 try:
                     resp_body: Any = resp.json()
@@ -495,6 +553,12 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                     "flow_name": flow_info.get("name") or action.get("flow_name"),
                     "message": first_langflow_message(resp_body),
                     "response": resp_body,
+                    "simulation_agent": simulation_agent,
+                    "retrieval_rounds": ((simulation_agent.get("agent") or {}).get("retrieval_rounds") if isinstance(simulation_agent, dict) else None),
+                    "used_docs": ((simulation_agent.get("context_pack") or {}).get("documents") if isinstance(simulation_agent, dict) else []),
+                    "missing_context": ((simulation_agent.get("coverage_report") or {}).get("missing_context") if isinstance(simulation_agent, dict) else []),
+                    "coverage_score": ((simulation_agent.get("coverage_report") or {}).get("coverage_score") if isinstance(simulation_agent, dict) else None),
+                    "simulation_boundaries": (simulation_agent.get("limitations") if isinstance(simulation_agent, dict) else []),
                     **simulation_metadata(action),
                 }
 
@@ -556,7 +620,12 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported action type: {action_type}")
 
-        append_action_log({**base_log, "status": result.get("status"), "result": result})
+        simulation_log = {
+            key: result.get(key)
+            for key in ("retrieval_rounds", "used_docs", "missing_context", "coverage_score", "simulation_boundaries")
+            if key in result
+        }
+        append_action_log({**base_log, **simulation_log, "status": result.get("status"), "result": result})
         return result
     except HTTPException:
         raise

@@ -101,7 +101,15 @@
             </tr>
             {% if action.simulation %}
             <tr>
-              <td colspan="7"><small><strong>{{ action.simulation_label or "SIMULATED" }}</strong> 실제 시스템 호출 아님. {{ action.simulation_notice or "BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다." }}{% if action.real_system_status %} 실제 시스템 상태: {{ action.real_system_status }}.{% endif %}</small></td>
+              <td colspan="7">
+                <small>
+                  <strong>{{ action.simulation_label or "SIMULATED" }}</strong> 실제 시스템 호출 아님.
+                  {{ action.simulation_notice or "BoI Universal Action Simulator Flow가 생성한 PoC 결과입니다." }}
+                  {% if action.real_system_status %} 실제 시스템 상태: {{ action.real_system_status }}.{% endif %}
+                  {% if action.retrieval_rounds %}<br />BoI Simulation Agent: retrieval rounds={{ action.retrieval_rounds }}, coverage={{ action.coverage_score }}{% endif %}
+                  {% if action.missing_context %}<br />Missing context: {{ action.missing_context|join(", ") }}{% endif %}
+                </small>
+              </td>
             </tr>
             {% endif %}
             {% endfor %}

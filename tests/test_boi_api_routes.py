@@ -685,14 +685,14 @@ def test_app_shell_uses_request_domain_when_external_url_is_blank_or_local(boi_a
     monkeypatch.delenv("KAFKA_UI_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("BOI_WIKI_MCP_EXTERNAL_URL", raising=False)
     monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
-    client = TestClient(boi_app_module.app, base_url="http://mangugil.iptime.org:28000")
+    client = TestClient(boi_app_module.app, base_url="http://wiki.example.internal:28000")
 
     response = client.get("/?employee_id=100001")
 
     assert response.status_code == 200
-    assert 'href="http://mangugil.iptime.org:27860"' in response.text
-    assert 'href="http://mangugil.iptime.org:28081"' in response.text
-    assert 'href="http://mangugil.iptime.org:28200"' in response.text
+    assert 'href="http://wiki.example.internal:27860"' in response.text
+    assert 'href="http://wiki.example.internal:28081"' in response.text
+    assert 'href="http://wiki.example.internal:28200"' in response.text
     assert "http://localhost" not in response.text
 
 
@@ -2078,6 +2078,17 @@ def test_direct_development_workflow_status_and_raw_pages_mark_simulated_actions
             "real_system_status": "unavailable",
             "real_system_connected": False,
             "simulated_system": "품질 시스템",
+            "retrieval_rounds": 3,
+            "coverage_score": 1.0,
+            "used_docs": [
+                {
+                    "role": "action_spec",
+                    "title": "Response Trend 확인 시뮬레이션",
+                    "boi_id": "boi:public:actions:langflow:direct-development-quality-response-trend-simulate",
+                    "uri": "/public/actions/langflow/direct-development-quality-response-trend-simulate.md",
+                    "match_reason": "exact_ref",
+                }
+            ],
             "result": {
                 "status": "langflow_invoked",
                 "message": "SIMULATED Response Trend 확인 결과",
@@ -2085,6 +2096,27 @@ def test_direct_development_workflow_status_and_raw_pages_mark_simulated_actions
                 "simulation_label": "SIMULATED",
                 "real_system_connected": False,
                 "simulated_system": "품질 시스템",
+                "retrieval_rounds": 3,
+                "coverage_score": 1.0,
+                "simulation_agent": {
+                    "agent": {"name": "BoI Simulation Agent", "retrieval_rounds": 3},
+                    "coverage_report": {"coverage_score": 1.0, "missing_context": []},
+                    "context_pack": {
+                        "documents": [
+                            {
+                                "role": "action_spec",
+                                "title": "Response Trend 확인 시뮬레이션",
+                                "boi_id": "boi:public:actions:langflow:direct-development-quality-response-trend-simulate",
+                                "uri": "/public/actions/langflow/direct-development-quality-response-trend-simulate.md",
+                                "match_reason": "exact_ref",
+                            }
+                        ]
+                    },
+                    "retrieval_trace": [{"round": 1, "objective": "Resolve exact references."}],
+                    "simulation_result": {
+                        "markdown": "# SIMULATED BoI Wiki Simulation Result\n\n## Current Finding\nAgent rendered result",
+                    },
+                },
             },
         },
     )
@@ -2097,10 +2129,49 @@ def test_direct_development_workflow_status_and_raw_pages_mark_simulated_actions
     assert "SIMULATED" in status.text
     assert "품질 시스템" in status.text
     assert "실제 시스템 호출" in status.text
+    assert "BoI Simulation Agent" in status.text
+    assert "coverage=1.0" in status.text
     assert raw.status_code == 200
     assert "SIMULATED" in raw.text
-    assert "BoI Universal Action Simulator Flow" in raw.text
+    assert "BoI Simulation Agent" in raw.text
+    assert "Agent rendered result" in raw.text
     assert "실제 시스템 호출" in raw.text
+
+
+def test_universal_simulation_agent_builds_context_from_action_event_and_sop(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/simulations/universal-agent",
+        headers={"x-service-token": "dev-service-token-change-me"},
+        json={
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-agent-context",
+                "event_type": "direct_development.result_check.requested.v1",
+                "trace_id": "trace-agent-context",
+                "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+            },
+            "payload": {"title": "직개발 결과 확인", "tech": "Tech-A", "work_id": "1.10"},
+            "prior_results": [{"action_key": "boi.materialize.event", "status": "materialized", "summary": "BoI generated"}],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["simulation"] is True
+    assert body["agent"]["name"] == "BoI Simulation Agent"
+    assert 1 <= body["agent"]["retrieval_rounds"] <= 4
+    assert body["coverage_report"]["covered"]["action_contract"] is True
+    assert body["coverage_report"]["covered"]["expected_output_schema"] is True
+    assert body["coverage_report"]["covered"]["prior_evidence"] is True
+    assert body["simulation_result"]["status"] == "simulated"
+    assert "SIMULATED" in body["simulation_result"]["markdown"]
+    refs = {item["ref"] for item in body["citations"]}
+    assert "boi:public:actions:langflow:direct-development-quality-response-trend-simulate" in refs
+    assert any("direct_development.result_check.requested.v1" in item["uri"] for item in body["citations"])
 
 
 def test_workflow_status_links_action_raw_ids_and_dedupes_generated_bois(boi_app_module):

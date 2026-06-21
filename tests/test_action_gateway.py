@@ -182,6 +182,37 @@ class FakeLangflowAsyncClient:
             )
         return FakeHttpResponse(status_code=404, body={"detail": "not found"})
 
+    async def post(self, url, headers=None, json=None):
+        self.requests.append({"method": "POST", "url": url, "headers": headers or {}, "json": json or {}})
+        if url.endswith("/api/simulations/universal-agent"):
+            return FakeHttpResponse(
+                body={
+                    "ok": True,
+                    "status": "simulated_context_ready",
+                    "agent": {"name": "BoI Simulation Agent", "version": "0.1", "retrieval_rounds": 3},
+                    "context_pack": {
+                        "documents": [
+                            {
+                                "role": "action_spec",
+                                "title": "Response Trend 확인 시뮬레이션",
+                                "boi_id": "boi:public:actions:langflow:direct-development-quality-response-trend-simulate",
+                                "uri": "/public/actions/langflow/direct-development-quality-response-trend-simulate.md",
+                                "match_reason": "exact_ref",
+                            }
+                        ]
+                    },
+                    "retrieval_trace": [{"round": 1, "objective": "Resolve exact references.", "found_docs": []}],
+                    "coverage_report": {"coverage_score": 1.0, "missing_context": [], "covered": {"action_contract": True}},
+                    "citations": [{"label": "action_spec", "title": "Response Trend 확인 시뮬레이션"}],
+                    "limitations": ["SIMULATED dry-run result only; no unavailable internal system was called."],
+                    "simulation_result": {
+                        "status": "simulated",
+                        "markdown": "# SIMULATED BoI Wiki Simulation Result\n\n## Current Finding\nAgent context ready",
+                    },
+                }
+            )
+        return FakeHttpResponse(status_code=404, body={"detail": "not found"})
+
     async def request(self, method, url, headers=None, json=None):
         self.requests.append({"method": method, "url": url, "headers": headers or {}, "json": json or {}})
         return FakeHttpResponse(
@@ -383,9 +414,17 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert body["simulation_label"] == "SIMULATED"
     assert body["real_system_connected"] is False
     assert body["simulated_system"] == "품질 시스템"
+    assert body["retrieval_rounds"] == 3
+    assert body["coverage_score"] == 1.0
+    assert body["used_docs"][0]["role"] == "action_spec"
 
+    agent_request = next(req for req in FakeLangflowAsyncClient.requests if req["url"] == "http://boi-api:8000/api/simulations/universal-agent")
+    assert agent_request["headers"]["x-service-token"] == "test-service-token"
+    assert agent_request["json"]["action_key"] == "direct_development.quality_response_trend.simulate"
     run_request = next(req for req in FakeLangflowAsyncClient.requests if "/api/v1/run/" in req["url"])
     assert run_request["url"] == "http://langflow:7860/api/v1/run/simulator-flow-id"
+    assert "BoI Simulation Agent retrieved context" in run_request["json"]["input_value"]
+    assert "retrieval_trace" in run_request["json"]["input_value"]
     assert "SIMULATED action request" in run_request["json"]["input_value"]
     assert "Tech-A" in run_request["json"]["input_value"]
 
@@ -394,6 +433,9 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert logs[0]["status"] == "langflow_invoked"
     assert logs[0]["simulation"] is True
     assert logs[0]["simulation_label"] == "SIMULATED"
+    assert logs[0]["retrieval_rounds"] == 3
+    assert logs[0]["coverage_score"] == 1.0
+    assert logs[0]["used_docs"][0]["role"] == "action_spec"
 
 
 def test_dispatch_passes_prior_results_to_stage_langflow_action(tmp_path, monkeypatch):

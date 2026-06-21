@@ -153,6 +153,8 @@ security_notes:
 
 이 action은 `SIMULATED` evidence 전용이다. 실제 시스템 호출은 수행하지 않으며, Action Gateway result에는 `simulation=true`, `real_system_connected=false`, `real_system_status=unavailable`을 남긴다.
 
+Action Gateway는 Langflow 실행 전에 BoI Simulation Agent를 호출한다. Agent는 Action Spec, Event Type, SOP stage, prior result를 seed로 BoI Wiki를 bounded loop로 조회하고 `retrieval_trace`, `used_docs`, `coverage_score`, `missing_context`를 action log에 남긴다. Langflow LLM은 이 agent context를 받아 최종 표현을 렌더링한다.
+
 # Citations
 
 - Action catalog: `data/action_catalog/actions.yaml`

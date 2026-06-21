@@ -23,6 +23,7 @@ BOI_COMPONENT_KEYS = {
     "writer": "ext:boi:BoIWikiWriter@extra",
     "action": "ext:boi:BoIActionInvoker@extra",
     "result": "ext:boi:BoIResultComposer@extra",
+    "simulation_agent": "ext:boi:BoISimulationAgent@extra",
 }
 
 
@@ -245,6 +246,7 @@ def create_component_reference_flow(
         "Write a Korean BoI workflow execution draft. Use linked SOP/action context, "
         "avoid PoC architecture boilerplate, and clearly mark manual handoff and approval needs."
     ),
+    include_simulation_agent: bool = False,
     description: str = (
         "BoI custom component reference flow: Event context, metadata, policy guard, "
         "wiki writer, action invoker, and Gemma LLM smoke path."
@@ -350,9 +352,22 @@ def create_component_reference_flow(
             760,
         ),
     }
+    if include_simulation_agent:
+        nodes_by_name["simulation_agent"] = create_custom_node(
+            components,
+            BOI_COMPONENT_KEYS["simulation_agent"],
+            "BoISimulationAgent-boi",
+            920,
+            1080,
+            {
+                "action_key": action_key,
+                "employee_id": "100001",
+                "boi_api_url": "http://boi-api:8000",
+                "max_rounds": 4,
+            },
+        )
     data["nodes"].extend(nodes_by_name.values())
-    data["edges"].extend(
-        [
+    edges = [
             create_edge(chat_input, nodes_by_name["context"], "message"),
             create_edge(nodes_by_name["harness"], nodes_by_name["prompt"], "harness"),
             create_edge(nodes_by_name["reader"], nodes_by_name["prompt"], "documents"),
@@ -370,8 +385,16 @@ def create_component_reference_flow(
             create_edge(nodes_by_name["writer"], nodes_by_name["result"], "write_result"),
             create_edge(nodes_by_name["action"], nodes_by_name["result"], "action_result"),
             create_edge(nodes_by_name["result"], chat_output, "input_value"),
-        ]
-    )
+    ]
+    if include_simulation_agent:
+        edges.extend(
+            [
+                create_edge(nodes_by_name["context"], nodes_by_name["simulation_agent"], "work_context"),
+                create_edge(nodes_by_name["simulation_agent"], nodes_by_name["prompt"], "prior_results"),
+                create_edge(nodes_by_name["simulation_agent"], nodes_by_name["result"], "analysis"),
+            ]
+        )
+    data["edges"].extend(edges)
     data["viewport"] = {"x": -220, "y": -120, "zoom": 0.55}
 
     response = client.post(
@@ -521,14 +544,15 @@ def main() -> None:
                 prompt_instruction=(
                     "You are the official BoI Universal Action Simulator. Generate a Korean PoC simulation result "
                     "for the requested action. Make it unmistakable that this is SIMULATED and not a real system call. "
-                    "Use BoI Wiki context, SOP stage, prior action results, source_refs, and the expected result contract. "
+                    "Use the BoI Simulation Agent context first, then BoI Wiki context, SOP stage, prior action results, source_refs, and the expected result contract. "
                     "Return concise sections plus a JSON block with: status=simulated, simulation=true, simulated_system, "
                     "simulated_action_key, input_evidence_refs, generated_result, confidence, limitations, "
                     "recommended_next_event, human_review_required."
                 ),
+                include_simulation_agent=True,
                 description=(
-                    "Official BoI universal simulator flow: reads BoI context and generates marked SIMULATED "
-                    "action results for unavailable systems or human-step simulations."
+                    "Official BoI universal simulator flow: calls BoI Simulation Agent for bounded wiki retrieval, "
+                    "then renders marked SIMULATED action results for unavailable systems or human-step simulations."
                 ),
             )
             smoke_target = custom_flow.get("id") or custom_flow.get("endpoint_name") or smoke_target

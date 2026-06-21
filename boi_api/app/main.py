@@ -43,6 +43,7 @@ from .workflow_materializer import (
     sanitize_stage_analysis_message,
     render_stage_execution_body,
 )
+from .simulation_agent import build_simulation_agent_result
 from .auth import (
     AuthError,
     AuthIdentity,
@@ -912,7 +913,10 @@ def first_result_text(value: Any, *, allow_string: bool = False) -> str:
 
 def action_raw_readable_markdown(row: dict[str, Any]) -> dict[str, Any]:
     result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    simulation_agent = result.get("simulation_agent") if isinstance(result.get("simulation_agent"), dict) else {}
+    simulation_result = simulation_agent.get("simulation_result") if isinstance(simulation_agent.get("simulation_result"), dict) else {}
     candidates: list[tuple[str, Any]] = [
+        ("result.simulation_agent.simulation_result.markdown", simulation_result.get("markdown")),
         ("result.message", result.get("message")),
         ("result.response", result.get("response")),
         ("result.body", result.get("body")),
@@ -3238,6 +3242,18 @@ class ActionInvokeRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+class SimulationAgentRequest(BaseModel):
+    action_key: str
+    employee_id: str = DEMO_EMPLOYEE_ID
+    event: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    prior_results: list[dict[str, Any]] = Field(default_factory=list)
+    workflow_key: str | None = None
+    sop_ref: str | None = None
+    sop_stage_id: str | None = None
+    max_rounds: int = 4
+
+
 class SourcePreviewRequest(BaseModel):
     path: str = Field(examples=["data/boi/public/sop/equipment-abnormal-response.md"])
     base_sha256: str | None = None
@@ -4510,6 +4526,10 @@ def workflow_status_action_rows(
         simulation_notice: str = "",
         real_system_status: str = "",
         simulated_system: str = "",
+        retrieval_rounds: Any = "",
+        coverage_score: Any = "",
+        missing_context: Any = None,
+        used_docs: Any = None,
     ) -> None:
         if not action_key:
             return
@@ -4545,6 +4565,10 @@ def workflow_status_action_rows(
                 "simulation_notice": simulation_notice or str(catalog_item.get("simulation_notice") or ""),
                 "real_system_status": real_system_status or str(catalog_item.get("real_system_status") or ""),
                 "simulated_system": simulated_system or str(catalog_item.get("simulated_system") or ""),
+                "retrieval_rounds": retrieval_rounds or "",
+                "coverage_score": coverage_score if coverage_score is not None else "",
+                "missing_context": missing_context or [],
+                "used_docs": used_docs or [],
             }
         )
 
@@ -4565,6 +4589,10 @@ def workflow_status_action_rows(
             simulation_notice=str(action.get("simulation_notice") or result.get("simulation_notice") or ""),
             real_system_status=str(action.get("real_system_status") or result.get("real_system_status") or ""),
             simulated_system=str(action.get("simulated_system") or result.get("simulated_system") or ""),
+            retrieval_rounds=action.get("retrieval_rounds") or result.get("retrieval_rounds") or ((result.get("simulation_agent") or {}).get("agent") or {}).get("retrieval_rounds"),
+            coverage_score=action.get("coverage_score") if action.get("coverage_score") is not None else result.get("coverage_score"),
+            missing_context=action.get("missing_context") or result.get("missing_context") or ((result.get("simulation_agent") or {}).get("coverage_report") or {}).get("missing_context"),
+            used_docs=action.get("used_docs") or result.get("used_docs") or ((result.get("simulation_agent") or {}).get("context_pack") or {}).get("documents"),
         )
     for event in payload.get("events") or []:
         result = event.get("result") if isinstance(event.get("result"), dict) else {}
@@ -4586,6 +4614,10 @@ def workflow_status_action_rows(
                 simulation_notice=str(action.get("simulation_notice") or ""),
                 real_system_status=str(action.get("real_system_status") or ""),
                 simulated_system=str(action.get("simulated_system") or ""),
+                retrieval_rounds=action.get("retrieval_rounds") or "",
+                coverage_score=action.get("coverage_score") if action.get("coverage_score") is not None else "",
+                missing_context=action.get("missing_context") or [],
+                used_docs=action.get("used_docs") or [],
             )
     for detail in payload.get("action_details") or []:
         add_row(
@@ -5599,6 +5631,9 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
     result_value = row.get("result") if isinstance(row.get("result"), dict) else {}
     boi_id = str(row.get("boi_id") or result_boi_id(result_value) or "")
     readable_result = action_raw_readable_markdown(redacted_row)
+    simulation_agent = result_value.get("simulation_agent") if isinstance(result_value.get("simulation_agent"), dict) else {}
+    coverage_report = simulation_agent.get("coverage_report") if isinstance(simulation_agent.get("coverage_report"), dict) else {}
+    context_pack = simulation_agent.get("context_pack") if isinstance(simulation_agent.get("context_pack"), dict) else {}
     return templates.TemplateResponse(
         "action_raw.html",
         {
@@ -5638,6 +5673,10 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
             "simulation_notice": row.get("simulation_notice") or result_value.get("simulation_notice") or "",
             "real_system_status": row.get("real_system_status") or result_value.get("real_system_status") or "",
             "simulated_system": row.get("simulated_system") or result_value.get("simulated_system") or "",
+            "simulation_agent": simulation_agent,
+            "coverage_report": coverage_report,
+            "retrieval_trace": simulation_agent.get("retrieval_trace") if simulation_agent else [],
+            "used_docs": context_pack.get("documents") if context_pack else [],
         },
     )
 
@@ -5646,6 +5685,41 @@ async def action_raw_page(request: Request, log_ref: str, employee_id: str = Dep
 async def api_event_audit(req: EventAuditRequest) -> dict[str, Any]:
     append_event_log(status=req.status, event=req.event, result=req.result, error=req.error)
     return {"ok": True}
+
+
+@app.post("/api/simulations/universal-agent", dependencies=[Depends(require_service_token)])
+async def api_universal_simulation_agent(req: SimulationAgentRequest) -> dict[str, Any]:
+    action = action_catalog_by_key().get(req.action_key)
+    if not action:
+        raise HTTPException(status_code=404, detail=f"Action not found: {req.action_key}")
+    employee_id = req.employee_id or DEMO_EMPLOYEE_ID
+    docs = accessible_docs(employee_id)
+    doc_lookup = build_doc_lookup(docs)
+    event_type = str(req.event.get("event_type") or "")
+    event_def = get_event_type(event_type) or {}
+    workflow: dict[str, Any] | None = None
+    if req.workflow_key:
+        try:
+            workflow = workflow_context(req.workflow_key, employee_id, trace_id=str(req.event.get("trace_id") or ""), doc_lookup=doc_lookup)
+        except HTTPException:
+            workflow = None
+    if workflow is None and event_type:
+        workflow, stage, event_def = workflow_for_event_type(event_type, employee_id, doc_lookup=doc_lookup)
+        if workflow and stage and not req.sop_stage_id:
+            event_def = {**event_def, "sop_stage_id": stage.get("sop_stage_id") or stage.get("stage_id") or stage.get("stage")}
+    return build_simulation_agent_result(
+        action=action,
+        event=req.event,
+        payload=req.payload or req.event.get("payload") or {},
+        prior_results=req.prior_results,
+        employee_id=employee_id,
+        docs=docs,
+        event_def=event_def,
+        workflow=workflow,
+        sop_ref=req.sop_ref or "",
+        sop_stage_id=req.sop_stage_id or "",
+        max_rounds=max(1, min(int(req.max_rounds or 4), 5)),
+    )
 
 
 @app.get("/actions", response_class=HTMLResponse)

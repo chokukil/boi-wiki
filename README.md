@@ -73,14 +73,14 @@ docker compose up -d --build
 NAS에서 BoI Wiki를 외부로 연 최소 설정:
 
 ```bash
-BOI_EXTERNAL_URL=http://mangugil.iptime.org:28000
+BOI_EXTERNAL_URL=http://wiki.example.internal:28000
 LANGFLOW_EXTERNAL_URL=
 KAFKA_UI_EXTERNAL_URL=
 BOI_WIKI_MCP_EXTERNAL_URL=
 ACTION_GATEWAY_EXTERNAL_URL=
 ```
 
-Langflow, Kafka UI, MCP Status, Action Gateway의 `*_EXTERNAL_URL`이 비어 있으면 BoI Wiki는 현재 접속 도메인을 기준으로 포트를 추론해 상단 메뉴를 유지합니다. `BOI_EXTERNAL_URL=http://mangugil.iptime.org:28000` 기준 기본 fallback은 Langflow `27860`, Kafka UI `28081`, Action Gateway `28100`, MCP Status `28200`입니다. reverse proxy나 포트 포워딩이 다른 구조라면 해당 `*_EXTERNAL_URL`을 명시합니다.
+Langflow, Kafka UI, MCP Status, Action Gateway의 `*_EXTERNAL_URL`이 비어 있으면 BoI Wiki는 현재 접속 도메인을 기준으로 포트를 추론해 상단 메뉴를 유지합니다. `BOI_EXTERNAL_URL=http://wiki.example.internal:28000` 기준 기본 fallback은 Langflow `27860`, Kafka UI `28081`, Action Gateway `28100`, MCP Status `28200`입니다. reverse proxy나 포트 포워딩이 다른 구조라면 해당 `*_EXTERNAL_URL`을 명시합니다.
 
 ### NAS Git 자동 반영
 

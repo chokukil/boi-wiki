@@ -17,7 +17,7 @@ DEFAULT_FLOW_FILE = ROOT / "langflow" / "flows" / "boi_reference_flow.json"
 REQUIRED_RUNTIME_FLOWS = {
     "BoI Reference Flow": {"endpoint": "boi-reference-flow", "require_boi_components": True},
     "BoI Equipment Stage Analysis Flow": {"endpoint": "boi-equipment-stage-analysis", "require_boi_components": True},
-    "BoI Universal Action Simulator Flow": {"endpoint": "boi-universal-action-simulator", "require_boi_components": True},
+    "BoI Universal Action Simulator Flow": {"endpoint": "boi-universal-action-simulator", "require_boi_components": True, "require_simulation_agent": True},
 }
 
 
@@ -90,7 +90,7 @@ def path_exists(source: str, target: str, edges: list[tuple[str, str]]) -> bool:
     return False
 
 
-def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False) -> list[str]:
+def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False, require_simulation_agent: bool = False) -> list[str]:
     errors: list[str] = []
     node_ids, edges, node_by_id = flow_graph(flow)
     if not node_ids:
@@ -133,11 +133,16 @@ def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False) ->
         prompt = node_matching(node_by_id, "BoI Prompt Composer")
         writer = node_matching(node_by_id, "BoI Wiki Writer")
         result = node_matching(node_by_id, "BoI Result Composer")
+        simulation_agent = node_matching(node_by_id, "BoI Simulation Agent")
         for label, node_id in {"Gemma LLM": llm, "BoI Draft Output": output, "BoI Prompt Composer": prompt, "BoI Wiki Writer": writer, "BoI Result Composer": result}.items():
             if not node_id:
                 errors.append(f"runtime execution node is missing: {label}")
+        if require_simulation_agent and not simulation_agent:
+            errors.append("BoI Universal Simulator is missing BoI Simulation Agent")
         if prompt and llm and not path_exists(prompt, llm, edges):
             errors.append("BoI Prompt Composer is not connected to the Gemma LLM input path")
+        if require_simulation_agent and simulation_agent and prompt and not path_exists(simulation_agent, prompt, edges):
+            errors.append("BoI Simulation Agent is not connected to the prompt path")
         if llm and writer and not path_exists(llm, writer, edges):
             errors.append("Gemma LLM output is not connected to BoI Wiki Writer")
         if writer and result and not path_exists(writer, result, edges):
@@ -203,7 +208,11 @@ def main() -> int:
             selected = sorted(matches, key=lambda item: str(item.get("updated_at") or ""), reverse=True)[0]
             errors.extend(
                 f"runtime:{flow_name}:{error}"
-                for error in audit_flow(selected, require_boi_components=bool(rule["require_boi_components"]))
+                for error in audit_flow(
+                    selected,
+                    require_boi_components=bool(rule["require_boi_components"]),
+                    require_simulation_agent=bool(rule.get("require_simulation_agent")),
+                )
             )
 
     result = {"ok": not errors, "errors": errors, "runtime_summary": runtime_summary}

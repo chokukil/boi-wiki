@@ -179,8 +179,8 @@ Observed simulator actions:
 # Reproduce
 
 ```bash
-python scripts/setup_langflow_reference_flows.py --langflow-url http://mangugil.iptime.org:27860 --auth-mode auto-login --summary
-BOI_API_URL=http://mangugil.iptime.org:28000 POC_SMOKE_TIMEOUT_SECONDS=360 python scripts/run_direct_development_sop_poc.py
+python scripts/setup_langflow_reference_flows.py --langflow-url http://wiki.example.internal:27860 --auth-mode auto-login --summary
+BOI_API_URL=http://wiki.example.internal:28000 POC_SMOKE_TIMEOUT_SECONDS=360 python scripts/run_direct_development_sop_poc.py
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
 ```
 

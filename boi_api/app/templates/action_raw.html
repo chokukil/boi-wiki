@@ -44,6 +44,32 @@
       {% endif %}
     </section>
 
+    {% if simulation_agent %}
+    <section class="workflow-panel">
+      <h2>BoI Simulation Agent</h2>
+      <div class="event-summary-line">
+        <span class="badge status">{{ simulation_agent.agent.name if simulation_agent.agent else "BoI Simulation Agent" }}</span>
+        {% if simulation_agent.agent %}<span>rounds={{ simulation_agent.agent.retrieval_rounds }}</span>{% endif %}
+        {% if coverage_report %}<span>coverage={{ coverage_report.coverage_score }}</span>{% endif %}
+      </div>
+      {% if coverage_report and coverage_report.missing_context %}
+      <p class="notice warning">Missing context: {{ coverage_report.missing_context|join(", ") }}</p>
+      {% endif %}
+      {% if used_docs %}
+      <h3>Used BoI Wiki Docs</h3>
+      <ul class="relationship-list workflow-relationship-list">
+        {% for doc in used_docs[:10] %}
+        <li>
+          <span class="badge status">{{ doc.role }}</span>
+          <strong>{{ doc.title }}</strong>
+          <small>{{ doc.boi_id or doc.uri }} · {{ doc.match_reason }}</small>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+    {% endif %}
+
     <section class="workflow-panel">
       <h2>Linked Views / Metadata</h2>
       <div class="event-summary-line">

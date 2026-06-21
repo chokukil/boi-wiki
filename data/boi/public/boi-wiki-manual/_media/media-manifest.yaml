@@ -10,7 +10,7 @@ media:
   - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-source-sop-image.png
     sha256: 66ea486c3015865527350f23f3e38a942fd63ae2c43b06f833f7980048d6852a
     source_kind: browser-screenshot
-    captured_url: http://mangugil.iptime.org:28000/okf-media/public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png
+    captured_url: http://wiki.example.internal:28000/okf-media/public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png
     captured_at: 2026-06-21T00:48:39+09:00
     viewport: 1280x633
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
@@ -18,7 +18,7 @@ media:
   - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-public-sop.png
     sha256: 86d15c82819f59280547485e7fc9b85fbfc694ec872d75429c08ee84d02eb203
     source_kind: browser-screenshot
-    captured_url: http://mangugil.iptime.org:28000/docs/boi:public:sop:direct-development-reporting?employee_id=100001&folder=public%2Fsop
+    captured_url: http://wiki.example.internal:28000/docs/boi:public:sop:direct-development-reporting?employee_id=100001&folder=public%2Fsop
     captured_at: 2026-06-21T00:48:39+09:00
     viewport: 1280x633
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
@@ -26,7 +26,7 @@ media:
   - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-workflow-status.png
     sha256: 0b431ba3aa5f33435ed4e5c28cb93ddcc08bf16d20e9cff2ee2b7b0afe536cec
     source_kind: browser-screenshot
-    captured_url: http://mangugil.iptime.org:28000/workflows/direct-development-reporting/status?employee_id=100001&trace_id=trace-f91b32904db0434db27c3f84307103ad
+    captured_url: http://wiki.example.internal:28000/workflows/direct-development-reporting/status?employee_id=100001&trace_id=trace-f91b32904db0434db27c3f84307103ad
     captured_at: 2026-06-21T00:48:39+09:00
     viewport: 1280x633
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
@@ -34,7 +34,7 @@ media:
   - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-event-timeline.png
     sha256: 98a7492163f26886b93dc46998f9895b393de8ece3a6dc7abf4a6b321146ea04
     source_kind: browser-screenshot
-    captured_url: http://mangugil.iptime.org:28000/events?employee_id=100001&trace_id=trace-f91b32904db0434db27c3f84307103ad
+    captured_url: http://wiki.example.internal:28000/events?employee_id=100001&trace_id=trace-f91b32904db0434db27c3f84307103ad
     captured_at: 2026-06-21T00:48:39+09:00
     viewport: 1280x633
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
@@ -42,7 +42,7 @@ media:
   - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-action-raw-simulated.png
     sha256: 0a2894a864afef7d33390174395f2617c3113b71c5574bdfbf9e44a856177422
     source_kind: browser-screenshot
-    captured_url: http://mangugil.iptime.org:28000/actions/raw/action%3Aactions-20260621.jsonl%3A20?employee_id=100001
+    captured_url: http://wiki.example.internal:28000/actions/raw/action%3Aactions-20260621.jsonl%3A20?employee_id=100001
     captured_at: 2026-06-21T00:48:39+09:00
     viewport: 1280x633
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
@@ -50,7 +50,7 @@ media:
   - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-generated-boi-simulated.png
     sha256: 1953dd8d315927a2926a04783f97cdf90ae668e53c632a1d5ede7f6b6b55f6cc
     source_kind: browser-screenshot
-    captured_url: http://mangugil.iptime.org:28000/docs/boi:private:100001:20260621004811:69f332?employee_id=100001
+    captured_url: http://wiki.example.internal:28000/docs/boi:private:100001:20260621004811:69f332?employee_id=100001
     captured_at: 2026-06-21T00:48:39+09:00
     viewport: 1280x633
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow
@@ -58,7 +58,7 @@ media:
   - path: public/boi-wiki-manual/_media/browser/direct-development-poc/direct-development-langflow-universal-simulator.png
     sha256: 31841afb22b2dcef536d5a3a9d1238f1deb202fda34382519fc182bcb7efb424
     source_kind: browser-screenshot
-    captured_url: http://mangugil.iptime.org:27860/flow/9525919a-aad6-43c1-a944-7cdd05c0e566
+    captured_url: http://wiki.example.internal:27860/flow/9525919a-aad6-43c1-a944-7cdd05c0e566
     captured_at: 2026-06-21T00:48:39+09:00
     viewport: 1280x633
     related_doc: boi:public:boi-wiki-manual:use-cases:sop-image-to-e2e-workflow

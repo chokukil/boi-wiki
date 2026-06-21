@@ -126,7 +126,7 @@ curl -fsS http://127.0.0.1:28200/health
 
 외부 노출도 별도로 확인한다. 내부 확인은 성공하지만 외부 확인이 실패하면 애플리케이션 장애가 아니라 방화벽, 포트 포워딩, reverse proxy 노출 문제일 수 있다.
 
-상단 메뉴는 `BOI_EXTERNAL_URL` 또는 현재 접속 Host를 기준으로 같은 도메인의 NAS fallback 포트를 추론한다. `http://mangugil.iptime.org:28000`으로 BoI Wiki에 접속하면 기본 메뉴 링크는 Langflow `:27860`, Kafka UI `:28081`, Action Gateway `:28100`, MCP Status `:28200`을 가리킨다. 실제 포트 포워딩이 다르면 `.env`의 `LANGFLOW_EXTERNAL_URL`, `KAFKA_UI_EXTERNAL_URL`, `ACTION_GATEWAY_EXTERNAL_URL`, `BOI_WIKI_MCP_EXTERNAL_URL`을 명시한다.
+상단 메뉴는 `BOI_EXTERNAL_URL` 또는 현재 접속 Host를 기준으로 같은 도메인의 NAS fallback 포트를 추론한다. `http://wiki.example.internal:28000`으로 BoI Wiki에 접속하면 기본 메뉴 링크는 Langflow `:27860`, Kafka UI `:28081`, Action Gateway `:28100`, MCP Status `:28200`을 가리킨다. 실제 포트 포워딩이 다르면 `.env`의 `LANGFLOW_EXTERNAL_URL`, `KAFKA_UI_EXTERNAL_URL`, `ACTION_GATEWAY_EXTERNAL_URL`, `BOI_WIKI_MCP_EXTERNAL_URL`을 명시한다.
 
 # Troubleshooting
 
