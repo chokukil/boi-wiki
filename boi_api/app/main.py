@@ -1299,24 +1299,28 @@ def find_action_log_row_by_request_id(request_id: str, employee_id: str | None =
             continue
         if employee_id and not action_log_visible_to_employee(row, employee_id):
             return None
-            return dict(row)
+        return dict(row)
     return None
 
 
-def trace_action_log_rows(trace_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
-    if not trace_id:
+def trace_action_log_rows(trace_id: str, *, event_ids: set[str] | None = None, limit: int = 80) -> list[dict[str, Any]]:
+    event_id_set = {str(event_id) for event_id in (event_ids or set()) if event_id}
+    tokens = [token for token in [trace_id, *sorted(event_id_set)] if token]
+    if not tokens:
         return []
     rows: list[dict[str, Any]] = []
     for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl")):
         with p.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
-                if trace_id not in line:
+                if not any(token in line for token in tokens):
                     continue
                 try:
                     row = json.loads(line)
                 except Exception:
                     continue
-                if str(row.get("trace_id") or "") != trace_id:
+                row_trace_id = str(row.get("trace_id") or "")
+                row_event_id = str(row.get("event_id") or "")
+                if row_trace_id != trace_id and row_event_id not in event_id_set:
                     continue
                 row["_log_ref"] = f"action:{p.name}:{line_number}"
                 rows.append(row)
@@ -4746,11 +4750,11 @@ def workflow_status_payload(
     doc_lookup = build_doc_lookup(docs)
     context = workflow_context(workflow_key, employee_id, trace_id=trace_id, doc_lookup=doc_lookup)
     events = filtered_event_log_rows(trace_id=trace_id)
-    event_ids = {row.get("event_id") for row in events if row.get("event_id")}
+    event_ids = {str(row.get("event_id")) for row in events if row.get("event_id")}
     action_logs = [
         dict(row)
-        for row in cached_action_log_rows()
-        if row.get("trace_id") == trace_id or (row.get("event_id") and row.get("event_id") in event_ids)
+        for row in trace_action_log_rows(trace_id, event_ids=event_ids, limit=500)
+        if action_log_visible_to_employee(row, employee_id)
     ]
     generated_doc_by_id: dict[str, dict[str, Any]] = {}
     for row in events:

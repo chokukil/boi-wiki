@@ -1804,6 +1804,46 @@ def test_equipment_demo_status_summarizes_trace_context(boi_app_module):
     assert body["relation_graph"]["node_count"] < 50
 
 
+def test_workflow_status_reads_trace_action_logs_without_full_action_cache(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    trace_id = "trace-status-streaming-actions"
+    boi_app_module.append_event_log(
+        status="handled",
+        event={
+            "event_id": "evt-status-streaming-actions",
+            "event_type": "direct_development.result_check.requested.v1",
+            "trace_id": trace_id,
+            "payload": {"title": "직개발 결과 확인"},
+        },
+    )
+    append_action_log_row(
+        boi_app_module,
+        {
+            "logged_at": "2026-06-21T12:00:00+09:00",
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "request_id": "act-status-streaming-actions",
+            "employee_id": "100001",
+            "event_id": "evt-status-streaming-actions",
+            "event_type": "direct_development.result_check.requested.v1",
+            "trace_id": trace_id,
+            "status": "langflow_invoked",
+            "connector_kind": "langflow",
+            "coverage_score": 1.0,
+        },
+    )
+
+    def fail_full_action_cache():
+        raise AssertionError("workflow status should stream trace action logs instead of loading the full action cache")
+
+    monkeypatch.setattr(boi_app_module, "cached_action_log_rows", fail_full_action_cache)
+
+    response = client.get(f"/api/workflows/direct-development-reporting/status?employee_id=100001&trace_id={trace_id}&format=json")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert any(row["action_key"] == "direct_development.quality_response_trend.simulate" for row in body["actions"])
+
+
 def test_generic_workflow_status_uses_sop_stage_registry(boi_app_module):
     client = TestClient(boi_app_module.app)
     trace_id = "trace-generic-workflow-registry"
