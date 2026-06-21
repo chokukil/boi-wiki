@@ -54,7 +54,30 @@
     }
   }
 
+  async function loadEditor(editor) {
+    if (!editor || editor.dataset.loaded === "true") return;
+    const loading = editor.querySelector(".body-editor-loading");
+    resultText("body source loading...", false);
+    if (loading) loading.textContent = "Body source loading...";
+    const response = await fetch(editor.dataset.editorUrl, { headers: { Accept: "application/json" } });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail || "HTTP " + response.status);
+    }
+    editor.dataset.previewUrl = payload.preview_url || "";
+    editor.dataset.applyUrl = payload.apply_url || "";
+    editor.dataset.baseSha = payload.base_sha256 || "";
+    const textarea = editor.querySelector(".body-draft-textarea");
+    if (textarea) textarea.value = payload.body || "";
+    if (loading) loading.textContent = "Body source loaded.";
+    editor.dataset.loaded = "true";
+    resultText("ready", false);
+  }
+
   async function postBodyEdit(editor, url, phase) {
+    if (!editor.dataset.loaded) {
+      await loadEditor(editor);
+    }
     const textarea = editor.querySelector(".body-draft-textarea");
     resultText(phase, false);
     const response = await fetch(url, {
@@ -83,7 +106,12 @@
       const editor = panel();
       if (editor) {
         editor.hidden = false;
-        editor.querySelector(".body-draft-textarea")?.focus();
+        try {
+          await loadEditor(editor);
+          editor.querySelector(".body-draft-textarea")?.focus();
+        } catch (error) {
+          resultText("editor load failed: " + error.message, true);
+        }
       }
       return;
     }

@@ -6,6 +6,7 @@
   <title>{{ doc.metadata.title }} · BoI Wiki</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/doc_graph.js" defer></script>
+  <script src="/static/doc_metadata.js" defer></script>
   <script src="/static/doc_edit.js" defer></script>
   <script src="/static/mermaid_render.js" defer></script>
 </head>
@@ -92,15 +93,14 @@
       <div class="markdown-body rendered-content">{{ body_html }}</div>
       {% if body_editor %}
       <div class="body-editor-panel" hidden
-        data-preview-url="{{ body_editor.preview_url }}"
-        data-apply-url="{{ body_editor.apply_url }}"
-        data-base-sha="{{ body_editor.base_sha256 }}"
+        data-editor-url="{{ body_editor.editor_url }}"
         data-employee-id="{{ employee_id }}">
         <div class="editor-toolbar">
           <strong>Validated Body Editor</strong>
           <a href="{{ body_editor.guide_url }}">Validated edit guide</a>
         </div>
-        <textarea class="body-draft-textarea" spellcheck="false">{{ body_editor.body }}</textarea>
+        <p class="body-editor-loading muted">Body source is loaded on demand.</p>
+        <textarea class="body-draft-textarea" spellcheck="false"></textarea>
         <section class="edit-preview-panel body-preview-panel" aria-live="polite">
           <h3>Preview</h3>
           <div class="body-edit-preview rendered-content muted">Preview / Validate를 실행하면 미리보기가 표시됩니다.</div>
@@ -121,22 +121,28 @@
       </div>
       {% endif %}
     </section>
-    <details class="metadata">
+    <details class="metadata" data-metadata-url="{{ metadata_fragment_url }}">
       <summary class="section-heading">
         <h2>Metadata</h2>
-        <span class="muted">click to expand</span>
+        <span class="muted">summary first · full metadata loads on open</span>
       </summary>
       <nav class="breadcrumb" aria-label="Document folder">
         {% for crumb in doc_folder_breadcrumbs %}
         <a href="{{ crumb.url }}">{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
         {% endfor %}
       </nav>
-      <dl class="metadata-grid">
-        {% for row in metadata_rows %}
+      <dl class="metadata-grid metadata-summary-grid">
+        {% for row in metadata_summary_rows %}
         <dt class="metadata-key">{{ row.key }}</dt>
         <dd class="metadata-value">{{ row.value_html }}</dd>
         {% endfor %}
       </dl>
+      <div class="lazy-panel-controls">
+        <button type="button" class="load-metadata-fragment">Load Full Metadata</button>
+        <a href="{{ metadata_fragment_url }}">HTML fragment</a>
+        <span class="metadata-load-status muted" aria-live="polite"></span>
+      </div>
+      <div class="metadata-fragment-content" hidden></div>
     </details>
     <section class="citations-panel">
       <h2>Citations</h2>

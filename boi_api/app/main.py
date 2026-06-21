@@ -160,12 +160,15 @@ templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 _EVENT_TYPES_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _ACTION_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}
+_DOC_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_ref": {}}
 _WORKFLOW_DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}
 _EVENT_LOG_CACHE: dict[str, Any] = {"signature": None, "rows": []}
 _ACTION_LOG_CACHE: dict[str, Any] = {"signature": None, "rows": []}
 _RECOVERED_DOC_CACHE: dict[str, Any] = {"signature": None, "by_boi_id": {}, "by_uri": {}}
 _FILE_SIGNATURE_CACHE: dict[str, tuple[float, tuple[tuple[str, int, int], ...]]] = {}
 _DOC_BODY_HTML_CACHE: dict[tuple[Any, ...], Markup] = {}
+_OKF_GRAPH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
+MARKDOWN_RENDERER_VERSION = "2026-06-22-doc-detail-lazy-v1"
 SIGNATURE_TTL_SECONDS = 1.0
 
 
@@ -238,10 +241,14 @@ def invalidate_doc_caches() -> None:
     _FILE_SIGNATURE_CACHE.clear()
     _DOCS_CACHE["signature"] = None
     _DOCS_CACHE["docs"] = []
+    _DOC_INDEX_CACHE["signature"] = None
+    _DOC_INDEX_CACHE["by_ref"] = {}
     _WORKFLOW_DOCS_CACHE["signature"] = None
     _WORKFLOW_DOCS_CACHE["docs"] = []
     _DOC_BODY_HTML_CACHE.clear()
     _OKF_GRAPH_CACHE.clear()
+    _OKF_GRAPH_INDEX_CACHE["signature"] = None
+    _OKF_GRAPH_INDEX_CACHE["by_employee"] = {}
 
 
 def invalidate_event_log_caches() -> None:
@@ -368,15 +375,114 @@ def direct_doc_candidate_paths(ref: str) -> list[Path]:
     return result
 
 
+def doc_index_ref_candidates(path: Path, metadata: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    try:
+        rel = str(path.relative_to(DATA_ROOT)).replace("\\", "/")
+    except ValueError:
+        rel = ""
+    if rel:
+        candidates.extend([rel, "/" + rel])
+        if rel.endswith(".md"):
+            candidates.extend([rel[:-3], "/" + rel[:-3]])
+    boi_id = str(metadata.get("boi_id") or "")
+    if boi_id:
+        candidates.append(boi_id)
+    return candidates
+
+
+def doc_index_by_ref() -> dict[str, Path]:
+    ensure_dirs()
+    signature = markdown_signature()
+    if _DOC_INDEX_CACHE["signature"] == signature:
+        return _DOC_INDEX_CACHE["by_ref"]
+    by_ref: dict[str, Path] = {}
+    for path in all_markdown_files():
+        try:
+            metadata, _body = split_frontmatter(path.read_text(encoding="utf-8"))
+        except Exception:
+            metadata = {}
+        for candidate in doc_index_ref_candidates(path, metadata):
+            for key in normalized_doc_lookup_keys(candidate):
+                by_ref.setdefault(key, path)
+    _DOC_INDEX_CACHE["signature"] = signature
+    _DOC_INDEX_CACHE["by_ref"] = by_ref
+    return by_ref
+
+
+def find_doc_path_by_ref(ref: str) -> Path | None:
+    raw = str(ref or "").strip()
+    normalized_uri = raw.lstrip("/")
+    normalized_concept_id = normalized_uri[:-3] if normalized_uri.endswith(".md") else normalized_uri
+    for path in direct_doc_candidate_paths(raw):
+        if path.exists():
+            return path
+    index = doc_index_by_ref()
+    for key in normalized_doc_lookup_keys(raw) + normalized_doc_lookup_keys(normalized_concept_id):
+        path = index.get(key)
+        if path:
+            return path
+    return None
+
+
 def is_generated_private_doc(doc: dict[str, Any]) -> bool:
     metadata = doc.get("metadata") or {}
     author = metadata.get("author") if isinstance(metadata.get("author"), dict) else {}
-    path_parts = Path(str(doc.get("path") or "")).parts
+    path = Path(str(doc.get("path") or ""))
+    try:
+        path_parts = path.relative_to(DATA_ROOT).parts
+    except Exception:
+        path_parts = path.parts
+    path_generated = (
+        len(path_parts) >= 3
+        and path_parts[0] == "private"
+        and path.name.startswith(f"boi-private-{path_parts[1]}-")
+        and path.suffix.lower() == ".md"
+    )
+    source_event = metadata.get("source_event") if isinstance(metadata.get("source_event"), dict) else {}
     return (
         metadata.get("visibility") == "private"
-        and str(author.get("agent_id") or "").startswith("boi-writer")
-        and "private" in path_parts
+        and len(path_parts) >= 2
+        and path_parts[0] == "private"
+        and (
+            str(author.get("agent_id") or "").startswith("boi-writer")
+            or path_generated
+            or bool(source_event.get("trace") or source_event.get("trace_id"))
+            or str(metadata.get("boi_id") or "").startswith(f"boi:private:{path_parts[1]}:")
+        )
     )
+
+
+MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)")
+
+
+def referenced_doc_lookup_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, dict[str, Any]]:
+    lookup = build_doc_lookup([doc])
+    source_path = Path(str(doc.get("path") or ""))
+    refs: set[str] = set()
+    if source_path.exists():
+        for match in MARKDOWN_LINK_RE.finditer(str(doc.get("body") or "")):
+            href = match.group(1)
+            if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href) or href.startswith("#"):
+                continue
+            target, _resolved = resolve_okf_link(href, source_path=source_path, boi_root=DATA_ROOT)
+            refs.add(target)
+    for item in doc.get("metadata", {}).get("source_refs") or []:
+        if isinstance(item, dict):
+            ref = str(item.get("uri") or item.get("ref") or "")
+            if ref and not ref.startswith(("http://", "https://")):
+                refs.add(ref)
+    for ref in sorted(refs):
+        path = find_doc_path_by_ref(ref)
+        if not path:
+            continue
+        try:
+            linked_doc = read_doc(path)
+        except Exception:
+            continue
+        if is_accessible(linked_doc, employee_id):
+            lookup.update(build_doc_lookup([linked_doc]))
+    return lookup
 
 
 def markdown_href_for_doc_route(
@@ -2173,6 +2279,47 @@ def metadata_rows_for_template(metadata: dict[str, Any], request: Request | None
     return [{"key": str(key), "value_html": render_value_html(value)} for key, value in display_metadata.items()]
 
 
+METADATA_SUMMARY_KEYS = (
+    ("type", ("type",)),
+    ("boi_id", ("boi_id",)),
+    ("visibility", ("visibility",)),
+    ("status", ("status",)),
+    ("event_type", ("event_type",)),
+    ("source_event.trace", ("source_event", "trace")),
+    ("source_event.trace_id", ("source_event", "trace_id")),
+    ("workflow_key", ("workflow", "workflow_key")),
+)
+
+
+def nested_metadata_value(metadata: dict[str, Any], path: tuple[str, ...]) -> Any:
+    value: Any = metadata
+    for key in path:
+        if not isinstance(value, dict) or key not in value:
+            return None
+        value = value.get(key)
+    return value
+
+
+def metadata_summary_rows_for_template(metadata: dict[str, Any], request: Request | None = None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for label, path in METADATA_SUMMARY_KEYS:
+        value = nested_metadata_value(metadata, path)
+        if value in (None, "", [], {}):
+            continue
+        display_value = rewrite_display_value(value, request) if request is not None and metadata.get("type") == "boi/action-spec" else value
+        rows.append({"key": label, "value_html": render_value_html(display_value)})
+    return rows
+
+
+def metadata_fragment_html_for_doc(doc: dict[str, Any], request: Request | None = None) -> Markup:
+    rows = metadata_rows_for_template(doc["metadata"], request)
+    items = [
+        f'<dt class="metadata-key">{html_escape(row["key"])}</dt><dd class="metadata-value">{row["value_html"]}</dd>'
+        for row in rows
+    ]
+    return Markup(f'<dl class="metadata-grid">{"".join(items)}</dl>')
+
+
 def action_spec_for_template(metadata: dict[str, Any], request: Request) -> dict[str, Any] | None:
     if metadata.get("type") != "boi/action-spec":
         return None
@@ -2285,28 +2432,18 @@ def find_recovered_doc_by_id(boi_id: str, employee_id: str | None = None) -> dic
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
     normalized_concept_id = normalized_uri[:-3] if normalized_uri.endswith(".md") else normalized_uri
-    for path in direct_doc_candidate_paths(boi_id):
-        if not path.exists():
-            continue
+    path = find_doc_path_by_ref(boi_id)
+    if path:
         try:
             doc = read_doc(path)
         except Exception:
-            continue
-        doc_uri = doc.get("uri", "").lstrip("/")
-        doc_concept_id = doc_uri[:-3] if doc_uri.endswith(".md") else doc_uri
-        if doc["metadata"].get("boi_id") == boi_id or doc_uri == normalized_uri or doc_concept_id == normalized_concept_id:
-            if employee_id is None or is_accessible(doc, employee_id):
-                return doc
-    for p in all_markdown_files():
-        try:
-            doc = read_doc(p)
-        except Exception:
-            continue
-        doc_uri = doc.get("uri", "").lstrip("/")
-        doc_concept_id = doc_uri[:-3] if doc_uri.endswith(".md") else doc_uri
-        if doc["metadata"].get("boi_id") == boi_id or doc_uri == normalized_uri or doc_concept_id == normalized_concept_id:
-            if employee_id is None or is_accessible(doc, employee_id):
-                return doc
+            doc = None
+        if doc:
+            doc_uri = doc.get("uri", "").lstrip("/")
+            doc_concept_id = doc_uri[:-3] if doc_uri.endswith(".md") else doc_uri
+            if doc["metadata"].get("boi_id") == boi_id or doc_uri == normalized_uri or doc_concept_id == normalized_concept_id:
+                if employee_id is None or is_accessible(doc, employee_id):
+                    return doc
     return find_recovered_doc_by_id(boi_id, employee_id)
 
 
@@ -2517,6 +2654,21 @@ def cached_okf_graph_for_docs(docs: list[dict[str, Any]], employee_id: str) -> d
         _OKF_GRAPH_CACHE.clear()
     graph = okf_graph_for_docs(docs, employee_id)
     _OKF_GRAPH_CACHE[key] = graph
+    return graph
+
+
+def cached_okf_graph_for_employee(employee_id: str) -> dict[str, Any]:
+    signature = markdown_signature()
+    if _OKF_GRAPH_INDEX_CACHE["signature"] != signature:
+        _OKF_GRAPH_INDEX_CACHE["signature"] = signature
+        _OKF_GRAPH_INDEX_CACHE["by_employee"] = {}
+    by_employee: dict[str, dict[str, Any]] = _OKF_GRAPH_INDEX_CACHE["by_employee"]
+    cached = by_employee.get(employee_id)
+    if cached is not None:
+        return cached
+    docs = accessible_docs(employee_id)
+    graph = okf_graph_for_docs(docs, employee_id)
+    by_employee[employee_id] = graph
     return graph
 
 
@@ -3071,12 +3223,31 @@ def body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> dict[s
         source_ref_for_path(path)
     except Exception:
         return None
+    doc_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
+    return {
+        "editor_url": "/api/docs/" + doc_ref + "/body-editor?" + urlencode({"employee_id": employee_id}),
+        "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
+    }
+
+
+def full_body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, Any] | None:
+    path_value = str(doc.get("path") or "")
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.exists() or path.suffix.lower() != ".md":
+        return None
+    try:
+        source_ref_for_path(path)
+    except Exception:
+        return None
     content = path.read_text(encoding="utf-8")
+    doc_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
     return {
         "body": doc.get("body") or "",
         "base_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        "preview_url": "/api/docs/" + str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/")) + "/body-preview?" + urlencode({"employee_id": employee_id}),
-        "apply_url": "/api/docs/" + str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/")) + "/body-apply?" + urlencode({"employee_id": employee_id}),
+        "preview_url": "/api/docs/" + doc_ref + "/body-preview?" + urlencode({"employee_id": employee_id}),
+        "apply_url": "/api/docs/" + doc_ref + "/body-apply?" + urlencode({"employee_id": employee_id}),
         "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
     }
 
@@ -3113,7 +3284,7 @@ def cached_doc_body_html(doc: dict[str, Any], employee_id: str, doc_lookup: dict
         employee_id,
         str(doc.get("uri") or ""),
         doc_version,
-        hashlib.sha1(repr(_DOCS_CACHE.get("signature")).encode("utf-8")).hexdigest(),
+        MARKDOWN_RENDERER_VERSION,
     )
     cached = _DOC_BODY_HTML_CACHE.get(key)
     if cached is not None:
@@ -4192,6 +4363,33 @@ async def apply_source_edit_api(
     )
 
 
+@app.get("/api/docs/{boi_id:path}/metadata-fragment", response_class=HTMLResponse)
+async def doc_metadata_fragment(
+    request: Request,
+    boi_id: str,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    doc = find_doc_by_id(boi_id, employee_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    return HTMLResponse(str(metadata_fragment_html_for_doc(doc, request)))
+
+
+@app.get("/api/docs/{boi_id:path}/body-editor")
+async def doc_body_editor(
+    boi_id: str,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    doc = find_doc_by_id(boi_id, employee_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    payload = full_body_editor_payload_for_doc(doc, employee_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Body editor is not available for this document")
+    return payload
+
+
 @app.post("/api/docs/{boi_id:path}/body-preview")
 async def preview_doc_body_edit(
     boi_id: str,
@@ -4199,9 +4397,7 @@ async def preview_doc_body_edit(
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.editor")
-    docs = accessible_docs(employee_id)
-    doc_lookup = build_doc_lookup(docs)
-    doc = doc_from_lookup(boi_id, doc_lookup)
+    doc = find_doc_by_id(boi_id, employee_id)
     if not doc:
         raise HTTPException(status_code=404, detail="BoI not found or not accessible")
     source_path = Path(str(doc.get("path") or ""))
@@ -4225,9 +4421,7 @@ async def apply_doc_body_edit(
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.editor")
-    docs = accessible_docs(employee_id)
-    doc_lookup = build_doc_lookup(docs)
-    doc = doc_from_lookup(boi_id, doc_lookup)
+    doc = find_doc_by_id(boi_id, employee_id)
     if not doc:
         raise HTTPException(status_code=404, detail="BoI not found or not accessible")
     source_path = Path(str(doc.get("path") or ""))
@@ -4272,22 +4466,14 @@ async def doc_page(
             },
             status_code=404,
         )
-    if is_generated_private_doc(doc):
-        docs = [doc]
-        doc_lookup = build_doc_lookup(docs)
-    else:
-        docs = accessible_docs(employee_id)
-        doc_lookup = build_doc_lookup(docs)
-        doc = doc_from_lookup(boi_id, doc_lookup) or doc
-    if doc.get("recovered_from_log"):
-        docs = docs + [doc]
-        doc_lookup.update(build_doc_lookup([doc]))
+    doc_lookup = referenced_doc_lookup_for_doc(doc, employee_id)
     doc_folder_path = doc_folder(doc)
     return_folder = normalize_folder(folder) or doc_folder_path
     workflow = doc["metadata"].get("workflow") or {}
     workflow_key = str(workflow.get("workflow_key") or "")
     workflow_poc = workflow_context(workflow_key, employee_id, doc_lookup=doc_lookup) if workflow_key else None
     graph_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
+    doc_query = urlencode({"employee_id": employee_id})
     return templates.TemplateResponse(
         "doc.html",
         {
@@ -4314,12 +4500,13 @@ async def doc_page(
             "doc_list_url": browse_url(employee_id, folder=return_folder),
             "source_url": source_url_for_doc(doc, employee_id),
             "doc_graph_url": "/api/okf/graph/doc/" + graph_ref + "?" + urlencode({"employee_id": employee_id}),
+            "metadata_fragment_url": "/api/docs/" + graph_ref + "/metadata-fragment?" + doc_query,
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
             "body_html": cached_doc_body_html(doc, employee_id, doc_lookup),
             "body_editor": body_editor_payload_for_doc(doc, employee_id),
             "citations": citation_rows_for_doc(doc, employee_id, doc_lookup=doc_lookup),
             "workflow_poc": workflow_poc,
-            "metadata_rows": metadata_rows_for_template(doc["metadata"], request),
+            "metadata_summary_rows": metadata_summary_rows_for_template(doc["metadata"], request),
             "public_boi_base_url": boi_public_base_url(request),
             "action_spec": action_spec_for_template(doc["metadata"], request),
         },
@@ -4360,19 +4547,18 @@ async def list_boi(
 
 @app.get("/api/okf/graph")
 async def api_okf_graph(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    return cached_okf_graph_for_docs(accessible_docs(employee_id), employee_id)
+    return cached_okf_graph_for_employee(employee_id)
 
 
 @app.get("/api/okf/graph/doc/{boi_id:path}")
 async def api_okf_doc_graph(boi_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    docs = accessible_docs(employee_id)
-    doc_lookup = build_doc_lookup(docs)
-    doc = doc_from_lookup(boi_id, doc_lookup) or find_recovered_doc_by_id(boi_id, employee_id)
+    doc = find_doc_by_id(boi_id, employee_id)
     if not doc:
         raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    graph = cached_okf_graph_for_employee(employee_id)
     if doc.get("recovered_from_log"):
-        docs = docs + [doc]
-    return relationship_context_for_doc(doc, employee_id, docs=docs)
+        graph = okf_graph_for_docs([doc], employee_id)
+    return relationship_context_for_doc(doc, employee_id, graph=graph)
 
 
 @app.post("/api/boi")
@@ -4809,9 +4995,7 @@ def action_details_for_keys(
                 "risk_level": action.get("risk_level"),
                 "approval_required": bool(action.get("approval_required")),
                 "doc_ref": action.get("doc_ref"),
-                "doc_uri": action_doc_uri(action, employee_id, doc_lookup=doc_lookup)
-                if doc_lookup is not None
-                else (doc_url_for_ref(str(action.get("doc_ref") or ""), employee_id) if action.get("doc_ref") else ""),
+                "doc_uri": action_doc_uri(action, employee_id, doc_lookup=doc_lookup),
                 "requires_manual_action": action.get("requires_manual_action"),
                 "simulation": bool(action.get("simulation_mode")),
                 "simulation_mode": action.get("simulation_mode"),

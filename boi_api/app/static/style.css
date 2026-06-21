@@ -67,6 +67,7 @@ main { margin:16px 24px 28px; }
 .metadata > summary::-webkit-details-marker { display:none; }
 .metadata > summary .muted { font-size:13px; font-weight:700; }
 .body-editor-panel { margin-top:14px; border:1px solid #cbd5e1; border-radius:var(--radius); background:#f8fafc; padding:12px; }
+.body-editor-loading { margin:0 0 10px; }
 .editor-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .editor-toolbar a { color:#1d4ed8; font-weight:800; }
 .body-draft-textarea { width:100%; min-height:420px; resize:vertical; border:1px solid var(--line); border-radius:var(--radius); padding:12px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:13px; line-height:1.45; background:#fff; }
@@ -145,11 +146,15 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .empty-state { border:1px dashed #cbd5e1; border-radius:var(--radius); padding:20px; background:#f8fafc; color:#334155; }
 .empty-state p { margin:8px 0 0; color:#64748b; }
 .metadata-grid { display:grid; grid-template-columns:minmax(130px, 36%) minmax(0, 1fr); margin:12px 0 0; border:1px solid #d7dde7; border-radius:var(--radius); overflow:hidden; background:#fff; }
+.metadata-summary-grid { margin-bottom:12px; }
 .metadata-key, .metadata-value { margin:0; padding:10px 12px; border-top:1px solid #e5e7eb; }
 .metadata-key:nth-of-type(1), .metadata-value:nth-of-type(1) { border-top:0; }
 .metadata-key { background:#f3f5f9; color:#334155; font-weight:800; word-break:break-word; }
 .metadata-value { min-width:0; color:#111827; word-break:break-word; }
 .metadata-value .structured-data { margin:0; }
+.lazy-panel-controls { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:10px; }
+.lazy-panel-controls a { color:#1d4ed8; font-weight:800; text-decoration:none; }
+.metadata-fragment-content { margin-top:12px; }
 .relationship-columns { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
 .relationship-columns h3 { margin:8px 0; color:#334155; font-size:15px; }
 .relationship-list { list-style:none; padding:0; margin:8px 0 0; display:flex; flex-direction:column; gap:8px; }

@@ -613,18 +613,23 @@ def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
     client = TestClient(boi_app_module.app)
 
     response = client.get("/docs/boi:team:platform:kafka-sop-v0.1?employee_id=100001")
+    fragment = client.get("/api/docs/boi:team:platform:kafka-sop-v0.1/metadata-fragment?employee_id=100001")
 
     assert response.status_code == 200
-    assert '<details class="metadata">' in response.text
+    assert fragment.status_code == 200
+    assert '<details class="metadata"' in response.text
     assert '<section class="metadata">' not in response.text
-    assert response.text.index('<section class="body">') < response.text.index('<details class="metadata">')
-    assert 'class="metadata-grid"' in response.text
-    assert '<dt class="metadata-key">okf_version</dt>' in response.text
-    assert '<dd class="metadata-value"><span class="scalar string">0.1</span></dd>' in response.text
+    assert response.text.index('<section class="body">') < response.text.index('<details class="metadata"')
+    assert 'class="metadata-grid metadata-summary-grid"' in response.text
+    assert "Load Full Metadata" in response.text
+    assert "/api/docs/boi:team:platform:kafka-sop-v0.1/metadata-fragment?employee_id=100001" in response.text
     assert '<dt class="metadata-key">visibility</dt>' in response.text
     assert '<dd class="metadata-value"><span class="scalar string">team</span></dd>' in response.text
-    assert '<dt class="metadata-key">acl_policy</dt>' in response.text
-    assert '<dd class="metadata-value"><span class="scalar string">acl:team:platform</span></dd>' in response.text
+    assert '<dt class="metadata-key">acl_policy</dt>' not in response.text
+    assert '<dt class="metadata-key">okf_version</dt>' in fragment.text
+    assert '<dd class="metadata-value"><span class="scalar string">0.1</span></dd>' in fragment.text
+    assert '<dt class="metadata-key">acl_policy</dt>' in fragment.text
+    assert '<dd class="metadata-value"><span class="scalar string">acl:team:platform</span></dd>' in fragment.text
 
 
 def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_module):
@@ -913,13 +918,22 @@ def test_doc_page_exposes_validated_source_edit_guidance(boi_app_module):
     client = TestClient(boi_app_module.app)
 
     response = client.get("/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001")
+    editor = client.get("/api/docs/boi:public:sop:equipment-abnormal-response/body-editor?employee_id=100001")
 
     assert response.status_code == 200
+    assert editor.status_code == 200
     assert "draft-only" not in response.text
     assert "Source 보기 / 검증 편집" in response.text
     assert "Body 수정" in response.text
     assert "Preview / Validate" in response.text
     assert "Apply & Commit" in response.text
+    assert 'data-editor-url="/api/docs/boi:public:sop:equipment-abnormal-response/body-editor?employee_id=100001"' in response.text
+    assert "data-base-sha=" not in response.text
+    assert '<textarea class="body-draft-textarea" spellcheck="false"></textarea>' in response.text
+    assert "Body source is loaded on demand." in response.text
+    assert "# Summary" in editor.json()["body"]
+    assert "Public SOP 문서" in editor.json()["body"]
+    assert editor.json()["base_sha256"]
     assert "/source?employee_id=100001&amp;path=data%2Fboi%2Fpublic%2Fsop%2Fequipment-abnormal-response.md" in response.text
     assert "/docs/boi:public:harness:web-draft-editing-guide?employee_id=100001" in response.text
 
@@ -962,6 +976,39 @@ def test_doc_body_editor_previews_and_applies_with_commit(boi_app_module, monkey
     assert body["commit_status"] == "committed"
     assert body["commit_hash"] == "body123"
     assert "Edited Body Apply" in source_path.read_text(encoding="utf-8")
+
+
+def test_generated_private_doc_page_uses_direct_lookup_without_accessible_docs(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    doc = boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/action",
+            "title": "Generated Direct Lookup Test",
+            "description": "Generated private doc should not need full accessible_docs scan",
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:private:100001:20990101010101:fastpath",
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "boi-writer-fastpath-test"},
+            "acl_policy": "acl:private:100001",
+            "status": "draft",
+            "source_event": {"event_id": "evt-fastpath", "event_type": "corrective_action.requested.v1", "trace": "trace-fastpath"},
+        },
+        "# Summary\n\nGenerated private body fast path",
+    )
+
+    def blocked_accessible_docs(employee_id):
+        raise AssertionError("accessible_docs should not be called for generated private doc page")
+
+    monkeypatch.setattr(boi_app_module, "accessible_docs", blocked_accessible_docs)
+    response = client.get(f"/docs/{doc['metadata']['boi_id']}?employee_id=100001")
+
+    assert response.status_code == 200
+    assert "Generated Direct Lookup Test" in response.text
+    assert "Generated private body fast path" in response.text
 
 
 def test_action_spec_is_collapsed_by_default_and_source_citation_is_clickable(boi_app_module):
@@ -1363,6 +1410,8 @@ def test_doc_page_renders_okf_media_images_from_media_directory(boi_app_module):
 def test_doc_graph_api_reuses_okf_graph_between_employee_requests(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     boi_app_module._OKF_GRAPH_CACHE.clear()
+    boi_app_module._OKF_GRAPH_INDEX_CACHE["signature"] = None
+    boi_app_module._OKF_GRAPH_INDEX_CACHE["by_employee"] = {}
     original_okf_graph_for_docs = boi_app_module.okf_graph_for_docs
     calls = 0
 
