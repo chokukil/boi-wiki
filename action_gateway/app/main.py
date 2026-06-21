@@ -660,16 +660,28 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 result = {"ok": True, "status": "event_published", "request_id": request_id, "action_key": action.get("action_key"), "response": resp.json()}
 
         elif action_type in LANGFLOW_RUN_ACTION_TYPES:
-            async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 90))) as client:
-                simulation_agent = await universal_simulation_agent_context(client, action, req)
-                context["simulation_agent"] = simulation_agent
-                context["simulation_agent_json"] = json.dumps(simulation_agent, ensure_ascii=False, indent=2, default=str)
-                agent_fields = simulation_agent_fields(simulation_agent)
-                simulation_agent_ready = isinstance(simulation_agent, dict) and bool(simulation_agent) and simulation_agent.get("ok") is not False
-                flow_target = str(action.get("flow_id") or action.get("flow_name") or "unresolved")
-                flow_info: dict[str, Any] = {}
-                langflow_timeout_seconds = float(action.get("timeout_seconds", 90))
+            base_timeout_seconds = float(action.get("timeout_seconds", 90))
+            simulation_mode = str(action.get("simulation_mode") or "")
+            simulation_agent_timeout_seconds = float(
+                action.get("simulation_agent_timeout_seconds")
+                or (max(base_timeout_seconds, 90) if simulation_mode == "langflow_universal" else base_timeout_seconds)
+            )
+            langflow_timeout_seconds = float(
+                action.get("langflow_renderer_timeout_seconds")
+                or action.get("renderer_timeout_seconds")
+                or (20 if simulation_mode == "langflow_universal" else base_timeout_seconds)
+            )
 
+            async with httpx.AsyncClient(timeout=simulation_agent_timeout_seconds) as simulation_client:
+                simulation_agent = await universal_simulation_agent_context(simulation_client, action, req)
+            context["simulation_agent"] = simulation_agent
+            context["simulation_agent_json"] = json.dumps(simulation_agent, ensure_ascii=False, indent=2, default=str)
+            agent_fields = simulation_agent_fields(simulation_agent)
+            simulation_agent_ready = isinstance(simulation_agent, dict) and bool(simulation_agent) and simulation_agent.get("ok") is not False
+            flow_target = str(action.get("flow_id") or action.get("flow_name") or "unresolved")
+            flow_info: dict[str, Any] = {}
+
+            async with httpx.AsyncClient(timeout=max(langflow_timeout_seconds, 1)) as client:
                 async def perform_langflow_request() -> tuple[Any, Any]:
                     nonlocal flow_target, flow_info
                     flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
