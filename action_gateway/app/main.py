@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -649,7 +650,10 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 agent_fields = simulation_agent_fields(simulation_agent)
                 flow_target = str(action.get("flow_id") or action.get("flow_name") or "unresolved")
                 flow_info: dict[str, Any] = {}
-                try:
+                langflow_timeout_seconds = float(action.get("timeout_seconds", 90))
+
+                async def perform_langflow_request() -> tuple[Any, Any]:
+                    nonlocal flow_target, flow_info
                     flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
                     url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
                     if not host_allowed(url):
@@ -674,6 +678,10 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                         resp_body: Any = resp.json()
                     except Exception:
                         resp_body = resp.text[:2000]
+                    return resp, resp_body
+
+                try:
+                    resp, resp_body = await asyncio.wait_for(perform_langflow_request(), timeout=langflow_timeout_seconds)
                     if resp.status_code >= 400:
                         raise HTTPException(status_code=resp.status_code, detail=resp_body)
                     result = {
@@ -690,7 +698,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                         **agent_fields,
                         **simulation_metadata(action),
                     }
-                except httpx.TimeoutException as exc:
+                except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
                     if not (isinstance(simulation_agent, dict) and simulation_agent.get("ok") is not False):
                         raise
                     result = {
