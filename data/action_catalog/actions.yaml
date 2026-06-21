@@ -605,7 +605,7 @@ actions:
     risk_level: low
     approval_required: false
     dry_run: false
-    timeout_seconds: 180
+    timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
@@ -645,7 +645,7 @@ actions:
     risk_level: low
     approval_required: false
     dry_run: false
-    timeout_seconds: 180
+    timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
@@ -685,7 +685,7 @@ actions:
     risk_level: medium
     approval_required: false
     dry_run: false
-    timeout_seconds: 180
+    timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
@@ -725,7 +725,7 @@ actions:
     risk_level: medium
     approval_required: false
     dry_run: false
-    timeout_seconds: 180
+    timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
@@ -765,7 +765,7 @@ actions:
     risk_level: low
     approval_required: false
     dry_run: false
-    timeout_seconds: 180
+    timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
@@ -805,7 +805,7 @@ actions:
     risk_level: medium
     approval_required: false
     dry_run: false
-    timeout_seconds: 180
+    timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
@@ -845,7 +845,7 @@ actions:
     risk_level: medium
     approval_required: false
     dry_run: false
-    timeout_seconds: 180
+    timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
     require_model: google/gemma-4-26b-a4b-qat
