@@ -1202,6 +1202,41 @@ def cached_event_log_rows() -> list[dict[str, Any]]:
     return cached_jsonl_rows(root=EVENTS_ROOT, pattern="events-*.jsonl", cache=_EVENT_LOG_CACHE, ref_prefix="event")
 
 
+def read_jsonl_row_by_ref(*, log_ref: str, root: Path, ref_prefix: str) -> dict[str, Any] | None:
+    parts = log_ref.split(":")
+    if len(parts) != 3 or parts[0] != ref_prefix:
+        return None
+    file_name = parts[1]
+    if "/" in file_name or "\\" in file_name or not file_name.endswith(".jsonl"):
+        return None
+    try:
+        line_number = int(parts[2])
+    except ValueError:
+        return None
+    if line_number < 1:
+        return None
+    path = (root / file_name).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError:
+        return None
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as handle:
+        for current_line_number, line in enumerate(handle, start=1):
+            if current_line_number != line_number:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                return None
+            if isinstance(row, dict):
+                row["_log_ref"] = log_ref
+                return row
+            return None
+    return None
+
+
 def read_action_logs(limit: int = 200, action_key: str | None = None, offset: int = 0) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in cached_action_log_rows():
@@ -1224,6 +1259,11 @@ def action_log_visible_to_employee(row: dict[str, Any], employee_id: str) -> boo
 
 
 def find_action_log_row_by_ref(log_ref: str, employee_id: str | None = None) -> dict[str, Any] | None:
+    direct_row = read_jsonl_row_by_ref(log_ref=log_ref, root=ACTION_LOG_ROOT, ref_prefix="action")
+    if direct_row is not None:
+        if employee_id and not action_log_visible_to_employee(direct_row, employee_id):
+            return None
+        return dict(direct_row)
     for row in cached_action_log_rows():
         if row.get("_log_ref") != log_ref:
             continue
@@ -1303,6 +1343,10 @@ def count_event_logs(
 
 
 def find_event_log_row_by_ref(log_ref: str) -> dict[str, Any] | None:
+    direct_row = read_jsonl_row_by_ref(log_ref=log_ref, root=EVENTS_ROOT, ref_prefix="event")
+    if direct_row is not None:
+        direct_row["event_label"] = event_label(direct_row.get("event_type"))
+        return direct_row
     for row in cached_event_log_rows():
         if row.get("_log_ref") == log_ref:
             item = dict(row)
