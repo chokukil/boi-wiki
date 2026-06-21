@@ -4684,7 +4684,9 @@ def action_details_for_keys(
                 "risk_level": action.get("risk_level"),
                 "approval_required": bool(action.get("approval_required")),
                 "doc_ref": action.get("doc_ref"),
-                "doc_uri": action_doc_uri(action, employee_id, doc_lookup=doc_lookup),
+                "doc_uri": action_doc_uri(action, employee_id, doc_lookup=doc_lookup)
+                if doc_lookup is not None
+                else (doc_url_for_ref(str(action.get("doc_ref") or ""), employee_id) if action.get("doc_ref") else ""),
                 "requires_manual_action": action.get("requires_manual_action"),
                 "simulation": bool(action.get("simulation_mode")),
                 "simulation_mode": action.get("simulation_mode"),
@@ -4841,7 +4843,7 @@ def workflow_status_payload(
             item = {
                 "boi_id": boi_id,
                 "boi_uri": result.get("boi_uri"),
-                "doc_url": doc_url_if_resolvable(boi_id, employee_id),
+                "doc_url": doc_url_for_ref(boi_id, employee_id),
                 "event_id": row.get("event_id"),
                 "event_type": row.get("event_type"),
             }
