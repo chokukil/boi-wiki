@@ -330,6 +330,55 @@ def doc_from_lookup(ref: str, doc_lookup: dict[str, dict[str, Any]] | None = Non
     return None
 
 
+def direct_doc_candidate_paths(ref: str) -> list[Path]:
+    raw = str(ref or "").strip().lstrip("/")
+    if not raw:
+        return []
+    candidates: list[Path] = []
+    concept = raw[:-3] if raw.endswith(".md") else raw
+    if raw.startswith(("public/", "team/", "private/")):
+        candidates.append(DATA_ROOT / (raw if raw.endswith(".md") else f"{raw}.md"))
+    if raw.startswith("boi:"):
+        parts = raw.split(":")
+        if len(parts) >= 2:
+            visibility = parts[1]
+            tail = parts[2:]
+            if visibility == "public" and tail:
+                candidates.append(DATA_ROOT / "public" / ("/".join(tail) + ".md"))
+                if len(tail) >= 2:
+                    candidates.append(DATA_ROOT / "public" / "/".join(tail[:-1]) / (tail[-1].replace("_", "-") + ".md"))
+            elif visibility == "team" and len(tail) >= 2:
+                candidates.append(DATA_ROOT / "team" / tail[0] / ("/".join(tail[1:]) + ".md"))
+                if len(tail) >= 3:
+                    candidates.append(DATA_ROOT / "team" / tail[0] / "/".join(tail[1:-1]) / (tail[-1].replace("_", "-") + ".md"))
+            elif visibility == "private" and len(tail) >= 3:
+                employee_id, timestamp, suffix = tail[0], tail[1], tail[2]
+                candidates.append(DATA_ROOT / "private" / employee_id / f"boi-private-{employee_id}-{timestamp}-{suffix}.md")
+                candidates.append(DATA_ROOT / "private" / employee_id / ("/".join(tail[1:]) + ".md"))
+    if concept.startswith(("public/", "team/", "private/")):
+        candidates.append(DATA_ROOT / f"{concept}.md")
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for path in candidates:
+        normalized = path.resolve() if path.exists() else path
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(path)
+    return result
+
+
+def is_generated_private_doc(doc: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    author = metadata.get("author") if isinstance(metadata.get("author"), dict) else {}
+    path_parts = Path(str(doc.get("path") or "")).parts
+    return (
+        metadata.get("visibility") == "private"
+        and str(author.get("agent_id") or "").startswith("boi-writer")
+        and "private" in path_parts
+    )
+
+
 def markdown_href_for_doc_route(
     href: str,
     employee_id: str,
@@ -2236,6 +2285,18 @@ def find_recovered_doc_by_id(boi_id: str, employee_id: str | None = None) -> dic
 def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
     normalized_concept_id = normalized_uri[:-3] if normalized_uri.endswith(".md") else normalized_uri
+    for path in direct_doc_candidate_paths(boi_id):
+        if not path.exists():
+            continue
+        try:
+            doc = read_doc(path)
+        except Exception:
+            continue
+        doc_uri = doc.get("uri", "").lstrip("/")
+        doc_concept_id = doc_uri[:-3] if doc_uri.endswith(".md") else doc_uri
+        if doc["metadata"].get("boi_id") == boi_id or doc_uri == normalized_uri or doc_concept_id == normalized_concept_id:
+            if employee_id is None or is_accessible(doc, employee_id):
+                return doc
     for p in all_markdown_files():
         try:
             doc = read_doc(p)
@@ -4192,9 +4253,7 @@ async def doc_page(
     employee_id: str = Depends(current_employee),
     folder: str = "",
 ) -> HTMLResponse:
-    docs = accessible_docs(employee_id)
-    doc_lookup = build_doc_lookup(docs)
-    doc = doc_from_lookup(boi_id, doc_lookup) or find_recovered_doc_by_id(boi_id, employee_id)
+    doc = find_doc_by_id(boi_id, employee_id)
     if not doc:
         return templates.TemplateResponse(
             "missing_doc.html",
@@ -4213,6 +4272,13 @@ async def doc_page(
             },
             status_code=404,
         )
+    if is_generated_private_doc(doc):
+        docs = [doc]
+        doc_lookup = build_doc_lookup(docs)
+    else:
+        docs = accessible_docs(employee_id)
+        doc_lookup = build_doc_lookup(docs)
+        doc = doc_from_lookup(boi_id, doc_lookup) or doc
     if doc.get("recovered_from_log"):
         docs = docs + [doc]
         doc_lookup.update(build_doc_lookup([doc]))
