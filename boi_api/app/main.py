@@ -78,6 +78,7 @@ ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalo
 ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT", "/data/actions"))
 DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT", str(DATA_ROOT.parent / "drafts")))
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
+ACTION_INVOKE_TIMEOUT_SECONDS = float(os.getenv("ACTION_INVOKE_TIMEOUT_SECONDS", "90"))
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 DEFAULT_TEAM_ID = os.getenv("DEFAULT_TEAM_ID", "aix-tf")
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
@@ -6640,7 +6641,7 @@ async def api_action_invoke(req: ActionInvokeRequest, employee_id: str = Depends
     require_employee_role(employee_id, "boi.action_invoker")
     payload = req.model_dump()
     payload["employee_id"] = req.employee_id or employee_id
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=ACTION_INVOKE_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             f"{ACTION_GATEWAY_URL.rstrip('/')}/api/actions/invoke",
             headers={"x-service-token": SERVICE_TOKEN},

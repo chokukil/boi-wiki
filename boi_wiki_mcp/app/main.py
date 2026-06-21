@@ -14,6 +14,7 @@ BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000").rstrip("/")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 DEFAULT_EMPLOYEE_ID = os.getenv("DEFAULT_EMPLOYEE_ID", "100001")
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100").rstrip("/")
+MCP_BACKEND_TIMEOUT_SECONDS = float(os.getenv("MCP_BACKEND_TIMEOUT_SECONDS", "120"))
 
 DEFAULT_PUBLIC_BASE_URL = "http://localhost:8200"
 MCP_TOOL_CAPABILITIES = [
@@ -83,7 +84,7 @@ async def api_post(
 ) -> dict[str, Any]:
     params = {"employee_id": employee_id or DEFAULT_EMPLOYEE_ID}
     headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=MCP_BACKEND_TIMEOUT_SECONDS) as client:
         resp = await client.post(f"{BOI_API_URL}{path}", params=params, headers=headers, json=payload or {})
     try:
         body: Any = resp.json()

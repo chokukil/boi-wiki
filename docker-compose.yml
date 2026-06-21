@@ -134,6 +134,7 @@ services:
       ACTION_CATALOG_ROOT: /data/action_catalog
       ACTION_LOG_ROOT: /data/actions
       ACTION_GATEWAY_URL: http://action-gateway:8100
+      ACTION_INVOKE_TIMEOUT_SECONDS: ${ACTION_INVOKE_TIMEOUT_SECONDS:-90}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       BOI_AUTH_MODE: ${BOI_AUTH_MODE:-dev}
       BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:8000}
@@ -217,6 +218,7 @@ services:
     environment:
       BOI_API_URL: http://boi-api:8000
       ACTION_GATEWAY_URL: http://action-gateway:8100
+      MCP_BACKEND_TIMEOUT_SECONDS: ${MCP_BACKEND_TIMEOUT_SECONDS:-120}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       DEFAULT_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
       BOI_WIKI_MCP_EXTERNAL_URL: ${BOI_WIKI_MCP_EXTERNAL_URL:-}
