@@ -152,7 +152,7 @@ def _extract_next_event(value: Any, stage: dict[str, Any] | None = None) -> str:
     if match:
         return match.group(1).strip()
     if stage:
-        emits = _as_list(stage.get("emits_event"))
+        emits = [str(item) for item in _as_list(stage.get("emits_event")) if str(item or "").strip()]
         if emits:
             return str(emits[0])
         next_stage = stage.get("next_stage")
