@@ -116,6 +116,7 @@ services:
     build:
       context: ./boi_api
     container_name: boi-api
+    command: sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${BOI_API_WORKERS:-2}"
     depends_on:
       kafka:
         condition: service_healthy
