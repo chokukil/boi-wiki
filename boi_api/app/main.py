@@ -492,14 +492,27 @@ def render_markdown(
             flush_paragraph()
             flush_list()
             flush_table()
-            language = stripped.strip("`").strip().lower()
+            language = stripped.removeprefix("```").strip().split(None, 1)[0].lower() if stripped.removeprefix("```").strip() else ""
             code_lines: list[str] = []
             index += 1
             while index < len(lines) and not lines[index].strip().startswith("```"):
                 code_lines.append(lines[index])
                 index += 1
             code = "\n".join(code_lines)
-            if language == "json":
+            if language == "mermaid":
+                html_parts.append(
+                    '<div class="mermaid-diagram" data-mermaid-state="pending">'
+                    '<div class="mermaid">'
+                    f"{html_escape(code)}"
+                    "</div>"
+                    '<p class="mermaid-status" aria-live="polite">Mermaid diagram pending render.</p>'
+                    '<details class="mermaid-source-fallback">'
+                    "<summary>Mermaid source</summary>"
+                    f'<pre class="code-block"><code>{html_escape(code)}</code></pre>'
+                    "</details>"
+                    "</div>"
+                )
+            elif language == "json":
                 parsed = parse_structured_string(code)
                 if parsed is not code:
                     html_parts.append(str(render_value_html(parsed)))

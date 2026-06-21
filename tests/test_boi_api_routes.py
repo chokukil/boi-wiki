@@ -513,7 +513,7 @@ def test_doc_page_renders_markdown_body(boi_app_module):
             "acl_policy": {"agent": "boi-writer-v0.1"},
             "status": "draft",
         },
-        "# Summary\n\n본문이 **굵게** 보이고 `inline code`도 보입니다.\n\n| 항목 | 상태 |\n|---|---|\n| Markdown | OK |",
+        "# Summary\n\n본문이 **굵게** 보이고 `inline code`도 보입니다.\n\n| 항목 | 상태 |\n|---|---|\n| Markdown | OK |\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\n```python\nprint('plain code')\n```",
     )
 
     response = client.get("/docs/boi-rendering-test?employee_id=100001")
@@ -526,6 +526,12 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert "<strong>굵게</strong>" in response.text
     assert "<code>inline code</code>" in response.text
     assert '<table class="markdown-table">' in response.text
+    assert '<script src="/static/mermaid_render.js" defer></script>' in response.text
+    assert '<div class="mermaid-diagram" data-mermaid-state="pending">' in response.text
+    assert '<div class="mermaid">' in response.text
+    assert "flowchart TD" in response.text
+    assert "Mermaid source" in response.text
+    assert "print(&#x27;plain code&#x27;)" in response.text
     assert "<pre class=\"markdown-body\">" not in response.text
 
 

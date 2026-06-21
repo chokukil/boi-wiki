@@ -30,7 +30,7 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 # Agent Rules
 
 1. 전체 파일을 먼저 뒤지지 말고 `index.md`에서 시작해 필요한 폴더의 `index.md`와 concept 문서로 좁힌다.
-2. 개인 기록은 local workspace의 `data/boi/private/me/...` 아래에 저장한다.
+2. 개인 기록은 local workspace의 `data/boi/private/{7자리사번}/...` 아래에 저장한다. `0000000`은 scaffold 전용이며, 실제 작업 전 agent가 7자리 사번을 확인해야 한다.
 3. Local Private 문서에는 `visibility: local-private`, `local_only: true`, `promotion_status`, lifecycle metadata를 넣는다.
 4. 저장 전 Level 0 self-check를 반드시 수행하고, promotion 전에는 local preflight와 preview를 같이 만든다.
 5. `index.md`와 `log.md`를 업데이트한다.
@@ -41,7 +41,7 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 
 `boi-wiki-local`은 local MCP를 공식 경로로 요구하지 않는다. Agent는 skills와 이 하네스를 기준으로 다음 작업을 local-only로 완료할 수 있어야 한다.
 
-- SOP를 Mermaid/SVG 도식으로 변환
+- SOP를 Mermaid/SVG 도식으로 변환. Mermaid 기본 산출물은 `Overview + Swimlane`이고, 복잡한 구간은 stage detail diagram으로 분리한다.
 - Event 발생 시 SOP stage, action, manual handoff 계획
 - API/Webhook/MCP/Langflow/Manual action spec 초안 작성
 - 업무 단위 agent context pack 작성

@@ -48,7 +48,10 @@
     fillList(".body-validation-warnings", report.warnings || []);
     renderSuggestions(payload.fix_suggestions || []);
     const html = payload.body_preview_html || (payload.preview && payload.preview.html);
-    if (preview && html) preview.innerHTML = html;
+    if (preview && html) {
+      preview.innerHTML = html;
+      preview.dispatchEvent(new CustomEvent("boi:markdown-rendered", { bubbles: true }));
+    }
   }
 
   async function postBodyEdit(editor, url, phase) {
