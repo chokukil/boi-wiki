@@ -134,7 +134,7 @@ def start_workflow() -> dict[str, Any]:
 
 
 def get_status(trace_id: str) -> dict[str, Any]:
-    query = urlencode({"employee_id": EMPLOYEE_ID, "trace_id": trace_id})
+    query = urlencode({"employee_id": EMPLOYEE_ID, "trace_id": trace_id, "compact": "true"})
     return request_json("GET", boi_url(f"/api/workflows/{WORKFLOW_KEY}/status?{query}"))
 
 

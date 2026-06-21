@@ -1848,6 +1848,65 @@ def test_workflow_status_reads_trace_logs_without_full_jsonl_caches(boi_app_modu
     assert any(row["action_key"] == "direct_development.quality_response_trend.simulate" for row in body["actions"])
 
 
+def test_workflow_status_compact_omits_large_results_but_keeps_simulation_fields(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    trace_id = "trace-status-compact-actions"
+    large_message = "Response Trend evidence " + ("x" * 5000)
+    boi_app_module.append_event_log(
+        status="handled",
+        event={
+            "event_id": "evt-status-compact-actions",
+            "event_type": "direct_development.result_check.requested.v1",
+            "trace_id": trace_id,
+            "payload": {"title": "직개발 결과 확인"},
+        },
+        result={"dispatch_result": {"response": {"item": {"body": "large raw dispatch payload"}}}},
+    )
+    append_action_log_row(
+        boi_app_module,
+        {
+            "logged_at": "2026-06-21T12:00:00+09:00",
+            "action_key": "direct_development.quality_response_trend.simulate",
+            "request_id": "act-status-compact-actions",
+            "employee_id": "100001",
+            "event_id": "evt-status-compact-actions",
+            "event_type": "direct_development.result_check.requested.v1",
+            "trace_id": trace_id,
+            "status": "langflow_invoked",
+            "connector_kind": "langflow",
+            "result": {
+                "status": "langflow_invoked",
+                "simulation": True,
+                "coverage_score": 1.0,
+                "message": large_message,
+                "response": {"huge": "raw-result-should-not-be-returned"},
+                "simulation_agent": {
+                    "coverage_report": {"coverage_score": 1.0, "missing_context": []},
+                    "context_pack": {"documents": [{"ref": "/public/sop/direct-development-reporting.md"}]},
+                    "evidence_packets": [{"name": "Response Trend", "provenance": "simulated_prerequisite"}],
+                },
+            },
+        },
+    )
+
+    response = client.get(
+        f"/api/workflows/direct-development-reporting/status?employee_id=100001&trace_id={trace_id}&format=json&compact=true"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["compact"] is True
+    assert body["relation_graph"]["omitted"].startswith("compact workflow status")
+    rendered = json.dumps(body, ensure_ascii=False)
+    assert "raw-result-should-not-be-returned" not in rendered
+    assert len(rendered) < 20000
+    action = next(row for row in body["actions"] if row["action_key"] == "direct_development.quality_response_trend.simulate")
+    assert action["simulation"] is True
+    assert action["coverage_score"] == 1.0
+    assert action["result"]["message"].endswith("...")
+    assert action["evidence_packets"][0]["provenance"] == "simulated_prerequisite"
+
+
 def test_generic_workflow_status_uses_sop_stage_registry(boi_app_module):
     client = TestClient(boi_app_module.app)
     trace_id = "trace-generic-workflow-registry"

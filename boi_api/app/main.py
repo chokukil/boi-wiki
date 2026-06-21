@@ -4945,23 +4945,146 @@ def workflow_trace_graph(
     }
 
 
+def compact_status_text(value: Any, limit: int = 320) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip() + " ..."
+
+
+def compact_workflow_event_row(row: dict[str, Any]) -> dict[str, Any]:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    payload = result.get("payload") if isinstance(result.get("payload"), dict) else row.get("payload")
+    compact: dict[str, Any] = {}
+    for key in [
+        "_log_ref",
+        "logged_at",
+        "event_type",
+        "event_id",
+        "trace_id",
+        "event_label",
+        "payload_title",
+        "actor_employee_id",
+        "employee_id",
+    ]:
+        if key in row:
+            compact[key] = row[key]
+    if isinstance(payload, dict):
+        compact["result"] = {"payload": payload}
+    elif result:
+        compact["result"] = {
+            key: result[key]
+            for key in ["status", "boi_id", "boi_uri", "request_id"]
+            if key in result
+        }
+    return compact
+
+
+def compact_workflow_action_log_row(row: dict[str, Any]) -> dict[str, Any]:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    simulation_agent = result.get("simulation_agent") if isinstance(result.get("simulation_agent"), dict) else {}
+    coverage_report = simulation_agent.get("coverage_report") if isinstance(simulation_agent.get("coverage_report"), dict) else {}
+    context_pack = simulation_agent.get("context_pack") if isinstance(simulation_agent.get("context_pack"), dict) else {}
+    agent_meta = simulation_agent.get("agent") if isinstance(simulation_agent.get("agent"), dict) else {}
+
+    coverage_score = row.get("coverage_score")
+    if coverage_score is None:
+        coverage_score = result.get("coverage_score")
+    if coverage_score is None:
+        coverage_score = coverage_report.get("coverage_score")
+
+    missing_context = row.get("missing_context") or result.get("missing_context") or coverage_report.get("missing_context") or []
+    used_docs = row.get("used_docs") or result.get("used_docs") or context_pack.get("documents") or []
+    evidence_packets = (
+        row.get("evidence_packets")
+        or result.get("evidence_packets")
+        or simulation_agent.get("evidence_packets")
+        or context_pack.get("evidence_packets")
+        or []
+    )
+
+    simulation = bool(row.get("simulation") or result.get("simulation"))
+    if not simulation and (simulation_agent or row.get("simulation_label") or result.get("simulation_label")):
+        simulation = True
+
+    compact: dict[str, Any] = {}
+    for key in [
+        "_log_ref",
+        "logged_at",
+        "action_key",
+        "status",
+        "request_id",
+        "employee_id",
+        "event_id",
+        "event_type",
+        "trace_id",
+        "connector_kind",
+        "doc_ref",
+        "boi_id",
+        "summary",
+        "simulation_label",
+        "simulation_notice",
+        "real_system_status",
+        "simulated_system",
+    ]:
+        if key in row:
+            compact[key] = row[key]
+
+    compact["simulation"] = simulation
+    if coverage_score is not None:
+        compact["coverage_score"] = coverage_score
+    if missing_context:
+        compact["missing_context"] = missing_context
+    if used_docs:
+        compact["used_docs"] = used_docs
+    if evidence_packets:
+        compact["evidence_packets"] = evidence_packets
+    if agent_meta.get("retrieval_rounds") is not None:
+        compact["retrieval_rounds"] = agent_meta.get("retrieval_rounds")
+
+    compact["result"] = {
+        key: value
+        for key, value in {
+            "ok": result.get("ok"),
+            "status": result.get("status"),
+            "request_id": result.get("request_id"),
+            "action_key": result.get("action_key"),
+            "simulation": simulation,
+            "simulation_label": result.get("simulation_label") or row.get("simulation_label"),
+            "coverage_score": coverage_score,
+            "langflow_renderer_status": result.get("langflow_renderer_status"),
+            "flow_id": result.get("flow_id"),
+            "flow_name": result.get("flow_name"),
+            "message": compact_status_text(str(result.get("message") or result.get("summary") or ""), 320)
+            if result.get("message") or result.get("summary")
+            else "",
+        }.items()
+        if value not in (None, "")
+    }
+    return compact
+
+
 def workflow_status_payload(
     workflow_key: str,
     trace_id: str,
     employee_id: str,
     graph_scope: str = "trace",
+    compact: bool = False,
 ) -> dict[str, Any]:
-    docs = accessible_docs(employee_id) if graph_scope == "global" else workflow_docs_for_registry(employee_id)
+    docs = [] if compact else (accessible_docs(employee_id) if graph_scope == "global" else workflow_docs_for_registry(employee_id))
     context = workflow_context(workflow_key, employee_id, trace_id=trace_id)
-    events = filtered_event_log_rows(trace_id=trace_id)
+    raw_events = filtered_event_log_rows(trace_id=trace_id)
+    events = [compact_workflow_event_row(row) for row in raw_events] if compact else raw_events
     event_ids = {str(row.get("event_id")) for row in events if row.get("event_id")}
-    action_logs = [
-        dict(row)
-        for row in trace_action_log_rows(trace_id, event_ids=event_ids, limit=500)
-        if action_log_visible_to_employee(row, employee_id)
-    ]
+    action_logs = []
+    for row in trace_action_log_rows(trace_id, event_ids=event_ids, limit=500):
+        if not action_log_visible_to_employee(row, employee_id):
+            continue
+        action_logs.append(compact_workflow_action_log_row(row) if compact else dict(row))
     generated_doc_by_id: dict[str, dict[str, Any]] = {}
-    for row in events:
+    for row in raw_events:
         result = row.get("result") or {}
         boi_id = str(result.get("boi_id") or "")
         if boi_id:
@@ -4976,13 +5099,25 @@ def workflow_status_payload(
             if not existing or (item.get("doc_url") and not existing.get("doc_url")):
                 generated_doc_by_id[boi_id] = item
     generated_docs = list(generated_doc_by_id.values())
-    relation_graph = (
-        cached_okf_graph_for_docs(docs, employee_id)
-        if graph_scope == "global"
-        else workflow_trace_graph(context=context, events=events, actions=action_logs, generated_docs=generated_docs, employee_id=employee_id)
-    )
+    if compact:
+        relation_graph = {
+            "node_count": 0,
+            "edge_count": 0,
+            "nodes": [],
+            "edges": [],
+            "outgoing_by_source": {},
+            "incoming_by_target": {},
+            "omitted": "compact workflow status omits relation_graph; use /status/raw?section=graph for raw graph data",
+        }
+    else:
+        relation_graph = (
+            cached_okf_graph_for_docs(docs, employee_id)
+            if graph_scope == "global"
+            else workflow_trace_graph(context=context, events=events, actions=action_logs, generated_docs=generated_docs, employee_id=employee_id)
+        )
     return {
         "ok": True,
+        "compact": compact,
         "workflow_key": workflow_key,
         "trace_id": trace_id,
         "sop_ref": context["sop_ref"],
@@ -5011,8 +5146,9 @@ def equipment_anomaly_status_payload(
     trace_id: str,
     employee_id: str,
     graph_scope: str = "trace",
+    compact: bool = False,
 ) -> dict[str, Any]:
-    return workflow_status_payload("equipment-anomaly", trace_id, employee_id, graph_scope=graph_scope)
+    return workflow_status_payload("equipment-anomaly", trace_id, employee_id, graph_scope=graph_scope, compact=compact)
 
 
 def workflow_status_action_rows(
@@ -5365,8 +5501,9 @@ async def generic_workflow_status(
     employee_id: str = Depends(current_employee),
     format: str = "auto",
     graph_scope: str = "trace",
+    compact: bool = False,
 ) -> Any:
-    payload = workflow_status_payload(workflow_key, trace_id, employee_id, graph_scope=graph_scope)
+    payload = workflow_status_payload(workflow_key, trace_id, employee_id, graph_scope=graph_scope, compact=compact)
     if workflow_status_should_render_html(request, format):
         return templates.TemplateResponse("workflow_status.html", workflow_status_template_context(request, payload, employee_id))
     return payload
@@ -5407,8 +5544,9 @@ async def equipment_anomaly_status(
     employee_id: str = Depends(current_employee),
     format: str = "auto",
     graph_scope: str = "trace",
+    compact: bool = False,
 ) -> Any:
-    payload = equipment_anomaly_status_payload(trace_id, employee_id, graph_scope=graph_scope)
+    payload = equipment_anomaly_status_payload(trace_id, employee_id, graph_scope=graph_scope, compact=compact)
     if workflow_status_should_render_html(request, format):
         return templates.TemplateResponse("workflow_status.html", workflow_status_template_context(request, payload, employee_id))
     return payload
