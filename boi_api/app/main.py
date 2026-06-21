@@ -86,6 +86,7 @@ DEMO_EMPLOYEE_ID = os.getenv("DEMO_EMPLOYEE_ID", "100001")
 BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1").rstrip("/")
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
+KAFKA_PUBLISH_TIMEOUT_SECONDS = float(os.getenv("BOI_KAFKA_PUBLISH_TIMEOUT_SECONDS", "20"))
 
 LOCALHOST_NAMES = {"localhost", "127.0.0.1", "::1", "testserver"}
 DEFAULT_EXTERNAL_TOOL_PORTS = {
@@ -159,6 +160,7 @@ templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 _EVENT_TYPES_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _ACTION_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}
+_WORKFLOW_DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}
 _EVENT_LOG_CACHE: dict[str, Any] = {"signature": None, "rows": []}
 _ACTION_LOG_CACHE: dict[str, Any] = {"signature": None, "rows": []}
 _RECOVERED_DOC_CACHE: dict[str, Any] = {"signature": None, "by_boi_id": {}, "by_uri": {}}
@@ -236,6 +238,8 @@ def invalidate_doc_caches() -> None:
     _FILE_SIGNATURE_CACHE.clear()
     _DOCS_CACHE["signature"] = None
     _DOCS_CACHE["docs"] = []
+    _WORKFLOW_DOCS_CACHE["signature"] = None
+    _WORKFLOW_DOCS_CACHE["docs"] = []
     _DOC_BODY_HTML_CACHE.clear()
     _OKF_GRAPH_CACHE.clear()
 
@@ -4415,13 +4419,31 @@ async def publish_event(req: EventPublishRequest, employee_id: str = Depends(cur
         "trace_id": req.trace_id or f"trace-{uuid.uuid4().hex}",
     }
     append_event_log(status="published", event=event)
-    producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP, value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode())
-    await producer.start()
-    try:
-        await producer.send_and_wait(BOI_EVENTS_TOPIC, event)
-    finally:
-        await producer.stop()
+    await publish_event_to_kafka(event)
     return {"ok": True, "topic": BOI_EVENTS_TOPIC, "event": event}
+
+
+async def publish_event_to_kafka(event: dict[str, Any]) -> None:
+    timeout = max(1.0, KAFKA_PUBLISH_TIMEOUT_SECONDS)
+    producer = AIOKafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP,
+        value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode(),
+        request_timeout_ms=int(timeout * 1000),
+        retry_backoff_ms=500,
+    )
+    started = False
+    try:
+        await asyncio.wait_for(producer.start(), timeout=timeout)
+        started = True
+        await asyncio.wait_for(producer.send_and_wait(BOI_EVENTS_TOPIC, event), timeout=timeout)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Kafka publish failed: {type(exc).__name__}") from exc
+    finally:
+        if started:
+            try:
+                await asyncio.wait_for(producer.stop(), timeout=5)
+            except Exception:
+                pass
 
 
 def unique_values(values: list[str]) -> list[str]:
@@ -4439,13 +4461,36 @@ def workflow_docs_for_registry(employee_id: str, doc_lookup: dict[str, dict[str,
         seen: set[str] = set()
         docs: list[dict[str, Any]] = []
         for doc in doc_lookup.values():
+            metadata = doc.get("metadata") or {}
+            workflow = metadata.get("workflow") or {}
+            if not isinstance(workflow, dict) or not workflow.get("workflow_key"):
+                continue
             uri = str(doc.get("uri") or doc.get("path") or id(doc))
             if uri in seen:
                 continue
             seen.add(uri)
             docs.append(doc)
         return docs
-    return accessible_docs(employee_id)
+    candidate_paths: list[Path] = []
+    for root_name in ("public", "team"):
+        root = DATA_ROOT / root_name
+        if root.exists():
+            candidate_paths.extend(sorted(root.rglob("*.md")))
+    signature = file_signature(candidate_paths)
+    if _WORKFLOW_DOCS_CACHE["signature"] != signature:
+        docs = []
+        for path in candidate_paths:
+            try:
+                doc = read_doc(path)
+            except Exception:
+                continue
+            metadata = doc.get("metadata") or {}
+            workflow = metadata.get("workflow") or {}
+            if isinstance(workflow, dict) and workflow.get("workflow_key"):
+                docs.append(doc)
+        _WORKFLOW_DOCS_CACHE["signature"] = signature
+        _WORKFLOW_DOCS_CACHE["docs"] = docs
+    return [doc for doc in _WORKFLOW_DOCS_CACHE["docs"] if is_accessible(doc, employee_id)]
 
 
 def normalize_workflow_stage(stage: dict[str, Any]) -> dict[str, Any]:
@@ -4584,14 +4629,23 @@ def workflow_context(
     employee_id: str,
     trace_id: str | None = None,
     doc_lookup: dict[str, dict[str, Any]] | None = None,
+    include_action_details: bool = True,
 ) -> dict[str, Any]:
     workflow = workflow_for_key(workflow_key, employee_id, doc_lookup=doc_lookup)
     if not workflow:
         raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_key}")
     context = dict(workflow)
     context.pop("doc", None)
-    context["action_details"] = action_details_for_keys(context.get("expected_actions") or [], employee_id, doc_lookup=doc_lookup)
-    context["manual_action_details"] = action_details_for_keys(context.get("expected_manual_actions") or [], employee_id, doc_lookup=doc_lookup)
+    context["action_details"] = (
+        action_details_for_keys(context.get("expected_actions") or [], employee_id, doc_lookup=doc_lookup)
+        if include_action_details
+        else []
+    )
+    context["manual_action_details"] = (
+        action_details_for_keys(context.get("expected_manual_actions") or [], employee_id, doc_lookup=doc_lookup)
+        if include_action_details
+        else []
+    )
     if trace_id:
         context["status_url"] = workflow_status_api_url_for_key(workflow_key, trace_id, employee_id)
         context["status_page_url"] = workflow_status_page_url_for_key(workflow_key, trace_id, employee_id)
@@ -4770,9 +4824,8 @@ def workflow_status_payload(
     employee_id: str,
     graph_scope: str = "trace",
 ) -> dict[str, Any]:
-    docs = accessible_docs(employee_id)
-    doc_lookup = build_doc_lookup(docs)
-    context = workflow_context(workflow_key, employee_id, trace_id=trace_id, doc_lookup=doc_lookup)
+    docs = accessible_docs(employee_id) if graph_scope == "global" else workflow_docs_for_registry(employee_id)
+    context = workflow_context(workflow_key, employee_id, trace_id=trace_id)
     events = filtered_event_log_rows(trace_id=trace_id)
     event_ids = {str(row.get("event_id")) for row in events if row.get("event_id")}
     action_logs = [
@@ -4788,7 +4841,7 @@ def workflow_status_payload(
             item = {
                 "boi_id": boi_id,
                 "boi_uri": result.get("boi_uri"),
-                "doc_url": doc_url_if_resolvable(boi_id, employee_id, doc_lookup=doc_lookup),
+                "doc_url": doc_url_if_resolvable(boi_id, employee_id),
                 "event_id": row.get("event_id"),
                 "event_type": row.get("event_type"),
             }
@@ -5103,7 +5156,7 @@ async def start_workflow_from_data(
     raw: dict[str, Any],
     employee_id: str,
 ) -> dict[str, Any]:
-    workflow = workflow_context(workflow_key, employee_id)
+    workflow = workflow_context(workflow_key, employee_id, include_action_details=False)
     raw_payload = raw.get("payload")
     payload = dict(raw_payload) if isinstance(raw_payload, dict) else {key: value for key, value in raw.items() if key not in WORKFLOW_START_CONTROL_KEYS}
     owner = str(raw.get("actor_employee_id") or raw.get("owner") or payload.get("owner") or employee_id)
@@ -5122,7 +5175,7 @@ async def start_workflow_from_data(
         employee_id=employee_id,
     )
     trace_id = str(result["event"].get("trace_id") or "")
-    workflow = workflow_context(workflow_key, employee_id, trace_id=trace_id)
+    workflow = workflow_context(workflow_key, employee_id, trace_id=trace_id, include_action_details=False)
     workflow.update(
         {
             "workflow_key": workflow_key,
@@ -5296,12 +5349,7 @@ async def inbound_webhook(
         "trace_id": incoming.get("trace_id") or f"trace-{uuid.uuid4().hex}",
     }
     append_event_log(status="published", event=event)
-    producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP, value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode())
-    await producer.start()
-    try:
-        await producer.send_and_wait(BOI_EVENTS_TOPIC, event)
-    finally:
-        await producer.stop()
+    await publish_event_to_kafka(event)
     return {"ok": True, "source": source, "topic": BOI_EVENTS_TOPIC, "event": event}
 
 
