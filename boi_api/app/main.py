@@ -5169,31 +5169,51 @@ def langflow_auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def first_langflow_text(value: Any) -> str:
-    if isinstance(value, dict):
-        for key in ("answer_markdown", "text", "message", "content"):
-            item = value.get(key)
-            if isinstance(item, str) and item.strip():
-                return item
-            found = first_langflow_text(item)
-            if found:
-                return found
-        for item in value.values():
-            found = first_langflow_text(item)
-            if found:
-                return found
-    elif isinstance(value, list):
+def iter_langflow_text_candidates(value: Any, depth: int = 0) -> list[str]:
+    if depth > 12:
+        return []
+    candidates: list[str] = []
+    if isinstance(value, str):
+        if value.strip():
+            candidates.append(value)
+        return candidates
+    if isinstance(value, list):
         for item in value:
-            found = first_langflow_text(item)
-            if found:
-                return found
+            candidates.extend(iter_langflow_text_candidates(item, depth + 1))
+        return candidates
+    if isinstance(value, dict):
+        preferred_keys = (
+            "answer_markdown",
+            "text",
+            "message",
+            "content",
+            "output",
+            "result",
+            "data",
+            "results",
+            "artifacts",
+            "outputs",
+            "messages",
+        )
+        seen_keys: set[str] = set()
+        for key in preferred_keys:
+            if key in value:
+                seen_keys.add(key)
+                candidates.extend(iter_langflow_text_candidates(value.get(key), depth + 1))
+        for key, item in value.items():
+            if key not in seen_keys:
+                candidates.extend(iter_langflow_text_candidates(item, depth + 1))
+    return candidates
+
+
+def first_langflow_text(value: Any) -> str:
+    for text in iter_langflow_text_candidates(value):
+        if text.strip():
+            return text
     return ""
 
 
-def parse_langflow_agent_payload(run_result: dict[str, Any]) -> dict[str, Any]:
-    text = first_langflow_text(run_result)
-    if not text:
-        raise LangflowBoiAgentUnavailable("BoI Agent Flow returned no message")
+def parse_langflow_json_text(text: str) -> dict[str, Any] | None:
     stripped = text.strip()
     if stripped.startswith("```json"):
         stripped = stripped.removeprefix("```json").strip()
@@ -5201,14 +5221,35 @@ def parse_langflow_agent_payload(run_result: dict[str, Any]) -> dict[str, Any]:
             stripped = stripped[:-3].strip()
     elif stripped.startswith("```") and stripped.endswith("```"):
         stripped = stripped[3:-3].strip()
-    if stripped.startswith("{"):
-        try:
-            parsed = json.loads(stripped)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-    return {"answer_markdown": text}
+    if not stripped.startswith("{"):
+        return None
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def langflow_payload_has_answer(payload: dict[str, Any]) -> bool:
+    answer = str(payload.get("answer_markdown") or payload.get("answer") or payload.get("message") or "").strip()
+    return bool(answer and answer != "BoI Agent returned an empty answer.")
+
+
+def parse_langflow_agent_payload(run_result: dict[str, Any]) -> dict[str, Any]:
+    candidates = iter_langflow_text_candidates(run_result)
+    if not candidates:
+        raise LangflowBoiAgentUnavailable("BoI Agent Flow returned no message")
+    parsed_candidates: list[dict[str, Any]] = []
+    for text in candidates:
+        parsed = parse_langflow_json_text(text)
+        if parsed is None:
+            continue
+        if langflow_payload_has_answer(parsed):
+            return parsed
+        parsed_candidates.append(parsed)
+    if parsed_candidates:
+        return parsed_candidates[0]
+    return {"answer_markdown": candidates[0]}
 
 
 def normalize_langflow_agent_response(

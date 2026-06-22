@@ -207,6 +207,40 @@ def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypa
     assert calls[0]["req"].question == "설비 이상 대응 SOP와 Action을 찾아줘"
 
 
+def test_boi_agent_parser_prefers_nested_langflow_answer_payload(boi_app_module):
+    req = boi_app_module.BoiAgentChatRequest(question="SOP 찾아줘", current_url="/")
+    answer_payload = {
+        "answer_markdown": "- **링크**: [설비 SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001)",
+        "links": [{"label": "설비 SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+        "citations": [{"label": "설비 SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+        "suggested_questions": ["이 SOP의 Action을 보여줘."],
+        "context_summary": {"source": "langflow"},
+    }
+    run_result = {
+        "outputs": [
+            {
+                "outputs": [
+                    {
+                        "results": {
+                            "message": {
+                                "data": {"text": json.dumps(answer_payload, ensure_ascii=False)},
+                                "text": json.dumps(answer_payload, ensure_ascii=False),
+                            }
+                        },
+                        "artifacts": {"message": json.dumps({"answer_markdown": "BoI Agent returned an empty answer."})},
+                    }
+                ]
+            }
+        ]
+    }
+
+    body = boi_app_module.normalize_langflow_agent_response(run_result, req, "100001")
+
+    assert body["answer_markdown"].startswith("- **링크**")
+    assert body["links"][0]["label"] == "설비 SOP"
+    assert body["context_summary"]["langflow_flow"] == "boi-agent"
+
+
 def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
