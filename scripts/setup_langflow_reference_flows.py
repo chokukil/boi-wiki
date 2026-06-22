@@ -596,8 +596,9 @@ def create_boi_agent_flow(
         {"boi_api_url": "http://boi-api:8000"},
     )
     for output in tools["data"]["node"].get("outputs") or []:
-        output["types"] = ["Tool"]
-        output["selected"] = "Tool"
+        if output.get("name") == "api_build_tool":
+            output["types"] = ["Tool"]
+            output["selected"] = "Tool"
     result = create_custom_node(
         components,
         BOI_COMPONENT_KEYS["agent_result"],
@@ -617,12 +618,7 @@ def create_boi_agent_flow(
         "edges": [
             create_edge(chat_input, agent, input_field),
             create_edge(llm, agent, model_field, source_output_name="model_output"),
-            create_edge(tools, agent, tools_field, source_output_name="ontology_search_tool"),
-            create_edge(tools, agent, tools_field, source_output_name="boi_get_tool"),
-            create_edge(tools, agent, tools_field, source_output_name="workflow_status_tool"),
-            create_edge(tools, agent, tools_field, source_output_name="agent_inbox_tool"),
-            create_edge(tools, agent, tools_field, source_output_name="manual_handoff_complete_tool"),
-            create_edge(tools, agent, tools_field, source_output_name="memory_recall_tool"),
+            create_edge(tools, agent, tools_field, source_output_name="api_build_tool"),
             create_edge(agent, result, result_field),
             create_edge(result, chat_output, output_field),
         ],

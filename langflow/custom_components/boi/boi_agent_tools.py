@@ -7,8 +7,10 @@ import urllib.request
 from typing import Any, Literal
 
 from langchain_core.tools import StructuredTool
-from lfx.custom import Component
-from lfx.io import Output, StrInput
+from lfx.base.langchain_utilities.model import LCToolComponent
+from lfx.field_typing import Tool
+from lfx.io import StrInput
+from lfx.schema.data import Data
 from pydantic import BaseModel, Field
 
 
@@ -48,7 +50,7 @@ class MemoryRecallArgs(BaseModel):
     limit: int = Field(5, description="Maximum memory items.")
 
 
-class BoIAgentTools(Component):
+class BoIAgentTools(LCToolComponent):
     display_name = "BoI Agent Tools"
     description = "Langflow native Agent tools for BoI Wiki ontology search, documents, workflow status, inbox, handoff completion, and memory recall."
     icon = "wrench"
@@ -56,14 +58,6 @@ class BoIAgentTools(Component):
 
     inputs = [
         StrInput(name="boi_api_url", display_name="BoI API URL", value="http://boi-api:8000"),
-    ]
-    outputs = [
-        Output(name="ontology_search_tool", display_name="ontology_search", method="ontology_search_tool"),
-        Output(name="boi_get_tool", display_name="boi_get", method="boi_get_tool"),
-        Output(name="workflow_status_tool", display_name="workflow_status", method="workflow_status_tool"),
-        Output(name="agent_inbox_tool", display_name="agent_inbox", method="agent_inbox_tool"),
-        Output(name="manual_handoff_complete_tool", display_name="manual_handoff_complete", method="manual_handoff_complete_tool"),
-        Output(name="memory_recall_tool", display_name="memory_recall", method="memory_recall_tool"),
     ]
 
     def _headers(self) -> dict[str, str]:
@@ -117,7 +111,22 @@ class BoIAgentTools(Component):
     def _memory_recall(self, query: str = "", employee_id: str = "100001", limit: int = 5) -> str:
         return self._request("GET", "/api/agents/boi-wiki/memory", params={"employee_id": employee_id, "q": query, "limit": limit})
 
-    def ontology_search_tool(self) -> StructuredTool:
+    def run_model(self) -> list[Data]:
+        tools = self.build_tool()
+        self.status = f"{len(tools)} BoI Agent tools available"
+        return [Data(data={"tools": [tool.name for tool in tools]})]
+
+    def build_tool(self) -> list[Tool]:
+        return [
+            self.ontology_search_tool(),
+            self.boi_get_tool(),
+            self.workflow_status_tool(),
+            self.agent_inbox_tool(),
+            self.manual_handoff_complete_tool(),
+            self.memory_recall_tool(),
+        ]
+
+    def ontology_search_tool(self) -> Tool:
         return StructuredTool.from_function(
             name="ontology_search",
             description="Search BoI Wiki ontology groups across SOP, Event Types, Actions, documents, dictionary, and runtime evidence.",
@@ -125,7 +134,7 @@ class BoIAgentTools(Component):
             args_schema=OntologySearchArgs,
         )
 
-    def boi_get_tool(self) -> StructuredTool:
+    def boi_get_tool(self) -> Tool:
         return StructuredTool.from_function(
             name="boi_get",
             description="Read a specific BoI document metadata/body fragment by BoI ID or OKF path.",
@@ -133,7 +142,7 @@ class BoIAgentTools(Component):
             args_schema=BoiGetArgs,
         )
 
-    def workflow_status_tool(self) -> StructuredTool:
+    def workflow_status_tool(self) -> Tool:
         return StructuredTool.from_function(
             name="workflow_status",
             description="Read workflow status for a trace.",
@@ -141,7 +150,7 @@ class BoIAgentTools(Component):
             args_schema=WorkflowStatusArgs,
         )
 
-    def agent_inbox_tool(self) -> StructuredTool:
+    def agent_inbox_tool(self) -> Tool:
         return StructuredTool.from_function(
             name="agent_inbox",
             description="Return open manual/approval/follow-up action tasks for an employee.",
@@ -149,7 +158,7 @@ class BoIAgentTools(Component):
             args_schema=AgentInboxArgs,
         )
 
-    def manual_handoff_complete_tool(self) -> StructuredTool:
+    def manual_handoff_complete_tool(self) -> Tool:
         return StructuredTool.from_function(
             name="manual_handoff_complete",
             description="Append a user-confirmed manual handoff completion row. Requires user_confirmed=true.",
@@ -157,7 +166,7 @@ class BoIAgentTools(Component):
             args_schema=ManualHandoffCompleteArgs,
         )
 
-    def memory_recall_tool(self) -> StructuredTool:
+    def memory_recall_tool(self) -> Tool:
         return StructuredTool.from_function(
             name="memory_recall",
             description="Search private Agent Memory BoI documents for answer preferences and domain context.",
