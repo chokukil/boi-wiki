@@ -2139,7 +2139,11 @@ def dictionary_term_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, 
 
 
 def dictionary_terms_for_employee(employee_id: str, scope: str = "all") -> list[dict[str, Any]]:
-    docs = [doc for doc in accessible_docs(employee_id) if is_dictionary_doc(doc)]
+    return dictionary_terms_from_docs(accessible_docs(employee_id), employee_id, scope=scope)
+
+
+def dictionary_terms_from_docs(docs: list[dict[str, Any]], employee_id: str, scope: str = "all") -> list[dict[str, Any]]:
+    docs = [doc for doc in docs if is_dictionary_doc(doc)]
     terms = [dictionary_term_for_doc(doc, employee_id) for doc in docs]
     if scope and scope != "all":
         terms = [term for term in terms if term.get("scope") == scope]
@@ -2151,9 +2155,8 @@ def normalize_search_token(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
-def resolve_dictionary_query(query: str, employee_id: str, *, scope: str = "all") -> dict[str, Any]:
+def resolve_dictionary_query_from_terms(query: str, terms: list[dict[str, Any]]) -> dict[str, Any]:
     normalized = normalize_search_token(query)
-    terms = dictionary_terms_for_employee(employee_id, scope=scope)
     matches: list[dict[str, Any]] = []
     for term in terms:
         candidates = [term.get("term", ""), *(term.get("aliases") or [])]
@@ -2178,8 +2181,12 @@ def resolve_dictionary_query(query: str, employee_id: str, *, scope: str = "all"
     }
 
 
-def search_tokens_for_query(query: str, employee_id: str) -> list[str]:
-    resolved = resolve_dictionary_query(query, employee_id)
+def resolve_dictionary_query(query: str, employee_id: str, *, scope: str = "all") -> dict[str, Any]:
+    return resolve_dictionary_query_from_terms(query, dictionary_terms_for_employee(employee_id, scope=scope))
+
+
+def search_tokens_for_query(query: str, employee_id: str, *, dictionary: dict[str, Any] | None = None) -> list[str]:
+    resolved = dictionary or resolve_dictionary_query(query, employee_id)
     tokens = list(resolved.get("expanded_terms") or [])
     tokens.extend(re.findall(r"[\w가-힣.:/-]+", query or ""))
     return [normalize_search_token(token) for token in dict.fromkeys(tokens) if normalize_search_token(token)]
@@ -2212,7 +2219,6 @@ def search_index_for_employee(employee_id: str) -> dict[str, Any]:
         markdown_signature(),
         glob_signature(EVENT_CATALOG_ROOT, "*.yaml"),
         glob_signature(ACTION_CATALOG_ROOT, "*.yaml"),
-        materialized_log_signature(),
     )
     cached = _SEARCH_INDEX_CACHE.get("by_employee", {}).get(employee_id)
     if _SEARCH_INDEX_CACHE.get("signature") == signature and cached:
@@ -2236,7 +2242,7 @@ def search_index_for_employee(employee_id: str) -> dict[str, Any]:
     index = {
         "docs": docs,
         "doc_records": doc_records,
-        "dictionary": dictionary_terms_for_employee(employee_id),
+        "dictionary": dictionary_terms_from_docs(docs, employee_id),
         "event_types": load_event_types(),
         "actions": load_action_catalog(),
     }
@@ -2263,8 +2269,11 @@ def ontology_search_payload(
     query = str(query or "").strip()
     effective_limit = max(1, min(int(limit or 8), 50))
     index = search_index_for_employee(employee_id)
-    dictionary = resolve_dictionary_query(query, employee_id)
-    tokens = search_tokens_for_query(query, employee_id)
+    dictionary_terms = index.get("dictionary") or []
+    if scope in {"private", "team", "public"}:
+        dictionary_terms = [term for term in dictionary_terms if term.get("scope") == scope]
+    dictionary = resolve_dictionary_query_from_terms(query, dictionary_terms)
+    tokens = search_tokens_for_query(query, employee_id, dictionary=dictionary)
 
     doc_hits: list[tuple[int, dict[str, Any]]] = []
     for record in index["doc_records"]:
@@ -2336,7 +2345,9 @@ def ontology_search_payload(
     action_items.sort(key=lambda item: -int(item.get("score") or 0))
 
     runtime_items: list[dict[str, Any]] = []
-    if query:
+    runtime_token_pattern = re.compile(r"\b(trace-|evt-|act-|request_id|log_ref|action:|event:)", re.IGNORECASE)
+    include_runtime_evidence = scope == "runtime_evidence" or bool(runtime_token_pattern.search(query))
+    if query and include_runtime_evidence:
         for row in read_action_logs(limit=200):
             if not action_log_visible_to_employee(row, employee_id):
                 continue
