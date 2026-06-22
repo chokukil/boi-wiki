@@ -330,7 +330,49 @@ def _simulated_prerequisite_packet(
 
 
 def _required_evidence(action: dict[str, Any]) -> list[dict[str, Any]]:
-    return _dict_items(action.get("evidence_requirements") or action.get("simulation_evidence_requirements"))
+    explicit = _dict_items(action.get("evidence_requirements") or action.get("simulation_evidence_requirements"))
+    action_key = str(action.get("action_key") or "")
+    if action_key == "sop.equipment.request_trend_history":
+        return [
+            *explicit,
+            {
+                "evidence_key": "quality_system_response_trend",
+                "title": "품질 시스템 Response Trend evidence",
+                "source_action": "sop.equipment.request_trend_history",
+                "doc_ref": "boi:public:actions:api:request-trend-history",
+                "required_fields": [
+                    "source_system",
+                    "trend_status",
+                    "response_series",
+                    "frequency",
+                    "time_range",
+                    "anomaly_basis",
+                ],
+                "simulated_fields": {
+                    "source_system": "quality_system",
+                    "trend_status": "simulated_response_trend_anomaly_detected",
+                    "response_series": "SIMULATED response trend sequence around alarm window",
+                    "frequency": "1min",
+                    "time_range": "event_alarm_window",
+                    "anomaly_basis": "SOP/action contract based simulation; no real quality system was called",
+                    "series_ref": "/mock/quality-system/response-trend/${payload.equipment_id}",
+                },
+            },
+        ]
+    return explicit
+
+
+def _render_simulated_field(value: Any, payload: dict[str, Any]) -> str:
+    text = _stringify(value)
+    replacements = {
+        "${payload.equipment_id}": str(payload.get("equipment_id") or "equipment-unknown"),
+        "${payload.lot_id}": str(payload.get("lot_id") or "lot-unknown"),
+        "${payload.wafer_id}": str(payload.get("wafer_id") or "wafer-unknown"),
+        "${payload.work_id}": str(payload.get("work_id") or payload.get("lot_id") or payload.get("equipment_id") or "work-unknown"),
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return text
 
 
 def _ensure_required_evidence_packets(
@@ -352,13 +394,14 @@ def _ensure_required_evidence_packets(
         fields = requirement.get("simulated_fields") if isinstance(requirement.get("simulated_fields"), dict) else {}
         if not source_action or not fields:
             continue
+        rendered_fields = {key: _render_simulated_field(value, payload) for key, value in fields.items()}
         packet = _simulated_prerequisite_packet(
             evidence_key=evidence_key,
             action_key=source_action,
             title=str(requirement.get("title") or evidence_key),
             doc_ref=str(requirement.get("doc_ref") or ""),
             payload=payload,
-            fields={key: _stringify(value) for key, value in fields.items()},
+            fields=rendered_fields,
         )
         generated.append(packet)
         by_key[evidence_key] = packet
@@ -390,6 +433,29 @@ def _evidence_markdown(evidence_packets: list[dict[str, Any]]) -> str:
             + (f": {field_text}" if field_text else "")
         )
     return "\n".join(lines)
+
+
+def _tool_call(
+    *,
+    iteration: int,
+    tool: str,
+    status: str,
+    query: str = "",
+    result_count: int | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "iteration": iteration,
+        "tool": tool,
+        "status": status,
+    }
+    if query:
+        item["query"] = query
+    if result_count is not None:
+        item["result_count"] = result_count
+    if note:
+        item["note"] = note
+    return item
 
 
 def _find_stage(workflow: dict[str, Any] | None, event_type: str, sop_stage_id: str, stage_hint: str) -> dict[str, Any]:
@@ -515,6 +581,44 @@ def build_simulation_agent_result(
         for doc in _search_docs(docs, [term for term in terms if str(term or "").strip()], limit=3):
             add_doc(doc, role="supporting_context", reason="search_terms", round_no=index)
 
+    tool_calls: list[dict[str, Any]] = [
+        _tool_call(
+            iteration=1,
+            tool="action_spec_lookup",
+            status="ok" if any(item["role"] == "action_spec" for item in context_docs) else "missing",
+            query=str(action.get("doc_ref") or action_key),
+            result_count=sum(1 for item in context_docs if item["role"] == "action_spec"),
+        ),
+        _tool_call(
+            iteration=1,
+            tool="trace_context_lookup",
+            status="ok" if prior_results else "empty",
+            query=str(event.get("trace_id") or ""),
+            result_count=len(prior_results),
+        ),
+    ]
+    for row in trace:
+        if row.get("queries"):
+            tool_calls.append(
+                _tool_call(
+                    iteration=int(row.get("round") or 0),
+                    tool="boi_search",
+                    status="ok" if row.get("found_docs") else "empty",
+                    query=", ".join(str(item) for item in row.get("queries") or []),
+                    result_count=len(row.get("found_docs") or []),
+                )
+            )
+        elif row.get("exact_refs"):
+            tool_calls.append(
+                _tool_call(
+                    iteration=int(row.get("round") or 0),
+                    tool="boi_get",
+                    status="ok" if row.get("found_docs") else "missing",
+                    query=", ".join(str(item) for item in row.get("exact_refs") or []),
+                    result_count=len(row.get("found_docs") or []),
+                )
+            )
+
     covered = {
         "sop_stage": bool(stage or stage_hint or resolved_sop_ref),
         "action_contract": bool(action.get("doc_ref") and any(item["role"] == "action_spec" for item in context_docs)),
@@ -533,6 +637,26 @@ def build_simulation_agent_result(
         required = REQUIRED_COVERAGE
     missing = [key for key in required if not covered.get(key)]
     score = round(sum(1 for key in required if covered.get(key)) / len(required), 2)
+    tool_calls.append(
+        _tool_call(
+            iteration=len(trace),
+            tool="coverage_evaluator",
+            status="pass" if score >= 0.85 else "needs_context",
+            result_count=sum(1 for key in required if covered.get(key)),
+            note=f"coverage_score={score}",
+        )
+    )
+    simulated_packets = [packet for packet in evidence_packets if str(packet.get("provenance") or "") == "simulated_prerequisite"]
+    if simulated_packets:
+        tool_calls.append(
+            _tool_call(
+                iteration=len(trace),
+                tool="simulated_evidence_builder",
+                status="ok",
+                result_count=len(simulated_packets),
+                note="Generated SIMULATED evidence packets from SOP/action contracts.",
+            )
+        )
     for row in trace:
         row["coverage_after"] = {
             "coverage_score": score,
@@ -592,10 +716,13 @@ def build_simulation_agent_result(
         "agent": {
             "name": "BoI Simulation Agent",
             "version": "0.1",
-            "strategy": "bounded-retrieval-loop",
+            "strategy": "bounded-tool-loop",
             "max_rounds": max_rounds,
             "retrieval_rounds": len(trace),
+            "agent_iterations": len(trace),
         },
+        "agent_iterations": len(trace),
+        "tool_calls": tool_calls,
         "employee_id": employee_id,
         "action_key": action_key,
         "event_type": event_type,
@@ -646,6 +773,7 @@ def build_simulation_agent_result(
                 "missing_context": missing,
                 "recommended_next_event": next_event,
                 "human_review_required": "manual" in manual_condition or action.get("risk_level") in {"medium", "high"},
+                "real_system_connected": False,
                 "evidence_packets": evidence_packets,
             },
         },

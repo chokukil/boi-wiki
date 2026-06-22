@@ -74,7 +74,11 @@ def test_langflow_setup_script_documents_upload_and_smoke_endpoints():
     assert "BoIPromptComposer-boi" in script
     assert "BoIResultComposer-boi" in script
     assert "BoISimulationAgent-boi" in script
-    assert "include_simulation_agent=True" in script
+    assert "BoIUniversalSimulatorAgent-boi" in script
+    assert "create_universal_agent_simulator_flow" in script
+    assert "smoke_input_for_endpoint" in script
+    assert "direct_development.quality_response_trend.simulate" in script
+    assert "trace-langflow-smoke-universal" in script
     assert "manual.direct_development.decide_cross_section" not in script
 
 
@@ -86,7 +90,8 @@ def test_langflow_audit_script_checks_runtime_connected_boi_components():
     assert "boi-universal-action-simulator" in script
     assert "require_boi_components" in script
     assert "require_simulation_agent" in script
-    assert "BoI Universal Simulator is missing BoI Simulation Agent" in script
+    assert "BoI Universal Simulator is missing BoI Universal Simulator Agent" in script
+    assert "BoI Universal Simulator Agent is not connected to final result composer" in script
     assert "BoI custom components are disconnected" in script
     assert "BoI Prompt Composer is not connected to the Gemma LLM input path" in script
     assert "BoI Result Composer is not connected to ChatOutput" in script
@@ -98,16 +103,23 @@ def test_langflow_custom_components_include_prompt_result_and_simulation_agent()
     prompt = Path("langflow/custom_components/boi/boi_prompt_composer.py").read_text(encoding="utf-8")
     result = Path("langflow/custom_components/boi/boi_result_composer.py").read_text(encoding="utf-8")
     simulation_agent = Path("langflow/custom_components/boi/boi_simulation_agent.py").read_text(encoding="utf-8")
+    universal_agent = Path("langflow/custom_components/boi/boi_universal_simulator_agent.py").read_text(encoding="utf-8")
     context = Path("langflow/custom_components/boi/boi_context_normalizer.py").read_text(encoding="utf-8")
     init = Path("langflow/custom_components/boi/__init__.py").read_text(encoding="utf-8")
 
     assert "class BoIPromptComposer" in prompt
     assert "class BoIResultComposer" in result
     assert "class BoISimulationAgent" in simulation_agent
+    assert "class BoIUniversalSimulatorAgent" in universal_agent
+    assert "agent_iterations" in universal_agent
+    assert "tool_calls" in universal_agent
+    assert "coverage_score" in universal_agent
     assert "/api/simulations/universal-agent" in simulation_agent
+    assert "/api/simulations/universal-agent" in universal_agent
     assert "simulation_agent" in context
     assert "Action key:" in context
     assert "context.get(\"action_key\")" in simulation_agent
+    assert "BoIUniversalSimulatorAgent" in init
     assert "BoIPromptComposer" in init
     assert "BoIResultComposer" in init
     assert "BoISimulationAgent" in init

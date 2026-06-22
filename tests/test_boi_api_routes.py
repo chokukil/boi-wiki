@@ -863,7 +863,7 @@ def test_public_sop_and_action_folders_are_browsable(boi_app_module):
         "public/sop": "설비 이상 감지·원인 분석·이상 조치 SOP",
         "public/actions": "Public Action Library",
         "public/event-types": "설비 Alarm 발생",
-        "public/actions/api": "Trend / 이력 확인 요청",
+        "public/actions/api": "품질 시스템 Response Trend 확인 시뮬레이션",
         "public/actions/webhook": "외부 Webhook 이벤트 수신",
         "public/actions/mcp": "MCP 기반 BoI 검색 Tool 호출 예시",
         "public/actions/langflow": "Langflow Reference Flow 호출",
@@ -1031,16 +1031,36 @@ def test_action_spec_display_rewrites_localhost_examples_for_external_host(boi_a
     client = TestClient(boi_app_module.app)
 
     response = client.get(
+        "/docs/boi:public:actions:api:request-raw-data?employee_id=100001",
+        headers={"host": "boi-wiki.example:28000"},
+    )
+
+    assert response.status_code == 200
+    assert "http://boi-wiki.example:28000/api/poc/equipment/raw-data" in response.text
+    assert "http://boi-wiki.example:28100/api/actions/invoke" in response.text
+    assert "ACTION_GATEWAY_EXTERNAL_URL_NOT_CONFIGURED" not in response.text
+    assert "http://localhost" not in response.text
+    assert "http://boi-api:8000" not in response.text
+
+
+def test_langflow_simulation_action_spec_uses_agent_flow_display_urls(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
+    monkeypatch.delenv("ACTION_GATEWAY_EXTERNAL_URL", raising=False)
+    monkeypatch.delenv("LANGFLOW_EXTERNAL_URL", raising=False)
+    client = TestClient(boi_app_module.app)
+
+    response = client.get(
         "/docs/boi:public:actions:api:request-trend-history?employee_id=100001",
         headers={"host": "boi-wiki.example:28000"},
     )
 
     assert response.status_code == 200
-    assert "http://boi-wiki.example:28000/api/poc/equipment/trend-history" in response.text
+    assert "BoI Universal Simulator Agent" in response.text
+    assert "품질 시스템" in response.text
+    assert "http://boi-wiki.example:27860/api/v1/run/{flow_id}" in response.text
     assert "http://boi-wiki.example:28100/api/actions/invoke" in response.text
-    assert "ACTION_GATEWAY_EXTERNAL_URL_NOT_CONFIGURED" not in response.text
     assert "http://localhost" not in response.text
-    assert "http://boi-api:8000" not in response.text
+    assert "http://langflow:7860" not in response.text
 
 
 def test_workflow_poc_and_promotion_curls_use_external_boi_url(boi_app_module, monkeypatch):
@@ -2321,7 +2341,12 @@ def test_universal_simulation_agent_builds_context_from_action_event_and_sop(boi
     assert body["ok"] is True
     assert body["simulation"] is True
     assert body["agent"]["name"] == "BoI Simulation Agent"
+    assert body["agent"]["strategy"] == "bounded-tool-loop"
     assert 1 <= body["agent"]["retrieval_rounds"] <= 4
+    assert 1 <= body["agent"]["agent_iterations"] <= 5
+    assert body["tool_calls"]
+    assert any(call["tool"] == "action_spec_lookup" for call in body["tool_calls"])
+    assert any(call["tool"] == "coverage_evaluator" for call in body["tool_calls"])
     assert body["coverage_report"]["covered"]["action_contract"] is True
     assert body["coverage_report"]["covered"]["expected_output_schema"] is True
     assert body["coverage_report"]["covered"]["prior_evidence"] is True
@@ -2330,6 +2355,40 @@ def test_universal_simulation_agent_builds_context_from_action_event_and_sop(boi
     refs = {item["ref"] for item in body["citations"]}
     assert "boi:public:actions:langflow:direct-development-quality-response-trend-simulate" in refs
     assert any("direct_development.result_check.requested.v1" in item["uri"] for item in body["citations"])
+
+
+def test_universal_simulation_agent_generates_quality_system_response_trend_evidence(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/simulations/universal-agent",
+        headers={"x-service-token": "dev-service-token-change-me"},
+        json={
+            "action_key": "sop.equipment.request_trend_history",
+            "employee_id": "100001",
+            "event": {
+                "event_id": "evt-equipment-quality-system",
+                "event_type": "equipment.alarm.raised.v1",
+                "trace_id": "trace-equipment-quality-system",
+                "payload": {"title": "이상 감지", "equipment_id": "ETCH-VM-01", "lot_id": "LOT-001"},
+            },
+            "payload": {"equipment_id": "ETCH-VM-01", "lot_id": "LOT-001", "wafer_id": "WF-001"},
+            "simulation_depth": "stage_prerequisites",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["coverage_report"]["coverage_score"] >= 0.85
+    assert body["coverage_report"]["passed"] is True
+    assert "trend_status" not in body["coverage_report"]["missing_context"]
+    packets = {packet["evidence_key"]: packet for packet in body["evidence_packets"]}
+    assert packets["quality_system_response_trend"]["provenance"] == "simulated_prerequisite"
+    assert packets["quality_system_response_trend"]["fields"]["source_system"] == "quality_system"
+    assert packets["quality_system_response_trend"]["fields"]["trend_status"]
+    assert body["simulation_result"]["generated_result"]["real_system_connected"] is False
+    assert "품질 시스템" in body["simulation_result"]["markdown"]
+    assert "SIMULATED Evidence Packets" in body["simulation_result"]["markdown"]
 
 
 def test_universal_simulation_agent_generates_manual_prerequisite_evidence_without_prior_logs(boi_app_module):

@@ -2,11 +2,12 @@
 okf_version: '0.1'
 boi_profile_version: '0.1'
 type: boi/action-spec
-title: Trend / 이력 확인 요청
-description: 장비/공정 Trend와 Lot/Wafer 이력을 조회하는 시스템 API action
+title: 품질 시스템 Response Trend 확인 시뮬레이션
+description: 품질 시스템 Response Trend 확인을 BoI Universal Simulator Agent로 시뮬레이션한다.
+  실제 품질 시스템 호출이 아니다.
 tags:
 - ActionGateway
-- API
+- Langflow
 - EquipmentWorkflow
 timestamp: 2026-06-17 12:06:00+09:00
 boi_id: boi:public:actions:api:request-trend-history
@@ -19,7 +20,7 @@ author:
 acl_policy: acl:public
 status: reviewed
 action_key: sop.equipment.request_trend_history
-connector_kind: api
+connector_kind: langflow
 execution_mode: gateway
 event_types:
 - equipment.alarm.raised.v1
@@ -28,6 +29,11 @@ event_types:
 risk_level: low
 approval_required: false
 dry_run_default: false
+simulation: true
+simulation_mode: langflow_universal
+simulation_label: SIMULATED
+simulated_system: 품질 시스템
+real_system_status: unavailable
 payload_contract:
   required:
   - equipment_id
@@ -36,27 +42,31 @@ payload_contract:
   - wafer_id
   - alarm_code
 result_contract:
-  status: mocked
+  status: langflow_invoked
   fields:
+  - source_system
+  - response_series
+  - frequency
+  - time_range
   - trend_status
-  - lot_history_ref
-  - wafer_history_ref
+  - anomaly_basis
+  - series_ref
+  - real_system_connected
 source_refs:
 - type: action_catalog
   ref: data/action_catalog/actions.yaml
 review:
   reviewer: tf-lead
   review_status: reviewed
-protocol: http
+protocol: langflow
 method: POST
-url: http://boi-api:8000/api/poc/equipment/trend-history
+url: http://langflow:7860/api/v1/run/{flow_id}
 auth:
-  type: header
-  header: x-service-token
-  value: $SERVICE_TOKEN
+  type: bearer
+  source: Langflow auto-login token inside trusted PoC network
 headers:
   Content-Type: application/json
-  x-service-token: ${service_token}
+  Authorization: Bearer $LANGFLOW_AUTO_LOGIN_TOKEN
 request_schema:
   type: object
   required:
@@ -81,7 +91,7 @@ response_schema:
     ok:
       type: boolean
     status:
-      const: invoked
+      const: langflow_invoked
     request_id:
       type: string
     result:
@@ -99,20 +109,28 @@ example_request:
   approved_by: ''
 example_response:
   ok: true
-  status: invoked
+  status: langflow_invoked
   action: sop.equipment.request_trend_history
+  simulation: true
+  simulation_label: SIMULATED
+  simulated_system: 품질 시스템
+  real_system_connected: false
   result:
-    message: PoC endpoint invoked
-curl: 'curl -X POST ''http://boi-api:8000/api/poc/equipment/trend-history'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"payload":{"equipment_id":"ETCH-VM-01"},"dry_run":false}'''
+    source_system: quality_system
+    trend_status: simulated_response_trend_anomaly_detected
+    anomaly_basis: SOP/action contract based simulation
+curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token:
+  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"sop.equipment.request_trend_history","employee_id":"100001","event":{"event_type":"equipment.alarm.raised.v1","trace_id":"trace-equipment-demo"},"payload":{"equipment_id":"ETCH-VM-01","lot_id":"LOT-POC-001","wafer_id":"WF-POC-001"},"dry_run":false}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: sop.equipment.request_trend_history
-  catalog_type: api
+  catalog_type: langflow_run
   doc_ref: boi:public:actions:api:request-trend-history
+  flow_name: BoI Universal Action Simulator Flow
+  resolve_latest: true
 health_check:
-  type: http
-  command: curl -fsS 'http://boi-api:8000/api/poc/equipment/trend-history' || true
+  type: script
+  command: python scripts/setup_langflow_reference_flows.py --auth-mode api-key --summary
 security_notes:
 - Use environment variables for tokens.
 - Do not store real service tokens or API keys in public BoI docs.
@@ -120,4 +138,8 @@ security_notes:
 
 # Usage
 
-이상 감지와 원인 분석 단계에서 Trend 이상 여부와 Lot/Wafer 이력을 확인한다.
+이상 감지와 원인 분석 단계에서 품질 시스템 Response Trend 이상 여부를 확인한다. 현재 PoC에서는 실제 품질 시스템 connector가 없으므로, 이 action은 `BoI Universal Simulator Agent`가 SOP와 action contract를 근거로 `SIMULATED` evidence packet을 생성한다.
+
+# SIMULATED Boundary
+
+이 action은 실제 품질 시스템 호출이 아니다. Action Raw와 Generated BoI에는 `simulation=true`, `real_system_connected=false`, `simulated_system=품질 시스템`이 남아야 한다.

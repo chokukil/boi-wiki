@@ -108,17 +108,26 @@ def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False, re
     if require_boi_components and not boi:
         errors.append("required BoI custom components are missing")
     if require_boi_components and boi:
-        required_labels = [
-            "BoI Harness Loader",
-            "BoI Wiki Reader",
-            "BoI Context Normalizer",
-            "BoI Prompt Composer",
-            "BoI Metadata Builder",
-            "BoI Policy",
-            "BoI Wiki Writer",
-            "BoI Action Invoker",
-            "BoI Result Composer",
-        ]
+        if require_simulation_agent:
+            required_labels = [
+                "BoI Context Normalizer",
+                "BoI Universal Simulator Agent",
+                "BoI Metadata Builder",
+                "BoI Policy",
+                "BoI Result Composer",
+            ]
+        else:
+            required_labels = [
+                "BoI Harness Loader",
+                "BoI Wiki Reader",
+                "BoI Context Normalizer",
+                "BoI Prompt Composer",
+                "BoI Metadata Builder",
+                "BoI Policy",
+                "BoI Wiki Writer",
+                "BoI Action Invoker",
+                "BoI Result Composer",
+            ]
         for label in required_labels:
             if not node_matching(node_by_id, label):
                 errors.append(f"required BoI custom component is missing: {label}")
@@ -138,19 +147,29 @@ def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False, re
         writer = node_matching(node_by_id, "BoI Wiki Writer")
         result = node_matching(node_by_id, "BoI Result Composer")
         simulation_agent = node_matching(node_by_id, "BoI Simulation Agent")
-        for label, node_id in {"Gemma LLM": llm, "BoI Draft Output": output, "BoI Prompt Composer": prompt, "BoI Wiki Writer": writer, "BoI Result Composer": result}.items():
-            if not node_id:
-                errors.append(f"runtime execution node is missing: {label}")
-        if require_simulation_agent and not simulation_agent:
-            errors.append("BoI Universal Simulator is missing BoI Simulation Agent")
-        if prompt and llm and not path_exists(prompt, llm, edges):
-            errors.append("BoI Prompt Composer is not connected to the Gemma LLM input path")
-        if require_simulation_agent and simulation_agent and prompt and not path_exists(simulation_agent, prompt, edges):
-            errors.append("BoI Simulation Agent is not connected to the prompt path")
-        if llm and writer and not path_exists(llm, writer, edges):
-            errors.append("Gemma LLM output is not connected to BoI Wiki Writer")
-        if writer and result and not path_exists(writer, result, edges):
-            errors.append("BoI Wiki Writer result is not connected to final result composer")
+        universal_agent = node_matching(node_by_id, "BoI Universal Simulator Agent")
+        if require_simulation_agent:
+            for label, node_id in {"BoI Draft Output": output, "BoI Universal Simulator Agent": universal_agent, "BoI Result Composer": result}.items():
+                if not node_id:
+                    errors.append(f"runtime execution node is missing: {label}")
+            if not universal_agent:
+                errors.append("BoI Universal Simulator is missing BoI Universal Simulator Agent")
+            if universal_agent and result and not path_exists(universal_agent, result, edges):
+                errors.append("BoI Universal Simulator Agent is not connected to final result composer")
+            if llm and output and path_exists(llm, output, edges):
+                errors.append("BoI Universal Simulator has a standalone Gemma LLM output path")
+            if simulation_agent and prompt and not path_exists(simulation_agent, prompt, edges):
+                errors.append("BoI Simulation Agent is not connected to the prompt path")
+        else:
+            for label, node_id in {"Gemma LLM": llm, "BoI Draft Output": output, "BoI Prompt Composer": prompt, "BoI Wiki Writer": writer, "BoI Result Composer": result}.items():
+                if not node_id:
+                    errors.append(f"runtime execution node is missing: {label}")
+            if prompt and llm and not path_exists(prompt, llm, edges):
+                errors.append("BoI Prompt Composer is not connected to the Gemma LLM input path")
+            if llm and writer and not path_exists(llm, writer, edges):
+                errors.append("Gemma LLM output is not connected to BoI Wiki Writer")
+            if writer and result and not path_exists(writer, result, edges):
+                errors.append("BoI Wiki Writer result is not connected to final result composer")
         if result and output and not path_exists(result, output, edges):
             errors.append("BoI Result Composer is not connected to ChatOutput")
     return errors

@@ -90,28 +90,39 @@ actions:
       notes: "기존 SOP event에는 자동 dispatch하지 않고, 명시 forecast event 또는 payload.forecast_required=true 경로에서만 호출한다."
 
   - action_key: sop.equipment.request_trend_history
-    name_ko: Trend / 이력 확인 요청
-    description: 장비/공정 Trend와 Lot/Wafer 이력을 조회하는 시스템 API 호출 예시
-    type: api
-    connector_kind: api
+    name_ko: 품질 시스템 Response Trend 확인 시뮬레이션
+    description: 품질 시스템 Response Trend 확인을 BoI Universal Action Simulator Agent로 시뮬레이션한다. 실제 품질 시스템 호출이 아니다.
+    type: langflow_run
+    connector_kind: langflow
     execution_mode: gateway
     doc_ref: boi:public:actions:api:request-trend-history
     enabled: true
     auto_dispatch: true
     order: 20
-    method: POST
-    url: http://boi-api:8000/api/poc/equipment/trend-history
-    headers:
-      x-service-token: ${service_token}
-      Content-Type: application/json
     dry_run: false
+    timeout_seconds: 45
+    flow_name: BoI Universal Action Simulator Flow
+    resolve_latest: true
+    require_marker: BoI Universal Simulator Agent
+    simulation_mode: langflow_universal
+    simulation_label: SIMULATED
+    simulated_system: 품질 시스템
+    real_system_status: unavailable
+    simulation_notice: "SIMULATED: 실제 품질 시스템 호출이 아니라 BoI Universal Simulator Agent가 SOP/action contract 기반 evidence를 생성합니다."
     body:
-      request_id: ${request_id}
-      employee_id: ${employee_id}
-      event: ${event}
-      payload: ${payload}
-      dry_run: ${dry_run}
-      approved_by: ${approved_by}
+      input_value: |
+        SIMULATED action request.
+        Action key: sop.equipment.request_trend_history
+        Simulated system: 품질 시스템
+        SOP: boi:public:sop:equipment-abnormal-response
+        Stage: detect
+        Event: ${event.event_type} / trace=${event.trace_id}
+        Payload: ${payload}
+        Prior Action Results:
+        ${prior_results_json}
+        Expected result contract: status=simulated, source_system=quality_system, response_series, frequency, time_range, trend_status, anomaly_basis, series_ref, real_system_connected=false.
+      input_type: chat
+      output_type: chat
     event_types: [equipment.alarm.raised.v1, trend.anomaly.detected.v1, root_cause.analysis.requested.v1]
     owner: AIX 확산 TF
     risk_level: low
@@ -645,8 +656,7 @@ actions:
     timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
-    require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Wiki Writer
+    require_marker: BoI Universal Simulator Agent
     simulation_mode: langflow_universal
     simulation_label: SIMULATED
     simulated_system: 품질 시스템
@@ -685,8 +695,7 @@ actions:
     timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
-    require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Wiki Writer
+    require_marker: BoI Universal Simulator Agent
     simulation_mode: langflow_universal
     simulation_label: SIMULATED
     simulated_system: Map 분석 시스템
@@ -725,8 +734,7 @@ actions:
     timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
-    require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Wiki Writer
+    require_marker: BoI Universal Simulator Agent
     simulation_mode: langflow_universal
     simulation_label: SIMULATED
     simulated_system: 단면 검사 시스템
@@ -765,8 +773,7 @@ actions:
     timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
-    require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Wiki Writer
+    require_marker: BoI Universal Simulator Agent
     simulation_mode: langflow_universal
     simulation_label: SIMULATED
     simulated_system: 단면 검사 시스템
@@ -805,8 +812,7 @@ actions:
     timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
-    require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Wiki Writer
+    require_marker: BoI Universal Simulator Agent
     simulation_mode: langflow_universal
     simulation_label: SIMULATED
     simulated_system: 품질 시스템
@@ -845,8 +851,7 @@ actions:
     timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
-    require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Wiki Writer
+    require_marker: BoI Universal Simulator Agent
     simulation_mode: langflow_universal
     simulation_label: SIMULATED
     simulated_system: BoI Universal Action Simulator
@@ -885,8 +890,7 @@ actions:
     timeout_seconds: 45
     flow_name: BoI Universal Action Simulator Flow
     resolve_latest: true
-    require_model: google/gemma-4-26b-a4b-qat
-    require_marker: BoI Wiki Writer
+    require_marker: BoI Universal Simulator Agent
     simulation_mode: langflow_universal
     simulation_label: SIMULATED
     simulated_system: 메신저

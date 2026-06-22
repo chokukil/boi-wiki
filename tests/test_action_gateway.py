@@ -174,8 +174,8 @@ class FakeLangflowAsyncClient:
                         "updated_at": "2026-06-21T00:00:00+00:00",
                         "data": {
                             "nodes": [
+                                {"data": {"display_name": "BoI Universal Simulator Agent"}},
                                 {"data": {"display_name": "BoI Wiki Writer"}},
-                                {"data": {"template": {"model_name": {"value": "google/gemma-4-26b-a4b-qat"}}}},
                             ]
                         },
                     },
@@ -186,11 +186,47 @@ class FakeLangflowAsyncClient:
     async def post(self, url, headers=None, json=None):
         self.requests.append({"method": "POST", "url": url, "headers": headers or {}, "json": json or {}})
         if url.endswith("/api/simulations/universal-agent"):
+            action_key = (json or {}).get("action_key")
+            if action_key == "sop.equipment.request_trend_history":
+                evidence_packets = [
+                    {
+                        "evidence_key": "quality_system_response_trend",
+                        "title": "품질 시스템 Response Trend evidence",
+                        "action_key": "sop.equipment.request_trend_history",
+                        "provenance": "simulated_prerequisite",
+                        "fields": {
+                            "source_system": "quality_system",
+                            "trend_status": "simulated_response_trend_anomaly_detected",
+                            "response_series": "SIMULATED response trend sequence",
+                        },
+                    }
+                ]
+            else:
+                evidence_packets = [
+                    {
+                        "evidence_key": "response_trend",
+                        "title": "Response Trend evidence",
+                        "action_key": "direct_development.quality_response_trend.simulate",
+                        "provenance": "simulated_prerequisite",
+                        "fields": {"trend_status": "simulated_response_trend_abnormality_reviewed"},
+                    }
+                ]
             return FakeHttpResponse(
                 body={
                     "ok": True,
                     "status": "simulated_context_ready",
-                    "agent": {"name": "BoI Simulation Agent", "version": "0.1", "retrieval_rounds": 3},
+                    "agent": {
+                        "name": "BoI Simulation Agent",
+                        "version": "0.1",
+                        "strategy": "bounded-tool-loop",
+                        "retrieval_rounds": 3,
+                        "agent_iterations": 3,
+                    },
+                    "agent_iterations": 3,
+                    "tool_calls": [
+                        {"iteration": 1, "tool": "action_spec_lookup", "status": "ok"},
+                        {"iteration": 3, "tool": "coverage_evaluator", "status": "pass"},
+                    ],
                     "context_pack": {
                         "documents": [
                             {
@@ -204,15 +240,7 @@ class FakeLangflowAsyncClient:
                     },
                     "retrieval_trace": [{"round": 1, "objective": "Resolve exact references.", "found_docs": []}],
                     "coverage_report": {"coverage_score": 1.0, "missing_context": [], "covered": {"action_contract": True}},
-                    "evidence_packets": [
-                        {
-                            "evidence_key": "response_trend",
-                            "title": "Response Trend evidence",
-                            "action_key": "direct_development.quality_response_trend.simulate",
-                            "provenance": "simulated_prerequisite",
-                            "fields": {"trend_status": "simulated_response_trend_abnormality_reviewed"},
-                        }
-                    ],
+                    "evidence_packets": evidence_packets,
                     "citations": [{"label": "action_spec", "title": "Response Trend 확인 시뮬레이션"}],
                     "limitations": ["SIMULATED dry-run result only; no unavailable internal system was called."],
                     "simulation_result": {
@@ -225,6 +253,9 @@ class FakeLangflowAsyncClient:
 
     async def request(self, method, url, headers=None, json=None):
         self.requests.append({"method": method, "url": url, "headers": headers or {}, "json": json or {}})
+        message_text = "Langflow Gemma response"
+        if "simulator-flow-id" in url:
+            message_text = "# SIMULATED BoI Wiki Simulation Result\n\n## Current Finding\nLangflow Agent tool loop result"
         return FakeHttpResponse(
             body={
                 "session_id": "latest-flow-id",
@@ -234,7 +265,7 @@ class FakeLangflowAsyncClient:
                             {
                                 "results": {
                                     "message": {
-                                        "text": "Langflow Gemma response",
+                                        "text": message_text,
                                         "properties": {
                                             "source": {
                                                 "source": "google/gemma-4-26b-a4b-qat",
@@ -442,9 +473,12 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert body["real_system_connected"] is False
     assert body["simulated_system"] == "품질 시스템"
     assert "SIMULATED BoI Wiki Simulation Result" in body["message"]
-    assert body["langflow_message"] == "Langflow Gemma response"
-    assert body["langflow_renderer_status"] == "rendered"
+    assert "Langflow Agent tool loop result" in body["langflow_message"]
+    assert body["langflow_renderer_status"] == "agent_flow"
+    assert body["agent_fallback_used"] is False
     assert body["retrieval_rounds"] == 3
+    assert body["agent_iterations"] == 3
+    assert any(call["tool"] == "coverage_evaluator" for call in body["tool_calls"])
     assert body["coverage_score"] == 1.0
     assert body["evidence_packets"][0]["evidence_key"] == "response_trend"
     assert body["used_docs"][0]["role"] == "action_spec"
@@ -466,12 +500,14 @@ def test_universal_simulator_langflow_action_records_simulation_metadata(tmp_pat
     assert logs[0]["simulation"] is True
     assert logs[0]["simulation_label"] == "SIMULATED"
     assert logs[0]["retrieval_rounds"] == 3
+    assert logs[0]["agent_iterations"] == 3
+    assert any(call["tool"] == "coverage_evaluator" for call in logs[0]["tool_calls"])
     assert logs[0]["coverage_score"] == 1.0
     assert logs[0]["evidence_packets"][0]["provenance"] == "simulated_prerequisite"
     assert logs[0]["used_docs"][0]["role"] == "action_spec"
 
 
-def test_universal_simulator_defaults_to_agent_passthrough_without_langflow_renderer(tmp_path, monkeypatch):
+def test_universal_simulator_defaults_to_langflow_agent_flow_before_fallback(tmp_path, monkeypatch):
     gateway = load_gateway_module(tmp_path, monkeypatch)
     FakeLangflowAsyncClient.requests = []
     monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowAsyncClient)
@@ -496,14 +532,17 @@ def test_universal_simulator_defaults_to_agent_passthrough_without_langflow_rend
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "langflow_invoked"
-    assert body["langflow_renderer_status"] == "agent_passthrough"
-    assert body["response"]["fallback"] == "boi_simulation_agent"
+    assert body["langflow_renderer_status"] == "agent_flow"
+    assert body["agent_fallback_used"] is False
     assert body["coverage_score"] == 1.0
-    assert "SIMULATED BoI Wiki Simulation Result" in body["message"]
-    assert [req["url"] for req in FakeLangflowAsyncClient.requests] == ["http://boi-api:8000/api/simulations/universal-agent"]
+    assert "Langflow Agent tool loop result" in body["message"]
+    urls = [req["url"] for req in FakeLangflowAsyncClient.requests]
+    assert "http://boi-api:8000/api/simulations/universal-agent" in urls
+    assert "http://langflow:7860/api/v1/run/simulator-flow-id" in urls
 
     logs = client.get("/api/actions/logs", headers={"x-service-token": "test-service-token"}).json()["items"]
-    assert logs[0]["langflow_renderer_status"] == "agent_passthrough"
+    assert logs[0]["langflow_renderer_status"] == "agent_flow"
+    assert logs[0]["agent_fallback_used"] is False
     assert logs[0]["coverage_score"] == 1.0
 
 
@@ -615,10 +654,10 @@ def test_dispatch_passes_prior_results_to_stage_langflow_action(tmp_path, monkey
     assert "/mock/vision-inspection/raw-data/ETCH-VM-01/LOT-001" in input_value
 
 
-def test_api_action_invokes_configured_boi_api_endpoint(tmp_path, monkeypatch):
+def test_quality_system_trend_action_invokes_universal_agent_flow(tmp_path, monkeypatch):
     gateway = load_gateway_module(tmp_path, monkeypatch)
-    FakeAsyncClient.requests = []
-    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeAsyncClient)
+    FakeLangflowAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeLangflowAsyncClient)
     client = TestClient(gateway.app)
 
     response = client.post(
@@ -627,7 +666,7 @@ def test_api_action_invokes_configured_boi_api_endpoint(tmp_path, monkeypatch):
         json={
             "action_key": "sop.equipment.request_trend_history",
             "employee_id": "100001",
-            "event": {"event_id": "evt-api-test", "event_type": "equipment.alarm.raised.v1"},
+            "event": {"event_id": "evt-api-test", "event_type": "equipment.alarm.raised.v1", "trace_id": "trace-equipment-trend"},
             "payload": {"equipment_id": "ETCH-VM-01", "lot_id": "LOT-001", "wafer_id": "WF-001"},
             "dry_run": False,
         },
@@ -635,10 +674,15 @@ def test_api_action_invokes_configured_boi_api_endpoint(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "invoked"
-    assert FakeAsyncClient.requests[0]["url"] == "http://boi-api:8000/api/poc/equipment/trend-history"
-    assert FakeAsyncClient.requests[0]["headers"]["x-service-token"] == "test-service-token"
-    assert FakeAsyncClient.requests[0]["json"]["payload"]["equipment_id"] == "ETCH-VM-01"
+    assert body["status"] == "langflow_invoked"
+    assert body["simulated_system"] == "품질 시스템"
+    assert body["real_system_connected"] is False
+    assert body["coverage_score"] == 1.0
+    assert body["evidence_packets"][0]["evidence_key"] == "quality_system_response_trend"
+    assert body["evidence_packets"][0]["fields"]["source_system"] == "quality_system"
+    urls = [req["url"] for req in FakeLangflowAsyncClient.requests]
+    assert "http://boi-api:8000/api/simulations/universal-agent" in urls
+    assert "http://langflow:7860/api/v1/run/simulator-flow-id" in urls
 
 
 def test_mcp_action_invokes_boi_api_bridge_endpoint(tmp_path, monkeypatch):

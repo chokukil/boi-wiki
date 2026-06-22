@@ -131,11 +131,20 @@ def test_public_action_specs_include_executable_contracts_without_secrets():
             assert secret not in text, f"{spec_id} leaks {secret}"
 
 
-def test_equipment_api_and_mcp_actions_are_wired_to_real_poc_endpoints():
+def test_equipment_api_langflow_and_mcp_actions_are_wired_to_runtime_targets():
     actions = {action["action_key"]: action for action in load_actions()}
 
+    trend = actions["sop.equipment.request_trend_history"]
+    assert trend["type"] == "langflow_run"
+    assert trend["connector_kind"] == "langflow"
+    assert trend["flow_name"] == "BoI Universal Action Simulator Flow"
+    assert trend["simulation_mode"] == "langflow_universal"
+    assert trend["simulation_label"] == "SIMULATED"
+    assert trend["simulated_system"] == "품질 시스템"
+    assert trend["real_system_status"] == "unavailable"
+    assert trend["require_marker"] == "BoI Universal Simulator Agent"
+
     equipment_api_urls = {
-        "sop.equipment.request_trend_history": "http://boi-api:8000/api/poc/equipment/trend-history",
         "sop.equipment.request_raw_data": "http://boi-api:8000/api/poc/equipment/raw-data",
         "sop.equipment.request_maintenance_guide": "http://boi-api:8000/api/poc/equipment/maintenance-guide",
         "sop.equipment.notify_action_owner": "http://boi-api:8000/api/poc/equipment/notify-owner",

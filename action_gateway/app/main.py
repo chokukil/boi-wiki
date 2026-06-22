@@ -509,6 +509,9 @@ def simulation_agent_fields(value: dict[str, Any] | None) -> dict[str, Any]:
     return {
         "simulation_agent": value,
         "retrieval_rounds": ((value.get("agent") or {}).get("retrieval_rounds") if isinstance(value.get("agent"), dict) else None),
+        "agent_iterations": value.get("agent_iterations")
+        or ((value.get("agent") or {}).get("agent_iterations") if isinstance(value.get("agent"), dict) else None),
+        "tool_calls": value.get("tool_calls") or [],
         "used_docs": context_pack.get("documents") or [],
         "missing_context": ((value.get("coverage_report") or {}).get("missing_context") if isinstance(value.get("coverage_report"), dict) else []),
         "coverage_score": ((value.get("coverage_report") or {}).get("coverage_score") if isinstance(value.get("coverage_report"), dict) else None),
@@ -729,7 +732,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
             renderer_enabled = (
                 truthy_value(action.get("langflow_renderer_enabled"))
                 if "langflow_renderer_enabled" in action
-                else LANGFLOW_UNIVERSAL_RENDERER_ENABLED
+                else (True if simulation_mode == "langflow_universal" else LANGFLOW_UNIVERSAL_RENDERER_ENABLED)
             )
 
             if simulation_mode == "langflow_universal" and simulation_agent_ready and not renderer_enabled:
@@ -788,7 +791,11 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                         if resp.status_code >= 400:
                             raise HTTPException(status_code=resp.status_code, detail=resp_body)
                         langflow_message = first_langflow_message(resp_body)
-                        canonical_message = simulation_agent_markdown(simulation_agent) if simulation_agent_ready and str(action.get("simulation_mode") or "") == "langflow_universal" else langflow_message
+                        canonical_message = (
+                            langflow_message or simulation_agent_markdown(simulation_agent)
+                            if simulation_agent_ready and str(action.get("simulation_mode") or "") == "langflow_universal"
+                            else langflow_message
+                        )
                         result = {
                             "ok": True,
                             "status": "langflow_invoked",
@@ -800,7 +807,8 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                             "flow_name": flow_info.get("name") or action.get("flow_name"),
                             "message": canonical_message,
                             "langflow_message": langflow_message,
-                            "langflow_renderer_status": "rendered",
+                            "langflow_renderer_status": "agent_flow" if simulation_mode == "langflow_universal" else "rendered",
+                            "agent_fallback_used": False if simulation_mode == "langflow_universal" else None,
                             "response": resp_body,
                             **agent_fields,
                             **simulation_metadata(action),
@@ -825,6 +833,7 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                                 "fallback": "boi_simulation_agent",
                             },
                             "langflow_renderer_status": "timeout_fallback",
+                            "agent_fallback_used": True,
                             **agent_fields,
                             **simulation_metadata(action),
                         }
@@ -947,9 +956,12 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 "used_docs",
                 "missing_context",
                 "coverage_score",
+                "agent_iterations",
+                "tool_calls",
                 "evidence_packets",
                 "simulation_boundaries",
                 "langflow_renderer_status",
+                "agent_fallback_used",
             )
             if key in result
         }
