@@ -53,6 +53,9 @@ class BoIResultComposer(Component):
             "```json",
             json.dumps(
                 {
+                    "ok": simulation_agent.get("ok"),
+                    "status": simulation_agent.get("status"),
+                    "error": simulation_agent.get("error"),
                     "agent": simulation_agent.get("agent"),
                     "agent_iterations": simulation_agent.get("agent_iterations"),
                     "tool_calls": simulation_agent.get("tool_calls"),

@@ -73,7 +73,8 @@ class BoIUniversalSimulatorAgent(Component):
                 "request": body,
                 "agent_iterations": 0,
                 "tool_calls": [],
-                "coverage_report": {"coverage_score": 0, "missing_context": ["agent_failed"], "passed": False},
+                "coverage_report": {"coverage_score": 0, "missing_context": ["agent_failed", error], "passed": False},
+                "limitations": [error],
             }
         )
 
