@@ -186,8 +186,8 @@ def get_auth_headers(client: httpx.Client, langflow_url: str, api_key: str, auth
     return {"Authorization": f"Bearer {token}"}
 
 
-def runtime_flows(langflow_url: str, api_key: str, auth_mode: str) -> list[dict[str, Any]]:
-    with httpx.Client(timeout=30) as client:
+def runtime_flows(langflow_url: str, api_key: str, auth_mode: str, timeout: float = 30) -> list[dict[str, Any]]:
+    with httpx.Client(timeout=timeout) as client:
         headers = get_auth_headers(client, langflow_url.rstrip("/"), api_key, auth_mode)
         response = client.get(f"{langflow_url.rstrip('/')}/api/v1/flows/", headers=headers)
         response.raise_for_status()
@@ -204,6 +204,7 @@ def main() -> int:
     parser.add_argument("--langflow-url", default=os.getenv("LANGFLOW_URL", "http://localhost:7860"))
     parser.add_argument("--langflow-api-key", default=os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me"))
     parser.add_argument("--auth-mode", choices=["auto-login", "api-key"], default=os.getenv("LANGFLOW_AUTH_MODE", "auto-login"))
+    parser.add_argument("--timeout", type=float, default=float(os.getenv("LANGFLOW_AUDIT_TIMEOUT", "30")))
     args = parser.parse_args()
 
     errors: list[str] = []
@@ -216,7 +217,7 @@ def main() -> int:
 
     runtime_summary: dict[str, Any] = {}
     if args.runtime:
-        flows = runtime_flows(args.langflow_url, args.langflow_api_key, args.auth_mode)
+        flows = runtime_flows(args.langflow_url, args.langflow_api_key, args.auth_mode, timeout=args.timeout)
         by_name: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for flow in flows:
             by_name[str(flow.get("name") or "")].append(flow)
