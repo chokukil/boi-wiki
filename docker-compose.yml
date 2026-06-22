@@ -172,6 +172,7 @@ services:
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
       LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}
       LANGFLOW_BOI_AGENT_ENDPOINT: ${LANGFLOW_BOI_AGENT_ENDPOINT:-boi-agent}
+      LANGFLOW_AGENT_TIMEOUT_SECONDS: ${LANGFLOW_AGENT_TIMEOUT_SECONDS:-180}
     volumes:
       - ./data/boi:/data/boi
       - ./data/events:/data/events
