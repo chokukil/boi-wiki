@@ -18,6 +18,7 @@ REQUIRED_RUNTIME_FLOWS = {
     "BoI Reference Flow": {"endpoint": "boi-reference-flow", "require_boi_components": True},
     "BoI Equipment Stage Analysis Flow": {"endpoint": "boi-equipment-stage-analysis", "require_boi_components": True},
     "BoI Universal Action Simulator Flow": {"endpoint": "boi-universal-action-simulator", "require_boi_components": True, "require_simulation_agent": True},
+    "BoI Agent Flow": {"endpoint": "boi-agent", "require_native_agent": True},
 }
 
 
@@ -90,7 +91,17 @@ def path_exists(source: str, target: str, edges: list[tuple[str, str]]) -> bool:
     return False
 
 
-def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False, require_simulation_agent: bool = False) -> list[str]:
+def direct_edge_exists(source: str, target: str, edges: list[tuple[str, str]]) -> bool:
+    return any(start == source and end == target for start, end in edges)
+
+
+def audit_flow(
+    flow: dict[str, Any],
+    *,
+    require_boi_components: bool = False,
+    require_simulation_agent: bool = False,
+    require_native_agent: bool = False,
+) -> list[str]:
     errors: list[str] = []
     node_ids, edges, node_by_id = flow_graph(flow)
     if not node_ids:
@@ -99,6 +110,10 @@ def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False, re
         flow_text = json.dumps(flow.get("data") or flow, ensure_ascii=False)
         if "manual.direct_development.decide_cross_section" in flow_text:
             errors.append("BoI Universal Simulator contains a hardcoded manual.direct_development.decide_cross_section action key")
+    if require_native_agent:
+        flow_text = json.dumps(flow.get("data") or flow, ensure_ascii=False)
+        if "boi_agent_chat" in flow_text:
+            errors.append("BoI Agent Flow must not call boi_agent_chat recursively")
     for source, target in edges:
         if source not in node_ids:
             errors.append(f"edge source missing node: {source}")
@@ -172,6 +187,26 @@ def audit_flow(flow: dict[str, Any], *, require_boi_components: bool = False, re
                 errors.append("BoI Wiki Writer result is not connected to final result composer")
         if result and output and not path_exists(result, output, edges):
             errors.append("BoI Result Composer is not connected to ChatOutput")
+    if require_native_agent:
+        agent = node_matching(node_by_id, "BoI Agent")
+        tools = node_matching(node_by_id, "MCP Tools") or node_matching(node_by_id, "Tool")
+        result = node_matching(node_by_id, "BoI Agent Result Composer")
+        output = node_matching(node_by_id, "BoI Draft Output")
+        llm = node_matching(node_by_id, "Gemma OpenAI-Compatible LLM")
+        if not agent:
+            errors.append("BoI Agent Flow is missing native Agent")
+        if not tools:
+            errors.append("BoI Agent Flow is missing tool connection")
+        if not result:
+            errors.append("BoI Agent Flow is missing BoI Agent Result Composer")
+        if agent and result and not path_exists(agent, result, edges):
+            errors.append("BoI Agent Flow native Agent is not connected to result composer")
+        if tools and agent and not path_exists(tools, agent, edges):
+            errors.append("BoI Agent Flow is missing tool connection")
+        if result and output and not path_exists(result, output, edges):
+            errors.append("BoI Agent Flow result composer is not connected to ChatOutput")
+        if llm and output and direct_edge_exists(llm, output, edges):
+            errors.append("BoI Agent Flow has standalone LLM to output path")
     return errors
 
 
@@ -234,8 +269,9 @@ def main() -> int:
                 f"runtime:{flow_name}:{error}"
                 for error in audit_flow(
                     selected,
-                    require_boi_components=bool(rule["require_boi_components"]),
+                    require_boi_components=bool(rule.get("require_boi_components")),
                     require_simulation_agent=bool(rule.get("require_simulation_agent")),
+                    require_native_agent=bool(rule.get("require_native_agent")),
                 )
             )
 

@@ -9,6 +9,8 @@ from .boi_wiki_reader import BoIWikiReader
 from .boi_action_invoker import BoIActionInvoker
 from .boi_simulation_agent import BoISimulationAgent
 from .boi_universal_simulator_agent import BoIUniversalSimulatorAgent
+from .boi_agent_result_composer import BoIAgentResultComposer
+from .boi_agent_tools import BoIAgentTools
 
 __all__ = [
     "BoIContextNormalizer",
@@ -22,4 +24,6 @@ __all__ = [
     "BoIActionInvoker",
     "BoISimulationAgent",
     "BoIUniversalSimulatorAgent",
+    "BoIAgentResultComposer",
+    "BoIAgentTools",
 ]

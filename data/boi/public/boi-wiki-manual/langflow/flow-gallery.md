@@ -55,6 +55,10 @@ review:
 
 Simulator flow는 standalone LLM pipeline이 아니다. 공식 completion 기준은 `BoI Universal Simulator Agent`가 중심 노드로 존재하고, 그 결과가 `BoI Metadata Builder`, `BoI Policy & Validation Guard`, `BoI Result Composer`, `BoI Draft Output`으로 이어지는 것이다. 결과에는 실제 시스템 호출이 아니라는 `SIMULATED` 표시와 human review 필요 여부가 포함되어야 한다.
 
+# BoI Agent Flow
+
+`BoI Agent Flow`는 우측 하단 Web Pet Agent와 MCP `boi_agent_chat`의 trusted backend다. endpoint는 `boi-agent`이며, 공식 외부 인터페이스는 BoI API와 `boi-wiki-mcp`다. Canvas completion 기준은 `Chat Input -> native Agent -> BoI Agent Tools -> BoI Agent Result Composer -> Chat Output` 경로가 연결되어 있고, standalone LLM -> Output 경로가 없어야 한다. Agent toolset은 read/action tool 중심이며 `boi_agent_chat` 자체는 recursion 방지를 위해 연결하지 않는다.
+
 # Runtime Checks
 
 아래 명령으로 runtime에 등록된 flow가 이 gallery의 의도와 일치하는지 확인한다.

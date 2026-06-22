@@ -13,6 +13,16 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "langflow" / "flows" / "boi_reference_flow.manifest.json"
 DEFAULT_ENDPOINT_NAME = "boi-reference-flow"
+BOI_AGENT_FLOW_NAME = "BoI Agent Flow"
+DEFAULT_BOI_AGENT_ENDPOINT_NAME = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
+BOI_AGENT_ALLOWED_TOOLS = [
+    "ontology_search",
+    "boi_get",
+    "workflow_status",
+    "agent_inbox",
+    "manual_handoff_complete",
+    "agent_memory_search",
+]
 BOI_COMPONENT_KEYS = {
     "harness": "ext:boi:BoIHarnessLoader@extra",
     "reader": "ext:boi:BoIWikiReader@extra",
@@ -25,6 +35,8 @@ BOI_COMPONENT_KEYS = {
     "result": "ext:boi:BoIResultComposer@extra",
     "simulation_agent": "ext:boi:BoISimulationAgent@extra",
     "universal_agent": "ext:boi:BoIUniversalSimulatorAgent@extra",
+    "agent_result": "ext:boi:BoIAgentResultComposer@extra",
+    "agent_tools": "ext:boi:BoIAgentTools@extra",
 }
 
 
@@ -144,8 +156,124 @@ def create_custom_node(
     }
 
 
+def iter_runtime_components(components: dict[str, Any]):
+    for category, items in components.items():
+        if not isinstance(items, dict):
+            continue
+        for key, component in items.items():
+            if isinstance(component, dict):
+                yield str(category), str(key), component
+
+
+def find_runtime_component(
+    components: dict[str, Any],
+    *,
+    display_names: tuple[str, ...] = (),
+    key_contains: tuple[str, ...] = (),
+) -> tuple[str, dict[str, Any]]:
+    for _category, key, component in iter_runtime_components(components):
+        display_name = str(component.get("display_name") or component.get("name") or key)
+        if display_name in display_names or any(token.lower() in display_name.lower() for token in key_contains) or any(
+            token.lower() in key.lower() for token in key_contains
+        ):
+            return key, component
+    expected = ", ".join(display_names + key_contains)
+    raise RuntimeError(f"Langflow native component not found in /api/v1/all: {expected}")
+
+
+def find_native_agent_component(components: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    preferred: list[tuple[str, dict[str, Any]]] = []
+    fallback: list[tuple[str, dict[str, Any]]] = []
+    for category, key, component in iter_runtime_components(components):
+        if str(category) == "boi" or str(key).startswith("ext:boi:"):
+            continue
+        display_name = str(component.get("display_name") or component.get("name") or key)
+        template = component.get("template") or {}
+        has_agent_contract = "tools" in template and "input_value" in template and ("system_prompt" in template or "instructions" in template)
+        if display_name == "Agent" and has_agent_contract:
+            preferred.append((key, component))
+        elif display_name.endswith(" Agent") and has_agent_contract:
+            fallback.append((key, component))
+    if preferred:
+        return preferred[0]
+    if fallback:
+        return fallback[0]
+    raise RuntimeError("Langflow native Agent component not found in /api/v1/all. Update Langflow or install the Agent component package.")
+
+
+def find_mcp_tools_component(components: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    for category, key, component in iter_runtime_components(components):
+        if str(category) == "boi" or str(key).startswith("ext:boi:"):
+            continue
+        display_name = str(component.get("display_name") or component.get("name") or key)
+        text = f"{key} {display_name}".lower()
+        if "mcp" in text and ("tool" in text or "server" in text):
+            return key, component
+    raise RuntimeError("Langflow MCP tools component not found in /api/v1/all. BoI Agent Flow requires MCP tools.")
+
+
+def create_runtime_node(
+    component_key: str,
+    component: dict[str, Any],
+    node_id: str,
+    x: int,
+    y: int,
+    *,
+    display_name: str | None = None,
+    values: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    node_component = json.loads(json.dumps(component, ensure_ascii=False))
+    node_component["id"] = node_id
+    for field, value in (values or {}).items():
+        if field in node_component.get("template", {}):
+            node_component["template"][field]["value"] = value
+    output_name = (node_component.get("outputs") or [{}])[0].get("name")
+    return {
+        "id": node_id,
+        "type": "genericNode",
+        "position": {"x": x, "y": y},
+        "positionAbsolute": {"x": x, "y": y},
+        "dragging": False,
+        "selected": False,
+        "measured": {"width": 340, "height": 280},
+        "width": 340,
+        "height": 280,
+        "data": {
+            "id": node_id,
+            "type": component_key,
+            "node": node_component,
+            "display_name": display_name or node_component.get("display_name"),
+            "description": node_component.get("description", ""),
+            "selected_output": output_name,
+            "showNode": True,
+        },
+    }
+
+
+def first_template_field_name(node: dict[str, Any], candidates: tuple[str, ...]) -> str:
+    template = node["data"]["node"].get("template") or {}
+    for candidate in candidates:
+        if candidate in template:
+            return candidate
+    raise RuntimeError(f"{component_name_for_error(node)} does not expose any of fields: {candidates}")
+
+
+def component_name_for_error(node: dict[str, Any]) -> str:
+    data = node.get("data") or {}
+    return str(data.get("display_name") or data.get("type") or node.get("id"))
+
+
 def first_output(node: dict[str, Any]) -> dict[str, Any]:
     return (node["data"]["node"].get("outputs") or [{}])[0]
+
+
+def output_by_name(node: dict[str, Any], output_name: str | None) -> dict[str, Any]:
+    outputs = node["data"]["node"].get("outputs") or []
+    if output_name:
+        for output in outputs:
+            if output.get("name") == output_name:
+                return output
+    return outputs[0] if outputs else {}
 
 
 def template_field(node: dict[str, Any], field_name: str) -> dict[str, Any]:
@@ -156,8 +284,10 @@ def create_edge(
     source: dict[str, Any],
     target: dict[str, Any],
     target_field_name: str,
+    *,
+    source_output_name: str | None = None,
 ) -> dict[str, Any]:
-    output = first_output(source)
+    output = output_by_name(source, source_output_name)
     field = template_field(target, target_field_name)
     source_handle = {
         "dataType": source["data"]["type"],
@@ -414,6 +544,110 @@ def create_component_reference_flow(
     return response.json()
 
 
+def create_boi_agent_flow(
+    client: httpx.Client,
+    langflow_url: str,
+    headers: dict[str, str],
+    base_flow: dict[str, Any],
+) -> dict[str, Any]:
+    components = get_components(client, langflow_url, headers)
+    base_data = compact_base_flow(base_flow)
+    chat_input = find_node(base_data, "BoI Event Input")
+    chat_output = find_node(base_data, "BoI Draft Output")
+    llm = find_node(base_data, "Gemma OpenAI-Compatible LLM")
+    for node, position in (
+        (chat_input, {"x": 80, "y": 300}),
+        (llm, {"x": 420, "y": 60}),
+        (chat_output, {"x": 1620, "y": 300}),
+    ):
+        node["position"] = position
+        node["positionAbsolute"] = dict(position)
+
+    agent_key, agent_component = find_native_agent_component(components)
+    allowed_tool_names = ",".join(BOI_AGENT_ALLOWED_TOOLS)
+    agent = create_runtime_node(
+        agent_key,
+        agent_component,
+        "BoIAgent-native",
+        860,
+        300,
+        display_name="BoI Agent",
+        values={
+            "system_prompt": (
+                "You are BoI Agent. Answer through BoI Wiki evidence, cite links, and use only read/action tools "
+                "from the BoI Wiki MCP server. Never call the page-aware Agent chat tool because that would recurse. Use tools "
+                f"preferentially in this set: {allowed_tool_names}. Return JSON with answer_markdown, links, "
+                "citations, suggested_questions, and context_summary."
+            ),
+            "instructions": (
+                "Use ontology_search first, boi_get for exact docs, workflow_status for traces, agent_inbox for "
+                "assigned actions, manual_handoff_complete only when the user explicitly asked to complete a handoff."
+            ),
+            "max_iterations": 5,
+            "verbose": True,
+        },
+    )
+    tools = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["agent_tools"],
+        "BoIAgentTools-boi",
+        420,
+        520,
+        {"boi_api_url": "http://boi-api:8000"},
+    )
+    for output in tools["data"]["node"].get("outputs") or []:
+        output["types"] = ["Tool"]
+        output["selected"] = "Tool"
+    result = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["agent_result"],
+        "BoIAgentResultComposer-boi",
+        1240,
+        300,
+        {"result_title": "BoI Agent Response"},
+    )
+    input_field = first_template_field_name(agent, ("input_value", "input", "message", "chat_input", "human_input"))
+    model_field = first_template_field_name(agent, ("language_model", "llm", "model", "model_input", "agent_llm"))
+    tools_field = first_template_field_name(agent, ("tools", "tool", "agent_tools"))
+    result_field = first_template_field_name(result, ("agent_message", "analysis"))
+    output_field = first_template_field_name(chat_output, ("input_value",))
+
+    data = {
+        "nodes": [chat_input, llm, tools, agent, result, chat_output],
+        "edges": [
+            create_edge(chat_input, agent, input_field),
+            create_edge(llm, agent, model_field, source_output_name="model_output"),
+            create_edge(tools, agent, tools_field, source_output_name="ontology_search_tool"),
+            create_edge(tools, agent, tools_field, source_output_name="boi_get_tool"),
+            create_edge(tools, agent, tools_field, source_output_name="workflow_status_tool"),
+            create_edge(tools, agent, tools_field, source_output_name="agent_inbox_tool"),
+            create_edge(tools, agent, tools_field, source_output_name="manual_handoff_complete_tool"),
+            create_edge(tools, agent, tools_field, source_output_name="memory_recall_tool"),
+            create_edge(agent, result, result_field),
+            create_edge(result, chat_output, output_field),
+        ],
+        "viewport": {"x": -160, "y": -60, "zoom": 0.7},
+    }
+    response = client.post(
+        f"{langflow_url}/api/v1/flows/",
+        headers=headers,
+        json={
+            "name": BOI_AGENT_FLOW_NAME,
+            "description": (
+                "Official trusted-backend BoI Agent Flow: Chat Input -> native Agent with BoI Agent Tools -> "
+                "BoI Agent Result Composer -> Chat Output. BoI API and boi-wiki-mcp are the public interfaces."
+            ),
+            "endpoint_name": DEFAULT_BOI_AGENT_ENDPOINT_NAME,
+            "data": data,
+            "webhook": False,
+            "access_type": "PRIVATE",
+            "tags": ["boi", "agent", "mcp", "trusted-backend"],
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def create_universal_agent_simulator_flow(
     client: httpx.Client,
     langflow_url: str,
@@ -508,6 +742,16 @@ def create_universal_agent_simulator_flow(
 
 
 def smoke_input_for_endpoint(endpoint_name: str) -> str:
+    if str(endpoint_name) == DEFAULT_BOI_AGENT_ENDPOINT_NAME or "boi-agent" in str(endpoint_name):
+        return json.dumps(
+            {
+                "question": "설비 이상 대응 SOP와 연결된 Action을 찾아줘.",
+                "employee_id": "100001",
+                "current_url": "/",
+                "page_context": {"title": "BoI Wiki"},
+            },
+            ensure_ascii=False,
+        )
     if "universal" not in str(endpoint_name):
         return "BoI Wiki PoC Langflow smoke test. Respond with one short Korean sentence."
     return json.dumps(
@@ -610,12 +854,13 @@ def main() -> None:
             client,
             langflow_url,
             headers,
-            {"BoI Reference Flow", "BoI Equipment Stage Analysis Flow", "BoI Universal Action Simulator Flow"},
+            {"BoI Reference Flow", "BoI Equipment Stage Analysis Flow", "BoI Universal Action Simulator Flow", BOI_AGENT_FLOW_NAME},
         )
         smoke_target = endpoint_name
         custom_flow = None
         stage_flow = None
         simulator_flow = None
+        boi_agent_flow = None
         if not args.skip_custom_components:
             custom_flow = create_component_reference_flow(
                 client,
@@ -649,6 +894,12 @@ def main() -> None:
                 ),
             )
             simulator_flow = create_universal_agent_simulator_flow(
+                client,
+                langflow_url,
+                headers,
+                base_flow,
+            )
+            boi_agent_flow = create_boi_agent_flow(
                 client,
                 langflow_url,
                 headers,
@@ -693,6 +944,15 @@ def main() -> None:
             }
             if simulator_flow
             else None,
+            "boi_agent_flow": {
+                "id": boi_agent_flow.get("id"),
+                "name": boi_agent_flow.get("name"),
+                "endpoint_name": boi_agent_flow.get("endpoint_name"),
+                "nodes": len((boi_agent_flow.get("data") or {}).get("nodes") or []),
+                "edges": len((boi_agent_flow.get("data") or {}).get("edges") or []),
+            }
+            if boi_agent_flow
+            else None,
         }
         if not args.skip_smoke:
             result["smoke"] = smoke_run(client, langflow_url, headers, smoke_target)
@@ -710,6 +970,13 @@ def main() -> None:
                     headers,
                     simulator_flow.get("endpoint_name") or simulator_flow.get("id") or "boi-universal-action-simulator",
                 )
+            if boi_agent_flow:
+                result["boi_agent_smoke"] = smoke_run(
+                    client,
+                    langflow_url,
+                    headers,
+                    boi_agent_flow.get("endpoint_name") or boi_agent_flow.get("id") or DEFAULT_BOI_AGENT_ENDPOINT_NAME,
+                )
         if args.summary:
             result = {
                 "ok": result["ok"],
@@ -718,9 +985,11 @@ def main() -> None:
                 "custom_component_flow": result["custom_component_flow"],
                 "equipment_stage_flow": result["equipment_stage_flow"],
                 "universal_simulator_flow": result["universal_simulator_flow"],
+                "boi_agent_flow": result["boi_agent_flow"],
                 "smoke": summarize_run(result.get("smoke")),
                 "stage_smoke": summarize_run(result.get("stage_smoke")),
                 "simulator_smoke": summarize_run(result.get("simulator_smoke")),
+                "boi_agent_smoke": summarize_run(result.get("boi_agent_smoke")),
             }
 
     print(json.dumps(result, ensure_ascii=False, indent=2))

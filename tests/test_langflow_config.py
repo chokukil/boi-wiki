@@ -69,6 +69,11 @@ def test_langflow_setup_script_documents_upload_and_smoke_endpoints():
     assert "/api/v1/auto_login" in script
     assert "resolve_smoke_target" in script
     assert "boi-reference-flow" in script
+    assert "BoI Agent Flow" in script
+    assert "boi-agent" in script
+    assert "LANGFLOW_BOI_AGENT_ENDPOINT" in script
+    assert "create_boi_agent_flow" in script
+    assert "native Agent" in script
     assert "BoI Universal Action Simulator Flow" in script
     assert "boi-universal-action-simulator" in script
     assert "BoIPromptComposer-boi" in script
@@ -86,6 +91,11 @@ def test_langflow_audit_script_checks_runtime_connected_boi_components():
     script = Path("scripts/audit_langflow_flows.py").read_text(encoding="utf-8")
 
     assert "BoI Equipment Stage Analysis Flow" in script
+    assert "BoI Agent Flow" in script
+    assert "boi-agent" in script
+    assert "require_native_agent" in script
+    assert "BoI Agent Flow is missing native Agent" in script
+    assert "BoI Agent Flow is missing tool connection" in script
     assert "BoI Universal Action Simulator Flow" in script
     assert "boi-universal-action-simulator" in script
     assert "require_boi_components" in script

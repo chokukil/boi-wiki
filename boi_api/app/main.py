@@ -88,6 +88,11 @@ DEMO_EMPLOYEE_ID = os.getenv("DEMO_EMPLOYEE_ID", "100001")
 BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1").rstrip("/")
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
+LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
+LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
+LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "api-key")
+LANGFLOW_BOI_AGENT_ENDPOINT = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
+LANGFLOW_AGENT_TIMEOUT_SECONDS = float(os.getenv("LANGFLOW_AGENT_TIMEOUT_SECONDS", "120"))
 KAFKA_PUBLISH_TIMEOUT_SECONDS = float(os.getenv("BOI_KAFKA_PUBLISH_TIMEOUT_SECONDS", "20"))
 
 LOCALHOST_NAMES = {"localhost", "127.0.0.1", "::1", "testserver"}
@@ -5145,53 +5150,160 @@ def agent_link_for_item(item: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
-    search = ontology_search_payload(req.question, employee_id, current_url=req.current_url, limit=6)
-    inbox = agent_inbox_payload(employee_id, status="open", limit=5)
-    memories = agent_memory_items(employee_id, q=req.question, limit=3)
-    best = search.get("best_matches") or []
-    answer_lines = [
-        "BoI Wiki 기준으로 확인한 내용입니다.",
-    ]
-    if best:
-        answer_lines.append("")
-        answer_lines.append("관련성이 높은 항목:")
-        for item in best[:5]:
-            label = item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id")
-            detail = item.get("description") or item.get("definition") or item.get("match_reason") or ""
-            answer_lines.append(f"- {label}: {detail}")
-    if inbox.get("open_count"):
-        answer_lines.append("")
-        answer_lines.append(f"현재 담당 Action은 {inbox['open_count']}건입니다. 우측 Agent의 내 Action 탭에서 바로 확인할 수 있습니다.")
-    if memories:
-        answer_lines.append("")
-        answer_lines.append("개인 memory에서 함께 참고한 항목이 있습니다.")
-    links = [agent_link_for_item(item) for item in best[:8] if item.get("url")]
+class LangflowBoiAgentUnavailable(RuntimeError):
+    """Raised when the trusted Langflow BoI Agent backend cannot answer."""
+
+
+def langflow_auth_headers() -> dict[str, str]:
+    if LANGFLOW_AUTH_MODE == "api-key":
+        return {"x-api-key": LANGFLOW_API_KEY}
+    try:
+        with httpx.Client(timeout=LANGFLOW_AGENT_TIMEOUT_SECONDS) as client:
+            response = client.get(f"{LANGFLOW_URL}/api/v1/auto_login")
+            response.raise_for_status()
+            token = response.json().get("access_token")
+    except Exception as exc:  # pragma: no cover - exercised through route-level unavailable handling
+        raise LangflowBoiAgentUnavailable(f"Langflow auto_login failed: {exc}") from exc
+    if not token:
+        raise LangflowBoiAgentUnavailable("Langflow auto_login did not return access_token")
+    return {"Authorization": f"Bearer {token}"}
+
+
+def first_langflow_text(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("answer_markdown", "text", "message", "content"):
+            item = value.get(key)
+            if isinstance(item, str) and item.strip():
+                return item
+            found = first_langflow_text(item)
+            if found:
+                return found
+        for item in value.values():
+            found = first_langflow_text(item)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = first_langflow_text(item)
+            if found:
+                return found
+    return ""
+
+
+def parse_langflow_agent_payload(run_result: dict[str, Any]) -> dict[str, Any]:
+    text = first_langflow_text(run_result)
+    if not text:
+        raise LangflowBoiAgentUnavailable("BoI Agent Flow returned no message")
+    stripped = text.strip()
+    if stripped.startswith("```json"):
+        stripped = stripped.removeprefix("```json").strip()
+        if stripped.endswith("```"):
+            stripped = stripped[:-3].strip()
+    elif stripped.startswith("```") and stripped.endswith("```"):
+        stripped = stripped[3:-3].strip()
+    if stripped.startswith("{"):
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    return {"answer_markdown": text}
+
+
+def normalize_langflow_agent_response(
+    run_result: dict[str, Any],
+    req: BoiAgentChatRequest,
+    employee_id: str,
+) -> dict[str, Any]:
+    parsed = parse_langflow_agent_payload(run_result)
+    answer_markdown = str(parsed.get("answer_markdown") or parsed.get("answer") or parsed.get("message") or "").strip()
+    if not answer_markdown:
+        raise LangflowBoiAgentUnavailable("BoI Agent Flow response did not include answer_markdown")
+    links = parsed.get("links")
+    if not isinstance(links, list):
+        links = []
+    citations = parsed.get("citations")
+    if not isinstance(citations, list):
+        citations = links[:5]
+    suggestions = parsed.get("suggested_questions")
+    if not isinstance(suggestions, list) or not suggestions:
+        suggestions = page_context_suggestions(req.current_url, req.page_context)
+    context_summary = parsed.get("context_summary")
+    if not isinstance(context_summary, dict):
+        context_summary = {}
+    context_summary.update(
+        {
+            "current_url": req.current_url,
+            "langflow_flow": LANGFLOW_BOI_AGENT_ENDPOINT,
+            "langflow_backend": "trusted",
+        }
+    )
     return {
         "ok": True,
         "employee_id": employee_id,
-        "answer_markdown": "\n".join(answer_lines),
+        "answer_markdown": answer_markdown,
         "links": links,
-        "citations": links[:5],
-        "suggested_questions": page_context_suggestions(req.current_url, req.page_context),
-        "context_summary": {
-            "current_url": req.current_url,
-            "used_dictionary_terms": search.get("used_dictionary_terms") or [],
-            "memory_count": len(memories),
-            "inbox_open_count": inbox.get("open_count", 0),
-        },
-        "ontology_search": search,
-        "langflow_backend": {
-            "official_external_interface": "BoI API / boi-wiki-mcp",
-            "direct_langflow_run": "trusted-dev-only",
-        },
+        "citations": citations,
+        "suggested_questions": suggestions,
+        "context_summary": context_summary,
     }
+
+
+def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    if not LANGFLOW_URL or not LANGFLOW_BOI_AGENT_ENDPOINT:
+        raise LangflowBoiAgentUnavailable("Langflow BoI Agent endpoint is not configured")
+    payload = {
+        "input_value": json.dumps(
+            {
+                "question": req.question,
+                "employee_id": employee_id,
+                "current_url": req.current_url,
+                "page_context": req.page_context,
+                "conversation": req.conversation[-12:],
+                "save_memory": req.save_memory,
+            },
+            ensure_ascii=False,
+        ),
+        "input_type": "chat",
+        "output_type": "chat",
+    }
+    headers = {**langflow_auth_headers(), "Content-Type": "application/json"}
+    url = f"{LANGFLOW_URL}/api/v1/run/{LANGFLOW_BOI_AGENT_ENDPOINT}"
+    try:
+        with httpx.Client(timeout=LANGFLOW_AGENT_TIMEOUT_SECONDS) as client:
+            response = client.post(url, headers=headers, json=payload)
+            if response.status_code == 404:
+                raise LangflowBoiAgentUnavailable(f"BoI Agent Flow endpoint not found: {LANGFLOW_BOI_AGENT_ENDPOINT}")
+            response.raise_for_status()
+            run_result = response.json()
+    except LangflowBoiAgentUnavailable:
+        raise
+    except Exception as exc:
+        raise LangflowBoiAgentUnavailable(f"Langflow BoI Agent call failed: {exc}") from exc
+    return normalize_langflow_agent_response(run_result, req, employee_id)
+
+
+def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    return call_langflow_boi_agent(req, employee_id)
 
 
 @app.post("/api/agents/boi-wiki/chat")
 async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
-    return agent_chat_response(req, employee_id)
+    try:
+        return agent_chat_response(req, employee_id)
+    except LangflowBoiAgentUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "langflow_boi_agent_unavailable",
+                "message": str(exc),
+                "langflow_url": LANGFLOW_URL,
+                "endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
+            },
+        ) from exc
 
 
 @app.post("/api/agents/boi-wiki/suggestions")
@@ -5211,6 +5323,8 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         "employee_id": employee_id,
         "official_external_interfaces": ["BoI API", "boi-wiki-mcp"],
         "trusted_dev_backend": "Langflow",
+        "langflow_boi_agent_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
+        "langflow_boi_agent_configured": bool(LANGFLOW_URL and LANGFLOW_BOI_AGENT_ENDPOINT),
         "features": [
             "page-aware Q&A",
             "ontology-assisted search",

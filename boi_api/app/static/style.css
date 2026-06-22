@@ -186,7 +186,7 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-panel h2 { margin:0; font-size:18px; }
 .boi-agent-panel header p { margin:4px 0 0; max-width:290px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#dbeafe; font-size:12px; }
 .boi-agent-close { min-width:32px; height:32px; padding:0; border:1px solid rgba(255,255,255,.25); border-radius:999px; background:rgba(255,255,255,.08); color:#fff; font-size:22px; line-height:1; }
-.boi-agent-tabs { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; padding:8px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
+.boi-agent-tabs { display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; padding:8px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
 .boi-agent-tabs button { min-height:36px; border:1px solid transparent; border-radius:999px; background:transparent; color:#334155; font-size:13px; font-weight:900; }
 .boi-agent-tabs button.active { border-color:#bfdbfe; background:#fff; color:#111827; box-shadow:0 4px 12px rgba(37,99,235,.12); }
 .boi-agent-content { overflow:auto; padding:14px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); }
@@ -196,9 +196,15 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-suggestions { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:12px; }
 .boi-agent-suggestions button { padding:7px 10px; border:1px solid #bfdbfe; border-radius:999px; background:#fff; color:#1d4ed8; font-size:12px; font-weight:800; box-shadow:0 2px 8px rgba(37,99,235,.07); }
 .boi-agent-suggestions button:hover { border-color:#60a5fa; background:#eff6ff; }
-.boi-agent-chat-form, .boi-agent-memory-form, .boi-agent-dictionary-form { display:grid; gap:9px; }
-.boi-agent-chat-form textarea, .boi-agent-memory-form textarea, .boi-agent-dictionary-form textarea { width:100%; min-height:86px; resize:vertical; }
-.boi-agent-chat-form button, .boi-agent-memory-form button, .boi-agent-dictionary-form button, .boi-agent-handoff-form button { justify-self:end; }
+.boi-agent-chat-form { display:grid; gap:9px; }
+.boi-agent-chat-form textarea { width:100%; min-height:86px; resize:vertical; }
+.boi-agent-chat-form button, .boi-agent-handoff-form button { justify-self:end; }
+.boi-agent-messages { display:grid; gap:9px; margin-bottom:12px; }
+.boi-agent-message { max-width:92%; padding:10px 12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
+.boi-agent-message.user { justify-self:end; border-color:#bfdbfe; background:#eff6ff; }
+.boi-agent-message.assistant { justify-self:start; }
+.boi-agent-message strong { display:block; margin-bottom:4px; color:#334155; font-size:12px; }
+.boi-agent-message p { margin:0; color:#1f2937; line-height:1.55; }
 .boi-agent-answer { position:relative; margin-top:12px; padding:13px 14px; border:1px solid #dbeafe; border-radius:12px; background:#fff; box-shadow:0 6px 18px rgba(15,23,42,.08); }
 .boi-agent-answer::before { content:""; position:absolute; right:28px; top:-8px; width:14px; height:14px; border-left:1px solid #dbeafe; border-top:1px solid #dbeafe; background:#fff; transform:rotate(45deg); }
 .boi-agent-answer p { margin:0; color:#1f2937; line-height:1.55; }

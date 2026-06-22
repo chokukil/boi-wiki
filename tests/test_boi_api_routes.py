@@ -169,8 +169,23 @@ def test_ontology_search_dictionary_and_boi_search_remain_distinct(boi_app_modul
     assert all((item.get("metadata") or {}).get("type") for item in boi_search.json()["items"])
 
 
-def test_boi_agent_chat_returns_links_and_suggestions(boi_app_module):
+def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    calls: list[dict[str, object]] = []
+
+    def fake_call(req, employee_id: str):
+        calls.append({"req": req, "employee_id": employee_id})
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "answer_markdown": "Langflow BoI Agent answer",
+            "links": [{"label": "SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+            "citations": [],
+            "suggested_questions": ["이 SOP를 Mermaid로 보여줘."],
+            "context_summary": {"langflow_flow": "boi-agent"},
+        }
+
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -184,10 +199,32 @@ def test_boi_agent_chat_returns_links_and_suggestions(boi_app_module):
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert "BoI Wiki 기준" in body["answer_markdown"]
-    assert body["suggested_questions"]
+    assert body["answer_markdown"] == "Langflow BoI Agent answer"
+    assert body["context_summary"]["langflow_flow"] == "boi-agent"
     assert isinstance(body["links"], list)
-    assert body["ontology_search"]["groups"]
+    assert calls
+    assert calls[0]["employee_id"] == "100001"
+    assert calls[0]["req"].question == "설비 이상 대응 SOP와 Action을 찾아줘"
+
+
+def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fake_call(req, employee_id: str):
+        raise boi_app_module.LangflowBoiAgentUnavailable("BoI Agent Flow not found")
+
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "SOP 찾아줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 503
+    body = response.json()["detail"]
+    assert body["status"] == "langflow_boi_agent_unavailable"
+    assert "BoI Agent Flow not found" in body["message"]
+    assert "BoI Wiki 기준" not in response.text
 
 
 def test_agent_memory_blocks_sensitive_values_and_saves_private_memory(boi_app_module):
@@ -252,7 +289,13 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert response.status_code == 200
     assert 'id="boi-agent-root"' in response.text
     assert "/static/pet_agent.js" in response.text
+    assert "sessionStorage" in script
+    assert "Agent" in script
+    assert "Inbox" in script
     assert "boi-agent-handoff-form" in script
+    assert "boi-agent-memory-form" not in script
+    assert "boi-agent-dictionary-form" not in script
+    assert "event.shiftKey" in script
     assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
 
 

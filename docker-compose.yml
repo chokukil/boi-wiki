@@ -168,6 +168,10 @@ services:
       BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}
       BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
       BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
+      LANGFLOW_URL: http://langflow:7860
+      LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
+      LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}
+      LANGFLOW_BOI_AGENT_ENDPOINT: ${LANGFLOW_BOI_AGENT_ENDPOINT:-boi-agent}
     volumes:
       - ./data/boi:/data/boi
       - ./data/events:/data/events
