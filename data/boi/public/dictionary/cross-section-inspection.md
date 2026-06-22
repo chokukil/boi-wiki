@@ -41,6 +41,12 @@ Cross-section Inspection은 단면검사다. BoI Wiki에서는 자동 실행이 
 - [단면검사 필요 여부 판단](/public/actions/manual/direct-development-decide-cross-section.md)
 - [단면검사 의뢰 시뮬레이션](/public/actions/langflow/direct-development-cross-section-request-simulate.md)
 
+# Related Dictionary Terms
+
+- [Map View](map-view.md)
+- [Response Trend](response-trend.md)
+- [Manual Handoff](manual-handoff.md)
+
 # Citations
 
 - [직개발 결과 확인 및 Reporting SOP](/public/sop/direct-development-reporting.md)

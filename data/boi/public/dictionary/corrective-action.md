@@ -60,6 +60,13 @@ maps_to_event_type: corrective_action.requested.v1
 - Agent는 `Corrective Action` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Process Hold](process-hold.md)
+- [Spec / Rule](spec-rule.md)
+- [Approval](approval.md)
+- [Manual Handoff](manual-handoff.md)
+
 # Citations
 
 - [NIST Control Charts](https://www.itl.nist.gov/div898/handbook/pmc/section3/pmc31.htm)

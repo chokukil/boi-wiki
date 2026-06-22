@@ -60,6 +60,13 @@ maps_to_action_key: sop.equipment.request_maintenance_guide
 - Agent는 `Preventive Maintenance` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Equipment](equipment.md)
+- [Root Cause Analysis](root-cause-analysis.md)
+- [Corrective Action](corrective-action.md)
+- [Manual Handoff](manual-handoff.md)
+
 # Citations
 
 - [Applied Materials Product Library](https://www.appliedmaterials.com/us/en/product-library.html)

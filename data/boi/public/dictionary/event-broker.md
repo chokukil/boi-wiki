@@ -37,6 +37,10 @@ Event Broker는 업무 시점을 event로 바꾸는 계층이다. BoI Wiki에서
 - [workflow event publish](/public/actions/event-broker/publish-event.md)
 - [multi-action connector guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md)
 
+# Related Dictionary Terms
+
+- [Action Gateway](action-gateway.md)
+
 # Citations
 
 - [Multi Action Connector Guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md)

@@ -64,6 +64,13 @@ wafer, die, package의 defect나 pattern 이상을 찾아내는 검사 활동
 - Agent는 `Inspection` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Defect](defect.md)
+- [Map View](map-view.md)
+- [Cross-section Inspection](cross-section-inspection.md)
+- [Yield](yield.md)
+
 # Citations
 
 - [Applied Materials Metrology and Inspection](https://www.appliedmaterials.com/us/en/semiconductor/products/processes/metrology-and-inspection.html)

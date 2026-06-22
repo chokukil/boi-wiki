@@ -62,6 +62,13 @@ through-silicon via. 적층 chip 사이를 수직으로 연결하는 silicon 관
 - Agent는 `TSV` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [HBM](hbm.md)
+- [Advanced Packaging](advanced-packaging.md)
+- [Hybrid Bonding](hybrid-bonding.md)
+- [Interposer](interposer.md)
+
 # Citations
 
 - [SK hynix HBM Leadership](https://news.skhynix.com/one-team-spirit-sk-hynix-journey-to-hbm-leadership/)

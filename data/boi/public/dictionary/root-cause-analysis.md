@@ -64,6 +64,13 @@ maps_to_sop: boi:public:sop:equipment-abnormal-response
 - Agent는 `Root Cause Analysis` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [FDC](fdc.md)
+- [Response Trend](response-trend.md)
+- [Preventive Maintenance](preventive-maintenance.md) - `Maintenance Guide`와 연결되는 public dictionary term
+- [Manual Handoff](manual-handoff.md)
+
 # Citations
 
 - [NIST Control Charts](https://www.itl.nist.gov/div898/handbook/pmc/section3/pmc31.htm)

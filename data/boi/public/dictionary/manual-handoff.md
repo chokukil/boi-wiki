@@ -61,6 +61,13 @@ Agent가 자동 실행하지 않고 담당자 판단/승인/현장 조치로 넘
 - Agent는 `Manual Handoff` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Approval](approval.md)
+- [Action Gateway](action-gateway.md)
+- [Cross-section Inspection](cross-section-inspection.md)
+- [Corrective Action](corrective-action.md)
+
 # Citations
 
 - [NIST Control Charts](https://www.itl.nist.gov/div898/handbook/pmc/section3/pmc31.htm)

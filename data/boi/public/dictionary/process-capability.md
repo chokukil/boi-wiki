@@ -62,6 +62,13 @@ maps_to_action_key: sop.equipment.change_spec_rule
 - Agent는 `Process Capability` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Cpk](cpk.md)
+- [Spec / Rule](spec-rule.md)
+- [SPC](spc.md)
+- [Process Hold](process-hold.md)
+
 # Citations
 
 - [NIST Process Capability](https://www.itl.nist.gov/div898/handbook/pmc/section1/pmc16.htm)

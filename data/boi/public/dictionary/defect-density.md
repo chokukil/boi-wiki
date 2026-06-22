@@ -60,6 +60,13 @@ wafer 단위 면적당 defect 수 또는 밀도
 - Agent는 `Defect Density` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Defect](defect.md)
+- [Yield](yield.md)
+- [Inspection](inspection.md)
+- [Map View](map-view.md)
+
 # Citations
 
 - [AnySilicon Defect Density](https://anysilicon.com/semipedia/defect-density-dd/)

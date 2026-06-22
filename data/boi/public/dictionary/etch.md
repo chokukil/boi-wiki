@@ -38,6 +38,12 @@ Etch는 반도체 pattern 형성을 위해 material을 제거하는 공정이다
 - [equipment.alarm.raised.v1](/public/event-types/equipment.alarm.raised.v1.md)
 - [설비 이상 대응 SOP](/public/sop/equipment-abnormal-response.md)
 
+# Related Dictionary Terms
+
+- [FDC](fdc.md)
+- [Response Trend](response-trend.md)
+- [Alarm](alarm.md) - `Equipment Alarm`와 연결되는 public dictionary term
+
 # Citations
 
 - [Applied Materials Technical Glossary](https://www.appliedmaterials.com/us/en/glossary.html)

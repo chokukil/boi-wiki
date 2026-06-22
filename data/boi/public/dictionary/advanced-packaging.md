@@ -63,6 +63,14 @@ source_refs:
 - Agent는 `Advanced Packaging` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [HBM](hbm.md)
+- [TSV](tsv.md)
+- [Hybrid Bonding](hybrid-bonding.md)
+- [Interposer](interposer.md)
+- [Wafer Level Package](wafer-level-package.md)
+
 # Citations
 
 - [Applied Materials Hybrid Bonding](https://www.appliedmaterials.com/us/en/semiconductor/markets-and-inflections/heterogeneous-integration/hybrid-bonding.html)

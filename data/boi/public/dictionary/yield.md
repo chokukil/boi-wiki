@@ -58,6 +58,13 @@ source_refs:
 - Agent는 `Yield` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Die](die.md)
+- [Wafer](wafer.md)
+- [Defect Density](defect-density.md)
+- [Process Capability](process-capability.md)
+
 # Citations
 
 - [Applied Materials Technical Glossary](https://www.appliedmaterials.com/us/en/glossary.html)

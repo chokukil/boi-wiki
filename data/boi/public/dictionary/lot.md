@@ -38,6 +38,12 @@ Lot은 wafer 묶음 또는 생산 추적 단위다. BoI Wiki에서는 event payl
 - [Raw / Source Data 확인 요청](/public/actions/api/request-raw-data.md)
 - [Trend / 이력 확인 요청](/public/actions/api/request-trend-history.md)
 
+# Related Dictionary Terms
+
+- [Wafer](wafer.md)
+- [Quality System](quality-system.md)
+- [Response Trend](response-trend.md)
+
 # Citations
 
 - [설비 이상 감지·원인 분석·이상 조치 SOP](/public/sop/equipment-abnormal-response.md)

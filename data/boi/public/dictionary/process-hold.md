@@ -39,6 +39,12 @@ Process Hold는 공정 진행 금지 또는 lot hold를 뜻한다. BoI Wiki에�
 - [공정 진행 금지 요청](/public/actions/api/block-process-progress.md)
 - [공정 진행 금지 승인](/public/actions/manual/approve-process-hold.md)
 
+# Related Dictionary Terms
+
+- [Approval](approval.md)
+- [Spec / Rule](spec-rule.md)
+- [Manual Handoff](manual-handoff.md)
+
 # Citations
 
 - [설비 이상 감지·원인 분석·이상 조치 SOP](/public/sop/equipment-abnormal-response.md)

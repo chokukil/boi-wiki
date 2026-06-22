@@ -62,6 +62,13 @@ source_refs:
 - Agent는 `HBM` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [DRAM](dram.md)
+- [TSV](tsv.md)
+- [Hybrid Bonding](hybrid-bonding.md)
+- [Advanced Packaging](advanced-packaging.md)
+
 # Citations
 
 - [SK hynix HBM Leadership](https://news.skhynix.com/one-team-spirit-sk-hynix-journey-to-hbm-leadership/)

@@ -61,6 +61,13 @@ lithography에서 회로 pattern을 wafer에 전사하기 위해 쓰는 mask 원
 - Agent는 `Reticle / Photomask` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Lithography](lithography.md)
+- [Photoresist](photoresist.md)
+- [Wafer](wafer.md)
+- [Defect](defect.md)
+
 # Citations
 
 - [UCSB Nanofab Reticle Layout Note](https://wiki.nanofab.ucsb.edu/w/images/c/cb/Demis_D_John_-_Stepper_Reticle_Layout_vs_Wafer_Layout.pdf)

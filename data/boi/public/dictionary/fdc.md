@@ -39,6 +39,12 @@ FDC는 설비 fault를 감지하고 분류하는 모니터링 개념이다. BoI 
 - [Trend 이상 감지](/public/event-types/trend.anomaly.detected.v1.md)
 - [설비 Alarm 발생](/public/event-types/equipment.alarm.raised.v1.md)
 
+# Related Dictionary Terms
+
+- [SPC](spc.md)
+- [Response Trend](response-trend.md)
+- [Alarm](alarm.md)
+
 # Citations
 
 - [Skyworks IEEE article on FDC](https://www.skyworksinc.com/-/media/SkyWorks/Documents/Articles/IEEE_Chang_202304_Advanced_Process_Monitoring.pdf)

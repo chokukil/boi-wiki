@@ -62,6 +62,13 @@ wafer/die/package에서 목표 spec이나 pattern에서 벗어난 결함
 - Agent는 `Defect` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Inspection](inspection.md)
+- [Map View](map-view.md)
+- [Defect Density](defect-density.md)
+- [Yield](yield.md)
+
 # Citations
 
 - [KLA Defect Inspection and Review](https://www.kla.com/products/chip-manufacturing/defect-inspection-review)

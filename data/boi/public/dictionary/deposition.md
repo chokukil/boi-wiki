@@ -61,6 +61,14 @@ wafer 표면에 원하는 물질의 얇은 막을 형성하는 공정 범주
 - Agent는 `Deposition` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [CVD](cvd.md)
+- [PVD](pvd.md)
+- [ALD](ald.md)
+- [Metrology](metrology.md)
+- [Response Trend](response-trend.md)
+
 # Citations
 
 - [Lam Research Deposition Essentials](https://newsroom.lamresearch.com/Deposition-Essentials-Semi-101?blog=true)

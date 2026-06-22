@@ -38,6 +38,12 @@ Wafer는 반도체 공정의 기본 단위 기판이다. BoI Wiki에서는 `wafe
 - [설비 이상 대응 SOP](/public/sop/equipment-abnormal-response.md)의 detect/analyze stage에서 Lot/Wafer 이력 조회와 연결된다.
 - [직개발 결과 확인 및 Reporting SOP](/public/sop/direct-development-reporting.md)의 Map View 확인 stage와 연결된다.
 
+# Related Dictionary Terms
+
+- [Lot](lot.md)
+- [Map View](map-view.md)
+- [Die](die.md)
+
 # Citations
 
 - [Intel Common Chip Terms](https://newsroom.intel.com/de/tech101/explaining-common-chip-terms)

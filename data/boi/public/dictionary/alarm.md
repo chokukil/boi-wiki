@@ -60,6 +60,13 @@ maps_to_event_type: equipment.alarm.raised.v1
 - Agent는 `Alarm` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [FDC](fdc.md)
+- [Equipment](equipment.md)
+- [Event Broker](event-broker.md)
+- [Manual Handoff](manual-handoff.md)
+
 # Citations
 
 - [Applied Materials Technical Glossary](https://www.appliedmaterials.com/us/en/glossary.html)

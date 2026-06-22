@@ -55,6 +55,12 @@ wafer에 ion을 주입해 전기적 특성을 조절하는 공정
 - Agent는 `Ion Implant` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Recipe](recipe.md)
+- [Metrology](metrology.md)
+- [Process Capability](process-capability.md)
+
 # Citations
 
 - [Applied Materials Product Library](https://www.appliedmaterials.com/us/en/product-library.html)

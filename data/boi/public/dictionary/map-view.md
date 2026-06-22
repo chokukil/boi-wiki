@@ -41,6 +41,12 @@ Map View는 wafer 또는 검사 결과의 위치/패턴 evidence다. BoI Wiki에
 - [Map View 확인 시뮬레이션](/public/actions/langflow/direct-development-map-view-simulate.md)
 - [단면검사 필요 여부 판단](/public/actions/manual/direct-development-decide-cross-section.md)
 
+# Related Dictionary Terms
+
+- [Wafer](wafer.md)
+- [Response Trend](response-trend.md)
+- [Cross-section Inspection](cross-section-inspection.md)
+
 # Citations
 
 - [Hitachi High-Tech Semiconductor Glossary](https://www.hitachi-hightech.com/global/en/knowledge/semiconductor/room/words.html)

@@ -64,6 +64,13 @@ maps_to_action_key: sop.equipment.request_raw_data
 - Agent는 `Metrology` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Inspection](inspection.md)
+- [SPC](spc.md)
+- [Response Trend](response-trend.md)
+- [Spec / Rule](spec-rule.md)
+
 # Citations
 
 - [Applied Materials Metrology and Inspection](https://www.appliedmaterials.com/us/en/semiconductor/products/processes/metrology-and-inspection.html)

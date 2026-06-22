@@ -38,6 +38,12 @@ Fab은 반도체 wafer 제조 시설을 뜻한다. BoI Wiki의 direct-developmen
 - [직개발 결과 확인 및 Reporting SOP](/public/sop/direct-development-reporting.md)의 연구소-양산 FAB 비교 stage에서 사용한다.
 - "FAB 비교", "양산 FAB", "연구소 FAB" 검색은 이 term을 통해 관련 SOP/Event/Action으로 확장된다.
 
+# Related Dictionary Terms
+
+- [Wafer](wafer.md)
+- [Lot](lot.md)
+- [Process Hold](process-hold.md)
+
 # Citations
 
 - [NIST Semiconductor Glossary](https://www.nist.gov/semiconductors/semiconductor-glossary)

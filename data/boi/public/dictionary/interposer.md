@@ -59,6 +59,13 @@ chiplet, memory, logic 사이의 고밀도 연결을 중개하는 package substr
 - Agent는 `Interposer` 또는 별칭이 query에 나오면 관련 SOP/Event/Action 후보를 함께 조회한다.
 - 실행 권한이나 approval policy는 dictionary가 아니라 Action Gateway와 BoI Profile metadata가 결정한다.
 
+# Related Dictionary Terms
+
+- [Advanced Packaging](advanced-packaging.md)
+- [HBM](hbm.md)
+- [TSV](tsv.md)
+- [Hybrid Bonding](hybrid-bonding.md)
+
 # Citations
 
 - [Applied Materials Hybrid Bonding](https://www.appliedmaterials.com/us/en/semiconductor/markets-and-inflections/heterogeneous-integration/hybrid-bonding.html)
