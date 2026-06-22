@@ -15,6 +15,7 @@ DEFAULT_MANIFEST = ROOT / "langflow" / "flows" / "boi_reference_flow.manifest.js
 DEFAULT_ENDPOINT_NAME = "boi-reference-flow"
 BOI_AGENT_FLOW_NAME = "BoI Agent Flow"
 DEFAULT_BOI_AGENT_ENDPOINT_NAME = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
+DEFAULT_BOI_AGENT_LLM_MODEL = os.getenv("BOI_AGENT_LLM_MODEL") or os.getenv("BOI_LLM_MODEL") or "qwen/qwen3-4b-2507"
 BOI_AGENT_ALLOWED_TOOLS = [
     "ontology_search",
     "boi_get",
@@ -562,6 +563,14 @@ def create_boi_agent_flow(
     ):
         node["position"] = position
         node["positionAbsolute"] = dict(position)
+    llm_template = ((llm.get("data") or {}).get("node") or {}).get("template") or {}
+    for field, value in {
+        "model_name": DEFAULT_BOI_AGENT_LLM_MODEL,
+        "temperature": 0.1,
+        "stream": False,
+    }.items():
+        if field in llm_template:
+            llm_template[field]["value"] = value
 
     agent_key, agent_component = find_native_agent_component(components)
     allowed_tool_names = ",".join(BOI_AGENT_ALLOWED_TOOLS)
