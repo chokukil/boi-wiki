@@ -148,3 +148,14 @@ def test_public_dictionary_event_action_sop_mappings_resolve():
         sop_ref = metadata.get("maps_to_sop")
         if sop_ref:
             assert sop_ref in boi_ids, (path, sop_ref)
+
+
+def test_dictionary_authoring_harness_documents_quality_gate():
+    harness = DATA_ROOT / "boi" / "public" / "harness" / "dictionary-authoring-harness.md"
+    metadata, body = frontmatter_and_body(harness)
+
+    assert metadata["boi_id"] == "boi:public:harness:dictionary-authoring-harness"
+    assert "dictionary_resolve" in body
+    assert "pytest tests/test_public_dictionary_quality.py -q -s" in body
+    assert "python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links" in body
+    assert "Public Dictionary index: `data/boi/public/dictionary/index.md`" in body
