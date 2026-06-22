@@ -8,6 +8,20 @@
   const pageTitle = root.dataset.pageTitle || document.title || "BoI Wiki";
   const state = { open: false, tab: "chat", suggestions: [], inbox: [], answer: "", busyTask: "" };
 
+  function syncViewportPosition() {
+    const visual = window.visualViewport;
+    if (!visual) return;
+    const hiddenRight = Math.max(0, window.innerWidth - visual.width - visual.offsetLeft);
+    const hiddenBottom = Math.max(0, window.innerHeight - visual.height - visual.offsetTop);
+    if (hiddenRight > 1 || hiddenBottom > 1) {
+      root.style.setProperty("--boi-agent-right", `${hiddenRight + 12}px`);
+      root.style.setProperty("--boi-agent-bottom", `${hiddenBottom + 12}px`);
+    } else {
+      root.style.removeProperty("--boi-agent-right");
+      root.style.removeProperty("--boi-agent-bottom");
+    }
+  }
+
   function api(path, options) {
     const url = new URL(path, location.origin);
     url.searchParams.set("employee_id", employeeId);
@@ -46,16 +60,28 @@
   }
 
   function render() {
+    syncViewportPosition();
     root.innerHTML = `
       <button class="boi-agent-launcher" type="button" aria-expanded="${state.open ? "true" : "false"}">
-        <span>BoI Agent</span>
-        ${state.inbox.length ? `<strong>${state.inbox.length}</strong>` : ""}
+        <span class="boi-agent-orb" aria-hidden="true">
+          <span class="boi-agent-orb-eyes"></span>
+        </span>
+        <span class="boi-agent-launcher-copy">
+          <span>BoI Agent</span>
+          <small>${state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요"}</small>
+        </span>
+        ${state.inbox.length ? `<strong aria-label="Open action count">${state.inbox.length}</strong>` : ""}
       </button>
       <section class="boi-agent-panel ${state.open ? "open" : ""}" aria-label="BoI Agent">
         <header>
-          <div>
-            <h2>BoI Agent</h2>
-            <p>${escapeHtml(pageTitle)}</p>
+          <div class="boi-agent-header-main">
+            <span class="boi-agent-orb large" aria-hidden="true">
+              <span class="boi-agent-orb-eyes"></span>
+            </span>
+            <div>
+              <h2>BoI Agent</h2>
+              <p>${escapeHtml(pageTitle)}</p>
+            </div>
           </div>
           <button type="button" class="boi-agent-close" aria-label="Close">×</button>
         </header>
@@ -131,12 +157,16 @@
         </form>`;
     }
     return `
+      <section class="boi-agent-context-card">
+        <strong>현재 페이지를 보고 있습니다</strong>
+        <p>${escapeHtml(pageTitle)}</p>
+      </section>
       <div class="boi-agent-suggestions">
         ${state.suggestions.map((item) => `<button type="button" data-question="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join("")}
       </div>
       <form class="boi-agent-chat-form">
-        <textarea name="question" placeholder="현재 페이지나 BoI Wiki에 대해 질문하세요." required></textarea>
-        <button type="submit">질문</button>
+        <textarea name="question" placeholder="현재 페이지 기준으로 묻거나, SOP/Event/Action/Dictionary를 검색해보세요." required></textarea>
+        <button type="submit">Agent에게 묻기</button>
       </form>
       ${state.answer ? `<div class="boi-agent-answer"><p>${renderMarkdownLite(state.answer.answer_markdown || "")}</p>${renderLinks(state.answer.links)}</div>` : ""}
     `;
@@ -258,4 +288,8 @@
     }).then((body) => { state.suggestions = body.suggestions || []; }),
     refreshInbox(),
   ]).finally(render);
+
+  window.visualViewport?.addEventListener("resize", syncViewportPosition);
+  window.visualViewport?.addEventListener("scroll", syncViewportPosition);
+  window.addEventListener("resize", syncViewportPosition);
 })();
