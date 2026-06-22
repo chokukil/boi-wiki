@@ -118,6 +118,8 @@ def test_langflow_custom_components_include_prompt_result_and_simulation_agent()
     assert "/api/simulations/universal-agent" in universal_agent
     assert "simulation_agent" in context
     assert "Action key:" in context
+    assert "json_payload" in context
+    assert "\"payload\": payload" in context
     assert "context.get(\"action_key\")" in simulation_agent
     assert "BoIUniversalSimulatorAgent" in init
     assert "BoIPromptComposer" in init

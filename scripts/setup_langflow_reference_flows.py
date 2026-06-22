@@ -590,6 +590,7 @@ def main() -> None:
     parser.add_argument("--langflow-url", default=env("LANGFLOW_URL", "http://localhost:7860"))
     parser.add_argument("--langflow-api-key", default=os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me"))
     parser.add_argument("--auth-mode", choices=["auto-login", "api-key"], default=os.getenv("LANGFLOW_AUTH_MODE", "auto-login"))
+    parser.add_argument("--timeout", type=float, default=float(os.getenv("LANGFLOW_SETUP_TIMEOUT", "180")))
     parser.add_argument("--skip-custom-components", action="store_true")
     parser.add_argument("--skip-smoke", action="store_true")
     parser.add_argument("--summary", action="store_true")
@@ -600,7 +601,7 @@ def main() -> None:
     langflow_url = args.langflow_url.rstrip("/")
     endpoint_name = manifest.get("endpoint_name") or DEFAULT_ENDPOINT_NAME
 
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=args.timeout) as client:
         headers = get_auth_headers(client, langflow_url, args.langflow_api_key, args.auth_mode)
         base_flow = json.loads(flow_file.read_text(encoding="utf-8"))
         deleted = delete_flows_by_name(
