@@ -20,6 +20,12 @@ class OntologySearchArgs(BaseModel):
     scope: str = Field("all", description="all|boi|sop|event|action|dictionary")
 
 
+class BoiAnswerArgs(BaseModel):
+    question: str = Field(..., description="User question to answer from BoI Wiki.")
+    employee_id: str = Field("100001", description="Employee ID used for ACL.")
+    current_url: str = Field("", description="Current BoI Wiki page URL.")
+
+
 class BoiGetArgs(BaseModel):
     boi_id: str = Field(..., description="BoI ID or OKF path.")
     employee_id: str = Field("100001", description="Employee ID used for ACL.")
@@ -82,6 +88,82 @@ class BoIAgentTools(LCToolComponent):
     def _ontology_search(self, query: str, employee_id: str = "100001", scope: str = "all") -> str:
         return self._request("GET", "/api/search/ontology", params={"q": query, "employee_id": employee_id, "scope": scope})
 
+    def _boi_answer(self, question: str, employee_id: str = "100001", current_url: str = "") -> str:
+        raw = self._ontology_search(question, employee_id=employee_id, scope="all")
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            return json.dumps(
+                {
+                    "answer_markdown": "BoI Wiki 검색 결과를 읽지 못했습니다.",
+                    "links": [],
+                    "citations": [],
+                    "suggested_questions": ["다른 키워드로 검색해줘", "SOP를 검색해줘"],
+                    "context_summary": {"source": "boi_answer", "current_url": current_url},
+                },
+                ensure_ascii=False,
+            )
+
+        links: list[dict[str, str]] = []
+        lines = ["### BoI Wiki 검색 결과"]
+        knowledge = payload.get("knowledge_panel") if isinstance(payload, dict) else {}
+        candidates: list[dict[str, Any]] = []
+        if isinstance(knowledge, dict):
+            for key in ("top_sop", "top_event_types", "top_actions", "top_documents"):
+                value = knowledge.get(key)
+                if isinstance(value, list):
+                    candidates.extend(item for item in value if isinstance(item, dict))
+        if not candidates and isinstance(payload, dict):
+            best = payload.get("best_matches")
+            if isinstance(best, list):
+                candidates.extend(item for item in best if isinstance(item, dict))
+            groups = payload.get("groups")
+            if isinstance(groups, dict):
+                for value in groups.values():
+                    if isinstance(value, list):
+                        candidates.extend(item for item in value if isinstance(item, dict))
+
+        seen: set[str] = set()
+        for item in candidates[:5]:
+            title = str(item.get("title") or item.get("label") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or "Untitled")
+            href = str(item.get("href") or item.get("url") or "")
+            boi_id = str(item.get("boi_id") or item.get("doc_ref") or "")
+            if not href and boi_id.startswith("boi:"):
+                href = f"/docs/{urllib.parse.quote(boi_id, safe=':')}?employee_id={urllib.parse.quote(employee_id)}"
+            key = href or title
+            if key in seen:
+                continue
+            seen.add(key)
+            description = str(item.get("description") or item.get("match_reason") or "").strip()
+            if href:
+                lines.append(f"- [{title}]({href})")
+                links.append({"label": title, "href": href})
+            else:
+                lines.append(f"- {title}")
+            if description:
+                lines.append(f"  - {description[:180]}")
+
+        if len(lines) == 1:
+            lines.append("관련 결과를 찾지 못했습니다. 다른 업무 용어나 Event/SOP 이름으로 다시 물어보세요.")
+        return json.dumps(
+            {
+                "answer_markdown": "\n".join(lines),
+                "links": links,
+                "citations": links[:3],
+                "suggested_questions": [
+                    "이 SOP의 Event와 Action 흐름을 요약해줘",
+                    "관련 Action Spec을 찾아줘",
+                    "내가 처리해야 할 Action이 있는지 확인해줘",
+                ],
+                "context_summary": {
+                    "source": "boi_answer",
+                    "current_url": current_url,
+                    "query_expansion": payload.get("query_expansion") if isinstance(payload, dict) else [],
+                },
+            },
+            ensure_ascii=False,
+        )
+
     def _boi_get(self, boi_id: str, employee_id: str = "100001") -> str:
         return self._request("GET", f"/api/docs/{urllib.parse.quote(boi_id, safe='')}/metadata-fragment", params={"employee_id": employee_id})
 
@@ -118,6 +200,7 @@ class BoIAgentTools(LCToolComponent):
 
     def build_tool(self) -> list[Tool]:
         return [
+            self.boi_answer_tool(),
             self.ontology_search_tool(),
             self.boi_get_tool(),
             self.workflow_status_tool(),
@@ -125,6 +208,15 @@ class BoIAgentTools(LCToolComponent):
             self.manual_handoff_complete_tool(),
             self.memory_recall_tool(),
         ]
+
+    def boi_answer_tool(self) -> Tool:
+        return StructuredTool.from_function(
+            name="boi_answer",
+            description="Answer ordinary BoI Wiki questions by searching ontology and returning final JSON. Use this first for normal chat/search questions.",
+            func=self._boi_answer,
+            args_schema=BoiAnswerArgs,
+            return_direct=True,
+        )
 
     def ontology_search_tool(self) -> Tool:
         return StructuredTool.from_function(

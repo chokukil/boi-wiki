@@ -17,6 +17,7 @@ BOI_AGENT_FLOW_NAME = "BoI Agent Flow"
 DEFAULT_BOI_AGENT_ENDPOINT_NAME = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
 DEFAULT_BOI_AGENT_LLM_MODEL = os.getenv("BOI_AGENT_LLM_MODEL") or os.getenv("BOI_LLM_MODEL") or "qwen/qwen3-4b-2507"
 BOI_AGENT_ALLOWED_TOOLS = [
+    "boi_answer",
     "ontology_search",
     "boi_get",
     "workflow_status",
@@ -584,15 +585,14 @@ def create_boi_agent_flow(
         values={
             "system_prompt": (
                 "You are BoI Agent, a concise BoI Wiki assistant. Always use BoI Wiki tools instead of guessing. "
-                "For normal questions, call ontology_search first with the user's main keyword and employee_id. "
-                "After the first successful ontology_search result, stop using tools and write the final answer immediately. "
-                "For search/list questions, return the most relevant links from that first result; do not keep searching. "
+                "For ordinary chat/search questions, call boi_answer first. boi_answer returns the final answer directly; do not call more tools after it. "
+                "Use ontology_search only when boi_answer is insufficient. "
                 "Use boi_get only when the user asks about a specific BoI/document. Use workflow_status only for trace/workflow questions. "
                 "Never call the page-aware chat endpoint because that would recurse. Allowed tools: "
                 f"{allowed_tool_names}. Final answers must be concise Markdown, not JSON."
             ),
             "instructions": (
-                "Use at most one BoI tool for ordinary questions. Prefer one ontology_search call, then final answer. "
+                "Use at most one BoI tool for ordinary questions. Prefer one boi_answer call, then stop. "
                 "agent_inbox is only for assigned actions. manual_handoff_complete is only when the user explicitly asked to complete a handoff."
             ),
             "max_iterations": 4,
