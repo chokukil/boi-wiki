@@ -24,6 +24,7 @@ class BoIUniversalSimulatorAgent(Component):
         StrInput(name="employee_id", display_name="Employee ID", value="100001"),
         StrInput(name="boi_api_url", display_name="BoI API URL", value="http://boi-api:8000"),
         IntInput(name="max_iterations", display_name="Max Agent Iterations", value=5),
+        IntInput(name="timeout_seconds", display_name="BoI API Timeout Seconds", value=120),
     ]
     outputs = [Output(name="agent_result", display_name="Agent Result", method="run_agent")]
 
@@ -117,7 +118,8 @@ class BoIUniversalSimulatorAgent(Component):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            timeout = min(max(int(self.timeout_seconds or 120), 10), 300)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 if isinstance(result, dict):
                     result.setdefault("agent_iterations", ((result.get("agent") or {}).get("agent_iterations") or 1))

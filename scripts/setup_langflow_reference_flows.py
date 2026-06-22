@@ -455,6 +455,7 @@ def create_universal_agent_simulator_flow(
                 "employee_id": "100001",
                 "boi_api_url": "http://boi-api:8000",
                 "max_iterations": 5,
+                "timeout_seconds": 120,
             },
         ),
         "metadata": create_custom_node(
