@@ -65,6 +65,23 @@ class BoIUniversalSimulatorAgent(Component):
             "payload": context.get("payload") if isinstance(context.get("payload"), dict) else {},
         }
 
+    def _boi_api_candidates(self) -> list[str]:
+        values = [
+            self.boi_api_url,
+            os.getenv("BOI_API_URL"),
+            os.getenv("BOI_EXTERNAL_URL"),
+            "http://boi-api:8000",
+        ]
+        seen: set[str] = set()
+        urls: list[str] = []
+        for value in values:
+            url = str(value or "").strip().rstrip("/")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            urls.append(url)
+        return urls
+
     def _fallback_result(self, error: str, body: dict[str, Any]) -> Data:
         return Data(
             data={
@@ -110,21 +127,29 @@ class BoIUniversalSimulatorAgent(Component):
             "simulation_depth": context.get("simulation_depth") or "stage_prerequisites",
             "max_rounds": min(max(int(self.max_iterations or 5), 1), 5),
         }
-        url = f"{self.boi_api_url.rstrip('/')}/api/simulations/universal-agent"
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-            headers=self._headers(),
-            method="POST",
-        )
+        encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        timeout = min(max(int(self.timeout_seconds or 120), 10), 300)
+        errors: list[str] = []
         try:
-            timeout = min(max(int(self.timeout_seconds or 120), 10), 300)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                if isinstance(result, dict):
-                    result.setdefault("agent_iterations", ((result.get("agent") or {}).get("agent_iterations") or 1))
-                    result.setdefault("tool_calls", result.get("tool_calls") or [])
-                    return Data(data=result)
-                return self._fallback_result("unexpected non-object response", body)
+            for base_url in self._boi_api_candidates():
+                url = f"{base_url}/api/simulations/universal-agent"
+                req = urllib.request.Request(
+                    url,
+                    data=encoded,
+                    headers=self._headers(),
+                    method="POST",
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        result = json.loads(resp.read().decode("utf-8"))
+                        if isinstance(result, dict):
+                            result.setdefault("agent_iterations", ((result.get("agent") or {}).get("agent_iterations") or 1))
+                            result.setdefault("tool_calls", result.get("tool_calls") or [])
+                            result.setdefault("boi_api_url_used", base_url)
+                            return Data(data=result)
+                        return self._fallback_result("unexpected non-object response", body)
+                except Exception as exc:
+                    errors.append(f"{base_url}: {repr(exc)}")
+            return self._fallback_result("; ".join(errors) or "BoI API unavailable", body)
         except Exception as exc:
             return self._fallback_result(repr(exc), body)
