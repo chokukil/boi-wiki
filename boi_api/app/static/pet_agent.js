@@ -63,21 +63,17 @@
     syncViewportPosition();
     root.innerHTML = `
       <button class="boi-agent-launcher" type="button" aria-expanded="${state.open ? "true" : "false"}">
-        <span class="boi-agent-orb" aria-hidden="true">
-          <span class="boi-agent-orb-eyes"></span>
-        </span>
         <span class="boi-agent-launcher-copy">
           <span>BoI Agent</span>
           <small>${state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요"}</small>
         </span>
+        <img class="boi-agent-pet" src="/static/assets/boi-agent-pet.png" alt="" loading="lazy" decoding="async">
         ${state.inbox.length ? `<strong aria-label="Open action count">${state.inbox.length}</strong>` : ""}
       </button>
       <section class="boi-agent-panel ${state.open ? "open" : ""}" aria-label="BoI Agent">
         <header>
           <div class="boi-agent-header-main">
-            <span class="boi-agent-orb large" aria-hidden="true">
-              <span class="boi-agent-orb-eyes"></span>
-            </span>
+            <img class="boi-agent-pet small" src="/static/assets/boi-agent-pet.png" alt="" loading="lazy" decoding="async">
             <div>
               <h2>BoI Agent</h2>
               <p>${escapeHtml(pageTitle)}</p>

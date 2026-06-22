@@ -71,6 +71,19 @@ Dictionary는 사람이 쉽게 입력할 수 있어야 한다. 기본 폼은 다
 
 동일 용어가 여러 scope에 있으면 `private -> team -> public` 순서로 해석한다. Dictionary는 검색과 언어 이해를 돕지만 실행 권한이나 approval policy를 바꾸지 않는다.
 
+### Public Semiconductor Seed Vocabulary
+
+`public/dictionary`는 BoI Agent의 공통 도메인 seed vocabulary이다. 최소한 다음 범주의 용어를 public fallback으로 유지한다.
+
+- 반도체 object: `Fab`, `Wafer`, `Lot`, `Die`, `Reticle / Photomask`
+- 공정 module: `Lithography`, `Deposition`, `CVD`, `PVD`, `ALD`, `CMP`, `Etch`, `Ion Implant`
+- 품질/검사/SPC: `Metrology`, `Inspection`, `Defect`, `Yield`, `Control Chart`, `Cpk`, `Out-of-Control`, `Excursion`
+- 설비/운영: `Equipment`, `Chamber`, `Recipe`, `Alarm`, `FDC`, `Preventive Maintenance`, `Root Cause Analysis`, `Corrective Action`
+- memory/package: `DRAM`, `NAND Flash`, `HBM`, `TSV`, `Advanced Packaging`, `Hybrid Bonding`, `Interposer`
+- AI Native Workflow: `Event Broker`, `Action Gateway`, `Manual Handoff`, `Approval`, `Time Series Forecast`, `TimesFM`
+
+Agent는 사용자의 용어가 낯설거나 약어일 때 바로 전체 wiki를 훑지 말고 `dictionary_resolve`를 먼저 호출한다. `maps_to_event_type`, `maps_to_action_key`, `maps_to_sop`가 있는 경우 해당 Event/Action/SOP를 context pack에 포함한다. 관련 mapping이 없으면 dictionary term과 backlink를 근거로 `ontology_search`를 호출한다.
+
 ## Memory
 
 Private memory는 `data/boi/private/{employee_id}/agent-memory/*.md`에 `boi/agent-memory`로 저장한다.
