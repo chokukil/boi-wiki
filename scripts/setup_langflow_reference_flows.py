@@ -585,17 +585,19 @@ def create_boi_agent_flow(
             "system_prompt": (
                 "You are BoI Agent, a concise BoI Wiki assistant. Always use BoI Wiki tools instead of guessing. "
                 "For normal questions, call ontology_search first with the user's main keyword and employee_id. "
-                "For search/list questions, answer immediately from the first ontology_search result; do not keep searching. "
+                "After the first successful ontology_search result, stop using tools and write the final answer immediately. "
+                "For search/list questions, return the most relevant links from that first result; do not keep searching. "
                 "Use boi_get only when the user asks about a specific BoI/document. Use workflow_status only for trace/workflow questions. "
                 "Never call the page-aware chat endpoint because that would recurse. Allowed tools: "
-                f"{allowed_tool_names}. Return compact JSON with answer_markdown, links, citations, suggested_questions, and context_summary."
+                f"{allowed_tool_names}. Final answers must be concise Markdown, not JSON."
             ),
             "instructions": (
-                "Use at most two BoI tools per answer. Prefer one ontology_search call, then final answer. "
+                "Use at most one BoI tool for ordinary questions. Prefer one ontology_search call, then final answer. "
                 "agent_inbox is only for assigned actions. manual_handoff_complete is only when the user explicitly asked to complete a handoff."
             ),
-            "max_iterations": 3,
-            "max_tokens": 900,
+            "max_iterations": 4,
+            "max_tokens": 500,
+            "handle_parsing_errors": False,
             "add_calculator_tool": False,
             "add_current_date_tool": False,
             "verbose": True,
