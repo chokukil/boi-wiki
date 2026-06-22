@@ -578,7 +578,7 @@ def create_boi_agent_flow(
                 "For normal questions, call ontology_search first with the user's main keyword and employee_id. "
                 "For search/list questions, answer immediately from the first ontology_search result; do not keep searching. "
                 "Use boi_get only when the user asks about a specific BoI/document. Use workflow_status only for trace/workflow questions. "
-                "Never call boi_agent_chat because that would recurse. Allowed tools: "
+                "Never call the page-aware chat endpoint because that would recurse. Allowed tools: "
                 f"{allowed_tool_names}. Return compact JSON with answer_markdown, links, citations, suggested_questions, and context_summary."
             ),
             "instructions": (
