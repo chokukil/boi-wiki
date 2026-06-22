@@ -1,4 +1,28 @@
 media:
+  - path: public/boi-wiki-manual/_media/browser/langflow-flow-gallery/20260622-boi-reference-flow.png
+    sha256: a1ff4761fad64f22948c06ef929d9f9f9fb985eb7ffb1956d219a36e290af03f
+    source_kind: browser-screenshot
+    captured_url: langflow-runtime-export:boi_reference_flow.png
+    captured_at: 2026-06-22T23:58:00+09:00
+    viewport: 3834x1240
+    related_doc: boi:public:boi-wiki-manual:langflow:flow-gallery
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/langflow-flow-gallery/20260622-boi-equipment-stage-analysis-flow.png
+    sha256: a67b658f5097f5c9181cb21df8bef93352b1227592d3448c500de7f0401aab1c
+    source_kind: browser-screenshot
+    captured_url: langflow-runtime-export:boi_equipment_analysis.png
+    captured_at: 2026-06-22T23:56:00+09:00
+    viewport: 3829x1310
+    related_doc: boi:public:boi-wiki-manual:langflow:flow-gallery
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/langflow-flow-gallery/20260622-boi-universal-action-simulator-flow.png
+    sha256: 6a17bd72da2f4a079704ea02e93742ffc3e1febca58259ace43ad9090e06cbb8
+    source_kind: browser-screenshot
+    captured_url: langflow-runtime-export:boi_simulator_flow.png
+    captured_at: 2026-06-22T23:55:00+09:00
+    viewport: 2738x1136
+    related_doc: boi:public:boi-wiki-manual:langflow:flow-gallery
+    created_by: codex
   - path: public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png
     sha256: 002cd35720977227fde31bb523d0a34a0039665e6e891e8ecad7dc907fd1b462
     source_kind: source-image

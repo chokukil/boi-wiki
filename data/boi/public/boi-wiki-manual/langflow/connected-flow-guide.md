@@ -49,6 +49,8 @@ Action Gateway는 Universal Simulator flow를 먼저 호출하고, Langflow Agen
 
 ![Langflow Equipment Stage Analysis Flow](/public/boi-wiki-manual/_media/browser/langflow-stage-analysis/20260619-150927-langflow-equipment-stage-analysis-connected-flow-current-1440x1000-01d4ad42f1d6.png)
 
+Reference, Stage Analysis, Universal Simulator canvas의 최신 public gallery는 [Langflow Flow Gallery](/public/boi-wiki-manual/langflow/flow-gallery.md)에서 확인한다.
+
 아래 Workflow Status 캡처는 `scripts/run_equipment_sop_poc.py`로 생성한 trace `trace-5557beb5527048bc86bc9c5e66c4a64f`의 실행 증거다. Event, Action, Langflow action, generated BoI, manual handoff가 같은 trace로 연결되어야 완료로 본다.
 
 ![Equipment Workflow Status](/public/boi-wiki-manual/_media/browser/workflow-status/20260619-152032-equipment-anomaly-workflow-status-current-1440x1000-399ae96b3b8d.png)

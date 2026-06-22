@@ -4,6 +4,7 @@
 * [Register and Use BoI Wiki MCP](mcp/register-and-use-boi-wiki-mcp.md)
 * [Action Connector Guide](actions/multi-action-connector-guide.md)
 * [Langflow Integration Guide](langflow/connected-flow-guide.md)
+* [Langflow Flow Gallery](langflow/flow-gallery.md)
 * [SOP Workflow Guide](sop-workflows/create-and-connect-sop.md)
 * [Use Cases](use-cases/)
 * [SOP Image to E2E Workflow](use-cases/sop-image-to-e2e-workflow.md)
