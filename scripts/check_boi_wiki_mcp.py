@@ -11,7 +11,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-EXPECTED_PROTOCOL = {"tools": 14, "resource_templates": 4, "prompts": 5}
+EXPECTED_PROTOCOL = {"tools": 22, "resource_templates": 5, "prompts": 5}
 
 
 def attr_any(item: object, *names: str) -> str:
@@ -103,6 +103,14 @@ async def main_async(args: argparse.Namespace) -> int:
                 "boi_search",
                 "boi_get",
                 "workflow_status",
+                "boi_agent_chat",
+                "boi_agent_suggestions",
+                "ontology_search",
+                "dictionary_resolve",
+                "dictionary_terms",
+                "agent_memory_search",
+                "agent_inbox",
+                "manual_handoff_complete",
                 "action_invoke",
                 "source_preview",
                 "source_apply",

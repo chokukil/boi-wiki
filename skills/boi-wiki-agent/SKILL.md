@@ -12,6 +12,11 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 1. Prefer BoI Wiki MCP if available.
    - MCP URL: `http://localhost:8200/mcp`
    - Smoke: `python scripts/check_boi_wiki_mcp.py`
+   - Use `ontology_search` first when the user asks broad domain/search questions across SOP/Event/Action/Dictionary/runtime evidence.
+   - Use `boi_agent_chat` when the user asks a page-aware question or wants recommendations from current context.
+   - Use `boi_search` only when the task needs a BoI document list.
+   - Use `agent_inbox` for "what do I need to act on" questions.
+   - Use `dictionary_resolve` before interpreting shop-floor aliases, acronyms, or user-specific terms.
 2. If MCP is unavailable, read repo harness files:
    - `harness/sop-authoring-harness.md`
    - `harness/action-authoring-harness.md`
@@ -24,8 +29,10 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 - OKF Markdown documents and action catalog are source of truth.
 - Web and MCP source/body edits use preview, validation, apply, and auto-commit. MCP apply tools require explicit `user_confirmed: true`. Team/Public promotion is separate: after user preview approval, call the validated promotion publish path and treat HOTL as post-publication oversight.
 - Langflow is one connector kind, not the default connector.
+- BoI API/MCP are the official external Agent interfaces. Langflow direct run URLs are trusted/dev integration paths, not user-facing public APIs.
 - Always search existing SOPs, event types, action specs, manual tasks, and harness docs before creating new ones.
 - Keep images under `_media/`, update `media-manifest.yaml`, and use standard Markdown image syntax.
+- Private memory and dictionary entries are BoI documents. Do not promote them automatically to Team/Public.
 
 ## SOP Work
 
@@ -41,6 +48,14 @@ When a user supplies an SOP image, OCR text, or process description:
 Support all connector kinds: `api`, `webhook`, `mcp`, `langflow`, `manual`, `event_broker`, and `boi_writer`.
 
 For each action, create or update the public action-spec BoI document and the catalog entry together. High-risk system actions require a manual approval action.
+
+## Agent / Search Work
+
+- Keep `/api/boi` and MCP `boi_search` document-only for compatibility.
+- Use `/api/search/ontology` or MCP `ontology_search` for grouped knowledge graph exploration.
+- Use dictionary priority `private → team → public` when expanding terms.
+- Runtime links, raw logs, and recent activity are evidence signals, not OKF concept graph edges.
+- Mutating Agent operations such as manual handoff completion, source/body apply, promotion, and action invoke require explicit user confirmation.
 
 ## Validation
 

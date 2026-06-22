@@ -28,13 +28,18 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 14
+    assert body["capabilities"]["tools"] == 22
+    assert body["capabilities"]["resource_templates"] == 5
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     tool_names = [item["name"] for item in body["capability_lists"]["tools"]]
     assert "source_preview" in tool_names
     assert "source_apply" in tool_names
     assert "doc_body_preview" in tool_names
     assert "doc_body_apply" in tool_names
+    assert "boi_agent_chat" in tool_names
+    assert "ontology_search" in tool_names
+    assert "agent_inbox" in tool_names
+    assert "manual_handoff_complete" in tool_names
     assert "source_create_draft" not in tool_names
     assert "doc_body_create_draft" not in tool_names
     assert any(item["name"] == "promotion_submit" for item in body["capability_lists"]["tools"])
@@ -54,8 +59,8 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
-    assert "Tools" in body and "14" in body
-    assert "Resource templates" in body and "4" in body
+    assert "Tools" in body and "22" in body
+    assert "Resource templates" in body and "5" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
     assert "workflow_status" in body
@@ -63,7 +68,11 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "source_apply" in body
     assert "doc_body_apply" in body
     assert "promotion_submit" in body
+    assert "boi_agent_chat" in body
+    assert "ontology_search" in body
+    assert "agent_inbox" in body
     assert "boi://docs/{boi_id}" in body
+    assert "boi://search/ontology/{query}" in body
     assert "create_sop_from_source" in body
     assert "406" in body
     assert "Codex" in body
@@ -132,6 +141,7 @@ def test_boi_wiki_mcp_bridge_invokes_search_tool(mcp_module, monkeypatch):
     assert body["tool"] == "boi.search"
     assert body["request_id"] == "act-mcp-test"
     assert body["response"]["count"] == 1
+    assert body["result"]["count"] == 1
     assert body["response"]["kwargs"]["query"] == "설비"
     assert body["response"]["kwargs"]["service_token"] is True
 
@@ -146,6 +156,76 @@ def test_boi_wiki_mcp_bridge_requires_service_token(mcp_module):
     )
 
     assert response.status_code == 401
+
+
+def test_boi_wiki_mcp_bridge_invokes_ontology_tool(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"path": path, **kwargs})
+        return {"ok": True, "groups": {"sop": []}}
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    response = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "ontology.search",
+            "arguments": {"query": "설비", "employee_id": "100001"},
+            "request_id": "act-ontology-test",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["response"]["ok"] is True
+    assert response.json()["result"]["ok"] is True
+    assert calls[0]["path"] == "/api/search/ontology"
+    assert calls[0]["service_token"] is True
+
+
+def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "answer_markdown": "agent answer"}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "items": [{"task_id": "task-1"}]}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    chat = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "boi_agent_chat",
+            "arguments": {"question": "SOP 찾아줘", "employee_id": "100001", "current_url": "/sops"},
+        },
+    )
+    inbox = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "agent_inbox",
+            "arguments": {"employee_id": "100001", "limit": 3},
+        },
+    )
+
+    assert chat.status_code == 200
+    assert chat.json()["result"]["answer_markdown"] == "agent answer"
+    assert inbox.status_code == 200
+    assert inbox.json()["result"]["items"][0]["task_id"] == "task-1"
+    assert calls[0]["path"] == "/api/agents/boi-wiki/chat"
+    assert calls[1]["path"] == "/api/agents/boi-wiki/inbox"
 
 
 def test_boi_wiki_mcp_streamable_http_initializes(mcp_module):
@@ -244,14 +324,17 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 14,
+            "tools": 22,
             "resources": 0,
-            "resource_templates": 4,
+            "resource_templates": 5,
             "prompts": 5,
             "tool_names": [
                 "boi_search",
                 "boi_get",
                 "workflow_status",
+                "boi_agent_chat",
+                "ontology_search",
+                "agent_inbox",
                 "action_invoke",
                 "source_preview",
                 "source_apply",
@@ -260,7 +343,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
                 "promotion_submit",
                 "promotion_status",
             ],
-            "resource_template_uris": ["boi://docs/{boi_id}"],
+            "resource_template_uris": ["boi://docs/{boi_id}", "boi://search/ontology/{query}"],
             "prompt_names": ["create_sop_from_source"],
         }
 
@@ -292,6 +375,9 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "boi_search" in output
     assert "workflow_status" in output
+    assert "boi_agent_chat" in output
+    assert "ontology_search" in output
+    assert "agent_inbox" in output
     assert "source_apply" in output
     assert "doc_body_apply" in output
     assert "promotion_submit" in output

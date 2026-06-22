@@ -139,6 +139,123 @@ def test_auth_me_exposes_dev_identity(boi_app_module):
     assert "boi.editor" in body["roles"]
 
 
+def test_ontology_search_dictionary_and_boi_search_remain_distinct(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    create = client.post(
+        "/api/dictionary/terms?employee_id=100001",
+        json={
+            "scope": "private",
+            "term": "응답체인",
+            "aliases": ["Response Chain"],
+            "definition": "설비 응답 흐름 이상을 부르는 현장 표현",
+            "example": "응답체인 알람이면 설비 이상 대응 SOP를 확인한다.",
+            "maps_to_sop": "boi:public:sop:equipment-abnormal-response",
+        },
+    )
+    ontology = client.get("/api/search/ontology?employee_id=100001&q=Response%20Chain")
+    boi_search = client.get("/api/boi?employee_id=100001&q=Response%20Chain")
+
+    assert create.status_code == 200
+    assert create.json()["item"]["folder"].endswith("dictionary")
+    assert ontology.status_code == 200
+    body = ontology.json()
+    assert body["ok"] is True
+    assert "dictionary" in body["groups"]
+    assert any(item["term"] == "응답체인" for item in body["groups"]["dictionary"])
+    assert "event_types" in body["groups"]
+    assert boi_search.status_code == 200
+    assert "items" in boi_search.json()
+    assert all((item.get("metadata") or {}).get("type") for item in boi_search.json()["items"])
+
+
+def test_boi_agent_chat_returns_links_and_suggestions(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "설비 이상 대응 SOP와 Action을 찾아줘",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "page_context": {"title": "설비 이상 SOP"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "BoI Wiki 기준" in body["answer_markdown"]
+    assert body["suggested_questions"]
+    assert isinstance(body["links"], list)
+    assert body["ontology_search"]["groups"]
+
+
+def test_agent_memory_blocks_sensitive_values_and_saves_private_memory(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    blocked = client.post(
+        "/api/agents/boi-wiki/memory?employee_id=100001",
+        json={"title": "토큰", "body": "api key token을 기억해줘"},
+    )
+    saved = client.post(
+        "/api/agents/boi-wiki/memory?employee_id=100001",
+        json={"title": "답변 선호", "body": "SOP 답변은 stage 기준으로 짧게 정리한다.", "memory_kind": "answer_style"},
+    )
+    listed = client.get("/api/agents/boi-wiki/memory?employee_id=100001&q=SOP")
+
+    assert blocked.status_code == 400
+    assert saved.status_code == 200
+    assert saved.json()["item"]["folder"].endswith("agent-memory")
+    assert listed.status_code == 200
+    assert listed.json()["count"] >= 1
+
+
+def test_agent_inbox_and_manual_handoff_completion_are_append_only(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "request_id": "act-manual-required-test",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "원인 후보 검토 필요",
+            "trace_id": "trace-agent-inbox-test",
+        },
+    )
+
+    inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100001")
+    complete = client.post(
+        "/api/agents/boi-wiki/manual-handoffs/complete?employee_id=100001",
+        json={
+            "task_id": "task:act-manual-required-test",
+            "outcome": "completed",
+            "note": "원인 후보 검토 완료",
+            "user_confirmed": True,
+        },
+    )
+    inbox_after = client.get("/api/agents/boi-wiki/inbox?employee_id=100001")
+
+    assert inbox.status_code == 200
+    assert any(item["request_id"] == "act-manual-required-test" for item in inbox.json()["items"])
+    assert complete.status_code == 200
+    assert complete.json()["item"]["completion_for_request_id"] == "act-manual-required-test"
+    assert not any(item["request_id"] == "act-manual-required-test" for item in inbox_after.json()["items"])
+
+
+def test_pet_agent_mount_is_available_on_home(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/?employee_id=100001")
+    script = (boi_app_module.APP_DIR / "static" / "pet_agent.js").read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert 'id="boi-agent-root"' in response.text
+    assert "/static/pet_agent.js" in response.text
+    assert "boi-agent-handoff-form" in script
+    assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
+
+
 def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
     client = TestClient(boi_app_module.app)

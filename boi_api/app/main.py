@@ -77,6 +77,7 @@ EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog")
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
 ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT", "/data/actions"))
 DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT", str(DATA_ROOT.parent / "drafts")))
+ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT", str(DATA_ROOT.parent / "activity")))
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
 ACTION_INVOKE_TIMEOUT_SECONDS = float(os.getenv("ACTION_INVOKE_TIMEOUT_SECONDS", "90"))
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
@@ -169,6 +170,7 @@ _RECOVERED_DOC_CACHE: dict[str, Any] = {"signature": None, "by_boi_id": {}, "by_
 _FILE_SIGNATURE_CACHE: dict[str, tuple[float, tuple[tuple[str, int, int], ...]]] = {}
 _DOC_BODY_HTML_CACHE: dict[tuple[Any, ...], Markup] = {}
 _OKF_GRAPH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
+_SEARCH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
 MARKDOWN_RENDERER_VERSION = "2026-06-22-doc-detail-lazy-v1"
 SIGNATURE_TTL_SECONDS = 1.0
 
@@ -196,6 +198,7 @@ def ensure_dirs() -> None:
     EVENT_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    ACTIVITY_ROOT.mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
@@ -250,12 +253,21 @@ def invalidate_doc_caches() -> None:
     _OKF_GRAPH_CACHE.clear()
     _OKF_GRAPH_INDEX_CACHE["signature"] = None
     _OKF_GRAPH_INDEX_CACHE["by_employee"] = {}
+    _SEARCH_INDEX_CACHE["signature"] = None
+    _SEARCH_INDEX_CACHE["by_employee"] = {}
 
 
 def invalidate_event_log_caches() -> None:
     _FILE_SIGNATURE_CACHE.clear()
     _EVENT_LOG_CACHE["signature"] = None
     _EVENT_LOG_CACHE["rows"] = []
+    _RECOVERED_DOC_CACHE["signature"] = None
+
+
+def invalidate_action_log_caches() -> None:
+    _FILE_SIGNATURE_CACHE.clear()
+    _ACTION_LOG_CACHE["signature"] = None
+    _ACTION_LOG_CACHE["rows"] = []
     _RECOVERED_DOC_CACHE["signature"] = None
 
 
@@ -1438,6 +1450,23 @@ def read_action_logs(limit: int = 200, action_key: str | None = None, offset: in
     return rows
 
 
+def append_action_log_row(row: dict[str, Any]) -> dict[str, Any]:
+    ensure_dirs()
+    path = ACTION_LOG_ROOT / f"actions-{datetime.now(KST).strftime('%Y%m%d')}.jsonl"
+    line_number = 1
+    if path.exists():
+        try:
+            line_number = len(path.read_text(encoding="utf-8").splitlines()) + 1
+        except Exception:
+            line_number = 1
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    invalidate_action_log_caches()
+    item = dict(row)
+    item["_log_ref"] = f"action:{path.name}:{line_number}"
+    return item
+
+
 def action_log_visible_to_employee(row: dict[str, Any], employee_id: str) -> bool:
     row_employee_id = str(row.get("employee_id") or "")
     if row_employee_id and row_employee_id != employee_id:
@@ -2032,6 +2061,380 @@ def doc_search_blob(doc: dict[str, Any]) -> str:
             str(doc.get("body") or ""),
         ]
     ).lower()
+
+
+def stable_doc_ref(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    return str(metadata.get("boi_id") or doc.get("uri") or "")
+
+
+def doc_result_item(doc: dict[str, Any], employee_id: str, *, score: int = 0, match_reason: str = "") -> dict[str, Any]:
+    metadata = doc.get("metadata") or {}
+    ref = stable_doc_ref(doc)
+    return {
+        "kind": "boi",
+        "score": score,
+        "match_reason": match_reason,
+        "boi_id": metadata.get("boi_id"),
+        "title": metadata.get("title"),
+        "description": metadata.get("description"),
+        "type": metadata.get("type"),
+        "visibility": metadata.get("visibility"),
+        "status": metadata.get("status"),
+        "uri": doc.get("uri"),
+        "folder": doc_folder(doc),
+        "url": doc_url_for_ref(ref, employee_id) if ref else "",
+        "metadata": metadata,
+    }
+
+
+def dictionary_scope_for_doc(doc: dict[str, Any], employee_id: str) -> str:
+    metadata = doc.get("metadata") or {}
+    visibility = str(metadata.get("visibility") or "")
+    uri = str(doc.get("uri") or "")
+    if visibility == "private" or uri.startswith(f"/private/{employee_id}/"):
+        return "private"
+    if visibility == "team" or uri.startswith("/team/"):
+        return "team"
+    return "public"
+
+
+def dictionary_priority(scope: str) -> int:
+    return {"private": 0, "team": 1, "public": 2}.get(scope, 9)
+
+
+def is_dictionary_doc(doc: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    uri = str(doc.get("uri") or "")
+    return str(metadata.get("type") or "") == "boi/dictionary-term" or "/dictionary/" in uri
+
+
+def dictionary_term_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    metadata = doc.get("metadata") or {}
+    term = str(metadata.get("term") or metadata.get("title") or "").strip()
+    aliases = [str(item).strip() for item in metadata.get("aliases") or [] if str(item).strip()]
+    links = metadata.get("links") or metadata.get("related_docs") or []
+    scope = dictionary_scope_for_doc(doc, employee_id)
+    ref = stable_doc_ref(doc)
+    return {
+        "term": term,
+        "definition": metadata.get("definition") or metadata.get("description") or "",
+        "aliases": aliases,
+        "domain": metadata.get("domain") or "",
+        "examples": metadata.get("examples") or [],
+        "links": links,
+        "related_terms": metadata.get("related_terms") or [],
+        "broader": metadata.get("broader") or [],
+        "narrower": metadata.get("narrower") or [],
+        "same_as": metadata.get("same_as") or [],
+        "maps_to_event_type": metadata.get("maps_to_event_type") or "",
+        "maps_to_action_key": metadata.get("maps_to_action_key") or "",
+        "maps_to_sop": metadata.get("maps_to_sop") or "",
+        "scope": scope,
+        "priority": dictionary_priority(scope),
+        "boi_id": metadata.get("boi_id") or "",
+        "uri": doc.get("uri") or "",
+        "url": doc_url_for_ref(ref, employee_id) if ref else "",
+    }
+
+
+def dictionary_terms_for_employee(employee_id: str, scope: str = "all") -> list[dict[str, Any]]:
+    docs = [doc for doc in accessible_docs(employee_id) if is_dictionary_doc(doc)]
+    terms = [dictionary_term_for_doc(doc, employee_id) for doc in docs]
+    if scope and scope != "all":
+        terms = [term for term in terms if term.get("scope") == scope]
+    terms.sort(key=lambda item: (item.get("priority", 9), str(item.get("term") or "").lower()))
+    return terms
+
+
+def normalize_search_token(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def resolve_dictionary_query(query: str, employee_id: str, *, scope: str = "all") -> dict[str, Any]:
+    normalized = normalize_search_token(query)
+    terms = dictionary_terms_for_employee(employee_id, scope=scope)
+    matches: list[dict[str, Any]] = []
+    for term in terms:
+        candidates = [term.get("term", ""), *(term.get("aliases") or [])]
+        haystack = "\n".join(str(candidate) for candidate in candidates).lower()
+        if not normalized or normalized in haystack or any(normalize_search_token(candidate) in normalized for candidate in candidates if candidate):
+            matches.append(term)
+    matches.sort(key=lambda item: (item.get("priority", 9), -len(str(item.get("term") or ""))))
+    expansion: list[str] = [query] if query else []
+    for term in matches[:8]:
+        expansion.extend([str(term.get("term") or ""), *[str(alias) for alias in term.get("aliases") or []]])
+        for key in ("maps_to_event_type", "maps_to_action_key", "maps_to_sop"):
+            value = str(term.get(key) or "")
+            if value:
+                expansion.append(value)
+        expansion.extend(str(item) for item in term.get("related_terms") or [])
+    unique_expansion = [item for item in dict.fromkeys(item.strip() for item in expansion if str(item).strip())]
+    return {
+        "query": query,
+        "matches": matches,
+        "canonical_terms": [term for term in matches[:3]],
+        "expanded_terms": unique_expansion,
+    }
+
+
+def search_tokens_for_query(query: str, employee_id: str) -> list[str]:
+    resolved = resolve_dictionary_query(query, employee_id)
+    tokens = list(resolved.get("expanded_terms") or [])
+    tokens.extend(re.findall(r"[\w가-힣.:/-]+", query or ""))
+    return [normalize_search_token(token) for token in dict.fromkeys(tokens) if normalize_search_token(token)]
+
+
+def weighted_text_score(blob: str, tokens: list[str], *, title: str = "", id_text: str = "", description: str = "") -> int:
+    if not tokens:
+        return 0
+    blob_lower = blob.lower()
+    title_lower = title.lower()
+    id_lower = id_text.lower()
+    description_lower = description.lower()
+    score = 0
+    for token in tokens:
+        if not token:
+            continue
+        if token in title_lower:
+            score += 100
+        if token in id_lower:
+            score += 80
+        if token in description_lower:
+            score += 40
+        if token in blob_lower:
+            score += 12
+    return score
+
+
+def search_index_for_employee(employee_id: str) -> dict[str, Any]:
+    signature = (
+        markdown_signature(),
+        glob_signature(EVENT_CATALOG_ROOT, "*.yaml"),
+        glob_signature(ACTION_CATALOG_ROOT, "*.yaml"),
+        materialized_log_signature(),
+    )
+    cached = _SEARCH_INDEX_CACHE.get("by_employee", {}).get(employee_id)
+    if _SEARCH_INDEX_CACHE.get("signature") == signature and cached:
+        return cached
+    docs = accessible_docs(employee_id)
+    doc_records = []
+    for doc in docs:
+        metadata = doc.get("metadata") or {}
+        ref = stable_doc_ref(doc)
+        doc_records.append(
+            {
+                "ref": ref,
+                "doc": doc,
+                "blob": doc_search_blob(doc),
+                "title": str(metadata.get("title") or ""),
+                "id_text": "\n".join([str(metadata.get("boi_id") or ""), str(doc.get("uri") or "")]),
+                "description": str(metadata.get("description") or ""),
+                "type": str(metadata.get("type") or ""),
+            }
+        )
+    index = {
+        "docs": docs,
+        "doc_records": doc_records,
+        "dictionary": dictionary_terms_for_employee(employee_id),
+        "event_types": load_event_types(),
+        "actions": load_action_catalog(),
+    }
+    if _SEARCH_INDEX_CACHE.get("signature") != signature:
+        _SEARCH_INDEX_CACHE["signature"] = signature
+        _SEARCH_INDEX_CACHE["by_employee"] = {}
+    _SEARCH_INDEX_CACHE["by_employee"][employee_id] = index
+    return index
+
+
+def action_doc_url(action: dict[str, Any], employee_id: str) -> str:
+    doc_ref = str(action.get("doc_ref") or "")
+    return doc_url_for_ref(doc_ref, employee_id) if doc_ref else ""
+
+
+def ontology_search_payload(
+    query: str,
+    employee_id: str,
+    *,
+    scope: str = "all",
+    limit: int = 8,
+    current_url: str = "",
+) -> dict[str, Any]:
+    query = str(query or "").strip()
+    effective_limit = max(1, min(int(limit or 8), 50))
+    index = search_index_for_employee(employee_id)
+    dictionary = resolve_dictionary_query(query, employee_id)
+    tokens = search_tokens_for_query(query, employee_id)
+
+    doc_hits: list[tuple[int, dict[str, Any]]] = []
+    for record in index["doc_records"]:
+        score = weighted_text_score(
+            record["blob"],
+            tokens,
+            title=record["title"],
+            id_text=record["id_text"],
+            description=record["description"],
+        )
+        if not query:
+            score = 1
+        if score > 0:
+            doc_hits.append((score, record["doc"]))
+    doc_hits.sort(key=lambda item: (-item[0], metadata_sort_value((item[1].get("metadata") or {}).get("timestamp"))), reverse=False)
+    doc_items = [doc_result_item(doc, employee_id, score=score, match_reason="document") for score, doc in doc_hits[: effective_limit * 3]]
+
+    sop_items = [item for item in doc_items if is_official_sop_doc({"metadata": item.get("metadata") or {}, "uri": item.get("uri") or "", "path": ""})][:effective_limit]
+    dictionary_items = dictionary["matches"][:effective_limit]
+
+    event_items: list[dict[str, Any]] = []
+    for event_def in index["event_types"]:
+        blob = event_type_search_blob(event_def)
+        score = weighted_text_score(
+            blob,
+            tokens,
+            title=str(event_def.get("name_ko") or event_def.get("event_type") or ""),
+            id_text=str(event_def.get("event_type") or ""),
+            description=str(event_def.get("description") or ""),
+        )
+        if score > 0 or any(str(term.get("maps_to_event_type") or "") == str(event_def.get("event_type") or "") for term in dictionary["matches"]):
+            event_items.append(
+                {
+                    "kind": "event_type",
+                    "score": score or 90,
+                    "event_type": event_def.get("event_type"),
+                    "title": event_def.get("name_ko") or event_def.get("event_type"),
+                    "description": event_def.get("description") or "",
+                    "workflow_stage": event_def.get("workflow_stage") or "",
+                    "sop_ref": event_def.get("sop_ref") or "",
+                    "url": event_type_url(str(event_def.get("event_type") or ""), employee_id),
+                }
+            )
+    event_items.sort(key=lambda item: -int(item.get("score") or 0))
+
+    action_items: list[dict[str, Any]] = []
+    for action in index["actions"]:
+        blob = json.dumps(action, ensure_ascii=False, default=str).lower()
+        score = weighted_text_score(
+            blob,
+            tokens,
+            title=str(action.get("name") or action.get("name_ko") or action.get("action_key") or ""),
+            id_text=str(action.get("action_key") or ""),
+            description=str(action.get("description") or ""),
+        )
+        if score > 0 or any(str(term.get("maps_to_action_key") or "") == str(action.get("action_key") or "") for term in dictionary["matches"]):
+            action_items.append(
+                {
+                    "kind": "action",
+                    "score": score or 90,
+                    "action_key": action.get("action_key"),
+                    "title": action.get("name") or action.get("name_ko") or action.get("action_key"),
+                    "description": action.get("description") or "",
+                    "connector_kind": action.get("connector_kind") or action.get("type") or "",
+                    "doc_ref": action.get("doc_ref") or "",
+                    "url": action_doc_url(action, employee_id),
+                }
+            )
+    action_items.sort(key=lambda item: -int(item.get("score") or 0))
+
+    runtime_items: list[dict[str, Any]] = []
+    if query:
+        for row in read_action_logs(limit=200):
+            if not action_log_visible_to_employee(row, employee_id):
+                continue
+            blob = json.dumps(row, ensure_ascii=False, default=str).lower()
+            score = weighted_text_score(blob, tokens, id_text=str(row.get("request_id") or row.get("action_key") or ""))
+            if score > 0:
+                result_status = row.get("result", {}).get("status") if isinstance(row.get("result"), dict) else ""
+                runtime_items.append(
+                    {
+                        "kind": "action_log",
+                        "score": score,
+                        "title": row.get("action_key") or row.get("request_id") or "Action log",
+                        "description": row.get("status") or result_status or "",
+                        "trace_id": row.get("trace_id") or "",
+                        "log_ref": row.get("_log_ref") or "",
+                        "url": action_raw_page_url(str(row.get("_log_ref") or ""), employee_id) if row.get("_log_ref") else "",
+                    }
+                )
+        runtime_items.sort(key=lambda item: -int(item.get("score") or 0))
+
+    groups = {
+        "sop": sop_items[:effective_limit],
+        "event_types": event_items[:effective_limit],
+        "actions": action_items[:effective_limit],
+        "boi_documents": doc_items[:effective_limit],
+        "dictionary": dictionary_items[:effective_limit],
+        "runtime_evidence": runtime_items[:effective_limit],
+    }
+    if scope != "all":
+        groups = {scope: groups.get(scope, [])}
+
+    best_matches: list[dict[str, Any]] = []
+    for items in groups.values():
+        best_matches.extend(items if isinstance(items, list) else [])
+    best_matches.sort(key=lambda item: -int(item.get("score") or 0))
+
+    graph_paths = []
+    for item in best_matches[:3]:
+        ref = str(item.get("boi_id") or item.get("doc_ref") or "")
+        if not ref:
+            continue
+        doc = find_doc_by_id(ref, employee_id)
+        if not doc:
+            continue
+        relationship = relationship_context_for_doc(doc, employee_id, graph=okf_graph_for_docs([doc], employee_id))
+        graph_paths.append(
+            {
+                "source": okf_concept_id_for_doc(doc),
+                "outgoing_count": len(relationship.get("outgoing") or []),
+                "backlink_count": 0,
+                "url": doc_url_for_ref(stable_doc_ref(doc), employee_id),
+            }
+        )
+
+    return {
+        "ok": True,
+        "query": query,
+        "scope": scope,
+        "employee_id": employee_id,
+        "current_url": current_url,
+        "query_expansion": dictionary.get("expanded_terms", []),
+        "used_dictionary_terms": dictionary_items,
+        "knowledge_panel": {
+            "interpreted_as": [term.get("term") for term in dictionary.get("canonical_terms") or []],
+            "top_sop": groups.get("sop", [])[:1],
+            "top_event_type": groups.get("event_types", [])[:1],
+            "top_action": groups.get("actions", [])[:1],
+        },
+        "groups": groups,
+        "best_matches": best_matches[:effective_limit],
+        "graph_paths": graph_paths,
+        "document_rank_refs": [str(item.get("boi_id") or item.get("uri") or "") for item in doc_items],
+    }
+
+
+def filter_docs_ontology_aware(
+    docs: list[dict[str, Any]],
+    employee_id: str,
+    *,
+    q: str = "",
+    event_type: str = "",
+    visibility: str = "",
+    boi_type: str = "",
+    archive_status: str = "active",
+) -> list[dict[str, Any]]:
+    if not q:
+        return filter_docs(docs, q=q, event_type=event_type, visibility=visibility, boi_type=boi_type, archive_status=archive_status)
+    base = filter_docs(docs, q="", event_type=event_type, visibility=visibility, boi_type=boi_type, archive_status=archive_status)
+    payload = ontology_search_payload(q, employee_id, scope="all", limit=500)
+    rank = {ref: index for index, ref in enumerate(payload.get("document_rank_refs") or []) if ref}
+    ranked_docs = []
+    for doc in base:
+        refs = [stable_doc_ref(doc), str(doc.get("uri") or "").lstrip("/")]
+        best = min((rank[ref] for ref in refs if ref in rank), default=None)
+        if best is not None:
+            ranked_docs.append((best, doc))
+    ranked_docs.sort(key=lambda item: item[0])
+    return [doc for _rank, doc in ranked_docs]
 
 
 def is_sop_related_doc(doc: dict[str, Any]) -> bool:
@@ -3340,12 +3743,18 @@ def target_dir_for(metadata: dict[str, Any]) -> Path:
     visibility = metadata.get("visibility", "private")
     if visibility == "private":
         owner = str(metadata.get("owner") or DEMO_EMPLOYEE_ID)
+        if str(metadata.get("type") or "") == "boi/dictionary-term":
+            return DATA_ROOT / "private" / owner / "dictionary"
         return DATA_ROOT / "private" / owner
     if visibility == "team":
         team_id = str(metadata.get("team_id") or DEFAULT_TEAM_ID)
+        if str(metadata.get("type") or "") == "boi/dictionary-term":
+            return DATA_ROOT / "team" / team_id / "dictionary"
         return DATA_ROOT / "team" / team_id
     if visibility == "public":
         boi_type = str(metadata.get("type") or "")
+        if boi_type == "boi/dictionary-term":
+            return DATA_ROOT / "public" / "dictionary"
         if boi_type == "boi/sop":
             return DATA_ROOT / "public" / "sop"
         if boi_type == "boi/action-spec":
@@ -3394,6 +3803,31 @@ def write_boi(metadata: dict[str, Any], body: str) -> dict[str, Any]:
     if errors:
         raise HTTPException(status_code=400, detail={"errors": errors})
     path_dir = target_dir_for(metadata)
+    path_dir.mkdir(parents=True, exist_ok=True)
+    filename = safe_filename(metadata["boi_id"]) + ".md"
+    path = path_dir / filename
+    path.write_text(compose_markdown(metadata, body), encoding="utf-8")
+    invalidate_doc_caches()
+    return read_doc(path)
+
+
+def write_boi_to_subfolder(metadata: dict[str, Any], body: str, subfolder: str) -> dict[str, Any]:
+    ensure_dirs()
+    normalized = normalize_folder(subfolder)
+    if not normalized or any(part in {"..", "."} for part in normalized.split("/")):
+        raise HTTPException(status_code=400, detail="invalid BoI subfolder")
+    if not normalized.startswith(("agent-memory", "dictionary")):
+        raise HTTPException(status_code=400, detail="subfolder is not allowlisted for this API")
+    errors = validate_metadata(metadata)
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    visibility = str(metadata.get("visibility") or "private")
+    if visibility != "private":
+        raise HTTPException(status_code=400, detail="subfolder writer supports private BoI only")
+    owner = str(metadata.get("owner") or "")
+    if not owner:
+        raise HTTPException(status_code=400, detail="private owner is required")
+    path_dir = DATA_ROOT / "private" / owner / normalized
     path_dir.mkdir(parents=True, exist_ok=True)
     filename = safe_filename(metadata["boi_id"]) + ".md"
     path = path_dir / filename
@@ -3811,6 +4245,69 @@ class SimulationAgentRequest(BaseModel):
     simulation_depth: str = "stage_prerequisites"
 
 
+class BoiAgentChatRequest(BaseModel):
+    question: str
+    current_url: str = ""
+    page_context: dict[str, Any] = Field(default_factory=dict)
+    conversation: list[dict[str, Any]] = Field(default_factory=list)
+    save_memory: bool = True
+
+
+class BoiAgentSuggestionsRequest(BaseModel):
+    current_url: str = ""
+    page_context: dict[str, Any] = Field(default_factory=dict)
+
+
+class BoiAgentApprovalRequest(BaseModel):
+    operation: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    user_confirmed: bool = False
+    note: str = ""
+
+
+class ManualHandoffCompleteRequest(BaseModel):
+    task_id: str
+    outcome: Literal["completed", "not_needed", "blocked"] = "completed"
+    note: str
+    completed_by: str | None = None
+    user_confirmed: bool = True
+
+
+class AgentMemoryRequest(BaseModel):
+    memory_kind: str = "domain_context"
+    title: str
+    body: str
+    tags: list[str] = Field(default_factory=list)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    importance: int = 3
+
+
+class AgentMemoryUpdateRequest(BaseModel):
+    note: str = ""
+    superseded_by: str | None = None
+
+
+class ActivityRequest(BaseModel):
+    activity_type: str
+    target: str = ""
+    title: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DictionaryTermRequest(BaseModel):
+    term: str
+    definition: str
+    aliases: list[str] = Field(default_factory=list)
+    example: str = ""
+    links: list[str] = Field(default_factory=list)
+    scope: Literal["private", "team", "public"] = "private"
+    team_id: str | None = None
+    domain: str = ""
+    maps_to_event_type: str = ""
+    maps_to_action_key: str = ""
+    maps_to_sop: str = ""
+
+
 class SourcePreviewRequest(BaseModel):
     path: str = Field(examples=["data/boi/public/sop/equipment-abnormal-response.md"])
     base_sha256: str | None = None
@@ -4202,8 +4699,9 @@ async def index(
 ) -> HTMLResponse:
     selected_folder = normalize_folder(folder)
     accessible = accessible_docs(employee_id)
-    filtered_docs = filter_docs(
+    filtered_docs = filter_docs_ontology_aware(
         accessible,
+        employee_id,
         q=q,
         event_type=event_type,
         visibility=visibility,
@@ -4534,8 +5032,9 @@ async def list_boi(
     archive_status: str = "active",
 ) -> dict[str, Any]:
     selected_folder = normalize_folder(folder)
-    filtered_docs = filter_docs(
+    filtered_docs = filter_docs_ontology_aware(
         accessible_docs(employee_id),
+        employee_id,
         q=q,
         event_type=event_type,
         visibility=visibility,
@@ -4569,6 +5068,499 @@ async def api_okf_doc_graph(boi_id: str, employee_id: str = Depends(current_empl
     if doc.get("recovered_from_log"):
         graph = okf_graph_for_docs([doc], employee_id)
     return relationship_context_for_doc(doc, employee_id, graph=graph)
+
+
+@app.get("/api/search/ontology")
+async def api_ontology_search(
+    employee_id: str = Depends(current_employee),
+    q: str = "",
+    scope: str = "all",
+    limit: int = 8,
+    current_url: str = "",
+) -> dict[str, Any]:
+    return ontology_search_payload(q, employee_id, scope=scope, limit=limit, current_url=current_url)
+
+
+def page_context_suggestions(current_url: str, page_context: dict[str, Any] | None = None) -> list[str]:
+    context = page_context or {}
+    url = str(current_url or "")
+    title = str(context.get("title") or "")
+    suggestions: list[str]
+    if "/workflows/" in url or "trace_id=" in url:
+        suggestions = [
+            "이 trace에서 내가 처리해야 할 manual handoff가 뭐야?",
+            "실패하거나 승인 대기인 action을 요약해줘.",
+            "이 workflow를 SOP stage 기준으로 설명해줘.",
+        ]
+    elif "/actions" in url:
+        suggestions = [
+            "이 action이 어떤 Event Type과 SOP에서 쓰이는지 찾아줘.",
+            "이 action의 입력과 결과 schema를 요약해줘.",
+            "비슷한 API/MCP action spec을 찾아줘.",
+        ]
+    elif "/event-types" in url:
+        suggestions = [
+            "이 Event Type이 연결된 SOP와 Action을 찾아줘.",
+            "이 Event가 발생하면 다음에 어떤 BoI가 생성돼?",
+            "이 Event Type으로 최근 실행 trace를 보여줘.",
+        ]
+    elif "/sops" in url or ":sop:" in url or "/sop/" in url:
+        suggestions = [
+            "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
+            "이 SOP의 Event, Action, Manual Handoff 관계를 요약해줘.",
+            "이 SOP를 실행하려면 부족한 Action Spec이 있는지 찾아줘.",
+        ]
+    elif title:
+        suggestions = [
+            "현재 문서와 연결된 SOP/Event/Action을 찾아줘.",
+            "이 문서의 핵심과 관련 BoI를 요약해줘.",
+            "이 내용을 기반으로 팀 공유용 draft를 만들려면 무엇을 확인해야 해?",
+        ]
+    else:
+        suggestions = [
+            "설비 이상 대응 SOP와 연결된 Action을 찾아줘.",
+            "내가 처리해야 할 Action이 있는지 확인해줘.",
+            "BoI Wiki에서 특정 업무 용어를 찾아줘.",
+        ]
+    return suggestions
+
+
+def agent_link_for_item(item: dict[str, Any]) -> dict[str, str]:
+    label = str(item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or "")
+    return {
+        "label": label,
+        "url": str(item.get("url") or ""),
+        "kind": str(item.get("kind") or ""),
+    }
+
+
+def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    search = ontology_search_payload(req.question, employee_id, current_url=req.current_url, limit=6)
+    inbox = agent_inbox_payload(employee_id, status="open", limit=5)
+    memories = agent_memory_items(employee_id, q=req.question, limit=3)
+    best = search.get("best_matches") or []
+    answer_lines = [
+        "BoI Wiki 기준으로 확인한 내용입니다.",
+    ]
+    if best:
+        answer_lines.append("")
+        answer_lines.append("관련성이 높은 항목:")
+        for item in best[:5]:
+            label = item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id")
+            detail = item.get("description") or item.get("definition") or item.get("match_reason") or ""
+            answer_lines.append(f"- {label}: {detail}")
+    if inbox.get("open_count"):
+        answer_lines.append("")
+        answer_lines.append(f"현재 담당 Action은 {inbox['open_count']}건입니다. 우측 Agent의 내 Action 탭에서 바로 확인할 수 있습니다.")
+    if memories:
+        answer_lines.append("")
+        answer_lines.append("개인 memory에서 함께 참고한 항목이 있습니다.")
+    links = [agent_link_for_item(item) for item in best[:8] if item.get("url")]
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "answer_markdown": "\n".join(answer_lines),
+        "links": links,
+        "citations": links[:5],
+        "suggested_questions": page_context_suggestions(req.current_url, req.page_context),
+        "context_summary": {
+            "current_url": req.current_url,
+            "used_dictionary_terms": search.get("used_dictionary_terms") or [],
+            "memory_count": len(memories),
+            "inbox_open_count": inbox.get("open_count", 0),
+        },
+        "ontology_search": search,
+        "langflow_backend": {
+            "official_external_interface": "BoI API / boi-wiki-mcp",
+            "direct_langflow_run": "trusted-dev-only",
+        },
+    }
+
+
+@app.post("/api/agents/boi-wiki/chat")
+async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
+    return agent_chat_response(req, employee_id)
+
+
+@app.post("/api/agents/boi-wiki/suggestions")
+async def api_boi_agent_suggestions(req: BoiAgentSuggestionsRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "current_url": req.current_url,
+        "suggestions": page_context_suggestions(req.current_url, req.page_context),
+    }
+
+
+@app.get("/api/agents/boi-wiki/capabilities")
+async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "official_external_interfaces": ["BoI API", "boi-wiki-mcp"],
+        "trusted_dev_backend": "Langflow",
+        "features": [
+            "page-aware Q&A",
+            "ontology-assisted search",
+            "dictionary resolve",
+            "action inbox",
+            "manual handoff completion",
+            "private memory",
+            "recent activity",
+        ],
+        "write_confirmation_required": ["approve", "manual_handoff_complete", "action_invoke", "promotion_submit", "source_apply", "doc_body_apply"],
+    }
+
+
+@app.post("/api/agents/boi-wiki/approve")
+async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required")
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "operation": req.operation,
+        "status": "approved_for_explicit_next_step",
+        "note": req.note,
+        "payload_preview": redact_sensitive(req.payload),
+    }
+
+
+def activity_file_for_employee(employee_id: str) -> Path:
+    now = datetime.now(KST)
+    return ACTIVITY_ROOT / "private" / employee_id / f"activity-{now.strftime('%Y%m')}.jsonl"
+
+
+def append_activity(employee_id: str, activity: dict[str, Any]) -> dict[str, Any]:
+    ensure_dirs()
+    path = activity_file_for_employee(employee_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "activity_id": f"activity-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+        "employee_id": employee_id,
+        "logged_at": now_iso(),
+        **activity,
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    return row
+
+
+def recent_activity(employee_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    root = ACTIVITY_ROOT / "private" / employee_id
+    if not root.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    cutoff = datetime.now(KST) - timedelta(days=30)
+    for path in sorted(root.glob("activity-*.jsonl"), reverse=True):
+        for line in reversed(path.read_text(encoding="utf-8").splitlines()):
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            try:
+                logged_at = datetime.fromisoformat(str(row.get("logged_at") or ""))
+            except Exception:
+                logged_at = datetime.now(KST)
+            if logged_at < cutoff:
+                continue
+            rows.append(row)
+            if len(rows) >= limit:
+                return rows
+    return rows
+
+
+@app.post("/api/agents/boi-wiki/activity")
+async def api_agent_activity_write(req: ActivityRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "item": append_activity(employee_id, req.model_dump())}
+
+
+@app.get("/api/agents/boi-wiki/activity")
+async def api_agent_activity(employee_id: str = Depends(current_employee), limit: int = 50) -> dict[str, Any]:
+    items = recent_activity(employee_id, limit=max(1, min(limit, 200)))
+    return {"ok": True, "count": len(items), "items": items}
+
+
+def agent_memory_items(employee_id: str, q: str = "", limit: int = 20, include_archived: bool = False) -> list[dict[str, Any]]:
+    docs = [
+        doc
+        for doc in accessible_docs(employee_id)
+        if str((doc.get("metadata") or {}).get("type") or "") == "boi/agent-memory"
+        and "/agent-memory/" in str(doc.get("uri") or "")
+    ]
+    if not include_archived:
+        docs = [doc for doc in docs if (doc.get("metadata") or {}).get("archive_status", "active") == "active"]
+    if q:
+        tokens = search_tokens_for_query(q, employee_id)
+        docs = [
+            doc
+            for doc in docs
+            if weighted_text_score(doc_search_blob(doc), tokens, title=str((doc.get("metadata") or {}).get("title") or "")) > 0
+        ]
+    items = []
+    for doc in docs[: max(1, min(limit, 100))]:
+        metadata = doc.get("metadata") or {}
+        items.append(
+            {
+                "memory_id": metadata.get("boi_id"),
+                "title": metadata.get("title"),
+                "memory_kind": metadata.get("memory_kind") or "",
+                "description": metadata.get("description") or "",
+                "usage_count": metadata.get("usage_count", 1),
+                "archive_status": metadata.get("archive_status", "active"),
+                "url": doc_url_for_ref(stable_doc_ref(doc), employee_id),
+            }
+        )
+    return items
+
+
+@app.get("/api/agents/boi-wiki/memory")
+async def api_agent_memory(employee_id: str = Depends(current_employee), q: str = "", include_archived: bool = False, limit: int = 20) -> dict[str, Any]:
+    items = agent_memory_items(employee_id, q=q, limit=limit, include_archived=include_archived)
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@app.post("/api/agents/boi-wiki/memory")
+async def api_agent_memory_write(req: AgentMemoryRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    forbidden = re.compile(r"(password|token|secret|api[_ -]?key|승인 우회|자동 승인)", re.IGNORECASE)
+    if forbidden.search(req.body) or forbidden.search(req.title):
+        raise HTTPException(status_code=400, detail="sensitive or high-risk preference cannot be auto-saved as memory")
+    metadata = make_metadata(
+        boi_type="boi/agent-memory",
+        title=req.title,
+        description=req.body[:160],
+        owner=employee_id,
+        visibility="private",
+        classification="internal",
+        source_refs=req.source_refs or [{"type": "agent-memory", "ref": "BoI Agent conversation"}],
+        status="draft",
+        tags=list(dict.fromkeys(["AgentMemory", req.memory_kind, *req.tags])),
+    )
+    metadata.update(
+        {
+            "memory_kind": req.memory_kind,
+            "importance": max(1, min(int(req.importance or 3), 5)),
+            "usage_count": 1,
+            "archive_status": "active",
+            "review_after": (datetime.now(KST) + timedelta(days=90)).date().isoformat(),
+        }
+    )
+    doc = write_boi_to_subfolder(metadata, req.body, "agent-memory")
+    return {"ok": True, "item": doc_result_item(doc, employee_id)}
+
+
+def update_memory_metadata(memory_id: str, employee_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    doc = find_doc_by_id(memory_id, employee_id)
+    if not doc or str((doc.get("metadata") or {}).get("type") or "") != "boi/agent-memory":
+        raise HTTPException(status_code=404, detail="memory not found")
+    path = Path(str(doc.get("path") or ""))
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="memory source missing")
+    metadata, body = split_frontmatter(path.read_text(encoding="utf-8"))
+    metadata.update(updates)
+    metadata["updated_at"] = now_iso()
+    path.write_text(compose_markdown(metadata, body), encoding="utf-8")
+    invalidate_doc_caches()
+    updated = read_doc(path)
+    return doc_result_item(updated, employee_id)
+
+
+@app.post("/api/agents/boi-wiki/memory/{memory_id:path}/archive")
+async def api_agent_memory_archive(memory_id: str, req: AgentMemoryUpdateRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "item": update_memory_metadata(memory_id, employee_id, {"archive_status": "archived", "archive_note": req.note})}
+
+
+@app.post("/api/agents/boi-wiki/memory/{memory_id:path}/supersede")
+async def api_agent_memory_supersede(memory_id: str, req: AgentMemoryUpdateRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "item": update_memory_metadata(memory_id, employee_id, {"archive_status": "superseded", "superseded_by": req.superseded_by or "", "archive_note": req.note})}
+
+
+@app.post("/api/agents/boi-wiki/memory/compact")
+async def api_agent_memory_compact(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    items = agent_memory_items(employee_id, limit=200)
+    by_title: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        by_title.setdefault(normalize_search_token(str(item.get("title") or "")), []).append(item)
+    candidates = [group for group in by_title.values() if len(group) > 1]
+    return {"ok": True, "candidate_groups": candidates, "message": "Review candidates before superseding or archiving memory."}
+
+
+@app.post("/api/agents/boi-wiki/memory/undo")
+async def api_agent_memory_undo(memory_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "item": update_memory_metadata(memory_id, employee_id, {"archive_status": "active", "undo_at": now_iso()})}
+
+
+@app.get("/api/dictionary/resolve")
+async def api_dictionary_resolve(employee_id: str = Depends(current_employee), q: str = "", scope: str = "all") -> dict[str, Any]:
+    return {"ok": True, **resolve_dictionary_query(q, employee_id, scope=scope)}
+
+
+@app.get("/api/dictionary/terms")
+async def api_dictionary_terms(employee_id: str = Depends(current_employee), scope: str = "all", q: str = "", limit: int = 100) -> dict[str, Any]:
+    items = dictionary_terms_for_employee(employee_id, scope=scope)
+    if q:
+        q_lower = normalize_search_token(q)
+        items = [item for item in items if q_lower in normalize_search_token(json.dumps(item, ensure_ascii=False, default=str))]
+    items = items[: max(1, min(limit, 500))]
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@app.post("/api/dictionary/terms")
+async def api_dictionary_term_create(req: DictionaryTermRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    visibility = "private" if req.scope == "private" else req.scope
+    team_id = req.team_id or (teams_for(employee_id)[0] if req.scope == "team" else None)
+    owner = employee_id if req.scope == "private" else (team_id or "public")
+    metadata = make_metadata(
+        boi_type="boi/dictionary-term",
+        title=req.term,
+        description=req.definition,
+        owner=owner,
+        visibility=visibility,  # type: ignore[arg-type]
+        classification="internal",
+        team_id=team_id,
+        source_refs=[{"type": "dictionary", "ref": "BoI Agent dictionary form"}],
+        status="draft" if req.scope == "private" else "reviewed",
+        tags=["Dictionary", req.domain] if req.domain else ["Dictionary"],
+        reviewer="dictionary-curator" if req.scope != "private" else None,
+    )
+    metadata.update(
+        {
+            "term": req.term,
+            "definition": req.definition,
+            "aliases": req.aliases,
+            "examples": [req.example] if req.example else [],
+            "links": req.links,
+            "domain": req.domain,
+            "maps_to_event_type": req.maps_to_event_type,
+            "maps_to_action_key": req.maps_to_action_key,
+            "maps_to_sop": req.maps_to_sop,
+        }
+    )
+    if req.scope == "private":
+        doc = write_boi_to_subfolder(metadata, dictionary_body(req), "dictionary")
+    else:
+        doc = write_boi(metadata, dictionary_body(req))
+    return {"ok": True, "item": doc_result_item(doc, employee_id)}
+
+
+def dictionary_body(req: DictionaryTermRequest) -> str:
+    lines = [
+        "# Summary",
+        "",
+        req.definition,
+        "",
+        "## Usage",
+        "",
+        f"- Term: {req.term}",
+    ]
+    if req.aliases:
+        lines.append(f"- Aliases: {', '.join(req.aliases)}")
+    if req.example:
+        lines.extend(["", "## Example", "", req.example])
+    if req.links:
+        lines.extend(["", "## Links", "", *[f"- {link}" for link in req.links]])
+    return "\n".join(lines).strip() + "\n"
+
+
+def completion_request_ids() -> set[str]:
+    completed: set[str] = set()
+    for row in cached_action_log_rows():
+        if row.get("completion_for_request_id"):
+            completed.add(str(row.get("completion_for_request_id")))
+    return completed
+
+
+def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50) -> dict[str, Any]:
+    completed = completion_request_ids()
+    items: list[dict[str, Any]] = []
+    for row in read_action_logs(limit=500):
+        if not action_log_visible_to_employee(row, employee_id):
+            continue
+        request_id = str(row.get("request_id") or "")
+        result_status = (row.get("result") or {}).get("status") if isinstance(row.get("result"), dict) else ""
+        row_status = str(row.get("status") or result_status or "")
+        if request_id in completed and status == "open":
+            continue
+        if row_status not in {"manual_required", "approval_required", "manual_blocked", "needs_followup"}:
+            continue
+        task_id = f"task:{request_id or row.get('_log_ref')}"
+        items.append(
+            {
+                "task_id": task_id,
+                "status": row_status,
+                "action_key": row.get("action_key") or "",
+                "request_id": request_id,
+                "trace_id": row.get("trace_id") or "",
+                "event_id": row.get("event_id") or "",
+                "doc_ref": row.get("doc_ref") or "",
+                "log_ref": row.get("_log_ref") or "",
+                "raw_url": action_raw_page_url(str(row.get("_log_ref") or ""), employee_id) if row.get("_log_ref") else "",
+                "workflow_url": workflow_status_page_url(str(row.get("trace_id") or ""), employee_id) if row.get("trace_id") else "",
+                "summary": row.get("summary") or row.get("message") or row_status,
+            }
+        )
+        if len(items) >= max(1, min(limit, 200)):
+            break
+    return {"ok": True, "employee_id": employee_id, "status": status, "open_count": len(items), "count": len(items), "items": items}
+
+
+@app.get("/api/agents/boi-wiki/inbox")
+async def api_agent_inbox(employee_id: str = Depends(current_employee), status: str = "open", limit: int = 50) -> dict[str, Any]:
+    return agent_inbox_payload(employee_id, status=status, limit=limit)
+
+
+@app.post("/api/agents/boi-wiki/manual-handoffs/complete")
+async def api_manual_handoff_complete(req: ManualHandoffCompleteRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required")
+    if not req.note.strip():
+        raise HTTPException(status_code=400, detail="completion note is required")
+    parent_request_id = req.task_id.removeprefix("task:")
+    row = {
+        "request_id": f"manual-completion-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+        "completion_for_request_id": parent_request_id,
+        "employee_id": employee_id,
+        "completed_by": req.completed_by or employee_id,
+        "status": "manual_completed" if req.outcome == "completed" else req.outcome,
+        "outcome": req.outcome,
+        "note": req.note,
+        "logged_at": now_iso(),
+        "action_key": "manual.handoff.complete",
+        "connector_kind": "manual",
+    }
+    appended = append_action_log_row(row)
+    return {"ok": True, "item": appended}
+
+
+@app.post("/api/agents/boi-wiki/inbox/{task_id:path}/snooze")
+async def api_agent_inbox_snooze(task_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    row = append_action_log_row(
+        {
+            "request_id": f"inbox-snooze-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+            "completion_for_request_id": task_id.removeprefix("task:"),
+            "employee_id": employee_id,
+            "status": "snoozed",
+            "logged_at": now_iso(),
+            "action_key": "agent.inbox.snooze",
+        }
+    )
+    return {"ok": True, "item": row}
+
+
+@app.post("/api/agents/boi-wiki/inbox/{task_id:path}/dismiss")
+async def api_agent_inbox_dismiss(task_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    row = append_action_log_row(
+        {
+            "request_id": f"inbox-dismiss-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+            "completion_for_request_id": task_id.removeprefix("task:"),
+            "employee_id": employee_id,
+            "status": "dismissed",
+            "logged_at": now_iso(),
+            "action_key": "agent.inbox.dismiss",
+        }
+    )
+    return {"ok": True, "item": row}
 
 
 @app.post("/api/boi")

@@ -26,6 +26,14 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "action_invoke", "description": "Invoke an allowlisted Action Gateway action with approval policy preserved."},
     {"name": "workflow_start", "description": "Start a config-driven workflow from SOP metadata."},
     {"name": "workflow_status", "description": "Return workflow status for a trace."},
+    {"name": "boi_agent_chat", "description": "Ask the page-aware BoI Agent using ontology search, dictionary, memory, and inbox context."},
+    {"name": "boi_agent_suggestions", "description": "Return recommended questions for a current BoI Wiki page context."},
+    {"name": "ontology_search", "description": "Search the business knowledge graph across Dictionary, SOP, Event Types, Actions, BoI docs, and runtime evidence."},
+    {"name": "dictionary_resolve", "description": "Resolve business terms and aliases with private, team, then public priority."},
+    {"name": "dictionary_terms", "description": "List accessible BoI dictionary terms by scope."},
+    {"name": "agent_memory_search", "description": "Search private Agent Memory BoI documents for the employee."},
+    {"name": "agent_inbox", "description": "Return open manual/approval/follow-up action tasks for an employee."},
+    {"name": "manual_handoff_complete", "description": "Append a user-confirmed manual handoff completion row."},
     {"name": "source_preview", "description": "Preview and validate a proposed Markdown/YAML source edit before applying it."},
     {"name": "source_apply", "description": "Apply a user-confirmed validated source edit and auto-commit it."},
     {"name": "doc_body_preview", "description": "Preview and validate a proposed BoI document body edit before applying it."},
@@ -38,6 +46,7 @@ MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://folders/{folder}", "description": "BoI search results scoped to an OKF folder."},
     {"uri": "boi://actions/{action_key}", "description": "Single action catalog entry."},
     {"uri": "boi://workflows/{workflow_key}/status/{trace_id}", "description": "Workflow status for a trace."},
+    {"uri": "boi://search/ontology/{query}", "description": "Ontology-assisted grouped search results."},
 ]
 MCP_PROMPT_CAPABILITIES = [
     {"name": "create_sop_from_source", "description": "Create a BoI SOP from source material after checking existing wiki context."},
@@ -103,7 +112,9 @@ mcp = FastMCP(
     "boi-wiki-mcp",
     instructions=(
         "BoI Wiki MCP exposes OKF BoI documents, action catalog specs, workflow status, "
-        "validated source/body editing, user-confirmed promotion publishing, and SOP/action/Langflow authoring prompts."
+        "ontology search, page-aware BoI Agent chat, action inbox, dictionary/memory helpers, "
+        "validated source/body editing, user-confirmed promotion publishing, and SOP/action/Langflow authoring prompts. "
+        "BoI API/MCP are the official external interfaces; direct Langflow runs are trusted/dev integration paths."
     ),
     streamable_http_path="/mcp",
     json_response=True,
@@ -262,6 +273,107 @@ async def workflow_status_impl(
         employee_id=employee_id,
         params={"trace_id": trace_id, "format": "json", "graph_scope": graph_scope},
         service_token=service_token,
+    )
+
+
+@mcp.tool(name="boi_agent_chat")
+async def boi_agent_chat(
+    question: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    current_url: str = "",
+    page_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Ask the BoI Agent through the official BoI API surface."""
+    return await api_post(
+        "/api/agents/boi-wiki/chat",
+        employee_id=employee_id,
+        payload={"question": question, "current_url": current_url, "page_context": page_context or {}},
+    )
+
+
+@mcp.tool(name="boi_agent_suggestions")
+async def boi_agent_suggestions(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    current_url: str = "",
+    page_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return recommended BoI Agent questions for a page context."""
+    return await api_post(
+        "/api/agents/boi-wiki/suggestions",
+        employee_id=employee_id,
+        payload={"current_url": current_url, "page_context": page_context or {}},
+    )
+
+
+@mcp.tool(name="ontology_search")
+async def ontology_search(
+    query: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    scope: str = "all",
+    limit: int = 8,
+    current_url: str = "",
+) -> dict[str, Any]:
+    """Search the BoI ontology-assisted knowledge graph."""
+    return await api_get(
+        "/api/search/ontology",
+        employee_id=employee_id,
+        params={"q": query, "scope": scope, "limit": limit, "current_url": current_url},
+    )
+
+
+@mcp.tool(name="dictionary_resolve")
+async def dictionary_resolve(query: str, employee_id: str = DEFAULT_EMPLOYEE_ID, scope: str = "all") -> dict[str, Any]:
+    """Resolve dictionary terms and aliases by private, team, then public priority."""
+    return await api_get("/api/dictionary/resolve", employee_id=employee_id, params={"q": query, "scope": scope})
+
+
+@mcp.tool(name="dictionary_terms")
+async def dictionary_terms(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    scope: str = "all",
+    query: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List accessible BoI dictionary terms."""
+    return await api_get("/api/dictionary/terms", employee_id=employee_id, params={"scope": scope, "q": query, "limit": limit})
+
+
+@mcp.tool(name="agent_memory_search")
+async def agent_memory_search(
+    query: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    include_archived: bool = False,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Search private BoI Agent memory documents."""
+    return await api_get(
+        "/api/agents/boi-wiki/memory",
+        employee_id=employee_id,
+        params={"q": query, "include_archived": str(include_archived).lower(), "limit": limit},
+    )
+
+
+@mcp.tool(name="agent_inbox")
+async def agent_inbox(employee_id: str = DEFAULT_EMPLOYEE_ID, status: str = "open", limit: int = 50) -> dict[str, Any]:
+    """Return manual/approval/follow-up tasks for the employee."""
+    return await api_get("/api/agents/boi-wiki/inbox", employee_id=employee_id, params={"status": status, "limit": limit})
+
+
+@mcp.tool(name="manual_handoff_complete")
+async def manual_handoff_complete(
+    task_id: str,
+    note: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    outcome: Literal["completed", "not_needed", "blocked"] = "completed",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Complete a manual handoff task with explicit user confirmation."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before completing a manual handoff")
+    return await api_post(
+        "/api/agents/boi-wiki/manual-handoffs/complete",
+        employee_id=employee_id,
+        payload={"task_id": task_id, "note": note, "outcome": outcome, "user_confirmed": user_confirmed},
     )
 
 
@@ -427,6 +539,12 @@ async def workflow_status_resource(workflow_key: str, trace_id: str) -> str:
     return as_text(await workflow_status(workflow_key, trace_id, DEFAULT_EMPLOYEE_ID))
 
 
+@mcp.resource("boi://search/ontology/{query}")
+async def ontology_search_resource(query: str) -> str:
+    """Read ontology-assisted search results as JSON text."""
+    return as_text(await ontology_search(query=query, employee_id=DEFAULT_EMPLOYEE_ID))
+
+
 @mcp.prompt(name="create_sop_from_source")
 def create_sop_from_source(domain: str = "", target_visibility: str = "private") -> str:
     """Prompt for converting user-provided SOP images/docs into BoI Wiki OKF workflow packages."""
@@ -530,6 +648,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
             "A direct browser/curl request to /mcp may return 406 even when the server is healthy.",
             "Static resources are intentionally empty; use resource templates and tools.",
+            "BoI API/MCP are the official external Agent interfaces; direct Langflow run URLs are trusted/dev only.",
         ],
     }
 
@@ -600,6 +719,7 @@ async def status_page(request: Request) -> HTMLResponse:
     <section>
       <h2>Client Registration</h2>
       <p>Register <code>{payload["mcp_endpoint"]}</code> as a Streamable HTTP MCP server in Codex, Claude Desktop, or Cursor.</p>
+      <p>Use <code>ontology_search</code> for knowledge graph exploration, <code>boi_search</code> for document-only search, and <code>boi_agent_chat</code> for page-aware Q&amp;A. Langflow direct run URLs are trusted/dev integration paths, not the public Agent API.</p>
       <p>Opening <code>/mcp</code> directly in a browser is not a valid MCP check. It can return <code>406</code> because the client did not send the required MCP Accept headers.</p>
     </section>
   </main>
@@ -647,10 +767,45 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         )
     elif tool_name == "actions_search":
         result = await actions_search_impl(employee_id=employee_id, connector_kind=str(args.get("connector_kind") or ""), service_token=True)
+    elif tool_name == "ontology_search":
+        result = await api_get(
+            "/api/search/ontology",
+            employee_id=employee_id,
+            params={"q": str(args.get("query") or args.get("q") or ""), "scope": str(args.get("scope") or "all"), "limit": int(args.get("limit") or 8)},
+            service_token=True,
+        )
+    elif tool_name == "boi_agent_chat":
+        result = await api_post(
+            "/api/agents/boi-wiki/chat",
+            employee_id=employee_id,
+            payload={"question": str(args.get("question") or ""), "current_url": str(args.get("current_url") or ""), "page_context": args.get("page_context") or {}},
+            service_token=True,
+        )
+    elif tool_name == "agent_inbox":
+        result = await api_get(
+            "/api/agents/boi-wiki/inbox",
+            employee_id=employee_id,
+            params={"status": str(args.get("status") or "open"), "limit": int(args.get("limit") or 50)},
+            service_token=True,
+        )
+    elif tool_name == "dictionary_resolve":
+        result = await api_get(
+            "/api/dictionary/resolve",
+            employee_id=employee_id,
+            params={"q": str(args.get("query") or args.get("q") or ""), "scope": str(args.get("scope") or "all")},
+            service_token=True,
+        )
     else:
         return JSONResponse({"detail": f"unsupported MCP bridge tool: {req.tool}"}, status_code=400)
     return JSONResponse(
-        {"ok": True, "status": "mcp_invoked", "tool": req.tool, "request_id": req.request_id, "response": result}
+        {
+            "ok": True,
+            "status": "mcp_invoked",
+            "tool": req.tool,
+            "request_id": req.request_id,
+            "response": result,
+            "result": result,
+        }
     )
 
 
