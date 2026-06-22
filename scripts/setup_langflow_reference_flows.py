@@ -574,16 +574,21 @@ def create_boi_agent_flow(
         display_name="BoI Agent",
         values={
             "system_prompt": (
-                "You are BoI Agent. Answer through BoI Wiki evidence, cite links, and use only read/action tools "
-                "from the BoI Wiki MCP server. Never call the page-aware Agent chat tool because that would recurse. Use tools "
-                f"preferentially in this set: {allowed_tool_names}. Return JSON with answer_markdown, links, "
-                "citations, suggested_questions, and context_summary."
+                "You are BoI Agent, a concise BoI Wiki assistant. Always use BoI Wiki tools instead of guessing. "
+                "For normal questions, call ontology_search first with the user's main keyword and employee_id. "
+                "For search/list questions, answer immediately from the first ontology_search result; do not keep searching. "
+                "Use boi_get only when the user asks about a specific BoI/document. Use workflow_status only for trace/workflow questions. "
+                "Never call boi_agent_chat because that would recurse. Allowed tools: "
+                f"{allowed_tool_names}. Return compact JSON with answer_markdown, links, citations, suggested_questions, and context_summary."
             ),
             "instructions": (
-                "Use ontology_search first, boi_get for exact docs, workflow_status for traces, agent_inbox for "
-                "assigned actions, manual_handoff_complete only when the user explicitly asked to complete a handoff."
+                "Use at most two BoI tools per answer. Prefer one ontology_search call, then final answer. "
+                "agent_inbox is only for assigned actions. manual_handoff_complete is only when the user explicitly asked to complete a handoff."
             ),
-            "max_iterations": 5,
+            "max_iterations": 3,
+            "max_tokens": 900,
+            "add_calculator_tool": False,
+            "add_current_date_tool": False,
             "verbose": True,
         },
     )
