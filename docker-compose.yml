@@ -18,7 +18,7 @@ services:
     networks: [boi-net]
 
   langflow:
-    image: ${LANGFLOW_IMAGE:-langflowai/langflow:latest}
+    image: ${LANGFLOW_IMAGE:-langflowai/langflow@sha256:3ec67ddf344b3f2393b4961aa4f87e8928798f33772fdfdc6d348bfd54f58bf0}
     container_name: boi-langflow
     depends_on:
       langflow-postgres:
