@@ -36,12 +36,35 @@ class BoIContextNormalizer(Component):
         except Exception:
             return {}
 
+    def _message_text(self, value: Any) -> str:
+        if not value:
+            return ""
+        if isinstance(value, str):
+            return value
+        for attr in ("text", "content", "message", "value"):
+            item = getattr(value, attr, None)
+            if isinstance(item, str) and item:
+                return item
+        data = getattr(value, "data", None)
+        if isinstance(data, dict):
+            for key in ("text", "content", "message", "input_value", "value"):
+                item = data.get(key)
+                if isinstance(item, str) and item:
+                    return item
+        if isinstance(value, dict):
+            for key in ("text", "content", "message", "input_value", "value"):
+                item = value.get(key)
+                if isinstance(item, str) and item:
+                    return item
+        return str(value)
+
     def build_context(self) -> Data:
         raw: dict[str, Any] = {}
         if self.event:
             raw = self.event.data if hasattr(self.event, "data") else dict(self.event)
-        message_text = getattr(self.message, "text", "") if self.message else ""
-        manual = self.manual_input or message_text or ""
+        message_text = self._message_text(self.message)
+        manual_text = self._message_text(self.manual_input)
+        manual = manual_text or message_text or ""
         json_payload: dict[str, Any] = {}
         if manual.strip().startswith("{"):
             try:

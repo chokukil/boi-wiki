@@ -477,6 +477,7 @@ def create_universal_agent_simulator_flow(
     data["edges"].extend(
         [
             create_edge(chat_input, nodes_by_name["context"], "message"),
+            create_edge(chat_input, nodes_by_name["context"], "manual_input"),
             create_edge(nodes_by_name["context"], nodes_by_name["universal_agent"], "work_context"),
             create_edge(nodes_by_name["context"], nodes_by_name["metadata"], "work_context"),
             create_edge(nodes_by_name["metadata"], nodes_by_name["policy"], "metadata"),
