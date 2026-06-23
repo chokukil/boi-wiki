@@ -121,6 +121,12 @@
     };
     let text = String(value || "")
       .replace(/`([^`]+)`/g, (_match, code) => stash(`<code>${escapeHtml(code)}</code>`))
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, url) => {
+        const src = String(url || "").trim();
+        return src
+          ? stash(`<img class="boi-agent-inline-image" src="${escapeAttr(src)}" alt="${escapeAttr(alt || "Markdown image")}" loading="lazy" decoding="async">`)
+          : "";
+      })
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, url) => {
         const href = String(url || "").trim();
         return href ? stash(`<a href="${escapeAttr(href)}">${escapeHtml(label)}</a>`) : escapeHtml(label);
@@ -319,15 +325,15 @@
 
   function artifactItems(message) {
     const markdownMermaid = mermaidSourcesFromMarkdown(message.text || "");
-    const skippedMarkdownMermaid = mermaidSourcesFromArtifacts(message);
+    const seenMermaidSources = new Set();
     return (message.artifacts || []).filter((artifact) => {
       if (!artifact || typeof artifact !== "object") return false;
-      if (
-        artifact.type === "mermaid"
-        && artifact.source
-        && markdownMermaid.has(normalizeMermaidSource(artifact.source))
-        && !skippedMarkdownMermaid.has(normalizeMermaidSource(artifact.source))
-      ) return false;
+      if (artifact.type === "mermaid" && artifact.source) {
+        const source = normalizeMermaidSource(artifact.source);
+        if (seenMermaidSources.has(source)) return false;
+        seenMermaidSources.add(source);
+        if (markdownMermaid.has(source)) return true;
+      }
       return true;
     });
   }
@@ -698,6 +704,9 @@
     root.querySelectorAll("[data-open-artifact]").forEach((button) => {
       button.addEventListener("click", () => openArtifact(button.dataset.openArtifact || ""));
     });
+    root.querySelectorAll(".boi-agent-answer img, .boi-agent-artifact img").forEach((image) => {
+      image.addEventListener("click", () => openImageArtifact(image));
+    });
     root.querySelectorAll("[data-agent-approve]").forEach((button) => {
       button.addEventListener("click", () => {
         let payload = {};
@@ -759,6 +768,17 @@
     state.viewer = {
       title: clone.querySelector("strong")?.textContent || "Artifact",
       html: clone.outerHTML,
+    };
+    render();
+  }
+
+  function openImageArtifact(image) {
+    const src = image.getAttribute("src") || "";
+    if (!src) return;
+    const alt = image.getAttribute("alt") || "Image";
+    state.viewer = {
+      title: alt,
+      html: `<figure class="boi-agent-image-viewer"><img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"></figure>`,
     };
     render();
   }

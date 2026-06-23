@@ -741,6 +741,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
 
     response = client.get("/?employee_id=100001")
     script = (boi_app_module.APP_DIR / "static" / "pet_agent.js").read_text(encoding="utf-8")
+    style = (boi_app_module.APP_DIR / "static" / "style.css").read_text(encoding="utf-8")
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' in response.text
@@ -756,6 +757,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
     assert "isLikelyTableStart" in script
+    assert "boi-agent-inline-image" in script
+    assert "openImageArtifact" in script
+    assert "seenMermaidSources" in script
     assert 'artifact.type === "workflow_summary"' in script
     assert "renderObjectTable(rows)" in script
     assert "JSON.stringify(artifact.data, null, 2)" not in script
@@ -773,6 +777,10 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-dictionary-form" not in script
     assert "event.shiftKey" in script
     assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
+    assert "width:min(640px" in style
+    assert "width:min(1080px" in style
+    assert ".boi-agent-inline-image" in style
+    assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
 
 
 def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, monkeypatch):
