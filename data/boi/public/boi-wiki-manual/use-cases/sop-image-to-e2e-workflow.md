@@ -172,7 +172,7 @@ Observed simulator actions:
 
 # Human + AI Collaboration Rule
 
-사람이 실제로 해야 하는 단계는 agent가 몰래 완료 처리하지 않는다. workflow는 `manual_required`로 멈추고, 담당자가 완료했음을 알리는 event가 발행되어야 다음 stage로 간다. 이번 smoke에서는 end-to-end 검증을 위해 harness가 `manual.direct_development.decide_cross_section`을 dry-run으로 기록한 뒤, 별도 `direct_development.cross_section.requested.v1` completion event를 명시적으로 발행했다.
+사람이 실제로 해야 하는 단계는 agent가 몰래 완료 처리하지 않는다. workflow는 `manual_required`로 멈추고, 담당자가 완료했음을 알리는 event가 발행되어야 다음 stage로 간다. 이번 smoke에서는 end-to-end 검증을 위해 harness가 `manual.direct_development.decide_cross_section`을 사전 확인 기록으로 남긴 뒤, 별도 `direct_development.cross_section.requested.v1` completion event를 명시적으로 발행했다.
 
 협의체 공유는 더 강한 경계가 필요하다. preview는 `SIMULATED`로 생성하지만 실제 메신저 공유 action은 `approval_required`로 남긴다.
 

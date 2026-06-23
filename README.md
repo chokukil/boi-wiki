@@ -363,7 +363,7 @@ PoC 요소는 다음 기업 내부 서비스로 교체합니다.
 | development key | Secret Manager |
 | `BOI_AUTH_MODE=dev` | Keycloak SSO + HCP permission API |
 | MCP bridge/server | 내부 MCP bridge/server와 승인된 MCP endpoint |
-| dry-run high-risk action | 사람 승인과 change-management workflow |
+| high-risk action 사전 확인 | 사람 승인과 change-management workflow |
 
 ## 보안 기본값
 

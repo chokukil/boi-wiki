@@ -53,7 +53,7 @@ flowchart TD
 
 | Developer term | User-facing wording |
 |---|---|
-| dry-run | 먼저 확인 |
+| simulation / preview-only run | 먼저 확인 |
 | invoke | 요청 실행 |
 | approval_required | 승인 필요 |
 | manual_required | 조치 내용 입력 필요 |

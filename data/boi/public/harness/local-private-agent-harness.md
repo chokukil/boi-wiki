@@ -45,7 +45,7 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 - Event 발생 시 SOP stage, action, manual handoff 계획
 - API/Webhook/MCP/Langflow/Manual action spec 초안 작성
 - 업무 단위 agent context pack 작성
-- Event payload 기반 workflow dry-run
+- Event payload 기반 workflow 사전 확인 시뮬레이션
 - BoI 연계 Langflow workflow 설계 초안
 
 원격 `boi-wiki-mcp`가 연결되어 있으면 shared SOP, Event Type, Action Spec, Workflow Status 조회에 사용한다. `source_apply`, `doc_body_apply`, `promotion_submit`, `action_invoke` 같은 원격 쓰기/실행 tool은 사용자 명시 승인 후에만 사용한다.

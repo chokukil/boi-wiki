@@ -57,6 +57,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `/api/agents/boi-wiki/capabilities` | `boi_agent_backend=native`, `build_revision` present |
 | `/api/search/ontology?q=SOP&view=compact` | grouped compact result |
 | Pet Agent diagram question | Mermaid artifact returned by native backend |
+| Pet Agent workflow summary question | Markdown answer and workflow artifact render as HTML tables |
 | Inbox tab | 업무 카드가 일반 구성원 문구로 표시 |
 | MCP `boi_agent_chat` | same Native Agent API path |
 

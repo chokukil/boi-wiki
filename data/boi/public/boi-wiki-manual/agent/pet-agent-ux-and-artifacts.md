@@ -52,6 +52,27 @@ flowchart TD
   INLINE --> VIEWER["click to large viewer"]
 ```
 
+# Markdown Rendering Contract
+
+Pet Agent는 서버가 내려준 `answer_markdown`을 그대로 원문 텍스트로 노출하지 않는다. 다음 문법은 채팅 안에서 HTML로 렌더링되어야 한다.
+
+| Markdown input | Rendered behavior |
+|---|---|
+| heading, paragraph | 읽기 쉬운 section과 문단 |
+| `-`, `*`, `+` list | bullet list |
+| `1.` list | ordered list |
+| `- [ ]`, `- [x]` | disabled checklist |
+| table | `.boi-agent-table-wrap` 안의 HTML table |
+| inline code, link, bold, italic, strike | inline semantic HTML |
+| bare `http://` or `https://` URL | clickable link |
+| `mermaid` fenced block | Mermaid diagram with source fallback |
+
+`workflow_summary`와 `gap_table` artifact는 JSON `<pre>`가 아니라 table artifact로 보여준다. 객체나 배열 cell은 표 안에서 list 또는 compact JSON block으로 정리하되, 일반 workflow 요약은 사람이 바로 읽는 표가 기본이다.
+
+# Artifact Viewer
+
+Artifact는 채팅 안에서는 compact하게 보이고, `크게 보기`를 누르면 modal viewer에서 크게 확인한다. Viewer 대상은 Mermaid, table, image, task card, confirmation card다. Mermaid는 Markdown fenced block과 artifact가 같은 source를 포함하면 하나만 렌더링한다.
+
 # Inbox Display
 
 Inbox는 기술 ID보다 일반 사용자가 이해할 업무 문구를 우선한다.
