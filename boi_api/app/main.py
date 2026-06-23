@@ -6268,7 +6268,10 @@ def link_items_from_agent_context(page_context: dict[str, Any], employee_id: str
 def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_limit: int = 5) -> dict[str, Any]:
     page_context = resolve_agent_page_context(req.current_url, employee_id)
     ontology_seed: dict[str, Any] = {}
-    if req.question.strip():
+    intent = normalize_agent_intent(str(req.intent or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    page_first_intents = {"diagram", "workflow_explain", "gap_check", "page_qa", "summarize"}
+    should_seed_search = bool(req.question.strip()) and not (page_context.get("resolved") and intent in page_first_intents)
+    if should_seed_search:
         ontology_seed = ontology_search_payload(req.question, employee_id, scope="all", limit=search_limit, current_url=req.current_url, view="compact")
     return {
         "question": req.question,
