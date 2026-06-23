@@ -650,6 +650,16 @@ def is_table_separator(line: str) -> bool:
     return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells)
 
 
+def is_table_start(lines: list[str], index: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    current = lines[index].strip()
+    separator = lines[index + 1].strip()
+    if "|" not in current or "|" not in separator:
+        return False
+    return len(table_cells(current)) >= 2 and is_table_separator(separator)
+
+
 def render_table(
     lines: list[str],
     employee_id: str | None = None,
@@ -812,11 +822,14 @@ def render_markdown(
             flush_list()
             flush_table()
             ordered_items.append(re.sub(r"^\s*\d+\.\s+", "", line).strip())
-        elif stripped.startswith("|") and stripped.endswith("|"):
+        elif is_table_start(lines, index):
             flush_paragraph()
             flush_list()
             flush_ordered_list()
-            table_lines.append(stripped)
+            while index < len(lines) and "|" in lines[index] and lines[index].strip():
+                table_lines.append(lines[index].strip())
+                index += 1
+            index -= 1
         elif re.fullmatch(r"!\[[^\]]*\]\([^)]+\)", stripped):
             flush_paragraph()
             flush_list()
