@@ -200,13 +200,13 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-launcher strong { position:absolute; right:72px; top:-7px; z-index:2; display:inline-flex; align-items:center; justify-content:center; min-width:23px; height:23px; border:2px solid #fff; border-radius:999px; background:#ef4444; color:#fff; font-size:12px; box-shadow:0 4px 10px rgba(239,68,68,.25); }
 .boi-agent-pet { display:block; width:88px; height:auto; align-self:end; justify-self:end; filter:drop-shadow(0 12px 16px rgba(15,23,42,.28)); transform:translateY(3px); pointer-events:none; }
 .boi-agent-pet.small { width:48px; transform:none; filter:drop-shadow(0 5px 9px rgba(15,23,42,.24)); }
-.boi-agent-panel { position:fixed; right:var(--boi-agent-right, 20px); bottom:calc(var(--boi-agent-bottom, 18px) + 80px); z-index:999; display:none; width:min(640px, calc(100vw - 32px)); max-height:min(760px, calc(100vh - 112px)); overflow:hidden; border:1px solid #cbd5e1; border-radius:14px; background:#fff; box-shadow:0 24px 60px rgba(15,23,42,.28); }
+.boi-agent-panel { position:fixed; right:var(--boi-agent-right, 20px); bottom:calc(var(--boi-agent-bottom, 18px) + 80px); z-index:999; display:none; width:min(760px, calc(100vw - 32px)); max-height:min(760px, calc(100vh - 112px)); overflow:hidden; border:1px solid #cbd5e1; border-radius:14px; background:#fff; box-shadow:0 24px 60px rgba(15,23,42,.28); }
 .boi-agent-panel.open { display:flex; flex-direction:column; }
 .boi-agent-panel.expanded { width:min(1080px, calc(100vw - 44px)); max-height:calc(100vh - 92px); }
 .boi-agent-panel > header { display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:12px; padding:13px 15px; background:linear-gradient(135deg,#0f172a 0%,#164e63 100%); color:#fff; }
 .boi-agent-header-main { display:flex; align-items:center; min-width:0; gap:10px; }
 .boi-agent-panel h2 { margin:0; font-size:18px; }
-.boi-agent-panel header p { margin:4px 0 0; max-width:290px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#dbeafe; font-size:12px; }
+.boi-agent-panel header p { margin:4px 0 0; max-width:390px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#dbeafe; font-size:12px; }
 .boi-agent-window-actions { display:flex; align-items:center; gap:6px; }
 .boi-agent-window-actions button { min-height:32px; padding:4px 9px; border:1px solid rgba(255,255,255,.25); border-radius:999px; background:rgba(255,255,255,.08); color:#fff; font-size:12px; font-weight:800; }
 .boi-agent-window-actions .boi-agent-close { min-width:32px; padding:0; font-size:22px; line-height:1; }

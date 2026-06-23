@@ -967,6 +967,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "/static/mermaid_render.js?v=" in response.text
     assert "/static/pet_agent.js?v=" in response.text
     assert "sessionStorage" in script
+    assert "boiAgent.v4" in script
     assert "Agent" in script
     assert "Inbox" in script
     assert "boi-agent-meta" in script
@@ -1003,7 +1004,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-dictionary-form" not in script
     assert "event.shiftKey" in script
     assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
-    assert "width:min(640px" in style
+    assert "width:min(760px" in style
     assert "width:min(1080px" in style
     assert ".boi-agent-inline-image" in style
     assert ".boi-agent-message > .boi-agent-message-author" in style

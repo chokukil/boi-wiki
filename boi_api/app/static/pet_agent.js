@@ -5,7 +5,7 @@
 
   const employeeId = root.dataset.employeeId || new URLSearchParams(location.search).get("employee_id") || "100001";
   const pageTitle = root.dataset.pageTitle || document.title || "BoI Wiki";
-  const storageKey = `boiAgent.v3.${employeeId}`;
+  const storageKey = `boiAgent.v4.${employeeId}`;
   let activeRequest = null;
   let restoreScrollOnce = true;
 
