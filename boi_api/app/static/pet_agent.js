@@ -74,13 +74,77 @@
       .replace(/"/g, "&quot;");
   }
 
-  function renderMarkdownLite(value) {
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/'/g, "&#39;");
+  }
+
+  function renderInlineMarkdown(value) {
     return escapeHtml(value)
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_match, label, url) => `<a href="${escapeAttr(url)}">${escapeHtml(label)}</a>`)
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+
+  function renderTextMarkdown(value) {
+    const escaped = renderInlineMarkdown(value);
+    return escaped
       .replace(/^- (.*)$/gm, "<li>$1</li>")
       .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
       .replace(/\n{2,}/g, "</p><p>")
       .replace(/\n/g, "<br>");
+  }
+
+  function renderMermaidBlock(source, title) {
+    const escapedSource = escapeHtml(source);
+    return `
+      <div class="mermaid-diagram boi-agent-artifact" data-mermaid-state="pending">
+        ${title ? `<strong>${escapeHtml(title)}</strong>` : ""}
+        <div class="mermaid">${escapedSource}</div>
+        <p class="mermaid-status">Rendering Mermaid diagram...</p>
+        <details class="mermaid-source-fallback">
+          <summary>Mermaid source</summary>
+          <pre><code>${escapedSource}</code></pre>
+        </details>
+      </div>`;
+  }
+
+  function renderMarkdownLite(value) {
+    const text = String(value || "");
+    const parts = [];
+    const fence = /```(\w+)?\s*\n([\s\S]*?)```/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = fence.exec(text))) {
+      if (match.index > lastIndex) parts.push(`<p>${renderTextMarkdown(text.slice(lastIndex, match.index).trim())}</p>`);
+      const lang = String(match[1] || "").toLowerCase();
+      const source = String(match[2] || "").trim();
+      if (lang === "mermaid") {
+        parts.push(renderMermaidBlock(source));
+      } else {
+        parts.push(`<pre><code>${escapeHtml(source)}</code></pre>`);
+      }
+      lastIndex = fence.lastIndex;
+    }
+    if (lastIndex < text.length) parts.push(`<p>${renderTextMarkdown(text.slice(lastIndex).trim())}</p>`);
+    return parts.filter(Boolean).join("");
+  }
+
+  function renderArtifacts(artifacts) {
+    if (!Array.isArray(artifacts) || !artifacts.length) return "";
+    return `<div class="boi-agent-artifacts">${artifacts.map((artifact) => {
+      if (!artifact || typeof artifact !== "object") return "";
+      if (artifact.type === "mermaid" && artifact.source) return renderMermaidBlock(artifact.source, artifact.title || "Diagram");
+      if (artifact.type === "gap_table" && Array.isArray(artifact.data)) {
+        return `<div class="boi-agent-artifact"><strong>Gap Check</strong><table><tbody>${artifact.data.map((row) => `<tr>${Object.values(row || {}).map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      }
+      if (artifact.type === "workflow_summary" && artifact.data) {
+        return `<div class="boi-agent-artifact"><strong>Workflow Summary</strong><pre>${escapeHtml(JSON.stringify(artifact.data, null, 2))}</pre></div>`;
+      }
+      if (artifact.type === "task_cards" && Array.isArray(artifact.data)) {
+        return `<div class="boi-agent-artifact">${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
+      }
+      return "";
+    }).join("")}</div>`;
   }
 
   function renderLinks(links) {
@@ -94,6 +158,7 @@
   function renderMessageMeta(message) {
     const meta = message.meta || {};
     const chips = [];
+    if (meta.intent) chips.push(meta.intent);
     if (meta.route) chips.push(`Route: ${meta.route}`);
     if (meta.used_backend) chips.push(meta.used_backend === "langflow" ? "Langflow Agent" : meta.used_backend);
     if (meta.router_backend) chips.push(`Router: ${meta.router_backend}`);
@@ -113,7 +178,8 @@
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
           <strong>${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
-          <p>${renderMarkdownLite(message.text || "")}</p>
+          <div class="boi-agent-answer">${renderMarkdownLite(message.text || "")}</div>
+          ${renderArtifacts(message.artifacts || [])}
           ${renderLinks(message.links || [])}
         </article>`)
       .join("")}</div>`;
@@ -149,6 +215,7 @@
       </section>
     `;
     bind();
+    root.dispatchEvent(new CustomEvent("boi:markdown-rendered", { bubbles: true }));
   }
 
   function renderTab() {
@@ -157,19 +224,24 @@
       return `<div class="boi-agent-list">${state.inbox
         .map((item) => {
           const isManual = ["manual_required", "manual_blocked", "needs_followup"].includes(item.status || "");
+          const display = item.display || {};
           return `
           <article class="boi-agent-task">
-            <strong>${escapeHtml(item.action_key || item.status)}</strong>
-            <p>${escapeHtml(item.summary || item.status)}</p>
-            <dl>
-              ${item.status ? `<div><dt>상태</dt><dd>${escapeHtml(item.status)}</dd></div>` : ""}
-              ${item.request_id ? `<div><dt>요청</dt><dd>${escapeHtml(item.request_id)}</dd></div>` : ""}
-              ${item.trace_id ? `<div><dt>Trace</dt><dd>${escapeHtml(item.trace_id)}</dd></div>` : ""}
-            </dl>
+            ${renderTaskDisplay(display, item)}
             <div class="boi-agent-links">
-              ${item.workflow_url ? `<a href="${escapeHtml(item.workflow_url)}">Workflow</a>` : ""}
-              ${item.raw_url ? `<a href="${escapeHtml(item.raw_url)}">Raw</a>` : ""}
+              ${display.primary_url ? `<a href="${escapeAttr(display.primary_url)}">${escapeHtml(display.primary_label || "업무 상태 보기")}</a>` : ""}
+              ${item.workflow_url ? `<a href="${escapeAttr(item.workflow_url)}">Workflow</a>` : ""}
+              ${item.raw_url ? `<a href="${escapeAttr(item.raw_url)}">Raw</a>` : ""}
             </div>
+            <details class="boi-agent-technical">
+              <summary>기술 세부정보</summary>
+              <dl>
+                ${item.status ? `<div><dt>상태</dt><dd>${escapeHtml(item.status)}</dd></div>` : ""}
+                ${item.action_key ? `<div><dt>Action</dt><dd>${escapeHtml(item.action_key)}</dd></div>` : ""}
+                ${item.request_id ? `<div><dt>요청</dt><dd>${escapeHtml(item.request_id)}</dd></div>` : ""}
+                ${item.trace_id ? `<div><dt>Trace</dt><dd>${escapeHtml(item.trace_id)}</dd></div>` : ""}
+              </dl>
+            </details>
             ${isManual ? `
               <form class="boi-agent-handoff-form" data-task-id="${escapeHtml(item.task_id || "")}">
                 <label>
@@ -205,6 +277,21 @@
       </form>
       <p class="boi-agent-hint">Enter로 전송, Shift+Enter로 줄바꿈</p>
     `;
+  }
+
+  function renderTaskDisplay(display, rawItem) {
+    const item = display || {};
+    const fallback = rawItem || {};
+    return `
+      <div class="boi-agent-task-display">
+        <div class="boi-agent-task-title">
+          <strong>${escapeHtml(item.title || fallback.action_key || "업무 확인")}</strong>
+          <span>${escapeHtml(item.status_label || fallback.status || "확인 필요")}</span>
+        </div>
+        ${item.risk_label ? `<small>${escapeHtml(item.risk_label)}</small>` : ""}
+        <p>${escapeHtml(item.why_it_matters || fallback.summary || "")}</p>
+        ${item.next_action ? `<p class="boi-agent-next-action">${escapeHtml(item.next_action)}</p>` : ""}
+      </div>`;
   }
 
   function bind() {
@@ -275,8 +362,18 @@
     render();
   }
 
+  function requestModeForQuestion(question) {
+    const q = String(question || "").toLowerCase();
+    if (/(mermaid|머메이드|flowchart|다이어그램|도식|프로세스 플로우|그려)/.test(q)) return { mode: "deep", intent: "diagram" };
+    if (/(부족|누락|gap|갭|action spec|명세|완성도)/.test(q)) return { mode: "deep", intent: "gap_check" };
+    if (/(event|이벤트|action|액션|manual handoff|핸드오프|관계|흐름|발생하면|뭘 해야)/.test(q)) return { mode: "deep", intent: "workflow_explain" };
+    if (/(trace|트레이스|workflow status|로그|왜|원인|리스크|시뮬레이션|추론|판단)/.test(q)) return { mode: "deep", intent: "trace_reasoning" };
+    return { mode: "auto", intent: "" };
+  }
+
   function ask(question) {
     if (!question.trim()) return;
+    const routeHint = requestModeForQuestion(question);
     state.draft = "";
     state.messages.push({ role: "user", text: question });
     const pendingIndex = state.messages.push({ role: "assistant", text: "확인 중입니다..." }) - 1;
@@ -287,6 +384,8 @@
       method: "POST",
       body: JSON.stringify({
         question,
+        mode: routeHint.mode,
+        intent: routeHint.intent,
         selected_text: selectedText(),
         current_url: currentUrl(),
         page_context: { title: pageTitle },
@@ -299,10 +398,12 @@
         links: body.links || [],
         meta: {
           route: body.route,
+          intent: body.intent || body.context_summary?.intent,
           used_backend: body.used_backend,
           router_backend: body.router_backend,
           latency_ms: body.latency_ms,
         },
+        artifacts: body.artifacts || [],
       };
       if (body.suggested_questions) state.suggestions = body.suggested_questions;
       render();

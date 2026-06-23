@@ -17,13 +17,14 @@ BOI_AGENT_FLOW_NAME = "BoI Agent Flow"
 DEFAULT_BOI_AGENT_ENDPOINT_NAME = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
 DEFAULT_BOI_AGENT_LLM_MODEL = os.getenv("BOI_AGENT_LLM_MODEL") or os.getenv("BOI_LLM_MODEL") or "google/gemma-4-26b-a4b-qat"
 BOI_AGENT_ALLOWED_TOOLS = [
-    "boi_answer",
     "ontology_search",
     "boi_get",
+    "action_spec_lookup",
     "workflow_status",
     "agent_inbox",
     "manual_handoff_complete",
-    "agent_memory_search",
+    "memory_recall",
+    "boi_answer",
 ]
 BOI_COMPONENT_KEYS = {
     "harness": "ext:boi:BoIHarnessLoader@extra",
@@ -584,16 +585,23 @@ def create_boi_agent_flow(
         display_name="BoI Agent",
         values={
             "system_prompt": (
-                "You are BoI Agent, a concise BoI Wiki assistant. Always use BoI Wiki tools instead of guessing. "
-                "For ordinary chat/search questions, call boi_answer first. boi_answer returns the final answer directly; do not call more tools after it. "
-                "Use ontology_search only when boi_answer is insufficient. "
-                "Use boi_get only when the user asks about a specific BoI/document. Use workflow_status only for trace/workflow questions. "
-                "Never call the page-aware chat endpoint because that would recurse. Allowed tools: "
-                f"{allowed_tool_names}. Final answers must be concise Markdown, not JSON."
+                "You are BoI Agent, a page-aware BoI Wiki work assistant. Use tools to search, inspect relations, "
+                "and build useful artifacts; do not guess from memory. The input is JSON with question, intent, "
+                "current_url, page_context_pack, ontology_search_seed, employee_id, and conversation. "
+                "For intent=diagram, workflow_explain, gap_check, or trace_reasoning, use ontology_search plus "
+                "boi_get/action_spec_lookup/workflow_status as needed before answering. For simple search/page_qa, "
+                "ontology_search may be enough; boi_answer is only a fallback compact answer tool, not the normal first step. "
+                "Never call boi_agent_chat because that would recurse. Allowed tools: "
+                f"{allowed_tool_names}. Return exactly one JSON object with answer_markdown, links, citations, "
+                "suggested_questions, artifacts, and context_summary. Mermaid diagrams must appear in artifacts as "
+                '{"type":"mermaid","source":"flowchart TD\\n..."} and also as a ```mermaid code block in answer_markdown.'
             ),
             "instructions": (
-                "Use at most one BoI tool for ordinary questions. Prefer one boi_answer call, then stop. "
-                "agent_inbox is only for assigned actions. manual_handoff_complete is only when the user explicitly asked to complete a handoff."
+                "Use bounded tool-loop reasoning: plan, call the minimum useful tools, evaluate gaps, then answer. "
+                "For gap checks, cite missing action specs/event types/SOP stages explicitly. "
+                "For inbox, use agent_inbox and explain tasks in user-friendly language. "
+                "manual_handoff_complete is only when the user explicitly asked to complete a handoff and confirmation is present. "
+                "Do not output plain prose; output the JSON contract."
             ),
             "max_iterations": 4,
             "max_tokens": 500,

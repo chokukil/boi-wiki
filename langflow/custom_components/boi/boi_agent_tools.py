@@ -31,6 +31,11 @@ class BoiGetArgs(BaseModel):
     employee_id: str = Field("100001", description="Employee ID used for ACL.")
 
 
+class ActionSpecLookupArgs(BaseModel):
+    action_key: str = Field(..., description="Action key to look up.")
+    employee_id: str = Field("100001", description="Employee ID used for ACL.")
+
+
 class WorkflowStatusArgs(BaseModel):
     workflow_key: str = Field(..., description="Workflow key from SOP metadata.")
     trace_id: str = Field(..., description="Trace ID.")
@@ -167,6 +172,20 @@ class BoIAgentTools(LCToolComponent):
     def _boi_get(self, boi_id: str, employee_id: str = "100001") -> str:
         return self._request("GET", f"/api/docs/{urllib.parse.quote(boi_id, safe='')}/metadata-fragment", params={"employee_id": employee_id})
 
+    def _action_spec_lookup(self, action_key: str, employee_id: str = "100001") -> str:
+        raw = self._request("GET", "/api/actions/catalog", params={"employee_id": employee_id})
+        try:
+            payload = json.loads(raw)
+            items = payload.get("items") if isinstance(payload, dict) else []
+            for item in items or []:
+                if str(item.get("action_key") or "") == action_key:
+                    doc_ref = str(item.get("doc_ref") or "")
+                    doc = self._boi_get(doc_ref, employee_id) if doc_ref else ""
+                    return json.dumps({"ok": True, "item": item, "doc_ref": doc_ref, "doc": doc}, ensure_ascii=False)
+            return json.dumps({"ok": False, "status": "not_found", "action_key": action_key}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": repr(exc), "raw": raw[:1200]}, ensure_ascii=False)
+
     def _workflow_status(self, workflow_key: str, trace_id: str, employee_id: str = "100001") -> str:
         return self._request("GET", f"/api/workflows/{workflow_key}/status", params={"employee_id": employee_id, "trace_id": trace_id, "format": "json"})
 
@@ -203,6 +222,7 @@ class BoIAgentTools(LCToolComponent):
             self.boi_answer_tool(),
             self.ontology_search_tool(),
             self.boi_get_tool(),
+            self.action_spec_lookup_tool(),
             self.workflow_status_tool(),
             self.agent_inbox_tool(),
             self.manual_handoff_complete_tool(),
@@ -212,10 +232,10 @@ class BoIAgentTools(LCToolComponent):
     def boi_answer_tool(self) -> Tool:
         return StructuredTool.from_function(
             name="boi_answer",
-            description="Answer ordinary BoI Wiki questions by searching ontology and returning final JSON. Use this first for normal chat/search questions.",
+            description="Fallback: make a compact JSON answer from ontology search when deeper tool-loop reasoning is unnecessary.",
             func=self._boi_answer,
             args_schema=BoiAnswerArgs,
-            return_direct=True,
+            return_direct=False,
         )
 
     def ontology_search_tool(self) -> Tool:
@@ -232,6 +252,14 @@ class BoIAgentTools(LCToolComponent):
             description="Read a specific BoI document metadata/body fragment by BoI ID or OKF path.",
             func=self._boi_get,
             args_schema=BoiGetArgs,
+        )
+
+    def action_spec_lookup_tool(self) -> Tool:
+        return StructuredTool.from_function(
+            name="action_spec_lookup",
+            description="Look up an Action catalog entry and its BoI Action Spec document by action_key.",
+            func=self._action_spec_lookup,
+            args_schema=ActionSpecLookupArgs,
         )
 
     def workflow_status_tool(self) -> Tool:

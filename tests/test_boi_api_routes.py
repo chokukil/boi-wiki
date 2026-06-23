@@ -250,6 +250,58 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     assert "설비" in body["answer_markdown"]
 
 
+def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    calls: list[dict[str, object]] = []
+
+    def fake_router(req, employee_id: str):
+        return {
+            "route": "fast",
+            "confidence": 0.95,
+            "intent": "search",
+            "reason": "router guessed search",
+            "requires_mutation": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    def fake_langflow(req, employee_id: str, route=None, started_at=None):
+        calls.append({"req": req, "route": route})
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "answer_markdown": "```mermaid\nflowchart TD\n  a[Start] --> b[Action]\n```",
+            "links": [],
+            "citations": [],
+            "suggested_questions": [],
+            "artifacts": [{"type": "mermaid", "source": "flowchart TD\n  a[Start] --> b[Action]"}],
+            "context_summary": {"langflow_flow": "boi-agent", "intent": "diagram"},
+            "route": "deep",
+            "intent": "diagram",
+            "router_backend": "llm",
+            "used_backend": "langflow",
+        }
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_langflow)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "deep"
+    assert body["intent"] == "diagram"
+    assert body["used_backend"] == "langflow"
+    assert calls
+    assert calls[0]["route"]["intent"] == "diagram"
+
+
 def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
     payload = boi_app_module.parse_router_payload(
         'thinking about policy {"allowed_routes":["fast"]} final {"route":"fast","confidence":0.92,"intent":"lookup"}'
@@ -505,6 +557,10 @@ def test_agent_inbox_and_manual_handoff_completion_are_append_only(boi_app_modul
 
     assert inbox.status_code == 200
     assert any(item["request_id"] == "act-manual-required-test" for item in inbox.json()["items"])
+    target = next(item for item in inbox.json()["items"] if item["request_id"] == "act-manual-required-test")
+    assert target["display"]["status_label"] == "조치 필요"
+    assert "조치" in target["display"]["next_action"]
+    assert target["display"]["primary_url"]
     assert complete.status_code == 200
     assert complete.json()["item"]["completion_for_request_id"] == "act-manual-required-test"
     assert not any(item["request_id"] == "act-manual-required-test" for item in inbox_after.json()["items"])
@@ -523,8 +579,12 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "Agent" in script
     assert "Inbox" in script
     assert "boi-agent-meta" in script
+    assert "renderArtifacts" in script
+    assert "mermaid-diagram" in script
+    assert "requestModeForQuestion" in script
     assert "selected_text" in script
     assert "boi-agent-handoff-form" in script
+    assert "기술 세부정보" in script
     assert "boi-agent-memory-form" not in script
     assert "boi-agent-dictionary-form" not in script
     assert "event.shiftKey" in script

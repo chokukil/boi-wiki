@@ -2462,6 +2462,20 @@ def ontology_search_payload(
             }
         )
 
+    citations: list[dict[str, Any]] = []
+    seen_citation_keys: set[str] = set()
+    for item in best_matches[:effective_limit]:
+        label = str(item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or item.get("uri") or "")
+        ref = str(item.get("boi_id") or item.get("doc_ref") or item.get("event_type") or item.get("action_key") or item.get("term") or "")
+        url = str(item.get("url") or "")
+        key = url or ref or label
+        if not key or key in seen_citation_keys:
+            continue
+        seen_citation_keys.add(key)
+        citations.append({"label": label or ref, "ref": ref, "url": url, "kind": item.get("kind") or ""})
+        if len(citations) >= 5:
+            break
+
     return {
         "ok": True,
         "query": query,
@@ -2479,6 +2493,7 @@ def ontology_search_payload(
         "groups": groups,
         "best_matches": best_matches[:effective_limit],
         "graph_paths": graph_paths,
+        "citations": citations,
         "document_rank_refs": [str(item.get("boi_id") or item.get("uri") or "") for item in doc_items],
     }
 
@@ -4319,6 +4334,7 @@ class SimulationAgentRequest(BaseModel):
 class BoiAgentChatRequest(BaseModel):
     question: str
     mode: Literal["auto", "fast", "deep"] = "auto"
+    intent: str = ""
     current_url: str = ""
     selected_text: str = ""
     page_context: dict[str, Any] = Field(default_factory=dict)
@@ -5216,11 +5232,39 @@ class BoiAgentRouterUnavailable(RuntimeError):
 
 
 ALLOWED_AGENT_ROUTES = {"fast", "deep", "inbox", "manual_handoff", "approval_required"}
+ALLOWED_AGENT_INTENTS = {
+    "search",
+    "page_qa",
+    "summarize",
+    "diagram",
+    "workflow_explain",
+    "gap_check",
+    "trace_reasoning",
+    "inbox",
+    "manual_complete",
+    "approval",
+}
+DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
 
 
 def normalize_agent_route(value: str) -> str:
     route = str(value or "").strip().lower().replace("-", "_")
     return route if route in ALLOWED_AGENT_ROUTES else "fast"
+
+
+def normalize_agent_intent(value: str, *, fallback: str = "search") -> str:
+    intent = str(value or "").strip().lower().replace("-", "_")
+    aliases = {
+        "lookup": "search",
+        "page_summary": "summarize",
+        "reasoning": "trace_reasoning",
+        "manual_handoff": "manual_complete",
+        "approval_required": "approval",
+        "forced_fast": fallback,
+        "forced_deep": fallback if fallback in DEEP_AGENT_INTENTS else "trace_reasoning",
+    }
+    intent = aliases.get(intent, intent)
+    return intent if intent in ALLOWED_AGENT_INTENTS else fallback
 
 
 def safety_route_override(question: str) -> str | None:
@@ -5234,22 +5278,43 @@ def safety_route_override(question: str) -> str | None:
     return None
 
 
+def deterministic_agent_intent(question: str, current_url: str = "") -> str:
+    q = str(question or "").lower()
+    if safety := safety_route_override(q):
+        return "manual_complete" if safety == "manual_handoff" else "approval"
+    if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
+        return "inbox"
+    if any(term in q for term in ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")):
+        return "diagram"
+    if any(term in q for term in ("부족", "누락", "없는지", "없나", "gap", "갭", "action spec", "액션 spec", "명세", "완성도")):
+        return "gap_check"
+    if any(term in q for term in ("trace", "트레이스", "workflow status", "로그", "왜", "원인", "리스크", "시뮬레이션", "추론", "판단")):
+        return "trace_reasoning"
+    if any(term in q for term in ("event", "이벤트", "action", "액션", "manual handoff", "handoff", "핸드오프", "관계", "흐름", "발생하면", "뭘 해야", "어떻게 해야", "이어지는")):
+        return "workflow_explain"
+    if any(term in q for term in ("요약", "정리", "summary", "summarize")):
+        return "summarize"
+    if any(term in q for term in ("찾", "검색", "링크", "목록", "어디", "보여")):
+        return "search"
+    return "page_qa" if current_url else "search"
+
+
+def route_for_agent_intent(intent: str) -> str:
+    if intent in DEEP_AGENT_INTENTS:
+        return "deep"
+    if intent == "inbox":
+        return "inbox"
+    if intent == "manual_complete":
+        return "manual_handoff"
+    if intent == "approval":
+        return "approval_required"
+    return "fast"
+
+
 def rule_agent_route(req: BoiAgentChatRequest, reason: str = "rules") -> dict[str, Any]:
     q = str(req.question or "").lower()
-    route = "fast"
-    intent = "search"
-    if safety := safety_route_override(q):
-        route = safety
-        intent = safety
-    elif any(term in q for term in ("내 action", "내 액션", "할 일", "처리해야", "inbox", "대기", "남았")):
-        route = "inbox"
-        intent = "inbox"
-    elif any(term in q for term in ("판단", "원인", "왜", "리스크", "시뮬레이션", "분석", "추론", "비교", "설계", "해야", "workflow로", "워크플로우로")):
-        route = "deep"
-        intent = "reasoning"
-    elif any(term in q for term in ("찾", "검색", "보여", "요약", "링크", "mermaid", "머메이드", "목록")):
-        route = "fast"
-        intent = "lookup"
+    intent = normalize_agent_intent(req.intent, fallback=deterministic_agent_intent(q, req.current_url)) if req.intent else deterministic_agent_intent(q, req.current_url)
+    route = route_for_agent_intent(intent)
     return {
         "route": route,
         "confidence": 0.78 if route == "fast" else 0.82,
@@ -5266,12 +5331,25 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
         {
             "task": "Route this BoI Agent request. Return JSON only.",
             "allowed_routes": sorted(ALLOWED_AGENT_ROUTES),
+            "allowed_intents": sorted(ALLOWED_AGENT_INTENTS),
             "route_policy": {
-                "fast": "search, list, link, summarize, current page explanation, deterministic transformation",
-                "deep": "multi-hop reasoning, risk/decision, root-cause analysis, simulation, workflow/action design",
+                "fast": "search, page_qa, summarize only. Use current page context and ontology search.",
+                "deep": "diagram, workflow_explain, gap_check, trace_reasoning, multi-hop reasoning, artifact generation",
                 "inbox": "ask what actions/manual handoffs are pending for the employee",
                 "manual_handoff": "request to complete or record a manual handoff",
                 "approval_required": "request to approve, execute, publish, edit, or mutate shared/runtime state",
+            },
+            "intent_policy": {
+                "search": "find documents, SOPs, actions, events, dictionary terms",
+                "page_qa": "answer a question about the current page",
+                "summarize": "summarize current page or search results",
+                "diagram": "produce Mermaid or visual workflow artifacts",
+                "workflow_explain": "explain Event -> SOP -> Action -> Manual Handoff -> BoI flow",
+                "gap_check": "find missing Action Specs, Event Types, evidence, or workflow gaps",
+                "trace_reasoning": "reason over trace/workflow/action evidence",
+                "inbox": "show assigned work",
+                "manual_complete": "complete a manual handoff",
+                "approval": "approve, publish, invoke, edit, deploy, or mutate state",
             },
             "employee_id": employee_id,
             "question": req.question,
@@ -5282,7 +5360,7 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
             "required_json_schema": {
                 "route": "fast|deep|inbox|manual_handoff|approval_required",
                 "confidence": "0.0-1.0",
-                "intent": "short intent label",
+                "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval",
                 "reason": "short Korean or English reason",
                 "requires_mutation": "boolean",
                 "requires_langflow": "boolean",
@@ -5357,35 +5435,59 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
         confidence = 0.0
     if confidence < BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD:
         raise BoiAgentRouterUnavailable("LLM router confidence is below threshold")
+    intent = normalize_agent_intent(str(parsed.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    if intent in DEEP_AGENT_INTENTS and route != "deep":
+        route = "deep"
+    elif intent == "inbox":
+        route = "inbox"
+    elif intent == "manual_complete":
+        route = "manual_handoff"
+    elif intent == "approval":
+        route = "approval_required"
     return {
         "route": route,
         "confidence": confidence,
-        "intent": str(parsed.get("intent") or route),
+        "intent": intent,
         "reason": str(parsed.get("reason") or "llm_router"),
-        "requires_mutation": bool(parsed.get("requires_mutation")),
+        "requires_mutation": bool(parsed.get("requires_mutation") or route in {"manual_handoff", "approval_required"}),
         "requires_langflow": bool(parsed.get("requires_langflow") or route == "deep"),
         "router_backend": "llm",
     }
 
 
 def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    deterministic_intent = deterministic_agent_intent(req.question, req.current_url)
     if req.mode == "fast":
         route = rule_agent_route(req, reason="mode=fast")
-        route.update({"route": "fast", "confidence": 1.0, "intent": "forced_fast"})
+        intent = normalize_agent_intent(req.intent, fallback=deterministic_intent) if req.intent else deterministic_intent
+        # Explicit fast mode can keep simple Q&A fast, but safety and mutation intents still override below.
+        route.update({"route": "fast", "confidence": 1.0, "intent": intent})
     elif req.mode == "deep":
         route = rule_agent_route(req, reason="mode=deep")
-        route.update({"route": "deep", "confidence": 1.0, "intent": "forced_deep", "requires_langflow": True})
+        intent = normalize_agent_intent(req.intent, fallback=deterministic_intent)
+        route.update({"route": "deep", "confidence": 1.0, "intent": intent, "requires_langflow": True})
     else:
         try:
             route = call_boi_agent_router_llm(req, employee_id)
         except BoiAgentRouterUnavailable as exc:
             route = rule_agent_route(req, reason=f"fallback: {exc}")
+    route["intent"] = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_intent)
+    # Rules are the safety net for obvious artifact/reasoning requests even when the LLM router says fast.
+    if deterministic_intent in DEEP_AGENT_INTENTS and route.get("route") != "deep":
+        route.update(
+            {
+                "route": "deep",
+                "intent": deterministic_intent,
+                "reason": f"intent override after {route.get('router_backend')}: {deterministic_intent}",
+                "requires_langflow": True,
+            }
+        )
     override = safety_route_override(req.question)
     if override and route.get("route") not in {"manual_handoff", "approval_required"}:
         route.update(
             {
                 "route": override,
-                "intent": override,
+                "intent": "manual_complete" if override == "manual_handoff" else "approval",
                 "reason": f"safety override after {route.get('router_backend')}",
                 "requires_mutation": True,
                 "requires_langflow": False,
@@ -5395,13 +5497,14 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
         route.update(
             {
                 "route": "approval_required",
-                "intent": "approval_required",
+                "intent": "approval",
                 "reason": f"mutation safety override after {route.get('router_backend')}",
                 "requires_mutation": True,
                 "requires_langflow": False,
             }
         )
     route["route"] = normalize_agent_route(str(route.get("route") or "fast"))
+    route["intent"] = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_intent)
     return route
 
 
@@ -5532,6 +5635,68 @@ def link_items_from_agent_context(page_context: dict[str, Any], employee_id: str
     return [item for item in links if item.get("url")]
 
 
+def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_limit: int = 5) -> dict[str, Any]:
+    page_context = resolve_agent_page_context(req.current_url, employee_id)
+    ontology_seed: dict[str, Any] = {}
+    if req.question.strip():
+        ontology_seed = ontology_search_payload(req.question, employee_id, scope="all", limit=search_limit, current_url=req.current_url)
+    return {
+        "question": req.question,
+        "selected_text_excerpt": text_excerpt(req.selected_text, 700) if req.selected_text else "",
+        "current_url": req.current_url,
+        "page_context": page_context,
+        "ontology_search_seed": ontology_seed,
+    }
+
+
+def mermaid_artifact_from_markdown(answer_markdown: str) -> dict[str, Any] | None:
+    match = re.search(r"```mermaid\s*\n(?P<body>.*?)```", str(answer_markdown or ""), flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    source = match.group("body").strip()
+    return {"type": "mermaid", "title": "Mermaid diagram", "source": source} if source else None
+
+
+def normalize_agent_artifacts(value: Any, answer_markdown: str = "") -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for artifact_type, artifact_value in value.items():
+            if artifact_type == "mermaid" and isinstance(artifact_value, str):
+                artifacts.append({"type": "mermaid", "title": "Mermaid diagram", "source": artifact_value.strip()})
+            elif artifact_type in {"gap_table", "workflow_summary", "task_cards"}:
+                artifacts.append({"type": artifact_type, "data": artifact_value})
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict) and item.get("type"):
+                artifacts.append(item)
+    mermaid = mermaid_artifact_from_markdown(answer_markdown)
+    if mermaid and not any(item.get("type") == "mermaid" and item.get("source") == mermaid["source"] for item in artifacts):
+        artifacts.append(mermaid)
+    return [artifact for artifact in artifacts if artifact.get("type")]
+
+
+def fallback_mermaid_for_page_context(page_context: dict[str, Any]) -> str:
+    title = str(page_context.get("title") or page_context.get("page_kind") or "BoI Page")
+    linked_items = page_context.get("linked_items") or []
+    lines = [
+        "flowchart TD",
+        f'  current["{mermaid_label(title)}"]',
+    ]
+    for index, item in enumerate(linked_items[:6], start=1):
+        label = str(item.get("title") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or f"Related {index}")
+        lines.append(f'  n{index}["{mermaid_label(label)}"]')
+        lines.append(f"  current --> n{index}")
+    if len(lines) == 2:
+        lines.append('  current --> missing["관련 링크를 더 찾아야 합니다"]')
+    return "\n".join(lines)
+
+
+def mermaid_label(value: str, limit: int = 34) -> str:
+    text = re.sub(r"[\r\n\t]+", " ", str(value or "")).strip()
+    text = text.replace('"', "'")
+    return text[: limit - 1] + "…" if len(text) > limit else text
+
+
 def lightweight_doc_link_items(doc: dict[str, Any], employee_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
     """Extract current-document OKF links without building the full ontology index."""
     items: list[dict[str, Any]] = []
@@ -5575,17 +5740,20 @@ def lightweight_doc_link_items(doc: dict[str, Any], employee_id: str, *, limit: 
 
 
 def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
-    page_context = resolve_agent_page_context(req.current_url, employee_id)
-    if page_context.get("resolved"):
+    context_pack = agent_context_pack(req, employee_id)
+    page_context = context_pack["page_context"]
+    intent = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    if page_context.get("resolved") and intent in {"page_qa", "summarize"}:
         search = {
             "best_matches": page_context.get("linked_items") or [],
             "query_expansion": [],
             "used_dictionary_terms": [],
             "knowledge_panel": {},
+            "citations": [],
             "fast_path": "page_context",
         }
     else:
-        search = ontology_search_payload(req.question, employee_id, scope="all", limit=5, current_url=req.current_url)
+        search = context_pack.get("ontology_search_seed") or ontology_search_payload(req.question, employee_id, scope="all", limit=5, current_url=req.current_url)
     links: list[dict[str, Any]] = []
     links.extend(link_items_from_agent_context(page_context, employee_id))
     for item in search.get("best_matches") or []:
@@ -5597,6 +5765,19 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
         answer_lines = [f"현재 화면은 `{page_context.get('page_kind')}`로 해석했습니다: **{page_label}**."]
     else:
         answer_lines = ["현재 화면을 정확히 해석하지 못해 BoI Wiki ontology search 기준으로 답변합니다."]
+    if intent == "search":
+        expanded = search.get("query_expansion") or []
+        if expanded:
+            answer_lines.append("검색어를 다음 업무 용어로 확장했습니다: " + ", ".join(f"`{term}`" for term in expanded[:6]))
+        knowledge = search.get("knowledge_panel") or {}
+        panel_bits = []
+        for key, label in (("top_sop", "SOP"), ("top_event_type", "Event"), ("top_action", "Action")):
+            value = knowledge.get(key) if isinstance(knowledge, dict) else []
+            if isinstance(value, list) and value:
+                item = value[0]
+                panel_bits.append(f"{label}: {item.get('title') or item.get('event_type') or item.get('action_key')}")
+        if panel_bits:
+            answer_lines.append("가장 관련 높은 축은 " + " / ".join(panel_bits) + "입니다.")
     best = (search.get("best_matches") or [])[:3]
     if best:
         answer_lines.append("관련 항목:")
@@ -5605,7 +5786,11 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
             url = str(item.get("url") or "")
             description = text_excerpt(str(item.get("description") or ""), 120)
             rendered_label = f"[{label}]({url})" if url else f"**{label}**"
-            answer_lines.append(f"- {rendered_label}" + (f": {description}" if description else ""))
+            reason = str(item.get("match_reason") or item.get("kind") or "").replace("_", " ")
+            suffix = f": {description}" if description else ""
+            if reason and reason not in description:
+                suffix = f" ({reason})" + suffix
+            answer_lines.append(f"- {rendered_label}{suffix}")
     elif page_context.get("body_excerpt"):
         answer_lines.append(f"본문 발췌: {page_context['body_excerpt']}")
     else:
@@ -5617,6 +5802,7 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
         "page_context": page_context,
         "current_url": req.current_url,
         "route": route.get("route"),
+        "intent": intent,
         "router_backend": route.get("router_backend"),
         "router_confidence": route.get("confidence"),
         "used_backend": "fast_api",
@@ -5629,8 +5815,10 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
         "links": links[:8],
         "citations": links[:5],
         "suggested_questions": page_context_suggestions(req.current_url, req.page_context) + ["깊게 분석해줘."],
+        "artifacts": [],
         "context_summary": context_summary,
         "route": route.get("route"),
+        "intent": intent,
         "router_backend": route.get("router_backend"),
         "router_confidence": route.get("confidence"),
         "used_backend": "fast_api",
@@ -5641,9 +5829,16 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
 def agent_inbox_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
     inbox = agent_inbox_payload(employee_id, status="open", limit=5)
     items = inbox.get("items") or []
-    lines = [f"현재 열린 Action은 {len(items)}건입니다."]
+    intent = normalize_agent_intent(str(route.get("intent") or ""), fallback="inbox")
+    lines = [f"현재 처리할 업무는 {len(items)}건입니다."]
     for item in items[:5]:
-        lines.append(f"- `{item.get('status')}` {item.get('action_key')} ({item.get('request_id')})")
+        display = item.get("display") if isinstance(item.get("display"), dict) else {}
+        label = display.get("status_label") or item.get("status") or "확인 필요"
+        title = display.get("title") or item.get("action_key") or "업무 확인"
+        next_action = display.get("next_action") or "Workflow/Raw를 확인하세요."
+        primary_url = display.get("primary_url") or item.get("workflow_url") or item.get("raw_url") or ""
+        rendered_title = f"[{title}]({primary_url})" if primary_url else f"**{title}**"
+        lines.append(f"- {label}: {rendered_title} - {next_action}")
     latency_ms = int((time.perf_counter() - started_at) * 1000)
     return {
         "ok": True,
@@ -5656,8 +5851,10 @@ def agent_inbox_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[s
         ],
         "citations": [],
         "suggested_questions": page_context_suggestions(req.current_url, req.page_context),
-        "context_summary": {"route": route.get("route"), "router_backend": route.get("router_backend"), "used_backend": "inbox_api", "latency_ms": latency_ms},
+        "artifacts": [{"type": "task_cards", "data": [item.get("display") for item in items if item.get("display")]}],
+        "context_summary": {"route": route.get("route"), "intent": intent, "router_backend": route.get("router_backend"), "used_backend": "inbox_api", "latency_ms": latency_ms},
         "route": route.get("route"),
+        "intent": intent,
         "router_backend": route.get("router_backend"),
         "router_confidence": route.get("confidence"),
         "used_backend": "inbox_api",
@@ -5668,6 +5865,7 @@ def agent_inbox_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[s
 def agent_safety_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
     latency_ms = int((time.perf_counter() - started_at) * 1000)
     route_name = str(route.get("route") or "approval_required")
+    intent = normalize_agent_intent(str(route.get("intent") or ""), fallback="approval" if route_name == "approval_required" else "manual_complete")
     if route_name == "manual_handoff":
         answer = "Manual Handoff 완료는 Inbox 카드에서 조치 내용과 outcome을 입력한 뒤 명시적으로 완료 기록을 남겨야 합니다."
     else:
@@ -5679,8 +5877,10 @@ def agent_safety_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[
         "links": [],
         "citations": [],
         "suggested_questions": ["내 Inbox를 보여줘.", "관련 Workflow Status를 열어줘."],
-        "context_summary": {"route": route_name, "router_backend": route.get("router_backend"), "used_backend": "safety_guard", "latency_ms": latency_ms},
+        "artifacts": [],
+        "context_summary": {"route": route_name, "intent": intent, "router_backend": route.get("router_backend"), "used_backend": "safety_guard", "latency_ms": latency_ms},
         "route": route_name,
+        "intent": intent,
         "router_backend": route.get("router_backend"),
         "router_confidence": route.get("confidence"),
         "used_backend": "safety_guard",
@@ -5807,12 +6007,21 @@ def normalize_langflow_agent_response(
     suggestions = parsed.get("suggested_questions")
     if not isinstance(suggestions, list) or not suggestions:
         suggestions = page_context_suggestions(req.current_url, req.page_context)
+    artifacts = normalize_agent_artifacts(parsed.get("artifacts"), answer_markdown)
+    intent = normalize_agent_intent(str(route.get("intent") if route else parsed.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    if intent == "diagram" and not any(item.get("type") == "mermaid" for item in artifacts):
+        page_context = resolve_agent_page_context(req.current_url, employee_id)
+        fallback_source = fallback_mermaid_for_page_context(page_context)
+        artifacts.append({"type": "mermaid", "title": "현재 페이지 관계도", "source": fallback_source, "fallback": True})
+        if "```mermaid" not in answer_markdown:
+            answer_markdown = answer_markdown.rstrip() + "\n\n```mermaid\n" + fallback_source + "\n```"
     context_summary = parsed.get("context_summary")
     if not isinstance(context_summary, dict):
         context_summary = {}
     context_summary.update(
         {
             "current_url": req.current_url,
+            "intent": intent,
             "langflow_flow": LANGFLOW_BOI_AGENT_ENDPOINT,
             "langflow_backend": "trusted",
         }
@@ -5836,8 +6045,10 @@ def normalize_langflow_agent_response(
         "links": links,
         "citations": citations,
         "suggested_questions": suggestions,
+        "artifacts": artifacts,
         "context_summary": context_summary,
         "route": route.get("route") if route else "deep",
+        "intent": intent,
         "router_backend": route.get("router_backend") if route else "",
         "router_confidence": route.get("confidence") if route else None,
         "used_backend": "langflow",
@@ -5848,15 +6059,21 @@ def normalize_langflow_agent_response(
 def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any] | None = None, started_at: float | None = None) -> dict[str, Any]:
     if not LANGFLOW_URL or not LANGFLOW_BOI_AGENT_ENDPOINT:
         raise LangflowBoiAgentUnavailable("Langflow BoI Agent endpoint is not configured")
+    context_pack = agent_context_pack(req, employee_id, search_limit=6)
+    intent = normalize_agent_intent(str(route.get("intent") if route else req.intent), fallback=deterministic_agent_intent(req.question, req.current_url))
     payload = {
         "input_value": json.dumps(
             {
                 "question": req.question,
                 "employee_id": employee_id,
                 "mode": req.mode,
+                "intent": intent,
+                "route": route or {},
                 "current_url": req.current_url,
                 "selected_text": req.selected_text,
                 "page_context": req.page_context,
+                "page_context_pack": context_pack.get("page_context") or {},
+                "ontology_search_seed": context_pack.get("ontology_search_seed") or {},
                 "conversation": req.conversation[-12:],
                 "save_memory": req.save_memory,
             },
@@ -6202,6 +6419,54 @@ def completion_request_ids(rows: list[dict[str, Any]] | None = None) -> set[str]
     return completed
 
 
+def agent_inbox_display(row: dict[str, Any], employee_id: str, row_status: str) -> dict[str, str]:
+    action_key = str(row.get("action_key") or "")
+    action = action_catalog_by_key().get(action_key, {})
+    action_title = str(action.get("name") or action.get("name_ko") or row.get("title") or action_key or "업무 확인")
+    risk = str(action.get("risk_level") or row.get("risk_level") or "")
+    workflow_url = workflow_status_page_url(str(row.get("trace_id") or ""), employee_id) if row.get("trace_id") else ""
+    raw_url = action_raw_page_url(str(row.get("_log_ref") or ""), employee_id) if row.get("_log_ref") else ""
+    if row_status == "approval_required":
+        return {
+            "title": f"{action_title} 승인 필요",
+            "status_label": "승인 필요",
+            "why_it_matters": "영향이 큰 작업이어서 자동 실행하지 않고 담당자 확인이 필요합니다.",
+            "next_action": "Workflow와 근거 문서를 확인한 뒤 승인 또는 반려 여부를 결정하세요.",
+            "risk_label": "고위험" if risk == "high" else "승인 필요",
+            "primary_url": workflow_url or raw_url,
+            "primary_label": "업무 상태 보기",
+        }
+    if row_status == "manual_required":
+        return {
+            "title": f"{action_title} 조치 필요",
+            "status_label": "조치 필요",
+            "why_it_matters": "사람 판단, 현장 확인, 또는 담당자 조치가 필요한 단계입니다.",
+            "next_action": "확인/조치 내용을 입력하고 완료로 기록하세요.",
+            "risk_label": "수동 조치",
+            "primary_url": workflow_url or raw_url,
+            "primary_label": "조치 내용 입력",
+        }
+    if row_status == "manual_blocked":
+        return {
+            "title": f"{action_title} 보류 상태",
+            "status_label": "보류 확인",
+            "why_it_matters": "필요한 근거, 승인, 담당자 확인 중 일부가 부족합니다.",
+            "next_action": "막힌 이유를 확인하고 후속 조치를 남기세요.",
+            "risk_label": "확인 필요",
+            "primary_url": workflow_url or raw_url,
+            "primary_label": "막힌 이유 보기",
+        }
+    return {
+        "title": f"{action_title} 후속 확인",
+        "status_label": "후속 확인",
+        "why_it_matters": "Trace에서 추가 확인이 필요한 업무로 기록되었습니다.",
+        "next_action": "관련 Workflow 또는 Raw를 확인하고 필요한 조치를 결정하세요.",
+        "risk_label": "후속 확인",
+        "primary_url": workflow_url or raw_url,
+        "primary_label": "세부 확인",
+    }
+
+
 def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50) -> dict[str, Any]:
     recent_rows = read_recent_action_logs_fast(limit=max(50, min(limit * 20, 300)))
     completed = completion_request_ids(recent_rows)
@@ -6217,6 +6482,7 @@ def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50)
         if row_status not in {"manual_required", "approval_required", "manual_blocked", "needs_followup"}:
             continue
         task_id = f"task:{request_id or row.get('_log_ref')}"
+        display = agent_inbox_display(row, employee_id, row_status)
         items.append(
             {
                 "task_id": task_id,
@@ -6230,6 +6496,7 @@ def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50)
                 "raw_url": action_raw_page_url(str(row.get("_log_ref") or ""), employee_id) if row.get("_log_ref") else "",
                 "workflow_url": workflow_status_page_url(str(row.get("trace_id") or ""), employee_id) if row.get("trace_id") else "",
                 "summary": row.get("summary") or row.get("message") or row_status,
+                "display": display,
             }
         )
         if len(items) >= max(1, min(limit, 200)):
