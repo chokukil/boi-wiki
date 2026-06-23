@@ -79,6 +79,8 @@ class NativeBoiAgent:
             "citations": [],
             "coverage_report": {},
             "answer_markdown": "",
+            "access_summary": context_pack.get("access_summary") or {},
+            "guardrails_applied": [],
         }
         if StateGraph is not None:
             return self._run_langgraph(state)
@@ -88,12 +90,13 @@ class NativeBoiAgent:
         for node in (
             self._classify_intent,
             self._resolve_page_context,
+            self._access_policy_gate,
             self._retrieve_ontology,
             self._plan_tools,
             self._execute_tools_loop,
             self._evaluate_coverage,
             self._compose_answer,
-            self._verify_links_and_artifacts,
+            self._verify_acl_and_artifacts,
             self._safety_gate,
         ):
             state = node(state)
@@ -104,22 +107,24 @@ class NativeBoiAgent:
             graph = StateGraph(dict)
             graph.add_node("classify_intent", self._classify_intent)
             graph.add_node("resolve_page_context", self._resolve_page_context)
+            graph.add_node("access_policy_gate", self._access_policy_gate)
             graph.add_node("retrieve_ontology", self._retrieve_ontology)
             graph.add_node("plan_tools", self._plan_tools)
             graph.add_node("execute_tools_loop", self._execute_tools_loop)
             graph.add_node("evaluate_coverage", self._evaluate_coverage)
             graph.add_node("compose_answer", self._compose_answer)
-            graph.add_node("verify_links_and_artifacts", self._verify_links_and_artifacts)
+            graph.add_node("verify_acl_and_artifacts", self._verify_acl_and_artifacts)
             graph.add_node("safety_gate", self._safety_gate)
             graph.add_edge(START, "classify_intent")
             graph.add_edge("classify_intent", "resolve_page_context")
-            graph.add_edge("resolve_page_context", "retrieve_ontology")
+            graph.add_edge("resolve_page_context", "access_policy_gate")
+            graph.add_edge("access_policy_gate", "retrieve_ontology")
             graph.add_edge("retrieve_ontology", "plan_tools")
             graph.add_edge("plan_tools", "execute_tools_loop")
             graph.add_edge("execute_tools_loop", "evaluate_coverage")
             graph.add_edge("evaluate_coverage", "compose_answer")
-            graph.add_edge("compose_answer", "verify_links_and_artifacts")
-            graph.add_edge("verify_links_and_artifacts", "safety_gate")
+            graph.add_edge("compose_answer", "verify_acl_and_artifacts")
+            graph.add_edge("verify_acl_and_artifacts", "safety_gate")
             graph.add_edge("safety_gate", END)
             compiled = graph.compile()
             final_state = compiled.invoke(state)
@@ -147,7 +152,21 @@ class NativeBoiAgent:
                 state.setdefault("tool_results", {})["current_doc"] = doc
         return state
 
+    def _access_policy_gate(self, state: JsonDict) -> JsonDict:
+        state.setdefault("guardrails_applied", []).append("acl_policy")
+        access = state.get("access_summary") if isinstance(state.get("access_summary"), dict) else {}
+        if access and access.get("can_read") is False:
+            state["route_name"] = "approval_required"
+            state["intent"] = "access_denied"
+            state["answer_markdown"] = "현재 권한으로 이 BoI를 Agent 컨텍스트에 사용할 수 없습니다."
+            state["stop_reason"] = "access_denied"
+        if access and access.get("can_use_in_agent_context") is False:
+            state.setdefault("guardrails_applied", []).append("classification_redaction")
+        return state
+
     def _retrieve_ontology(self, state: JsonDict) -> JsonDict:
+        if state.get("stop_reason"):
+            return state
         search = state.get("search") or {}
         if not search.get("ok"):
             query = state.get("question") or ""
@@ -157,6 +176,9 @@ class NativeBoiAgent:
         return state
 
     def _plan_tools(self, state: JsonDict) -> JsonDict:
+        if state.get("stop_reason"):
+            state["planned_tools"] = []
+            return state
         intent = state.get("intent")
         page_context = state.get("page_context") or {}
         planned: list[JsonDict] = []
@@ -251,6 +273,8 @@ class NativeBoiAgent:
         return state
 
     def _compose_answer(self, state: JsonDict) -> JsonDict:
+        if state.get("stop_reason"):
+            return state
         intent = state.get("intent")
         if intent == "diagram":
             self._compose_diagram_answer(state)
@@ -374,7 +398,7 @@ class NativeBoiAgent:
         state["links"] = links_from_search(search)
         state["citations"] = state["links"][:5]
 
-    def _verify_links_and_artifacts(self, state: JsonDict) -> JsonDict:
+    def _verify_acl_and_artifacts(self, state: JsonDict) -> JsonDict:
         seen: set[str] = set()
         links = []
         for link in state.get("links") or []:
@@ -386,6 +410,7 @@ class NativeBoiAgent:
             links.append({"label": label or url, "url": url, "kind": str(link.get("kind") or "reference")})
         state["links"] = links[:12]
         state["citations"] = [item for item in state.get("citations") or [] if item.get("url") or item.get("ref")][:8]
+        state.setdefault("guardrails_applied", []).append("artifact_link_acl")
         return state
 
     def _safety_gate(self, state: JsonDict) -> JsonDict:
@@ -433,6 +458,9 @@ class NativeBoiAgent:
             "tool_trace": [item.__dict__ for item in state.get("tool_trace") or []],
             "coverage_report": state.get("coverage_report") or {},
             "deployment_revision": self.config.build_revision,
+            "access_summary": state.get("access_summary") or {},
+            "guardrails_applied": state.get("guardrails_applied") or [],
+            "redacted_count": len((state.get("access_summary") or {}).get("redactions") or []),
         }
 
     def _call_tool(self, name: str, args: JsonDict, fn: Callable[[], Any], state: JsonDict) -> Any:

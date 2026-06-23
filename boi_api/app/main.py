@@ -45,6 +45,7 @@ from .workflow_materializer import (
 )
 from .simulation_agent import build_simulation_agent_result
 from .native_agent import LANGGRAPH_AVAILABLE, NativeAgentConfig, NativeAgentTools, NativeBoiAgent
+from .access_policy import CLASSIFICATION_POLICY_VERSION, AccessPolicyDecision, doc_access_policy
 from .auth import (
     AuthError,
     AuthIdentity,
@@ -79,6 +80,7 @@ ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalo
 ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT", "/data/actions"))
 DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT", str(DATA_ROOT.parent / "drafts")))
 ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT", str(DATA_ROOT.parent / "activity")))
+RBAC_ROOT = Path(os.getenv("RBAC_ROOT", str(DATA_ROOT.parent / "rbac")))
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
 ACTION_INVOKE_TIMEOUT_SECONDS = float(os.getenv("ACTION_INVOKE_TIMEOUT_SECONDS", "90"))
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
@@ -216,9 +218,11 @@ def ensure_dirs() -> None:
     ACTION_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTIVITY_ROOT.mkdir(parents=True, exist_ok=True)
+    RBAC_ROOT.mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
+    (DRAFT_ROOT / "event_type_drafts").mkdir(parents=True, exist_ok=True)
 
 
 def file_signature(paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
@@ -1760,7 +1764,34 @@ def append_event_log(*, status: str, event: dict[str, Any], result: dict[str, An
 
 
 def teams_for(employee_id: str) -> list[str]:
-    return identity_for_employee(employee_id).teams
+    identity = identity_for_employee(employee_id)
+    teams = list(identity.teams)
+    state = rbac_state()
+    for team_id, team in (state.get("teams") or {}).items():
+        if employee_id in [str(item) for item in team.get("members") or []]:
+            teams.append(str(team_id))
+    return sorted(dict.fromkeys(team for team in teams if team))
+
+
+def roles_for(employee_id: str) -> list[str]:
+    identity = identity_for_employee(employee_id)
+    roles = list(identity.roles)
+    teams = set(teams_for(employee_id))
+    state = rbac_state()
+    for binding in state.get("bindings") or []:
+        subject_type = str(binding.get("subject_type") or "")
+        subject_id = str(binding.get("subject_id") or "")
+        if subject_type == "employee" and subject_id != employee_id:
+            continue
+        if subject_type == "team" and subject_id not in teams:
+            continue
+        scope = str(binding.get("scope") or "global")
+        if scope and scope != "global":
+            # Fine-grained scope checks are handled by /api/rbac/check; global
+            # compatibility keeps existing role checks stable.
+            continue
+        roles.extend(str(role) for role in binding.get("roles") or [] if role)
+    return sorted(dict.fromkeys(role for role in roles if role))
 
 
 def user_name_for(employee_id: str) -> str:
@@ -1769,34 +1800,155 @@ def user_name_for(employee_id: str) -> str:
 
 
 def require_employee_role(employee_id: str, role: str) -> None:
+    if role in roles_for(employee_id) or "boi.admin" in roles_for(employee_id):
+        return
+    raise HTTPException(status_code=403, detail=f"missing required role: {role}")
+
+
+RBAC_ROLES = [
+    {"role": "boi.viewer", "label": "조회", "description": "권한 범위의 BoI와 runtime evidence를 조회합니다."},
+    {"role": "boi.editor", "label": "편집", "description": "권한 범위의 draft/source/body를 수정합니다."},
+    {"role": "boi.workflow_runner", "label": "Workflow 실행", "description": "Event 발행, workflow start, manual handoff completion을 수행합니다."},
+    {"role": "boi.action_invoker", "label": "Action 실행", "description": "Action Gateway를 통한 요청 실행을 수행합니다."},
+    {"role": "boi.promoter", "label": "승격", "description": "Team/Public promotion draft와 apply를 처리합니다."},
+    {"role": "boi.admin", "label": "관리", "description": "권한 관리와 break-glass audit을 운영합니다."},
+]
+
+
+def rbac_state_path() -> Path:
+    return RBAC_ROOT / "state.yaml"
+
+
+def rbac_audit_path() -> Path:
+    return RBAC_ROOT / "audit.jsonl"
+
+
+def default_rbac_state() -> dict[str, Any]:
+    teams: dict[str, dict[str, Any]] = {}
+    for employee_id, team_ids in USER_TEAMS.items():
+        for team_id in team_ids:
+            team = teams.setdefault(
+                str(team_id),
+                {
+                    "team_id": str(team_id),
+                    "display_name": str(team_id),
+                    "description": "Dev seed team",
+                    "owners": [],
+                    "members": [],
+                    "status": "active",
+                },
+            )
+            team["members"].append(str(employee_id))
+    return {"teams": teams, "roles": RBAC_ROLES, "bindings": []}
+
+
+def rbac_state() -> dict[str, Any]:
+    ensure_dirs()
+    path = rbac_state_path()
+    if not path.exists():
+        return default_rbac_state()
     try:
-        require_role(identity_for_employee(employee_id), role)
-    except AuthError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    default = default_rbac_state()
+    teams = {**default["teams"], **(data.get("teams") or {})}
+    return {"teams": teams, "roles": data.get("roles") or RBAC_ROLES, "bindings": data.get("bindings") or []}
+
+
+def write_rbac_state(data: dict[str, Any]) -> None:
+    ensure_dirs()
+    rbac_state_path().write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
+def append_rbac_audit(actor: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_dirs()
+    row = {
+        "audit_id": f"rbac-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+        "logged_at": now_iso(),
+        "actor": actor,
+        "action": action,
+        "payload": redact_sensitive(payload),
+    }
+    with rbac_audit_path().open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    return row
+
+
+def access_policy_for_doc(doc: dict[str, Any], employee_id: str, *, break_glass: bool = False) -> AccessPolicyDecision:
+    return doc_access_policy(
+        doc,
+        employee_id=employee_id,
+        teams=teams_for(employee_id),
+        roles=roles_for(employee_id),
+        data_root=DATA_ROOT,
+        break_glass=break_glass,
+    )
+
+
+def rbac_audit_rows(limit: int = 100) -> list[dict[str, Any]]:
+    path = rbac_audit_path()
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return rows[-max(1, min(limit, 500)) :][::-1]
+
+
+def rbac_team_member_ids(team: dict[str, Any]) -> list[str]:
+    values = list(team.get("members") or [])
+    values.extend(team.get("owners") or [])
+    return sorted(dict.fromkeys(str(item) for item in values if item))
+
+
+def rbac_can_manage(employee_id: str, *, team_id: str | None = None) -> bool:
+    roles = roles_for(employee_id)
+    if "boi.admin" in roles:
+        return True
+    if "boi.editor" not in roles:
+        return False
+    if not team_id:
+        return True
+    state = rbac_state()
+    team = (state.get("teams") or {}).get(str(team_id)) or {}
+    return str(employee_id) in [str(item) for item in (team.get("owners") or [])]
+
+
+def binding_applies_to_employee(binding: dict[str, Any], employee_id: str) -> bool:
+    subject_type = str(binding.get("subject_type") or "")
+    subject_id = str(binding.get("subject_id") or "")
+    if subject_type == "employee":
+        return subject_id == employee_id
+    if subject_type == "team":
+        return subject_id in teams_for(employee_id)
+    return False
+
+
+def role_binding_decision(employee_id: str, required_role: str, *, scope: str = "global", resource: str = "") -> dict[str, Any]:
+    if required_role in roles_for(employee_id) or "boi.admin" in roles_for(employee_id):
+        return {"allowed": True, "reason": "role_present", "role": required_role, "scope": scope, "resource": resource}
+    state = rbac_state()
+    for binding in state.get("bindings") or []:
+        if not binding_applies_to_employee(binding, employee_id):
+            continue
+        if required_role not in [str(role) for role in (binding.get("roles") or [])]:
+            continue
+        binding_scope = str(binding.get("scope") or "global")
+        binding_resource = str(binding.get("resource") or "")
+        if binding_scope in {"global", scope} and (not binding_resource or not resource or binding_resource == resource):
+            return {"allowed": True, "reason": "binding_match", "binding": binding}
+    return {"allowed": False, "reason": "missing_role", "role": required_role, "scope": scope, "resource": resource}
 
 
 def is_accessible(doc: dict[str, Any], employee_id: str) -> bool:
-    meta = doc["metadata"]
-    hotl = meta.get("hotl") or {}
-    if str(hotl.get("status") or "") in HOTL_HIDDEN_STATUSES:
-        return False
-    visibility = meta.get("visibility")
-    path = Path(doc["path"])
-    if visibility == "public":
-        return True
-    if visibility == "team":
-        # Team ID can come from metadata.team_id or path /team/{team_id}
-        team_id = meta.get("team_id")
-        if not team_id:
-            parts = path.relative_to(DATA_ROOT).parts
-            if len(parts) >= 2 and parts[0] == "team":
-                team_id = parts[1]
-        return team_id in teams_for(employee_id)
-    if visibility == "private":
-        parts = path.relative_to(DATA_ROOT).parts
-        # Only web-stored Private BoI under /private/{employee_id} is visible here.
-        return len(parts) >= 2 and parts[0] == "private" and parts[1] == employee_id
-    return False
+    return access_policy_for_doc(doc, employee_id).can_read
 
 
 def accessible_docs(employee_id: str) -> list[dict[str, Any]]:
@@ -2094,6 +2246,7 @@ def filter_docs(
 def doc_query_score(doc: dict[str, Any], query: str) -> int:
     if not query:
         return 0
+    query = str(query or "").lower()
     metadata = doc.get("metadata") or {}
     title = str(metadata.get("title") or "").lower()
     boi_id = str(metadata.get("boi_id") or "").lower()
@@ -2128,6 +2281,19 @@ def doc_search_blob(doc: dict[str, Any]) -> str:
     ).lower()
 
 
+def doc_metadata_search_blob(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    return "\n".join(
+        [
+            str(metadata.get("title") or ""),
+            str(metadata.get("description") or ""),
+            str(metadata.get("boi_id") or ""),
+            str(metadata.get("type") or ""),
+            " ".join(str(tag) for tag in metadata.get("tags") or []),
+        ]
+    ).lower()
+
+
 def stable_doc_ref(doc: dict[str, Any]) -> str:
     metadata = doc.get("metadata") or {}
     return str(metadata.get("boi_id") or doc.get("uri") or "")
@@ -2136,6 +2302,7 @@ def stable_doc_ref(doc: dict[str, Any]) -> str:
 def doc_result_item(doc: dict[str, Any], employee_id: str, *, score: int = 0, match_reason: str = "") -> dict[str, Any]:
     metadata = doc.get("metadata") or {}
     ref = stable_doc_ref(doc)
+    access = access_policy_for_doc(doc, employee_id)
     return {
         "kind": "boi",
         "score": score,
@@ -2150,6 +2317,7 @@ def doc_result_item(doc: dict[str, Any], employee_id: str, *, score: int = 0, ma
         "folder": doc_folder(doc),
         "url": doc_url_for_ref(ref, employee_id) if ref else "",
         "metadata": metadata,
+        "access": access.to_dict(),
     }
 
 
@@ -2208,7 +2376,7 @@ def dictionary_terms_for_employee(employee_id: str, scope: str = "all") -> list[
 
 
 def dictionary_terms_from_docs(docs: list[dict[str, Any]], employee_id: str, scope: str = "all") -> list[dict[str, Any]]:
-    docs = [doc for doc in docs if is_dictionary_doc(doc)]
+    docs = [doc for doc in docs if is_dictionary_doc(doc) and access_policy_for_doc(doc, employee_id).can_use_in_agent_context]
     terms = [dictionary_term_for_doc(doc, employee_id) for doc in docs]
     if scope and scope != "all":
         terms = [term for term in terms if term.get("scope") == scope]
@@ -2292,16 +2460,18 @@ def search_index_for_employee(employee_id: str) -> dict[str, Any]:
     doc_records = []
     for doc in docs:
         metadata = doc.get("metadata") or {}
+        access = access_policy_for_doc(doc, employee_id)
         ref = stable_doc_ref(doc)
         doc_records.append(
             {
                 "ref": ref,
                 "doc": doc,
-                "blob": doc_search_blob(doc),
+                "blob": doc_search_blob(doc) if access.can_use_in_agent_context else doc_metadata_search_blob(doc),
                 "title": str(metadata.get("title") or ""),
                 "id_text": "\n".join([str(metadata.get("boi_id") or ""), str(doc.get("uri") or "")]),
                 "description": str(metadata.get("description") or ""),
                 "type": str(metadata.get("type") or ""),
+                "access": access.to_dict(),
             }
         )
     index = {
@@ -2590,12 +2760,14 @@ def filter_docs_ontology_aware(
     rank = {ref: index for index, ref in enumerate(payload.get("document_rank_refs") or []) if ref}
     ranked_docs = []
     for doc in base:
+        direct_score = doc_query_score(doc, q)
+        if direct_score <= 0:
+            continue
         refs = [stable_doc_ref(doc), str(doc.get("uri") or "").lstrip("/")]
         best = min((rank[ref] for ref in refs if ref in rank), default=None)
-        if best is not None:
-            ranked_docs.append((best, doc))
-    ranked_docs.sort(key=lambda item: item[0])
-    return [doc for _rank, doc in ranked_docs]
+        ranked_docs.append((best if best is not None else 999_999, -direct_score, doc))
+    ranked_docs.sort(key=lambda item: (item[0], item[1]))
+    return [doc for _rank, _score, doc in ranked_docs]
 
 
 def is_sop_related_doc(doc: dict[str, Any]) -> bool:
@@ -2991,19 +3163,29 @@ def recovered_doc_indexes() -> tuple[dict[str, dict[str, Any]], dict[str, dict[s
     return by_boi_id, by_uri
 
 
-def find_recovered_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
+def find_recovered_doc_by_id(
+    boi_id: str,
+    employee_id: str | None = None,
+    *,
+    include_inaccessible: bool = False,
+) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
     by_boi_id, by_uri = recovered_doc_indexes()
     candidates = [by_boi_id.get(boi_id), by_uri.get(normalized_uri)]
     if normalized_uri.endswith(".md"):
         candidates.append(by_uri.get(normalized_uri[:-3]))
     for doc in candidates:
-        if doc and (employee_id is None or is_accessible(doc, employee_id)):
+        if doc and (include_inaccessible or employee_id is None or is_accessible(doc, employee_id)):
             return doc
     return None
 
 
-def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
+def find_doc_by_id(
+    boi_id: str,
+    employee_id: str | None = None,
+    *,
+    include_inaccessible: bool = False,
+) -> dict[str, Any] | None:
     normalized_uri = boi_id.lstrip("/")
     normalized_concept_id = normalized_uri[:-3] if normalized_uri.endswith(".md") else normalized_uri
     path = find_doc_path_by_ref(boi_id)
@@ -3016,9 +3198,9 @@ def find_doc_by_id(boi_id: str, employee_id: str | None = None) -> dict[str, Any
             doc_uri = doc.get("uri", "").lstrip("/")
             doc_concept_id = doc_uri[:-3] if doc_uri.endswith(".md") else doc_uri
             if doc["metadata"].get("boi_id") == boi_id or doc_uri == normalized_uri or doc_concept_id == normalized_concept_id:
-                if employee_id is None or is_accessible(doc, employee_id):
+                if include_inaccessible or employee_id is None or is_accessible(doc, employee_id):
                     return doc
-    return find_recovered_doc_by_id(boi_id, employee_id)
+    return find_recovered_doc_by_id(boi_id, employee_id, include_inaccessible=include_inaccessible)
 
 
 def doc_url_for_ref(ref: str, employee_id: str) -> str:
@@ -3136,6 +3318,7 @@ def app_shell_context(
         {"id": "actions", "label": "Actions", "href": app_url("/actions", employee_id)},
     ]
     utility_links = [
+        {"label": "권한 관리", "href": app_url("/permissions", employee_id), "external": False},
         {"label": "API Docs", "href": "/docs", "external": True},
     ]
     optional_tools = [
@@ -4028,7 +4211,9 @@ def make_metadata(
         "classification": classification,
         "owner": owner,
         "author": {"type": "agent", "agent_id": "boi-writer-v0.4"},
-        "acl_policy": f"acl:{visibility}:{owner if visibility == 'private' else (team_id or 'public')}",
+        "acl_policy": "acl:public"
+        if visibility == "public"
+        else f"acl:{visibility}:{owner if visibility == 'private' else (team_id or DEFAULT_TEAM_ID)}",
         "status": status,
     }
     if team_id:
@@ -4427,6 +4612,62 @@ class BoiAgentApprovalRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     user_confirmed: bool = False
     note: str = ""
+
+
+class RbacTeamRequest(BaseModel):
+    team_id: str
+    display_name: str = ""
+    description: str = ""
+    owners: list[str] = Field(default_factory=list)
+    members: list[str] = Field(default_factory=list)
+    status: str = "active"
+
+
+class RbacTeamMemberRequest(BaseModel):
+    employee_id: str
+    action: Literal["add", "remove"] = "add"
+    role: Literal["member", "owner"] = "member"
+
+
+class RbacBindingRequest(BaseModel):
+    subject_type: Literal["employee", "team"]
+    subject_id: str
+    roles: list[str]
+    scope: str = "global"
+    resource: str = ""
+
+
+class RbacCheckRequest(BaseModel):
+    operation: str = "read"
+    employee_id: str = ""
+    required_role: str = "boi.viewer"
+    scope: str = "global"
+    resource: str = ""
+    boi_id: str = ""
+    action_key: str = ""
+    workflow_key: str = ""
+    event_type: str = ""
+
+
+class BreakGlassRequest(BaseModel):
+    reason: str
+    ticket_ref: str = ""
+    user_confirmed: bool = True
+
+
+class EventTypeDraftRequest(BaseModel):
+    event_type: str
+    name_ko: str = ""
+    description: str = ""
+    owner: str = ""
+    status: str = "draft"
+    topic: str = ""
+    workflow_stage: str = ""
+    sop_ref: str = ""
+    payload_schema: dict[str, Any] = Field(default_factory=dict)
+    recommended_actions: list[str] = Field(default_factory=list)
+    source_refs: list[Any] = Field(default_factory=list)
+    user_confirmed: bool = False
 
 
 class ManualHandoffCompleteRequest(BaseModel):
@@ -4971,6 +5212,308 @@ async def sops_page(
             "clear_url": app_url("/sops", employee_id),
         },
     )
+
+
+@app.get("/permissions", response_class=HTMLResponse)
+async def permissions_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    state = rbac_state()
+    return templates.TemplateResponse(
+        "permissions.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="library",
+                title="권한 관리",
+                description="사번 기준 팀, 역할, BoI Profile ACL, audit을 관리합니다.",
+            ),
+            "me": {
+                "employee_id": employee_id,
+                "teams": teams_for(employee_id),
+                "roles": roles_for(employee_id),
+            },
+            "teams": sorted((state.get("teams") or {}).values(), key=lambda item: str(item.get("team_id") or "")),
+            "roles": state.get("roles") or RBAC_ROLES,
+            "bindings": state.get("bindings") or [],
+            "audit_rows": rbac_audit_rows(limit=40),
+            "can_manage": rbac_can_manage(employee_id),
+        },
+    )
+
+
+@app.get("/api/rbac/me")
+async def api_rbac_me(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "teams": teams_for(employee_id),
+        "roles": roles_for(employee_id),
+        "can_manage": rbac_can_manage(employee_id),
+        "classification_policy_version": CLASSIFICATION_POLICY_VERSION,
+    }
+
+
+@app.get("/api/rbac/teams")
+async def api_rbac_teams(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    state = rbac_state()
+    teams = sorted((state.get("teams") or {}).values(), key=lambda item: str(item.get("team_id") or ""))
+    return {"ok": True, "count": len(teams), "items": teams}
+
+
+@app.post("/api/rbac/teams")
+async def api_rbac_create_team(req: RbacTeamRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not rbac_can_manage(employee_id):
+        raise HTTPException(status_code=403, detail="team management role required")
+    state = rbac_state()
+    teams = state.setdefault("teams", {})
+    team_id = req.team_id.strip()
+    if not team_id:
+        raise HTTPException(status_code=400, detail="team_id is required")
+    team = teams.setdefault(
+        team_id,
+        {
+            "team_id": team_id,
+            "display_name": req.display_name or team_id,
+            "description": req.description,
+            "owners": [],
+            "members": [],
+            "status": "active",
+        },
+    )
+    team["display_name"] = req.display_name or team.get("display_name") or team_id
+    team["description"] = req.description
+    team["status"] = req.status or team.get("status") or "active"
+    if employee_id not in [str(item) for item in (team.get("owners") or [])]:
+        team.setdefault("owners", []).append(employee_id)
+    write_rbac_state(state)
+    append_rbac_audit(employee_id, "team_upsert", {"team_id": team_id, "display_name": team["display_name"]})
+    return {"ok": True, "team": team}
+
+
+@app.post("/api/rbac/teams/{team_id}/members")
+async def api_rbac_add_team_member(
+    team_id: str,
+    req: RbacTeamMemberRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not rbac_can_manage(employee_id, team_id=team_id):
+        raise HTTPException(status_code=403, detail="team owner or admin role required")
+    member_id = req.employee_id.strip()
+    if not re.fullmatch(r"\d{6,7}", member_id):
+        raise HTTPException(status_code=400, detail="employee_id must be 6 or 7 digits")
+    state = rbac_state()
+    teams = state.setdefault("teams", {})
+    if team_id not in teams:
+        raise HTTPException(status_code=404, detail="team not found")
+    team = teams[team_id]
+    bucket = "owners" if req.role == "owner" else "members"
+    team.setdefault(bucket, [])
+    if req.action == "remove":
+        team[bucket] = [item for item in team.get(bucket) or [] if str(item) != member_id]
+        if bucket == "members":
+            team["owners"] = [item for item in team.get("owners") or [] if str(item) != member_id]
+        audit_action = "team_member_remove"
+    else:
+        if member_id not in [str(item) for item in team[bucket]]:
+            team[bucket].append(member_id)
+        if bucket == "owners" and member_id not in [str(item) for item in team.get("members") or []]:
+            team.setdefault("members", []).append(member_id)
+        audit_action = "team_member_add"
+    write_rbac_state(state)
+    append_rbac_audit(employee_id, audit_action, {"team_id": team_id, "member_id": member_id, "role": req.role})
+    return {"ok": True, "team": team}
+
+
+@app.get("/api/rbac/roles")
+async def api_rbac_roles(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "items": rbac_state().get("roles") or RBAC_ROLES}
+
+
+@app.post("/api/rbac/bindings")
+async def api_rbac_binding(req: RbacBindingRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not rbac_can_manage(employee_id):
+        raise HTTPException(status_code=403, detail="role binding management requires admin/editor")
+    roles = [role for role in req.roles if role in {item["role"] for item in RBAC_ROLES}]
+    if not roles:
+        raise HTTPException(status_code=400, detail="at least one valid role is required")
+    subject_type = req.subject_type.strip()
+    if subject_type not in {"employee", "team"}:
+        raise HTTPException(status_code=400, detail="subject_type must be employee or team")
+    binding = {
+        "binding_id": f"bind-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+        "subject_type": subject_type,
+        "subject_id": req.subject_id.strip(),
+        "roles": roles,
+        "scope": req.scope or "global",
+        "resource": req.resource,
+        "created_by": employee_id,
+        "created_at": now_iso(),
+    }
+    state = rbac_state()
+    state.setdefault("bindings", []).append(binding)
+    write_rbac_state(state)
+    append_rbac_audit(employee_id, "role_binding_add", binding)
+    return {"ok": True, "binding": binding}
+
+
+@app.post("/api/rbac/check")
+async def api_rbac_check(req: RbacCheckRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    target_employee = req.employee_id or employee_id
+    if target_employee != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="only admin can check another employee")
+    decision = role_binding_decision(
+        target_employee,
+        req.required_role,
+        scope=req.scope or "global",
+        resource=req.resource or "",
+    )
+    return {"ok": True, "employee_id": target_employee, "decision": decision}
+
+
+@app.get("/api/docs/{boi_id:path}/access")
+async def api_doc_access(boi_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    doc = find_doc_by_id(boi_id, employee_id)
+    if not doc:
+        hidden_doc = find_doc_by_id(boi_id, employee_id, include_inaccessible=True)
+        if not hidden_doc:
+            raise HTTPException(status_code=404, detail="BoI not found")
+        decision = access_policy_for_doc(hidden_doc, employee_id)
+        return {"ok": True, "boi_id": boi_id, "access": decision.to_dict(), "visible": False}
+    decision = access_policy_for_doc(doc, employee_id)
+    return {"ok": True, "boi_id": boi_id, "access": decision.to_dict(), "visible": decision.can_read}
+
+
+@app.post("/api/docs/{boi_id:path}/break-glass")
+async def api_doc_break_glass(
+    boi_id: str,
+    req: BreakGlassRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="break-glass requires admin role")
+    if not req.reason.strip():
+        raise HTTPException(status_code=400, detail="reason is required")
+    doc = find_doc_by_id(boi_id, employee_id, include_inaccessible=True)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found")
+    decision = access_policy_for_doc(doc, employee_id, break_glass=True)
+    audit = append_rbac_audit(
+        employee_id,
+        "break_glass_access",
+        {"boi_id": boi_id, "reason": req.reason, "ticket_ref": req.ticket_ref, "decision": decision.to_dict()},
+    )
+    return {"ok": True, "boi_id": boi_id, "access": decision.to_dict(), "audit": audit}
+
+
+def event_type_draft_dir() -> Path:
+    ensure_dirs()
+    path = DRAFT_ROOT / "event_type_drafts"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def event_type_draft_path(draft_id: str) -> Path:
+    safe = re.sub(r"[^a-zA-Z0-9_.:-]", "-", draft_id)
+    return event_type_draft_dir() / f"{safe}.json"
+
+
+def validate_event_type_draft_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    event_type = str(payload.get("event_type") or "")
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+\.v\d+", event_type):
+        errors.append("event_type must follow dotted lower-case versioned naming, e.g. domain.event.requested.v1")
+    if get_event_type(event_type):
+        errors.append("event_type already exists in catalog")
+    if not payload.get("name_ko"):
+        warnings.append("name_ko is recommended for operator-facing UI")
+    if not payload.get("description"):
+        warnings.append("description is recommended")
+    if not payload.get("sop_ref") and not payload.get("workflow_stage"):
+        warnings.append("sop_ref or workflow_stage should be provided when this event participates in SOP workflow")
+    recommended_actions = payload.get("recommended_actions") or []
+    action_keys = {str(item.get("action_key") or item.get("key") or "") for item in load_action_catalog()}
+    unknown_actions = [item for item in recommended_actions if item not in action_keys]
+    if unknown_actions:
+        warnings.append(f"unknown recommended action(s): {', '.join(unknown_actions)}")
+    return {"valid": not errors, "errors": errors, "warnings": warnings}
+
+
+def create_event_type_draft(req: EventTypeDraftRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required to create an Event Type draft")
+    payload = req.model_dump()
+    validation = validate_event_type_draft_payload(payload)
+    draft_id = f"event-type-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    row = {
+        "draft_id": draft_id,
+        "status": "draft",
+        "created_at": now_iso(),
+        "created_by": employee_id,
+        "event_type": req.event_type,
+        "proposal": payload,
+        "validation": validation,
+        "catalog_patch_proposal": {
+            "event_type": req.event_type,
+            "name_ko": req.name_ko or req.event_type,
+            "description": req.description,
+            "owner": req.owner or employee_id,
+            "topic": req.topic,
+            "workflow_stage": req.workflow_stage,
+            "sop_ref": req.sop_ref,
+            "payload_schema": req.payload_schema,
+            "recommended_actions": req.recommended_actions,
+        },
+    }
+    event_type_draft_path(draft_id).write_text(json.dumps(row, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    append_rbac_audit(employee_id, "event_type_draft_create", {"draft_id": draft_id, "event_type": req.event_type, "validation": validation})
+    return row
+
+
+def read_event_type_drafts() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for path in sorted(event_type_draft_dir().glob("*.json")):
+        try:
+            rows.append(json.loads(path.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    return sorted(rows, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+
+
+@app.post("/api/event-types/drafts")
+async def api_event_type_draft_create(req: EventTypeDraftRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    draft = create_event_type_draft(req, employee_id)
+    return {"ok": True, "draft": draft}
+
+
+@app.get("/api/event-types/drafts")
+async def api_event_type_drafts(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    rows = read_event_type_drafts()
+    visible = [row for row in rows if row.get("created_by") == employee_id or "boi.admin" in roles_for(employee_id)]
+    return {"ok": True, "count": len(visible), "items": visible}
+
+
+@app.post("/api/event-types/drafts/{draft_id}/validate")
+async def api_event_type_draft_validate(draft_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    path = event_type_draft_path(draft_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="draft not found")
+    draft = json.loads(path.read_text(encoding="utf-8"))
+    validation = validate_event_type_draft_payload(draft.get("proposal") or {})
+    draft["validation"] = validation
+    draft["validated_at"] = now_iso()
+    draft["validated_by"] = employee_id
+    path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    append_rbac_audit(employee_id, "event_type_draft_validate", {"draft_id": draft_id, "validation": validation})
+    return {"ok": True, "draft": draft}
 
 
 @app.get("/source", response_class=HTMLResponse)
@@ -5609,6 +6152,7 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         if not doc:
             return {**context, "page_kind": "doc", "boi_id": boi_id, "fallback": "ontology_search_only"}
         metadata = doc.get("metadata") or {}
+        access = access_policy_for_doc(doc, employee_id)
         source_event = metadata.get("source_event") if isinstance(metadata.get("source_event"), dict) else {}
         return {
             **context,
@@ -5622,9 +6166,10 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
             "status": metadata.get("status") or "",
             "event_type": metadata.get("event_type") or source_event.get("event_type") or "",
             "trace_id": source_event.get("trace") or "",
-            "body_excerpt": text_excerpt(str(doc.get("body") or "")),
+            "body_excerpt": text_excerpt(str(doc.get("body") or "")) if access.can_use_in_agent_context else "",
             "linked_items": lightweight_doc_link_items(doc, employee_id, limit=8),
             "url": doc_url_for_ref(str(metadata.get("boi_id") or boi_id), employee_id),
+            "access": access.to_dict(),
         }
     if path.startswith("/workflows/") and path.endswith("/status"):
         workflow_key = unquote(path.removeprefix("/workflows/").removesuffix("/status")).strip("/")
@@ -5731,6 +6276,7 @@ def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_lim
         "current_url": req.current_url,
         "page_context": page_context,
         "ontology_search_seed": ontology_seed,
+        "access_summary": page_context.get("access") or {"can_read": True, "can_use_in_agent_context": True},
     }
 
 
@@ -5739,6 +6285,7 @@ def native_agent_doc_tool(ref: str, employee_id: str) -> dict[str, Any] | None:
     if not doc:
         return None
     metadata = doc.get("metadata") or {}
+    access = access_policy_for_doc(doc, employee_id)
     stable_ref = stable_doc_ref(doc)
     return {
         "ok": True,
@@ -5747,8 +6294,9 @@ def native_agent_doc_tool(ref: str, employee_id: str) -> dict[str, Any] | None:
         "title": metadata.get("title") or stable_ref,
         "description": metadata.get("description") or "",
         "metadata": metadata,
-        "body_excerpt": text_excerpt(str(doc.get("body") or ""), 1800),
+        "body_excerpt": text_excerpt(str(doc.get("body") or ""), 1800) if access.can_use_in_agent_context else "",
         "url": doc_url_for_ref(stable_ref, employee_id),
+        "access": access.to_dict(),
     }
 
 
@@ -5856,10 +6404,24 @@ def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dic
             "latency_ms": latency_ms,
             "router_backend": route.get("router_backend"),
             "router_confidence": route.get("confidence"),
+            "access_summary": context_pack.get("access_summary") or {},
+            "guardrails_applied": sorted(set([*(response.get("guardrails_applied") or []), "acl_policy", "classification", "mutation_confirmation"])),
+            "redacted_count": max(int(response.get("redacted_count") or 0), count_agent_redactions(response), len((context_pack.get("access_summary") or {}).get("redactions") or [])),
         }
     )
     response.setdefault("context_summary", {})["latency_ms"] = latency_ms
     return response
+
+
+def count_agent_redactions(response: dict[str, Any]) -> int:
+    count = 0
+    for item in response.get("tool_trace") or []:
+        result = item.get("result") if isinstance(item, dict) else {}
+        if isinstance(result, dict):
+            count += int(result.get("redacted_count") or 0)
+    access = response.get("access_summary") if isinstance(response.get("access_summary"), dict) else {}
+    count += len(access.get("redactions") or []) if isinstance(access, dict) else 0
+    return count
 
 
 def mermaid_artifact_from_markdown(answer_markdown: str) -> dict[str, Any] | None:
@@ -6371,6 +6933,17 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         "official_external_interfaces": ["BoI API", "boi-wiki-mcp"],
         "trusted_dev_backend": "Langflow optional visual/debug backend",
         "boi_agent_backend": BOI_AGENT_BACKEND,
+        "rbac_enabled": True,
+        "acl_guardrail_enabled": True,
+        "classification_policy_version": CLASSIFICATION_POLICY_VERSION,
+        "supported_execution_cards": [
+            "event_publish",
+            "workflow_start",
+            "action_invoke",
+            "manual_handoff_complete",
+            "event_type_draft",
+            "promotion_draft",
+        ],
         "native_agent": {
             "enabled": BOI_AGENT_BACKEND in {"native", "hybrid"},
             "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "sequential-fallback",
@@ -6396,6 +6969,31 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
 async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     if not req.user_confirmed:
         raise HTTPException(status_code=400, detail="user_confirmed=true is required")
+    operation = req.operation.strip()
+    payload = req.payload or {}
+    if operation in {"event_publish", "publish_event"}:
+        result = await publish_event(EventPublishRequest(**payload), employee_id)
+        append_rbac_audit(employee_id, "agent_event_publish", {"operation": operation, "event_type": payload.get("event_type"), "note": req.note})
+        return {"ok": True, "operation": operation, "status": "executed", "result": result}
+    if operation in {"workflow_start", "start_workflow"}:
+        workflow_key = str(payload.get("workflow_key") or payload.get("key") or "")
+        if not workflow_key:
+            raise HTTPException(status_code=400, detail="workflow_key is required")
+        result = await start_workflow_from_data(workflow_key, payload.get("payload") or payload, employee_id)
+        append_rbac_audit(employee_id, "agent_workflow_start", {"workflow_key": workflow_key, "note": req.note})
+        return {"ok": True, "operation": operation, "status": "executed", "result": result}
+    if operation in {"action_invoke", "invoke_action"}:
+        result = await invoke_action_gateway(ActionInvokeRequest(**payload), employee_id)
+        append_rbac_audit(employee_id, "agent_action_invoke", {"action_key": payload.get("action_key"), "note": req.note})
+        return {"ok": True, "operation": operation, "status": "executed", "result": result}
+    if operation in {"manual_handoff_complete", "manual_complete"}:
+        result = await complete_manual_handoff(ManualHandoffCompleteRequest(**payload), employee_id)
+        append_rbac_audit(employee_id, "agent_manual_handoff_complete", {"task_id": payload.get("task_id"), "note": req.note})
+        return {"ok": True, "operation": operation, "status": "executed", "result": result}
+    if operation in {"event_type_draft", "create_event_type_draft"}:
+        draft_payload = {**payload, "user_confirmed": True}
+        draft = create_event_type_draft(EventTypeDraftRequest(**draft_payload), employee_id)
+        return {"ok": True, "operation": operation, "status": "draft_created", "draft": draft}
     return {
         "ok": True,
         "employee_id": employee_id,
@@ -6740,8 +7338,8 @@ async def api_agent_inbox(employee_id: str = Depends(current_employee), status: 
     return agent_inbox_payload(employee_id, status=status, limit=limit)
 
 
-@app.post("/api/agents/boi-wiki/manual-handoffs/complete")
-async def api_manual_handoff_complete(req: ManualHandoffCompleteRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+async def complete_manual_handoff(req: ManualHandoffCompleteRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.workflow_runner")
     if not req.user_confirmed:
         raise HTTPException(status_code=400, detail="user_confirmed=true is required")
     if not req.note.strip():
@@ -6761,6 +7359,11 @@ async def api_manual_handoff_complete(req: ManualHandoffCompleteRequest, employe
     }
     appended = append_action_log_row(row)
     return {"ok": True, "item": appended}
+
+
+@app.post("/api/agents/boi-wiki/manual-handoffs/complete")
+async def api_manual_handoff_complete(req: ManualHandoffCompleteRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return await complete_manual_handoff(req, employee_id)
 
 
 @app.post("/api/agents/boi-wiki/inbox/{task_id:path}/snooze")
@@ -8858,8 +9461,7 @@ async def api_action_logs(action_key: str = "", limit: int = 200) -> dict[str, A
     return {"count": len(rows), "items": rows}
 
 
-@app.post("/api/actions/invoke")
-async def api_action_invoke(req: ActionInvokeRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+async def invoke_action_gateway(req: ActionInvokeRequest, employee_id: str) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.action_invoker")
     payload = req.model_dump()
     payload["employee_id"] = req.employee_id or employee_id
@@ -8876,6 +9478,11 @@ async def api_action_invoke(req: ActionInvokeRequest, employee_id: str = Depends
         if resp.status_code >= 400:
             raise HTTPException(status_code=resp.status_code, detail=body)
         return body
+
+
+@app.post("/api/actions/invoke")
+async def api_action_invoke(req: ActionInvokeRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return await invoke_action_gateway(req, employee_id)
 
 
 @app.get("/api/users")

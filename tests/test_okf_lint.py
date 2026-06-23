@@ -25,6 +25,27 @@ def valid_private_metadata(boi_id: str = "boi:private:100001:lint:001") -> dict:
     }
 
 
+def valid_public_metadata(boi_id: str = "boi:public:lint:test") -> dict:
+    return {
+        "okf_version": "0.1",
+        "boi_profile_version": "0.1",
+        "type": "boi/test",
+        "title": "OKF Lint Test",
+        "description": "OKF lint fixture",
+        "tags": ["OKF", "Test"],
+        "timestamp": "2026-06-17T15:00:00+09:00",
+        "boi_id": boi_id,
+        "visibility": "public",
+        "classification": "internal",
+        "owner": "public",
+        "author": {"type": "agent", "agent_id": "test"},
+        "acl_policy": "acl:public",
+        "status": "draft",
+        "source_refs": [{"type": "test", "ref": "okf-lint-fixture"}],
+        "review": {"reviewer": "test-reviewer", "review_status": "fixture"},
+    }
+
+
 def write_markdown(path: Path, metadata: dict, body: str = "# Summary\n\nOKF body") -> None:
     import yaml
 
@@ -83,7 +104,7 @@ def test_okf_lint_rejects_reserved_index_used_as_boi_concept(tmp_path: Path):
     from boi_api.app.okf import lint_data_root
 
     data_root = tmp_path / "data"
-    write_markdown(data_root / "boi" / "public" / "actions" / "index.md", valid_private_metadata("boi:private:100001:index"))
+    write_markdown(data_root / "boi" / "public" / "actions" / "index.md", valid_public_metadata("boi:public:actions:index"))
 
     result = lint_data_root(data_root)
 
@@ -97,12 +118,12 @@ def test_okf_lint_extracts_bundle_relative_markdown_graph_edges(tmp_path: Path):
     data_root = tmp_path / "data"
     write_markdown(
         data_root / "boi" / "public" / "sop" / "flow.md",
-        valid_private_metadata("boi:private:100001:flow"),
+        valid_public_metadata("boi:public:sop:flow"),
         "# Summary\n\nUse [Trend History](/public/actions/api/request-trend-history.md).",
     )
     write_markdown(
         data_root / "boi" / "public" / "actions" / "api" / "request-trend-history.md",
-        valid_private_metadata("boi:private:100001:trend"),
+        valid_public_metadata("boi:public:actions:api:request-trend-history"),
         "# Summary\n\nTrend API.",
     )
 
@@ -139,7 +160,7 @@ def test_okf_lint_validates_local_media_assets_with_manifest(tmp_path: Path):
     )
     write_markdown(
         data_root / "boi" / "public" / "manual" / "media-test.md",
-        valid_private_metadata("boi:private:100001:media-test"),
+        valid_public_metadata("boi:public:manual:media-test"),
         "# Summary\n\n![Sample](/public/manual/_media/browser/sample.png)",
     )
 
@@ -166,7 +187,7 @@ def test_okf_lint_rejects_media_outside_media_directory(tmp_path: Path):
     image_path.write_bytes(tiny_png_bytes())
     write_markdown(
         data_root / "boi" / "public" / "manual" / "media-test.md",
-        valid_private_metadata("boi:private:100001:bad-media-test"),
+        valid_public_metadata("boi:public:manual:bad-media-test"),
         "# Summary\n\n![Sample](/public/manual/sample.png)",
     )
 

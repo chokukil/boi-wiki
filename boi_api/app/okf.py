@@ -99,6 +99,42 @@ def validate_okf_metadata(metadata: dict[str, Any], promotion: bool = False) -> 
     return validate_boi_profile_metadata(metadata, promotion=promotion)
 
 
+def validate_boi_profile_path_acl(metadata: dict[str, Any], path: Path, boi_root: Path) -> list[str]:
+    errors: list[str] = []
+    try:
+        parts = path.resolve().relative_to(boi_root.resolve()).parts
+    except ValueError:
+        return ["BoI path must be under boi root"]
+    visibility = str(metadata.get("visibility") or "")
+    owner = str(metadata.get("owner") or "")
+    raw_acl_policy = metadata.get("acl_policy")
+    acl_policy = raw_acl_policy if isinstance(raw_acl_policy, str) else ""
+    if visibility == "private":
+        if len(parts) < 3 or parts[0] != "private" or not re.fullmatch(r"\d{6,7}", parts[1]):
+            errors.append("private BoI must live under data/boi/private/{numeric-employee-id}/")
+        else:
+            employee_id = parts[1]
+            if owner != employee_id:
+                errors.append("private BoI owner must match path employee_id")
+            if acl_policy and acl_policy != f"acl:private:{employee_id}":
+                errors.append("private BoI acl_policy must match acl:private:{employee_id}")
+    elif visibility == "team":
+        if len(parts) < 3 or parts[0] != "team" or not parts[1]:
+            errors.append("team BoI must live under data/boi/team/{team_id}/")
+        else:
+            team_id = str(metadata.get("team_id") or parts[1])
+            if str(metadata.get("team_id") or "") and str(metadata.get("team_id")) != parts[1]:
+                errors.append("team BoI team_id must match path team_id")
+            if acl_policy and acl_policy != f"acl:team:{team_id}":
+                errors.append("team BoI acl_policy must match acl:team:{team_id}")
+    elif visibility == "public":
+        if not parts or parts[0] != "public":
+            errors.append("public BoI must live under data/boi/public/")
+        if acl_policy and acl_policy != "acl:public":
+            errors.append("public BoI acl_policy must be acl:public")
+    return errors
+
+
 def concept_id_for_path(path: Path, boi_root: Path) -> str:
     return str(path.relative_to(boi_root).with_suffix("")).replace("\\", "/")
 
@@ -334,7 +370,11 @@ def lint_markdown_file(
     metadata, body = split_frontmatter(path.read_text(encoding="utf-8"))
     if not metadata:
         return ["missing YAML frontmatter"], []
-    errors = validate_okf_core_metadata(metadata) + validate_boi_profile_metadata(metadata)
+    errors = (
+        validate_okf_core_metadata(metadata)
+        + validate_boi_profile_metadata(metadata)
+        + validate_boi_profile_path_acl(metadata, path, boi_root)
+    )
     edges = markdown_link_edges(path, body, boi_root)
     if strict_links:
         errors.extend(f"unresolved OKF markdown link: {edge['href']}" for edge in edges if not edge["resolved"])

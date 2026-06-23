@@ -31,6 +31,8 @@ review:
 
 BoI Wiki의 운영 권한은 OKF 문서 ACL과 사용자 identity를 함께 본다. 개발 모드는 사번 selector를 유지하지만, SSO 모드에서는 Keycloak claim과 HCP 권한 응답이 source of truth다.
 
+SSO/MyAccess 성격의 시스템은 “누가 이 시스템에 접근할 수 있는가”와 사번 claim을 제공한다. BoI 문서 visibility, Team BoI 접근, Action 실행, promotion, Agent context 사용 같은 세부 권한은 BoI Wiki 내부 팀 RBAC와 BoI Profile ACL이 결정한다.
+
 # SK hynix SSO Baseline
 
 이 PoC의 SSO 기준은 [langflow-hynix](https://github.com/YeonghyeonKO/langflow-hynix)의 Keycloak/HCP 모델과 맞춘다.
@@ -129,5 +131,7 @@ BoI Wiki MCP는 agent가 OKF 문서, action catalog, workflow 상태, source/bod
 # Citations
 
 - [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)
+- [BoI Profile ACL Policy](/public/boi-wiki-manual/security/boi-profile-acl-policy.md)
+- [Team RBAC Management](/public/boi-wiki-manual/security/team-rbac-management.md)
 - [Langflow connected flow guide](/public/boi-wiki-manual/langflow/connected-flow-guide.md)
 - [Web edit와 Git commit 정책](/public/boi-wiki-manual/operations/draft-and-git-policy.md)

@@ -1,0 +1,103 @@
+---
+okf_version: "0.1"
+boi_profile_version: "0.1"
+type: boi/manual
+title: Agent Guardrail and ACL
+description: Native BoI Agent와 MCP가 ACL, classification, mutation safety를 우회하지 않도록 하는 guardrail 기준
+tags: [Manual, Agent, ACL, Guardrail, MCP]
+timestamp: 2026-06-24T09:10:00+09:00
+boi_id: boi:public:boi-wiki-manual:agent:agent-guardrail-and-acl
+visibility: public
+classification: internal
+owner: AIX 확산 TF
+author:
+  type: agent
+  agent_id: codex
+acl_policy: acl:public
+status: reviewed
+source_refs:
+  - type: repo
+    ref: boi_api/app/native_agent.py
+  - type: repo
+    ref: boi_api/app/access_policy.py
+review:
+  reviewer: agent-curator
+  review_status: reviewed
+---
+
+# Summary
+
+BoI Agent는 검색 결과를 모아 답하는 챗봇이 아니라 업무 시스템의 보안 경계를 통과하는 Agent다. Web Pet Agent, MCP `boi_agent_chat`, Native Agent, Ontology Search, Inbox, Manual Handoff completion은 모두 같은 ACL decision을 사용한다.
+
+# Native Agent Guardrail State Graph
+
+```mermaid
+flowchart TD
+  START["question + current_url + employee_id"] --> ROUTE["intent routing"]
+  ROUTE --> PAGE["resolve page context"]
+  PAGE --> ACL["access_policy_gate"]
+  ACL -->|denied| DENY["access denied answer"]
+  ACL -->|allowed| RET["ontology retrieval with ACL pruning"]
+  RET --> LOOP["typed tool loop"]
+  LOOP --> ART["compose artifacts<br/>Mermaid / tables / task cards"]
+  ART --> VERIFY["verify_acl_and_artifacts"]
+  VERIFY --> SAFE["safety gate<br/>mutation requires confirmation"]
+  SAFE --> OUT["answer + links + citations + redactions"]
+```
+
+# What Must Be Filtered
+
+| Surface | ACL rule |
+|---|---|
+| Search result | 접근 불가 문서, restricted 원문 제거 |
+| Agent context | `can_use_in_agent_context=false`이면 원문 body 제외 |
+| Citation/link | `can_cite=false`이면 link/citation 제거 |
+| Mermaid/table/task card | 포함된 BoI/Event/Action reference를 다시 검증 |
+| Memory | restricted/confidential 원문 자동 저장 금지 |
+| External action payload | `can_export=false`이면 원문 payload 포함 금지 |
+| MCP | Web Agent와 동일한 access policy 사용 |
+
+# Mutation Boundary
+
+Agent가 할 수 있는 상태 변경은 모두 confirmation card를 거친다.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Pet as Pet Agent
+  participant API as BoI API
+  participant Guard as RBAC/ACL/Safety
+  participant Runtime as Event/Action/Workflow
+
+  User->>Pet: "이 이벤트 발행해줘"
+  Pet->>API: chat request
+  API->>Guard: classify mutation + check permissions
+  Guard-->>API: confirmation required
+  API-->>Pet: execution_card
+  User->>Pet: confirm
+  Pet->>API: /api/agents/boi-wiki/approve
+  API->>Guard: re-check RBAC/ACL/classification
+  Guard-->>API: allowed
+  API->>Runtime: execute append-only/action/event call
+  Runtime-->>API: result
+  API-->>Pet: execution result + audit reference
+```
+
+# Required Response Metadata
+
+Agent response should include:
+
+- `access_summary`
+- `guardrails_applied`
+- `redacted_count`
+- `tool_trace`
+- `coverage_report`
+- `links`
+- `citations`
+- `artifacts`
+
+# Related Documents
+
+- [Native BoI Agent Architecture](/public/boi-wiki-manual/agent/native-boi-agent-architecture.md)
+- [BoI Profile ACL Policy](/public/boi-wiki-manual/security/boi-profile-acl-policy.md)
+- [Pet Agent UX and Artifacts](/public/boi-wiki-manual/agent/pet-agent-ux-and-artifacts.md)

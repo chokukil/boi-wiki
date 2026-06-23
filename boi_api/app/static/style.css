@@ -107,6 +107,9 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-answer pre, .boi-agent-artifact pre { margin:8px 0; max-height:220px; overflow:auto; padding:10px; border-radius:8px; background:#0f172a; color:#e5e7eb; font-size:12px; }
 .boi-agent-artifacts { display:grid; gap:8px; margin-top:8px; }
 .boi-agent-artifact { border:1px solid #dbe3ee; border-radius:10px; background:#f8fafc; padding:10px; overflow:auto; }
+.boi-agent-artifact-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.boi-agent-artifact-title button { border:1px solid #bfdbfe; border-radius:999px; background:#fff; color:#1d4ed8; padding:3px 8px; font-size:11px; font-weight:800; }
+.boi-agent-image-artifact img { display:block; max-width:100%; height:auto; border-radius:8px; }
 .boi-agent-artifact table { width:100%; border-collapse:collapse; font-size:12px; }
 .boi-agent-artifact td { border-top:1px solid #dbe3ee; padding:6px; vertical-align:top; }
 .boi-agent-task-title { display:flex; gap:8px; align-items:center; justify-content:space-between; }
@@ -192,13 +195,16 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-launcher strong { position:absolute; right:72px; top:-7px; z-index:2; display:inline-flex; align-items:center; justify-content:center; min-width:23px; height:23px; border:2px solid #fff; border-radius:999px; background:#ef4444; color:#fff; font-size:12px; box-shadow:0 4px 10px rgba(239,68,68,.25); }
 .boi-agent-pet { display:block; width:88px; height:auto; align-self:end; justify-self:end; filter:drop-shadow(0 12px 16px rgba(15,23,42,.28)); transform:translateY(3px); pointer-events:none; }
 .boi-agent-pet.small { width:48px; transform:none; filter:drop-shadow(0 5px 9px rgba(15,23,42,.24)); }
-.boi-agent-panel { position:fixed; right:var(--boi-agent-right, 20px); bottom:calc(var(--boi-agent-bottom, 18px) + 80px); z-index:999; display:none; width:min(430px, calc(100vw - 32px)); max-height:min(720px, calc(100vh - 112px)); overflow:hidden; border:1px solid #cbd5e1; border-radius:14px; background:#fff; box-shadow:0 24px 60px rgba(15,23,42,.28); }
+.boi-agent-panel { position:fixed; right:var(--boi-agent-right, 20px); bottom:calc(var(--boi-agent-bottom, 18px) + 80px); z-index:999; display:none; width:min(560px, calc(100vw - 32px)); max-height:min(760px, calc(100vh - 112px)); overflow:hidden; border:1px solid #cbd5e1; border-radius:14px; background:#fff; box-shadow:0 24px 60px rgba(15,23,42,.28); }
 .boi-agent-panel.open { display:flex; flex-direction:column; }
+.boi-agent-panel.expanded { width:min(920px, calc(100vw - 44px)); max-height:calc(100vh - 92px); }
 .boi-agent-panel > header { display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:12px; padding:13px 15px; background:linear-gradient(135deg,#0f172a 0%,#164e63 100%); color:#fff; }
 .boi-agent-header-main { display:flex; align-items:center; min-width:0; gap:10px; }
 .boi-agent-panel h2 { margin:0; font-size:18px; }
 .boi-agent-panel header p { margin:4px 0 0; max-width:290px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#dbeafe; font-size:12px; }
-.boi-agent-close { min-width:32px; height:32px; padding:0; border:1px solid rgba(255,255,255,.25); border-radius:999px; background:rgba(255,255,255,.08); color:#fff; font-size:22px; line-height:1; }
+.boi-agent-window-actions { display:flex; align-items:center; gap:6px; }
+.boi-agent-window-actions button { min-height:32px; padding:4px 9px; border:1px solid rgba(255,255,255,.25); border-radius:999px; background:rgba(255,255,255,.08); color:#fff; font-size:12px; font-weight:800; }
+.boi-agent-window-actions .boi-agent-close { min-width:32px; padding:0; font-size:22px; line-height:1; }
 .boi-agent-tabs { display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; padding:8px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
 .boi-agent-tabs button { min-height:36px; border:1px solid transparent; border-radius:999px; background:transparent; color:#334155; font-size:13px; font-weight:900; }
 .boi-agent-tabs button.active { border-color:#bfdbfe; background:#fff; color:#111827; box-shadow:0 4px 12px rgba(37,99,235,.12); }
@@ -211,19 +217,23 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-suggestions button:hover { border-color:#60a5fa; background:#eff6ff; }
 .boi-agent-chat-form { display:grid; gap:9px; }
 .boi-agent-chat-form textarea { width:100%; min-height:86px; resize:vertical; }
+.boi-agent-form-actions { display:flex; justify-content:flex-end; gap:8px; }
 .boi-agent-chat-form button, .boi-agent-handoff-form button { justify-self:end; }
 .boi-agent-messages { display:grid; gap:9px; margin-bottom:12px; }
-.boi-agent-message { max-width:92%; padding:10px 12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
+.boi-agent-message { max-width:96%; min-width:0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; overflow-wrap:anywhere; }
 .boi-agent-message.user { justify-self:end; border-color:#bfdbfe; background:#eff6ff; }
 .boi-agent-message.assistant { justify-self:start; }
 .boi-agent-message strong { display:block; margin-bottom:4px; color:#334155; font-size:12px; }
 .boi-agent-message p { margin:0; color:#1f2937; line-height:1.55; }
 .boi-agent-meta { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 7px; }
 .boi-agent-meta span { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border:1px solid #dbeafe; border-radius:999px; background:#f8fafc; color:#475569; font-size:11px; font-weight:800; }
-.boi-agent-answer { position:relative; margin-top:12px; padding:13px 14px; border:1px solid #dbeafe; border-radius:12px; background:#fff; box-shadow:0 6px 18px rgba(15,23,42,.08); }
+.boi-agent-answer { position:relative; margin-top:12px; padding:13px 14px; border:1px solid #dbeafe; border-radius:12px; background:#fff; box-shadow:0 6px 18px rgba(15,23,42,.08); overflow-wrap:anywhere; }
 .boi-agent-answer::before { content:""; position:absolute; right:28px; top:-8px; width:14px; height:14px; border-left:1px solid #dbeafe; border-top:1px solid #dbeafe; background:#fff; transform:rotate(45deg); }
 .boi-agent-answer p { margin:0; color:#1f2937; line-height:1.55; }
 .boi-agent-answer ul { margin:8px 0 0 18px; padding:0; }
+.boi-agent-table-wrap { max-width:100%; overflow:auto; }
+.boi-agent-answer table, .boi-agent-table-wrap table { width:100%; border-collapse:collapse; font-size:12px; }
+.boi-agent-answer th, .boi-agent-answer td, .boi-agent-table-wrap th, .boi-agent-table-wrap td { border-top:1px solid #dbe3ee; padding:6px; text-align:left; vertical-align:top; overflow-wrap:anywhere; }
 .boi-agent-links { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
 .boi-agent-links a { display:inline-flex; align-items:center; min-height:28px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; color:#1d4ed8; text-decoration:none; font-size:12px; font-weight:800; }
 .boi-agent-list { display:grid; gap:9px; }
@@ -237,12 +247,33 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-handoff-form label { display:grid; gap:4px; font-size:12px; font-weight:900; color:#334155; }
 .boi-agent-handoff-form textarea { min-height:70px; resize:vertical; }
 .boi-agent-empty, .boi-agent-hint { color:#64748b; font-size:13px; }
+.permissions-page { display:grid; gap:18px; padding:20px 24px 48px; }
+.permission-summary-grid, .permission-card-grid, .permission-policy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+.permission-summary-grid article, .permission-card, .permission-policy-grid article { border:1px solid #dbe3ee; border-radius:8px; background:#fff; padding:13px 14px; }
+.permission-summary-grid strong { display:block; margin-bottom:6px; color:#334155; font-size:12px; text-transform:uppercase; }
+.permission-summary-grid p, .permission-policy-grid p, .permission-card p { margin:0; color:#475569; line-height:1.55; }
+.permission-card header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.permission-card h3, .permission-policy-grid h3 { margin:0 0 6px; font-size:16px; }
+.permission-card header span { border-radius:999px; background:#dcfce7; color:#166534; padding:2px 8px; font-size:12px; font-weight:800; }
+.permission-card dl { display:grid; gap:5px; margin:10px 0 0; font-size:13px; }
+.permission-card dl div { display:grid; grid-template-columns:68px minmax(0, 1fr); gap:8px; }
+.permission-card dt { color:#334155; font-weight:900; }
+.permission-card dd { margin:0; overflow-wrap:anywhere; }
+.boi-agent-viewer-backdrop { position:fixed; inset:0; z-index:1100; display:flex; align-items:center; justify-content:center; padding:22px; background:rgba(15,23,42,.45); }
+.boi-agent-viewer { width:min(1100px, 96vw); max-height:92vh; display:flex; flex-direction:column; border:1px solid #cbd5e1; border-radius:14px; background:#fff; box-shadow:0 28px 80px rgba(15,23,42,.38); overflow:hidden; }
+.boi-agent-viewer header { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; background:#0f172a; color:#fff; }
+.boi-agent-viewer header button { border:1px solid rgba(255,255,255,.25); border-radius:999px; background:rgba(255,255,255,.08); color:#fff; padding:5px 10px; font-weight:800; }
+.boi-agent-viewer-body { padding:16px; overflow:auto; }
+.boi-agent-viewer .boi-agent-artifact { border:0; background:#fff; padding:0; }
+.boi-agent-viewer .mermaid-diagram { max-width:none; }
 @media (max-width:640px) {
   .boi-agent-launcher { right:var(--boi-agent-right, 12px); bottom:var(--boi-agent-bottom, 12px); grid-template-columns:minmax(150px, 1fr) auto; max-width:calc(100vw - 24px); }
   .boi-agent-launcher-copy { min-height:48px; padding:9px 11px; }
   .boi-agent-launcher-copy small { display:none; }
   .boi-agent-panel { right:var(--boi-agent-right, 12px); bottom:calc(var(--boi-agent-bottom, 12px) + 70px); width:calc(100vw - 24px); }
+  .boi-agent-panel.expanded { right:12px; width:calc(100vw - 24px); max-height:calc(100vh - 86px); }
   .boi-agent-panel header p { max-width:210px; }
+  .boi-agent-window-actions .boi-agent-new { display:none; }
   .boi-agent-tabs { grid-template-columns:repeat(2, 1fr); }
 }
 

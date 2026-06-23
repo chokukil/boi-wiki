@@ -29,6 +29,7 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 - OKF Markdown documents and action catalog are source of truth.
 - Web and MCP source/body edits use preview, validation, apply, and auto-commit. MCP apply tools require explicit `user_confirmed: true`. Team/Public promotion is separate: after user preview approval, call the validated promotion publish path and treat HOTL as post-publication oversight.
 - Native BoI Agent in `boi-api` is the production Agent backend. Langflow is one connector/debug backend, not the default Agent engine.
+- Langflow is one connector kind among `api`, `webhook`, `mcp`, `manual`, `event_broker`, and `boi_writer`; do not model BoI Wiki as Langflow-only.
 - BoI API/MCP are the official external Agent interfaces. Langflow direct run URLs are trusted/dev integration paths, not user-facing public APIs.
 - Always search existing SOPs, event types, action specs, manual tasks, and harness docs before creating new ones.
 - Keep images under `_media/`, update `media-manifest.yaml`, and use standard Markdown image syntax.

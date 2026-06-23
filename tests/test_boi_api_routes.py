@@ -199,6 +199,70 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert isinstance(body["links"], list)
 
 
+def test_rbac_me_and_doc_access_guard_private_boi(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    me = client.get("/api/rbac/me?employee_id=100001")
+    assert me.status_code == 200
+    assert me.json()["rbac_enabled"] if "rbac_enabled" in me.json() else me.json()["ok"]
+    assert "boi.viewer" in me.json()["roles"]
+
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/reference",
+            "title": "Private ACL Test",
+            "description": "private ACL test",
+            "tags": ["ACL"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:private:100001:acl-test",
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "acl_policy": "acl:private:100001",
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "acl"}],
+        },
+        "# Summary\n\nprivate body",
+    )
+
+    allowed = client.get("/api/docs/boi:private:100001:acl-test/access?employee_id=100001")
+    denied = client.get("/api/docs/boi:private:100001:acl-test/access?employee_id=100002")
+
+    assert allowed.status_code == 200
+    assert allowed.json()["access"]["can_read"] is True
+    assert denied.status_code == 200
+    assert denied.json()["access"]["can_read"] is False
+    assert "another employee" in " ".join(denied.json()["access"]["reasons"])
+
+
+def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    event_type = "pytest.sample.event.requested.v1"
+
+    response = client.post(
+        "/api/event-types/drafts?employee_id=100001",
+        json={
+            "event_type": event_type,
+            "name_ko": "Pytest 신규 이벤트",
+            "description": "catalog에는 바로 반영되지 않는 draft",
+            "user_confirmed": True,
+        },
+    )
+
+    assert response.status_code == 200
+    draft = response.json()["draft"]
+    assert draft["event_type"] == event_type
+    assert draft["validation"]["valid"] is True
+    assert boi_app_module.get_event_type(event_type) is None
+
+    validate = client.post(f"/api/event-types/drafts/{draft['draft_id']}/validate?employee_id=100001")
+    assert validate.status_code == 200
+    assert validate.json()["draft"]["validation"]["valid"] is True
+
+
 def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

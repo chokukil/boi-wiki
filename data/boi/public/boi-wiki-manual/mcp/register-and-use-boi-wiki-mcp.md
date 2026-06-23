@@ -42,6 +42,8 @@ BoI Wiki MCP는 agent-facing 표준 인터페이스다. API를 직접 외우는 
 
 Codex에서 BoI Wiki MCP를 사용할 때 이름은 `boi-wiki-mcp`, transport는 Streamable HTTP, URL은 `http://localhost:8200/mcp`로 둔다. 등록 후 `boi_search`, `boi_get`, `workflow_status`, `action_invoke` 같은 tool이 보이면 정상이다.
 
+BoI Agent 관련 tool은 BoI API와 같은 guardrail을 사용한다. `boi_search`는 document-only search이고, 복합 업무 탐색은 `ontology_search`, 현재 페이지 기반 질의응답은 `boi_agent_chat`, 담당 업무 확인은 `agent_inbox`를 사용한다. `manual_handoff_complete`, apply, promotion, action 실행 계열은 사용자 확인과 RBAC/ACL 검증 없이는 실행되지 않는다.
+
 ```json
 {
   "mcpServers": {
@@ -148,4 +150,6 @@ python scripts/check_boi_wiki_mcp.py \
 # Citations
 
 - [MCP BoI Search Action Spec](/public/actions/mcp/boi-search-sample.md)
+- [Agent Guardrail and ACL](/public/boi-wiki-manual/agent/agent-guardrail-and-acl.md)
+- [BoI Agent API, MCP, Ontology Search Harness](/public/harness/agent-api-mcp-search-harness.md)
 - [Multi-action connector guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md)

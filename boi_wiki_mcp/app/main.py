@@ -26,7 +26,7 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "action_invoke", "description": "Invoke an allowlisted Action Gateway action with approval policy preserved."},
     {"name": "workflow_start", "description": "Start a config-driven workflow from SOP metadata."},
     {"name": "workflow_status", "description": "Return workflow status for a trace."},
-    {"name": "boi_agent_chat", "description": "Ask the page-aware BoI Agent using ontology search, dictionary, memory, and inbox context."},
+    {"name": "boi_agent_chat", "description": "Ask the page-aware BoI Agent using ontology search, dictionary, memory, inbox context, and BoI ACL guardrails."},
     {"name": "boi_agent_suggestions", "description": "Return recommended questions for a current BoI Wiki page context."},
     {"name": "ontology_search", "description": "Search the business knowledge graph across Dictionary, SOP, Event Types, Actions, BoI docs, and runtime evidence."},
     {"name": "dictionary_resolve", "description": "Resolve business terms and aliases with private, team, then public priority."},
@@ -650,7 +650,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
             "A direct browser/curl request to /mcp may return 406 even when the server is healthy.",
             "Static resources are intentionally empty; use resource templates and tools.",
-            "BoI API/MCP are the official external Agent interfaces; Native BoI Agent is the production backend and direct Langflow run URLs are trusted/dev visual-debug only.",
+            "BoI API/MCP are the official external Agent interfaces; Native BoI Agent is the production backend and direct Langflow run URLs are trusted/dev visual-debug only. All Agent/Search/Inbox tools use the same BoI Profile ACL and Team RBAC guardrails as the Web UI.",
         ],
     }
 
@@ -721,7 +721,7 @@ async def status_page(request: Request) -> HTMLResponse:
     <section>
       <h2>Client Registration</h2>
       <p>Register <code>{payload["mcp_endpoint"]}</code> as a Streamable HTTP MCP server in Codex, Claude Desktop, or Cursor.</p>
-      <p>Use <code>ontology_search</code> for knowledge graph exploration, <code>boi_search</code> for document-only search, and <code>boi_agent_chat</code> for page-aware Q&amp;A. The production BoI Agent backend is the native Agent inside BoI API; Langflow direct run URLs are trusted/dev visual-debug paths, not the public Agent API.</p>
+      <p>Use <code>ontology_search</code> for knowledge graph exploration, <code>boi_search</code> for document-only search, and <code>boi_agent_chat</code> for page-aware Q&amp;A. The production BoI Agent backend is the native Agent inside BoI API; Langflow direct run URLs are trusted/dev visual-debug paths, not the public Agent API. Agent/Search/Inbox tools use BoI Profile ACL and Team RBAC guardrails.</p>
       <p>Opening <code>/mcp</code> directly in a browser is not a valid MCP check. It can return <code>406</code> because the client did not send the required MCP Accept headers.</p>
     </section>
   </main>

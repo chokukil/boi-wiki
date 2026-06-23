@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ shell.title }} - BoI Wiki</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% include "_app_shell.html" %}
+
+<main class="page-shell permissions-page">
+  <section class="page-section">
+    <h2>내 권한</h2>
+    <div class="permission-summary-grid">
+      <article>
+        <strong>사번</strong>
+        <p>{{ me.employee_id }}</p>
+      </article>
+      <article>
+        <strong>팀</strong>
+        <p>{{ me.teams | join(', ') if me.teams else '-' }}</p>
+      </article>
+      <article>
+        <strong>역할</strong>
+        <p>{{ me.roles | join(', ') if me.roles else '-' }}</p>
+      </article>
+      <article>
+        <strong>정책</strong>
+        <p>BoI Profile ACL + classification</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="page-section">
+    <h2>팀</h2>
+    <p class="muted">팀은 물리 조직이 아니라 BoI 공유와 권한 부여를 위한 관리 단위입니다. 사번을 팀에 추가해 Team BoI와 Workflow 권한을 부여합니다.</p>
+    <div class="permission-card-grid">
+      {% for team in teams %}
+      <article class="permission-card">
+        <header>
+          <h3>{{ team.display_name or team.team_id }}</h3>
+          <span>{{ team.status or 'active' }}</span>
+        </header>
+        <p>{{ team.description or team.team_id }}</p>
+        <dl>
+          <div><dt>team_id</dt><dd>{{ team.team_id }}</dd></div>
+          <div><dt>owners</dt><dd>{{ team.owners | join(', ') if team.owners else '-' }}</dd></div>
+          <div><dt>members</dt><dd>{{ team.members | join(', ') if team.members else '-' }}</dd></div>
+        </dl>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="page-section">
+    <h2>역할</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Role</th><th>Label</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          {% for role in roles %}
+          <tr>
+            <td><code>{{ role.role }}</code></td>
+            <td>{{ role.label }}</td>
+            <td>{{ role.description }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="page-section">
+    <h2>Role Bindings</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Subject</th><th>Roles</th><th>Scope</th><th>Resource</th><th>Created</th></tr>
+        </thead>
+        <tbody>
+          {% for binding in bindings %}
+          <tr>
+            <td>{{ binding.subject_type }}:{{ binding.subject_id }}</td>
+            <td>{{ binding.roles | join(', ') }}</td>
+            <td>{{ binding.scope or 'global' }}</td>
+            <td>{{ binding.resource or '-' }}</td>
+            <td>{{ binding.created_at or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">아직 추가 role binding이 없습니다. 기본 개발 사용자 역할과 팀 seed가 적용됩니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="page-section">
+    <h2>BoI Profile ACL 기준</h2>
+    <div class="permission-policy-grid">
+      <article>
+        <h3>Private</h3>
+        <p><code>data/boi/private/{7자리사번}</code>, <code>owner</code>, <code>acl:private:{7자리사번}</code>, 요청 사번이 일치해야 합니다.</p>
+      </article>
+      <article>
+        <h3>Team</h3>
+        <p><code>team_id</code>, <code>acl:team:{team_id}</code>, 내부 팀 멤버십이 일치해야 합니다.</p>
+      </article>
+      <article>
+        <h3>Classification</h3>
+        <p><code>confidential</code>은 export/action payload를 제한하고, <code>restricted</code>는 Agent context와 memory 사용을 강하게 제한합니다.</p>
+      </article>
+      <article>
+        <h3>Break-glass</h3>
+        <p>Admin도 private 원문 열람은 기본 차단됩니다. 사유와 audit이 있는 break-glass 요청만 예외입니다.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="page-section">
+    <h2>Audit</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Actor</th><th>Action</th><th>Payload</th></tr>
+        </thead>
+        <tbody>
+          {% for row in audit_rows %}
+          <tr>
+            <td>{{ row.logged_at }}</td>
+            <td>{{ row.actor }}</td>
+            <td>{{ row.action }}</td>
+            <td><code>{{ row.payload }}</code></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">권한 audit 기록이 아직 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+</body>
+</html>

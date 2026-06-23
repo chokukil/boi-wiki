@@ -39,13 +39,16 @@ flowchart TD
   MCP["boi-wiki-mcp<br/>boi_agent_chat"] --> API
   API --> ROUTER["LLM Router first<br/>rules fallback"]
   ROUTER --> AGENT["Native BoI Agent<br/>LangGraph + sequential fallback"]
+  AGENT --> ACL["Access Policy Gate<br/>visibility + classification + team RBAC"]
   AGENT --> RET["Ontology Retrieval<br/>Dictionary + OKF graph + catalogs"]
   AGENT --> TOOLS["Typed Tool Dispatcher"]
   TOOLS --> DOCS["BoI Markdown / OKF docs"]
   TOOLS --> LOGS["Event / Action / Activity JSONL"]
   TOOLS --> CAT["Event / Action catalogs"]
   TOOLS --> MEM["Private Memory / Dictionary"]
-  AGENT --> SAFE["Safety Gate<br/>mutation requires confirmation"]
+  RET --> ACL2["ACL pruning"]
+  TOOLS --> ACL2
+  ACL2 --> SAFE["Safety Gate<br/>mutation requires confirmation"]
   SAFE --> OUT["Unified Agent Response<br/>links + citations + artifacts"]
   OUT --> UI
   OUT --> MCP
@@ -78,4 +81,6 @@ flowchart TD
 - [Native BoI Agent Tool Loop](/public/boi-wiki-manual/agent/native-boi-agent-tool-loop.md)
 - [Ontology Retrieval and Search](/public/boi-wiki-manual/agent/ontology-retrieval-and-search.md)
 - [Safety, Approval, and Memory](/public/boi-wiki-manual/agent/safety-approval-and-memory.md)
+- [Agent Guardrail and ACL](/public/boi-wiki-manual/agent/agent-guardrail-and-acl.md)
+- [BoI Profile ACL Policy](/public/boi-wiki-manual/security/boi-profile-acl-policy.md)
 - [Deployment and Verification](/public/boi-wiki-manual/agent/deployment-and-verification.md)
