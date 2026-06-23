@@ -760,6 +760,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' in response.text
+    assert "/static/mermaid_render.js?v=" in response.text
     assert "/static/pet_agent.js?v=" in response.text
     assert "sessionStorage" in script
     assert "Agent" in script
@@ -1196,6 +1197,7 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert "플러스 목록도 지원" in response.text
     assert '<table class="markdown-table">' in response.text
     assert '/static/mermaid_render.js?v=' in response.text
+    assert response.text.count('/static/mermaid_render.js?v=') == 1
     assert '<div class="mermaid-diagram" data-mermaid-state="pending">' in response.text
     assert '<div class="mermaid">' in response.text
     assert "flowchart TD" in response.text
@@ -1323,6 +1325,7 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         assert "Event Stream" in response.text
         assert "Actions" in response.text
         assert "Workflows" not in response.text
+        assert "/static/mermaid_render.js?v=" in response.text
         assert 'class="utility-nav"' in response.text
         assert "Langflow" in response.text
         assert "Kafka UI" in response.text
