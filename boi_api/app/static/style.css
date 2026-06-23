@@ -229,8 +229,15 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-meta span { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border:1px solid #dbeafe; border-radius:999px; background:#f8fafc; color:#475569; font-size:11px; font-weight:800; }
 .boi-agent-answer { position:relative; margin-top:12px; padding:13px 14px; border:1px solid #dbeafe; border-radius:12px; background:#fff; box-shadow:0 6px 18px rgba(15,23,42,.08); overflow-wrap:anywhere; }
 .boi-agent-answer::before { content:""; position:absolute; right:28px; top:-8px; width:14px; height:14px; border-left:1px solid #dbeafe; border-top:1px solid #dbeafe; background:#fff; transform:rotate(45deg); }
-.boi-agent-answer p { margin:0; color:#1f2937; line-height:1.55; }
-.boi-agent-answer ul { margin:8px 0 0 18px; padding:0; }
+.boi-agent-answer p { margin:0 0 8px; color:#1f2937; line-height:1.55; }
+.boi-agent-answer p:last-child { margin-bottom:0; }
+.boi-agent-answer h3, .boi-agent-answer h4, .boi-agent-answer h5, .boi-agent-answer h6 { margin:10px 0 6px; color:#0f172a; line-height:1.35; }
+.boi-agent-answer h3 { font-size:16px; }
+.boi-agent-answer h4, .boi-agent-answer h5, .boi-agent-answer h6 { font-size:14px; }
+.boi-agent-answer ul, .boi-agent-answer ol { margin:8px 0 8px 18px; padding:0; }
+.boi-agent-answer li { margin:3px 0; line-height:1.5; }
+.boi-agent-answer blockquote { margin:8px 0; padding:8px 10px; border-left:3px solid #bfdbfe; background:#f8fafc; color:#334155; }
+.boi-agent-answer blockquote p { margin:0 0 6px; }
 .boi-agent-table-wrap { max-width:100%; overflow:auto; }
 .boi-agent-answer table, .boi-agent-table-wrap table { width:100%; border-collapse:collapse; font-size:12px; }
 .boi-agent-answer th, .boi-agent-answer td, .boi-agent-table-wrap th, .boi-agent-table-wrap td { border-top:1px solid #dbe3ee; padding:6px; text-align:left; vertical-align:top; overflow-wrap:anywhere; }

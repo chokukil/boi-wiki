@@ -5949,7 +5949,9 @@ def rule_agent_route(req: BoiAgentChatRequest, reason: str = "rules") -> dict[st
         "intent": intent,
         "reason": reason,
         "requires_mutation": route in {"manual_handoff", "approval_required"},
-        "requires_langflow": route == "deep",
+        "requires_deep_reasoning": route == "deep",
+        # Compatibility field for older clients. Deep answers are handled by the native agent by default.
+        "requires_langflow": False,
         "router_backend": "rules",
     }
 
@@ -5991,7 +5993,7 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
                 "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval",
                 "reason": "short Korean or English reason",
                 "requires_mutation": "boolean",
-                "requires_langflow": "boolean",
+                "requires_deep_reasoning": "boolean",
             },
         },
         ensure_ascii=False,
@@ -6078,7 +6080,9 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
         "intent": intent,
         "reason": str(parsed.get("reason") or "llm_router"),
         "requires_mutation": bool(parsed.get("requires_mutation") or route in {"manual_handoff", "approval_required"}),
-        "requires_langflow": bool(parsed.get("requires_langflow") or route == "deep"),
+        "requires_deep_reasoning": bool(parsed.get("requires_deep_reasoning") or parsed.get("requires_langflow") or route == "deep"),
+        # Compatibility field for older clients. Deep answers are handled by native agent unless backend=langflow.
+        "requires_langflow": False,
         "router_backend": "llm",
     }
 
@@ -6093,7 +6097,7 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
     elif req.mode == "deep":
         route = rule_agent_route(req, reason="mode=deep")
         intent = normalize_agent_intent(req.intent, fallback=deterministic_intent)
-        route.update({"route": "deep", "confidence": 1.0, "intent": intent, "requires_langflow": True})
+        route.update({"route": "deep", "confidence": 1.0, "intent": intent, "requires_deep_reasoning": True, "requires_langflow": False})
     else:
         try:
             route = call_boi_agent_router_llm(req, employee_id)
@@ -6107,7 +6111,8 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
                 "route": "deep",
                 "intent": deterministic_intent,
                 "reason": f"intent override after {route.get('router_backend')}: {deterministic_intent}",
-                "requires_langflow": True,
+                "requires_deep_reasoning": True,
+                "requires_langflow": False,
             }
         )
     override = safety_route_override(req.question)
@@ -6357,6 +6362,34 @@ def native_agent_workflow_status_tool(workflow_key: str, trace_id: str, employee
     return workflow_status_payload(workflow_key, trace_id, employee_id, compact=True)
 
 
+def native_agent_llm_json(employee_id: str, task: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """LLM helper used inside the native graph.
+
+    The native agent owns routing. This adapter reuses the configured
+    OpenAI-compatible router endpoint without making the API entrypoint call a
+    separate pre-router first.
+    """
+    if task != "route":
+        return None
+    request_payload = payload.get("request") if isinstance(payload, dict) else {}
+    if not isinstance(request_payload, dict):
+        return None
+    try:
+        req = BoiAgentChatRequest(
+            question=str(request_payload.get("question") or ""),
+            mode=str(request_payload.get("mode") or "auto"),
+            intent=str(request_payload.get("intent") or ""),
+            current_url=str(request_payload.get("current_url") or ""),
+            selected_text=str(request_payload.get("selected_text") or ""),
+            page_context=request_payload.get("page_context") if isinstance(request_payload.get("page_context"), dict) else {},
+            conversation=request_payload.get("conversation") if isinstance(request_payload.get("conversation"), list) else [],
+            save_memory=bool(request_payload.get("save_memory", True)),
+        )
+        return call_boi_agent_router_llm(req, employee_id)
+    except (BoiAgentRouterUnavailable, ValueError, TypeError):
+        return None
+
+
 def native_agent_memory_tool(query: str, employee_id: str, limit: int = 5) -> dict[str, Any]:
     items = agent_memory_items(employee_id, q=query, limit=limit)
     return {"ok": True, "count": len(items), "items": items}
@@ -6373,6 +6406,7 @@ def native_agent_tools(employee_id: str, current_url: str = "") -> NativeAgentTo
         dictionary_resolve=lambda query: {"ok": True, **resolve_dictionary_query(query, employee_id, scope="all")},
         memory_recall=lambda query, limit=5: native_agent_memory_tool(query, employee_id, limit=limit),
         agent_inbox=lambda limit=10: agent_inbox_payload(employee_id, status="open", limit=limit),
+        llm_json=lambda task, payload: native_agent_llm_json(employee_id, task, payload),
     )
 
 
@@ -6384,6 +6418,7 @@ def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dic
             max_tool_loops=BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             tool_timeout_seconds=BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             build_revision=BOI_BUILD_REVISION,
+            llm_enabled=BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first",
         ),
     )
     response = runtime.run(
@@ -6401,12 +6436,13 @@ def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dic
         context_pack,
     )
     latency_ms = int((time.perf_counter() - started_at) * 1000)
+    router_confidence = response.get("router_confidence")
     response.update(
         {
             "employee_id": employee_id,
             "latency_ms": latency_ms,
-            "router_backend": route.get("router_backend"),
-            "router_confidence": route.get("confidence"),
+            "router_backend": response.get("router_backend") or route.get("router_backend"),
+            "router_confidence": router_confidence if router_confidence is not None else route.get("confidence"),
             "access_summary": context_pack.get("access_summary") or {},
             "guardrails_applied": sorted(set([*(response.get("guardrails_applied") or []), "acl_policy", "classification", "mutation_confirmation"])),
             "redacted_count": max(int(response.get("redacted_count") or 0), count_agent_redactions(response), len((context_pack.get("access_summary") or {}).get("redactions") or [])),
@@ -6574,7 +6610,10 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
     else:
         answer_lines.append("질문과 직접 연결되는 항목을 찾지 못했습니다.")
     if route.get("route") == "fast":
-        answer_lines.append("\n더 복합적인 판단이 필요하면 `깊게 분석해줘`라고 요청하면 Langflow Agent로 전환합니다.")
+        answer_lines.append(
+            "\n더 복합적인 판단이 필요하면 `도식으로 보여줘`, `누락된 Action을 찾아줘`, "
+            "`실행 근거를 분석해줘`처럼 원하는 산출물을 구체적으로 요청하세요."
+        )
     latency_ms = int((time.perf_counter() - started_at) * 1000)
     context_summary = {
         "page_context": page_context,
@@ -6592,7 +6631,8 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
         "answer_markdown": "\n".join(answer_lines),
         "links": links[:8],
         "citations": links[:5],
-        "suggested_questions": page_context_suggestions(req.current_url, req.page_context) + ["깊게 분석해줘."],
+        "suggested_questions": page_context_suggestions(req.current_url, req.page_context)
+        + ["이 내용을 도식으로 보여줘.", "누락된 Action이 있는지 점검해줘."],
         "artifacts": [],
         "context_summary": context_summary,
         "route": route.get("route"),
@@ -6879,17 +6919,21 @@ def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: d
 
 def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
     started_at = time.perf_counter()
+    if BOI_AGENT_BACKEND in {"native", "hybrid"}:
+        try:
+            return call_native_boi_agent(req, employee_id, {}, started_at)
+        except Exception:
+            if BOI_AGENT_BACKEND == "hybrid":
+                route = route_boi_agent_request(req, employee_id)
+                return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
+            raise
+
     route = route_boi_agent_request(req, employee_id)
     route_name = str(route.get("route") or "fast")
     if route_name in {"manual_handoff", "approval_required"}:
         return agent_safety_answer(req, employee_id, route, started_at)
     if BOI_AGENT_BACKEND == "langflow" and route_name == "deep":
         return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
-    if BOI_AGENT_BACKEND == "hybrid" and route_name == "deep":
-        try:
-            return call_native_boi_agent(req, employee_id, route, started_at)
-        except Exception:
-            return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
     if BOI_AGENT_BACKEND not in {"native", "hybrid", "langflow"}:
         route["reason"] = f"unknown backend {BOI_AGENT_BACKEND}; using native"
     if BOI_AGENT_BACKEND in {"native", "hybrid"} or route_name in {"fast", "deep", "inbox"}:

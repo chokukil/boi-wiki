@@ -19,6 +19,131 @@ LANGGRAPH_AVAILABLE = StateGraph is not None
 
 JsonDict = dict[str, Any]
 
+ALLOWED_AGENT_ROUTES = {"fast", "deep", "inbox", "manual_handoff", "approval_required"}
+ALLOWED_AGENT_INTENTS = {
+    "search",
+    "page_qa",
+    "summarize",
+    "diagram",
+    "workflow_explain",
+    "gap_check",
+    "trace_reasoning",
+    "inbox",
+    "manual_complete",
+    "approval",
+    "access_denied",
+}
+DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
+
+
+def normalize_native_route(value: str, fallback: str = "fast") -> str:
+    route = str(value or "").strip().lower().replace("-", "_")
+    return route if route in ALLOWED_AGENT_ROUTES else fallback
+
+
+def normalize_native_intent(value: str, *, fallback: str = "search") -> str:
+    intent = str(value or "").strip().lower().replace("-", "_")
+    aliases = {
+        "lookup": "search",
+        "page_summary": "summarize",
+        "summary": "summarize",
+        "workflow_reasoning": "trace_reasoning",
+        "reasoning": "trace_reasoning",
+        "manual_handoff": "manual_complete",
+        "approval_required": "approval",
+    }
+    intent = aliases.get(intent, intent)
+    return intent if intent in ALLOWED_AGENT_INTENTS else fallback
+
+
+def safety_route_override(question: str) -> str | None:
+    q = str(question or "").lower()
+    manual_terms = ("manual handoff", "handoff 완료", "핸드오프 완료", "조치 완료", "완료 처리", "조치내용", "조치 내용")
+    approval_terms = ("승인", "approve", "실행해", "실행해줘", "invoke", "publish", "게시", "배포", "source_apply", "doc_body_apply")
+    if any(term in q for term in manual_terms):
+        return "manual_handoff"
+    if any(term in q for term in approval_terms):
+        return "approval_required"
+    return None
+
+
+def deterministic_native_intent(question: str, current_url: str = "") -> str:
+    q = str(question or "").lower()
+    if safety := safety_route_override(q):
+        return "manual_complete" if safety == "manual_handoff" else "approval"
+    if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
+        return "inbox"
+    if any(term in q for term in ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")):
+        return "diagram"
+    if any(term in q for term in ("부족", "누락", "없는지", "없나", "gap", "갭", "action spec", "액션 spec", "명세", "완성도")):
+        return "gap_check"
+    if any(term in q for term in ("trace", "트레이스", "workflow status", "로그", "왜", "원인", "리스크", "시뮬레이션", "추론", "판단")):
+        return "trace_reasoning"
+    if any(term in q for term in ("찾", "검색", "링크", "목록", "어디", "보여줘")):
+        return "search"
+    if any(term in q for term in ("event", "이벤트", "action", "액션", "manual handoff", "handoff", "핸드오프", "관계", "흐름", "발생하면", "뭘 해야", "어떻게 해야", "이어지는")):
+        return "workflow_explain"
+    if any(term in q for term in ("요약", "정리", "summary", "summarize")):
+        return "summarize"
+    return "page_qa" if current_url else "search"
+
+
+def route_for_native_intent(intent: str) -> str:
+    if intent in DEEP_AGENT_INTENTS:
+        return "deep"
+    if intent == "inbox":
+        return "inbox"
+    if intent == "manual_complete":
+        return "manual_handoff"
+    if intent == "approval":
+        return "approval_required"
+    return "fast"
+
+
+def native_rule_route(request: JsonDict, reason: str = "native_rules") -> JsonDict:
+    deterministic = deterministic_native_intent(str(request.get("question") or ""), str(request.get("current_url") or ""))
+    requested_intent = normalize_native_intent(str(request.get("intent") or ""), fallback=deterministic) if request.get("intent") else deterministic
+    requested_mode = str(request.get("mode") or "auto")
+    route = route_for_native_intent(requested_intent)
+    if requested_mode == "fast" and route not in {"manual_handoff", "approval_required"}:
+        route = "fast"
+    elif requested_mode == "deep":
+        route = "deep"
+    return finalize_native_route(request, {"route": route, "intent": requested_intent, "reason": reason, "router_backend": "native_rules"})
+
+
+def finalize_native_route(request: JsonDict, candidate: JsonDict | None) -> JsonDict:
+    question = str(request.get("question") or "")
+    current_url = str(request.get("current_url") or "")
+    deterministic = deterministic_native_intent(question, current_url)
+    route = normalize_native_route(str((candidate or {}).get("route") or ""), fallback=route_for_native_intent(deterministic))
+    intent = normalize_native_intent(str((candidate or {}).get("intent") or ""), fallback=deterministic)
+    if deterministic in DEEP_AGENT_INTENTS and route != "deep":
+        route = "deep"
+        intent = deterministic
+    if override := safety_route_override(question):
+        route = override
+        intent = "manual_complete" if override == "manual_handoff" else "approval"
+    elif (candidate or {}).get("requires_mutation") and route not in {"manual_handoff", "approval_required"}:
+        route = "approval_required"
+        intent = "approval"
+    confidence = (candidate or {}).get("confidence")
+    try:
+        confidence_value = float(confidence) if confidence is not None else (1.0 if (candidate or {}).get("router_backend") == "request_hint" else 0.82)
+    except (TypeError, ValueError):
+        confidence_value = 0.82
+    return {
+        "route": route,
+        "intent": intent,
+        "confidence": confidence_value,
+        "reason": str((candidate or {}).get("reason") or "native classification"),
+        "requires_mutation": route in {"manual_handoff", "approval_required"},
+        "requires_deep_reasoning": route == "deep",
+        # Compatibility field for older clients. Deep is native reasoning now, not Langflow.
+        "requires_langflow": False,
+        "router_backend": str((candidate or {}).get("router_backend") or "native_rules"),
+    }
+
 
 @dataclass
 class NativeAgentConfig:
@@ -136,12 +261,35 @@ class NativeBoiAgent:
             return self._run_sequential(state)
 
     def _classify_intent(self, state: JsonDict) -> JsonDict:
-        route = state.get("route") or {}
         request = state.get("request") or {}
-        state["intent"] = str(route.get("intent") or request.get("intent") or "search")
+        route = state.get("route") or {}
+        if not route.get("route"):
+            route = self._classify_route_inside_graph(request, state)
+        else:
+            route = finalize_native_route(request, route)
+        state["route"] = route
+        state["intent"] = str(route.get("intent") or "search")
         state["route_name"] = str(route.get("route") or "fast")
         state["question"] = str(request.get("question") or "")
         return state
+
+    def _classify_route_inside_graph(self, request: JsonDict, state: JsonDict) -> JsonDict:
+        if self.config.llm_enabled and self.tools.llm_json and str(request.get("mode") or "auto") == "auto":
+            payload = {
+                "request": request,
+                "deterministic_intent": deterministic_native_intent(str(request.get("question") or ""), str(request.get("current_url") or "")),
+                "allowed_routes": sorted(ALLOWED_AGENT_ROUTES),
+                "allowed_intents": sorted(ALLOWED_AGENT_INTENTS),
+            }
+            routed = self._call_tool(
+                "route_classifier",
+                {"backend": "llm_first"},
+                lambda: self.tools.llm_json("route", payload) if self.tools.llm_json else None,
+                state,
+            )
+            if isinstance(routed, dict) and routed.get("route"):
+                return finalize_native_route(request, routed)
+        return native_rule_route(request)
 
     def _resolve_page_context(self, state: JsonDict) -> JsonDict:
         page_context = state.get("page_context") or {}

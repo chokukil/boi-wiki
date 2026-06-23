@@ -273,6 +273,7 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
             "intent": "page_summary",
             "reason": "simple current page question",
             "requires_mutation": False,
+            "requires_deep_reasoning": False,
             "requires_langflow": False,
             "router_backend": "llm",
         }
@@ -280,6 +281,8 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     def fail_langflow(*args, **kwargs):
         raise AssertionError("fast route must not call Langflow")
 
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
@@ -302,6 +305,27 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     assert "설비" in body["answer_markdown"]
 
 
+def test_boi_agent_native_backend_does_not_pre_route_before_graph(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fail_pre_router(*args, **kwargs):
+        raise AssertionError("native backend must classify inside the native graph")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "route_boi_agent_request", fail_pre_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "SOP 찾아줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["used_backend"] == "native_langgraph"
+    assert body["router_backend"] == "native_rules"
+
+
 def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
@@ -312,6 +336,7 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
             "intent": "search",
             "reason": "router guessed search",
             "requires_mutation": False,
+            "requires_deep_reasoning": False,
             "requires_langflow": False,
             "router_backend": "llm",
         }
@@ -319,6 +344,8 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     def fail_langflow(*args, **kwargs):
         raise AssertionError("native diagram path must not call Langflow")
 
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
@@ -358,6 +385,8 @@ def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_mod
     def fail_langflow(*args, **kwargs):
         raise AssertionError("rules fast fallback must not call Langflow")
 
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", broken_router)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
@@ -369,7 +398,7 @@ def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_mod
     assert response.status_code == 200
     body = response.json()
     assert body["route"] == "fast"
-    assert body["router_backend"] == "rules"
+    assert body["router_backend"] == "native_rules"
     assert body["used_backend"] == "native_langgraph"
 
 
@@ -383,10 +412,13 @@ def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(bo
             "intent": "summary",
             "reason": "wrongly classified",
             "requires_mutation": False,
+            "requires_deep_reasoning": False,
             "requires_langflow": False,
             "router_backend": "llm",
         }
 
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", unsafe_router)
 
     response = client.post(
@@ -397,8 +429,8 @@ def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(bo
     assert response.status_code == 200
     body = response.json()
     assert body["route"] == "manual_handoff"
-    assert body["used_backend"] == "safety_guard"
-    assert "명시" in body["answer_markdown"]
+    assert body["used_backend"] == "native_langgraph"
+    assert "확인 카드" in body["answer_markdown"]
 
 
 def test_boi_agent_chat_safety_overrides_router_requires_mutation_flag(boi_app_module, monkeypatch):
@@ -411,10 +443,13 @@ def test_boi_agent_chat_safety_overrides_router_requires_mutation_flag(boi_app_m
             "intent": "edit",
             "reason": "router detected mutation but wrong route",
             "requires_mutation": True,
+            "requires_deep_reasoning": False,
             "requires_langflow": False,
             "router_backend": "llm",
         }
 
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", unsafe_router)
 
     response = client.post(
@@ -425,7 +460,7 @@ def test_boi_agent_chat_safety_overrides_router_requires_mutation_flag(boi_app_m
     assert response.status_code == 200
     body = response.json()
     assert body["route"] == "approval_required"
-    assert body["used_backend"] == "safety_guard"
+    assert body["used_backend"] == "native_langgraph"
 
 
 def test_boi_agent_router_parses_openai_compatible_json_response(boi_app_module, monkeypatch):
@@ -450,7 +485,7 @@ def test_boi_agent_router_parses_openai_compatible_json_response(boi_app_module,
                                     "intent": "workflow_reasoning",
                                     "reason": "multi-hop 판단",
                                     "requires_mutation": False,
-                                    "requires_langflow": True,
+                                    "requires_deep_reasoning": True,
                                 },
                                 ensure_ascii=False,
                             )
@@ -488,6 +523,8 @@ def test_boi_agent_router_parses_openai_compatible_json_response(boi_app_module,
 
     assert route["route"] == "deep"
     assert route["router_backend"] == "llm"
+    assert route["requires_deep_reasoning"] is True
+    assert route["requires_langflow"] is False
     assert payloads[0]["url"] == "http://router.example/v1/chat/completions"
     assert payloads[0]["json"]["model"] == "google/gemma-4-26b-a4b-qat"
 
@@ -619,7 +656,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-meta" in script
     assert "renderArtifacts" in script
     assert "mermaid-diagram" in script
-    assert "requestModeForQuestion" in script
+    assert "requestModeForQuestion" not in script
+    assert "mode: routeHint.mode" not in script
     assert "selected_text" in script
     assert "boi-agent-handoff-form" in script
     assert "기술 세부정보" in script

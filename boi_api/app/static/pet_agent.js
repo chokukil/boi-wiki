@@ -113,17 +113,30 @@
   }
 
   function renderInlineMarkdown(value) {
-    return escapeHtml(value)
-      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_match, label, url) => `<a href="${escapeAttr(url)}">${escapeHtml(label)}</a>`)
+    const tokens = [];
+    const stash = (html) => {
+      const token = `@@BOI_AGENT_TOKEN_${tokens.length}@@`;
+      tokens.push({ token, html });
+      return token;
+    };
+    let text = String(value || "")
+      .replace(/`([^`]+)`/g, (_match, code) => stash(`<code>${escapeHtml(code)}</code>`))
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_match, label, url) => stash(`<a href="${escapeAttr(url)}">${escapeHtml(label)}</a>`));
+    text = escapeHtml(text)
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/`([^`]+)`/g, "<code>$1</code>");
+      .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+      .replace(/\*([^*\s][^*]*?)\*/g, "<em>$1</em>");
+    for (const item of tokens) {
+      text = text.replace(item.token, item.html);
+    }
+    return text;
   }
 
   function renderMarkdownTable(lines) {
     if (lines.length < 2 || !/^\s*\|?[\s:-|]+\|?\s*$/.test(lines[1])) return "";
     const headers = splitTableRow(lines[0]);
     const bodyRows = lines.slice(2).map(splitTableRow).filter((row) => row.length);
-    return `<div class="boi-agent-table-wrap"><table><thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return `<div class="boi-agent-table-wrap"><table><thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((row) => `<tr>${headers.map((_header, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
 
   function splitTableRow(line) {
@@ -134,9 +147,10 @@
     const lines = String(value || "").split(/\n/);
     const parts = [];
     for (let i = 0; i < lines.length; i += 1) {
+      if (!lines[i].trim()) continue;
       if (lines[i].includes("|") && lines[i + 1]?.includes("|")) {
         const tableLines = [];
-        while (i < lines.length && lines[i].includes("|")) {
+        while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
           tableLines.push(lines[i]);
           i += 1;
         }
@@ -148,6 +162,12 @@
         }
       }
       const line = lines[i];
+      const heading = line.match(/^(#{1,4})\s+(.+)$/);
+      if (heading) {
+        const level = Math.min(4, heading[1].length + 2);
+        parts.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+        continue;
+      }
       if (/^\s*-\s+/.test(line)) {
         const listItems = [];
         while (i < lines.length && /^\s*-\s+/.test(lines[i])) {
@@ -158,7 +178,39 @@
         parts.push(`<ul>${listItems.join("")}</ul>`);
         continue;
       }
-      if (line.trim()) parts.push(`<p>${renderInlineMarkdown(line)}</p>`);
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const listItems = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          listItems.push(`<li>${renderInlineMarkdown(lines[i].replace(/^\s*\d+\.\s+/, ""))}</li>`);
+          i += 1;
+        }
+        i -= 1;
+        parts.push(`<ol>${listItems.join("")}</ol>`);
+        continue;
+      }
+      if (/^\s*>\s?/.test(line)) {
+        const quoteLines = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+          quoteLines.push(lines[i].replace(/^\s*>\s?/, ""));
+          i += 1;
+        }
+        i -= 1;
+        parts.push(`<blockquote>${quoteLines.map((quote) => `<p>${renderInlineMarkdown(quote)}</p>`).join("")}</blockquote>`);
+        continue;
+      }
+      const paragraph = [line.trim()];
+      while (
+        i + 1 < lines.length
+        && lines[i + 1].trim()
+        && !/^(#{1,4})\s+/.test(lines[i + 1])
+        && !/^\s*(-|\d+\.)\s+/.test(lines[i + 1])
+        && !/^\s*>\s?/.test(lines[i + 1])
+        && !(lines[i + 1].includes("|") && lines[i + 2]?.includes("|"))
+      ) {
+        i += 1;
+        paragraph.push(lines[i].trim());
+      }
+      parts.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
     }
     return parts.join("");
   }
@@ -181,8 +233,9 @@
       </div>`;
   }
 
-  function renderMarkdownLite(value) {
+  function renderMarkdownLite(value, options) {
     const text = String(value || "");
+    const skipMermaidSources = options?.skipMermaidSources || new Set();
     const parts = [];
     const fence = /```(\w+)?\s*\n([\s\S]*?)```/g;
     let lastIndex = 0;
@@ -192,10 +245,13 @@
       const lang = String(match[1] || "").toLowerCase();
       const source = String(match[2] || "").trim();
       if (lang === "mermaid") {
-        const id = `markdown-mermaid-${parts.length}-${Math.abs(hashString(source))}`;
-        parts.push(renderMermaidBlock(source, "Diagram", { id, source, type: "mermaid" }));
+        if (!skipMermaidSources.has(normalizeMermaidSource(source))) {
+          const id = `markdown-mermaid-${parts.length}-${Math.abs(hashString(source))}`;
+          parts.push(renderMermaidBlock(source, "Diagram", { id, source, type: "mermaid" }));
+        }
       } else {
-        parts.push(`<pre><code>${escapeHtml(source)}</code></pre>`);
+        const className = lang ? ` class="language-${escapeAttr(lang)}"` : "";
+        parts.push(`<pre><code${className}>${escapeHtml(source)}</code></pre>`);
       }
       lastIndex = fence.lastIndex;
     }
@@ -214,11 +270,25 @@
 
   function artifactItems(message) {
     const markdownMermaid = mermaidSourcesFromMarkdown(message.text || "");
+    const skippedMarkdownMermaid = mermaidSourcesFromArtifacts(message);
     return (message.artifacts || []).filter((artifact) => {
       if (!artifact || typeof artifact !== "object") return false;
-      if (artifact.type === "mermaid" && artifact.source && markdownMermaid.has(normalizeMermaidSource(artifact.source))) return false;
+      if (
+        artifact.type === "mermaid"
+        && artifact.source
+        && markdownMermaid.has(normalizeMermaidSource(artifact.source))
+        && !skippedMarkdownMermaid.has(normalizeMermaidSource(artifact.source))
+      ) return false;
       return true;
     });
+  }
+
+  function mermaidSourcesFromArtifacts(message) {
+    const found = new Set();
+    for (const artifact of message.artifacts || []) {
+      if (artifact?.type === "mermaid" && artifact.source) found.add(normalizeMermaidSource(artifact.source));
+    }
+    return found;
   }
 
   function renderArtifacts(message, messageIndex) {
@@ -262,10 +332,26 @@
   function renderMessageMeta(message) {
     const meta = message.meta || {};
     const chips = [];
-    if (meta.intent) chips.push(meta.intent);
-    if (meta.route) chips.push(meta.route === "deep" ? "깊은 분석" : "빠른 답변");
-    if (meta.used_backend) chips.push(meta.used_backend === "native_langgraph" ? "Native Agent" : meta.used_backend);
-    if (Number.isFinite(meta.latency_ms)) chips.push(`${meta.latency_ms}ms`);
+    const intentLabels = {
+      search: "검색",
+      page_qa: "현재 페이지 답변",
+      summarize: "요약",
+      diagram: "도식 생성",
+      workflow_explain: "업무 흐름 분석",
+      gap_check: "누락 점검",
+      trace_reasoning: "실행 근거 분석",
+      inbox: "Inbox",
+      manual_complete: "조치 확인",
+      approval: "승인 필요",
+      access_denied: "권한 확인",
+    };
+    const routeLabels = {
+      manual_handoff: "조치 확인",
+      approval_required: "승인 필요",
+      inbox: "Inbox",
+    };
+    if (meta.intent && intentLabels[meta.intent]) chips.push(intentLabels[meta.intent]);
+    if (!chips.length && meta.route && routeLabels[meta.route]) chips.push(routeLabels[meta.route]);
     if (!chips.length) return "";
     return `<div class="boi-agent-meta">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>`;
   }
@@ -277,14 +363,17 @@
   function renderMessages() {
     if (!state.messages.length) return "";
     return `<div class="boi-agent-messages">${state.messages
-      .map((message, index) => `
+      .map((message, index) => {
+        const artifactMermaid = mermaidSourcesFromArtifacts(message);
+        return `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
           <strong>${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
-          <div class="boi-agent-answer">${renderMarkdownLite(message.text || "")}</div>
+          <div class="boi-agent-answer">${renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid })}</div>
           ${renderArtifacts(message, index)}
           ${renderLinks(message.links || [])}
-        </article>`)
+        </article>`;
+      })
       .join("")}</div>`;
   }
 
@@ -545,18 +634,8 @@
     render();
   }
 
-  function requestModeForQuestion(question) {
-    const q = String(question || "").toLowerCase();
-    if (/(mermaid|머메이드|flowchart|다이어그램|도식|프로세스 플로우|그려)/.test(q)) return { mode: "deep", intent: "diagram" };
-    if (/(부족|누락|gap|갭|action spec|명세|완성도)/.test(q)) return { mode: "deep", intent: "gap_check" };
-    if (/(event|이벤트|action|액션|manual handoff|핸드오프|관계|흐름|발생하면|뭘 해야)/.test(q)) return { mode: "deep", intent: "workflow_explain" };
-    if (/(trace|트레이스|workflow status|로그|왜|원인|리스크|시뮬레이션|추론|판단)/.test(q)) return { mode: "deep", intent: "trace_reasoning" };
-    return { mode: "auto", intent: "" };
-  }
-
   function ask(question) {
     if (!question.trim() || state.sending) return;
-    const routeHint = requestModeForQuestion(question);
     const controller = new AbortController();
     activeRequest = controller;
     state.draft = "";
@@ -571,8 +650,6 @@
       signal: controller.signal,
       body: JSON.stringify({
         question,
-        mode: routeHint.mode,
-        intent: routeHint.intent,
         selected_text: selectedText(),
         current_url: currentUrl(),
         page_context: { title: pageTitle },
