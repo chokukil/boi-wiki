@@ -100,6 +100,44 @@ def test_okf_lint_reports_invalid_metadata():
     assert "status must be draft/reviewed/approved/deprecated" in errors
 
 
+def test_okf_lint_rejects_private_owner_acl_path_mismatch(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    metadata = valid_private_metadata("boi:private:100001:mismatch")
+    metadata["owner"] = "100002"
+    metadata["acl_policy"] = "acl:private:100002"
+    write_markdown(data_root / "boi" / "private" / "100001" / "bad-private.md", metadata)
+
+    result = lint_data_root(data_root)
+
+    assert not result.ok
+    assert any("private BoI owner must match path employee_id" in error for error in result.errors)
+    assert any("private BoI acl_policy must match acl:private:{employee_id}" in error for error in result.errors)
+
+
+def test_okf_lint_rejects_team_acl_path_mismatch(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    metadata = valid_public_metadata("boi:team:platform:mismatch")
+    metadata.update(
+        {
+            "visibility": "team",
+            "owner": "platform",
+            "team_id": "process",
+            "acl_policy": "acl:team:process",
+        }
+    )
+    write_markdown(data_root / "boi" / "team" / "platform" / "bad-team.md", metadata)
+
+    result = lint_data_root(data_root)
+
+    assert not result.ok
+    assert any("team BoI team_id must match path team_id" in error for error in result.errors)
+    assert any("team BoI acl_policy must match acl:team:{team_id}" in error for error in result.errors)
+
+
 def test_okf_lint_rejects_reserved_index_used_as_boi_concept(tmp_path: Path):
     from boi_api.app.okf import lint_data_root
 
@@ -236,6 +274,42 @@ def test_okf_lint_includes_materialized_log_payloads(tmp_path: Path):
 
     assert result.ok, result.errors
     assert result.checked_log_item_count == 1
+
+
+def test_okf_lint_rejects_materialized_log_acl_path_mismatch(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    log_path = data_root / "events" / "events-20260617.jsonl"
+    log_path.parent.mkdir(parents=True)
+    metadata = valid_private_metadata("boi:private:100001:from-log-mismatch")
+    metadata["owner"] = "100002"
+    metadata["acl_policy"] = "acl:private:100002"
+    log_path.write_text(
+        json.dumps(
+            {
+                "result": {
+                    "response": {
+                        "item": {
+                            "metadata": metadata,
+                            "body": "# Summary\n\nRecovered from log",
+                            "uri": "/private/100001/boi-private-100001-from-log-mismatch.md",
+                        }
+                    }
+                }
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = lint_data_root(data_root, include_logs=True)
+
+    assert not result.ok
+    assert result.checked_log_item_count == 1
+    assert any("private BoI owner must match path employee_id" in error for error in result.errors)
+    assert any("private BoI acl_policy must match acl:private:{employee_id}" in error for error in result.errors)
 
 
 def test_okf_lint_cli_runs_against_repo_data():

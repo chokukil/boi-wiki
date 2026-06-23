@@ -84,7 +84,8 @@ def doc_access_policy(
         effective_team = team_id or path_team
         if path_team and team_id and path_team != team_id:
             reasons.append("team path and metadata.team_id mismatch")
-        if acl_policy and effective_team and acl_policy != f"acl:team:{effective_team}":
+        acl_team = path_team or effective_team
+        if acl_policy and acl_team and acl_policy != f"acl:team:{acl_team}":
             reasons.append("team acl_policy mismatch")
         can_read = bool(effective_team and effective_team in set(teams)) and not reasons
         team_id = effective_team

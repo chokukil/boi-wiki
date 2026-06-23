@@ -122,10 +122,10 @@ def validate_boi_profile_path_acl(metadata: dict[str, Any], path: Path, boi_root
         if len(parts) < 3 or parts[0] != "team" or not parts[1]:
             errors.append("team BoI must live under data/boi/team/{team_id}/")
         else:
-            team_id = str(metadata.get("team_id") or parts[1])
+            path_team_id = parts[1]
             if str(metadata.get("team_id") or "") and str(metadata.get("team_id")) != parts[1]:
                 errors.append("team BoI team_id must match path team_id")
-            if acl_policy and acl_policy != f"acl:team:{team_id}":
+            if acl_policy and acl_policy != f"acl:team:{path_team_id}":
                 errors.append("team BoI acl_policy must match acl:team:{team_id}")
     elif visibility == "public":
         if not parts or parts[0] != "public":
@@ -382,6 +382,20 @@ def lint_markdown_file(
     return errors, edges
 
 
+def materialized_item_acl_errors(item: dict[str, Any], boi_root: Path) -> list[str]:
+    metadata = item.get("metadata") or {}
+    uri = str(item.get("uri") or "").strip()
+    if not uri:
+        return ["materialized BoI requires uri for ACL path validation"]
+    uri_path = uri.split("#", 1)[0].split("?", 1)[0].lstrip("/")
+    if not uri_path:
+        return ["materialized BoI uri is empty after normalization"]
+    path = boi_root / uri_path
+    if path.suffix != ".md":
+        path = path.with_suffix(".md")
+    return validate_boi_profile_path_acl(metadata, path, boi_root)
+
+
 def lint_data_root(
     root: Path,
     include_logs: bool = False,
@@ -411,7 +425,7 @@ def lint_data_root(
                         result.checked_log_item_count += 1
                         metadata = item.get("metadata") or {}
                         prefix = f"{path}:{row_index}:materialized_item:{item_index}"
-                        result.extend(prefix, validate_boi_profile_metadata(metadata))
+                        result.extend(prefix, validate_boi_profile_metadata(metadata) + materialized_item_acl_errors(item, boi_root))
                         body = item.get("body") or ""
                         if isinstance(body, str):
                             item_uri = str(item.get("uri") or "").strip("/")
