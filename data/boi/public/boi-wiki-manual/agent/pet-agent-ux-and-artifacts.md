@@ -73,6 +73,8 @@ Pet Agent는 서버가 내려준 `answer_markdown`을 그대로 원문 텍스트
 
 `workflow_summary`와 `gap_table` artifact는 JSON `<pre>`가 아니라 table artifact로 보여준다. 객체나 배열 cell은 표 안에서 list 또는 compact JSON block으로 정리하되, 일반 workflow 요약은 사람이 바로 읽는 표가 기본이다.
 
+Markdown 본문 스타일은 메시지 작성자 라벨 스타일과 분리한다. 예를 들어 `**굵게**`는 문단 안의 inline emphasis로 남아야 하며, 작성자 라벨처럼 block으로 떨어지면 안 된다. 표 parser는 inline code, link URL, escaped pipe 안의 `|`를 셀 분리자로 오해하지 않아야 한다.
+
 # Artifact Viewer
 
 Artifact는 채팅 안에서는 compact하게 보이고, `크게 보기`를 누르면 modal viewer에서 크게 확인한다. Viewer 대상은 Mermaid, table, image, task card, confirmation card다. Markdown image도 이미지를 클릭하면 같은 viewer로 열린다. Mermaid는 Markdown fenced block과 artifact가 같은 source를 포함하면 하나만 렌더링하고, artifacts 배열 안에 같은 source가 중복되어도 한 번만 보여준다.

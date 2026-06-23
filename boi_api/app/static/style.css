@@ -228,7 +228,7 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-message { max-width:100%; min-width:0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; overflow-wrap:anywhere; }
 .boi-agent-message.user { justify-self:end; border-color:#bfdbfe; background:#eff6ff; }
 .boi-agent-message.assistant { justify-self:start; }
-.boi-agent-message strong { display:block; margin-bottom:4px; color:#334155; font-size:12px; }
+.boi-agent-message > .boi-agent-message-author { display:block; margin-bottom:4px; color:#334155; font-size:12px; }
 .boi-agent-message p { margin:0; color:#1f2937; line-height:1.55; }
 .boi-agent-meta { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 7px; }
 .boi-agent-meta span { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border:1px solid #dbeafe; border-radius:999px; background:#f8fafc; color:#475569; font-size:11px; font-weight:800; }
@@ -239,13 +239,18 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-answer h3, .boi-agent-answer h4, .boi-agent-answer h5, .boi-agent-answer h6 { margin:10px 0 6px; color:#0f172a; line-height:1.35; }
 .boi-agent-answer h3 { font-size:16px; }
 .boi-agent-answer h4, .boi-agent-answer h5, .boi-agent-answer h6 { font-size:14px; }
+.boi-agent-answer strong { color:inherit; font-size:inherit; font-weight:850; }
+.boi-agent-answer code { display:inline-block; max-width:100%; padding:1px 5px; border:1px solid #c7d2fe; border-radius:5px; background:#eef2ff; color:#312e81; font-size:.92em; overflow-wrap:anywhere; }
+.boi-agent-answer a { overflow-wrap:anywhere; }
 .boi-agent-answer ul, .boi-agent-answer ol { margin:8px 0 8px 18px; padding:0; }
 .boi-agent-answer li { margin:3px 0; line-height:1.5; }
 .boi-agent-answer blockquote { margin:8px 0; padding:8px 10px; border-left:3px solid #bfdbfe; background:#f8fafc; color:#334155; }
 .boi-agent-answer blockquote p { margin:0 0 6px; }
-.boi-agent-table-wrap { max-width:100%; overflow:auto; }
-.boi-agent-answer table, .boi-agent-table-wrap table { width:100%; border-collapse:collapse; font-size:12px; }
+.boi-agent-answer hr { margin:10px 0; border:0; border-top:1px solid #dbe3ee; }
+.boi-agent-table-wrap { max-width:100%; margin:9px 0; overflow:hidden; border:1px solid #dbe3ee; border-radius:9px; background:#fff; }
+.boi-agent-answer table, .boi-agent-table-wrap table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:12px; }
 .boi-agent-answer th, .boi-agent-answer td, .boi-agent-table-wrap th, .boi-agent-table-wrap td { border-top:1px solid #dbe3ee; padding:6px; text-align:left; vertical-align:top; overflow-wrap:anywhere; }
+.boi-agent-answer th, .boi-agent-table-wrap th { background:#f8fafc; color:#334155; font-weight:900; }
 .boi-agent-inline-image { display:block; max-width:100%; height:auto; margin:8px 0; border:1px solid #dbe3ee; border-radius:8px; cursor:zoom-in; }
 .boi-agent-links { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
 .boi-agent-links a { display:inline-flex; align-items:center; min-height:28px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; color:#1d4ed8; text-decoration:none; font-size:12px; font-weight:800; }

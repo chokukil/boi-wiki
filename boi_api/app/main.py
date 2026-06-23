@@ -72,6 +72,22 @@ from .auth import (
 )
 
 KST = timezone(timedelta(hours=9))
+
+
+def resolve_router_llm_enabled(raw_value: str | None, mode: str, base_url: str) -> bool:
+    raw = str(raw_value if raw_value is not None else "auto").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return (
+        raw in {"", "auto"}
+        and str(mode or "") == "llm_first"
+        and bool(str(base_url or "").strip())
+        and "llm-gateway.example" not in str(base_url or "")
+    )
+
+
 APP_DIR = Path(__file__).resolve().parent
 DATA_ROOT = Path(os.getenv("DATA_ROOT", "/data/boi"))
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT", "/data/events"))
@@ -92,10 +108,15 @@ BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:123
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
 BOI_AGENT_ROUTER_MODE = os.getenv("BOI_AGENT_ROUTER_MODE", "llm_first")
-BOI_AGENT_ROUTER_LLM_ENABLED = os.getenv("BOI_AGENT_ROUTER_LLM_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 BOI_AGENT_ROUTER_BASE_URL = os.getenv("BOI_AGENT_ROUTER_BASE_URL", BOI_LLM_BASE_URL).rstrip("/")
 BOI_AGENT_ROUTER_API_KEY = os.getenv("BOI_AGENT_ROUTER_API_KEY", BOI_LLM_API_KEY)
 BOI_AGENT_ROUTER_MODEL = os.getenv("BOI_AGENT_ROUTER_MODEL", BOI_LLM_MODEL)
+BOI_AGENT_ROUTER_LLM_ENABLED_RAW = os.getenv("BOI_AGENT_ROUTER_LLM_ENABLED", "auto").strip().lower()
+BOI_AGENT_ROUTER_LLM_ENABLED = resolve_router_llm_enabled(
+    BOI_AGENT_ROUTER_LLM_ENABLED_RAW,
+    BOI_AGENT_ROUTER_MODE,
+    BOI_AGENT_ROUTER_BASE_URL,
+)
 BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "3"))
 BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD", "0.7"))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
@@ -4840,6 +4861,14 @@ async def runtime_config() -> dict[str, Any]:
         },
         "boi_agent": {
             "backend": BOI_AGENT_BACKEND,
+            "router": {
+                "mode": BOI_AGENT_ROUTER_MODE,
+                "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,
+                "base_url": BOI_AGENT_ROUTER_BASE_URL,
+                "model": BOI_AGENT_ROUTER_MODEL,
+                "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
+                "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
+            },
             "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
@@ -7039,6 +7068,14 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         "official_external_interfaces": ["BoI API", "boi-wiki-mcp"],
         "trusted_dev_backend": "Langflow optional visual/debug backend",
         "boi_agent_backend": BOI_AGENT_BACKEND,
+        "router": {
+            "mode": BOI_AGENT_ROUTER_MODE,
+            "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,
+            "base_url": BOI_AGENT_ROUTER_BASE_URL,
+            "model": BOI_AGENT_ROUTER_MODEL,
+            "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
+            "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
+        },
         "rbac_enabled": True,
         "acl_guardrail_enabled": True,
         "classification_policy_version": CLASSIFICATION_POLICY_VERSION,

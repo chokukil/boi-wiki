@@ -69,9 +69,14 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_NATIVE_MAX_TOOL_LOOPS` | `5` | per-run bounded tool loop |
 | `BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS` | `8` | per-tool timeout target |
 | `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
+| `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first, rules fallback |
+| `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 rules fallback |
+| `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
 | `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
 
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
+
+`/api/runtime/config`는 Router mode, LLM enabled 여부, base URL, model을 노출한다. secret은 노출하지 않는다.
 
 # Related Documents
 

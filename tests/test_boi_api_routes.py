@@ -124,6 +124,17 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["llm"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["llm"]["api_key_configured"] is True
     assert "api_key" not in body["llm"]
+    assert body["boi_agent"]["router"]["mode"] == "llm_first"
+    assert body["boi_agent"]["router"]["model"] == "google/gemma-4-26b-a4b-qat"
+    assert body["boi_agent"]["router"]["llm_enabled"] is False
+    assert "api_key" not in body["boi_agent"]["router"]
+
+
+def test_agent_router_auto_enables_for_real_llm_url(boi_app_module):
+    assert boi_app_module.resolve_router_llm_enabled("auto", "llm_first", "http://router.example:1236/v1") is True
+    assert boi_app_module.resolve_router_llm_enabled("auto", "llm_first", "http://llm-gateway.example:1236/v1") is False
+    assert boi_app_module.resolve_router_llm_enabled("false", "llm_first", "http://router.example:1236/v1") is False
+    assert boi_app_module.resolve_router_llm_enabled("true", "rules", "http://llm-gateway.example:1236/v1") is True
 
 
 def test_auth_me_exposes_dev_identity(boi_app_module):
@@ -757,6 +768,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
     assert "isLikelyTableStart" in script
+    assert "normalizeTableRow" in script
+    assert "inCode || parenDepth > 0" in script
+    assert "boi-agent-message-author" in script
     assert "boi-agent-inline-image" in script
     assert "openImageArtifact" in script
     assert "seenMermaidSources" in script
@@ -780,6 +794,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "width:min(640px" in style
     assert "width:min(1080px" in style
     assert ".boi-agent-inline-image" in style
+    assert ".boi-agent-message > .boi-agent-message-author" in style
+    assert ".boi-agent-message strong { display:block;" not in style
+    assert "table-layout:fixed" in style
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
 
 

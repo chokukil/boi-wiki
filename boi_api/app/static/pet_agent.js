@@ -145,7 +145,7 @@
 
   function isTableSeparatorLine(line) {
     const cells = splitTableRow(line);
-    return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+    return cells.length >= 2 && cells.every((cell) => /^:?\s*-{3,}\s*:?$/.test(cell.trim()));
   }
 
   function isLikelyTableStart(lines, index) {
@@ -159,9 +159,19 @@
   function renderMarkdownTable(lines) {
     if (lines.length < 2 || !isTableSeparatorLine(lines[1])) return "";
     const headers = splitTableRow(lines[0]);
-    const bodyRows = lines.slice(2).map(splitTableRow).filter((row) => row.length);
+    const bodyRows = lines.slice(2)
+      .map(splitTableRow)
+      .filter((row) => row.length)
+      .map((row) => normalizeTableRow(row, headers.length));
     if (!headers.length) return "";
     return `<div class="boi-agent-table-wrap"><table><thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((row) => `<tr>${headers.map((_header, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function normalizeTableRow(row, expectedLength) {
+    if (!expectedLength || row.length <= expectedLength) return row;
+    const head = row.slice(0, expectedLength - 1);
+    head.push(row.slice(expectedLength - 1).join(" | "));
+    return head;
   }
 
   function splitTableRow(line) {
@@ -169,15 +179,30 @@
     const cells = [];
     let cell = "";
     let escaped = false;
+    let inCode = false;
+    let parenDepth = 0;
     for (const char of source) {
       if (escaped) {
-        cell += char;
+        cell += char === "|" ? "|" : `\\${char}`;
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
+      } else if (char === "`") {
+        inCode = !inCode;
+        cell += char;
+      } else if (!inCode && char === "(") {
+        parenDepth += 1;
+        cell += char;
+      } else if (!inCode && char === ")" && parenDepth > 0) {
+        parenDepth -= 1;
+        cell += char;
       } else if (char === "|") {
-        cells.push(cell.trim());
-        cell = "";
+        if (inCode || parenDepth > 0) {
+          cell += char;
+        } else {
+          cells.push(cell.trim());
+          cell = "";
+        }
       } else {
         cell += char;
       }
@@ -205,9 +230,9 @@
         }
       }
       const line = lines[i];
-      const heading = line.match(/^(#{1,4})\s+(.+)$/);
+      const heading = line.match(/^(#{1,6})\s+(.+)$/);
       if (heading) {
-        const level = Math.min(4, heading[1].length + 2);
+        const level = Math.min(6, heading[1].length + 2);
         parts.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
         continue;
       }
@@ -479,7 +504,7 @@
         const artifactMermaid = mermaidSourcesFromArtifacts(message);
         return `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
-          <strong>${message.role === "user" ? "You" : "BoI Agent"}</strong>
+          <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
           <div class="boi-agent-answer">${renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid })}</div>
           ${renderArtifacts(message, index)}
