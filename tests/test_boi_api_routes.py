@@ -717,8 +717,14 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "mermaid-diagram" in script
     assert "BoiAgentMarkdownDebug" in script
     assert "renderMarkdownTable" in script
+    assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
     assert "isLikelyTableStart" in script
+    assert 'artifact.type === "workflow_summary"' in script
+    assert "renderObjectTable(rows)" in script
+    assert "JSON.stringify(artifact.data, null, 2)" not in script
+    assert "[-*+]" in script
+    assert "https?:" in script
     assert "requestModeForQuestion" not in script
     assert "mode: routeHint.mode" not in script
     assert "selected_text" in script

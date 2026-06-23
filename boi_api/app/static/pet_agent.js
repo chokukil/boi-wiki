@@ -128,7 +128,9 @@
     text = escapeHtml(text)
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/__([^_]+)__/g, "<strong>$1</strong>")
-      .replace(/\*([^*\s][^*]*?)\*/g, "<em>$1</em>");
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      .replace(/\*([^*\s][^*]*?)\*/g, "<em>$1</em>")
+      .replace(/(^|[\s>])(https?:\/\/[^\s<]+[^<.,;:\s)])/g, (_match, prefix, url) => `${prefix}<a href="${escapeAttr(url)}">${escapeHtml(url)}</a>`);
     for (const item of tokens) {
       text = text.replace(item.token, item.html);
     }
@@ -152,7 +154,7 @@
     if (lines.length < 2 || !isTableSeparatorLine(lines[1])) return "";
     const headers = splitTableRow(lines[0]);
     const bodyRows = lines.slice(2).map(splitTableRow).filter((row) => row.length);
-    if (!headers.length || !bodyRows.length) return "";
+    if (!headers.length) return "";
     return `<div class="boi-agent-table-wrap"><table><thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((row) => `<tr>${headers.map((_header, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
 
@@ -203,10 +205,17 @@
         parts.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
         continue;
       }
-      if (/^\s*-\s+/.test(line)) {
+      if (/^\s*[-*+]\s+/.test(line)) {
         const listItems = [];
-        while (i < lines.length && /^\s*-\s+/.test(lines[i])) {
-          listItems.push(`<li>${renderInlineMarkdown(lines[i].replace(/^\s*-\s+/, ""))}</li>`);
+        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+          const rawItem = lines[i].replace(/^\s*[-*+]\s+/, "");
+          const task = rawItem.match(/^\[( |x|X)\]\s+(.*)$/);
+          if (task) {
+            const checked = task[1].toLowerCase() === "x";
+            listItems.push(`<li><input type="checkbox" disabled${checked ? " checked" : ""}> ${renderInlineMarkdown(task[2])}</li>`);
+          } else {
+            listItems.push(`<li>${renderInlineMarkdown(rawItem)}</li>`);
+          }
           i += 1;
         }
         i -= 1;
@@ -242,7 +251,7 @@
         i + 1 < lines.length
         && lines[i + 1].trim()
         && !/^(#{1,4})\s+/.test(lines[i + 1])
-        && !/^\s*(-|\d+\.)\s+/.test(lines[i + 1])
+        && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i + 1])
         && !/^\s*>\s?/.test(lines[i + 1])
         && !isLikelyTableStart(lines, i + 1)
         && !/^\s*---+\s*$/.test(lines[i + 1])
@@ -343,7 +352,8 @@
         return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Gap Check")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(artifact.data)}</div>`;
       }
       if (artifact.type === "workflow_summary" && artifact.data) {
-        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Workflow Summary")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div><pre>${escapeHtml(JSON.stringify(artifact.data, null, 2))}</pre></div>`;
+        const rows = Array.isArray(artifact.data) ? artifact.data : [artifact.data];
+        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Workflow Summary")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(rows)}</div>`;
       }
       if (artifact.type === "task_cards" && Array.isArray(artifact.data)) {
         return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Tasks")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
@@ -392,13 +402,26 @@
   function renderObjectTable(rows) {
     if (!Array.isArray(rows) || !rows.length) return "";
     const keys = Array.from(new Set(rows.flatMap((row) => Object.keys(row || {}))));
-    return `<div class="boi-agent-table-wrap"><table><thead><tr>${keys.map((key) => `<th>${escapeHtml(key)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${keys.map((key) => `<td>${renderInlineMarkdown(row?.[key] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return `<div class="boi-agent-table-wrap"><table><thead><tr>${keys.map((key) => `<th>${escapeHtml(key)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${keys.map((key) => `<td>${renderCellValue(row?.[key])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function renderCellValue(value) {
+    if (value === null || value === undefined || value === "") return "-";
+    if (Array.isArray(value)) {
+      if (!value.length) return "-";
+      return `<ul>${value.map((item) => `<li>${renderCellValue(item)}</li>`).join("")}</ul>`;
+    }
+    if (typeof value === "object") {
+      return `<pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+    }
+    return renderInlineMarkdown(value);
   }
 
   window.BoiAgentMarkdownDebug = {
     renderInlineMarkdown,
     renderMarkdownLite,
     renderMarkdownTable,
+    renderCellValue,
     splitTableRow,
     mermaidSourcesFromMarkdown,
     mermaidSourcesFromArtifacts,
