@@ -102,7 +102,7 @@
 
   function mermaidSourcesFromMarkdown(value) {
     const found = new Set();
-    const fence = /```(\w+)?\s*\n([\s\S]*?)```/g;
+    const fence = /```[^\S\r\n]*([A-Za-z0-9_-]+)?[^\S\r\n]*(?:\r?\n)([\s\S]*?)```/g;
     let match;
     while ((match = fence.exec(String(value || "")))) {
       if (String(match[1] || "").toLowerCase() === "mermaid") {
@@ -317,7 +317,7 @@
     const text = String(value || "");
     const skipMermaidSources = options?.skipMermaidSources || new Set();
     const parts = [];
-    const fence = /```([A-Za-z0-9_-]+)?[^\S\r\n]*(?:\r?\n)([\s\S]*?)```/g;
+    const fence = /```[^\S\r\n]*([A-Za-z0-9_-]+)?[^\S\r\n]*(?:\r?\n)([\s\S]*?)```/g;
     let lastIndex = 0;
     let match;
     while ((match = fence.exec(text))) {

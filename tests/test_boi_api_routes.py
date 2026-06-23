@@ -770,6 +770,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "mermaid-diagram" in script
     assert "BoiAgentMarkdownDebug" in script
     assert "renderMarkdownTable" in script
+    assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
     assert "isLikelyTableStart" in script

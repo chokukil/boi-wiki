@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import copy
 import hashlib
 import json
 import os
@@ -222,6 +223,8 @@ _OKF_GRAPH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
 _SEARCH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
 MARKDOWN_RENDERER_VERSION = "2026-06-22-doc-detail-lazy-v1"
 SIGNATURE_TTL_SECONDS = 1.0
+_ENSURE_DIRS_READY = False
+_RBAC_STATE_CACHE: dict[str, Any] = {"signature": None, "state": None}
 
 
 def now_iso() -> str:
@@ -239,6 +242,9 @@ def safe_filename(value: str) -> str:
 
 
 def ensure_dirs() -> None:
+    global _ENSURE_DIRS_READY
+    if _ENSURE_DIRS_READY:
+        return
     for sub in ["public", f"team/{DEFAULT_TEAM_ID}", "team/platform"]:
         (DATA_ROOT / sub).mkdir(parents=True, exist_ok=True)
     for employee_id in USER_TEAMS:
@@ -253,6 +259,7 @@ def ensure_dirs() -> None:
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "event_type_drafts").mkdir(parents=True, exist_ok=True)
+    _ENSURE_DIRS_READY = True
 
 
 def file_signature(paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
@@ -1912,23 +1919,44 @@ def default_rbac_state() -> dict[str, Any]:
     return {"teams": teams, "roles": RBAC_ROLES, "bindings": []}
 
 
+def invalidate_rbac_state_cache() -> None:
+    _RBAC_STATE_CACHE["signature"] = None
+    _RBAC_STATE_CACHE["state"] = None
+
+
+def rbac_state_signature() -> tuple[str, int, int] | tuple[str, int, int, str]:
+    path = rbac_state_path()
+    try:
+        stat = path.stat()
+        return (str(path), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return (str(path), 0, 0, "missing")
+
+
 def rbac_state() -> dict[str, Any]:
     ensure_dirs()
     path = rbac_state_path()
-    if not path.exists():
-        return default_rbac_state()
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        data = {}
-    default = default_rbac_state()
-    teams = {**default["teams"], **(data.get("teams") or {})}
-    return {"teams": teams, "roles": data.get("roles") or RBAC_ROLES, "bindings": data.get("bindings") or []}
+    signature = rbac_state_signature()
+    if _RBAC_STATE_CACHE["signature"] != signature:
+        if not path.exists():
+            state = default_rbac_state()
+        else:
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                data = {}
+            default = default_rbac_state()
+            teams = {**default["teams"], **(data.get("teams") or {})}
+            state = {"teams": teams, "roles": data.get("roles") or RBAC_ROLES, "bindings": data.get("bindings") or []}
+        _RBAC_STATE_CACHE["signature"] = signature
+        _RBAC_STATE_CACHE["state"] = state
+    return copy.deepcopy(_RBAC_STATE_CACHE["state"] or default_rbac_state())
 
 
 def write_rbac_state(data: dict[str, Any]) -> None:
     ensure_dirs()
     rbac_state_path().write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    invalidate_rbac_state_cache()
 
 
 def append_rbac_audit(actor: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -2033,7 +2061,13 @@ def accessible_docs(employee_id: str) -> list[dict[str, Any]]:
                 continue
         _DOCS_CACHE["signature"] = signature
         _DOCS_CACHE["docs"] = parsed_docs
-    docs = [doc for doc in _DOCS_CACHE["docs"] if is_accessible(doc, employee_id)]
+    teams = teams_for(employee_id)
+    roles = roles_for(employee_id)
+    docs = [
+        doc
+        for doc in _DOCS_CACHE["docs"]
+        if doc_access_policy(doc, employee_id=employee_id, teams=teams, roles=roles, data_root=DATA_ROOT).can_read
+    ]
     docs.sort(key=lambda d: metadata_sort_value(d["metadata"].get("timestamp")), reverse=True)
     return docs
 
