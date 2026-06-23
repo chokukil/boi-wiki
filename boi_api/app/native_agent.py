@@ -834,12 +834,26 @@ def trace_links(workflow: JsonDict, trace: JsonDict) -> list[JsonDict]:
 
 def suggested_questions_for_state(state: JsonDict) -> list[str]:
     intent = state.get("intent")
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    title = str(page_context.get("title") or doc_title((state.get("tool_results") or {}).get("current_doc") or {}, "현재 문서"))
+    stage_count = int(page_context.get("stage_count") or 0)
+    action_count = int(page_context.get("workflow_action_count") or 0)
+    manual_count = int(page_context.get("workflow_manual_action_count") or 0)
     if intent == "diagram":
-        return ["이 SOP의 Action Spec 누락을 점검해줘.", "이 Event가 발생하면 뭘 해야 해?"]
+        return [
+            f"{title}의 Action {action_count}개와 Manual Handoff {manual_count}개 중 부족한 명세를 점검해줘.",
+            "이 Event가 발생하면 뭘 해야 해?",
+        ]
     if intent == "gap_check":
-        return ["누락된 Action Spec 초안을 만들어줘.", "이 workflow를 Mermaid로 보여줘."]
+        return ["누락된 Action Spec 초안을 만들어줘.", f"{title}를 Mermaid로 다시 보여줘."]
     if intent == "inbox":
         return ["가장 먼저 처리할 일을 알려줘.", "승인 대기 건만 보여줘."]
+    if stage_count:
+        return [
+            f"{title}를 Mermaid 프로세스 플로우로 보여줘.",
+            f"{title}의 Event, Action, Manual Handoff 관계를 요약해줘.",
+            "부족한 Action Spec이 있는지 찾아줘.",
+        ]
     return ["이 내용을 Mermaid로 보여줘.", "관련 Action과 Event를 요약해줘.", "부족한 명세가 있는지 찾아줘."]
 
 

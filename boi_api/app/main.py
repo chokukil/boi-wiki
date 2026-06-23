@@ -5955,48 +5955,112 @@ async def api_ontology_search(
     return ontology_search_payload(q, employee_id, scope=scope, limit=limit, current_url=current_url, view=view)
 
 
+def dedupe_suggestions(values: list[str], limit: int = 4) -> list[str]:
+    seen: set[str] = set()
+    suggestions: list[str] = []
+    for value in values:
+        text = re.sub(r"\s+", " ", str(value or "")).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        suggestions.append(text)
+        if len(suggestions) >= limit:
+            break
+    return suggestions
+
+
 def page_context_suggestions(current_url: str, page_context: dict[str, Any] | None = None) -> list[str]:
     context = page_context or {}
     url = str(current_url or "")
-    title = str(context.get("title") or "")
-    suggestions: list[str]
-    if "/workflows/" in url or "trace_id=" in url:
-        suggestions = [
-            "이 trace에서 내가 처리해야 할 manual handoff가 뭐야?",
-            "실패하거나 승인 대기인 action을 요약해줘.",
-            "이 workflow를 SOP stage 기준으로 설명해줘.",
+    page_kind = str(context.get("page_kind") or "")
+    title = str(context.get("title") or context.get("page_title") or "").strip()
+    access = context.get("access") if isinstance(context.get("access"), dict) else {}
+    if access and access.get("can_use_in_agent_context") is False:
+        return [
+            "현재 문서의 접근 정책과 보안 등급을 설명해줘.",
+            "내 권한으로 사용할 수 있는 관련 공개 문서를 찾아줘.",
+            "이 문서를 Agent context로 쓸 수 없는 이유를 알려줘.",
         ]
-    elif "/actions" in url:
-        suggestions = [
-            "이 action이 어떤 Event Type과 SOP에서 쓰이는지 찾아줘.",
-            "이 action의 입력과 결과 schema를 요약해줘.",
-            "비슷한 API/MCP action spec을 찾아줘.",
-        ]
-    elif "/event-types" in url:
-        suggestions = [
-            "이 Event Type이 연결된 SOP와 Action을 찾아줘.",
-            "이 Event가 발생하면 다음에 어떤 BoI가 생성돼?",
-            "이 Event Type으로 최근 실행 trace를 보여줘.",
-        ]
-    elif "/sops" in url or ":sop:" in url or "/sop/" in url:
-        suggestions = [
-            "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
-            "이 SOP의 Event, Action, Manual Handoff 관계를 요약해줘.",
-            "이 SOP를 실행하려면 부족한 Action Spec이 있는지 찾아줘.",
-        ]
-    elif title:
-        suggestions = [
-            "현재 문서와 연결된 SOP/Event/Action을 찾아줘.",
-            "이 문서의 핵심과 관련 BoI를 요약해줘.",
-            "이 내용을 기반으로 팀 공유용 draft를 만들려면 무엇을 확인해야 해?",
-        ]
+
+    suggestions: list[str] = []
+    if page_kind == "workflow_status" or "/workflows/" in url or "trace_id=" in url:
+        event_count = int(context.get("event_count") or 0)
+        action_count = int(context.get("action_count") or 0)
+        handoff_count = int(context.get("manual_handoff_count") or 0)
+        workflow_key = str(context.get("workflow_key") or "workflow")
+        if event_count or action_count:
+            suggestions.append(f"이 {workflow_key} trace의 Event {event_count}개와 Action {action_count}개를 SOP stage 기준으로 요약해줘.")
+        if handoff_count:
+            suggestions.append(f"남은 Manual Handoff {handoff_count}건을 일반 업무 관점으로 정리해줘.")
+        suggestions.extend([
+            "승인 대기 또는 조치 필요 Action을 먼저 알려줘.",
+            "생성된 BoI와 원본 Action Raw 링크를 묶어서 보여줘.",
+        ])
+    elif page_kind == "action_raw" or "/actions/raw/" in url:
+        action_key = str(context.get("action_key") or "이 Action")
+        status = str(context.get("status") or "")
+        suggestions.extend([
+            f"{action_key} 실행 결과를 업무 관점으로 요약해줘.",
+            f"{action_key}이 어떤 SOP/Event와 연결되는지 찾아줘.",
+            "이 Action 결과가 다음 workflow 단계에 어떤 영향을 주는지 알려줘.",
+        ])
+        if status:
+            suggestions.append(f"현재 상태 `{status}`에서 내가 할 일을 알려줘.")
+    elif page_kind == "event_type" or "/event-types/" in url:
+        event_type = str(context.get("event_type") or "이 Event Type")
+        stage = str(context.get("workflow_stage") or "")
+        recommended_actions = context.get("recommended_actions") if isinstance(context.get("recommended_actions"), list) else []
+        suggestions.extend([
+            f"{event_type}가 발생하면 어떤 SOP stage와 Action이 이어지는지 알려줘.",
+            f"{event_type} 최근 실행 trace를 찾아줘.",
+        ])
+        if stage:
+            suggestions.append(f"`{stage}` 단계에서 사람이 확인해야 할 항목을 정리해줘.")
+        if recommended_actions:
+            suggestions.append(f"{event_type}의 recommended action {len(recommended_actions)}개가 충분한지 점검해줘.")
+    elif page_kind == "events" or url.startswith("/events"):
+        event_type = str(context.get("event_type") or "")
+        trace_id = str(context.get("trace_id") or "")
+        event_count = int(context.get("event_count") or 0)
+        if trace_id:
+            suggestions.append("이 trace의 실행 흐름과 다음 조치를 요약해줘.")
+        if event_type:
+            suggestions.append(f"{event_type} 이벤트 {event_count}건에서 반복 패턴을 찾아줘.")
+            suggestions.append(f"{event_type}가 연결된 SOP와 Action을 보여줘.")
+        suggestions.extend([
+            "최근 Event 중 내가 처리해야 할 Action을 Inbox 기준으로 보여줘.",
+            "Event Stream을 시간/trace 기준으로 좁혀볼 추천 필터를 알려줘.",
+        ])
+    elif page_kind == "doc" or title:
+        doc_type = str(context.get("type") or "")
+        boi_id = str(context.get("boi_id") or "")
+        stage_count = int(context.get("stage_count") or 0)
+        action_count = int(context.get("workflow_action_count") or 0)
+        manual_count = int(context.get("workflow_manual_action_count") or 0)
+        is_sop = doc_type == "boi/sop" or ":sop:" in boi_id or "/sop/" in url or bool(stage_count)
+        subject = title or "현재 문서"
+        if is_sop:
+            suggestions.extend([
+                f"{subject}를 Mermaid 프로세스 플로우로 보여줘.",
+                f"{subject}의 Event, Action, Manual Handoff 관계를 요약해줘.",
+            ])
+            if action_count or manual_count:
+                suggestions.append(f"{subject}의 Action {action_count}개와 Manual Handoff {manual_count}개 중 부족한 명세를 찾아줘.")
+            else:
+                suggestions.append(f"{subject}를 실행하려면 부족한 Action Spec이 있는지 찾아줘.")
+        else:
+            suggestions.extend([
+                f"{subject}와 연결된 SOP/Event/Action을 찾아줘.",
+                f"{subject}의 핵심과 관련 BoI를 요약해줘.",
+                "이 내용을 팀 공유용 draft로 만들려면 무엇을 확인해야 해?",
+            ])
     else:
         suggestions = [
-            "설비 이상 대응 SOP와 연결된 Action을 찾아줘.",
+            "SOP/Event/Action을 함께 검색해줘.",
             "내가 처리해야 할 Action이 있는지 확인해줘.",
-            "BoI Wiki에서 특정 업무 용어를 찾아줘.",
+            "BoI Wiki에서 업무 용어를 ontology search로 찾아줘.",
         ]
-    return suggestions
+    return dedupe_suggestions(suggestions)
 
 
 def agent_link_for_item(item: dict[str, Any]) -> dict[str, str]:
@@ -6360,6 +6424,23 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         access = access_policy_for_doc(doc, employee_id)
         source_event = metadata.get("source_event") if isinstance(metadata.get("source_event"), dict) else {}
         can_use_context = access.can_use_in_agent_context
+        workflow = metadata.get("workflow") if isinstance(metadata.get("workflow"), dict) else {}
+        workflow_stages = workflow.get("stages") if isinstance(workflow.get("stages"), list) and can_use_context else []
+        workflow_event_types: list[str] = []
+        workflow_actions: list[str] = []
+        workflow_manual_actions: list[str] = []
+        for stage in workflow_stages:
+            if not isinstance(stage, dict):
+                continue
+            for event_type in stage.get("event_types") or ([stage.get("entry_event")] if stage.get("entry_event") else []):
+                if event_type and str(event_type) not in workflow_event_types:
+                    workflow_event_types.append(str(event_type))
+            for action_key in stage.get("automated_actions") or []:
+                if action_key and str(action_key) not in workflow_actions:
+                    workflow_actions.append(str(action_key))
+            for manual_key in stage.get("manual_actions") or []:
+                if manual_key and str(manual_key) not in workflow_manual_actions:
+                    workflow_manual_actions.append(str(manual_key))
         return {
             **context,
             "page_kind": "doc",
@@ -6372,6 +6453,11 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
             "status": metadata.get("status") or "",
             "event_type": metadata.get("event_type") or source_event.get("event_type") or "",
             "trace_id": source_event.get("trace") or "",
+            "workflow_key": workflow.get("workflow_key") or "",
+            "stage_count": len(workflow_stages),
+            "workflow_event_types": workflow_event_types[:12],
+            "workflow_action_count": len(workflow_actions),
+            "workflow_manual_action_count": len(workflow_manual_actions),
             "body_excerpt": text_excerpt(str(doc.get("body") or "")) if can_use_context else "",
             "linked_items": lightweight_doc_link_items(doc, employee_id, limit=8) if can_use_context else [],
             "url": doc_url_for_ref(str(metadata.get("boi_id") or boi_id), employee_id) if access.can_cite else "",
@@ -7220,11 +7306,15 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
 
 @app.post("/api/agents/boi-wiki/suggestions")
 async def api_boi_agent_suggestions(req: BoiAgentSuggestionsRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    resolved_context = resolve_agent_page_context(req.current_url, employee_id)
+    if not resolved_context.get("title") and req.page_context.get("title"):
+        resolved_context["title"] = req.page_context.get("title")
     return {
         "ok": True,
         "employee_id": employee_id,
         "current_url": req.current_url,
-        "suggestions": page_context_suggestions(req.current_url, req.page_context),
+        "page_context": resolved_context,
+        "suggestions": page_context_suggestions(req.current_url, resolved_context),
     }
 
 

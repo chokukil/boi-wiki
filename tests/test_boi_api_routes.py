@@ -1012,6 +1012,84 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
 
 
+def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/agents/boi-wiki/suggestions?employee_id=100001",
+        json={
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "page_context": {"title": "client supplied title should not win"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    suggestions = body["suggestions"]
+    joined = " ".join(suggestions)
+    assert body["page_context"]["stage_count"] == 4
+    assert body["page_context"]["workflow_action_count"] > 0
+    assert body["page_context"]["workflow_manual_action_count"] > 0
+    assert "설비 이상 감지·원인 분석·이상 조치 SOP" in joined
+    assert "client supplied title should not win" not in joined
+    assert "Action" in joined
+    assert "Manual Handoff" in joined
+
+
+def test_boi_agent_suggestions_use_event_type_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/agents/boi-wiki/suggestions?employee_id=100001",
+        json={"current_url": "/event-types/equipment.alarm.raised.v1?employee_id=100001"},
+    )
+
+    assert response.status_code == 200
+    suggestions = response.json()["suggestions"]
+    joined = " ".join(suggestions)
+    assert "equipment.alarm.raised.v1" in joined
+    assert "SOP stage" in joined
+    assert "recommended action" in joined
+
+
+def test_boi_agent_suggestions_respect_restricted_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/sop",
+            "title": "Restricted Suggestion Test",
+            "description": "restricted suggestions must not invite context use",
+            "tags": ["Restricted", "Agent"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:public:sop:restricted-suggestion-test",
+            "visibility": "public",
+            "classification": "restricted",
+            "owner": "public",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "acl_policy": "acl:public",
+            "status": "draft",
+            "review": {"reviewer": "pytest", "review_status": "draft"},
+            "source_refs": [{"type": "test", "ref": "restricted-suggestion"}],
+            "workflow": {"workflow_key": "restricted-suggestion-test", "stages": [{"id": "restricted", "name": "Restricted Stage"}]},
+        },
+        "# Summary\n\nrestricted context body",
+    )
+
+    response = client.post(
+        "/api/agents/boi-wiki/suggestions?employee_id=100001",
+        json={"current_url": "/docs/boi:public:sop:restricted-suggestion-test?employee_id=100001"},
+    )
+
+    assert response.status_code == 200
+    suggestions = response.json()["suggestions"]
+    joined = " ".join(suggestions)
+    assert "접근 정책" in joined
+    assert "Mermaid" not in joined
+    assert "Action Spec" not in joined
+
+
 def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
     client = TestClient(boi_app_module.app)
