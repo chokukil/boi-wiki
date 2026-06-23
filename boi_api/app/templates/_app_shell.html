@@ -61,4 +61,4 @@
   data-current-url="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
   data-page-title="{{ shell.title }}"
 ></div>
-<script src="/static/pet_agent.js" defer></script>
+<script src="{{ asset_url('pet_agent.js') }}" defer></script>

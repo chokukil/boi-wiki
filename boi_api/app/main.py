@@ -178,6 +178,14 @@ app = FastAPI(title="BoI Wiki", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
+
+def asset_url(path: str) -> str:
+    clean_path = str(path or "").lstrip("/")
+    return f"/static/{clean_path}?v={quote(BOI_BUILD_REVISION)}"
+
+
+templates.env.globals["asset_url"] = asset_url
+
 _EVENT_TYPES_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _ACTION_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}

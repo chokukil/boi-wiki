@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Workflow Status · {{ trace_id }} · BoI Wiki</title>
-  <link rel="stylesheet" href="/static/style.css" />
-  <script src="/static/workflow_status.js" defer></script>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('workflow_status.js') }}" defer></script>
 </head>
 <body>
   {% include "_app_shell.html" %}

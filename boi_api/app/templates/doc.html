@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ doc.metadata.title }} · BoI Wiki</title>
-  <link rel="stylesheet" href="/static/style.css" />
-  <script src="/static/doc_graph.js" defer></script>
-  <script src="/static/doc_metadata.js" defer></script>
-  <script src="/static/doc_edit.js" defer></script>
-  <script src="/static/mermaid_render.js" defer></script>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('doc_graph.js') }}" defer></script>
+  <script src="{{ asset_url('doc_metadata.js') }}" defer></script>
+  <script src="{{ asset_url('doc_edit.js') }}" defer></script>
+  <script src="{{ asset_url('mermaid_render.js') }}" defer></script>
 </head>
 <body>
   {% include "_app_shell.html" %}

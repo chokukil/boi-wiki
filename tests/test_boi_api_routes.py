@@ -649,7 +649,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' in response.text
-    assert "/static/pet_agent.js" in response.text
+    assert "/static/pet_agent.js?v=" in response.text
     assert "sessionStorage" in script
     assert "Agent" in script
     assert "Inbox" in script
@@ -1054,7 +1054,7 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert "<strong>굵게</strong>" in response.text
     assert "<code>inline code</code>" in response.text
     assert '<table class="markdown-table">' in response.text
-    assert '<script src="/static/mermaid_render.js" defer></script>' in response.text
+    assert '/static/mermaid_render.js?v=' in response.text
     assert '<div class="mermaid-diagram" data-mermaid-state="pending">' in response.text
     assert '<div class="mermaid">' in response.text
     assert "flowchart TD" in response.text
@@ -1340,7 +1340,7 @@ def test_index_loads_library_script_and_prioritizes_library_surface(boi_app_modu
     response = client.get("/?employee_id=100001&folder=team/platform")
 
     assert response.status_code == 200
-    assert '<script src="/static/library.js" defer></script>' in response.text
+    assert '/static/library.js?v=' in response.text
     assert response.text.index('id="boi-library"') < response.text.index('class="poc-guide"')
     assert 'href="/?employee_id=100001&amp;folder=team%2Fplatform"' in response.text
     assert 'aria-current="page"' in response.text
