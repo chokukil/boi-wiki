@@ -6078,6 +6078,7 @@ def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: d
                 "save_memory": req.save_memory,
             },
             ensure_ascii=False,
+            default=str,
         ),
         "input_type": "chat",
         "output_type": "chat",
