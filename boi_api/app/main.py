@@ -1462,6 +1462,56 @@ def read_action_logs(limit: int = 200, action_key: str | None = None, offset: in
     return rows
 
 
+def tail_jsonl_lines(path: Path, max_lines: int, *, chunk_size: int = 16384) -> list[str]:
+    if max_lines <= 0 or not path.exists():
+        return []
+    data = b""
+    newline_count = 0
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        position = handle.tell()
+        while position > 0 and newline_count <= max_lines:
+            read_size = min(chunk_size, position)
+            position -= read_size
+            handle.seek(position)
+            chunk = handle.read(read_size)
+            data = chunk + data
+            newline_count = data.count(b"\n")
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    return lines[-max_lines:]
+
+
+def count_file_lines(path: Path, *, chunk_size: int = 1024 * 1024) -> int:
+    count = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            count += chunk.count(b"\n")
+    return count
+
+
+def read_recent_action_logs_fast(limit: int = 200, action_key: str | None = None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    wanted = max(1, min(int(limit or 200), 2000))
+    for path in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl"), reverse=True):
+        tail_lines = tail_jsonl_lines(path, max(wanted * 3, 200))
+        start_line = max(1, count_file_lines(path) - len(tail_lines) + 1)
+        for offset, line in reversed(list(enumerate(tail_lines))):
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if action_key and row.get("action_key") != action_key:
+                continue
+            row["_log_ref"] = f"action:{path.name}:{start_line + offset}"
+            rows.append(row)
+            if len(rows) >= wanted:
+                return rows
+    return rows
+
+
 def append_action_log_row(row: dict[str, Any]) -> dict[str, Any]:
     ensure_dirs()
     path = ACTION_LOG_ROOT / f"actions-{datetime.now(KST).strftime('%Y%m%d')}.jsonl"
@@ -6145,18 +6195,19 @@ def dictionary_body(req: DictionaryTermRequest) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-def completion_request_ids() -> set[str]:
+def completion_request_ids(rows: list[dict[str, Any]] | None = None) -> set[str]:
     completed: set[str] = set()
-    for row in cached_action_log_rows():
+    for row in (rows if rows is not None else cached_action_log_rows()):
         if row.get("completion_for_request_id"):
             completed.add(str(row.get("completion_for_request_id")))
     return completed
 
 
 def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50) -> dict[str, Any]:
-    completed = completion_request_ids()
+    recent_rows = read_recent_action_logs_fast(limit=max(200, min(limit * 50, 1000)))
+    completed = completion_request_ids(recent_rows)
     items: list[dict[str, Any]] = []
-    for row in read_action_logs(limit=500):
+    for row in recent_rows:
         if not action_log_visible_to_employee(row, employee_id):
             continue
         request_id = str(row.get("request_id") or "")
