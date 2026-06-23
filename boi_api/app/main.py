@@ -5906,9 +5906,9 @@ def normalize_agent_intent(value: str, *, fallback: str = "search") -> str:
 
 def safety_route_override(question: str) -> str | None:
     q = str(question or "").lower()
-    manual_terms = ("manual handoff", "handoff 완료", "핸드오프 완료", "조치 완료", "완료 처리", "조치내용", "조치 내용")
+    manual_action_terms = ("handoff 완료", "핸드오프 완료", "조치 완료", "완료 처리", "조치내용", "조치 내용", "완료 기록", "완료로 기록")
     approval_terms = ("승인", "approve", "실행해", "실행해줘", "invoke", "publish", "게시", "배포", "반영", "적용", "source_apply", "doc_body_apply")
-    if any(term in q for term in manual_terms):
+    if any(term in q for term in manual_action_terms):
         return "manual_handoff"
     if any(term in q for term in approval_terms):
         return "approval_required"

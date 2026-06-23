@@ -121,7 +121,10 @@
     };
     let text = String(value || "")
       .replace(/`([^`]+)`/g, (_match, code) => stash(`<code>${escapeHtml(code)}</code>`))
-      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_match, label, url) => stash(`<a href="${escapeAttr(url)}">${escapeHtml(label)}</a>`));
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, url) => {
+        const href = String(url || "").trim();
+        return href ? stash(`<a href="${escapeAttr(href)}">${escapeHtml(label)}</a>`) : escapeHtml(label);
+      });
     text = escapeHtml(text)
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/__([^_]+)__/g, "<strong>$1</strong>")
@@ -132,15 +135,47 @@
     return text;
   }
 
+  function isTableSeparatorLine(line) {
+    const cells = splitTableRow(line);
+    return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+  }
+
+  function isLikelyTableStart(lines, index) {
+    return Boolean(
+      lines[index]?.includes("|")
+      && lines[index + 1]?.includes("|")
+      && isTableSeparatorLine(lines[index + 1])
+    );
+  }
+
   function renderMarkdownTable(lines) {
-    if (lines.length < 2 || !/^\s*\|?[\s:-|]+\|?\s*$/.test(lines[1])) return "";
+    if (lines.length < 2 || !isTableSeparatorLine(lines[1])) return "";
     const headers = splitTableRow(lines[0]);
     const bodyRows = lines.slice(2).map(splitTableRow).filter((row) => row.length);
+    if (!headers.length || !bodyRows.length) return "";
     return `<div class="boi-agent-table-wrap"><table><thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((row) => `<tr>${headers.map((_header, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
 
   function splitTableRow(line) {
-    return String(line || "").trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+    const source = String(line || "").trim().replace(/^\|/, "").replace(/\|$/, "");
+    const cells = [];
+    let cell = "";
+    let escaped = false;
+    for (const char of source) {
+      if (escaped) {
+        cell += char;
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "|") {
+        cells.push(cell.trim());
+        cell = "";
+      } else {
+        cell += char;
+      }
+    }
+    cells.push(cell.trim());
+    return cells;
   }
 
   function renderTextMarkdown(value) {
@@ -148,7 +183,7 @@
     const parts = [];
     for (let i = 0; i < lines.length; i += 1) {
       if (!lines[i].trim()) continue;
-      if (lines[i].includes("|") && lines[i + 1]?.includes("|")) {
+      if (isLikelyTableStart(lines, i)) {
         const tableLines = [];
         while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
           tableLines.push(lines[i]);
@@ -198,6 +233,10 @@
         parts.push(`<blockquote>${quoteLines.map((quote) => `<p>${renderInlineMarkdown(quote)}</p>`).join("")}</blockquote>`);
         continue;
       }
+      if (/^\s*---+\s*$/.test(line)) {
+        parts.push("<hr>");
+        continue;
+      }
       const paragraph = [line.trim()];
       while (
         i + 1 < lines.length
@@ -205,7 +244,8 @@
         && !/^(#{1,4})\s+/.test(lines[i + 1])
         && !/^\s*(-|\d+\.)\s+/.test(lines[i + 1])
         && !/^\s*>\s?/.test(lines[i + 1])
-        && !(lines[i + 1].includes("|") && lines[i + 2]?.includes("|"))
+        && !isLikelyTableStart(lines, i + 1)
+        && !/^\s*---+\s*$/.test(lines[i + 1])
       ) {
         i += 1;
         paragraph.push(lines[i].trim());
@@ -237,7 +277,7 @@
     const text = String(value || "");
     const skipMermaidSources = options?.skipMermaidSources || new Set();
     const parts = [];
-    const fence = /```(\w+)?\s*\n([\s\S]*?)```/g;
+    const fence = /```([A-Za-z0-9_-]+)?[^\S\r\n]*(?:\r?\n)([\s\S]*?)```/g;
     let lastIndex = 0;
     let match;
     while ((match = fence.exec(text))) {
@@ -354,6 +394,15 @@
     const keys = Array.from(new Set(rows.flatMap((row) => Object.keys(row || {}))));
     return `<div class="boi-agent-table-wrap"><table><thead><tr>${keys.map((key) => `<th>${escapeHtml(key)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${keys.map((key) => `<td>${renderInlineMarkdown(row?.[key] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
+
+  window.BoiAgentMarkdownDebug = {
+    renderInlineMarkdown,
+    renderMarkdownLite,
+    renderMarkdownTable,
+    splitTableRow,
+    mermaidSourcesFromMarkdown,
+    mermaidSourcesFromArtifacts,
+  };
 
   function renderLinks(links) {
     if (!links || !links.length) return "";

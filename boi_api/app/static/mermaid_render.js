@@ -36,8 +36,12 @@
   }
 
   async function render(root) {
-    const pending = diagrams(root).filter((diagram) => diagram.dataset.mermaidState !== "rendered");
+    const pending = diagrams(root).filter((diagram) => {
+      const state = diagram.dataset.mermaidState || "pending";
+      return state !== "rendered" && state !== "rendering";
+    });
     if (!pending.length) return;
+    pending.forEach((diagram) => setStatus(diagram, "Rendering Mermaid diagram...", "rendering"));
 
     let mermaid;
     try {
@@ -57,7 +61,6 @@
       const node = diagram.querySelector(".mermaid");
       if (!node) continue;
       try {
-        setStatus(diagram, "Rendering Mermaid diagram...", "rendering");
         await mermaid.run({ nodes: [node] });
         setStatus(diagram, "Mermaid diagram rendered.", "rendered");
       } catch (error) {

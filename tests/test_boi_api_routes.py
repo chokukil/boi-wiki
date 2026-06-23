@@ -435,6 +435,43 @@ def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(bo
     assert body["artifacts"][0]["data"]["route"] == "manual_handoff"
 
 
+def test_boi_agent_manual_handoff_relationship_question_is_not_mutation(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def wrong_fast_router(req, employee_id: str):
+        return {
+            "route": "fast",
+            "confidence": 0.99,
+            "intent": "search",
+            "reason": "router guessed search",
+            "requires_mutation": False,
+            "requires_deep_reasoning": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", wrong_fast_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP의 Event, Action, Manual Handoff 관계를 요약해줘.",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "page_context": {"title": "설비 이상 감지·원인 분석·이상 조치 SOP"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "deep"
+    assert body["intent"] == "workflow_explain"
+    assert body["used_backend"] == "native_langgraph"
+    assert body["artifacts"][0]["type"] == "workflow_summary"
+    assert "confirmation_required" not in {artifact.get("type") for artifact in body["artifacts"]}
+
+
 def test_boi_agent_chat_safety_overrides_router_requires_mutation_flag(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
@@ -659,6 +696,10 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-meta" in script
     assert "renderArtifacts" in script
     assert "mermaid-diagram" in script
+    assert "BoiAgentMarkdownDebug" in script
+    assert "renderMarkdownTable" in script
+    assert "isTableSeparatorLine" in script
+    assert "isLikelyTableStart" in script
     assert "requestModeForQuestion" not in script
     assert "mode: routeHint.mode" not in script
     assert "selected_text" in script
