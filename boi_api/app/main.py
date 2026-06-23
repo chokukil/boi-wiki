@@ -5381,6 +5381,7 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
             "event_type": metadata.get("event_type") or source_event.get("event_type") or "",
             "trace_id": source_event.get("trace") or "",
             "body_excerpt": text_excerpt(str(doc.get("body") or "")),
+            "linked_items": lightweight_doc_link_items(doc, employee_id, limit=8),
             "url": doc_url_for_ref(str(metadata.get("boi_id") or boi_id), employee_id),
         }
     if path.startswith("/workflows/") and path.endswith("/status"):
@@ -5477,9 +5478,60 @@ def link_items_from_agent_context(page_context: dict[str, Any], employee_id: str
     return [item for item in links if item.get("url")]
 
 
+def lightweight_doc_link_items(doc: dict[str, Any], employee_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    """Extract current-document OKF links without building the full ontology index."""
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    source_path = Path(str(doc.get("path") or ""))
+    if not source_path.exists():
+        return items
+    for match in MARKDOWN_LINK_RE.finditer(str(doc.get("body") or "")):
+        href = match.group(1)
+        if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", href) or href.startswith("#") or is_app_route_href(href):
+            continue
+        target, _resolved = resolve_okf_link(href, source_path=source_path, boi_root=DATA_ROOT)
+        if target in seen:
+            continue
+        seen.add(target)
+        path = find_doc_path_by_ref(target)
+        if not path:
+            continue
+        try:
+            linked_doc = read_doc(path)
+        except Exception:
+            continue
+        if not is_accessible(linked_doc, employee_id):
+            continue
+        metadata = linked_doc.get("metadata") or {}
+        ref = str(metadata.get("boi_id") or linked_doc.get("uri") or target)
+        items.append(
+            {
+                "kind": "boi_document",
+                "score": 100,
+                "boi_id": metadata.get("boi_id") or "",
+                "uri": linked_doc.get("uri") or "",
+                "title": metadata.get("title") or ref,
+                "description": metadata.get("description") or "",
+                "url": doc_url_for_ref(ref, employee_id),
+            }
+        )
+        if len(items) >= limit:
+            break
+    return items
+
+
 def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
     page_context = resolve_agent_page_context(req.current_url, employee_id)
-    search = ontology_search_payload(req.question, employee_id, scope="all", limit=5, current_url=req.current_url)
+    if page_context.get("resolved"):
+        search = {
+            "best_matches": page_context.get("linked_items") or [],
+            "query_expansion": [],
+            "used_dictionary_terms": [],
+            "knowledge_panel": {},
+            "fast_path": "page_context",
+        }
+    else:
+        search = ontology_search_payload(req.question, employee_id, scope="all", limit=5, current_url=req.current_url)
     links: list[dict[str, Any]] = []
     links.extend(link_items_from_agent_context(page_context, employee_id))
     for item in search.get("best_matches") or []:
