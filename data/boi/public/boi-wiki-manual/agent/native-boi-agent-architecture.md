@@ -29,7 +29,7 @@ review:
 
 BoI Agent의 production path는 `boi-api` 내부 Native Agent다. Langflow는 visual workflow, demo, debug backend로 유지하지만 사용자-facing Agent 응답의 필수 runtime dependency가 아니다.
 
-Native Agent는 LangGraph state graph와 순차 fallback을 함께 제공한다. LLM은 Router와 선택적 planner/composer에 쓰이고, 실행 경계는 Python typed tool dispatcher가 통제한다. Router는 `llm_first`가 기본이며, `BOI_AGENT_ROUTER_LLM_ENABLED=auto`에서는 실제 OpenAI-compatible LLM URL이 설정된 배포에서 LLM Router를 사용하고 placeholder 개발 URL에서는 rules fallback을 사용한다.
+Native Agent는 LangGraph state graph와 순차 fallback을 함께 제공한다. LLM은 Router와 선택적 planner/composer에 쓰이고, 실행 경계는 Python typed tool dispatcher가 통제한다. Router는 `llm_first`가 기본이며, `BOI_AGENT_ROUTER_LLM_ENABLED=auto`에서는 실제 OpenAI-compatible LLM URL이 설정된 배포에서 LLM Router를 사용하고 placeholder 개발 URL에서는 rules fallback을 사용한다. Router LLM은 사용자 답변을 생성하지 않고 `route`, `intent`, `confidence` JSON만 반환한다. JSON이 없거나 timeout이면 rules fallback이 이어받는다.
 
 # Architecture
 

@@ -127,6 +127,7 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["router"]["mode"] == "llm_first"
     assert body["boi_agent"]["router"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["boi_agent"]["router"]["llm_enabled"] is False
+    assert body["boi_agent"]["router"]["max_tokens"] == 768
     assert "api_key" not in body["boi_agent"]["router"]
 
 
@@ -583,7 +584,8 @@ def test_boi_agent_router_parses_openai_compatible_json_response(boi_app_module,
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_BASE_URL", "http://router.example/v1")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_API_KEY", "dummy")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODEL", "google/gemma-4-26b-a4b-qat")
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_TIMEOUT_SECONDS", 3)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_TIMEOUT_SECONDS", 8)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MAX_TOKENS", 768)
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
     route = boi_app_module.call_boi_agent_router_llm(
@@ -597,6 +599,8 @@ def test_boi_agent_router_parses_openai_compatible_json_response(boi_app_module,
     assert route["requires_langflow"] is False
     assert payloads[0]["url"] == "http://router.example/v1/chat/completions"
     assert payloads[0]["json"]["model"] == "google/gemma-4-26b-a4b-qat"
+    assert payloads[0]["json"]["response_format"] == {"type": "text"}
+    assert payloads[0]["json"]["max_tokens"] == 768
 
 
 def test_boi_agent_parser_prefers_nested_langflow_answer_payload(boi_app_module):

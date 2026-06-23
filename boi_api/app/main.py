@@ -117,7 +117,8 @@ BOI_AGENT_ROUTER_LLM_ENABLED = resolve_router_llm_enabled(
     BOI_AGENT_ROUTER_MODE,
     BOI_AGENT_ROUTER_BASE_URL,
 )
-BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "3"))
+BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "8"))
+BOI_AGENT_ROUTER_MAX_TOKENS = int(os.getenv("BOI_AGENT_ROUTER_MAX_TOKENS", "768"))
 BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD", "0.7"))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
@@ -4867,6 +4868,7 @@ async def runtime_config() -> dict[str, Any]:
                 "base_url": BOI_AGENT_ROUTER_BASE_URL,
                 "model": BOI_AGENT_ROUTER_MODEL,
                 "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
+                "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
                 "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
             },
             "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
@@ -6116,8 +6118,11 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
     body = {
         "model": BOI_AGENT_ROUTER_MODEL,
         "temperature": 0,
-        "max_tokens": 192,
-        "response_format": {"type": "json_object"},
+        "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
+        # Some OpenAI-compatible runtimes used for local Gemma serving reject
+        # OpenAI's older json_object mode and only accept text/json_schema.
+        # We request text and keep strict JSON extraction in parse_router_payload.
+        "response_format": {"type": "text"},
         "messages": [
             {
                 "role": "system",
@@ -7074,6 +7079,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "base_url": BOI_AGENT_ROUTER_BASE_URL,
             "model": BOI_AGENT_ROUTER_MODEL,
             "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
+            "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
             "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
         },
         "rbac_enabled": True,
