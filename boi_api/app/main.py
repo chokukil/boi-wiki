@@ -6028,6 +6028,9 @@ ALLOWED_AGENT_INTENTS = {
     "inbox",
     "manual_complete",
     "approval",
+    "event_publish",
+    "action_invoke",
+    "workflow_start",
     "event_type_draft",
 }
 DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
@@ -6046,6 +6049,11 @@ def normalize_agent_intent(value: str, *, fallback: str = "search") -> str:
         "reasoning": "trace_reasoning",
         "manual_handoff": "manual_complete",
         "approval_required": "approval",
+        "publish_event": "event_publish",
+        "event": "event_publish",
+        "invoke_action": "action_invoke",
+        "action": "action_invoke",
+        "start_workflow": "workflow_start",
         "forced_fast": fallback,
         "forced_deep": fallback if fallback in DEEP_AGENT_INTENTS else "trace_reasoning",
     }
@@ -6066,8 +6074,6 @@ def safety_route_override(question: str) -> str | None:
 
 def deterministic_agent_intent(question: str, current_url: str = "") -> str:
     q = str(question or "").lower()
-    if safety := safety_route_override(q):
-        return "manual_complete" if safety == "manual_handoff" else "approval"
     if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
         return "inbox"
     if (
@@ -6075,6 +6081,14 @@ def deterministic_agent_intent(question: str, current_url: str = "") -> str:
         and any(term in q for term in ("초안", "만들", "생성", "정의", "추가", "draft", "create"))
     ):
         return "event_type_draft"
+    if re.search(r"\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\.v\d+\b", question) and any(term in q for term in ("이벤트 발행", "event 발행", "publish event", "이벤트를 발행", "이벤트 발생", "발행해", "발행해줘")):
+        return "event_publish"
+    if any(term in q for term in ("workflow 시작", "workflow 실행", "워크플로우 시작", "워크플로우 실행", "workflow start", "start workflow")):
+        return "workflow_start"
+    if re.search(r"\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,}\b", question) and any(term in q for term in ("action 실행", "액션 실행", "action 요청", "액션 요청", "invoke", "호출", "실행해", "실행해줘")):
+        return "action_invoke"
+    if safety := safety_route_override(q):
+        return "manual_complete" if safety == "manual_handoff" else "approval"
     if any(term in q for term in ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")):
         return "diagram"
     if any(term in q for term in ("부족", "누락", "없는지", "없나", "gap", "갭", "action spec", "액션 spec", "명세", "완성도")):
@@ -6098,6 +6112,8 @@ def route_for_agent_intent(intent: str) -> str:
     if intent == "manual_complete":
         return "manual_handoff"
     if intent == "approval":
+        return "approval_required"
+    if intent in {"event_publish", "action_invoke", "workflow_start"}:
         return "approval_required"
     if intent == "event_type_draft":
         return "approval_required"
@@ -6145,6 +6161,9 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
                 "inbox": "show assigned work",
                 "manual_complete": "complete a manual handoff",
                 "approval": "approve, publish, invoke, edit, deploy, or mutate state",
+                "event_publish": "publish a specific Event Type through Event Broker after confirmation",
+                "action_invoke": "invoke a specific allow-listed Action Gateway action after confirmation",
+                "workflow_start": "start a specific SOP workflow after confirmation",
                 "event_type_draft": "create a draft proposal for a new Event Type, never directly apply it",
             },
             "employee_id": employee_id,
@@ -6156,7 +6175,7 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
             "required_json_schema": {
                 "route": "fast|deep|inbox|manual_handoff|approval_required",
                 "confidence": "0.0-1.0",
-                "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval|event_type_draft",
+                "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval|event_publish|action_invoke|workflow_start|event_type_draft",
                 "reason": "short Korean or English reason",
                 "requires_mutation": "boolean",
                 "requires_deep_reasoning": "boolean",
@@ -6283,6 +6302,16 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
                 "intent": deterministic_intent,
                 "reason": f"intent override after {route.get('router_backend')}: {deterministic_intent}",
                 "requires_deep_reasoning": True,
+                "requires_langflow": False,
+            }
+        )
+    if deterministic_intent in {"event_publish", "action_invoke", "workflow_start", "event_type_draft"}:
+        route.update(
+            {
+                "route": "approval_required",
+                "intent": deterministic_intent,
+                "reason": f"mutation intent override after {route.get('router_backend')}: {deterministic_intent}",
+                "requires_mutation": True,
                 "requires_langflow": False,
             }
         )

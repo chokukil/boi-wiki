@@ -31,10 +31,14 @@ ALLOWED_AGENT_INTENTS = {
     "inbox",
     "manual_complete",
     "approval",
+    "event_publish",
+    "action_invoke",
+    "workflow_start",
     "event_type_draft",
     "access_denied",
 }
 DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
+MUTATION_AGENT_INTENTS = {"manual_complete", "approval", "event_publish", "action_invoke", "workflow_start", "event_type_draft"}
 
 
 def normalize_native_route(value: str, fallback: str = "fast") -> str:
@@ -52,6 +56,11 @@ def normalize_native_intent(value: str, *, fallback: str = "search") -> str:
         "reasoning": "trace_reasoning",
         "manual_handoff": "manual_complete",
         "approval_required": "approval",
+        "publish_event": "event_publish",
+        "event": "event_publish",
+        "invoke_action": "action_invoke",
+        "action": "action_invoke",
+        "start_workflow": "workflow_start",
     }
     intent = aliases.get(intent, intent)
     return intent if intent in ALLOWED_AGENT_INTENTS else fallback
@@ -70,8 +79,6 @@ def safety_route_override(question: str) -> str | None:
 
 def deterministic_native_intent(question: str, current_url: str = "") -> str:
     q = str(question or "").lower()
-    if safety := safety_route_override(q):
-        return "manual_complete" if safety == "manual_handoff" else "approval"
     if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
         return "inbox"
     if (
@@ -79,6 +86,14 @@ def deterministic_native_intent(question: str, current_url: str = "") -> str:
         and any(term in q for term in ("초안", "만들", "생성", "정의", "추가", "draft", "create"))
     ):
         return "event_type_draft"
+    if event_type_from_text(question) and any(term in q for term in ("이벤트 발행", "event 발행", "publish event", "이벤트를 발행", "이벤트 발생", "발행해", "발행해줘")):
+        return "event_publish"
+    if any(term in q for term in ("workflow 시작", "workflow 실행", "워크플로우 시작", "워크플로우 실행", "workflow start", "start workflow")):
+        return "workflow_start"
+    if action_key_from_text(question) and any(term in q for term in ("action 실행", "액션 실행", "action 요청", "액션 요청", "invoke", "호출", "실행해", "실행해줘")):
+        return "action_invoke"
+    if safety := safety_route_override(q):
+        return "manual_complete" if safety == "manual_handoff" else "approval"
     if any(term in q for term in ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")):
         return "diagram"
     if any(term in q for term in ("부족", "누락", "없는지", "없나", "gap", "갭", "action spec", "액션 spec", "명세", "완성도")):
@@ -102,6 +117,8 @@ def route_for_native_intent(intent: str) -> str:
     if intent == "manual_complete":
         return "manual_handoff"
     if intent == "approval":
+        return "approval_required"
+    if intent in {"event_publish", "action_invoke", "workflow_start"}:
         return "approval_required"
     if intent == "event_type_draft":
         return "approval_required"
@@ -129,9 +146,13 @@ def finalize_native_route(request: JsonDict, candidate: JsonDict | None) -> Json
     if deterministic in DEEP_AGENT_INTENTS and route != "deep":
         route = "deep"
         intent = deterministic
-    if override := safety_route_override(question):
+    if intent in {"event_publish", "action_invoke", "workflow_start", "event_type_draft"}:
+        route = "approval_required"
+    elif override := safety_route_override(question):
         route = override
         intent = "manual_complete" if override == "manual_handoff" else "approval"
+    elif intent in MUTATION_AGENT_INTENTS:
+        route = route_for_native_intent(intent)
     elif (candidate or {}).get("requires_mutation") and route not in {"manual_handoff", "approval_required"}:
         route = "approval_required"
         intent = "approval"
@@ -853,6 +874,59 @@ def confirmation_payload_for_state(state: JsonDict) -> JsonDict:
                 "primary_label": "Event Type 이름을 포함해 다시 요청",
             },
         }
+    if intent == "event_publish":
+        payload = event_publish_payload_from_state(state)
+        if payload:
+            return {
+                "title": "Event 발행 확인",
+                "answer_markdown": "Event Broker에 새 Event를 발행하려면 먼저 내용을 확인해야 합니다. 아래 카드에서 Event Type과 payload를 확인한 뒤 실행하세요.",
+                "data": {
+                    "route": route_name,
+                    "intent": intent,
+                    "operation": "event_publish",
+                    "payload": payload,
+                    "title": "Event 발행 확인",
+                    "message": "Event 발행은 workflow를 진행시키고 BoI 생성/action dispatch로 이어질 수 있습니다.",
+                    "primary_label": "Event 발행하기",
+                },
+            }
+        return missing_execution_payload("Event Type 필요", "예: `equipment.alarm.raised.v1` 이벤트를 발행해줘.", route_name, intent)
+    if intent == "workflow_start":
+        payload = workflow_start_payload_from_state(state)
+        if payload:
+            workflow_key = str(payload.get("workflow_key") or "")
+            return {
+                "title": "Workflow 시작 확인",
+                "answer_markdown": "SOP 기반 Workflow를 시작하려면 먼저 시작 Event payload를 확인해야 합니다. 아래 카드에서 workflow와 payload를 확인한 뒤 실행하세요.",
+                "data": {
+                    "route": route_name,
+                    "intent": intent,
+                    "operation": "workflow_start",
+                    "payload": payload,
+                    "title": "Workflow 시작 확인",
+                    "message": f"`{workflow_key}` workflow의 entry event를 발행합니다.",
+                    "primary_label": "Workflow 시작하기",
+                },
+            }
+        return missing_execution_payload("Workflow Key 필요", "예: `equipment-anomaly` workflow를 시작해줘.", route_name, intent)
+    if intent == "action_invoke":
+        payload = action_invoke_payload_from_state(state)
+        if payload:
+            action_key = str(payload.get("action_key") or "")
+            return {
+                "title": "Action 요청 실행 확인",
+                "answer_markdown": "Action Gateway 요청은 allow-list와 권한 검증을 거쳐 실행됩니다. 아래 카드에서 action과 payload를 확인한 뒤 실행하세요.",
+                "data": {
+                    "route": route_name,
+                    "intent": intent,
+                    "operation": "action_invoke",
+                    "payload": payload,
+                    "title": "Action 요청 실행 확인",
+                    "message": f"`{action_key}` action을 Action Gateway로 요청합니다.",
+                    "primary_label": "Action 요청 실행",
+                },
+            }
+        return missing_execution_payload("Action Key 필요", "예: `sop.equipment.request_raw_data` action을 실행해줘.", route_name, intent)
     return {
         "title": "확인 필요",
         "answer_markdown": "이 요청은 상태 변경 또는 승인 절차가 필요합니다. Agent가 바로 실행하지 않고 확인 카드와 승인 API를 통해 처리해야 합니다.",
@@ -864,12 +938,119 @@ def confirmation_payload_for_state(state: JsonDict) -> JsonDict:
     }
 
 
+def missing_execution_payload(title: str, message: str, route_name: str, intent: str) -> JsonDict:
+    return {
+        "title": title,
+        "answer_markdown": "실행 요청을 만들려면 필수 식별자가 필요합니다. Agent가 임의로 추정해 실행하지 않습니다.",
+        "data": {
+            "route": route_name,
+            "intent": intent,
+            "title": title,
+            "message": message,
+            "primary_label": "필수 정보를 추가해 다시 요청",
+        },
+    }
+
+
+def event_type_from_text(value: str) -> str:
+    match = re.search(r"\b([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\.v\d+)\b", str(value or ""))
+    return match.group(1) if match else ""
+
+
+def action_key_from_text(value: str) -> str:
+    candidates = re.findall(r"\b([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,})\b", str(value or ""))
+    for candidate in candidates:
+        if not re.search(r"\.v\d+$", candidate):
+            return candidate
+    return ""
+
+
+def execution_source_refs(state: JsonDict) -> list[JsonDict]:
+    current_url = str(state.get("current_url") or "")
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    refs: list[JsonDict] = []
+    if page_context.get("boi_id"):
+        refs.append({"type": "boi", "ref": str(page_context.get("boi_id"))})
+    if page_context.get("sop_ref"):
+        refs.append({"type": "sop", "ref": str(page_context.get("sop_ref"))})
+    if current_url:
+        refs.append({"type": "boi-agent-page", "ref": current_url})
+    return refs
+
+
+def event_publish_payload_from_state(state: JsonDict) -> JsonDict:
+    question = str(state.get("question") or "")
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    event_type = event_type_from_text(question) or str(page_context.get("event_type") or "")
+    if not event_type:
+        return {}
+    return {
+        "event_type": event_type,
+        "payload": {
+            "title": compact_text(question, 100) or event_type,
+            "summary": compact_text(question, 400),
+        },
+        "source_refs": execution_source_refs(state),
+        "trace_id": str(page_context.get("trace_id") or "") or None,
+    }
+
+
+def workflow_start_payload_from_state(state: JsonDict) -> JsonDict:
+    question = str(state.get("question") or "")
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    tool_results = state.get("tool_results") if isinstance(state.get("tool_results"), dict) else {}
+    workflow_key = str(page_context.get("workflow_key") or "")
+    current_doc = tool_results.get("current_doc") if isinstance(tool_results.get("current_doc"), dict) else {}
+    metadata = current_doc.get("metadata") if isinstance(current_doc.get("metadata"), dict) else {}
+    workflow = metadata.get("workflow") if isinstance(metadata.get("workflow"), dict) else {}
+    workflow_key = workflow_key or str(workflow.get("workflow_key") or "")
+    if not workflow_key:
+        match = re.search(r"`?([a-z][a-z0-9_-]*(?:-[a-z0-9_]+)+)`?\s*(?:workflow|워크플로우)", question, flags=re.IGNORECASE)
+        workflow_key = match.group(1) if match else ""
+    if not workflow_key:
+        return {}
+    return {
+        "workflow_key": workflow_key,
+        "payload": {
+            "title": compact_text(question, 100) or workflow_key,
+            "summary": compact_text(question, 400),
+            "workflow": workflow_key,
+        },
+        "source_refs": execution_source_refs(state),
+    }
+
+
+def action_invoke_payload_from_state(state: JsonDict) -> JsonDict:
+    question = str(state.get("question") or "")
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    search = state.get("search") if isinstance(state.get("search"), dict) else {}
+    action_key = action_key_from_text(question) or str(page_context.get("action_key") or "")
+    if not action_key:
+        groups = search.get("groups") if isinstance(search.get("groups"), dict) else {}
+        for item in groups.get("actions") or []:
+            if isinstance(item, dict) and item.get("action_key"):
+                action_key = str(item["action_key"])
+                break
+    if not action_key:
+        return {}
+    event_type = event_type_from_text(question) or str(page_context.get("event_type") or "")
+    return {
+        "action_key": action_key,
+        "event": {
+            "event_type": event_type,
+            "trace_id": str(page_context.get("trace_id") or ""),
+            "payload": {"title": compact_text(question, 100), "summary": compact_text(question, 400)},
+            "source_refs": execution_source_refs(state),
+        },
+        "payload": {"title": compact_text(question, 100), "summary": compact_text(question, 400)},
+    }
+
+
 def event_type_draft_payload_from_state(state: JsonDict) -> JsonDict:
     question = str(state.get("question") or "")
-    match = re.search(r"\b([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\.v\d+)\b", question)
-    if not match:
+    event_type = event_type_from_text(question)
+    if not event_type:
         return {}
-    event_type = match.group(1)
     search = state.get("search") if isinstance(state.get("search"), dict) else {}
     page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
     tool_results = state.get("tool_results") if isinstance(state.get("tool_results"), dict) else {}

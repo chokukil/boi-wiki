@@ -400,6 +400,59 @@ def test_boi_agent_approve_event_type_draft_requires_editor_role(boi_app_module,
     assert all(item.get("event_type") != "pytest.unauthorized.event.v1" for item in drafts.json()["items"])
 
 
+def test_boi_agent_execution_requests_return_specific_confirmation_cards(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    event_response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "equipment.alarm.raised.v1 이벤트를 발행해줘.",
+            "current_url": "/event-types/equipment.alarm.raised.v1?employee_id=100001",
+        },
+    )
+    assert event_response.status_code == 200
+    event_body = event_response.json()
+    event_card = event_body["artifacts"][0]
+    assert event_body["route"] == "approval_required"
+    assert event_body["intent"] == "event_publish"
+    assert event_card["type"] == "confirmation_required"
+    assert event_card["data"]["operation"] == "event_publish"
+    assert event_card["data"]["payload"]["event_type"] == "equipment.alarm.raised.v1"
+    assert "Event 발행" in event_card["title"]
+
+    workflow_response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 workflow 시작해줘.",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+    assert workflow_response.status_code == 200
+    workflow_body = workflow_response.json()
+    workflow_card = workflow_body["artifacts"][0]
+    assert workflow_body["route"] == "approval_required"
+    assert workflow_body["intent"] == "workflow_start"
+    assert workflow_card["data"]["operation"] == "workflow_start"
+    assert workflow_card["data"]["payload"]["workflow_key"] == "equipment-anomaly"
+    assert "Workflow 시작" in workflow_card["title"]
+
+    action_response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "sop.equipment.request_raw_data action 실행해줘.",
+            "current_url": "/actions?employee_id=100001",
+        },
+    )
+    assert action_response.status_code == 200
+    action_body = action_response.json()
+    action_card = action_body["artifacts"][0]
+    assert action_body["route"] == "approval_required"
+    assert action_body["intent"] == "action_invoke"
+    assert action_card["data"]["operation"] == "action_invoke"
+    assert action_card["data"]["payload"]["action_key"] == "sop.equipment.request_raw_data"
+    assert "Action 요청 실행" in action_card["title"]
+
+
 def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
