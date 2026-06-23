@@ -6701,6 +6701,51 @@ def normalize_agent_artifacts(value: Any, answer_markdown: str = "") -> list[dic
     return [artifact for artifact in artifacts if artifact.get("type")]
 
 
+def normalize_agent_mermaid_source(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def markdown_without_duplicate_mermaid_artifacts(answer_markdown: str, artifacts: list[dict[str, Any]]) -> str:
+    """Return display Markdown with Mermaid fences removed when artifacts render them.
+
+    Agent answers often include the same Mermaid source twice: once in
+    answer_markdown for source transparency and once as a structured artifact
+    for the viewer. The Pet UI renders artifacts separately, so server-rendered
+    answer_html should omit duplicate fences to avoid double diagrams while
+    preserving the original answer_markdown API field.
+    """
+    mermaid_sources = {
+        normalize_agent_mermaid_source(str(artifact.get("source") or ""))
+        for artifact in artifacts
+        if isinstance(artifact, dict) and artifact.get("type") == "mermaid" and artifact.get("source")
+    }
+    if not mermaid_sources:
+        return str(answer_markdown or "")
+
+    def replace(match: re.Match[str]) -> str:
+        source = normalize_agent_mermaid_source(match.group("body"))
+        return "" if source in mermaid_sources else match.group(0)
+
+    return re.sub(
+        r"```[^\S\r\n]*mermaid[^\S\r\n]*(?:\r?\n)(?P<body>.*?)(?:\r?\n)?```",
+        replace,
+        str(answer_markdown or ""),
+        flags=re.IGNORECASE | re.DOTALL,
+    ).strip()
+
+
+def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    answer_markdown = str(response.get("answer_markdown") or "")
+    artifacts = response.get("artifacts") if isinstance(response.get("artifacts"), list) else []
+    display_markdown = markdown_without_duplicate_mermaid_artifacts(answer_markdown, artifacts)
+    response["answer_html"] = (
+        str(render_markdown(display_markdown, employee_id=employee_id))
+        if display_markdown.strip()
+        else ""
+    )
+    return response
+
+
 def fallback_mermaid_for_page_context(page_context: dict[str, Any]) -> str:
     title = str(page_context.get("title") or page_context.get("page_kind") or "BoI Page")
     linked_items = page_context.get("linked_items") or []
@@ -7159,7 +7204,7 @@ def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str,
 async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
     try:
-        return agent_chat_response(req, employee_id)
+        return enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id)
     except LangflowBoiAgentUnavailable as exc:
         raise HTTPException(
             status_code=503,

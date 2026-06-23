@@ -554,6 +554,10 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     assert body["used_backend"] == "native_langgraph"
     assert body["artifacts"][0]["type"] == "mermaid"
     assert "```mermaid" in body["answer_markdown"]
+    assert "answer_html" in body
+    assert "```mermaid" not in body["answer_html"]
+    assert "mermaid-diagram" not in body["answer_html"]
+    assert '<table class="markdown-table">' in body["answer_html"]
 
 
 def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
@@ -970,6 +974,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "mermaid-diagram" in script
     assert "BoiAgentMarkdownDebug" in script
     assert "renderMarkdownTable" in script
+    assert "answer_html" in script
+    assert "message.html || renderMarkdownLite" in script
     assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
