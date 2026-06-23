@@ -173,7 +173,7 @@ def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypa
     client = TestClient(boi_app_module.app)
     calls: list[dict[str, object]] = []
 
-    def fake_call(req, employee_id: str):
+    def fake_call(req, employee_id: str, route=None, started_at=None):
         calls.append({"req": req, "employee_id": employee_id})
         return {
             "ok": True,
@@ -183,6 +183,9 @@ def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypa
             "citations": [],
             "suggested_questions": ["이 SOP를 Mermaid로 보여줘."],
             "context_summary": {"langflow_flow": "boi-agent"},
+            "route": "deep",
+            "router_backend": "rules",
+            "used_backend": "langflow",
         }
 
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
@@ -191,6 +194,7 @@ def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypa
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
             "question": "설비 이상 대응 SOP와 Action을 찾아줘",
+            "mode": "deep",
             "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
             "page_context": {"title": "설비 이상 SOP"},
         },
@@ -205,6 +209,188 @@ def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypa
     assert calls
     assert calls[0]["employee_id"] == "100001"
     assert calls[0]["req"].question == "설비 이상 대응 SOP와 Action을 찾아줘"
+
+
+def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fake_router(req, employee_id: str):
+        return {
+            "route": "fast",
+            "confidence": 0.91,
+            "intent": "page_summary",
+            "reason": "simple current page question",
+            "requires_mutation": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    def fail_langflow(*args, **kwargs):
+        raise AssertionError("fast route must not call Langflow")
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "현재 SOP 핵심 링크를 알려줘",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "page_context": {"title": "설비 이상 SOP"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "fast"
+    assert body["router_backend"] == "llm"
+    assert body["used_backend"] == "fast_api"
+    assert body["context_summary"]["page_context"]["page_kind"] == "doc"
+    assert body["context_summary"]["page_context"]["resolved"] is True
+    assert "설비" in body["answer_markdown"]
+
+
+def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def broken_router(req, employee_id: str):
+        raise boi_app_module.BoiAgentRouterUnavailable("router timeout")
+
+    def fail_langflow(*args, **kwargs):
+        raise AssertionError("rules fast fallback must not call Langflow")
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", broken_router)
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "SOP 찾아줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "fast"
+    assert body["router_backend"] == "rules"
+    assert body["used_backend"] == "fast_api"
+
+
+def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def unsafe_router(req, employee_id: str):
+        return {
+            "route": "fast",
+            "confidence": 0.99,
+            "intent": "summary",
+            "reason": "wrongly classified",
+            "requires_mutation": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", unsafe_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "이 manual handoff 조치 완료 처리해줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "manual_handoff"
+    assert body["used_backend"] == "safety_guard"
+    assert "명시" in body["answer_markdown"]
+
+
+def test_boi_agent_chat_safety_overrides_router_requires_mutation_flag(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def unsafe_router(req, employee_id: str):
+        return {
+            "route": "fast",
+            "confidence": 0.99,
+            "intent": "edit",
+            "reason": "router detected mutation but wrong route",
+            "requires_mutation": True,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", unsafe_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "이 내용을 반영해줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "approval_required"
+    assert body["used_backend"] == "safety_guard"
+
+
+def test_boi_agent_router_parses_openai_compatible_json_response(boi_app_module, monkeypatch):
+    payloads: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "id": "chatcmpl-router-test",
+                "object": "chat.completion",
+                "model": "google/gemma-4-26b-a4b-qat",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "route": "deep",
+                                    "confidence": 0.92,
+                                    "intent": "workflow_reasoning",
+                                    "reason": "multi-hop 판단",
+                                    "requires_mutation": False,
+                                    "requires_langflow": True,
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, headers, json):
+            payloads.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            return FakeResponse()
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_BASE_URL", "http://router.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_TIMEOUT_SECONDS", 3)
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    route = boi_app_module.call_boi_agent_router_llm(
+        boi_app_module.BoiAgentChatRequest(question="이 workflow를 판단해줘", current_url="/"),
+        "100001",
+    )
+
+    assert route["route"] == "deep"
+    assert route["router_backend"] == "llm"
+    assert payloads[0]["url"] == "http://router.example/v1/chat/completions"
+    assert payloads[0]["json"]["model"] == "google/gemma-4-26b-a4b-qat"
 
 
 def test_boi_agent_parser_prefers_nested_langflow_answer_payload(boi_app_module):
@@ -244,14 +430,14 @@ def test_boi_agent_parser_prefers_nested_langflow_answer_payload(boi_app_module)
 def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
-    def fake_call(req, employee_id: str):
+    def fake_call(req, employee_id: str, route=None, started_at=None):
         raise boi_app_module.LangflowBoiAgentUnavailable("BoI Agent Flow not found")
 
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
-        json={"question": "SOP 찾아줘", "current_url": "/"},
+        json={"question": "SOP 찾아줘", "mode": "deep", "current_url": "/"},
     )
 
     assert response.status_code == 503
@@ -326,6 +512,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "sessionStorage" in script
     assert "Agent" in script
     assert "Inbox" in script
+    assert "boi-agent-meta" in script
+    assert "selected_text" in script
     assert "boi-agent-handoff-form" in script
     assert "boi-agent-memory-form" not in script
     assert "boi-agent-dictionary-form" not in script

@@ -16,7 +16,7 @@ from datetime import date, datetime, timezone, timedelta
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit, unquote
 
 import yaml
 from aiokafka import AIOKafkaProducer
@@ -88,6 +88,13 @@ DEMO_EMPLOYEE_ID = os.getenv("DEMO_EMPLOYEE_ID", "100001")
 BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1").rstrip("/")
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
+BOI_AGENT_ROUTER_MODE = os.getenv("BOI_AGENT_ROUTER_MODE", "llm_first")
+BOI_AGENT_ROUTER_LLM_ENABLED = os.getenv("BOI_AGENT_ROUTER_LLM_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+BOI_AGENT_ROUTER_BASE_URL = os.getenv("BOI_AGENT_ROUTER_BASE_URL", BOI_LLM_BASE_URL).rstrip("/")
+BOI_AGENT_ROUTER_API_KEY = os.getenv("BOI_AGENT_ROUTER_API_KEY", BOI_LLM_API_KEY)
+BOI_AGENT_ROUTER_MODEL = os.getenv("BOI_AGENT_ROUTER_MODEL", BOI_LLM_MODEL)
+BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "3"))
+BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD", "0.7"))
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
 LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "api-key")
@@ -4263,7 +4270,9 @@ class SimulationAgentRequest(BaseModel):
 
 class BoiAgentChatRequest(BaseModel):
     question: str
+    mode: Literal["auto", "fast", "deep"] = "auto"
     current_url: str = ""
+    selected_text: str = ""
     page_context: dict[str, Any] = Field(default_factory=dict)
     conversation: list[dict[str, Any]] = Field(default_factory=list)
     save_memory: bool = True
@@ -5154,6 +5163,425 @@ class LangflowBoiAgentUnavailable(RuntimeError):
     """Raised when the trusted Langflow BoI Agent backend cannot answer."""
 
 
+class BoiAgentRouterUnavailable(RuntimeError):
+    """Raised when the optional LLM router cannot produce a usable route."""
+
+
+ALLOWED_AGENT_ROUTES = {"fast", "deep", "inbox", "manual_handoff", "approval_required"}
+
+
+def normalize_agent_route(value: str) -> str:
+    route = str(value or "").strip().lower().replace("-", "_")
+    return route if route in ALLOWED_AGENT_ROUTES else "fast"
+
+
+def safety_route_override(question: str) -> str | None:
+    q = str(question or "").lower()
+    manual_terms = ("manual handoff", "handoff 완료", "핸드오프 완료", "조치 완료", "완료 처리", "조치내용", "조치 내용")
+    approval_terms = ("승인", "approve", "실행해", "실행해줘", "invoke", "publish", "게시", "배포", "source_apply", "doc_body_apply")
+    if any(term in q for term in manual_terms):
+        return "manual_handoff"
+    if any(term in q for term in approval_terms):
+        return "approval_required"
+    return None
+
+
+def rule_agent_route(req: BoiAgentChatRequest, reason: str = "rules") -> dict[str, Any]:
+    q = str(req.question or "").lower()
+    route = "fast"
+    intent = "search"
+    if safety := safety_route_override(q):
+        route = safety
+        intent = safety
+    elif any(term in q for term in ("내 action", "내 액션", "할 일", "처리해야", "inbox", "대기", "남았")):
+        route = "inbox"
+        intent = "inbox"
+    elif any(term in q for term in ("판단", "원인", "왜", "리스크", "시뮬레이션", "분석", "추론", "비교", "설계", "해야", "workflow로", "워크플로우로")):
+        route = "deep"
+        intent = "reasoning"
+    elif any(term in q for term in ("찾", "검색", "보여", "요약", "링크", "mermaid", "머메이드", "목록")):
+        route = "fast"
+        intent = "lookup"
+    return {
+        "route": route,
+        "confidence": 0.78 if route == "fast" else 0.82,
+        "intent": intent,
+        "reason": reason,
+        "requires_mutation": route in {"manual_handoff", "approval_required"},
+        "requires_langflow": route == "deep",
+        "router_backend": "rules",
+    }
+
+
+def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str:
+    return json.dumps(
+        {
+            "task": "Route this BoI Agent request. Return JSON only.",
+            "allowed_routes": sorted(ALLOWED_AGENT_ROUTES),
+            "route_policy": {
+                "fast": "search, list, link, summarize, current page explanation, deterministic transformation",
+                "deep": "multi-hop reasoning, risk/decision, root-cause analysis, simulation, workflow/action design",
+                "inbox": "ask what actions/manual handoffs are pending for the employee",
+                "manual_handoff": "request to complete or record a manual handoff",
+                "approval_required": "request to approve, execute, publish, edit, or mutate shared/runtime state",
+            },
+            "employee_id": employee_id,
+            "question": req.question,
+            "current_url": req.current_url,
+            "page_title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
+            "selected_text": req.selected_text[:1000],
+            "conversation_tail": req.conversation[-4:],
+            "required_json_schema": {
+                "route": "fast|deep|inbox|manual_handoff|approval_required",
+                "confidence": "0.0-1.0",
+                "intent": "short intent label",
+                "reason": "short Korean or English reason",
+                "requires_mutation": "boolean",
+                "requires_langflow": "boolean",
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def parse_router_payload(text: str) -> dict[str, Any] | None:
+    parsed = parse_langflow_json_text(text)
+    if parsed is not None:
+        return parsed
+    match = re.search(r"\{.*\}", text.strip(), flags=re.DOTALL)
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    if not BOI_AGENT_ROUTER_LLM_ENABLED or BOI_AGENT_ROUTER_MODE != "llm_first":
+        raise BoiAgentRouterUnavailable("LLM router is not configured")
+    if not BOI_AGENT_ROUTER_BASE_URL or not BOI_AGENT_ROUTER_MODEL:
+        raise BoiAgentRouterUnavailable("LLM router base URL/model is missing")
+    url = BOI_AGENT_ROUTER_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if BOI_AGENT_ROUTER_API_KEY:
+        headers["Authorization"] = f"Bearer {BOI_AGENT_ROUTER_API_KEY}"
+    body = {
+        "model": BOI_AGENT_ROUTER_MODEL,
+        "temperature": 0,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a routing classifier for BoI Wiki Agent. "
+                    "Return only one compact JSON object. Do not answer the user."
+                ),
+            },
+            {"role": "user", "content": router_prompt_for_request(req, employee_id)},
+        ],
+    }
+    try:
+        with httpx.Client(timeout=BOI_AGENT_ROUTER_TIMEOUT_SECONDS) as client:
+            response = client.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        raise BoiAgentRouterUnavailable(f"LLM router call failed: {exc}") from exc
+    parsed = None
+    for text in iter_langflow_text_candidates(payload):
+        candidate = parse_router_payload(text)
+        if candidate and candidate.get("route"):
+            parsed = candidate
+            break
+    if not parsed:
+        raise BoiAgentRouterUnavailable("LLM router returned invalid JSON")
+    route = normalize_agent_route(str(parsed.get("route") or ""))
+    try:
+        confidence = float(parsed.get("confidence") or 0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    if confidence < BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD:
+        raise BoiAgentRouterUnavailable("LLM router confidence is below threshold")
+    return {
+        "route": route,
+        "confidence": confidence,
+        "intent": str(parsed.get("intent") or route),
+        "reason": str(parsed.get("reason") or "llm_router"),
+        "requires_mutation": bool(parsed.get("requires_mutation")),
+        "requires_langflow": bool(parsed.get("requires_langflow") or route == "deep"),
+        "router_backend": "llm",
+    }
+
+
+def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    if req.mode == "fast":
+        route = rule_agent_route(req, reason="mode=fast")
+        route.update({"route": "fast", "confidence": 1.0, "intent": "forced_fast"})
+    elif req.mode == "deep":
+        route = rule_agent_route(req, reason="mode=deep")
+        route.update({"route": "deep", "confidence": 1.0, "intent": "forced_deep", "requires_langflow": True})
+    else:
+        try:
+            route = call_boi_agent_router_llm(req, employee_id)
+        except BoiAgentRouterUnavailable as exc:
+            route = rule_agent_route(req, reason=f"fallback: {exc}")
+    override = safety_route_override(req.question)
+    if override and route.get("route") not in {"manual_handoff", "approval_required"}:
+        route.update(
+            {
+                "route": override,
+                "intent": override,
+                "reason": f"safety override after {route.get('router_backend')}",
+                "requires_mutation": True,
+                "requires_langflow": False,
+            }
+        )
+    elif route.get("requires_mutation") and route.get("route") not in {"manual_handoff", "approval_required"}:
+        route.update(
+            {
+                "route": "approval_required",
+                "intent": "approval_required",
+                "reason": f"mutation safety override after {route.get('router_backend')}",
+                "requires_mutation": True,
+                "requires_langflow": False,
+            }
+        )
+    route["route"] = normalize_agent_route(str(route.get("route") or "fast"))
+    return route
+
+
+def text_excerpt(value: str, limit: int = 900) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[: limit - 1] + "…" if len(text) > limit else text
+
+
+def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, Any]:
+    parsed = urlsplit(str(current_url or ""))
+    path = parsed.path or "/"
+    query = parse_qs(parsed.query)
+    context: dict[str, Any] = {"page_kind": "unknown", "resolved": False, "current_url": current_url}
+    if path.startswith("/docs/"):
+        boi_id = unquote(path.removeprefix("/docs/"))
+        doc = find_doc_by_id(boi_id, employee_id)
+        if not doc:
+            return {**context, "page_kind": "doc", "boi_id": boi_id, "fallback": "ontology_search_only"}
+        metadata = doc.get("metadata") or {}
+        source_event = metadata.get("source_event") if isinstance(metadata.get("source_event"), dict) else {}
+        return {
+            **context,
+            "page_kind": "doc",
+            "resolved": True,
+            "title": metadata.get("title") or "",
+            "description": metadata.get("description") or "",
+            "boi_id": metadata.get("boi_id") or boi_id,
+            "type": metadata.get("type") or "",
+            "visibility": metadata.get("visibility") or "",
+            "status": metadata.get("status") or "",
+            "event_type": metadata.get("event_type") or source_event.get("event_type") or "",
+            "trace_id": source_event.get("trace") or "",
+            "body_excerpt": text_excerpt(str(doc.get("body") or "")),
+            "url": doc_url_for_ref(str(metadata.get("boi_id") or boi_id), employee_id),
+        }
+    if path.startswith("/workflows/") and path.endswith("/status"):
+        workflow_key = unquote(path.removeprefix("/workflows/").removesuffix("/status")).strip("/")
+        trace_id = (query.get("trace_id") or [""])[0]
+        if not workflow_key or not trace_id:
+            return {**context, "page_kind": "workflow_status", "fallback": "ontology_search_only"}
+        payload = workflow_status_payload(workflow_key, trace_id, employee_id, compact=True)
+        return {
+            **context,
+            "page_kind": "workflow_status",
+            "resolved": True,
+            "workflow_key": workflow_key,
+            "trace_id": trace_id,
+            "sop_ref": payload.get("sop_ref") or "",
+            "event_count": len(payload.get("events") or []),
+            "action_count": len(payload.get("actions") or []),
+            "manual_handoff_count": len(payload.get("manual_handoffs") or []),
+            "generated_boi_count": len(payload.get("generated_docs") or []),
+            "url": workflow_status_page_url_for_key(workflow_key, trace_id, employee_id),
+        }
+    if path == "/events" or path.startswith("/events"):
+        event_type = (query.get("event_type") or [""])[0]
+        trace_id = (query.get("trace_id") or [""])[0]
+        event_id = (query.get("event_id") or [""])[0]
+        rows = read_event_logs(limit=5, event_type=event_type or None, trace_id=trace_id or None, event_id=event_id or None)
+        return {
+            **context,
+            "page_kind": "events",
+            "resolved": True,
+            "event_type": event_type,
+            "trace_id": trace_id,
+            "event_id": event_id,
+            "event_count": len(rows),
+            "events": [
+                {
+                    "event_id": row.get("event_id"),
+                    "event_type": row.get("event_type"),
+                    "trace_id": row.get("trace_id"),
+                    "status": row.get("status"),
+                }
+                for row in rows
+            ],
+        }
+    if path.startswith("/actions/raw/"):
+        log_ref = unquote(path.removeprefix("/actions/raw/"))
+        row = find_action_log_row_by_ref(log_ref, employee_id)
+        if not row:
+            return {**context, "page_kind": "action_raw", "log_ref": log_ref, "fallback": "ontology_search_only"}
+        readable = action_raw_readable_markdown(row)
+        result_value = row.get("result") if isinstance(row.get("result"), dict) else {}
+        return {
+            **context,
+            "page_kind": "action_raw",
+            "resolved": True,
+            "log_ref": log_ref,
+            "action_key": row.get("action_key") or "",
+            "status": row.get("status") or result_value.get("status") or "",
+            "request_id": row.get("request_id") or "",
+            "trace_id": row.get("trace_id") or "",
+            "event_id": row.get("event_id") or "",
+            "doc_ref": row.get("doc_ref") or "",
+            "readable_excerpt": text_excerpt(str(readable.get("markdown") or ""), 700) if readable.get("available") else "",
+            "url": action_raw_page_url(log_ref, employee_id),
+        }
+    if path.startswith("/event-types/"):
+        event_type = unquote(path.removeprefix("/event-types/"))
+        event_def = event_type_map().get(event_type)
+        if not event_def:
+            return {**context, "page_kind": "event_type", "event_type": event_type, "fallback": "ontology_search_only"}
+        return {
+            **context,
+            "page_kind": "event_type",
+            "resolved": True,
+            "event_type": event_type,
+            "title": event_def.get("name_ko") or event_type,
+            "description": event_def.get("description") or "",
+            "workflow_stage": event_def.get("workflow_stage") or "",
+            "sop_ref": event_def.get("sop_ref") or "",
+            "recommended_actions": event_def.get("recommended_actions") or [],
+            "url": event_type_url(event_type, employee_id),
+        }
+    return {**context, "fallback": "ontology_search_only"}
+
+
+def link_items_from_agent_context(page_context: dict[str, Any], employee_id: str) -> list[dict[str, str]]:
+    links: list[dict[str, str]] = []
+    if page_context.get("url"):
+        links.append({"label": str(page_context.get("title") or page_context.get("page_kind") or "현재 화면"), "url": str(page_context["url"]), "kind": "current_page"})
+    if page_context.get("boi_id"):
+        links.append({"label": str(page_context["boi_id"]), "url": doc_url_for_ref(str(page_context["boi_id"]), employee_id), "kind": "boi"})
+    if page_context.get("sop_ref"):
+        links.append({"label": str(page_context["sop_ref"]), "url": doc_url_for_ref(str(page_context["sop_ref"]), employee_id), "kind": "sop"})
+    return [item for item in links if item.get("url")]
+
+
+def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
+    page_context = resolve_agent_page_context(req.current_url, employee_id)
+    search = ontology_search_payload(req.question, employee_id, scope="all", limit=5, current_url=req.current_url)
+    links: list[dict[str, Any]] = []
+    links.extend(link_items_from_agent_context(page_context, employee_id))
+    for item in search.get("best_matches") or []:
+        link = agent_link_for_item(item)
+        if link.get("url") and all(existing.get("url") != link["url"] for existing in links):
+            links.append(link)
+    page_label = str(page_context.get("title") or page_context.get("page_kind") or "현재 화면")
+    if page_context.get("resolved"):
+        answer_lines = [f"현재 화면은 `{page_context.get('page_kind')}`로 해석했습니다: **{page_label}**."]
+    else:
+        answer_lines = ["현재 화면을 정확히 해석하지 못해 BoI Wiki ontology search 기준으로 답변합니다."]
+    best = (search.get("best_matches") or [])[:3]
+    if best:
+        answer_lines.append("관련 항목:")
+        for item in best:
+            label = str(item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or "결과")
+            url = str(item.get("url") or "")
+            description = text_excerpt(str(item.get("description") or ""), 120)
+            rendered_label = f"[{label}]({url})" if url else f"**{label}**"
+            answer_lines.append(f"- {rendered_label}" + (f": {description}" if description else ""))
+    elif page_context.get("body_excerpt"):
+        answer_lines.append(f"본문 발췌: {page_context['body_excerpt']}")
+    else:
+        answer_lines.append("질문과 직접 연결되는 항목을 찾지 못했습니다.")
+    if route.get("route") == "fast":
+        answer_lines.append("\n더 복합적인 판단이 필요하면 `깊게 분석해줘`라고 요청하면 Langflow Agent로 전환합니다.")
+    latency_ms = int((time.perf_counter() - started_at) * 1000)
+    context_summary = {
+        "page_context": page_context,
+        "current_url": req.current_url,
+        "route": route.get("route"),
+        "router_backend": route.get("router_backend"),
+        "router_confidence": route.get("confidence"),
+        "used_backend": "fast_api",
+        "latency_ms": latency_ms,
+    }
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "answer_markdown": "\n".join(answer_lines),
+        "links": links[:8],
+        "citations": links[:5],
+        "suggested_questions": page_context_suggestions(req.current_url, req.page_context) + ["깊게 분석해줘."],
+        "context_summary": context_summary,
+        "route": route.get("route"),
+        "router_backend": route.get("router_backend"),
+        "router_confidence": route.get("confidence"),
+        "used_backend": "fast_api",
+        "latency_ms": latency_ms,
+    }
+
+
+def agent_inbox_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
+    inbox = agent_inbox_payload(employee_id, status="open", limit=5)
+    items = inbox.get("items") or []
+    lines = [f"현재 열린 Action은 {len(items)}건입니다."]
+    for item in items[:5]:
+        lines.append(f"- `{item.get('status')}` {item.get('action_key')} ({item.get('request_id')})")
+    latency_ms = int((time.perf_counter() - started_at) * 1000)
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "answer_markdown": "\n".join(lines),
+        "links": [
+            {"label": str(item.get("action_key") or item.get("request_id")), "url": str(item.get("raw_url") or item.get("workflow_url") or ""), "kind": "inbox"}
+            for item in items
+            if item.get("raw_url") or item.get("workflow_url")
+        ],
+        "citations": [],
+        "suggested_questions": page_context_suggestions(req.current_url, req.page_context),
+        "context_summary": {"route": route.get("route"), "router_backend": route.get("router_backend"), "used_backend": "inbox_api", "latency_ms": latency_ms},
+        "route": route.get("route"),
+        "router_backend": route.get("router_backend"),
+        "router_confidence": route.get("confidence"),
+        "used_backend": "inbox_api",
+        "latency_ms": latency_ms,
+    }
+
+
+def agent_safety_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
+    latency_ms = int((time.perf_counter() - started_at) * 1000)
+    route_name = str(route.get("route") or "approval_required")
+    if route_name == "manual_handoff":
+        answer = "Manual Handoff 완료는 Inbox 카드에서 조치 내용과 outcome을 입력한 뒤 명시적으로 완료 기록을 남겨야 합니다."
+    else:
+        answer = "승인, 실행, publish, 편집 같은 상태 변경 요청은 Agent 답변만으로 수행하지 않습니다. 관련 Workflow/Raw를 확인하고 명시 승인 flow로 진행해야 합니다."
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "answer_markdown": answer,
+        "links": [],
+        "citations": [],
+        "suggested_questions": ["내 Inbox를 보여줘.", "관련 Workflow Status를 열어줘."],
+        "context_summary": {"route": route_name, "router_backend": route.get("router_backend"), "used_backend": "safety_guard", "latency_ms": latency_ms},
+        "route": route_name,
+        "router_backend": route.get("router_backend"),
+        "router_confidence": route.get("confidence"),
+        "used_backend": "safety_guard",
+        "latency_ms": latency_ms,
+    }
+
+
 def langflow_auth_headers() -> dict[str, str]:
     if LANGFLOW_AUTH_MODE == "api-key":
         return {"x-api-key": LANGFLOW_API_KEY}
@@ -5256,6 +5684,8 @@ def normalize_langflow_agent_response(
     run_result: dict[str, Any],
     req: BoiAgentChatRequest,
     employee_id: str,
+    route: dict[str, Any] | None = None,
+    started_at: float | None = None,
 ) -> dict[str, Any]:
     parsed = parse_langflow_agent_payload(run_result)
     answer_markdown = str(parsed.get("answer_markdown") or parsed.get("answer") or parsed.get("message") or "").strip()
@@ -5280,6 +5710,18 @@ def normalize_langflow_agent_response(
             "langflow_backend": "trusted",
         }
     )
+    latency_ms = int((time.perf_counter() - started_at) * 1000) if started_at else None
+    if route:
+        context_summary.update(
+            {
+                "route": route.get("route"),
+                "router_backend": route.get("router_backend"),
+                "router_confidence": route.get("confidence"),
+                "used_backend": "langflow",
+            }
+        )
+        if latency_ms is not None:
+            context_summary["latency_ms"] = latency_ms
     return {
         "ok": True,
         "employee_id": employee_id,
@@ -5288,10 +5730,15 @@ def normalize_langflow_agent_response(
         "citations": citations,
         "suggested_questions": suggestions,
         "context_summary": context_summary,
+        "route": route.get("route") if route else "deep",
+        "router_backend": route.get("router_backend") if route else "",
+        "router_confidence": route.get("confidence") if route else None,
+        "used_backend": "langflow",
+        "latency_ms": latency_ms,
     }
 
 
-def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any] | None = None, started_at: float | None = None) -> dict[str, Any]:
     if not LANGFLOW_URL or not LANGFLOW_BOI_AGENT_ENDPOINT:
         raise LangflowBoiAgentUnavailable("Langflow BoI Agent endpoint is not configured")
     payload = {
@@ -5299,7 +5746,9 @@ def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str) -> dict[
             {
                 "question": req.question,
                 "employee_id": employee_id,
+                "mode": req.mode,
                 "current_url": req.current_url,
+                "selected_text": req.selected_text,
                 "page_context": req.page_context,
                 "conversation": req.conversation[-12:],
                 "save_memory": req.save_memory,
@@ -5322,11 +5771,20 @@ def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str) -> dict[
         raise
     except Exception as exc:
         raise LangflowBoiAgentUnavailable(f"Langflow BoI Agent call failed: {exc}") from exc
-    return normalize_langflow_agent_response(run_result, req, employee_id)
+    return normalize_langflow_agent_response(run_result, req, employee_id, route=route, started_at=started_at)
 
 
 def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
-    return call_langflow_boi_agent(req, employee_id)
+    started_at = time.perf_counter()
+    route = route_boi_agent_request(req, employee_id)
+    route_name = str(route.get("route") or "fast")
+    if route_name == "deep":
+        return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
+    if route_name == "inbox":
+        return agent_inbox_answer(req, employee_id, route, started_at)
+    if route_name in {"manual_handoff", "approval_required"}:
+        return agent_safety_answer(req, employee_id, route, started_at)
+    return agent_fast_answer(req, employee_id, route, started_at)
 
 
 @app.post("/api/agents/boi-wiki/chat")

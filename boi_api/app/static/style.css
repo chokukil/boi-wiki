@@ -205,6 +205,8 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-message.assistant { justify-self:start; }
 .boi-agent-message strong { display:block; margin-bottom:4px; color:#334155; font-size:12px; }
 .boi-agent-message p { margin:0; color:#1f2937; line-height:1.55; }
+.boi-agent-meta { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 7px; }
+.boi-agent-meta span { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border:1px solid #dbeafe; border-radius:999px; background:#f8fafc; color:#475569; font-size:11px; font-weight:800; }
 .boi-agent-answer { position:relative; margin-top:12px; padding:13px 14px; border:1px solid #dbeafe; border-radius:12px; background:#fff; box-shadow:0 6px 18px rgba(15,23,42,.08); }
 .boi-agent-answer::before { content:""; position:absolute; right:28px; top:-8px; width:14px; height:14px; border-left:1px solid #dbeafe; border-top:1px solid #dbeafe; background:#fff; transform:rotate(45deg); }
 .boi-agent-answer p { margin:0; color:#1f2937; line-height:1.55; }

@@ -10,6 +10,9 @@ def test_env_example_contains_openai_compatible_gemma_defaults():
     assert "BOI_LLM_BASE_URL=http://llm-gateway.example:1236/v1" in env_text
     assert "BOI_LLM_MODEL=google/gemma-4-26b-a4b-qat" in env_text
     assert "BOI_LLM_API_KEY=not-needed" in env_text
+    assert "BOI_AGENT_ROUTER_MODE=llm_first" in env_text
+    assert "BOI_AGENT_ROUTER_MODEL=google/gemma-4-26b-a4b-qat" in env_text
+    assert "BOI_AGENT_ROUTER_API_KEY=boi-router-dummy-key" in env_text
     assert "LANGFLOW_SECRET_KEY=Ym9pLXdpa2ktcG9jLWRldi1zZWNyZXQta2V5LTIwMjY=" in env_text
     assert "LANGFLOW_SKIP_AUTH_AUTO_LOGIN=true" in env_text
 
@@ -20,6 +23,9 @@ def test_docker_compose_passes_llm_settings_to_langflow_and_gateway():
     assert "BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}" in compose_text
     assert "BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}" in compose_text
     assert "BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}" in compose_text
+    assert "BOI_AGENT_ROUTER_MODE: ${BOI_AGENT_ROUTER_MODE:-llm_first}" in compose_text
+    assert "BOI_AGENT_ROUTER_LLM_ENABLED: ${BOI_AGENT_ROUTER_LLM_ENABLED:-false}" in compose_text
+    assert "BOI_AGENT_ROUTER_BASE_URL: ${BOI_AGENT_ROUTER_BASE_URL:-http://llm-gateway.example:1236/v1}" in compose_text
     assert "LANGFLOW_SECRET_KEY: ${LANGFLOW_SECRET_KEY:-Ym9pLXdpa2ktcG9jLWRldi1zZWNyZXQta2V5LTIwMjY=}" in compose_text
     assert "LANGFLOW_SKIP_AUTH_AUTO_LOGIN: ${LANGFLOW_SKIP_AUTH_AUTO_LOGIN:-true}" in compose_text
     assert "BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}" in compose_text

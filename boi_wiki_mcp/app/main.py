@@ -280,14 +280,16 @@ async def workflow_status_impl(
 async def boi_agent_chat(
     question: str,
     employee_id: str = DEFAULT_EMPLOYEE_ID,
+    mode: str = "auto",
     current_url: str = "",
+    selected_text: str = "",
     page_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Ask the BoI Agent through the official BoI API surface."""
     return await api_post(
         "/api/agents/boi-wiki/chat",
         employee_id=employee_id,
-        payload={"question": question, "current_url": current_url, "page_context": page_context or {}},
+        payload={"question": question, "mode": mode, "current_url": current_url, "selected_text": selected_text, "page_context": page_context or {}},
     )
 
 
@@ -778,7 +780,13 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         result = await api_post(
             "/api/agents/boi-wiki/chat",
             employee_id=employee_id,
-            payload={"question": str(args.get("question") or ""), "current_url": str(args.get("current_url") or ""), "page_context": args.get("page_context") or {}},
+            payload={
+                "question": str(args.get("question") or ""),
+                "mode": str(args.get("mode") or "auto"),
+                "current_url": str(args.get("current_url") or ""),
+                "selected_text": str(args.get("selected_text") or ""),
+                "page_context": args.get("page_context") or {},
+            },
             service_token=True,
         )
     elif tool_name == "agent_inbox":

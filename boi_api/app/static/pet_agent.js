@@ -11,6 +11,10 @@
     return root.dataset.currentUrl || `${location.pathname}${location.search}`;
   }
 
+  function selectedText() {
+    return String(window.getSelection?.().toString() || "").trim().slice(0, 1200);
+  }
+
   function defaultState() {
     return { open: false, tab: "agent", suggestions: [], inbox: [], messages: [], draft: "", busyTask: "" };
   }
@@ -87,6 +91,17 @@
       .join("")}</div>`;
   }
 
+  function renderMessageMeta(message) {
+    const meta = message.meta || {};
+    const chips = [];
+    if (meta.route) chips.push(`Route: ${meta.route}`);
+    if (meta.used_backend) chips.push(meta.used_backend === "langflow" ? "Langflow Agent" : meta.used_backend);
+    if (meta.router_backend) chips.push(`Router: ${meta.router_backend}`);
+    if (Number.isFinite(meta.latency_ms)) chips.push(`${meta.latency_ms}ms`);
+    if (!chips.length) return "";
+    return `<div class="boi-agent-meta">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>`;
+  }
+
   function tabLabel(tab) {
     return { agent: "Agent", inbox: "Inbox" }[tab] || tab;
   }
@@ -97,6 +112,7 @@
       .map((message) => `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
           <strong>${message.role === "user" ? "You" : "BoI Agent"}</strong>
+          ${renderMessageMeta(message)}
           <p>${renderMarkdownLite(message.text || "")}</p>
           ${renderLinks(message.links || [])}
         </article>`)
@@ -271,12 +287,23 @@
       method: "POST",
       body: JSON.stringify({
         question,
+        selected_text: selectedText(),
         current_url: currentUrl(),
         page_context: { title: pageTitle },
         conversation: state.messages.slice(-10).map((item) => ({ role: item.role, content: item.text })),
       }),
     }).then((body) => {
-      state.messages[pendingIndex] = { role: "assistant", text: body.answer_markdown || "", links: body.links || [] };
+      state.messages[pendingIndex] = {
+        role: "assistant",
+        text: body.answer_markdown || "",
+        links: body.links || [],
+        meta: {
+          route: body.route,
+          used_backend: body.used_backend,
+          router_backend: body.router_backend,
+          latency_ms: body.latency_ms,
+        },
+      };
       if (body.suggested_questions) state.suggestions = body.suggested_questions;
       render();
     }).catch((error) => {
