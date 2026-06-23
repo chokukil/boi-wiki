@@ -5290,12 +5290,12 @@ def deterministic_agent_intent(question: str, current_url: str = "") -> str:
         return "gap_check"
     if any(term in q for term in ("trace", "트레이스", "workflow status", "로그", "왜", "원인", "리스크", "시뮬레이션", "추론", "판단")):
         return "trace_reasoning"
+    if any(term in q for term in ("찾", "검색", "링크", "목록", "어디", "보여줘")):
+        return "search"
     if any(term in q for term in ("event", "이벤트", "action", "액션", "manual handoff", "handoff", "핸드오프", "관계", "흐름", "발생하면", "뭘 해야", "어떻게 해야", "이어지는")):
         return "workflow_explain"
     if any(term in q for term in ("요약", "정리", "summary", "summarize")):
         return "summarize"
-    if any(term in q for term in ("찾", "검색", "링크", "목록", "어디", "보여")):
-        return "search"
     return "page_qa" if current_url else "search"
 
 
