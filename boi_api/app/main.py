@@ -5323,6 +5323,7 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
         "model": BOI_AGENT_ROUTER_MODEL,
         "temperature": 0,
         "max_tokens": 192,
+        "response_format": {"type": "json_object"},
         "messages": [
             {
                 "role": "system",
