@@ -1462,7 +1462,13 @@ def read_action_logs(limit: int = 200, action_key: str | None = None, offset: in
     return rows
 
 
-def tail_jsonl_lines(path: Path, max_lines: int, *, chunk_size: int = 16384) -> tuple[list[str], bool]:
+def tail_jsonl_lines(
+    path: Path,
+    max_lines: int,
+    *,
+    chunk_size: int = 16384,
+    max_bytes: int = 2 * 1024 * 1024,
+) -> tuple[list[str], bool]:
     if max_lines <= 0 or not path.exists():
         return [], True
     data = b""
@@ -1471,7 +1477,7 @@ def tail_jsonl_lines(path: Path, max_lines: int, *, chunk_size: int = 16384) -> 
     with path.open("rb") as handle:
         handle.seek(0, os.SEEK_END)
         position = handle.tell()
-        while position > 0 and newline_count <= max_lines:
+        while position > 0 and newline_count <= max_lines and len(data) < max_bytes:
             read_size = min(chunk_size, position)
             position -= read_size
             handle.seek(position)
@@ -6196,7 +6202,7 @@ def completion_request_ids(rows: list[dict[str, Any]] | None = None) -> set[str]
 
 
 def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50) -> dict[str, Any]:
-    recent_rows = read_recent_action_logs_fast(limit=max(200, min(limit * 50, 1000)))
+    recent_rows = read_recent_action_logs_fast(limit=max(50, min(limit * 20, 300)))
     completed = completion_request_ids(recent_rows)
     items: list[dict[str, Any]] = []
     for row in recent_rows:
