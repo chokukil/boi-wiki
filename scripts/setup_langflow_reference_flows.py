@@ -591,7 +591,7 @@ def create_boi_agent_flow(
                 "For intent=diagram, workflow_explain, gap_check, or trace_reasoning, use ontology_search plus "
                 "boi_get/action_spec_lookup/workflow_status as needed before answering. For simple search/page_qa, "
                 "ontology_search may be enough; boi_answer is only a fallback compact answer tool, not the normal first step. "
-                "Never call boi_agent_chat because that would recurse. Allowed tools: "
+                "Never call the page-aware chat API from inside this Agent because that would recurse. Allowed tools: "
                 f"{allowed_tool_names}. Return exactly one JSON object with answer_markdown, links, citations, "
                 "suggested_questions, artifacts, and context_summary. Mermaid diagrams must appear in artifacts as "
                 '{"type":"mermaid","source":"flowchart TD\\n..."} and also as a ```mermaid code block in answer_markdown.'
