@@ -659,6 +659,20 @@ def render_paragraph(
     return f"<p>{render_inline_markdown(text, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</p>" if text else ""
 
 
+def render_list_item(
+    item: str,
+    employee_id: str | None = None,
+    source_path: Path | None = None,
+    doc_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    task = re.match(r"^\[( |x|X)\]\s+(?P<body>.*)$", item.strip())
+    if task:
+        checked = " checked" if task.group(1).lower() == "x" else ""
+        body = render_inline_markdown(task.group("body"), employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)
+        return f'<li><input type="checkbox" disabled{checked}> {body}</li>'
+    return f"<li>{render_inline_markdown(item, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</li>"
+
+
 def render_markdown(
     value: str,
     employee_id: str | None = None,
@@ -669,6 +683,7 @@ def render_markdown(
     html_parts: list[str] = []
     paragraph: list[str] = []
     list_items: list[str] = []
+    ordered_items: list[str] = []
     table_lines: list[str] = []
     index = 0
 
@@ -682,12 +697,24 @@ def render_markdown(
             html_parts.append(
                 "<ul>"
                 + "".join(
-                    f"<li>{render_inline_markdown(item, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</li>"
+                    render_list_item(item, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)
                     for item in list_items
                 )
                 + "</ul>"
             )
             list_items.clear()
+
+    def flush_ordered_list() -> None:
+        if ordered_items:
+            html_parts.append(
+                "<ol>"
+                + "".join(
+                    render_list_item(item, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)
+                    for item in ordered_items
+                )
+                + "</ol>"
+            )
+            ordered_items.clear()
 
     def flush_table() -> None:
         if table_lines:
@@ -701,6 +728,7 @@ def render_markdown(
         if stripped.startswith("```"):
             flush_paragraph()
             flush_list()
+            flush_ordered_list()
             flush_table()
             language = stripped.removeprefix("```").strip().split(None, 1)[0].lower() if stripped.removeprefix("```").strip() else ""
             code_lines: list[str] = []
@@ -733,37 +761,49 @@ def render_markdown(
         elif not stripped:
             flush_paragraph()
             flush_list()
+            flush_ordered_list()
             flush_table()
         elif stripped.startswith("#"):
             flush_paragraph()
             flush_list()
+            flush_ordered_list()
             flush_table()
             marker, _, title = stripped.partition(" ")
             level = min(max(len(marker), 1) + 2, 5)
             html_parts.append(
                 f"<h{level}>{render_inline_markdown(title or stripped.lstrip('#').strip(), employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</h{level}>"
             )
-        elif re.match(r"^\s*[-*]\s+\S", line):
+        elif re.match(r"^\s*[-*+]\s+\S", line):
             flush_paragraph()
+            flush_ordered_list()
             flush_table()
-            list_items.append(re.sub(r"^\s*[-*]\s+", "", line).strip())
+            list_items.append(re.sub(r"^\s*[-*+]\s+", "", line).strip())
+        elif re.match(r"^\s*\d+\.\s+\S", line):
+            flush_paragraph()
+            flush_list()
+            flush_table()
+            ordered_items.append(re.sub(r"^\s*\d+\.\s+", "", line).strip())
         elif stripped.startswith("|") and stripped.endswith("|"):
             flush_paragraph()
             flush_list()
+            flush_ordered_list()
             table_lines.append(stripped)
         elif re.fullmatch(r"!\[[^\]]*\]\([^)]+\)", stripped):
             flush_paragraph()
             flush_list()
+            flush_ordered_list()
             flush_table()
             html_parts.append(render_inline_markdown(stripped, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup))
         else:
             flush_list()
+            flush_ordered_list()
             flush_table()
             paragraph.append(line)
         index += 1
 
     flush_paragraph()
     flush_list()
+    flush_ordered_list()
     flush_table()
     return Markup(f'<div class="rendered-markdown">{"".join(html_parts)}</div>')
 
