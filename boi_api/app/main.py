@@ -7048,7 +7048,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "action_invoke",
             "manual_handoff_complete",
             "event_type_draft",
-            "promotion_draft",
+            "promotion_submit",
         ],
         "native_agent": {
             "enabled": BOI_AGENT_BACKEND in {"native", "hybrid"},
@@ -7100,14 +7100,21 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
         draft_payload = {**payload, "user_confirmed": True}
         draft = create_event_type_draft(EventTypeDraftRequest(**draft_payload), employee_id)
         return {"ok": True, "operation": operation, "status": "draft_created", "draft": draft}
-    return {
-        "ok": True,
-        "employee_id": employee_id,
-        "operation": req.operation,
-        "status": "approved_for_explicit_next_step",
-        "note": req.note,
-        "payload_preview": redact_sensitive(req.payload),
-    }
+    if operation in {"promotion_submit", "submit_promotion"}:
+        promotion_payload = {**payload, "user_confirmed": True}
+        result = await submit_promotion(PromotionSubmitRequest(**promotion_payload), employee_id)
+        append_rbac_audit(
+            employee_id,
+            "agent_promotion_submit",
+            {
+                "target_visibility": promotion_payload.get("target_visibility"),
+                "team_id": promotion_payload.get("team_id"),
+                "title": promotion_payload.get("title"),
+                "note": req.note,
+            },
+        )
+        return {"ok": True, "operation": operation, "status": "executed", "result": result}
+    raise HTTPException(status_code=400, detail=f"unsupported Agent approval operation: {req.operation}")
 
 
 def activity_file_for_employee(employee_id: str) -> Path:

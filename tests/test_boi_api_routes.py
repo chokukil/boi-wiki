@@ -700,6 +700,42 @@ def test_agent_inbox_and_manual_handoff_completion_are_append_only(boi_app_modul
     assert not any(item["request_id"] == "act-manual-required-test" for item in inbox_after.json()["items"])
 
 
+def test_boi_agent_approve_rejects_unsupported_operation(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={"operation": "not_a_supported_operation", "payload": {"title": "Noop"}, "user_confirmed": True},
+    )
+
+    assert response.status_code == 400
+    assert "unsupported Agent approval operation" in response.json()["detail"]
+
+
+def test_boi_agent_approve_promotion_submit_uses_validation_path(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "promotion_submit",
+            "user_confirmed": True,
+            "payload": {
+                "target_visibility": "public",
+                "title": "Agent Promotion Secret Guard Test",
+                "description": "Agent approval must reuse promotion validation.",
+                "body": "# Summary\n\nsecret=sk-agent-approval-validation-test",
+                "source_refs": [{"type": "local-private", "ref": "agent-promotion-secret-test"}],
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["status"] == "validation_failed"
+    assert "potential secret token detected" in detail["validation"]["errors"]
+
+
 def test_pet_agent_mount_is_available_on_home(boi_app_module):
     client = TestClient(boi_app_module.app)
 
