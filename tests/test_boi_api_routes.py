@@ -466,6 +466,47 @@ def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(bo
     assert body["artifacts"][0]["data"]["route"] == "manual_handoff"
 
 
+def test_boi_agent_event_type_draft_card_uses_ontology_context(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "장비 점검 완료 이벤트 타입 maintenance.inspection.completed.v1 초안을 만들어줘. 작업자는 7자리 사번이고 SOP는 설비 이상 감지 SOP와 연결해줘.",
+            "current_url": "/event-types?employee_id=100001",
+            "page_context": {"title": "Event Types"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "approval_required"
+    assert body["intent"] == "event_type_draft"
+    artifact = body["artifacts"][0]
+    assert artifact["type"] == "confirmation_required"
+    payload = artifact["data"]["payload"]
+    assert payload["event_type"] == "maintenance.inspection.completed.v1"
+    assert payload["name_ko"] == "장비 점검 완료"
+    assert payload["sop_ref"] == "boi:public:sop:equipment-abnormal-response"
+    assert payload["workflow_stage"]
+    assert payload["topic"] == "maintenance.inspection"
+    assert payload["payload_schema"]["properties"]["owner_employee_id"]["pattern"] == "^\\d{7}$"
+    assert "equipment_id" in payload["payload_schema"]["properties"]
+
+    approve = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={"operation": artifact["data"]["operation"], "payload": payload, "user_confirmed": True},
+    )
+    assert approve.status_code == 200
+    draft = approve.json()["draft"]
+    assert draft["status"] == "draft"
+    assert draft["validation"]["valid"] is True
+    assert draft["catalog_patch_proposal"]["sop_ref"] == "boi:public:sop:equipment-abnormal-response"
+    assert boi_app_module.get_event_type(payload["event_type"]) is None
+
+
 def test_boi_agent_manual_handoff_relationship_question_is_not_mutation(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

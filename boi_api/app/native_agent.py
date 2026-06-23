@@ -823,7 +823,7 @@ def confirmation_payload_for_state(state: JsonDict) -> JsonDict:
     route_name = str(state.get("route_name") or "")
     question = str(state.get("question") or "")
     if intent == "event_type_draft":
-        payload = event_type_draft_payload_from_question(question)
+        payload = event_type_draft_payload_from_state(state)
         if payload:
             return {
                 "title": "신규 Event Type 초안 확인",
@@ -860,19 +860,123 @@ def confirmation_payload_for_state(state: JsonDict) -> JsonDict:
     }
 
 
-def event_type_draft_payload_from_question(question: str) -> JsonDict:
+def event_type_draft_payload_from_state(state: JsonDict) -> JsonDict:
+    question = str(state.get("question") or "")
     match = re.search(r"\b([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\.v\d+)\b", question)
     if not match:
         return {}
     event_type = match.group(1)
+    search = state.get("search") if isinstance(state.get("search"), dict) else {}
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    tool_results = state.get("tool_results") if isinstance(state.get("tool_results"), dict) else {}
+    sop_ref = event_type_draft_sop_ref(page_context, tool_results, search)
+    related_event = event_type_draft_related_event(search)
+    workflow_stage = event_type_draft_workflow_stage(question, related_event)
+    action_keys = event_type_draft_recommended_actions(search)
     return {
         "event_type": event_type,
-        "name_ko": "",
+        "name_ko": event_type_draft_name(question, event_type),
         "description": compact_text(question, 260),
         "owner": "",
-        "topic": "",
-        "workflow_stage": "",
-        "sop_ref": "",
-        "payload_schema": {},
-        "recommended_actions": [],
+        "topic": event_type_draft_topic(event_type, related_event),
+        "workflow_stage": workflow_stage,
+        "sop_ref": sop_ref,
+        "payload_schema": event_type_draft_payload_schema(question),
+        "recommended_actions": action_keys,
     }
+
+
+def event_type_draft_name(question: str, event_type: str) -> str:
+    before = question.split(event_type, 1)[0]
+    before = re.sub(r"(신규|새로운|event type|이벤트 타입|이벤트|초안|만들어줘|만들|생성|정의|추가)", " ", before, flags=re.IGNORECASE)
+    before = re.sub(r"\s+", " ", before).strip(" .,:;/-")
+    korean_chunks = re.findall(r"[가-힣A-Za-z0-9·\-/ ]+", before)
+    name = " ".join(chunk.strip() for chunk in korean_chunks if chunk.strip()).strip()
+    if name:
+        return compact_text(name, 60)
+    parts = event_type.rsplit(".v", 1)[0].split(".")
+    return " ".join(part.replace("_", " ").title() for part in parts[-2:])
+
+
+def event_type_draft_topic(event_type: str, related_event: JsonDict | None = None) -> str:
+    if isinstance(related_event, dict) and related_event.get("topic"):
+        return str(related_event.get("topic"))
+    parts = event_type.split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else parts[0]
+
+
+def event_type_draft_payload_schema(question: str) -> JsonDict:
+    properties: JsonDict = {
+        "title": {"type": "string", "description": "업무 화면에 표시할 이벤트 제목"},
+        "summary": {"type": "string", "description": "이벤트 발생 맥락 요약"},
+    }
+    if re.search(r"사번|담당|owner|작업자", question, re.IGNORECASE):
+        properties["owner_employee_id"] = {"type": "string", "pattern": "^\\d{7}$", "description": "담당자 7자리 사번"}
+    if re.search(r"설비|장비|equipment", question, re.IGNORECASE):
+        properties["equipment_id"] = {"type": "string", "description": "대상 설비 또는 장비 ID"}
+    return {"type": "object", "properties": properties, "required": ["title"]}
+
+
+def event_type_draft_sop_ref(page_context: JsonDict, tool_results: JsonDict, search: JsonDict) -> str:
+    for value in (page_context.get("sop_ref"),):
+        if value:
+            return str(value)
+    current_doc = tool_results.get("current_doc") if isinstance(tool_results.get("current_doc"), dict) else {}
+    metadata = current_doc.get("metadata") if isinstance(current_doc.get("metadata"), dict) else {}
+    if metadata.get("type") == "boi/sop" and metadata.get("boi_id"):
+        return str(metadata.get("boi_id"))
+    if page_context.get("page_kind") == "doc" and page_context.get("boi_id") and "sop" in str(page_context.get("boi_id")):
+        return str(page_context.get("boi_id"))
+    knowledge = search.get("knowledge_panel") if isinstance(search.get("knowledge_panel"), dict) else {}
+    for item in knowledge.get("top_sop") or []:
+        if isinstance(item, dict) and item.get("boi_id"):
+            return str(item.get("boi_id"))
+    groups = search.get("groups") if isinstance(search.get("groups"), dict) else {}
+    for item in groups.get("sop") or []:
+        if isinstance(item, dict) and item.get("boi_id"):
+            return str(item.get("boi_id"))
+    for item in search.get("best_matches") or []:
+        if isinstance(item, dict) and item.get("type") == "boi/sop" and item.get("boi_id"):
+            return str(item.get("boi_id"))
+    return ""
+
+
+def event_type_draft_related_event(search: JsonDict) -> JsonDict | None:
+    knowledge = search.get("knowledge_panel") if isinstance(search.get("knowledge_panel"), dict) else {}
+    for item in knowledge.get("top_event_type") or []:
+        if isinstance(item, dict):
+            return item
+    groups = search.get("groups") if isinstance(search.get("groups"), dict) else {}
+    for item in groups.get("event_types") or []:
+        if isinstance(item, dict):
+            return item
+    return None
+
+
+def event_type_draft_workflow_stage(question: str, related_event: JsonDict | None = None) -> str:
+    stage_terms = ("이상 감지", "원인 분석", "보전 가이드", "이상 조치", "Map View 확인", "단면검사", "결과 확인")
+    for term in stage_terms:
+        if term in question:
+            return term
+    if isinstance(related_event, dict) and related_event.get("workflow_stage"):
+        return str(related_event.get("workflow_stage"))
+    if re.search(r"완료|completed|조치", question, re.IGNORECASE):
+        return "이상 조치"
+    if re.search(r"요청|requested|분석", question, re.IGNORECASE):
+        return "원인 분석"
+    return ""
+
+
+def event_type_draft_recommended_actions(search: JsonDict) -> list[str]:
+    action_keys: list[str] = []
+    groups = search.get("groups") if isinstance(search.get("groups"), dict) else {}
+    candidates = list(groups.get("actions") or []) + list(search.get("best_matches") or [])
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        action_key = str(item.get("action_key") or "")
+        if action_key and action_key not in action_keys:
+            action_keys.append(action_key)
+        if len(action_keys) >= 3:
+            break
+    return action_keys
