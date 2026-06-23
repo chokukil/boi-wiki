@@ -1462,11 +1462,12 @@ def read_action_logs(limit: int = 200, action_key: str | None = None, offset: in
     return rows
 
 
-def tail_jsonl_lines(path: Path, max_lines: int, *, chunk_size: int = 16384) -> list[str]:
+def tail_jsonl_lines(path: Path, max_lines: int, *, chunk_size: int = 16384) -> tuple[list[str], bool]:
     if max_lines <= 0 or not path.exists():
-        return []
+        return [], True
     data = b""
     newline_count = 0
+    started_at_beginning = True
     with path.open("rb") as handle:
         handle.seek(0, os.SEEK_END)
         position = handle.tell()
@@ -1477,27 +1478,17 @@ def tail_jsonl_lines(path: Path, max_lines: int, *, chunk_size: int = 16384) -> 
             chunk = handle.read(read_size)
             data = chunk + data
             newline_count = data.count(b"\n")
+        started_at_beginning = position == 0
     lines = data.decode("utf-8", errors="replace").splitlines()
-    return lines[-max_lines:]
-
-
-def count_file_lines(path: Path, *, chunk_size: int = 1024 * 1024) -> int:
-    count = 0
-    with path.open("rb") as handle:
-        while True:
-            chunk = handle.read(chunk_size)
-            if not chunk:
-                break
-            count += chunk.count(b"\n")
-    return count
+    return lines[-max_lines:], started_at_beginning
 
 
 def read_recent_action_logs_fast(limit: int = 200, action_key: str | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     wanted = max(1, min(int(limit or 200), 2000))
     for path in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl"), reverse=True):
-        tail_lines = tail_jsonl_lines(path, max(wanted * 3, 200))
-        start_line = max(1, count_file_lines(path) - len(tail_lines) + 1)
+        tail_lines, complete_file = tail_jsonl_lines(path, max(wanted * 3, 200))
+        start_line = 1 if complete_file else None
         for offset, line in reversed(list(enumerate(tail_lines))):
             try:
                 row = json.loads(line)
@@ -1505,7 +1496,8 @@ def read_recent_action_logs_fast(limit: int = 200, action_key: str | None = None
                 continue
             if action_key and row.get("action_key") != action_key:
                 continue
-            row["_log_ref"] = f"action:{path.name}:{start_line + offset}"
+            if start_line is not None:
+                row["_log_ref"] = f"action:{path.name}:{start_line + offset}"
             rows.append(row)
             if len(rows) >= wanted:
                 return rows
