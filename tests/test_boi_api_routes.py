@@ -250,6 +250,84 @@ def test_rbac_me_and_doc_access_guard_private_boi(boi_app_module):
     assert "another employee" in " ".join(denied.json()["access"]["reasons"])
 
 
+def test_boi_agent_restricted_docs_are_pruned_from_context_and_artifacts(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    restricted_phrase = "restricted-agent-secret-body-token"
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/sop",
+            "title": "Restricted Agent Leak Test",
+            "description": "restricted context should not be used by Agent",
+            "tags": ["Restricted", "Agent"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:public:sop:restricted-agent-leak-test",
+            "visibility": "public",
+            "classification": "restricted",
+            "owner": "public",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "acl_policy": "acl:public",
+            "status": "draft",
+            "review": {"reviewer": "pytest", "review_status": "draft"},
+            "source_refs": [{"type": "test", "ref": "restricted-agent"}],
+            "workflow": {
+                "workflow_key": "restricted-agent-leak-test",
+                "stages": [
+                    {
+                        "id": "restricted",
+                        "name": "Restricted Stage",
+                        "event_types": ["restricted.event.v1"],
+                        "automated_actions": ["restricted.action"],
+                    }
+                ],
+            },
+        },
+        f"# Summary\n\n{restricted_phrase}\n\n[Hidden Link](/public/sop/equipment-abnormal-response.md)",
+    )
+
+    compact_search = client.get(
+        f"/api/search/ontology?employee_id=100001&q={restricted_phrase}&view=compact"
+    )
+    assert compact_search.status_code == 200
+    compact_body = compact_search.json()
+    compact_result_dump = json.dumps(
+        {
+            "groups": compact_body.get("groups"),
+            "best_matches": compact_body.get("best_matches"),
+            "citations": compact_body.get("citations"),
+            "document_rank_refs": compact_body.get("document_rank_refs"),
+        },
+        ensure_ascii=False,
+    )
+    assert restricted_phrase not in compact_result_dump
+    assert "restricted-agent-leak-test" not in compact_result_dump
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 제한 문서를 Mermaid로 보여줘.",
+            "mode": "deep",
+            "current_url": "/docs/boi:public:sop:restricted-agent-leak-test?employee_id=100001",
+            "page_context": {"title": "Restricted Agent Leak Test"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    dumped = json.dumps(body, ensure_ascii=False)
+    assert body["used_backend"] == "native_langgraph"
+    assert body["access_summary"]["can_read"] is True
+    assert body["access_summary"]["can_use_in_agent_context"] is False
+    assert body["redacted_count"] >= 1
+    assert "classification_redaction" in body["guardrails_applied"]
+    assert restricted_phrase not in dumped
+    assert "restricted.action" not in dumped
+    assert "restricted.event.v1" not in dumped
+    assert not any("restricted-agent-leak-test" in str(link.get("url") or "") for link in body["links"])
+    assert not any("restricted-agent-leak-test" in str(citation.get("url") or "") for citation in body["citations"])
+
+
 def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -292,6 +370,34 @@ def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_mod
     validate = client.post(f"/api/event-types/drafts/{draft['draft_id']}/validate?employee_id=100001")
     assert validate.status_code == 200
     assert validate.json()["draft"]["validation"]["valid"] is True
+
+
+def test_boi_agent_approve_event_type_draft_requires_editor_role(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def viewer_only(employee_id: str):
+        return ["boi.viewer"]
+
+    monkeypatch.setattr(boi_app_module, "roles_for", viewer_only)
+
+    response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100003",
+        json={
+            "operation": "event_type_draft",
+            "user_confirmed": True,
+            "payload": {
+                "event_type": "pytest.unauthorized.event.v1",
+                "name_ko": "권한 없는 이벤트",
+                "description": "권한 없는 사용자가 만들면 안 되는 Event Type draft",
+            },
+        },
+    )
+
+    assert response.status_code == 403
+    assert "boi.editor" in response.text
+    drafts = client.get("/api/event-types/drafts?employee_id=100003")
+    assert drafts.status_code == 200
+    assert all(item.get("event_type") != "pytest.unauthorized.event.v1" for item in drafts.json()["items"])
 
 
 def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_module, monkeypatch):

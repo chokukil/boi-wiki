@@ -2407,20 +2407,36 @@ def doc_result_item(doc: dict[str, Any], employee_id: str, *, score: int = 0, ma
     metadata = doc.get("metadata") or {}
     ref = stable_doc_ref(doc)
     access = access_policy_for_doc(doc, employee_id)
+    visible_metadata = metadata
+    title = metadata.get("title")
+    description = metadata.get("description")
+    url = doc_url_for_ref(ref, employee_id) if ref else ""
+    if not access.can_use_in_agent_context:
+        visible_metadata = {
+            "boi_id": metadata.get("boi_id"),
+            "type": metadata.get("type"),
+            "title": metadata.get("title"),
+            "visibility": metadata.get("visibility"),
+            "classification": access.classification,
+            "status": metadata.get("status"),
+        }
+        description = "보안 등급 정책에 따라 Agent context에는 원문과 상세 metadata를 사용하지 않습니다."
+    if not access.can_cite:
+        url = ""
     return {
         "kind": "boi",
         "score": score,
         "match_reason": match_reason,
         "boi_id": metadata.get("boi_id"),
-        "title": metadata.get("title"),
-        "description": metadata.get("description"),
+        "title": title,
+        "description": description,
         "type": metadata.get("type"),
         "visibility": metadata.get("visibility"),
         "status": metadata.get("status"),
         "uri": doc.get("uri"),
         "folder": doc_folder(doc),
-        "url": doc_url_for_ref(ref, employee_id) if ref else "",
-        "metadata": metadata,
+        "url": url,
+        "metadata": visible_metadata,
         "access": access.to_dict(),
     }
 
@@ -2745,6 +2761,9 @@ def ontology_search_payload(
     citations: list[dict[str, Any]] = []
     seen_citation_keys: set[str] = set()
     for item in best_matches[:effective_limit]:
+        access = item.get("access") if isinstance(item, dict) and isinstance(item.get("access"), dict) else {}
+        if access.get("can_cite") is False:
+            continue
         label = str(item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or item.get("uri") or "")
         ref = str(item.get("boi_id") or item.get("doc_ref") or item.get("event_type") or item.get("action_key") or item.get("term") or "")
         url = str(item.get("url") or "")
@@ -2815,10 +2834,19 @@ def compact_ontology_item(item: Any) -> Any:
     return compact
 
 
+def ontology_item_allowed_for_agent_context(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return True
+    access = item.get("access")
+    if isinstance(access, dict) and access.get("can_use_in_agent_context") is False:
+        return False
+    return True
+
+
 def compact_ontology_payload(payload: dict[str, Any]) -> dict[str, Any]:
     groups = payload.get("groups") if isinstance(payload.get("groups"), dict) else {}
     compact_groups = {
-        key: [compact_ontology_item(item) for item in value]
+        key: [compact_ontology_item(item) for item in value if ontology_item_allowed_for_agent_context(item)]
         for key, value in groups.items()
         if isinstance(value, list)
     }
@@ -2826,9 +2854,21 @@ def compact_ontology_payload(payload: dict[str, Any]) -> dict[str, Any]:
     compact_knowledge = {}
     for key, value in knowledge_panel.items():
         if isinstance(value, list):
-            compact_knowledge[key] = [compact_ontology_item(item) for item in value]
+            compact_knowledge[key] = [compact_ontology_item(item) for item in value if ontology_item_allowed_for_agent_context(item)]
         else:
             compact_knowledge[key] = value
+    best_matches = [
+        item for item in payload.get("best_matches") or []
+        if ontology_item_allowed_for_agent_context(item)
+    ]
+    citations = [
+        item for item in payload.get("citations") or []
+        if not (
+            isinstance(item, dict)
+            and isinstance(item.get("access"), dict)
+            and item["access"].get("can_cite") is False
+        )
+    ]
     return {
         "ok": payload.get("ok", True),
         "query": payload.get("query", ""),
@@ -2840,10 +2880,14 @@ def compact_ontology_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "used_dictionary_terms": [compact_ontology_item(item) for item in payload.get("used_dictionary_terms") or []],
         "knowledge_panel": compact_knowledge,
         "groups": compact_groups,
-        "best_matches": [compact_ontology_item(item) for item in payload.get("best_matches") or []],
+        "best_matches": [compact_ontology_item(item) for item in best_matches],
         "graph_paths": payload.get("graph_paths") or [],
-        "citations": payload.get("citations") or [],
-        "document_rank_refs": payload.get("document_rank_refs") or [],
+        "citations": citations,
+        "document_rank_refs": [
+            str(item.get("boi_id") or item.get("uri") or "")
+            for item in best_matches
+            if isinstance(item, dict) and (item.get("boi_id") or item.get("uri"))
+        ],
     }
 
 
@@ -6286,21 +6330,22 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         metadata = doc.get("metadata") or {}
         access = access_policy_for_doc(doc, employee_id)
         source_event = metadata.get("source_event") if isinstance(metadata.get("source_event"), dict) else {}
+        can_use_context = access.can_use_in_agent_context
         return {
             **context,
             "page_kind": "doc",
             "resolved": True,
             "title": metadata.get("title") or "",
-            "description": metadata.get("description") or "",
+            "description": metadata.get("description") or "" if can_use_context else "",
             "boi_id": metadata.get("boi_id") or boi_id,
             "type": metadata.get("type") or "",
             "visibility": metadata.get("visibility") or "",
             "status": metadata.get("status") or "",
             "event_type": metadata.get("event_type") or source_event.get("event_type") or "",
             "trace_id": source_event.get("trace") or "",
-            "body_excerpt": text_excerpt(str(doc.get("body") or "")) if access.can_use_in_agent_context else "",
-            "linked_items": lightweight_doc_link_items(doc, employee_id, limit=8),
-            "url": doc_url_for_ref(str(metadata.get("boi_id") or boi_id), employee_id),
+            "body_excerpt": text_excerpt(str(doc.get("body") or "")) if can_use_context else "",
+            "linked_items": lightweight_doc_link_items(doc, employee_id, limit=8) if can_use_context else [],
+            "url": doc_url_for_ref(str(metadata.get("boi_id") or boi_id), employee_id) if access.can_cite else "",
             "access": access.to_dict(),
         }
     if path.startswith("/workflows/") and path.endswith("/status"):
@@ -6422,16 +6467,27 @@ def native_agent_doc_tool(ref: str, employee_id: str) -> dict[str, Any] | None:
     metadata = doc.get("metadata") or {}
     access = access_policy_for_doc(doc, employee_id)
     stable_ref = stable_doc_ref(doc)
+    visible_metadata = metadata
+    if not access.can_use_in_agent_context:
+        visible_metadata = {
+            "boi_id": metadata.get("boi_id"),
+            "type": metadata.get("type"),
+            "title": metadata.get("title"),
+            "visibility": metadata.get("visibility"),
+            "classification": access.classification,
+            "status": metadata.get("status"),
+        }
     return {
         "ok": True,
         "boi_id": metadata.get("boi_id") or stable_ref,
         "uri": doc.get("uri") or "",
         "title": metadata.get("title") or stable_ref,
         "description": metadata.get("description") or "",
-        "metadata": metadata,
+        "metadata": visible_metadata,
         "body_excerpt": text_excerpt(str(doc.get("body") or ""), 1800) if access.can_use_in_agent_context else "",
-        "url": doc_url_for_ref(stable_ref, employee_id),
+        "url": doc_url_for_ref(stable_ref, employee_id) if access.can_cite else "",
         "access": access.to_dict(),
+        "redacted_count": len(access.redactions),
     }
 
 

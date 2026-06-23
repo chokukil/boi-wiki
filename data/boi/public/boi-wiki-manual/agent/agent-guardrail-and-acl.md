@@ -57,6 +57,18 @@ flowchart TD
 | External action payload | `can_export=false`이면 원문 payload 포함 금지 |
 | MCP | Web Agent와 동일한 access policy 사용 |
 
+# Full Search vs Agent Context
+
+`/api/search/ontology`의 full view는 사용자가 읽을 수 있는 문서를 업무 검색 결과로 보여줄 수 있다. 하지만 Native Agent가 prompt/tool context로 쓰는 compact view는 더 엄격하다.
+
+| View | 기준 | restricted 처리 |
+|---|---|---|
+| Full ontology search | `can_read` | 사용자가 볼 수 있는 범위 안에서 최소 metadata만 표시 |
+| Agent compact context | `can_use_in_agent_context` | context, best match, citation, graph rank에서 제외 |
+| Direct `boi_get` tool | `can_use_in_agent_context` + `can_cite` | body/workflow metadata/link를 redaction |
+
+이 구분은 사용자가 문서를 열람할 수 있는 권한과 Agent가 그 내용을 요약, 도식화, 외부 action payload, memory에 사용할 권한이 다르기 때문이다. restricted 문서는 Agent가 제목 정도의 존재 신호를 볼 수 있더라도 원문, workflow metadata, 본문 링크, citation으로 사용하지 않는다.
+
 # Mutation Boundary
 
 Agent가 할 수 있는 상태 변경은 모두 confirmation card를 거친다.

@@ -779,6 +779,9 @@ def action_gap_rows(doc: JsonDict, specs: list[JsonDict]) -> list[JsonDict]:
 def links_from_search(search: JsonDict) -> list[JsonDict]:
     links = []
     for item in search.get("best_matches") or []:
+        access = item.get("access") if isinstance(item.get("access"), dict) else {}
+        if access.get("can_cite") is False:
+            continue
         url = str(item.get("url") or "")
         if url:
             links.append({"label": item_label(item), "url": url, "kind": str(item.get("kind") or "search")})
@@ -788,7 +791,8 @@ def links_from_search(search: JsonDict) -> list[JsonDict]:
 def links_from_doc_and_search(doc: JsonDict, search: JsonDict) -> list[JsonDict]:
     links = []
     metadata = doc.get("metadata") if isinstance(doc, dict) else {}
-    if metadata and metadata.get("boi_id"):
+    access = doc.get("access") if isinstance(doc.get("access"), dict) else {}
+    if metadata and metadata.get("boi_id") and access.get("can_cite") is not False:
         links.append({"label": str(metadata.get("title") or metadata.get("boi_id")), "url": str(doc.get("url") or ""), "kind": "current_doc"})
     links.extend(links_from_search(search))
     return links
