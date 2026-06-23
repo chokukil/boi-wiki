@@ -15,7 +15,7 @@ DEFAULT_MANIFEST = ROOT / "langflow" / "flows" / "boi_reference_flow.manifest.js
 DEFAULT_ENDPOINT_NAME = "boi-reference-flow"
 BOI_AGENT_FLOW_NAME = "BoI Agent Flow"
 DEFAULT_BOI_AGENT_ENDPOINT_NAME = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
-DEFAULT_BOI_AGENT_LLM_MODEL = os.getenv("BOI_AGENT_LLM_MODEL") or os.getenv("BOI_LLM_MODEL") or "qwen/qwen3-4b-2507"
+DEFAULT_BOI_AGENT_LLM_MODEL = os.getenv("BOI_AGENT_LLM_MODEL") or os.getenv("BOI_LLM_MODEL") or "google/gemma-4-26b-a4b-qat"
 BOI_AGENT_ALLOWED_TOOLS = [
     "boi_answer",
     "ontology_search",
