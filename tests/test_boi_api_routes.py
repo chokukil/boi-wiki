@@ -238,6 +238,25 @@ def test_rbac_me_and_doc_access_guard_private_boi(boi_app_module):
     assert "another employee" in " ".join(denied.json()["access"]["reasons"])
 
 
+def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/permissions?employee_id=100001")
+    script = (boi_app_module.APP_DIR / "static" / "permissions.js").read_text(encoding="utf-8")
+    style = (boi_app_module.APP_DIR / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert "/static/permissions.js?v=" in response.text
+    assert 'data-rbac-form="team"' in response.text
+    assert 'data-rbac-form="member"' in response.text
+    assert 'data-rbac-form="binding"' in response.text
+    assert "/api/rbac/teams" in script
+    assert "/api/rbac/bindings" in script
+    assert "data-rbac-result" in response.text
+    assert ".permission-form-grid" in style
+    assert ".rbac-result" in style
+
+
 def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_module):
     client = TestClient(boi_app_module.app)
     event_type = "pytest.sample.event.requested.v1"

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ shell.title }} - BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}">
+  <script src="{{ asset_url('permissions.js') }}" defer></script>
 </head>
 <body>
 {% include "_app_shell.html" %}
@@ -52,6 +53,112 @@
       {% endfor %}
     </div>
   </section>
+
+  {% if can_manage %}
+  <section class="page-section permission-admin-panel" data-rbac-admin>
+    <header class="section-heading">
+      <div>
+        <h2>팀 / 역할 관리</h2>
+        <p class="muted">팀을 만들고 사번을 추가한 뒤 필요한 역할을 부여합니다. 모든 변경은 RBAC audit에 남습니다.</p>
+      </div>
+      <output class="rbac-result" data-rbac-result>대기 중</output>
+    </header>
+    <div class="permission-form-grid">
+      <form class="permission-form" data-rbac-form="team">
+        <h3>팀 만들기 / 수정</h3>
+        <label>
+          <span>team_id</span>
+          <input name="team_id" placeholder="예: process-ai" required>
+        </label>
+        <label>
+          <span>표시 이름</span>
+          <input name="display_name" placeholder="예: Process AI TF">
+        </label>
+        <label>
+          <span>설명</span>
+          <textarea name="description" placeholder="이 팀이 공유할 BoI 범위와 목적"></textarea>
+        </label>
+        <label>
+          <span>상태</span>
+          <select name="status">
+            <option value="active">active</option>
+            <option value="inactive">inactive</option>
+          </select>
+        </label>
+        <button type="submit">팀 저장</button>
+      </form>
+
+      <form class="permission-form" data-rbac-form="member">
+        <h3>사번 멤버 관리</h3>
+        <label>
+          <span>팀</span>
+          <select name="team_id" required>
+            {% for team in teams %}
+            <option value="{{ team.team_id }}">{{ team.display_name or team.team_id }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>사번</span>
+          <input name="employee_id" inputmode="numeric" pattern="[0-9]{6,7}" placeholder="예: 100001" required>
+        </label>
+        <label>
+          <span>권한</span>
+          <select name="role">
+            <option value="member">member</option>
+            <option value="owner">owner</option>
+          </select>
+        </label>
+        <label>
+          <span>작업</span>
+          <select name="action">
+            <option value="add">추가</option>
+            <option value="remove">제거</option>
+          </select>
+        </label>
+        <button type="submit">멤버 반영</button>
+      </form>
+
+      <form class="permission-form" data-rbac-form="binding">
+        <h3>역할 부여</h3>
+        <label>
+          <span>대상 종류</span>
+          <select name="subject_type">
+            <option value="employee">사번</option>
+            <option value="team">팀</option>
+          </select>
+        </label>
+        <label>
+          <span>대상 ID</span>
+          <input name="subject_id" placeholder="사번 또는 team_id" required>
+        </label>
+        <fieldset>
+          <legend>역할</legend>
+          {% for role in roles %}
+          <label class="permission-checkbox">
+            <input type="checkbox" name="roles" value="{{ role.role }}">
+            <span>{{ role.label }} <code>{{ role.role }}</code></span>
+          </label>
+          {% endfor %}
+        </fieldset>
+        <label>
+          <span>Scope</span>
+          <input name="scope" value="global">
+        </label>
+        <label>
+          <span>Resource</span>
+          <input name="resource" placeholder="선택 사항">
+        </label>
+        <button type="submit">역할 부여</button>
+      </form>
+    </div>
+  </section>
+  {% else %}
+  <section class="page-section permission-admin-panel">
+    <h2>팀 / 역할 관리</h2>
+    <p class="muted">현재 사번은 권한 관리 역할이 없어 조회만 가능합니다. 팀 owner 또는 admin에게 요청하세요.</p>
+  </section>
+  {% endif %}
 
   <section class="page-section">
     <h2>역할</h2>

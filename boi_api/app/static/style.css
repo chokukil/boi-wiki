@@ -260,10 +260,11 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-handoff-form textarea { min-height:70px; resize:vertical; }
 .boi-agent-empty, .boi-agent-hint { color:#64748b; font-size:13px; }
 .permissions-page { display:grid; gap:18px; padding:20px 24px 48px; }
-.permission-summary-grid, .permission-card-grid, .permission-policy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+.permissions-page .page-section { min-width:0; }
+.permission-summary-grid, .permission-card-grid, .permission-policy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap:12px; min-width:0; }
 .permission-summary-grid article, .permission-card, .permission-policy-grid article { border:1px solid #dbe3ee; border-radius:8px; background:#fff; padding:13px 14px; }
 .permission-summary-grid strong { display:block; margin-bottom:6px; color:#334155; font-size:12px; text-transform:uppercase; }
-.permission-summary-grid p, .permission-policy-grid p, .permission-card p { margin:0; color:#475569; line-height:1.55; }
+.permission-summary-grid p, .permission-policy-grid p, .permission-card p { margin:0; color:#475569; line-height:1.55; overflow-wrap:anywhere; }
 .permission-card header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
 .permission-card h3, .permission-policy-grid h3 { margin:0 0 6px; font-size:16px; }
 .permission-card header span { border-radius:999px; background:#dcfce7; color:#166534; padding:2px 8px; font-size:12px; font-weight:800; }
@@ -271,6 +272,25 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .permission-card dl div { display:grid; grid-template-columns:68px minmax(0, 1fr); gap:8px; }
 .permission-card dt { color:#334155; font-weight:900; }
 .permission-card dd { margin:0; overflow-wrap:anywhere; }
+.permission-admin-panel .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; }
+.permission-admin-panel .section-heading h2 { margin:0 0 5px; }
+.rbac-result { flex:0 0 auto; display:inline-flex; align-items:center; min-height:30px; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; background:#f8fafc; color:#475569; font-size:12px; font-weight:900; }
+.rbac-result[data-state="success"] { border-color:#86efac; background:#dcfce7; color:#166534; }
+.rbac-result[data-state="error"] { border-color:#fecaca; background:#fff1f2; color:#991b1b; }
+.rbac-result[data-state="loading"] { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
+.permission-form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap:12px; min-width:0; }
+.permission-form { display:grid; align-content:start; gap:10px; min-width:0; padding:14px; border:1px solid #dbe3ee; border-radius:8px; background:#fff; }
+.permission-form h3 { margin:0; color:#0f172a; font-size:16px; }
+.permission-form label { display:grid; gap:5px; min-width:0; color:#334155; font-size:12px; font-weight:900; }
+.permission-form input, .permission-form select, .permission-form textarea { width:100%; min-width:0; }
+.permission-form textarea { min-height:74px; resize:vertical; }
+.permission-form fieldset { display:grid; gap:8px; margin:0; padding:10px; border:1px solid #e5e7eb; border-radius:8px; }
+.permission-form legend { padding:0 5px; color:#334155; font-size:12px; font-weight:900; }
+.permission-checkbox { display:flex !important; grid-template-columns:none; align-items:flex-start; gap:7px !important; font-weight:700 !important; }
+.permission-checkbox input { width:auto; margin-top:3px; }
+.permission-checkbox code { color:#475569; font-size:11px; }
+.permission-form button[type="submit"] { justify-self:end; min-height:36px; padding:7px 12px; border:1px solid #0f172a; border-radius:8px; background:#0f172a; color:#fff; font-weight:900; }
+.permission-form button[type="submit"]:disabled { opacity:.65; cursor:wait; }
 .boi-agent-viewer-backdrop { position:fixed; inset:0; z-index:1100; display:flex; align-items:center; justify-content:center; padding:22px; background:rgba(15,23,42,.45); }
 .boi-agent-viewer { width:min(1100px, 96vw); max-height:92vh; display:flex; flex-direction:column; border:1px solid #cbd5e1; border-radius:14px; background:#fff; box-shadow:0 28px 80px rgba(15,23,42,.38); overflow:hidden; }
 .boi-agent-viewer header { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; background:#0f172a; color:#fff; }
