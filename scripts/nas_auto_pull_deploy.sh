@@ -144,7 +144,8 @@ if [[ "$NAS_AUTO_PULL_DRY_RUN" == "1" ]]; then
 fi
 
 log "running docker-compose up -d --build"
-"$SUDO_BIN" env PATH="$NAS_DOCKER_PATH" "$DOCKER_COMPOSE_BIN" \
+build_revision="$(git rev-parse --short HEAD)"
+"$SUDO_BIN" env PATH="$NAS_DOCKER_PATH" BOI_BUILD_REVISION="$build_revision" "$DOCKER_COMPOSE_BIN" \
   -f "$COMPOSE_FILE" \
   --env-file "$ENV_FILE" \
   up -d --build

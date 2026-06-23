@@ -114,7 +114,7 @@ mcp = FastMCP(
         "BoI Wiki MCP exposes OKF BoI documents, action catalog specs, workflow status, "
         "ontology search, page-aware BoI Agent chat, action inbox, dictionary/memory helpers, "
         "validated source/body editing, user-confirmed promotion publishing, and SOP/action/Langflow authoring prompts. "
-        "BoI API/MCP are the official external interfaces; direct Langflow runs are trusted/dev integration paths."
+        "BoI API/MCP are the official external interfaces; Native BoI Agent is the production backend and direct Langflow runs are trusted/dev visual-debug paths."
     ),
     streamable_http_path="/mcp",
     json_response=True,
@@ -650,7 +650,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
             "A direct browser/curl request to /mcp may return 406 even when the server is healthy.",
             "Static resources are intentionally empty; use resource templates and tools.",
-            "BoI API/MCP are the official external Agent interfaces; direct Langflow run URLs are trusted/dev only.",
+            "BoI API/MCP are the official external Agent interfaces; Native BoI Agent is the production backend and direct Langflow run URLs are trusted/dev visual-debug only.",
         ],
     }
 
@@ -721,7 +721,7 @@ async def status_page(request: Request) -> HTMLResponse:
     <section>
       <h2>Client Registration</h2>
       <p>Register <code>{payload["mcp_endpoint"]}</code> as a Streamable HTTP MCP server in Codex, Claude Desktop, or Cursor.</p>
-      <p>Use <code>ontology_search</code> for knowledge graph exploration, <code>boi_search</code> for document-only search, and <code>boi_agent_chat</code> for page-aware Q&amp;A. Langflow direct run URLs are trusted/dev integration paths, not the public Agent API.</p>
+      <p>Use <code>ontology_search</code> for knowledge graph exploration, <code>boi_search</code> for document-only search, and <code>boi_agent_chat</code> for page-aware Q&amp;A. The production BoI Agent backend is the native Agent inside BoI API; Langflow direct run URLs are trusted/dev visual-debug paths, not the public Agent API.</p>
       <p>Opening <code>/mcp</code> directly in a browser is not a valid MCP check. It can return <code>406</code> because the client did not send the required MCP Accept headers.</p>
     </section>
   </main>

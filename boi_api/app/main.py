@@ -44,6 +44,7 @@ from .workflow_materializer import (
     render_stage_execution_body,
 )
 from .simulation_agent import build_simulation_agent_result
+from .native_agent import LANGGRAPH_AVAILABLE, NativeAgentConfig, NativeAgentTools, NativeBoiAgent
 from .auth import (
     AuthError,
     AuthIdentity,
@@ -95,6 +96,10 @@ BOI_AGENT_ROUTER_API_KEY = os.getenv("BOI_AGENT_ROUTER_API_KEY", BOI_LLM_API_KEY
 BOI_AGENT_ROUTER_MODEL = os.getenv("BOI_AGENT_ROUTER_MODEL", BOI_LLM_MODEL)
 BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "3"))
 BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD", "0.7"))
+BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
+BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
+BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
+BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
 LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "api-key")
@@ -2325,6 +2330,7 @@ def ontology_search_payload(
     scope: str = "all",
     limit: int = 8,
     current_url: str = "",
+    view: str = "full",
 ) -> dict[str, Any]:
     query = str(query or "").strip()
     effective_limit = max(1, min(int(limit or 8), 50))
@@ -2476,7 +2482,7 @@ def ontology_search_payload(
         if len(citations) >= 5:
             break
 
-    return {
+    payload = {
         "ok": True,
         "query": query,
         "scope": scope,
@@ -2495,6 +2501,75 @@ def ontology_search_payload(
         "graph_paths": graph_paths,
         "citations": citations,
         "document_rank_refs": [str(item.get("boi_id") or item.get("uri") or "") for item in doc_items],
+    }
+    if str(view or "").lower() == "compact":
+        return compact_ontology_payload(payload)
+    return payload
+
+
+def compact_ontology_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    keys = (
+        "kind",
+        "score",
+        "match_reason",
+        "boi_id",
+        "uri",
+        "title",
+        "description",
+        "type",
+        "visibility",
+        "status",
+        "folder",
+        "url",
+        "term",
+        "definition",
+        "aliases",
+        "event_type",
+        "workflow_stage",
+        "sop_ref",
+        "action_key",
+        "connector_kind",
+        "doc_ref",
+        "trace_id",
+        "log_ref",
+    )
+    compact = {key: item.get(key) for key in keys if item.get(key) not in (None, "", [], {})}
+    if compact.get("description"):
+        compact["description"] = text_excerpt(str(compact["description"]), 260)
+    return compact
+
+
+def compact_ontology_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    groups = payload.get("groups") if isinstance(payload.get("groups"), dict) else {}
+    compact_groups = {
+        key: [compact_ontology_item(item) for item in value]
+        for key, value in groups.items()
+        if isinstance(value, list)
+    }
+    knowledge_panel = payload.get("knowledge_panel") if isinstance(payload.get("knowledge_panel"), dict) else {}
+    compact_knowledge = {}
+    for key, value in knowledge_panel.items():
+        if isinstance(value, list):
+            compact_knowledge[key] = [compact_ontology_item(item) for item in value]
+        else:
+            compact_knowledge[key] = value
+    return {
+        "ok": payload.get("ok", True),
+        "query": payload.get("query", ""),
+        "scope": payload.get("scope", "all"),
+        "employee_id": payload.get("employee_id", ""),
+        "current_url": payload.get("current_url", ""),
+        "view": "compact",
+        "query_expansion": payload.get("query_expansion") or [],
+        "used_dictionary_terms": [compact_ontology_item(item) for item in payload.get("used_dictionary_terms") or []],
+        "knowledge_panel": compact_knowledge,
+        "groups": compact_groups,
+        "best_matches": [compact_ontology_item(item) for item in payload.get("best_matches") or []],
+        "graph_paths": payload.get("graph_paths") or [],
+        "citations": payload.get("citations") or [],
+        "document_rank_refs": payload.get("document_rank_refs") or [],
     }
 
 
@@ -4465,11 +4540,20 @@ async def okf_media(media_path: str) -> FileResponse:
 @app.get("/api/runtime/config")
 async def runtime_config() -> dict[str, Any]:
     return {
+        "build": {
+            "revision": BOI_BUILD_REVISION,
+        },
         "llm": {
             "provider": "openai-compatible",
             "base_url": BOI_LLM_BASE_URL,
             "model": BOI_LLM_MODEL,
             "api_key_configured": bool(BOI_LLM_API_KEY),
+        },
+        "boi_agent": {
+            "backend": BOI_AGENT_BACKEND,
+            "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
+            "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
+            "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
         },
         "event_broker": {"type": "kafka", "bootstrap": KAFKA_BOOTSTRAP, "topic": BOI_EVENTS_TOPIC},
         "connectors": {"action_gateway_url": ACTION_GATEWAY_URL, "langflow": "peer_connector"},
@@ -5166,8 +5250,9 @@ async def api_ontology_search(
     scope: str = "all",
     limit: int = 8,
     current_url: str = "",
+    view: str = "full",
 ) -> dict[str, Any]:
-    return ontology_search_payload(q, employee_id, scope=scope, limit=limit, current_url=current_url)
+    return ontology_search_payload(q, employee_id, scope=scope, limit=limit, current_url=current_url, view=view)
 
 
 def page_context_suggestions(current_url: str, page_context: dict[str, Any] | None = None) -> list[str]:
@@ -5639,7 +5724,7 @@ def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_lim
     page_context = resolve_agent_page_context(req.current_url, employee_id)
     ontology_seed: dict[str, Any] = {}
     if req.question.strip():
-        ontology_seed = ontology_search_payload(req.question, employee_id, scope="all", limit=search_limit, current_url=req.current_url)
+        ontology_seed = ontology_search_payload(req.question, employee_id, scope="all", limit=search_limit, current_url=req.current_url, view="compact")
     return {
         "question": req.question,
         "selected_text_excerpt": text_excerpt(req.selected_text, 700) if req.selected_text else "",
@@ -5647,6 +5732,134 @@ def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_lim
         "page_context": page_context,
         "ontology_search_seed": ontology_seed,
     }
+
+
+def native_agent_doc_tool(ref: str, employee_id: str) -> dict[str, Any] | None:
+    doc = find_doc_by_id(ref, employee_id)
+    if not doc:
+        return None
+    metadata = doc.get("metadata") or {}
+    stable_ref = stable_doc_ref(doc)
+    return {
+        "ok": True,
+        "boi_id": metadata.get("boi_id") or stable_ref,
+        "uri": doc.get("uri") or "",
+        "title": metadata.get("title") or stable_ref,
+        "description": metadata.get("description") or "",
+        "metadata": metadata,
+        "body_excerpt": text_excerpt(str(doc.get("body") or ""), 1800),
+        "url": doc_url_for_ref(stable_ref, employee_id),
+    }
+
+
+def native_agent_action_spec_tool(action_key: str, employee_id: str) -> dict[str, Any] | None:
+    for action in load_action_catalog():
+        if str(action.get("action_key") or "") != action_key:
+            continue
+        doc_ref = str(action.get("doc_ref") or "")
+        return {
+            "ok": True,
+            "action_key": action_key,
+            "item": action,
+            "doc_ref": doc_ref,
+            "doc": native_agent_doc_tool(doc_ref, employee_id) if doc_ref else None,
+            "url": action_doc_url(action, employee_id),
+        }
+    return None
+
+
+def native_agent_trace_context_tool(trace_id: str, employee_id: str) -> dict[str, Any]:
+    event_rows = read_event_logs(limit=100, trace_id=trace_id) if trace_id else []
+    action_rows = [
+        row
+        for row in cached_action_log_rows()
+        if str(row.get("trace_id") or "") == trace_id
+        if action_log_visible_to_employee(row, employee_id)
+    ] if trace_id else []
+    return {
+        "ok": True,
+        "trace_id": trace_id,
+        "events": [
+            {
+                "event_id": row.get("event_id"),
+                "event_type": row.get("event_type"),
+                "status": row.get("status"),
+                "url": events_url(employee_id, trace_id=trace_id, event_id=str(row.get("event_id") or "")),
+            }
+            for row in event_rows[:20]
+        ],
+        "actions": [
+            {
+                "request_id": row.get("request_id"),
+                "action_key": row.get("action_key"),
+                "status": row.get("status") or ((row.get("result") or {}).get("status") if isinstance(row.get("result"), dict) else ""),
+                "raw_url": action_raw_page_url(str(row.get("_log_ref") or ""), employee_id) if row.get("_log_ref") else "",
+            }
+            for row in action_rows[:30]
+        ],
+    }
+
+
+def native_agent_workflow_status_tool(workflow_key: str, trace_id: str, employee_id: str) -> dict[str, Any] | None:
+    if not workflow_key or not trace_id:
+        return None
+    return workflow_status_payload(workflow_key, trace_id, employee_id, compact=True)
+
+
+def native_agent_memory_tool(query: str, employee_id: str, limit: int = 5) -> dict[str, Any]:
+    items = agent_memory_items(employee_id, q=query, limit=limit)
+    return {"ok": True, "count": len(items), "items": items}
+
+
+def native_agent_tools(employee_id: str, current_url: str = "") -> NativeAgentTools:
+    return NativeAgentTools(
+        ontology_search=lambda query, scope="all", limit=8: ontology_search_payload(query, employee_id, scope=scope, limit=limit, current_url=current_url, view="compact"),
+        boi_get=lambda ref: native_agent_doc_tool(ref, employee_id),
+        event_type_lookup=lambda event_type: event_type_map().get(event_type),
+        action_spec_lookup=lambda action_key: native_agent_action_spec_tool(action_key, employee_id),
+        workflow_status=lambda workflow_key, trace_id: native_agent_workflow_status_tool(workflow_key, trace_id, employee_id),
+        trace_context_lookup=lambda trace_id: native_agent_trace_context_tool(trace_id, employee_id),
+        dictionary_resolve=lambda query: {"ok": True, **resolve_dictionary_query(query, employee_id, scope="all")},
+        memory_recall=lambda query, limit=5: native_agent_memory_tool(query, employee_id, limit=limit),
+        agent_inbox=lambda limit=10: agent_inbox_payload(employee_id, status="open", limit=limit),
+    )
+
+
+def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
+    context_pack = agent_context_pack(req, employee_id, search_limit=8)
+    runtime = NativeBoiAgent(
+        native_agent_tools(employee_id, req.current_url),
+        NativeAgentConfig(
+            max_tool_loops=BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
+            tool_timeout_seconds=BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
+            build_revision=BOI_BUILD_REVISION,
+        ),
+    )
+    response = runtime.run(
+        {
+            "question": req.question,
+            "mode": req.mode,
+            "intent": req.intent,
+            "current_url": req.current_url,
+            "selected_text": req.selected_text,
+            "page_context": req.page_context,
+            "conversation": req.conversation[-12:],
+            "save_memory": req.save_memory,
+        },
+        route,
+        context_pack,
+    )
+    latency_ms = int((time.perf_counter() - started_at) * 1000)
+    response.update(
+        {
+            "employee_id": employee_id,
+            "latency_ms": latency_ms,
+            "router_backend": route.get("router_backend"),
+            "router_confidence": route.get("confidence"),
+        }
+    )
+    response.setdefault("context_summary", {})["latency_ms"] = latency_ms
+    return response
 
 
 def mermaid_artifact_from_markdown(answer_markdown: str) -> dict[str, Any] | None:
@@ -6103,12 +6316,21 @@ def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str,
     started_at = time.perf_counter()
     route = route_boi_agent_request(req, employee_id)
     route_name = str(route.get("route") or "fast")
-    if route_name == "deep":
-        return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
-    if route_name == "inbox":
-        return agent_inbox_answer(req, employee_id, route, started_at)
     if route_name in {"manual_handoff", "approval_required"}:
         return agent_safety_answer(req, employee_id, route, started_at)
+    if BOI_AGENT_BACKEND == "langflow" and route_name == "deep":
+        return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
+    if BOI_AGENT_BACKEND == "hybrid" and route_name == "deep":
+        try:
+            return call_native_boi_agent(req, employee_id, route, started_at)
+        except Exception:
+            return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
+    if BOI_AGENT_BACKEND not in {"native", "hybrid", "langflow"}:
+        route["reason"] = f"unknown backend {BOI_AGENT_BACKEND}; using native"
+    if BOI_AGENT_BACKEND in {"native", "hybrid"} or route_name in {"fast", "deep", "inbox"}:
+        return call_native_boi_agent(req, employee_id, route, started_at)
+    if route_name == "inbox":
+        return agent_inbox_answer(req, employee_id, route, started_at)
     return agent_fast_answer(req, employee_id, route, started_at)
 
 
@@ -6145,8 +6367,16 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
     return {
         "ok": True,
         "employee_id": employee_id,
+        "build_revision": BOI_BUILD_REVISION,
         "official_external_interfaces": ["BoI API", "boi-wiki-mcp"],
-        "trusted_dev_backend": "Langflow",
+        "trusted_dev_backend": "Langflow optional visual/debug backend",
+        "boi_agent_backend": BOI_AGENT_BACKEND,
+        "native_agent": {
+            "enabled": BOI_AGENT_BACKEND in {"native", "hybrid"},
+            "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "sequential-fallback",
+            "max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
+            "tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
+        },
         "langflow_boi_agent_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
         "langflow_boi_agent_configured": bool(LANGFLOW_URL and LANGFLOW_BOI_AGENT_ENDPOINT),
         "features": [

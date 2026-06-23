@@ -117,6 +117,8 @@ services:
   boi-api:
     build:
       context: ./boi_api
+      args:
+        BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-unknown}
     container_name: boi-api
     command: >
       sh -c 'if [ "${BOI_API_WORKERS:-1}" = "1" ]; then
@@ -175,6 +177,10 @@ services:
       BOI_AGENT_ROUTER_MODEL: ${BOI_AGENT_ROUTER_MODEL:-google/gemma-4-26b-a4b-qat}
       BOI_AGENT_ROUTER_TIMEOUT_SECONDS: ${BOI_AGENT_ROUTER_TIMEOUT_SECONDS:-3}
       BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD: ${BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD:-0.7}
+      BOI_AGENT_BACKEND: ${BOI_AGENT_BACKEND:-native}
+      BOI_AGENT_NATIVE_MAX_TOOL_LOOPS: ${BOI_AGENT_NATIVE_MAX_TOOL_LOOPS:-5}
+      BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS: ${BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS:-8}
+      BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-unknown}
       LANGFLOW_URL: http://langflow:7860
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
       LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}

@@ -57,7 +57,7 @@ Simulator flow는 standalone LLM pipeline이 아니다. 공식 completion 기준
 
 # BoI Agent Flow
 
-`BoI Agent Flow`는 우측 하단 Web Pet Agent와 MCP `boi_agent_chat`의 trusted deep-reasoning backend다. endpoint는 `boi-agent`이며, 공식 외부 인터페이스는 BoI API와 `boi-wiki-mcp`다. BoI API는 LLM Router와 Page Context fast path를 먼저 적용하고, 복합 추론이 필요한 요청만 이 Langflow flow로 보낸다. Canvas completion 기준은 `Chat Input -> native Agent -> BoI Agent Tools -> BoI Agent Result Composer -> Chat Output` 경로가 연결되어 있고, standalone LLM -> Output 경로가 없어야 한다. Agent toolset은 read/action tool 중심이며 `boi_agent_chat` 자체는 recursion 방지를 위해 연결하지 않는다.
+`BoI Agent Flow`는 우측 하단 Web Pet Agent와 MCP `boi_agent_chat`의 visual workflow/debug 예제다. endpoint는 `boi-agent`이며, 공식 외부 인터페이스는 BoI API와 `boi-wiki-mcp`다. BoI API의 production path는 Native BoI Agent이고, Langflow flow는 같은 tool-loop 개념을 화면에서 확인하는 용도다. Canvas completion 기준은 `Chat Input -> native Agent -> BoI Agent Tools -> BoI Agent Result Composer -> Chat Output` 경로가 연결되어 있고, standalone LLM -> Output 경로가 없어야 한다. Agent toolset은 read/action tool 중심이며 `boi_agent_chat` 자체는 recursion 방지를 위해 연결하지 않는다.
 
 # Runtime Checks
 

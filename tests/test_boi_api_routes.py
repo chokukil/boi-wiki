@@ -169,26 +169,14 @@ def test_ontology_search_dictionary_and_boi_search_remain_distinct(boi_app_modul
     assert all((item.get("metadata") or {}).get("type") for item in boi_search.json()["items"])
 
 
-def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypatch):
+def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
-    calls: list[dict[str, object]] = []
 
-    def fake_call(req, employee_id: str, route=None, started_at=None):
-        calls.append({"req": req, "employee_id": employee_id})
-        return {
-            "ok": True,
-            "employee_id": employee_id,
-            "answer_markdown": "Langflow BoI Agent answer",
-            "links": [{"label": "SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
-            "citations": [],
-            "suggested_questions": ["이 SOP를 Mermaid로 보여줘."],
-            "context_summary": {"langflow_flow": "boi-agent"},
-            "route": "deep",
-            "router_backend": "rules",
-            "used_backend": "langflow",
-        }
+    def fail_langflow(*args, **kwargs):
+        raise AssertionError("native default must not call Langflow")
 
-    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -203,12 +191,12 @@ def test_boi_agent_chat_delegates_to_langflow_boi_agent(boi_app_module, monkeypa
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["answer_markdown"] == "Langflow BoI Agent answer"
-    assert body["context_summary"]["langflow_flow"] == "boi-agent"
+    assert body["used_backend"] == "native_langgraph"
+    assert body["deployment_revision"]
+    assert body["run_id"].startswith("boi-agent-run-")
+    assert isinstance(body["tool_trace"], list)
+    assert "설비" in body["answer_markdown"]
     assert isinstance(body["links"], list)
-    assert calls
-    assert calls[0]["employee_id"] == "100001"
-    assert calls[0]["req"].question == "설비 이상 대응 SOP와 Action을 찾아줘"
 
 
 def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_module, monkeypatch):
@@ -244,7 +232,7 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     body = response.json()
     assert body["route"] == "fast"
     assert body["router_backend"] == "llm"
-    assert body["used_backend"] == "fast_api"
+    assert body["used_backend"] == "native_langgraph"
     assert body["context_summary"]["page_context"]["page_kind"] == "doc"
     assert body["context_summary"]["page_context"]["resolved"] is True
     assert "설비" in body["answer_markdown"]
@@ -252,7 +240,6 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
 
 def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
-    calls: list[dict[str, object]] = []
 
     def fake_router(req, employee_id: str):
         return {
@@ -265,25 +252,11 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
             "router_backend": "llm",
         }
 
-    def fake_langflow(req, employee_id: str, route=None, started_at=None):
-        calls.append({"req": req, "route": route})
-        return {
-            "ok": True,
-            "employee_id": employee_id,
-            "answer_markdown": "```mermaid\nflowchart TD\n  a[Start] --> b[Action]\n```",
-            "links": [],
-            "citations": [],
-            "suggested_questions": [],
-            "artifacts": [{"type": "mermaid", "source": "flowchart TD\n  a[Start] --> b[Action]"}],
-            "context_summary": {"langflow_flow": "boi-agent", "intent": "diagram"},
-            "route": "deep",
-            "intent": "diagram",
-            "router_backend": "llm",
-            "used_backend": "langflow",
-        }
+    def fail_langflow(*args, **kwargs):
+        raise AssertionError("native diagram path must not call Langflow")
 
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
-    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_langflow)
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -297,9 +270,9 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     body = response.json()
     assert body["route"] == "deep"
     assert body["intent"] == "diagram"
-    assert body["used_backend"] == "langflow"
-    assert calls
-    assert calls[0]["route"]["intent"] == "diagram"
+    assert body["used_backend"] == "native_langgraph"
+    assert body["artifacts"][0]["type"] == "mermaid"
+    assert "```mermaid" in body["answer_markdown"]
 
 
 def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
@@ -333,7 +306,7 @@ def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_mod
     body = response.json()
     assert body["route"] == "fast"
     assert body["router_backend"] == "rules"
-    assert body["used_backend"] == "fast_api"
+    assert body["used_backend"] == "native_langgraph"
 
 
 def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(boi_app_module, monkeypatch):
@@ -495,6 +468,7 @@ def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_modu
     def fake_call(req, employee_id: str, route=None, started_at=None):
         raise boi_app_module.LangflowBoiAgentUnavailable("BoI Agent Flow not found")
 
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "langflow")
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
 
     response = client.post(
