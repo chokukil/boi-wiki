@@ -308,11 +308,45 @@
       if (artifact.type === "task_cards" && Array.isArray(artifact.data)) {
         return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Tasks")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
       }
+      if (artifact.type === "confirmation_required" && artifact.data) {
+        return renderConfirmationArtifact(artifact, viewerId);
+      }
       if (artifact.type === "image" && artifact.url) {
         return `<figure class="boi-agent-artifact boi-agent-image-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Image")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div><img src="${escapeAttr(artifact.url)}" alt="${escapeAttr(artifact.alt || artifact.title || "Artifact image")}"></figure>`;
       }
       return "";
     }).join("")}</div>`;
+  }
+
+  function renderConfirmationArtifact(artifact, viewerId) {
+    const data = artifact.data || {};
+    const operation = String(data.operation || "");
+    const payload = data.payload && typeof data.payload === "object" ? data.payload : {};
+    const canExecute = operation && Object.keys(payload).length > 0;
+    const title = artifact.title || data.title || "확인 필요";
+    const message = data.message || "상태 변경이나 승인 절차가 필요한 요청입니다. 내용을 확인한 뒤 명시적으로 실행해야 합니다.";
+    const primaryLabel = data.primary_label || (canExecute ? "요청 실행" : "먼저 확인");
+    const payloadJson = JSON.stringify(payload);
+    return `
+      <div class="boi-agent-artifact boi-agent-confirmation-card" data-viewer-id="${escapeAttr(viewerId)}">
+        <div class="boi-agent-artifact-title">
+          <strong>${escapeHtml(title)}</strong>
+          <button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button>
+        </div>
+        <p>${escapeHtml(message)}</p>
+        <div class="boi-agent-confirmation-actions">
+          ${canExecute ? `<button type="button" data-agent-approve data-operation="${escapeAttr(operation)}" data-payload="${escapeAttr(payloadJson)}">${escapeHtml(primaryLabel)}</button>` : `<span>${escapeHtml(primaryLabel)}</span>`}
+        </div>
+        <details class="boi-agent-technical">
+          <summary>기술 세부정보</summary>
+          <dl>
+            ${data.route ? `<div><dt>Route</dt><dd>${escapeHtml(data.route)}</dd></div>` : ""}
+            ${data.intent ? `<div><dt>Intent</dt><dd>${escapeHtml(data.intent)}</dd></div>` : ""}
+            ${operation ? `<div><dt>Operation</dt><dd>${escapeHtml(operation)}</dd></div>` : ""}
+          </dl>
+          ${Object.keys(payload).length ? `<pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre>` : ""}
+        </details>
+      </div>`;
   }
 
   function renderObjectTable(rows) {
@@ -591,6 +625,36 @@
     });
     root.querySelectorAll("[data-open-artifact]").forEach((button) => {
       button.addEventListener("click", () => openArtifact(button.dataset.openArtifact || ""));
+    });
+    root.querySelectorAll("[data-agent-approve]").forEach((button) => {
+      button.addEventListener("click", () => {
+        let payload = {};
+        try {
+          payload = JSON.parse(button.dataset.payload || "{}");
+        } catch (_error) {
+          payload = {};
+        }
+        const operation = button.dataset.operation || "";
+        if (!operation) return;
+        state.busyTask = `approve:${operation}`;
+        render();
+        api("/api/agents/boi-wiki/approve", {
+          method: "POST",
+          body: JSON.stringify({
+            operation,
+            payload,
+            user_confirmed: true,
+            note: "BoI Agent confirmation card",
+          }),
+        }).then((body) => {
+          showAgentMessage(`${operation} 요청을 처리했습니다. 상태: ${body.status || "완료"}`);
+          return refreshInbox();
+        }).catch((error) => showAgentMessage(`요청 실행에 실패했습니다: ${error.message}`))
+          .finally(() => {
+            state.busyTask = "";
+            render();
+          });
+      });
     });
     root.querySelector(".boi-agent-viewer-close")?.addEventListener("click", () => {
       state.viewer = null;

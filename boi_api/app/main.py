@@ -5879,6 +5879,7 @@ ALLOWED_AGENT_INTENTS = {
     "inbox",
     "manual_complete",
     "approval",
+    "event_type_draft",
 }
 DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
 
@@ -5906,7 +5907,7 @@ def normalize_agent_intent(value: str, *, fallback: str = "search") -> str:
 def safety_route_override(question: str) -> str | None:
     q = str(question or "").lower()
     manual_terms = ("manual handoff", "handoff 완료", "핸드오프 완료", "조치 완료", "완료 처리", "조치내용", "조치 내용")
-    approval_terms = ("승인", "approve", "실행해", "실행해줘", "invoke", "publish", "게시", "배포", "source_apply", "doc_body_apply")
+    approval_terms = ("승인", "approve", "실행해", "실행해줘", "invoke", "publish", "게시", "배포", "반영", "적용", "source_apply", "doc_body_apply")
     if any(term in q for term in manual_terms):
         return "manual_handoff"
     if any(term in q for term in approval_terms):
@@ -5920,6 +5921,11 @@ def deterministic_agent_intent(question: str, current_url: str = "") -> str:
         return "manual_complete" if safety == "manual_handoff" else "approval"
     if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
         return "inbox"
+    if (
+        any(term in q for term in ("event type", "event-type", "이벤트 타입", "이벤트 정의", "신규 이벤트"))
+        and any(term in q for term in ("초안", "만들", "생성", "정의", "추가", "draft", "create"))
+    ):
+        return "event_type_draft"
     if any(term in q for term in ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")):
         return "diagram"
     if any(term in q for term in ("부족", "누락", "없는지", "없나", "gap", "갭", "action spec", "액션 spec", "명세", "완성도")):
@@ -5943,6 +5949,8 @@ def route_for_agent_intent(intent: str) -> str:
     if intent == "manual_complete":
         return "manual_handoff"
     if intent == "approval":
+        return "approval_required"
+    if intent == "event_type_draft":
         return "approval_required"
     return "fast"
 
@@ -5988,6 +5996,7 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
                 "inbox": "show assigned work",
                 "manual_complete": "complete a manual handoff",
                 "approval": "approve, publish, invoke, edit, deploy, or mutate state",
+                "event_type_draft": "create a draft proposal for a new Event Type, never directly apply it",
             },
             "employee_id": employee_id,
             "question": req.question,
@@ -5998,7 +6007,7 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
             "required_json_schema": {
                 "route": "fast|deep|inbox|manual_handoff|approval_required",
                 "confidence": "0.0-1.0",
-                "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval",
+                "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval|event_type_draft",
                 "reason": "short Korean or English reason",
                 "requires_mutation": "boolean",
                 "requires_deep_reasoning": "boolean",
@@ -6081,6 +6090,8 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
     elif intent == "manual_complete":
         route = "manual_handoff"
     elif intent == "approval":
+        route = "approval_required"
+    elif intent == "event_type_draft":
         route = "approval_required"
     return {
         "route": route,

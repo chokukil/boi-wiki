@@ -431,6 +431,8 @@ def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(bo
     assert body["route"] == "manual_handoff"
     assert body["used_backend"] == "native_langgraph"
     assert "확인 카드" in body["answer_markdown"]
+    assert body["artifacts"][0]["type"] == "confirmation_required"
+    assert body["artifacts"][0]["data"]["route"] == "manual_handoff"
 
 
 def test_boi_agent_chat_safety_overrides_router_requires_mutation_flag(boi_app_module, monkeypatch):
@@ -461,6 +463,7 @@ def test_boi_agent_chat_safety_overrides_router_requires_mutation_flag(boi_app_m
     body = response.json()
     assert body["route"] == "approval_required"
     assert body["used_backend"] == "native_langgraph"
+    assert body["artifacts"][0]["type"] == "confirmation_required"
 
 
 def test_boi_agent_router_parses_openai_compatible_json_response(boi_app_module, monkeypatch):
@@ -660,6 +663,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "mode: routeHint.mode" not in script
     assert "selected_text" in script
     assert "boi-agent-handoff-form" in script
+    assert "boi-agent-confirmation-card" in script
+    assert "/api/agents/boi-wiki/approve" in script
+    assert "data-agent-approve" in script
     assert "기술 세부정보" in script
     assert "boi-agent-memory-form" not in script
     assert "boi-agent-dictionary-form" not in script

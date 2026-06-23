@@ -31,6 +31,7 @@ ALLOWED_AGENT_INTENTS = {
     "inbox",
     "manual_complete",
     "approval",
+    "event_type_draft",
     "access_denied",
 }
 DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
@@ -59,7 +60,7 @@ def normalize_native_intent(value: str, *, fallback: str = "search") -> str:
 def safety_route_override(question: str) -> str | None:
     q = str(question or "").lower()
     manual_terms = ("manual handoff", "handoff 완료", "핸드오프 완료", "조치 완료", "완료 처리", "조치내용", "조치 내용")
-    approval_terms = ("승인", "approve", "실행해", "실행해줘", "invoke", "publish", "게시", "배포", "source_apply", "doc_body_apply")
+    approval_terms = ("승인", "approve", "실행해", "실행해줘", "invoke", "publish", "게시", "배포", "반영", "적용", "source_apply", "doc_body_apply")
     if any(term in q for term in manual_terms):
         return "manual_handoff"
     if any(term in q for term in approval_terms):
@@ -73,6 +74,11 @@ def deterministic_native_intent(question: str, current_url: str = "") -> str:
         return "manual_complete" if safety == "manual_handoff" else "approval"
     if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
         return "inbox"
+    if (
+        any(term in q for term in ("event type", "event-type", "이벤트 타입", "이벤트 정의", "신규 이벤트"))
+        and any(term in q for term in ("초안", "만들", "생성", "정의", "추가", "draft", "create"))
+    ):
+        return "event_type_draft"
     if any(term in q for term in ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")):
         return "diagram"
     if any(term in q for term in ("부족", "누락", "없는지", "없나", "gap", "갭", "action spec", "액션 spec", "명세", "완성도")):
@@ -96,6 +102,8 @@ def route_for_native_intent(intent: str) -> str:
     if intent == "manual_complete":
         return "manual_handoff"
     if intent == "approval":
+        return "approval_required"
+    if intent == "event_type_draft":
         return "approval_required"
     return "fast"
 
@@ -564,17 +572,15 @@ class NativeBoiAgent:
     def _safety_gate(self, state: JsonDict) -> JsonDict:
         route_name = state.get("route_name")
         if route_name in {"manual_handoff", "approval_required"}:
+            confirmation = confirmation_payload_for_state(state)
             state["answer_markdown"] = (
-                "이 요청은 상태 변경 또는 승인 절차가 필요합니다. Agent가 바로 실행하지 않고 확인 카드와 승인 API를 통해 처리해야 합니다."
+                confirmation["answer_markdown"]
             )
             state["artifacts"] = [
                 {
                     "type": "confirmation_required",
-                    "data": {
-                        "route": route_name,
-                        "intent": state.get("intent"),
-                        "message": "명시 승인 후에만 실행할 수 있습니다.",
-                    },
+                    "title": confirmation["title"],
+                    "data": confirmation["data"],
                 }
             ]
         return state
@@ -810,3 +816,63 @@ def suggested_questions_for_state(state: JsonDict) -> list[str]:
     if intent == "inbox":
         return ["가장 먼저 처리할 일을 알려줘.", "승인 대기 건만 보여줘."]
     return ["이 내용을 Mermaid로 보여줘.", "관련 Action과 Event를 요약해줘.", "부족한 명세가 있는지 찾아줘."]
+
+
+def confirmation_payload_for_state(state: JsonDict) -> JsonDict:
+    intent = str(state.get("intent") or "")
+    route_name = str(state.get("route_name") or "")
+    question = str(state.get("question") or "")
+    if intent == "event_type_draft":
+        payload = event_type_draft_payload_from_question(question)
+        if payload:
+            return {
+                "title": "신규 Event Type 초안 확인",
+                "answer_markdown": "신규 Event Type은 바로 catalog에 반영하지 않고 draft로 만든 뒤 검증합니다. 아래 카드에서 내용을 확인하고 명시적으로 실행하세요.",
+                "data": {
+                    "route": route_name,
+                    "intent": intent,
+                    "operation": "event_type_draft",
+                    "payload": payload,
+                    "title": "신규 Event Type 초안 확인",
+                    "message": "Event Type draft를 만들고 validation 결과를 확인합니다. catalog 적용은 별도 검토와 승인 후 진행됩니다.",
+                    "primary_label": "Event Type 초안 만들기",
+                },
+            }
+        return {
+            "title": "신규 Event Type 초안 확인",
+            "answer_markdown": "Event Type 초안을 만들려면 `domain.event.requested.v1` 같은 versioned event_type 이름이 필요합니다.",
+            "data": {
+                "route": route_name,
+                "intent": intent,
+                "title": "Event Type 이름 필요",
+                "message": "예: `quality.forecast.requested.v1` 신규 Event Type 초안 만들어줘.",
+                "primary_label": "Event Type 이름을 포함해 다시 요청",
+            },
+        }
+    return {
+        "title": "확인 필요",
+        "answer_markdown": "이 요청은 상태 변경 또는 승인 절차가 필요합니다. Agent가 바로 실행하지 않고 확인 카드와 승인 API를 통해 처리해야 합니다.",
+        "data": {
+            "route": route_name,
+            "intent": intent,
+            "message": "명시 승인 후에만 실행할 수 있습니다.",
+        },
+    }
+
+
+def event_type_draft_payload_from_question(question: str) -> JsonDict:
+    match = re.search(r"\b([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\.v\d+)\b", question)
+    if not match:
+        return {}
+    event_type = match.group(1)
+    return {
+        "event_type": event_type,
+        "name_ko": "",
+        "description": compact_text(question, 260),
+        "owner": "",
+        "topic": "",
+        "workflow_stage": "",
+        "sop_ref": "",
+        "payload_schema": {},
+        "recommended_actions": [],
+    }
