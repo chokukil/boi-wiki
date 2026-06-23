@@ -250,6 +250,16 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     assert "설비" in body["answer_markdown"]
 
 
+def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
+    payload = boi_app_module.parse_router_payload(
+        'thinking about policy {"allowed_routes":["fast"]} final {"route":"fast","confidence":0.92,"intent":"lookup"}'
+    )
+
+    assert payload is not None
+    assert payload["route"] == "fast"
+    assert payload["confidence"] == 0.92
+
+
 def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

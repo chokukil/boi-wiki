@@ -5246,16 +5246,20 @@ def router_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str
 
 def parse_router_payload(text: str) -> dict[str, Any] | None:
     parsed = parse_langflow_json_text(text)
-    if parsed is not None:
+    if parsed is not None and parsed.get("route"):
         return parsed
-    match = re.search(r"\{.*\}", text.strip(), flags=re.DOTALL)
-    if not match:
-        return None
-    try:
-        payload = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
+    decoder = json.JSONDecoder()
+    stripped = text.strip()
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("route"):
+            return payload
+    return None
 
 
 def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
@@ -5270,6 +5274,7 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
     body = {
         "model": BOI_AGENT_ROUTER_MODEL,
         "temperature": 0,
+        "max_tokens": 192,
         "messages": [
             {
                 "role": "system",
@@ -5664,6 +5669,7 @@ def iter_langflow_text_candidates(value: Any, depth: int = 0) -> list[str]:
     if isinstance(value, dict):
         preferred_keys = (
             "answer_markdown",
+            "reasoning_content",
             "text",
             "message",
             "content",
