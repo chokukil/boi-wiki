@@ -763,8 +763,8 @@ def doc_title(doc: JsonDict, fallback: str) -> str:
 
 def workflow_stages(doc: JsonDict) -> list[JsonDict]:
     metadata = doc.get("metadata") if isinstance(doc, dict) else {}
-    workflow = (metadata or {}).get("workflow") if isinstance(metadata, dict) else {}
-    stages = workflow.get("stages") if isinstance(workflow, dict) else []
+    workflow = ((metadata or {}).get("workflow") or {}) if isinstance(metadata, dict) else {}
+    stages = (workflow.get("stages") if isinstance(workflow, dict) else []) or []
     return [stage for stage in stages if isinstance(stage, dict)]
 
 
@@ -904,10 +904,9 @@ def trace_links(workflow: JsonDict, trace: JsonDict) -> list[JsonDict]:
 def suggested_questions_for_state(state: JsonDict) -> list[str]:
     intent = state.get("intent")
     page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
-    title = str(page_context.get("title") or doc_title((state.get("tool_results") or {}).get("current_doc") or {}, "현재 문서"))
-    stage_count = int(page_context.get("stage_count") or 0)
-    action_count = int(page_context.get("workflow_action_count") or 0)
-    manual_count = int(page_context.get("workflow_manual_action_count") or 0)
+    current_doc = (state.get("tool_results") or {}).get("current_doc") or {}
+    title = suggested_subject_title(state)
+    stage_count, action_count, manual_count = suggested_workflow_counts(page_context, current_doc)
     if intent == "diagram":
         return [
             f"{title}의 Action {action_count}개와 Manual Handoff {manual_count}개 중 부족한 명세를 점검해줘.",
@@ -924,6 +923,40 @@ def suggested_questions_for_state(state: JsonDict) -> list[str]:
             "부족한 Action Spec이 있는지 찾아줘.",
         ]
     return ["이 내용을 Mermaid로 보여줘.", "관련 Action과 Event를 요약해줘.", "부족한 명세가 있는지 찾아줘."]
+
+
+def suggested_subject_title(state: JsonDict) -> str:
+    tool_results = state.get("tool_results") if isinstance(state.get("tool_results"), dict) else {}
+    current_doc = tool_results.get("current_doc") if isinstance(tool_results.get("current_doc"), dict) else {}
+    doc_title_value = doc_title(current_doc or {}, "")
+    if doc_title_value:
+        return doc_title_value
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    page_title = str(page_context.get("title") or page_context.get("page_title") or "").strip()
+    if page_title:
+        return page_title
+    search = state.get("search") if isinstance(state.get("search"), dict) else {}
+    for item in search.get("best_matches") or []:
+        if isinstance(item, dict) and str(item.get("kind") or "") in {"boi", "event_type", "action", "dictionary"}:
+            label = item_label(item)
+            if label and label != "결과":
+                return label
+    return "현재 문서"
+
+
+def suggested_workflow_counts(page_context: JsonDict, current_doc: JsonDict) -> tuple[int, int, int]:
+    stage_count = int(page_context.get("stage_count") or 0)
+    action_count = int(page_context.get("workflow_action_count") or 0)
+    manual_count = int(page_context.get("workflow_manual_action_count") or 0)
+    if stage_count or action_count or manual_count:
+        return stage_count, action_count, manual_count
+    stages = workflow_stages(current_doc)
+    automated: set[str] = set()
+    manual: set[str] = set()
+    for stage in stages:
+        automated.update(str(item) for item in stage.get("automated_actions") or [] if item)
+        manual.update(str(item) for item in stage.get("manual_actions") or [] if item)
+    return len(stages), len(automated), len(manual)
 
 
 def confirmation_payload_for_state(state: JsonDict) -> JsonDict:
