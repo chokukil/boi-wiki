@@ -393,6 +393,16 @@
     return parts.filter(Boolean).join("");
   }
 
+  function looksLikeRawMarkdownHtml(value) {
+    const text = String(value || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, "\n");
+    return /```/.test(text)
+      || /\|\s*:?-{3,}:?\s*\|/.test(text)
+      || /^\s*:?-{3,}:?\s*\|\s*:?-{3,}:?/m.test(text);
+  }
+
   function hashString(value) {
     let hash = 0;
     for (let index = 0; index < String(value).length; index += 1) {
@@ -510,6 +520,7 @@
     splitTableRow,
     mermaidSourcesFromMarkdown,
     mermaidSourcesFromArtifacts,
+    looksLikeRawMarkdownHtml,
   };
 
   function renderLinks(links) {
@@ -556,7 +567,8 @@
     return `<div class="boi-agent-messages">${state.messages
       .map((message, index) => {
         const artifactMermaid = mermaidSourcesFromArtifacts(message);
-        const answerHtml = message.html || renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
+        const serverHtml = message.html && !looksLikeRawMarkdownHtml(message.html) ? message.html : "";
+        const answerHtml = serverHtml || renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
         return `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>

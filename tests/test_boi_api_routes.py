@@ -1170,7 +1170,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "html: body.answer_html || \"\"" in script
     assert "body.display_markdown || body.answer_markdown" in script
     assert "rawText: body.answer_markdown" in script
-    assert "message.html || renderMarkdownLite(message.text || \"\", { skipMermaidSources: artifactMermaid })" in script
+    assert "looksLikeRawMarkdownHtml" in script
+    assert "const serverHtml = message.html && !looksLikeRawMarkdownHtml(message.html)" in script
+    assert "serverHtml || renderMarkdownLite(message.text || \"\", { skipMermaidSources: artifactMermaid })" in script
     assert "/api/agents/boi-wiki/chat/stream" in script
     assert "answer_delta" in script
     assert "statusLines" in script
@@ -1272,6 +1274,8 @@ const tableHtml = window.BoiAgentMarkdownDebug.renderMarkdownTable([
   "| --- | --- | --- |",
   "| 이상 감지 | `equipment.alarm.raised.v1` | [SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001) |",
 ]);
+const rawServerHtml = "<p>| 항목 | 값 |<br>| --- | --- |<br>| 상태 | 완료 |</p>";
+const renderedServerHtml = "<table><thead><tr><th>항목</th><th>값</th></tr></thead></table>";
 console.log(JSON.stringify({
   html,
   tableHtml,
@@ -1283,6 +1287,8 @@ console.log(JSON.stringify({
   skippedMermaid: !html.includes("mermaid-diagram") && !html.includes("```mermaid"),
   rawTableSeparatorLeaked: html.includes("| --- |"),
   tableKeepsLink: tableHtml.includes("<a href="),
+  detectsRawServerMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(rawServerHtml),
+  acceptsRenderedServerHtml: !window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(renderedServerHtml),
 }));
 """
     result = subprocess.run(
@@ -1303,6 +1309,8 @@ console.log(JSON.stringify({
     assert payload["skippedMermaid"]
     assert not payload["rawTableSeparatorLeaked"]
     assert payload["tableKeepsLink"]
+    assert payload["detectsRawServerMarkdown"]
+    assert payload["acceptsRenderedServerHtml"]
 
 
 def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):
