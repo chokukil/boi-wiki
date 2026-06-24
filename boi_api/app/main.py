@@ -128,6 +128,7 @@ BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
 BOI_AGENT_STREAM_HEARTBEAT_SECONDS = float(os.getenv("BOI_AGENT_STREAM_HEARTBEAT_SECONDS", "2"))
+BOI_AGENT_CACHE_WARMUP_ON_STARTUP = os.getenv("BOI_AGENT_CACHE_WARMUP_ON_STARTUP", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
@@ -227,6 +228,17 @@ _FILE_SIGNATURE_CACHE: dict[str, tuple[float, tuple[tuple[str, int, int], ...]]]
 _DOC_BODY_HTML_CACHE: dict[tuple[Any, ...], Markup] = {}
 _OKF_GRAPH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
 _SEARCH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
+_AGENT_CACHE_WARMUP_LOCK = threading.Lock()
+_AGENT_CACHE_WARMUP_STATE: dict[str, Any] = {
+    "enabled": BOI_AGENT_CACHE_WARMUP_ON_STARTUP,
+    "status": "not_started",
+    "employee_id": "",
+    "started_at": "",
+    "completed_at": "",
+    "elapsed_ms": 0,
+    "checks": {},
+    "error": "",
+}
 MARKDOWN_RENDERER_VERSION = "2026-06-22-doc-detail-lazy-v1"
 SIGNATURE_TTL_SECONDS = 1.0
 _ENSURE_DIRS_READY = False
@@ -5130,9 +5142,96 @@ class PocMcpCallRequest(BaseModel):
     request_id: str | None = None
 
 
+def agent_cache_warmup_state() -> dict[str, Any]:
+    with _AGENT_CACHE_WARMUP_LOCK:
+        return copy.deepcopy(_AGENT_CACHE_WARMUP_STATE)
+
+
+def warm_agent_runtime_caches(employee_id: str | None = None, *, force: bool = False) -> dict[str, Any]:
+    """Warm common read-only indexes used by the first BoI Agent request."""
+    warmup_employee_id = str(employee_id or DEMO_EMPLOYEE_ID)
+    with _AGENT_CACHE_WARMUP_LOCK:
+        if _AGENT_CACHE_WARMUP_STATE.get("status") == "running" and not force:
+            return copy.deepcopy(_AGENT_CACHE_WARMUP_STATE)
+        if _AGENT_CACHE_WARMUP_STATE.get("status") == "completed" and not force:
+            return copy.deepcopy(_AGENT_CACHE_WARMUP_STATE)
+        _AGENT_CACHE_WARMUP_STATE.update(
+            {
+                "enabled": BOI_AGENT_CACHE_WARMUP_ON_STARTUP,
+                "status": "running",
+                "employee_id": warmup_employee_id,
+                "started_at": now_iso(),
+                "completed_at": "",
+                "elapsed_ms": 0,
+                "checks": {},
+                "error": "",
+            }
+        )
+    started = time.perf_counter()
+    checks: dict[str, Any] = {}
+    try:
+        event_types = load_event_types()
+        checks["event_types"] = len(event_types)
+        actions = load_action_catalog()
+        checks["actions"] = len(actions)
+        docs = accessible_docs(warmup_employee_id)
+        checks["accessible_docs"] = len(docs)
+        index = search_index_for_employee(warmup_employee_id)
+        checks["search_docs"] = len(index.get("doc_records") or [])
+        ontology = ontology_search_payload("SOP", warmup_employee_id, scope="all", limit=3, view="compact")
+        checks["ontology_best_matches"] = len(ontology.get("best_matches") or [])
+        page_context = resolve_agent_page_context(
+            f"/docs/boi:public:sop:equipment-abnormal-response?employee_id={quote(warmup_employee_id)}",
+            warmup_employee_id,
+        )
+        checks["sample_page_context_resolved"] = bool(page_context.get("resolved"))
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        with _AGENT_CACHE_WARMUP_LOCK:
+            _AGENT_CACHE_WARMUP_STATE.update(
+                {
+                    "status": "completed",
+                    "completed_at": now_iso(),
+                    "elapsed_ms": elapsed_ms,
+                    "checks": checks,
+                    "error": "",
+                }
+            )
+            return copy.deepcopy(_AGENT_CACHE_WARMUP_STATE)
+    except Exception as exc:  # pragma: no cover - defensive startup path
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        with _AGENT_CACHE_WARMUP_LOCK:
+            _AGENT_CACHE_WARMUP_STATE.update(
+                {
+                    "status": "failed",
+                    "completed_at": now_iso(),
+                    "elapsed_ms": elapsed_ms,
+                    "checks": checks,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            return copy.deepcopy(_AGENT_CACHE_WARMUP_STATE)
+
+
+def start_agent_cache_warmup() -> None:
+    with _AGENT_CACHE_WARMUP_LOCK:
+        _AGENT_CACHE_WARMUP_STATE["enabled"] = BOI_AGENT_CACHE_WARMUP_ON_STARTUP
+        if not BOI_AGENT_CACHE_WARMUP_ON_STARTUP:
+            if _AGENT_CACHE_WARMUP_STATE.get("status") == "not_started":
+                _AGENT_CACHE_WARMUP_STATE["status"] = "disabled"
+            return
+        if _AGENT_CACHE_WARMUP_STATE.get("status") in {"running", "completed"}:
+            return
+    threading.Thread(
+        target=lambda: warm_agent_runtime_caches(DEMO_EMPLOYEE_ID),
+        name="boi-agent-cache-warmup",
+        daemon=True,
+    ).start()
+
+
 @app.on_event("startup")
 async def startup() -> None:
     ensure_dirs()
+    start_agent_cache_warmup()
 
 
 @app.get("/health")
@@ -5182,6 +5281,7 @@ async def runtime_config() -> dict[str, Any]:
             "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
+            "cache_warmup": agent_cache_warmup_state(),
         },
         "event_broker": {"type": "kafka", "bootstrap": KAFKA_BOOTSTRAP, "topic": BOI_EVENTS_TOPIC},
         "connectors": {"action_gateway_url": ACTION_GATEWAY_URL, "langflow": "peer_connector"},
@@ -7922,6 +8022,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "sequential-fallback",
             "max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
+            "cache_warmup": agent_cache_warmup_state(),
         },
         "langflow_boi_agent_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
         "langflow_boi_agent_configured": bool(LANGFLOW_URL and LANGFLOW_BOI_AGENT_ENDPOINT),

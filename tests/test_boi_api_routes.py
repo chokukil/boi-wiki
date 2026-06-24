@@ -135,6 +135,21 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["router"]["backoff_remaining_seconds"] >= 0
     assert body["boi_agent"]["router"]["max_tokens"] == 768
     assert "api_key" not in body["boi_agent"]["router"]
+    assert body["boi_agent"]["cache_warmup"]["enabled"] is True
+    assert body["boi_agent"]["cache_warmup"]["status"] in {"not_started", "running", "completed", "failed", "disabled"}
+
+
+def test_agent_cache_warmup_populates_runtime_indexes(boi_app_module):
+    state = boi_app_module.warm_agent_runtime_caches("100001", force=True)
+
+    assert state["status"] == "completed"
+    assert state["employee_id"] == "100001"
+    assert state["elapsed_ms"] >= 0
+    assert state["checks"]["event_types"] >= 1
+    assert state["checks"]["actions"] >= 1
+    assert state["checks"]["accessible_docs"] >= 1
+    assert state["checks"]["search_docs"] >= 1
+    assert state["checks"]["sample_page_context_resolved"] is True
 
 
 def test_agent_router_auto_enables_for_real_llm_url(boi_app_module):
