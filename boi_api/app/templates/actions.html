@@ -48,7 +48,7 @@
     {% if a.execution_mode == 'human' %}
     <p><strong>Execution:</strong> manual handoff; 자동 실행되지 않고 담당자 판단/승인/완료 확인으로 기록됩니다.</p>
     {% endif %}
-    <pre>curl -X POST "http://localhost:8000/api/actions/invoke?employee_id={{ employee_id }}" \
+    <pre>curl -X POST "{{ action_invoke_url }}" \
   -H "Content-Type: application/json" \
   -d '{"action_key":"{{ a.action_key }}","payload":{"equipment_id":"EQP-001","lot_id":"LOT-001","owner":"100001"},"dry_run":true}'</pre>
   </article>

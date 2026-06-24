@@ -3116,6 +3116,20 @@ def test_action_catalog_page_links_public_action_specs(boi_app_module):
     assert "/docs/boi:public:actions:api:block-process-progress" in response.text
 
 
+def test_action_catalog_page_uses_external_boi_url_for_invoke_curl(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
+    client = TestClient(boi_app_module.app)
+
+    response = client.get(
+        "/actions?employee_id=100001&event_type=corrective_action.requested.v1",
+        headers={"host": "boi-wiki.example:28000"},
+    )
+
+    assert response.status_code == 200
+    assert 'curl -X POST "http://boi-wiki.example:28000/api/actions/invoke?employee_id=100001"' in response.text
+    assert 'curl -X POST "http://localhost:8000/api/actions/invoke' not in response.text
+
+
 def test_materialized_equipment_boi_links_sop_and_action_docs(boi_app_module):
     client = TestClient(boi_app_module.app)
 

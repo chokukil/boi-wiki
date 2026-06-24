@@ -10263,6 +10263,7 @@ async def actions_page(
             "event_types": load_event_types(),
             "actions": actions_for_template(actions, employee_id, doc_lookup=doc_lookup),
             "action_logs": read_action_logs(limit=100),
+            "action_invoke_url": f"{boi_public_base_url(request)}/api/actions/invoke?employee_id={quote(employee_id)}",
         },
     )
 

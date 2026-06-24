@@ -101,7 +101,9 @@ event: status
 data: {"message": "현재 화면 맥락을 확인하고 있습니다.", "elapsed_ms": 0}
 ```
 
-이 smoke는 최종 답변 품질 검증이 아니라 “장시간 Agent 요청이 진행 상태를 즉시 보여주는가”를 확인하는 최소 검증이다. 최종 답변 품질은 Pet UI에서 Markdown table, Mermaid artifact, links, Inbox card가 함께 렌더링되는지 별도로 확인한다.
+실제 문구는 현재 페이지 종류에 따라 `현재 BoI 문서와 접근 권한을 확인하고 있습니다.`, `현재 Workflow 상태와 접근 권한을 확인하고 있습니다.`처럼 달라질 수 있다. 핵심은 첫 `status`가 즉시 오고, 긴 작업 중에도 2초 안팎으로 한 줄 진행 상태가 반복되는 것이다.
+
+이 smoke는 최종 답변 품질 검증이 아니라 “장시간 Agent 요청이 진행 상태를 계속 보여주는가”를 확인하는 최소 검증이다. 최종 답변 품질은 Pet UI에서 Markdown table, Mermaid artifact, links, Inbox card가 함께 렌더링되는지 별도로 확인한다.
 
 # Related Documents
 

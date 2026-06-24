@@ -48,7 +48,7 @@ response_schema:
   type: object
   description: MCP JSON-RPC response
 example_request:
-  mcp_url: http://localhost:8200/mcp
+  mcp_url: ${BOI_WIKI_MCP_EXTERNAL_URL}/mcp
   tools:
     - boi_search
     - action_invoke
@@ -57,20 +57,20 @@ example_request:
     - promotion_status
 example_response:
   tools: [boi_search, boi_get, actions_search, action_invoke, workflow_start, workflow_status, promotion_submit, promotion_status]
-curl: "python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp"
+curl: "python scripts/check_boi_wiki_mcp.py --base-url ${BOI_WIKI_MCP_EXTERNAL_URL} --mcp-url ${BOI_WIKI_MCP_EXTERNAL_URL}/mcp"
 action_gateway_mapping:
-  invoke_url: http://localhost:8100/api/actions/invoke
+  invoke_url: ${ACTION_GATEWAY_EXTERNAL_URL}/api/actions/invoke
   note: Action Gateway uses /api/mcp/call bridge for mcp_tool actions.
 health_check:
   type: http
-  command: curl -fsS http://localhost:8200/health
+  command: curl -fsS ${BOI_WIKI_MCP_EXTERNAL_URL}/health
 security_notes:
   - Local PoC uses service token only for bridge compatibility endpoint.
   - Source/body draft tools do not mutate source files or create Git commits.
   - promotion_submit requires user confirmation and remote validation before publish.
 mcp_server:
   name: boi-wiki-mcp
-  streamable_http_url: http://localhost:8200/mcp
+  streamable_http_url: ${BOI_WIKI_MCP_EXTERNAL_URL}/mcp
 transport: streamable_http
 tool_name: boi_search
 input_schema:
@@ -87,6 +87,8 @@ example_tool_call:
 # Summary
 
 BoI Wiki MCP 서버는 agent가 BoI Wiki와 workflow runtime을 표준 MCP로 사용할 수 있게 하는 진입점이다. API를 직접 외우지 않고 [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)을 따르면 된다.
+
+문서에 적힌 `url: http://boi-wiki-mcp:8200/mcp`는 Docker 내부 실행 URL이다. 사람이 복사하는 등록 URL과 smoke command는 `.env`의 `BOI_WIKI_MCP_EXTERNAL_URL`을 기준으로 만든다. 로컬 개발 기본값은 `http://localhost:8200`이고, NAS/reverse proxy 배포에서는 실제 외부 URL을 `.env`나 MCP client 설정에만 둔다.
 
 # Available Capabilities
 
