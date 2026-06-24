@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 import httpx
@@ -126,6 +127,7 @@ BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFID
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
+BOI_AGENT_STREAM_HEARTBEAT_SECONDS = float(os.getenv("BOI_AGENT_STREAM_HEARTBEAT_SECONDS", "2"))
 BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
@@ -7628,6 +7630,7 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
         yield agent_sse_event("status", {**status_steps[0], "elapsed_ms": 0})
         started_at = time.perf_counter()
         progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        result_queue: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
 
         def emit_progress(payload: dict[str, Any]) -> None:
             progress_queue.put(payload)
@@ -7643,30 +7646,44 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
         def run_agent() -> dict[str, Any]:
             return enrich_agent_answer_html(agent_chat_response(req, employee_id, progress_callback=emit_progress), employee_id)
 
-        task = asyncio.create_task(asyncio.to_thread(run_agent))
+        def run_agent_worker() -> None:
+            try:
+                result_queue.put(("response", run_agent()))
+            except Exception as exc:  # pragma: no cover - exercised through stream error path
+                result_queue.put(("error", exc))
+
+        worker = threading.Thread(target=run_agent_worker, name="boi-agent-stream-worker", daemon=True)
+        worker.start()
         status_index = 1
         last_generic_status_at = started_at
+        response: dict[str, Any] | None = None
         try:
             while True:
+                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                for progress in drain_progress_events():
+                    yield agent_sse_event("status", agent_tool_progress_status(progress, elapsed_ms))
+
                 try:
-                    response = await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
-                    break
-                except asyncio.TimeoutError:
-                    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                    emitted_progress = False
-                    for progress in drain_progress_events():
-                        emitted_progress = True
-                        yield agent_sse_event("status", agent_tool_progress_status(progress, elapsed_ms))
-                    if not emitted_progress and time.perf_counter() - last_generic_status_at >= 2.0:
+                    kind, payload = result_queue.get_nowait()
+                except queue.Empty:
+                    if time.perf_counter() - last_generic_status_at >= max(0.5, BOI_AGENT_STREAM_HEARTBEAT_SECONDS):
                         step = status_steps[min(status_index, len(status_steps) - 1)]
                         status_index += 1
                         last_generic_status_at = time.perf_counter()
                         yield agent_sse_event("status", {**step, "elapsed_ms": elapsed_ms})
+                    await asyncio.sleep(0.25)
+                    continue
+                if kind == "error":
+                    raise payload
+                response = payload
+                break
 
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             for progress in drain_progress_events():
                 yield agent_sse_event("status", agent_tool_progress_status(progress, elapsed_ms))
 
+            if response is None:
+                raise RuntimeError("BoI Agent stream finished without a response")
             display_markdown = str(response.get("display_markdown") or response.get("answer_markdown") or "")
             for chunk in iter_agent_answer_chunks(display_markdown):
                 yield agent_sse_event("answer_delta", {"delta": chunk})
@@ -7683,8 +7700,9 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
         except Exception as exc:
             yield agent_sse_event("error", {"status": "agent_stream_error", "message": str(exc)})
         finally:
-            if not task.done():
-                task.cancel()
+            # The worker is daemonized because a client-side stop cannot safely
+            # interrupt an in-flight LLM/tool request. Late results are dropped.
+            worker.join(timeout=0)
 
     return StreamingResponse(stream_events(), media_type="text/event-stream")
 

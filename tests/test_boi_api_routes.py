@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 from urllib.parse import quote, unquote
 
 from fastapi.testclient import TestClient
@@ -1262,6 +1263,47 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert final["used_backend"] == "native_langgraph"
 
 
+def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STREAM_HEARTBEAT_SECONDS", 0.05)
+
+    def fake_slow_agent_response(req, employee_id: str, progress_callback=None):
+        time.sleep(0.65)
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "answer_markdown": "느린 작업을 마쳤습니다.",
+            "display_markdown": "느린 작업을 마쳤습니다.",
+            "links": [],
+            "citations": [],
+            "suggested_questions": [],
+            "artifacts": [],
+            "context_summary": {"intent": "page_qa"},
+            "route": "fast",
+            "intent": "page_qa",
+            "router_backend": "rules",
+            "used_backend": "native_langgraph",
+            "latency_ms": 180,
+        }
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_slow_agent_response)
+
+    with client.stream(
+        "POST",
+        "/api/agents/boi-wiki/chat/stream?employee_id=100001",
+        json={"question": "천천히 확인해줘", "current_url": "/"},
+    ) as response:
+        assert response.status_code == 200
+        raw = "".join(response.iter_text())
+
+    events = parse_sse_events(raw)
+    status_payloads = [json.loads(item["data"]) for item in events if item["event"] == "status"]
+    assert len(status_payloads) >= 2
+    assert status_payloads[0]["stage"] == "page_context"
+    assert any(item["stage"] != "page_context" for item in status_payloads[1:])
+    assert events[-1]["event"] == "final"
+
+
 def test_agent_memory_blocks_sensitive_values_and_saves_private_memory(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -1502,6 +1544,7 @@ const tableHtml = window.BoiAgentMarkdownDebug.renderMarkdownTable([
   "| 이상 감지 | `equipment.alarm.raised.v1` | [SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001) |",
 ]);
 const rawServerHtml = "<p>| 항목 | 값 |<br>| --- | --- |<br>| 상태 | 완료 |</p>";
+const rawHeadingHtml = "<p># 제목<br>- 항목<br>1. 순서</p>";
 const renderedServerHtml = "<table><thead><tr><th>항목</th><th>값</th></tr></thead></table>";
 const renderedMermaidServerHtml = "<div class=\"rendered-markdown\"><div class=\"mermaid-diagram\"><div class=\"mermaid\">flowchart TD</div></div></div>";
 const runSummaryHtml = window.BoiAgentMarkdownDebug.renderRunSummary({
@@ -1524,6 +1567,7 @@ console.log(JSON.stringify({
   rawTableSeparatorLeaked: html.includes("| --- |"),
   tableKeepsLink: tableHtml.includes("<a href="),
   detectsRawServerMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(rawServerHtml),
+  detectsRawHeadingMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(rawHeadingHtml),
   acceptsRenderedServerHtml: !window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(renderedServerHtml),
   rejectsDuplicateMermaidServerHtml: !window.BoiAgentMarkdownDebug.shouldUseServerHtml(
     { html: renderedMermaidServerHtml },
@@ -1555,6 +1599,7 @@ console.log(JSON.stringify({
     assert not payload["rawTableSeparatorLeaked"]
     assert payload["tableKeepsLink"]
     assert payload["detectsRawServerMarkdown"]
+    assert payload["detectsRawHeadingMarkdown"]
     assert payload["acceptsRenderedServerHtml"]
     assert payload["rejectsDuplicateMermaidServerHtml"]
     assert payload["acceptsPlainRenderedServerHtml"]

@@ -401,7 +401,10 @@
       .replace(/<[^>]+>/g, "\n");
     return /```/.test(text)
       || /\|\s*:?-{3,}:?\s*\|/.test(text)
-      || /^\s*:?-{3,}:?\s*\|\s*:?-{3,}:?/m.test(text);
+      || /^\s*:?-{3,}:?\s*\|\s*:?-{3,}:?/m.test(text)
+      || /^\s{0,3}#{1,6}\s+\S/m.test(text)
+      || /^\s{0,3}[-*+]\s+\S/m.test(text)
+      || /^\s{0,3}\d+\.\s+\S/m.test(text);
   }
 
   function shouldUseServerHtml(message, artifactMermaid) {
