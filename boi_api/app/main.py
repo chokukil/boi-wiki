@@ -7164,7 +7164,7 @@ def agent_sse_event(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
 
-def iter_agent_answer_chunks(value: str, *, chunk_size: int = 700) -> list[str]:
+def iter_agent_answer_chunks(value: str, *, chunk_size: int = 180) -> list[str]:
     text = str(value or "")
     if not text:
         return []
@@ -7179,6 +7179,13 @@ def iter_agent_answer_chunks(value: str, *, chunk_size: int = 700) -> list[str]:
         chunks.append(text[start:end])
         start = end
     return chunks
+
+
+def agent_stream_chunk_delay_seconds() -> float:
+    try:
+        return max(0.0, min(0.25, float(os.getenv("BOI_AGENT_STREAM_CHUNK_DELAY_SECONDS", "0.025"))))
+    except (TypeError, ValueError):
+        return 0.025
 
 
 def agent_stream_status_steps(req: BoiAgentChatRequest) -> list[dict[str, str]]:
@@ -7774,8 +7781,21 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
             if response is None:
                 raise RuntimeError("BoI Agent stream finished without a response")
             display_markdown = str(response.get("display_markdown") or response.get("answer_markdown") or "")
-            for chunk in iter_agent_answer_chunks(display_markdown):
+            chunks = iter_agent_answer_chunks(display_markdown)
+            if chunks:
+                yield agent_sse_event(
+                    "status",
+                    {
+                        "stage": "answer_stream",
+                        "message": "답변을 작성하고 있습니다. 생성되는 내용을 바로 보여드리겠습니다.",
+                        "elapsed_ms": elapsed_ms,
+                    },
+                )
+            chunk_delay = agent_stream_chunk_delay_seconds()
+            for chunk in chunks:
                 yield agent_sse_event("answer_delta", {"delta": chunk})
+                if chunk_delay:
+                    await asyncio.sleep(chunk_delay)
             yield agent_sse_event("final", response)
         except LangflowBoiAgentUnavailable as exc:
             yield agent_sse_event(

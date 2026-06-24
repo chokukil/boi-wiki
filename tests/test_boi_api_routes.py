@@ -1221,8 +1221,20 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
         return {
             "ok": True,
             "employee_id": employee_id,
-            "answer_markdown": "현재 페이지를 확인했습니다.\n\n| 항목 | 값 |\n| --- | --- |\n| 상태 | 완료 |",
-            "display_markdown": "현재 페이지를 확인했습니다.\n\n| 항목 | 값 |\n| --- | --- |\n| 상태 | 완료 |",
+            "answer_markdown": (
+                "현재 페이지를 확인했습니다.\n\n"
+                "| 항목 | 값 |\n| --- | --- |\n| 상태 | 완료 |\n\n"
+                "이 응답은 스트리밍 UI가 부분 답변을 여러 조각으로 렌더링하는지 검증하기 위해 "
+                "일부러 길게 작성한 본문입니다. BoI Agent는 오래 걸리는 작업 중에는 현재 진행 상태를 "
+                "한 줄로 알려주고, 답변이 준비되면 여러 chunk로 나누어 사용자에게 보여줘야 합니다."
+            ),
+            "display_markdown": (
+                "현재 페이지를 확인했습니다.\n\n"
+                "| 항목 | 값 |\n| --- | --- |\n| 상태 | 완료 |\n\n"
+                "이 응답은 스트리밍 UI가 부분 답변을 여러 조각으로 렌더링하는지 검증하기 위해 "
+                "일부러 길게 작성한 본문입니다. BoI Agent는 오래 걸리는 작업 중에는 현재 진행 상태를 "
+                "한 줄로 알려주고, 답변이 준비되면 여러 chunk로 나누어 사용자에게 보여줘야 합니다."
+            ),
             "links": [{"label": "설비 SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
             "citations": [],
             "suggested_questions": ["깊게 분석해줘."],
@@ -1256,7 +1268,10 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert all(item.get("stage") for item in status_payloads)
     assert any(item.get("stage") == "tool_start" and item.get("tool") == "ontology_search" for item in status_payloads)
     assert any(item.get("stage") == "tool_done" and item.get("summary") == "best_matches=2" for item in status_payloads)
-    assert "현재 페이지를 확인했습니다" in "".join(json.loads(item["data"])["delta"] for item in events if item["event"] == "answer_delta")
+    assert any(item.get("stage") == "answer_stream" for item in status_payloads)
+    answer_deltas = [json.loads(item["data"])["delta"] for item in events if item["event"] == "answer_delta"]
+    assert len(answer_deltas) >= 2
+    assert "현재 페이지를 확인했습니다" in "".join(answer_deltas)
     final = json.loads(events[-1]["data"])
     assert final["answer_html"]
     assert final["links"][0]["label"] == "설비 SOP"
