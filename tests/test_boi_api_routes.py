@@ -806,6 +806,32 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     assert '<table class="markdown-table">' in body["answer_html"]
 
 
+def test_boi_agent_deep_request_uses_ontology_match_when_not_on_doc_page(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "설비 이상 SOP를 Mermaid 프로세스 플로우로 보여줘",
+            "current_url": "/?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "deep"
+    assert body["intent"] == "diagram"
+    assert body["used_backend"] == "native_langgraph"
+    assert body["coverage_report"]["coverage_score"] == 1.0
+    assert "current_doc" in body["coverage_report"]["covered"]
+    assert any(item["tool"] == "boi_get" and "equipment-abnormal-response" in str(item["args"]) for item in body["tool_trace"])
+    assert "설비 이상 감지" in body["answer_markdown"]
+    assert "workflow metadata 확인 필요" not in body["answer_markdown"]
+    assert any(item.get("type") == "mermaid" for item in body["artifacts"])
+
+
 def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

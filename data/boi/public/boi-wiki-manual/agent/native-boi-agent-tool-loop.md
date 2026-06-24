@@ -27,17 +27,20 @@ review:
 
 Native BoI Agent는 LangGraph node 이름을 코드 구조와 일치시킨다. LangGraph가 없거나 버전 차이로 실패하면 같은 node 순서를 순차 실행한다.
 
+이 loop는 무한 ReAct가 아니라 bounded tool loop다. 검색과 권한 확인은 항상 먼저 수행하고, 사용자가 “Mermaid로 그려줘”, “부족한 Action Spec 찾아줘”처럼 산출물을 요청하면 ontology search에서 찾은 최상위 SOP/BoI 문서를 다시 `boi_get`으로 좁혀 읽는다. 따라서 현재 페이지가 SOP 문서가 아니어도, 질문에 SOP 이름이나 업무 용어가 있으면 `검색 -> 문서 조회 -> Action/Event 확장 -> 산출물 생성` 순서로 처리한다.
+
 # State Graph
 
 ```mermaid
 flowchart TD
   A["classify_intent"] --> B["resolve_page_context"]
-  B --> C["retrieve_ontology"]
+  B --> ACL["access_policy_gate"]
+  ACL --> C["retrieve_ontology"]
   C --> D["plan_tools"]
   D --> E["execute_tools_loop"]
   E --> F["evaluate_coverage"]
   F --> G["compose_answer"]
-  G --> H["verify_links_and_artifacts"]
+  G --> H["verify_acl_and_artifacts"]
   H --> I["safety_gate"]
 ```
 
@@ -56,7 +59,7 @@ sequenceDiagram
   Agent->>Search: compact retrieval
   Search-->>Agent: grouped results + knowledge panel
   loop max 5 tool calls
-    Agent->>Tool: boi_get / workflow_status / action_spec_lookup
+    Agent->>Tool: boi_get / workflow_status / action_spec_lookup / dictionary_resolve / memory_recall
     Tool-->>Agent: typed result
   end
   Agent->>Agent: coverage + artifact generation

@@ -360,8 +360,12 @@ class NativeBoiAgent:
         intent = state.get("intent")
         page_context = state.get("page_context") or {}
         planned: list[JsonDict] = []
-        if intent in {"diagram", "workflow_explain", "gap_check"} and page_context.get("boi_id"):
-            planned.append({"tool": "boi_get", "args": {"boi_id": page_context["boi_id"]}})
+        if intent in {"diagram", "workflow_explain", "gap_check"}:
+            target_boi_id = str(page_context.get("boi_id") or "")
+            if not target_boi_id:
+                target_boi_id = best_boi_ref_from_search(state.get("search") or {}, prefer_sop=True)
+            if target_boi_id:
+                planned.append({"tool": "boi_get", "args": {"boi_id": target_boi_id}})
         if intent == "trace_reasoning" and page_context.get("trace_id"):
             planned.append({"tool": "trace_context_lookup", "args": {"trace_id": page_context["trace_id"]}})
             if page_context.get("workflow_key"):
@@ -737,6 +741,19 @@ def compact_text(value: str, limit: int = 160) -> str:
 
 def item_label(item: JsonDict) -> str:
     return str(item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or item.get("uri") or "결과")
+
+
+def best_boi_ref_from_search(search: JsonDict, *, prefer_sop: bool = False) -> str:
+    matches = [
+        item
+        for item in (search.get("best_matches") or [])
+        if isinstance(item, dict) and str(item.get("kind") or "") == "boi" and (item.get("boi_id") or item.get("uri"))
+    ]
+    if prefer_sop:
+        for item in matches:
+            if str(item.get("type") or "") == "boi/sop":
+                return str(item.get("boi_id") or item.get("uri") or "")
+    return str((matches[0] or {}).get("boi_id") or (matches[0] or {}).get("uri") or "") if matches else ""
 
 
 def doc_title(doc: JsonDict, fallback: str) -> str:
