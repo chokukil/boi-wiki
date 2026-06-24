@@ -8418,6 +8418,8 @@ async def update_promotion_hotl(
 @app.post("/api/events/publish")
 async def publish_event(req: EventPublishRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.workflow_runner")
+    if req.actor_employee_id and req.actor_employee_id != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="actor_employee_id must match the authenticated employee")
     actor = req.actor_employee_id or employee_id
     event = {
         "event_id": f"evt-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
@@ -9375,10 +9377,11 @@ async def start_workflow_from_data(
     if not event_type:
         raise HTTPException(status_code=400, detail=f"Workflow has no entry event: {workflow_key}")
     payload.setdefault("workflow", workflow_key)
+    payload.setdefault("owner", owner)
     result = await publish_event(
         EventPublishRequest(
             event_type=event_type,
-            actor_employee_id=owner,
+            actor_employee_id=employee_id,
             payload=payload,
             source_refs=raw.get("source_refs") or [{"type": "workflow", "ref": workflow_key, "sop_ref": workflow.get("sop_ref")}],
             trace_id=raw.get("trace_id"),
@@ -10393,8 +10396,10 @@ async def api_action_logs(action_key: str = "", limit: int = 200) -> dict[str, A
 
 async def invoke_action_gateway(req: ActionInvokeRequest, employee_id: str) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.action_invoker")
+    if req.employee_id and req.employee_id != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="action employee_id must match the authenticated employee")
     payload = req.model_dump()
-    payload["employee_id"] = req.employee_id or employee_id
+    payload["employee_id"] = req.employee_id if req.employee_id and "boi.admin" in roles_for(employee_id) else employee_id
     async with httpx.AsyncClient(timeout=ACTION_INVOKE_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             f"{ACTION_GATEWAY_URL.rstrip('/')}/api/actions/invoke",

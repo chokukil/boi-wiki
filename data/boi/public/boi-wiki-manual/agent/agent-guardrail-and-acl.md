@@ -95,6 +95,19 @@ sequenceDiagram
   API-->>Pet: execution result + audit reference
 ```
 
+## Authenticated Employee Binding
+
+Mutation payload 안의 사번 필드는 인증 사번을 우회할 수 없다. SSO 또는 dev auth가 결정한 `employee_id`가 authoritative identity이며, Agent/API/MCP는 사용자가 보낸 payload의 `employee_id`나 `actor_employee_id`를 그대로 신뢰하지 않는다.
+
+| Operation | Binding rule |
+|---|---|
+| Event publish | `actor_employee_id`는 인증 사번과 같아야 한다. Admin override는 audit 대상이다. |
+| Workflow start | Event actor는 인증 사번이다. 담당자/owner는 payload field로 남길 수 있지만 actor로 spoof하지 않는다. |
+| Action invoke | Action Gateway로 전달하는 `employee_id`는 인증 사번이다. Admin override 외에는 body의 다른 사번을 거부한다. |
+| Manual handoff completion | 완료자는 인증 사번이며 append-only completion row에 남긴다. |
+
+이 규칙은 “사용자가 볼 수 있는가”와 별개로 “누가 실행했는가”를 보호한다. Agent가 생성한 confirmation card도 최종 `/api/agents/boi-wiki/approve` 단계에서 같은 binding을 다시 검사한다.
+
 # Required Response Metadata
 
 Agent response should include:

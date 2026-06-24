@@ -74,6 +74,19 @@ Agent는 실행 대상을 임의로 추정하지 않는다. 아래처럼 필수 
 
 확인 카드가 반환되어도 실제 상태 변경은 아직 일어나지 않는다. 사용자가 카드의 primary action을 눌러 `/api/agents/boi-wiki/approve`가 호출되고, RBAC/ACL/classification 검증을 다시 통과해야만 Event, Action, Workflow, draft 생성이 실행된다.
 
+# Identity and Actor Rules
+
+사용자가 보는 확인 카드와 API payload에 사번이 들어갈 수 있지만, 실행 주체는 항상 인증 사번을 기준으로 결정한다. 이는 SSO가 들어왔을 때 특히 중요하다.
+
+| Case | Rule |
+|---|---|
+| Event 발행 | `actor_employee_id`가 인증 사번과 다르면 거부한다. |
+| Workflow 시작 | workflow 담당자/owner는 payload로 남길 수 있지만, 실제 Event actor는 인증 사번이다. |
+| Action 호출 | Action Gateway에 전달되는 `employee_id`는 인증 사번이다. 요청 body가 다른 사번을 넣으면 거부한다. |
+| Admin override | 예외적으로 허용될 수 있지만, 별도 role과 audit가 필요하다. |
+
+따라서 Agent가 “누구 대신 실행”하는 방식으로 쓰이면 안 된다. 대리 실행이 필요하면 팀 RBAC, manual handoff, approval flow로 남겨야 한다.
+
 # Event Type Draft Lifecycle
 
 신규 Event Type은 즉시 runtime catalog에 들어가지 않는다.

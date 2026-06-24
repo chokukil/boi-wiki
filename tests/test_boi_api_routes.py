@@ -1388,6 +1388,55 @@ def test_boi_agent_approve_rejects_unsupported_operation(boi_app_module):
     assert "unsupported Agent approval operation" in response.json()["detail"]
 
 
+def test_agent_mutation_apis_reject_employee_spoofing(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(
+        boi_app_module,
+        "roles_for",
+        lambda _employee_id: ["boi.viewer", "boi.workflow_runner", "boi.action_invoker"],
+    )
+
+    event_response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "event_publish",
+            "user_confirmed": True,
+            "payload": {
+                "event_type": "equipment.alarm.raised.v1",
+                "actor_employee_id": "100002",
+                "payload": {"title": "spoof attempt"},
+            },
+        },
+    )
+    action_response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "action_invoke",
+            "user_confirmed": True,
+            "payload": {
+                "action_key": "sop.equipment.request_raw_data",
+                "employee_id": "100002",
+                "payload": {"title": "spoof attempt"},
+            },
+        },
+    )
+    direct_action_response = client.post(
+        "/api/actions/invoke?employee_id=100001",
+        json={
+            "action_key": "sop.equipment.request_raw_data",
+            "employee_id": "100002",
+            "payload": {"title": "spoof attempt"},
+        },
+    )
+
+    assert event_response.status_code == 403
+    assert "actor_employee_id must match" in event_response.text
+    assert action_response.status_code == 403
+    assert "action employee_id must match" in action_response.text
+    assert direct_action_response.status_code == 403
+    assert "action employee_id must match" in direct_action_response.text
+
+
 def test_boi_agent_approve_promotion_submit_uses_validation_path(boi_app_module):
     client = TestClient(boi_app_module.app)
 
