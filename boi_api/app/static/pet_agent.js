@@ -5,7 +5,7 @@
 
   const employeeId = root.dataset.employeeId || new URLSearchParams(location.search).get("employee_id") || "100001";
   const pageTitle = root.dataset.pageTitle || document.title || "BoI Wiki";
-  const storageKey = `boiAgent.v4.${employeeId}`;
+  const storageKey = `boiAgent.v5.${employeeId}`;
   let activeRequest = null;
   let restoreScrollOnce = true;
 
@@ -502,7 +502,7 @@
     return `<div class="boi-agent-messages">${state.messages
       .map((message, index) => {
         const artifactMermaid = mermaidSourcesFromArtifacts(message);
-        const answerHtml = message.html || renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
+        const answerHtml = renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
         return `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
@@ -841,7 +841,6 @@
       state.messages[pendingIndex] = {
         role: "assistant",
         text: body.answer_markdown || "",
-        html: body.answer_html || "",
         links: body.links || [],
         meta: {
           route: body.route,
