@@ -151,6 +151,16 @@
         </label>
         <button type="submit">역할 부여</button>
       </form>
+
+      <form class="permission-form" data-rbac-form="doc-access">
+        <h3>문서 접근 확인</h3>
+        <label>
+          <span>BoI ID</span>
+          <input name="boi_id" placeholder="예: boi:public:sop:equipment-abnormal-response" required>
+        </label>
+        <p class="muted">현재 사번 기준으로 문서 읽기, Agent context 사용, 수정 가능 여부를 확인합니다.</p>
+        <button type="submit">접근 정책 확인</button>
+      </form>
     </div>
   </section>
   {% else %}

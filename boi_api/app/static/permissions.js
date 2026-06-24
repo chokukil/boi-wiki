@@ -32,6 +32,15 @@
     return payload;
   }
 
+  async function getJson(path) {
+    const response = await fetch(apiPath(path));
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || payload.message || `HTTP ${response.status}`);
+    }
+    return payload;
+  }
+
   function formValues(form) {
     const data = new FormData(form);
     return Object.fromEntries(data.entries());
@@ -88,10 +97,32 @@
     reloadSoon();
   }
 
+  async function submitDocAccess(form) {
+    const values = formValues(form);
+    const boiId = String(values.boi_id || "").trim();
+    if (!boiId) {
+      throw new Error("BoI ID를 입력하세요.");
+    }
+    const body = await getJson(`/api/docs/${encodeURIComponent(boiId)}/access`);
+    const access = body.access || {};
+    const labels = [
+      access.can_read ? "읽기 가능" : "읽기 불가",
+      access.can_use_in_agent_context ? "Agent context 가능" : "Agent context 제한",
+      access.can_edit ? "수정 가능" : "수정 제한",
+    ];
+    const detail = [
+      access.visibility ? `visibility=${access.visibility}` : "",
+      access.classification ? `classification=${access.classification}` : "",
+      access.acl_policy ? `acl=${access.acl_policy}` : "",
+    ].filter(Boolean).join(" · ");
+    setResult(`${boiId}: ${labels.join(" · ")}${detail ? ` (${detail})` : ""}`, access.can_read ? "success" : "error");
+  }
+
   const handlers = {
     team: submitTeam,
     member: submitMember,
     binding: submitBinding,
+    "doc-access": submitDocAccess,
   };
 
   admin.querySelectorAll("[data-rbac-form]").forEach((form) => {

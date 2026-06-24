@@ -340,8 +340,12 @@ def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
     assert 'data-rbac-form="team"' in response.text
     assert 'data-rbac-form="member"' in response.text
     assert 'data-rbac-form="binding"' in response.text
+    assert 'data-rbac-form="doc-access"' in response.text
+    assert "문서 접근 확인" in response.text
     assert "/api/rbac/teams" in script
     assert "/api/rbac/bindings" in script
+    assert "/api/docs/${encodeURIComponent(boiId)}/access" in script
+    assert "Agent context 가능" in script
     assert "data-rbac-result" in response.text
     assert ".permission-form-grid" in style
     assert ".rbac-result" in style
