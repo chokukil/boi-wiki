@@ -527,6 +527,7 @@
     renderMarkdownLite,
     renderMarkdownTable,
     renderCellValue,
+    renderRunSummary,
     splitTableRow,
     mermaidSourcesFromMarkdown,
     mermaidSourcesFromArtifacts,
@@ -569,6 +570,51 @@
     return `<div class="boi-agent-meta">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>`;
   }
 
+  function toolDisplayLabel(tool) {
+    return {
+      ontology_search: "관련 지식 검색",
+      boi_get: "BoI 문서 조회",
+      action_spec_lookup: "Action 명세 확인",
+      trace_context_lookup: "Trace 근거 확인",
+      workflow_status: "Workflow 상태 확인",
+      dictionary_resolve: "업무 용어 확인",
+      memory_recall: "Private memory 확인",
+      agent_inbox: "Inbox 확인",
+      route_classifier: "질문 유형 판단",
+    }[tool] || "근거 확인";
+  }
+
+  function toolStatusLabel(status) {
+    return {
+      ok: "완료",
+      empty: "결과 없음",
+      failed: "실패",
+    }[status] || status || "확인";
+  }
+
+  function renderRunSummary(message) {
+    if (message.role !== "assistant") return "";
+    const meta = message.meta || {};
+    const toolTrace = Array.isArray(meta.tool_trace) ? meta.tool_trace : [];
+    const coverage = meta.coverage_report && typeof meta.coverage_report === "object" ? meta.coverage_report : {};
+    const guardrails = Array.isArray(meta.guardrails_applied) ? meta.guardrails_applied : [];
+    if (!toolTrace.length && !Object.keys(coverage).length && !guardrails.length) return "";
+    const toolRows = toolTrace.slice(0, 8).map((item) => {
+      const elapsed = Number.isFinite(Number(item.elapsed_ms)) ? ` · ${Number(item.elapsed_ms)}ms` : "";
+      const summary = item.summary ? `<small>${escapeHtml(item.summary)}</small>` : "";
+      return `<li><strong>${escapeHtml(toolDisplayLabel(item.tool))}</strong><span>${escapeHtml(toolStatusLabel(item.status))}${elapsed}</span>${summary}</li>`;
+    }).join("");
+    const coverageScore = Number.isFinite(Number(coverage.coverage_score)) ? Math.round(Number(coverage.coverage_score) * 100) : null;
+    const missing = Array.isArray(coverage.missing) ? coverage.missing : [];
+    return `
+      <details class="boi-agent-run-summary">
+        <summary>Agent가 확인한 내용${coverageScore !== null ? ` · ${coverageScore}%` : ""}</summary>
+        ${toolRows ? `<ul>${toolRows}</ul>` : ""}
+        ${missing.length ? `<p>더 확인이 필요한 항목: ${missing.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}</p>` : ""}
+        ${guardrails.length ? `<p>권한/보안 가드레일 적용: ${guardrails.length}건</p>` : ""}
+      </details>`;
+  }
+
   function tabLabel(tab) {
     return { agent: "Agent", inbox: "Inbox" }[tab] || tab;
   }
@@ -586,6 +632,7 @@
           ${renderMessageMeta(message)}
           ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
           <div class="boi-agent-answer">${answerHtml}</div>
+          ${renderRunSummary(message)}
           ${renderArtifacts(message, index)}
           ${renderLinks(message.links || [])}
         </article>`;
@@ -1012,6 +1059,9 @@
           used_backend: body.used_backend,
           router_backend: body.router_backend,
           latency_ms: body.latency_ms,
+          tool_trace: body.tool_trace || [],
+          coverage_report: body.coverage_report || {},
+          guardrails_applied: body.guardrails_applied || [],
         },
         artifacts: body.artifacts || [],
       };

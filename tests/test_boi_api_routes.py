@@ -1336,6 +1336,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "mermaid-diagram" in script
     assert "BoiAgentMarkdownDebug" in script
     assert "renderMarkdownTable" in script
+    assert "renderRunSummary" in script
     assert "html: body.answer_html || \"\"" in script
     assert "body.display_markdown || body.answer_markdown" in script
     assert "rawText: body.answer_markdown" in script
@@ -1351,6 +1352,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "state.currentStatus" in script
     assert "진행 상태" in script
     assert "state.sending ? state.currentStatus" in script
+    assert "tool_trace: body.tool_trace || []" in script
+    assert "coverage_report: body.coverage_report || {}" in script
+    assert "Agent가 확인한 내용" in script
     assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
@@ -1394,6 +1398,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert ".boi-agent-message > .boi-agent-message-author" in style
     assert ".boi-agent-message strong { display:block;" not in style
     assert "table-layout:fixed" in style
+    assert ".boi-agent-run-summary" in style
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
 
 
@@ -1451,6 +1456,14 @@ const tableHtml = window.BoiAgentMarkdownDebug.renderMarkdownTable([
 const rawServerHtml = "<p>| 항목 | 값 |<br>| --- | --- |<br>| 상태 | 완료 |</p>";
 const renderedServerHtml = "<table><thead><tr><th>항목</th><th>값</th></tr></thead></table>";
 const renderedMermaidServerHtml = "<div class=\"rendered-markdown\"><div class=\"mermaid-diagram\"><div class=\"mermaid\">flowchart TD</div></div></div>";
+const runSummaryHtml = window.BoiAgentMarkdownDebug.renderRunSummary({
+  role: "assistant",
+  meta: {
+    tool_trace: [{ tool: "ontology_search", status: "ok", elapsed_ms: 12, summary: "best_matches=3" }],
+    coverage_report: { coverage_score: 1, missing: [] },
+    guardrails_applied: ["acl_policy"],
+  },
+});
 console.log(JSON.stringify({
   html,
   tableHtml,
@@ -1472,6 +1485,7 @@ console.log(JSON.stringify({
     { html: renderedServerHtml },
     new Set([window.BoiAgentMarkdownDebug.normalizeMermaidSource?.(mermaidSource) || mermaidSource.replace(/\s+/g, " ").trim()])
   ),
+  hasRunSummary: runSummaryHtml.includes("Agent가 확인한 내용") && runSummaryHtml.includes("관련 지식 검색") && runSummaryHtml.includes("권한/보안 가드레일"),
 }));
 """
     result = subprocess.run(
@@ -1496,6 +1510,7 @@ console.log(JSON.stringify({
     assert payload["acceptsRenderedServerHtml"]
     assert payload["rejectsDuplicateMermaidServerHtml"]
     assert payload["acceptsPlainRenderedServerHtml"]
+    assert payload["hasRunSummary"]
 
 
 def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):
