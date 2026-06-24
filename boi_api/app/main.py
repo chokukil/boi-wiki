@@ -3948,6 +3948,44 @@ def copy_optional_tree(source: Path, target: Path) -> None:
         target.mkdir(parents=True, exist_ok=True)
 
 
+def fast_work_temp_parent() -> Path | None:
+    configured = os.getenv("BOI_WORK_TMPDIR")
+    candidates = [configured, "/tmp", tempfile.gettempdir()]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            continue
+        if path.exists() and os.access(path, os.W_OK):
+            return path
+    return None
+
+
+def source_post_apply_validation_report(source_path: Path, proposed_content: str, preapply_validation: dict[str, Any]) -> dict[str, Any]:
+    if os.getenv("BOI_EDIT_POST_APPLY_FULL_LINT", "false").lower() in {"1", "true", "yes", "on"}:
+        return current_source_validation_report(source_path)
+    source_validation = validate_source_content(source_path, proposed_content)
+    errors = list(source_validation.get("errors") or [])
+    warnings = list(source_validation.get("warnings") or [])
+    okf_report = preapply_validation.get("okf_lint")
+    if okf_report is not None:
+        errors.extend(okf_report.get("errors") or [])
+        warnings.extend(okf_report.get("warnings") or [])
+    errors = unique_messages(errors)
+    warnings = unique_messages(warnings)
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "source_validation": source_validation,
+        "okf_lint": okf_report,
+        "post_apply_full_lint": False,
+    }
+
+
 def candidate_path_in_temp_data_root(temp_root: Path, source_path: Path) -> Path | None:
     try:
         rel_path = source_path.resolve().relative_to(DATA_ROOT.resolve())
@@ -3957,7 +3995,8 @@ def candidate_path_in_temp_data_root(temp_root: Path, source_path: Path) -> Path
 
 
 def candidate_okf_lint_report(source_path: Path, proposed_content: str) -> dict[str, Any] | None:
-    with tempfile.TemporaryDirectory(prefix="boi-edit-") as temp_dir:
+    temp_parent = fast_work_temp_parent()
+    with tempfile.TemporaryDirectory(prefix="boi-edit-", dir=str(temp_parent) if temp_parent else None) as temp_dir:
         temp_root = Path(temp_dir)
         copy_optional_tree(DATA_ROOT, temp_root / "boi")
         copy_optional_tree(EVENTS_ROOT, temp_root / "events")
@@ -4213,7 +4252,7 @@ def apply_source_edit(
     source_path.write_text(proposed_content, encoding="utf-8")
     invalidate_doc_caches()
     try:
-        post_validation = current_source_validation_report(source_path)
+        post_validation = source_post_apply_validation_report(source_path, proposed_content, preview["validation_report"])
         if not post_validation["ok"]:
             rollback_source_file(source_path, current_content)
             raise HTTPException(

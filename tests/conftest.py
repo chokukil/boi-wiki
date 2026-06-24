@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib
+import os
 import shutil
 import sys
+import tempfile
 import types
 from pathlib import Path
 from typing import Any
@@ -31,16 +33,25 @@ class FakeKafkaProducer:
         self.sent_events.append({"topic": topic, "event": event})
 
 
+def _fast_tmp_path(prefix: str) -> Path:
+    base = Path(os.getenv("BOI_TEST_TMPDIR") or "/tmp")
+    if not base.exists() or not os.access(base, os.W_OK):
+        base = Path(tempfile.gettempdir())
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=str(base)))
+
+
 @pytest.fixture()
-def boi_app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def boi_app_module(monkeypatch: pytest.MonkeyPatch):
     fake_aiokafka = types.ModuleType("aiokafka")
     fake_aiokafka.AIOKafkaProducer = FakeKafkaProducer
     fake_aiokafka.AIOKafkaConsumer = object
     monkeypatch.setitem(sys.modules, "aiokafka", fake_aiokafka)
 
+    tmp_path = _fast_tmp_path("boi-api-test-")
     data_root = tmp_path / "boi"
     shutil.copytree(ROOT / "data" / "boi", data_root)
 
+    monkeypatch.setenv("TMPDIR", "/tmp")
     monkeypatch.setenv("DATA_ROOT", str(data_root))
     monkeypatch.setenv("EVENTS_ROOT", str(tmp_path / "events"))
     monkeypatch.setenv("EVENT_CATALOG_ROOT", str(Path.cwd() / "data" / "event_catalog"))
@@ -54,4 +65,8 @@ def boi_app_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     sys.modules.pop("boi_api.app.main", None)
     module = importlib.import_module("boi_api.app.main")
     module.AIOKafkaProducer = FakeKafkaProducer
-    return module
+    try:
+        yield module
+    finally:
+        sys.modules.pop("boi_api.app.main", None)
+        shutil.rmtree(tmp_path, ignore_errors=True)
