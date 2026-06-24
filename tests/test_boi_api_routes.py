@@ -1584,7 +1584,10 @@ def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
     assert response.text.index('<section class="body">') < response.text.index('<details class="metadata"')
     assert 'class="metadata-grid metadata-summary-grid"' in response.text
     assert "Load Full Metadata" in response.text
+    assert response.text.count("Load Full Metadata") == 1
     assert "/api/docs/boi:team:platform:kafka-sop-v0.1/metadata-fragment?employee_id=100001" in response.text
+    assert "/api/docs/boi:team:platform:kafka-sop-v0.1/access?employee_id=100001" in response.text
+    assert "Access Policy" in response.text
     assert '<dt class="metadata-key">visibility</dt>' in response.text
     assert '<dd class="metadata-value"><span class="scalar string">team</span></dd>' in response.text
     assert '<dt class="metadata-key">acl_policy</dt>' not in response.text

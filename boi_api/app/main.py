@@ -5894,6 +5894,7 @@ async def doc_page(
             "doc_list_url": browse_url(employee_id, folder=return_folder),
             "source_url": source_url_for_doc(doc, employee_id),
             "doc_graph_url": "/api/okf/graph/doc/" + graph_ref + "?" + urlencode({"employee_id": employee_id}),
+            "access_policy_url": "/api/docs/" + graph_ref + "/access?" + doc_query,
             "metadata_fragment_url": "/api/docs/" + graph_ref + "/metadata-fragment?" + doc_query,
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
             "body_html": cached_doc_body_html(doc, employee_id, doc_lookup),
