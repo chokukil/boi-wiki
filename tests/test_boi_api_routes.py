@@ -1458,6 +1458,18 @@ def test_admin_employee_override_requires_reason_and_audit(boi_app_module, monke
             "payload": {"title": "admin override without reason"},
         },
     )
+    agent_event_without_reason = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "event_publish",
+            "user_confirmed": True,
+            "payload": {
+                "event_type": "equipment.alarm.raised.v1",
+                "actor_employee_id": "100002",
+                "payload": {"title": "agent admin override without reason"},
+            },
+        },
+    )
     action_without_reason = client.post(
         "/api/actions/invoke?employee_id=100001",
         json={
@@ -1478,6 +1490,8 @@ def test_admin_employee_override_requires_reason_and_audit(boi_app_module, monke
 
     assert event_without_reason.status_code == 400
     assert "admin_override_reason" in event_without_reason.text
+    assert agent_event_without_reason.status_code == 400
+    assert "admin_override_reason" in agent_event_without_reason.text
     assert action_without_reason.status_code == 400
     assert "admin_override_reason" in action_without_reason.text
     assert event_with_reason.status_code == 200
@@ -1588,6 +1602,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-confirmation-card" in script
     assert "/api/agents/boi-wiki/approve" in script
     assert "data-agent-approve" in script
+    assert "data-agent-approve-note" in script
+    assert "BoI Agent confirmation card" not in script
     assert "agentApprovalResultMessage" in script
     assert "Event 발행 요청을 보냈습니다." in script
     assert "Workflow 시작 요청을 보냈습니다." in script
@@ -1602,6 +1618,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
     assert "width:min(840px" in style
     assert "width:min(1120px" in style
+    assert ".boi-agent-approve-note" in style
     assert ".boi-agent-content { overflow-y:auto; overflow-x:hidden;" in style
     assert ".boi-agent-answer pre, .boi-agent-artifact pre { margin:8px 0; max-height:220px; overflow-y:auto; overflow-x:hidden;" in style
     assert ".boi-agent-inline-image" in style

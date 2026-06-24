@@ -534,6 +534,10 @@
         </div>
         <p>${escapeHtml(message)}</p>
         <div class="boi-agent-confirmation-actions">
+          <label class="boi-agent-approve-note">
+            <span>실행 사유 / 메모</span>
+            <textarea data-agent-approve-note placeholder="필요 시 실행 사유를 남겨주세요. 다른 사번 대신 실행하는 경우에는 사유가 필요합니다."></textarea>
+          </label>
           ${canExecute ? `<button type="button" data-agent-approve data-operation="${escapeAttr(operation)}" data-payload="${escapeAttr(payloadJson)}">${escapeHtml(primaryLabel)}</button>` : `<span>${escapeHtml(primaryLabel)}</span>`}
         </div>
         <details class="boi-agent-technical">
@@ -930,6 +934,7 @@
         }
         const operation = button.dataset.operation || "";
         if (!operation) return;
+        const note = button.closest(".boi-agent-confirmation-card")?.querySelector("[data-agent-approve-note]")?.value || "";
         state.busyTask = `approve:${operation}`;
         render();
         api("/api/agents/boi-wiki/approve", {
@@ -938,7 +943,7 @@
             operation,
             payload,
             user_confirmed: true,
-            note: "BoI Agent confirmation card",
+            note,
           }),
         }).then((body) => {
           showAgentMessage(agentApprovalResultMessage(operation, body));
