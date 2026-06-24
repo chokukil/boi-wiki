@@ -2686,6 +2686,15 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert "<pre class=\"markdown-body\">" not in response.text
 
 
+def test_doc_markdown_tables_preserve_readable_columns(boi_app_module):
+    style = Path("boi_api/app/static/style.css").read_text(encoding="utf-8")
+
+    assert ".rendered-content .table-wrap { overflow-x:auto;" in style
+    assert ".rendered-content .markdown-table { width:max-content; min-width:100%;" in style
+    assert "word-break:keep-all" in style
+    assert ".rendered-content .markdown-table a, .rendered-content .markdown-table code { word-break:break-word; overflow-wrap:anywhere; }" in style
+
+
 def test_index_renders_okf_folder_tree_for_accessible_docs(boi_app_module):
     client = TestClient(boi_app_module.app)
 
