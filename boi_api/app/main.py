@@ -7577,6 +7577,11 @@ def agent_doc_ref_from_reference(value: Any) -> str:
         return path.removeprefix("/docs/").strip()
     if text.startswith("boi:"):
         return text.split("#", 1)[0].split("?", 1)[0].strip()
+    normalized_path = path.split("#", 1)[0].split("?", 1)[0].lstrip("/")
+    if normalized_path.startswith(("public/", "team/", "private/")) and (
+        normalized_path.endswith(".md") or find_doc_path_by_ref(normalized_path)
+    ):
+        return normalized_path
     return ""
 
 

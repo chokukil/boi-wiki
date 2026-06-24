@@ -853,7 +853,7 @@ def test_boi_agent_restricted_docs_are_pruned_from_context_and_artifacts(boi_app
 def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     forbidden_id = "boi:private:100002:agent-final-leak"
-    boi_app_module.write_boi(
+    forbidden_doc = boi_app_module.write_boi(
         {
             "okf_version": "0.1",
             "boi_profile_version": "0.1",
@@ -873,6 +873,7 @@ def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_mo
         },
         "# Summary\n\nforbidden private body",
     )
+    forbidden_uri = forbidden_doc["uri"]
 
     class LeakyNativeAgent:
         def __init__(self, *_args, **_kwargs):
@@ -881,9 +882,13 @@ def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_mo
         def run(self, *_args, **_kwargs):
             return {
                 "ok": True,
-                "answer_markdown": f"보면 안 되는 링크: [private](/docs/{forbidden_id}?employee_id=100001)",
+                "answer_markdown": (
+                    f"보면 안 되는 링크: [private](/docs/{forbidden_id}?employee_id=100001) "
+                    f"그리고 [private md]({forbidden_uri})"
+                ),
                 "links": [
                     {"label": "forbidden", "url": f"/docs/{forbidden_id}?employee_id=100001", "kind": "boi"},
+                    {"label": "forbidden-md", "url": forbidden_uri, "kind": "boi"},
                     {"label": "public", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001", "kind": "boi"},
                 ],
                 "citations": [{"label": "forbidden", "ref": forbidden_id, "url": f"/docs/{forbidden_id}?employee_id=100001"}],
@@ -892,6 +897,7 @@ def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_mo
                         "type": "gap_table",
                         "data": [
                             {"name": "forbidden", "url": f"/docs/{forbidden_id}?employee_id=100001"},
+                            {"name": "forbidden-md", "url": forbidden_uri},
                             {"name": "public", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"},
                         ],
                     }
@@ -933,6 +939,7 @@ def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_mo
         ensure_ascii=False,
     )
     assert forbidden_id not in dumped
+    assert forbidden_uri not in dumped
     assert "agent_final_reference_acl" in body["guardrails_applied"]
     assert body["redacted_count"] >= 1
     assert any("equipment-abnormal-response" in str(link.get("url") or "") for link in body["links"])
