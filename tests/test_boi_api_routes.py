@@ -4,6 +4,8 @@ import json
 import hashlib
 from pathlib import Path
 import re
+import shutil
+import subprocess
 from urllib.parse import quote, unquote
 
 from fastapi.testclient import TestClient
@@ -1022,6 +1024,90 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert ".boi-agent-message strong { display:block;" not in style
     assert "table-layout:fixed" in style
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
+
+
+def test_pet_agent_markdown_renderer_executes_core_gfm_cases(boi_app_module):
+    if not shutil.which("node"):
+        pytest.skip("node is required for Pet Agent Markdown renderer smoke")
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync("boi_api/app/static/pet_agent.js", "utf8");
+const root = {
+  dataset: {},
+  style: { setProperty() {}, removeProperty() {} },
+  querySelector() { return null; },
+  querySelectorAll() { return []; },
+  addEventListener() {},
+  dispatchEvent() {},
+  innerHTML: "",
+};
+global.document = { getElementById() { return root; }, title: "Test", addEventListener() {} };
+global.window = { getSelection() { return { toString() { return ""; } }; }, addEventListener() {}, visualViewport: null };
+global.location = { search: "?employee_id=100001", pathname: "/", origin: "http://localhost:8000" };
+global.URLSearchParams = URLSearchParams;
+global.URL = URL;
+global.sessionStorage = { getItem() { return null; }, setItem() {} };
+global.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ suggestions: [], items: [] }) });
+global.CustomEvent = function CustomEvent(name, opts) { return { name, ...opts }; };
+global.CSS = { escape: (value) => String(value) };
+vm.runInThisContext(code);
+
+const markdown = [
+  "## Source Mapping",
+  "",
+  "| Stage | Evidence | Link |",
+  "| --- | --- | --- |",
+  "| 이상 감지 | `equipment.alarm.raised.v1` and trend | [SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001) |",
+  "",
+  "- **확인**: 링크와 굵게",
+  "1. 첫 번째",
+  "",
+  "```mermaid",
+  "flowchart TD",
+  "  A[Start] --> B[End]",
+  "```",
+].join("\n");
+const mermaidSource = "flowchart TD\n  A[Start] --> B[End]";
+const html = window.BoiAgentMarkdownDebug.renderMarkdownLite(markdown, {
+  skipMermaidSources: new Set([window.BoiAgentMarkdownDebug.normalizeMermaidSource?.(mermaidSource) || mermaidSource.replace(/\s+/g, " ").trim()]),
+});
+const tableHtml = window.BoiAgentMarkdownDebug.renderMarkdownTable([
+  "| Stage | Evidence | Link |",
+  "| --- | --- | --- |",
+  "| 이상 감지 | `equipment.alarm.raised.v1` | [SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001) |",
+]);
+console.log(JSON.stringify({
+  html,
+  tableHtml,
+  hasTable: html.includes("boi-agent-table-wrap"),
+  hasCode: html.includes("<code>equipment.alarm.raised.v1</code>"),
+  hasLink: html.includes('href="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"'),
+  hasStrong: html.includes("<strong>확인</strong>"),
+  hasOrderedList: html.includes("<ol><li>첫 번째</li></ol>"),
+  skippedMermaid: !html.includes("mermaid-diagram") && !html.includes("```mermaid"),
+  rawTableSeparatorLeaked: html.includes("| --- |"),
+  tableKeepsLink: tableHtml.includes("<a href="),
+}));
+"""
+    result = subprocess.run(
+        ["node"],
+        input=script,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        check=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload["hasTable"]
+    assert payload["hasCode"]
+    assert payload["hasLink"]
+    assert payload["hasStrong"]
+    assert payload["hasOrderedList"]
+    assert payload["skippedMermaid"]
+    assert not payload["rawTableSeparatorLeaked"]
+    assert payload["tableKeepsLink"]
 
 
 def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):
