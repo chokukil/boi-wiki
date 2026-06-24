@@ -213,6 +213,9 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-tabs { display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; padding:8px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
 .boi-agent-tabs button { min-height:36px; border:1px solid transparent; border-radius:999px; background:transparent; color:#334155; font-size:13px; font-weight:900; }
 .boi-agent-tabs button.active { border-color:#bfdbfe; background:#fff; color:#111827; box-shadow:0 4px 12px rgba(37,99,235,.12); }
+.boi-agent-live-status { display:flex; align-items:center; gap:8px; padding:7px 14px; border-bottom:1px solid #dbeafe; background:#eff6ff; color:#1e3a8a; font-size:12px; line-height:1.35; }
+.boi-agent-live-status strong { flex:0 0 auto; font-weight:900; }
+.boi-agent-live-status span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .boi-agent-content { overflow-y:auto; overflow-x:hidden; padding:14px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); }
 .boi-agent-context-card { margin-bottom:12px; padding:11px 12px; border:1px solid #dbeafe; border-radius:10px; background:#eff6ff; }
 .boi-agent-context-card strong { display:block; margin-bottom:3px; color:#1e3a8a; font-size:12px; }

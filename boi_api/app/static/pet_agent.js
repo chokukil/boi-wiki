@@ -28,6 +28,7 @@
       draft: "",
       busyTask: "",
       sending: false,
+      currentStatus: "",
       scrollTop: 0,
       viewer: null,
     };
@@ -36,7 +37,7 @@
   function loadState() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || "{}");
-      return { ...defaultState(), ...saved, suggestions: [], inbox: [], busyTask: "", sending: false, viewer: null };
+      return { ...defaultState(), ...saved, suggestions: [], inbox: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
     } catch (_error) {
       return defaultState();
     }
@@ -585,11 +586,12 @@
   function render() {
     syncViewportPosition();
     persistState();
+    const launcherStatus = state.sending ? state.currentStatus || "Agent가 확인 중입니다" : (state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요");
     root.innerHTML = `
       <button class="boi-agent-launcher" type="button" aria-expanded="${state.open ? "true" : "false"}">
         <span class="boi-agent-launcher-copy">
           <span>BoI Agent</span>
-          <small>${state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요"}</small>
+          <small aria-live="polite">${escapeHtml(launcherStatus)}</small>
         </span>
         <img class="boi-agent-pet" src="/static/assets/boi-agent-pet.png" alt="" loading="lazy" decoding="async">
         ${state.inbox.length ? `<strong aria-label="Open action count">${state.inbox.length}</strong>` : ""}
@@ -612,6 +614,7 @@
         <nav class="boi-agent-tabs" aria-label="BoI Agent tabs">
           ${["agent", "inbox"].map((tab) => `<button type="button" data-tab="${tab}" class="${state.tab === tab ? "active" : ""}">${tabLabel(tab)}</button>`).join("")}
         </nav>
+        ${state.sending && state.currentStatus ? `<div class="boi-agent-live-status" aria-live="polite"><strong>진행 상태</strong><span>${escapeHtml(state.currentStatus)}</span></div>` : ""}
         <div class="boi-agent-content">${renderTab()}</div>
       </section>
       ${renderViewer()}
@@ -733,6 +736,7 @@
       state.messages = [];
       state.draft = "";
       state.sending = false;
+      state.currentStatus = "";
       state.scrollTop = 0;
       render();
     });
@@ -924,6 +928,7 @@
     let finalBody = null;
     state.draft = "";
     state.sending = true;
+    state.currentStatus = "현재 요청을 시작했습니다.";
     state.messages.push({ role: "user", text: question });
     const pendingIndex = state.messages.push({ role: "assistant", text: "확인 중입니다...", progressText: "현재 요청을 시작했습니다." }) - 1;
     state.open = true;
@@ -946,6 +951,7 @@
         status(payload) {
           const message = payload.message || "확인 중입니다.";
           statusLines.push(message);
+          state.currentStatus = message;
           state.messages[pendingIndex] = {
             ...state.messages[pendingIndex],
             text: streamedText || message,
@@ -988,15 +994,18 @@
         },
         artifacts: body.artifacts || [],
       };
+      state.currentStatus = "";
       if (body.suggested_questions) state.suggestions = body.suggested_questions;
     }).catch((error) => {
       state.messages[pendingIndex] = {
         role: "assistant",
         text: error.name === "AbortError" ? "생성을 중지했습니다." : `Agent 호출에 실패했습니다: ${error.message}`,
       };
+      state.currentStatus = "";
     }).finally(() => {
       if (activeRequest === controller) activeRequest = null;
       state.sending = false;
+      state.currentStatus = "";
       render();
     });
   }

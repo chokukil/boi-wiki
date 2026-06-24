@@ -7521,15 +7521,15 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
 async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> StreamingResponse:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
 
-    status_messages = [
-        "현재 화면 맥락을 확인하고 있습니다.",
-        "관련 BoI 문서와 Event/Action을 찾고 있습니다.",
-        "답변과 근거 링크를 정리하고 있습니다.",
-        "시간이 조금 더 걸리고 있어 계속 확인 중입니다.",
+    status_steps = [
+        {"stage": "page_context", "message": "현재 화면 맥락을 확인하고 있습니다."},
+        {"stage": "retrieval", "message": "관련 BoI 문서와 Event/Action을 찾고 있습니다."},
+        {"stage": "compose", "message": "답변과 근거 링크를 정리하고 있습니다."},
+        {"stage": "waiting", "message": "시간이 조금 더 걸리고 있어 계속 확인 중입니다."},
     ]
 
     async def stream_events():
-        yield agent_sse_event("status", {"message": status_messages[0], "elapsed_ms": 0})
+        yield agent_sse_event("status", {**status_steps[0], "elapsed_ms": 0})
         started_at = time.perf_counter()
 
         def run_agent() -> dict[str, Any]:
@@ -7544,9 +7544,9 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     break
                 except asyncio.TimeoutError:
                     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                    message = status_messages[min(status_index, len(status_messages) - 1)]
+                    step = status_steps[min(status_index, len(status_steps) - 1)]
                     status_index += 1
-                    yield agent_sse_event("status", {"message": message, "elapsed_ms": elapsed_ms})
+                    yield agent_sse_event("status", {**step, "elapsed_ms": elapsed_ms})
 
             display_markdown = str(response.get("display_markdown") or response.get("answer_markdown") or "")
             for chunk in iter_agent_answer_chunks(display_markdown):

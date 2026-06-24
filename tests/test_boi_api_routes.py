@@ -1125,6 +1125,8 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert "answer_delta" in event_names
     assert event_names[-1] == "final"
     assert any("현재 화면" in json.loads(item["data"])["message"] for item in events if item["event"] == "status")
+    status_payloads = [json.loads(item["data"]) for item in events if item["event"] == "status"]
+    assert all(item.get("stage") for item in status_payloads)
     assert "현재 페이지를 확인했습니다" in "".join(json.loads(item["data"])["delta"] for item in events if item["event"] == "answer_delta")
     final = json.loads(events[-1]["data"])
     assert final["answer_html"]
@@ -1255,6 +1257,10 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "answer_delta" in script
     assert "statusLines" in script
     assert "readAgentStream" in script
+    assert "currentStatus" in script
+    assert "state.currentStatus" in script
+    assert "진행 상태" in script
+    assert "state.sending ? state.currentStatus" in script
     assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
