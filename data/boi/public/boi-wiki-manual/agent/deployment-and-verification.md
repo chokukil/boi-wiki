@@ -82,7 +82,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄과 SSE route plan은 LLM stream planner가 생성해야 한다. 실패 시 정해진 대체 문구를 쓰지 않고 장애로 표시한다. |
 | `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible stream planner endpoint. 이름은 호환상 `STATUS`를 유지하지만 SSE에서는 route/status plan을 함께 만든다. |
 | `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |
-| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `12` | stream plan 생성 timeout. 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. |
+| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `30` | stream plan 생성 timeout. 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. NAS와 로컬 LLM endpoint 부하를 고려해 Router보다 길게 둔다. |
 | `BOI_AGENT_STATUS_MAX_TOKENS` | `4096` | Gemma 계열 모델이 짧은 status 작업에도 reasoning token을 먼저 쓸 수 있어 final JSON 확보를 위해 Router보다 넉넉히 둔다. `finish_reason=length`로 JSON content가 비면 Agent streaming 장애로 처리된다. |
 
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
