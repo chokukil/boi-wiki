@@ -98,7 +98,7 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 | `okf_graph_doc` | 특정 문서 outgoing/backlink 조회 |
 | `actions_search` / `action_get` | multi-action catalog 탐색 |
 | `action_invoke` | Action Gateway 경유 실행. 실제 실행(`dry_run=false`)은 `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
-| `workflow_start` / `workflow_status` | SOP 기반 workflow 실행/상태 확인 |
+| `workflow_start` / `workflow_status` | SOP 기반 workflow 실행/상태 확인. `workflow_start`는 entry event를 발행하므로 `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
 | `source_preview` / `doc_body_preview` | source/body 수정 전 preview와 validation feedback |
 | `source_apply` / `doc_body_apply` | 사용자 승인된 source/body 수정 apply와 자동 commit |
 | `promotion_submit` | 사용자 승인된 Team/Public promotion candidate 원격 검증/즉시 게시. `user_confirmed=true`가 없으면 MCP 단계에서 차단 |

@@ -253,11 +253,15 @@ async def workflow_start(
     employee_id: str = DEFAULT_EMPLOYEE_ID,
     payload: dict[str, Any] | None = None,
     trace_id: str | None = None,
+    user_confirmed: bool = False,
 ) -> dict[str, Any]:
     """Start a config-driven workflow from SOP metadata."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before starting a workflow")
     body = dict(payload or {})
     if trace_id:
         body["trace_id"] = trace_id
+    body["user_confirmed"] = user_confirmed
     return await api_post(f"/api/workflows/{workflow_key}/start", employee_id=employee_id, payload=body)
 
 

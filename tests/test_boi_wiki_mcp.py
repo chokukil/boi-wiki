@@ -371,6 +371,41 @@ def test_mcp_action_invoke_requires_confirmation_for_real_execution(mcp_module, 
     assert calls[1]["payload"]["user_confirmed"] is True
 
 
+def test_mcp_workflow_start_requires_user_confirmation(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"path": path, **kwargs})
+        return {"ok": True, "trace_id": "trace-confirmed"}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(
+            mcp_module.workflow_start(
+                workflow_key="equipment-anomaly",
+                employee_id="100001",
+                payload={"equipment_id": "ETCH-VM-01"},
+                user_confirmed=False,
+            )
+        )
+    assert calls == []
+
+    result = asyncio.run(
+        mcp_module.workflow_start(
+            workflow_key="equipment-anomaly",
+            employee_id="100001",
+            payload={"equipment_id": "ETCH-VM-01"},
+            user_confirmed=True,
+        )
+    )
+
+    assert result["trace_id"] == "trace-confirmed"
+    assert calls[0]["path"] == "/api/workflows/equipment-anomaly/start"
+    assert calls[0]["payload"]["equipment_id"] == "ETCH-VM-01"
+    assert calls[0]["payload"]["user_confirmed"] is True
+
+
 def test_mcp_promotion_submit_requires_user_confirmation(mcp_module, monkeypatch):
     calls: list[dict[str, object]] = []
 
