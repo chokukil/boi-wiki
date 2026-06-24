@@ -43,6 +43,7 @@ ALLOWED_AGENT_INTENTS = {
 }
 DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
 MUTATION_AGENT_INTENTS = {"manual_complete", "approval", "event_publish", "action_invoke", "workflow_start", "event_type_draft"}
+NATIVE_ARTIFACT_AUTHORITATIVE_INTENTS = {"diagram", "gap_check", "inbox"}
 
 
 def normalize_native_route(value: str, fallback: str = "fast") -> str:
@@ -486,6 +487,10 @@ class NativeBoiAgent:
 
     def _compose_with_llm_if_enabled(self, state: JsonDict) -> None:
         if state.get("stop_reason") or state.get("route_name") in {"manual_handoff", "approval_required"}:
+            return
+        if state.get("intent") in NATIVE_ARTIFACT_AUTHORITATIVE_INTENTS and state.get("artifacts"):
+            state["composer_backend"] = "native_artifact"
+            state["composer_skipped_reason"] = "typed_artifact_is_authoritative"
             return
         if not self.config.composer_enabled:
             state["composer_backend"] = "deterministic"

@@ -497,6 +497,35 @@ def test_boi_agent_native_uses_llm_composer_when_enabled(boi_app_module, monkeyp
     assert body["suggested_questions"] == ["이 SOP의 부족한 Action Spec을 찾아줘."]
 
 
+def test_boi_agent_diagram_uses_native_artifact_without_llm_composer(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def unexpected_llm(*args, **kwargs):
+        raise AssertionError("diagram artifact path should not call the LLM answer composer")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", unexpected_llm)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘",
+            "mode": "deep",
+            "intent": "diagram",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "diagram"
+    assert body["context_summary"]["composer_backend"] == "native_artifact"
+    assert body["artifacts"][0]["type"] == "mermaid"
+    assert "```mermaid" not in body["display_markdown"]
+
+
 def test_boi_agent_required_llm_composer_failure_is_service_error(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
