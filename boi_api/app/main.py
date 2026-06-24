@@ -6666,8 +6666,11 @@ def parse_router_payload(text: str) -> dict[str, Any] | None:
 
 def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
     parsed = parse_langflow_json_text(text)
-    if isinstance(parsed, dict) and str(parsed.get("answer_markdown") or "").strip():
-        return parsed
+    if isinstance(parsed, dict):
+        answer = str(parsed.get("answer_markdown") or parsed.get("answer") or parsed.get("message") or parsed.get("final_answer") or "").strip()
+        if answer:
+            parsed["answer_markdown"] = answer
+            return parsed
     decoder = json.JSONDecoder()
     stripped = text.strip()
     for index, char in enumerate(stripped):
@@ -6677,8 +6680,13 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
             payload, _end = decoder.raw_decode(stripped[index:])
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and str(payload.get("answer_markdown") or "").strip():
-            return payload
+        if isinstance(payload, dict):
+            answer = str(payload.get("answer_markdown") or payload.get("answer") or payload.get("message") or payload.get("final_answer") or "").strip()
+            if answer:
+                payload["answer_markdown"] = answer
+                return payload
+    if stripped and not stripped.startswith("{") and not stripped.startswith("["):
+        return {"answer_markdown": stripped}
     return None
 
 
