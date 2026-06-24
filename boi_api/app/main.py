@@ -8169,7 +8169,7 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
 
     async def stream_events():
         try:
-            stream_plan = agent_stream_plan(req, employee_id)
+            stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)
             status_steps = stream_plan["status_steps"]
             planned_route = stream_plan["route"]
         except BoiAgentStatusUnavailable as exc:

@@ -2148,6 +2148,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert ".boi-agent-answer-viewer .boi-agent-answer" in style
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
 
+    source = (boi_app_module.APP_DIR / "main.py").read_text(encoding="utf-8")
+    assert "stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)" in source
+
 
 def test_pet_agent_markdown_renderer_executes_core_gfm_cases(boi_app_module):
     if not shutil.which("node"):
