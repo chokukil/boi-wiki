@@ -67,6 +67,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | Env | Default | Meaning |
 |---|---|---|
 | `BOI_AGENT_BACKEND` | `native` | `native`, `hybrid`, `langflow` |
+| `BOI_AGENT_LANGGRAPH_REQUIRED` | `1` | Native Agent orchestration은 LangGraph가 필수다. LangGraph import나 graph 실행이 실패하면 sequential fallback으로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. |
 | `BOI_AGENT_NATIVE_MAX_TOOL_LOOPS` | `5` | per-run bounded tool loop |
 | `BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS` | `8` | per-tool timeout target |
 | `BOI_AGENT_CACHE_WARMUP_ON_STARTUP` | `1` | API 시작 직후 문서, catalog, ontology search index를 백그라운드로 예열해 첫 Agent 질문 지연을 줄인다. LLM은 호출하지 않는다. |

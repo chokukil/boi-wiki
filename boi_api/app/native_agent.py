@@ -17,6 +17,10 @@ except Exception:  # pragma: no cover - fallback is exercised when dependency is
 LANGGRAPH_AVAILABLE = StateGraph is not None
 
 
+class NativeAgentRuntimeUnavailable(RuntimeError):
+    """Raised when the required Native Agent orchestration runtime is unavailable."""
+
+
 JsonDict = dict[str, Any]
 
 ALLOWED_AGENT_ROUTES = {"fast", "deep", "inbox", "manual_handoff", "approval_required"}
@@ -180,6 +184,7 @@ class NativeAgentConfig:
     tool_timeout_seconds: float = 8.0
     build_revision: str = "unknown"
     llm_enabled: bool = False
+    require_langgraph: bool = True
     progress_callback: Callable[[JsonDict], None] | None = None
 
 
@@ -239,6 +244,8 @@ class NativeBoiAgent:
         }
         if StateGraph is not None:
             return self._run_langgraph(state)
+        if self.config.require_langgraph:
+            raise NativeAgentRuntimeUnavailable("LangGraph runtime is required but unavailable")
         return self._run_sequential(state)
 
     def _run_sequential(self, state: JsonDict) -> JsonDict:
@@ -286,6 +293,8 @@ class NativeBoiAgent:
             final_state["langgraph_available"] = True
             return self._response(final_state)
         except Exception as exc:  # pragma: no cover - depends on installed LangGraph version.
+            if self.config.require_langgraph:
+                raise NativeAgentRuntimeUnavailable(f"LangGraph runtime failed: {exc}") from exc
             state["langgraph_available"] = False
             state["langgraph_error"] = repr(exc)
             return self._run_sequential(state)

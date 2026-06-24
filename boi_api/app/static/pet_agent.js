@@ -146,6 +146,7 @@
     const labels = {
       status_generation_failed: "진행 상태를 생성하지 못했습니다.",
       boi_agent_router_unavailable: "질문 의도 판단 모델에 연결하지 못했습니다.",
+      native_agent_runtime_unavailable: "Native Agent 실행 엔진을 사용할 수 없습니다.",
       langflow_boi_agent_unavailable: "Langflow Agent backend에 연결하지 못했습니다.",
       agent_stream_error: "Agent 스트리밍 처리 중 오류가 발생했습니다.",
     };

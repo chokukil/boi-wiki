@@ -47,7 +47,7 @@ from .workflow_materializer import (
     render_stage_execution_body,
 )
 from .simulation_agent import build_simulation_agent_result
-from .native_agent import LANGGRAPH_AVAILABLE, NativeAgentConfig, NativeAgentTools, NativeBoiAgent
+from .native_agent import LANGGRAPH_AVAILABLE, NativeAgentConfig, NativeAgentRuntimeUnavailable, NativeAgentTools, NativeBoiAgent
 from .access_policy import CLASSIFICATION_POLICY_VERSION, AccessPolicyDecision, doc_access_policy
 from .auth import (
     AuthError,
@@ -140,6 +140,7 @@ BOI_AGENT_STATUS_REQUIRED = os.getenv("BOI_AGENT_STATUS_REQUIRED", "1").strip().
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
+BOI_AGENT_LANGGRAPH_REQUIRED = os.getenv("BOI_AGENT_LANGGRAPH_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_AGENT_STREAM_HEARTBEAT_SECONDS = float(os.getenv("BOI_AGENT_STREAM_HEARTBEAT_SECONDS", "2"))
 BOI_AGENT_CACHE_WARMUP_ON_STARTUP = os.getenv("BOI_AGENT_CACHE_WARMUP_ON_STARTUP", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
@@ -5303,6 +5304,11 @@ async def runtime_config() -> dict[str, Any]:
             },
             "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
+            "langgraph": {
+                "available": LANGGRAPH_AVAILABLE,
+                "required": BOI_AGENT_LANGGRAPH_REQUIRED,
+                "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "unavailable",
+            },
             "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
             "cache_warmup": agent_cache_warmup_state(),
         },
@@ -7346,6 +7352,7 @@ def call_native_boi_agent(
             tool_timeout_seconds=BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             build_revision=BOI_BUILD_REVISION,
             llm_enabled=BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first",
+            require_langgraph=BOI_AGENT_LANGGRAPH_REQUIRED,
             progress_callback=progress_callback,
         ),
     )
@@ -8079,6 +8086,8 @@ def agent_chat_response(
     if BOI_AGENT_BACKEND in {"native", "hybrid"}:
         try:
             return call_native_boi_agent(req, employee_id, route, started_at, progress_callback=progress_callback)
+        except NativeAgentRuntimeUnavailable:
+            raise
         except Exception:
             if BOI_AGENT_BACKEND == "hybrid":
                 return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
@@ -8112,6 +8121,17 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
                 "message": str(exc),
                 "model": BOI_AGENT_ROUTER_MODEL,
                 "required": BOI_AGENT_ROUTER_REQUIRED,
+            },
+        ) from exc
+    except NativeAgentRuntimeUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "native_agent_runtime_unavailable",
+                "message": str(exc),
+                "langgraph_available": LANGGRAPH_AVAILABLE,
+                "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
             },
         ) from exc
     except LangflowBoiAgentUnavailable as exc:
@@ -8155,6 +8175,17 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     "message": str(exc),
                     "model": BOI_AGENT_ROUTER_MODEL,
                     "required": BOI_AGENT_ROUTER_REQUIRED,
+                },
+            )
+            return
+        except NativeAgentRuntimeUnavailable as exc:
+            yield agent_sse_event(
+                "error",
+                {
+                    "status": "native_agent_runtime_unavailable",
+                    "message": str(exc),
+                    "langgraph_available": LANGGRAPH_AVAILABLE,
+                    "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
                 },
             )
             return
@@ -8249,6 +8280,16 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     "required": BOI_AGENT_ROUTER_REQUIRED,
                 },
             )
+        except NativeAgentRuntimeUnavailable as exc:
+            yield agent_sse_event(
+                "error",
+                {
+                    "status": "native_agent_runtime_unavailable",
+                    "message": str(exc),
+                    "langgraph_available": LANGGRAPH_AVAILABLE,
+                    "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
+                },
+            )
         except Exception as exc:
             yield agent_sse_event("error", {"status": "agent_stream_error", "message": str(exc)})
         finally:
@@ -8313,7 +8354,9 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         ],
         "native_agent": {
             "enabled": BOI_AGENT_BACKEND in {"native", "hybrid"},
-            "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "sequential-runtime",
+            "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "unavailable",
+            "langgraph_available": LANGGRAPH_AVAILABLE,
+            "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
             "max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             "cache_warmup": agent_cache_warmup_state(),

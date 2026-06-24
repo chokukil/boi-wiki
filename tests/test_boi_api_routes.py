@@ -138,6 +138,8 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert "api_key" not in body["boi_agent"]["router"]
     assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 12
     assert body["boi_agent"]["status_writer"]["max_tokens"] == 1536
+    assert body["boi_agent"]["langgraph"]["required"] is True
+    assert body["boi_agent"]["langgraph"]["runtime"] in {"LangGraph", "unavailable"}
     assert body["boi_agent"]["cache_warmup"]["enabled"] is True
     assert body["boi_agent"]["cache_warmup"]["status"] in {"not_started", "running", "completed", "failed", "disabled"}
 
@@ -174,6 +176,8 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["streaming"]["events"] == ["status", "answer_delta", "final", "error"]
     assert body["status_writer"]["required"] is True
     assert body["status_writer"]["model"]
+    assert body["native_agent"]["langgraph_required"] is True
+    assert body["native_agent"]["runtime"] in {"LangGraph", "unavailable"}
     assert "progressive response streaming" in body["features"]
 
 
@@ -452,6 +456,103 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert isinstance(body["tool_trace"], list)
     assert "설비" in body["answer_markdown"]
     assert isinstance(body["links"], list)
+
+
+def test_boi_agent_chat_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):
+    from boi_api.app import native_agent
+
+    client = TestClient(boi_app_module.app)
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_LANGGRAPH_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "LANGGRAPH_AVAILABLE", False)
+    monkeypatch.setattr(native_agent, "StateGraph", None, raising=False)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "설비 이상 대응 SOP와 Action을 찾아줘",
+            "mode": "deep",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "native_agent_runtime_unavailable"
+    assert detail["langgraph_required"] is True
+
+
+def test_boi_agent_hybrid_does_not_hide_langgraph_required_failure(boi_app_module, monkeypatch):
+    from boi_api.app import native_agent
+
+    client = TestClient(boi_app_module.app)
+
+    def fail_langflow(*args, **kwargs):
+        raise AssertionError("LangGraph required failure must not fall back to Langflow")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "hybrid")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_LANGGRAPH_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "LANGGRAPH_AVAILABLE", False)
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
+    monkeypatch.setattr(native_agent, "StateGraph", None, raising=False)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "설비 이상 대응 SOP와 Action을 찾아줘",
+            "mode": "deep",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["status"] == "native_agent_runtime_unavailable"
+
+
+def test_boi_agent_stream_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):
+    from boi_api.app import native_agent
+
+    client = TestClient(boi_app_module.app)
+    llm_steps = [
+        {"stage": "page_context", "message": "현재 페이지와 권한을 확인하고 있습니다.", "source": "llm_status"},
+        {"stage": "intent", "message": "질문의 의도를 판단하고 있습니다.", "source": "llm_status"},
+        {"stage": "retrieval", "message": "필요한 근거를 찾고 있습니다.", "source": "llm_status"},
+        {"stage": "tool_loop", "message": "관련 도구 호출을 준비하고 있습니다.", "source": "llm_status"},
+        {"stage": "compose", "message": "답변을 구성하고 있습니다.", "source": "llm_status"},
+        {"stage": "answer_stream", "message": "답변을 화면에 보여주고 있습니다.", "source": "llm_status"},
+        {"stage": "waiting", "message": "조금 더 확인하고 있습니다.", "source": "llm_status"},
+    ]
+    planned_route = {
+        "route": "deep",
+        "confidence": 0.93,
+        "intent": "diagram",
+        "reason": "test stream plan",
+        "requires_mutation": False,
+        "requires_deep_reasoning": True,
+        "requires_langflow": False,
+        "router_backend": "llm",
+    }
+
+    monkeypatch.setattr(boi_app_module, "agent_stream_plan", lambda req, employee_id: {"status_steps": llm_steps, "route": planned_route})
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_LANGGRAPH_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "LANGGRAPH_AVAILABLE", False)
+    monkeypatch.setattr(native_agent, "StateGraph", None, raising=False)
+
+    with client.stream(
+        "POST",
+        "/api/agents/boi-wiki/chat/stream?employee_id=100001",
+        json={"question": "이 SOP를 Mermaid로 보여줘", "current_url": "/docs/boi:public:sop:equipment-abnormal-response"},
+    ) as response:
+        assert response.status_code == 200
+        raw = "".join(response.iter_text())
+
+    events = parse_sse_events(raw)
+    payloads = [json.loads(item["data"]) for item in events if item["event"] == "error"]
+    assert payloads
+    assert payloads[-1]["status"] == "native_agent_runtime_unavailable"
+    assert payloads[-1]["langgraph_required"] is True
 
 
 def test_rbac_me_and_doc_access_guard_private_boi(boi_app_module):
