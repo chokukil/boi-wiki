@@ -2073,6 +2073,12 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "state.currentStatus" in script
     assert "진행 상태" in script
     assert "state.sending ? state.currentStatus" in script
+    assert "let pageUnloading = false" in script
+    assert 'window.addEventListener("pagehide"' in script
+    assert "if (pageUnloading) return;" in script
+    assert "state.messages.splice(pendingIndex, 1)" in script
+    assert "text: streamedText," in script
+    assert '${answerHtml ? `<div class="boi-agent-answer"' in script
     assert "state.messages.slice(-20)" in script
     assert "content.scrollTop = content.scrollHeight" in script
     assert "tool_trace: body.tool_trace || []" in script

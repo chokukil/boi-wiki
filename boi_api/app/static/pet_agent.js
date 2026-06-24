@@ -8,6 +8,7 @@
   const storageKey = `boiAgent.v5.${employeeId}`;
   let activeRequest = null;
   let restoreScrollOnce = true;
+  let pageUnloading = false;
 
   function currentUrl() {
     return root.dataset.currentUrl || `${location.pathname}${location.search}`;
@@ -707,7 +708,7 @@
           ${renderMessageMeta(message)}
           ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
           ${renderStatusTrail(message)}
-          <div class="boi-agent-answer" data-answer-id="answer-${index}">${answerHtml}</div>
+          ${answerHtml ? `<div class="boi-agent-answer" data-answer-id="answer-${index}">${answerHtml}</div>` : ""}
           ${message.role === "assistant" && answerHtml ? `<div class="boi-agent-answer-actions"><button type="button" data-open-answer="answer-${index}">답변 크게 보기</button></div>` : ""}
           ${renderRunSummary(message)}
           ${renderArtifacts(message, index)}
@@ -1116,7 +1117,7 @@
           state.currentStatus = message;
           state.messages[pendingIndex] = {
             ...state.messages[pendingIndex],
-            text: streamedText || message,
+            text: streamedText,
             progressText: message,
             statusLines: statusLines.slice(-6),
           };
@@ -1162,6 +1163,16 @@
       state.currentStatus = "";
       if (body.suggested_questions) state.suggestions = body.suggested_questions;
     }).catch((error) => {
+      if (pageUnloading) {
+        const pending = state.messages[pendingIndex] || {};
+        if (pending.role === "assistant" && !pending.text && !pending.rawText && !pending.artifacts?.length) {
+          state.messages.splice(pendingIndex, 1);
+        }
+        state.sending = false;
+        state.currentStatus = "";
+        persistState();
+        return;
+      }
       const message = String(error.message || "");
       state.messages[pendingIndex] = {
         role: "assistant",
@@ -1169,6 +1180,7 @@
       };
       state.currentStatus = "";
     }).finally(() => {
+      if (pageUnloading) return;
       if (activeRequest === controller) activeRequest = null;
       state.sending = false;
       state.currentStatus = "";
@@ -1194,6 +1206,11 @@
   window.visualViewport?.addEventListener("resize", syncViewportPosition);
   window.visualViewport?.addEventListener("scroll", syncViewportPosition);
   window.addEventListener("resize", syncViewportPosition);
+  window.addEventListener("pagehide", () => {
+    pageUnloading = true;
+    if (activeRequest) activeRequest.abort();
+    persistState();
+  });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.viewer) {
       state.viewer = null;
