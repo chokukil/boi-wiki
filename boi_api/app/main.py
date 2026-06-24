@@ -7760,7 +7760,7 @@ def agent_chat_response(
 async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
     try:
-        return enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id)
+        return await asyncio.to_thread(lambda: enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id))
     except LangflowBoiAgentUnavailable as exc:
         raise HTTPException(
             status_code=503,

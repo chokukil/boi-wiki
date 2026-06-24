@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import threading
 import time
 from urllib.parse import quote, unquote
 
@@ -1319,6 +1320,41 @@ def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_mo
     assert status_payloads[0]["stage"] == "page_context"
     assert any(item["stage"] != "page_context" for item in status_payloads[1:])
     assert events[-1]["event"] == "final"
+
+
+def test_boi_agent_chat_endpoint_offloads_agent_work(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    worker_threads: list[str] = []
+
+    def fake_agent_response(req, employee_id: str, progress_callback=None):
+        worker_threads.append(threading.current_thread().name)
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "answer_markdown": "일반 API 응답입니다.",
+            "links": [],
+            "citations": [],
+            "suggested_questions": [],
+            "artifacts": [],
+            "context_summary": {"intent": "page_qa"},
+            "route": "fast",
+            "intent": "page_qa",
+            "router_backend": "rules",
+            "used_backend": "native_langgraph",
+            "latency_ms": 10,
+        }
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_agent_response)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer_html"]
+    assert worker_threads
+    assert worker_threads[0] != threading.current_thread().name
 
 
 def test_agent_memory_blocks_sensitive_values_and_saves_private_memory(boi_app_module):
