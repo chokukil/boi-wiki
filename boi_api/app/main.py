@@ -6825,6 +6825,7 @@ def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dic
     )
     latency_ms = int((time.perf_counter() - started_at) * 1000)
     router_confidence = response.get("router_confidence")
+    final_reference_redactions = sanitize_agent_final_references(response, employee_id)
     response.update(
         {
             "employee_id": employee_id,
@@ -6832,12 +6833,113 @@ def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dic
             "router_backend": response.get("router_backend") or route.get("router_backend"),
             "router_confidence": router_confidence if router_confidence is not None else route.get("confidence"),
             "access_summary": context_pack.get("access_summary") or {},
-            "guardrails_applied": sorted(set([*(response.get("guardrails_applied") or []), "acl_policy", "classification", "mutation_confirmation"])),
-            "redacted_count": max(int(response.get("redacted_count") or 0), count_agent_redactions(response), len((context_pack.get("access_summary") or {}).get("redactions") or [])),
+            "guardrails_applied": sorted(set([*(response.get("guardrails_applied") or []), "acl_policy", "classification", "mutation_confirmation", "agent_final_reference_acl"])),
+            "redacted_count": max(int(response.get("redacted_count") or 0), count_agent_redactions(response), len((context_pack.get("access_summary") or {}).get("redactions") or [])) + final_reference_redactions,
         }
     )
     response.setdefault("context_summary", {})["latency_ms"] = latency_ms
     return response
+
+
+def agent_doc_ref_from_reference(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = urlsplit(text)
+    except Exception:
+        parsed = None
+    path = unquote(parsed.path if parsed else text)
+    if path.startswith("/docs/"):
+        return path.removeprefix("/docs/").strip()
+    if text.startswith("boi:"):
+        return text.split("#", 1)[0].split("?", 1)[0].strip()
+    return ""
+
+
+def agent_reference_allowed(value: Any, employee_id: str) -> bool:
+    ref = agent_doc_ref_from_reference(value)
+    if not ref:
+        return True
+    doc = find_doc_by_id(ref, employee_id, include_inaccessible=True)
+    if doc:
+        access = access_policy_for_doc(doc, employee_id)
+        return bool(access.can_read and access.can_cite)
+    if ref.startswith("boi:private:"):
+        parts = ref.split(":")
+        return len(parts) >= 3 and parts[2] == employee_id
+    return True
+
+
+def redact_inaccessible_agent_text(value: str, employee_id: str) -> tuple[str, int]:
+    redacted_count = 0
+
+    def replace_markdown_link(match: re.Match[str]) -> str:
+        nonlocal redacted_count
+        label = match.group("label")
+        href = match.group("href")
+        if agent_reference_allowed(href, employee_id):
+            return match.group(0)
+        redacted_count += 1
+        return f"{label} (권한 제한으로 숨김)"
+
+    text = re.sub(
+        r"\[(?P<label>[^\]]+)\]\((?P<href>[^)]+)\)",
+        replace_markdown_link,
+        str(value or ""),
+    )
+
+    def replace_private_ref(match: re.Match[str]) -> str:
+        nonlocal redacted_count
+        ref = match.group(0)
+        if agent_reference_allowed(ref, employee_id):
+            return ref
+        redacted_count += 1
+        return "[권한 제한]"
+
+    text = re.sub(r"boi:private:[0-9]{6,8}:[A-Za-z0-9:_-]+", replace_private_ref, text)
+    return text, redacted_count
+
+
+def sanitize_agent_reference_value(value: Any, employee_id: str) -> tuple[Any, int]:
+    if isinstance(value, dict):
+        redacted_count = 0
+        for key in ("url", "href", "ref", "boi_id", "doc_ref"):
+            if key in value and not agent_reference_allowed(value.get(key), employee_id):
+                return None, 1
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            sanitized_item, item_redactions = sanitize_agent_reference_value(item, employee_id)
+            redacted_count += item_redactions
+            if sanitized_item is not None:
+                sanitized[key] = sanitized_item
+        return sanitized, redacted_count
+    if isinstance(value, list):
+        sanitized_items = []
+        redacted_count = 0
+        for item in value:
+            sanitized_item, item_redactions = sanitize_agent_reference_value(item, employee_id)
+            redacted_count += item_redactions
+            if sanitized_item is not None:
+                sanitized_items.append(sanitized_item)
+        return sanitized_items, redacted_count
+    if isinstance(value, str):
+        return redact_inaccessible_agent_text(value, employee_id)
+    return value, 0
+
+
+def sanitize_agent_final_references(response: dict[str, Any], employee_id: str) -> int:
+    redacted_count = 0
+    for key in ("answer_markdown", "links", "citations", "suggested_questions", "artifacts"):
+        sanitized, count = sanitize_agent_reference_value(response.get(key), employee_id)
+        redacted_count += count
+        if sanitized is not None:
+            response[key] = sanitized
+        elif key in {"links", "citations", "artifacts", "suggested_questions"}:
+            response[key] = []
+        else:
+            response[key] = ""
+    return redacted_count
 
 
 def count_agent_redactions(response: dict[str, Any]) -> int:

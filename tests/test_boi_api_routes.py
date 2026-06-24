@@ -359,6 +359,84 @@ def test_boi_agent_restricted_docs_are_pruned_from_context_and_artifacts(boi_app
     assert not any("restricted-agent-leak-test" in str(citation.get("url") or "") for citation in body["citations"])
 
 
+def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    forbidden_id = "boi:private:100002:agent-final-leak"
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/reference",
+            "title": "다른 사번 Private Agent Leak",
+            "description": "Agent final response must not expose this link",
+            "tags": ["ACL", "Agent"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": forbidden_id,
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100002",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "acl_policy": "acl:private:100002",
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "agent-final-leak"}],
+        },
+        "# Summary\n\nforbidden private body",
+    )
+
+    class LeakyNativeAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self, *_args, **_kwargs):
+            return {
+                "ok": True,
+                "answer_markdown": f"보면 안 되는 링크: [private](/docs/{forbidden_id}?employee_id=100001)",
+                "links": [
+                    {"label": "forbidden", "url": f"/docs/{forbidden_id}?employee_id=100001", "kind": "boi"},
+                    {"label": "public", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001", "kind": "boi"},
+                ],
+                "citations": [{"label": "forbidden", "ref": forbidden_id, "url": f"/docs/{forbidden_id}?employee_id=100001"}],
+                "artifacts": [
+                    {
+                        "type": "gap_table",
+                        "data": [
+                            {"name": "forbidden", "url": f"/docs/{forbidden_id}?employee_id=100001"},
+                            {"name": "public", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"},
+                        ],
+                    }
+                ],
+                "context_summary": {"route": "fast", "intent": "page_qa"},
+                "route": "fast",
+                "intent": "page_qa",
+                "used_backend": "native_langgraph",
+                "guardrails_applied": ["acl_policy"],
+                "tool_trace": [],
+            }
+
+    monkeypatch.setattr(boi_app_module, "NativeBoiAgent", LeakyNativeAgent)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "권한 필터 테스트", "mode": "fast", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    dumped = json.dumps(
+        {
+            "answer_markdown": body.get("answer_markdown"),
+            "links": body.get("links"),
+            "citations": body.get("citations"),
+            "artifacts": body.get("artifacts"),
+        },
+        ensure_ascii=False,
+    )
+    assert forbidden_id not in dumped
+    assert "agent_final_reference_acl" in body["guardrails_applied"]
+    assert body["redacted_count"] >= 1
+    assert any("equipment-abnormal-response" in str(link.get("url") or "") for link in body["links"])
+
+
 def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
     client = TestClient(boi_app_module.app)
 
