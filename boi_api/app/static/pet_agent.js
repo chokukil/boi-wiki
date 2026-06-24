@@ -294,7 +294,16 @@
       if (/^\s*[-*+]\s+/.test(line)) {
         const listItems = [];
         while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
-          const rawItem = lines[i].replace(/^\s*[-*+]\s+/, "");
+          let rawItem = lines[i].replace(/^\s*[-*+]\s+/, "");
+          while (
+            i + 1 < lines.length
+            && /^\s{2,}\S/.test(lines[i + 1])
+            && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i + 1])
+            && !isLikelyTableStart(lines, i + 1)
+          ) {
+            i += 1;
+            rawItem += ` ${lines[i].trim()}`;
+          }
           const task = rawItem.match(/^\[( |x|X)\]\s+(.*)$/);
           if (task) {
             const checked = task[1].toLowerCase() === "x";
@@ -311,7 +320,17 @@
       if (/^\s*\d+\.\s+/.test(line)) {
         const listItems = [];
         while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-          listItems.push(`<li>${renderInlineMarkdown(lines[i].replace(/^\s*\d+\.\s+/, ""))}</li>`);
+          let rawItem = lines[i].replace(/^\s*\d+\.\s+/, "");
+          while (
+            i + 1 < lines.length
+            && /^\s{2,}\S/.test(lines[i + 1])
+            && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i + 1])
+            && !isLikelyTableStart(lines, i + 1)
+          ) {
+            i += 1;
+            rawItem += ` ${lines[i].trim()}`;
+          }
+          listItems.push(`<li>${renderInlineMarkdown(rawItem)}</li>`);
           i += 1;
         }
         i -= 1;
@@ -404,7 +423,9 @@
       || /^\s*:?-{3,}:?\s*\|\s*:?-{3,}:?/m.test(text)
       || /^\s{0,3}#{1,6}\s+\S/m.test(text)
       || /^\s{0,3}[-*+]\s+\S/m.test(text)
-      || /^\s{0,3}\d+\.\s+\S/m.test(text);
+      || /^\s{0,3}\d+\.\s+\S/m.test(text)
+      || /^\s{0,3}(?:>|&gt;)\s*\S/m.test(text)
+      || /^\s{0,3}(?:-{3,}|_{3,}|\*{3,})\s*$/m.test(text);
   }
 
   function shouldUseServerHtml(message, artifactMermaid) {
@@ -534,6 +555,7 @@
     splitTableRow,
     mermaidSourcesFromMarkdown,
     mermaidSourcesFromArtifacts,
+    normalizeMermaidSource,
     looksLikeRawMarkdownHtml,
     shouldUseServerHtml,
   };

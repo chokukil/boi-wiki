@@ -1527,7 +1527,14 @@ const markdown = [
   "| 이상 감지 | `equipment.alarm.raised.v1` and trend | [SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001) |",
   "",
   "- **확인**: 링크와 굵게",
+  "- 줄바꿈된 항목",
+  "  같은 bullet에 이어져야 함",
   "1. 첫 번째",
+  "   같은 numbered item에 이어져야 함",
+  "",
+  "> 인용 문장",
+  "",
+  "---",
   "",
   "```mermaid",
   "flowchart TD",
@@ -1562,12 +1569,19 @@ console.log(JSON.stringify({
   hasCode: html.includes("<code>equipment.alarm.raised.v1</code>"),
   hasLink: html.includes('href="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"'),
   hasStrong: html.includes("<strong>확인</strong>"),
-  hasOrderedList: html.includes("<ol><li>첫 번째</li></ol>"),
+  hasOrderedList: html.includes("<ol><li>첫 번째 같은 numbered item에 이어져야 함</li></ol>"),
   skippedMermaid: !html.includes("mermaid-diagram") && !html.includes("```mermaid"),
   rawTableSeparatorLeaked: html.includes("| --- |"),
+  hasWrappedBullet: html.includes("줄바꿈된 항목 같은 bullet에 이어져야 함"),
+  hasWrappedOrderedItem: html.includes("첫 번째 같은 numbered item에 이어져야 함"),
+  hasBlockquote: html.includes("<blockquote>") && html.includes("인용 문장"),
+  hasHr: html.includes("<hr>"),
   tableKeepsLink: tableHtml.includes("<a href="),
   detectsRawServerMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(rawServerHtml),
   detectsRawHeadingMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(rawHeadingHtml),
+  detectsRawBlockquoteMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml("<p>&gt; 인용</p>"),
+  detectsRawHrMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml("<p>---</p>"),
+  exposesNormalizeMermaid: typeof window.BoiAgentMarkdownDebug.normalizeMermaidSource === "function",
   acceptsRenderedServerHtml: !window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(renderedServerHtml),
   rejectsDuplicateMermaidServerHtml: !window.BoiAgentMarkdownDebug.shouldUseServerHtml(
     { html: renderedMermaidServerHtml },
@@ -1597,13 +1611,47 @@ console.log(JSON.stringify({
     assert payload["hasOrderedList"]
     assert payload["skippedMermaid"]
     assert not payload["rawTableSeparatorLeaked"]
+    assert payload["hasWrappedBullet"]
+    assert payload["hasWrappedOrderedItem"]
+    assert payload["hasBlockquote"]
+    assert payload["hasHr"]
     assert payload["tableKeepsLink"]
     assert payload["detectsRawServerMarkdown"]
     assert payload["detectsRawHeadingMarkdown"]
+    assert payload["detectsRawBlockquoteMarkdown"]
+    assert payload["detectsRawHrMarkdown"]
+    assert payload["exposesNormalizeMermaid"]
     assert payload["acceptsRenderedServerHtml"]
     assert payload["rejectsDuplicateMermaidServerHtml"]
     assert payload["acceptsPlainRenderedServerHtml"]
     assert payload["hasRunSummary"]
+
+
+def test_server_markdown_renderer_handles_agent_quote_hr_and_inline_styles(boi_app_module):
+    html = str(
+        boi_app_module.render_markdown(
+            "\n".join(
+                [
+                    "> **중요** 인용",
+                    "> - 인용 목록",
+                    "",
+                    "---",
+                    "",
+                    "본문에는 *강조*, ~~삭제~~, `*코드는 그대로*`가 있습니다.",
+                ]
+            ),
+            employee_id="100001",
+        )
+    )
+
+    assert "<blockquote>" in html
+    assert "<strong>중요</strong>" in html
+    assert "<li>인용 목록</li>" in html
+    assert "<hr>" in html
+    assert "<em>강조</em>" in html
+    assert "<del>삭제</del>" in html
+    assert "<code>*코드는 그대로*</code>" in html
+    assert "<em>코드는 그대로</em>" not in html
 
 
 def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):

@@ -614,9 +614,19 @@ def render_inline_markdown(
     source_path: Path | None = None,
     doc_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> str:
+    tokens: list[tuple[str, str]] = []
+
+    def stash(html: str) -> str:
+        token = f"@@BOI_MARKDOWN_TOKEN_{len(tokens)}@@"
+        tokens.append((token, html))
+        return token
+
     rendered = html_escape(value)
-    rendered = re.sub(r"`([^`]+)`", r"<code>\1</code>", rendered)
+    rendered = re.sub(r"`([^`]+)`", lambda match: stash(f"<code>{match.group(1)}</code>"), rendered)
     rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", rendered)
+    rendered = re.sub(r"__([^_]+)__", r"<strong>\1</strong>", rendered)
+    rendered = re.sub(r"~~([^~]+)~~", r"<del>\1</del>", rendered)
+    rendered = re.sub(r"(?<!\*)\*([^*\s][^*]*?)\*(?!\*)", r"<em>\1</em>", rendered)
 
     def replace_image(match: re.Match[str]) -> str:
         alt = html_unescape(match.group(1))
@@ -644,6 +654,8 @@ def render_inline_markdown(
 
     rendered = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)", replace_image, rendered)
     rendered = re.sub(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)", replace_link, rendered)
+    for token, html in tokens:
+        rendered = rendered.replace(token, html)
     return rendered
 
 
@@ -766,6 +778,7 @@ def render_markdown(
     list_items: list[str] = []
     ordered_items: list[str] = []
     table_lines: list[str] = []
+    blockquote_lines: list[str] = []
     index = 0
 
     def flush_paragraph() -> None:
@@ -802,6 +815,16 @@ def render_markdown(
             html_parts.append(render_table(table_lines, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup))
             table_lines.clear()
 
+    def flush_blockquote() -> None:
+        if not blockquote_lines:
+            return
+        inner = str(render_markdown("\n".join(blockquote_lines), employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup))
+        prefix = '<div class="rendered-markdown">'
+        if inner.startswith(prefix) and inner.endswith("</div>"):
+            inner = inner[len(prefix) : -len("</div>")]
+        html_parts.append(f"<blockquote>{inner}</blockquote>")
+        blockquote_lines.clear()
+
     while index < len(lines):
         line = lines[index]
         stripped = line.strip()
@@ -811,6 +834,7 @@ def render_markdown(
             flush_list()
             flush_ordered_list()
             flush_table()
+            flush_blockquote()
             language = stripped.removeprefix("```").strip().split(None, 1)[0].lower() if stripped.removeprefix("```").strip() else ""
             code_lines: list[str] = []
             index += 1
@@ -844,30 +868,48 @@ def render_markdown(
             flush_list()
             flush_ordered_list()
             flush_table()
+            flush_blockquote()
+        elif re.fullmatch(r"(?:-{3,}|_{3,}|\*{3,})", stripped):
+            flush_paragraph()
+            flush_list()
+            flush_ordered_list()
+            flush_table()
+            flush_blockquote()
+            html_parts.append("<hr>")
         elif stripped.startswith("#"):
             flush_paragraph()
             flush_list()
             flush_ordered_list()
             flush_table()
+            flush_blockquote()
             marker, _, title = stripped.partition(" ")
             level = min(max(len(marker), 1) + 2, 5)
             html_parts.append(
                 f"<h{level}>{render_inline_markdown(title or stripped.lstrip('#').strip(), employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup)}</h{level}>"
             )
+        elif re.match(r"^\s*>\s?", line):
+            flush_paragraph()
+            flush_list()
+            flush_ordered_list()
+            flush_table()
+            blockquote_lines.append(re.sub(r"^\s*>\s?", "", line))
         elif re.match(r"^\s*[-*+]\s+\S", line):
             flush_paragraph()
             flush_ordered_list()
             flush_table()
+            flush_blockquote()
             list_items.append(re.sub(r"^\s*[-*+]\s+", "", line).strip())
         elif re.match(r"^\s*\d+\.\s+\S", line):
             flush_paragraph()
             flush_list()
             flush_table()
+            flush_blockquote()
             ordered_items.append(re.sub(r"^\s*\d+\.\s+", "", line).strip())
         elif is_table_start(lines, index):
             flush_paragraph()
             flush_list()
             flush_ordered_list()
+            flush_blockquote()
             while index < len(lines) and "|" in lines[index] and lines[index].strip():
                 table_lines.append(lines[index].strip())
                 index += 1
@@ -877,11 +919,13 @@ def render_markdown(
             flush_list()
             flush_ordered_list()
             flush_table()
+            flush_blockquote()
             html_parts.append(render_inline_markdown(stripped, employee_id=employee_id, source_path=source_path, doc_lookup=doc_lookup))
         else:
             flush_list()
             flush_ordered_list()
             flush_table()
+            flush_blockquote()
             paragraph.append(line)
         index += 1
 
@@ -889,6 +933,7 @@ def render_markdown(
     flush_list()
     flush_ordered_list()
     flush_table()
+    flush_blockquote()
     return Markup(f'<div class="rendered-markdown">{"".join(html_parts)}</div>')
 
 
