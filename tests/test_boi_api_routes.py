@@ -2141,6 +2141,17 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)" in source
 
 
+def test_mermaid_loader_retries_after_cdn_load_failure(boi_app_module):
+    script = (boi_app_module.APP_DIR / "static" / "mermaid_render.js").read_text(encoding="utf-8")
+
+    assert "let loadPromise = null;" in script
+    assert "let settled = false;" in script
+    assert "loadPromise = null;" in script
+    assert "script.remove();" in script
+    assert "script.onerror = () => fail(new Error(\"Mermaid library load failed\"));" in script
+    assert "fail(new Error(\"Mermaid library load timed out\"))" in script
+
+
 def test_pet_agent_markdown_renderer_executes_core_gfm_cases(boi_app_module):
     if not shutil.which("node"):
         pytest.skip("node is required for Pet Agent Markdown renderer smoke")

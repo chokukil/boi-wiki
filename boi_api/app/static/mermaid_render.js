@@ -23,13 +23,29 @@
     if (loadPromise) return loadPromise;
     loadPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
+      let settled = false;
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        loadPromise = null;
+        script.remove();
+        reject(error);
+      };
       script.src = CDN_URL;
       script.async = true;
-      script.onload = () => window.mermaid ? resolve(window.mermaid) : reject(new Error("Mermaid library unavailable"));
-      script.onerror = () => reject(new Error("Mermaid library load failed"));
+      script.onload = () => {
+        if (settled) return;
+        if (!window.mermaid) {
+          fail(new Error("Mermaid library unavailable"));
+          return;
+        }
+        settled = true;
+        resolve(window.mermaid);
+      };
+      script.onerror = () => fail(new Error("Mermaid library load failed"));
       document.head.appendChild(script);
       window.setTimeout(() => {
-        if (!window.mermaid) reject(new Error("Mermaid library load timed out"));
+        if (!window.mermaid) fail(new Error("Mermaid library load timed out"));
       }, 8000);
     });
     return loadPromise;
