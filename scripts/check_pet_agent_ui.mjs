@@ -272,6 +272,21 @@ async function main() {
       250,
     );
 
+    try {
+      await waitUntil(
+        cdp,
+        `(() => {
+          const latest = document.querySelector("#boi-agent-root .boi-agent-message.assistant:last-of-type");
+          const diagrams = Array.from(latest?.querySelectorAll(".mermaid-diagram") || []);
+          return diagrams.length > 0 && diagrams.every((diagram) => !["pending", "rendering"].includes(diagram.dataset.mermaidState || "pending"));
+        })()`,
+        12000,
+        250,
+      );
+    } catch (_error) {
+      // The strict report below records whether Mermaid actually rendered or fell back.
+    }
+
     await cdp.evaluate(`(() => {
       document.querySelector(".boi-agent-expand")?.click();
       document.querySelector("[data-open-artifact]")?.click();
@@ -283,6 +298,14 @@ async function main() {
       const root = document.querySelector("#boi-agent-root");
       const probe = window.__boiAgentUiProbe || {};
       const uniqueAnswers = Array.from(new Set(probe.answerTexts || []));
+      const latestMessage = root.querySelector(".boi-agent-message.assistant:last-of-type");
+      const answerNode = latestMessage?.querySelector(".boi-agent-answer");
+      const diagrams = Array.from(latestMessage?.querySelectorAll(".boi-agent-artifacts .mermaid-diagram, .boi-agent-answer .mermaid-diagram") || []);
+      const normalizedSources = new Set(diagrams.map((diagram) => {
+        const source = diagram.querySelector(".mermaid-source-fallback code")?.textContent || diagram.querySelector(".mermaid")?.textContent || "";
+        return source.trim().replace(/\\s+/g, " ");
+      }).filter(Boolean));
+      const answerText = answerNode?.textContent || "";
       return {
         panelOpen: !!root.querySelector(".boi-agent-panel.open"),
         expanded: !!root.querySelector(".boi-agent-panel.expanded"),
@@ -298,6 +321,14 @@ async function main() {
         hasArtifactOpenButton: !!root.querySelector("[data-open-artifact]"),
         hasAnswerOpenButton: !!root.querySelector("[data-open-answer]"),
         hasHorizontalOverflow: root.querySelector(".boi-agent-content") ? root.querySelector(".boi-agent-content").scrollWidth > root.querySelector(".boi-agent-content").clientWidth + 2 : false,
+        mermaidDiagramCount: diagrams.length,
+        mermaidRenderedCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")).length,
+        mermaidFallbackCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "fallback").length,
+        uniqueMermaidSourceCount: normalizedSources.size,
+        answerMarkdownTableCount: answerNode ? answerNode.querySelectorAll(".boi-agent-table-wrap table, .markdown-table").length : 0,
+        artifactTableCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
+        rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
+        rawTableSeparatorLeak: new RegExp("\\\\|\\\\s*:?-{3,}:?\\\\s*\\\\|").test(answerText),
       };
     })()`);
 
@@ -330,6 +361,11 @@ async function main() {
       viewer_opened: beforeNew.viewerOpen,
       expand_control_worked: beforeNew.expanded,
       no_horizontal_overflow: !beforeNew.hasHorizontalOverflow,
+      mermaid_diagram_present: beforeNew.mermaidDiagramCount >= 1,
+      mermaid_diagram_rendered: beforeNew.mermaidRenderedCount >= 1 && beforeNew.mermaidFallbackCount === 0,
+      mermaid_not_duplicated: beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount,
+      markdown_table_rendered: (beforeNew.answerMarkdownTableCount + beforeNew.artifactTableCount) >= 1,
+      no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
     };
     const ok = Object.values(checks).every(Boolean);
