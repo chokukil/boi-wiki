@@ -974,6 +974,8 @@ def test_boi_agent_event_type_draft_card_uses_ontology_context(boi_app_module, m
     assert body["intent"] == "event_type_draft"
     artifact = body["artifacts"][0]
     assert artifact["type"] == "confirmation_required"
+    assert body["execution_cards"][0]["operation"] == "event_type_draft"
+    assert body["execution_cards"][0]["requires_confirmation"] is True
     payload = artifact["data"]["payload"]
     assert payload["event_type"] == "maintenance.inspection.completed.v1"
     assert payload["name_ko"] == "장비 점검 완료"

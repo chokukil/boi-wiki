@@ -7144,6 +7144,29 @@ def normalize_agent_artifacts(value: Any, answer_markdown: str = "") -> list[dic
     return [artifact for artifact in artifacts if artifact.get("type")]
 
 
+def execution_cards_from_artifacts(artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cards: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or artifact.get("type") != "confirmation_required":
+            continue
+        data = artifact.get("data") if isinstance(artifact.get("data"), dict) else {}
+        operation = str(data.get("operation") or data.get("type") or "confirmation_required")
+        cards.append(
+            {
+                "type": operation,
+                "operation": operation,
+                "title": str(data.get("title") or artifact.get("title") or "확인 필요"),
+                "message": str(data.get("message") or ""),
+                "primary_label": str(data.get("primary_label") or "확인 후 실행"),
+                "payload": data.get("payload") or {},
+                "requires_confirmation": True,
+                "route": data.get("route"),
+                "intent": data.get("intent"),
+            }
+        )
+    return cards
+
+
 def normalize_agent_mermaid_source(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
@@ -7179,7 +7202,12 @@ def markdown_without_duplicate_mermaid_artifacts(answer_markdown: str, artifacts
 
 def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict[str, Any]:
     answer_markdown = str(response.get("answer_markdown") or "")
-    artifacts = response.get("artifacts") if isinstance(response.get("artifacts"), list) else []
+    artifacts = normalize_agent_artifacts(response.get("artifacts"), answer_markdown)
+    response["artifacts"] = artifacts
+    if not isinstance(response.get("execution_cards"), list) or not response.get("execution_cards"):
+        cards = execution_cards_from_artifacts(artifacts)
+        if cards:
+            response["execution_cards"] = cards
     display_markdown = markdown_without_duplicate_mermaid_artifacts(answer_markdown, artifacts)
     response["display_markdown"] = display_markdown
     response["answer_html"] = (
