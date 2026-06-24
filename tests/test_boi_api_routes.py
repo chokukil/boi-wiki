@@ -1398,6 +1398,24 @@ def test_boi_agent_composer_parser_accepts_answer_alias_and_plain_markdown(boi_a
     assert openai_candidates[0].startswith("```json")
     assert openai_payload["answer_markdown"].startswith("## 답변")
     assert id_payload is None
+    assert boi_app_module.invalid_agent_composer_answer_reason("* User wants a Mermaid process flow") == "prompt_echo"
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 최종 답변\n\n업무 흐름을 정리했습니다.") == ""
+
+
+def test_boi_agent_display_markdown_removes_all_mermaid_when_artifacts_exist(boi_app_module):
+    markdown = (
+        "## 답변\n\n"
+        "```mermaid\nflowchart TD\n  A --> B\n```\n\n"
+        "설명입니다.\n\n"
+        "```mermaid\nflowchart TD\n  C --> D\n```"
+    )
+    display = boi_app_module.markdown_without_duplicate_mermaid_artifacts(
+        markdown,
+        [{"type": "mermaid", "source": "flowchart TD\n  A --> B"}],
+    )
+
+    assert "```mermaid" not in display
+    assert "설명입니다." in display
 
 
 def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_app_module, monkeypatch):

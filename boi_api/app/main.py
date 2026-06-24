@@ -6711,6 +6711,34 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
     return None
 
 
+def invalid_agent_composer_answer_reason(answer: str) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return "empty_answer"
+    lowered = text.lower()
+    prompt_echo_markers = (
+        "user wants",
+        "target audience",
+        "constraint:",
+        "format: github-flavored markdown",
+        "structured_draft",
+        "body_excerpt",
+        "required_json_schema",
+        "supplied evidence",
+        "do not invent private data",
+        "return only one json object",
+    )
+    if any(marker in lowered for marker in prompt_echo_markers):
+        return "prompt_echo"
+    if re.match(r"^\s*[-*]\s+user\s+wants\b", text, flags=re.IGNORECASE):
+        return "prompt_echo"
+    if text.startswith("{") or text.startswith("[") or text.startswith("```json"):
+        return "unparsed_json"
+    if text.startswith("chatcmpl-"):
+        return "openai_response_metadata"
+    return ""
+
+
 def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> dict[str, Any]:
     if not BOI_AGENT_COMPOSER_LLM_ENABLED:
         raise NativeAgentRuntimeUnavailable("LLM answer composer is not configured")
@@ -6730,8 +6758,11 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
                 "role": "system",
                 "content": (
                     "You are the final answer composer for BoI Wiki Agent. "
-                    "Return only one JSON object. Use only supplied evidence. "
-                    "Do not invent private data, links, actions, or approvals."
+                    "Return only one JSON object with answer_markdown and suggested_questions. "
+                    "answer_markdown must be the final user-facing Korean Markdown answer. "
+                    "Never echo, summarize, or restate the prompt, request fields, JSON schema, "
+                    "structured_draft label, body_excerpt label, or system instructions. "
+                    "Use only supplied evidence. Do not invent private data, links, actions, or approvals."
                 ),
             },
             {
@@ -6757,12 +6788,15 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
         candidate = parse_agent_compose_payload(text)
         if candidate:
             answer = str(candidate.get("answer_markdown") or "").strip()
+            invalid_reason = invalid_agent_composer_answer_reason(answer)
+            if invalid_reason:
+                continue
             suggestions = candidate.get("suggested_questions")
             return {
                 "answer_markdown": answer,
                 "suggested_questions": suggestions if isinstance(suggestions, list) else [],
             }
-    raise NativeAgentRuntimeUnavailable("LLM answer composer returned invalid JSON")
+    raise NativeAgentRuntimeUnavailable("LLM answer composer returned invalid final answer")
 
 
 REQUIRED_AGENT_STATUS_STAGES = ("page_context", "intent", "retrieval", "tool_loop", "compose", "answer_stream", "waiting")
@@ -7681,11 +7715,10 @@ def normalize_agent_mermaid_source(value: str) -> str:
 def markdown_without_duplicate_mermaid_artifacts(answer_markdown: str, artifacts: list[dict[str, Any]]) -> str:
     """Return display Markdown with Mermaid fences removed when artifacts render them.
 
-    Agent answers often include the same Mermaid source twice: once in
-    answer_markdown for source transparency and once as a structured artifact
-    for the viewer. The Pet UI renders artifacts separately, so server-rendered
-    answer_html should omit duplicate fences to avoid double diagrams while
-    preserving the original answer_markdown API field.
+    Agent answers can include Mermaid both in answer_markdown and in structured
+    artifacts. The Pet UI renders artifacts separately, so server-rendered
+    answer_html should omit Mermaid fences whenever Mermaid artifacts exist.
+    The original answer_markdown API field still preserves source transparency.
     """
     mermaid_sources = {
         normalize_agent_mermaid_source(str(artifact.get("source") or ""))
@@ -7696,8 +7729,7 @@ def markdown_without_duplicate_mermaid_artifacts(answer_markdown: str, artifacts
         return str(answer_markdown or "")
 
     def replace(match: re.Match[str]) -> str:
-        source = normalize_agent_mermaid_source(match.group("body"))
-        return "" if source in mermaid_sources else match.group(0)
+        return ""
 
     return re.sub(
         r"```[^\S\r\n]*mermaid[^\S\r\n]*(?:\r?\n)(?P<body>.*?)(?:\r?\n)?```",
