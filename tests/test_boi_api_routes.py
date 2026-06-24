@@ -501,7 +501,7 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
-            "question": "현재 SOP 핵심 링크를 알려줘",
+            "question": "현재 페이지를 기준으로 어떻게 이해하면 돼?",
             "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
             "page_context": {"title": "설비 이상 SOP"},
         },
@@ -562,7 +562,7 @@ def test_boi_agent_native_reuses_api_router_without_internal_llm(boi_app_module,
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
-        json={"question": "설비 SOP 관련 Event와 Action을 찾아줘", "current_url": "/"},
+        json={"question": "현재 페이지 기준으로 답해줘", "current_url": "/"},
     )
 
     assert response.status_code == 200
@@ -656,6 +656,29 @@ def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_mod
     assert body["used_backend"] == "native_langgraph"
 
 
+def test_boi_agent_obvious_search_skips_llm_router(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fail_router(*args, **kwargs):
+        raise AssertionError("obvious search intent should not call LLM router")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fail_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "설비 SOP 관련 Event와 Action을 찾아줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "fast"
+    assert body["intent"] == "search"
+    assert body["router_backend"] == "rules"
+    assert body["used_backend"] == "native_langgraph"
+
+
 def test_boi_agent_router_network_failure_uses_short_backoff(boi_app_module, monkeypatch):
     calls = {"post": 0}
 
@@ -681,7 +704,7 @@ def test_boi_agent_router_network_failure_uses_short_backoff(boi_app_module, mon
     monkeypatch.setattr(boi_app_module, "_BOI_AGENT_ROUTER_BACKOFF_REASON", "")
     monkeypatch.setattr(boi_app_module.httpx, "Client", FailingClient)
 
-    request = boi_app_module.BoiAgentChatRequest(question="SOP 찾아줘", current_url="/")
+    request = boi_app_module.BoiAgentChatRequest(question="현재 페이지 기준으로 답해줘", current_url="/")
     first = boi_app_module.route_boi_agent_request(request, "100001")
     second = boi_app_module.route_boi_agent_request(request, "100001")
 
