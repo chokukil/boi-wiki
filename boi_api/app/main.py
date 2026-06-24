@@ -6439,7 +6439,7 @@ class LangflowBoiAgentUnavailable(RuntimeError):
 
 
 class BoiAgentRouterUnavailable(RuntimeError):
-    """Raised when the optional LLM router cannot produce a usable route."""
+    """Raised when the required LLM router cannot produce a usable route."""
 
 
 class BoiAgentStatusUnavailable(RuntimeError):
@@ -7035,10 +7035,8 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
     else:
         try:
             route = call_boi_agent_router_llm(req, employee_id)
-        except BoiAgentRouterUnavailable as exc:
-            if BOI_AGENT_ROUTER_REQUIRED:
-                raise
-            route = rule_agent_route(req, reason=f"fallback: {exc}")
+        except BoiAgentRouterUnavailable:
+            raise
     return apply_agent_route_overrides(req, route)
 
 

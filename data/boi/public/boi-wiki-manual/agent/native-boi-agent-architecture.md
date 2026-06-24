@@ -29,7 +29,7 @@ review:
 
 BoI Agent의 production path는 `boi-api` 내부 Native Agent다. Langflow는 visual workflow, demo, debug backend로 유지하지만 사용자-facing Agent 응답의 필수 runtime dependency가 아니다.
 
-Native Agent는 LangGraph state graph와 typed tool dispatcher를 함께 제공한다. LLM은 Router, stream planner, 선택적 planner/composer에 쓰이고, 실행 경계는 Python typed tool dispatcher가 통제한다. Router는 `llm_first`가 기본이며, `BOI_AGENT_ROUTER_REQUIRED=1`이 운영 기본값이다. 이때 Router LLM은 사용자 답변을 생성하지 않고 `route`, `intent`, `confidence` JSON만 반환한다. Router LLM이 비활성, 미설정, timeout, invalid JSON 중 하나라도 해당하면 `/chat`은 rules로 우회하지 않고 `boi_agent_router_unavailable`을 반환한다. rules 분기는 `BOI_AGENT_ROUTER_REQUIRED=0`인 명시 개발/테스트 모드에서만 허용한다. Web Pet Agent의 진행 상태 한 줄도 정해진 대체 문구로 우회하지 않는다. `/chat/stream`은 별도 status LLM과 router LLM을 중복 호출하지 않고, stream planner가 요청별 `route + status` JSON을 한 번에 만든다. `BOI_AGENT_STATUS_REQUIRED=1`일 때 stream planner가 route/status plan을 만들지 못하면 `/chat/stream`은 `status_generation_failed` 또는 `boi_agent_router_unavailable`을 반환하고 Agent UI는 장애로 표시한다.
+Native Agent는 LangGraph state graph와 typed tool dispatcher를 함께 제공한다. LLM은 Router, stream planner, 선택적 planner/composer에 쓰이고, 실행 경계는 Python typed tool dispatcher가 통제한다. Router는 `llm_first`가 기본이며 운영 필수 구성이다. 이때 Router LLM은 사용자 답변을 생성하지 않고 `route`, `intent`, `confidence` JSON만 반환한다. Router LLM이 비활성, 미설정, timeout, invalid JSON, low confidence 중 하나라도 해당하면 `/chat`은 rules로 우회하지 않고 `boi_agent_router_unavailable`을 반환한다. Web Pet Agent의 진행 상태 한 줄도 정해진 대체 문구로 우회하지 않는다. `/chat/stream`은 별도 status LLM과 router LLM을 중복 호출하지 않고, stream planner가 요청별 `route + status` JSON을 한 번에 만든다. `BOI_AGENT_STATUS_REQUIRED=1`일 때 stream planner가 route/status plan을 만들지 못하면 `/chat/stream`은 `status_generation_failed` 또는 `boi_agent_router_unavailable`을 반환하고 Agent UI는 장애로 표시한다.
 
 # Architecture
 

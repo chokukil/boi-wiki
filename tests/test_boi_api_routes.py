@@ -1120,6 +1120,29 @@ def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_a
     assert "router timeout" in body["message"]
 
 
+def test_boi_agent_chat_router_failure_is_not_rule_fallback_even_when_required_flag_disabled(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def broken_router(req, employee_id: str):
+        raise boi_app_module.BoiAgentRouterUnavailable("router timeout")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", False)
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", broken_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "SOP 찾아줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 503
+    body = response.json()["detail"]
+    assert body["status"] == "boi_agent_router_unavailable"
+    assert body["required"] is False
+    assert "router timeout" in body["message"]
+
+
 def test_boi_agent_obvious_search_uses_llm_router_first(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     calls = {"router": 0}

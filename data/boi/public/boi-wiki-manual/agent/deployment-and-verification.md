@@ -73,7 +73,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
 | `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first |
 | `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 LLM 비활성으로 해석한다. |
-| `BOI_AGENT_ROUTER_REQUIRED` | `1` | `1`이면 Router LLM 비활성, 미설정, timeout, invalid JSON 모두 `boi_agent_router_unavailable` 장애로 표시한다. rules 분기는 `REQUIRED=0`인 명시 개발/테스트 모드에서만 허용한다. |
+| `BOI_AGENT_ROUTER_REQUIRED` | `1` | 운영에서는 Router LLM 비활성, 미설정, timeout, invalid JSON, low confidence를 모두 `boi_agent_router_unavailable` 장애로 표시한다. 자동 대화 경로는 규칙 기반 대체 응답으로 우회하지 않는다. |
 | `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
 | `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
 | `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `12` | Gemma Router response timeout. 운영 모드에서 timeout은 Agent 장애로 노출된다. |
