@@ -1444,10 +1444,16 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "answer_delta" in script
     assert "statusLines" in script
     assert "readAgentStream" in script
+    assert "activeRequest.abort()" in script
+    assert "생성을 중지했습니다." in script
+    assert "boi-agent-new" in script
+    assert "boi-agent-expand" in script
     assert "currentStatus" in script
     assert "state.currentStatus" in script
     assert "진행 상태" in script
     assert "state.sending ? state.currentStatus" in script
+    assert "state.messages.slice(-20)" in script
+    assert "content.scrollTop = content.scrollHeight" in script
     assert "tool_trace: body.tool_trace || []" in script
     assert "coverage_report: body.coverage_report || {}" in script
     assert "Agent가 확인한 내용" in script
