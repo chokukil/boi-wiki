@@ -1,0 +1,353 @@
+#!/usr/bin/env node
+import { spawn } from "node:child_process";
+import { createWriteStream, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { get } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+
+function parseArgs(argv) {
+  const args = {
+    url: "http://localhost:8000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+    question: "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
+    timeoutMs: 90000,
+    screenshot: "",
+    strict: false,
+  };
+  for (let index = 2; index < argv.length; index += 1) {
+    const item = argv[index];
+    if (item === "--url") args.url = argv[++index];
+    else if (item === "--question") args.question = argv[++index];
+    else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
+    else if (item === "--screenshot") args.screenshot = argv[++index];
+    else if (item === "--strict") args.strict = true;
+    else if (item === "-h" || item === "--help") {
+      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--screenshot FILE] [--strict]`);
+      process.exit(0);
+    }
+  }
+  return args;
+}
+
+function findChrome() {
+  const candidates = [
+    process.env.CHROME_BIN,
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  ].filter(Boolean);
+  const chrome = candidates.find((candidate) => existsSync(candidate));
+  if (!chrome) throw new Error("Chrome/Chromium binary not found. Set CHROME_BIN to run Pet Agent UI smoke.");
+  return chrome;
+}
+
+function fetchJson(url, timeoutMs = 1000) {
+  return new Promise((resolve, reject) => {
+    const req = get(url, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`timeout fetching ${url}`));
+    });
+  });
+}
+
+async function waitForJson(url, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      return await fetchJson(url, 1200);
+    } catch (error) {
+      lastError = error;
+      await sleep(150);
+    }
+  }
+  throw lastError || new Error(`timed out waiting for ${url}`);
+}
+
+class CdpClient {
+  constructor(wsUrl) {
+    this.wsUrl = wsUrl;
+    this.ws = null;
+    this.nextId = 1;
+    this.pending = new Map();
+    this.listeners = new Map();
+  }
+
+  async connect() {
+    this.ws = new WebSocket(this.wsUrl);
+    await new Promise((resolve, reject) => {
+      this.ws.addEventListener("open", resolve, { once: true });
+      this.ws.addEventListener("error", reject, { once: true });
+    });
+    this.ws.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      if (message.id && this.pending.has(message.id)) {
+        const { resolve, reject } = this.pending.get(message.id);
+        this.pending.delete(message.id);
+        if (message.error) reject(new Error(message.error.message || JSON.stringify(message.error)));
+        else resolve(message.result || {});
+        return;
+      }
+      if (message.method && this.listeners.has(message.method)) {
+        for (const listener of this.listeners.get(message.method)) listener(message.params || {});
+      }
+    });
+  }
+
+  send(method, params = {}) {
+    const id = this.nextId++;
+    this.ws.send(JSON.stringify({ id, method, params }));
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+    });
+  }
+
+  once(method) {
+    return new Promise((resolve) => {
+      const listener = (params) => {
+        this.off(method, listener);
+        resolve(params);
+      };
+      this.on(method, listener);
+    });
+  }
+
+  on(method, listener) {
+    if (!this.listeners.has(method)) this.listeners.set(method, new Set());
+    this.listeners.get(method).add(listener);
+  }
+
+  off(method, listener) {
+    this.listeners.get(method)?.delete(listener);
+  }
+
+  async evaluate(expression, awaitPromise = true) {
+    const result = await this.send("Runtime.evaluate", {
+      expression,
+      awaitPromise,
+      returnByValue: true,
+      userGesture: true,
+    });
+    if (result.exceptionDetails) {
+      const details = result.exceptionDetails;
+      const message = details.exception?.description || details.exception?.value || details.text || "Runtime.evaluate exception";
+      throw new Error(message);
+    }
+    return result.result?.value;
+  }
+
+  close() {
+    this.ws?.close();
+  }
+}
+
+async function waitUntil(cdp, expression, timeoutMs, intervalMs = 150) {
+  const deadline = Date.now() + timeoutMs;
+  let lastValue;
+  while (Date.now() < deadline) {
+    lastValue = await cdp.evaluate(expression);
+    if (lastValue) return lastValue;
+    await sleep(intervalMs);
+  }
+  throw new Error(`timed out waiting for expression: ${expression}. Last value: ${JSON.stringify(lastValue)}`);
+}
+
+async function terminateChrome(child) {
+  if (!child || child.killed) return;
+  const exited = new Promise((resolve) => {
+    child.once("exit", resolve);
+  });
+  child.kill("SIGTERM");
+  await Promise.race([exited, sleep(2000)]);
+  if (!child.killed) {
+    child.kill("SIGKILL");
+    await Promise.race([exited, sleep(1000)]);
+  }
+}
+
+async function main() {
+  const args = parseArgs(process.argv);
+  const chrome = findChrome();
+  const profileDir = mkdtempSync(join(tmpdir(), "boi-agent-chrome-"));
+  const port = 9333 + Math.floor(Math.random() * 1000);
+  const child = spawn(chrome, [
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${profileDir}`,
+    "about:blank",
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+
+  let cdp;
+  try {
+    await waitForJson(`http://127.0.0.1:${port}/json/version`, 10000);
+    const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`, 5000);
+    const pageTarget = targets.find((target) => target.type === "page" && target.webSocketDebuggerUrl);
+    if (!pageTarget) throw new Error("Chrome page target not found");
+    cdp = new CdpClient(pageTarget.webSocketDebuggerUrl);
+    await cdp.connect();
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    const loaded = cdp.once("Page.loadEventFired");
+    await cdp.send("Page.navigate", { url: args.url });
+    await loaded;
+    await waitUntil(
+      cdp,
+      "document.readyState === 'complete' && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
+      15000,
+    );
+
+    await cdp.evaluate(`(() => {
+      window.__boiAgentUiProbe = {
+        answerTexts: [],
+        liveStatuses: [],
+        statusTrailCounts: [],
+        stopSeen: false,
+        panelOpenSeen: false,
+        viewerSeen: false,
+        lastRenderAt: Date.now(),
+      };
+      const root = document.querySelector("#boi-agent-root");
+      const record = () => {
+        const probe = window.__boiAgentUiProbe;
+        const panel = root.querySelector(".boi-agent-panel.open");
+        const answer = root.querySelector(".boi-agent-message.assistant:last-of-type .boi-agent-answer");
+        const status = root.querySelector(".boi-agent-live-status span");
+        const trail = root.querySelectorAll(".boi-agent-status-trail li");
+        if (panel) probe.panelOpenSeen = true;
+        if (root.querySelector(".boi-agent-stop")) probe.stopSeen = true;
+        if (root.querySelector(".boi-agent-viewer")) probe.viewerSeen = true;
+        if (status && status.textContent.trim()) probe.liveStatuses.push(status.textContent.trim());
+        if (trail.length) probe.statusTrailCounts.push(trail.length);
+        if (answer) {
+          const text = answer.textContent.trim();
+          if (text && probe.answerTexts[probe.answerTexts.length - 1] !== text) probe.answerTexts.push(text);
+        }
+        probe.lastRenderAt = Date.now();
+      };
+      window.__boiAgentUiObserver = new MutationObserver(record);
+      window.__boiAgentUiObserver.observe(root, { childList: true, subtree: true, characterData: true });
+      window.__boiAgentUiTimer = setInterval(record, 50);
+      record();
+      return true;
+    })()`);
+
+    await cdp.evaluate(`(() => {
+      document.querySelector(".boi-agent-launcher").click();
+      return true;
+    })()`);
+    await waitUntil(cdp, "!!document.querySelector('.boi-agent-panel.open .boi-agent-chat-form textarea')", 10000);
+    await cdp.evaluate(`(() => {
+      const textarea = document.querySelector(".boi-agent-chat-form textarea");
+      textarea.value = ${JSON.stringify(args.question)};
+      textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: textarea.value }));
+      document.querySelector(".boi-agent-chat-form").requestSubmit();
+      return true;
+    })()`);
+
+    await waitUntil(
+      cdp,
+      `(() => {
+        const root = document.querySelector("#boi-agent-root");
+        const latest = root.querySelector(".boi-agent-message.assistant:last-of-type .boi-agent-answer");
+        return !root.querySelector(".boi-agent-stop") && latest && latest.textContent.trim().length > 80;
+      })()`,
+      args.timeoutMs,
+      250,
+    );
+
+    await cdp.evaluate(`(() => {
+      document.querySelector(".boi-agent-expand")?.click();
+      document.querySelector("[data-open-artifact]")?.click();
+      document.querySelector("[data-open-answer]")?.click();
+      return true;
+    })()`);
+    await sleep(300);
+    const beforeNew = await cdp.evaluate(`(() => {
+      const root = document.querySelector("#boi-agent-root");
+      const probe = window.__boiAgentUiProbe || {};
+      const uniqueAnswers = Array.from(new Set(probe.answerTexts || []));
+      return {
+        panelOpen: !!root.querySelector(".boi-agent-panel.open"),
+        expanded: !!root.querySelector(".boi-agent-panel.expanded"),
+        stopSeen: !!probe.stopSeen,
+        liveStatusCount: (probe.liveStatuses || []).length,
+        statusTrailMax: Math.max(0, ...(probe.statusTrailCounts || [0])),
+        answerSnapshotCount: uniqueAnswers.length,
+        answerTextLength: (uniqueAnswers[uniqueAnswers.length - 1] || "").length,
+        viewerOpen: !!root.querySelector(".boi-agent-viewer"),
+        hasNewButton: !!root.querySelector(".boi-agent-new"),
+        hasExpandButton: !!root.querySelector(".boi-agent-expand"),
+        hasStopButtonNow: !!root.querySelector(".boi-agent-stop"),
+        hasArtifactOpenButton: !!root.querySelector("[data-open-artifact]"),
+        hasAnswerOpenButton: !!root.querySelector("[data-open-answer]"),
+        hasHorizontalOverflow: root.querySelector(".boi-agent-content") ? root.querySelector(".boi-agent-content").scrollWidth > root.querySelector(".boi-agent-content").clientWidth + 2 : false,
+      };
+    })()`);
+
+    if (args.screenshot) {
+      const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+      createWriteStream(args.screenshot).end(Buffer.from(screenshot.data, "base64"));
+    }
+
+    await cdp.evaluate(`(() => {
+      document.querySelector(".boi-agent-viewer-close")?.click();
+      document.querySelector(".boi-agent-new")?.click();
+      return true;
+    })()`);
+    await sleep(150);
+    const afterNew = await cdp.evaluate(`(() => {
+      const root = document.querySelector("#boi-agent-root");
+      return {
+        messageCount: root.querySelectorAll(".boi-agent-message").length,
+        draft: root.querySelector(".boi-agent-chat-form textarea")?.value || "",
+      };
+    })()`);
+
+    const checks = {
+      panel_opened: beforeNew.panelOpen,
+      stop_seen_during_generation: beforeNew.stopSeen,
+      live_status_seen: beforeNew.liveStatusCount > 0,
+      status_trail_seen: beforeNew.statusTrailMax >= 1,
+      streamed_answer_updates_seen: beforeNew.answerSnapshotCount >= 2,
+      answer_rendered: beforeNew.answerTextLength > 80,
+      viewer_opened: beforeNew.viewerOpen,
+      expand_control_worked: beforeNew.expanded,
+      no_horizontal_overflow: !beforeNew.hasHorizontalOverflow,
+      new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
+    };
+    const ok = Object.values(checks).every(Boolean);
+    const report = { ok, url: args.url, checks, before_new: beforeNew, after_new: afterNew, screenshot: args.screenshot || "" };
+    console.log(JSON.stringify(report, null, 2));
+    if (args.strict && !ok) process.exitCode = 1;
+  } finally {
+    try { cdp?.close(); } catch (_error) {}
+    await terminateChrome(child);
+    try {
+      rmSync(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (_error) {
+      // Chrome may leave transient Windows/WSL profile locks. The smoke result is more important than cleanup.
+    }
+  }
+}
+
+main().catch((error) => {
+  console.error(JSON.stringify({ ok: false, error: error.message }, null, 2));
+  process.exit(1);
+});
