@@ -136,7 +136,8 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["router"]["backoff_remaining_seconds"] >= 0
     assert body["boi_agent"]["router"]["max_tokens"] == 1536
     assert "api_key" not in body["boi_agent"]["router"]
-    assert body["boi_agent"]["status_writer"]["max_tokens"] == 4096
+    assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 12
+    assert body["boi_agent"]["status_writer"]["max_tokens"] == 1536
     assert body["boi_agent"]["cache_warmup"]["enabled"] is True
     assert body["boi_agent"]["cache_warmup"]["status"] in {"not_started", "running", "completed", "failed", "disabled"}
 
