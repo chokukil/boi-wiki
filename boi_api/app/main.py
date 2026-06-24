@@ -137,6 +137,18 @@ BOI_AGENT_STATUS_LLM_ENABLED = resolve_router_llm_enabled(
 BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "1536"))
 BOI_AGENT_STATUS_REQUIRED = os.getenv("BOI_AGENT_STATUS_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_COMPOSER_BASE_URL = os.getenv("BOI_AGENT_COMPOSER_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
+BOI_AGENT_COMPOSER_API_KEY = os.getenv("BOI_AGENT_COMPOSER_API_KEY", BOI_AGENT_ROUTER_API_KEY)
+BOI_AGENT_COMPOSER_MODEL = os.getenv("BOI_AGENT_COMPOSER_MODEL", BOI_AGENT_ROUTER_MODEL)
+BOI_AGENT_COMPOSER_LLM_ENABLED_RAW = os.getenv("BOI_AGENT_COMPOSER_LLM_ENABLED", BOI_AGENT_ROUTER_LLM_ENABLED_RAW).strip().lower()
+BOI_AGENT_COMPOSER_LLM_ENABLED = resolve_router_llm_enabled(
+    BOI_AGENT_COMPOSER_LLM_ENABLED_RAW,
+    "llm_first",
+    BOI_AGENT_COMPOSER_BASE_URL,
+)
+BOI_AGENT_COMPOSER_REQUIRED = os.getenv("BOI_AGENT_COMPOSER_REQUIRED", "0").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "20"))
+BOI_AGENT_COMPOSER_MAX_TOKENS = int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "3072"))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
@@ -5302,6 +5314,14 @@ async def runtime_config() -> dict[str, Any]:
                 "timeout_seconds": BOI_AGENT_STATUS_TIMEOUT_SECONDS,
                 "max_tokens": BOI_AGENT_STATUS_MAX_TOKENS,
             },
+            "composer": {
+                "llm_enabled": BOI_AGENT_COMPOSER_LLM_ENABLED,
+                "required": BOI_AGENT_COMPOSER_REQUIRED,
+                "base_url": BOI_AGENT_COMPOSER_BASE_URL,
+                "model": BOI_AGENT_COMPOSER_MODEL,
+                "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
+                "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
+            },
             "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             "langgraph": {
@@ -6644,6 +6664,78 @@ def parse_router_payload(text: str) -> dict[str, Any] | None:
     return None
 
 
+def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
+    parsed = parse_langflow_json_text(text)
+    if isinstance(parsed, dict) and str(parsed.get("answer_markdown") or "").strip():
+        return parsed
+    decoder = json.JSONDecoder()
+    stripped = text.strip()
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and str(payload.get("answer_markdown") or "").strip():
+            return payload
+    return None
+
+
+def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    if not BOI_AGENT_COMPOSER_LLM_ENABLED:
+        raise NativeAgentRuntimeUnavailable("LLM answer composer is not configured")
+    if not BOI_AGENT_COMPOSER_BASE_URL or not BOI_AGENT_COMPOSER_MODEL:
+        raise NativeAgentRuntimeUnavailable("LLM answer composer base URL/model is missing")
+    url = BOI_AGENT_COMPOSER_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if BOI_AGENT_COMPOSER_API_KEY:
+        headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
+    body = {
+        "model": BOI_AGENT_COMPOSER_MODEL,
+        "temperature": 0.25,
+        "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
+        "response_format": {"type": "text"},
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are the final answer composer for BoI Wiki Agent. "
+                    "Return only one JSON object. Use only supplied evidence. "
+                    "Do not invent private data, links, actions, or approvals."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "employee_id": employee_id,
+                        **(payload if isinstance(payload, dict) else {}),
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+    }
+    try:
+        with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:
+            response = client.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            raw = response.json()
+    except Exception as exc:
+        raise NativeAgentRuntimeUnavailable(f"LLM answer composer call failed: {exc}") from exc
+    for text in iter_langflow_text_candidates(raw):
+        candidate = parse_agent_compose_payload(text)
+        if candidate:
+            answer = str(candidate.get("answer_markdown") or "").strip()
+            suggestions = candidate.get("suggested_questions")
+            return {
+                "answer_markdown": answer,
+                "suggested_questions": suggestions if isinstance(suggestions, list) else [],
+            }
+    raise NativeAgentRuntimeUnavailable("LLM answer composer returned invalid JSON")
+
+
 REQUIRED_AGENT_STATUS_STAGES = ("page_context", "intent", "retrieval", "tool_loop", "compose", "answer_stream", "waiting")
 
 
@@ -7296,6 +7388,8 @@ def native_agent_llm_json(employee_id: str, task: str, payload: dict[str, Any]) 
     OpenAI-compatible router endpoint without making the API entrypoint call a
     separate pre-router first.
     """
+    if task == "compose":
+        return call_boi_agent_composer_llm(payload, employee_id)
     if task != "route":
         return None
     request_payload = payload.get("request") if isinstance(payload, dict) else {}
@@ -7353,6 +7447,8 @@ def call_native_boi_agent(
             build_revision=BOI_BUILD_REVISION,
             llm_enabled=BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first",
             require_langgraph=BOI_AGENT_LANGGRAPH_REQUIRED,
+            composer_enabled=BOI_AGENT_COMPOSER_LLM_ENABLED,
+            composer_required=BOI_AGENT_COMPOSER_REQUIRED,
             progress_callback=progress_callback,
         ),
     )
@@ -8340,6 +8436,14 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "model": BOI_AGENT_STATUS_MODEL,
             "timeout_seconds": BOI_AGENT_STATUS_TIMEOUT_SECONDS,
             "max_tokens": BOI_AGENT_STATUS_MAX_TOKENS,
+        },
+        "composer": {
+            "llm_enabled": BOI_AGENT_COMPOSER_LLM_ENABLED,
+            "required": BOI_AGENT_COMPOSER_REQUIRED,
+            "base_url": BOI_AGENT_COMPOSER_BASE_URL,
+            "model": BOI_AGENT_COMPOSER_MODEL,
+            "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
+            "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
         },
         "rbac_enabled": True,
         "acl_guardrail_enabled": True,

@@ -138,6 +138,8 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert "api_key" not in body["boi_agent"]["router"]
     assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 12
     assert body["boi_agent"]["status_writer"]["max_tokens"] == 1536
+    assert body["boi_agent"]["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
+    assert body["boi_agent"]["composer"]["max_tokens"] == 3072
     assert body["boi_agent"]["langgraph"]["required"] is True
     assert body["boi_agent"]["langgraph"]["runtime"] in {"LangGraph", "unavailable"}
     assert body["boi_agent"]["cache_warmup"]["enabled"] is True
@@ -176,6 +178,7 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["streaming"]["events"] == ["status", "answer_delta", "final", "error"]
     assert body["status_writer"]["required"] is True
     assert body["status_writer"]["model"]
+    assert body["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["native_agent"]["langgraph_required"] is True
     assert body["native_agent"]["runtime"] in {"LangGraph", "unavailable"}
     assert "progressive response streaming" in body["features"]
@@ -456,6 +459,69 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert isinstance(body["tool_trace"], list)
     assert "설비" in body["answer_markdown"]
     assert isinstance(body["links"], list)
+
+
+def test_boi_agent_native_uses_llm_composer_when_enabled(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    compose_calls: list[dict] = []
+
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        compose_calls.append({"employee_id": employee_id, "task": task, "payload": payload})
+        assert task == "compose"
+        return {
+            "answer_markdown": "## LLM Composer 답변\n\nSOP 근거와 Action 연결을 업무 관점으로 다시 정리했습니다.",
+            "suggested_questions": ["이 SOP의 부족한 Action Spec을 찾아줘."],
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP의 Event, Action, Manual Handoff 관계를 설명해줘",
+            "mode": "deep",
+            "intent": "workflow_explain",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert compose_calls
+    assert compose_calls[0]["payload"]["structured_draft"]
+    assert body["answer_markdown"].startswith("## LLM Composer 답변")
+    assert body["context_summary"]["composer_backend"] == "llm"
+    assert body["suggested_questions"] == ["이 SOP의 부족한 Action Spec을 찾아줘."]
+
+
+def test_boi_agent_required_llm_composer_failure_is_service_error(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def empty_llm(employee_id: str, task: str, payload: dict):
+        return None
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", empty_llm)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP의 Event, Action, Manual Handoff 관계를 설명해줘",
+            "mode": "deep",
+            "intent": "workflow_explain",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "native_agent_runtime_unavailable"
+    assert "composer" in detail["message"].lower()
 
 
 def test_boi_agent_chat_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):

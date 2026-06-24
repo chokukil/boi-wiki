@@ -40,7 +40,11 @@ flowchart TD
   D --> E["execute_tools_loop"]
   E --> F["evaluate_coverage"]
   F --> G["compose_answer"]
-  G --> H["verify_acl_and_artifacts"]
+  G --> LC{"LLM composer enabled?"}
+  LC -->|yes| LLM["compose final Markdown<br/>from typed evidence"]
+  LC -->|no| DET["keep deterministic structured draft"]
+  LLM --> H["verify_acl_and_artifacts"]
+  DET --> H
   H --> I["safety_gate"]
 ```
 
@@ -63,6 +67,10 @@ sequenceDiagram
     Tool-->>Agent: typed result
   end
   Agent->>Agent: coverage + artifact generation
+  opt LLM composer enabled
+    Agent->>Tool: answer_composer with compact evidence pack
+    Tool-->>Agent: answer_markdown + suggested_questions JSON
+  end
   Agent-->>API: answer_markdown + links + citations + artifacts
 ```
 
@@ -79,6 +87,7 @@ sequenceDiagram
 | `dictionary_resolve` | private -> team -> public 용어 해석 |
 | `memory_recall` | private agent-memory 요약 조회 |
 | `agent_inbox` | 담당자가 처리해야 할 action inbox 조회 |
+| `answer_composer` | typed tool 결과와 artifact를 근거로 최종 Markdown 답변을 작성하는 LLM composer. 실행 권한이나 ACL을 바꾸지 않는다. |
 
 # Artifact Policy
 

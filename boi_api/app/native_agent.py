@@ -185,6 +185,8 @@ class NativeAgentConfig:
     build_revision: str = "unknown"
     llm_enabled: bool = False
     require_langgraph: bool = True
+    composer_enabled: bool = False
+    composer_required: bool = False
     progress_callback: Callable[[JsonDict], None] | None = None
 
 
@@ -479,7 +481,39 @@ class NativeBoiAgent:
             self._compose_inbox_answer(state)
         else:
             self._compose_search_answer(state)
+        self._compose_with_llm_if_enabled(state)
         return state
+
+    def _compose_with_llm_if_enabled(self, state: JsonDict) -> None:
+        if state.get("stop_reason") or state.get("route_name") in {"manual_handoff", "approval_required"}:
+            return
+        if not self.config.composer_enabled:
+            state["composer_backend"] = "deterministic"
+            return
+        if not self.tools.llm_json:
+            if self.config.composer_required:
+                raise NativeAgentRuntimeUnavailable("LLM answer composer is required but not configured")
+            state["composer_backend"] = "deterministic"
+            state["composer_error"] = "llm_json_not_configured"
+            return
+        payload = llm_compose_payload(state)
+        result = self._call_tool(
+            "answer_composer",
+            {"intent": state.get("intent"), "route": state.get("route_name")},
+            lambda: self.tools.llm_json("compose", payload) if self.tools.llm_json else None,
+            state,
+        )
+        if isinstance(result, dict) and str(result.get("answer_markdown") or "").strip() and not result.get("error"):
+            state["answer_markdown"] = str(result.get("answer_markdown") or "").strip()
+            suggestions = result.get("suggested_questions")
+            if isinstance(suggestions, list):
+                state["suggested_questions"] = [str(item).strip() for item in suggestions if str(item).strip()][:4]
+            state["composer_backend"] = "llm"
+            return
+        state["composer_backend"] = "deterministic"
+        state["composer_error"] = str((result or {}).get("error") if isinstance(result, dict) else "empty_llm_compose_result")
+        if self.config.composer_required:
+            raise NativeAgentRuntimeUnavailable("LLM answer composer did not return answer_markdown")
 
     def _compose_diagram_answer(self, state: JsonDict) -> None:
         doc = (state.get("tool_results") or {}).get("current_doc") or {}
@@ -626,7 +660,7 @@ class NativeBoiAgent:
             "answer_markdown": state.get("answer_markdown") or "",
             "links": state.get("links") or [],
             "citations": state.get("citations") or [],
-            "suggested_questions": suggested_questions_for_state(state),
+            "suggested_questions": state.get("suggested_questions") or suggested_questions_for_state(state),
             "artifacts": state.get("artifacts") or [],
             "context_summary": {
                 "route": state.get("route_name"),
@@ -636,6 +670,8 @@ class NativeBoiAgent:
                 "used_backend": "native_langgraph",
                 "page_context": state.get("page_context") or {},
                 "langgraph_available": bool(state.get("langgraph_available")),
+                "composer_backend": state.get("composer_backend") or "deterministic",
+                "composer_error": state.get("composer_error") or "",
             },
             "route": state.get("route_name"),
             "intent": state.get("intent"),
@@ -717,6 +753,7 @@ def tool_progress_message(tool: str, status: str, *, summary: str = "") -> str:
         "memory_recall": "Private memory",
         "agent_inbox": "내 Action",
         "route_classifier": "질문 유형",
+        "answer_composer": "최종 답변",
     }
     label = labels.get(tool, "필요한 근거")
     if status == "start":
@@ -741,6 +778,83 @@ def compact_tool_result(result: Any) -> Any:
     if isinstance(result, list):
         return {"items": len(result)}
     return result
+
+
+def llm_compose_payload(state: JsonDict) -> JsonDict:
+    search = state.get("search") if isinstance(state.get("search"), dict) else {}
+    page_context = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    tool_results = state.get("tool_results") if isinstance(state.get("tool_results"), dict) else {}
+    current_doc = tool_results.get("current_doc") if isinstance(tool_results.get("current_doc"), dict) else {}
+    action_specs = tool_results.get("action_specs") if isinstance(tool_results.get("action_specs"), list) else []
+    return {
+        "task": "compose_final_boi_agent_answer",
+        "language": "ko",
+        "style": {
+            "audience": "일반 구성원과 업무 담당자가 이해할 수 있는 간결한 업무 문장",
+            "format": "GitHub-flavored Markdown",
+            "avoid": ["내부 stack trace", "근거 없는 단정", "권한 없는 private 내용", "dry-run", "fallback", "stub"],
+        },
+        "question": state.get("question") or "",
+        "route": state.get("route_name") or "",
+        "intent": state.get("intent") or "",
+        "page_context": {
+            key: page_context.get(key)
+            for key in (
+                "page_kind",
+                "resolved",
+                "title",
+                "boi_id",
+                "type",
+                "event_type",
+                "workflow_key",
+                "trace_id",
+                "workflow_event_types",
+                "workflow_action_count",
+                "workflow_manual_action_count",
+                "body_excerpt",
+            )
+            if page_context.get(key) not in (None, "", [])
+        },
+        "current_doc": {
+            "title": doc_title(current_doc, "") if current_doc else "",
+            "boi_id": current_doc.get("boi_id") if isinstance(current_doc, dict) else "",
+            "body_excerpt": compact_text(str(current_doc.get("body_excerpt") or ""), 900) if isinstance(current_doc, dict) else "",
+        },
+        "search_matches": [
+            {
+                "label": item_label(item),
+                "kind": item.get("kind"),
+                "type": item.get("type"),
+                "url": item.get("url"),
+                "description": compact_text(str(item.get("description") or item.get("match_reason") or ""), 180),
+            }
+            for item in (search.get("best_matches") or [])[:6]
+            if isinstance(item, dict)
+        ],
+        "action_specs": [
+            {
+                "action_key": ((spec.get("item") if isinstance(spec.get("item"), dict) else spec) or {}).get("action_key"),
+                "doc_ref": ((spec.get("item") if isinstance(spec.get("item"), dict) else spec) or {}).get("doc_ref"),
+            }
+            for spec in action_specs[:12]
+            if isinstance(spec, dict)
+        ],
+        "coverage_report": state.get("coverage_report") or {},
+        "tool_trace": [
+            {
+                "tool": item.tool,
+                "status": item.status,
+                "summary": item.summary,
+            }
+            for item in (state.get("tool_trace") or [])[-10:]
+            if isinstance(item, ToolTraceItem) and item.tool != "answer_composer"
+        ],
+        "structured_draft": compact_text(str(state.get("answer_markdown") or ""), 3200),
+        "required_json_schema": {
+            "answer_markdown": "final Korean Markdown answer. Preserve factual constraints and include links only from evidence.",
+            "suggested_questions": ["2-4 short follow-up questions"],
+        },
+    }
 
 
 def compact_text(value: str, limit: int = 160) -> str:
