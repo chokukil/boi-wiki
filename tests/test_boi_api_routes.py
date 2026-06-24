@@ -1654,8 +1654,13 @@ const markdown = [
   "  같은 bullet에 이어져야 함",
   "1. 첫 번째",
   "   같은 numbered item에 이어져야 함",
+  "2. 두 번째",
+  "   - 하위 bullet",
+  "     하위 bullet 설명",
+  "   1. 하위 numbered",
   "",
   "> 인용 문장",
+  "> - 인용 목록",
   "",
   "---",
   "",
@@ -1692,12 +1697,13 @@ console.log(JSON.stringify({
   hasCode: html.includes("<code>equipment.alarm.raised.v1</code>"),
   hasLink: html.includes('href="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"'),
   hasStrong: html.includes("<strong>확인</strong>"),
-  hasOrderedList: html.includes("<ol><li>첫 번째 같은 numbered item에 이어져야 함</li></ol>"),
+  hasOrderedList: html.includes("<ol><li>첫 번째 같은 numbered item에 이어져야 함</li><li>두 번째"),
+  hasNestedBullet: html.includes("<li>두 번째<ul><li>하위 bullet 하위 bullet 설명</li></ul><ol><li>하위 numbered</li></ol></li>"),
   skippedMermaid: !html.includes("mermaid-diagram") && !html.includes("```mermaid"),
   rawTableSeparatorLeaked: html.includes("| --- |"),
   hasWrappedBullet: html.includes("줄바꿈된 항목 같은 bullet에 이어져야 함"),
   hasWrappedOrderedItem: html.includes("첫 번째 같은 numbered item에 이어져야 함"),
-  hasBlockquote: html.includes("<blockquote>") && html.includes("인용 문장"),
+  hasBlockquote: html.includes("<blockquote>") && html.includes("인용 문장") && html.includes("<li>인용 목록</li>"),
   hasHr: html.includes("<hr>"),
   tableKeepsLink: tableHtml.includes("<a href="),
   detectsRawServerMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(rawServerHtml),
@@ -1732,6 +1738,7 @@ console.log(JSON.stringify({
     assert payload["hasLink"]
     assert payload["hasStrong"]
     assert payload["hasOrderedList"]
+    assert payload["hasNestedBullet"]
     assert payload["skippedMermaid"]
     assert not payload["rawTableSeparatorLeaked"]
     assert payload["hasWrappedBullet"]

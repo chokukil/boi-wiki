@@ -266,6 +266,65 @@
     return cells;
   }
 
+  function listLineInfo(line) {
+    const match = String(line || "").match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+    if (!match) return null;
+    return {
+      indent: match[1].replace(/\t/g, "    ").length,
+      ordered: /^\d+\./.test(match[2]),
+      text: match[3],
+    };
+  }
+
+  function renderListItemText(rawItem) {
+    const task = String(rawItem || "").match(/^\[( |x|X)\]\s+(.*)$/);
+    if (task) {
+      const checked = task[1].toLowerCase() === "x";
+      return `<input type="checkbox" disabled${checked ? " checked" : ""}> ${renderInlineMarkdown(task[2])}`;
+    }
+    return renderInlineMarkdown(rawItem);
+  }
+
+  function renderListBlock(lines, startIndex, baseIndent) {
+    const first = listLineInfo(lines[startIndex]);
+    if (!first) return { html: "", nextIndex: startIndex };
+    const ordered = first.ordered;
+    const tag = ordered ? "ol" : "ul";
+    const items = [];
+    let i = startIndex;
+
+    while (i < lines.length) {
+      const info = listLineInfo(lines[i]);
+      if (!info || info.indent < baseIndent || info.indent !== baseIndent || info.ordered !== ordered) break;
+      let rawItem = info.text;
+      let nestedHtml = "";
+      i += 1;
+
+      while (i < lines.length) {
+        const nextInfo = listLineInfo(lines[i]);
+        if (nextInfo) {
+          if (nextInfo.indent > baseIndent) {
+            const nested = renderListBlock(lines, i, nextInfo.indent);
+            nestedHtml += nested.html;
+            i = nested.nextIndex;
+            continue;
+          }
+          break;
+        }
+        if (!lines[i].trim()) break;
+        if (/^\s{2,}\S/.test(lines[i]) && !isLikelyTableStart(lines, i)) {
+          rawItem += ` ${lines[i].trim()}`;
+          i += 1;
+          continue;
+        }
+        break;
+      }
+      items.push(`<li>${renderListItemText(rawItem)}${nestedHtml}</li>`);
+    }
+
+    return { html: `<${tag}>${items.join("")}</${tag}>`, nextIndex: i };
+  }
+
   function renderTextMarkdown(value) {
     const lines = String(value || "").split(/\n/);
     const parts = [];
@@ -291,50 +350,11 @@
         parts.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
         continue;
       }
-      if (/^\s*[-*+]\s+/.test(line)) {
-        const listItems = [];
-        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
-          let rawItem = lines[i].replace(/^\s*[-*+]\s+/, "");
-          while (
-            i + 1 < lines.length
-            && /^\s{2,}\S/.test(lines[i + 1])
-            && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i + 1])
-            && !isLikelyTableStart(lines, i + 1)
-          ) {
-            i += 1;
-            rawItem += ` ${lines[i].trim()}`;
-          }
-          const task = rawItem.match(/^\[( |x|X)\]\s+(.*)$/);
-          if (task) {
-            const checked = task[1].toLowerCase() === "x";
-            listItems.push(`<li><input type="checkbox" disabled${checked ? " checked" : ""}> ${renderInlineMarkdown(task[2])}</li>`);
-          } else {
-            listItems.push(`<li>${renderInlineMarkdown(rawItem)}</li>`);
-          }
-          i += 1;
-        }
-        i -= 1;
-        parts.push(`<ul>${listItems.join("")}</ul>`);
-        continue;
-      }
-      if (/^\s*\d+\.\s+/.test(line)) {
-        const listItems = [];
-        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-          let rawItem = lines[i].replace(/^\s*\d+\.\s+/, "");
-          while (
-            i + 1 < lines.length
-            && /^\s{2,}\S/.test(lines[i + 1])
-            && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i + 1])
-            && !isLikelyTableStart(lines, i + 1)
-          ) {
-            i += 1;
-            rawItem += ` ${lines[i].trim()}`;
-          }
-          listItems.push(`<li>${renderInlineMarkdown(rawItem)}</li>`);
-          i += 1;
-        }
-        i -= 1;
-        parts.push(`<ol>${listItems.join("")}</ol>`);
+      const listInfo = listLineInfo(line);
+      if (listInfo) {
+        const list = renderListBlock(lines, i, listInfo.indent);
+        parts.push(list.html);
+        i = list.nextIndex - 1;
         continue;
       }
       if (/^\s*>\s?/.test(line)) {
@@ -344,7 +364,7 @@
           i += 1;
         }
         i -= 1;
-        parts.push(`<blockquote>${quoteLines.map((quote) => `<p>${renderInlineMarkdown(quote)}</p>`).join("")}</blockquote>`);
+        parts.push(`<blockquote>${renderTextMarkdown(quoteLines.join("\n"))}</blockquote>`);
         continue;
       }
       if (/^\s*---+\s*$/.test(line)) {
@@ -552,6 +572,7 @@
     renderMarkdownTable,
     renderCellValue,
     renderRunSummary,
+    listLineInfo,
     splitTableRow,
     mermaidSourcesFromMarkdown,
     mermaidSourcesFromArtifacts,
