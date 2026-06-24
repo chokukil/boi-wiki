@@ -150,6 +150,16 @@ def test_classify_runtime_paths_require_compose():
         assert classify(path) == "compose_required"
 
 
+def test_boi_api_dockerfile_keeps_dependency_layer_revision_independent():
+    lines = Path("boi_api/Dockerfile").read_text(encoding="utf-8").splitlines()
+
+    pip_install_index = next(index for index, line in enumerate(lines) if "pip install" in line)
+    revision_arg_index = next(index for index, line in enumerate(lines) if line.strip().startswith("ARG BOI_BUILD_REVISION"))
+    revision_env_index = next(index for index, line in enumerate(lines) if "BOI_BUILD_REVISION=${BOI_BUILD_REVISION}" in line)
+
+    assert pip_install_index < revision_arg_index < revision_env_index
+
+
 def test_dirty_tracked_worktree_blocks_pull(tmp_path: Path):
     app = tmp_path / "dirty-app"
     init_repo(app)
