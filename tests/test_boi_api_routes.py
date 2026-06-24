@@ -182,6 +182,20 @@ def test_ontology_search_dictionary_and_boi_search_remain_distinct(boi_app_modul
     assert "items" in boi_search.json()
     assert all((item.get("metadata") or {}).get("type") for item in boi_search.json()["items"])
 
+    equipment = client.get("/api/search/ontology?employee_id=100001&q=설비%20SOP&view=compact")
+    assert equipment.status_code == 200
+    best_matches = equipment.json()["best_matches"]
+    identities = []
+    for item in best_matches:
+        if item.get("event_type"):
+            identities.append(f"event:{item['event_type']}")
+        elif item.get("action_key"):
+            identities.append(f"action:{item['action_key']}")
+        else:
+            identities.append(str(item.get("boi_id") or item.get("doc_ref") or item.get("url") or item.get("title")))
+    assert len(identities) == len(set(identities))
+    assert identities.count("boi:public:sop:equipment-abnormal-response") <= 1
+
 
 def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)

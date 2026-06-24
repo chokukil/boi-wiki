@@ -2626,6 +2626,59 @@ def action_doc_url(action: dict[str, Any], employee_id: str) -> str:
     return doc_url_for_ref(doc_ref, employee_id) if doc_ref else ""
 
 
+def ontology_item_identity(item: dict[str, Any]) -> str:
+    """Return a stable semantic identity for cross-group ontology results.
+
+    The ontology response intentionally exposes grouped views for documents,
+    event catalog entries, and action catalog entries. The flat best_matches
+    list should not repeat the same business concept just because it was found
+    through more than one source, such as an event catalog row and its BoI doc.
+    """
+    if not isinstance(item, dict):
+        return ""
+    kind = str(item.get("kind") or "")
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    boi_type = str(item.get("type") or metadata.get("type") or "")
+    boi_id = str(item.get("boi_id") or metadata.get("boi_id") or "")
+    event_type = str(item.get("event_type") or metadata.get("event_type") or "")
+    action_key = str(item.get("action_key") or metadata.get("action_key") or "")
+    doc_ref = str(item.get("doc_ref") or "")
+    if not action_key and isinstance(metadata.get("action_gateway_mapping"), dict):
+        action_key = str(metadata.get("action_gateway_mapping", {}).get("action_key") or "")
+    if kind == "event_type" or boi_type == "boi/event-type":
+        if event_type:
+            return f"event:{event_type}"
+        if boi_id.startswith("boi:public:event-types:"):
+            return f"event:{boi_id.removeprefix('boi:public:event-types:')}"
+    if kind == "action" or boi_type == "boi/action-spec":
+        if action_key:
+            return f"action:{action_key}"
+        if doc_ref:
+            return f"doc:{doc_ref}"
+    if doc_ref:
+        return f"doc:{doc_ref}"
+    if boi_id:
+        return f"doc:{boi_id}"
+    for key in ("log_ref", "request_id", "url", "term", "title"):
+        value = str(item.get(key) or "")
+        if value:
+            return f"{key}:{value}"
+    return ""
+
+
+def dedupe_ontology_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        key = ontology_item_identity(item)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
 def ontology_search_payload(
     query: str,
     employee_id: str,
@@ -2752,6 +2805,7 @@ def ontology_search_payload(
     for items in groups.values():
         best_matches.extend(items if isinstance(items, list) else [])
     best_matches.sort(key=lambda item: -int(item.get("score") or 0))
+    best_matches = dedupe_ontology_items(best_matches)
 
     graph_paths = []
     for item in best_matches[:3]:
@@ -2806,7 +2860,7 @@ def ontology_search_payload(
         "best_matches": best_matches[:effective_limit],
         "graph_paths": graph_paths,
         "citations": citations,
-        "document_rank_refs": [str(item.get("boi_id") or item.get("uri") or "") for item in doc_items],
+        "document_rank_refs": list(dict.fromkeys(str(item.get("boi_id") or item.get("uri") or "") for item in doc_items)),
     }
     if str(view or "").lower() == "compact":
         return compact_ontology_payload(payload)
