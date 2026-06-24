@@ -832,6 +832,36 @@ def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_mod
     assert validate.json()["draft"]["validation"]["valid"] is True
 
 
+def test_event_types_page_shows_visible_drafts_without_catalog_apply(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    event_type = "pytest.visible.draft.requested.v1"
+
+    response = client.post(
+        "/api/event-types/drafts?employee_id=100001",
+        json={
+            "event_type": event_type,
+            "name_ko": "화면 표시 초안",
+            "description": "Event Types 화면에서 확인할 수 있는 draft-only 초안",
+            "workflow_stage": "초안 검토",
+            "recommended_actions": ["boi.materialize_event"],
+            "user_confirmed": True,
+        },
+    )
+    assert response.status_code == 200
+    assert boi_app_module.get_event_type(event_type) is None
+
+    page = client.get("/event-types?employee_id=100001")
+    assert page.status_code == 200
+    assert "신규 Event Type 초안" in page.text
+    assert event_type in page.text
+    assert "catalog에는 아직 반영되지 않음" in page.text
+    assert "validation ok" in page.text
+
+    other_employee = client.get("/event-types?employee_id=100003")
+    assert other_employee.status_code == 200
+    assert event_type not in other_employee.text
+
+
 def test_boi_agent_approve_event_type_draft_requires_editor_role(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

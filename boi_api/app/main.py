@@ -6004,6 +6004,12 @@ def read_event_type_drafts() -> list[dict[str, Any]]:
     return sorted(rows, key=lambda item: str(item.get("created_at") or ""), reverse=True)
 
 
+def visible_event_type_drafts(employee_id: str) -> list[dict[str, Any]]:
+    rows = read_event_type_drafts()
+    admin = "boi.admin" in roles_for(employee_id)
+    return [row for row in rows if row.get("created_by") == employee_id or admin]
+
+
 @app.post("/api/event-types/drafts")
 async def api_event_type_draft_create(req: EventTypeDraftRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     draft = create_event_type_draft(req, employee_id)
@@ -6013,8 +6019,7 @@ async def api_event_type_draft_create(req: EventTypeDraftRequest, employee_id: s
 @app.get("/api/event-types/drafts")
 async def api_event_type_drafts(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.viewer")
-    rows = read_event_type_drafts()
-    visible = [row for row in rows if row.get("created_by") == employee_id or "boi.admin" in roles_for(employee_id)]
+    visible = visible_event_type_drafts(employee_id)
     return {"ok": True, "count": len(visible), "items": visible}
 
 
@@ -10391,6 +10396,7 @@ async def event_types_page(
     status_options = sorted({str(item.get("status") or "") for item in types if item.get("status")})
     owner_options = sorted({str(item.get("owner") or "") for item in types if item.get("owner")})
     workflow_stage_options = sorted({str(item.get("workflow_stage") or "") for item in types if item.get("workflow_stage")})
+    event_type_drafts = visible_event_type_drafts(employee_id)
     return templates.TemplateResponse(
         "event_types.html",
         {
@@ -10414,6 +10420,8 @@ async def event_types_page(
             "owner_options": owner_options,
             "workflow_stage_options": workflow_stage_options,
             "total_event_types": len(filtered_types),
+            "event_type_drafts": event_type_drafts,
+            "event_type_draft_count": len(event_type_drafts),
             "has_active_filter": bool(q or status or owner or workflow_stage or has_sop),
             "clear_url": app_url("/event-types", employee_id),
         },

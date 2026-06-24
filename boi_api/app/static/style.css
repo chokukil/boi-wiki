@@ -354,6 +354,12 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .event-card small { display: block; margin-top: 6px; color: #4b5563; }
 .cards.compact { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .event-row { border-left: 4px solid #8ab4f8; }
+.catalog-draft-panel { margin:0 0 18px; padding:16px; border:1px solid #bfdbfe; border-radius:10px; background:#f8fbff; }
+.catalog-draft-panel .section-heading { margin-bottom:10px; padding:0; background:transparent; color:inherit; }
+.catalog-draft-panel .section-heading h2 { margin:0 0 4px; color:#0f172a; }
+.catalog-draft-panel .section-heading p { margin:0; color:#475569; }
+.compact-list { gap:9px; }
+.draft-row { border-left-color:#f59e0b; background:#fff; }
 .event-stream-preview { margin: 24px 0 48px; }
 .source-page { max-width:1180px; margin:24px auto 64px; padding:0 22px; display:grid; grid-template-columns:1fr; gap:14px; }
 .source-status, .source-viewer, .source-editor { min-width:0; background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:14px; }
