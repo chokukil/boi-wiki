@@ -226,8 +226,11 @@ async def action_invoke(
     boi_id: str | None = None,
     dry_run: bool | None = True,
     approved_by: str | None = None,
+    user_confirmed: bool = False,
 ) -> dict[str, Any]:
     """Invoke an allowlisted Action Gateway action. High-risk actions still require approval."""
+    if dry_run is False and not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before invoking a real action")
     return await api_post(
         "/api/actions/invoke",
         employee_id=employee_id,
@@ -239,6 +242,7 @@ async def action_invoke(
             "boi_id": boi_id,
             "dry_run": dry_run,
             "approved_by": approved_by,
+            "user_confirmed": user_confirmed,
         },
     )
 
@@ -492,6 +496,8 @@ async def promotion_submit(
     user_confirmed_at: str | None = None,
 ) -> dict[str, Any]:
     """Submit a user-confirmed Team/Public promotion candidate for validation and immediate publish."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before submitting a promotion")
     return await api_post(
         "/api/promotions/submit",
         employee_id=employee_id,

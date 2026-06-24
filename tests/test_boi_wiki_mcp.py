@@ -327,6 +327,85 @@ def test_mcp_doc_body_apply_requires_user_confirmation(mcp_module, monkeypatch):
     assert calls[0]["path"] == "/api/docs/boi:public:test/body-apply"
 
 
+def test_mcp_action_invoke_requires_confirmation_for_real_execution(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"path": path, **kwargs})
+        return {"ok": True, "status": "invoked"}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(
+            mcp_module.action_invoke(
+                action_key="sop.equipment.request_raw_data",
+                employee_id="100001",
+                dry_run=False,
+                user_confirmed=False,
+            )
+        )
+    assert calls == []
+
+    dry_run_result = asyncio.run(
+        mcp_module.action_invoke(
+            action_key="sop.equipment.request_raw_data",
+            employee_id="100001",
+            dry_run=True,
+            user_confirmed=False,
+        )
+    )
+    assert dry_run_result["status"] == "invoked"
+    assert calls[0]["payload"]["dry_run"] is True
+
+    real_result = asyncio.run(
+        mcp_module.action_invoke(
+            action_key="sop.equipment.request_raw_data",
+            employee_id="100001",
+            dry_run=False,
+            user_confirmed=True,
+        )
+    )
+    assert real_result["status"] == "invoked"
+    assert calls[1]["payload"]["dry_run"] is False
+    assert calls[1]["payload"]["user_confirmed"] is True
+
+
+def test_mcp_promotion_submit_requires_user_confirmation(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"path": path, **kwargs})
+        return {"ok": True, "promotion_id": "promo-test"}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(
+            mcp_module.promotion_submit(
+                title="Team 공유 후보",
+                body="# Summary\n\n공유 후보",
+                source_refs=[{"type": "boi", "ref": "local-private:test"}],
+                employee_id="100001",
+                user_confirmed=False,
+            )
+        )
+    assert calls == []
+
+    result = asyncio.run(
+        mcp_module.promotion_submit(
+            title="Team 공유 후보",
+            body="# Summary\n\n공유 후보",
+            source_refs=[{"type": "boi", "ref": "local-private:test"}],
+            employee_id="100001",
+            user_confirmed=True,
+        )
+    )
+    assert result["promotion_id"] == "promo-test"
+    assert calls[0]["path"] == "/api/promotions/submit"
+    assert calls[0]["payload"]["user_confirmed"] is True
+
+
 def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     import scripts.check_boi_wiki_mcp as script
 

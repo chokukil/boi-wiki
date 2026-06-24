@@ -47,10 +47,10 @@ flowchart TD
 | Operation | Boundary |
 |---|---|
 | `manual_handoff_complete` | append-only completion row, no action log rewrite |
-| `action_invoke` | risk policy and approval guard apply |
+| `action_invoke` | risk policy and approval guard apply. MCP에서는 실제 실행(`dry_run=false`) 전 `user_confirmed=true`가 필수다. |
 | `source_apply` | preview, validation, user confirmation, commit |
 | `doc_body_apply` | preview, base hash check, user confirmation, commit |
-| `promotion_submit` | preview/diff, sensitivity check, explicit approval |
+| `promotion_submit` | preview/diff, sensitivity check, explicit approval. MCP에서도 `user_confirmed=true`가 없으면 API 호출 전 차단한다. |
 
 # Memory
 
