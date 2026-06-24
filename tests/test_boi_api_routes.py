@@ -1950,7 +1950,7 @@ def test_doc_page_renders_markdown_body(boi_app_module):
             "acl_policy": {"agent": "boi-writer-v0.1"},
             "status": "draft",
         },
-        "# Summary\n\n본문이 **굵게** 보이고 `inline code`도 보입니다.\n\n1. 첫 번째 확인\n2. 두 번째 확인\n\n- [x] 완료 항목\n- [ ] 대기 항목\n+ 플러스 목록도 지원\n\n| 항목 | 상태 |\n|---|---|\n| Markdown | OK |\n\n항목 | 상태\n--- | ---\nGFM table | OK\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\n```python\nprint('plain code')\n```",
+        "# Summary\n\n본문이 **굵게** 보이고 `inline code`도 보입니다.\n\n1. 첫 번째 확인\n2. 두 번째 확인\n\n- [x] 완료 항목\n- [ ] 대기 항목\n+ 플러스 목록도 지원\n\n| 항목 | 상태 |\n|---|---|\n| Markdown | OK |\n\n항목 | 상태\n--- | ---\nGFM table | OK\n\n| Case | Value | Link |\n| --- | --- | --- |\n| escaped pipe | A\\|B | [SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001) |\n| code pipe | `a|b` | [Pipe URL](/events?employee_id=100001&trace_id=trace-a|b) |\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\n```python\nprint('plain code')\n```",
     )
 
     response = client.get("/docs/boi-rendering-test?employee_id=100001")
@@ -1967,8 +1967,11 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert '<input type="checkbox" disabled>' in response.text
     assert "플러스 목록도 지원" in response.text
     assert '<table class="markdown-table">' in response.text
-    assert response.text.count('<table class="markdown-table">') >= 2
+    assert response.text.count('<table class="markdown-table">') >= 3
     assert "GFM table" in response.text
+    assert "A|B" in response.text
+    assert "<code>a|b</code>" in response.text
+    assert "/events?employee_id=100001&amp;trace_id=trace-a|b" in response.text
     assert '/static/mermaid_render.js?v=' in response.text
     assert response.text.count('/static/mermaid_render.js?v=') == 1
     assert '<div class="mermaid-diagram" data-mermaid-state="pending">' in response.text

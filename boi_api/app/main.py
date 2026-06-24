@@ -14,7 +14,7 @@ import time
 import uuid
 import httpx
 from datetime import date, datetime, timezone, timedelta
-from html import escape as html_escape
+from html import escape as html_escape, unescape as html_unescape
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, quote, urlencode, urlsplit, unquote
@@ -616,8 +616,8 @@ def render_inline_markdown(
     rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", rendered)
 
     def replace_image(match: re.Match[str]) -> str:
-        alt = match.group(1)
-        href = match.group(2)
+        alt = html_unescape(match.group(1))
+        href = html_unescape(match.group(2))
         media_url = markdown_media_url_for_doc_route(href, source_path)
         if not media_url:
             return f'<span class="missing-media">Image unavailable: {html_escape(alt or href)}</span>'
@@ -635,7 +635,7 @@ def render_inline_markdown(
 
     def replace_link(match: re.Match[str]) -> str:
         label = match.group(1)
-        href = match.group(2)
+        href = html_unescape(match.group(2))
         routed_href = markdown_href_for_doc_route(href, employee_id, source_path, doc_lookup) if employee_id else href
         return f'<a href="{html_escape(routed_href, quote=True)}">{label}</a>'
 
@@ -644,8 +644,44 @@ def render_inline_markdown(
     return rendered
 
 
+def strip_table_boundary_pipes(line: str) -> str:
+    source = line.strip()
+    if source.startswith("|"):
+        source = source[1:]
+    if source.endswith("|") and not source.endswith(r"\|"):
+        source = source[:-1]
+    return source
+
+
 def table_cells(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+    source = strip_table_boundary_pipes(line)
+    cells: list[str] = []
+    cell: list[str] = []
+    escaped = False
+    in_code = False
+    paren_depth = 0
+    for char in source:
+        if escaped:
+            cell.append(char if char == "|" else f"\\{char}")
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "`":
+            in_code = not in_code
+            cell.append(char)
+        elif not in_code and char == "(":
+            paren_depth += 1
+            cell.append(char)
+        elif not in_code and char == ")" and paren_depth > 0:
+            paren_depth -= 1
+            cell.append(char)
+        elif char == "|" and not in_code and paren_depth == 0:
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(char)
+    cells.append("".join(cell).strip())
+    return cells
 
 
 def is_table_separator(line: str) -> bool:
