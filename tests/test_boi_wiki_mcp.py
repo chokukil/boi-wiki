@@ -508,3 +508,32 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     assert "Cursor" in output
     assert "http://localhost:8200/mcp" in output
     assert "folder_tree" not in output
+
+
+def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_breaks(monkeypatch):
+    import scripts.check_boi_wiki_mcp as script
+
+    async def broken_client(*args, **kwargs):
+        raise RuntimeError("stream client broke before tools/list")
+
+    async def stateless_json(*args, **kwargs):
+        return {
+            "tools": 22,
+            "resources": 0,
+            "resource_templates": 5,
+            "prompts": 5,
+            "tool_names": ["boi_agent_chat", "ontology_search", "agent_inbox"],
+            "resource_template_uris": ["boi://search/ontology/{query}"],
+            "prompt_names": ["create_sop_from_source"],
+        }
+
+    monkeypatch.setattr(script, "check_protocol_mcp_client", broken_client)
+    monkeypatch.setattr(script, "check_protocol_stateless_json", stateless_json)
+
+    result = asyncio.run(script.check_protocol("http://localhost:8200/mcp", include_details=True))
+
+    assert result["tools"] == 22
+    assert result["resource_templates"] == 5
+    assert result["prompts"] == 5
+    assert result["transport_mode"] == "stateless_json_rpc"
+    assert "stream client broke" in result["client_warning"]

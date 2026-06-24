@@ -24,6 +24,16 @@ def attr_any(item: object, *names: str) -> str:
 
 
 async def check_protocol(url: str, include_details: bool = False) -> dict:
+    try:
+        return await check_protocol_mcp_client(url, include_details=include_details)
+    except Exception as exc:
+        direct = await check_protocol_stateless_json(url, include_details=include_details)
+        direct["client_warning"] = f"{type(exc).__name__}: {exc}"
+        direct["transport_mode"] = "stateless_json_rpc"
+        return direct
+
+
+async def check_protocol_mcp_client(url: str, include_details: bool = False) -> dict:
     tools = resources = resource_templates = prompts = None
     close_warning = ""
     try:
@@ -58,6 +68,62 @@ async def check_protocol(url: str, include_details: bool = False) -> dict:
                     attr_any(template, "uriTemplate", "uri_template") for template in resource_templates.resourceTemplates
                 ],
                 "prompt_names": [attr_any(prompt, "name") for prompt in prompts.prompts],
+            }
+        )
+    return result
+
+
+async def check_protocol_stateless_json(url: str, include_details: bool = False) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+
+        async def rpc(method: str, request_id: int, params: dict | None = None) -> dict:
+            response = await client.post(
+                url,
+                headers=headers,
+                json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}},
+            )
+            response.raise_for_status()
+            body = response.json()
+            if body.get("error"):
+                raise RuntimeError(json.dumps(body["error"], ensure_ascii=False))
+            result = body.get("result")
+            if not isinstance(result, dict):
+                raise RuntimeError(f"invalid JSON-RPC result for {method}")
+            return result
+
+        await rpc(
+            "initialize",
+            1,
+            {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "check-boi-wiki-mcp", "version": "1.0"},
+            },
+        )
+        tools = await rpc("tools/list", 2)
+        resource_templates = await rpc("resources/templates/list", 3)
+        prompts = await rpc("prompts/list", 4)
+
+    tool_items = list(tools.get("tools") or [])
+    template_items = list(resource_templates.get("resourceTemplates") or [])
+    prompt_items = list(prompts.get("prompts") or [])
+    result = {
+        "tools": len(tool_items),
+        "resources": 0,
+        "resource_templates": len(template_items),
+        "prompts": len(prompt_items),
+    }
+    if include_details:
+        result.update(
+            {
+                "tool_names": [str(item.get("name") or "") for item in tool_items],
+                "resource_uris": [],
+                "resource_template_uris": [str(item.get("uriTemplate") or item.get("uri") or "") for item in template_items],
+                "prompt_names": [str(item.get("name") or "") for item in prompt_items],
             }
         )
     return result
