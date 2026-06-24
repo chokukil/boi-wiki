@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ import httpx
 from datetime import date, datetime, timezone, timedelta
 from html import escape as html_escape, unescape as html_unescape
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from urllib.parse import parse_qs, quote, urlencode, urlsplit, unquote
 
 import yaml
@@ -6834,7 +6835,13 @@ def native_agent_tools(employee_id: str, current_url: str = "") -> NativeAgentTo
     )
 
 
-def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
+def call_native_boi_agent(
+    req: BoiAgentChatRequest,
+    employee_id: str,
+    route: dict[str, Any],
+    started_at: float,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     context_pack = agent_context_pack(req, employee_id, search_limit=8)
     runtime = NativeBoiAgent(
         native_agent_tools(employee_id, req.current_url),
@@ -6843,6 +6850,7 @@ def call_native_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: dic
             tool_timeout_seconds=BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             build_revision=BOI_BUILD_REVISION,
             llm_enabled=BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first",
+            progress_callback=progress_callback,
         ),
     )
     response = runtime.run(
@@ -7122,6 +7130,17 @@ def agent_stream_status_steps(req: BoiAgentChatRequest) -> list[dict[str, str]]:
         {"stage": "compose", "message": "답변, 표, 다이어그램, 링크를 검증해 정리하고 있습니다."},
         {"stage": "waiting", "message": "분석이 길어지고 있어 계속 확인 중입니다. 완료되는 대로 답변을 이어서 보여드리겠습니다."},
     ]
+
+
+def agent_tool_progress_status(payload: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
+    return {
+        "stage": str(payload.get("stage") or "tool_progress"),
+        "message": str(payload.get("message") or "Agent가 필요한 근거를 확인하고 있습니다."),
+        "tool": str(payload.get("tool") or ""),
+        "status": str(payload.get("status") or ""),
+        "summary": str(payload.get("summary") or ""),
+        "elapsed_ms": int(payload.get("elapsed_ms") or elapsed_ms),
+    }
 
 
 def fallback_mermaid_for_page_context(page_context: dict[str, Any]) -> str:
@@ -7552,12 +7571,16 @@ def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: d
     return normalize_langflow_agent_response(run_result, req, employee_id, route=route, started_at=started_at)
 
 
-def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+def agent_chat_response(
+    req: BoiAgentChatRequest,
+    employee_id: str,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     started_at = time.perf_counter()
     route = route_boi_agent_request(req, employee_id)
     if BOI_AGENT_BACKEND in {"native", "hybrid"}:
         try:
-            return call_native_boi_agent(req, employee_id, route, started_at)
+            return call_native_boi_agent(req, employee_id, route, started_at, progress_callback=progress_callback)
         except Exception:
             if BOI_AGENT_BACKEND == "hybrid":
                 return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
@@ -7571,7 +7594,7 @@ def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str,
     if BOI_AGENT_BACKEND not in {"native", "hybrid", "langflow"}:
         route["reason"] = f"unknown backend {BOI_AGENT_BACKEND}; using native"
     if BOI_AGENT_BACKEND in {"native", "hybrid"} or route_name in {"fast", "deep", "inbox"}:
-        return call_native_boi_agent(req, employee_id, route, started_at)
+        return call_native_boi_agent(req, employee_id, route, started_at, progress_callback=progress_callback)
     if route_name == "inbox":
         return agent_inbox_answer(req, employee_id, route, started_at)
     return agent_fast_answer(req, employee_id, route, started_at)
@@ -7604,22 +7627,45 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
     async def stream_events():
         yield agent_sse_event("status", {**status_steps[0], "elapsed_ms": 0})
         started_at = time.perf_counter()
+        progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+
+        def emit_progress(payload: dict[str, Any]) -> None:
+            progress_queue.put(payload)
+
+        def drain_progress_events() -> list[dict[str, Any]]:
+            drained: list[dict[str, Any]] = []
+            while True:
+                try:
+                    drained.append(progress_queue.get_nowait())
+                except queue.Empty:
+                    return drained
 
         def run_agent() -> dict[str, Any]:
-            return enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id)
+            return enrich_agent_answer_html(agent_chat_response(req, employee_id, progress_callback=emit_progress), employee_id)
 
         task = asyncio.create_task(asyncio.to_thread(run_agent))
         status_index = 1
+        last_generic_status_at = started_at
         try:
             while True:
                 try:
-                    response = await asyncio.wait_for(asyncio.shield(task), timeout=2.0)
+                    response = await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
                     break
                 except asyncio.TimeoutError:
                     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                    step = status_steps[min(status_index, len(status_steps) - 1)]
-                    status_index += 1
-                    yield agent_sse_event("status", {**step, "elapsed_ms": elapsed_ms})
+                    emitted_progress = False
+                    for progress in drain_progress_events():
+                        emitted_progress = True
+                        yield agent_sse_event("status", agent_tool_progress_status(progress, elapsed_ms))
+                    if not emitted_progress and time.perf_counter() - last_generic_status_at >= 2.0:
+                        step = status_steps[min(status_index, len(status_steps) - 1)]
+                        status_index += 1
+                        last_generic_status_at = time.perf_counter()
+                        yield agent_sse_event("status", {**step, "elapsed_ms": elapsed_ms})
+
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            for progress in drain_progress_events():
+                yield agent_sse_event("status", agent_tool_progress_status(progress, elapsed_ms))
 
             display_markdown = str(response.get("display_markdown") or response.get("answer_markdown") or "")
             for chunk in iter_agent_answer_chunks(display_markdown):

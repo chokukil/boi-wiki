@@ -1194,7 +1194,19 @@ def parse_sse_events(raw: str) -> list[dict[str, str]]:
 def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
-    def fake_agent_response(req, employee_id: str):
+    def fake_agent_response(req, employee_id: str, progress_callback=None):
+        if progress_callback:
+            progress_callback({"stage": "tool_start", "tool": "ontology_search", "message": "관련 BoI 지식을 확인하고 있습니다."})
+            progress_callback(
+                {
+                    "stage": "tool_done",
+                    "tool": "ontology_search",
+                    "status": "ok",
+                    "elapsed_ms": 7,
+                    "summary": "best_matches=2",
+                    "message": "관련 BoI 지식 확인을 마쳤습니다 (best_matches=2).",
+                }
+            )
         return {
             "ok": True,
             "employee_id": employee_id,
@@ -1231,6 +1243,8 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert any("현재 화면" in json.loads(item["data"])["message"] for item in events if item["event"] == "status")
     status_payloads = [json.loads(item["data"]) for item in events if item["event"] == "status"]
     assert all(item.get("stage") for item in status_payloads)
+    assert any(item.get("stage") == "tool_start" and item.get("tool") == "ontology_search" for item in status_payloads)
+    assert any(item.get("stage") == "tool_done" and item.get("summary") == "best_matches=2" for item in status_payloads)
     assert "현재 페이지를 확인했습니다" in "".join(json.loads(item["data"])["delta"] for item in events if item["event"] == "answer_delta")
     final = json.loads(events[-1]["data"])
     assert final["answer_html"]

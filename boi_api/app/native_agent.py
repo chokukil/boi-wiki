@@ -180,6 +180,7 @@ class NativeAgentConfig:
     tool_timeout_seconds: float = 8.0
     build_revision: str = "unknown"
     llm_enabled: bool = False
+    progress_callback: Callable[[JsonDict], None] | None = None
 
 
 @dataclass
@@ -637,6 +638,7 @@ class NativeBoiAgent:
         }
 
     def _call_tool(self, name: str, args: JsonDict, fn: Callable[[], Any], state: JsonDict) -> Any:
+        self._emit_progress({"stage": "tool_start", "tool": name, "args": compact_tool_args(args), "message": tool_progress_message(name, "start")})
         started = time.perf_counter()
         try:
             result = fn()
@@ -648,7 +650,26 @@ class NativeBoiAgent:
             summary = repr(exc)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         state.setdefault("tool_trace", []).append(ToolTraceItem(tool=name, status=status, elapsed_ms=elapsed_ms, summary=summary, args=args, result=compact_tool_result(result)))
+        self._emit_progress(
+            {
+                "stage": "tool_done",
+                "tool": name,
+                "status": status,
+                "elapsed_ms": elapsed_ms,
+                "summary": summary,
+                "message": tool_progress_message(name, status, summary=summary),
+            }
+        )
         return result
+
+    def _emit_progress(self, payload: JsonDict) -> None:
+        callback = self.config.progress_callback
+        if not callback:
+            return
+        try:
+            callback(payload)
+        except Exception:
+            return
 
 
 def summarize_tool_result(result: Any) -> str:
@@ -662,6 +683,39 @@ def summarize_tool_result(result: Any) -> str:
     if isinstance(result, list):
         return f"items={len(result)}"
     return "ok" if result else "empty"
+
+
+def compact_tool_args(args: JsonDict) -> JsonDict:
+    compact: JsonDict = {}
+    for key, value in (args or {}).items():
+        if key in {"query", "boi_id", "trace_id", "workflow_key", "action_key", "event_type", "scope", "limit"}:
+            compact[key] = compact_text(str(value), 120) if isinstance(value, str) else value
+    return compact
+
+
+def tool_progress_message(tool: str, status: str, *, summary: str = "") -> str:
+    labels = {
+        "ontology_search": "관련 BoI 지식",
+        "boi_get": "BoI 문서",
+        "action_spec_lookup": "Action 명세",
+        "trace_context_lookup": "Trace 근거",
+        "workflow_status": "Workflow 상태",
+        "dictionary_resolve": "업무 용어",
+        "memory_recall": "Private memory",
+        "agent_inbox": "내 Action",
+        "route_classifier": "질문 유형",
+    }
+    label = labels.get(tool, "필요한 근거")
+    if status == "start":
+        return f"{label}을 확인하고 있습니다."
+    if status == "ok":
+        detail = f" ({summary})" if summary else ""
+        return f"{label} 확인을 마쳤습니다{detail}."
+    if status == "empty":
+        return f"{label}에서 바로 쓸 수 있는 결과를 찾지 못했습니다."
+    if status == "failed":
+        return f"{label} 확인 중 오류가 발생했습니다."
+    return f"{label} 상태를 확인했습니다."
 
 
 def compact_tool_result(result: Any) -> Any:
