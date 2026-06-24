@@ -932,15 +932,26 @@ def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_mod
     assert body["used_backend"] == "native_langgraph"
 
 
-def test_boi_agent_obvious_search_skips_llm_router(boi_app_module, monkeypatch):
+def test_boi_agent_obvious_search_uses_llm_router_first(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    calls = {"router": 0}
 
-    def fail_router(*args, **kwargs):
-        raise AssertionError("obvious search intent should not call LLM router")
+    def fake_router(req, employee_id: str):
+        calls["router"] += 1
+        return {
+            "route": "fast",
+            "confidence": 0.91,
+            "intent": "search",
+            "reason": "document search request",
+            "requires_mutation": False,
+            "requires_deep_reasoning": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
-    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fail_router)
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -951,8 +962,9 @@ def test_boi_agent_obvious_search_skips_llm_router(boi_app_module, monkeypatch):
     body = response.json()
     assert body["route"] == "fast"
     assert body["intent"] == "search"
-    assert body["router_backend"] == "rules"
+    assert body["router_backend"] == "llm"
     assert body["used_backend"] == "native_langgraph"
+    assert calls["router"] == 1
 
 
 def test_boi_agent_router_network_failure_uses_short_backoff(boi_app_module, monkeypatch):

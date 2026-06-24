@@ -6846,8 +6846,6 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
         route = rule_agent_route(req, reason="mode=deep")
         intent = normalize_agent_intent(req.intent, fallback=deterministic_intent)
         route.update({"route": "deep", "confidence": 1.0, "intent": intent, "requires_deep_reasoning": True, "requires_langflow": False})
-    elif deterministic_intent in {"search", "diagram", "workflow_explain", "gap_check", "trace_reasoning", "inbox", "manual_complete", "approval", "event_publish", "action_invoke", "workflow_start", "event_type_draft"}:
-        route = rule_agent_route(req, reason=f"deterministic intent pre-route: {deterministic_intent}")
     else:
         try:
             route = call_boi_agent_router_llm(req, employee_id)
