@@ -668,9 +668,12 @@
   function renderStatusTrail(message) {
     const lines = (message.statusLines || []).filter(Boolean).slice(-5);
     if (lines.length <= 1) return "";
-    return `<ol class="boi-agent-status-trail" aria-label="Agent 진행 단계">
-      ${lines.map((line, index) => `<li class="${index === lines.length - 1 ? "current" : ""}">${escapeHtml(line)}</li>`).join("")}
-    </ol>`;
+    return `<details class="boi-agent-status-trail">
+      <summary>진행 단계 ${lines.length}개</summary>
+      <ol aria-label="Agent 진행 단계">
+        ${lines.map((line, index) => `<li class="${index === lines.length - 1 ? "current" : ""}">${escapeHtml(line)}</li>`).join("")}
+      </ol>
+    </details>`;
   }
 
   function tabLabel(tab) {

@@ -1654,6 +1654,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "Agent가 확인한 내용" in script
     assert "renderStatusTrail" in script
     assert "boi-agent-status-trail" in script
+    assert "<details class=\"boi-agent-status-trail\">" in script
+    assert "진행 단계 ${lines.length}개" in script
     assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
@@ -1706,6 +1708,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "table-layout:fixed" in style
     assert ".boi-agent-run-summary" in style
     assert ".boi-agent-status-trail" in style
+    assert ".boi-agent-status-trail summary" in style
     assert ".boi-agent-answer-actions" in style
     assert ".boi-agent-answer-viewer .boi-agent-answer" in style
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
