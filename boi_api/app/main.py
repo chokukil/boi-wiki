@@ -6752,7 +6752,20 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
         "model": BOI_AGENT_COMPOSER_MODEL,
         "temperature": 0.25,
         "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
-        "response_format": {"type": "text"},
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "boi_agent_final_answer",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "answer_markdown": {"type": "string"},
+                        "suggested_questions": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["answer_markdown"],
+                },
+            },
+        },
         "messages": [
             {
                 "role": "system",

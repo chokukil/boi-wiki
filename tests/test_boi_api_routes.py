@@ -1418,6 +1418,65 @@ def test_boi_agent_display_markdown_removes_all_mermaid_when_artifacts_exist(boi
     assert "설명입니다." in display
 
 
+def test_boi_agent_llm_compose_payload_strips_diagram_mermaid_source():
+    from boi_api.app.native_agent import llm_compose_payload
+
+    payload = llm_compose_payload(
+        {
+            "intent": "diagram",
+            "question": "SOP를 그려줘",
+            "route_name": "deep",
+            "answer_markdown": "## 답변\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\n## Source Mapping\n\n| stage | events |\n|---|---|",
+            "search": {},
+            "page_context": {},
+            "tool_results": {},
+            "coverage_report": {},
+            "tool_trace": [],
+        }
+    )
+
+    assert "```mermaid" not in payload["structured_draft"]
+    assert "structured artifact" in payload["artifact_policy"]["mermaid"]
+
+
+def test_boi_agent_composer_llm_requests_json_schema(boi_app_module, monkeypatch):
+    payloads: list[dict] = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"answer_markdown":"## 답변\\n\\n정상 답변입니다.","suggested_questions":["다음 질문"]}'}}]}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers, json):
+            payloads.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            return FakeResponse()
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
+
+    assert result["answer_markdown"].startswith("## 답변")
+    assert result["suggested_questions"] == ["다음 질문"]
+    assert payloads[0]["json"]["response_format"]["type"] == "json_schema"
+    assert payloads[0]["json"]["response_format"]["json_schema"]["name"] == "boi_agent_final_answer"
+
+
 def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

@@ -786,6 +786,10 @@ def llm_compose_payload(state: JsonDict) -> JsonDict:
     tool_results = state.get("tool_results") if isinstance(state.get("tool_results"), dict) else {}
     current_doc = tool_results.get("current_doc") if isinstance(tool_results.get("current_doc"), dict) else {}
     action_specs = tool_results.get("action_specs") if isinstance(tool_results.get("action_specs"), list) else []
+    intent = str(state.get("intent") or "")
+    draft = str(state.get("answer_markdown") or "")
+    if intent == "diagram":
+        draft = strip_mermaid_fences(draft)
     return {
         "task": "compose_final_boi_agent_answer",
         "language": "ko",
@@ -796,7 +800,10 @@ def llm_compose_payload(state: JsonDict) -> JsonDict:
         },
         "question": state.get("question") or "",
         "route": state.get("route_name") or "",
-        "intent": state.get("intent") or "",
+        "intent": intent,
+        "artifact_policy": {
+            "mermaid": "If intent is diagram, Mermaid is rendered from structured artifacts. Do not include Mermaid code fences in answer_markdown.",
+        },
         "page_context": {
             key: page_context.get(key)
             for key in (
@@ -849,12 +856,21 @@ def llm_compose_payload(state: JsonDict) -> JsonDict:
             for item in (state.get("tool_trace") or [])[-10:]
             if isinstance(item, ToolTraceItem) and item.tool != "answer_composer"
         ],
-        "structured_draft": compact_text(str(state.get("answer_markdown") or ""), 3200),
+        "structured_draft": compact_text(draft, 3200),
         "required_json_schema": {
             "answer_markdown": "final Korean Markdown answer. Preserve factual constraints and include links only from evidence.",
             "suggested_questions": ["2-4 short follow-up questions"],
         },
     }
+
+
+def strip_mermaid_fences(value: str) -> str:
+    return re.sub(
+        r"```[^\S\r\n]*mermaid[^\S\r\n]*(?:\r?\n).*?(?:\r?\n)?```",
+        "[Mermaid diagram is provided as a separate structured artifact.]",
+        str(value or ""),
+        flags=re.IGNORECASE | re.DOTALL,
+    ).strip()
 
 
 def compact_text(value: str, limit: int = 160) -> str:
