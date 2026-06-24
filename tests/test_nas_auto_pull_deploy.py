@@ -85,6 +85,9 @@ def test_script_contains_required_safety_contracts():
     assert "DEPLOY_STATUS=" in text
     assert "service_completed_successfully" in text
     assert "service_started" in text
+    assert "upsert_env_key \"$ENV_FILE\" \"BOI_BUILD_REVISION\"" in text
+    assert "recover_compose_v1_created_containers" in text
+    assert "verify_runtime_revision \"$build_revision\"" in text
     assert "cat \"$ENV_FILE\"" not in text
     assert "set -x" not in text
 
@@ -207,3 +210,118 @@ def test_hot_reload_pull_skips_compose_and_runtime_change_generates_nas_compose(
     assert not compose.startswith("name:")
     assert "service_completed_successfully" not in compose
     assert "service_started" in compose
+
+
+def test_runtime_change_updates_env_revision_and_verifies_running_revision(tmp_path: Path):
+    work, app = setup_remote_worktree(tmp_path)
+
+    write(work / "boi_api/app/main.py", "print('runtime revision update')\n")
+    commit_all(work, "runtime revision update")
+    git(work, "push", "origin", "main")
+    expected_revision = run(["git", "rev-parse", "--short", "HEAD"], cwd=work).stdout.strip()
+
+    write(app / ".env", "SERVICE_TOKEN=redacted-test-token\nBOI_BUILD_REVISION=oldrev\n")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    compose_calls = tmp_path / "compose-calls.log"
+    write(
+        fake_bin / "sudo",
+        "#!/usr/bin/env bash\n"
+        "exec \"$@\"\n",
+    )
+    write(
+        fake_bin / "docker-compose",
+        "#!/usr/bin/env bash\n"
+        "printf 'env_revision=%s args=%s\\n' \"$BOI_BUILD_REVISION\" \"$*\" >> " + str(compose_calls) + "\n"
+        "exit 0\n",
+    )
+    write(
+        fake_bin / "curl",
+        "#!/usr/bin/env bash\n"
+        "rev=$(awk -F= '/^BOI_BUILD_REVISION=/{print $2}' .env | tail -n1)\n"
+        "printf '{\"build\":{\"revision\":\"%s\"}}\\n' \"$rev\"\n",
+    )
+    for script in ["sudo", "docker-compose", "curl"]:
+        (fake_bin / script).chmod(0o755)
+
+    result = run_deploy_script(
+        app,
+        lock_dir=tmp_path / "runtime-revision.lock",
+        extra_env={
+            "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
+            "SUDO_BIN": str(fake_bin / "sudo"),
+            "DOCKER_COMPOSE_BIN": str(fake_bin / "docker-compose"),
+            "DOCKER_BIN": str(fake_bin / "docker"),
+            "NAS_RUNTIME_CONFIG_URL": "http://127.0.0.1:28000/api/runtime/config",
+            "NAS_RUNTIME_VERIFY_ATTEMPTS": "1",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert f"BOI_BUILD_REVISION={expected_revision}" in (app / ".env").read_text(encoding="utf-8")
+    assert "oldrev" not in (app / ".env").read_text(encoding="utf-8")
+    assert f"runtime revision verified: {expected_revision}" in result.stdout
+    assert f"env_revision={expected_revision}" in compose_calls.read_text(encoding="utf-8")
+    assert "DEPLOY_STATUS=success" in result.stdout.splitlines()[-1]
+
+
+def test_compose_failure_starts_created_boi_api_container(tmp_path: Path):
+    work, app = setup_remote_worktree(tmp_path)
+
+    write(work / "boi_api/app/main.py", "print('runtime compose recovery')\n")
+    commit_all(work, "runtime compose recovery")
+    git(work, "push", "origin", "main")
+    expected_revision = run(["git", "rev-parse", "--short", "HEAD"], cwd=work).stdout.strip()
+
+    write(app / ".env", "SERVICE_TOKEN=redacted-test-token\n")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    docker_calls = tmp_path / "docker-calls.log"
+    compose_calls = tmp_path / "compose-calls.log"
+    write(
+        fake_bin / "sudo",
+        "#!/usr/bin/env bash\n"
+        "exec \"$@\"\n",
+    )
+    write(
+        fake_bin / "docker-compose",
+        "#!/usr/bin/env bash\n"
+        "printf 'compose %s\\n' \"$*\" >> " + str(compose_calls) + "\n"
+        "exit 1\n",
+    )
+    write(
+        fake_bin / "docker",
+        "#!/usr/bin/env bash\n"
+        "printf 'docker %s\\n' \"$*\" >> " + str(docker_calls) + "\n"
+        "if [ \"$1\" = 'ps' ]; then printf 'abc123 boi-api Created\\n'; exit 0; fi\n"
+        "if [ \"$1\" = 'start' ]; then exit 0; fi\n"
+        "exit 0\n",
+    )
+    write(
+        fake_bin / "curl",
+        "#!/usr/bin/env bash\n"
+        "rev=$(awk -F= '/^BOI_BUILD_REVISION=/{print $2}' .env | tail -n1)\n"
+        "printf '{\"build\":{\"revision\":\"%s\"}}\\n' \"$rev\"\n",
+    )
+    for script in ["sudo", "docker-compose", "docker", "curl"]:
+        (fake_bin / script).chmod(0o755)
+
+    result = run_deploy_script(
+        app,
+        lock_dir=tmp_path / "runtime-recovery.lock",
+        extra_env={
+            "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
+            "SUDO_BIN": str(fake_bin / "sudo"),
+            "DOCKER_COMPOSE_BIN": str(fake_bin / "docker-compose"),
+            "DOCKER_BIN": str(fake_bin / "docker"),
+            "NAS_COMPOSE_RECOVERY_SERVICES": "boi-api",
+            "NAS_RUNTIME_VERIFY_ATTEMPTS": "1",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert f"BOI_BUILD_REVISION={expected_revision}" in (app / ".env").read_text(encoding="utf-8")
+    assert "compose failed; checking for Compose v1 stale-id created containers" in result.stdout
+    assert "starting created container for service boi-api: abc123" in result.stdout
+    assert "docker start abc123" in docker_calls.read_text(encoding="utf-8")
+    assert "DEPLOY_STATUS=success" in result.stdout.splitlines()[-1]

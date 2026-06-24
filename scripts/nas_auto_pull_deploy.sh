@@ -9,9 +9,13 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.nas.yml}"
 ENV_FILE="${ENV_FILE:-.env}"
 LOCK_DIR="${LOCK_DIR:-/tmp/boi-wiki-nas-auto-pull.lock}"
 DOCKER_COMPOSE_BIN="${DOCKER_COMPOSE_BIN:-/usr/local/bin/docker-compose}"
+DOCKER_BIN="${DOCKER_BIN:-/usr/local/bin/docker}"
 SUDO_BIN="${SUDO_BIN:-sudo}"
 NAS_DOCKER_PATH="${NAS_DOCKER_PATH:-/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin}"
 NAS_AUTO_PULL_DRY_RUN="${NAS_AUTO_PULL_DRY_RUN:-0}"
+NAS_COMPOSE_RECOVERY_SERVICES="${NAS_COMPOSE_RECOVERY_SERVICES:-boi-api action-gateway event-router boi-wiki-mcp langflow}"
+NAS_RUNTIME_CONFIG_URL="${NAS_RUNTIME_CONFIG_URL:-http://127.0.0.1:28000/api/runtime/config}"
+NAS_RUNTIME_VERIFY_ATTEMPTS="${NAS_RUNTIME_VERIFY_ATTEMPTS:-40}"
 
 DEPLOY_STATUS="failed"
 LOCK_OWNED="0"
@@ -57,6 +61,79 @@ needs_compose_recreate() {
       return 0
     fi
   done
+  return 1
+}
+
+upsert_env_key() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp_file
+  tmp_file="${file}.tmp.$$"
+  if grep -q "^${key}=" "$file"; then
+    sed "s|^${key}=.*|${key}=${value}|" "$file" > "$tmp_file"
+  else
+    cat "$file" > "$tmp_file"
+    printf '\n%s=%s\n' "$key" "$value" >> "$tmp_file"
+  fi
+  chmod --reference="$file" "$tmp_file" 2>/dev/null || true
+  mv "$tmp_file" "$file"
+}
+
+sudo_env() {
+  "$SUDO_BIN" env PATH="$NAS_DOCKER_PATH" "$@"
+}
+
+compose() {
+  sudo_env "$DOCKER_COMPOSE_BIN" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
+}
+
+docker_cmd() {
+  sudo_env "$DOCKER_BIN" "$@"
+}
+
+recover_compose_v1_created_containers() {
+  local service
+  local created_id
+  local recovered="0"
+  log "compose failed; checking for Compose v1 stale-id created containers"
+  for service in $NAS_COMPOSE_RECOVERY_SERVICES; do
+    docker_cmd ps -a --filter "label=com.docker.compose.service=${service}" --format '{{.ID}} {{.Names}} {{.Status}}' || true
+    created_id="$(
+      docker_cmd ps -a --filter "label=com.docker.compose.service=${service}" --format '{{.ID}} {{.Status}}' \
+        | awk '/Created/{print $1; exit}'
+    )"
+    if [[ -n "$created_id" ]]; then
+      log "starting created container for service ${service}: ${created_id}"
+      docker_cmd start "$created_id" >/dev/null
+      recovered="1"
+    fi
+  done
+  [[ "$recovered" == "1" ]]
+}
+
+verify_runtime_revision() {
+  local expected_revision="$1"
+  local attempt
+  local runtime_revision
+  for attempt in $(seq 1 "$NAS_RUNTIME_VERIFY_ATTEMPTS"); do
+    if curl -fsS "$NAS_RUNTIME_CONFIG_URL" >/tmp/boi-runtime-config.json; then
+      runtime_revision="$(
+        python3 - <<'PY' 2>/dev/null || true
+import json
+body = json.load(open('/tmp/boi-runtime-config.json'))
+print((body.get('build') or {}).get('revision') or body.get('build_revision') or '')
+PY
+      )"
+      if [[ "$runtime_revision" == "$expected_revision" ]]; then
+        log "runtime revision verified: ${runtime_revision}"
+        return 0
+      fi
+      log "runtime revision mismatch attempt=${attempt}: expected=${expected_revision} actual=${runtime_revision:-unknown}"
+    fi
+    sleep 2
+  done
+  log "runtime revision verification failed: expected=${expected_revision}"
   return 1
 }
 
@@ -145,9 +222,14 @@ fi
 
 log "running docker-compose up -d --build"
 build_revision="$(git rev-parse --short HEAD)"
-"$SUDO_BIN" env PATH="$NAS_DOCKER_PATH" BOI_BUILD_REVISION="$build_revision" "$DOCKER_COMPOSE_BIN" \
-  -f "$COMPOSE_FILE" \
-  --env-file "$ENV_FILE" \
-  up -d --build
+upsert_env_key "$ENV_FILE" "BOI_BUILD_REVISION" "$build_revision"
+export BOI_BUILD_REVISION="$build_revision"
+if ! compose up -d --build; then
+  if ! recover_compose_v1_created_containers; then
+    exit 1
+  fi
+fi
+
+verify_runtime_revision "$build_revision"
 
 DEPLOY_STATUS="success"
