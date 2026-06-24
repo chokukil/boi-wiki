@@ -1805,6 +1805,31 @@ def test_boi_agent_chat_stream_fails_when_status_llm_unavailable(boi_app_module,
     assert "status model unavailable" in payload["message"]
 
 
+def test_boi_agent_chat_stream_fails_when_status_required_is_disabled(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def unexpected_agent(*args, **kwargs):
+        raise AssertionError("agent should not run when LLM status generation is disabled")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_REQUIRED", False)
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", unexpected_agent)
+
+    with client.stream(
+        "POST",
+        "/api/agents/boi-wiki/chat/stream?employee_id=100001",
+        json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
+    ) as response:
+        assert response.status_code == 200
+        raw = "".join(response.iter_text())
+
+    events = parse_sse_events(raw)
+    assert events[-1]["event"] == "error"
+    payload = json.loads(events[-1]["data"])
+    assert payload["status"] == "status_generation_failed"
+    assert payload["required"] is False
+    assert "disabled" in payload["message"]
+
+
 def test_boi_agent_chat_endpoint_offloads_agent_work(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     worker_threads: list[str] = []
