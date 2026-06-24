@@ -71,13 +71,14 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS` | `8` | per-tool timeout target |
 | `BOI_AGENT_CACHE_WARMUP_ON_STARTUP` | `1` | API 시작 직후 문서, catalog, ontology search index를 백그라운드로 예열해 첫 Agent 질문 지연을 줄인다. LLM은 호출하지 않는다. |
 | `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
-| `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first, rules fallback |
-| `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 rules fallback |
+| `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first |
+| `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 명시 개발 모드로 rules 사용 |
+| `BOI_AGENT_ROUTER_REQUIRED` | `1` | LLM Router가 켜진 운영 모드에서는 router 실패를 fallback하지 않고 `boi_agent_router_unavailable` 장애로 표시한다. |
 | `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
 | `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
-| `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `3` | Gemma Router response timeout. Timeout이면 rules fallback을 사용해 Agent 응답을 계속 진행한다. |
-| `BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS` | `30` | Router timeout/network failure 뒤 같은 worker가 잠시 LLM 호출을 건너뛰고 rules fallback을 바로 쓰는 보호 시간 |
-| `BOI_AGENT_ROUTER_MAX_TOKENS` | `768` | reasoning token을 쓰는 Gemma 계열 Router의 final JSON 확보용 |
+| `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `12` | Gemma Router response timeout. 운영 모드에서 timeout은 Agent 장애로 노출된다. |
+| `BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS` | `30` | Router timeout/network failure 뒤 같은 worker가 잠시 LLM 호출을 건너뛰고 같은 장애를 빠르게 반환하는 보호 시간 |
+| `BOI_AGENT_ROUTER_MAX_TOKENS` | `1536` | reasoning token을 쓰는 Gemma 계열 Router의 final JSON 확보용 |
 | `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄은 LLM status writer가 생성해야 한다. 실패 시 fallback하지 않고 장애로 표시한다. |
 | `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible status writer endpoint |
 | `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |

@@ -131,9 +131,10 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["router"]["mode"] == "llm_first"
     assert body["boi_agent"]["router"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["boi_agent"]["router"]["llm_enabled"] is False
+    assert body["boi_agent"]["router"]["required"] is True
     assert body["boi_agent"]["router"]["failure_backoff_seconds"] == 30
     assert body["boi_agent"]["router"]["backoff_remaining_seconds"] >= 0
-    assert body["boi_agent"]["router"]["max_tokens"] == 768
+    assert body["boi_agent"]["router"]["max_tokens"] == 1536
     assert "api_key" not in body["boi_agent"]["router"]
     assert body["boi_agent"]["cache_warmup"]["enabled"] is True
     assert body["boi_agent"]["cache_warmup"]["status"] in {"not_started", "running", "completed", "failed", "disabled"}
@@ -906,30 +907,27 @@ def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
     assert payload["confidence"] == 0.92
 
 
-def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_module, monkeypatch):
+def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
     def broken_router(req, employee_id: str):
         raise boi_app_module.BoiAgentRouterUnavailable("router timeout")
 
-    def fail_langflow(*args, **kwargs):
-        raise AssertionError("rules fast fallback must not call Langflow")
-
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", broken_router)
-    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={"question": "SOP 찾아줘", "current_url": "/"},
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["route"] == "fast"
-    assert body["router_backend"] == "rules"
-    assert body["used_backend"] == "native_langgraph"
+    assert response.status_code == 503
+    body = response.json()["detail"]
+    assert body["status"] == "boi_agent_router_unavailable"
+    assert body["required"] is True
+    assert "router timeout" in body["message"]
 
 
 def test_boi_agent_obvious_search_uses_llm_router_first(boi_app_module, monkeypatch):
@@ -967,7 +965,7 @@ def test_boi_agent_obvious_search_uses_llm_router_first(boi_app_module, monkeypa
     assert calls["router"] == 1
 
 
-def test_boi_agent_router_network_failure_uses_short_backoff(boi_app_module, monkeypatch):
+def test_boi_agent_router_network_failure_surfaces_backoff_when_required(boi_app_module, monkeypatch):
     calls = {"post": 0}
 
     class FailingClient:
@@ -986,6 +984,7 @@ def test_boi_agent_router_network_failure_uses_short_backoff(boi_app_module, mon
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_BASE_URL", "http://router.example:1236/v1")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS", 60)
     monkeypatch.setattr(boi_app_module, "_BOI_AGENT_ROUTER_BACKOFF_UNTIL", 0.0)
@@ -993,13 +992,10 @@ def test_boi_agent_router_network_failure_uses_short_backoff(boi_app_module, mon
     monkeypatch.setattr(boi_app_module.httpx, "Client", FailingClient)
 
     request = boi_app_module.BoiAgentChatRequest(question="현재 페이지 기준으로 답해줘", current_url="/")
-    first = boi_app_module.route_boi_agent_request(request, "100001")
-    second = boi_app_module.route_boi_agent_request(request, "100001")
-
-    assert first["router_backend"] == "rules"
-    assert "router unavailable" in first["reason"]
-    assert second["router_backend"] == "rules"
-    assert "backoff active" in second["reason"]
+    with pytest.raises(boi_app_module.BoiAgentRouterUnavailable, match="router unavailable"):
+        boi_app_module.route_boi_agent_request(request, "100001")
+    with pytest.raises(boi_app_module.BoiAgentRouterUnavailable, match="backoff active"):
+        boi_app_module.route_boi_agent_request(request, "100001")
     assert calls["post"] == 1
 
 

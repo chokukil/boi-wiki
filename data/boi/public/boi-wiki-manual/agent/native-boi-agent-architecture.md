@@ -29,7 +29,7 @@ review:
 
 BoI Agent의 production path는 `boi-api` 내부 Native Agent다. Langflow는 visual workflow, demo, debug backend로 유지하지만 사용자-facing Agent 응답의 필수 runtime dependency가 아니다.
 
-Native Agent는 LangGraph state graph와 순차 fallback을 함께 제공한다. LLM은 Router, status writer, 선택적 planner/composer에 쓰이고, 실행 경계는 Python typed tool dispatcher가 통제한다. Router는 `llm_first`가 기본이며, `BOI_AGENT_ROUTER_LLM_ENABLED=auto`에서는 실제 OpenAI-compatible LLM URL이 설정된 배포에서 LLM Router를 사용하고 placeholder 개발 URL에서는 rules fallback을 사용한다. Router LLM은 사용자 답변을 생성하지 않고 `route`, `intent`, `confidence` JSON만 반환한다. JSON이 없거나 timeout이면 rules fallback이 이어받는다. 단, Web Pet Agent의 진행 상태 한 줄은 fallback하지 않는다. `BOI_AGENT_STATUS_REQUIRED=1`일 때 status writer가 요청별 JSON status plan을 만들지 못하면 `/chat/stream`은 `status_generation_failed`를 반환하고 Agent UI는 장애로 표시한다.
+Native Agent는 LangGraph state graph와 typed tool dispatcher를 함께 제공한다. LLM은 Router, status writer, 선택적 planner/composer에 쓰이고, 실행 경계는 Python typed tool dispatcher가 통제한다. Router는 `llm_first`가 기본이며, `BOI_AGENT_ROUTER_LLM_ENABLED=auto`에서는 실제 OpenAI-compatible LLM URL이 설정된 배포에서 LLM Router를 사용하고 placeholder 개발 URL에서는 명시 개발 모드로 rules를 사용한다. 운영 기본값은 `BOI_AGENT_ROUTER_REQUIRED=1`이다. 이때 Router LLM은 사용자 답변을 생성하지 않고 `route`, `intent`, `confidence` JSON만 반환하며, JSON이 없거나 timeout이면 `/chat`은 `boi_agent_router_unavailable`을 반환한다. Web Pet Agent의 진행 상태 한 줄도 fallback하지 않는다. `BOI_AGENT_STATUS_REQUIRED=1`일 때 status writer가 요청별 JSON status plan을 만들지 못하면 `/chat/stream`은 `status_generation_failed`를 반환하고 Agent UI는 장애로 표시한다.
 
 # Architecture
 
@@ -39,8 +39,8 @@ flowchart TD
   MCP["boi-wiki-mcp<br/>boi_agent_chat"] --> API
   STREAM --> STATUS["LLM Status Writer<br/>request-specific one-line progress"]
   STATUS --> API["BoI API JSON<br/>/api/agents/boi-wiki/chat"]
-  API --> ROUTER["LLM Router first<br/>rules fallback"]
-  ROUTER --> AGENT["Native BoI Agent<br/>LangGraph + sequential fallback"]
+  API --> ROUTER["LLM Router required<br/>failure returns service error"]
+  ROUTER --> AGENT["Native BoI Agent<br/>LangGraph-compatible runtime"]
   AGENT --> ACL["Access Policy Gate<br/>visibility + classification + team RBAC"]
   AGENT --> RET["Ontology Retrieval<br/>Dictionary + OKF graph + catalogs"]
   AGENT --> TOOLS["Typed Tool Dispatcher"]
@@ -62,7 +62,7 @@ flowchart TD
 | Component | Role |
 |---|---|
 | `boi-api` | Official Agent API, auth, ACL, page context, search, tool dispatch, safety boundary |
-| `NativeBoiAgent` | LangGraph nodes and deterministic fallback |
+| `NativeBoiAgent` | LangGraph-compatible nodes and typed tool loop |
 | Ontology search | Compact grouped retrieval for SOP, Event, Action, Dictionary, BoI, runtime evidence |
 | MCP | External agent interface that calls the same BoI API |
 | Langflow | Optional visual workflow and connector demo, not the required Agent engine |
@@ -73,7 +73,7 @@ BoI Agent는 동기 JSON API와 streaming API를 모두 제공한다.
 
 | Interface | Use |
 |---|---|
-| `POST /api/agents/boi-wiki/chat` | machine-to-machine JSON response, MCP bridge fallback, tests |
+| `POST /api/agents/boi-wiki/chat` | machine-to-machine JSON response, MCP bridge, tests |
 | `POST /api/agents/boi-wiki/chat/stream` | Web Pet Agent default. Server-Sent Events로 진행 상태와 답변 조각을 전달 |
 
 Streaming response는 다음 event 순서를 따른다.

@@ -120,9 +120,10 @@ BOI_AGENT_ROUTER_LLM_ENABLED = resolve_router_llm_enabled(
     BOI_AGENT_ROUTER_MODE,
     BOI_AGENT_ROUTER_BASE_URL,
 )
-BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "3"))
+BOI_AGENT_ROUTER_REQUIRED = os.getenv("BOI_AGENT_ROUTER_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS", "30"))
-BOI_AGENT_ROUTER_MAX_TOKENS = int(os.getenv("BOI_AGENT_ROUTER_MAX_TOKENS", "768"))
+BOI_AGENT_ROUTER_MAX_TOKENS = int(os.getenv("BOI_AGENT_ROUTER_MAX_TOKENS", "1536"))
 BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD", "0.7"))
 BOI_AGENT_STATUS_BASE_URL = os.getenv("BOI_AGENT_STATUS_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
 BOI_AGENT_STATUS_API_KEY = os.getenv("BOI_AGENT_STATUS_API_KEY", BOI_AGENT_ROUTER_API_KEY)
@@ -5282,6 +5283,7 @@ async def runtime_config() -> dict[str, Any]:
             "router": {
                 "mode": BOI_AGENT_ROUTER_MODE,
                 "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,
+                "required": BOI_AGENT_ROUTER_REQUIRED,
                 "base_url": BOI_AGENT_ROUTER_BASE_URL,
                 "model": BOI_AGENT_ROUTER_MODEL,
                 "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
@@ -6850,6 +6852,8 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
         try:
             route = call_boi_agent_router_llm(req, employee_id)
         except BoiAgentRouterUnavailable as exc:
+            if BOI_AGENT_ROUTER_REQUIRED and BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first":
+                raise
             route = rule_agent_route(req, reason=f"fallback: {exc}")
     route["intent"] = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_intent)
     # Rules are the safety net for obvious artifact/reasoning requests even when the LLM router says fast.
@@ -7969,6 +7973,17 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
     try:
         return await asyncio.to_thread(lambda: enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id))
+    except BoiAgentRouterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "boi_agent_router_unavailable",
+                "message": str(exc),
+                "model": BOI_AGENT_ROUTER_MODEL,
+                "required": BOI_AGENT_ROUTER_REQUIRED,
+            },
+        ) from exc
     except LangflowBoiAgentUnavailable as exc:
         raise HTTPException(
             status_code=503,
@@ -8081,6 +8096,16 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     "endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
                 },
             )
+        except BoiAgentRouterUnavailable as exc:
+            yield agent_sse_event(
+                "error",
+                {
+                    "status": "boi_agent_router_unavailable",
+                    "message": str(exc),
+                    "model": BOI_AGENT_ROUTER_MODEL,
+                    "required": BOI_AGENT_ROUTER_REQUIRED,
+                },
+            )
         except Exception as exc:
             yield agent_sse_event("error", {"status": "agent_stream_error", "message": str(exc)})
         finally:
@@ -8117,6 +8142,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         "router": {
             "mode": BOI_AGENT_ROUTER_MODE,
             "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,
+            "required": BOI_AGENT_ROUTER_REQUIRED,
             "base_url": BOI_AGENT_ROUTER_BASE_URL,
             "model": BOI_AGENT_ROUTER_MODEL,
             "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
@@ -8144,7 +8170,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         ],
         "native_agent": {
             "enabled": BOI_AGENT_BACKEND in {"native", "hybrid"},
-            "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "sequential-fallback",
+            "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "sequential-runtime",
             "max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             "cache_warmup": agent_cache_warmup_state(),
