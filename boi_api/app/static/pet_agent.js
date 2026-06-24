@@ -706,7 +706,7 @@
   function render() {
     syncViewportPosition();
     persistState();
-    const launcherStatus = state.sending ? state.currentStatus || "Agent가 확인 중입니다" : (state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요");
+    const launcherStatus = state.sending ? state.currentStatus || "" : (state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요");
     root.innerHTML = `
       <button class="boi-agent-launcher" type="button" aria-expanded="${state.open ? "true" : "false"}">
         <span class="boi-agent-launcher-copy">
@@ -1075,9 +1075,9 @@
     let finalBody = null;
     state.draft = "";
     state.sending = true;
-    state.currentStatus = "현재 요청을 시작했습니다.";
+    state.currentStatus = "";
     state.messages.push({ role: "user", text: question });
-    const pendingIndex = state.messages.push({ role: "assistant", text: "확인 중입니다...", progressText: "현재 요청을 시작했습니다." }) - 1;
+    const pendingIndex = state.messages.push({ role: "assistant", text: "", progressText: "" }) - 1;
     state.open = true;
     state.tab = "agent";
     render();
@@ -1096,7 +1096,8 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       await readAgentStream(response, {
         status(payload) {
-          const message = payload.message || "확인 중입니다.";
+          const message = payload.message || "";
+          if (!message) return;
           statusLines.push(message);
           state.currentStatus = message;
           state.messages[pendingIndex] = {
