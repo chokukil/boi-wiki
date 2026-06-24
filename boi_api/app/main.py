@@ -136,7 +136,11 @@ BOI_AGENT_STATUS_LLM_ENABLED = resolve_router_llm_enabled(
 )
 BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "1536"))
-BOI_AGENT_STATUS_REQUIRED = os.getenv("BOI_AGENT_STATUS_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+# Status text is part of the user-facing Agent contract.  The env name is kept
+# for older compose files/docs, but runtime policy is intentionally not
+# downgradeable: if the stream planner cannot generate status text, the Agent is
+# unhealthy instead of falling back to canned copy.
+BOI_AGENT_STATUS_REQUIRED = True
 BOI_AGENT_COMPOSER_BASE_URL = os.getenv("BOI_AGENT_COMPOSER_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
 BOI_AGENT_COMPOSER_API_KEY = os.getenv("BOI_AGENT_COMPOSER_API_KEY", BOI_AGENT_ROUTER_API_KEY)
 BOI_AGENT_COMPOSER_MODEL = os.getenv("BOI_AGENT_COMPOSER_MODEL", BOI_AGENT_ROUTER_MODEL)
