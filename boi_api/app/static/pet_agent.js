@@ -640,7 +640,7 @@
       boi_get: "BoI 문서 조회",
       action_spec_lookup: "Action 명세 확인",
       trace_context_lookup: "Trace 근거 확인",
-      workflow_status: "Workflow 상태 확인",
+      workflow_status: "업무 흐름 상태 확인",
       dictionary_resolve: "업무 용어 확인",
       memory_recall: "Private memory 확인",
       agent_inbox: "Inbox 확인",
@@ -770,8 +770,8 @@
             ${renderTaskDisplay(display, item)}
             <div class="boi-agent-links">
               ${display.primary_url ? `<a href="${escapeAttr(display.primary_url)}">${escapeHtml(display.primary_label || "업무 상태 보기")}</a>` : ""}
-              ${item.workflow_url ? `<a href="${escapeAttr(item.workflow_url)}">Workflow</a>` : ""}
-              ${item.raw_url ? `<a href="${escapeAttr(item.raw_url)}">Raw</a>` : ""}
+              ${item.workflow_url ? `<a href="${escapeAttr(item.workflow_url)}">업무 흐름</a>` : ""}
+              ${item.raw_url ? `<a href="${escapeAttr(item.raw_url)}">원본 기록</a>` : ""}
             </div>
             <details class="boi-agent-technical">
               <summary>기술 세부정보</summary>
@@ -797,7 +797,7 @@
                   <textarea name="note" placeholder="수행한 확인, 판단, 조치 내용을 남겨주세요." required></textarea>
                 </label>
                 <button type="submit" ${state.busyTask === item.task_id ? "disabled" : ""}>완료 기록</button>
-              </form>` : `<p class="boi-agent-hint">승인이 필요한 업무입니다. Workflow와 원본 기록을 확인한 뒤 명시 승인으로 처리합니다.</p>`}
+              </form>` : `<p class="boi-agent-hint">승인이 필요한 업무입니다. 업무 흐름과 원본 기록을 확인한 뒤 명시 승인으로 처리합니다.</p>`}
           </article>`;
         })
         .join("")}</div>`;
@@ -1059,8 +1059,8 @@
     const messages = {
       event_publish: "Event 발행 요청을 보냈습니다.",
       publish_event: "Event 발행 요청을 보냈습니다.",
-      workflow_start: "Workflow 시작 요청을 보냈습니다.",
-      start_workflow: "Workflow 시작 요청을 보냈습니다.",
+      workflow_start: "업무 흐름 시작 요청을 보냈습니다.",
+      start_workflow: "업무 흐름 시작 요청을 보냈습니다.",
       action_invoke: "Action 실행 요청을 보냈습니다.",
       invoke_action: "Action 실행 요청을 보냈습니다.",
       manual_handoff_complete: "Manual Handoff 완료 기록을 남겼습니다.",

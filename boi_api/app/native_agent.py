@@ -541,7 +541,7 @@ class NativeBoiAgent:
             display = item.get("display") if isinstance(item.get("display"), dict) else {}
             title = display.get("title") or item.get("action_key") or "업무 확인"
             status = display.get("status_label") or item.get("status") or "확인 필요"
-            next_action = display.get("next_action") or "Workflow/Raw를 확인하세요."
+            next_action = display.get("next_action") or "업무 흐름이나 원본 기록을 확인하세요."
             url = display.get("primary_url") or item.get("workflow_url") or item.get("raw_url") or ""
             title_md = f"[{title}]({url})" if url else f"**{title}**"
             lines.append(f"- {status}: {title_md} - {next_action}")

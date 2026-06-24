@@ -7818,7 +7818,7 @@ def agent_inbox_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[s
         display = item.get("display") if isinstance(item.get("display"), dict) else {}
         label = display.get("status_label") or item.get("status") or "확인 필요"
         title = display.get("title") or item.get("action_key") or "업무 확인"
-        next_action = display.get("next_action") or "Workflow/Raw를 확인하세요."
+        next_action = display.get("next_action") or "업무 흐름이나 원본 기록을 확인하세요."
         primary_url = display.get("primary_url") or item.get("workflow_url") or item.get("raw_url") or ""
         rendered_title = f"[{title}]({primary_url})" if primary_url else f"**{title}**"
         lines.append(f"- {label}: {rendered_title} - {next_action}")
@@ -7852,14 +7852,14 @@ def agent_safety_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[
     if route_name == "manual_handoff":
         answer = "Manual Handoff 완료는 Inbox 카드에서 조치 내용과 outcome을 입력한 뒤 명시적으로 완료 기록을 남겨야 합니다."
     else:
-        answer = "승인, 실행, publish, 편집 같은 상태 변경 요청은 Agent 답변만으로 수행하지 않습니다. 관련 Workflow/Raw를 확인하고 명시 승인 flow로 진행해야 합니다."
+        answer = "승인, 실행, publish, 편집 같은 상태 변경 요청은 Agent 답변만으로 수행하지 않습니다. 관련 업무 흐름과 원본 기록을 확인하고 명시 승인 절차로 진행해야 합니다."
     return {
         "ok": True,
         "employee_id": employee_id,
         "answer_markdown": answer,
         "links": [],
         "citations": [],
-        "suggested_questions": ["내 Inbox를 보여줘.", "관련 Workflow Status를 열어줘."],
+        "suggested_questions": ["내 Inbox를 보여줘.", "관련 업무 흐름 상태를 열어줘."],
         "artifacts": [],
         "context_summary": {"route": route_name, "intent": intent, "router_backend": route.get("router_backend"), "used_backend": "safety_guard", "latency_ms": latency_ms},
         "route": route_name,
@@ -8660,7 +8660,7 @@ def agent_inbox_display(row: dict[str, Any], employee_id: str, row_status: str) 
             "title": f"{action_title} 승인 필요",
             "status_label": "승인 필요",
             "why_it_matters": "영향이 큰 작업이어서 자동 실행하지 않고 담당자 확인이 필요합니다.",
-            "next_action": "Workflow와 근거 문서를 확인한 뒤 승인 또는 반려 여부를 결정하세요.",
+            "next_action": "업무 흐름과 근거 문서를 확인한 뒤 승인 또는 반려 여부를 결정하세요.",
             "risk_label": "고위험" if risk == "high" else "승인 필요",
             "primary_url": workflow_url or raw_url,
             "primary_label": "업무 상태 보기",
@@ -8689,7 +8689,7 @@ def agent_inbox_display(row: dict[str, Any], employee_id: str, row_status: str) 
         "title": f"{action_title} 후속 확인",
         "status_label": "후속 확인",
         "why_it_matters": "Trace에서 추가 확인이 필요한 업무로 기록되었습니다.",
-        "next_action": "관련 Workflow 또는 Raw를 확인하고 필요한 조치를 결정하세요.",
+        "next_action": "관련 업무 흐름이나 원본 기록을 확인하고 필요한 조치를 결정하세요.",
         "risk_label": "후속 확인",
         "primary_url": workflow_url or raw_url,
         "primary_label": "세부 확인",
