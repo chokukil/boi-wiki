@@ -404,6 +404,15 @@
       || /^\s*:?-{3,}:?\s*\|\s*:?-{3,}:?/m.test(text);
   }
 
+  function shouldUseServerHtml(message, artifactMermaid) {
+    const html = String(message?.html || "");
+    if (!html || looksLikeRawMarkdownHtml(html)) return false;
+    if (artifactMermaid?.size && /class=["'][^"']*mermaid-diagram|class=["'][^"']*\bmermaid\b/i.test(html)) {
+      return false;
+    }
+    return true;
+  }
+
   function hashString(value) {
     let hash = 0;
     for (let index = 0; index < String(value).length; index += 1) {
@@ -522,6 +531,7 @@
     mermaidSourcesFromMarkdown,
     mermaidSourcesFromArtifacts,
     looksLikeRawMarkdownHtml,
+    shouldUseServerHtml,
   };
 
   function renderLinks(links) {
@@ -568,7 +578,7 @@
     return `<div class="boi-agent-messages">${state.messages
       .map((message, index) => {
         const artifactMermaid = mermaidSourcesFromArtifacts(message);
-        const serverHtml = message.html && !looksLikeRawMarkdownHtml(message.html) ? message.html : "";
+        const serverHtml = shouldUseServerHtml(message, artifactMermaid) ? message.html : "";
         const answerHtml = serverHtml || renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
         return `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
@@ -860,6 +870,17 @@
   function openArtifact(id) {
     const node = root.querySelector(`[data-viewer-id="${CSS.escape(id)}"]`);
     if (!node) return;
+    if (node.classList.contains("mermaid-diagram")) {
+      const source = node.querySelector(".mermaid-source-fallback code")?.textContent
+        || node.querySelector(".mermaid")?.textContent
+        || "";
+      state.viewer = {
+        title: node.querySelector("strong")?.textContent || "Diagram",
+        html: renderMermaidBlock(source, node.querySelector("strong")?.textContent || "Diagram", null),
+      };
+      render();
+      return;
+    }
     const clone = node.cloneNode(true);
     clone.querySelectorAll("[data-open-artifact]").forEach((button) => button.remove());
     state.viewer = {

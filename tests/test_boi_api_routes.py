@@ -1340,7 +1340,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "body.display_markdown || body.answer_markdown" in script
     assert "rawText: body.answer_markdown" in script
     assert "looksLikeRawMarkdownHtml" in script
-    assert "const serverHtml = message.html && !looksLikeRawMarkdownHtml(message.html)" in script
+    assert "shouldUseServerHtml" in script
+    assert "const serverHtml = shouldUseServerHtml(message, artifactMermaid)" in script
     assert "serverHtml || renderMarkdownLite(message.text || \"\", { skipMermaidSources: artifactMermaid })" in script
     assert "/api/agents/boi-wiki/chat/stream" in script
     assert "answer_delta" in script
@@ -1385,8 +1386,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-dictionary-form" not in script
     assert "event.shiftKey" in script
     assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
-    assert "width:min(760px" in style
-    assert "width:min(1080px" in style
+    assert "width:min(840px" in style
+    assert "width:min(1120px" in style
     assert ".boi-agent-content { overflow-y:auto; overflow-x:hidden;" in style
     assert ".boi-agent-answer pre, .boi-agent-artifact pre { margin:8px 0; max-height:220px; overflow-y:auto; overflow-x:hidden;" in style
     assert ".boi-agent-inline-image" in style
@@ -1449,6 +1450,7 @@ const tableHtml = window.BoiAgentMarkdownDebug.renderMarkdownTable([
 ]);
 const rawServerHtml = "<p>| 항목 | 값 |<br>| --- | --- |<br>| 상태 | 완료 |</p>";
 const renderedServerHtml = "<table><thead><tr><th>항목</th><th>값</th></tr></thead></table>";
+const renderedMermaidServerHtml = "<div class=\"rendered-markdown\"><div class=\"mermaid-diagram\"><div class=\"mermaid\">flowchart TD</div></div></div>";
 console.log(JSON.stringify({
   html,
   tableHtml,
@@ -1462,6 +1464,14 @@ console.log(JSON.stringify({
   tableKeepsLink: tableHtml.includes("<a href="),
   detectsRawServerMarkdown: window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(rawServerHtml),
   acceptsRenderedServerHtml: !window.BoiAgentMarkdownDebug.looksLikeRawMarkdownHtml(renderedServerHtml),
+  rejectsDuplicateMermaidServerHtml: !window.BoiAgentMarkdownDebug.shouldUseServerHtml(
+    { html: renderedMermaidServerHtml },
+    new Set([window.BoiAgentMarkdownDebug.normalizeMermaidSource?.(mermaidSource) || mermaidSource.replace(/\s+/g, " ").trim()])
+  ),
+  acceptsPlainRenderedServerHtml: window.BoiAgentMarkdownDebug.shouldUseServerHtml(
+    { html: renderedServerHtml },
+    new Set([window.BoiAgentMarkdownDebug.normalizeMermaidSource?.(mermaidSource) || mermaidSource.replace(/\s+/g, " ").trim()])
+  ),
 }));
 """
     result = subprocess.run(
@@ -1484,6 +1494,8 @@ console.log(JSON.stringify({
     assert payload["tableKeepsLink"]
     assert payload["detectsRawServerMarkdown"]
     assert payload["acceptsRenderedServerHtml"]
+    assert payload["rejectsDuplicateMermaidServerHtml"]
+    assert payload["acceptsPlainRenderedServerHtml"]
 
 
 def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):
