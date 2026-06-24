@@ -431,12 +431,20 @@ def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_mo
                         ],
                     }
                 ],
-                "context_summary": {"route": "fast", "intent": "page_qa"},
+                "context_summary": {"route": "fast", "intent": "page_qa", "page_context": {"boi_id": forbidden_id}},
                 "route": "fast",
                 "intent": "page_qa",
                 "used_backend": "native_langgraph",
                 "guardrails_applied": ["acl_policy"],
-                "tool_trace": [],
+                "tool_trace": [
+                    {
+                        "tool": "boi_get",
+                        "status": "ok",
+                        "elapsed_ms": 1,
+                        "summary": forbidden_id,
+                        "result": {"boi_id": forbidden_id, "url": f"/docs/{forbidden_id}?employee_id=100001"},
+                    }
+                ],
             }
 
     monkeypatch.setattr(boi_app_module, "NativeBoiAgent", LeakyNativeAgent)
@@ -454,6 +462,8 @@ def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_mo
             "links": body.get("links"),
             "citations": body.get("citations"),
             "artifacts": body.get("artifacts"),
+            "tool_trace": body.get("tool_trace"),
+            "context_summary": body.get("context_summary"),
         },
         ensure_ascii=False,
     )

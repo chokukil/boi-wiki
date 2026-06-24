@@ -6974,12 +6974,12 @@ def sanitize_agent_reference_value(value: Any, employee_id: str) -> tuple[Any, i
 
 def sanitize_agent_final_references(response: dict[str, Any], employee_id: str) -> int:
     redacted_count = 0
-    for key in ("answer_markdown", "links", "citations", "suggested_questions", "artifacts"):
+    for key in ("answer_markdown", "display_markdown", "links", "citations", "suggested_questions", "artifacts", "tool_trace", "context_summary"):
         sanitized, count = sanitize_agent_reference_value(response.get(key), employee_id)
         redacted_count += count
         if sanitized is not None:
             response[key] = sanitized
-        elif key in {"links", "citations", "artifacts", "suggested_questions"}:
+        elif key in {"links", "citations", "artifacts", "suggested_questions", "tool_trace"}:
             response[key] = []
         else:
             response[key] = ""
