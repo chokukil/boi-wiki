@@ -26,15 +26,22 @@ DEFAULT_USER_NAMES: dict[str, str] = {
     "100003": "Platform User 100003",
 }
 
-DEV_DEFAULT_ROLES = [
+DEV_VIEWER_ROLES = ["boi.viewer"]
+DEV_POWER_USER_ROLES = [
     "boi.viewer",
     "boi.editor",
     "boi.promoter",
     "boi.workflow_runner",
     "boi.action_invoker",
 ]
-DEV_ADMIN_ROLES = [*DEV_DEFAULT_ROLES, "boi.admin"]
-HCP_MANAGER_ROLES = [*DEV_DEFAULT_ROLES, "boi.admin"]
+DEV_DEFAULT_ROLES = DEV_VIEWER_ROLES
+DEFAULT_USER_ROLES: dict[str, list[str]] = {
+    "100001": [*DEV_POWER_USER_ROLES, "boi.admin"],
+    "100002": DEV_POWER_USER_ROLES,
+    "100003": DEV_VIEWER_ROLES,
+}
+DEV_ADMIN_ROLES = [*DEV_POWER_USER_ROLES, "boi.admin"]
+HCP_MANAGER_ROLES = [*DEV_POWER_USER_ROLES, "boi.admin"]
 HCP_DEPLOY_APPROVER_ROLES = [
     "boi.viewer",
     "boi.editor",
@@ -134,6 +141,23 @@ def dev_user_names() -> dict[str, str]:
     return result or DEFAULT_USER_NAMES
 
 
+def dev_user_roles() -> dict[str, list[str]]:
+    configured = os.getenv("BOI_DEV_USER_ROLES_JSON")
+    if not configured:
+        return DEFAULT_USER_ROLES
+    try:
+        parsed = json.loads(configured)
+    except json.JSONDecodeError:
+        return DEFAULT_USER_ROLES
+    result: dict[str, list[str]] = {}
+    for employee_id, roles in parsed.items():
+        if isinstance(roles, str):
+            result[str(employee_id)] = split_csv(roles)
+        elif isinstance(roles, list):
+            result[str(employee_id)] = [str(item) for item in roles if item]
+    return result or DEFAULT_USER_ROLES
+
+
 def teams_for_employee(employee_id: str) -> list[str]:
     return dev_user_teams().get(employee_id, [])
 
@@ -144,7 +168,8 @@ def name_for_employee(employee_id: str) -> str:
 
 def dev_identity(employee_id: str | None) -> AuthIdentity:
     resolved = employee_id or os.getenv("DEMO_EMPLOYEE_ID", "100001")
-    roles = DEV_ADMIN_ROLES if resolved == os.getenv("BOI_DEV_ADMIN_EMPLOYEE_ID", "100001") else DEV_DEFAULT_ROLES
+    configured_roles = dev_user_roles().get(resolved, DEV_DEFAULT_ROLES)
+    roles = DEV_ADMIN_ROLES if resolved == os.getenv("BOI_DEV_ADMIN_EMPLOYEE_ID", "100001") else configured_roles
     return AuthIdentity(
         employee_id=resolved,
         display_name=name_for_employee(resolved),

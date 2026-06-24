@@ -281,6 +281,17 @@ def test_rbac_me_and_doc_access_guard_private_boi(boi_app_module):
     assert "another employee" in " ".join(denied.json()["access"]["reasons"])
 
 
+def test_dev_unknown_employee_gets_viewer_only_rbac(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    me = client.get("/api/rbac/me?employee_id=9999999")
+
+    assert me.status_code == 200
+    body = me.json()
+    assert body["roles"] == ["boi.viewer"]
+    assert body["can_manage"] is False
+
+
 def test_boi_agent_restricted_docs_are_pruned_from_context_and_artifacts(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     restricted_phrase = "restricted-agent-secret-body-token"
