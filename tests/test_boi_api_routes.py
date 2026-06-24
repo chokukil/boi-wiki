@@ -427,6 +427,78 @@ def test_dev_unknown_employee_gets_viewer_only_rbac(boi_app_module):
     assert body["can_manage"] is False
 
 
+def test_break_glass_allows_admin_private_read_with_reason_and_audit(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_id = "boi:private:100002:break-glass-readable"
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/reference",
+            "title": "Break Glass Readable",
+            "description": "admin break-glass should allow audited private read",
+            "tags": ["ACL", "BreakGlass"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": boi_id,
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100002",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "acl_policy": "acl:private:100002",
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "break-glass-readable"}],
+        },
+        "# Summary\n\nprivate body",
+    )
+
+    response = client.post(
+        f"/api/docs/{boi_id}/break-glass?employee_id=100001",
+        json={"reason": "운영 장애 원인 확인", "ticket_ref": "INC-ACL-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access"]["can_read"] is True
+    assert "break-glass admin read" in body["access"]["reasons"]
+    assert body["audit"]["action"] == "break_glass_access"
+    assert body["audit"]["payload"]["reason"] == "운영 장애 원인 확인"
+
+
+def test_break_glass_rejects_structurally_invalid_private_policy(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_id = "boi:private:100002:break-glass-invalid-policy"
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/reference",
+            "title": "Break Glass Invalid Policy",
+            "description": "break-glass must not bypass malformed private ACL",
+            "tags": ["ACL", "BreakGlass"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": boi_id,
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "acl_policy": "acl:private:100002",
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "break-glass-invalid"}],
+        },
+        "# Summary\n\ninvalid private body",
+    )
+
+    response = client.post(
+        f"/api/docs/{boi_id}/break-glass?employee_id=100001",
+        json={"reason": "운영 장애 원인 확인", "ticket_ref": "INC-ACL-2"},
+    )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["detail"]["access"]["can_read"] is False
+    assert "private acl_policy mismatch" in body["detail"]["access"]["reasons"]
+
+
 def test_boi_agent_restricted_docs_are_pruned_from_context_and_artifacts(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     restricted_phrase = "restricted-agent-secret-body-token"

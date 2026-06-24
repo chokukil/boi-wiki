@@ -82,6 +82,10 @@ flowchart TD
 
 OKF lint는 private/team/public 경로와 ACL 문자열 정책을 검사한다. private 문서가 `data/boi/private/me` 같은 legacy 경로에 있거나 owner가 path 사번과 다르면 실패해야 한다.
 
+# Break-Glass Boundary
+
+Break-glass는 admin이 사유와 audit을 남기고 다른 사번의 정상 private 문서를 일시적으로 읽는 예외 절차다. 이 절차는 BoI Profile 구조 오류를 우회하지 않는다. 예를 들어 private path, `owner`, `acl_policy`가 서로 맞지 않거나 team path와 `team_id`가 충돌하면 break-glass 요청도 실패해야 한다.
+
 # Related Documents
 
 - [Team RBAC Management](/public/boi-wiki-manual/security/team-rbac-management.md)

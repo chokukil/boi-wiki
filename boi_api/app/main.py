@@ -5911,6 +5911,14 @@ async def api_doc_break_glass(
     if not doc:
         raise HTTPException(status_code=404, detail="BoI not found")
     decision = access_policy_for_doc(doc, employee_id, break_glass=True)
+    if not decision.can_read:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "break-glass access denied by BoI profile policy",
+                "access": decision.to_dict(),
+            },
+        )
     audit = append_rbac_audit(
         employee_id,
         "break_glass_access",
