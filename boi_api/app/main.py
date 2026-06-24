@@ -91,6 +91,33 @@ def resolve_router_llm_enabled(raw_value: str | None, mode: str, base_url: str) 
     )
 
 
+LLM_PLACEHOLDER_MARKERS = ("llm-gateway.example",)
+LLM_API_KEY_PLACEHOLDERS = {"", "not-needed", "boi-router-dummy-key"}
+
+
+def inherit_llm_env_value(raw_value: str | None, fallback: str, *, secret: bool = False) -> str:
+    """Use a specific LLM env value unless it is an example placeholder.
+
+    Docker Compose often injects example defaults even when the application code
+    would otherwise inherit from the router LLM settings.  Treat those example
+    values as absent so secondary Agent components do not silently disable
+    themselves while the Router is correctly configured.
+    """
+    value = str(raw_value or "").strip()
+    fallback_value = str(fallback or "").strip()
+    if not value:
+        return fallback_value
+    if secret:
+        if value in LLM_API_KEY_PLACEHOLDERS and fallback_value and fallback_value not in LLM_API_KEY_PLACEHOLDERS:
+            return fallback_value
+        return value
+    if any(marker in value for marker in LLM_PLACEHOLDER_MARKERS) and fallback_value and not any(
+        marker in fallback_value for marker in LLM_PLACEHOLDER_MARKERS
+    ):
+        return fallback_value
+    return value
+
+
 APP_DIR = Path(__file__).resolve().parent
 DATA_ROOT = Path(os.getenv("DATA_ROOT", "/data/boi"))
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT", "/data/events"))
@@ -141,9 +168,9 @@ BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "1536
 # downgradeable: if the stream planner cannot generate status text, the Agent is
 # unhealthy instead of falling back to canned copy.
 BOI_AGENT_STATUS_REQUIRED = True
-BOI_AGENT_SUGGESTIONS_BASE_URL = os.getenv("BOI_AGENT_SUGGESTIONS_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
-BOI_AGENT_SUGGESTIONS_API_KEY = os.getenv("BOI_AGENT_SUGGESTIONS_API_KEY", BOI_AGENT_ROUTER_API_KEY)
-BOI_AGENT_SUGGESTIONS_MODEL = os.getenv("BOI_AGENT_SUGGESTIONS_MODEL", BOI_AGENT_ROUTER_MODEL)
+BOI_AGENT_SUGGESTIONS_BASE_URL = inherit_llm_env_value(os.getenv("BOI_AGENT_SUGGESTIONS_BASE_URL"), BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
+BOI_AGENT_SUGGESTIONS_API_KEY = inherit_llm_env_value(os.getenv("BOI_AGENT_SUGGESTIONS_API_KEY"), BOI_AGENT_ROUTER_API_KEY, secret=True)
+BOI_AGENT_SUGGESTIONS_MODEL = inherit_llm_env_value(os.getenv("BOI_AGENT_SUGGESTIONS_MODEL"), BOI_AGENT_ROUTER_MODEL)
 BOI_AGENT_SUGGESTIONS_LLM_ENABLED_RAW = os.getenv("BOI_AGENT_SUGGESTIONS_LLM_ENABLED", BOI_AGENT_ROUTER_LLM_ENABLED_RAW).strip().lower()
 BOI_AGENT_SUGGESTIONS_LLM_ENABLED = resolve_router_llm_enabled(
     BOI_AGENT_SUGGESTIONS_LLM_ENABLED_RAW,

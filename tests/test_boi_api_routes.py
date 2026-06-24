@@ -2865,6 +2865,24 @@ def test_boi_agent_suggestions_fail_when_required_llm_unavailable(boi_app_module
     assert "suggestion model timeout" in detail["message"]
 
 
+def test_boi_agent_suggestions_placeholder_env_inherits_router_llm(boi_app_module):
+    assert (
+        boi_app_module.inherit_llm_env_value(
+            "http://llm-gateway.example:1236/v1",
+            "http://router.example/v1",
+        )
+        == "http://router.example/v1"
+    )
+    assert (
+        boi_app_module.inherit_llm_env_value(
+            "not-needed",
+            "real-router-key",
+            secret=True,
+        )
+        == "real-router-key"
+    )
+
+
 def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
     client = TestClient(boi_app_module.app)
