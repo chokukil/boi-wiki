@@ -155,6 +155,21 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert "progressive response streaming" in body["features"]
 
 
+def test_boi_agent_stream_status_steps_are_page_and_intent_aware(boi_app_module):
+    request = boi_app_module.BoiAgentChatRequest(
+        question="이 SOP를 Mermaid 프로세스 플로우로 보여줘",
+        current_url="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+    )
+
+    steps = boi_app_module.agent_stream_status_steps(request)
+
+    assert steps[0]["stage"] == "page_context"
+    assert "현재 BoI 문서와 접근 권한" in steps[0]["message"]
+    assert any("도식화할 근거" in step["message"] for step in steps)
+    assert steps[-1]["stage"] == "waiting"
+    assert "완료되는 대로 답변" in steps[-1]["message"]
+
+
 def test_auth_me_exposes_dev_identity(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -1355,6 +1370,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "tool_trace: body.tool_trace || []" in script
     assert "coverage_report: body.coverage_report || {}" in script
     assert "Agent가 확인한 내용" in script
+    assert "renderStatusTrail" in script
+    assert "boi-agent-status-trail" in script
     assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script
@@ -1403,6 +1420,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert ".boi-agent-message strong { display:block;" not in style
     assert "table-layout:fixed" in style
     assert ".boi-agent-run-summary" in style
+    assert ".boi-agent-status-trail" in style
     assert ".boi-agent-answer-actions" in style
     assert ".boi-agent-answer-viewer .boi-agent-answer" in style
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style

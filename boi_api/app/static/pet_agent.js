@@ -615,6 +615,14 @@
       </details>`;
   }
 
+  function renderStatusTrail(message) {
+    const lines = (message.statusLines || []).filter(Boolean).slice(-5);
+    if (lines.length <= 1) return "";
+    return `<ol class="boi-agent-status-trail" aria-label="Agent 진행 단계">
+      ${lines.map((line, index) => `<li class="${index === lines.length - 1 ? "current" : ""}">${escapeHtml(line)}</li>`).join("")}
+    </ol>`;
+  }
+
   function tabLabel(tab) {
     return { agent: "Agent", inbox: "Inbox" }[tab] || tab;
   }
@@ -631,6 +639,7 @@
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
           ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
+          ${renderStatusTrail(message)}
           <div class="boi-agent-answer" data-answer-id="answer-${index}">${answerHtml}</div>
           ${message.role === "assistant" && answerHtml ? `<div class="boi-agent-answer-actions"><button type="button" data-open-answer="answer-${index}">답변 크게 보기</button></div>` : ""}
           ${renderRunSummary(message)}

@@ -7082,6 +7082,48 @@ def iter_agent_answer_chunks(value: str, *, chunk_size: int = 700) -> list[str]:
     return chunks
 
 
+def agent_stream_status_steps(req: BoiAgentChatRequest) -> list[dict[str, str]]:
+    intent = deterministic_agent_intent(req.question, req.current_url)
+    page_hint = "현재 화면"
+    current_url = str(req.current_url or "")
+    if "/docs/" in current_url:
+        page_hint = "현재 BoI 문서"
+    elif "/workflows/" in current_url:
+        page_hint = "현재 Workflow 상태"
+    elif "/events" in current_url:
+        page_hint = "현재 Event Stream"
+    elif "/actions/raw/" in current_url:
+        page_hint = "현재 Action 원본"
+    elif "/event-types" in current_url:
+        page_hint = "현재 Event Type"
+
+    intent_messages = {
+        "diagram": "SOP stage, Event, Action, Manual Handoff 관계를 도식화할 근거로 정리하고 있습니다.",
+        "workflow_explain": "Event에서 SOP stage와 Action으로 이어지는 업무 흐름을 맞춰 보고 있습니다.",
+        "gap_check": "연결된 Action Spec과 누락된 실행 명세를 대조하고 있습니다.",
+        "trace_reasoning": "Trace의 Event, Action, 생성 BoI 근거를 묶어 확인하고 있습니다.",
+        "inbox": "내가 처리해야 할 승인과 조치 요청을 정리하고 있습니다.",
+        "search": "Dictionary, OKF 링크, SOP/Event/Action catalog를 함께 검색하고 있습니다.",
+        "page_qa": "현재 화면 맥락과 관련 BoI 지식을 함께 확인하고 있습니다.",
+        "summarize": "현재 화면의 핵심 내용과 관련 근거를 요약하고 있습니다.",
+        "event_publish": "Event 발행은 바로 실행하지 않고 확인 카드로 준비하고 있습니다.",
+        "action_invoke": "Action 실행은 바로 호출하지 않고 확인 카드로 준비하고 있습니다.",
+        "workflow_start": "Workflow 시작 요청을 확인 카드로 준비하고 있습니다.",
+        "event_type_draft": "신규 Event Type은 draft와 검증 경로로 준비하고 있습니다.",
+        "manual_complete": "Manual Handoff 완료 가능 여부와 권한을 확인하고 있습니다.",
+        "approval": "승인이 필요한 작업인지 권한과 위험도를 확인하고 있습니다.",
+    }
+    subject = f"{page_hint}과" if page_hint == "현재 화면" else f"{page_hint}와"
+    return [
+        {"stage": "page_context", "message": f"{subject} 접근 권한을 확인하고 있습니다."},
+        {"stage": "intent", "message": "질문 의도를 분류하고 필요한 처리 경로를 고르고 있습니다."},
+        {"stage": "retrieval", "message": intent_messages.get(intent, "관련 BoI 문서와 업무 관계를 찾고 있습니다.")},
+        {"stage": "tool_loop", "message": "필요한 문서, catalog, runtime evidence를 추가로 확인하고 있습니다."},
+        {"stage": "compose", "message": "답변, 표, 다이어그램, 링크를 검증해 정리하고 있습니다."},
+        {"stage": "waiting", "message": "분석이 길어지고 있어 계속 확인 중입니다. 완료되는 대로 답변을 이어서 보여드리겠습니다."},
+    ]
+
+
 def fallback_mermaid_for_page_context(page_context: dict[str, Any]) -> str:
     title = str(page_context.get("title") or page_context.get("page_kind") or "BoI Page")
     linked_items = page_context.get("linked_items") or []
@@ -7557,12 +7599,7 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
 async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> StreamingResponse:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
 
-    status_steps = [
-        {"stage": "page_context", "message": "현재 화면 맥락을 확인하고 있습니다."},
-        {"stage": "retrieval", "message": "관련 BoI 문서와 Event/Action을 찾고 있습니다."},
-        {"stage": "compose", "message": "답변과 근거 링크를 정리하고 있습니다."},
-        {"stage": "waiting", "message": "시간이 조금 더 걸리고 있어 계속 확인 중입니다."},
-    ]
+    status_steps = agent_stream_status_steps(req)
 
     async def stream_events():
         yield agent_sse_event("status", {**status_steps[0], "elapsed_ms": 0})
