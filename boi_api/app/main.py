@@ -6834,6 +6834,15 @@ def stream_plan_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -
                 "must_be_specific_to_request": True,
             },
             "required_status_stages": list(REQUIRED_AGENT_STATUS_STAGES),
+            "hard_requirements": [
+                "statuses MUST contain exactly one item for every required_status_stages value.",
+                "Do not return only the current stage. Return the full planned sequence.",
+                "Every status message must be specific to the user's request and current page.",
+            ],
+            "statuses_template": [
+                {"stage": stage, "message": "요청과 현재 페이지에 맞춘 한국어 한 줄 상태"}
+                for stage in REQUIRED_AGENT_STATUS_STAGES
+            ],
             "stage_meaning": {
                 "page_context": "현재 페이지, 사번, 접근 권한을 확인하는 단계",
                 "intent": "질문 의도와 필요한 산출물을 판단하는 단계",
@@ -6875,39 +6884,76 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
     headers = {"Content-Type": "application/json"}
     if BOI_AGENT_STATUS_API_KEY:
         headers["Authorization"] = f"Bearer {BOI_AGENT_STATUS_API_KEY}"
-    body = {
-        "model": BOI_AGENT_STATUS_MODEL,
-        "temperature": 0.1,
-        "max_tokens": max(BOI_AGENT_STATUS_MAX_TOKENS, BOI_AGENT_ROUTER_MAX_TOKENS),
-        "response_format": {"type": "text"},
-        "messages": [
+    def post_stream_plan(messages: list[dict[str, str]]) -> dict[str, Any]:
+        body = {
+            "model": BOI_AGENT_STATUS_MODEL,
+            "temperature": 0.1,
+            "max_tokens": max(BOI_AGENT_STATUS_MAX_TOKENS, BOI_AGENT_ROUTER_MAX_TOKENS),
+            "response_format": {"type": "text"},
+            "messages": messages,
+        }
+        try:
+            with httpx.Client(timeout=max(BOI_AGENT_STATUS_TIMEOUT_SECONDS, BOI_AGENT_ROUTER_TIMEOUT_SECONDS)) as client:
+                response = client.post(url, headers=headers, json=body)
+                response.raise_for_status()
+                return response.json()
+        except Exception as exc:
+            raise BoiAgentStatusUnavailable(f"LLM stream plan call failed: {exc}") from exc
+
+    def parse_stream_plan_response(payload: dict[str, Any]) -> dict[str, Any]:
+        for text in iter_langflow_text_candidates(payload):
+            candidate = parse_stream_plan_payload(text)
+            if candidate:
+                return candidate
+        raise BoiAgentStatusUnavailable("LLM stream plan returned invalid JSON")
+
+    initial_messages = [
             {
                 "role": "system",
                 "content": (
                     "You plan BoI Agent streaming work. Return one compact JSON object with "
-                    "both routing fields and progress statuses. Do not answer the user."
+                    "both routing fields and a complete progress status sequence. "
+                    "Do not answer the user."
                 ),
             },
             {"role": "user", "content": stream_plan_prompt_for_request(req, employee_id)},
-        ],
-    }
+    ]
+    parsed = parse_stream_plan_response(post_stream_plan(initial_messages))
     try:
-        with httpx.Client(timeout=max(BOI_AGENT_STATUS_TIMEOUT_SECONDS, BOI_AGENT_ROUTER_TIMEOUT_SECONDS)) as client:
-            response = client.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        raise BoiAgentStatusUnavailable(f"LLM stream plan call failed: {exc}") from exc
-    parsed = None
-    for text in iter_langflow_text_candidates(payload):
-        candidate = parse_stream_plan_payload(text)
-        if candidate:
-            parsed = candidate
-            break
-    if not parsed:
-        raise BoiAgentStatusUnavailable("LLM stream plan returned invalid JSON")
+        status_steps = normalize_llm_status_steps(parsed)
+    except BoiAgentStatusUnavailable as exc:
+        repair_prompt = json.dumps(
+            {
+                "task": "Repair the BoI Agent streaming plan. Return JSON only.",
+                "error": str(exc),
+                "previous_json": parsed,
+                "required_status_stages": list(REQUIRED_AGENT_STATUS_STAGES),
+                "hard_requirements": [
+                    "Return route, confidence, intent, reason, requires_mutation, requires_deep_reasoning, statuses.",
+                    "statuses MUST contain exactly one item for every required_status_stages value.",
+                    "Do not answer the user. Do not include markdown.",
+                ],
+                "statuses_template": [
+                    {"stage": stage, "message": "요청과 현재 페이지에 맞춘 한국어 한 줄 상태"}
+                    for stage in REQUIRED_AGENT_STATUS_STAGES
+                ],
+            },
+            ensure_ascii=False,
+        )
+        repair_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You repair invalid BoI Agent route/status JSON. Return only one compact JSON object. "
+                    "No markdown. No explanation."
+                ),
+            },
+            {"role": "user", "content": repair_prompt},
+        ]
+        parsed = parse_stream_plan_response(post_stream_plan(repair_messages))
+        status_steps = normalize_llm_status_steps(parsed)
     route = normalize_llm_route_payload(parsed, req)
-    return {"status_steps": normalize_llm_status_steps(parsed), "route": apply_agent_route_overrides(req, route)}
+    return {"status_steps": status_steps, "route": apply_agent_route_overrides(req, route)}
 
 
 def router_llm_backoff_remaining() -> float:
@@ -7899,10 +7945,10 @@ def iter_langflow_text_candidates(value: Any, depth: int = 0) -> list[str]:
     if isinstance(value, dict):
         preferred_keys = (
             "answer_markdown",
-            "reasoning_content",
             "text",
             "message",
             "content",
+            "reasoning_content",
             "output",
             "result",
             "data",

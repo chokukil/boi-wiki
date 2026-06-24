@@ -290,6 +290,93 @@ def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app
     assert all(item["source"] == "llm_status" for item in plan["status_steps"])
 
 
+def test_boi_agent_stream_plan_repairs_incomplete_llm_status_sequence(boi_app_module, monkeypatch):
+    payloads = []
+    incomplete_statuses = [
+        {"stage": "page_context", "message": "현재 SOP 페이지를 확인하고 있습니다."},
+    ]
+    repaired_statuses = [
+        {"stage": "page_context", "message": "현재 SOP 페이지와 접근 권한을 확인하고 있습니다."},
+        {"stage": "intent", "message": "질문이 간단 설명인지 판단하고 있습니다."},
+        {"stage": "retrieval", "message": "관련 BoI 근거를 찾고 있습니다."},
+        {"stage": "tool_loop", "message": "필요한 근거를 더 확인하고 있습니다."},
+        {"stage": "compose", "message": "답변과 링크를 정리하고 있습니다."},
+        {"stage": "answer_stream", "message": "완성된 답변을 화면에 보여주고 있습니다."},
+        {"stage": "waiting", "message": "작업이 길어지면 계속 처리 상태를 알려드립니다."},
+    ]
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, headers, json):
+            payloads.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            statuses = incomplete_statuses if len(payloads) == 1 else repaired_statuses
+            return FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json_module.dumps(
+                                    {
+                                        "route": "fast",
+                                        "confidence": 0.92,
+                                        "intent": "page_qa",
+                                        "reason": "stream plan repair test",
+                                        "requires_mutation": False,
+                                        "requires_deep_reasoning": False,
+                                        "statuses": statuses,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+
+    # Avoid shadowing pytest's imported json module through the FakeClient.post parameter name.
+    json_module = json
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_BASE_URL", "http://router.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    plan = boi_app_module.call_boi_agent_stream_plan_llm(
+        boi_app_module.BoiAgentChatRequest(
+            question="현재 페이지 기준으로 진행 상태 한 줄을 만들고 짧게 답해줘",
+            current_url="/docs/boi:public:sop:equipment-abnormal-response",
+        ),
+        "100001",
+    )
+
+    assert len(payloads) == 2
+    assert "Repair the BoI Agent streaming plan" in payloads[1]["json"]["messages"][1]["content"]
+    assert [item["stage"] for item in plan["status_steps"]] == list(boi_app_module.REQUIRED_AGENT_STATUS_STAGES)
+    assert all(item["source"] == "llm_status" for item in plan["status_steps"])
+
+
 def test_auth_me_exposes_dev_identity(boi_app_module):
     client = TestClient(boi_app_module.app)
 
