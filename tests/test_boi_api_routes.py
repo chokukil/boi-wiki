@@ -1365,6 +1365,10 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-inline-image" in script
     assert "openImageArtifact" in script
     assert 'event.key === "Escape" && state.viewer' in script
+    assert "data-open-answer" in script
+    assert "openAnswer" in script
+    assert "답변 크게 보기" in script
+    assert "boi-agent-answer-viewer" in script
     assert "seenMermaidSources" in script
     assert 'artifact.type === "workflow_summary"' in script
     assert "renderObjectTable(rows)" in script
@@ -1399,6 +1403,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert ".boi-agent-message strong { display:block;" not in style
     assert "table-layout:fixed" in style
     assert ".boi-agent-run-summary" in style
+    assert ".boi-agent-answer-actions" in style
+    assert ".boi-agent-answer-viewer .boi-agent-answer" in style
     assert ".boi-agent-window-actions .boi-agent-new { display:none; }" not in style
 
 

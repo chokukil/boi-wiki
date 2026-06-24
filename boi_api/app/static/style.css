@@ -255,6 +255,9 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-answer table, .boi-agent-table-wrap table, .boi-agent-answer .table-wrap table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:12px; }
 .boi-agent-answer th, .boi-agent-answer td, .boi-agent-table-wrap th, .boi-agent-table-wrap td, .boi-agent-answer .table-wrap th, .boi-agent-answer .table-wrap td { border-top:1px solid #dbe3ee; padding:6px; text-align:left; vertical-align:top; overflow-wrap:anywhere; }
 .boi-agent-answer th, .boi-agent-table-wrap th, .boi-agent-answer .table-wrap th { background:#f8fafc; color:#334155; font-weight:900; }
+.boi-agent-answer-actions { display:flex; justify-content:flex-end; margin:6px 0 0; }
+.boi-agent-answer-actions button { border:1px solid #bfdbfe; border-radius:999px; background:#fff; color:#1d4ed8; padding:3px 8px; font-size:11px; font-weight:800; cursor:pointer; }
+.boi-agent-answer-actions button:hover { background:#eff6ff; }
 .boi-agent-inline-image { display:block; max-width:100%; height:auto; margin:8px 0; border:1px solid #dbe3ee; border-radius:8px; cursor:zoom-in; }
 .boi-agent-run-summary { margin-top:8px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; color:#475569; font-size:12px; }
 .boi-agent-run-summary summary { cursor:pointer; padding:7px 9px; color:#334155; font-weight:900; }
@@ -317,6 +320,9 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-viewer-body { padding:16px; overflow:auto; }
 .boi-agent-viewer .boi-agent-artifact { border:0; background:#fff; padding:0; }
 .boi-agent-viewer .mermaid-diagram { max-width:none; }
+.boi-agent-answer-viewer .boi-agent-answer { margin:0; box-shadow:none; }
+.boi-agent-answer-viewer .boi-agent-answer::before { display:none; }
+.boi-agent-viewer .boi-agent-answer .table-wrap, .boi-agent-viewer .boi-agent-table-wrap { overflow:auto; }
 .boi-agent-image-viewer { margin:0; }
 .boi-agent-image-viewer img { display:block; max-width:100%; height:auto; margin:0 auto; border-radius:10px; }
 @media (max-width:640px) {

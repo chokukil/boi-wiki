@@ -631,7 +631,8 @@
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
           ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
-          <div class="boi-agent-answer">${answerHtml}</div>
+          <div class="boi-agent-answer" data-answer-id="answer-${index}">${answerHtml}</div>
+          ${message.role === "assistant" && answerHtml ? `<div class="boi-agent-answer-actions"><button type="button" data-open-answer="answer-${index}">답변 크게 보기</button></div>` : ""}
           ${renderRunSummary(message)}
           ${renderArtifacts(message, index)}
           ${renderLinks(message.links || [])}
@@ -858,6 +859,9 @@
     root.querySelectorAll("[data-open-artifact]").forEach((button) => {
       button.addEventListener("click", () => openArtifact(button.dataset.openArtifact || ""));
     });
+    root.querySelectorAll("[data-open-answer]").forEach((button) => {
+      button.addEventListener("click", () => openAnswer(button.dataset.openAnswer || ""));
+    });
     root.querySelectorAll(".boi-agent-answer img, .boi-agent-artifact img").forEach((image) => {
       image.addEventListener("click", () => openImageArtifact(image));
     });
@@ -933,6 +937,18 @@
     state.viewer = {
       title: clone.querySelector("strong")?.textContent || "Artifact",
       html: clone.outerHTML,
+    };
+    render();
+  }
+
+  function openAnswer(id) {
+    const node = root.querySelector(`[data-answer-id="${CSS.escape(id)}"]`);
+    if (!node) return;
+    const clone = node.cloneNode(true);
+    clone.removeAttribute("data-answer-id");
+    state.viewer = {
+      title: "BoI Agent 답변",
+      html: `<div class="boi-agent-answer-viewer">${clone.outerHTML}</div>`,
     };
     render();
   }
