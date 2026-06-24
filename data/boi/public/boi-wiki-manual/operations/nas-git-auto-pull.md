@@ -48,6 +48,7 @@ runtime 변경이 포함된 배포는 현재 Git short SHA를 `.env`의 `BOI_BUI
 | Runtime env file | `.env` |
 | Lock dir | `/tmp/boi-wiki-nas-auto-pull.lock` |
 | Compose binary | `/usr/local/bin/docker-compose` |
+| Runtime revision verify attempts | 90 attempts, 2 seconds apart |
 | Log file | `/volume1/docker/boi-wiki/deploy-logs/autopull.log` |
 | Log rotation | 10 MiB, 5 archives |
 
@@ -62,6 +63,7 @@ ENV_FILE=.env
 LOG_DIR=/volume1/docker/boi-wiki/deploy-logs
 LOG_MAX_BYTES=10485760
 LOG_ROTATE_KEEP=5
+NAS_RUNTIME_VERIFY_ATTEMPTS=90
 ```
 
 # DSM Scheduled Task
@@ -126,7 +128,7 @@ git rev-parse --short HEAD
 curl -fsS http://127.0.0.1:28000/api/runtime/config
 ```
 
-revision이 다르면 `DEPLOY_STATUS=failed`로 끝난다. 이 검증은 “이미지 빌드는 성공했지만 오래된 `.env` 값 때문에 앱이 이전 revision을 표시하는” 문제를 잡기 위한 필수 gate다.
+revision이 다르면 `DEPLOY_STATUS=failed`로 끝난다. 이 검증은 “이미지 빌드는 성공했지만 오래된 `.env` 값 때문에 앱이 이전 revision을 표시하는” 문제를 잡기 위한 필수 gate다. NAS가 cache warmup 중에는 connection reset 또는 empty reply를 낼 수 있으므로 기본 대기 시간은 90회, 2초 간격이다.
 
 # Compose v1 Recovery
 

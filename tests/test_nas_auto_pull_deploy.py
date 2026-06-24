@@ -88,6 +88,7 @@ def test_script_contains_required_safety_contracts():
     assert "upsert_env_key \"$ENV_FILE\" \"BOI_BUILD_REVISION\"" in text
     assert "recover_compose_v1_created_containers" in text
     assert "verify_runtime_revision \"$build_revision\"" in text
+    assert "NAS_RUNTIME_VERIFY_ATTEMPTS=\"${NAS_RUNTIME_VERIFY_ATTEMPTS:-90}\"" in text
     assert "cat \"$ENV_FILE\"" not in text
     assert "set -x" not in text
 
