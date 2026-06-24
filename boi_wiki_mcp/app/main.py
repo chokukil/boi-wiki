@@ -774,6 +774,18 @@ def parse_bridge_request(data: Any) -> McpBridgeRequest:
     return McpBridgeRequest.parse_obj(data)
 
 
+def bridge_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def bridge_confirmation_error(tool: str) -> JSONResponse:
+    return JSONResponse({"detail": f"user_confirmed=true is required before calling {tool}"}, status_code=400)
+
+
 async def mcp_bridge_call(request: Request) -> JSONResponse:
     if request.headers.get("x-service-token") != SERVICE_TOKEN:
         return JSONResponse({"detail": "invalid service token"}, status_code=401)
@@ -788,6 +800,8 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         result = await boi_search_impl(query=str(args.get("query") or ""), employee_id=employee_id, service_token=True)
     elif tool_name == "boi_get":
         result = await boi_get_impl(str(args.get("boi_id") or req.boi_id or ""), employee_id=employee_id, service_token=True)
+    elif tool_name == "okf_graph_doc":
+        result = await api_get(f"/api/okf/graph/doc/{str(args.get('boi_id') or req.boi_id or '')}", employee_id=employee_id, service_token=True)
     elif tool_name == "workflow_status":
         result = await workflow_status_impl(
             str(args.get("workflow_key") or ""),
@@ -795,13 +809,56 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             employee_id=employee_id,
             service_token=True,
         )
+    elif tool_name == "workflow_start":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        workflow_key = str(args.get("workflow_key") or "")
+        payload = dict(args.get("payload") or {})
+        if args.get("trace_id"):
+            payload["trace_id"] = str(args.get("trace_id"))
+        payload["user_confirmed"] = True
+        result = await api_post(f"/api/workflows/{workflow_key}/start", employee_id=employee_id, payload=payload, service_token=True)
     elif tool_name == "actions_search":
-        result = await actions_search_impl(employee_id=employee_id, connector_kind=str(args.get("connector_kind") or ""), service_token=True)
+        result = await actions_search_impl(
+            employee_id=employee_id,
+            event_type=str(args.get("event_type") or ""),
+            connector_kind=str(args.get("connector_kind") or ""),
+            action_key=str(args.get("action_key") or ""),
+            service_token=True,
+        )
+    elif tool_name == "action_get":
+        result = await actions_search_impl(employee_id=employee_id, action_key=str(args.get("action_key") or ""), service_token=True)
+        if not result.get("items"):
+            return JSONResponse({"detail": f"Action not found: {args.get('action_key') or ''}"}, status_code=404)
+        result = {"ok": True, "item": result["items"][0]}
+    elif tool_name == "action_invoke":
+        if bridge_bool(args.get("dry_run"), True) is False and not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/actions/invoke",
+            employee_id=employee_id,
+            payload={
+                "action_key": str(args.get("action_key") or ""),
+                "employee_id": employee_id,
+                "event": args.get("event") or {},
+                "payload": args.get("payload") or {},
+                "boi_id": args.get("boi_id"),
+                "dry_run": bridge_bool(args.get("dry_run"), True),
+                "approved_by": args.get("approved_by"),
+                "user_confirmed": bridge_bool(args.get("user_confirmed")),
+            },
+            service_token=True,
+        )
     elif tool_name == "ontology_search":
         result = await api_get(
             "/api/search/ontology",
             employee_id=employee_id,
-            params={"q": str(args.get("query") or args.get("q") or ""), "scope": str(args.get("scope") or "all"), "limit": int(args.get("limit") or 8)},
+            params={
+                "q": str(args.get("query") or args.get("q") or ""),
+                "scope": str(args.get("scope") or "all"),
+                "limit": int(args.get("limit") or 8),
+                "current_url": str(args.get("current_url") or ""),
+            },
             service_token=True,
         )
     elif tool_name == "boi_agent_chat":
@@ -815,6 +872,13 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "selected_text": str(args.get("selected_text") or ""),
                 "page_context": args.get("page_context") or {},
             },
+            service_token=True,
+        )
+    elif tool_name == "boi_agent_suggestions":
+        result = await api_post(
+            "/api/agents/boi-wiki/suggestions",
+            employee_id=employee_id,
+            payload={"current_url": str(args.get("current_url") or ""), "page_context": args.get("page_context") or {}},
             service_token=True,
         )
     elif tool_name == "agent_inbox":
@@ -831,6 +895,117 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             params={"q": str(args.get("query") or args.get("q") or ""), "scope": str(args.get("scope") or "all")},
             service_token=True,
         )
+    elif tool_name == "dictionary_terms":
+        result = await api_get(
+            "/api/dictionary/terms",
+            employee_id=employee_id,
+            params={"scope": str(args.get("scope") or "all"), "q": str(args.get("query") or args.get("q") or ""), "limit": int(args.get("limit") or 100)},
+            service_token=True,
+        )
+    elif tool_name == "agent_memory_search":
+        result = await api_get(
+            "/api/agents/boi-wiki/memory",
+            employee_id=employee_id,
+            params={"q": str(args.get("query") or args.get("q") or ""), "include_archived": str(bridge_bool(args.get("include_archived"))).lower(), "limit": int(args.get("limit") or 20)},
+            service_token=True,
+        )
+    elif tool_name == "manual_handoff_complete":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/agents/boi-wiki/manual-handoffs/complete",
+            employee_id=employee_id,
+            payload={
+                "task_id": str(args.get("task_id") or ""),
+                "note": str(args.get("note") or ""),
+                "outcome": str(args.get("outcome") or "completed"),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "source_preview":
+        result = await api_post(
+            "/api/source/preview",
+            employee_id=employee_id,
+            payload={
+                "path": str(args.get("path") or ""),
+                "base_sha256": args.get("base_sha256"),
+                "proposed_content": str(args.get("proposed_content") or ""),
+                "author": str(args.get("author") or "boi-wiki-mcp"),
+                "note": str(args.get("note") or "MCP source preview"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "source_apply":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/source/apply",
+            employee_id=employee_id,
+            payload={
+                "path": str(args.get("path") or ""),
+                "base_sha256": str(args.get("base_sha256") or ""),
+                "proposed_content": str(args.get("proposed_content") or ""),
+                "author": str(args.get("author") or "boi-wiki-mcp"),
+                "note": str(args.get("note") or "MCP validated source edit"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "doc_body_preview":
+        boi_id = str(args.get("boi_id") or req.boi_id or "")
+        result = await api_post(
+            f"/api/docs/{boi_id}/body-preview",
+            employee_id=employee_id,
+            payload={
+                "base_sha256": args.get("base_sha256"),
+                "proposed_body": str(args.get("proposed_body") or ""),
+                "author": str(args.get("author") or "boi-wiki-mcp"),
+                "note": str(args.get("note") or "MCP body preview"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "doc_body_apply":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        boi_id = str(args.get("boi_id") or req.boi_id or "")
+        result = await api_post(
+            f"/api/docs/{boi_id}/body-apply",
+            employee_id=employee_id,
+            payload={
+                "base_sha256": str(args.get("base_sha256") or ""),
+                "proposed_body": str(args.get("proposed_body") or ""),
+                "author": str(args.get("author") or "boi-wiki-mcp"),
+                "note": str(args.get("note") or "MCP validated body edit"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "promotion_submit":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/promotions/submit",
+            employee_id=employee_id,
+            payload={
+                "target_visibility": str(args.get("target_visibility") or "team"),
+                "team_id": args.get("team_id"),
+                "title": str(args.get("title") or ""),
+                "description": str(args.get("description") or "Promoted BoI"),
+                "body": str(args.get("body") or ""),
+                "boi_type": str(args.get("boi_type") or "boi/reference"),
+                "classification": str(args.get("classification") or "internal"),
+                "tags": args.get("tags") or [],
+                "source_refs": args.get("source_refs") or [],
+                "source_local_id": args.get("source_local_id"),
+                "source_sha256": args.get("source_sha256"),
+                "reviewer": str(args.get("reviewer") or "hotl-curator"),
+                "promotion_reason": str(args.get("promotion_reason") or "User explicitly requested promotion."),
+                "user_confirmed": True,
+                "user_confirmed_at": args.get("user_confirmed_at"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "promotion_status":
+        result = await api_get(f"/api/promotions/{str(args.get('promotion_id') or '')}", employee_id=employee_id, service_token=True)
     else:
         return JSONResponse({"detail": f"unsupported MCP bridge tool: {req.tool}"}, status_code=400)
     return JSONResponse(

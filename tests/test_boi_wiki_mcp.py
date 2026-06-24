@@ -236,6 +236,83 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
     assert calls[1]["path"] == "/api/agents/boi-wiki/inbox"
 
 
+def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "path": path}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    requests = [
+        ("boi_agent_suggestions", {"employee_id": "100001", "current_url": "/sops", "page_context": {"title": "SOP"}}),
+        ("dictionary_terms", {"employee_id": "100001", "query": "단면검사", "scope": "all", "limit": 5}),
+        ("agent_memory_search", {"employee_id": "100001", "query": "선호", "include_archived": False, "limit": 3}),
+    ]
+    for tool, arguments in requests:
+        response = client.post(
+            "/api/mcp/call",
+            headers={"x-service-token": "test-service-token"},
+            json={"server": {"name": "boi-wiki-mcp"}, "tool": tool, "arguments": arguments},
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+    denied = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "manual_handoff_complete",
+            "arguments": {"employee_id": "100001", "task_id": "task-1", "note": "done", "user_confirmed": False},
+        },
+    )
+    approved = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "manual_handoff_complete",
+            "arguments": {"employee_id": "100001", "task_id": "task-1", "note": "done", "user_confirmed": True},
+        },
+    )
+
+    assert denied.status_code == 400
+    assert "user_confirmed=true" in denied.json()["detail"]
+    assert approved.status_code == 200
+    assert [item["path"] for item in calls] == [
+        "/api/agents/boi-wiki/suggestions",
+        "/api/dictionary/terms",
+        "/api/agents/boi-wiki/memory",
+        "/api/agents/boi-wiki/manual-handoffs/complete",
+    ]
+    assert calls[-1]["payload"]["user_confirmed"] is True
+
+
+def test_boi_wiki_mcp_bridge_requires_confirmation_for_write_tools(mcp_module):
+    client = TestClient(mcp_module.app)
+    for tool, arguments in [
+        ("workflow_start", {"workflow_key": "equipment-anomaly"}),
+        ("source_apply", {"path": "data/boi/public/test.md", "base_sha256": "x", "proposed_content": "x"}),
+        ("doc_body_apply", {"boi_id": "boi:public:test", "base_sha256": "x", "proposed_body": "x"}),
+        ("promotion_submit", {"title": "x", "body": "x", "source_refs": []}),
+    ]:
+        response = client.post(
+            "/api/mcp/call",
+            headers={"x-service-token": "test-service-token"},
+            json={"server": {"name": "boi-wiki-mcp"}, "tool": tool, "arguments": arguments},
+        )
+        assert response.status_code == 400
+        assert "user_confirmed=true" in response.json()["detail"]
+
+
 def test_boi_wiki_mcp_streamable_http_initializes(mcp_module):
     with TestClient(mcp_module.app) as client:
         response = client.post(
