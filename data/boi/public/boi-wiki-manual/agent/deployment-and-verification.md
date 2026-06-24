@@ -74,11 +74,12 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
 | `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
 | `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `3` | Gemma Router response timeout. Timeout이면 rules fallback을 사용해 Agent 응답을 계속 진행한다. |
+| `BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS` | `30` | Router timeout/network failure 뒤 같은 worker가 잠시 LLM 호출을 건너뛰고 rules fallback을 바로 쓰는 보호 시간 |
 | `BOI_AGENT_ROUTER_MAX_TOKENS` | `768` | reasoning token을 쓰는 Gemma 계열 Router의 final JSON 확보용 |
 
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
 
-`/api/runtime/config`는 Router mode, LLM enabled 여부, base URL, model을 노출한다. secret은 노출하지 않는다.
+`/api/runtime/config`는 Router mode, LLM enabled 여부, base URL, model, timeout, backoff 상태를 노출한다. secret은 노출하지 않는다.
 
 # Related Documents
 

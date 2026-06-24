@@ -119,6 +119,7 @@ BOI_AGENT_ROUTER_LLM_ENABLED = resolve_router_llm_enabled(
     BOI_AGENT_ROUTER_BASE_URL,
 )
 BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "3"))
+BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS", "30"))
 BOI_AGENT_ROUTER_MAX_TOKENS = int(os.getenv("BOI_AGENT_ROUTER_MAX_TOKENS", "768"))
 BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD", "0.7"))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
@@ -131,6 +132,8 @@ LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "api-key")
 LANGFLOW_BOI_AGENT_ENDPOINT = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
 LANGFLOW_AGENT_TIMEOUT_SECONDS = float(os.getenv("LANGFLOW_AGENT_TIMEOUT_SECONDS", "120"))
 KAFKA_PUBLISH_TIMEOUT_SECONDS = float(os.getenv("BOI_KAFKA_PUBLISH_TIMEOUT_SECONDS", "20"))
+_BOI_AGENT_ROUTER_BACKOFF_UNTIL = 0.0
+_BOI_AGENT_ROUTER_BACKOFF_REASON = ""
 
 LOCALHOST_NAMES = {"localhost", "127.0.0.1", "::1", "testserver"}
 DEFAULT_EXTERNAL_TOOL_PORTS = {
@@ -5013,6 +5016,8 @@ async def runtime_config() -> dict[str, Any]:
                 "base_url": BOI_AGENT_ROUTER_BASE_URL,
                 "model": BOI_AGENT_ROUTER_MODEL,
                 "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
+                "failure_backoff_seconds": BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS,
+                "backoff_remaining_seconds": round(router_llm_backoff_remaining(), 1),
                 "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
                 "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
             },
@@ -6335,11 +6340,21 @@ def parse_router_payload(text: str) -> dict[str, Any] | None:
     return None
 
 
+def router_llm_backoff_remaining() -> float:
+    return max(0.0, _BOI_AGENT_ROUTER_BACKOFF_UNTIL - time.monotonic())
+
+
 def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    global _BOI_AGENT_ROUTER_BACKOFF_UNTIL, _BOI_AGENT_ROUTER_BACKOFF_REASON
     if not BOI_AGENT_ROUTER_LLM_ENABLED or BOI_AGENT_ROUTER_MODE != "llm_first":
         raise BoiAgentRouterUnavailable("LLM router is not configured")
     if not BOI_AGENT_ROUTER_BASE_URL or not BOI_AGENT_ROUTER_MODEL:
         raise BoiAgentRouterUnavailable("LLM router base URL/model is missing")
+    backoff_remaining = router_llm_backoff_remaining()
+    if backoff_remaining > 0:
+        raise BoiAgentRouterUnavailable(
+            f"LLM router backoff active for {backoff_remaining:.1f}s after {_BOI_AGENT_ROUTER_BACKOFF_REASON or 'previous failure'}"
+        )
     url = BOI_AGENT_ROUTER_BASE_URL.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
     if BOI_AGENT_ROUTER_API_KEY:
@@ -6369,7 +6384,12 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
             response.raise_for_status()
             payload = response.json()
     except Exception as exc:
+        if BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS > 0:
+            _BOI_AGENT_ROUTER_BACKOFF_UNTIL = time.monotonic() + BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS
+            _BOI_AGENT_ROUTER_BACKOFF_REASON = type(exc).__name__
         raise BoiAgentRouterUnavailable(f"LLM router call failed: {exc}") from exc
+    _BOI_AGENT_ROUTER_BACKOFF_UNTIL = 0.0
+    _BOI_AGENT_ROUTER_BACKOFF_REASON = ""
     parsed = None
     for text in iter_langflow_text_candidates(payload):
         candidate = parse_router_payload(text)

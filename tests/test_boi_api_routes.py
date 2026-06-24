@@ -129,6 +129,8 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["router"]["mode"] == "llm_first"
     assert body["boi_agent"]["router"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["boi_agent"]["router"]["llm_enabled"] is False
+    assert body["boi_agent"]["router"]["failure_backoff_seconds"] == 30
+    assert body["boi_agent"]["router"]["backoff_remaining_seconds"] >= 0
     assert body["boi_agent"]["router"]["max_tokens"] == 768
     assert "api_key" not in body["boi_agent"]["router"]
 
@@ -652,6 +654,42 @@ def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_mod
     assert body["route"] == "fast"
     assert body["router_backend"] == "rules"
     assert body["used_backend"] == "native_langgraph"
+
+
+def test_boi_agent_router_network_failure_uses_short_backoff(boi_app_module, monkeypatch):
+    calls = {"post": 0}
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, *args, **kwargs):
+            calls["post"] += 1
+            raise boi_app_module.httpx.ConnectTimeout("router unavailable")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_BASE_URL", "http://router.example:1236/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS", 60)
+    monkeypatch.setattr(boi_app_module, "_BOI_AGENT_ROUTER_BACKOFF_UNTIL", 0.0)
+    monkeypatch.setattr(boi_app_module, "_BOI_AGENT_ROUTER_BACKOFF_REASON", "")
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FailingClient)
+
+    request = boi_app_module.BoiAgentChatRequest(question="SOP 찾아줘", current_url="/")
+    first = boi_app_module.route_boi_agent_request(request, "100001")
+    second = boi_app_module.route_boi_agent_request(request, "100001")
+
+    assert first["router_backend"] == "rules"
+    assert "router unavailable" in first["reason"]
+    assert second["router_backend"] == "rules"
+    assert "backoff active" in second["reason"]
+    assert calls["post"] == 1
 
 
 def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(boi_app_module, monkeypatch):
