@@ -986,6 +986,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-message-author" in script
     assert "boi-agent-inline-image" in script
     assert "openImageArtifact" in script
+    assert 'event.key === "Escape" && state.viewer' in script
     assert "seenMermaidSources" in script
     assert 'artifact.type === "workflow_summary"' in script
     assert "renderObjectTable(rows)" in script

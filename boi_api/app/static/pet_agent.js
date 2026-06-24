@@ -883,4 +883,10 @@
   window.visualViewport?.addEventListener("resize", syncViewportPosition);
   window.visualViewport?.addEventListener("scroll", syncViewportPosition);
   window.addEventListener("resize", syncViewportPosition);
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.viewer) {
+      state.viewer = null;
+      render();
+    }
+  });
 })();
