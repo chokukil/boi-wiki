@@ -73,13 +73,13 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
 | `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first |
 | `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 LLM 비활성으로 해석한다. |
-| `BOI_AGENT_ROUTER_REQUIRED` | `1` | `1`이면 Router LLM 비활성, 미설정, timeout, invalid JSON 모두 fallback하지 않고 `boi_agent_router_unavailable` 장애로 표시한다. rules는 `REQUIRED=0`인 명시 개발/테스트 모드에서만 허용한다. |
+| `BOI_AGENT_ROUTER_REQUIRED` | `1` | `1`이면 Router LLM 비활성, 미설정, timeout, invalid JSON 모두 `boi_agent_router_unavailable` 장애로 표시한다. rules 분기는 `REQUIRED=0`인 명시 개발/테스트 모드에서만 허용한다. |
 | `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
 | `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
 | `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `12` | Gemma Router response timeout. 운영 모드에서 timeout은 Agent 장애로 노출된다. |
 | `BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS` | `30` | Router timeout/network failure 뒤 같은 worker가 잠시 LLM 호출을 건너뛰고 같은 장애를 빠르게 반환하는 보호 시간 |
 | `BOI_AGENT_ROUTER_MAX_TOKENS` | `1536` | reasoning token을 쓰는 Gemma 계열 Router의 final JSON 확보용 |
-| `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄과 SSE route plan은 LLM stream planner가 생성해야 한다. 실패 시 fallback하지 않고 장애로 표시한다. |
+| `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄과 SSE route plan은 LLM stream planner가 생성해야 한다. 실패 시 정해진 대체 문구를 쓰지 않고 장애로 표시한다. |
 | `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible stream planner endpoint. 이름은 호환상 `STATUS`를 유지하지만 SSE에서는 route/status plan을 함께 만든다. |
 | `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |
 | `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `12` | stream plan 생성 timeout. 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. |
@@ -115,7 +115,7 @@ event: error
 data: {"status":"status_generation_failed", ...}
 ```
 
-이 오류는 정상 fallback이 아니라 Agent streaming 장애로 취급한다.
+이 오류는 정상 우회가 아니라 Agent streaming 장애로 취급한다.
 
 이 smoke는 최종 답변 품질 검증이 아니라 “장시간 Agent 요청이 진행 상태를 계속 보여주는가”를 확인하는 최소 검증이다. 최종 답변 품질은 Pet UI에서 Markdown table, Mermaid artifact, links, Inbox card가 함께 렌더링되는지 별도로 확인한다.
 
