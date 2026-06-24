@@ -190,6 +190,7 @@
     </div>
   </section>
 
+  {% if can_manage %}
   <section class="page-section">
     <h2>Role Bindings</h2>
     <div class="table-wrap">
@@ -213,6 +214,7 @@
       </table>
     </div>
   </section>
+  {% endif %}
 
   <section class="page-section">
     <h2>BoI Profile ACL 기준</h2>
@@ -236,6 +238,7 @@
     </div>
   </section>
 
+  {% if can_manage %}
   <section class="page-section">
     <h2>Audit</h2>
     <div class="table-wrap">
@@ -258,6 +261,7 @@
       </table>
     </div>
   </section>
+  {% endif %}
 </main>
 </body>
 </html>

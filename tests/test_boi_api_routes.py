@@ -460,6 +460,48 @@ def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
     assert ".rbac-result" in style
 
 
+def test_permissions_page_hides_role_bindings_and_audit_for_non_manager(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    monkeypatch.setattr(boi_app_module, "roles_for", lambda _employee_id: ["boi.viewer"])
+    monkeypatch.setattr(boi_app_module, "rbac_can_manage", lambda _employee_id, **_kwargs: False)
+
+    response = client.get("/permissions?employee_id=100003")
+
+    assert response.status_code == 200
+    assert 'data-rbac-admin' not in response.text
+    assert 'data-rbac-form="team"' not in response.text
+    assert 'data-rbac-form="binding"' not in response.text
+    assert "조회만 가능합니다" in response.text
+    assert "Role Bindings" not in response.text
+    assert ">Audit<" not in response.text
+    assert "역할 부여를 저장했습니다" not in response.text
+
+
+def test_rbac_mutation_apis_reject_non_manager(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    monkeypatch.setattr(boi_app_module, "roles_for", lambda _employee_id: ["boi.viewer"])
+    monkeypatch.setattr(boi_app_module, "rbac_can_manage", lambda _employee_id, **_kwargs: False)
+
+    create_team = client.post(
+        "/api/rbac/teams?employee_id=100003",
+        json={"team_id": "pytest-viewer-denied", "display_name": "Denied"},
+    )
+    add_member = client.post(
+        "/api/rbac/teams/aix-tf/members?employee_id=100003",
+        json={"employee_id": "100009", "role": "member", "action": "add"},
+    )
+    bind_role = client.post(
+        "/api/rbac/bindings?employee_id=100003",
+        json={"subject_type": "employee", "subject_id": "100003", "roles": ["boi.admin"]},
+    )
+
+    assert create_team.status_code == 403
+    assert add_member.status_code == 403
+    assert bind_role.status_code == 403
+
+
 def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_module):
     client = TestClient(boi_app_module.app)
     event_type = "pytest.sample.event.requested.v1"
