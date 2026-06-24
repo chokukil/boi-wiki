@@ -2643,6 +2643,29 @@ def test_workflow_poc_and_promotion_curls_use_external_boi_url(boi_app_module, m
     assert 'curl -X POST "http://localhost:8000/api/boi/' not in private_response.text
 
 
+def test_doc_body_curl_examples_use_external_boi_url_for_external_host(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
+    client = TestClient(boi_app_module.app)
+
+    direct_sop = client.get(
+        "/docs/boi:public:sop:direct-development-reporting?employee_id=100001",
+        headers={"host": "boi-wiki.example:28000"},
+    )
+    event_type = client.get(
+        "/docs/boi:public:event-types:equipment.alarm.raised.v1?employee_id=100001",
+        headers={"host": "boi-wiki.example:28000"},
+    )
+
+    assert direct_sop.status_code == 200
+    assert "http://boi-wiki.example:28000/api/workflows/direct-development-reporting/start?employee_id=100001" in direct_sop.text
+    assert "http://boi-wiki.example:28000/workflows/direct-development-reporting/status?employee_id=100001" in direct_sop.text
+    assert "http://localhost:8000/api/workflows/direct-development-reporting" not in direct_sop.text
+    assert "http://localhost:8000/workflows/direct-development-reporting" not in direct_sop.text
+    assert event_type.status_code == 200
+    assert "http://boi-wiki.example:28000/api/workflows/demo/equipment-anomaly/start?employee_id=100001" in event_type.text
+    assert "http://localhost:8000/api/workflows/demo/equipment-anomaly" not in event_type.text
+
+
 def test_action_catalog_source_api_is_valid_with_manual_high_risk_approvals(boi_app_module):
     client = TestClient(boi_app_module.app)
 

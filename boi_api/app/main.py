@@ -4310,6 +4310,11 @@ def cached_doc_body_html(doc: dict[str, Any], employee_id: str, doc_lookup: dict
     return rendered
 
 
+def doc_body_html_for_request(doc: dict[str, Any], employee_id: str, doc_lookup: dict[str, dict[str, Any]], request: Request) -> Markup:
+    rendered = cached_doc_body_html(doc, employee_id, doc_lookup)
+    return Markup(rewrite_display_string(str(rendered), request))
+
+
 def action_doc_uri(
     action: dict[str, Any],
     employee_id: str,
@@ -5995,7 +6000,7 @@ async def doc_page(
             "access_policy_url": "/api/docs/" + graph_ref + "/access?" + doc_query,
             "metadata_fragment_url": "/api/docs/" + graph_ref + "/metadata-fragment?" + doc_query,
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
-            "body_html": cached_doc_body_html(doc, employee_id, doc_lookup),
+            "body_html": doc_body_html_for_request(doc, employee_id, doc_lookup, request),
             "body_editor": body_editor_payload_for_doc(doc, employee_id),
             "citations": citation_rows_for_doc(doc, employee_id, doc_lookup=doc_lookup),
             "workflow_poc": workflow_poc,
