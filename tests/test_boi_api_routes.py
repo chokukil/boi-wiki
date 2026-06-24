@@ -515,15 +515,11 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     assert "설비" in body["answer_markdown"]
 
 
-def test_boi_agent_native_backend_does_not_pre_route_before_graph(boi_app_module, monkeypatch):
+def test_boi_agent_native_backend_uses_api_rule_router_before_graph(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
-
-    def fail_pre_router(*args, **kwargs):
-        raise AssertionError("native backend must classify inside the native graph")
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
-    monkeypatch.setattr(boi_app_module, "route_boi_agent_request", fail_pre_router)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -533,7 +529,47 @@ def test_boi_agent_native_backend_does_not_pre_route_before_graph(boi_app_module
     assert response.status_code == 200
     body = response.json()
     assert body["used_backend"] == "native_langgraph"
-    assert body["router_backend"] == "native_rules"
+    assert body["router_backend"] == "rules"
+
+
+def test_boi_agent_native_reuses_api_router_without_internal_llm(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    calls = {"router": 0}
+
+    def fake_router(req, employee_id: str):
+        calls["router"] += 1
+        return {
+            "route": "fast",
+            "confidence": 0.91,
+            "intent": "search",
+            "reason": "test router",
+            "requires_mutation": False,
+            "requires_deep_reasoning": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    def fail_internal_llm(*args, **kwargs):
+        raise AssertionError("native graph must not re-run LLM routing when API route is provided")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fail_internal_llm)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "설비 SOP 관련 Event와 Action을 찾아줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert calls["router"] == 1
+    assert body["used_backend"] == "native_langgraph"
+    assert body["router_backend"] == "llm"
+    assert body["router_confidence"] == 0.91
+    assert body["intent"] == "search"
 
 
 def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module, monkeypatch):
@@ -614,7 +650,7 @@ def test_boi_agent_chat_router_failure_falls_back_to_rules_fast_path(boi_app_mod
     assert response.status_code == 200
     body = response.json()
     assert body["route"] == "fast"
-    assert body["router_backend"] == "native_rules"
+    assert body["router_backend"] == "rules"
     assert body["used_backend"] == "native_langgraph"
 
 
@@ -997,10 +1033,10 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "mermaid-diagram" in script
     assert "BoiAgentMarkdownDebug" in script
     assert "renderMarkdownTable" in script
-    assert "answer_html" not in script
+    assert "html: body.answer_html || \"\"" in script
     assert "body.display_markdown || body.answer_markdown" in script
     assert "rawText: body.answer_markdown" in script
-    assert "renderMarkdownLite(message.text || \"\", { skipMermaidSources: artifactMermaid })" in script
+    assert "message.html || renderMarkdownLite(message.text || \"\", { skipMermaidSources: artifactMermaid })" in script
     assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script

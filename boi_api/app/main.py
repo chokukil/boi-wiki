@@ -7331,16 +7331,15 @@ def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: d
 
 def agent_chat_response(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
     started_at = time.perf_counter()
+    route = route_boi_agent_request(req, employee_id)
     if BOI_AGENT_BACKEND in {"native", "hybrid"}:
         try:
-            return call_native_boi_agent(req, employee_id, {}, started_at)
+            return call_native_boi_agent(req, employee_id, route, started_at)
         except Exception:
             if BOI_AGENT_BACKEND == "hybrid":
-                route = route_boi_agent_request(req, employee_id)
                 return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
             raise
 
-    route = route_boi_agent_request(req, employee_id)
     route_name = str(route.get("route") or "fast")
     if route_name in {"manual_handoff", "approval_required"}:
         return agent_safety_answer(req, employee_id, route, started_at)

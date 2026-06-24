@@ -502,7 +502,7 @@
     return `<div class="boi-agent-messages">${state.messages
       .map((message, index) => {
         const artifactMermaid = mermaidSourcesFromArtifacts(message);
-        const answerHtml = renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
+        const answerHtml = message.html || renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
         return `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
@@ -841,6 +841,7 @@
       state.messages[pendingIndex] = {
         role: "assistant",
         text: body.display_markdown || body.answer_markdown || "",
+        html: body.answer_html || "",
         rawText: body.answer_markdown || "",
         links: body.links || [],
         meta: {
