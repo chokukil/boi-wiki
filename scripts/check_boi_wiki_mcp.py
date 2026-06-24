@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -23,19 +24,31 @@ def attr_any(item: object, *names: str) -> str:
 
 
 async def check_protocol(url: str, include_details: bool = False) -> dict:
-    async with streamablehttp_client(url) as (read_stream, write_stream, _session_id):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            tools = await session.list_tools()
-            resources = await session.list_resources()
-            resource_templates = await session.list_resource_templates()
-            prompts = await session.list_prompts()
+    tools = resources = resource_templates = prompts = None
+    close_warning = ""
+    try:
+        async with streamablehttp_client(url) as (read_stream, write_stream, _session_id):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                resources = await session.list_resources()
+                resource_templates = await session.list_resource_templates()
+                prompts = await session.list_prompts()
+    except Exception as exc:
+        if tools is None or resources is None or resource_templates is None or prompts is None:
+            raise
+        # Some streamable HTTP deployments close the POST writer as soon as the
+        # read side has delivered all protocol lists. Treat that as a transport
+        # close warning only after the authoritative MCP lists were collected.
+        close_warning = f"{type(exc).__name__}: {exc}"
     result = {
         "tools": len(tools.tools),
         "resources": len(resources.resources),
         "resource_templates": len(resource_templates.resourceTemplates),
         "prompts": len(prompts.prompts),
     }
+    if close_warning:
+        result["close_warning"] = close_warning
     if include_details:
         result.update(
             {
@@ -134,7 +147,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check BoI Wiki MCP protocol and bridge endpoints.")
     parser.add_argument("--base-url", default="http://localhost:8200", help="BoI Wiki MCP service base URL.")
     parser.add_argument("--mcp-url", default="http://localhost:8200/mcp", help="Streamable HTTP MCP URL.")
-    parser.add_argument("--service-token", default="dev-service-token-change-me")
+    parser.add_argument("--service-token", default=os.getenv("SERVICE_TOKEN", "dev-service-token-change-me"))
     parser.add_argument("--query", default="SOP")
     parser.add_argument("--summary", action="store_true", help="Print only the verification summary.")
     parser.add_argument("--details", action="store_true", help="Include tool, resource template, and prompt names.")
