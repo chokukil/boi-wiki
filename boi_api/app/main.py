@@ -6652,6 +6652,13 @@ def parse_router_payload(text: str) -> dict[str, Any] | None:
         return parsed
     decoder = json.JSONDecoder()
     stripped = text.strip()
+    if stripped.startswith("```") and stripped.endswith("```"):
+        fenced = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", stripped, count=1).strip()
+        fenced = re.sub(r"\s*```$", "", fenced, count=1).strip()
+        if fenced and fenced != stripped:
+            payload = parse_router_payload(fenced)
+            if payload and payload.get("route"):
+                return payload
     for index, char in enumerate(stripped):
         if char != "{":
             continue
@@ -6673,6 +6680,13 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
             return parsed
     decoder = json.JSONDecoder()
     stripped = text.strip()
+    if stripped.startswith("```") and stripped.endswith("```"):
+        fenced = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", stripped, count=1).strip()
+        fenced = re.sub(r"\s*```$", "", fenced, count=1).strip()
+        if fenced and fenced != stripped:
+            payload = parse_agent_compose_payload(fenced)
+            if payload:
+                return payload
     for index, char in enumerate(stripped):
         if char != "{":
             continue
@@ -8004,6 +8018,7 @@ def iter_langflow_text_candidates(value: Any, depth: int = 0) -> list[str]:
         return candidates
     if isinstance(value, dict):
         preferred_keys = (
+            "choices",
             "answer_markdown",
             "text",
             "message",

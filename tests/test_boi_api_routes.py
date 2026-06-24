@@ -1374,10 +1374,29 @@ def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
 def test_boi_agent_composer_parser_accepts_answer_alias_and_plain_markdown(boi_app_module):
     alias_payload = boi_app_module.parse_agent_compose_payload('{"answer":"## 답변\\n근거를 기준으로 정리했습니다."}')
     plain_payload = boi_app_module.parse_agent_compose_payload("## 답변\n\n근거를 기준으로 정리했습니다.")
+    fenced_json_payload = boi_app_module.parse_agent_compose_payload(
+        '```json\n{"answer_markdown":"## 답변\\n\\n| 항목 | 내용 |\\n| --- | --- |\\n| 근거 | SOP |"}\n```'
+    )
     id_payload = boi_app_module.parse_agent_compose_payload("chatcmpl-ehtj17bt32uiwqj0hp4cig")
+    openai_candidates = boi_app_module.iter_langflow_text_candidates(
+        {
+            "id": "chatcmpl-ehtj17bt32uiwqj0hp4cig",
+            "choices": [
+                {
+                    "message": {
+                        "content": '```json\n{"answer_markdown":"## 답변\\n\\n업무 관점으로 정리했습니다."}\n```'
+                    }
+                }
+            ],
+        }
+    )
+    openai_payload = boi_app_module.parse_agent_compose_payload(openai_candidates[0])
 
     assert alias_payload["answer_markdown"].startswith("## 답변")
     assert plain_payload["answer_markdown"].startswith("## 답변")
+    assert fenced_json_payload["answer_markdown"].startswith("## 답변")
+    assert openai_candidates[0].startswith("```json")
+    assert openai_payload["answer_markdown"].startswith("## 답변")
     assert id_payload is None
 
 
