@@ -981,6 +981,66 @@ def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_modu
     assert "BoI Wiki 기준" not in response.text
 
 
+def parse_sse_events(raw: str) -> list[dict[str, str]]:
+    events: list[dict[str, str]] = []
+    for block in raw.split("\n\n"):
+        event_name = "message"
+        data_lines: list[str] = []
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event_name = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line.split(":", 1)[1].lstrip())
+        if data_lines:
+            events.append({"event": event_name, "data": "\n".join(data_lines)})
+    return events
+
+
+def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fake_agent_response(req, employee_id: str):
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "answer_markdown": "현재 페이지를 확인했습니다.\n\n| 항목 | 값 |\n| --- | --- |\n| 상태 | 완료 |",
+            "display_markdown": "현재 페이지를 확인했습니다.\n\n| 항목 | 값 |\n| --- | --- |\n| 상태 | 완료 |",
+            "links": [{"label": "설비 SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+            "citations": [],
+            "suggested_questions": ["깊게 분석해줘."],
+            "artifacts": [],
+            "context_summary": {"intent": "page_qa"},
+            "route": "fast",
+            "intent": "page_qa",
+            "router_backend": "rules",
+            "used_backend": "native_langgraph",
+            "latency_ms": 12,
+        }
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_agent_response)
+
+    with client.stream(
+        "POST",
+        "/api/agents/boi-wiki/chat/stream?employee_id=100001",
+        json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        raw = "".join(response.iter_text())
+
+    events = parse_sse_events(raw)
+    event_names = [item["event"] for item in events]
+    assert "status" in event_names
+    assert "answer_delta" in event_names
+    assert event_names[-1] == "final"
+    assert any("현재 화면" in json.loads(item["data"])["message"] for item in events if item["event"] == "status")
+    assert "현재 페이지를 확인했습니다" in "".join(json.loads(item["data"])["delta"] for item in events if item["event"] == "answer_delta")
+    final = json.loads(events[-1]["data"])
+    assert final["answer_html"]
+    assert final["links"][0]["label"] == "설비 SOP"
+    assert final["used_backend"] == "native_langgraph"
+
+
 def test_agent_memory_blocks_sensitive_values_and_saves_private_memory(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -1098,6 +1158,10 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "body.display_markdown || body.answer_markdown" in script
     assert "rawText: body.answer_markdown" in script
     assert "message.html || renderMarkdownLite(message.text || \"\", { skipMermaidSources: artifactMermaid })" in script
+    assert "/api/agents/boi-wiki/chat/stream" in script
+    assert "answer_delta" in script
+    assert "statusLines" in script
+    assert "readAgentStream" in script
     assert "```[^\\S\\r\\n]*([A-Za-z0-9_-]+)?" in script
     assert "renderCellValue" in script
     assert "isTableSeparatorLine" in script

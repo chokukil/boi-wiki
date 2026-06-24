@@ -84,6 +84,60 @@
     });
   }
 
+  function sseUrl(path) {
+    const url = new URL(path, location.origin);
+    url.searchParams.set("employee_id", employeeId);
+    return url;
+  }
+
+  function parseSseBlock(block) {
+    const event = { event: "message", data: "" };
+    const data = [];
+    String(block || "").split(/\r?\n/).forEach((line) => {
+      if (line.startsWith("event:")) {
+        event.event = line.slice(6).trim() || "message";
+      } else if (line.startsWith("data:")) {
+        data.push(line.slice(5).trimStart());
+      }
+    });
+    event.data = data.join("\n");
+    return event;
+  }
+
+  async function readAgentStream(response, handlers) {
+    if (!response.body || !window.ReadableStream) {
+      throw new Error("이 브라우저는 Agent 스트리밍을 지원하지 않습니다.");
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const rawBlock = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        dispatchSseEvent(parseSseBlock(rawBlock), handlers);
+        boundary = buffer.indexOf("\n\n");
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) dispatchSseEvent(parseSseBlock(buffer), handlers);
+  }
+
+  function dispatchSseEvent(event, handlers) {
+    if (!event.data) return;
+    let payload = {};
+    try {
+      payload = JSON.parse(event.data);
+    } catch (_error) {
+      payload = { message: event.data };
+    }
+    const handler = handlers[event.event];
+    if (handler) handler(payload);
+  }
+
   function escapeHtml(value) {
     return String(value || "")
       .replace(/&/g, "&amp;")
@@ -507,6 +561,7 @@
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
+          ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
           <div class="boi-agent-answer">${answerHtml}</div>
           ${renderArtifacts(message, index)}
           ${renderLinks(message.links || [])}
@@ -820,15 +875,20 @@
     if (!question.trim() || state.sending) return;
     const controller = new AbortController();
     activeRequest = controller;
+    const statusLines = [];
+    let streamedText = "";
+    let streamError = "";
+    let finalBody = null;
     state.draft = "";
     state.sending = true;
     state.messages.push({ role: "user", text: question });
-    const pendingIndex = state.messages.push({ role: "assistant", text: "확인 중입니다..." }) - 1;
+    const pendingIndex = state.messages.push({ role: "assistant", text: "확인 중입니다...", progressText: "현재 요청을 시작했습니다." }) - 1;
     state.open = true;
     state.tab = "agent";
     render();
-    api("/api/agents/boi-wiki/chat", {
+    fetch(sseUrl("/api/agents/boi-wiki/chat/stream"), {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
         question,
@@ -837,10 +897,42 @@
         page_context: { title: pageTitle },
         conversation: state.messages.slice(-10).map((item) => ({ role: item.role, content: item.text })),
       }),
-    }).then((body) => {
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await readAgentStream(response, {
+        status(payload) {
+          const message = payload.message || "확인 중입니다.";
+          statusLines.push(message);
+          state.messages[pendingIndex] = {
+            ...state.messages[pendingIndex],
+            text: streamedText || message,
+            progressText: message,
+            statusLines: statusLines.slice(-6),
+          };
+          render();
+        },
+        answer_delta(payload) {
+          streamedText += payload.delta || "";
+          state.messages[pendingIndex] = {
+            ...state.messages[pendingIndex],
+            text: streamedText,
+            progressText: statusLines[statusLines.length - 1] || "",
+          };
+          render();
+        },
+        final(payload) {
+          finalBody = payload;
+        },
+        error(payload) {
+          streamError = payload.message || payload.status || "Agent 호출에 실패했습니다.";
+        },
+      });
+      if (streamError) throw new Error(streamError);
+      if (!finalBody) throw new Error("Agent 응답이 완료되지 않았습니다.");
+      const body = finalBody;
       state.messages[pendingIndex] = {
         role: "assistant",
-        text: body.display_markdown || body.answer_markdown || "",
+        text: body.display_markdown || body.answer_markdown || streamedText || "",
         html: body.answer_html || "",
         rawText: body.answer_markdown || "",
         links: body.links || [],

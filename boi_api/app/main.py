@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit, unquote
 import yaml
 from aiokafka import AIOKafkaProducer
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
@@ -6923,6 +6923,27 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
     return response
 
 
+def agent_sse_event(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+
+
+def iter_agent_answer_chunks(value: str, *, chunk_size: int = 700) -> list[str]:
+    text = str(value or "")
+    if not text:
+        return []
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + chunk_size)
+        if end < len(text):
+            boundary = max(text.rfind("\n", start, end), text.rfind(" ", start, end))
+            if boundary > start + 120:
+                end = boundary + 1
+        chunks.append(text[start:end])
+        start = end
+    return chunks
+
+
 def fallback_mermaid_for_page_context(page_context: dict[str, Any]) -> str:
     title = str(page_context.get("title") or page_context.get("page_kind") or "BoI Page")
     linked_items = page_context.get("linked_items") or []
@@ -7392,6 +7413,59 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
                 "endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
             },
         ) from exc
+
+
+@app.post("/api/agents/boi-wiki/chat/stream")
+async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> StreamingResponse:
+    append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
+
+    status_messages = [
+        "현재 화면 맥락을 확인하고 있습니다.",
+        "관련 BoI 문서와 Event/Action을 찾고 있습니다.",
+        "답변과 근거 링크를 정리하고 있습니다.",
+        "시간이 조금 더 걸리고 있어 계속 확인 중입니다.",
+    ]
+
+    async def stream_events():
+        yield agent_sse_event("status", {"message": status_messages[0], "elapsed_ms": 0})
+        started_at = time.perf_counter()
+
+        def run_agent() -> dict[str, Any]:
+            return enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id)
+
+        task = asyncio.create_task(asyncio.to_thread(run_agent))
+        status_index = 1
+        try:
+            while True:
+                try:
+                    response = await asyncio.wait_for(asyncio.shield(task), timeout=2.0)
+                    break
+                except asyncio.TimeoutError:
+                    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                    message = status_messages[min(status_index, len(status_messages) - 1)]
+                    status_index += 1
+                    yield agent_sse_event("status", {"message": message, "elapsed_ms": elapsed_ms})
+
+            display_markdown = str(response.get("display_markdown") or response.get("answer_markdown") or "")
+            for chunk in iter_agent_answer_chunks(display_markdown):
+                yield agent_sse_event("answer_delta", {"delta": chunk})
+            yield agent_sse_event("final", response)
+        except LangflowBoiAgentUnavailable as exc:
+            yield agent_sse_event(
+                "error",
+                {
+                    "status": "langflow_boi_agent_unavailable",
+                    "message": str(exc),
+                    "endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
+                },
+            )
+        except Exception as exc:
+            yield agent_sse_event("error", {"status": "agent_stream_error", "message": str(exc)})
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(stream_events(), media_type="text/event-stream")
 
 
 @app.post("/api/agents/boi-wiki/suggestions")
