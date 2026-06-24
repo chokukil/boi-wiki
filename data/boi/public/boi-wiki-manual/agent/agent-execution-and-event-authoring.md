@@ -83,7 +83,7 @@ Agent는 실행 대상을 임의로 추정하지 않는다. 아래처럼 필수 
 | Event 발행 | `actor_employee_id`가 인증 사번과 다르면 거부한다. |
 | Workflow 시작 | workflow 담당자/owner는 payload로 남길 수 있지만, 실제 Event actor는 인증 사번이다. |
 | Action 호출 | Action Gateway에 전달되는 `employee_id`는 인증 사번이다. 요청 body가 다른 사번을 넣으면 거부한다. |
-| Admin override | 예외적으로 허용될 수 있지만, 별도 role과 audit가 필요하다. |
+| Admin override | 예외적으로 허용될 수 있지만, `admin_override_reason`, 별도 role, audit가 필요하다. |
 
 따라서 Agent가 “누구 대신 실행”하는 방식으로 쓰이면 안 된다. 대리 실행이 필요하면 팀 RBAC, manual handoff, approval flow로 남겨야 한다.
 

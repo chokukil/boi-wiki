@@ -1982,6 +1982,34 @@ def require_employee_role(employee_id: str, role: str) -> None:
     raise HTTPException(status_code=403, detail=f"missing required role: {role}")
 
 
+def require_employee_binding_or_admin_override(
+    employee_id: str,
+    requested_employee_id: str | None,
+    *,
+    operation: str,
+    mismatch_detail: str,
+    reason: str | None = None,
+) -> bool:
+    requested = str(requested_employee_id or "").strip()
+    if not requested or requested == employee_id:
+        return False
+    if "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail=mismatch_detail)
+    clean_reason = str(reason or "").strip()
+    if not clean_reason:
+        raise HTTPException(status_code=400, detail=f"{operation} admin override requires admin_override_reason")
+    append_rbac_audit(
+        employee_id,
+        f"admin_{operation}_employee_override",
+        {
+            "authenticated_employee_id": employee_id,
+            "requested_employee_id": requested,
+            "reason": clean_reason,
+        },
+    )
+    return True
+
+
 RBAC_ROLES = [
     {"role": "boi.viewer", "label": "조회", "description": "권한 범위의 BoI와 runtime evidence를 조회합니다."},
     {"role": "boi.editor", "label": "편집", "description": "권한 범위의 draft/source/body를 수정합니다."},
@@ -4872,6 +4900,7 @@ class EventPublishRequest(BaseModel):
     event_type: str = Field(examples=["meeting.closed.v1"])
     payload: dict[str, Any] = Field(default_factory=dict)
     actor_employee_id: str | None = None
+    admin_override_reason: str | None = None
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
     trace_id: str | None = None
 
@@ -4922,6 +4951,7 @@ class ActionInvokeRequest(BaseModel):
     dry_run: bool | None = None
     approved_by: str | None = None
     idempotency_key: str | None = None
+    admin_override_reason: str | None = None
 
 
 class SimulationAgentRequest(BaseModel):
@@ -7894,6 +7924,8 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
     operation = req.operation.strip()
     payload = req.payload or {}
     if operation in {"event_publish", "publish_event"}:
+        if payload.get("actor_employee_id") and payload.get("actor_employee_id") != employee_id and not payload.get("admin_override_reason") and req.note:
+            payload = {**payload, "admin_override_reason": req.note}
         result = await publish_event(EventPublishRequest(**payload), employee_id)
         append_rbac_audit(employee_id, "agent_event_publish", {"operation": operation, "event_type": payload.get("event_type"), "note": req.note})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
@@ -7905,6 +7937,8 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
         append_rbac_audit(employee_id, "agent_workflow_start", {"workflow_key": workflow_key, "note": req.note})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
     if operation in {"action_invoke", "invoke_action"}:
+        if payload.get("employee_id") and payload.get("employee_id") != employee_id and not payload.get("admin_override_reason") and req.note:
+            payload = {**payload, "admin_override_reason": req.note}
         result = await invoke_action_gateway(ActionInvokeRequest(**payload), employee_id)
         append_rbac_audit(employee_id, "agent_action_invoke", {"action_key": payload.get("action_key"), "note": req.note})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
@@ -8418,8 +8452,13 @@ async def update_promotion_hotl(
 @app.post("/api/events/publish")
 async def publish_event(req: EventPublishRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.workflow_runner")
-    if req.actor_employee_id and req.actor_employee_id != employee_id and "boi.admin" not in roles_for(employee_id):
-        raise HTTPException(status_code=403, detail="actor_employee_id must match the authenticated employee")
+    require_employee_binding_or_admin_override(
+        employee_id,
+        req.actor_employee_id,
+        operation="event_publish",
+        mismatch_detail="actor_employee_id must match the authenticated employee",
+        reason=req.admin_override_reason,
+    )
     actor = req.actor_employee_id or employee_id
     event = {
         "event_id": f"evt-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
@@ -10396,9 +10435,14 @@ async def api_action_logs(action_key: str = "", limit: int = 200) -> dict[str, A
 
 async def invoke_action_gateway(req: ActionInvokeRequest, employee_id: str) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.action_invoker")
-    if req.employee_id and req.employee_id != employee_id and "boi.admin" not in roles_for(employee_id):
-        raise HTTPException(status_code=403, detail="action employee_id must match the authenticated employee")
-    payload = req.model_dump()
+    require_employee_binding_or_admin_override(
+        employee_id,
+        req.employee_id,
+        operation="action_invoke",
+        mismatch_detail="action employee_id must match the authenticated employee",
+        reason=req.admin_override_reason,
+    )
+    payload = req.model_dump(exclude={"admin_override_reason"})
     payload["employee_id"] = req.employee_id if req.employee_id and "boi.admin" in roles_for(employee_id) else employee_id
     async with httpx.AsyncClient(timeout=ACTION_INVOKE_TIMEOUT_SECONDS) as client:
         resp = await client.post(

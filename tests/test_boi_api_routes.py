@@ -1437,6 +1437,59 @@ def test_agent_mutation_apis_reject_employee_spoofing(boi_app_module, monkeypatc
     assert "action employee_id must match" in direct_action_response.text
 
 
+def test_admin_employee_override_requires_reason_and_audit(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    async def fake_publish_event_to_kafka(_event):
+        return None
+
+    monkeypatch.setattr(
+        boi_app_module,
+        "roles_for",
+        lambda _employee_id: ["boi.viewer", "boi.workflow_runner", "boi.action_invoker", "boi.admin"],
+    )
+    monkeypatch.setattr(boi_app_module, "publish_event_to_kafka", fake_publish_event_to_kafka)
+
+    event_without_reason = client.post(
+        "/api/events/publish?employee_id=100001",
+        json={
+            "event_type": "equipment.alarm.raised.v1",
+            "actor_employee_id": "100002",
+            "payload": {"title": "admin override without reason"},
+        },
+    )
+    action_without_reason = client.post(
+        "/api/actions/invoke?employee_id=100001",
+        json={
+            "action_key": "sop.equipment.request_raw_data",
+            "employee_id": "100002",
+            "payload": {"title": "admin override without reason"},
+        },
+    )
+    event_with_reason = client.post(
+        "/api/events/publish?employee_id=100001",
+        json={
+            "event_type": "equipment.alarm.raised.v1",
+            "actor_employee_id": "100002",
+            "admin_override_reason": "pytest delegated operation audit",
+            "payload": {"title": "admin override with reason"},
+        },
+    )
+
+    assert event_without_reason.status_code == 400
+    assert "admin_override_reason" in event_without_reason.text
+    assert action_without_reason.status_code == 400
+    assert "admin_override_reason" in action_without_reason.text
+    assert event_with_reason.status_code == 200
+    assert event_with_reason.json()["event"]["actor"]["employee_id"] == "100002"
+    audits = boi_app_module.rbac_audit_rows(limit=20)
+    assert any(
+        row.get("action") == "admin_event_publish_employee_override"
+        and (row.get("payload") or {}).get("requested_employee_id") == "100002"
+        for row in audits
+    )
+
+
 def test_boi_agent_approve_promotion_submit_uses_validation_path(boi_app_module):
     client = TestClient(boi_app_module.app)
 
