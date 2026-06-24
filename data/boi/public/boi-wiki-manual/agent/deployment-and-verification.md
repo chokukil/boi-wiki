@@ -72,8 +72,8 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_CACHE_WARMUP_ON_STARTUP` | `1` | API 시작 직후 문서, catalog, ontology search index를 백그라운드로 예열해 첫 Agent 질문 지연을 줄인다. LLM은 호출하지 않는다. |
 | `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
 | `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first |
-| `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 명시 개발 모드로 rules 사용 |
-| `BOI_AGENT_ROUTER_REQUIRED` | `1` | LLM Router가 켜진 운영 모드에서는 router 실패를 fallback하지 않고 `boi_agent_router_unavailable` 장애로 표시한다. |
+| `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 LLM 비활성으로 해석한다. |
+| `BOI_AGENT_ROUTER_REQUIRED` | `1` | `1`이면 Router LLM 비활성, 미설정, timeout, invalid JSON 모두 fallback하지 않고 `boi_agent_router_unavailable` 장애로 표시한다. rules는 `REQUIRED=0`인 명시 개발/테스트 모드에서만 허용한다. |
 | `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
 | `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
 | `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `12` | Gemma Router response timeout. 운영 모드에서 timeout은 Agent 장애로 노출된다. |

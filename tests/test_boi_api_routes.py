@@ -786,6 +786,29 @@ def test_boi_agent_approve_event_type_draft_requires_editor_role(boi_app_module,
 def test_boi_agent_execution_requests_return_specific_confirmation_cards(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
+    def fake_router(req, employee_id: str):
+        question = req.question
+        if "이벤트" in question:
+            intent = "event_publish"
+        elif "workflow" in question:
+            intent = "workflow_start"
+        else:
+            intent = "action_invoke"
+        return {
+            "route": "approval_required",
+            "confidence": 0.98,
+            "intent": intent,
+            "reason": "execution confirmation request",
+            "requires_mutation": True,
+            "requires_deep_reasoning": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+
     event_response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
@@ -878,21 +901,23 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     assert "설비" in body["answer_markdown"]
 
 
-def test_boi_agent_native_backend_uses_api_rule_router_before_graph(boi_app_module, monkeypatch):
+def test_boi_agent_required_router_disabled_returns_service_error(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={"question": "SOP 찾아줘", "current_url": "/"},
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["used_backend"] == "native_langgraph"
-    assert body["router_backend"] == "rules"
+    assert response.status_code == 503
+    body = response.json()["detail"]
+    assert body["status"] == "boi_agent_router_unavailable"
+    assert body["required"] is True
+    assert "not configured" in body["message"]
 
 
 def test_boi_agent_native_reuses_api_router_without_internal_llm(boi_app_module, monkeypatch):
@@ -984,7 +1009,21 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
 def test_boi_agent_deep_request_uses_ontology_match_when_not_on_doc_page(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
+    def fake_router(req, employee_id: str):
+        return {
+            "route": "deep",
+            "confidence": 0.95,
+            "intent": "diagram",
+            "reason": "diagram request",
+            "requires_mutation": False,
+            "requires_deep_reasoning": True,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -1186,7 +1225,21 @@ def test_boi_agent_chat_safety_overrides_llm_fast_route_for_manual_completion(bo
 def test_boi_agent_event_type_draft_card_uses_ontology_context(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
+    def fake_router(req, employee_id: str):
+        return {
+            "route": "approval_required",
+            "confidence": 0.95,
+            "intent": "event_type_draft",
+            "reason": "event type draft request",
+            "requires_mutation": True,
+            "requires_deep_reasoning": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -1494,7 +1547,7 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
             "context_summary": {"intent": "page_qa"},
             "route": "fast",
             "intent": "page_qa",
-            "router_backend": "rules",
+            "router_backend": "llm",
             "used_backend": "native_langgraph",
             "latency_ms": 12,
         }
@@ -1570,7 +1623,7 @@ def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_mo
             "context_summary": {"intent": "page_qa"},
             "route": "fast",
             "intent": "page_qa",
-            "router_backend": "rules",
+            "router_backend": "llm",
             "used_backend": "native_langgraph",
             "latency_ms": 180,
         }
@@ -1639,7 +1692,7 @@ def test_boi_agent_chat_endpoint_offloads_agent_work(boi_app_module, monkeypatch
             "context_summary": {"intent": "page_qa"},
             "route": "fast",
             "intent": "page_qa",
-            "router_backend": "rules",
+            "router_backend": "llm",
             "used_backend": "native_langgraph",
             "latency_ms": 10,
         }
@@ -1900,6 +1953,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "readAgentStream" in script
     assert "activeRequest.abort()" in script
     assert "생성을 중지했습니다." in script
+    assert "formatAgentStreamError" in script
+    assert "BoI Agent 장애" in script
+    assert "status_generation_failed" in script
     assert "boi-agent-new" in script
     assert "boi-agent-expand" in script
     assert "currentStatus" in script

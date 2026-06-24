@@ -139,6 +139,20 @@
     if (handler) handler(payload);
   }
 
+  function formatAgentStreamError(payload) {
+    const status = String(payload?.status || "agent_stream_error");
+    const message = String(payload?.message || "").trim();
+    const labels = {
+      status_generation_failed: "진행 상태를 생성하지 못했습니다.",
+      boi_agent_router_unavailable: "질문 의도 판단 모델에 연결하지 못했습니다.",
+      langflow_boi_agent_unavailable: "Langflow Agent backend에 연결하지 못했습니다.",
+      agent_stream_error: "Agent 스트리밍 처리 중 오류가 발생했습니다.",
+    };
+    const label = labels[status] || "Agent 처리 중 오류가 발생했습니다.";
+    const detail = message ? ` ${message}` : "";
+    return `BoI Agent 장애: ${label} (${status}).${detail}`;
+  }
+
   function escapeHtml(value) {
     return String(value || "")
       .replace(/&/g, "&amp;")
@@ -1121,7 +1135,7 @@
           finalBody = payload;
         },
         error(payload) {
-          streamError = payload.message || payload.status || "Agent 호출에 실패했습니다.";
+          streamError = formatAgentStreamError(payload);
         },
       });
       if (streamError) throw new Error(streamError);
@@ -1148,9 +1162,10 @@
       state.currentStatus = "";
       if (body.suggested_questions) state.suggestions = body.suggested_questions;
     }).catch((error) => {
+      const message = String(error.message || "");
       state.messages[pendingIndex] = {
         role: "assistant",
-        text: error.name === "AbortError" ? "생성을 중지했습니다." : `Agent 호출에 실패했습니다: ${error.message}`,
+        text: error.name === "AbortError" ? "생성을 중지했습니다." : (message.startsWith("BoI Agent 장애:") ? message : `Agent 호출에 실패했습니다: ${message}`),
       };
       state.currentStatus = "";
     }).finally(() => {

@@ -7035,7 +7035,7 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
         try:
             route = call_boi_agent_router_llm(req, employee_id)
         except BoiAgentRouterUnavailable as exc:
-            if BOI_AGENT_ROUTER_REQUIRED and BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first":
+            if BOI_AGENT_ROUTER_REQUIRED:
                 raise
             route = rule_agent_route(req, reason=f"fallback: {exc}")
     return apply_agent_route_overrides(req, route)
