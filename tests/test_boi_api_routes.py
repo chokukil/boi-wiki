@@ -1006,6 +1006,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
     assert "width:min(760px" in style
     assert "width:min(1080px" in style
+    assert ".boi-agent-content { overflow-y:auto; overflow-x:hidden;" in style
+    assert ".boi-agent-answer pre, .boi-agent-artifact pre { margin:8px 0; max-height:220px; overflow-y:auto; overflow-x:hidden;" in style
     assert ".boi-agent-inline-image" in style
     assert ".boi-agent-message > .boi-agent-message-author" in style
     assert ".boi-agent-message strong { display:block;" not in style

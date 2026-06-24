@@ -104,9 +104,9 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .mermaid-diagram[data-mermaid-state="fallback"] { border-color:#f59e0b; background:#fffbeb; }
 .boi-agent-answer p { margin:0 0 8px; }
 .boi-agent-answer ul { margin:8px 0 8px 18px; padding:0; }
-.boi-agent-answer pre, .boi-agent-artifact pre { margin:8px 0; max-height:220px; overflow:auto; padding:10px; border-radius:8px; background:#0f172a; color:#e5e7eb; font-size:12px; }
+.boi-agent-answer pre, .boi-agent-artifact pre { margin:8px 0; max-height:220px; overflow-y:auto; overflow-x:hidden; padding:10px; border-radius:8px; background:#0f172a; color:#e5e7eb; font-size:12px; white-space:pre-wrap; word-break:break-word; }
 .boi-agent-artifacts { display:grid; gap:8px; margin-top:8px; }
-.boi-agent-artifact { border:1px solid #dbe3ee; border-radius:10px; background:#f8fafc; padding:10px; overflow:auto; }
+.boi-agent-artifact { border:1px solid #dbe3ee; border-radius:10px; background:#f8fafc; padding:10px; overflow:hidden; }
 .boi-agent-artifact-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
 .boi-agent-artifact-title button { border:1px solid #bfdbfe; border-radius:999px; background:#fff; color:#1d4ed8; padding:3px 8px; font-size:11px; font-weight:800; }
 .boi-agent-image-artifact img { display:block; max-width:100%; height:auto; border-radius:8px; }
@@ -213,7 +213,7 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-tabs { display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; padding:8px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
 .boi-agent-tabs button { min-height:36px; border:1px solid transparent; border-radius:999px; background:transparent; color:#334155; font-size:13px; font-weight:900; }
 .boi-agent-tabs button.active { border-color:#bfdbfe; background:#fff; color:#111827; box-shadow:0 4px 12px rgba(37,99,235,.12); }
-.boi-agent-content { overflow:auto; padding:14px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); }
+.boi-agent-content { overflow-y:auto; overflow-x:hidden; padding:14px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); }
 .boi-agent-context-card { margin-bottom:12px; padding:11px 12px; border:1px solid #dbeafe; border-radius:10px; background:#eff6ff; }
 .boi-agent-context-card strong { display:block; margin-bottom:3px; color:#1e3a8a; font-size:12px; }
 .boi-agent-context-card p { margin:0; color:#334155; font-size:13px; overflow-wrap:anywhere; }
