@@ -6685,6 +6685,24 @@ def parse_status_payload(text: str) -> dict[str, Any] | None:
     return None
 
 
+def parse_stream_plan_payload(text: str) -> dict[str, Any] | None:
+    parsed = parse_langflow_json_text(text)
+    if isinstance(parsed, dict) and parsed.get("route") and isinstance(parsed.get("statuses"), list):
+        return parsed
+    decoder = json.JSONDecoder()
+    stripped = text.strip()
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("route") and isinstance(payload.get("statuses"), list):
+            return payload
+    return None
+
+
 def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
     seen: dict[str, str] = {}
     for item in payload.get("statuses") or []:
@@ -6701,6 +6719,38 @@ def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
     if missing:
         raise BoiAgentStatusUnavailable("LLM status writer missed required stages: " + ", ".join(missing))
     return [{"stage": stage, "message": seen[stage], "source": "llm_status"} for stage in REQUIRED_AGENT_STATUS_STAGES]
+
+
+def normalize_llm_route_payload(payload: dict[str, Any], req: BoiAgentChatRequest) -> dict[str, Any]:
+    route = normalize_agent_route(str(payload.get("route") or ""))
+    try:
+        confidence = float(payload.get("confidence") or 0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    if confidence < BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD:
+        raise BoiAgentRouterUnavailable("LLM router confidence is below threshold")
+    intent = normalize_agent_intent(str(payload.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    if intent in DEEP_AGENT_INTENTS and route != "deep":
+        route = "deep"
+    elif intent == "inbox":
+        route = "inbox"
+    elif intent == "manual_complete":
+        route = "manual_handoff"
+    elif intent == "approval":
+        route = "approval_required"
+    elif intent == "event_type_draft":
+        route = "approval_required"
+    return {
+        "route": route,
+        "confidence": confidence,
+        "intent": intent,
+        "reason": str(payload.get("reason") or "llm_router"),
+        "requires_mutation": bool(payload.get("requires_mutation") or route in {"manual_handoff", "approval_required"}),
+        "requires_deep_reasoning": bool(payload.get("requires_deep_reasoning") or payload.get("requires_langflow") or route == "deep"),
+        # Compatibility field for older clients. Deep answers are handled by native agent unless backend=langflow.
+        "requires_langflow": False,
+        "router_backend": "llm",
+    }
 
 
 def call_boi_agent_status_llm(req: BoiAgentChatRequest, employee_id: str) -> list[dict[str, str]]:
@@ -6746,6 +6796,109 @@ def call_boi_agent_status_llm(req: BoiAgentChatRequest, employee_id: str) -> lis
     if not parsed:
         raise BoiAgentStatusUnavailable("LLM status writer returned invalid JSON")
     return normalize_llm_status_steps(parsed)
+
+
+def stream_plan_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str:
+    return json.dumps(
+        {
+            "task": "Create one BoI Agent streaming plan. Return JSON only. Do not answer the user.",
+            "language": "ko",
+            "employee_id": employee_id,
+            "question": req.question,
+            "current_url": req.current_url,
+            "page_title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
+            "selected_text_excerpt": text_excerpt(req.selected_text, 500),
+            "conversation_tail": req.conversation[-3:],
+            "allowed_routes": sorted(ALLOWED_AGENT_ROUTES),
+            "allowed_intents": sorted(ALLOWED_AGENT_INTENTS),
+            "route_policy": {
+                "fast": "search, page_qa, summarize only. Use current page context and ontology search.",
+                "deep": "diagram, workflow_explain, gap_check, trace_reasoning, multi-hop reasoning, artifact generation",
+                "inbox": "ask what actions/manual handoffs are pending for the employee",
+                "manual_handoff": "request to complete or record a manual handoff",
+                "approval_required": "request to approve, execute, publish, edit, or mutate shared/runtime state",
+            },
+            "status_style": {
+                "tone": "일반 구성원이 이해하기 쉬운 업무 문장",
+                "length": "각 message는 18~70자 한 문장",
+                "avoid": ["dry-run", "invoke", "router", "fallback", "stub", "LLM", "LangGraph", "stack trace"],
+                "must_be_specific_to_request": True,
+            },
+            "required_status_stages": list(REQUIRED_AGENT_STATUS_STAGES),
+            "stage_meaning": {
+                "page_context": "현재 페이지, 사번, 접근 권한을 확인하는 단계",
+                "intent": "질문 의도와 필요한 산출물을 판단하는 단계",
+                "retrieval": "BoI Wiki, SOP, Event, Action, Dictionary, runtime evidence를 찾는 단계",
+                "tool_loop": "필요한 근거를 여러 번 조회하고 빈틈을 점검하는 단계",
+                "compose": "답변, 표, Mermaid, 링크, citation을 정리하는 단계",
+                "answer_stream": "완성된 답변을 사용자에게 보여주는 단계",
+                "waiting": "작업이 길어질 때 계속 처리 중임을 알리는 단계",
+            },
+            "required_json_schema": {
+                "route": "fast|deep|inbox|manual_handoff|approval_required",
+                "confidence": "0.0-1.0",
+                "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval|event_publish|action_invoke|workflow_start|event_type_draft",
+                "reason": "short Korean or English reason",
+                "requires_mutation": "boolean",
+                "requires_deep_reasoning": "boolean",
+                "statuses": [
+                    {
+                        "stage": "one of required_status_stages",
+                        "message": "Korean one-line progress text",
+                    }
+                ],
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    if not BOI_AGENT_STATUS_REQUIRED:
+        raise BoiAgentStatusUnavailable("LLM status writer is disabled by configuration")
+    if not BOI_AGENT_STATUS_LLM_ENABLED:
+        raise BoiAgentStatusUnavailable("LLM status writer is not configured")
+    if not BOI_AGENT_STATUS_BASE_URL or not BOI_AGENT_STATUS_MODEL:
+        raise BoiAgentStatusUnavailable("LLM status writer base URL/model is missing")
+    if BOI_AGENT_ROUTER_REQUIRED and (not BOI_AGENT_ROUTER_LLM_ENABLED or BOI_AGENT_ROUTER_MODE != "llm_first"):
+        raise BoiAgentRouterUnavailable("LLM router is not configured")
+    url = BOI_AGENT_STATUS_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if BOI_AGENT_STATUS_API_KEY:
+        headers["Authorization"] = f"Bearer {BOI_AGENT_STATUS_API_KEY}"
+    body = {
+        "model": BOI_AGENT_STATUS_MODEL,
+        "temperature": 0.1,
+        "max_tokens": max(BOI_AGENT_STATUS_MAX_TOKENS, BOI_AGENT_ROUTER_MAX_TOKENS),
+        "response_format": {"type": "text"},
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You plan BoI Agent streaming work. Return one compact JSON object with "
+                    "both routing fields and progress statuses. Do not answer the user."
+                ),
+            },
+            {"role": "user", "content": stream_plan_prompt_for_request(req, employee_id)},
+        ],
+    }
+    try:
+        with httpx.Client(timeout=max(BOI_AGENT_STATUS_TIMEOUT_SECONDS, BOI_AGENT_ROUTER_TIMEOUT_SECONDS)) as client:
+            response = client.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        raise BoiAgentStatusUnavailable(f"LLM stream plan call failed: {exc}") from exc
+    parsed = None
+    for text in iter_langflow_text_candidates(payload):
+        candidate = parse_stream_plan_payload(text)
+        if candidate:
+            parsed = candidate
+            break
+    if not parsed:
+        raise BoiAgentStatusUnavailable("LLM stream plan returned invalid JSON")
+    route = normalize_llm_route_payload(parsed, req)
+    return {"status_steps": normalize_llm_status_steps(parsed), "route": apply_agent_route_overrides(req, route)}
 
 
 def router_llm_backoff_remaining() -> float:
@@ -6806,55 +6959,11 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
             break
     if not parsed:
         raise BoiAgentRouterUnavailable("LLM router returned invalid JSON")
-    route = normalize_agent_route(str(parsed.get("route") or ""))
-    try:
-        confidence = float(parsed.get("confidence") or 0)
-    except (TypeError, ValueError):
-        confidence = 0.0
-    if confidence < BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD:
-        raise BoiAgentRouterUnavailable("LLM router confidence is below threshold")
-    intent = normalize_agent_intent(str(parsed.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
-    if intent in DEEP_AGENT_INTENTS and route != "deep":
-        route = "deep"
-    elif intent == "inbox":
-        route = "inbox"
-    elif intent == "manual_complete":
-        route = "manual_handoff"
-    elif intent == "approval":
-        route = "approval_required"
-    elif intent == "event_type_draft":
-        route = "approval_required"
-    return {
-        "route": route,
-        "confidence": confidence,
-        "intent": intent,
-        "reason": str(parsed.get("reason") or "llm_router"),
-        "requires_mutation": bool(parsed.get("requires_mutation") or route in {"manual_handoff", "approval_required"}),
-        "requires_deep_reasoning": bool(parsed.get("requires_deep_reasoning") or parsed.get("requires_langflow") or route == "deep"),
-        # Compatibility field for older clients. Deep answers are handled by native agent unless backend=langflow.
-        "requires_langflow": False,
-        "router_backend": "llm",
-    }
+    return normalize_llm_route_payload(parsed, req)
 
 
-def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+def apply_agent_route_overrides(req: BoiAgentChatRequest, route: dict[str, Any]) -> dict[str, Any]:
     deterministic_intent = deterministic_agent_intent(req.question, req.current_url)
-    if req.mode == "fast":
-        route = rule_agent_route(req, reason="mode=fast")
-        intent = normalize_agent_intent(req.intent, fallback=deterministic_intent) if req.intent else deterministic_intent
-        # Explicit fast mode can keep simple Q&A fast, but safety and mutation intents still override below.
-        route.update({"route": "fast", "confidence": 1.0, "intent": intent})
-    elif req.mode == "deep":
-        route = rule_agent_route(req, reason="mode=deep")
-        intent = normalize_agent_intent(req.intent, fallback=deterministic_intent)
-        route.update({"route": "deep", "confidence": 1.0, "intent": intent, "requires_deep_reasoning": True, "requires_langflow": False})
-    else:
-        try:
-            route = call_boi_agent_router_llm(req, employee_id)
-        except BoiAgentRouterUnavailable as exc:
-            if BOI_AGENT_ROUTER_REQUIRED and BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first":
-                raise
-            route = rule_agent_route(req, reason=f"fallback: {exc}")
     route["intent"] = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_intent)
     # Rules are the safety net for obvious artifact/reasoning requests even when the LLM router says fast.
     if deterministic_intent in DEEP_AGENT_INTENTS and route.get("route") != "deep":
@@ -6901,6 +7010,27 @@ def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[
     route["route"] = normalize_agent_route(str(route.get("route") or "fast"))
     route["intent"] = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_intent)
     return route
+
+
+def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    deterministic_intent = deterministic_agent_intent(req.question, req.current_url)
+    if req.mode == "fast":
+        route = rule_agent_route(req, reason="mode=fast")
+        intent = normalize_agent_intent(req.intent, fallback=deterministic_intent) if req.intent else deterministic_intent
+        # Explicit fast mode can keep simple Q&A fast, but safety and mutation intents still override below.
+        route.update({"route": "fast", "confidence": 1.0, "intent": intent})
+    elif req.mode == "deep":
+        route = rule_agent_route(req, reason="mode=deep")
+        intent = normalize_agent_intent(req.intent, fallback=deterministic_intent)
+        route.update({"route": "deep", "confidence": 1.0, "intent": intent, "requires_deep_reasoning": True, "requires_langflow": False})
+    else:
+        try:
+            route = call_boi_agent_router_llm(req, employee_id)
+        except BoiAgentRouterUnavailable as exc:
+            if BOI_AGENT_ROUTER_REQUIRED and BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first":
+                raise
+            route = rule_agent_route(req, reason=f"fallback: {exc}")
+    return apply_agent_route_overrides(req, route)
 
 
 def text_excerpt(value: str, limit: int = 900) -> str:
@@ -7500,6 +7630,10 @@ def agent_stream_status_steps(req: BoiAgentChatRequest, employee_id: str) -> lis
     return call_boi_agent_status_llm(req, employee_id)
 
 
+def agent_stream_plan(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    return call_boi_agent_stream_plan_llm(req, employee_id)
+
+
 def agent_tool_progress_status(payload: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
     return {
         "stage": str(payload.get("stage") or "tool_progress"),
@@ -7943,9 +8077,10 @@ def agent_chat_response(
     req: BoiAgentChatRequest,
     employee_id: str,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    route: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     started_at = time.perf_counter()
-    route = route_boi_agent_request(req, employee_id)
+    route = dict(route) if route else route_boi_agent_request(req, employee_id)
     if BOI_AGENT_BACKEND in {"native", "hybrid"}:
         try:
             return call_native_boi_agent(req, employee_id, route, started_at, progress_callback=progress_callback)
@@ -8003,7 +8138,9 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
 
     async def stream_events():
         try:
-            status_steps = agent_stream_status_steps(req, employee_id)
+            stream_plan = agent_stream_plan(req, employee_id)
+            status_steps = stream_plan["status_steps"]
+            planned_route = stream_plan["route"]
         except BoiAgentStatusUnavailable as exc:
             yield agent_sse_event(
                 "error",
@@ -8012,6 +8149,17 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     "message": str(exc),
                     "model": BOI_AGENT_STATUS_MODEL,
                     "required": BOI_AGENT_STATUS_REQUIRED,
+                },
+            )
+            return
+        except BoiAgentRouterUnavailable as exc:
+            yield agent_sse_event(
+                "error",
+                {
+                    "status": "boi_agent_router_unavailable",
+                    "message": str(exc),
+                    "model": BOI_AGENT_ROUTER_MODEL,
+                    "required": BOI_AGENT_ROUTER_REQUIRED,
                 },
             )
             return
@@ -8032,7 +8180,7 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     return drained
 
         def run_agent() -> dict[str, Any]:
-            return enrich_agent_answer_html(agent_chat_response(req, employee_id, progress_callback=emit_progress), employee_id)
+            return enrich_agent_answer_html(agent_chat_response(req, employee_id, progress_callback=emit_progress, route=planned_route), employee_id)
 
         def run_agent_worker() -> None:
             try:

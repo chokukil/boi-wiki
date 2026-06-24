@@ -79,10 +79,10 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `12` | Gemma Router response timeout. 운영 모드에서 timeout은 Agent 장애로 노출된다. |
 | `BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS` | `30` | Router timeout/network failure 뒤 같은 worker가 잠시 LLM 호출을 건너뛰고 같은 장애를 빠르게 반환하는 보호 시간 |
 | `BOI_AGENT_ROUTER_MAX_TOKENS` | `1536` | reasoning token을 쓰는 Gemma 계열 Router의 final JSON 확보용 |
-| `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄은 LLM status writer가 생성해야 한다. 실패 시 fallback하지 않고 장애로 표시한다. |
-| `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible status writer endpoint |
+| `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄과 SSE route plan은 LLM stream planner가 생성해야 한다. 실패 시 fallback하지 않고 장애로 표시한다. |
+| `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible stream planner endpoint. 이름은 호환상 `STATUS`를 유지하지만 SSE에서는 route/status plan을 함께 만든다. |
 | `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |
-| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `12` | status plan 생성 timeout. 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. |
+| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `12` | stream plan 생성 timeout. 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. |
 | `BOI_AGENT_STATUS_MAX_TOKENS` | `1536` | Gemma 계열 모델이 짧은 status 작업에도 reasoning token을 먼저 쓸 수 있어 final JSON 확보를 위해 Router보다 넉넉히 둔다. |
 
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
@@ -108,7 +108,7 @@ event: status
 data: {"stage":"page_context","message":"...","source":"llm_status","elapsed_ms":0}
 ```
 
-실제 문구는 LLM status writer가 질문과 현재 페이지에 맞춰 생성한다. 고정 문구가 아니므로 특정 문장과 exact match하지 않는다. 핵심은 첫 `status`에 `source: "llm_status"`가 있고, 긴 작업 중에도 LLM이 만든 한 줄 진행 상태가 반복되는 것이다. status writer가 JSON plan을 만들지 못하면 다음처럼 실패해야 한다.
+실제 문구는 LLM stream planner가 질문과 현재 페이지에 맞춰 생성한다. 고정 문구가 아니므로 특정 문장과 exact match하지 않는다. 핵심은 첫 `status`에 `source: "llm_status"`가 있고, 긴 작업 중에도 LLM이 만든 한 줄 진행 상태가 반복되는 것이다. stream planner가 route/status JSON plan을 만들지 못하면 다음처럼 실패해야 한다.
 
 ```text
 event: error

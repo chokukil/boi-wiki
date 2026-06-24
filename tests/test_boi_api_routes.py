@@ -211,6 +211,85 @@ def test_boi_agent_stream_status_plan_missing_stage_is_failure(boi_app_module):
         )
 
 
+def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app_module, monkeypatch):
+    payloads = []
+    statuses = [
+        {"stage": "page_context", "message": "현재 SOP와 권한을 확인하고 있습니다."},
+        {"stage": "intent", "message": "프로세스 도식 요청인지 판단하고 있습니다."},
+        {"stage": "retrieval", "message": "SOP와 Event 근거를 찾고 있습니다."},
+        {"stage": "tool_loop", "message": "Action과 Handoff 연결을 확인하고 있습니다."},
+        {"stage": "compose", "message": "Mermaid와 표를 정리하고 있습니다."},
+        {"stage": "answer_stream", "message": "완성된 답변을 보여주고 있습니다."},
+        {"stage": "waiting", "message": "작업이 길어져도 계속 확인하고 있습니다."},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "route": "deep",
+                                    "confidence": 0.93,
+                                    "intent": "diagram",
+                                    "reason": "stream plan",
+                                    "requires_mutation": False,
+                                    "requires_deep_reasoning": True,
+                                    "statuses": statuses,
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, headers, json):
+            payloads.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            return FakeResponse()
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_BASE_URL", "http://router.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    plan = boi_app_module.call_boi_agent_stream_plan_llm(
+        boi_app_module.BoiAgentChatRequest(
+            question="이 SOP를 Mermaid 프로세스 플로우로 보여줘",
+            current_url="/docs/boi:public:sop:equipment-abnormal-response",
+        ),
+        "100001",
+    )
+
+    assert len(payloads) == 1
+    assert payloads[0]["url"] == "http://router.example/v1/chat/completions"
+    assert plan["route"]["route"] == "deep"
+    assert plan["route"]["intent"] == "diagram"
+    assert plan["route"]["router_backend"] == "llm"
+    assert [item["stage"] for item in plan["status_steps"]] == list(boi_app_module.REQUIRED_AGENT_STATUS_STAGES)
+    assert all(item["source"] == "llm_status" for item in plan["status_steps"])
+
+
 def test_auth_me_exposes_dev_identity(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -1284,6 +1363,7 @@ def parse_sse_events(raw: str) -> list[dict[str, str]]:
 
 def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    received_routes: list[dict] = []
     llm_steps = [
         {"stage": "page_context", "message": "현재 페이지와 접근 권한을 확인하고 있습니다.", "source": "llm_status"},
         {"stage": "intent", "message": "질문이 간단 설명인지 판단하고 있습니다.", "source": "llm_status"},
@@ -1293,8 +1373,19 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
         {"stage": "answer_stream", "message": "답변을 화면에 보여주고 있습니다.", "source": "llm_status"},
         {"stage": "waiting", "message": "작업이 길어져도 계속 처리하고 있습니다.", "source": "llm_status"},
     ]
+    planned_route = {
+        "route": "fast",
+        "confidence": 0.91,
+        "intent": "page_qa",
+        "reason": "test stream plan",
+        "requires_mutation": False,
+        "requires_deep_reasoning": False,
+        "requires_langflow": False,
+        "router_backend": "llm",
+    }
 
-    def fake_agent_response(req, employee_id: str, progress_callback=None):
+    def fake_agent_response(req, employee_id: str, progress_callback=None, route=None):
+        received_routes.append(route or {})
         if progress_callback:
             progress_callback({"stage": "tool_start", "tool": "ontology_search", "message": "관련 BoI 지식을 확인하고 있습니다."})
             progress_callback(
@@ -1337,7 +1428,7 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
         }
 
     monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_agent_response)
-    monkeypatch.setattr(boi_app_module, "agent_stream_status_steps", lambda req, employee_id: llm_steps)
+    monkeypatch.setattr(boi_app_module, "agent_stream_plan", lambda req, employee_id: {"status_steps": llm_steps, "route": planned_route})
 
     with client.stream(
         "POST",
@@ -1366,6 +1457,7 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert final["answer_html"]
     assert final["links"][0]["label"] == "설비 SOP"
     assert final["used_backend"] == "native_langgraph"
+    assert received_routes == [planned_route]
 
 
 def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_module, monkeypatch):
@@ -1381,7 +1473,18 @@ def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_mo
         {"stage": "waiting", "message": "조금 더 확인하고 있습니다.", "source": "llm_status"},
     ]
 
-    def fake_slow_agent_response(req, employee_id: str, progress_callback=None):
+    planned_route = {
+        "route": "fast",
+        "confidence": 0.9,
+        "intent": "page_qa",
+        "reason": "test stream plan",
+        "requires_mutation": False,
+        "requires_deep_reasoning": False,
+        "requires_langflow": False,
+        "router_backend": "llm",
+    }
+
+    def fake_slow_agent_response(req, employee_id: str, progress_callback=None, route=None):
         time.sleep(0.65)
         return {
             "ok": True,
@@ -1401,7 +1504,7 @@ def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_mo
         }
 
     monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_slow_agent_response)
-    monkeypatch.setattr(boi_app_module, "agent_stream_status_steps", lambda req, employee_id: llm_steps)
+    monkeypatch.setattr(boi_app_module, "agent_stream_plan", lambda req, employee_id: {"status_steps": llm_steps, "route": planned_route})
 
     with client.stream(
         "POST",
@@ -1429,7 +1532,7 @@ def test_boi_agent_chat_stream_fails_when_status_llm_unavailable(boi_app_module,
     def unexpected_agent(*args, **kwargs):
         raise AssertionError("agent should not run without LLM status text")
 
-    monkeypatch.setattr(boi_app_module, "agent_stream_status_steps", fail_status)
+    monkeypatch.setattr(boi_app_module, "agent_stream_plan", fail_status)
     monkeypatch.setattr(boi_app_module, "agent_chat_response", unexpected_agent)
 
     with client.stream(
