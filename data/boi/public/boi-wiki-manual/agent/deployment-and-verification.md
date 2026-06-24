@@ -55,6 +55,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | Check | Expected |
 |---|---|
 | `/api/agents/boi-wiki/capabilities` | `boi_agent_backend=native`, `build_revision` present |
+| `/api/agents/boi-wiki/chat/stream` | first SSE `status` event arrives quickly and includes one-line progress |
 | `/api/search/ontology?q=SOP&view=compact` | grouped compact result |
 | Pet Agent diagram question | Mermaid artifact returned by native backend |
 | Pet Agent workflow summary question | Markdown answer and workflow artifact render as HTML tables |
@@ -80,6 +81,27 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
 
 `/api/runtime/config`는 Router mode, LLM enabled 여부, base URL, model, timeout, backoff 상태를 노출한다. secret은 노출하지 않는다.
+
+# Streaming Smoke
+
+배포 후 Web Pet Agent가 멈춘 것처럼 보이지 않는지 확인하려면 external URL 기준으로 streaming endpoint의 첫 event를 확인한다.
+
+```bash
+curl -N \
+  -H "Content-Type: application/json" \
+  -d '{"question":"현재 페이지 기준으로 설명해줘","current_url":"/"}' \
+  "$BOI_EXTERNAL_URL/api/agents/boi-wiki/chat/stream?employee_id=100001" \
+  | sed -n '1,4p'
+```
+
+기대 결과:
+
+```text
+event: status
+data: {"message": "현재 화면 맥락을 확인하고 있습니다.", "elapsed_ms": 0}
+```
+
+이 smoke는 최종 답변 품질 검증이 아니라 “장시간 Agent 요청이 진행 상태를 즉시 보여주는가”를 확인하는 최소 검증이다. 최종 답변 품질은 Pet UI에서 Markdown table, Mermaid artifact, links, Inbox card가 함께 렌더링되는지 별도로 확인한다.
 
 # Related Documents
 

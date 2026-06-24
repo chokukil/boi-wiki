@@ -35,8 +35,9 @@ Native Agent는 LangGraph state graph와 순차 fallback을 함께 제공한다.
 
 ```mermaid
 flowchart TD
-  UI["Web Pet Agent"] --> API["BoI API<br/>/api/agents/boi-wiki/chat"]
+  UI["Web Pet Agent"] --> STREAM["BoI API SSE<br/>/api/agents/boi-wiki/chat/stream"]
   MCP["boi-wiki-mcp<br/>boi_agent_chat"] --> API
+  STREAM --> API["BoI API JSON<br/>/api/agents/boi-wiki/chat"]
   API --> ROUTER["LLM Router first<br/>rules fallback"]
   ROUTER --> AGENT["Native BoI Agent<br/>LangGraph + sequential fallback"]
   AGENT --> ACL["Access Policy Gate<br/>visibility + classification + team RBAC"]
@@ -64,6 +65,36 @@ flowchart TD
 | Ontology search | Compact grouped retrieval for SOP, Event, Action, Dictionary, BoI, runtime evidence |
 | MCP | External agent interface that calls the same BoI API |
 | Langflow | Optional visual workflow and connector demo, not the required Agent engine |
+
+# Response Streaming Contract
+
+BoI Agent는 동기 JSON API와 streaming API를 모두 제공한다.
+
+| Interface | Use |
+|---|---|
+| `POST /api/agents/boi-wiki/chat` | machine-to-machine JSON response, MCP bridge fallback, tests |
+| `POST /api/agents/boi-wiki/chat/stream` | Web Pet Agent default. Server-Sent Events로 진행 상태와 답변 조각을 전달 |
+
+Streaming response는 다음 event 순서를 따른다.
+
+```mermaid
+sequenceDiagram
+  participant UI as Pet Agent UI
+  participant API as BoI API
+  participant Agent as Native BoI Agent
+
+  UI->>API: POST /chat/stream
+  API-->>UI: status "현재 화면 맥락을 확인하고 있습니다."
+  API->>Agent: route + page context + ontology retrieval
+  loop while Agent runs
+    API-->>UI: status "관련 BoI 문서와 Event/Action을 찾고 있습니다."
+  end
+  Agent-->>API: unified response
+  API-->>UI: answer_delta chunks
+  API-->>UI: final full JSON response
+```
+
+`status` event는 사용자가 장시간 요청을 멈춘 것으로 오해하지 않도록 한 줄 진행 상황만 전달한다. 실제 최종 응답의 canonical contract는 `final` event의 JSON이며, 기존 `/chat` 응답과 같은 `answer_markdown`, `answer_html`, `links`, `citations`, `artifacts`, `context_summary`, `route`, `intent` 필드를 유지한다.
 
 # Backend Selection
 
