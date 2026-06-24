@@ -6897,39 +6897,7 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
             {"role": "user", "content": stream_plan_prompt_for_request(req, employee_id)},
     ]
     parsed = parse_stream_plan_response(post_stream_plan(initial_messages))
-    try:
-        status_steps = normalize_llm_status_steps(parsed)
-    except BoiAgentStatusUnavailable as exc:
-        repair_prompt = json.dumps(
-            {
-                "task": "Repair the BoI Agent streaming plan. Return JSON only.",
-                "error": str(exc),
-                "previous_json": parsed,
-                "required_status_stages": list(REQUIRED_AGENT_STATUS_STAGES),
-                "hard_requirements": [
-                    "Return route, confidence, intent, reason, requires_mutation, requires_deep_reasoning, statuses.",
-                    "statuses MUST contain exactly one item for every required_status_stages value.",
-                    "Do not answer the user. Do not include markdown.",
-                ],
-                "statuses_template": [
-                    {"stage": stage, "message": "요청과 현재 페이지에 맞춘 한국어 한 줄 상태"}
-                    for stage in REQUIRED_AGENT_STATUS_STAGES
-                ],
-            },
-            ensure_ascii=False,
-        )
-        repair_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You repair invalid BoI Agent route/status JSON. Return only one compact JSON object. "
-                    "No markdown. No explanation."
-                ),
-            },
-            {"role": "user", "content": repair_prompt},
-        ]
-        parsed = parse_stream_plan_response(post_stream_plan(repair_messages))
-        status_steps = normalize_llm_status_steps(parsed)
+    status_steps = normalize_llm_status_steps(parsed)
     route = normalize_llm_route_payload(parsed, req)
     return {"status_steps": status_steps, "route": apply_agent_route_overrides(req, route)}
 

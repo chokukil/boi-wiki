@@ -291,19 +291,10 @@ def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app
     assert all(item["source"] == "llm_status" for item in plan["status_steps"])
 
 
-def test_boi_agent_stream_plan_repairs_incomplete_llm_status_sequence(boi_app_module, monkeypatch):
+def test_boi_agent_stream_plan_fails_on_incomplete_llm_status_sequence(boi_app_module, monkeypatch):
     payloads = []
     incomplete_statuses = [
         {"stage": "page_context", "message": "현재 SOP 페이지를 확인하고 있습니다."},
-    ]
-    repaired_statuses = [
-        {"stage": "page_context", "message": "현재 SOP 페이지와 접근 권한을 확인하고 있습니다."},
-        {"stage": "intent", "message": "질문이 간단 설명인지 판단하고 있습니다."},
-        {"stage": "retrieval", "message": "관련 BoI 근거를 찾고 있습니다."},
-        {"stage": "tool_loop", "message": "필요한 근거를 더 확인하고 있습니다."},
-        {"stage": "compose", "message": "답변과 링크를 정리하고 있습니다."},
-        {"stage": "answer_stream", "message": "완성된 답변을 화면에 보여주고 있습니다."},
-        {"stage": "waiting", "message": "작업이 길어지면 계속 처리 상태를 알려드립니다."},
     ]
 
     class FakeResponse:
@@ -328,7 +319,6 @@ def test_boi_agent_stream_plan_repairs_incomplete_llm_status_sequence(boi_app_mo
 
         def post(self, url, headers, json):
             payloads.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
-            statuses = incomplete_statuses if len(payloads) == 1 else repaired_statuses
             return FakeResponse(
                 {
                     "choices": [
@@ -342,7 +332,7 @@ def test_boi_agent_stream_plan_repairs_incomplete_llm_status_sequence(boi_app_mo
                                         "reason": "stream plan repair test",
                                         "requires_mutation": False,
                                         "requires_deep_reasoning": False,
-                                        "statuses": statuses,
+                                        "statuses": incomplete_statuses,
                                     },
                                     ensure_ascii=False,
                                 )
@@ -364,18 +354,16 @@ def test_boi_agent_stream_plan_repairs_incomplete_llm_status_sequence(boi_app_mo
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
-    plan = boi_app_module.call_boi_agent_stream_plan_llm(
-        boi_app_module.BoiAgentChatRequest(
-            question="현재 페이지 기준으로 진행 상태 한 줄을 만들고 짧게 답해줘",
-            current_url="/docs/boi:public:sop:equipment-abnormal-response",
-        ),
-        "100001",
-    )
+    with pytest.raises(boi_app_module.BoiAgentStatusUnavailable, match="missed required stages"):
+        boi_app_module.call_boi_agent_stream_plan_llm(
+            boi_app_module.BoiAgentChatRequest(
+                question="현재 페이지 기준으로 진행 상태 한 줄을 만들고 짧게 답해줘",
+                current_url="/docs/boi:public:sop:equipment-abnormal-response",
+            ),
+            "100001",
+        )
 
-    assert len(payloads) == 2
-    assert "Repair the BoI Agent streaming plan" in payloads[1]["json"]["messages"][1]["content"]
-    assert [item["stage"] for item in plan["status_steps"]] == list(boi_app_module.REQUIRED_AGENT_STATUS_STAGES)
-    assert all(item["source"] == "llm_status" for item in plan["status_steps"])
+    assert len(payloads) == 1
 
 
 def test_auth_me_exposes_dev_identity(boi_app_module):
