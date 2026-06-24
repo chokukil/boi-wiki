@@ -31,6 +31,7 @@
       sending: false,
       currentStatus: "",
       scrollTop: 0,
+      pinToBottom: true,
       viewer: null,
     };
   }
@@ -54,8 +55,22 @@
       messages: state.messages.slice(-20),
       draft: state.draft,
       scrollTop: state.scrollTop,
+      pinToBottom: state.pinToBottom,
     };
     sessionStorage.setItem(storageKey, JSON.stringify(saved));
+  }
+
+  function isNearBottom(element, threshold) {
+    if (!element) return true;
+    const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+    return remaining <= (threshold || 96);
+  }
+
+  function captureScrollState() {
+    const content = root.querySelector(".boi-agent-content");
+    if (!content || !state.open || state.tab !== "agent") return;
+    state.scrollTop = content.scrollTop;
+    state.pinToBottom = isNearBottom(content);
   }
 
   function syncViewportPosition() {
@@ -720,6 +735,7 @@
   }
 
   function render() {
+    captureScrollState();
     syncViewportPosition();
     persistState();
     const launcherStatus = state.sending ? state.currentStatus || "" : (state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요");
@@ -874,6 +890,7 @@
       state.sending = false;
       state.currentStatus = "";
       state.scrollTop = 0;
+      state.pinToBottom = true;
       render();
     });
     root.querySelectorAll(".boi-agent-tabs button").forEach((button) => {
@@ -891,6 +908,7 @@
     const content = root.querySelector(".boi-agent-content");
     content?.addEventListener("scroll", () => {
       state.scrollTop = content.scrollTop;
+      state.pinToBottom = isNearBottom(content);
       persistState();
     });
     const form = root.querySelector(".boi-agent-chat-form");
@@ -989,12 +1007,22 @@
   function restoreOrPinScroll() {
     const content = root.querySelector(".boi-agent-content");
     if (!content) return;
-    if (restoreScrollOnce && state.scrollTop) {
-      content.scrollTop = state.scrollTop;
+    if (restoreScrollOnce) {
+      if (state.open && state.tab === "agent" && state.pinToBottom) {
+        content.scrollTop = content.scrollHeight;
+      } else if (state.scrollTop) {
+        content.scrollTop = state.scrollTop;
+      }
       restoreScrollOnce = false;
       return;
     }
-    if (state.open && state.tab === "agent") content.scrollTop = content.scrollHeight;
+    if (state.open && state.tab === "agent") {
+      if (state.sending || state.pinToBottom) {
+        content.scrollTop = content.scrollHeight;
+      } else {
+        content.scrollTop = state.scrollTop;
+      }
+    }
   }
 
   function openArtifact(id) {
@@ -1092,6 +1120,7 @@
     state.draft = "";
     state.sending = true;
     state.currentStatus = "";
+    state.pinToBottom = true;
     state.messages.push({ role: "user", text: question });
     const pendingIndex = state.messages.push({ role: "assistant", text: "", progressText: "" }) - 1;
     state.open = true;
