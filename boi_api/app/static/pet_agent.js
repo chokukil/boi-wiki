@@ -840,7 +840,8 @@
     }).then((body) => {
       state.messages[pendingIndex] = {
         role: "assistant",
-        text: body.answer_markdown || "",
+        text: body.display_markdown || body.answer_markdown || "",
+        rawText: body.answer_markdown || "",
         links: body.links || [],
         meta: {
           route: body.route,

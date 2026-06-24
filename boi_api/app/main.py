@@ -6838,6 +6838,7 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
     answer_markdown = str(response.get("answer_markdown") or "")
     artifacts = response.get("artifacts") if isinstance(response.get("artifacts"), list) else []
     display_markdown = markdown_without_duplicate_mermaid_artifacts(answer_markdown, artifacts)
+    response["display_markdown"] = display_markdown
     response["answer_html"] = (
         str(render_markdown(display_markdown, employee_id=employee_id))
         if display_markdown.strip()
