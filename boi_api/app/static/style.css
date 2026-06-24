@@ -298,6 +298,7 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-handoff-form label { display:grid; gap:4px; font-size:12px; font-weight:900; color:#334155; }
 .boi-agent-handoff-form textarea { min-height:70px; resize:vertical; }
 .boi-agent-empty, .boi-agent-hint { color:#64748b; font-size:13px; }
+.boi-agent-hint.error { color:#b45309; }
 .permissions-page { display:grid; gap:18px; padding:20px 24px 48px; }
 .permissions-page .page-section { min-width:0; }
 .permission-summary-grid, .permission-card-grid, .permission-policy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap:12px; min-width:0; }

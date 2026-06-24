@@ -24,6 +24,7 @@
       expanded: false,
       tab: "agent",
       suggestions: [],
+      suggestionError: "",
       inbox: [],
       messages: [],
       draft: "",
@@ -39,7 +40,7 @@
   function loadState() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || "{}");
-      return { ...defaultState(), ...saved, suggestions: [], inbox: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
+      return { ...defaultState(), ...saved, suggestions: [], suggestionError: "", inbox: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
     } catch (_error) {
       return defaultState();
     }
@@ -95,8 +96,19 @@
       headers: { "Content-Type": "application/json" },
       signal,
       ...fetchOptions,
-    }).then((response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    }).then(async (response) => {
+      if (!response.ok) {
+        let detail = null;
+        try {
+          detail = await response.json();
+        } catch (_error) {
+          detail = null;
+        }
+        const payload = detail?.detail || detail || {};
+        const status = payload.status ? ` ${payload.status}` : "";
+        const message = payload.message ? `: ${payload.message}` : "";
+        throw new Error(`HTTP ${response.status}${status}${message}`);
+      }
       return response.json();
     });
   }
@@ -828,6 +840,7 @@
       <div class="boi-agent-suggestions">
         ${state.suggestions.map((item) => `<button type="button" data-question="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}
       </div>
+      ${state.suggestionError ? `<p class="boi-agent-hint error">${escapeHtml(state.suggestionError)}</p>` : ""}
       ${renderMessages()}
       <form class="boi-agent-chat-form">
         <textarea name="question" placeholder="현재 페이지 기준으로 묻거나, SOP/Event/Action을 찾아보세요." required>${escapeHtml(state.draft)}</textarea>
@@ -1229,7 +1242,13 @@
     api("/api/agents/boi-wiki/suggestions", {
       method: "POST",
       body: JSON.stringify({ current_url: currentUrl(), page_context: { title: pageTitle } }),
-    }).then((body) => { state.suggestions = body.suggestions || []; }),
+    }).then((body) => {
+      state.suggestions = body.suggestions || [];
+      state.suggestionError = "";
+    }).catch((error) => {
+      state.suggestions = [];
+      state.suggestionError = `추천 질문을 생성하지 못했습니다. Agent 상태를 확인해주세요. (${String(error.message || error)})`;
+    }),
     refreshInbox(),
   ]).finally(render);
 

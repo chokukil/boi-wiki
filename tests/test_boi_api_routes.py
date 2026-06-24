@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
+from typing import Any
 from urllib.parse import quote, unquote
 
 from fastapi.testclient import TestClient
@@ -2695,7 +2696,9 @@ def test_server_markdown_renderer_handles_agent_quote_hr_and_inline_styles(boi_a
     assert "<em>코드는 그대로</em>" not in html
 
 
-def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):
+def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", False)
     client = TestClient(boi_app_module.app)
 
     response = client.post(
@@ -2719,7 +2722,9 @@ def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module):
     assert "Manual Handoff" in joined
 
 
-def test_boi_agent_suggestions_use_event_type_context(boi_app_module):
+def test_boi_agent_suggestions_use_event_type_context(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", False)
     client = TestClient(boi_app_module.app)
 
     response = client.post(
@@ -2735,7 +2740,9 @@ def test_boi_agent_suggestions_use_event_type_context(boi_app_module):
     assert "recommended action" in joined
 
 
-def test_boi_agent_suggestions_respect_restricted_context(boi_app_module):
+def test_boi_agent_suggestions_respect_restricted_context(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", False)
     client = TestClient(boi_app_module.app)
     boi_app_module.write_boi(
         {
@@ -2771,6 +2778,91 @@ def test_boi_agent_suggestions_respect_restricted_context(boi_app_module):
     assert "접근 정책" in joined
     assert "Mermaid" not in joined
     assert "Action Spec" not in joined
+
+
+def test_boi_agent_suggestions_use_llm_writer_when_required(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    payloads: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "suggestions": [
+                                        "현재 SOP의 단계별 Event와 Action 흐름을 그림으로 정리해줘.",
+                                        "이 SOP에서 사람이 확인해야 하는 조치 항목만 모아줘.",
+                                        "이 SOP 실행에 필요한 Action Spec 누락 여부를 점검해줘.",
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, headers, json):
+            payloads.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            return FakeResponse()
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_BASE_URL", "http://router.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    response = client.post(
+        "/api/agents/boi-wiki/suggestions?employee_id=100001",
+        json={"current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions_source"] == "llm"
+    assert body["suggestions"][0].startswith("현재 SOP")
+    assert payloads[0]["url"] == "http://router.example/v1/chat/completions"
+    prompt = payloads[0]["json"]["messages"][1]["content"]
+    assert "boi_agent_page_suggestions_only" in prompt
+    assert "설비 이상 감지·원인 분석·이상 조치 SOP" in prompt
+
+
+def test_boi_agent_suggestions_fail_when_required_llm_unavailable(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def broken_suggestions(req, employee_id: str, page_context):
+        raise boi_app_module.BoiAgentSuggestionsUnavailable("suggestion model timeout")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_suggestions_llm", broken_suggestions)
+
+    response = client.post(
+        "/api/agents/boi-wiki/suggestions?employee_id=100001",
+        json={"current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"},
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "boi_agent_suggestions_unavailable"
+    assert detail["required"] is True
+    assert "suggestion model timeout" in detail["message"]
 
 
 def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, monkeypatch):

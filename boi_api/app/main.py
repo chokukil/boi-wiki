@@ -141,6 +141,18 @@ BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "1536
 # downgradeable: if the stream planner cannot generate status text, the Agent is
 # unhealthy instead of falling back to canned copy.
 BOI_AGENT_STATUS_REQUIRED = True
+BOI_AGENT_SUGGESTIONS_BASE_URL = os.getenv("BOI_AGENT_SUGGESTIONS_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
+BOI_AGENT_SUGGESTIONS_API_KEY = os.getenv("BOI_AGENT_SUGGESTIONS_API_KEY", BOI_AGENT_ROUTER_API_KEY)
+BOI_AGENT_SUGGESTIONS_MODEL = os.getenv("BOI_AGENT_SUGGESTIONS_MODEL", BOI_AGENT_ROUTER_MODEL)
+BOI_AGENT_SUGGESTIONS_LLM_ENABLED_RAW = os.getenv("BOI_AGENT_SUGGESTIONS_LLM_ENABLED", BOI_AGENT_ROUTER_LLM_ENABLED_RAW).strip().lower()
+BOI_AGENT_SUGGESTIONS_LLM_ENABLED = resolve_router_llm_enabled(
+    BOI_AGENT_SUGGESTIONS_LLM_ENABLED_RAW,
+    "llm_first",
+    BOI_AGENT_SUGGESTIONS_BASE_URL,
+)
+BOI_AGENT_SUGGESTIONS_REQUIRED = os.getenv("BOI_AGENT_SUGGESTIONS_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS", "8"))
+BOI_AGENT_SUGGESTIONS_MAX_TOKENS = int(os.getenv("BOI_AGENT_SUGGESTIONS_MAX_TOKENS", "1024"))
 BOI_AGENT_COMPOSER_BASE_URL = os.getenv("BOI_AGENT_COMPOSER_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
 BOI_AGENT_COMPOSER_API_KEY = os.getenv("BOI_AGENT_COMPOSER_API_KEY", BOI_AGENT_ROUTER_API_KEY)
 BOI_AGENT_COMPOSER_MODEL = os.getenv("BOI_AGENT_COMPOSER_MODEL", BOI_AGENT_ROUTER_MODEL)
@@ -6460,6 +6472,165 @@ def page_context_suggestions(current_url: str, page_context: dict[str, Any] | No
     return dedupe_suggestions(suggestions)
 
 
+def suggestion_context_for_llm(page_context: dict[str, Any]) -> dict[str, Any]:
+    access = page_context.get("access") if isinstance(page_context.get("access"), dict) else {}
+    can_use_context = access.get("can_use_in_agent_context") is not False
+    keys = (
+        "page_kind",
+        "title",
+        "boi_id",
+        "type",
+        "visibility",
+        "classification",
+        "event_type",
+        "workflow_key",
+        "workflow_stage",
+        "stage_count",
+        "workflow_action_count",
+        "workflow_manual_action_count",
+        "event_count",
+        "action_count",
+        "manual_handoff_count",
+        "status",
+        "trace_id",
+        "action_key",
+    )
+    context = {key: page_context.get(key) for key in keys if page_context.get(key) not in (None, "", [])}
+    context["access"] = {
+        "can_use_in_agent_context": access.get("can_use_in_agent_context", True),
+        "can_cite": access.get("can_cite", True),
+        "classification": access.get("classification") or page_context.get("classification") or "",
+        "redactions": access.get("redactions") or [],
+        "reasons": access.get("reasons") or [],
+    }
+    if can_use_context:
+        for key in ("citations", "okf_refs", "links"):
+            value = page_context.get(key)
+            if value:
+                context[key] = value[:8] if isinstance(value, list) else value
+        excerpt = text_excerpt(str(page_context.get("body_excerpt") or page_context.get("summary") or ""), 800)
+        if excerpt:
+            context["safe_excerpt"] = excerpt
+    return redact_sensitive(context)
+
+
+def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id: str, page_context: dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "task": "boi_agent_page_suggestions_only",
+            "language": "ko",
+            "employee_id": employee_id,
+            "current_url": req.current_url,
+            "client_page_title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
+            "resolved_page_context": suggestion_context_for_llm(page_context),
+            "capabilities": [
+                "현재 페이지 질의응답",
+                "BoI/SOP/Event/Action ontology search",
+                "SOP Mermaid diagram",
+                "Event to Action workflow explanation",
+                "Action Spec gap check",
+                "Trace reasoning",
+                "Inbox 업무 확인",
+                "신규 Event Type 초안 제안",
+            ],
+            "rules": [
+                "Return JSON only.",
+                "Produce 3 to 5 short Korean suggestions.",
+                "Every suggestion must be useful for the current page context.",
+                "Avoid internal technical words unless they are visible business terms on the page.",
+                "If access.can_use_in_agent_context is false, ask about access policy or allowed related documents instead of document content.",
+                "For mutating work, phrase it as draft/preview/approval, not immediate execution.",
+            ],
+            "output_shape": {"suggestions": ["질문 또는 요청 한 문장"]},
+        },
+        ensure_ascii=False,
+    )
+
+
+def parse_suggestions_payload(text: str) -> dict[str, Any] | None:
+    parsed = parse_langflow_json_text(text)
+    if isinstance(parsed, dict) and isinstance(parsed.get("suggestions"), list):
+        return parsed
+    decoder = json.JSONDecoder()
+    stripped = text.strip()
+    if stripped.startswith("```") and stripped.endswith("```"):
+        fenced = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", stripped, count=1).strip()
+        fenced = re.sub(r"\s*```$", "", fenced, count=1).strip()
+        if fenced and fenced != stripped:
+            payload = parse_suggestions_payload(fenced)
+            if payload:
+                return payload
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("suggestions"), list):
+            return payload
+    return None
+
+
+def normalize_llm_suggestions(payload: dict[str, Any]) -> list[str]:
+    suggestions: list[str] = []
+    for item in payload.get("suggestions") or []:
+        text = re.sub(r"\s+", " ", str(item or "")).strip()
+        text = text.strip("\"'` ")
+        if not text:
+            continue
+        if len(text) > 120:
+            text = text[:119].rstrip() + "…"
+        suggestions.append(text)
+    normalized = dedupe_suggestions(suggestions, limit=5)
+    if len(normalized) < 3:
+        raise BoiAgentSuggestionsUnavailable("LLM suggestion writer returned fewer than 3 suggestions")
+    return normalized
+
+
+def call_boi_agent_suggestions_llm(req: BoiAgentSuggestionsRequest, employee_id: str, page_context: dict[str, Any]) -> list[str]:
+    if not BOI_AGENT_SUGGESTIONS_LLM_ENABLED:
+        raise BoiAgentSuggestionsUnavailable("LLM suggestion writer is not configured")
+    if not BOI_AGENT_SUGGESTIONS_BASE_URL or not BOI_AGENT_SUGGESTIONS_MODEL:
+        raise BoiAgentSuggestionsUnavailable("LLM suggestion writer base URL/model is missing")
+    url = BOI_AGENT_SUGGESTIONS_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if BOI_AGENT_SUGGESTIONS_API_KEY:
+        headers["Authorization"] = f"Bearer {BOI_AGENT_SUGGESTIONS_API_KEY}"
+    body = {
+        "model": BOI_AGENT_SUGGESTIONS_MODEL,
+        "temperature": 0.35,
+        "max_tokens": BOI_AGENT_SUGGESTIONS_MAX_TOKENS,
+        "response_format": {"type": "text"},
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You write concise, page-aware suggestion buttons for BoI Agent. "
+                    "Return only JSON and never answer the user's task."
+                ),
+            },
+            {"role": "user", "content": suggestions_prompt_for_request(req, employee_id, page_context)},
+        ],
+    }
+    try:
+        with httpx.Client(timeout=BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS) as client:
+            response = client.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        raise BoiAgentSuggestionsUnavailable(f"LLM suggestion writer call failed: {exc}") from exc
+    parsed = None
+    for text in iter_langflow_text_candidates(payload):
+        candidate = parse_suggestions_payload(text)
+        if candidate:
+            parsed = candidate
+            break
+    if not parsed:
+        raise BoiAgentSuggestionsUnavailable("LLM suggestion writer returned invalid JSON")
+    return normalize_llm_suggestions(parsed)
+
+
 def agent_link_for_item(item: dict[str, Any]) -> dict[str, str]:
     label = str(item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or "")
     return {
@@ -6479,6 +6650,10 @@ class BoiAgentRouterUnavailable(RuntimeError):
 
 class BoiAgentStatusUnavailable(RuntimeError):
     """Raised when the required LLM status writer cannot produce progress text."""
+
+
+class BoiAgentSuggestionsUnavailable(RuntimeError):
+    """Raised when the required LLM suggestion writer cannot produce page-aware suggestions."""
 
 
 ALLOWED_AGENT_ROUTES = {"fast", "deep", "inbox", "manual_handoff", "approval_required"}
@@ -8485,12 +8660,30 @@ async def api_boi_agent_suggestions(req: BoiAgentSuggestionsRequest, employee_id
     resolved_context = resolve_agent_page_context(req.current_url, employee_id)
     if not resolved_context.get("title") and req.page_context.get("title"):
         resolved_context["title"] = req.page_context.get("title")
+    source = "llm"
+    try:
+        suggestions = await asyncio.to_thread(call_boi_agent_suggestions_llm, req, employee_id, resolved_context)
+    except BoiAgentSuggestionsUnavailable as exc:
+        if BOI_AGENT_SUGGESTIONS_REQUIRED:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "ok": False,
+                    "status": "boi_agent_suggestions_unavailable",
+                    "message": str(exc),
+                    "model": BOI_AGENT_SUGGESTIONS_MODEL,
+                    "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
+                },
+            ) from exc
+        source = "local_template"
+        suggestions = page_context_suggestions(req.current_url, resolved_context)
     return {
         "ok": True,
         "employee_id": employee_id,
         "current_url": req.current_url,
         "page_context": resolved_context,
-        "suggestions": page_context_suggestions(req.current_url, resolved_context),
+        "suggestions": suggestions,
+        "suggestions_source": source,
     }
 
 
@@ -8528,6 +8721,14 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "model": BOI_AGENT_COMPOSER_MODEL,
             "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
             "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
+        },
+        "suggestions": {
+            "llm_enabled": BOI_AGENT_SUGGESTIONS_LLM_ENABLED,
+            "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
+            "base_url": BOI_AGENT_SUGGESTIONS_BASE_URL,
+            "model": BOI_AGENT_SUGGESTIONS_MODEL,
+            "timeout_seconds": BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS,
+            "max_tokens": BOI_AGENT_SUGGESTIONS_MAX_TOKENS,
         },
         "rbac_enabled": True,
         "acl_guardrail_enabled": True,
