@@ -6808,45 +6808,36 @@ def call_boi_agent_status_llm(req: BoiAgentChatRequest, employee_id: str) -> lis
 
 
 def stream_plan_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str:
-    return json.dumps(
-        {
-            "task": "Return one compact JSON BoI Agent stream plan. Do not answer the user.",
-            "language": "ko",
-            "employee_id": employee_id,
-            "question": req.question,
-            "current_url": req.current_url,
-            "page_title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
-            "selected_text_excerpt": text_excerpt(req.selected_text, 500),
-            "routes": sorted(ALLOWED_AGENT_ROUTES),
-            "intents": sorted(ALLOWED_AGENT_INTENTS),
-            "status_rules": "statuses must include every stage exactly once; messages are Korean, 18-70 chars, page-specific, non-technical.",
-            "stages": list(REQUIRED_AGENT_STATUS_STAGES),
-            "hard_requirements": [
-                "Return JSON only, no markdown.",
-                "statuses MUST contain exactly one item for every stage.",
-                "Never return only one current status.",
-            ],
-            "statuses_template": [
-                {"stage": stage, "message": "요청과 현재 페이지에 맞춘 한국어 한 줄 상태"}
-                for stage in REQUIRED_AGENT_STATUS_STAGES
-            ],
-            "schema": {
-                "route": "fast|deep|inbox|manual_handoff|approval_required",
-                "confidence": "0.0-1.0",
-                "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval|event_publish|action_invoke|workflow_start|event_type_draft",
-                "reason": "short Korean or English reason",
-                "requires_mutation": "boolean",
-                "requires_deep_reasoning": "boolean",
-                "statuses": [
-                    {
-                        "stage": "one of required_status_stages",
-                        "message": "Korean one-line progress text",
-                    }
-                ],
-            },
+    payload: dict[str, Any] = {
+        "task": "route_and_status_plan_only",
+        "lang": "ko",
+        "employee_id": employee_id,
+        "question": req.question,
+        "url": req.current_url,
+        "title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
+        "routes": "fast|deep|inbox|manual_handoff|approval_required",
+        "intents": "|".join(sorted(ALLOWED_AGENT_INTENTS)),
+        "stages": "|".join(REQUIRED_AGENT_STATUS_STAGES),
+        "must": [
+            "JSON only",
+            "No markdown",
+            "Do not answer the user",
+            "statuses has exactly one Korean nontechnical message for every stage",
+        ],
+        "output_shape": {
+            "route": "route",
+            "confidence": 0.0,
+            "intent": "intent",
+            "reason": "short",
+            "requires_mutation": False,
+            "requires_deep_reasoning": False,
+            "statuses": [{"stage": "stage", "message": "18-70 chars"}],
         },
-        ensure_ascii=False,
-    )
+    }
+    selected = text_excerpt(req.selected_text, 220)
+    if selected:
+        payload["selected"] = selected
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
