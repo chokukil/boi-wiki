@@ -124,6 +124,18 @@ BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SEC
 BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS", "30"))
 BOI_AGENT_ROUTER_MAX_TOKENS = int(os.getenv("BOI_AGENT_ROUTER_MAX_TOKENS", "768"))
 BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD = float(os.getenv("BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD", "0.7"))
+BOI_AGENT_STATUS_BASE_URL = os.getenv("BOI_AGENT_STATUS_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
+BOI_AGENT_STATUS_API_KEY = os.getenv("BOI_AGENT_STATUS_API_KEY", BOI_AGENT_ROUTER_API_KEY)
+BOI_AGENT_STATUS_MODEL = os.getenv("BOI_AGENT_STATUS_MODEL", BOI_AGENT_ROUTER_MODEL)
+BOI_AGENT_STATUS_LLM_ENABLED_RAW = os.getenv("BOI_AGENT_STATUS_LLM_ENABLED", BOI_AGENT_ROUTER_LLM_ENABLED_RAW).strip().lower()
+BOI_AGENT_STATUS_LLM_ENABLED = resolve_router_llm_enabled(
+    BOI_AGENT_STATUS_LLM_ENABLED_RAW,
+    "llm_first",
+    BOI_AGENT_STATUS_BASE_URL,
+)
+BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "3"))
+BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "512"))
+BOI_AGENT_STATUS_REQUIRED = os.getenv("BOI_AGENT_STATUS_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
@@ -5278,6 +5290,14 @@ async def runtime_config() -> dict[str, Any]:
                 "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
                 "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
             },
+            "status_writer": {
+                "llm_enabled": BOI_AGENT_STATUS_LLM_ENABLED,
+                "required": BOI_AGENT_STATUS_REQUIRED,
+                "base_url": BOI_AGENT_STATUS_BASE_URL,
+                "model": BOI_AGENT_STATUS_MODEL,
+                "timeout_seconds": BOI_AGENT_STATUS_TIMEOUT_SECONDS,
+                "max_tokens": BOI_AGENT_STATUS_MAX_TOKENS,
+            },
             "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
@@ -6411,6 +6431,10 @@ class BoiAgentRouterUnavailable(RuntimeError):
     """Raised when the optional LLM router cannot produce a usable route."""
 
 
+class BoiAgentStatusUnavailable(RuntimeError):
+    """Raised when the required LLM status writer cannot produce progress text."""
+
+
 ALLOWED_AGENT_ROUTES = {"fast", "deep", "inbox", "manual_handoff", "approval_required"}
 ALLOWED_AGENT_INTENTS = {
     "search",
@@ -6596,6 +6620,130 @@ def parse_router_payload(text: str) -> dict[str, Any] | None:
         if isinstance(payload, dict) and payload.get("route"):
             return payload
     return None
+
+
+REQUIRED_AGENT_STATUS_STAGES = ("page_context", "intent", "retrieval", "tool_loop", "compose", "answer_stream", "waiting")
+
+
+def status_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str:
+    return json.dumps(
+        {
+            "task": "Write BoI Agent progress status lines. Return JSON only.",
+            "language": "ko",
+            "style": {
+                "tone": "일반 구성원이 이해하기 쉬운 업무 문장",
+                "length": "각 message는 18~70자 한 문장",
+                "avoid": ["dry-run", "invoke", "router", "fallback", "stub", "LLM", "LangGraph", "stack trace"],
+                "must_be_specific_to_request": True,
+            },
+            "required_stages": list(REQUIRED_AGENT_STATUS_STAGES),
+            "stage_meaning": {
+                "page_context": "현재 페이지, 사번, 접근 권한을 확인하는 단계",
+                "intent": "질문 의도와 필요한 산출물을 판단하는 단계",
+                "retrieval": "BoI Wiki, SOP, Event, Action, Dictionary, runtime evidence를 찾는 단계",
+                "tool_loop": "필요한 근거를 여러 번 조회하고 빈틈을 점검하는 단계",
+                "compose": "답변, 표, Mermaid, 링크, citation을 정리하는 단계",
+                "answer_stream": "완성된 답변을 사용자에게 보여주는 단계",
+                "waiting": "작업이 길어질 때 계속 처리 중임을 알리는 단계",
+            },
+            "employee_id": employee_id,
+            "question": req.question,
+            "current_url": req.current_url,
+            "page_title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
+            "selected_text_excerpt": text_excerpt(req.selected_text, 500),
+            "conversation_tail": req.conversation[-3:],
+            "required_json_schema": {
+                "statuses": [
+                    {
+                        "stage": "one of required_stages",
+                        "message": "Korean one-line progress text",
+                    }
+                ]
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def parse_status_payload(text: str) -> dict[str, Any] | None:
+    parsed = parse_langflow_json_text(text)
+    if isinstance(parsed, dict) and isinstance(parsed.get("statuses"), list):
+        return parsed
+    decoder = json.JSONDecoder()
+    stripped = text.strip()
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("statuses"), list):
+            return payload
+    return None
+
+
+def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
+    seen: dict[str, str] = {}
+    for item in payload.get("statuses") or []:
+        if not isinstance(item, dict):
+            continue
+        stage = str(item.get("stage") or "").strip()
+        message = re.sub(r"\s+", " ", str(item.get("message") or "")).strip()
+        if stage not in REQUIRED_AGENT_STATUS_STAGES or not message:
+            continue
+        if len(message) > 90:
+            message = message[:89].rstrip() + "…"
+        seen.setdefault(stage, message)
+    missing = [stage for stage in REQUIRED_AGENT_STATUS_STAGES if stage not in seen]
+    if missing:
+        raise BoiAgentStatusUnavailable("LLM status writer missed required stages: " + ", ".join(missing))
+    return [{"stage": stage, "message": seen[stage], "source": "llm_status"} for stage in REQUIRED_AGENT_STATUS_STAGES]
+
+
+def call_boi_agent_status_llm(req: BoiAgentChatRequest, employee_id: str) -> list[dict[str, str]]:
+    if not BOI_AGENT_STATUS_REQUIRED:
+        raise BoiAgentStatusUnavailable("LLM status writer is disabled by configuration")
+    if not BOI_AGENT_STATUS_LLM_ENABLED:
+        raise BoiAgentStatusUnavailable("LLM status writer is not configured")
+    if not BOI_AGENT_STATUS_BASE_URL or not BOI_AGENT_STATUS_MODEL:
+        raise BoiAgentStatusUnavailable("LLM status writer base URL/model is missing")
+    url = BOI_AGENT_STATUS_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if BOI_AGENT_STATUS_API_KEY:
+        headers["Authorization"] = f"Bearer {BOI_AGENT_STATUS_API_KEY}"
+    body = {
+        "model": BOI_AGENT_STATUS_MODEL,
+        "temperature": 0.2,
+        "max_tokens": BOI_AGENT_STATUS_MAX_TOKENS,
+        "response_format": {"type": "text"},
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You write concise progress status lines for BoI Agent. "
+                    "Return only JSON. Do not answer the user's question."
+                ),
+            },
+            {"role": "user", "content": status_prompt_for_request(req, employee_id)},
+        ],
+    }
+    try:
+        with httpx.Client(timeout=BOI_AGENT_STATUS_TIMEOUT_SECONDS) as client:
+            response = client.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        raise BoiAgentStatusUnavailable(f"LLM status writer call failed: {exc}") from exc
+    parsed = None
+    for text in iter_langflow_text_candidates(payload):
+        candidate = parse_status_payload(text)
+        if candidate:
+            parsed = candidate
+            break
+    if not parsed:
+        raise BoiAgentStatusUnavailable("LLM status writer returned invalid JSON")
+    return normalize_llm_status_steps(parsed)
 
 
 def router_llm_backoff_remaining() -> float:
@@ -7346,46 +7494,8 @@ def agent_stream_chunk_delay_seconds() -> float:
         return 0.025
 
 
-def agent_stream_status_steps(req: BoiAgentChatRequest) -> list[dict[str, str]]:
-    intent = deterministic_agent_intent(req.question, req.current_url)
-    page_hint = "현재 화면"
-    current_url = str(req.current_url or "")
-    if "/docs/" in current_url:
-        page_hint = "현재 BoI 문서"
-    elif "/workflows/" in current_url:
-        page_hint = "현재 Workflow 상태"
-    elif "/events" in current_url:
-        page_hint = "현재 Event Stream"
-    elif "/actions/raw/" in current_url:
-        page_hint = "현재 Action 원본"
-    elif "/event-types" in current_url:
-        page_hint = "현재 Event Type"
-
-    intent_messages = {
-        "diagram": "SOP stage, Event, Action, Manual Handoff 관계를 도식화할 근거로 정리하고 있습니다.",
-        "workflow_explain": "Event에서 SOP stage와 Action으로 이어지는 업무 흐름을 맞춰 보고 있습니다.",
-        "gap_check": "연결된 Action Spec과 누락된 실행 명세를 대조하고 있습니다.",
-        "trace_reasoning": "Trace의 Event, Action, 생성 BoI 근거를 묶어 확인하고 있습니다.",
-        "inbox": "내가 처리해야 할 승인과 조치 요청을 정리하고 있습니다.",
-        "search": "Dictionary, OKF 링크, SOP/Event/Action catalog를 함께 검색하고 있습니다.",
-        "page_qa": "현재 화면 맥락과 관련 BoI 지식을 함께 확인하고 있습니다.",
-        "summarize": "현재 화면의 핵심 내용과 관련 근거를 요약하고 있습니다.",
-        "event_publish": "Event 발행은 바로 실행하지 않고 확인 카드로 준비하고 있습니다.",
-        "action_invoke": "Action 실행은 바로 호출하지 않고 확인 카드로 준비하고 있습니다.",
-        "workflow_start": "Workflow 시작 요청을 확인 카드로 준비하고 있습니다.",
-        "event_type_draft": "신규 Event Type은 draft와 검증 경로로 준비하고 있습니다.",
-        "manual_complete": "Manual Handoff 완료 가능 여부와 권한을 확인하고 있습니다.",
-        "approval": "승인이 필요한 작업인지 권한과 위험도를 확인하고 있습니다.",
-    }
-    subject = f"{page_hint}과" if page_hint == "현재 화면" else f"{page_hint}와"
-    return [
-        {"stage": "page_context", "message": f"{subject} 접근 권한을 확인하고 있습니다."},
-        {"stage": "intent", "message": "질문 의도를 분류하고 필요한 처리 경로를 고르고 있습니다."},
-        {"stage": "retrieval", "message": intent_messages.get(intent, "관련 BoI 문서와 업무 관계를 찾고 있습니다.")},
-        {"stage": "tool_loop", "message": "필요한 문서, catalog, runtime evidence를 추가로 확인하고 있습니다."},
-        {"stage": "compose", "message": "답변, 표, 다이어그램, 링크를 검증해 정리하고 있습니다."},
-        {"stage": "waiting", "message": "분석이 길어지고 있어 계속 확인 중입니다. 완료되는 대로 답변을 이어서 보여드리겠습니다."},
-    ]
+def agent_stream_status_steps(req: BoiAgentChatRequest, employee_id: str) -> list[dict[str, str]]:
+    return call_boi_agent_status_llm(req, employee_id)
 
 
 def agent_tool_progress_status(payload: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
@@ -7878,9 +7988,20 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
 async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> StreamingResponse:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
 
-    status_steps = agent_stream_status_steps(req)
-
     async def stream_events():
+        try:
+            status_steps = agent_stream_status_steps(req, employee_id)
+        except BoiAgentStatusUnavailable as exc:
+            yield agent_sse_event(
+                "error",
+                {
+                    "status": "status_generation_failed",
+                    "message": str(exc),
+                    "model": BOI_AGENT_STATUS_MODEL,
+                    "required": BOI_AGENT_STATUS_REQUIRED,
+                },
+            )
+            return
         yield agent_sse_event("status", {**status_steps[0], "elapsed_ms": 0})
         started_at = time.perf_counter()
         progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
@@ -7914,8 +8035,7 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
         try:
             while True:
                 elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                for progress in drain_progress_events():
-                    yield agent_sse_event("status", agent_tool_progress_status(progress, elapsed_ms))
+                drain_progress_events()
 
                 try:
                     kind, payload = result_queue.get_nowait()
@@ -7933,19 +8053,18 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                 break
 
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-            for progress in drain_progress_events():
-                yield agent_sse_event("status", agent_tool_progress_status(progress, elapsed_ms))
+            drain_progress_events()
 
             if response is None:
                 raise RuntimeError("BoI Agent stream finished without a response")
             display_markdown = str(response.get("display_markdown") or response.get("answer_markdown") or "")
             chunks = iter_agent_answer_chunks(display_markdown)
             if chunks:
+                answer_status = next((item for item in status_steps if item.get("stage") == "answer_stream"), status_steps[-1])
                 yield agent_sse_event(
                     "status",
                     {
-                        "stage": "answer_stream",
-                        "message": "답변을 작성하고 있습니다. 생성되는 내용을 바로 보여드리겠습니다.",
+                        **answer_status,
                         "elapsed_ms": elapsed_ms,
                     },
                 )
@@ -8005,6 +8124,14 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
             "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
             "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
+        },
+        "status_writer": {
+            "llm_enabled": BOI_AGENT_STATUS_LLM_ENABLED,
+            "required": BOI_AGENT_STATUS_REQUIRED,
+            "base_url": BOI_AGENT_STATUS_BASE_URL,
+            "model": BOI_AGENT_STATUS_MODEL,
+            "timeout_seconds": BOI_AGENT_STATUS_TIMEOUT_SECONDS,
+            "max_tokens": BOI_AGENT_STATUS_MAX_TOKENS,
         },
         "rbac_enabled": True,
         "acl_guardrail_enabled": True,

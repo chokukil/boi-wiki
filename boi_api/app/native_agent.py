@@ -711,10 +711,10 @@ def tool_progress_message(tool: str, status: str, *, summary: str = "") -> str:
     }
     label = labels.get(tool, "필요한 근거")
     if status == "start":
-        return f"{label}을 확인하고 있습니다."
+        return f"{label} 확인 중입니다."
     if status == "ok":
         detail = f" ({summary})" if summary else ""
-        return f"{label} 확인을 마쳤습니다{detail}."
+        return f"{label} 확인 완료{detail}."
     if status == "empty":
         return f"{label}에서 바로 쓸 수 있는 결과를 찾지 못했습니다."
     if status == "failed":

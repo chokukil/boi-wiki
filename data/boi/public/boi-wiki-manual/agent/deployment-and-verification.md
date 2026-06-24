@@ -78,6 +78,10 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `3` | Gemma Router response timeout. Timeout이면 rules fallback을 사용해 Agent 응답을 계속 진행한다. |
 | `BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS` | `30` | Router timeout/network failure 뒤 같은 worker가 잠시 LLM 호출을 건너뛰고 rules fallback을 바로 쓰는 보호 시간 |
 | `BOI_AGENT_ROUTER_MAX_TOKENS` | `768` | reasoning token을 쓰는 Gemma 계열 Router의 final JSON 확보용 |
+| `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄은 LLM status writer가 생성해야 한다. 실패 시 fallback하지 않고 장애로 표시한다. |
+| `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible status writer endpoint |
+| `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |
+| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `3` | status plan 생성 timeout. 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. |
 
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
 
@@ -99,10 +103,17 @@ curl -N \
 
 ```text
 event: status
-data: {"message": "현재 화면 맥락을 확인하고 있습니다.", "elapsed_ms": 0}
+data: {"stage":"page_context","message":"...","source":"llm_status","elapsed_ms":0}
 ```
 
-실제 문구는 현재 페이지 종류에 따라 `현재 BoI 문서와 접근 권한을 확인하고 있습니다.`, `현재 Workflow 상태와 접근 권한을 확인하고 있습니다.`처럼 달라질 수 있다. 핵심은 첫 `status`가 즉시 오고, 긴 작업 중에도 2초 안팎으로 한 줄 진행 상태가 반복되는 것이다.
+실제 문구는 LLM status writer가 질문과 현재 페이지에 맞춰 생성한다. 고정 문구가 아니므로 특정 문장과 exact match하지 않는다. 핵심은 첫 `status`에 `source: "llm_status"`가 있고, 긴 작업 중에도 LLM이 만든 한 줄 진행 상태가 반복되는 것이다. status writer가 JSON plan을 만들지 못하면 다음처럼 실패해야 한다.
+
+```text
+event: error
+data: {"status":"status_generation_failed", ...}
+```
+
+이 오류는 정상 fallback이 아니라 Agent streaming 장애로 취급한다.
 
 이 smoke는 최종 답변 품질 검증이 아니라 “장시간 Agent 요청이 진행 상태를 계속 보여주는가”를 확인하는 최소 검증이다. 최종 답변 품질은 Pet UI에서 Markdown table, Mermaid artifact, links, Inbox card가 함께 렌더링되는지 별도로 확인한다.
 

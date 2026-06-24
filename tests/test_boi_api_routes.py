@@ -169,22 +169,45 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["streaming"]["enabled"] is True
     assert body["streaming"]["endpoint"] == "/api/agents/boi-wiki/chat/stream"
     assert body["streaming"]["events"] == ["status", "answer_delta", "final", "error"]
+    assert body["status_writer"]["required"] is True
+    assert body["status_writer"]["model"]
     assert "progressive response streaming" in body["features"]
 
 
-def test_boi_agent_stream_status_steps_are_page_and_intent_aware(boi_app_module):
+def test_boi_agent_stream_status_steps_require_llm_generated_plan(boi_app_module, monkeypatch):
     request = boi_app_module.BoiAgentChatRequest(
         question="이 SOP를 Mermaid 프로세스 플로우로 보여줘",
         current_url="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
     )
 
-    steps = boi_app_module.agent_stream_status_steps(request)
+    llm_steps = [
+        {"stage": "page_context", "message": "현재 SOP와 접근 권한을 확인하고 있습니다.", "source": "llm_status"},
+        {"stage": "intent", "message": "요청이 프로세스 도식 생성인지 판단하고 있습니다.", "source": "llm_status"},
+        {"stage": "retrieval", "message": "SOP의 Event와 Action 근거를 모으고 있습니다.", "source": "llm_status"},
+        {"stage": "tool_loop", "message": "누락된 연결이 없는지 근거를 다시 확인하고 있습니다.", "source": "llm_status"},
+        {"stage": "compose", "message": "Mermaid와 표를 함께 정리하고 있습니다.", "source": "llm_status"},
+        {"stage": "answer_stream", "message": "정리된 답변을 화면에 보여주고 있습니다.", "source": "llm_status"},
+        {"stage": "waiting", "message": "분석이 길어져도 계속 근거를 확인하고 있습니다.", "source": "llm_status"},
+    ]
 
-    assert steps[0]["stage"] == "page_context"
-    assert "현재 BoI 문서와 접근 권한" in steps[0]["message"]
-    assert any("도식화할 근거" in step["message"] for step in steps)
-    assert steps[-1]["stage"] == "waiting"
-    assert "완료되는 대로 답변" in steps[-1]["message"]
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_status_llm", lambda req, employee_id: llm_steps)
+
+    steps = boi_app_module.agent_stream_status_steps(request, "100001")
+
+    assert steps == llm_steps
+    assert all(step["source"] == "llm_status" for step in steps)
+
+
+def test_boi_agent_stream_status_plan_missing_stage_is_failure(boi_app_module):
+    with pytest.raises(boi_app_module.BoiAgentStatusUnavailable):
+        boi_app_module.normalize_llm_status_steps(
+            {
+                "statuses": [
+                    {"stage": "page_context", "message": "현재 페이지를 확인하고 있습니다."},
+                    {"stage": "intent", "message": "질문 의도를 보고 있습니다."},
+                ]
+            }
+        )
 
 
 def test_auth_me_exposes_dev_identity(boi_app_module):
@@ -1253,6 +1276,15 @@ def parse_sse_events(raw: str) -> list[dict[str, str]]:
 
 def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    llm_steps = [
+        {"stage": "page_context", "message": "현재 페이지와 접근 권한을 확인하고 있습니다.", "source": "llm_status"},
+        {"stage": "intent", "message": "질문이 간단 설명인지 판단하고 있습니다.", "source": "llm_status"},
+        {"stage": "retrieval", "message": "관련 BoI 근거를 찾아보고 있습니다.", "source": "llm_status"},
+        {"stage": "tool_loop", "message": "필요한 근거를 더 확인하고 있습니다.", "source": "llm_status"},
+        {"stage": "compose", "message": "표와 링크를 정리하고 있습니다.", "source": "llm_status"},
+        {"stage": "answer_stream", "message": "답변을 화면에 보여주고 있습니다.", "source": "llm_status"},
+        {"stage": "waiting", "message": "작업이 길어져도 계속 처리하고 있습니다.", "source": "llm_status"},
+    ]
 
     def fake_agent_response(req, employee_id: str, progress_callback=None):
         if progress_callback:
@@ -1297,6 +1329,7 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
         }
 
     monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_agent_response)
+    monkeypatch.setattr(boi_app_module, "agent_stream_status_steps", lambda req, employee_id: llm_steps)
 
     with client.stream(
         "POST",
@@ -1312,11 +1345,11 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert "status" in event_names
     assert "answer_delta" in event_names
     assert event_names[-1] == "final"
-    assert any("현재 화면" in json.loads(item["data"])["message"] for item in events if item["event"] == "status")
     status_payloads = [json.loads(item["data"]) for item in events if item["event"] == "status"]
     assert all(item.get("stage") for item in status_payloads)
-    assert any(item.get("stage") == "tool_start" and item.get("tool") == "ontology_search" for item in status_payloads)
-    assert any(item.get("stage") == "tool_done" and item.get("summary") == "best_matches=2" for item in status_payloads)
+    assert all(item.get("source") == "llm_status" for item in status_payloads)
+    assert any(item["message"] == llm_steps[0]["message"] for item in status_payloads)
+    assert not any(item.get("stage") == "tool_start" for item in status_payloads)
     assert any(item.get("stage") == "answer_stream" for item in status_payloads)
     answer_deltas = [json.loads(item["data"])["delta"] for item in events if item["event"] == "answer_delta"]
     assert len(answer_deltas) >= 2
@@ -1330,6 +1363,15 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
 def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_STREAM_HEARTBEAT_SECONDS", 0.05)
+    llm_steps = [
+        {"stage": "page_context", "message": "요청한 화면의 맥락을 확인하고 있습니다.", "source": "llm_status"},
+        {"stage": "intent", "message": "사용자가 원하는 답변 유형을 판단하고 있습니다.", "source": "llm_status"},
+        {"stage": "retrieval", "message": "필요한 BoI 근거를 찾고 있습니다.", "source": "llm_status"},
+        {"stage": "tool_loop", "message": "관련 근거를 추가로 확인하고 있습니다.", "source": "llm_status"},
+        {"stage": "compose", "message": "답변을 정리하고 있습니다.", "source": "llm_status"},
+        {"stage": "answer_stream", "message": "답변을 이어서 보여주고 있습니다.", "source": "llm_status"},
+        {"stage": "waiting", "message": "조금 더 확인하고 있습니다.", "source": "llm_status"},
+    ]
 
     def fake_slow_agent_response(req, employee_id: str, progress_callback=None):
         time.sleep(0.65)
@@ -1351,6 +1393,7 @@ def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_mo
         }
 
     monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_slow_agent_response)
+    monkeypatch.setattr(boi_app_module, "agent_stream_status_steps", lambda req, employee_id: llm_steps)
 
     with client.stream(
         "POST",
@@ -1364,8 +1407,36 @@ def test_boi_agent_chat_stream_emits_heartbeat_while_agent_is_running(boi_app_mo
     status_payloads = [json.loads(item["data"]) for item in events if item["event"] == "status"]
     assert len(status_payloads) >= 2
     assert status_payloads[0]["stage"] == "page_context"
+    assert all(item.get("source") == "llm_status" for item in status_payloads)
     assert any(item["stage"] != "page_context" for item in status_payloads[1:])
     assert events[-1]["event"] == "final"
+
+
+def test_boi_agent_chat_stream_fails_when_status_llm_unavailable(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fail_status(_req, _employee_id: str):
+        raise boi_app_module.BoiAgentStatusUnavailable("status model unavailable")
+
+    def unexpected_agent(*args, **kwargs):
+        raise AssertionError("agent should not run without LLM status text")
+
+    monkeypatch.setattr(boi_app_module, "agent_stream_status_steps", fail_status)
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", unexpected_agent)
+
+    with client.stream(
+        "POST",
+        "/api/agents/boi-wiki/chat/stream?employee_id=100001",
+        json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
+    ) as response:
+        assert response.status_code == 200
+        raw = "".join(response.iter_text())
+
+    events = parse_sse_events(raw)
+    assert events[-1]["event"] == "error"
+    payload = json.loads(events[-1]["data"])
+    assert payload["status"] == "status_generation_failed"
+    assert "status model unavailable" in payload["message"]
 
 
 def test_boi_agent_chat_endpoint_offloads_agent_work(boi_app_module, monkeypatch):
