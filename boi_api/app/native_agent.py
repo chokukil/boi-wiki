@@ -501,10 +501,8 @@ class NativeBoiAgent:
         rows = workflow_summary_rows(doc)
         state["artifacts"] = [{"type": "workflow_summary", "data": rows}]
         lines = [f"## {doc_title(doc, 'BoI Workflow')} 관계 요약", ""]
-        for row in rows:
-            lines.append(
-                f"- **{row['stage']}**: Event `{row['events']}` → Action `{row['actions']}` → Manual `{row['manual_actions']}` → Next `{row['next_stage']}`"
-            )
+        if rows:
+            lines.append(markdown_table(rows, ["stage", "events", "actions", "manual_actions", "next_stage"]))
         if not rows:
             lines.append("현재 문서에서 workflow metadata를 찾지 못했습니다. 연결된 SOP/Event/Action 문서를 더 확인해야 합니다.")
         state["answer_markdown"] = "\n".join(lines)
@@ -751,8 +749,8 @@ def markdown_table(rows: list[JsonDict], columns: list[str]) -> str:
         return "_No workflow mapping available._\n"
     labels = {
         "stage": "Stage",
-        "events": "Events",
-        "actions": "Automated Actions",
+        "events": "Event",
+        "actions": "Action",
         "manual_actions": "Manual Handoff",
         "next_stage": "Next",
     }

@@ -711,6 +711,42 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     assert '<table class="markdown-table">' in body["answer_html"]
 
 
+def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fake_router(req, employee_id: str):
+        return {
+            "route": "deep",
+            "confidence": 0.94,
+            "intent": "workflow_explain",
+            "reason": "workflow relationship question",
+            "requires_mutation": False,
+            "requires_deep_reasoning": True,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "workflow_explain"
+    assert "| Stage | Event | Action | Manual Handoff | Next |" in body["answer_markdown"]
+    assert '<table class="markdown-table">' in body["answer_html"]
+    assert "manual.equipment.confirm_alarm_context" in body["answer_html"]
+    assert any(item.get("type") == "workflow_summary" for item in body["artifacts"])
+
+
 def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
     payload = boi_app_module.parse_router_payload(
         'thinking about policy {"allowed_routes":["fast"]} final {"route":"fast","confidence":0.92,"intent":"lookup"}'
