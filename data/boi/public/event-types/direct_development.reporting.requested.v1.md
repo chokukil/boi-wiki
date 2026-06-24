@@ -51,7 +51,10 @@ recommended_manual_actions: []
 # Example
 
 ```bash
-curl -X POST "http://localhost:8000/api/workflows/direct-development-reporting/start?employee_id=100001" -H "x-service-token: $SERVICE_TOKEN"
+curl -X POST "http://localhost:8000/api/workflows/direct-development-reporting/start?employee_id=100001" \
+  -H "x-service-token: $SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_confirmed":true}'
 ```
 
 # Citations

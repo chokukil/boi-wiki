@@ -38,7 +38,9 @@ event_type: equipment.alarm.raised.v1
 # Examples
 
 ```bash
-curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?employee_id=100001"
+curl -X POST "http://localhost:8000/api/workflows/demo/equipment-anomaly/start?employee_id=100001" \
+  -H "Content-Type: application/json" \
+  -d '{"user_confirmed":true}'
 ```
 
 # Citations

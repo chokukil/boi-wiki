@@ -113,6 +113,7 @@ def start_workflow() -> dict[str, Any]:
         "POST",
         boi_url(f"/api/workflows/{WORKFLOW_KEY}/start?{query}"),
         {
+            "user_confirmed": True,
             "payload": {
                 "title": "직개발 결과 확인 및 Reporting PoC",
                 "product": "Product-A",

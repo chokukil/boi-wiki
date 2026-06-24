@@ -2444,7 +2444,7 @@ def event_run_example(event_type: str, employee_id: str) -> str:
         return (
             f'curl -X POST "http://localhost:8000/api/workflows/{workflow_key}/start?employee_id={employee_id}" '
             '-H "Content-Type: application/json" '
-            f'-d \'{{"payload":{{"title":"{event_label(event_type)}","workflow":"{workflow_key}"}}}}\''
+            f'-d \'{{"user_confirmed":true,"payload":{{"title":"{event_label(event_type)}","workflow":"{workflow_key}"}}}}\''
         )
     return f"python scripts/publish_event.py {event_type} --employee {employee_id}"
 
@@ -4937,6 +4937,7 @@ class EquipmentAnomalyStartRequest(BaseModel):
     lot_id: str = "LOT-POC-001"
     wafer_id: str = "WF-POC-001"
     owner: str | None = None
+    user_confirmed: bool = False
 
 
 class EventHandleRequest(BaseModel):
@@ -9836,7 +9837,21 @@ def workflow_status_should_render_html(request: Request, response_format: str) -
     return "text/html" in accept and "application/json" not in accept
 
 
-WORKFLOW_START_CONTROL_KEYS = {"payload", "event_type", "actor_employee_id", "owner", "source_refs", "trace_id"}
+WORKFLOW_START_CONTROL_KEYS = {
+    "payload",
+    "event_type",
+    "actor_employee_id",
+    "owner",
+    "source_refs",
+    "trace_id",
+    "user_confirmed",
+    "user_confirmed_at",
+}
+
+
+def require_workflow_start_confirmation(raw: dict[str, Any]) -> None:
+    if not bool(raw.get("user_confirmed")):
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required to start workflow")
 
 
 async def start_workflow_from_data(
@@ -9889,12 +9904,14 @@ async def start_workflow(workflow_key: str, request: Request, employee_id: str =
         raw = {}
     if not isinstance(raw, dict):
         raise HTTPException(status_code=400, detail="Workflow start body must be a JSON object")
+    require_workflow_start_confirmation(raw)
     return await start_workflow_from_data(workflow_key, raw, employee_id)
 
 
 @app.post("/api/workflows/demo/equipment-anomaly/start")
 async def start_equipment_anomaly_demo(req: EquipmentAnomalyStartRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.workflow_runner")
+    require_workflow_start_confirmation(req.model_dump())
     owner = req.owner or employee_id
     result = await start_workflow_from_data(
         "equipment-anomaly",

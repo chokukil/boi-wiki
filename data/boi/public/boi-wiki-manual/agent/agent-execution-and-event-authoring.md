@@ -74,6 +74,8 @@ Agent는 실행 대상을 임의로 추정하지 않는다. 아래처럼 필수 
 
 확인 카드가 반환되어도 실제 상태 변경은 아직 일어나지 않는다. 사용자가 카드의 primary action을 눌러 `/api/agents/boi-wiki/approve`가 호출되고, RBAC/ACL/classification 검증을 다시 통과해야만 Event, Action, Workflow, draft 생성이 실행된다.
 
+직접 API를 호출하는 자동화도 같은 경계를 따른다. `/api/workflows/{workflow_key}/start`와 demo workflow start는 entry event를 발행하므로 요청 body에 `user_confirmed: true`가 없으면 400으로 차단된다. PoC 스크립트와 curl 예시는 이 값을 명시해야 하며, 이 control field는 실제 Event payload에는 포함하지 않는다.
+
 # Identity and Actor Rules
 
 사용자가 보는 확인 카드와 API payload에 사번이 들어갈 수 있지만, 실행 주체는 항상 인증 사번을 기준으로 결정한다. 이는 SSO가 들어왔을 때 특히 중요하다.

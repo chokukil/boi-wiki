@@ -69,6 +69,7 @@ def start_demo() -> dict[str, Any]:
         "POST",
         f"/api/workflows/demo/equipment-anomaly/start?{query}",
         {
+            "user_confirmed": True,
             "equipment_id": "ETCH-VM-01",
             "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
             "title": "Response Chain 이상 Alarm 발생",

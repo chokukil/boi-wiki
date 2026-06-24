@@ -174,7 +174,7 @@
       <p><strong>Manual handoffs:</strong> {{ workflow_poc.expected_manual_actions | join(', ') }}</p>
       <pre>curl -X POST "{{ public_boi_base_url }}/api/workflows/{{ workflow_poc.workflow_key }}/start?employee_id={{ employee_id }}" \
   -H "Content-Type: application/json" \
-  -d '{"payload":{"title":"Workflow start","workflow":"{{ workflow_poc.workflow_key }}"}}'</pre>
+  -d '{"user_confirmed":true,"payload":{"title":"Workflow start","workflow":"{{ workflow_poc.workflow_key }}"}}'</pre>
     </section>
     {% endif %}
     {% if doc.metadata.visibility == 'private' %}

@@ -2457,6 +2457,7 @@ def test_equipment_anomaly_demo_route_publishes_first_event(boi_app_module):
     response = client.post(
         "/api/workflows/demo/equipment-anomaly/start?employee_id=100001",
         json={
+            "user_confirmed": True,
             "equipment_id": "ETCH-VM-01",
             "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
             "title": "Response Chain 이상 Alarm 발생",
@@ -3229,6 +3230,7 @@ def test_workflow_poc_and_promotion_curls_use_external_boi_url(boi_app_module, m
 
     assert sop_response.status_code == 200
     assert 'curl -X POST "http://boi-wiki.example:28000/api/workflows/equipment-anomaly/start?employee_id=100001"' in sop_response.text
+    assert '"user_confirmed":true' in sop_response.text
     assert 'curl -X POST "http://localhost:8000/api/workflows' not in sop_response.text
     assert private_response.status_code == 200
     assert 'curl -X POST "http://boi-wiki.example:28000/api/boi/boi:private:100001:seed-note-v0.1/promote?employee_id=100001"' in private_response.text
@@ -3250,11 +3252,13 @@ def test_doc_body_curl_examples_use_external_boi_url_for_external_host(boi_app_m
 
     assert direct_sop.status_code == 200
     assert "http://boi-wiki.example:28000/api/workflows/direct-development-reporting/start?employee_id=100001" in direct_sop.text
+    assert '"user_confirmed":true' in direct_sop.text
     assert "http://boi-wiki.example:28000/workflows/direct-development-reporting/status?employee_id=100001" in direct_sop.text
     assert "http://localhost:8000/api/workflows/direct-development-reporting" not in direct_sop.text
     assert "http://localhost:8000/workflows/direct-development-reporting" not in direct_sop.text
     assert event_type.status_code == 200
     assert "http://boi-wiki.example:28000/api/workflows/demo/equipment-anomaly/start?employee_id=100001" in event_type.text
+    assert "user_confirmed" in event_type.text
     assert "http://localhost:8000/api/workflows/demo/equipment-anomaly" not in event_type.text
 
 
@@ -4213,9 +4217,24 @@ def test_direct_development_workflow_registry_exposes_simulated_actions(boi_app_
 def test_generic_workflow_start_publishes_sop_entry_event(boi_app_module):
     client = TestClient(boi_app_module.app)
 
+    unconfirmed = client.post(
+        "/api/workflows/equipment-anomaly/start?employee_id=100001",
+        json={
+            "payload": {
+                "title": "Generic workflow start",
+                "equipment_id": "ETCH-VM-01",
+                "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
+            }
+        },
+    )
+
+    assert unconfirmed.status_code == 400
+    assert "user_confirmed=true" in str(unconfirmed.json()["detail"])
+
     response = client.post(
         "/api/workflows/equipment-anomaly/start?employee_id=100001",
         json={
+            "user_confirmed": True,
             "payload": {
                 "title": "Generic workflow start",
                 "equipment_id": "ETCH-VM-01",
@@ -4232,6 +4251,26 @@ def test_generic_workflow_start_publishes_sop_entry_event(boi_app_module):
     assert body["workflow"]["status_page_url"].startswith("/workflows/equipment-anomaly/status?")
     assert body["event"]["event_type"] == "equipment.alarm.raised.v1"
     assert boi_app_module.AIOKafkaProducer.sent_events[-1]["event"]["payload"]["equipment_id"] == "ETCH-VM-01"
+    assert "user_confirmed" not in boi_app_module.AIOKafkaProducer.sent_events[-1]["event"]["payload"]
+
+
+def test_demo_workflow_start_requires_user_confirmation(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    unconfirmed = client.post("/api/workflows/demo/equipment-anomaly/start?employee_id=100001", json={})
+
+    assert unconfirmed.status_code == 400
+    assert "user_confirmed=true" in str(unconfirmed.json()["detail"])
+
+    confirmed = client.post(
+        "/api/workflows/demo/equipment-anomaly/start?employee_id=100001",
+        json={"user_confirmed": True, "equipment_id": "ETCH-VM-01", "alarm_code": "RESPONSE_CHAIN_ABNORMAL"},
+    )
+
+    assert confirmed.status_code == 200
+    body = confirmed.json()
+    assert body["ok"] is True
+    assert body["workflow"]["workflow_key"] == "equipment-anomaly"
 
 
 def test_generic_workflow_status_page_groups_multiple_events_in_sop_stage(boi_app_module):

@@ -47,7 +47,7 @@ flowchart TD
 | Operation | Boundary |
 |---|---|
 | `manual_handoff_complete` | append-only completion row, no action log rewrite |
-| `workflow_start` | SOP entry event 발행. MCP에서는 `user_confirmed=true`가 필수다. |
+| `workflow_start` | SOP entry event 발행. API와 MCP 모두 `user_confirmed=true`가 필수다. |
 | `action_invoke` | risk policy and approval guard apply. MCP에서는 실제 실행(`dry_run=false`) 전 `user_confirmed=true`가 필수다. |
 | `source_apply` | preview, validation, user confirmation, commit |
 | `doc_body_apply` | preview, base hash check, user confirmation, commit |

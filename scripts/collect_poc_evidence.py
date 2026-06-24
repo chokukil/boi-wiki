@@ -294,6 +294,7 @@ def main() -> None:
                 client,
                 f"{boi_api_url}/api/workflows/demo/equipment-anomaly/start?employee_id=100001",
                 {
+                    "user_confirmed": True,
                     "equipment_id": "ETCH-VM-01",
                     "alarm_code": "RESPONSE_CHAIN_ABNORMAL",
                     "title": "Response Chain 이상 Alarm 발생",
