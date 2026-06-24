@@ -135,7 +135,7 @@ BOI_AGENT_STATUS_LLM_ENABLED = resolve_router_llm_enabled(
     BOI_AGENT_STATUS_BASE_URL,
 )
 BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "12"))
-BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "1536"))
+BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "4096"))
 BOI_AGENT_STATUS_REQUIRED = os.getenv("BOI_AGENT_STATUS_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
@@ -6810,49 +6810,27 @@ def call_boi_agent_status_llm(req: BoiAgentChatRequest, employee_id: str) -> lis
 def stream_plan_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -> str:
     return json.dumps(
         {
-            "task": "Create one BoI Agent streaming plan. Return JSON only. Do not answer the user.",
+            "task": "Return one compact JSON BoI Agent stream plan. Do not answer the user.",
             "language": "ko",
             "employee_id": employee_id,
             "question": req.question,
             "current_url": req.current_url,
             "page_title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
             "selected_text_excerpt": text_excerpt(req.selected_text, 500),
-            "conversation_tail": req.conversation[-3:],
-            "allowed_routes": sorted(ALLOWED_AGENT_ROUTES),
-            "allowed_intents": sorted(ALLOWED_AGENT_INTENTS),
-            "route_policy": {
-                "fast": "search, page_qa, summarize only. Use current page context and ontology search.",
-                "deep": "diagram, workflow_explain, gap_check, trace_reasoning, multi-hop reasoning, artifact generation",
-                "inbox": "ask what actions/manual handoffs are pending for the employee",
-                "manual_handoff": "request to complete or record a manual handoff",
-                "approval_required": "request to approve, execute, publish, edit, or mutate shared/runtime state",
-            },
-            "status_style": {
-                "tone": "일반 구성원이 이해하기 쉬운 업무 문장",
-                "length": "각 message는 18~70자 한 문장",
-                "avoid": ["dry-run", "invoke", "router", "fallback", "stub", "LLM", "LangGraph", "stack trace"],
-                "must_be_specific_to_request": True,
-            },
-            "required_status_stages": list(REQUIRED_AGENT_STATUS_STAGES),
+            "routes": sorted(ALLOWED_AGENT_ROUTES),
+            "intents": sorted(ALLOWED_AGENT_INTENTS),
+            "status_rules": "statuses must include every stage exactly once; messages are Korean, 18-70 chars, page-specific, non-technical.",
+            "stages": list(REQUIRED_AGENT_STATUS_STAGES),
             "hard_requirements": [
-                "statuses MUST contain exactly one item for every required_status_stages value.",
-                "Do not return only the current stage. Return the full planned sequence.",
-                "Every status message must be specific to the user's request and current page.",
+                "Return JSON only, no markdown.",
+                "statuses MUST contain exactly one item for every stage.",
+                "Never return only one current status.",
             ],
             "statuses_template": [
                 {"stage": stage, "message": "요청과 현재 페이지에 맞춘 한국어 한 줄 상태"}
                 for stage in REQUIRED_AGENT_STATUS_STAGES
             ],
-            "stage_meaning": {
-                "page_context": "현재 페이지, 사번, 접근 권한을 확인하는 단계",
-                "intent": "질문 의도와 필요한 산출물을 판단하는 단계",
-                "retrieval": "BoI Wiki, SOP, Event, Action, Dictionary, runtime evidence를 찾는 단계",
-                "tool_loop": "필요한 근거를 여러 번 조회하고 빈틈을 점검하는 단계",
-                "compose": "답변, 표, Mermaid, 링크, citation을 정리하는 단계",
-                "answer_stream": "완성된 답변을 사용자에게 보여주는 단계",
-                "waiting": "작업이 길어질 때 계속 처리 중임을 알리는 단계",
-            },
-            "required_json_schema": {
+            "schema": {
                 "route": "fast|deep|inbox|manual_handoff|approval_required",
                 "confidence": "0.0-1.0",
                 "intent": "search|page_qa|summarize|diagram|workflow_explain|gap_check|trace_reasoning|inbox|manual_complete|approval|event_publish|action_invoke|workflow_start|event_type_draft",
