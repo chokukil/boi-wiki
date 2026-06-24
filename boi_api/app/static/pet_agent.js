@@ -809,7 +809,7 @@
             note: "BoI Agent confirmation card",
           }),
         }).then((body) => {
-          showAgentMessage(`${operation} 요청을 처리했습니다. 상태: ${body.status || "완료"}`);
+          showAgentMessage(agentApprovalResultMessage(operation, body));
           return refreshInbox();
         }).catch((error) => showAgentMessage(`요청 실행에 실패했습니다: ${error.message}`))
           .finally(() => {
@@ -869,6 +869,37 @@
     state.open = true;
     state.tab = "agent";
     render();
+  }
+
+  function nestedValue(source, path) {
+    return path.split(".").reduce((value, key) => {
+      if (!value || typeof value !== "object") return "";
+      return value[key] || "";
+    }, source);
+  }
+
+  function agentApprovalResultMessage(operation, body) {
+    const messages = {
+      event_publish: "Event 발행 요청을 보냈습니다.",
+      publish_event: "Event 발행 요청을 보냈습니다.",
+      workflow_start: "Workflow 시작 요청을 보냈습니다.",
+      start_workflow: "Workflow 시작 요청을 보냈습니다.",
+      action_invoke: "Action 실행 요청을 보냈습니다.",
+      invoke_action: "Action 실행 요청을 보냈습니다.",
+      manual_handoff_complete: "Manual Handoff 완료 기록을 남겼습니다.",
+      manual_complete: "Manual Handoff 완료 기록을 남겼습니다.",
+      event_type_draft: "Event Type 초안을 만들었습니다.",
+      create_event_type_draft: "Event Type 초안을 만들었습니다.",
+      promotion_submit: "공유 요청을 제출했습니다.",
+      submit_promotion: "공유 요청을 제출했습니다.",
+    };
+    const status = body?.status ? ` 상태: ${body.status}.` : "";
+    const url = nestedValue(body, "result.workflow_status_url")
+      || nestedValue(body, "result.status_url")
+      || nestedValue(body, "result.raw_url")
+      || nestedValue(body, "draft.url");
+    const link = url ? ` [상태 보기](${url})` : "";
+    return `${messages[operation] || "요청을 처리했습니다."}${status}${link}`;
   }
 
   function ask(question) {
