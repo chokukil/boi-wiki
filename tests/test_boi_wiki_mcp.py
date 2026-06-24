@@ -31,6 +31,10 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["capabilities"]["tools"] == 22
     assert body["capabilities"]["resource_templates"] == 5
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
+    assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
+    assert body["agent_interfaces"]["streaming_api"] == "/api/agents/boi-wiki/chat/stream"
+    assert body["agent_interfaces"]["mcp_tool"] == "boi_agent_chat"
+    assert body["agent_interfaces"]["streaming_events"] == ["status", "answer_delta", "final", "error"]
     tool_names = [item["name"] for item in body["capability_lists"]["tools"]]
     assert "source_preview" in tool_names
     assert "source_apply" in tool_names
@@ -69,6 +73,8 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "doc_body_apply" in body
     assert "promotion_submit" in body
     assert "boi_agent_chat" in body
+    assert "/api/agents/boi-wiki/chat/stream" in body
+    assert "answer_delta" in body
     assert "ontology_search" in body
     assert "agent_inbox" in body
     assert "boi://docs/{boi_id}" in body

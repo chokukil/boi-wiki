@@ -7519,8 +7519,15 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         },
         "langflow_boi_agent_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
         "langflow_boi_agent_configured": bool(LANGFLOW_URL and LANGFLOW_BOI_AGENT_ENDPOINT),
+        "streaming": {
+            "enabled": True,
+            "endpoint": "/api/agents/boi-wiki/chat/stream",
+            "protocol": "text/event-stream",
+            "events": ["status", "answer_delta", "final", "error"],
+        },
         "features": [
             "page-aware Q&A",
+            "progressive response streaming",
             "ontology-assisted search",
             "dictionary resolve",
             "action inbox",

@@ -142,6 +142,19 @@ def test_agent_router_auto_enables_for_real_llm_url(boi_app_module):
     assert boi_app_module.resolve_router_llm_enabled("true", "rules", "http://llm-gateway.example:1236/v1") is True
 
 
+def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/api/agents/boi-wiki/capabilities?employee_id=100001")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["streaming"]["enabled"] is True
+    assert body["streaming"]["endpoint"] == "/api/agents/boi-wiki/chat/stream"
+    assert body["streaming"]["events"] == ["status", "answer_delta", "final", "error"]
+    assert "progressive response streaming" in body["features"]
+
+
 def test_auth_me_exposes_dev_identity(boi_app_module):
     client = TestClient(boi_app_module.app)
 

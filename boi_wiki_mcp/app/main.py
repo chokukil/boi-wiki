@@ -61,6 +61,13 @@ MCP_CAPABILITIES = {
     "resource_templates": len(MCP_RESOURCE_TEMPLATE_CAPABILITIES),
     "prompts": len(MCP_PROMPT_CAPABILITIES),
 }
+AGENT_INTERFACES = {
+    "json_api": "/api/agents/boi-wiki/chat",
+    "streaming_api": "/api/agents/boi-wiki/chat/stream",
+    "mcp_tool": "boi_agent_chat",
+    "streaming_protocol": "text/event-stream",
+    "streaming_events": ["status", "answer_delta", "final", "error"],
+}
 
 
 async def api_get(
@@ -645,6 +652,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "resource_templates": MCP_RESOURCE_TEMPLATE_CAPABILITIES,
             "prompts": MCP_PROMPT_CAPABILITIES,
         },
+        "agent_interfaces": AGENT_INTERFACES,
         "notes": [
             "Open / in a browser for this status page.",
             "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
@@ -717,6 +725,16 @@ async def status_page(request: Request) -> HTMLResponse:
       {render_items(capability_lists["resource_templates"], "uri")}
       <h3>Prompts</h3>
       {render_items(capability_lists["prompts"], "name")}
+    </section>
+    <section>
+      <h2>BoI Agent Interfaces</h2>
+      <dl>
+        <dt>JSON API</dt><dd><code>{payload["agent_interfaces"]["json_api"]}</code></dd>
+        <dt>Streaming API</dt><dd><code>{payload["agent_interfaces"]["streaming_api"]}</code></dd>
+        <dt>Streaming events</dt><dd><code>{", ".join(payload["agent_interfaces"]["streaming_events"])}</code></dd>
+        <dt>MCP tool</dt><dd><code>{payload["agent_interfaces"]["mcp_tool"]}</code></dd>
+      </dl>
+      <p>Web Pet Agent uses the streaming API so long requests can show one-line <code>status</code> updates and incremental <code>answer_delta</code> content. MCP clients normally call <code>boi_agent_chat</code> and receive the final JSON response.</p>
     </section>
     <section>
       <h2>Client Registration</h2>
