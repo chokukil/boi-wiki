@@ -1374,9 +1374,11 @@ def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
 def test_boi_agent_composer_parser_accepts_answer_alias_and_plain_markdown(boi_app_module):
     alias_payload = boi_app_module.parse_agent_compose_payload('{"answer":"## 답변\\n근거를 기준으로 정리했습니다."}')
     plain_payload = boi_app_module.parse_agent_compose_payload("## 답변\n\n근거를 기준으로 정리했습니다.")
+    id_payload = boi_app_module.parse_agent_compose_payload("chatcmpl-ehtj17bt32uiwqj0hp4cig")
 
     assert alias_payload["answer_markdown"].startswith("## 답변")
     assert plain_payload["answer_markdown"].startswith("## 답변")
+    assert id_payload is None
 
 
 def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_app_module, monkeypatch):

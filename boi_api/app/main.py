@@ -6685,7 +6685,14 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
             if answer:
                 payload["answer_markdown"] = answer
                 return payload
-    if stripped and not stripped.startswith("{") and not stripped.startswith("["):
+    if (
+        stripped
+        and not stripped.startswith("{")
+        and not stripped.startswith("[")
+        and len(stripped) >= 20
+        and re.search(r"\s", stripped)
+        and not re.fullmatch(r"[A-Za-z0-9_-]+", stripped)
+    ):
         return {"answer_markdown": stripped}
     return None
 
