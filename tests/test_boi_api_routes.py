@@ -364,6 +364,92 @@ def test_native_agent_tool_progress_does_not_generate_user_status_text():
     assert state["tool_trace"][0].summary == "count=1"
 
 
+def test_native_agent_workflow_mermaid_uses_specific_workflow_items():
+    from boi_api.app import native_agent
+
+    doc = {
+        "metadata": {
+            "workflow": {
+                "stages": [
+                    {
+                        "id": "detect",
+                        "name": "이상 감지",
+                        "event_types": ["equipment.alarm.raised.v1", "trend.anomaly.detected.v1"],
+                        "automated_actions": [
+                            "sop.equipment.request_raw_data",
+                            "sop.equipment.request_trend_history",
+                        ],
+                        "manual_actions": ["manual.equipment.confirm_alarm_context"],
+                    },
+                    {
+                        "id": "analyze",
+                        "name": "원인 분석",
+                        "event_types": ["root_cause.analysis.requested.v1"],
+                        "automated_actions": ["langflow.equipment.stage_analysis"],
+                        "manual_actions": ["manual.equipment.review_root_cause"],
+                    },
+                ]
+            }
+        }
+    }
+
+    source = native_agent.workflow_mermaid(doc)
+
+    assert 'e1_1["alarm.raised"] --> s1' in source
+    assert 'e1_2["anomaly.detected"] --> s1' in source
+    assert 's1 --> a1_1["request_raw_data"]' in source
+    assert 's1 --> a1_2["request_trend_history"]' in source
+    assert 's1 --> m1_1["confirm_alarm_context"]' in source
+    assert 's2 --> a2_1["stage_analysis"]' in source
+    assert "업무 이벤트 2개" not in source
+    assert "자동 업무 요청 2개" not in source
+    assert "수동 조치" not in source
+
+
+def test_native_agent_diagram_answer_describes_specific_item_labels():
+    from boi_api.app import native_agent
+
+    tools = native_agent.NativeAgentTools(
+        ontology_search=lambda query, scope="all", limit=8: {"ok": True, "count": 0},
+        boi_get=lambda ref: None,
+        event_type_lookup=lambda event_type: None,
+        action_spec_lookup=lambda action_key: None,
+        workflow_status=lambda workflow_key, trace_id: None,
+        trace_context_lookup=lambda trace_id: {"ok": True, "events": [], "actions": []},
+        dictionary_resolve=lambda query: {"ok": True, "terms": []},
+        memory_recall=lambda query, limit=5: {"ok": True, "items": []},
+        agent_inbox=lambda limit=10: {"ok": True, "items": []},
+        llm_json=None,
+    )
+    runtime = native_agent.NativeBoiAgent(tools, native_agent.NativeAgentConfig(require_langgraph=False))
+    state: dict[str, Any] = {
+        "tool_results": {
+            "current_doc": {
+                "metadata": {
+                    "title": "테스트 SOP",
+                    "workflow": {
+                        "stages": [
+                            {
+                                "id": "detect",
+                                "name": "이상 감지",
+                                "event_types": ["equipment.alarm.raised.v1"],
+                                "automated_actions": ["sop.equipment.request_raw_data"],
+                                "manual_actions": ["manual.equipment.confirm_alarm_context"],
+                            }
+                        ]
+                    },
+                }
+            }
+        },
+        "search": {},
+    }
+
+    runtime._compose_diagram_answer(state)
+
+    assert "항목 개수 중심" not in state["answer_markdown"]
+    assert "구체 항목 이름" in state["answer_markdown"]
+
+
 def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app_module, monkeypatch):
     payloads = []
     statuses = [
@@ -2213,6 +2299,9 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     assert body["intent"] == "diagram"
     assert body["used_backend"] == "native_langgraph"
     assert body["artifacts"][0]["type"] == "mermaid"
+    assert "request_raw_data" in body["artifacts"][0]["source"]
+    assert "confirm_alarm_context" in body["artifacts"][0]["source"]
+    assert "업무 이벤트" not in body["artifacts"][0]["source"]
     assert body["context_summary"]["composer_backend"] == "llm"
     assert "```mermaid" not in body["answer_markdown"]
     assert "```mermaid" not in body["display_markdown"]

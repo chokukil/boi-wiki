@@ -540,7 +540,7 @@ class NativeBoiAgent:
         state["answer_markdown"] = (
             f"## {title} 프로세스 플로우\n\n"
             "SOP metadata의 단계, 이벤트, 업무 요청, 수동 조치 항목을 기준으로 그렸습니다. "
-            "다이어그램은 읽기 쉽게 단계와 항목 개수 중심으로 줄이고, 전체 원본 매핑은 아래 표에 남겼습니다.\n\n"
+            "다이어그램은 읽기 쉽게 단계와 구체 항목 이름을 중심으로 표시하고, 전체 원본 매핑은 아래 표에 남겼습니다.\n\n"
             f"```mermaid\n{mermaid}\n```\n"
             "\n## 원본 매핑\n\n"
             + markdown_table(mapping_rows, ["stage", "events", "actions", "manual_actions", "next_stage"])
@@ -944,6 +944,55 @@ def workflow_stages(doc: JsonDict) -> list[JsonDict]:
     return [stage for stage in stages if isinstance(stage, dict)]
 
 
+def workflow_item_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.endswith(".v1"):
+        text = text[:-3]
+    parts = [part for part in re.split(r"[.:/]+", text) if part]
+    if not parts:
+        return text
+    first = parts[0].lower()
+    if first in {"sop", "langflow", "api", "webhook", "mcp", "manual"}:
+        return parts[-1]
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+    return text
+
+
+def append_workflow_item_nodes(
+    lines: list[str],
+    *,
+    stage_node: str,
+    prefix: str,
+    stage_index: int,
+    items: Any,
+    direction: str,
+    max_items: int = 3,
+) -> None:
+    if not isinstance(items, list):
+        items = [items] if items else []
+    labels = []
+    for item in items:
+        label = workflow_item_label(item)
+        if label:
+            labels.append(label)
+    for item_index, label in enumerate(labels[:max_items], start=1):
+        item_node = f"{prefix}{stage_index}_{item_index}"
+        if direction == "to_stage":
+            lines.append(f'  {item_node}["{mermaid_label(label, 30)}"] --> {stage_node}')
+        else:
+            lines.append(f'  {stage_node} --> {item_node}["{mermaid_label(label, 30)}"]')
+    if len(labels) > max_items:
+        more_node = f"{prefix}{stage_index}_more"
+        more_label = f"+{len(labels) - max_items}개"
+        if direction == "to_stage":
+            lines.append(f'  {more_node}["{more_label}"] --> {stage_node}')
+        else:
+            lines.append(f'  {stage_node} --> {more_node}["{more_label}"]')
+
+
 def workflow_mermaid(doc: JsonDict) -> str:
     stages = workflow_stages(doc)
     if not stages:
@@ -956,15 +1005,23 @@ def workflow_mermaid(doc: JsonDict) -> str:
         events = stage.get("event_types") or ([stage.get("entry_event")] if stage.get("entry_event") else [])
         automated_actions = stage.get("automated_actions") or []
         manual_actions = stage.get("manual_actions") or []
-        if events:
-            event_label = "업무 이벤트" if len(events) == 1 else f"업무 이벤트 {len(events)}개"
-            lines.append(f'  e{index}["{event_label}"] --> {node}')
-        if automated_actions:
-            action_label = "자동 업무 요청" if len(automated_actions) == 1 else f"자동 업무 요청 {len(automated_actions)}개"
-            lines.append(f'  {node} --> a{index}["{action_label}"]')
-        if manual_actions:
-            manual_label = "수동 조치" if len(manual_actions) == 1 else f"수동 조치 {len(manual_actions)}개"
-            lines.append(f'  {node} --> m{index}["{manual_label}"]')
+        append_workflow_item_nodes(lines, stage_node=node, prefix="e", stage_index=index, items=events, direction="to_stage")
+        append_workflow_item_nodes(
+            lines,
+            stage_node=node,
+            prefix="a",
+            stage_index=index,
+            items=automated_actions,
+            direction="from_stage",
+        )
+        append_workflow_item_nodes(
+            lines,
+            stage_node=node,
+            prefix="m",
+            stage_index=index,
+            items=manual_actions,
+            direction="from_stage",
+        )
         if index < len(stages):
             lines.append(f"  {node} --> s{index + 1}")
     return "\n".join(lines)
