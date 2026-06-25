@@ -145,7 +145,7 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 
 예를 들어 “장비 점검 완료 이벤트 타입 `maintenance.inspection.completed.v1` 초안을 만들어줘. 작업자는 7자리 사번이고 SOP는 설비 이상 감지 SOP와 연결해줘.”라고 요청하면 Agent는 `name_ko`, `sop_ref`, `topic`, `owner_employee_id` schema 후보까지 confirmation card에 채운다. 사용자가 카드에서 확인하기 전에는 draft 파일도 catalog도 변경되지 않는다.
 
-생성된 초안은 `/event-types` 화면 상단의 `신규 Event Type 초안` 섹션에서도 확인한다. 이 섹션은 현재 사번이 만든 draft와 admin이 볼 수 있는 draft만 보여주며, `validation ok`, warnings, errors, 연결 SOP/stage/action 후보를 함께 표시한다. 화면에 보인다고 해서 catalog에 적용된 것은 아니다. 실제 반영은 `boi.promoter` 권한자가 validation을 통과한 draft에 대해 `/api/event-types/drafts/{draft_id}/apply` 또는 `/api/agents/boi-wiki/approve`의 `event_type_draft_apply` operation을 명시 승인할 때만 진행된다. 이 경로는 기존 validated source edit과 같은 validation, rollback, commit 정책을 사용한다.
+생성된 초안은 `/event-types` 화면 상단의 `신규 Event Type 초안` 섹션에서도 확인한다. 이 섹션은 현재 사번이 만든 draft와 admin이 볼 수 있는 draft만 보여주며, `validation ok`, warnings, errors, 연결 SOP/stage/action 후보를 함께 표시한다. Draft 재검증도 같은 가시성 경계를 따른다. 즉 draft id를 알고 있더라도 작성자 또는 admin이 아니면 `/api/event-types/drafts/{draft_id}/validate`로 검증 상태를 갱신할 수 없다. 화면에 보인다고 해서 catalog에 적용된 것은 아니다. 실제 반영은 `boi.promoter` 권한자가 validation을 통과한 draft에 대해 `/api/event-types/drafts/{draft_id}/apply` 또는 `/api/agents/boi-wiki/approve`의 `event_type_draft_apply` operation을 명시 승인할 때만 진행된다. 이 경로는 기존 validated source edit과 같은 validation, rollback, commit 정책을 사용한다.
 
 # Public APIs
 
@@ -157,7 +157,7 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 | `POST /api/promotions/submit` | user-confirmed Team/Public promotion validation and publish path |
 | `POST /api/event-types/drafts` | create Event Type draft |
 | `GET /api/event-types/drafts` | list visible drafts |
-| `POST /api/event-types/drafts/{draft_id}/validate` | revalidate draft |
+| `POST /api/event-types/drafts/{draft_id}/validate` | revalidate visible draft |
 | `POST /api/event-types/drafts/{draft_id}/apply` | apply validated draft to event catalog |
 
 # Related Documents

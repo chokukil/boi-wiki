@@ -6415,6 +6415,8 @@ async def api_event_type_draft_validate(draft_id: str, employee_id: str = Depend
     if not path.exists():
         raise HTTPException(status_code=404, detail="draft not found")
     draft = json.loads(path.read_text(encoding="utf-8"))
+    if draft.get("created_by") != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="Event Type draft is not visible to this employee")
     validation = validate_event_type_draft_payload(draft.get("proposal") or {})
     draft["validation"] = validation
     draft["validated_at"] = now_iso()

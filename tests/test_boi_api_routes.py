@@ -2121,6 +2121,35 @@ def test_event_types_page_shows_visible_drafts_without_catalog_apply(boi_app_mod
     assert event_type not in other_employee.text
 
 
+def test_event_type_draft_validate_rejects_invisible_draft_even_for_editor(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    created = client.post(
+        "/api/event-types/drafts?employee_id=100001",
+        json={
+            "event_type": "pytest.invisible.validate.requested.v1",
+            "name_ko": "보이지 않는 검증 초안",
+            "description": "작성자나 admin이 아닌 editor는 검증 상태를 바꾸면 안 됨",
+            "workflow_stage": "초안 검토",
+            "user_confirmed": True,
+        },
+    )
+    assert created.status_code == 200
+    draft_id = created.json()["draft"]["draft_id"]
+
+    monkeypatch.setattr(
+        boi_app_module,
+        "roles_for",
+        lambda employee_id: ["boi.viewer", "boi.editor"] if employee_id == "100003" else ["boi.viewer", "boi.editor"],
+    )
+
+    response = client.post(f"/api/event-types/drafts/{draft_id}/validate?employee_id=100003")
+
+    assert response.status_code == 403
+    assert "not visible" in response.text
+    draft = json.loads(boi_app_module.event_type_draft_path(draft_id).read_text(encoding="utf-8"))
+    assert draft.get("validated_by") != "100003"
+
+
 def test_boi_agent_approve_event_type_draft_requires_editor_role(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
