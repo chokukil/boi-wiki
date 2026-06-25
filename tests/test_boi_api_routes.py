@@ -4945,6 +4945,10 @@ def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module, monke
         assert page_context["stage_count"] == 4
         assert page_context["workflow_action_count"] > 0
         assert page_context["workflow_manual_action_count"] > 0
+        assert "이상 감지" in page_context["workflow_stage_names"]
+        assert "equipment.alarm.raised.v1" in page_context["workflow_event_types"]
+        assert "sop.equipment.request_trend_history" in page_context["workflow_actions"]
+        assert "manual.equipment.confirm_alarm_context" in page_context["workflow_manual_actions"]
         return [
             f"{page_context['title']}의 Action과 Manual Handoff 관계를 질문해보세요.",
             "이 SOP 실행에 필요한 Action Spec 누락 여부를 점검해줘.",
@@ -5112,6 +5116,12 @@ def test_boi_agent_suggestions_use_llm_writer_when_required(boi_app_module, monk
     prompt = payloads[0]["json"]["messages"][1]["content"]
     assert "boi_agent_page_suggestions_only" in prompt
     assert "설비 이상 감지·원인 분석·이상 조치 SOP" in prompt
+    assert "specific_page_terms" in prompt
+    assert "contextual_candidate_tasks" in prompt
+    assert "equipment.alarm.raised.v1" in prompt
+    assert "sop.equipment.request_trend_history" in prompt
+    assert "manual.equipment.confirm_alarm_context" in prompt
+    assert "avoid suggestions that could fit any unrelated page" in prompt
 
 
 def test_boi_agent_suggestions_strip_markdown_artifacts(boi_app_module):

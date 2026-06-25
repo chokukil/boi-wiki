@@ -6858,6 +6858,10 @@ def suggestion_context_for_llm(page_context: dict[str, Any]) -> dict[str, Any]:
         "event_type",
         "workflow_key",
         "workflow_stage",
+        "workflow_stage_names",
+        "workflow_event_types",
+        "workflow_actions",
+        "workflow_manual_actions",
         "stage_count",
         "workflow_action_count",
         "workflow_manual_action_count",
@@ -6887,7 +6891,34 @@ def suggestion_context_for_llm(page_context: dict[str, Any]) -> dict[str, Any]:
     return redact_sensitive(context)
 
 
+def suggestion_specific_terms(page_context: dict[str, Any]) -> list[str]:
+    terms: list[str] = []
+    for key in (
+        "title",
+        "event_type",
+        "workflow_key",
+        "workflow_stage",
+        "action_key",
+        "trace_id",
+    ):
+        value = str(page_context.get(key) or "").strip()
+        if value:
+            terms.append(value)
+    for key in (
+        "workflow_stage_names",
+        "workflow_event_types",
+        "workflow_actions",
+        "workflow_manual_actions",
+        "recommended_actions",
+    ):
+        value = page_context.get(key)
+        if isinstance(value, list):
+            terms.extend(str(item).strip() for item in value[:8] if str(item).strip())
+    return dedupe_suggestions(terms, limit=12)
+
+
 def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id: str, page_context: dict[str, Any]) -> str:
+    specific_terms = suggestion_specific_terms(page_context)
     return json.dumps(
         {
             "task": "boi_agent_page_suggestions_only",
@@ -6896,6 +6927,8 @@ def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id:
             "current_url": req.current_url,
             "client_page_title": req.page_context.get("title") if isinstance(req.page_context, dict) else "",
             "resolved_page_context": suggestion_context_for_llm(page_context),
+            "specific_page_terms": specific_terms,
+            "contextual_candidate_tasks": page_context_suggestions(req.current_url, page_context),
             "capabilities": [
                 "현재 페이지 질의응답",
                 "BoI/SOP/Event/Action ontology search",
@@ -6910,6 +6943,8 @@ def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id:
                 "Return JSON only.",
                 "Produce 3 to 5 short Korean suggestions.",
                 "Every suggestion must be useful for the current page context.",
+                "Use concrete terms from specific_page_terms where natural; avoid suggestions that could fit any unrelated page.",
+                "Prefer visible business nouns such as the current SOP title, Event Type, workflow stage, Action key, or Manual Handoff name.",
                 "Do not use Markdown formatting, code fences, backticks, bullets, or numbering in suggestion text.",
                 "Avoid internal technical words unless they are visible business terms on the page.",
                 "If access.can_use_in_agent_context is false, ask about access policy or allowed related documents instead of document content.",
@@ -8148,9 +8183,13 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         workflow_event_types: list[str] = []
         workflow_actions: list[str] = []
         workflow_manual_actions: list[str] = []
+        workflow_stage_names: list[str] = []
         for stage in workflow_stages:
             if not isinstance(stage, dict):
                 continue
+            stage_name = str(stage.get("name") or stage.get("stage") or stage.get("id") or "").strip()
+            if stage_name and stage_name not in workflow_stage_names:
+                workflow_stage_names.append(stage_name)
             for event_type in stage.get("event_types") or ([stage.get("entry_event")] if stage.get("entry_event") else []):
                 if event_type and str(event_type) not in workflow_event_types:
                     workflow_event_types.append(str(event_type))
@@ -8174,7 +8213,10 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
             "trace_id": source_event.get("trace") or "",
             "workflow_key": workflow.get("workflow_key") or "",
             "stage_count": len(workflow_stages),
+            "workflow_stage_names": workflow_stage_names[:12],
             "workflow_event_types": workflow_event_types[:12],
+            "workflow_actions": workflow_actions[:12],
+            "workflow_manual_actions": workflow_manual_actions[:12],
             "workflow_action_count": len(workflow_actions),
             "workflow_manual_action_count": len(workflow_manual_actions),
             "body_excerpt": text_excerpt(str(doc.get("body") or "")) if can_use_context else "",
