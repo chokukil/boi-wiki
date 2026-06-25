@@ -7465,7 +7465,7 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         boi_id = unquote(path.removeprefix("/docs/"))
         doc = find_doc_by_id(boi_id, employee_id)
         if not doc:
-            return {**context, "page_kind": "doc", "boi_id": boi_id, "fallback": "ontology_search_only"}
+            return {**context, "page_kind": "doc", "boi_id": boi_id, "context_resolution": "ontology_search_only"}
         metadata = doc.get("metadata") or {}
         access = access_policy_for_doc(doc, employee_id)
         source_event = metadata.get("source_event") if isinstance(metadata.get("source_event"), dict) else {}
@@ -7513,7 +7513,7 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         workflow_key = unquote(path.removeprefix("/workflows/").removesuffix("/status")).strip("/")
         trace_id = (query.get("trace_id") or [""])[0]
         if not workflow_key or not trace_id:
-            return {**context, "page_kind": "workflow_status", "fallback": "ontology_search_only"}
+            return {**context, "page_kind": "workflow_status", "context_resolution": "ontology_search_only"}
         payload = workflow_status_payload(workflow_key, trace_id, employee_id, compact=True)
         return {
             **context,
@@ -7555,7 +7555,7 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         log_ref = unquote(path.removeprefix("/actions/raw/"))
         row = find_action_log_row_by_ref(log_ref, employee_id)
         if not row:
-            return {**context, "page_kind": "action_raw", "log_ref": log_ref, "fallback": "ontology_search_only"}
+            return {**context, "page_kind": "action_raw", "log_ref": log_ref, "context_resolution": "ontology_search_only"}
         readable = action_raw_readable_markdown(row)
         result_value = row.get("result") if isinstance(row.get("result"), dict) else {}
         return {
@@ -7576,7 +7576,7 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         event_type = unquote(path.removeprefix("/event-types/"))
         event_def = event_type_map().get(event_type)
         if not event_def:
-            return {**context, "page_kind": "event_type", "event_type": event_type, "fallback": "ontology_search_only"}
+            return {**context, "page_kind": "event_type", "event_type": event_type, "context_resolution": "ontology_search_only"}
         return {
             **context,
             "page_kind": "event_type",
@@ -7589,7 +7589,7 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
             "recommended_actions": event_def.get("recommended_actions") or [],
             "url": event_type_url(event_type, employee_id),
         }
-    return {**context, "fallback": "ontology_search_only"}
+    return {**context, "context_resolution": "ontology_search_only"}
 
 
 def link_items_from_agent_context(page_context: dict[str, Any], employee_id: str) -> list[dict[str, str]]:

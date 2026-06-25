@@ -1423,6 +1423,18 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     assert "설비" in body["answer_markdown"]
 
 
+def test_boi_agent_page_context_uses_resolution_status_not_fallback_key(boi_app_module):
+    context = boi_app_module.resolve_agent_page_context(
+        "/docs/boi:public:missing:doc?employee_id=100001",
+        "100001",
+    )
+
+    assert context["page_kind"] == "doc"
+    assert context["resolved"] is False
+    assert context["context_resolution"] == "ontology_search_only"
+    assert "fallback" not in context
+
+
 def test_boi_agent_required_router_disabled_returns_service_error(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
