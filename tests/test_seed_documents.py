@@ -75,3 +75,19 @@ def test_readme_links_mcp_status_and_validation_commands():
     assert "http://localhost:8200/" in text
     assert "http://localhost:8200/mcp" in text
     assert "python scripts/check_boi_wiki_mcp.py" in text
+
+
+def test_shared_docs_do_not_expose_legacy_private_me_or_real_nas_domain():
+    roots = [Path("README.md"), Path("data/boi/public/boi-wiki-manual"), Path("data/boi/public/harness")]
+    combined = []
+    for root in roots:
+        if root.is_file():
+            combined.append(root.read_text(encoding="utf-8"))
+            continue
+        for path in root.rglob("*.md"):
+            combined.append(path.read_text(encoding="utf-8"))
+    text = "\n".join(combined)
+
+    assert "private" + "/me" not in text
+    assert "private" + "\\me" not in text
+    assert "mangugil" + ".iptime.org" not in text

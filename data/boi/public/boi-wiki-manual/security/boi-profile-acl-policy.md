@@ -94,7 +94,7 @@ Agent가 사용하는 Dictionary, Memory, SOP, Event Type, Action Spec은 모두
 
 # Lint Boundary
 
-OKF lint는 private/team/public 경로와 ACL 문자열 정책을 검사한다. private 문서가 `data/boi/private/me` 같은 legacy 경로에 있거나 `owner`/`acl_policy`가 빠졌거나 path 사번과 다르면 실패해야 한다. Team 문서도 `team_id`/`acl_policy` 누락 또는 path team과 metadata team 불일치를 실패로 처리해야 한다.
+OKF lint는 private/team/public 경로와 ACL 문자열 정책을 검사한다. private 문서가 7자리 사번 폴더가 아닌 legacy 별칭 경로에 있거나 `owner`/`acl_policy`가 빠졌거나 path 사번과 다르면 실패해야 한다. Team 문서도 `team_id`/`acl_policy` 누락 또는 path team과 metadata team 불일치를 실패로 처리해야 한다.
 
 # Break-Glass Boundary
 
