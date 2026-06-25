@@ -395,6 +395,40 @@ def test_boi_agent_stream_plan_accepts_single_llm_status_message(boi_app_module)
     ]
 
 
+def test_boi_agent_stream_status_deduplicates_llm_messages(boi_app_module):
+    steps = boi_app_module.normalize_llm_status_steps(
+        {
+            "statuses": [
+                {
+                    "stage": "page_context",
+                    "message": "현재 페이지의 내용을 분석 중입니다.",
+                },
+                {
+                    "stage": "intent",
+                    "message": "현재 페이지의 내용을 분석 중입니다.",
+                },
+                {
+                    "stage": "compose",
+                    "message": "분석된 정보를 바탕으로 답변을 구성합니다.",
+                },
+            ]
+        }
+    )
+
+    assert steps == [
+        {
+            "stage": "page_context",
+            "message": "현재 페이지의 내용을 분석 중입니다.",
+            "source": "llm_status",
+        },
+        {
+            "stage": "compose",
+            "message": "분석된 정보를 바탕으로 답변을 구성합니다.",
+            "source": "llm_status",
+        },
+    ]
+
+
 def test_boi_agent_stream_status_filters_degenerated_llm_messages(boi_app_module):
     steps = boi_app_module.normalize_llm_status_steps(
         {

@@ -7169,6 +7169,7 @@ def is_usable_llm_status_message(message: str) -> bool:
 
 def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
     seen: dict[str, str] = {}
+    seen_messages: set[str] = set()
     for item in payload.get("statuses") or []:
         if not isinstance(item, dict):
             continue
@@ -7180,6 +7181,9 @@ def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
             continue
         if len(message) > 90:
             message = message[:89].rstrip() + "…"
+        if message in seen_messages:
+            continue
+        seen_messages.add(message)
         seen.setdefault(stage, message)
     if not seen:
         raise BoiAgentStatusUnavailable("LLM status writer returned no usable status message")
@@ -8678,7 +8682,18 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                 },
             )
             return
-        yield agent_sse_event("status", {**status_steps[0], "elapsed_ms": 0})
+        emitted_status_messages: set[str] = set()
+
+        def status_event_if_new(step: dict[str, str], elapsed_ms: int) -> str | None:
+            message = str(step.get("message") or "")
+            if message in emitted_status_messages:
+                return None
+            emitted_status_messages.add(message)
+            return agent_sse_event("status", {**step, "elapsed_ms": elapsed_ms})
+
+        initial_status = status_event_if_new(status_steps[0], 0)
+        if initial_status:
+            yield initial_status
         started_at = time.perf_counter()
         progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         result_queue: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
@@ -8716,11 +8731,16 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                 try:
                     kind, payload = result_queue.get_nowait()
                 except queue.Empty:
-                    if time.perf_counter() - last_generic_status_at >= max(0.5, BOI_AGENT_STREAM_HEARTBEAT_SECONDS):
+                    if (
+                        status_index < len(status_steps)
+                        and time.perf_counter() - last_generic_status_at >= max(0.5, BOI_AGENT_STREAM_HEARTBEAT_SECONDS)
+                    ):
                         step = status_steps[min(status_index, len(status_steps) - 1)]
                         status_index += 1
                         last_generic_status_at = time.perf_counter()
-                        yield agent_sse_event("status", {**step, "elapsed_ms": elapsed_ms})
+                        status_event = status_event_if_new(step, elapsed_ms)
+                        if status_event:
+                            yield status_event
                     await asyncio.sleep(0.25)
                     continue
                 if kind == "error":
@@ -8737,13 +8757,9 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
             chunks = iter_agent_answer_chunks(display_markdown)
             if chunks:
                 answer_status = next((item for item in status_steps if item.get("stage") == "answer_stream"), status_steps[-1])
-                yield agent_sse_event(
-                    "status",
-                    {
-                        **answer_status,
-                        "elapsed_ms": elapsed_ms,
-                    },
-                )
+                status_event = status_event_if_new(answer_status, elapsed_ms)
+                if status_event:
+                    yield status_event
             chunk_delay = agent_stream_chunk_delay_seconds()
             for chunk in chunks:
                 yield agent_sse_event("answer_delta", {"delta": chunk})
