@@ -6056,6 +6056,23 @@ async def api_rbac_roles(employee_id: str = Depends(current_employee)) -> dict[s
     return {"ok": True, "items": rbac_state().get("roles") or RBAC_ROLES}
 
 
+@app.get("/api/rbac/audit")
+async def api_rbac_audit(
+    employee_id: str = Depends(current_employee),
+    limit: int = Query(100, ge=1, le=500),
+    actor: str = "",
+    action: str = "",
+) -> dict[str, Any]:
+    if not rbac_can_manage(employee_id):
+        raise HTTPException(status_code=403, detail="audit access requires permission management role")
+    rows = rbac_audit_rows(limit=limit)
+    if actor:
+        rows = [row for row in rows if str(row.get("actor") or "") == actor]
+    if action:
+        rows = [row for row in rows if str(row.get("action") or "") == action]
+    return {"ok": True, "count": len(rows), "items": rows, "limit": limit, "actor": actor, "action": action}
+
+
 @app.post("/api/rbac/bindings")
 async def api_rbac_binding(req: RbacBindingRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     if not rbac_can_manage(employee_id):

@@ -1724,6 +1724,23 @@ def test_rbac_mutation_apis_reject_non_manager(boi_app_module, monkeypatch):
     assert bind_role.status_code == 403
 
 
+def test_rbac_audit_api_requires_manager_and_supports_filters(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    boi_app_module.append_rbac_audit("100001", "pytest_audit_visible", {"team_id": "pytest-audit"})
+    boi_app_module.append_rbac_audit("100002", "pytest_audit_other", {"team_id": "pytest-audit"})
+
+    allowed = client.get("/api/rbac/audit?employee_id=100001&action=pytest_audit_visible&limit=5")
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["count"] == 1
+    assert body["items"][0]["action"] == "pytest_audit_visible"
+    assert body["items"][0]["actor"] == "100001"
+
+    monkeypatch.setattr(boi_app_module, "rbac_can_manage", lambda _employee_id, **_kwargs: False)
+    denied = client.get("/api/rbac/audit?employee_id=100003")
+    assert denied.status_code == 403
+
+
 def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_module):
     client = TestClient(boi_app_module.app)
     event_type = "pytest.sample.event.requested.v1"

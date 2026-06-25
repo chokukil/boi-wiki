@@ -39,6 +39,7 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "rbac_me", "description": "Return the employee's BoI Wiki teams, roles, and permission-management capability."},
     {"name": "rbac_check", "description": "Check whether an employee has a required BoI Wiki role for a scope/resource."},
     {"name": "doc_access_check", "description": "Evaluate BoI Profile ACL/classification access for one document."},
+    {"name": "rbac_audit", "description": "Return recent BoI Wiki RBAC/break-glass audit rows for permission managers."},
     {"name": "event_type_draft_create", "description": "Create a user-confirmed Event Type draft and catalog patch proposal."},
     {"name": "event_type_drafts", "description": "List visible Event Type drafts for the employee."},
     {"name": "event_type_draft_validate", "description": "Revalidate an Event Type draft before catalog apply."},
@@ -521,6 +522,16 @@ async def rbac_check(
 async def doc_access_check(boi_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
     """Evaluate BoI Profile ACL/classification access for one document."""
     return await api_get(f"/api/docs/{boi_id}/access", employee_id=employee_id)
+
+
+@mcp.tool(name="rbac_audit")
+async def rbac_audit(employee_id: str = DEFAULT_EMPLOYEE_ID, limit: int = 100, actor: str = "", action: str = "") -> dict[str, Any]:
+    """Return recent BoI Wiki RBAC/break-glass audit rows for permission managers."""
+    return await api_get(
+        "/api/rbac/audit",
+        employee_id=employee_id,
+        params={"limit": max(1, min(int(limit or 100), 500)), "actor": actor, "action": action},
+    )
 
 
 def event_type_draft_payload_from_args(
@@ -1214,6 +1225,17 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         )
     elif tool_name == "doc_access_check":
         result = await api_get(f"/api/docs/{str(args.get('boi_id') or req.boi_id or '')}/access", employee_id=employee_id, service_token=True)
+    elif tool_name == "rbac_audit":
+        result = await api_get(
+            "/api/rbac/audit",
+            employee_id=employee_id,
+            params={
+                "limit": int(args.get("limit") or 100),
+                "actor": str(args.get("actor") or ""),
+                "action": str(args.get("action") or ""),
+            },
+            service_token=True,
+        )
     elif tool_name == "dictionary_resolve":
         result = await api_get(
             "/api/dictionary/resolve",

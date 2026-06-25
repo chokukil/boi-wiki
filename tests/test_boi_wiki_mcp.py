@@ -29,7 +29,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 29
+    assert body["capabilities"]["tools"] == 30
     assert body["capabilities"]["resource_templates"] == 6
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
@@ -71,6 +71,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "rbac_me" in tool_names
     assert "rbac_check" in tool_names
     assert "doc_access_check" in tool_names
+    assert "rbac_audit" in tool_names
     assert "event_type_draft_create" in tool_names
     assert "event_type_drafts" in tool_names
     assert "event_type_draft_validate" in tool_names
@@ -95,7 +96,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
-    assert "Tools" in body and "29" in body
+    assert "Tools" in body and "30" in body
     assert "Resource templates" in body and "6" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
@@ -115,6 +116,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "rbac_me" in body
     assert "rbac_check" in body
     assert "doc_access_check" in body
+    assert "rbac_audit" in body
     assert "event_type_draft_create" in body
     assert "event_type_draft_apply" in body
     assert "boi://docs/{boi_id}" in body
@@ -339,6 +341,7 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         ("rbac_me", {"employee_id": "100001"}),
         ("rbac_check", {"employee_id": "100001", "required_role": "boi.action_invoker", "scope": "action", "resource": "sop.equipment.request_raw_data"}),
         ("doc_access_check", {"employee_id": "100001", "boi_id": "boi:public:sop:equipment-abnormal-response"}),
+        ("rbac_audit", {"employee_id": "100001", "limit": 5, "action": "team_upsert"}),
     ]
     for tool, arguments in requests:
         response = client.post(
@@ -378,6 +381,7 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         "/api/rbac/me",
         "/api/rbac/check",
         "/api/docs/boi:public:sop:equipment-abnormal-response/access",
+        "/api/rbac/audit",
         "/api/agents/boi-wiki/manual-handoffs/complete",
     ]
     assert calls[-1]["payload"]["user_confirmed"] is True
@@ -408,16 +412,20 @@ def test_boi_wiki_mcp_rbac_tools_delegate_to_boi_api(mcp_module, monkeypatch):
         )
     )
     access = asyncio.run(mcp_module.doc_access_check("boi:public:sop:equipment-abnormal-response", employee_id="100001"))
+    audit = asyncio.run(mcp_module.rbac_audit(employee_id="100001", limit=5, action="team_upsert"))
 
     assert me["path"] == "/api/rbac/me"
     assert check["decision"]["allowed"] is True
     assert access["path"] == "/api/docs/boi:public:sop:equipment-abnormal-response/access"
+    assert audit["path"] == "/api/rbac/audit"
     assert [item["path"] for item in calls] == [
         "/api/rbac/me",
         "/api/rbac/check",
         "/api/docs/boi:public:sop:equipment-abnormal-response/access",
+        "/api/rbac/audit",
     ]
     assert calls[1]["payload"]["required_role"] == "boi.action_invoker"
+    assert calls[3]["params"]["action"] == "team_upsert"
 
 
 def test_boi_wiki_mcp_bridge_covers_event_type_draft_tools(mcp_module, monkeypatch):
@@ -831,7 +839,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 29,
+            "tools": 30,
             "resources": 0,
             "resource_templates": 6,
             "prompts": 5,
@@ -907,7 +915,7 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 29,
+            "tools": 30,
             "resources": 0,
             "resource_templates": 6,
             "prompts": 5,
@@ -943,7 +951,7 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 29,
+            "tools": 30,
             "resources": 0,
             "resource_templates": 6,
             "prompts": 5,

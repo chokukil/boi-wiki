@@ -62,6 +62,7 @@ flowchart TD
 | `GET|POST /api/rbac/teams` | 팀 조회와 생성 |
 | `POST /api/rbac/teams/{team_id}/members` | 사번 멤버 추가 |
 | `GET /api/rbac/roles` | 역할 목록 |
+| `GET /api/rbac/audit` | 권한 변경, break-glass, Agent 실행 승인 audit 조회 |
 | `POST /api/rbac/bindings` | 역할 binding 추가 |
 | `POST /api/rbac/check` | 특정 역할/범위 검증 |
 
