@@ -50,6 +50,17 @@ python scripts/okf_lint.py --root data --include-logs --strict-media --strict-li
 python scripts/check_boi_wiki_mcp.py --summary
 ```
 
+protected MCP endpoint를 외부에 열어 둔 배포에서는 service token을 환경 변수로만 넘겨 `/mcp` protocol과 bridge를 모두 확인한다.
+
+```bash
+python scripts/check_boi_wiki_mcp.py \
+  --base-url "$BOI_WIKI_MCP_EXTERNAL_URL" \
+  --mcp-url "$BOI_WIKI_MCP_EXTERNAL_URL/mcp" \
+  --service-token "$SERVICE_TOKEN" \
+  --require-bridge \
+  --summary
+```
+
 NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 
 | Check | Expected |
@@ -61,6 +72,9 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | Pet Agent workflow summary question | Markdown answer and workflow artifact render as HTML tables |
 | Inbox tab | 업무 카드가 일반 구성원 문구로 표시 |
 | MCP `boi_agent_chat` | same Native Agent API path |
+| MCP `/health` | `mcp_auth.required=true` when `/mcp` is externally reachable |
+| MCP `/mcp` without token | `401 MCP service token is required` when protected |
+| MCP `/mcp` with token | protocol initialize and tool list succeed |
 
 # Environment
 
@@ -72,6 +86,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS` | `8` | per-tool timeout target |
 | `BOI_AGENT_CACHE_WARMUP_ON_STARTUP` | `1` | API 시작 직후 문서, catalog, ontology search index를 백그라운드로 예열해 첫 Agent 질문 지연을 줄인다. LLM은 호출하지 않는다. |
 | `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
+| `MCP_REQUIRE_SERVICE_TOKEN` | `false` | `true`이면 Streamable HTTP `/mcp`도 `x-service-token` 또는 `Authorization: Bearer`를 요구한다. 외부에서 reachable한 NAS MCP endpoint는 `true`가 권장값이다. |
 | `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first |
 | `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 LLM 비활성으로 해석한다. |
 | `BOI_AGENT_ROUTER_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, Router LLM 비활성, 미설정, timeout, invalid JSON, invalid route/intent, low confidence를 모두 `boi_agent_router_unavailable` 장애로 표시한다. 자동 대화 경로는 규칙 기반 대체 응답으로 우회하지 않는다. |

@@ -38,6 +38,24 @@ BoI Wiki MCP는 agent-facing 표준 인터페이스다. API를 직접 외우는 
 
 `/mcp`는 UI가 아니라 MCP Streamable HTTP endpoint다. 브라우저 주소창이나 일반 `curl`로 열면 MCP `Accept` header가 없어서 `406 Not Acceptable`이 나올 수 있다. 이 상태는 서버 장애가 아니다. 사람이 확인할 때는 `http://localhost:8200/` 상태 페이지와 아래 검증 스크립트를 사용한다.
 
+# Authentication
+
+BoI Wiki MCP에는 두 호출 경로가 있다.
+
+| Path | Purpose | Auth |
+|---|---|---|
+| `/mcp` | 표준 Streamable HTTP MCP endpoint | `MCP_REQUIRE_SERVICE_TOKEN=true`이면 `x-service-token` 또는 `Authorization: Bearer <token>` 필요 |
+| `/api/mcp/call` | 테스트/호환용 bridge endpoint | 항상 `x-service-token` 필요 |
+
+로컬 개발처럼 신뢰된 장비에서만 열 때는 `MCP_REQUIRE_SERVICE_TOKEN=false`로 둘 수 있다. NAS나 사내 네트워크처럼 다른 사용자가 접근 가능한 endpoint로 열 때는 `.env`에 `MCP_REQUIRE_SERVICE_TOKEN=true`를 설정하고 `boi-wiki-mcp` 컨테이너를 재생성한다. 이 값이 켜진 상태에서 token 없이 `/mcp`를 호출하면 `401 MCP service token is required`가 정상이다.
+
+MCP client가 custom header를 지원하면 다음 둘 중 하나를 보낸다.
+
+- `x-service-token: <SERVICE_TOKEN>`
+- `Authorization: Bearer <SERVICE_TOKEN>`
+
+token 값은 Git, README, Wiki 문서, chat log에 남기지 않는다. 상태 페이지 `/health`와 `/status`의 `mcp_auth.required`가 현재 설정을 보여준다.
+
 # Codex 등록
 
 Codex에서 BoI Wiki MCP를 사용할 때 이름은 `boi-wiki-mcp`, transport는 Streamable HTTP, URL은 `http://localhost:8200/mcp`로 둔다. 등록 후 `boi_search`, `boi_get`, `workflow_status`, `action_invoke`, `event_type_draft_create` 같은 tool이 보이면 정상이다.
@@ -137,7 +155,22 @@ python scripts/check_boi_wiki_mcp.py \
   --client-checklist
 ```
 
-정상 결과는 protocol count와 bridge 호출이 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
+`MCP_REQUIRE_SERVICE_TOKEN=false`인 로컬 개발 endpoint에서는 token 없이 실행해도 protocol count를 확인하고 authenticated bridge는 `skipped`로 표시된다. 이 상태는 등록 전 tool 목록 확인에는 충분하지만, write/action/promotion bridge까지 검증한 것은 아니다.
+
+`MCP_REQUIRE_SERVICE_TOKEN=true`인 protected endpoint에서는 token 없이 protocol check 자체가 `auth_required`로 실패하는 것이 정상이다. 이 경우 아래처럼 `--service-token`을 함께 넘긴다.
+
+protected MCP와 bridge를 함께 검증할 때는 token을 환경 변수로만 넘긴다.
+
+```bash
+python scripts/check_boi_wiki_mcp.py \
+  --base-url http://localhost:8200 \
+  --mcp-url http://localhost:8200/mcp \
+  --service-token "$SERVICE_TOKEN" \
+  --require-bridge \
+  --summary
+```
+
+정상 결과는 protocol count와 authenticated bridge 호출이 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
 
 `/health`와 `/status`의 `agent_response_contract.version`은 `boi-agent.response.v1`이어야 한다. Web Pet Agent, REST API, MCP `boi_agent_chat`, 외부 자동화는 모두 이 계약을 기준으로 `answer_markdown`, `links`, `citations`, `artifacts`, `execution_cards`, `guardrails_applied`를 해석한다. MCP client에서 `boi_agent_chat`이 다른 형태의 임의 문자열만 반환하면 구버전 MCP image나 잘못된 bridge endpoint를 보고 있는 상태로 판단한다.
 
@@ -147,6 +180,7 @@ python scripts/check_boi_wiki_mcp.py \
 |---|---|---|
 | `http://localhost:8200/`가 열리지 않음 | MCP container 또는 port publish 문제 | `docker compose ps boi-wiki-mcp`, `curl http://localhost:8200/health` 확인 |
 | `/mcp`가 `406` 반환 | 일반 브라우저/curl이 MCP Accept header를 보내지 않음 | 정상일 수 있음. MCP client나 검증 스크립트로 확인 |
+| `/mcp`가 `401` 반환 | `MCP_REQUIRE_SERVICE_TOKEN=true`인데 token header가 없음 | MCP client에 `x-service-token` 또는 `Authorization: Bearer` 설정 |
 | root가 `404` | 구버전 image가 떠 있거나 rebuild 전 상태 | `docker compose up -d --build boi-wiki-mcp` |
 | `ClosedResourceError` 로그 | MCP stream client가 연결을 닫을 때 생기는 benign disconnect 로그일 수 있음 | protocol check가 성공하면 장애로 보지 않음. 반복 실패와 함께 발생하면 client 설정 확인 |
 | port 충돌 | 다른 process가 8200 사용 | `.env`의 `BOI_WIKI_MCP_PORT`를 바꾸고 client URL도 같이 변경 |
@@ -154,7 +188,7 @@ python scripts/check_boi_wiki_mcp.py \
 
 # Runtime Evidence
 
-상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록을 보여준다. `tools=26`, `resource_templates=5`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 목록에는 `boi_agent_chat`, `ontology_search`, `agent_inbox`, `manual_handoff_complete`, Event Type draft tool이 함께 보여야 한다.
+상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록과 MCP auth 상태를 보여준다. `tools=26`, `resource_templates=5`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 목록에는 `boi_agent_chat`, `ontology_search`, `agent_inbox`, `manual_handoff_complete`, Event Type draft tool이 함께 보여야 한다. 외부에 공개된 endpoint에서는 `mcp_auth.required=true`가 권장된다.
 
 ![BoI Wiki MCP Status capabilities](/public/boi-wiki-manual/_media/browser/mcp-status/20260619-151048-boi-wiki-mcp-status-capabilities-current-1440x1000-89caadae3b92.png)
 

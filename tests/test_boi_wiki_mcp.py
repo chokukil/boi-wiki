@@ -929,3 +929,26 @@ def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_brea
     assert result["transport_mode"] == "stateless_json_rpc"
     assert "stream client broke" in result["client_warning"]
     assert seen_tokens == [("client", "test-token"), ("stateless", "test-token")]
+
+
+def test_check_boi_wiki_mcp_reports_auth_required_without_token(monkeypatch):
+    import httpx
+    import scripts.check_boi_wiki_mcp as script
+
+    async def broken_client(*args, **kwargs):
+        raise RuntimeError("stream client unauthorized")
+
+    async def unauthorized_stateless(*args, **kwargs):
+        request = httpx.Request("POST", "http://localhost:8200/mcp")
+        response = httpx.Response(401, request=request, json={"detail": "MCP service token is required"})
+        raise httpx.HTTPStatusError("401 Unauthorized", request=request, response=response)
+
+    monkeypatch.setattr(script, "check_protocol_mcp_client", broken_client)
+    monkeypatch.setattr(script, "check_protocol_stateless_json", unauthorized_stateless)
+
+    result = asyncio.run(script.check_protocol("http://localhost:8200/mcp", include_details=False, service_token=""))
+
+    assert result["status"] == "auth_required"
+    assert result["auth_required"] is True
+    assert result["tools"] == 0
+    assert "--service-token" in result["message"]

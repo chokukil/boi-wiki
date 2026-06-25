@@ -37,7 +37,22 @@ async def check_protocol(url: str, include_details: bool = False, service_token:
     try:
         return await check_protocol_mcp_client(url, include_details=include_details, service_token=service_token)
     except Exception as exc:
-        direct = await check_protocol_stateless_json(url, include_details=include_details, service_token=service_token)
+        try:
+            direct = await check_protocol_stateless_json(url, include_details=include_details, service_token=service_token)
+        except httpx.HTTPStatusError as direct_exc:
+            if direct_exc.response.status_code == 401 and not str(service_token or "").strip():
+                return {
+                    "tools": 0,
+                    "resources": 0,
+                    "resource_templates": 0,
+                    "prompts": 0,
+                    "status": "auth_required",
+                    "auth_required": True,
+                    "transport_mode": "unauthorized",
+                    "client_warning": f"{type(exc).__name__}: {exc}",
+                    "message": "MCP endpoint requires a service token; rerun with --service-token and optionally --require-bridge.",
+                }
+            raise
         direct["client_warning"] = f"{type(exc).__name__}: {exc}"
         direct["transport_mode"] = "stateless_json_rpc"
         return direct
