@@ -166,7 +166,7 @@ BOI_AGENT_STATUS_LLM_ENABLED = resolve_router_llm_enabled(
     "llm_first",
     BOI_AGENT_STATUS_BASE_URL,
 )
-BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "12"))
+BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "30"))
 BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "1536"))
 # Status text is part of the user-facing Agent contract.  The env name is kept
 # for older compose files/docs, but runtime policy is intentionally not
