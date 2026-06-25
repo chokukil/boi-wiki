@@ -10304,7 +10304,59 @@ def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50)
         )
         if len(items) >= max(1, min(limit, 200)):
             break
-    return {"ok": True, "employee_id": employee_id, "status": status, "open_count": len(items), "count": len(items), "items": items}
+    groups = agent_inbox_groups(items)
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "status": status,
+        "open_count": len(items),
+        "count": len(items),
+        "group_count": len(groups),
+        "items": items,
+        "groups": groups,
+    }
+
+
+def agent_inbox_groups(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str]] = []
+    for item in items:
+        key = (str(item.get("status") or ""), str(item.get("action_key") or ""))
+        if key not in grouped:
+            display = item.get("display") if isinstance(item.get("display"), dict) else {}
+            group_display = {
+                "title": str(display.get("title") or item.get("action_key") or "업무 확인"),
+                "status_label": str(display.get("status_label") or item.get("status") or "확인 필요"),
+                "why_it_matters": str(display.get("why_it_matters") or item.get("summary") or ""),
+                "next_action": str(display.get("next_action") or "관련 업무를 확인하세요."),
+                "risk_label": str(display.get("risk_label") or ""),
+                "primary_url": str(display.get("primary_url") or item.get("workflow_url") or item.get("raw_url") or ""),
+                "primary_label": str(display.get("primary_label") or "업무 상태 보기"),
+            }
+            grouped[key] = {
+                "group_id": f"{key[0]}:{key[1]}",
+                "status": key[0],
+                "action_key": key[1],
+                "count": 0,
+                "display": group_display,
+                "items": [],
+            }
+            order.append(key)
+        group = grouped[key]
+        group["count"] += 1
+        group["items"].append(item)
+    result = [grouped[key] for key in order]
+    for group in result:
+        count = int(group.get("count") or 0)
+        display = group.get("display") if isinstance(group.get("display"), dict) else {}
+        if count > 1:
+            display["title"] = f"{display.get('title') or '업무 확인'} {count}건"
+            display["why_it_matters"] = (
+                f"같은 유형의 업무가 {count}건 있습니다. 먼저 묶음의 업무 흐름을 확인한 뒤 필요한 항목을 개별 처리하세요."
+            )
+            display.setdefault("next_action", "묶음을 펼쳐 개별 Workflow 또는 원본 기록을 확인하세요.")
+        group["display"] = display
+    return result
 
 
 @app.get("/api/agents/boi-wiki/inbox")

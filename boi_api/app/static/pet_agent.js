@@ -26,6 +26,7 @@
       suggestions: [],
       suggestionError: "",
       inbox: [],
+      inboxGroups: [],
       messages: [],
       draft: "",
       busyTask: "",
@@ -40,7 +41,7 @@
   function loadState() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || "{}");
-      return { ...defaultState(), ...saved, suggestions: [], suggestionError: "", inbox: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
+      return { ...defaultState(), ...saved, suggestions: [], suggestionError: "", inbox: [], inboxGroups: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
     } catch (_error) {
       return defaultState();
     }
@@ -835,46 +836,13 @@
   function renderTab() {
     if (state.tab === "inbox") {
       if (!state.inbox.length) return `<div class="boi-agent-empty">현재 처리할 Action이 없습니다.</div>`;
-      return `<div class="boi-agent-list">${state.inbox
-        .map((item) => {
-          const isManual = ["manual_required", "manual_blocked", "needs_followup"].includes(item.status || "");
-          const display = item.display || {};
-          return `
-          <article class="boi-agent-task">
-            ${renderTaskDisplay(display, item)}
-            <div class="boi-agent-links">
-              ${display.primary_url ? `<a href="${escapeAttr(display.primary_url)}">${escapeHtml(display.primary_label || "업무 상태 보기")}</a>` : ""}
-              ${item.workflow_url ? `<a href="${escapeAttr(item.workflow_url)}">업무 흐름</a>` : ""}
-              ${item.raw_url ? `<a href="${escapeAttr(item.raw_url)}">원본 기록</a>` : ""}
-            </div>
-            <details class="boi-agent-technical">
-              <summary>기술 세부정보</summary>
-              <dl>
-                ${item.status ? `<div><dt>상태</dt><dd>${escapeHtml(item.status)}</dd></div>` : ""}
-                ${item.action_key ? `<div><dt>Action</dt><dd>${escapeHtml(item.action_key)}</dd></div>` : ""}
-                ${item.request_id ? `<div><dt>요청</dt><dd>${escapeHtml(item.request_id)}</dd></div>` : ""}
-                ${item.trace_id ? `<div><dt>Trace</dt><dd>${escapeHtml(item.trace_id)}</dd></div>` : ""}
-              </dl>
-            </details>
-            ${isManual ? `
-              <form class="boi-agent-handoff-form" data-task-id="${escapeAttr(item.task_id || "")}">
-                <label>
-                  <span>조치 결과</span>
-                  <select name="outcome">
-                    <option value="completed">완료</option>
-                    <option value="not_needed">필요 없음</option>
-                    <option value="blocked">보류</option>
-                  </select>
-                </label>
-                <label>
-                  <span>조치 내용</span>
-                  <textarea name="note" placeholder="수행한 확인, 판단, 조치 내용을 남겨주세요." required></textarea>
-                </label>
-                <button type="submit" ${state.busyTask === item.task_id ? "disabled" : ""}>완료 기록</button>
-              </form>` : `<p class="boi-agent-hint">승인이 필요한 업무입니다. 업무 흐름과 원본 기록을 확인한 뒤 명시 승인으로 처리합니다.</p>`}
-          </article>`;
-        })
-        .join("")}</div>`;
+      const groups = state.inboxGroups.length ? state.inboxGroups : state.inbox.map((item) => ({
+        group_id: item.task_id || item.request_id || item.log_ref || item.action_key || "task",
+        count: 1,
+        display: item.display || {},
+        items: [item],
+      }));
+      return `<div class="boi-agent-list">${groups.map(renderInboxGroup).join("")}</div>`;
     }
     return `
       <section class="boi-agent-context-card">
@@ -910,6 +878,64 @@
         <p>${escapeHtml(item.why_it_matters || fallback.summary || "")}</p>
         ${item.next_action ? `<p class="boi-agent-next-action">${escapeHtml(item.next_action)}</p>` : ""}
       </div>`;
+  }
+
+  function renderInboxGroup(group) {
+    const display = group.display || {};
+    const items = Array.isArray(group.items) ? group.items : [];
+    const count = Number(group.count || items.length || 0);
+    const detailsOpen = count === 1 ? " open" : "";
+    return `
+      <article class="boi-agent-task boi-agent-task-group">
+        ${renderTaskDisplay(display, { status: group.status, action_key: group.action_key, summary: "" })}
+        <div class="boi-agent-links">
+          ${display.primary_url ? `<a href="${escapeAttr(display.primary_url)}">${escapeHtml(display.primary_label || "업무 상태 보기")}</a>` : ""}
+        </div>
+        <details class="boi-agent-task-items"${detailsOpen}>
+          <summary>${count > 1 ? `개별 업무 ${count}건 보기` : "개별 업무 보기"}</summary>
+          <div class="boi-agent-task-item-list">
+            ${items.map(renderInboxItem).join("")}
+          </div>
+        </details>
+      </article>`;
+  }
+
+  function renderInboxItem(item) {
+    const isManual = ["manual_required", "manual_blocked", "needs_followup"].includes(item.status || "");
+    const display = item.display || {};
+    return `
+      <section class="boi-agent-task-item">
+        <div class="boi-agent-links">
+          ${display.primary_url ? `<a href="${escapeAttr(display.primary_url)}">${escapeHtml(display.primary_label || "업무 상태 보기")}</a>` : ""}
+          ${item.workflow_url ? `<a href="${escapeAttr(item.workflow_url)}">업무 흐름</a>` : ""}
+          ${item.raw_url ? `<a href="${escapeAttr(item.raw_url)}">원본 기록</a>` : ""}
+        </div>
+        <details class="boi-agent-technical">
+          <summary>기술 세부정보</summary>
+          <dl>
+            ${item.status ? `<div><dt>상태</dt><dd>${escapeHtml(item.status)}</dd></div>` : ""}
+            ${item.action_key ? `<div><dt>Action</dt><dd>${escapeHtml(item.action_key)}</dd></div>` : ""}
+            ${item.request_id ? `<div><dt>요청</dt><dd>${escapeHtml(item.request_id)}</dd></div>` : ""}
+            ${item.trace_id ? `<div><dt>Trace</dt><dd>${escapeHtml(item.trace_id)}</dd></div>` : ""}
+          </dl>
+        </details>
+        ${isManual ? `
+	          <form class="boi-agent-handoff-form" data-task-id="${escapeAttr(item.task_id || "")}">
+	            <label>
+	              <span>조치 결과</span>
+	              <select name="outcome">
+	                <option value="completed">완료</option>
+	                <option value="not_needed">필요 없음</option>
+	                <option value="blocked">보류</option>
+	              </select>
+	            </label>
+	            <label>
+	              <span>조치 내용</span>
+	              <textarea name="note" placeholder="수행한 확인, 판단, 조치 내용을 남겨주세요." required></textarea>
+	            </label>
+	            <button type="submit" ${state.busyTask === item.task_id ? "disabled" : ""}>완료 기록</button>
+	          </form>` : `<p class="boi-agent-hint">승인이 필요한 업무입니다. 업무 흐름과 원본 기록을 확인한 뒤 명시 승인으로 처리합니다.</p>`}
+      </section>`;
   }
 
   function renderViewer() {
@@ -1296,6 +1322,7 @@
   function refreshInbox(message) {
     return api("/api/agents/boi-wiki/inbox").then((body) => {
       state.inbox = body.items || [];
+      state.inboxGroups = body.groups || [];
       if (message) showAgentMessage(message);
     });
   }

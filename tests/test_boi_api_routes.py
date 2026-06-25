@@ -4006,6 +4006,36 @@ def test_agent_inbox_and_manual_handoff_completion_are_append_only(boi_app_modul
     assert not any(item["request_id"] == "act-manual-required-test" for item in inbox_after.json()["items"])
 
 
+def test_agent_inbox_groups_repeated_tasks_for_member_readability(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    for idx in range(2):
+        append_action_log_row(
+            boi_app_module,
+            {
+                "employee_id": "100001",
+                "request_id": f"act-approval-group-test-{idx}",
+                "action_key": "direct_development.messenger_share.publish",
+                "status": "approval_required",
+                "summary": "공유 전 승인 필요",
+                "trace_id": f"trace-agent-inbox-approval-group-{idx}",
+            },
+        )
+
+    response = client.get("/api/agents/boi-wiki/inbox?employee_id=100001")
+    body = response.json()
+
+    assert response.status_code == 200
+    group = next(
+        item
+        for item in body["groups"]
+        if item["status"] == "approval_required" and item["action_key"] == "direct_development.messenger_share.publish"
+    )
+    assert group["count"] >= 2
+    assert "건" in group["display"]["title"]
+    assert "같은 유형의 업무" in group["display"]["why_it_matters"]
+    assert all("request_id" in item for item in group["items"])
+
+
 def test_manual_handoff_completion_rejects_task_not_visible_to_employee(boi_app_module):
     client = TestClient(boi_app_module.app)
     append_action_log_row(
@@ -4475,6 +4505,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert 'if (!lines.length) return "";' in script
     assert "readAgentStream" in script
     assert "refreshSuggestions" in script
+    assert "state.inboxGroups = body.groups || []" in script
+    assert "renderInboxGroup" in script
+    assert "개별 업무" in script
     assert "body.suggested_questions" not in script
     assert "activeRequest.abort()" in script
     assert "생성을 중지했습니다." in script
