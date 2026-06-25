@@ -4684,6 +4684,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "/api/agents/boi-wiki/approve" in script
     assert "data-agent-approve" in script
     assert "data-agent-approve-note" in script
+    assert "data-agent-approval-status" in script
+    assert "data-agent-approval-operation" in script
     assert "BoI Agent confirmation card" not in script
     assert "agentApprovalResultMessage" in script
     assert "이벤트 발행 요청을 보냈습니다." in script
@@ -4693,6 +4695,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "이벤트 유형 초안을 만들었습니다." in script
     assert "이벤트 유형 초안을 운영 목록에 반영했습니다." in script
     assert "공유 요청을 제출했습니다." in script
+    assert "처리 결과:" in script
+    assert "초안 생성 완료" in script
+    assert "상태: ${body.status}" not in script
     assert "명세 점검" in script
     assert "업무 흐름 요약" in script
     assert "처리할 일" in script

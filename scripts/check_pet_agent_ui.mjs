@@ -454,6 +454,8 @@ async function main() {
           skipped: false,
           messageCount: document.querySelectorAll("#boi-agent-root .boi-agent-message").length,
           latestText: text,
+          approvalStatus: latest?.dataset.agentApprovalStatus || "",
+          approvalOperation: latest?.dataset.agentApprovalOperation || "",
           containsDraftCreated: text.includes("이벤트 유형 초안을 만들었습니다"),
           containsExecuted: /요청을 처리했습니다|요청을 보냈습니다|초안을 만들었습니다|반영했습니다/.test(text),
         };
@@ -552,7 +554,9 @@ async function main() {
       expected_table_artifact_rendered: expectsTable ? beforeNew.artifactTableCount >= 1 : true,
       confirmation_card_rendered: expectsConfirmation ? beforeNew.confirmationCardCount >= 1 && beforeNew.approveButtonCount >= 1 : true,
       execution_card_approved: args.approveExecutionCard ? approvalResult.containsExecuted === true : true,
-      expected_approval_status_seen: args.expectApprovalStatus ? String(approvalResult.latestText || "").includes(args.expectApprovalStatus) : true,
+      expected_approval_status_seen: args.expectApprovalStatus
+        ? approvalResult.approvalStatus === args.expectApprovalStatus || String(approvalResult.latestText || "").includes(args.expectApprovalStatus)
+        : true,
       suggestions_refreshed_through_api: networkProbe.suggestionRequests >= 2 && beforeNew.suggestionButtonCount >= 1,
       no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",

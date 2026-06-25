@@ -775,8 +775,11 @@
         const artifactMermaid = mermaidSourcesFromArtifacts(message);
         const serverHtml = shouldUseServerHtml(message, artifactMermaid) ? message.html : "";
         const answerHtml = serverHtml || renderMarkdownLite(message.text || "", { skipMermaidSources: artifactMermaid });
+        const meta = message.meta || {};
+        const approvalStatus = meta.approval_status ? ` data-agent-approval-status="${escapeAttr(meta.approval_status)}"` : "";
+        const approvalOperation = meta.approval_operation ? ` data-agent-approval-operation="${escapeAttr(meta.approval_operation)}"` : "";
         return `
-        <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}">
+        <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}"${approvalStatus}${approvalOperation}>
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
           ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
@@ -1066,7 +1069,10 @@
             note,
           }),
         }).then((body) => {
-          showAgentMessage(agentApprovalResultMessage(operation, body));
+          showAgentMessage(agentApprovalResultMessage(operation, body), [], {
+            approval_status: body?.status || "",
+            approval_operation: operation,
+          });
           return refreshInbox();
         }).catch((error) => showAgentMessage(`요청 실행에 실패했습니다: ${error.message}`))
           .finally(() => {
@@ -1167,8 +1173,8 @@
     render();
   }
 
-  function showAgentMessage(text, links) {
-    state.messages.push({ role: "assistant", text, links: links || [] });
+  function showAgentMessage(text, links, meta) {
+    state.messages.push({ role: "assistant", text, links: links || [], meta: meta || {} });
     state.open = true;
     state.tab = "agent";
     render();
@@ -1198,7 +1204,18 @@
       promotion_submit: "공유 요청을 제출했습니다.",
       submit_promotion: "공유 요청을 제출했습니다.",
     };
-    const status = body?.status ? ` 상태: ${body.status}.` : "";
+    const statusLabels = {
+      draft_created: "초안 생성 완료",
+      draft_applied: "운영 목록 반영 완료",
+      applied: "반영 완료",
+      completed: "완료 기록 저장",
+      invoked: "요청 접수",
+      event_published: "이벤트 발행 완료",
+      published: "게시 요청 접수",
+      submitted: "제출 완료",
+    };
+    const statusLabel = statusLabels[body?.status] || "";
+    const status = statusLabel ? ` 처리 결과: ${statusLabel}.` : "";
     const url = nestedValue(body, "result.workflow_status_url")
       || nestedValue(body, "result.status_url")
       || nestedValue(body, "result.raw_url")
