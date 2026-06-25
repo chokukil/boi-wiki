@@ -48,7 +48,7 @@ Git worktree가 최신 commit으로 pull된 상태와 실제 서비스가 새 re
 | Remote / branch | `origin main` |
 | NAS compose file | `docker-compose.nas.yml` |
 | Runtime env file | `.env` |
-| Lock dir | `/tmp/boi-wiki-nas-auto-pull.lock` |
+| Lock dir | `/tmp/boi-wiki-nas-auto-pull.${USER}.lock` |
 | Compose binary | `/usr/local/bin/docker-compose` |
 | Runtime revision verify attempts | 90 attempts, 2 seconds apart |
 | Log file | `/volume1/docker/boi-wiki/deploy-logs/autopull.log` |
@@ -176,6 +176,7 @@ curl -fsS http://127.0.0.1:28200/health
 | branch mismatch | `/volume1/docker/boi-wiki/app`에서 `git branch --show-current` 확인 후 `main`으로 전환 |
 | non fast-forward | NAS에 로컬 commit이 생겼는지 확인. 자동화는 destructive reset을 하지 않음 |
 | compose command not found | Synology Docker package PATH와 `/usr/local/bin/docker-compose` 존재 여부 확인 |
+| `another NAS auto-pull deployment is already running` | 먼저 `ps`로 실제 배포 프로세스가 있는지 확인한다. 프로세스가 없고 예전 공용 `/tmp/boi-wiki-nas-auto-pull.lock`만 root-owned로 남았다면 stale lock을 제거한 뒤 사용자별 기본 lock으로 재실행한다. |
 | git pull succeeded but external revision is old | image rebuild/recreate가 안 된 상태다. `/api/runtime/config`의 `build.revision`이 Git HEAD와 다르면 배포 미완료로 처리 |
 | SSH login succeeds but `sudo` fails | 현재 계정의 sudo/admin password 또는 sudo 권한을 확인. Docker daemon 접근이 막히면 runtime code 배포 불가 |
 | DSM login succeeds but root task creation fails | `SYNO.Core.TaskScheduler.Root` API 노출 여부와 root task 생성 권한을 확인. 일반 TaskScheduler가 `owner=root` 생성에서 권한 오류를 반환하면 DSM API fallback 불가 |

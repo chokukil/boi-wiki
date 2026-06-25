@@ -7,7 +7,12 @@ REMOTE="${REMOTE:-origin}"
 BRANCH="${BRANCH:-main}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.nas.yml}"
 ENV_FILE="${ENV_FILE:-.env}"
-LOCK_DIR="${LOCK_DIR:-/tmp/boi-wiki-nas-auto-pull.lock}"
+NAS_AUTO_PULL_LOCK_OWNER="${NAS_AUTO_PULL_LOCK_OWNER:-${USER:-}}"
+if [[ -z "$NAS_AUTO_PULL_LOCK_OWNER" ]]; then
+  NAS_AUTO_PULL_LOCK_OWNER="$(id -un 2>/dev/null || printf 'user')"
+fi
+NAS_AUTO_PULL_LOCK_OWNER="$(printf '%s' "$NAS_AUTO_PULL_LOCK_OWNER" | tr -c 'A-Za-z0-9_.-' '_')"
+LOCK_DIR="${LOCK_DIR:-/tmp/boi-wiki-nas-auto-pull.${NAS_AUTO_PULL_LOCK_OWNER}.lock}"
 DOCKER_COMPOSE_BIN="${DOCKER_COMPOSE_BIN:-/usr/local/bin/docker-compose}"
 DOCKER_BIN="${DOCKER_BIN:-/usr/local/bin/docker}"
 SUDO_BIN="${SUDO_BIN:-sudo}"

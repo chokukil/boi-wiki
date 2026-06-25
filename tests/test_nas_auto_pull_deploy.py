@@ -80,6 +80,8 @@ def test_script_contains_required_safety_contracts():
     text = SCRIPT.read_text(encoding="utf-8")
 
     assert "git pull --ff-only" in text
+    assert "NAS_AUTO_PULL_LOCK_OWNER" in text
+    assert "boi-wiki-nas-auto-pull.${NAS_AUTO_PULL_LOCK_OWNER}.lock" in text
     assert "mkdir \"$LOCK_DIR\"" in text
     assert "set +x" in text
     assert "DEPLOY_STATUS=" in text
