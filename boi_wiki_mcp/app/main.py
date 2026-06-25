@@ -88,6 +88,14 @@ AGENT_RESPONSE_REQUIRED_FIELDS = [
     "access_summary",
     "guardrails_applied",
 ]
+AGENT_EXECUTION_CARD_REQUIRED_FIELDS = [
+    "contract_version",
+    "operation",
+    "requires_confirmation",
+    "user_confirmed_required",
+    "required_role",
+    "permission",
+]
 AGENT_ARTIFACT_TYPES = ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"]
 AGENT_RESPONSE_CONTRACT = {
     "version": AGENT_RESPONSE_CONTRACT_VERSION,
@@ -98,6 +106,7 @@ AGENT_RESPONSE_CONTRACT = {
     "mcp_resource_template": "boi://agent/response-schema/{version}",
     "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
     "required_fields": AGENT_RESPONSE_REQUIRED_FIELDS,
+    "execution_card_required_fields": AGENT_EXECUTION_CARD_REQUIRED_FIELDS,
     "artifact_types": AGENT_ARTIFACT_TYPES,
 }
 AGENT_RESPONSE_SCHEMA = {
@@ -127,7 +136,7 @@ AGENT_RESPONSE_SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["contract_version", "operation", "requires_confirmation", "user_confirmed_required"],
+                "required": AGENT_EXECUTION_CARD_REQUIRED_FIELDS,
                 "additionalProperties": True,
                 "properties": {
                     "contract_version": {"const": AGENT_RESPONSE_CONTRACT_VERSION},

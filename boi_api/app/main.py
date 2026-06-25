@@ -219,6 +219,14 @@ BOI_AGENT_RESPONSE_REQUIRED_FIELDS = [
     "access_summary",
     "guardrails_applied",
 ]
+BOI_AGENT_EXECUTION_CARD_REQUIRED_FIELDS = [
+    "contract_version",
+    "operation",
+    "requires_confirmation",
+    "user_confirmed_required",
+    "required_role",
+    "permission",
+]
 BOI_AGENT_ARTIFACT_TYPES = ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"]
 BOI_AGENT_EXECUTION_CARD_FIELDS = [
     "contract_version",
@@ -262,7 +270,7 @@ BOI_AGENT_RESPONSE_SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["contract_version", "operation", "requires_confirmation", "user_confirmed_required"],
+                "required": BOI_AGENT_EXECUTION_CARD_REQUIRED_FIELDS,
                 "additionalProperties": True,
                 "properties": {
                     "contract_version": {"const": BOI_AGENT_RESPONSE_CONTRACT_VERSION},
@@ -9663,6 +9671,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "required_fields": BOI_AGENT_RESPONSE_REQUIRED_FIELDS,
             "artifact_types": BOI_AGENT_ARTIFACT_TYPES,
             "execution_card_fields": BOI_AGENT_EXECUTION_CARD_FIELDS,
+            "execution_card_required_fields": BOI_AGENT_EXECUTION_CARD_REQUIRED_FIELDS,
             "schema": BOI_AGENT_RESPONSE_SCHEMA,
         },
         "router": {

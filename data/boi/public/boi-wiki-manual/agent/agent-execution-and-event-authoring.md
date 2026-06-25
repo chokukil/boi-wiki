@@ -70,7 +70,7 @@ BoI Agent의 기준 인터페이스는 Web Pet UI가 아니라 `/api/agents/boi-
 
 `execution_cards`는 Web UI 전용 데이터가 아니다. MCP client나 외부 시스템도 이 카드의 `approve_url`, `operation`, `payload`, `user_confirmed_required`, `display`, `technical_details`, `required_role`, `permission`을 사용해 같은 승인 UX를 만들 수 있다. 실제 실행은 카드 표시 시점이 아니라 `/api/agents/boi-wiki/approve` 호출 시점에 다시 RBAC/ACL/classification 검증을 거친다.
 
-권한 판단도 클라이언트가 추정하지 않는다. Agent API는 operation별 최소 role을 `required_role`에 넣고, 현재 사번 기준 role binding 결과를 `permission`에 넣는다. `permission.allowed`가 `false`이면 Web Pet은 실행 버튼을 표시하지 않고 `권한 필요` 상태만 보여준다. MCP client도 같은 필드를 읽어 사용자에게 “필요 권한”과 “거부 사유”를 설명해야 하며, 권한이 없는 상태에서 `approve`를 호출해도 서버가 다시 차단한다.
+권한 판단도 클라이언트가 추정하지 않는다. Agent API는 operation별 최소 role을 `required_role`에 넣고, 현재 사번 기준 role binding 결과를 `permission`에 넣는다. 이 둘은 execution card schema의 required field이므로 Web, REST, MCP client가 항상 존재한다고 가정해도 된다. `permission.allowed`가 `false`이면 Web Pet은 실행 버튼을 표시하지 않고 `권한 필요` 상태만 보여준다. MCP client도 같은 필드를 읽어 사용자에게 “필요 권한”과 “거부 사유”를 설명해야 하며, 권한이 없는 상태에서 `approve`를 호출해도 서버가 다시 차단한다.
 
 | Card field | Compatibility rule |
 |---|---|

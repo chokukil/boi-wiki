@@ -61,9 +61,14 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "tool_trace" in body["agent_response_contract"]["required_fields"]
     assert "access_summary" in body["agent_response_contract"]["required_fields"]
     assert "guardrails_applied" in body["agent_response_contract"]["required_fields"]
-    card_schema = body["agent_response_schema"]["properties"]["execution_cards"]["items"]["properties"]
+    assert "required_role" in body["agent_response_contract"]["execution_card_required_fields"]
+    assert "permission" in body["agent_response_contract"]["execution_card_required_fields"]
+    execution_card_item = body["agent_response_schema"]["properties"]["execution_cards"]["items"]
+    card_schema = execution_card_item["properties"]
     assert card_schema["required_role"]["type"] == "string"
     assert card_schema["permission"]["type"] == "object"
+    assert "required_role" in execution_card_item["required"]
+    assert "permission" in execution_card_item["required"]
     assert "mermaid" in body["agent_response_contract"]["artifact_types"]
     assert "gap_table" in body["agent_response_contract"]["artifact_types"]
     tool_names = [item["name"] for item in body["capability_lists"]["tools"]]
@@ -320,8 +325,10 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
                     "requires_confirmation": True,
                     "user_confirmed_required": True,
                     "approve_url": "/api/agents/boi-wiki/approve",
+                    "required_role": "boi.workflow_runner",
+                    "permission": {"allowed": True, "reason": "role_present", "role": "boi.workflow_runner"},
                     "display": {"title": "이벤트 발행 확인", "next_action": "요청 실행"},
-                    "technical_details": {"operation": "event_publish"},
+                    "technical_details": {"operation": "event_publish", "required_role": "boi.workflow_runner"},
                 }
             ],
             "access_summary": {"can_read": True, "can_use_in_agent_context": True},

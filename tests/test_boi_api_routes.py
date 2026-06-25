@@ -194,11 +194,16 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert "tool_trace" in body["response_contract"]["required_fields"]
     assert "access_summary" in body["response_contract"]["required_fields"]
     assert "execution_card_fields" in body["response_contract"]
+    assert "required_role" in body["response_contract"]["execution_card_required_fields"]
+    assert "permission" in body["response_contract"]["execution_card_required_fields"]
     assert body["response_contract"]["schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
     assert "mermaid" in body["response_contract"]["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
-    card_schema = body["response_contract"]["schema"]["properties"]["execution_cards"]["items"]["properties"]
+    execution_card_item = body["response_contract"]["schema"]["properties"]["execution_cards"]["items"]
+    card_schema = execution_card_item["properties"]
     assert card_schema["required_role"]["type"] == "string"
     assert card_schema["permission"]["type"] == "object"
+    assert "required_role" in execution_card_item["required"]
+    assert "permission" in execution_card_item["required"]
     assert "progressive response streaming" in body["features"]
     for operation in body["supported_execution_cards"]:
         assert operation in body["write_confirmation_required"]
