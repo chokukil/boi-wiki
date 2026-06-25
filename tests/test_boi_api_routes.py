@@ -375,6 +375,42 @@ def test_boi_agent_stream_plan_fails_on_incomplete_llm_status_sequence(boi_app_m
     assert len(payloads) == 1
 
 
+def test_boi_agent_llm_route_rejects_invalid_route_or_intent(boi_app_module):
+    request = boi_app_module.BoiAgentChatRequest(
+        question="이 SOP를 Mermaid 프로세스 플로우로 보여줘",
+        current_url="/docs/boi:public:sop:equipment-abnormal-response",
+    )
+
+    with pytest.raises(boi_app_module.BoiAgentRouterUnavailable, match="invalid route"):
+        boi_app_module.normalize_llm_route_payload(
+            {
+                "route": "maybe_fast",
+                "confidence": 0.99,
+                "intent": "diagram",
+                "reason": "bad route",
+            },
+            request,
+        )
+
+    with pytest.raises(boi_app_module.BoiAgentRouterUnavailable, match="invalid intent"):
+        boi_app_module.normalize_llm_route_payload(
+            {
+                "route": "deep",
+                "confidence": 0.99,
+                "intent": "",
+                "reason": "missing intent",
+            },
+            request,
+        )
+
+
+def test_boi_agent_user_facing_llm_contracts_are_not_env_downgradeable(boi_app_module):
+    assert boi_app_module.BOI_AGENT_ROUTER_REQUIRED is True
+    assert boi_app_module.BOI_AGENT_STATUS_REQUIRED is True
+    assert boi_app_module.BOI_AGENT_COMPOSER_REQUIRED is True
+    assert boi_app_module.BOI_AGENT_SUGGESTIONS_REQUIRED is True
+
+
 def test_auth_me_exposes_dev_identity(boi_app_module):
     client = TestClient(boi_app_module.app)
 

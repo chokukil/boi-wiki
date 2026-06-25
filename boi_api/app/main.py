@@ -147,7 +147,12 @@ BOI_AGENT_ROUTER_LLM_ENABLED = resolve_router_llm_enabled(
     BOI_AGENT_ROUTER_MODE,
     BOI_AGENT_ROUTER_BASE_URL,
 )
-BOI_AGENT_ROUTER_REQUIRED = os.getenv("BOI_AGENT_ROUTER_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+# Router/status/composer/suggestions are user-facing Agent quality contracts.
+# The env names remain for older compose files/docs, but production policy is
+# intentionally not downgradeable: if the configured LLM cannot produce these
+# fields, the Agent is unhealthy rather than silently falling back to canned
+# copy or deterministic routing.
+BOI_AGENT_ROUTER_REQUIRED = True
 BOI_AGENT_ROUTER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS = float(os.getenv("BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS", "30"))
 BOI_AGENT_ROUTER_MAX_TOKENS = int(os.getenv("BOI_AGENT_ROUTER_MAX_TOKENS", "1536"))
@@ -177,7 +182,7 @@ BOI_AGENT_SUGGESTIONS_LLM_ENABLED = resolve_router_llm_enabled(
     "llm_first",
     BOI_AGENT_SUGGESTIONS_BASE_URL,
 )
-BOI_AGENT_SUGGESTIONS_REQUIRED = os.getenv("BOI_AGENT_SUGGESTIONS_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_SUGGESTIONS_REQUIRED = True
 BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS", "8"))
 BOI_AGENT_SUGGESTIONS_MAX_TOKENS = int(os.getenv("BOI_AGENT_SUGGESTIONS_MAX_TOKENS", "1024"))
 BOI_AGENT_COMPOSER_BASE_URL = os.getenv("BOI_AGENT_COMPOSER_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
@@ -189,7 +194,7 @@ BOI_AGENT_COMPOSER_LLM_ENABLED = resolve_router_llm_enabled(
     "llm_first",
     BOI_AGENT_COMPOSER_BASE_URL,
 )
-BOI_AGENT_COMPOSER_REQUIRED = os.getenv("BOI_AGENT_COMPOSER_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_COMPOSER_REQUIRED = True
 BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "20"))
 BOI_AGENT_COMPOSER_MAX_TOKENS = min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "1536")), 1536)
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
@@ -6708,11 +6713,20 @@ def normalize_agent_route(value: str) -> str:
     return route if route in ALLOWED_AGENT_ROUTES else "fast"
 
 
+def require_llm_agent_route(value: Any) -> str:
+    route = str(value or "").strip().lower().replace("-", "_")
+    if route not in ALLOWED_AGENT_ROUTES:
+        raise BoiAgentRouterUnavailable("LLM router returned invalid route")
+    return route
+
+
 def normalize_agent_intent(value: str, *, fallback: str = "search") -> str:
     intent = str(value or "").strip().lower().replace("-", "_")
     aliases = {
         "lookup": "search",
         "page_summary": "summarize",
+        "summary": "summarize",
+        "workflow_reasoning": "trace_reasoning",
         "reasoning": "trace_reasoning",
         "manual_handoff": "manual_complete",
         "approval_required": "approval",
@@ -6726,6 +6740,13 @@ def normalize_agent_intent(value: str, *, fallback: str = "search") -> str:
     }
     intent = aliases.get(intent, intent)
     return intent if intent in ALLOWED_AGENT_INTENTS else fallback
+
+
+def require_llm_agent_intent(value: Any) -> str:
+    intent = normalize_agent_intent(str(value or ""), fallback="")
+    if intent not in ALLOWED_AGENT_INTENTS:
+        raise BoiAgentRouterUnavailable("LLM router returned invalid intent")
+    return intent
 
 
 def safety_route_override(question: str) -> str | None:
@@ -7179,14 +7200,14 @@ def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def normalize_llm_route_payload(payload: dict[str, Any], req: BoiAgentChatRequest) -> dict[str, Any]:
-    route = normalize_agent_route(str(payload.get("route") or ""))
+    route = require_llm_agent_route(payload.get("route"))
     try:
         confidence = float(payload.get("confidence") or 0)
     except (TypeError, ValueError):
         confidence = 0.0
     if confidence < BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD:
         raise BoiAgentRouterUnavailable("LLM router confidence is below threshold")
-    intent = normalize_agent_intent(str(payload.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    intent = require_llm_agent_intent(payload.get("intent"))
     if intent in DEEP_AGENT_INTENTS and route != "deep":
         route = "deep"
     elif intent == "inbox":
@@ -8081,9 +8102,12 @@ def agent_stream_plan(req: BoiAgentChatRequest, employee_id: str) -> dict[str, A
 
 
 def agent_tool_progress_status(payload: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        raise BoiAgentStatusUnavailable("Agent progress payload is missing generated status message")
     return {
         "stage": str(payload.get("stage") or "tool_progress"),
-        "message": str(payload.get("message") or "Agent가 필요한 근거를 확인하고 있습니다."),
+        "message": message,
         "tool": str(payload.get("tool") or ""),
         "status": str(payload.get("status") or ""),
         "summary": str(payload.get("summary") or ""),

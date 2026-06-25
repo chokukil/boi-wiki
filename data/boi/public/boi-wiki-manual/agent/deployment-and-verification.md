@@ -74,7 +74,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
 | `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first |
 | `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 LLM 비활성으로 해석한다. |
-| `BOI_AGENT_ROUTER_REQUIRED` | `1` | 운영에서는 Router LLM 비활성, 미설정, timeout, invalid JSON, low confidence를 모두 `boi_agent_router_unavailable` 장애로 표시한다. 자동 대화 경로는 규칙 기반 대체 응답으로 우회하지 않는다. |
+| `BOI_AGENT_ROUTER_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, Router LLM 비활성, 미설정, timeout, invalid JSON, invalid route/intent, low confidence를 모두 `boi_agent_router_unavailable` 장애로 표시한다. 자동 대화 경로는 규칙 기반 대체 응답으로 우회하지 않는다. |
 | `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
 | `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
 | `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `12` | Gemma Router response timeout. 운영 모드에서 timeout은 Agent 장애로 노출된다. |
@@ -85,12 +85,12 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |
 | `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `12` | stream plan 생성 timeout. 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. 긴 대기 뒤 대체 문구로 숨기지 않고 Agent 장애로 노출한다. |
 | `BOI_AGENT_STATUS_MAX_TOKENS` | `1536` | Gemma 계열 모델이 reasoning token을 먼저 쓸 수 있어 너무 낮추면 `finish_reason=length`로 JSON content가 비며 장애가 된다. compact stream planner prompt 기준 1536을 기본값으로 둔다. |
-| `BOI_AGENT_SUGGESTIONS_REQUIRED` | `1` | 현재 페이지 추천 질문은 LLM suggestion writer가 생성해야 한다. 운영에서 실패하면 템플릿 질문으로 대체하지 않고 `boi_agent_suggestions_unavailable`로 표시한다. |
+| `BOI_AGENT_SUGGESTIONS_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, 현재 페이지 추천 질문은 LLM suggestion writer가 생성해야 한다. 실패하면 템플릿 질문으로 대체하지 않고 `boi_agent_suggestions_unavailable`로 표시한다. |
 | `BOI_AGENT_SUGGESTIONS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible suggestion writer endpoint |
 | `BOI_AGENT_SUGGESTIONS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 현재 페이지 추천 질문을 생성할 model |
 | `BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS` | `8` | 추천 질문 생성 timeout. 실패 시 Pet Agent는 현재 페이지 질문을 숨기거나 장애로 표시해야 하며, 하드코딩 질문을 운영 fallback으로 쓰지 않는다. |
 | `BOI_AGENT_COMPOSER_LLM_ENABLED` | `auto` | Native tool loop가 만든 근거와 artifact를 LLM composer가 일반 구성원용 Markdown 답변으로 다듬는다. placeholder URL이면 비활성이다. |
-| `BOI_AGENT_COMPOSER_REQUIRED` | `1` | 운영 기본값은 LLM composer 필수다. 실패하면 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. 테스트나 로컬 진단에서만 명시적으로 `0`으로 낮춘다. |
+| `BOI_AGENT_COMPOSER_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, composer 실패는 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. |
 | `BOI_AGENT_COMPOSER_TIMEOUT_SECONDS` | `20` | composer 호출 timeout |
 | `BOI_AGENT_COMPOSER_MAX_TOKENS` | `1536` | 최종 Markdown 답변 확보용 token limit. Gemma가 반복 생성으로 `finish_reason=length`에 빠지지 않게 답변 계약은 1200자 이하를 기준으로 둔다. 런타임은 이 값을 최대 1536으로 cap한다. |
 
