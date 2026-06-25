@@ -374,6 +374,76 @@ def test_boi_agent_stream_plan_fails_when_llm_returns_no_usable_status(boi_app_m
     assert len(payloads) == 1
 
 
+def test_boi_agent_stream_plan_requests_three_distinct_statuses(boi_app_module, monkeypatch):
+    payloads: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "route": "fast",
+                                    "confidence": 0.95,
+                                    "intent": "page_qa",
+                                    "requires_mutation": False,
+                                    "requires_deep_reasoning": False,
+                                    "statuses": [
+                                        {"stage": "page_context", "message": "현재 화면의 맥락을 확인하고 있습니다."},
+                                        {"stage": "retrieval", "message": "관련 근거와 연결 문서를 살펴보고 있습니다."},
+                                        {"stage": "compose", "message": "확인한 내용을 한 문장으로 정리하고 있습니다."},
+                                    ],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, headers, json):
+            payloads.append(json)
+            return FakeResponse()
+
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_BASE_URL", "http://router.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    plan = boi_app_module.call_boi_agent_stream_plan_llm(
+        boi_app_module.BoiAgentChatRequest(
+            question="현재 페이지 기준으로 진행 상태 한 줄을 만들고 짧게 답해줘",
+            current_url="/docs/boi:public:sop:equipment-abnormal-response",
+        ),
+        "100001",
+    )
+
+    schema = payloads[0]["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["statuses"]["minItems"] == 3
+    assert schema["properties"]["statuses"]["maxItems"] == 3
+    prompt = payloads[0]["messages"][1]["content"]
+    assert "exactly 3 distinct Korean nontechnical messages" in prompt
+    assert len(plan["status_steps"]) == 3
+
+
 def test_boi_agent_stream_plan_accepts_single_llm_status_message(boi_app_module):
     steps = boi_app_module.normalize_llm_status_steps(
         {

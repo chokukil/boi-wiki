@@ -7283,9 +7283,11 @@ def stream_plan_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -
             "JSON only",
             "No markdown",
             "Do not answer the user",
-            "statuses has 1-3 Korean nontechnical messages",
+            "statuses has exactly 3 distinct Korean nontechnical messages",
+            "Use three different stages: early context check, evidence/tool work, answer composition",
             "Do not include a reason field",
-            "Avoid repeating words",
+            "Do not repeat the same sentence or phrase",
+            "Avoid broken hyphenated Korean such as 의-목",
         ],
         "output_shape": {
             "route": "route",
@@ -7330,7 +7332,7 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
                     "requires_deep_reasoning": {"type": "boolean"},
                     "statuses": {
                         "type": "array",
-                        "minItems": 1,
+                        "minItems": 3,
                         "maxItems": 3,
                         "items": {
                             "type": "object",
