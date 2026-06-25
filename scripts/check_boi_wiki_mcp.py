@@ -273,7 +273,40 @@ def validate_agent_response(response: dict, schema: dict) -> None:
     minimal_json_schema_validate(response, schema)
 
 
+REQUIRED_EXECUTION_CARD_FIELDS = {
+    "contract_version",
+    "operation",
+    "requires_confirmation",
+    "user_confirmed_required",
+    "required_role",
+    "permission",
+}
+
+
+def execution_card_required_fields(schema: dict) -> list[str]:
+    return (
+        schema.get("properties", {})
+        .get("execution_cards", {})
+        .get("items", {})
+        .get("required", [])
+    )
+
+
+def validate_agent_response_schema_contract(schema: dict) -> None:
+    if not isinstance(schema, dict):
+        raise RuntimeError("BoI Agent response-schema endpoint did not return a JSON schema")
+    required = set(execution_card_required_fields(schema))
+    missing = sorted(REQUIRED_EXECUTION_CARD_FIELDS - required)
+    if missing:
+        raise RuntimeError(
+            "execution_cards schema must require "
+            + ", ".join(sorted(REQUIRED_EXECUTION_CARD_FIELDS))
+            + f"; missing: {', '.join(missing)}"
+        )
+
+
 def agent_response_summary(response: dict, schema: dict) -> dict:
+    validate_agent_response_schema_contract(schema)
     validate_agent_response(response, schema)
     return {
         "schema_valid": True,
@@ -292,6 +325,8 @@ def mcp_status_schema_summary(status_payload: dict, api_schema: dict) -> dict:
     mcp_schema = status_payload.get("agent_response_schema")
     if not isinstance(mcp_schema, dict):
         raise RuntimeError("MCP status endpoint did not expose agent_response_schema")
+    validate_agent_response_schema_contract(api_schema)
+    validate_agent_response_schema_contract(mcp_schema)
     if mcp_schema != api_schema:
         raise RuntimeError("MCP status AgentResponse schema does not match BoI API schema")
     return {
@@ -303,6 +338,7 @@ def mcp_status_schema_summary(status_payload: dict, api_schema: dict) -> dict:
             .get("const")
         ),
         "required_fields": mcp_schema.get("required") or [],
+        "execution_card_required": execution_card_required_fields(mcp_schema),
     }
 
 

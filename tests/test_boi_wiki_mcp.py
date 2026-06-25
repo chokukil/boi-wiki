@@ -1192,8 +1192,19 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["contract_version", "operation", "requires_confirmation", "user_confirmed_required"],
-                    "properties": {"contract_version": {"const": "boi-agent.response.v1"}},
+                    "required": [
+                        "contract_version",
+                        "operation",
+                        "requires_confirmation",
+                        "user_confirmed_required",
+                        "required_role",
+                        "permission",
+                    ],
+                    "properties": {
+                        "contract_version": {"const": "boi-agent.response.v1"},
+                        "required_role": {"type": "string"},
+                        "permission": {"type": "object"},
+                    },
                 },
             },
             "status_updates": {"type": "array"},
@@ -1215,6 +1226,8 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
                 "operation": "event_publish",
                 "requires_confirmation": True,
                 "user_confirmed_required": True,
+                "required_role": "boi.workflow_runner",
+                "permission": {"allowed": True, "role": "boi.workflow_runner"},
             }
         ],
         "status_updates": [],
@@ -1287,22 +1300,72 @@ def test_check_boi_wiki_mcp_agent_contract_rejects_mcp_status_schema_drift(monke
 
     agent_schema = {
         "type": "object",
-        "required": ["agent_contract_version", "answer_markdown"],
+        "required": ["agent_contract_version", "answer_markdown", "execution_cards"],
         "properties": {
             "agent_contract_version": {"const": "boi-agent.response.v1"},
             "answer_markdown": {"type": "string"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "contract_version",
+                        "operation",
+                        "requires_confirmation",
+                        "user_confirmed_required",
+                        "required_role",
+                        "permission",
+                    ],
+                    "properties": {
+                        "contract_version": {"const": "boi-agent.response.v1"},
+                        "required_role": {"type": "string"},
+                        "permission": {"type": "object"},
+                    },
+                },
+            },
         },
     }
     drifted_schema = {
         "type": "object",
-        "required": ["agent_contract_version"],
+        "required": ["agent_contract_version", "answer_markdown", "execution_cards"],
         "properties": {
             "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "answer_markdown": {"type": "string"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "contract_version",
+                        "operation",
+                        "requires_confirmation",
+                        "user_confirmed_required",
+                        "required_role",
+                        "permission",
+                    ],
+                    "properties": {
+                        "contract_version": {"const": "boi-agent.response.v1"},
+                        "required_role": {"type": "string"},
+                        "permission": {"type": "object"},
+                        "unexpected_mcp_only_field": {"type": "string"},
+                    },
+                },
+            },
         },
     }
     agent_response = {
         "agent_contract_version": "boi-agent.response.v1",
         "answer_markdown": "계약 검증 응답",
+        "execution_cards": [
+            {
+                "contract_version": "boi-agent.response.v1",
+                "operation": "event_publish",
+                "requires_confirmation": True,
+                "user_confirmed_required": True,
+                "required_role": "boi.workflow_runner",
+                "permission": {"allowed": True, "role": "boi.workflow_runner"},
+            }
+        ],
     }
 
     class FakeResponse:
@@ -1340,6 +1403,110 @@ def test_check_boi_wiki_mcp_agent_contract_rejects_mcp_status_schema_drift(monke
     monkeypatch.setattr(script.httpx, "AsyncClient", FakeAsyncClient)
 
     with pytest.raises(RuntimeError, match="MCP status AgentResponse schema does not match BoI API schema"):
+        asyncio.run(
+            script.check_agent_contract(
+                boi_api_url="http://boi-api.test",
+                mcp_base_url="http://mcp.test",
+                employee_id="100001",
+            )
+        )
+
+
+def test_check_boi_wiki_mcp_agent_contract_rejects_missing_execution_permission_fields(monkeypatch):
+    import scripts.check_boi_wiki_mcp as script
+
+    legacy_schema = {
+        "type": "object",
+        "required": [
+            "agent_contract_version",
+            "answer_markdown",
+            "display_markdown",
+            "links",
+            "citations",
+            "artifacts",
+            "execution_cards",
+            "status_updates",
+            "tool_trace",
+            "access_summary",
+            "guardrails_applied",
+        ],
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "answer_markdown": {"type": "string"},
+            "display_markdown": {"type": "string"},
+            "links": {"type": "array"},
+            "citations": {"type": "array"},
+            "artifacts": {"type": "array"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["contract_version", "operation", "requires_confirmation", "user_confirmed_required"],
+                    "properties": {"contract_version": {"const": "boi-agent.response.v1"}},
+                },
+            },
+            "status_updates": {"type": "array"},
+            "tool_trace": {"type": "array"},
+            "access_summary": {"type": "object"},
+            "guardrails_applied": {"type": "array"},
+        },
+    }
+    legacy_response = {
+        "agent_contract_version": "boi-agent.response.v1",
+        "answer_markdown": "legacy contract response",
+        "display_markdown": "legacy contract response",
+        "links": [],
+        "citations": [],
+        "artifacts": [],
+        "execution_cards": [
+            {
+                "contract_version": "boi-agent.response.v1",
+                "operation": "event_publish",
+                "requires_confirmation": True,
+                "user_confirmed_required": True,
+            }
+        ],
+        "status_updates": [],
+        "tool_trace": [],
+        "access_summary": {},
+        "guardrails_applied": [],
+    }
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._body
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def get(self, url, **kwargs):
+            if url == "http://boi-api.test/api/agents/boi-wiki/response-schema":
+                return FakeResponse({"ok": True, "agent_contract_version": "boi-agent.response.v1", "schema": legacy_schema})
+            if url == "http://mcp.test/health":
+                return FakeResponse({"ok": True, "agent_response_schema": legacy_schema})
+            raise AssertionError(url)
+
+        async def post(self, url, **kwargs):
+            if url == "http://boi-api.test/api/agents/boi-wiki/chat":
+                return FakeResponse(legacy_response)
+            raise AssertionError(url)
+
+    monkeypatch.setattr(script.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(RuntimeError, match="execution_cards schema must require"):
         asyncio.run(
             script.check_agent_contract(
                 boi_api_url="http://boi-api.test",
@@ -1545,7 +1712,28 @@ def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependenc
             "access_summary",
             "guardrails_applied",
         ],
-        "properties": {"agent_contract_version": {"const": "boi-agent.response.v1"}},
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "contract_version",
+                        "operation",
+                        "requires_confirmation",
+                        "user_confirmed_required",
+                        "required_role",
+                        "permission",
+                    ],
+                    "properties": {
+                        "contract_version": {"const": "boi-agent.response.v1"},
+                        "required_role": {"type": "string"},
+                        "permission": {"type": "object"},
+                    },
+                },
+            },
+        },
     }
     response = {
         "agent_contract_version": "boi-agent.response.v1",
