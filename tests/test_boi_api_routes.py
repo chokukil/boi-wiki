@@ -474,7 +474,17 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     def fail_langflow(*args, **kwargs):
         raise AssertionError("native default must not call Langflow")
 
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        assert task == "compose"
+        return {
+            "answer_markdown": "## Native Agent 답변\n\n설비 이상 대응 SOP와 연결 Action을 확인했습니다.",
+            "suggested_questions": ["이 SOP의 Event와 Action 관계를 표로 보여줘."],
+        }
+
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
     response = client.post(
@@ -574,6 +584,33 @@ def test_boi_agent_required_llm_composer_failure_is_service_error(boi_app_module
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", empty_llm)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP를 짧게 요약해줘",
+            "mode": "fast",
+            "intent": "summarize",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "native_agent_runtime_unavailable"
+    assert "composer" in detail["message"].lower()
+
+
+def test_boi_agent_required_llm_composer_disabled_is_service_error(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def unexpected_llm(*args, **kwargs):
+        raise AssertionError("disabled composer must fail before calling LLM")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", unexpected_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -1352,9 +1389,19 @@ def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_mod
     def fail_langflow(*args, **kwargs):
         raise AssertionError("fast route must not call Langflow")
 
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        assert task == "compose"
+        return {
+            "answer_markdown": "## 현재 페이지 해석\n\n설비 이상 대응 SOP를 현재 문서 맥락으로 요약했습니다.",
+            "suggested_questions": ["이 SOP를 Mermaid로 보여줘."],
+        }
+
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
     response = client.post(
@@ -1412,14 +1459,22 @@ def test_boi_agent_native_reuses_api_router_without_internal_llm(boi_app_module,
             "router_backend": "llm",
         }
 
-    def fail_internal_llm(*args, **kwargs):
-        raise AssertionError("native graph must not re-run LLM routing when API route is provided")
+    def fake_internal_llm(employee_id: str, task: str, payload: dict):
+        if task == "route":
+            raise AssertionError("native graph must not re-run LLM routing when API route is provided")
+        assert task == "compose"
+        return {
+            "answer_markdown": "## Router 재사용 확인\n\nAPI Router 결과를 재사용해 현재 페이지 기준 답변을 구성했습니다.",
+            "suggested_questions": ["관련 SOP를 더 찾아줘."],
+        }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
-    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fail_internal_llm)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_internal_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -1738,9 +1793,19 @@ def test_boi_agent_obvious_search_uses_llm_router_first(boi_app_module, monkeypa
             "router_backend": "llm",
         }
 
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        assert task == "compose"
+        return {
+            "answer_markdown": "## 검색 결과\n\n설비 SOP 관련 Event와 Action을 BoI Wiki 근거로 정리했습니다.",
+            "suggested_questions": ["이 결과를 workflow summary로 보여줘."],
+        }
+
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",

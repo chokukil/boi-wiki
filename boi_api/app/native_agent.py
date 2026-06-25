@@ -496,6 +496,8 @@ class NativeBoiAgent:
             state["composer_skipped_reason"] = "typed_artifact_is_authoritative"
             return
         if not self.config.composer_enabled:
+            if self.config.composer_required:
+                raise NativeAgentRuntimeUnavailable("LLM answer composer is required but not configured")
             state["composer_backend"] = "deterministic"
             return
         if not self.tools.llm_json:
