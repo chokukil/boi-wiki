@@ -563,8 +563,8 @@ def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app
 
     assert len(payloads) == 1
     assert payloads[0]["url"] == "http://router.example/v1/chat/completions"
-    assert payloads[0]["json"]["response_format"]["type"] == "json_schema"
-    assert payloads[0]["json"]["response_format"]["json_schema"]["name"] == "boi_agent_stream_plan"
+    assert payloads[0]["json"]["response_format"]["type"] == "text"
+    assert "json_schema" not in payloads[0]["json"]["response_format"]
     assert plan["route"]["route"] == "deep"
     assert plan["route"]["intent"] == "diagram"
     assert plan["route"]["router_backend"] == "llm"
@@ -706,9 +706,7 @@ def test_boi_agent_stream_plan_requests_three_distinct_statuses(boi_app_module, 
         "100001",
     )
 
-    schema = payloads[0]["response_format"]["json_schema"]["schema"]
-    assert schema["properties"]["statuses"]["minItems"] == 3
-    assert schema["properties"]["statuses"]["maxItems"] == 3
+    assert payloads[0]["response_format"] == {"type": "text"}
     prompt = payloads[0]["messages"][1]["content"]
     assert "exactly 3 distinct Korean nontechnical messages" in prompt
     assert len(plan["status_steps"]) == 3
@@ -1663,6 +1661,27 @@ def test_boi_agent_deep_summarize_relation_question_overrides_to_workflow_explai
     )
     assert native_fixed["route"] == "deep"
     assert native_fixed["intent"] == "workflow_explain"
+
+
+def test_boi_agent_relation_table_show_request_is_not_search(boi_app_module):
+    from boi_api.app import native_agent
+
+    question = "이 SOP의 Event, Action, Manual Handoff 관계를 표로 보여줘."
+    request = boi_app_module.BoiAgentChatRequest(
+        question=question,
+        current_url="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+    )
+    route = {
+        "route": "fast",
+        "intent": "search",
+        "confidence": 0.98,
+        "router_backend": "llm",
+    }
+
+    fixed = boi_app_module.apply_agent_route_overrides(request, route)
+    assert fixed["route"] == "deep"
+    assert fixed["intent"] == "workflow_explain"
+    assert native_agent.deterministic_native_intent(question, request.current_url) == "workflow_explain"
 
 
 def test_boi_agent_stream_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):

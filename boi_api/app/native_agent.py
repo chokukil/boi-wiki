@@ -81,6 +81,33 @@ def safety_route_override(question: str) -> str | None:
     return None
 
 
+def looks_like_workflow_explain_request(question: str) -> bool:
+    q = str(question or "").lower()
+    event_terms = ("event", "이벤트")
+    action_terms = ("action", "액션", "업무 요청")
+    manual_terms = ("manual handoff", "handoff", "핸드오프", "수동 조치", "조치")
+    relation_terms = (
+        "관계",
+        "흐름",
+        "이어지는",
+        "연결",
+        "발생하면",
+        "뭘 해야",
+        "무엇을 해야",
+        "어떻게 해야",
+        "업무 흐름",
+        "workflow",
+        "워크플로우",
+    )
+    output_terms = ("요약", "정리", "표", "table", "보여줘", "설명", "나열")
+    has_relation = any(term in q for term in relation_terms)
+    has_event = any(term in q for term in event_terms)
+    has_action = any(term in q for term in action_terms)
+    has_manual = any(term in q for term in manual_terms)
+    has_output = any(term in q for term in output_terms)
+    return has_relation or (has_output and ((has_event and has_action) or (has_action and has_manual) or (has_event and has_manual)))
+
+
 def deterministic_native_intent(question: str, current_url: str = "") -> str:
     q = str(question or "").lower()
     if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
@@ -104,10 +131,10 @@ def deterministic_native_intent(question: str, current_url: str = "") -> str:
         return "gap_check"
     if any(term in q for term in ("trace", "트레이스", "workflow status", "로그", "왜", "원인", "리스크", "시뮬레이션", "추론", "판단")):
         return "trace_reasoning"
+    if looks_like_workflow_explain_request(question):
+        return "workflow_explain"
     if any(term in q for term in ("찾", "검색", "링크", "목록", "어디", "보여줘")):
         return "search"
-    if any(term in q for term in ("event", "이벤트", "action", "액션", "manual handoff", "handoff", "핸드오프", "관계", "흐름", "발생하면", "뭘 해야", "어떻게 해야", "이어지는")):
-        return "workflow_explain"
     if any(term in q for term in ("요약", "정리", "summary", "summarize")):
         return "summarize"
     return "page_qa" if current_url else "search"

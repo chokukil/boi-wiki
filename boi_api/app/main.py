@@ -47,7 +47,14 @@ from .workflow_materializer import (
     render_stage_execution_body,
 )
 from .simulation_agent import build_simulation_agent_result
-from .native_agent import LANGGRAPH_AVAILABLE, NativeAgentConfig, NativeAgentRuntimeUnavailable, NativeAgentTools, NativeBoiAgent
+from .native_agent import (
+    LANGGRAPH_AVAILABLE,
+    NativeAgentConfig,
+    NativeAgentRuntimeUnavailable,
+    NativeAgentTools,
+    NativeBoiAgent,
+    looks_like_workflow_explain_request,
+)
 from .access_policy import CLASSIFICATION_POLICY_VERSION, AccessPolicyDecision, doc_access_policy
 from .auth import (
     AuthError,
@@ -7162,10 +7169,10 @@ def deterministic_agent_intent(question: str, current_url: str = "") -> str:
         return "gap_check"
     if any(term in q for term in ("trace", "트레이스", "workflow status", "로그", "왜", "원인", "리스크", "시뮬레이션", "추론", "판단")):
         return "trace_reasoning"
+    if looks_like_workflow_explain_request(question):
+        return "workflow_explain"
     if any(term in q for term in ("찾", "검색", "링크", "목록", "어디", "보여줘")):
         return "search"
-    if any(term in q for term in ("event", "이벤트", "action", "액션", "manual handoff", "handoff", "핸드오프", "관계", "흐름", "발생하면", "뭘 해야", "어떻게 해야", "이어지는")):
-        return "workflow_explain"
     if any(term in q for term in ("요약", "정리", "summary", "summarize")):
         return "summarize"
     return "page_qa" if current_url else "search"
@@ -7893,51 +7900,16 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
     if BOI_AGENT_STATUS_API_KEY:
         headers["Authorization"] = f"Bearer {BOI_AGENT_STATUS_API_KEY}"
 
-    stream_plan_response_format = {
-        "type": "json_schema",
-        "json_schema": {
-            "name": "boi_agent_stream_plan",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "route": {"type": "string", "enum": sorted(ALLOWED_AGENT_ROUTES)},
-                    "confidence": {"type": "number"},
-                    "intent": {"type": "string", "enum": sorted(ALLOWED_AGENT_INTENTS)},
-                    "requires_mutation": {"type": "boolean"},
-                    "requires_deep_reasoning": {"type": "boolean"},
-                    "statuses": {
-                        "type": "array",
-                        "minItems": 3,
-                        "maxItems": 3,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "stage": {"type": "string", "enum": list(REQUIRED_AGENT_STATUS_STAGES)},
-                                "message": {"type": "string", "maxLength": 90},
-                            },
-                            "required": ["stage", "message"],
-                        },
-                    },
-                },
-                "required": [
-                    "route",
-                    "confidence",
-                    "intent",
-                    "requires_mutation",
-                    "requires_deep_reasoning",
-                    "statuses",
-                ],
-            },
-        },
-    }
-
     def post_stream_plan(messages: list[dict[str, str]]) -> dict[str, Any]:
         body = {
             "model": BOI_AGENT_STATUS_MODEL,
             "temperature": 0,
             "frequency_penalty": 0.6,
             "max_tokens": max(BOI_AGENT_STATUS_MAX_TOKENS, BOI_AGENT_ROUTER_MAX_TOKENS),
-            "response_format": stream_plan_response_format,
+            # Keep this aligned with the router LLM path. The local
+            # OpenAI-compatible Gemma runtime used in NAS is more reliable with
+            # text mode plus strict JSON extraction than json_schema mode.
+            "response_format": {"type": "text"},
             "messages": messages,
         }
         try:
