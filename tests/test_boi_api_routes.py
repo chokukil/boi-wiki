@@ -4547,6 +4547,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert '${answerHtml ? `<div class="boi-agent-answer"' in script
     assert "state.messages.slice(-20)" in script
     assert "content.scrollTop = content.scrollHeight" in script
+    assert "stickToBottomAfterLayout" in script
+    assert 'document.addEventListener("boi:mermaid-rendered", stickToBottomAfterLayout)' in script
     assert "tool_trace: body.tool_trace || []" in script
     assert "status_updates: responseStatusUpdates" in script
     assert "status_events: responseStatusUpdates" in script
@@ -4659,6 +4661,8 @@ def test_mermaid_loader_retries_after_cdn_load_failure(boi_app_module):
     assert "script.remove();" in script
     assert "script.onerror = () => fail(new Error(\"Mermaid library load failed\"));" in script
     assert "fail(new Error(\"Mermaid library load timed out\"))" in script
+    assert 'new CustomEvent("boi:mermaid-rendered"' in script
+    assert 'state === "rendered" || state === "fallback"' in script
 
 
 def test_pet_agent_markdown_renderer_executes_core_gfm_cases(boi_app_module):

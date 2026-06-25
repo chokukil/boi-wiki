@@ -1108,6 +1108,18 @@
     }
   }
 
+  function stickToBottomAfterLayout() {
+    if (!state.open || state.tab !== "agent" || !state.pinToBottom) return;
+    window.requestAnimationFrame(() => {
+      const content = root.querySelector(".boi-agent-content");
+      if (!content) return;
+      content.scrollTop = content.scrollHeight;
+      state.scrollTop = content.scrollTop;
+      state.pinToBottom = true;
+      persistState();
+    });
+  }
+
   function openArtifact(id) {
     const node = root.querySelector(`[data-viewer-id="${CSS.escape(id)}"]`);
     if (!node) return;
@@ -1271,6 +1283,7 @@
       const finalStatusLines = responseStatusUpdates.length
         ? responseStatusUpdates.map((item) => item?.message || "").filter(Boolean).slice(-6)
         : statusLines.slice(-6);
+      state.pinToBottom = true;
       state.messages[pendingIndex] = {
         role: "assistant",
         text: body.display_markdown || body.answer_markdown || streamedText || "",
@@ -1352,6 +1365,7 @@
   window.visualViewport?.addEventListener("resize", syncViewportPosition);
   window.visualViewport?.addEventListener("scroll", syncViewportPosition);
   window.addEventListener("resize", syncViewportPosition);
+  document.addEventListener("boi:mermaid-rendered", stickToBottomAfterLayout);
   window.addEventListener("pagehide", () => {
     pageUnloading = true;
     if (activeRequest) activeRequest.abort();

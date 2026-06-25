@@ -10,6 +10,12 @@
     diagram.dataset.mermaidState = state;
     const status = diagram.querySelector(".mermaid-status");
     if (status) status.textContent = message;
+    if (state === "rendered" || state === "fallback") {
+      diagram.dispatchEvent(new CustomEvent("boi:mermaid-rendered", {
+        bubbles: true,
+        detail: { state }
+      }));
+    }
   }
 
   function openFallback(diagram, message) {
