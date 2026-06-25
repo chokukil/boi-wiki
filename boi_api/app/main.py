@@ -8783,6 +8783,7 @@ def markdown_without_duplicate_mermaid_artifacts(answer_markdown: str, artifacts
 
 def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict[str, Any]:
     response.setdefault("agent_contract_version", BOI_AGENT_RESPONSE_CONTRACT_VERSION)
+    response.setdefault("answer_markdown", "")
     response.setdefault("links", [])
     response.setdefault("citations", [])
     response.setdefault("suggested_questions", [])

@@ -864,6 +864,37 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert isinstance(body["links"], list)
 
 
+def test_boi_agent_chat_normalizes_minimal_backend_response_to_agent_contract(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def minimal_agent_response(req, employee_id):
+        return {"ok": True, "used_backend": "test_minimal_backend"}
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", minimal_agent_response)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "SOP 찾아줘", "current_url": "/sops"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    schema = client.get("/api/agents/boi-wiki/response-schema").json()["schema"]
+    for field in schema["required"]:
+        assert field in body
+    assert body["agent_contract_version"] == "boi-agent.response.v1"
+    assert body["answer_markdown"] == ""
+    assert body["display_markdown"] == ""
+    assert body["links"] == []
+    assert body["citations"] == []
+    assert body["artifacts"] == []
+    assert body["execution_cards"] == []
+    assert body["status_updates"] == []
+    assert body["tool_trace"] == []
+    assert body["access_summary"] == {}
+    assert body["guardrails_applied"] == []
+
+
 def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     compose_calls: list[dict] = []
