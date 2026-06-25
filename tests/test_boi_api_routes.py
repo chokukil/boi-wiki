@@ -747,6 +747,68 @@ def test_ontology_search_dictionary_and_boi_search_remain_distinct(boi_app_modul
     assert identities.count("boi:public:sop:equipment-abnormal-response") <= 1
 
 
+def test_ontology_and_boi_search_filter_private_docs_by_employee(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    boi_id = "boi:private:100002:ontology-acl-private-leak-test"
+    needle = "ontology-acl-private-needle"
+    title = "Ontology ACL Private Leak Test"
+    boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/reference",
+            "title": title,
+            "description": needle,
+            "tags": ["ACL", "Search"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": boi_id,
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100002",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "acl_policy": "acl:private:100002",
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "ontology-private-acl"}],
+        },
+        f"# Summary\n\n{needle} must only be searchable by owner 100002.",
+    )
+
+    forbidden_ontology = client.get(f"/api/search/ontology?employee_id=100001&q={quote(needle)}&view=compact")
+    allowed_ontology = client.get(f"/api/search/ontology?employee_id=100002&q={quote(needle)}&view=compact")
+    forbidden_boi = client.get(f"/api/boi?employee_id=100001&q={quote(needle)}")
+    allowed_boi = client.get(f"/api/boi?employee_id=100002&q={quote(needle)}")
+
+    assert forbidden_ontology.status_code == 200
+    assert allowed_ontology.status_code == 200
+    forbidden_dump = json.dumps(
+        {
+            "groups": forbidden_ontology.json().get("groups"),
+            "best_matches": forbidden_ontology.json().get("best_matches"),
+            "citations": forbidden_ontology.json().get("citations"),
+            "document_rank_refs": forbidden_ontology.json().get("document_rank_refs"),
+        },
+        ensure_ascii=False,
+    )
+    allowed_dump = json.dumps(
+        {
+            "groups": allowed_ontology.json().get("groups"),
+            "best_matches": allowed_ontology.json().get("best_matches"),
+            "citations": allowed_ontology.json().get("citations"),
+            "document_rank_refs": allowed_ontology.json().get("document_rank_refs"),
+        },
+        ensure_ascii=False,
+    )
+    assert boi_id not in forbidden_dump
+    assert title not in forbidden_dump
+    assert boi_id in allowed_dump
+    assert title in allowed_dump
+
+    assert forbidden_boi.status_code == 200
+    assert allowed_boi.status_code == 200
+    assert all((item.get("metadata") or {}).get("boi_id") != boi_id for item in forbidden_boi.json()["items"])
+    assert any((item.get("metadata") or {}).get("boi_id") == boi_id for item in allowed_boi.json()["items"])
+
+
 def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
