@@ -12,7 +12,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-EXPECTED_PROTOCOL = {"tools": 26, "resource_templates": 6, "prompts": 5}
+EXPECTED_PROTOCOL = {"tools": 29, "resource_templates": 6, "prompts": 5}
 
 
 def mcp_auth_headers(service_token: str = "") -> dict[str, str]:

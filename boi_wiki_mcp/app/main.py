@@ -36,6 +36,9 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "agent_memory_search", "description": "Search private Agent Memory BoI documents for the employee."},
     {"name": "agent_inbox", "description": "Return open manual/approval/follow-up action tasks for an employee."},
     {"name": "manual_handoff_complete", "description": "Append a user-confirmed manual handoff completion row."},
+    {"name": "rbac_me", "description": "Return the employee's BoI Wiki teams, roles, and permission-management capability."},
+    {"name": "rbac_check", "description": "Check whether an employee has a required BoI Wiki role for a scope/resource."},
+    {"name": "doc_access_check", "description": "Evaluate BoI Profile ACL/classification access for one document."},
     {"name": "event_type_draft_create", "description": "Create a user-confirmed Event Type draft and catalog patch proposal."},
     {"name": "event_type_drafts", "description": "List visible Event Type drafts for the employee."},
     {"name": "event_type_draft_validate", "description": "Revalidate an Event Type draft before catalog apply."},
@@ -476,6 +479,48 @@ async def manual_handoff_complete(
         employee_id=employee_id,
         payload={"task_id": task_id, "note": note, "outcome": outcome, "user_confirmed": user_confirmed},
     )
+
+
+@mcp.tool(name="rbac_me")
+async def rbac_me(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return the employee's BoI Wiki teams, roles, and permission management capability."""
+    return await api_get("/api/rbac/me", employee_id=employee_id)
+
+
+@mcp.tool(name="rbac_check")
+async def rbac_check(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    required_role: str = "boi.viewer",
+    scope: str = "global",
+    resource: str = "",
+    operation: str = "read",
+    boi_id: str = "",
+    action_key: str = "",
+    workflow_key: str = "",
+    event_type: str = "",
+) -> dict[str, Any]:
+    """Check whether an employee has a required BoI Wiki role for a scope/resource."""
+    return await api_post(
+        "/api/rbac/check",
+        employee_id=employee_id,
+        payload={
+            "employee_id": employee_id,
+            "required_role": required_role,
+            "scope": scope,
+            "resource": resource,
+            "operation": operation,
+            "boi_id": boi_id,
+            "action_key": action_key,
+            "workflow_key": workflow_key,
+            "event_type": event_type,
+        },
+    )
+
+
+@mcp.tool(name="doc_access_check")
+async def doc_access_check(boi_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Evaluate BoI Profile ACL/classification access for one document."""
+    return await api_get(f"/api/docs/{boi_id}/access", employee_id=employee_id)
 
 
 def event_type_draft_payload_from_args(
@@ -1148,6 +1193,27 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             params={"status": str(args.get("status") or "open"), "limit": int(args.get("limit") or 50)},
             service_token=True,
         )
+    elif tool_name == "rbac_me":
+        result = await api_get("/api/rbac/me", employee_id=employee_id, service_token=True)
+    elif tool_name == "rbac_check":
+        result = await api_post(
+            "/api/rbac/check",
+            employee_id=employee_id,
+            payload={
+                "employee_id": str(args.get("target_employee_id") or args.get("employee_id") or employee_id),
+                "required_role": str(args.get("required_role") or "boi.viewer"),
+                "scope": str(args.get("scope") or "global"),
+                "resource": str(args.get("resource") or ""),
+                "operation": str(args.get("operation") or "read"),
+                "boi_id": str(args.get("boi_id") or ""),
+                "action_key": str(args.get("action_key") or ""),
+                "workflow_key": str(args.get("workflow_key") or ""),
+                "event_type": str(args.get("event_type") or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "doc_access_check":
+        result = await api_get(f"/api/docs/{str(args.get('boi_id') or req.boi_id or '')}/access", employee_id=employee_id, service_token=True)
     elif tool_name == "dictionary_resolve":
         result = await api_get(
             "/api/dictionary/resolve",
