@@ -1071,6 +1071,10 @@ def test_boi_agent_chat_normalizes_execution_cards_to_agent_schema(boi_app_modul
                     "operation": "event_publish",
                     "title": "이벤트 발행 확인",
                     "payload": {"event_type": "meeting.closed.v1"},
+                    "display": {
+                        "status_label": "확인 필요",
+                        "risk_label": "명시 확인 후 실행",
+                    },
                 }
             ],
         }

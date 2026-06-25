@@ -8797,10 +8797,11 @@ def normalize_agent_execution_cards(value: Any, employee_id: str) -> list[dict[s
         required_role = str(item.get("required_role") or agent_operation_required_role(operation))
         permission = item.get("permission") if isinstance(item.get("permission"), dict) else agent_operation_permission_decision(employee_id, operation)
         allowed = bool(permission.get("allowed", True))
-        status_label = str(display.get("status_label") or ("확인 필요" if allowed else "권한 필요"))
-        risk_label = str(
-            display.get("risk_label")
-            or ("명시 확인 후 실행" if allowed else f"권한 필요: {required_role or 'unknown'}")
+        status_label = "권한 필요" if not allowed else str(display.get("status_label") or "확인 필요")
+        risk_label = (
+            f"권한 필요: {required_role or 'unknown'}"
+            if not allowed
+            else str(display.get("risk_label") or "명시 확인 후 실행")
         )
         normalized = {
             **item,
