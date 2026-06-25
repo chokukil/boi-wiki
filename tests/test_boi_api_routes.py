@@ -496,6 +496,7 @@ def test_boi_agent_native_uses_llm_composer_when_enabled(boi_app_module, monkeyp
     assert body["answer_markdown"].startswith("## LLM Composer 답변")
     assert body["context_summary"]["composer_backend"] == "llm"
     assert body["suggested_questions"] == ["이 SOP의 부족한 Action Spec을 찾아줘."]
+    assert body["suggested_questions_source"] == "llm_composer"
 
 
 def test_boi_agent_diagram_uses_native_artifact_without_llm_composer(boi_app_module, monkeypatch):
@@ -1449,11 +1450,8 @@ def test_boi_agent_deep_request_uses_ontology_match_when_not_on_doc_page(boi_app
     assert "설비 이상 감지" in body["answer_markdown"]
     assert "workflow metadata 확인 필요" not in body["answer_markdown"]
     assert any(item.get("type") == "mermaid" for item in body["artifacts"])
-    joined_suggestions = " ".join(body["suggested_questions"])
-    assert "설비 이상 감지·원인 분석·이상 조치 SOP" in joined_suggestions
-    assert "Action 11개" in joined_suggestions
-    assert "Manual Handoff 5개" in joined_suggestions
-    assert "BoI Wiki" not in joined_suggestions
+    assert body["suggested_questions"] == []
+    assert body["suggested_questions_source"] == "suggestions_endpoint_required"
 
 
 def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, monkeypatch):

@@ -513,6 +513,7 @@ class NativeBoiAgent:
             suggestions = result.get("suggested_questions")
             if isinstance(suggestions, list):
                 state["suggested_questions"] = [str(item).strip() for item in suggestions if str(item).strip()][:4]
+                state["suggested_questions_source"] = "llm_composer"
             state["composer_backend"] = "llm"
             return
         state["composer_backend"] = "deterministic"
@@ -665,7 +666,8 @@ class NativeBoiAgent:
             "answer_markdown": state.get("answer_markdown") or "",
             "links": state.get("links") or [],
             "citations": state.get("citations") or [],
-            "suggested_questions": state.get("suggested_questions") or suggested_questions_for_state(state),
+            "suggested_questions": state.get("suggested_questions") or [],
+            "suggested_questions_source": state.get("suggested_questions_source") or "suggestions_endpoint_required",
             "artifacts": state.get("artifacts") or [],
             "context_summary": {
                 "route": state.get("route_name"),
