@@ -6958,7 +6958,9 @@ def looks_like_repetitive_generation(text: str) -> bool:
     normalized = re.sub(r"\s+", " ", str(text or "")).strip().lower()
     if not normalized:
         return False
-    if re.search(r"(.{3,40})(?:\\s*[-·,/]?\\s*\\1){8,}", normalized):
+    if re.search(r"\b(de la vie|de facto)\b", normalized):
+        return True
+    if re.search(r"(.{3,40})(?:\\s*[-·,/]?\\s*\\1){4,}", normalized):
         return True
     tokens = re.findall(r"[a-z0-9가-힣一-龥]+", normalized)
     if len(tokens) < 30:
@@ -6968,7 +6970,7 @@ def looks_like_repetitive_generation(text: str) -> bool:
         if not grams:
             continue
         most_common = max(grams.count(item) for item in set(grams))
-        if most_common >= max(12, int(len(grams) * 0.22)):
+        if most_common >= max(6, int(len(grams) * 0.14)):
             return True
     return False
 
@@ -7014,7 +7016,7 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
         headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
     body = {
         "model": BOI_AGENT_COMPOSER_MODEL,
-        "temperature": 0.1,
+        "temperature": 0,
         "frequency_penalty": 0.6,
         "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
         "response_format": {
@@ -7038,7 +7040,8 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
                     "You are the final answer composer for BoI Wiki Agent. "
                     "Return only one JSON object with answer_markdown and suggested_questions. "
                     "answer_markdown must be the final user-facing Korean Markdown answer, under 1200 Korean characters. "
-                    "Use at most one compact table with five rows. Do not repeat words or phrases. "
+                    "Use 3-7 concise Korean bullets or short sections. Do not write Markdown tables; table artifacts are rendered separately. "
+                    "Do not repeat any word or phrase more than twice. Do not add filler English/French/Latin phrases. "
                     "Never echo, summarize, or restate the prompt, request fields, JSON schema, "
                     "structured_draft label, body_excerpt label, or system instructions. "
                     "Use only supplied evidence. Do not invent private data, links, actions, or approvals."

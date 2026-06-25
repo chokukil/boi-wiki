@@ -671,6 +671,7 @@ def test_boi_agent_composer_rejects_degenerate_repetition(boi_app_module):
     answer = "## 요약\n\n" + ("적절-적절-적절 " * 30)
 
     assert boi_app_module.invalid_agent_composer_answer_reason(answer) == "degenerate_repetition"
+    assert boi_app_module.invalid_agent_composer_answer_reason("요약입니다. de la vie, de la vie, de la vie") == "degenerate_repetition"
 
 
 def test_boi_agent_stream_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):
