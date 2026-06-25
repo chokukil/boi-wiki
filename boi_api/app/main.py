@@ -8084,8 +8084,54 @@ def call_native_boi_agent(
     return response
 
 
+AGENT_ALLOWED_APP_LINK_PREFIXES = (
+    "docs",
+    "events",
+    "workflows",
+    "actions",
+    "event-types",
+    "api",
+    "permissions",
+    "sops",
+    "source",
+)
+AGENT_MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[(?P<label>[^\]]+)\]\((?P<href>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
+AGENT_HOSTLESS_APP_URL_RE = re.compile(
+    r"\bhttps?:/{3,}(?P<rest>(?:docs|events|workflows|actions|event-types|api|permissions|sops|source)(?:[^\s<)]*)?)",
+    flags=re.IGNORECASE,
+)
+AGENT_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def strip_agent_control_chars(value: str) -> str:
+    return AGENT_CONTROL_CHARS_RE.sub("", str(value or ""))
+
+
+def normalize_agent_href(value: Any) -> str:
+    text = strip_agent_control_chars(str(value or "")).strip()
+    if not text:
+        return ""
+    match = re.match(r"^https?:/{3,}(?P<rest>.*)$", text, flags=re.IGNORECASE)
+    if not match:
+        return text
+    rest = str(match.group("rest") or "").lstrip("/")
+    if rest.startswith(AGENT_ALLOWED_APP_LINK_PREFIXES):
+        return "/" + rest
+    return text
+
+
+def normalize_agent_text_references(value: str) -> str:
+    text = strip_agent_control_chars(str(value or ""))
+
+    def replace_markdown_link(match: re.Match[str]) -> str:
+        return f"[{match.group('label')}]({normalize_agent_href(match.group('href'))})"
+
+    text = AGENT_MARKDOWN_LINK_RE.sub(replace_markdown_link, text)
+    return AGENT_HOSTLESS_APP_URL_RE.sub(lambda match: "/" + str(match.group("rest") or "").lstrip("/"), text)
+
+
 def agent_doc_ref_from_reference(value: Any) -> str:
-    text = str(value or "").strip()
+    text = normalize_agent_href(value)
     if not text:
         return ""
     try:
@@ -8152,11 +8198,15 @@ def redact_inaccessible_agent_text(value: str, employee_id: str) -> tuple[str, i
 def sanitize_agent_reference_value(value: Any, employee_id: str) -> tuple[Any, int]:
     if isinstance(value, dict):
         redacted_count = 0
+        normalized_value = dict(value)
+        for key in ("url", "href"):
+            if key in normalized_value:
+                normalized_value[key] = normalize_agent_href(normalized_value.get(key))
         for key in ("url", "href", "ref", "boi_id", "doc_ref"):
-            if key in value and not agent_reference_allowed(value.get(key), employee_id):
+            if key in normalized_value and not agent_reference_allowed(normalized_value.get(key), employee_id):
                 return None, 1
         sanitized: dict[str, Any] = {}
-        for key, item in value.items():
+        for key, item in normalized_value.items():
             sanitized_item, item_redactions = sanitize_agent_reference_value(item, employee_id)
             redacted_count += item_redactions
             if sanitized_item is not None:
@@ -8172,7 +8222,7 @@ def sanitize_agent_reference_value(value: Any, employee_id: str) -> tuple[Any, i
                 sanitized_items.append(sanitized_item)
         return sanitized_items, redacted_count
     if isinstance(value, str):
-        return redact_inaccessible_agent_text(value, employee_id)
+        return redact_inaccessible_agent_text(normalize_agent_text_references(value), employee_id)
     return value, 0
 
 

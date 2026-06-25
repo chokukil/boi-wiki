@@ -1335,6 +1335,40 @@ def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_mo
     assert any("equipment-abnormal-response" in str(link.get("url") or "") for link in body["links"])
 
 
+def test_boi_agent_final_response_normalizes_hostless_app_links(boi_app_module):
+    response = {
+        "answer_markdown": (
+            "참고: [배포 문서](https:///docs/boi:public:boi-wiki-manual:agent:deployment-and-verification"
+            "?employee_id=100001)\brr\n"
+            "외부: [OpenAI](https://example.com/docs)"
+        ),
+        "links": [
+            {
+                "label": "배포 문서",
+                "url": "https:///docs/boi:public:boi-wiki-manual:agent:deployment-and-verification?employee_id=100001",
+            },
+            {"label": "외부", "url": "https://example.com/docs"},
+        ],
+        "citations": [],
+        "artifacts": [],
+        "suggested_questions": [],
+        "tool_trace": [],
+        "context_summary": {},
+    }
+
+    redactions = boi_app_module.sanitize_agent_final_references(response, "100001")
+    body = boi_app_module.enrich_agent_answer_html(response, "100001")
+    dumped = json.dumps(body, ensure_ascii=False)
+
+    assert redactions == 0
+    assert "https:///" not in dumped
+    assert "\b" not in body["answer_markdown"]
+    assert "](/docs/boi:public:boi-wiki-manual:agent:deployment-and-verification" in body["answer_markdown"]
+    assert body["links"][0]["url"].startswith("/docs/boi:public:boi-wiki-manual:agent:deployment-and-verification")
+    assert body["links"][1]["url"] == "https://example.com/docs"
+    assert 'href="/docs/boi:public:boi-wiki-manual:agent:deployment-and-verification' in body["answer_html"]
+
+
 def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
     client = TestClient(boi_app_module.app)
 
