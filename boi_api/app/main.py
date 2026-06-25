@@ -7283,12 +7283,51 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
     headers = {"Content-Type": "application/json"}
     if BOI_AGENT_STATUS_API_KEY:
         headers["Authorization"] = f"Bearer {BOI_AGENT_STATUS_API_KEY}"
+
+    stream_plan_response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "boi_agent_stream_plan",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "route": {"type": "string", "enum": sorted(ALLOWED_AGENT_ROUTES)},
+                    "confidence": {"type": "number"},
+                    "intent": {"type": "string", "enum": sorted(ALLOWED_AGENT_INTENTS)},
+                    "reason": {"type": "string"},
+                    "requires_mutation": {"type": "boolean"},
+                    "requires_deep_reasoning": {"type": "boolean"},
+                    "statuses": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "stage": {"type": "string", "enum": list(REQUIRED_AGENT_STATUS_STAGES)},
+                                "message": {"type": "string"},
+                            },
+                            "required": ["stage", "message"],
+                        },
+                    },
+                },
+                "required": [
+                    "route",
+                    "confidence",
+                    "intent",
+                    "reason",
+                    "requires_mutation",
+                    "requires_deep_reasoning",
+                    "statuses",
+                ],
+            },
+        },
+    }
+
     def post_stream_plan(messages: list[dict[str, str]]) -> dict[str, Any]:
         body = {
             "model": BOI_AGENT_STATUS_MODEL,
             "temperature": 0.1,
             "max_tokens": max(BOI_AGENT_STATUS_MAX_TOKENS, BOI_AGENT_ROUTER_MAX_TOKENS),
-            "response_format": {"type": "text"},
+            "response_format": stream_plan_response_format,
             "messages": messages,
         }
         try:

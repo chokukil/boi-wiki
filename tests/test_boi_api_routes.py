@@ -293,6 +293,8 @@ def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app
 
     assert len(payloads) == 1
     assert payloads[0]["url"] == "http://router.example/v1/chat/completions"
+    assert payloads[0]["json"]["response_format"]["type"] == "json_schema"
+    assert payloads[0]["json"]["response_format"]["json_schema"]["name"] == "boi_agent_stream_plan"
     assert plan["route"]["route"] == "deep"
     assert plan["route"]["intent"] == "diagram"
     assert plan["route"]["router_backend"] == "llm"
