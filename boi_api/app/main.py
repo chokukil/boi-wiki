@@ -7111,6 +7111,10 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
         if answer:
             parsed["answer_markdown"] = answer
             return parsed
+        plan = normalize_agent_answer_plan(parsed)
+        if plan:
+            parsed["answer_plan"] = plan
+            return parsed
     decoder = json.JSONDecoder()
     stripped = text.strip()
     if stripped.startswith("```") and stripped.endswith("```"):
@@ -7132,7 +7136,90 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
             if answer:
                 payload["answer_markdown"] = answer
                 return payload
+            plan = normalize_agent_answer_plan(payload)
+            if plan:
+                payload["answer_plan"] = plan
+                return payload
     return None
+
+
+def sanitize_agent_plan_text(value: Any, limit: int = 360) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    text = re.sub(r"^#{1,6}\s*", "", text).strip()
+    text = text.replace("|", "\\|")
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "..."
+    return text
+
+
+def normalize_agent_answer_plan(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    source = payload.get("answer_plan") if isinstance(payload.get("answer_plan"), dict) else payload
+    title = sanitize_agent_plan_text(source.get("title") or "답변", 80)
+    summary = sanitize_agent_plan_text(source.get("summary") or source.get("short_answer") or "", 700)
+    bullets: list[dict[str, str]] = []
+    for raw_item in (source.get("bullets") or source.get("points") or [])[:7]:
+        if isinstance(raw_item, dict):
+            text = sanitize_agent_plan_text(raw_item.get("text") or raw_item.get("body") or raw_item.get("summary") or "", 420)
+        else:
+            text = sanitize_agent_plan_text(raw_item, 420)
+        if text:
+            bullets.append({"text": text})
+    links: list[dict[str, str]] = []
+    for raw_link in (source.get("links") or [])[:6]:
+        if not isinstance(raw_link, dict):
+            continue
+        label = sanitize_agent_plan_text(raw_link.get("label") or raw_link.get("title") or raw_link.get("url") or "", 90)
+        url = str(raw_link.get("url") or raw_link.get("href") or "").strip()
+        reason = sanitize_agent_plan_text(raw_link.get("reason") or raw_link.get("description") or "", 180)
+        if label and url:
+            links.append({"label": label, "url": url, "reason": reason})
+    suggestions = [
+        sanitize_agent_plan_text(item, 120)
+        for item in (source.get("suggested_questions") or source.get("followups") or [])[:4]
+        if sanitize_agent_plan_text(item, 120)
+    ]
+    if not summary and not bullets and not links:
+        return None
+    return {
+        "title": title or "답변",
+        "summary": summary,
+        "bullets": bullets,
+        "links": links,
+        "suggested_questions": suggestions,
+    }
+
+
+def render_agent_answer_plan(plan: dict[str, Any]) -> str:
+    title = sanitize_agent_plan_text(plan.get("title") or "답변", 80)
+    parts = [f"## {title}"]
+    summary = sanitize_agent_plan_text(plan.get("summary") or "", 700)
+    if summary:
+        parts.append(summary)
+    bullets = plan.get("bullets") if isinstance(plan.get("bullets"), list) else []
+    bullet_lines = []
+    for item in bullets[:7]:
+        text = sanitize_agent_plan_text((item or {}).get("text") if isinstance(item, dict) else item, 420)
+        if text:
+            bullet_lines.append(f"- {text}")
+    if bullet_lines:
+        parts.append("\n".join(bullet_lines))
+    links = plan.get("links") if isinstance(plan.get("links"), list) else []
+    link_lines = []
+    for item in links[:6]:
+        if not isinstance(item, dict):
+            continue
+        label = sanitize_agent_plan_text(item.get("label") or item.get("url") or "", 90)
+        url = str(item.get("url") or "").strip()
+        reason = sanitize_agent_plan_text(item.get("reason") or "", 180)
+        if not label or not url:
+            continue
+        suffix = f" - {reason}" if reason else ""
+        link_lines.append(f"- [{label}]({url}){suffix}")
+    if link_lines:
+        parts.append("**관련 링크**\n" + "\n".join(link_lines))
+    return "\n\n".join(part for part in parts if str(part).strip()).strip()
 
 
 def looks_like_repetitive_generation(text: str) -> bool:
@@ -7294,10 +7381,11 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
     if repair:
         user_payload["quality_repair"] = repair
     system_content = (
-        "You are the final answer composer for BoI Wiki Agent. "
-        "Return only one JSON object with answer_markdown and suggested_questions. "
-        "answer_markdown must be the final user-facing Korean Markdown answer, under 1200 Korean characters. "
-        "Use 3-7 concise Korean bullets or short sections. Do not write Markdown tables; table artifacts are rendered separately. "
+        "You are the answer planner for BoI Wiki Agent. "
+        "Return only one JSON object with title, summary, bullets, links, and suggested_questions. "
+        "Do not write final Markdown, Markdown tables, code fences, or raw JSON inside any text field; the server renders Markdown. "
+        "The plan must be concise Korean user-facing content under 1200 Korean characters after rendering. "
+        "Use 3-7 concise Korean bullets when useful. Table, Mermaid, and card artifacts are rendered separately. "
         "Write in Korean sentences. English is allowed only for official product names, action keys, event types, APIs, URLs, or code identifiers. "
         "Do not use Chinese characters, Arabic, Cyrillic, Greek, French, German, Latin filler, decorative translations, or English-only section titles. "
         "Do not repeat any word or phrase more than twice. "
@@ -7309,7 +7397,7 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
     if repair:
         system_content += (
             " This is a quality repair attempt. Rewrite from the supplied structured_draft and evidence only. "
-            "Do not preserve the rejected wording. Start with a Korean heading such as '## 답변'."
+            "Do not preserve the rejected wording. Return a clean Korean answer plan; do not include Markdown headings or fences."
         )
     return {
         "model": BOI_AGENT_COMPOSER_MODEL,
@@ -7319,14 +7407,37 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
         "response_format": {
             "type": "json_schema",
             "json_schema": {
-                "name": "boi_agent_final_answer",
+                "name": "boi_agent_answer_plan",
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "answer_markdown": {"type": "string"},
+                        "title": {"type": "string"},
+                        "summary": {"type": "string"},
+                        "bullets": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "text": {"type": "string"},
+                                },
+                                "required": ["text"],
+                            },
+                        },
+                        "links": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string"},
+                                    "url": {"type": "string"},
+                                    "reason": {"type": "string"},
+                                },
+                                "required": ["label", "url"],
+                            },
+                        },
                         "suggested_questions": {"type": "array", "items": {"type": "string"}},
                     },
-                    "required": ["answer_markdown"],
+                    "required": ["title", "summary"],
                 },
             },
         },
@@ -7345,15 +7456,22 @@ def parse_boi_agent_composer_response(raw: Any) -> tuple[dict[str, Any] | None, 
     for text in iter_langflow_text_candidates(raw):
         candidate = parse_agent_compose_payload(text)
         if candidate:
-            answer = str(candidate.get("answer_markdown") or "").strip()
+            if isinstance(candidate.get("answer_plan"), dict):
+                answer = render_agent_answer_plan(candidate["answer_plan"])
+                suggestions = candidate["answer_plan"].get("suggested_questions")
+                composer_contract = "answer_plan"
+            else:
+                answer = str(candidate.get("answer_markdown") or "").strip()
+                suggestions = candidate.get("suggested_questions")
+                composer_contract = "legacy_answer_markdown"
             invalid_reason = invalid_agent_composer_answer_reason(answer)
             if invalid_reason:
                 invalid_reasons.append(invalid_reason)
                 continue
-            suggestions = candidate.get("suggested_questions")
             return {
                 "answer_markdown": answer,
                 "suggested_questions": suggestions if isinstance(suggestions, list) else [],
+                "composer_contract": composer_contract,
             }, invalid_reasons
     return None, invalid_reasons or ["no_valid_json_answer"]
 
@@ -7386,7 +7504,7 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
             return parsed
         repair_payload = {
             "previous_rejection_reasons": sorted(set(invalid_reasons)),
-            "required_fix": "Return a Korean-only user-facing Markdown answer. Keep official BoI/SOP/Event/Action/API/MCP identifiers only when needed.",
+            "required_fix": "Return a Korean-only structured answer plan. Do not include Markdown code fences, prompt text, or mixed-language filler. Keep official BoI/SOP/Event/Action/API/MCP identifiers only when needed.",
         }
     reason_summary = ", ".join(sorted(set(invalid_reasons))) or "unknown"
     raise NativeAgentRuntimeUnavailable(f"LLM answer composer returned invalid final answer: {reason_summary}")

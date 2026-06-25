@@ -859,8 +859,14 @@ def llm_compose_payload(state: JsonDict) -> JsonDict:
         ],
         "structured_draft": compact_text(draft, 3200),
         "required_json_schema": {
-            "answer_markdown": "final Korean Markdown answer. Preserve factual constraints and include links only from evidence.",
-            "suggested_questions": ["2-4 short follow-up questions"],
+            "answer_plan": {
+                "title": "short Korean title without Markdown syntax",
+                "summary": "concise Korean synthesis based only on supplied evidence",
+                "bullets": [{"text": "optional Korean bullet text"}],
+                "links": [{"label": "evidence label", "url": "evidence URL", "reason": "why this link matters"}],
+                "suggested_questions": ["2-4 short follow-up questions"],
+            },
+            "server_rendering": "The LLM must not write final Markdown. BoI API renders Markdown from this structured plan.",
         },
     }
 

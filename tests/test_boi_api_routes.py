@@ -696,7 +696,45 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert isinstance(body["links"], list)
 
 
-def test_boi_agent_native_uses_llm_composer_when_enabled(boi_app_module, monkeypatch):
+def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    compose_calls: list[dict] = []
+
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        compose_calls.append({"employee_id": employee_id, "task": task, "payload": payload})
+        assert task == "compose"
+        return {
+            "answer_markdown": "## 답변\n\n- 설비 이상 SOP는 Event, Action, Manual Handoff 근거를 연결합니다.",
+            "suggested_questions": ["이 SOP의 부족한 Action Spec을 찾아줘."],
+            "composer_contract": "answer_plan",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP를 짧게 요약해줘",
+            "mode": "fast",
+            "intent": "summarize",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert compose_calls
+    assert compose_calls[0]["payload"]["required_json_schema"]["answer_plan"]
+    assert body["context_summary"]["composer_backend"] == "llm"
+    assert body["context_summary"]["composer_error"] == ""
+    assert "설비" in body["answer_markdown"]
+    assert body["suggested_questions_source"] == "llm_composer"
+
+
+def test_boi_agent_trace_reasoning_uses_llm_composer_when_enabled(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     compose_calls: list[dict] = []
 
@@ -716,10 +754,10 @@ def test_boi_agent_native_uses_llm_composer_when_enabled(boi_app_module, monkeyp
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
-            "question": "이 SOP를 짧게 요약해줘",
-            "mode": "fast",
-            "intent": "summarize",
-            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "question": "이 trace 리스크를 분석해줘",
+            "mode": "deep",
+            "intent": "trace_reasoning",
+            "current_url": "/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-test-composer",
         },
     )
 
@@ -776,10 +814,10 @@ def test_boi_agent_required_llm_composer_failure_is_service_error(boi_app_module
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
-            "question": "이 SOP를 짧게 요약해줘",
-            "mode": "fast",
-            "intent": "summarize",
-            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "question": "이 trace 리스크를 분석해줘",
+            "mode": "deep",
+            "intent": "trace_reasoning",
+            "current_url": "/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-test-composer",
         },
     )
 
@@ -803,10 +841,10 @@ def test_boi_agent_required_llm_composer_disabled_is_service_error(boi_app_modul
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
-            "question": "이 SOP를 짧게 요약해줘",
-            "mode": "fast",
-            "intent": "summarize",
-            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "question": "이 trace 리스크를 분석해줘",
+            "mode": "deep",
+            "intent": "trace_reasoning",
+            "current_url": "/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-test-composer",
         },
     )
 
@@ -1986,6 +2024,9 @@ def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
 
 def test_boi_agent_composer_parser_accepts_json_contract_not_plain_markdown(boi_app_module):
     alias_payload = boi_app_module.parse_agent_compose_payload('{"answer":"## 답변\\n근거를 기준으로 정리했습니다."}')
+    plan_payload = boi_app_module.parse_agent_compose_payload(
+        '{"title":"답변","summary":"근거를 기준으로 정리했습니다.","bullets":[{"text":"SOP와 Action을 연결합니다."}]}'
+    )
     plain_payload = boi_app_module.parse_agent_compose_payload("## 답변\n\n근거를 기준으로 정리했습니다.")
     fenced_json_payload = boi_app_module.parse_agent_compose_payload(
         '```json\n{"answer_markdown":"## 답변\\n\\n| 항목 | 내용 |\\n| --- | --- |\\n| 근거 | SOP |"}\n```'
@@ -2006,6 +2047,7 @@ def test_boi_agent_composer_parser_accepts_json_contract_not_plain_markdown(boi_
     openai_payload = boi_app_module.parse_agent_compose_payload(openai_candidates[0])
 
     assert alias_payload["answer_markdown"].startswith("## 답변")
+    assert plan_payload["answer_plan"]["title"] == "답변"
     assert plain_payload is None
     assert fenced_json_payload["answer_markdown"].startswith("## 답변")
     assert openai_candidates[0].startswith("```json")
@@ -2052,7 +2094,7 @@ def test_boi_agent_llm_compose_payload_strips_diagram_mermaid_source():
     assert "structured artifact" in payload["artifact_policy"]["mermaid"]
 
 
-def test_boi_agent_composer_llm_requests_json_schema(boi_app_module, monkeypatch):
+def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monkeypatch):
     payloads: list[dict] = []
 
     class FakeResponse:
@@ -2060,7 +2102,20 @@ def test_boi_agent_composer_llm_requests_json_schema(boi_app_module, monkeypatch
             return None
 
         def json(self):
-            return {"choices": [{"message": {"content": '{"answer_markdown":"## 답변\\n\\n정상 답변입니다.","suggested_questions":["다음 질문"]}'}}]}
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"title":"답변","summary":"현재 화면 근거를 기준으로 정리했습니다.",'
+                                '"bullets":[{"text":"설비 이상 SOP는 Event와 Action을 연결합니다."}],'
+                                '"links":[{"label":"설비 SOP","url":"/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001","reason":"현재 페이지"}],'
+                                '"suggested_questions":["다음 질문"]}'
+                            )
+                        }
+                    }
+                ]
+            }
 
     class FakeClient:
         def __init__(self, timeout):
@@ -2085,9 +2140,16 @@ def test_boi_agent_composer_llm_requests_json_schema(boi_app_module, monkeypatch
     result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
 
     assert result["answer_markdown"].startswith("## 답변")
+    assert "현재 화면 근거" in result["answer_markdown"]
+    assert "- 설비 이상 SOP" in result["answer_markdown"]
+    assert "[설비 SOP]" in result["answer_markdown"]
     assert result["suggested_questions"] == ["다음 질문"]
+    assert result["composer_contract"] == "answer_plan"
     assert payloads[0]["json"]["response_format"]["type"] == "json_schema"
-    assert payloads[0]["json"]["response_format"]["json_schema"]["name"] == "boi_agent_final_answer"
+    assert payloads[0]["json"]["response_format"]["json_schema"]["name"] == "boi_agent_answer_plan"
+    schema = payloads[0]["json"]["response_format"]["json_schema"]["schema"]
+    assert "answer_markdown" not in schema["properties"]
+    assert "title" in schema["required"]
 
 
 def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, monkeypatch):
@@ -2101,14 +2163,14 @@ def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, m
                     {
                         "message": {
                             "content": (
-                                '{"answer_markdown":"### Current Page Content\\n\\n'
-                                '* **核心**: operator/العمليات/оператор 설명입니다."}'
+                                '{"title":"Current Page Content","summary":"核心: operator/العمليات/оператор 설명입니다.",'
+                                '"bullets":[{"text":"이 항목은 깨진 혼합 언어입니다."}]}'
                             )
                         }
                     },
                     {
                         "message": {
-                            "content": '{"answer_markdown":"## 답변\\n\\nBoI Wiki Agent가 확인한 SOP 근거를 한국어로 정리했습니다.","suggested_questions":["관련 Action도 볼까요?"]}'
+                            "content": '{"title":"답변","summary":"BoI Wiki Agent가 확인한 SOP 근거를 한국어로 정리했습니다.","suggested_questions":["관련 Action도 볼까요?"]}'
                         }
                     },
                 ]
@@ -2172,8 +2234,8 @@ def test_boi_agent_composer_llm_repairs_invalid_first_response(boi_app_module, m
                             {
                                 "message": {
                                     "content": (
-                                        '{"answer_markdown":"### Current Page Content\\n\\n'
-                                        '* **核心**: operator/العمليات/оператор 설명입니다."}'
+                                        '{"title":"Current Page Content","summary":"核心: operator/العمليات/оператор 설명입니다.",'
+                                        '"bullets":[{"text":"깨진 혼합 언어입니다."}]}'
                                     )
                                 }
                             }
@@ -2185,7 +2247,7 @@ def test_boi_agent_composer_llm_repairs_invalid_first_response(boi_app_module, m
                     "choices": [
                         {
                             "message": {
-                                "content": '{"answer_markdown":"## 답변\\n\\n현재 페이지의 BoI Wiki 내용을 한국어 업무 문장으로 정리했습니다."}'
+                                "content": '{"title":"답변","summary":"현재 페이지의 BoI Wiki 내용을 한국어 업무 문장으로 정리했습니다."}'
                             }
                         }
                     ]
@@ -2205,6 +2267,71 @@ def test_boi_agent_composer_llm_repairs_invalid_first_response(boi_app_module, m
     assert json.loads(calls[1]["messages"][1]["content"])["quality_repair"]["previous_rejection_reasons"] == ["non_korean_script"]
     assert result["quality_repair_used"] is True
     assert result["answer_markdown"].startswith("## 답변")
+
+
+def test_boi_agent_composer_llm_rejects_markdown_fence_inside_answer_plan(boi_app_module, monkeypatch):
+    calls: list[dict] = []
+
+    class FakeResponse:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.body
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers, json):
+            calls.append(json)
+            if len(calls) == 1:
+                return FakeResponse(
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"title":"답변","summary":"```json way=","bullets":[{"text":"깨진 code fence입니다."}]}'
+                                }
+                            }
+                        ]
+                    }
+                )
+            return FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"title":"답변","summary":"서버가 Markdown을 렌더링할 수 있는 구조화 요약입니다."}'
+                            }
+                        }
+                    ]
+                }
+            )
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
+
+    assert len(calls) == 2
+    assert json.loads(calls[1]["messages"][1]["content"])["quality_repair"]["previous_rejection_reasons"] == [
+        "broken_markdown_fence"
+    ]
+    assert result["composer_contract"] == "answer_plan"
+    assert "```json" not in result["answer_markdown"]
 
 
 def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_app_module, monkeypatch):
