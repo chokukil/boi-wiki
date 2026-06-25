@@ -2015,7 +2015,34 @@ def test_boi_agent_parser_prefers_nested_langflow_answer_payload(boi_app_module)
 
     assert body["answer_markdown"].startswith("- **링크**")
     assert body["links"][0]["label"] == "설비 SOP"
+    assert body["suggested_questions"] == ["이 SOP의 Action을 보여줘."]
+    assert body["suggested_questions_source"] == "llm_composer"
     assert body["context_summary"]["langflow_flow"] == "boi-agent"
+
+
+def test_boi_agent_langflow_response_does_not_template_missing_suggestions(boi_app_module):
+    req = boi_app_module.BoiAgentChatRequest(question="SOP 찾아줘", current_url="/")
+    run_result = {
+        "outputs": [
+            {
+                "outputs": [
+                    {
+                        "results": {
+                            "message": {
+                                "text": json.dumps({"answer_markdown": "## 답변\n\n근거를 기준으로 답변합니다."}, ensure_ascii=False)
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    body = boi_app_module.normalize_langflow_agent_response(run_result, req, "100001")
+
+    assert body["suggested_questions"] == []
+    assert body["suggested_questions_source"] == "suggestions_endpoint_required"
+    assert "현재 페이지" not in " ".join(body["suggested_questions"])
 
 
 def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_module, monkeypatch):

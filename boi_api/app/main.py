@@ -8235,8 +8235,8 @@ def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[st
         "answer_markdown": "\n".join(answer_lines),
         "links": links[:8],
         "citations": links[:5],
-        "suggested_questions": page_context_suggestions(req.current_url, req.page_context)
-        + ["이 내용을 도식으로 보여줘.", "누락된 Action이 있는지 점검해줘."],
+        "suggested_questions": [],
+        "suggested_questions_source": "suggestions_endpoint_required",
         "artifacts": [],
         "context_summary": context_summary,
         "route": route.get("route"),
@@ -8272,7 +8272,8 @@ def agent_inbox_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[s
             if item.get("raw_url") or item.get("workflow_url")
         ],
         "citations": [],
-        "suggested_questions": page_context_suggestions(req.current_url, req.page_context),
+        "suggested_questions": [],
+        "suggested_questions_source": "suggestions_endpoint_required",
         "artifacts": [{"type": "task_cards", "data": [item.get("display") for item in items if item.get("display")]}],
         "context_summary": {"route": route.get("route"), "intent": intent, "router_backend": route.get("router_backend"), "used_backend": "inbox_api", "latency_ms": latency_ms},
         "route": route.get("route"),
@@ -8298,7 +8299,8 @@ def agent_safety_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[
         "answer_markdown": answer,
         "links": [],
         "citations": [],
-        "suggested_questions": ["내 Inbox를 보여줘.", "관련 업무 흐름 상태를 열어줘."],
+        "suggested_questions": [],
+        "suggested_questions_source": "suggestions_endpoint_required",
         "artifacts": [],
         "context_summary": {"route": route_name, "intent": intent, "router_backend": route.get("router_backend"), "used_backend": "safety_guard", "latency_ms": latency_ms},
         "route": route_name,
@@ -8428,8 +8430,9 @@ def normalize_langflow_agent_response(
     if not isinstance(citations, list):
         citations = links[:5]
     suggestions = parsed.get("suggested_questions")
+    suggestions_source = "llm_composer" if isinstance(suggestions, list) and suggestions else "suggestions_endpoint_required"
     if not isinstance(suggestions, list) or not suggestions:
-        suggestions = page_context_suggestions(req.current_url, req.page_context)
+        suggestions = []
     artifacts = normalize_agent_artifacts(parsed.get("artifacts"), answer_markdown)
     intent = normalize_agent_intent(str(route.get("intent") if route else parsed.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
     if intent == "diagram" and not any(item.get("type") == "mermaid" for item in artifacts):
@@ -8464,6 +8467,7 @@ def normalize_langflow_agent_response(
         "links": links,
         "citations": citations,
         "suggested_questions": suggestions,
+        "suggested_questions_source": suggestions_source,
         "artifacts": artifacts,
         "context_summary": context_summary,
         "route": route.get("route") if route else "deep",
