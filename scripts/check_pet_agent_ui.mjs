@@ -289,11 +289,9 @@ async function main() {
 
     await cdp.evaluate(`(() => {
       document.querySelector(".boi-agent-expand")?.click();
-      document.querySelector("[data-open-artifact]")?.click();
-      document.querySelector("[data-open-answer]")?.click();
       return true;
     })()`);
-    await sleep(300);
+    await sleep(150);
     const beforeNew = await cdp.evaluate(`(() => {
       const root = document.querySelector("#boi-agent-root");
       const probe = window.__boiAgentUiProbe || {};
@@ -332,6 +330,95 @@ async function main() {
       };
     })()`);
 
+    await cdp.evaluate(`(() => {
+      document.querySelector("[data-open-artifact]")?.click();
+      return true;
+    })()`);
+    await waitUntil(cdp, "!!document.querySelector('#boi-agent-root .boi-agent-viewer')", 5000);
+    try {
+      await waitUntil(
+        cdp,
+        `(() => {
+          const viewer = document.querySelector("#boi-agent-root .boi-agent-viewer");
+          const diagram = viewer?.querySelector(".mermaid-diagram");
+          if (!diagram) return true;
+          return diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg");
+        })()`,
+        8000,
+        250,
+      );
+    } catch (_error) {
+      // The structured viewer report below records whether the diagram rendered.
+    }
+    const artifactViewer = await cdp.evaluate(`(() => {
+      const viewer = document.querySelector("#boi-agent-root .boi-agent-viewer");
+      const diagram = viewer?.querySelector(".mermaid-diagram");
+      return {
+        open: !!viewer,
+        hasMermaid: !!diagram,
+        mermaidRendered: !diagram || (diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")),
+        rawMermaidFenceLeak: viewer ? new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(viewer.textContent || "") : false,
+      };
+    })()`);
+    await cdp.evaluate(`document.querySelector("#boi-agent-root .boi-agent-viewer-close")?.click()`);
+    await sleep(150);
+
+    await cdp.evaluate(`(() => {
+      document.querySelector("[data-open-answer]")?.click();
+      return true;
+    })()`);
+    await waitUntil(cdp, "!!document.querySelector('#boi-agent-root .boi-agent-viewer')", 5000);
+    const answerViewer = await cdp.evaluate(`(() => {
+      const viewer = document.querySelector("#boi-agent-root .boi-agent-viewer");
+      return {
+        open: !!viewer,
+        hasAnswer: !!viewer?.querySelector(".boi-agent-answer-viewer"),
+        hasTable: !!viewer?.querySelector(".boi-agent-table-wrap table, .markdown-table"),
+      };
+    })()`);
+    await cdp.evaluate(`document.querySelector("#boi-agent-root .boi-agent-viewer-close")?.click()`);
+    await sleep(150);
+
+    const navUrl = new URL(args.url);
+    navUrl.pathname = "/sops";
+    navUrl.search = "employee_id=100001";
+    const navLoaded = cdp.once("Page.loadEventFired");
+    await cdp.send("Page.navigate", { url: navUrl.toString() });
+    await navLoaded;
+    await waitUntil(
+      cdp,
+      "document.readyState === 'complete' && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
+      15000,
+    );
+    try {
+      await waitUntil(
+        cdp,
+        `(() => {
+          const root = document.querySelector("#boi-agent-root");
+          const latest = root?.querySelector(".boi-agent-message.assistant:last-of-type");
+          const diagrams = Array.from(latest?.querySelectorAll(".mermaid-diagram") || []);
+          return diagrams.length > 0 && diagrams.every((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg"));
+        })()`,
+        12000,
+        250,
+      );
+    } catch (_error) {
+      // The structured report below records restoration/render status.
+    }
+    const afterNavigation = await cdp.evaluate(`(() => {
+      const root = document.querySelector("#boi-agent-root");
+      const latest = root?.querySelector(".boi-agent-message.assistant:last-of-type");
+      const diagrams = Array.from(latest?.querySelectorAll(".mermaid-diagram") || []);
+      const answerText = latest?.querySelector(".boi-agent-answer")?.textContent || "";
+      return {
+        panelOpen: !!root?.querySelector(".boi-agent-panel.open"),
+        messageCount: root?.querySelectorAll(".boi-agent-message").length || 0,
+        mermaidDiagramCount: diagrams.length,
+        mermaidRenderedCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")).length,
+        rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
+      };
+    })()`);
+
     if (args.screenshot) {
       const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
       createWriteStream(args.screenshot).end(Buffer.from(screenshot.data, "base64"));
@@ -358,9 +445,13 @@ async function main() {
       status_trail_seen: beforeNew.statusTrailMax >= 1,
       streamed_answer_updates_seen: beforeNew.answerSnapshotCount >= 2,
       answer_rendered: beforeNew.answerTextLength > 80,
-      viewer_opened: beforeNew.viewerOpen,
       expand_control_worked: beforeNew.expanded,
       no_horizontal_overflow: !beforeNew.hasHorizontalOverflow,
+      artifact_viewer_opened: artifactViewer.open,
+      artifact_viewer_mermaid_rendered: artifactViewer.open && artifactViewer.mermaidRendered && !artifactViewer.rawMermaidFenceLeak,
+      answer_viewer_opened: answerViewer.open && answerViewer.hasAnswer && answerViewer.hasTable,
+      state_restored_after_navigation: afterNavigation.panelOpen && afterNavigation.messageCount >= 2,
+      mermaid_rendered_after_navigation: afterNavigation.mermaidDiagramCount >= 1 && afterNavigation.mermaidRenderedCount >= 1 && !afterNavigation.rawMermaidFenceLeak,
       mermaid_diagram_present: beforeNew.mermaidDiagramCount >= 1,
       mermaid_diagram_rendered: beforeNew.mermaidRenderedCount >= 1 && beforeNew.mermaidFallbackCount === 0,
       mermaid_not_duplicated: beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount,
@@ -369,7 +460,7 @@ async function main() {
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
     };
     const ok = Object.values(checks).every(Boolean);
-    const report = { ok, url: args.url, checks, before_new: beforeNew, after_new: afterNew, screenshot: args.screenshot || "" };
+    const report = { ok, url: args.url, checks, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, after_navigation: afterNavigation, after_new: afterNew, screenshot: args.screenshot || "" };
     console.log(JSON.stringify(report, null, 2));
     if (args.strict && !ok) process.exitCode = 1;
   } finally {
