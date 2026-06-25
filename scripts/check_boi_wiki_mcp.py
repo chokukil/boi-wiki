@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 from urllib.parse import urlencode
+from urllib import error as urllib_error
 import urllib.request as urllib_request
 
 try:
@@ -90,8 +91,13 @@ async def check_protocol(url: str, include_details: bool = False, service_token:
     except Exception as exc:
         try:
             direct = await check_protocol_stateless_json(url, include_details=include_details, service_token=service_token)
-        except httpx.HTTPStatusError as direct_exc:
-            if direct_exc.response.status_code == 401 and not str(service_token or "").strip():
+        except Exception as direct_exc:
+            status_code = None
+            if httpx is not None and isinstance(direct_exc, httpx.HTTPStatusError):
+                status_code = direct_exc.response.status_code
+            elif isinstance(direct_exc, urllib_error.HTTPError):
+                status_code = direct_exc.code
+            if status_code == 401 and not str(service_token or "").strip():
                 return {
                     "tools": 0,
                     "resources": 0,
@@ -153,7 +159,7 @@ async def check_protocol_mcp_client(url: str, include_details: bool = False, ser
 
 async def check_protocol_stateless_json(url: str, include_details: bool = False, service_token: str = "") -> dict:
     if httpx is None:
-        raise RuntimeError("httpx is unavailable; install httpx or use --agent-contract-only for AgentResponse checks")
+        return await run_blocking(check_protocol_stateless_json_urllib, url, include_details, service_token)
     async with httpx.AsyncClient(timeout=30) as client:
         headers = {
             "Content-Type": "application/json",
@@ -212,7 +218,7 @@ async def check_protocol_stateless_json(url: str, include_details: bool = False,
 
 async def check_bridge(base_url: str, service_token: str, query: str) -> dict:
     if httpx is None:
-        raise RuntimeError("httpx is unavailable; install httpx or use --agent-contract-only for AgentResponse checks")
+        return await run_blocking(check_bridge_urllib, base_url, service_token, query)
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/mcp/call",
@@ -354,6 +360,108 @@ def urllib_json_request(method: str, url: str, *, headers: dict | None = None, p
     request = urllib_request.Request(full_url, data=body, headers=request_headers, method=method.upper())
     with urllib_request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def parse_json_or_sse_payload(raw_text: str) -> dict:
+    text = str(raw_text or "").strip()
+    if not text:
+        raise RuntimeError("empty JSON response")
+    if text.startswith("{") or text.startswith("["):
+        return json.loads(text)
+    data_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("data:"):
+            continue
+        value = line.split(":", 1)[1].strip()
+        if not value or value == "[DONE]":
+            continue
+        data_lines.append(value)
+    for value in data_lines:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    raise RuntimeError("response was not JSON or JSON SSE data")
+
+
+def urllib_json_rpc_request(url: str, *, headers: dict | None = None, payload: dict | None = None, timeout: int = 30) -> dict:
+    request_headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        **(headers or {}),
+    }
+    body = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8")
+    request = urllib_request.Request(url, data=body, headers=request_headers, method="POST")
+    with urllib_request.urlopen(request, timeout=timeout) as response:
+        return parse_json_or_sse_payload(response.read().decode("utf-8"))
+
+
+def check_protocol_stateless_json_urllib(url: str, include_details: bool = False, service_token: str = "") -> dict:
+    headers = mcp_auth_headers(service_token)
+
+    def rpc(method: str, request_id: int, params: dict | None = None) -> dict:
+        body = urllib_json_rpc_request(
+            url,
+            headers=headers,
+            payload={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}},
+            timeout=30,
+        )
+        if body.get("error"):
+            raise RuntimeError(json.dumps(body["error"], ensure_ascii=False))
+        result = body.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError(f"invalid JSON-RPC result for {method}")
+        return result
+
+    rpc(
+        "initialize",
+        1,
+        {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "check-boi-wiki-mcp", "version": "1.0"},
+        },
+    )
+    tools = rpc("tools/list", 2)
+    resource_templates = rpc("resources/templates/list", 3)
+    prompts = rpc("prompts/list", 4)
+    tool_items = list(tools.get("tools") or [])
+    template_items = list(resource_templates.get("resourceTemplates") or [])
+    prompt_items = list(prompts.get("prompts") or [])
+    result = {
+        "tools": len(tool_items),
+        "resources": 0,
+        "resource_templates": len(template_items),
+        "prompts": len(prompt_items),
+    }
+    if include_details:
+        result.update(
+            {
+                "tool_names": [str(item.get("name") or "") for item in tool_items],
+                "resource_uris": [],
+                "resource_template_uris": [str(item.get("uriTemplate") or item.get("uri") or "") for item in template_items],
+                "prompt_names": [str(item.get("name") or "") for item in prompt_items],
+            }
+        )
+    return result
+
+
+def check_bridge_urllib(base_url: str, service_token: str, query: str) -> dict:
+    return urllib_json_request(
+        "POST",
+        f"{base_url.rstrip('/')}/api/mcp/call",
+        headers={"x-service-token": service_token},
+        payload={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "boi.search",
+            "arguments": {"query": query, "employee_id": "100001"},
+            "request_id": "check-boi-wiki-mcp",
+        },
+        timeout=30,
+    )
 
 
 async def run_blocking(func, *args, **kwargs):
