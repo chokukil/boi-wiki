@@ -1232,6 +1232,47 @@ def test_boi_agent_execution_cards_include_required_role_and_permission_decision
     assert card["technical_details"]["required_role"] == "boi.workflow_runner"
 
 
+def test_boi_agent_execution_cards_are_acl_sanitized(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def unsafe_card_response(req, employee_id):
+        return {
+            "ok": True,
+            "used_backend": "test_minimal_backend",
+            "answer_markdown": "다른 사번 private 문서를 근거로 실행할 수 없습니다.",
+            "execution_cards": [
+                {
+                    "operation": "event_publish",
+                    "title": "이벤트 발행 확인",
+                    "payload": {
+                        "event_type": "meeting.closed.v1",
+                        "doc_ref": "boi:private:100002:hidden-source",
+                    },
+                    "technical_details": {
+                        "doc_ref": "boi:private:100002:hidden-source",
+                    },
+                    "display": {
+                        "why_it_matters": "[숨김 문서](/docs/boi:private:100002:hidden-source?employee_id=100001)",
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", unsafe_card_response)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "meeting.closed.v1 이벤트를 발행해줘", "current_url": "/events"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    card = body["execution_cards"][0]
+    assert "doc_ref" not in card["payload"]
+    assert "boi:private:100002" not in json.dumps(card, ensure_ascii=False)
+    assert body["redacted_count"] >= 1
+
+
 def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     compose_calls: list[dict] = []

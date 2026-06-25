@@ -8679,12 +8679,24 @@ def sanitize_agent_reference_value(value: Any, employee_id: str) -> tuple[Any, i
 
 def sanitize_agent_final_references(response: dict[str, Any], employee_id: str) -> int:
     redacted_count = 0
-    for key in ("answer_markdown", "display_markdown", "links", "citations", "suggested_questions", "artifacts", "tool_trace", "status_updates", "status_events", "context_summary"):
+    for key in (
+        "answer_markdown",
+        "display_markdown",
+        "links",
+        "citations",
+        "suggested_questions",
+        "artifacts",
+        "execution_cards",
+        "tool_trace",
+        "status_updates",
+        "status_events",
+        "context_summary",
+    ):
         sanitized, count = sanitize_agent_reference_value(response.get(key), employee_id)
         redacted_count += count
         if sanitized is not None:
             response[key] = sanitized
-        elif key in {"links", "citations", "artifacts", "suggested_questions", "tool_trace", "status_updates", "status_events"}:
+        elif key in {"links", "citations", "artifacts", "execution_cards", "suggested_questions", "tool_trace", "status_updates", "status_events"}:
             response[key] = []
         else:
             response[key] = ""
@@ -8908,6 +8920,7 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
     response.setdefault("status_updates", [])
     response["status_events"] = list(response["status_updates"])
     response.setdefault("coverage_report", {})
+    response.setdefault("context_summary", {})
     response.setdefault("access_summary", {})
     response.setdefault("guardrails_applied", [])
     response.setdefault("redacted_count", 0)
@@ -8919,6 +8932,12 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
         if cards:
             response["execution_cards"] = cards
     response.setdefault("execution_cards", [])
+    response["execution_cards"] = normalize_agent_execution_cards(response.get("execution_cards"), employee_id)
+    final_redactions = sanitize_agent_final_references(response, employee_id)
+    response["redacted_count"] = int(response.get("redacted_count") or 0) + final_redactions
+    answer_markdown = str(response.get("answer_markdown") or "")
+    artifacts = normalize_agent_artifacts(response.get("artifacts"), answer_markdown)
+    response["artifacts"] = artifacts
     response["execution_cards"] = normalize_agent_execution_cards(response.get("execution_cards"), employee_id)
     display_markdown = markdown_without_duplicate_mermaid_artifacts(answer_markdown, artifacts)
     response["display_markdown"] = display_markdown
