@@ -1212,7 +1212,7 @@ async def status_page(request: Request) -> HTMLResponse:
         <dt>Response contract</dt><dd><code>{payload["agent_response_contract"]["version"]}</code></dd>
         <dt>Response schema</dt><dd><code>{payload["agent_response_contract"]["mcp_resource_template"]}</code></dd>
       </dl>
-      <p>Web Pet Agent uses the streaming API so long requests can show one-line <code>status</code> updates and incremental <code>answer_delta</code> content. MCP clients normally call <code>boi_agent_chat</code> and receive the final JSON response using the same <code>{payload["agent_response_contract"]["version"]}</code> contract.</p>
+      <p>Web Pet Agent uses the streaming API so long requests can show one-line <code>status</code> updates and incremental <code>answer_delta</code> content. MCP clients normally call <code>boi_agent_chat</code> and receive the final JSON response using the same <code>{payload["agent_response_contract"]["version"]}</code> contract. In that JSON, <code>status_updates</code> is canonical and <code>status_events</code> is the compatible alias for event-oriented clients.</p>
     </section>
     <section>
       <h2>Client Registration</h2>

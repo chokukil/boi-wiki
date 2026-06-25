@@ -64,7 +64,8 @@ BoI Agent의 기준 인터페이스는 Web Pet UI가 아니라 `/api/agents/boi-
 | `links`, `citations` | 클릭 가능한 BoI/Event/Action/Trace reference |
 | `artifacts` | Mermaid, table, task card, confirmation card 같은 구조화 산출물 |
 | `execution_cards` | 상태 변경이 필요한 요청의 승인 UI/API contract |
-| `status_updates` | streaming에서 사용자에게 보여준 진행 상태를 non-stream API/MCP에서도 확인하기 위한 기록 |
+| `status_updates` | canonical 진행 상태 기록. streaming에서 사용자에게 보여준 상태를 non-stream API/MCP에서도 확인하기 위한 배열 |
+| `status_events` | `status_updates`와 같은 배열을 담는 호환 alias. event 기반 외부 client가 SSE `status` event와 같은 모델로 처리할 때 사용 |
 | `tool_trace` | Agent가 호출한 검색, 문서, workflow, Inbox tool 요약 |
 | `access_summary` | 응답 생성에 적용된 BoI Profile ACL/RBAC decision 요약 |
 | `guardrails_applied` | 적용된 ACL/RBAC/safety guardrail |
