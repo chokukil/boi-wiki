@@ -710,7 +710,7 @@
 
   function renderStatusTrail(message) {
     const lines = (message.statusLines || []).filter(Boolean).slice(-5);
-    if (lines.length <= 1) return "";
+    if (!lines.length) return "";
     return `<details class="boi-agent-status-trail">
       <summary>진행 단계 ${lines.length}개</summary>
       <ol aria-label="Agent 진행 단계">
@@ -1193,6 +1193,7 @@
         html: body.answer_html || "",
         rawText: body.answer_markdown || "",
         links: body.links || [],
+        statusLines: statusLines.slice(-6),
         meta: {
           route: body.route,
           intent: body.intent || body.context_summary?.intent,

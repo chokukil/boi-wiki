@@ -3060,6 +3060,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "/api/agents/boi-wiki/chat/stream" in script
     assert "answer_delta" in script
     assert "statusLines" in script
+    assert "statusLines: statusLines.slice(-6)" in script
+    assert 'if (!lines.length) return "";' in script
     assert "readAgentStream" in script
     assert "refreshSuggestions" in script
     assert "body.suggested_questions" not in script
