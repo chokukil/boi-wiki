@@ -13,6 +13,7 @@ DOCKER_BIN="${DOCKER_BIN:-/usr/local/bin/docker}"
 SUDO_BIN="${SUDO_BIN:-sudo}"
 NAS_DOCKER_PATH="${NAS_DOCKER_PATH:-/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin}"
 NAS_AUTO_PULL_DRY_RUN="${NAS_AUTO_PULL_DRY_RUN:-0}"
+NAS_AUTO_PULL_FORCE_RECREATE="${NAS_AUTO_PULL_FORCE_RECREATE:-0}"
 NAS_COMPOSE_RECOVERY_SERVICES="${NAS_COMPOSE_RECOVERY_SERVICES:-boi-api action-gateway event-router boi-wiki-mcp langflow}"
 NAS_RUNTIME_CONFIG_URL="${NAS_RUNTIME_CONFIG_URL:-http://127.0.0.1:28000/api/runtime/config}"
 NAS_RUNTIME_VERIFY_ATTEMPTS="${NAS_RUNTIME_VERIFY_ATTEMPTS:-90}"
@@ -211,7 +212,7 @@ log "fast-forwarding ${#changed_files[@]} changed path(s)"
 
 git pull --ff-only "$REMOTE" "$BRANCH"
 
-if ! needs_compose_recreate "${changed_files[@]}"; then
+if [[ "$NAS_AUTO_PULL_FORCE_RECREATE" != "1" ]] && ! needs_compose_recreate "${changed_files[@]}"; then
   log "hot-reload-only change set; docker compose restart is not required"
   DEPLOY_STATUS="success"
   exit 0
