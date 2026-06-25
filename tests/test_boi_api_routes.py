@@ -4610,6 +4610,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert 'if (!lines.length) return "";' in script
     assert "readAgentStream" in script
     assert "refreshSuggestions" in script
+    assert "suggestionsLoading" in script
+    assert "추천 질문 생성 중..." in script
+    assert ".boi-agent-suggestions-loading" in style
     assert "state.inboxGroups = body.groups || []" in script
     assert "renderInboxGroup" in script
     assert "개별 업무" in script

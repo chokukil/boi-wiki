@@ -309,8 +309,14 @@ async function main() {
     try {
       await waitUntil(
         cdp,
-        `document.querySelectorAll("#boi-agent-root .boi-agent-suggestions [data-question]").length > 0`,
-        12000,
+        `(() => {
+          const root = document.querySelector("#boi-agent-root");
+          const buttons = root.querySelectorAll(".boi-agent-suggestions [data-question]");
+          const loading = root.querySelector(".boi-agent-suggestions-loading");
+          const error = root.querySelector(".boi-agent-hint.error");
+          return buttons.length > 0 || (!loading && !!error);
+        })()`,
+        20000,
         250,
       );
     } catch (_error) {

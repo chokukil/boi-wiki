@@ -24,6 +24,7 @@
       expanded: false,
       tab: "agent",
       suggestions: [],
+      suggestionsLoading: false,
       suggestionError: "",
       inbox: [],
       inboxGroups: [],
@@ -41,7 +42,7 @@
   function loadState() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || "{}");
-      return { ...defaultState(), ...saved, suggestions: [], suggestionError: "", inbox: [], inboxGroups: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
+      return { ...defaultState(), ...saved, suggestions: [], suggestionsLoading: false, suggestionError: "", inbox: [], inboxGroups: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
     } catch (_error) {
       return defaultState();
     }
@@ -847,13 +848,14 @@
       }));
       return `<div class="boi-agent-list">${groups.map(renderInboxGroup).join("")}</div>`;
     }
-    return `
+      return `
       <section class="boi-agent-context-card">
         <strong>현재 페이지를 보고 있습니다</strong>
         <p>${escapeHtml(pageTitle)}</p>
       </section>
       <div class="boi-agent-suggestions">
         ${state.suggestions.map((item) => `<button type="button" data-question="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}
+        ${state.suggestionsLoading ? `<span class="boi-agent-suggestions-loading" aria-live="polite">추천 질문 생성 중...</span>` : ""}
       </div>
       ${state.suggestionError ? `<p class="boi-agent-hint error">${escapeHtml(state.suggestionError)}</p>` : ""}
       ${renderMessages()}
@@ -1360,16 +1362,21 @@
   }
 
   function refreshSuggestions() {
+    state.suggestionsLoading = true;
+    if (state.open && state.tab === "agent") render();
     return api("/api/agents/boi-wiki/suggestions", {
       method: "POST",
       body: JSON.stringify({ current_url: currentUrl(), page_context: { title: pageTitle } }),
     }).then((body) => {
       state.suggestions = body.suggestions || [];
       state.suggestionError = "";
+      state.suggestionsLoading = false;
       render();
     }).catch((error) => {
-      state.suggestions = [];
-      state.suggestionError = `추천 질문을 생성하지 못했습니다. Agent 상태를 확인해주세요. (${String(error.message || error)})`;
+      if (!state.suggestions.length) {
+        state.suggestionError = `추천 질문을 생성하지 못했습니다. Agent 상태를 확인해주세요. (${String(error.message || error)})`;
+      }
+      state.suggestionsLoading = false;
       render();
     });
   }
