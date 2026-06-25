@@ -6083,10 +6083,15 @@ async def api_rbac_binding(req: RbacBindingRequest, employee_id: str = Depends(c
     subject_type = req.subject_type.strip()
     if subject_type not in {"employee", "team"}:
         raise HTTPException(status_code=400, detail="subject_type must be employee or team")
+    subject_id = req.subject_id.strip()
+    if subject_type == "employee" and not re.fullmatch(r"\d{7}", subject_id):
+        raise HTTPException(status_code=400, detail="employee subject_id must be 7 digits")
+    if not subject_id:
+        raise HTTPException(status_code=400, detail="subject_id is required")
     binding = {
         "binding_id": f"bind-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
         "subject_type": subject_type,
-        "subject_id": req.subject_id.strip(),
+        "subject_id": subject_id,
         "roles": roles,
         "scope": req.scope or "global",
         "resource": req.resource,

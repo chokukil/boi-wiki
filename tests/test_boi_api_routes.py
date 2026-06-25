@@ -1895,6 +1895,7 @@ def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
     assert 'data-rbac-form="binding"' in response.text
     assert 'data-rbac-form="doc-access"' in response.text
     assert 'pattern="[0-9]{7}"' in response.text
+    assert "7자리 사번 또는 team_id" in response.text
     assert "문서 접근 확인" in response.text
     assert "/api/rbac/teams" in script
     assert "/api/rbac/bindings" in script
@@ -1970,6 +1971,30 @@ def test_rbac_team_member_requires_seven_digit_employee_id(boi_app_module):
     assert seven_digit.status_code == 200
     assert "1234567" in seven_digit.json()["team"]["members"]
     assert "123456" not in seven_digit.json()["team"]["members"]
+
+
+def test_rbac_employee_role_binding_requires_seven_digit_subject_id(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    invalid_employee = client.post(
+        "/api/rbac/bindings?employee_id=100001",
+        json={"subject_type": "employee", "subject_id": "123456", "roles": ["boi.viewer"]},
+    )
+    valid_employee = client.post(
+        "/api/rbac/bindings?employee_id=100001",
+        json={"subject_type": "employee", "subject_id": "1234567", "roles": ["boi.viewer"]},
+    )
+    team_binding = client.post(
+        "/api/rbac/bindings?employee_id=100001",
+        json={"subject_type": "team", "subject_id": "pytest-rbac-team", "roles": ["boi.viewer"]},
+    )
+
+    assert invalid_employee.status_code == 400
+    assert "7 digits" in invalid_employee.text
+    assert valid_employee.status_code == 200
+    assert valid_employee.json()["binding"]["subject_id"] == "1234567"
+    assert team_binding.status_code == 200
+    assert team_binding.json()["binding"]["subject_id"] == "pytest-rbac-team"
 
 
 def test_rbac_audit_api_requires_manager_and_supports_filters(boi_app_module, monkeypatch):

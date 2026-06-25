@@ -70,6 +70,7 @@ flowchart TD
 
 - 팀 문서는 팀 멤버에게만 보인다.
 - 팀 멤버 사번은 7자리 숫자만 허용한다. `private/me` 같은 별칭이나 6자리 임시 값은 RBAC membership에 넣지 않는다.
+- employee role binding의 `subject_id`도 7자리 숫자 사번만 허용한다. team role binding은 `team_id`를 사용한다.
 - `team_id`와 `acl:team:{team_id}`가 다르면 lint와 access decision에서 실패한다.
 - `team_id` 또는 `acl_policy`가 빠진 team 문서는 팀 멤버에게도 노출하지 않는다.
 - role binding은 문서 visibility를 넓히지 않는다. 문서 접근은 BoI Profile ACL을 먼저 통과해야 한다.
