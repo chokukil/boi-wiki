@@ -2136,7 +2136,15 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
     result = boi_app_module.call_boi_agent_composer_llm(
-        {"structured_draft": "## 초안" + (" 긴 근거" * 800), "large_unused": "x" * 5000},
+        {
+            "structured_draft": "## 초안" + (" 긴 근거" * 800),
+            "large_unused": "x" * 5000,
+            "page_context": {
+                "page_kind": "doc",
+                "title": "설비 SOP",
+                "body_excerpt": "# Summary\n| 단계 | 내용 |\n| --- | --- |\n| 감지 | [링크](/docs/x) |",
+            },
+        },
         "100001",
     )
 
@@ -2157,6 +2165,8 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     assert "structured_draft" not in user_payload
     assert len(user_payload["evidence_summary"]) < 800
     assert "##" not in user_payload["evidence_summary"]
+    assert user_payload["page_context"]["title"] == "설비 SOP"
+    assert "body_excerpt" not in user_payload["page_context"]
 
 
 def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, monkeypatch):

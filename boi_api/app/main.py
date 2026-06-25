@@ -7234,9 +7234,23 @@ def agent_composer_evidence_excerpt(value: Any, limit: int = 650) -> str:
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"^\s*\|.*\|\s*$", " ", text, flags=re.MULTILINE)
-    text = re.sub(r"[*_>`]+", " ", text)
+    text = re.sub(r"[#|*_>`]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text_excerpt(text, limit)
+
+
+def compact_agent_composer_page_context(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    compact: dict[str, Any] = {}
+    for key in ("page_kind", "resolved", "title", "boi_id", "type", "event_type", "workflow_key", "trace_id"):
+        if raw.get(key) not in (None, "", []):
+            compact[key] = raw.get(key)
+    for key in ("workflow_action_count", "workflow_manual_action_count"):
+        if raw.get(key) not in (None, "", []):
+            compact[key] = raw.get(key)
+    if isinstance(raw.get("workflow_event_types"), list):
+        compact["workflow_event_types"] = [str(item) for item in raw["workflow_event_types"][:6]]
+    return compact
 
 
 def looks_like_repetitive_generation(text: str) -> bool:
@@ -7376,7 +7390,7 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
         "question": source_payload.get("question") or "",
         "route": source_payload.get("route") or "",
         "intent": source_payload.get("intent") or "",
-        "page_context": source_payload.get("page_context") or {},
+        "page_context": compact_agent_composer_page_context(source_payload.get("page_context")),
         "search_matches": [
             {
                 "label": item.get("label"),
