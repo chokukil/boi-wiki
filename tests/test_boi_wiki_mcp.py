@@ -142,7 +142,16 @@ def test_boi_wiki_mcp_status_alias_works(mcp_module):
     assert "BoI Wiki MCP" in response.text
 
 
-def test_boi_agent_response_schema_resource(mcp_module):
+def test_boi_agent_response_schema_resource(mcp_module, monkeypatch):
+    async def fake_api_get(path, **kwargs):
+        return {
+            "ok": True,
+            "agent_contract_version": "boi-agent.response.v1",
+            "schema": mcp_module.AGENT_RESPONSE_SCHEMA,
+        }
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+
     body = json.loads(asyncio.run(mcp_module.boi_agent_response_schema_resource("latest")))
 
     assert body["ok"] is True
@@ -150,6 +159,32 @@ def test_boi_agent_response_schema_resource(mcp_module):
     assert body["schema"]["required"] == mcp_module.AGENT_RESPONSE_REQUIRED_FIELDS
     assert body["schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
     assert "mermaid" in body["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
+
+
+def test_boi_agent_response_schema_resource_uses_boi_api_as_canonical_schema(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"path": path, **kwargs})
+        return {
+            "ok": True,
+            "agent_contract_version": "boi-agent.response.v1",
+            "schema": {
+                "required": ["agent_contract_version", "answer_markdown"],
+                "properties": {
+                    "agent_contract_version": {"const": "boi-agent.response.v1"},
+                    "sentinel": {"const": "api-canonical-schema"},
+                },
+            },
+        }
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+
+    body = json.loads(asyncio.run(mcp_module.boi_agent_response_schema_resource("latest")))
+
+    assert calls[0]["path"] == "/api/agents/boi-wiki/response-schema"
+    assert calls[0]["service_token"] is True
+    assert body["schema"]["properties"]["sentinel"]["const"] == "api-canonical-schema"
 
 
 def test_boi_wiki_mcp_status_uses_forwarded_headers(mcp_module):

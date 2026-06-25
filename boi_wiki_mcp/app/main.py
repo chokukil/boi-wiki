@@ -875,13 +875,7 @@ async def boi_agent_response_schema_resource(version: str) -> str:
                 "supported_versions": ["latest", AGENT_RESPONSE_CONTRACT_VERSION],
             }
         )
-    return as_text(
-        {
-            "ok": True,
-            "agent_contract_version": AGENT_RESPONSE_CONTRACT_VERSION,
-            "schema": AGENT_RESPONSE_SCHEMA,
-        }
-    )
+    return as_text(await api_get("/api/agents/boi-wiki/response-schema", service_token=True))
 
 
 @mcp.prompt(name="create_sop_from_source")
