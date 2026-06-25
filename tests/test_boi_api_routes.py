@@ -2462,6 +2462,42 @@ def test_boi_agent_chat_endpoint_offloads_agent_work(boi_app_module, monkeypatch
     assert worker_threads[0] != threading.current_thread().name
 
 
+def test_boi_agent_chat_endpoint_returns_service_timeout_instead_of_hanging(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def slow_agent_response(req, employee_id: str, progress_callback=None):
+        time.sleep(0.08)
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "answer_markdown": "늦게 도착한 답변입니다.",
+            "links": [],
+            "citations": [],
+            "suggested_questions": [],
+            "artifacts": [],
+            "context_summary": {"intent": "page_qa"},
+            "route": "fast",
+            "intent": "page_qa",
+            "router_backend": "llm",
+            "used_backend": "native_langgraph",
+            "latency_ms": 80,
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_CHAT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", slow_agent_response)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 503
+    body = response.json()["detail"]
+    assert body["status"] == "boi_agent_timeout"
+    assert body["timeout_seconds"] == 0.01
+    assert body["used_backend"] == boi_app_module.BOI_AGENT_BACKEND
+
+
 def test_agent_memory_blocks_sensitive_values_and_saves_private_memory(boi_app_module):
     client = TestClient(boi_app_module.app)
 

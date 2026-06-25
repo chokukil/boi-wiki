@@ -201,6 +201,7 @@ BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
 BOI_AGENT_LANGGRAPH_REQUIRED = os.getenv("BOI_AGENT_LANGGRAPH_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_CHAT_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_CHAT_TIMEOUT_SECONDS", "45"))
 BOI_AGENT_STREAM_HEARTBEAT_SECONDS = float(os.getenv("BOI_AGENT_STREAM_HEARTBEAT_SECONDS", "2"))
 BOI_AGENT_CACHE_WARMUP_ON_STARTUP = os.getenv("BOI_AGENT_CACHE_WARMUP_ON_STARTUP", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
@@ -5375,6 +5376,7 @@ async def runtime_config() -> dict[str, Any]:
                 "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
                 "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
             },
+            "chat_timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
             "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
             "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
             "langgraph": {
@@ -8515,7 +8517,22 @@ def agent_chat_response(
 async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
     try:
-        return await asyncio.to_thread(lambda: enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id))
+        return await asyncio.wait_for(
+            asyncio.to_thread(lambda: enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id)),
+            timeout=BOI_AGENT_CHAT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "boi_agent_timeout",
+                "message": f"BoI Agent did not finish within {BOI_AGENT_CHAT_TIMEOUT_SECONDS:.1f}s",
+                "timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
+                "used_backend": BOI_AGENT_BACKEND,
+                "model": BOI_AGENT_COMPOSER_MODEL,
+            },
+        ) from exc
     except BoiAgentRouterUnavailable as exc:
         raise HTTPException(
             status_code=503,
@@ -8768,6 +8785,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
             "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
         },
+        "chat_timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
         "suggestions": {
             "llm_enabled": BOI_AGENT_SUGGESTIONS_LLM_ENABLED,
             "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
