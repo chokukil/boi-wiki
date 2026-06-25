@@ -4583,6 +4583,29 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)" in source
 
 
+def test_pet_agent_static_scripts_parse_before_runtime_smokes(boi_app_module):
+    if not shutil.which("node"):
+        pytest.skip("node is required for Pet Agent JavaScript syntax check")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    static_scripts = [
+        repo_root / "boi_api/app/static/pet_agent.js",
+        repo_root / "boi_api/app/static/mermaid_render.js",
+    ]
+
+    for script_path in static_scripts:
+        result = subprocess.run(
+            ["node", "--check", str(script_path)],
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    pet_script = static_scripts[0].read_text(encoding="utf-8")
+    assert pet_script.count("form?.requestSubmit();") == 1
+    assert pet_script.count("const bodyRows = lines.slice(2)") == 1
+
+
 def test_mermaid_loader_retries_after_cdn_load_failure(boi_app_module):
     script = (boi_app_module.APP_DIR / "static" / "mermaid_render.js").read_text(encoding="utf-8")
 
