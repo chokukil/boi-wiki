@@ -3375,6 +3375,8 @@ def test_boi_agent_event_type_draft_card_uses_ontology_context(boi_app_module, m
     assert payload["topic"] == "maintenance.inspection"
     assert payload["payload_schema"]["properties"]["owner_employee_id"]["pattern"] == "^\\d{7}$"
     assert "equipment_id" in payload["payload_schema"]["properties"]
+    assert "sop.equipment.change_spec_rule" not in payload.get("recommended_actions", [])
+    assert "manual.equipment.approve_spec_rule_change" not in payload.get("recommended_actions", [])
 
     approve = client.post(
         "/api/agents/boi-wiki/approve?employee_id=100001",

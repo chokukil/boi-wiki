@@ -1406,7 +1406,7 @@ def event_type_draft_payload_from_state(state: JsonDict) -> JsonDict:
     sop_ref = event_type_draft_sop_ref(page_context, tool_results, search)
     related_event = event_type_draft_related_event(search)
     workflow_stage = event_type_draft_workflow_stage(question, related_event)
-    action_keys = event_type_draft_recommended_actions(search)
+    action_keys = event_type_draft_recommended_actions(question, search)
     return {
         "event_type": event_type,
         "name_ko": event_type_draft_name(question, event_type),
@@ -1501,16 +1501,76 @@ def event_type_draft_workflow_stage(question: str, related_event: JsonDict | Non
     return ""
 
 
-def event_type_draft_recommended_actions(search: JsonDict) -> list[str]:
+def event_type_draft_recommended_actions(question: str, search: JsonDict) -> list[str]:
+    """Return high-confidence action suggestions for a new Event Type draft.
+
+    Ontology search often returns SOP-near actions that are useful for reading
+    context but too broad for a brand new event contract. For event type drafts,
+    irrelevant actions are worse than no suggestion because they can steer the
+    catalog toward an unsafe workflow. Keep only candidates that match explicit
+    user intent or a narrow domain hint.
+    """
+    normalized_question = question.lower()
+    direct_hints: list[tuple[str, tuple[str, ...]]] = [
+        ("mcp.timesfm.forecast", ("timesfm", "forecast", "예측", "시계열")),
+        ("boi.materialize_event", ("boi 기록", "boi 생성", "문서화", "materialize")),
+        ("sop.equipment.request_maintenance_guide", ("보전 가이드", "정비 가이드", "maintenance guide", "guide")),
+    ]
     action_keys: list[str] = []
+    for action_key, hints in direct_hints:
+        if any(hint.lower() in normalized_question for hint in hints):
+            action_keys.append(action_key)
+
     groups = search.get("groups") if isinstance(search.get("groups"), dict) else {}
     candidates = list(groups.get("actions") or []) + list(search.get("best_matches") or [])
     for item in candidates:
         if not isinstance(item, dict):
             continue
         action_key = str(item.get("action_key") or "")
-        if action_key and action_key not in action_keys:
+        if not action_key or action_key in action_keys:
+            continue
+        if not event_type_draft_action_matches_question(action_key, item, normalized_question):
+            continue
+        if action_key not in action_keys:
             action_keys.append(action_key)
         if len(action_keys) >= 3:
             break
     return action_keys
+
+
+def event_type_draft_action_matches_question(action_key: str, item: JsonDict, normalized_question: str) -> bool:
+    text = " ".join(
+        str(item.get(field) or "")
+        for field in (
+            "label",
+            "title",
+            "name",
+            "description",
+            "summary",
+            "wiki_usage",
+            "doc_ref",
+            "connector_kind",
+        )
+    ).lower()
+    combined = f"{action_key.lower()} {text}"
+
+    if re.search(r"spec|rule|규격|룰|규칙", combined) and not re.search(r"spec|rule|규격|룰|규칙|변경", normalized_question):
+        return False
+    if re.search(r"approve|approval|승인", combined) and not re.search(r"approve|approval|승인|공유|배포|게시|hold|보류", normalized_question):
+        return False
+    if "timesfm" in combined or "forecast" in combined or "예측" in combined:
+        return bool(re.search(r"timesfm|forecast|예측|시계열", normalized_question))
+    if "maintenance_guide" in action_key or "보전 가이드" in combined or "정비 가이드" in combined:
+        return bool(re.search(r"보전 가이드|정비 가이드|maintenance guide|guide", normalized_question))
+
+    action_tokens = {
+        token
+        for token in re.split(r"[^a-z0-9가-힣]+", combined)
+        if len(token) >= 3 and token not in {"action", "manual", "equipment", "sop", "public"}
+    }
+    question_tokens = {
+        token
+        for token in re.split(r"[^a-z0-9가-힣]+", normalized_question)
+        if len(token) >= 3
+    }
+    return bool(action_tokens & question_tokens)

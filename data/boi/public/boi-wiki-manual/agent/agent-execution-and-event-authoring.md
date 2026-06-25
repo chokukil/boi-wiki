@@ -161,10 +161,12 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 | `sop_stage_id` | SOP workflow metadata의 stage id가 확인되면 함께 보존해 status/timeline과 맞춘다. |
 | `topic` | 관련 Event Type topic이 있으면 재사용하고, 없으면 event_type 앞 두 segment를 사용한다. |
 | `payload_schema` | `사번`, `담당`, `설비`, `장비` 같은 표현을 보고 최소 payload field를 제안한다. |
-| `recommended_actions` | ontology search에서 연결된 Action 후보를 최대 3개까지 제안한다. |
+| `recommended_actions` | 질문에 명시된 intent와 강하게 맞는 Action만 제안한다. 불확실하면 빈 목록으로 둔다. |
 | `recommended_manual_actions` | 사람 확인/승인/조치가 필요한 manual action 후보를 action catalog 기준으로 제안한다. |
 
 예를 들어 “장비 점검 완료 이벤트 타입 `maintenance.inspection.completed.v1` 초안을 만들어줘. 작업자는 7자리 사번이고 SOP는 설비 이상 감지 SOP와 연결해줘.”라고 요청하면 Agent는 `name_ko`, `sop_ref`, `topic`, `owner_employee_id` schema 후보까지 confirmation card에 채운다. 사용자가 카드에서 확인하기 전에는 draft 파일도 catalog도 변경되지 않는다.
+
+Action 추천은 보수적으로 동작한다. 현재 SOP나 ontology search에서 가까운 Action이 보이더라도, 사용자 요청에 `Spec/Rule 변경`, `승인`, `시계열 예측`, `보전 가이드`처럼 명확한 실행 intent가 없으면 초안의 `recommended_actions`에 넣지 않는다. 신규 Event Type에서 잘못된 Action을 붙이는 것보다, 검토자가 명시적으로 Action을 보강하는 편이 안전하다.
 
 생성된 초안은 `/event-types` 화면 상단의 `신규 Event Type 초안` 섹션에서도 확인한다. 이 섹션은 현재 사번이 만든 draft와 admin이 볼 수 있는 draft만 보여주며, `validation ok`, warnings, errors, 연결 SOP/stage/action 후보를 함께 표시한다. Draft 재검증도 같은 가시성 경계를 따른다. 즉 draft id를 알고 있더라도 작성자 또는 admin이 아니면 `/api/event-types/drafts/{draft_id}/validate`로 검증 상태를 갱신할 수 없다. 화면에 보인다고 해서 catalog에 적용된 것은 아니다. 실제 반영은 `boi.promoter` 권한자가 validation을 통과한 draft에 대해 `/api/event-types/drafts/{draft_id}/apply` 또는 `/api/agents/boi-wiki/approve`의 `event_type_draft_apply` operation을 명시 승인할 때만 진행된다. 이 경로는 기존 validated source edit과 같은 validation, rollback, commit 정책을 사용한다.
 
