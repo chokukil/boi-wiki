@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import json
 import os
 from pathlib import Path
@@ -266,6 +267,13 @@ def urllib_json_request(method: str, url: str, *, headers: dict | None = None, p
         return json.loads(response.read().decode("utf-8"))
 
 
+async def run_blocking(func, *args, **kwargs):
+    if hasattr(asyncio, "to_thread"):
+        return await asyncio.to_thread(func, *args, **kwargs)
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
+
+
 async def check_agent_contract(
     boi_api_url: str,
     mcp_base_url: str,
@@ -277,7 +285,7 @@ async def check_agent_contract(
     api_base = boi_api_url.rstrip("/")
     mcp_base = mcp_base_url.rstrip("/")
     if httpx is None:
-        schema_payload = await asyncio.to_thread(
+        schema_payload = await run_blocking(
             urllib_json_request,
             "GET",
             f"{api_base}/api/agents/boi-wiki/response-schema",
@@ -292,7 +300,7 @@ async def check_agent_contract(
             "current_url": current_url,
             "save_memory": False,
         }
-        rest_chat = await asyncio.to_thread(
+        rest_chat = await run_blocking(
             urllib_json_request,
             "POST",
             f"{api_base}/api/agents/boi-wiki/chat",
@@ -319,7 +327,7 @@ async def check_agent_contract(
             },
         }
         if service_token:
-            bridge_payload = await asyncio.to_thread(
+            bridge_payload = await run_blocking(
                 urllib_json_request,
                 "POST",
                 f"{mcp_base}/api/mcp/call",

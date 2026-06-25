@@ -1331,6 +1331,7 @@ def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependenc
     spec.loader.exec_module(module)
     assert module.httpx is None
     assert module.validate is None
+    monkeypatch.delattr(module.asyncio, "to_thread", raising=False)
 
     schema = {
         "type": "object",
