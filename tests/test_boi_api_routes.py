@@ -4661,6 +4661,8 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         assert "Workflows" not in response.text
         assert "/static/mermaid_render.js?v=" in response.text
         assert 'class="utility-nav"' in response.text
+        assert "권한 관리" in response.text
+        assert f'href="/permissions?employee_id=100001"' in response.text
         assert "Langflow" in response.text
         assert "Kafka UI" in response.text
         assert "MCP Status" in response.text

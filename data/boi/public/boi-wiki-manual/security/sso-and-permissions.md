@@ -87,9 +87,9 @@ Langflow-Hynix project roles 응답:
 {"response":{"managers":["100001"],"deployApprovers":["100001"],"developers":["100002"]}}
 ```
 
-Project roles는 BoI role로 다음처럼 변환된다.
+Project role은 BoI role로 다음처럼 변환된다. BoI Wiki 안에서는 공유 단위를 “팀”으로 부르고, HCP 응답의 `managers`, `deployApprovers`, `developers`는 사내 project role 입력값으로만 취급한다.
 
-| HCP group | BoI roles |
+| HCP project role | BoI roles |
 | --- | --- |
 | `managers` | viewer, editor, promoter, workflow_runner, action_invoker, admin |
 | `deployApprovers` | viewer, editor, promoter, workflow_runner, action_invoker |
