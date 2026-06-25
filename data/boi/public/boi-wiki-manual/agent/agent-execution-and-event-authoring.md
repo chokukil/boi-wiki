@@ -76,6 +76,8 @@ Agent는 실행 대상을 임의로 추정하지 않는다. 아래처럼 필수 
 
 직접 API를 호출하는 자동화도 같은 경계를 따른다. `/api/workflows/{workflow_key}/start`와 demo workflow start는 entry event를 발행하므로 요청 body에 `user_confirmed: true`가 없으면 400으로 차단된다. PoC 스크립트와 curl 예시는 이 값을 명시해야 하며, 이 control field는 실제 Event payload에는 포함하지 않는다.
 
+Inbox의 `snooze`와 `dismiss`도 단순 화면 상태가 아니라 append-only action log row를 남기는 변경이다. 따라서 이 두 endpoint도 `boi.workflow_runner` 권한과 `user_confirmed: true`를 요구한다. 사용자는 UI에서 “잠시 미루기” 또는 “내 업무 아님”처럼 이해하면 되지만, 내부 기록에는 누가 어떤 task를 어떤 사유로 숨겼는지 audit 가능한 row가 남아야 한다.
+
 # Identity and Actor Rules
 
 사용자가 보는 확인 카드와 API payload에 사번이 들어갈 수 있지만, 실행 주체는 항상 인증 사번을 기준으로 결정한다. 이는 SSO가 들어왔을 때 특히 중요하다.
@@ -125,6 +127,8 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 | API | Purpose |
 |---|---|
 | `POST /api/agents/boi-wiki/approve` | confirmed execution gateway |
+| `POST /api/agents/boi-wiki/inbox/{task_id}/snooze` | user-confirmed append-only inbox snooze row |
+| `POST /api/agents/boi-wiki/inbox/{task_id}/dismiss` | user-confirmed append-only inbox dismiss row |
 | `POST /api/promotions/submit` | user-confirmed Team/Public promotion validation and publish path |
 | `POST /api/event-types/drafts` | create Event Type draft |
 | `GET /api/event-types/drafts` | list visible drafts |

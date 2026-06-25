@@ -2442,6 +2442,34 @@ def test_agent_inbox_and_manual_handoff_completion_are_append_only(boi_app_modul
     assert not any(item["request_id"] == "act-manual-required-test" for item in inbox_after.json()["items"])
 
 
+def test_agent_inbox_snooze_and_dismiss_require_confirmation_and_role(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    unconfirmed = client.post(
+        "/api/agents/boi-wiki/inbox/task:act-confirmation-test/snooze?employee_id=100001",
+        json={"note": "잠시 뒤 확인"},
+    )
+    confirmed = client.post(
+        "/api/agents/boi-wiki/inbox/task:act-confirmation-test/snooze?employee_id=100001",
+        json={"note": "잠시 뒤 확인", "user_confirmed": True},
+    )
+
+    monkeypatch.setattr(boi_app_module, "roles_for", lambda _employee_id: ["boi.viewer"])
+    denied = client.post(
+        "/api/agents/boi-wiki/inbox/task:act-confirmation-test/dismiss?employee_id=100003",
+        json={"note": "대상 아님", "user_confirmed": True},
+    )
+
+    assert unconfirmed.status_code == 400
+    assert "user_confirmed=true" in str(unconfirmed.json()["detail"])
+    assert confirmed.status_code == 200
+    assert confirmed.json()["item"]["completion_for_request_id"] == "act-confirmation-test"
+    assert confirmed.json()["item"]["status"] == "snoozed"
+    assert confirmed.json()["item"]["note"] == "잠시 뒤 확인"
+    assert denied.status_code == 403
+    assert "boi.workflow_runner" in denied.text
+
+
 def test_boi_agent_approve_rejects_unsupported_operation(boi_app_module):
     client = TestClient(boi_app_module.app)
 

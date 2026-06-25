@@ -5141,6 +5141,11 @@ class ManualHandoffCompleteRequest(BaseModel):
     user_confirmed: bool = True
 
 
+class InboxTaskMutationRequest(BaseModel):
+    note: str = ""
+    user_confirmed: bool = False
+
+
 class AgentMemoryRequest(BaseModel):
     memory_kind: str = "domain_context"
     title: str
@@ -9226,32 +9231,50 @@ async def api_manual_handoff_complete(req: ManualHandoffCompleteRequest, employe
 
 
 @app.post("/api/agents/boi-wiki/inbox/{task_id:path}/snooze")
-async def api_agent_inbox_snooze(task_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+async def api_agent_inbox_snooze(
+    task_id: str,
+    req: InboxTaskMutationRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.workflow_runner")
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required")
     row = append_action_log_row(
         {
             "request_id": f"inbox-snooze-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
             "completion_for_request_id": task_id.removeprefix("task:"),
             "employee_id": employee_id,
             "status": "snoozed",
+            "note": req.note,
             "logged_at": now_iso(),
             "action_key": "agent.inbox.snooze",
         }
     )
+    append_rbac_audit(employee_id, "agent_inbox_snooze", {"task_id": task_id, "note": req.note})
     return {"ok": True, "item": row}
 
 
 @app.post("/api/agents/boi-wiki/inbox/{task_id:path}/dismiss")
-async def api_agent_inbox_dismiss(task_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+async def api_agent_inbox_dismiss(
+    task_id: str,
+    req: InboxTaskMutationRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.workflow_runner")
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required")
     row = append_action_log_row(
         {
             "request_id": f"inbox-dismiss-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
             "completion_for_request_id": task_id.removeprefix("task:"),
             "employee_id": employee_id,
             "status": "dismissed",
+            "note": req.note,
             "logged_at": now_iso(),
             "action_key": "agent.inbox.dismiss",
         }
     )
+    append_rbac_audit(employee_id, "agent_inbox_dismiss", {"task_id": task_id, "note": req.note})
     return {"ok": True, "item": row}
 
 
