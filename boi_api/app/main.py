@@ -8844,45 +8844,45 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
 @app.post("/api/agents/boi-wiki/chat/stream")
 async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> StreamingResponse:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
+    try:
+        stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)
+        status_steps = stream_plan["status_steps"]
+        planned_route = stream_plan["route"]
+    except BoiAgentStatusUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "status_generation_failed",
+                "message": str(exc),
+                "model": BOI_AGENT_STATUS_MODEL,
+                "required": BOI_AGENT_STATUS_REQUIRED,
+            },
+        ) from exc
+    except BoiAgentRouterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "boi_agent_router_unavailable",
+                "message": str(exc),
+                "model": BOI_AGENT_ROUTER_MODEL,
+                "required": BOI_AGENT_ROUTER_REQUIRED,
+            },
+        ) from exc
+    except NativeAgentRuntimeUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "native_agent_runtime_unavailable",
+                "message": str(exc),
+                "langgraph_available": LANGGRAPH_AVAILABLE,
+                "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
+            },
+        ) from exc
 
     async def stream_events():
-        try:
-            stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)
-            status_steps = stream_plan["status_steps"]
-            planned_route = stream_plan["route"]
-        except BoiAgentStatusUnavailable as exc:
-            yield agent_sse_event(
-                "error",
-                {
-                    "status": "status_generation_failed",
-                    "message": str(exc),
-                    "model": BOI_AGENT_STATUS_MODEL,
-                    "required": BOI_AGENT_STATUS_REQUIRED,
-                },
-            )
-            return
-        except BoiAgentRouterUnavailable as exc:
-            yield agent_sse_event(
-                "error",
-                {
-                    "status": "boi_agent_router_unavailable",
-                    "message": str(exc),
-                    "model": BOI_AGENT_ROUTER_MODEL,
-                    "required": BOI_AGENT_ROUTER_REQUIRED,
-                },
-            )
-            return
-        except NativeAgentRuntimeUnavailable as exc:
-            yield agent_sse_event(
-                "error",
-                {
-                    "status": "native_agent_runtime_unavailable",
-                    "message": str(exc),
-                    "langgraph_available": LANGGRAPH_AVAILABLE,
-                    "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
-                },
-            )
-            return
         emitted_status_messages: set[str] = set()
 
         def status_event_if_new(step: dict[str, str], elapsed_ms: int) -> str | None:

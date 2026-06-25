@@ -161,7 +161,7 @@ Pet UI에는 `Agent`와 `Inbox` 두 탭만 둔다. Memory는 `data/boi/private/{
 
 JS가 실패해도 기존 BoI Wiki 본문 탐색은 정상 동작해야 한다.
 
-긴 질문은 사용자가 기다리는 동안 불확실성을 느끼지 않도록 progressive response를 사용한다. Pet UI는 `/api/agents/boi-wiki/chat/stream`의 `status` event를 한 줄 진행 메시지로 보여주고, `answer_delta`를 같은 말풍선에 누적한다. `final` event가 오면 server-rendered `answer_html`, links, artifacts로 메시지를 확정한다. 중지 버튼은 현재 streaming request만 취소하고 BoI Wiki 페이지 상태나 이전 대화 기록을 지우지 않는다.
+긴 질문은 사용자가 기다리는 동안 불확실성을 느끼지 않도록 progressive response를 사용한다. Pet UI는 `/api/agents/boi-wiki/chat/stream`의 `status` event를 한 줄 진행 메시지로 보여주고, `answer_delta`를 같은 말풍선에 누적한다. `final` event가 오면 server-rendered `answer_html`, links, artifacts로 메시지를 확정한다. 단, LLM stream planner가 요청별 status 문구를 만들지 못하면 SSE를 시작하지 않고 HTTP `503` 장애로 표시한다. 중지 버튼은 현재 streaming request만 취소하고 BoI Wiki 페이지 상태나 이전 대화 기록을 지우지 않는다.
 
 ## MCP Tool 기준
 

@@ -1153,7 +1153,16 @@
         conversation: state.messages.slice(-10).map((item) => ({ role: item.role, content: item.text })),
       }),
     }).then(async (response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch (_error) {
+          payload = null;
+        }
+        const detail = payload?.detail || payload || { status: "agent_stream_error", message: `HTTP ${response.status}` };
+        throw new Error(formatAgentStreamError(detail));
+      }
       await readAgentStream(response, {
         status(payload) {
           const message = payload.message || "";

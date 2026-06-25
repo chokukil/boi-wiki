@@ -118,11 +118,11 @@ event: status
 data: {"stage":"page_context","message":"...","source":"llm_status","elapsed_ms":0}
 ```
 
-실제 문구는 LLM stream planner가 질문과 현재 페이지에 맞춰 생성한다. 고정 문구가 아니므로 특정 문장과 exact match하지 않는다. 핵심은 첫 `status`에 `source: "llm_status"`가 있고, 긴 작업 중에도 LLM이 만든 한 줄 진행 상태가 반복되는 것이다. stream planner가 route/status JSON plan을 만들지 못하면 다음처럼 실패해야 한다.
+실제 문구는 LLM stream planner가 질문과 현재 페이지에 맞춰 생성한다. 고정 문구가 아니므로 특정 문장과 exact match하지 않는다. 핵심은 첫 `status`에 `source: "llm_status"`가 있고, 긴 작업 중에도 LLM이 만든 한 줄 진행 상태가 반복되는 것이다. stream planner가 route/status JSON plan을 만들지 못하면 SSE가 시작되기 전에 다음처럼 HTTP `503`으로 실패해야 한다.
 
 ```text
-event: error
-data: {"status":"status_generation_failed", ...}
+HTTP/1.1 503 Service Unavailable
+{"detail":{"status":"status_generation_failed", ...}}
 ```
 
 이 오류는 정상 우회가 아니라 Agent streaming 장애로 취급한다.

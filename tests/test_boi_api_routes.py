@@ -2678,17 +2678,13 @@ def test_boi_agent_chat_stream_fails_when_status_llm_unavailable(boi_app_module,
     monkeypatch.setattr(boi_app_module, "agent_stream_plan", fail_status)
     monkeypatch.setattr(boi_app_module, "agent_chat_response", unexpected_agent)
 
-    with client.stream(
-        "POST",
+    response = client.post(
         "/api/agents/boi-wiki/chat/stream?employee_id=100001",
         json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
-    ) as response:
-        assert response.status_code == 200
-        raw = "".join(response.iter_text())
+    )
 
-    events = parse_sse_events(raw)
-    assert events[-1]["event"] == "error"
-    payload = json.loads(events[-1]["data"])
+    assert response.status_code == 503
+    payload = response.json()["detail"]
     assert payload["status"] == "status_generation_failed"
     assert "status model unavailable" in payload["message"]
 
@@ -2702,20 +2698,39 @@ def test_boi_agent_chat_stream_fails_when_status_required_is_disabled(boi_app_mo
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_REQUIRED", False)
     monkeypatch.setattr(boi_app_module, "agent_chat_response", unexpected_agent)
 
-    with client.stream(
-        "POST",
+    response = client.post(
         "/api/agents/boi-wiki/chat/stream?employee_id=100001",
         json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
-    ) as response:
-        assert response.status_code == 200
-        raw = "".join(response.iter_text())
+    )
 
-    events = parse_sse_events(raw)
-    assert events[-1]["event"] == "error"
-    payload = json.loads(events[-1]["data"])
+    assert response.status_code == 503
+    payload = response.json()["detail"]
     assert payload["status"] == "status_generation_failed"
     assert payload["required"] is False
     assert "disabled" in payload["message"]
+
+
+def test_boi_agent_chat_stream_fails_when_router_plan_unavailable_before_streaming(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fail_router(_req, _employee_id: str):
+        raise boi_app_module.BoiAgentRouterUnavailable("router model unavailable")
+
+    def unexpected_agent(*args, **kwargs):
+        raise AssertionError("agent should not run without LLM route/status plan")
+
+    monkeypatch.setattr(boi_app_module, "agent_stream_plan", fail_router)
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", unexpected_agent)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat/stream?employee_id=100001",
+        json={"question": "현재 페이지 기준으로 설명해줘", "current_url": "/"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()["detail"]
+    assert payload["status"] == "boi_agent_router_unavailable"
+    assert "router model unavailable" in payload["message"]
 
 
 def test_boi_agent_chat_endpoint_offloads_agent_work(boi_app_module, monkeypatch):
