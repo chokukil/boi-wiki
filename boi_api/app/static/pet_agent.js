@@ -619,6 +619,8 @@
     renderMarkdownTable,
     renderCellValue,
     renderRunSummary,
+    renderArtifacts,
+    artifactItems,
     listLineInfo,
     splitTableRow,
     mermaidSourcesFromMarkdown,

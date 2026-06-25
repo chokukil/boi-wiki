@@ -4442,6 +4442,88 @@ console.log(JSON.stringify({
     assert payload["hasRunSummary"]
 
 
+def test_pet_agent_artifact_renderer_consumes_agent_response_contract(boi_app_module):
+    if not shutil.which("node"):
+        pytest.skip("node is required for Pet Agent artifact renderer smoke")
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync("boi_api/app/static/pet_agent.js", "utf8");
+const root = {
+  dataset: {},
+  style: { setProperty() {}, removeProperty() {} },
+  querySelector() { return null; },
+  querySelectorAll() { return []; },
+  addEventListener() {},
+  dispatchEvent() {},
+  innerHTML: "",
+};
+global.document = { getElementById() { return root; }, title: "Test", addEventListener() {} };
+global.window = { getSelection() { return { toString() { return ""; } }; }, addEventListener() {}, visualViewport: null };
+global.location = { search: "?employee_id=100001", pathname: "/", origin: "http://localhost:8000" };
+global.URLSearchParams = URLSearchParams;
+global.URL = URL;
+global.sessionStorage = { getItem() { return null; }, setItem() {} };
+global.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ suggestions: [], items: [] }) });
+global.CustomEvent = function CustomEvent(name, opts) { return { name, ...opts }; };
+global.CSS = { escape: (value) => String(value) };
+vm.runInThisContext(code);
+
+const mermaid = "flowchart TD\n  A[Start] --> B[End]";
+const message = {
+  text: [
+    "## SOP Flow",
+    "",
+    "```mermaid",
+    mermaid,
+    "```",
+  ].join("\n"),
+  artifacts: [
+    { type: "mermaid", title: "SOP Flow", source: mermaid },
+    { type: "mermaid", title: "Duplicate Flow", source: mermaid },
+    { type: "gap_table", title: "Action Gap", data: [{ item: "Trend", status: "ready", link: "[Spec](/docs/boi:public:actions:api:request-trend-history?employee_id=100001)" }] },
+    { type: "workflow_summary", title: "Workflow", data: [{ stage: "detect", action: "collect evidence" }] },
+    { type: "task_cards", title: "Tasks", data: [{ title: "공유 전 승인 필요", status_label: "승인 필요", why_it_matters: "외부 공유 전 확인", next_action: "내용 확인" }] },
+    { type: "image", title: "Preview", url: "/static/assets/boi-agent-pet.png", alt: "BoI Agent pet" },
+    { type: "confirmation_required", title: "요청 실행 전 확인", data: { operation: "event_publish", payload: { event_type: "demo.v1" }, primary_label: "요청 실행" } },
+  ],
+};
+
+const items = window.BoiAgentMarkdownDebug.artifactItems(message);
+const html = window.BoiAgentMarkdownDebug.renderArtifacts(message, 0);
+console.log(JSON.stringify({
+  artifactItemCount: items.length,
+  mermaidDiagramCount: (html.match(/mermaid-diagram/g) || []).length,
+  hasGapTable: html.includes("Action Gap") && html.includes("<table"),
+  rendersMarkdownLinkInTable: html.includes('href="/docs/boi:public:actions:api:request-trend-history?employee_id=100001"'),
+  hasWorkflowSummary: html.includes("Workflow") && html.includes("detect"),
+  hasTaskCard: html.includes("공유 전 승인 필요") && html.includes("내용 확인"),
+  hasImageViewerButton: html.includes("BoI Agent pet") && html.includes("data-open-artifact"),
+  hasConfirmationCard: html.includes("요청 실행 전 확인") && html.includes("data-agent-approve"),
+  hasTechnicalDetails: html.includes("기술 세부정보"),
+}));
+"""
+    result = subprocess.run(
+        ["node"],
+        input=script,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        check=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload["artifactItemCount"] == 6
+    assert payload["mermaidDiagramCount"] == 1
+    assert payload["hasGapTable"]
+    assert payload["rendersMarkdownLinkInTable"]
+    assert payload["hasWorkflowSummary"]
+    assert payload["hasTaskCard"]
+    assert payload["hasImageViewerButton"]
+    assert payload["hasConfirmationCard"]
+    assert payload["hasTechnicalDetails"]
+
+
 def test_server_markdown_renderer_handles_agent_quote_hr_and_inline_styles(boi_app_module):
     html = str(
         boi_app_module.render_markdown(
