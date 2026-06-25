@@ -3771,6 +3771,17 @@ def test_manual_handoff_completion_rejects_task_not_visible_to_employee(boi_app_
 
 def test_agent_inbox_snooze_and_dismiss_require_confirmation_and_role(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "request_id": "act-confirmation-test",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "확인 후 잠시 미루기",
+            "trace_id": "trace-agent-inbox-confirmation",
+        },
+    )
 
     unconfirmed = client.post(
         "/api/agents/boi-wiki/inbox/task:act-confirmation-test/snooze?employee_id=100001",
@@ -3795,6 +3806,35 @@ def test_agent_inbox_snooze_and_dismiss_require_confirmation_and_role(boi_app_mo
     assert confirmed.json()["item"]["note"] == "잠시 뒤 확인"
     assert denied.status_code == 403
     assert "boi.workflow_runner" in denied.text
+
+
+def test_agent_inbox_snooze_and_dismiss_reject_tasks_not_visible_to_employee(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100002",
+            "request_id": "act-inbox-mutation-other-employee",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "다른 사번의 Inbox 업무",
+            "trace_id": "trace-agent-inbox-mutation-other-employee",
+        },
+    )
+
+    snooze = client.post(
+        "/api/agents/boi-wiki/inbox/task:act-inbox-mutation-other-employee/snooze?employee_id=100001",
+        json={"note": "보이지 않는 업무를 미루면 안 됨", "user_confirmed": True},
+    )
+    dismiss = client.post(
+        "/api/agents/boi-wiki/inbox/task:act-inbox-mutation-other-employee/dismiss?employee_id=100001",
+        json={"note": "보이지 않는 업무를 숨기면 안 됨", "user_confirmed": True},
+    )
+
+    assert snooze.status_code == 403
+    assert dismiss.status_code == 403
+    completed = boi_app_module.completion_request_ids()
+    assert "act-inbox-mutation-other-employee" not in completed
 
 
 def test_boi_agent_approve_rejects_unsupported_operation(boi_app_module):

@@ -101,7 +101,7 @@ Agent는 실행 대상을 임의로 추정하지 않는다. 아래처럼 필수 
 
 Manual Handoff 완료는 현재 사번의 Inbox에서 보이는 task에 대해서만 허용한다. Task id를 직접 알고 있더라도 다른 사번의 private/runtime action row이거나 이미 완료된 항목이면 `/api/agents/boi-wiki/manual-handoffs/complete`와 `/api/agents/boi-wiki/approve`의 `manual_handoff_complete` operation은 차단된다.
 
-Inbox의 `snooze`와 `dismiss`도 단순 화면 상태가 아니라 append-only action log row를 남기는 변경이다. 따라서 이 두 endpoint도 `boi.workflow_runner` 권한과 `user_confirmed: true`를 요구한다. 사용자는 UI에서 “잠시 미루기” 또는 “내 업무 아님”처럼 이해하면 되지만, 내부 기록에는 누가 어떤 task를 어떤 사유로 숨겼는지 audit 가능한 row가 남아야 한다.
+Inbox의 `snooze`와 `dismiss`도 단순 화면 상태가 아니라 append-only action log row를 남기는 변경이다. 따라서 이 두 endpoint도 `boi.workflow_runner` 권한, `user_confirmed: true`, 그리고 현재 사번의 Inbox에서 보이는 task인지 검증한다. 사용자는 UI에서 “잠시 미루기” 또는 “내 업무 아님”처럼 이해하면 되지만, 내부 기록에는 누가 어떤 task를 어떤 사유로 숨겼는지 audit 가능한 row가 남아야 한다.
 
 # Identity and Actor Rules
 

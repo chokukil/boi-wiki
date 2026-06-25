@@ -121,7 +121,7 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 | `ontology_search` | Dictionary, SOP workflow, Event Type, Action Spec, BoI 문서, runtime evidence를 함께 보는 업무 지식 그래프 검색 |
 | `dictionary_resolve` / `dictionary_terms` | private → team → public 우선순위로 업무 용어와 alias 해석 |
 | `agent_memory_search` | 사번별 private Agent Memory BoI 검색 |
-| `agent_inbox` / `manual_handoff_complete` | 담당 action inbox 조회와 사용자 확인된 manual handoff 완료 기록. 완료 대상 task는 같은 사번의 Inbox에 보이는 항목이어야 한다. |
+| `agent_inbox` / `manual_handoff_complete` | 담당 action inbox 조회와 사용자 확인된 manual handoff 완료 기록. 완료, snooze, dismiss 대상 task는 같은 사번의 Inbox에 보이는 항목이어야 한다. |
 | `rbac_me` / `rbac_check` / `doc_access_check` / `rbac_audit` | 현재 사번의 팀·역할, 역할 binding, BoI Profile ACL/classification 접근 가능성, 권한 audit 확인 |
 | `event_type_draft_create` / `event_type_drafts` / `event_type_draft_validate` / `event_type_draft_apply` | 신규 Event Type draft 작성, 조회, 검증, 사용자 승인된 catalog 반영 |
 | `source_preview` / `doc_body_preview` | source/body 수정 전 preview와 validation feedback |

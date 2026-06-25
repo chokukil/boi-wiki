@@ -9977,25 +9977,48 @@ def completion_request_ids(rows: list[dict[str, Any]] | None = None) -> set[str]
     return completed
 
 
-def visible_manual_handoff_task_row(task_id: str, employee_id: str) -> dict[str, Any]:
+def visible_agent_inbox_task_row(
+    task_id: str,
+    employee_id: str,
+    *,
+    allowed_statuses: set[str] | None = None,
+    not_visible_detail: str = "inbox task is not visible to this employee",
+    not_found_detail: str = "inbox task not found",
+) -> dict[str, Any]:
     parent_ref = str(task_id or "").removeprefix("task:")
     if not parent_ref:
         raise HTTPException(status_code=400, detail="task_id is required")
     completed = completion_request_ids()
     if parent_ref in completed:
-        raise HTTPException(status_code=409, detail="manual handoff task is already completed")
+        raise HTTPException(status_code=409, detail="inbox task is already completed")
     for row in cached_action_log_rows():
         row_refs = {str(row.get("request_id") or ""), str(row.get("_log_ref") or "")}
         if parent_ref not in row_refs:
             continue
         if not action_log_visible_to_employee(row, employee_id):
-            raise HTTPException(status_code=403, detail="manual handoff task is not visible to this employee")
+            raise HTTPException(status_code=403, detail=not_visible_detail)
         result_status = (row.get("result") or {}).get("status") if isinstance(row.get("result"), dict) else ""
         row_status = str(row.get("status") or result_status or "")
-        if row_status not in {"manual_required", "manual_blocked", "needs_followup"}:
-            raise HTTPException(status_code=400, detail=f"manual handoff task is not completable: {row_status or 'unknown'}")
+        if allowed_statuses is not None and row_status not in allowed_statuses:
+            raise HTTPException(status_code=400, detail=f"inbox task status is not allowed: {row_status or 'unknown'}")
         return row
-    raise HTTPException(status_code=404, detail="manual handoff task not found")
+    raise HTTPException(status_code=404, detail=not_found_detail)
+
+
+def visible_manual_handoff_task_row(task_id: str, employee_id: str) -> dict[str, Any]:
+    try:
+        return visible_agent_inbox_task_row(
+            task_id,
+            employee_id,
+            allowed_statuses={"manual_required", "manual_blocked", "needs_followup"},
+            not_visible_detail="manual handoff task is not visible to this employee",
+            not_found_detail="manual handoff task not found",
+        )
+    except HTTPException as exc:
+        if exc.status_code == 400 and str(exc.detail).startswith("inbox task status is not allowed"):
+            detail = str(exc.detail).split(":", 1)[1].strip() if ":" in str(exc.detail) else "unknown"
+            raise HTTPException(status_code=400, detail=f"manual handoff task is not completable: {detail}")
+        raise
 
 
 def agent_inbox_display(row: dict[str, Any], employee_id: str, row_status: str) -> dict[str, str]:
@@ -10126,10 +10149,16 @@ async def api_agent_inbox_snooze(
     require_employee_role(employee_id, "boi.workflow_runner")
     if not req.user_confirmed:
         raise HTTPException(status_code=400, detail="user_confirmed=true is required")
+    task_row = visible_agent_inbox_task_row(
+        task_id,
+        employee_id,
+        allowed_statuses={"manual_required", "approval_required", "manual_blocked", "needs_followup"},
+    )
+    parent_request_id = str(task_row.get("request_id") or task_row.get("_log_ref") or task_id.removeprefix("task:"))
     row = append_action_log_row(
         {
             "request_id": f"inbox-snooze-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
-            "completion_for_request_id": task_id.removeprefix("task:"),
+            "completion_for_request_id": parent_request_id,
             "employee_id": employee_id,
             "status": "snoozed",
             "note": req.note,
@@ -10150,10 +10179,16 @@ async def api_agent_inbox_dismiss(
     require_employee_role(employee_id, "boi.workflow_runner")
     if not req.user_confirmed:
         raise HTTPException(status_code=400, detail="user_confirmed=true is required")
+    task_row = visible_agent_inbox_task_row(
+        task_id,
+        employee_id,
+        allowed_statuses={"manual_required", "approval_required", "manual_blocked", "needs_followup"},
+    )
+    parent_request_id = str(task_row.get("request_id") or task_row.get("_log_ref") or task_id.removeprefix("task:"))
     row = append_action_log_row(
         {
             "request_id": f"inbox-dismiss-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
-            "completion_for_request_id": task_id.removeprefix("task:"),
+            "completion_for_request_id": parent_request_id,
             "employee_id": employee_id,
             "status": "dismissed",
             "note": req.note,
