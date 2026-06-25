@@ -1548,10 +1548,10 @@ def test_event_types_page_shows_visible_drafts_without_catalog_apply(boi_app_mod
 
     page = client.get("/event-types?employee_id=100001")
     assert page.status_code == 200
-    assert "신규 Event Type 초안" in page.text
+    assert "신규 이벤트 유형 초안" in page.text
     assert event_type in page.text
-    assert "catalog에는 아직 반영되지 않음" in page.text
-    assert "validation ok" in page.text
+    assert "운영 목록에는 아직 반영되지 않음" in page.text
+    assert "검증 완료" in page.text
 
     other_employee = client.get("/event-types?employee_id=100003")
     assert other_employee.status_code == 200
@@ -1627,7 +1627,7 @@ def test_boi_agent_execution_requests_return_specific_confirmation_cards(boi_app
     assert event_card["type"] == "confirmation_required"
     assert event_card["data"]["operation"] == "event_publish"
     assert event_card["data"]["payload"]["event_type"] == "equipment.alarm.raised.v1"
-    assert "Event 발행" in event_card["title"]
+    assert "업무 이벤트 발행" in event_card["title"]
 
     workflow_response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -1643,7 +1643,7 @@ def test_boi_agent_execution_requests_return_specific_confirmation_cards(boi_app
     assert workflow_body["intent"] == "workflow_start"
     assert workflow_card["data"]["operation"] == "workflow_start"
     assert workflow_card["data"]["payload"]["workflow_key"] == "equipment-anomaly"
-    assert "Workflow 시작" in workflow_card["title"]
+    assert "SOP 업무 흐름 시작" in workflow_card["title"]
 
     action_response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -1659,7 +1659,7 @@ def test_boi_agent_execution_requests_return_specific_confirmation_cards(boi_app
     assert action_body["intent"] == "action_invoke"
     assert action_card["data"]["operation"] == "action_invoke"
     assert action_card["data"]["payload"]["action_key"] == "sop.equipment.request_raw_data"
-    assert "Action 요청 실행" in action_card["title"]
+    assert "업무 요청 실행" in action_card["title"]
 
 
 def test_boi_agent_chat_fast_uses_llm_router_and_current_doc_context(boi_app_module, monkeypatch):
@@ -1832,7 +1832,7 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     assert body["artifacts"][0]["type"] == "mermaid"
     assert "```mermaid" in body["answer_markdown"]
     assert "```mermaid" not in body["display_markdown"]
-    assert "Source Mapping" in body["display_markdown"]
+    assert "원본 매핑" in body["display_markdown"]
     assert "answer_html" in body
     assert "```mermaid" not in body["answer_html"]
     assert "mermaid-diagram" not in body["answer_html"]
@@ -1911,7 +1911,7 @@ def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, m
     assert response.status_code == 200
     body = response.json()
     assert body["intent"] == "workflow_explain"
-    assert "| Stage | Event | Action | Manual Handoff | Next |" in body["answer_markdown"]
+    assert "| 단계 | 이벤트 | 업무 요청 | 수동 조치 | 다음 |" in body["answer_markdown"]
     assert '<table class="markdown-table">' in body["answer_html"]
     assert "manual.equipment.confirm_alarm_context" in body["answer_html"]
     assert any(item.get("type") == "workflow_summary" for item in body["artifacts"])
@@ -3130,13 +3130,16 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "data-agent-approve-note" in script
     assert "BoI Agent confirmation card" not in script
     assert "agentApprovalResultMessage" in script
-    assert "Event 발행 요청을 보냈습니다." in script
+    assert "이벤트 발행 요청을 보냈습니다." in script
     assert "업무 흐름 시작 요청을 보냈습니다." in script
-    assert "Action 실행 요청을 보냈습니다." in script
-    assert "Manual Handoff 완료 기록을 남겼습니다." in script
-    assert "Event Type 초안을 만들었습니다." in script
-    assert "Event Type 초안을 catalog에 반영했습니다." in script
+    assert "업무 요청 실행 요청을 보냈습니다." in script
+    assert "조치 완료 기록을 남겼습니다." in script
+    assert "이벤트 유형 초안을 만들었습니다." in script
+    assert "이벤트 유형 초안을 운영 목록에 반영했습니다." in script
     assert "공유 요청을 제출했습니다." in script
+    assert "명세 점검" in script
+    assert "업무 흐름 요약" in script
+    assert "처리할 일" in script
     assert "기술 세부정보" in script
     assert ">Workflow<" not in script
     assert ">Raw<" not in script

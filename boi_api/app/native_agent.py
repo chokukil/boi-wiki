@@ -534,10 +534,10 @@ class NativeBoiAgent:
         title = doc_title(doc, "현재 SOP")
         state["answer_markdown"] = (
             f"## {title} 프로세스 플로우\n\n"
-            "SOP metadata의 stage, event, action, manual handoff를 기준으로 그렸습니다. "
+            "SOP metadata의 단계, 이벤트, 업무 요청, 수동 조치 항목을 기준으로 그렸습니다. "
             "다이어그램은 읽기 쉽게 단계와 항목 개수 중심으로 줄이고, 전체 원본 매핑은 아래 표에 남겼습니다.\n\n"
             f"```mermaid\n{mermaid}\n```\n"
-            "\n## Source Mapping\n\n"
+            "\n## 원본 매핑\n\n"
             + markdown_table(mapping_rows, ["stage", "events", "actions", "manual_actions", "next_stage"])
         )
         state["links"] = links_from_doc_and_search(doc, state.get("search") or {})
@@ -548,7 +548,7 @@ class NativeBoiAgent:
         specs = (state.get("tool_results") or {}).get("action_specs") or []
         rows = action_gap_rows(doc, specs)
         state["artifacts"] = [{"type": "gap_table", "data": rows}]
-        lines = [f"## {doc_title(doc, '현재 SOP')} Action Spec 점검", "", "| Action | 상태 | 근거 |", "|---|---|---|"]
+        lines = [f"## {doc_title(doc, '현재 SOP')} 업무 요청 명세 점검", "", "| 업무 요청 | 상태 | 근거 |", "|---|---|---|"]
         for row in rows:
             lines.append(f"| `{row['action_key']}` | {row['status_label']} | {row['evidence']} |")
         state["answer_markdown"] = "\n".join(lines)
@@ -559,11 +559,11 @@ class NativeBoiAgent:
         doc = (state.get("tool_results") or {}).get("current_doc") or {}
         rows = workflow_summary_rows(doc)
         state["artifacts"] = [{"type": "workflow_summary", "data": rows}]
-        lines = [f"## {doc_title(doc, 'BoI Workflow')} 관계 요약", ""]
+        lines = [f"## {doc_title(doc, 'BoI 업무 흐름')} 관계 요약", ""]
         if rows:
             lines.append(markdown_table(rows, ["stage", "events", "actions", "manual_actions", "next_stage"]))
         if not rows:
-            lines.append("현재 문서에서 workflow metadata를 찾지 못했습니다. 연결된 SOP/Event/Action 문서를 더 확인해야 합니다.")
+            lines.append("현재 문서에서 업무 흐름 metadata를 찾지 못했습니다. 연결된 SOP/이벤트/업무 요청 문서를 더 확인해야 합니다.")
         state["answer_markdown"] = "\n".join(lines)
         state["links"] = links_from_doc_and_search(doc, state.get("search") or {})
         state["citations"] = state["links"][:5]
@@ -573,15 +573,15 @@ class NativeBoiAgent:
         trace = (state.get("tool_results") or {}).get("trace_context") or {}
         lines = ["## Trace 실행 상태 요약", ""]
         if workflow:
-            lines.append(f"- Workflow: `{workflow.get('workflow_key') or workflow.get('workflow') or '-'}`")
-            lines.append(f"- Event count: {len(workflow.get('events') or [])}")
-            lines.append(f"- Action count: {len(workflow.get('actions') or [])}")
-            lines.append(f"- Manual handoff count: {len(workflow.get('manual_handoffs') or [])}")
+            lines.append(f"- 업무 흐름: `{workflow.get('workflow_key') or workflow.get('workflow') or '-'}`")
+            lines.append(f"- 이벤트 수: {len(workflow.get('events') or [])}")
+            lines.append(f"- 업무 요청 수: {len(workflow.get('actions') or [])}")
+            lines.append(f"- 수동 조치 수: {len(workflow.get('manual_handoffs') or [])}")
         elif trace:
-            lines.append(f"- Trace events: {len(trace.get('events') or [])}")
-            lines.append(f"- Trace actions: {len(trace.get('actions') or [])}")
+            lines.append(f"- Trace 이벤트 수: {len(trace.get('events') or [])}")
+            lines.append(f"- Trace 업무 요청 수: {len(trace.get('actions') or [])}")
         else:
-            lines.append("현재 trace context를 찾지 못했습니다. Workflow Status나 Event Stream 링크로 trace를 확인해야 합니다.")
+            lines.append("현재 trace context를 찾지 못했습니다. 업무 흐름 상태나 Event Stream 링크로 trace를 확인해야 합니다.")
         state["answer_markdown"] = "\n".join(lines)
         state["links"] = trace_links(workflow, trace)
         state["citations"] = state["links"][:5]
@@ -907,13 +907,13 @@ def workflow_mermaid(doc: JsonDict) -> str:
         automated_actions = stage.get("automated_actions") or []
         manual_actions = stage.get("manual_actions") or []
         if events:
-            event_label = "Event" if len(events) == 1 else f"Events ({len(events)})"
+            event_label = "업무 이벤트" if len(events) == 1 else f"업무 이벤트 {len(events)}개"
             lines.append(f'  e{index}["{event_label}"] --> {node}')
         if automated_actions:
-            action_label = "Automated Action" if len(automated_actions) == 1 else f"Automated Actions ({len(automated_actions)})"
+            action_label = "자동 업무 요청" if len(automated_actions) == 1 else f"자동 업무 요청 {len(automated_actions)}개"
             lines.append(f'  {node} --> a{index}["{action_label}"]')
         if manual_actions:
-            manual_label = "Manual Handoff" if len(manual_actions) == 1 else f"Manual Handoffs ({len(manual_actions)})"
+            manual_label = "수동 조치" if len(manual_actions) == 1 else f"수동 조치 {len(manual_actions)}개"
             lines.append(f'  {node} --> m{index}["{manual_label}"]')
         if index < len(stages):
             lines.append(f"  {node} --> s{index + 1}")
@@ -945,11 +945,11 @@ def markdown_table(rows: list[JsonDict], columns: list[str]) -> str:
     if not rows:
         return "_No workflow mapping available._\n"
     labels = {
-        "stage": "Stage",
-        "events": "Event",
-        "actions": "Action",
-        "manual_actions": "Manual Handoff",
-        "next_stage": "Next",
+        "stage": "단계",
+        "events": "이벤트",
+        "actions": "업무 요청",
+        "manual_actions": "수동 조치",
+        "next_stage": "다음",
     }
     header = "| " + " | ".join(labels.get(column, column) for column in columns) + " |"
     separator = "| " + " | ".join("---" for _ in columns) + " |"
@@ -1035,20 +1035,20 @@ def suggested_questions_for_state(state: JsonDict) -> list[str]:
     stage_count, action_count, manual_count = suggested_workflow_counts(page_context, current_doc)
     if intent == "diagram":
         return [
-            f"{title}의 Action {action_count}개와 Manual Handoff {manual_count}개 중 부족한 명세를 점검해줘.",
+            f"{title}의 업무 요청 {action_count}개와 수동 조치 {manual_count}개 중 부족한 명세를 점검해줘.",
             "이 Event가 발생하면 뭘 해야 해?",
         ]
     if intent == "gap_check":
-        return ["누락된 Action Spec 초안을 만들어줘.", f"{title}를 Mermaid로 다시 보여줘."]
+        return ["누락된 업무 요청 명세 초안을 만들어줘.", f"{title}를 Mermaid로 다시 보여줘."]
     if intent == "inbox":
         return ["가장 먼저 처리할 일을 알려줘.", "승인 대기 건만 보여줘."]
     if stage_count:
         return [
             f"{title}를 Mermaid 프로세스 플로우로 보여줘.",
-            f"{title}의 Event, Action, Manual Handoff 관계를 요약해줘.",
-            "부족한 Action Spec이 있는지 찾아줘.",
+            f"{title}의 이벤트, 업무 요청, 수동 조치 관계를 요약해줘.",
+            "부족한 업무 요청 명세가 있는지 찾아줘.",
         ]
-    return ["이 내용을 Mermaid로 보여줘.", "관련 Action과 Event를 요약해줘.", "부족한 명세가 있는지 찾아줘."]
+    return ["이 내용을 Mermaid로 보여줘.", "관련 업무 요청과 이벤트를 요약해줘.", "부족한 명세가 있는지 찾아줘."]
 
 
 def suggested_subject_title(state: JsonDict) -> str:
@@ -1093,82 +1093,82 @@ def confirmation_payload_for_state(state: JsonDict) -> JsonDict:
         payload = event_type_draft_payload_from_state(state)
         if payload:
             return {
-                "title": "신규 Event Type 초안 확인",
-                "answer_markdown": "신규 Event Type은 바로 catalog에 반영하지 않고 draft로 만든 뒤 검증합니다. 아래 카드에서 내용을 확인하고 명시적으로 실행하세요.",
+                "title": "신규 이벤트 유형 초안 확인",
+                "answer_markdown": "신규 이벤트 유형은 바로 운영 목록에 반영하지 않고 초안으로 만든 뒤 검증합니다. 아래 카드에서 내용을 확인하고 명시적으로 실행하세요.",
                 "data": {
                     "route": route_name,
                     "intent": intent,
                     "operation": "event_type_draft",
                     "payload": payload,
-                    "title": "신규 Event Type 초안 확인",
-                    "message": "Event Type draft를 만들고 validation 결과를 확인합니다. catalog 적용은 별도 검토와 승인 후 진행됩니다.",
-                    "primary_label": "Event Type 초안 만들기",
+                    "title": "신규 이벤트 유형 초안 확인",
+                    "message": "이벤트 유형 초안을 만들고 검증 결과를 확인합니다. 운영 목록 반영은 별도 검토와 승인 후 진행됩니다.",
+                    "primary_label": "이벤트 유형 초안 만들기",
                 },
             }
         return {
-            "title": "신규 Event Type 초안 확인",
-            "answer_markdown": "Event Type 초안을 만들려면 `domain.event.requested.v1` 같은 versioned event_type 이름이 필요합니다.",
+            "title": "신규 이벤트 유형 초안 확인",
+            "answer_markdown": "이벤트 유형 초안을 만들려면 `domain.event.requested.v1` 같은 versioned event_type 이름이 필요합니다.",
             "data": {
                 "route": route_name,
                 "intent": intent,
-                "title": "Event Type 이름 필요",
-                "message": "예: `quality.forecast.requested.v1` 신규 Event Type 초안 만들어줘.",
-                "primary_label": "Event Type 이름을 포함해 다시 요청",
+                "title": "이벤트 유형 이름 필요",
+                "message": "예: `quality.forecast.requested.v1` 신규 이벤트 유형 초안 만들어줘.",
+                "primary_label": "이벤트 유형 이름을 포함해 다시 요청",
             },
         }
     if intent == "event_publish":
         payload = event_publish_payload_from_state(state)
         if payload:
             return {
-                "title": "Event 발행 확인",
-                "answer_markdown": "Event Broker에 새 Event를 발행하려면 먼저 내용을 확인해야 합니다. 아래 카드에서 Event Type과 payload를 확인한 뒤 실행하세요.",
+                "title": "업무 이벤트 발행 확인",
+                "answer_markdown": "업무 이벤트를 발행하려면 먼저 내용을 확인해야 합니다. 아래 카드에서 이벤트 유형과 입력값을 확인한 뒤 실행하세요.",
                 "data": {
                     "route": route_name,
                     "intent": intent,
                     "operation": "event_publish",
                     "payload": payload,
-                    "title": "Event 발행 확인",
-                    "message": "Event 발행은 workflow를 진행시키고 BoI 생성/action dispatch로 이어질 수 있습니다.",
-                    "primary_label": "Event 발행하기",
+                    "title": "업무 이벤트 발행 확인",
+                    "message": "이벤트 발행은 SOP 업무 흐름을 진행시키고 BoI 생성과 업무 요청으로 이어질 수 있습니다.",
+                    "primary_label": "이벤트 발행하기",
                 },
             }
-        return missing_execution_payload("Event Type 필요", "예: `equipment.alarm.raised.v1` 이벤트를 발행해줘.", route_name, intent)
+        return missing_execution_payload("이벤트 유형 필요", "예: `equipment.alarm.raised.v1` 이벤트를 발행해줘.", route_name, intent)
     if intent == "workflow_start":
         payload = workflow_start_payload_from_state(state)
         if payload:
             workflow_key = str(payload.get("workflow_key") or "")
             return {
-                "title": "Workflow 시작 확인",
-                "answer_markdown": "SOP 기반 Workflow를 시작하려면 먼저 시작 Event payload를 확인해야 합니다. 아래 카드에서 workflow와 payload를 확인한 뒤 실행하세요.",
+                "title": "SOP 업무 흐름 시작 확인",
+                "answer_markdown": "SOP 기반 업무 흐름을 시작하려면 먼저 시작 이벤트 입력값을 확인해야 합니다. 아래 카드에서 업무 흐름과 입력값을 확인한 뒤 실행하세요.",
                 "data": {
                     "route": route_name,
                     "intent": intent,
                     "operation": "workflow_start",
                     "payload": payload,
-                    "title": "Workflow 시작 확인",
-                    "message": f"`{workflow_key}` workflow의 entry event를 발행합니다.",
-                    "primary_label": "Workflow 시작하기",
+                    "title": "SOP 업무 흐름 시작 확인",
+                    "message": f"`{workflow_key}` 업무 흐름의 시작 이벤트를 발행합니다.",
+                    "primary_label": "업무 흐름 시작하기",
                 },
             }
-        return missing_execution_payload("Workflow Key 필요", "예: `equipment-anomaly` workflow를 시작해줘.", route_name, intent)
+        return missing_execution_payload("업무 흐름 Key 필요", "예: `equipment-anomaly` workflow를 시작해줘.", route_name, intent)
     if intent == "action_invoke":
         payload = action_invoke_payload_from_state(state)
         if payload:
             action_key = str(payload.get("action_key") or "")
             return {
-                "title": "Action 요청 실행 확인",
-                "answer_markdown": "Action Gateway 요청은 allow-list와 권한 검증을 거쳐 실행됩니다. 아래 카드에서 action과 payload를 확인한 뒤 실행하세요.",
+                "title": "업무 요청 실행 확인",
+                "answer_markdown": "업무 요청은 허용 목록과 권한 검증을 거쳐 실행됩니다. 아래 카드에서 요청 종류와 입력값을 확인한 뒤 실행하세요.",
                 "data": {
                     "route": route_name,
                     "intent": intent,
                     "operation": "action_invoke",
                     "payload": payload,
-                    "title": "Action 요청 실행 확인",
-                    "message": f"`{action_key}` action을 Action Gateway로 요청합니다.",
-                    "primary_label": "Action 요청 실행",
+                    "title": "업무 요청 실행 확인",
+                    "message": f"`{action_key}` 업무 요청을 실행합니다.",
+                    "primary_label": "업무 요청 실행",
                 },
             }
-        return missing_execution_payload("Action Key 필요", "예: `sop.equipment.request_raw_data` action을 실행해줘.", route_name, intent)
+        return missing_execution_payload("업무 요청 Key 필요", "예: `sop.equipment.request_raw_data` action을 실행해줘.", route_name, intent)
     return {
         "title": "확인 필요",
         "answer_markdown": "이 요청은 상태 변경 또는 승인 절차가 필요합니다. Agent가 바로 실행하지 않고 확인 카드와 승인 API를 통해 처리해야 합니다.",

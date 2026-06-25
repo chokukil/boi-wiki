@@ -2110,8 +2110,8 @@ def require_employee_binding_or_admin_override(
 RBAC_ROLES = [
     {"role": "boi.viewer", "label": "조회", "description": "권한 범위의 BoI와 runtime evidence를 조회합니다."},
     {"role": "boi.editor", "label": "편집", "description": "권한 범위의 draft/source/body를 수정합니다."},
-    {"role": "boi.workflow_runner", "label": "Workflow 실행", "description": "Event 발행, workflow start, manual handoff completion을 수행합니다."},
-    {"role": "boi.action_invoker", "label": "Action 실행", "description": "Action Gateway를 통한 요청 실행을 수행합니다."},
+    {"role": "boi.workflow_runner", "label": "업무 흐름 실행", "description": "이벤트 발행, SOP 업무 흐름 시작, 수동 조치 완료를 수행합니다."},
+    {"role": "boi.action_invoker", "label": "업무 요청 실행", "description": "허용된 업무 요청을 실행합니다."},
     {"role": "boi.promoter", "label": "승격", "description": "Team/Public promotion draft와 apply를 처리합니다."},
     {"role": "boi.admin", "label": "관리", "description": "권한 관리와 break-glass audit을 운영합니다."},
 ]
@@ -6636,35 +6636,35 @@ def page_context_suggestions(current_url: str, page_context: dict[str, Any] | No
         handoff_count = int(context.get("manual_handoff_count") or 0)
         workflow_key = str(context.get("workflow_key") or "workflow")
         if event_count or action_count:
-            suggestions.append(f"이 {workflow_key} trace의 Event {event_count}개와 Action {action_count}개를 SOP stage 기준으로 요약해줘.")
+            suggestions.append(f"이 {workflow_key} trace의 이벤트 {event_count}개와 업무 요청 {action_count}개를 SOP 단계 기준으로 요약해줘.")
         if handoff_count:
-            suggestions.append(f"남은 Manual Handoff {handoff_count}건을 일반 업무 관점으로 정리해줘.")
+            suggestions.append(f"남은 수동 조치 {handoff_count}건을 일반 업무 관점으로 정리해줘.")
         suggestions.extend([
-            "승인 대기 또는 조치 필요 Action을 먼저 알려줘.",
-            "생성된 BoI와 원본 Action Raw 링크를 묶어서 보여줘.",
+            "승인 대기 또는 조치 필요 업무 요청을 먼저 알려줘.",
+            "생성된 BoI와 원본 실행 기록 링크를 묶어서 보여줘.",
         ])
     elif page_kind == "action_raw" or "/actions/raw/" in url:
-        action_key = str(context.get("action_key") or "이 Action")
+        action_key = str(context.get("action_key") or "이 업무 요청")
         status = str(context.get("status") or "")
         suggestions.extend([
             f"{action_key} 실행 결과를 업무 관점으로 요약해줘.",
-            f"{action_key}이 어떤 SOP/Event와 연결되는지 찾아줘.",
-            "이 Action 결과가 다음 workflow 단계에 어떤 영향을 주는지 알려줘.",
+            f"{action_key}이 어떤 SOP/이벤트와 연결되는지 찾아줘.",
+            "이 업무 요청 결과가 다음 업무 흐름 단계에 어떤 영향을 주는지 알려줘.",
         ])
         if status:
             suggestions.append(f"현재 상태 `{status}`에서 내가 할 일을 알려줘.")
     elif page_kind == "event_type" or "/event-types/" in url:
-        event_type = str(context.get("event_type") or "이 Event Type")
+        event_type = str(context.get("event_type") or "이 이벤트 유형")
         stage = str(context.get("workflow_stage") or "")
         recommended_actions = context.get("recommended_actions") if isinstance(context.get("recommended_actions"), list) else []
         suggestions.extend([
-            f"{event_type}가 발생하면 어떤 SOP stage와 Action이 이어지는지 알려줘.",
+            f"{event_type}가 발생하면 어떤 SOP 단계와 업무 요청이 이어지는지 알려줘.",
             f"{event_type} 최근 실행 trace를 찾아줘.",
         ])
         if stage:
             suggestions.append(f"`{stage}` 단계에서 사람이 확인해야 할 항목을 정리해줘.")
         if recommended_actions:
-            suggestions.append(f"{event_type}의 recommended action {len(recommended_actions)}개가 충분한지 점검해줘.")
+            suggestions.append(f"{event_type}의 권장 업무 요청 {len(recommended_actions)}개가 충분한지 점검해줘.")
     elif page_kind == "events" or url.startswith("/events"):
         event_type = str(context.get("event_type") or "")
         trace_id = str(context.get("trace_id") or "")
@@ -6673,9 +6673,9 @@ def page_context_suggestions(current_url: str, page_context: dict[str, Any] | No
             suggestions.append("이 trace의 실행 흐름과 다음 조치를 요약해줘.")
         if event_type:
             suggestions.append(f"{event_type} 이벤트 {event_count}건에서 반복 패턴을 찾아줘.")
-            suggestions.append(f"{event_type}가 연결된 SOP와 Action을 보여줘.")
+            suggestions.append(f"{event_type}가 연결된 SOP와 업무 요청을 보여줘.")
         suggestions.extend([
-            "최근 Event 중 내가 처리해야 할 Action을 Inbox 기준으로 보여줘.",
+            "최근 이벤트 중 내가 처리해야 할 업무 요청을 Inbox 기준으로 보여줘.",
             "Event Stream을 시간/trace 기준으로 좁혀볼 추천 필터를 알려줘.",
         ])
     elif page_kind == "doc" or title:
@@ -6689,15 +6689,15 @@ def page_context_suggestions(current_url: str, page_context: dict[str, Any] | No
         if is_sop:
             suggestions.extend([
                 f"{subject}를 Mermaid 프로세스 플로우로 보여줘.",
-                f"{subject}의 Event, Action, Manual Handoff 관계를 요약해줘.",
+                f"{subject}의 이벤트, 업무 요청, 수동 조치 관계를 요약해줘.",
             ])
             if action_count or manual_count:
-                suggestions.append(f"{subject}의 Action {action_count}개와 Manual Handoff {manual_count}개 중 부족한 명세를 찾아줘.")
+                suggestions.append(f"{subject}의 업무 요청 {action_count}개와 수동 조치 {manual_count}개 중 부족한 명세를 찾아줘.")
             else:
-                suggestions.append(f"{subject}를 실행하려면 부족한 Action Spec이 있는지 찾아줘.")
+                suggestions.append(f"{subject}를 실행하려면 부족한 업무 요청 명세가 있는지 찾아줘.")
         else:
             suggestions.extend([
-                f"{subject}와 연결된 SOP/Event/Action을 찾아줘.",
+                f"{subject}와 연결된 SOP/이벤트/업무 요청을 찾아줘.",
                 f"{subject}의 핵심과 관련 BoI를 요약해줘.",
                 "이 내용을 팀 공유용 draft로 만들려면 무엇을 확인해야 해?",
             ])
@@ -6769,7 +6769,7 @@ def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id:
                 "Action Spec gap check",
                 "Trace reasoning",
                 "Inbox 업무 확인",
-                "신규 Event Type 초안 제안",
+                "신규 이벤트 유형 초안 제안",
             ],
             "rules": [
                 "Return JSON only.",
@@ -8524,9 +8524,9 @@ def agent_safety_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[
     route_name = str(route.get("route") or "approval_required")
     intent = normalize_agent_intent(str(route.get("intent") or ""), fallback="approval" if route_name == "approval_required" else "manual_complete")
     if route_name == "manual_handoff":
-        answer = "Manual Handoff 완료는 Inbox 카드에서 조치 내용과 outcome을 입력한 뒤 명시적으로 완료 기록을 남겨야 합니다."
+        answer = "조치 완료는 Inbox 카드에서 조치 내용과 결과를 입력한 뒤 명시적으로 완료 기록을 남겨야 합니다."
     else:
-        answer = "승인, 실행, publish, 편집 같은 상태 변경 요청은 Agent 답변만으로 수행하지 않습니다. 관련 업무 흐름과 원본 기록을 확인하고 명시 승인 절차로 진행해야 합니다."
+        answer = "승인, 실행, 게시, 편집 같은 상태 변경 요청은 Agent 답변만으로 수행하지 않습니다. 관련 업무 흐름과 원본 기록을 확인하고 명시 승인 절차로 진행해야 합니다."
     return {
         "ok": True,
         "employee_id": employee_id,

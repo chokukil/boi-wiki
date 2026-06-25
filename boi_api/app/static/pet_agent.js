@@ -541,14 +541,14 @@
         return renderMermaidBlock(artifact.source, artifact.title || "Diagram", { id: viewerId, type: "mermaid", source: artifact.source });
       }
       if (artifact.type === "gap_table" && Array.isArray(artifact.data)) {
-        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Gap Check")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(artifact.data)}</div>`;
+        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "명세 점검")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(artifact.data)}</div>`;
       }
       if (artifact.type === "workflow_summary" && artifact.data) {
         const rows = Array.isArray(artifact.data) ? artifact.data : [artifact.data];
-        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Workflow Summary")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(rows)}</div>`;
+        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "업무 흐름 요약")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(rows)}</div>`;
       }
       if (artifact.type === "task_cards" && Array.isArray(artifact.data)) {
-        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Tasks")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
+        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "처리할 일")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
       }
       if (artifact.type === "confirmation_required" && artifact.data) {
         return renderConfirmationArtifact(artifact, viewerId);
@@ -957,8 +957,8 @@
             note: data.note,
             user_confirmed: true,
           }),
-        }).then(() => refreshInbox("Manual Handoff 완료 기록을 남겼습니다."))
-          .catch((error) => showAgentMessage(`Manual Handoff 완료 기록에 실패했습니다: ${error.message}`))
+        }).then(() => refreshInbox("조치 완료 기록을 남겼습니다."))
+          .catch((error) => showAgentMessage(`조치 완료 기록에 실패했습니다: ${error.message}`))
           .finally(() => {
             state.busyTask = "";
             render();
@@ -1100,18 +1100,18 @@
 
   function agentApprovalResultMessage(operation, body) {
     const messages = {
-      event_publish: "Event 발행 요청을 보냈습니다.",
-      publish_event: "Event 발행 요청을 보냈습니다.",
+      event_publish: "이벤트 발행 요청을 보냈습니다.",
+      publish_event: "이벤트 발행 요청을 보냈습니다.",
       workflow_start: "업무 흐름 시작 요청을 보냈습니다.",
       start_workflow: "업무 흐름 시작 요청을 보냈습니다.",
-      action_invoke: "Action 실행 요청을 보냈습니다.",
-      invoke_action: "Action 실행 요청을 보냈습니다.",
-      manual_handoff_complete: "Manual Handoff 완료 기록을 남겼습니다.",
-      manual_complete: "Manual Handoff 완료 기록을 남겼습니다.",
-      event_type_draft: "Event Type 초안을 만들었습니다.",
-      create_event_type_draft: "Event Type 초안을 만들었습니다.",
-      event_type_draft_apply: "Event Type 초안을 catalog에 반영했습니다.",
-      apply_event_type_draft: "Event Type 초안을 catalog에 반영했습니다.",
+      action_invoke: "업무 요청 실행 요청을 보냈습니다.",
+      invoke_action: "업무 요청 실행 요청을 보냈습니다.",
+      manual_handoff_complete: "조치 완료 기록을 남겼습니다.",
+      manual_complete: "조치 완료 기록을 남겼습니다.",
+      event_type_draft: "이벤트 유형 초안을 만들었습니다.",
+      create_event_type_draft: "이벤트 유형 초안을 만들었습니다.",
+      event_type_draft_apply: "이벤트 유형 초안을 운영 목록에 반영했습니다.",
+      apply_event_type_draft: "이벤트 유형 초안을 운영 목록에 반영했습니다.",
       promotion_submit: "공유 요청을 제출했습니다.",
       submit_promotion: "공유 요청을 제출했습니다.",
     };
