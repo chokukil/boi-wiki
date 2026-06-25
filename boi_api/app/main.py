@@ -9683,8 +9683,6 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
     operation = req.operation.strip()
     payload = req.payload or {}
     if operation in {"event_publish", "publish_event"}:
-        if payload.get("actor_employee_id") and payload.get("actor_employee_id") != employee_id and not payload.get("admin_override_reason") and req.note:
-            payload = {**payload, "admin_override_reason": req.note}
         result = await publish_event(EventPublishRequest(**payload), employee_id)
         append_rbac_audit(employee_id, "agent_event_publish", {"operation": operation, "event_type": payload.get("event_type"), "note": req.note})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
@@ -9696,8 +9694,6 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
         append_rbac_audit(employee_id, "agent_workflow_start", {"workflow_key": workflow_key, "note": req.note})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
     if operation in {"action_invoke", "invoke_action"}:
-        if payload.get("employee_id") and payload.get("employee_id") != employee_id and not payload.get("admin_override_reason") and req.note:
-            payload = {**payload, "admin_override_reason": req.note}
         result = await invoke_action_gateway(ActionInvokeRequest(**payload), employee_id)
         append_rbac_audit(employee_id, "agent_action_invoke", {"action_key": payload.get("action_key"), "note": req.note})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}

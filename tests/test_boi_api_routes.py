@@ -4001,6 +4001,37 @@ def test_admin_employee_override_requires_reason_and_audit(boi_app_module, monke
     )
 
 
+def test_agent_approve_does_not_treat_general_note_as_admin_override_reason(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    async def fake_publish_event_to_kafka(_event):
+        raise AssertionError("Agent approve must not publish delegated events without explicit override reason")
+
+    monkeypatch.setattr(
+        boi_app_module,
+        "roles_for",
+        lambda _employee_id: ["boi.viewer", "boi.workflow_runner", "boi.action_invoker", "boi.admin"],
+    )
+    monkeypatch.setattr(boi_app_module, "publish_event_to_kafka", fake_publish_event_to_kafka)
+
+    response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "event_publish",
+            "user_confirmed": True,
+            "note": "일반 승인 메모는 대리 실행 사유가 아니다",
+            "payload": {
+                "event_type": "equipment.alarm.raised.v1",
+                "actor_employee_id": "100002",
+                "payload": {"title": "agent admin override without explicit reason"},
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert "admin_override_reason" in response.text
+
+
 def test_boi_agent_approve_promotion_submit_uses_validation_path(boi_app_module):
     client = TestClient(boi_app_module.app)
 

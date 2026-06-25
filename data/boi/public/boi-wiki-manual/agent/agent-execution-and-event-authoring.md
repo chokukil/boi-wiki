@@ -114,6 +114,8 @@ Inbox의 `snooze`와 `dismiss`도 단순 화면 상태가 아니라 append-only 
 | Action 호출 | Action Gateway에 전달되는 `employee_id`는 인증 사번이다. 요청 body가 다른 사번을 넣으면 거부한다. |
 | Admin override | 예외적으로 허용될 수 있지만, `admin_override_reason`, 별도 role, audit가 필요하다. |
 
+Agent approval의 `note`는 승인 메모일 뿐 대리 실행 사유가 아니다. 다른 사번으로 Event를 발행하거나 Action을 호출해야 하는 예외 상황은 payload에 명시적인 `admin_override_reason`을 넣어야 하며, 이 값과 audit row가 함께 남아야 한다.
+
 따라서 Agent가 “누구 대신 실행”하는 방식으로 쓰이면 안 된다. 대리 실행이 필요하면 팀 RBAC, manual handoff, approval flow로 남겨야 한다.
 
 # Event Type Draft Lifecycle

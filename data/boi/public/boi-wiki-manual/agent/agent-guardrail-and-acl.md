@@ -106,7 +106,7 @@ Mutation payload 안의 사번 필드는 인증 사번을 우회할 수 없다. 
 | Action invoke | Action Gateway로 전달하는 `employee_id`는 인증 사번이다. Admin override는 `admin_override_reason`과 audit이 필요하다. |
 | Manual handoff completion | 완료자는 인증 사번이며 append-only completion row에 남긴다. |
 
-이 규칙은 “사용자가 볼 수 있는가”와 별개로 “누가 실행했는가”를 보호한다. Agent가 생성한 confirmation card도 최종 `/api/agents/boi-wiki/approve` 단계에서 같은 binding을 다시 검사한다. Admin override가 필요한 경우에는 `admin_event_publish_employee_override` 또는 `admin_action_invoke_employee_override` audit row가 남아야 한다.
+이 규칙은 “사용자가 볼 수 있는가”와 별개로 “누가 실행했는가”를 보호한다. Agent가 생성한 confirmation card도 최종 `/api/agents/boi-wiki/approve` 단계에서 같은 binding을 다시 검사한다. Admin override가 필요한 경우에는 payload의 명시적 `admin_override_reason`과 `admin_event_publish_employee_override` 또는 `admin_action_invoke_employee_override` audit row가 함께 남아야 한다. 승인 카드의 일반 `note`는 override reason으로 자동 변환하지 않는다.
 
 # Required Response Metadata
 
