@@ -133,10 +133,13 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 
 - Resource 예: `boi://docs/boi:public:sop:equipment-abnormal-response`
 - Resource 예: `boi://actions/mcp.boi_search.sample`
-- Resource 예: `boi://search/ontology/설비%20이상`
+- Employee-scoped Resource 예: `boi://employees/100001/docs/boi:private:100001:20260618070858:d1f2eb`
+- Employee-scoped Resource 예: `boi://employees/100001/search/ontology/설비%20이상`
 - Prompt 예: `create_sop_from_source`, `author_action_spec`, `build_langflow_boi_flow`
 
-현재 프로토콜 기준 기대값은 `tools: 32`, `resources: 0`, `resource_templates: 6`, `prompts: 5`다. `resources: 0`은 오류가 아니다. 정적 resource를 미리 노출하지 않고 `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`, `boi://workflows/{workflow_key}/status/{trace_id}`, `boi://search/ontology/{query}`, `boi://agent/response-schema/{version}` resource template으로 필요한 문서, 검색 결과, Agent 응답 스키마를 읽는다.
+현재 프로토콜 기준 기대값은 `tools: 32`, `resources: 0`, `resource_templates: 11`, `prompts: 5`다. `resources: 0`은 오류가 아니다. 정적 resource를 미리 노출하지 않고 resource template으로 필요한 문서, 검색 결과, Agent 응답 스키마를 읽는다.
+
+Unscoped resource template인 `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`는 public 문서와 public action 확인용이다. Workflow status와 ontology search처럼 사번별 ACL/RBAC 판단이 필요한 resource는 `boi://employees/{employee_id}/workflows/{workflow_key}/status/{trace_id}`, `boi://employees/{employee_id}/search/ontology/{query}`처럼 employee-scoped URI를 사용한다. Unscoped URI로 private/team 문서, trace, ontology search를 읽으려 하면 MCP server는 기본 사번으로 대신 조회하지 않고 `employee_scoped_resource_required` 오류와 올바른 employee-scoped URI를 반환한다. 일반 tool 호출에서는 기존처럼 `employee_id` argument를 명시한다.
 
 검색 tool은 목적별로 나눠 쓴다. 단순 BoI 문서 목록이 필요하면 `boi_search`를 사용한다. SOP, Event, Action, Dictionary, runtime evidence를 관계까지 포함해 탐색하려면 `ontology_search`를 사용한다. 현재 페이지를 바탕으로 답변이나 산출물이 필요하면 `boi_agent_chat`을 사용한다. MCP client도 REST API와 같이 `intent` 힌트, 최근 `conversation`, `save_memory=false` 같은 제어 값을 넘길 수 있다. 세 경로는 모두 BoI API의 ACL/RBAC guardrail을 통과하므로 MCP client가 Web UI보다 더 넓은 문서를 볼 수 없다.
 
@@ -204,7 +207,7 @@ python3 scripts/check_boi_wiki_mcp.py \
 
 # Runtime Evidence
 
-상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록과 MCP auth 상태를 보여준다. `tools=32`, `resource_templates=6`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 목록에는 `boi_agent_chat`, `boi_agent_capabilities`, `boi_agent_approve`, `ontology_search`, `agent_inbox`, `manual_handoff_complete`, `rbac_me`, `rbac_check`, `doc_access_check`, `rbac_audit`, Event Type draft tool, `boi://agent/response-schema/{version}`가 함께 보여야 한다. 외부에 공개된 endpoint에서는 `mcp_auth.required=true`가 권장된다.
+상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록과 MCP auth 상태를 보여준다. `tools=32`, `resource_templates=11`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 목록에는 `boi_agent_chat`, `boi_agent_capabilities`, `boi_agent_approve`, `ontology_search`, `agent_inbox`, `manual_handoff_complete`, `rbac_me`, `rbac_check`, `doc_access_check`, `rbac_audit`, Event Type draft tool, `boi://employees/{employee_id}/...` resource template, `boi://agent/response-schema/{version}`가 함께 보여야 한다. 외부에 공개된 endpoint에서는 `mcp_auth.required=true`가 권장된다.
 
 ![BoI Wiki MCP Status capabilities](/public/boi-wiki-manual/_media/browser/mcp-status/20260619-151048-boi-wiki-mcp-status-capabilities-current-1440x1000-89caadae3b92.png)
 

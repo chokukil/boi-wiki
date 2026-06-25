@@ -34,7 +34,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
     assert body["capabilities"]["tools"] == 32
-    assert body["capabilities"]["resource_templates"] == 6
+    assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
     assert body["agent_interfaces"]["streaming_api"] == "/api/agents/boi-wiki/chat/stream"
@@ -94,6 +94,8 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "doc_body_create_draft" not in tool_names
     assert any(item["name"] == "promotion_submit" for item in body["capability_lists"]["tools"])
     assert any(item["uri"] == "boi://docs/{boi_id}" for item in body["capability_lists"]["resource_templates"])
+    assert any(item["uri"] == "boi://employees/{employee_id}/docs/{boi_id}" for item in body["capability_lists"]["resource_templates"])
+    assert any(item["uri"] == "boi://employees/{employee_id}/search/ontology/{query}" for item in body["capability_lists"]["resource_templates"])
     assert any(item["uri"] == "boi://agent/response-schema/{version}" for item in body["capability_lists"]["resource_templates"])
     assert any(item["name"] == "create_sop_from_source" for item in body["capability_lists"]["prompts"])
 
@@ -111,7 +113,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
     assert "Tools" in body and "32" in body
-    assert "Resource templates" in body and "6" in body
+    assert "Resource templates" in body and "11" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
     assert "workflow_status" in body
@@ -171,6 +173,63 @@ def test_boi_agent_response_schema_resource(mcp_module, monkeypatch):
     assert body["schema"]["required"] == mcp_module.AGENT_RESPONSE_REQUIRED_FIELDS
     assert body["schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
     assert "mermaid" in body["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
+
+
+def test_mcp_employee_scoped_resources_use_uri_employee_id(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_boi_get(boi_id, employee_id):
+        calls.append({"tool": "boi_get", "boi_id": boi_id, "employee_id": employee_id})
+        return {"ok": True, "employee_id": employee_id, "boi_id": boi_id}
+
+    async def fake_boi_search(*args, **kwargs):
+        calls.append({"tool": "boi_search", **kwargs})
+        return {"ok": True, "employee_id": kwargs.get("employee_id"), "folder": kwargs.get("folder")}
+
+    async def fake_action_get(action_key, employee_id):
+        calls.append({"tool": "action_get", "action_key": action_key, "employee_id": employee_id})
+        return {"ok": True, "employee_id": employee_id, "action_key": action_key}
+
+    async def fake_workflow_status(workflow_key, trace_id, employee_id):
+        calls.append({"tool": "workflow_status", "workflow_key": workflow_key, "trace_id": trace_id, "employee_id": employee_id})
+        return {"ok": True, "employee_id": employee_id, "workflow_key": workflow_key, "trace_id": trace_id}
+
+    async def fake_ontology_search(*args, **kwargs):
+        calls.append({"tool": "ontology_search", **kwargs})
+        return {"ok": True, "employee_id": kwargs.get("employee_id"), "query": kwargs.get("query")}
+
+    monkeypatch.setattr(mcp_module, "boi_get", fake_boi_get)
+    monkeypatch.setattr(mcp_module, "boi_search", fake_boi_search)
+    monkeypatch.setattr(mcp_module, "action_get", fake_action_get)
+    monkeypatch.setattr(mcp_module, "workflow_status", fake_workflow_status)
+    monkeypatch.setattr(mcp_module, "ontology_search", fake_ontology_search)
+
+    assert json.loads(asyncio.run(mcp_module.boi_doc_for_employee_resource("100003", "boi:private:100003:test")))["employee_id"] == "100003"
+    assert json.loads(asyncio.run(mcp_module.boi_folder_for_employee_resource("100003", "private/100003")))["employee_id"] == "100003"
+    assert json.loads(asyncio.run(mcp_module.action_for_employee_resource("100003", "action.test")))["employee_id"] == "100003"
+    assert json.loads(asyncio.run(mcp_module.workflow_status_for_employee_resource("100003", "equipment-anomaly", "trace-1")))["employee_id"] == "100003"
+    assert json.loads(asyncio.run(mcp_module.ontology_search_for_employee_resource("100003", "SOP")))["employee_id"] == "100003"
+
+    assert {call["employee_id"] for call in calls} == {"100003"}
+
+
+def test_unscoped_mcp_resources_do_not_use_default_employee_for_private_context(mcp_module, monkeypatch):
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("employee-scoped data must not be loaded by unscoped resource")
+
+    monkeypatch.setattr(mcp_module, "boi_get", fail_if_called)
+    monkeypatch.setattr(mcp_module, "workflow_status", fail_if_called)
+    monkeypatch.setattr(mcp_module, "ontology_search", fail_if_called)
+
+    private_doc = json.loads(asyncio.run(mcp_module.boi_doc_resource("boi:private:100001:secret")))
+    workflow = json.loads(asyncio.run(mcp_module.workflow_status_resource("equipment-anomaly", "trace-private")))
+    ontology = json.loads(asyncio.run(mcp_module.ontology_search_resource("private trace")))
+
+    assert private_doc["ok"] is False
+    assert workflow["ok"] is False
+    assert ontology["ok"] is False
+    assert private_doc["error"] == "employee_scoped_resource_required"
+    assert workflow["employee_scoped_uri"].startswith("boi://employees/{employee_id}/")
 
 
 def test_mcp_static_agent_response_schema_matches_boi_api_contract(mcp_module, boi_app_module):
@@ -1022,7 +1081,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
         return {
             "tools": 32,
             "resources": 0,
-            "resource_templates": 6,
+            "resource_templates": 11,
             "prompts": 5,
             "tool_names": [
                 "boi_search",
@@ -1102,7 +1161,7 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
         return {
             "tools": 32,
             "resources": 0,
-            "resource_templates": 6,
+            "resource_templates": 11,
             "prompts": 5,
         }
 
@@ -1138,7 +1197,7 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
         return {
             "tools": 32,
             "resources": 0,
-            "resource_templates": 6,
+            "resource_templates": 11,
             "prompts": 5,
         }
 
@@ -1520,7 +1579,7 @@ def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys)
     import scripts.check_boi_wiki_mcp as script
 
     async def fake_check_protocol(*args, **kwargs):
-        return {"tools": 32, "resources": 0, "resource_templates": 6, "prompts": 5}
+        return {"tools": 32, "resources": 0, "resource_templates": 11, "prompts": 5}
 
     async def fake_check_bridge(*args, **kwargs):
         return {"ok": True, "status": "mcp_invoked", "tool": "boi.search", "request_id": "check-boi-wiki-mcp"}
@@ -1581,7 +1640,7 @@ def test_check_boi_wiki_mcp_reads_service_token_from_dotenv_without_printing(mon
 
     async def fake_check_protocol(*args, **kwargs):
         seen["protocol_token"] = kwargs.get("service_token", "")
-        return {"tools": 32, "resources": 0, "resource_templates": 6, "prompts": 5}
+        return {"tools": 32, "resources": 0, "resource_templates": 11, "prompts": 5}
 
     async def fake_check_bridge(base_url, service_token, query):
         seen["bridge_token"] = service_token
@@ -1804,7 +1863,7 @@ def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_brea
         return {
             "tools": 22,
             "resources": 0,
-            "resource_templates": 6,
+            "resource_templates": 11,
             "prompts": 5,
             "tool_names": ["boi_agent_chat", "ontology_search", "agent_inbox"],
             "resource_template_uris": ["boi://search/ontology/{query}"],
@@ -1817,7 +1876,7 @@ def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_brea
     result = asyncio.run(script.check_protocol("http://localhost:8200/mcp", include_details=True, service_token="test-token"))
 
     assert result["tools"] == 22
-    assert result["resource_templates"] == 6
+    assert result["resource_templates"] == 11
     assert result["prompts"] == 5
     assert result["transport_mode"] == "stateless_json_rpc"
     assert "stream client broke" in result["client_warning"]

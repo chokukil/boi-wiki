@@ -28,7 +28,7 @@ except Exception:  # pragma: no cover - agent-contract-only can run without MCP 
     ClientSession = None
     streamablehttp_client = None
 
-EXPECTED_PROTOCOL = {"tools": 32, "resource_templates": 6, "prompts": 5}
+EXPECTED_PROTOCOL = {"tools": 32, "resource_templates": 11, "prompts": 5}
 
 
 def mcp_auth_headers(service_token: str = "") -> dict[str, str]:

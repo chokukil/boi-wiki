@@ -54,11 +54,16 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "promotion_status", "description": "Return promotion publish, validation, HOTL, and commit status."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
-    {"uri": "boi://docs/{boi_id}", "description": "Single BoI document as JSON text."},
-    {"uri": "boi://folders/{folder}", "description": "BoI search results scoped to an OKF folder."},
-    {"uri": "boi://actions/{action_key}", "description": "Single action catalog entry."},
-    {"uri": "boi://workflows/{workflow_key}/status/{trace_id}", "description": "Workflow status for a trace."},
-    {"uri": "boi://search/ontology/{query}", "description": "Ontology-assisted grouped search results."},
+    {"uri": "boi://docs/{boi_id}", "description": "Public BoI document as JSON text. Use employee-scoped templates for private/team content."},
+    {"uri": "boi://folders/{folder}", "description": "Public BoI search results scoped to an OKF folder. Use employee-scoped templates for private/team content."},
+    {"uri": "boi://actions/{action_key}", "description": "Public action catalog entry."},
+    {"uri": "boi://workflows/{workflow_key}/status/{trace_id}", "description": "Compatibility template. Returns an employee-scoped-resource-required error for trace data."},
+    {"uri": "boi://search/ontology/{query}", "description": "Compatibility template. Returns an employee-scoped-resource-required error for ontology search."},
+    {"uri": "boi://employees/{employee_id}/docs/{boi_id}", "description": "Single BoI document evaluated with the supplied employee ACL context."},
+    {"uri": "boi://employees/{employee_id}/folders/{folder}", "description": "BoI folder listing evaluated with the supplied employee ACL context."},
+    {"uri": "boi://employees/{employee_id}/actions/{action_key}", "description": "Action catalog entry evaluated with the supplied employee ACL context."},
+    {"uri": "boi://employees/{employee_id}/workflows/{workflow_key}/status/{trace_id}", "description": "Workflow status evaluated with the supplied employee ACL context."},
+    {"uri": "boi://employees/{employee_id}/search/ontology/{query}", "description": "Ontology-assisted search evaluated with the supplied employee ACL context."},
     {"uri": "boi://agent/response-schema/{version}", "description": "BoI Agent response JSON Schema for API, MCP, and Web clients."},
 ]
 MCP_PROMPT_CAPABILITIES = [
@@ -231,6 +236,36 @@ async def api_post(
 
 def as_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2)
+
+
+def employee_scoped_resource_required(kind: str, resource: str, employee_scoped_uri: str) -> str:
+    return as_text(
+        {
+            "ok": False,
+            "error": "employee_scoped_resource_required",
+            "kind": kind,
+            "resource": resource,
+            "reason": "This MCP resource needs an explicit employee_id so BoI Profile ACL and Team RBAC can be evaluated.",
+            "employee_scoped_uri": employee_scoped_uri,
+            "tool_alternative": {
+                "docs": "boi_get",
+                "folders": "boi_search",
+                "actions": "action_get",
+                "workflow_status": "workflow_status",
+                "ontology_search": "ontology_search",
+            }.get(kind, ""),
+        }
+    )
+
+
+def is_public_boi_resource(value: str) -> bool:
+    normalized = str(value or "").strip().strip("/")
+    return normalized.startswith("boi:public:") or normalized.startswith("public/")
+
+
+def is_public_folder_resource(value: str) -> bool:
+    normalized = str(value or "").strip().strip("/")
+    return not normalized or normalized == "public" or normalized.startswith("public/")
 
 
 mcp = FastMCP(
@@ -862,14 +897,26 @@ async def promotion_status(
 
 @mcp.resource("boi://docs/{boi_id}")
 async def boi_doc_resource(boi_id: str) -> str:
-    """Read one BoI document as JSON text."""
+    """Read one public BoI document as JSON text."""
+    if not is_public_boi_resource(boi_id):
+        return employee_scoped_resource_required(
+            "docs",
+            boi_id,
+            f"boi://employees/{{employee_id}}/docs/{boi_id}",
+        )
     return as_text(await boi_get(boi_id, DEFAULT_EMPLOYEE_ID))
 
 
 @mcp.resource("boi://folders/{folder}")
 async def boi_folder_resource(folder: str) -> str:
-    """Read a folder listing as JSON text."""
-    return as_text(await boi_search(employee_id=DEFAULT_EMPLOYEE_ID, folder=folder))
+    """Read a public folder listing as JSON text."""
+    if not is_public_folder_resource(folder):
+        return employee_scoped_resource_required(
+            "folders",
+            folder,
+            f"boi://employees/{{employee_id}}/folders/{folder}",
+        )
+    return as_text(await boi_search(employee_id=DEFAULT_EMPLOYEE_ID, folder=folder, visibility="public"))
 
 
 @mcp.resource("boi://actions/{action_key}")
@@ -880,14 +927,52 @@ async def action_resource(action_key: str) -> str:
 
 @mcp.resource("boi://workflows/{workflow_key}/status/{trace_id}")
 async def workflow_status_resource(workflow_key: str, trace_id: str) -> str:
-    """Read workflow status as JSON text."""
-    return as_text(await workflow_status(workflow_key, trace_id, DEFAULT_EMPLOYEE_ID))
+    """Require an employee-scoped URI for workflow status."""
+    return employee_scoped_resource_required(
+        "workflow_status",
+        f"{workflow_key}/{trace_id}",
+        f"boi://employees/{{employee_id}}/workflows/{workflow_key}/status/{trace_id}",
+    )
 
 
 @mcp.resource("boi://search/ontology/{query}")
 async def ontology_search_resource(query: str) -> str:
-    """Read ontology-assisted search results as JSON text."""
-    return as_text(await ontology_search(query=query, employee_id=DEFAULT_EMPLOYEE_ID))
+    """Require an employee-scoped URI for ontology-assisted search."""
+    return employee_scoped_resource_required(
+        "ontology_search",
+        query,
+        f"boi://employees/{{employee_id}}/search/ontology/{query}",
+    )
+
+
+@mcp.resource("boi://employees/{employee_id}/docs/{boi_id}")
+async def boi_doc_for_employee_resource(employee_id: str, boi_id: str) -> str:
+    """Read one BoI document with an explicit employee ACL context."""
+    return as_text(await boi_get(boi_id, employee_id))
+
+
+@mcp.resource("boi://employees/{employee_id}/folders/{folder}")
+async def boi_folder_for_employee_resource(employee_id: str, folder: str) -> str:
+    """Read a folder listing with an explicit employee ACL context."""
+    return as_text(await boi_search(employee_id=employee_id, folder=folder))
+
+
+@mcp.resource("boi://employees/{employee_id}/actions/{action_key}")
+async def action_for_employee_resource(employee_id: str, action_key: str) -> str:
+    """Read an action catalog entry with an explicit employee ACL context."""
+    return as_text(await action_get(action_key, employee_id))
+
+
+@mcp.resource("boi://employees/{employee_id}/workflows/{workflow_key}/status/{trace_id}")
+async def workflow_status_for_employee_resource(employee_id: str, workflow_key: str, trace_id: str) -> str:
+    """Read workflow status with an explicit employee ACL context."""
+    return as_text(await workflow_status(workflow_key, trace_id, employee_id))
+
+
+@mcp.resource("boi://employees/{employee_id}/search/ontology/{query}")
+async def ontology_search_for_employee_resource(employee_id: str, query: str) -> str:
+    """Read ontology-assisted search results with an explicit employee ACL context."""
+    return as_text(await ontology_search(query=query, employee_id=employee_id))
 
 
 @mcp.resource("boi://agent/response-schema/{version}")

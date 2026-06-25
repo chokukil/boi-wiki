@@ -55,7 +55,7 @@ def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troublesho
     assert "http://localhost:8200/mcp" in text
     assert "Streamable HTTP" in text
     assert "resources: 0" in text
-    assert "resource_templates: 6" in text
+    assert "resource_templates: 11" in text
     assert "tools: 32" in text
     assert "source_apply" in text
     assert "doc_body_apply" in text
