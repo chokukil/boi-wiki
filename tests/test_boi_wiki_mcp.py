@@ -1235,8 +1235,11 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
 
         async def get(self, url, **kwargs):
             self.calls.append(("get", url, kwargs))
-            assert url == "http://boi-api.test/api/agents/boi-wiki/response-schema"
-            return FakeResponse({"ok": True, "agent_contract_version": "boi-agent.response.v1", "schema": agent_schema})
+            if url == "http://boi-api.test/api/agents/boi-wiki/response-schema":
+                return FakeResponse({"ok": True, "agent_contract_version": "boi-agent.response.v1", "schema": agent_schema})
+            if url == "http://mcp.test/health":
+                return FakeResponse({"ok": True, "agent_response_schema": agent_schema})
+            raise AssertionError(url)
 
         async def post(self, url, **kwargs):
             self.calls.append(("post", url, kwargs))
@@ -1265,7 +1268,75 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
     assert result["ok"] is True
     assert result["schema"]["version"] == "boi-agent.response.v1"
     assert result["rest_chat"]["schema_valid"] is True
+    assert result["mcp_status_schema"]["matches_api_schema"] is True
     assert result["mcp_bridge_chat"]["schema_valid"] is True
+
+
+def test_check_boi_wiki_mcp_agent_contract_rejects_mcp_status_schema_drift(monkeypatch):
+    import scripts.check_boi_wiki_mcp as script
+
+    agent_schema = {
+        "type": "object",
+        "required": ["agent_contract_version", "answer_markdown"],
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "answer_markdown": {"type": "string"},
+        },
+    }
+    drifted_schema = {
+        "type": "object",
+        "required": ["agent_contract_version"],
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+        },
+    }
+    agent_response = {
+        "agent_contract_version": "boi-agent.response.v1",
+        "answer_markdown": "계약 검증 응답",
+    }
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._body
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def get(self, url, **kwargs):
+            if url == "http://boi-api.test/api/agents/boi-wiki/response-schema":
+                return FakeResponse({"ok": True, "agent_contract_version": "boi-agent.response.v1", "schema": agent_schema})
+            if url == "http://mcp.test/health":
+                return FakeResponse({"ok": True, "agent_response_schema": drifted_schema})
+            raise AssertionError(url)
+
+        async def post(self, url, **kwargs):
+            if url == "http://boi-api.test/api/agents/boi-wiki/chat":
+                return FakeResponse(agent_response)
+            raise AssertionError(url)
+
+    monkeypatch.setattr(script.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(RuntimeError, match="MCP status AgentResponse schema does not match BoI API schema"):
+        asyncio.run(
+            script.check_agent_contract(
+                boi_api_url="http://boi-api.test",
+                mcp_base_url="http://mcp.test",
+                employee_id="100001",
+            )
+        )
 
 
 def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys):
@@ -1497,6 +1568,8 @@ def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependenc
         url = request.full_url if hasattr(request, "full_url") else str(request)
         if url.endswith("/api/agents/boi-wiki/response-schema"):
             return FakeHTTPResponse({"agent_contract_version": "boi-agent.response.v1", "schema": schema})
+        if url.endswith("/health"):
+            return FakeHTTPResponse({"ok": True, "agent_response_schema": schema})
         if url.endswith("/api/agents/boi-wiki/chat?employee_id=100001"):
             return FakeHTTPResponse(response)
         if url.endswith("/api/mcp/call"):
@@ -1516,6 +1589,7 @@ def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependenc
 
     assert result["ok"] is True
     assert result["rest_chat"]["schema_valid"] is True
+    assert result["mcp_status_schema"]["matches_api_schema"] is True
     assert result["mcp_bridge_chat"]["schema_valid"] is True
 
 

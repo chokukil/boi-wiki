@@ -175,7 +175,7 @@ python scripts/check_boi_wiki_mcp.py \
   --summary
 ```
 
-NAS host Python처럼 `httpx`나 MCP client library가 없는 환경에서는 AgentResponse 계약만 stdlib 기반으로 확인할 수 있습니다. NAS app directory에서 실행할 때는 token이 process argument에 남지 않도록 `.env`에서 직접 읽습니다.
+NAS host Python처럼 `httpx`나 MCP client library가 없는 환경에서는 AgentResponse 계약만 stdlib 기반으로 확인할 수 있습니다. 이 검증은 BoI API canonical schema, MCP `/health` schema, REST chat 응답, authenticated MCP bridge 응답이 모두 같은 `boi-agent.response.v1` 계약을 쓰는지 확인합니다. NAS app directory에서 실행할 때는 token이 process argument에 남지 않도록 `.env`에서 직접 읽습니다.
 
 ```bash
 python3 scripts/check_boi_wiki_mcp.py \

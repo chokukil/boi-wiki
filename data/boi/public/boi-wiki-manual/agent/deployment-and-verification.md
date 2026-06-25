@@ -51,7 +51,7 @@ python scripts/check_boi_wiki_mcp.py --summary
 python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:8000 --agent-contract --summary
 ```
 
-protected MCP endpoint를 외부에 열어 둔 배포에서는 service token을 환경 변수로만 넘겨 `/mcp` protocol, bridge, REST/MCP AgentResponse contract를 모두 확인한다.
+protected MCP endpoint를 외부에 열어 둔 배포에서는 service token을 환경 변수로만 넘겨 `/mcp` protocol, MCP `/health`의 AgentResponse schema, bridge, REST/MCP AgentResponse contract를 모두 확인한다.
 
 ```bash
 python scripts/check_boi_wiki_mcp.py \
@@ -64,7 +64,7 @@ python scripts/check_boi_wiki_mcp.py \
   --summary
 ```
 
-NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다. NAS app directory에서는 token 값을 CLI 인자로 넘기지 않고 `.env`에서 직접 읽는다.
+NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다. 이 모드도 BoI API canonical schema, MCP `/health` schema, REST chat response, authenticated MCP bridge chat response가 같은 `boi-agent.response.v1` 계약을 쓰는지 확인한다. NAS app directory에서는 token 값을 CLI 인자로 넘기지 않고 `.env`에서 직접 읽는다.
 
 ```bash
 python3 scripts/check_boi_wiki_mcp.py \
@@ -86,6 +86,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | Pet Agent workflow summary question | Markdown answer and workflow artifact render as HTML tables |
 | Inbox tab | 업무 카드가 일반 구성원 문구로 표시 |
 | MCP `boi_agent_chat` | same Native Agent API path |
+| MCP `/health` AgentResponse schema | matches `/api/agents/boi-wiki/response-schema` |
 | MCP `/health` | `mcp_auth.required=true` when `/mcp` is externally reachable |
 | MCP `/mcp` without token | `401 MCP service token is required` when protected |
 | MCP `/mcp` with token | protocol initialize and tool list succeed |

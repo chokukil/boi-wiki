@@ -288,6 +288,24 @@ def agent_response_summary(response: dict, schema: dict) -> dict:
     }
 
 
+def mcp_status_schema_summary(status_payload: dict, api_schema: dict) -> dict:
+    mcp_schema = status_payload.get("agent_response_schema")
+    if not isinstance(mcp_schema, dict):
+        raise RuntimeError("MCP status endpoint did not expose agent_response_schema")
+    if mcp_schema != api_schema:
+        raise RuntimeError("MCP status AgentResponse schema does not match BoI API schema")
+    return {
+        "schema_valid": True,
+        "matches_api_schema": True,
+        "contract_version": (
+            mcp_schema.get("properties", {})
+            .get("agent_contract_version", {})
+            .get("const")
+        ),
+        "required_fields": mcp_schema.get("required") or [],
+    }
+
+
 def urllib_json_request(method: str, url: str, *, headers: dict | None = None, params: dict | None = None, payload: dict | None = None, timeout: int = 60) -> dict:
     full_url = url
     if params:
@@ -328,6 +346,11 @@ async def check_agent_contract(
         schema = schema_payload.get("schema")
         if not isinstance(schema, dict):
             raise RuntimeError("BoI Agent response-schema endpoint did not return a JSON schema")
+        mcp_status = await run_blocking(
+            urllib_json_request,
+            "GET",
+            f"{mcp_base}/health",
+        )
         chat_payload = {
             "question": question,
             "mode": "fast",
@@ -354,6 +377,7 @@ async def check_agent_contract(
                     .get("required", [])
                 ),
             },
+            "mcp_status_schema": mcp_status_schema_summary(mcp_status, schema),
             "rest_chat": agent_response_summary(rest_chat, schema),
             "mcp_bridge_chat": {
                 "schema_valid": None,
@@ -393,6 +417,9 @@ async def check_agent_contract(
         schema = schema_payload.get("schema")
         if not isinstance(schema, dict):
             raise RuntimeError("BoI Agent response-schema endpoint did not return a JSON schema")
+        mcp_status_response = await client.get(f"{mcp_base}/health")
+        mcp_status_response.raise_for_status()
+        mcp_status = mcp_status_response.json()
 
         chat_payload = {
             "question": question,
@@ -420,6 +447,7 @@ async def check_agent_contract(
                     .get("required", [])
                 ),
             },
+            "mcp_status_schema": mcp_status_schema_summary(mcp_status, schema),
             "rest_chat": agent_response_summary(rest_chat, schema),
             "mcp_bridge_chat": {
                 "schema_valid": None,
