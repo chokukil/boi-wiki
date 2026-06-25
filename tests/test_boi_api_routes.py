@@ -2154,7 +2154,9 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     assert payloads[0]["json"]["max_tokens"] <= 220
     user_payload = json.loads(payloads[0]["json"]["messages"][1]["content"])
     assert "large_unused" not in user_payload
-    assert len(user_payload["structured_draft"]) < 1600
+    assert "structured_draft" not in user_payload
+    assert len(user_payload["evidence_summary"]) < 800
+    assert "##" not in user_payload["evidence_summary"]
 
 
 def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, monkeypatch):

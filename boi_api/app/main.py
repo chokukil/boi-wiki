@@ -7228,6 +7228,17 @@ def render_agent_answer_plan(plan: dict[str, Any]) -> str:
     return "\n\n".join(part for part in parts if str(part).strip()).strip()
 
 
+def agent_composer_evidence_excerpt(value: Any, limit: int = 650) -> str:
+    text = str(value or "")
+    text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\|.*\|\s*$", " ", text, flags=re.MULTILINE)
+    text = re.sub(r"[*_>`]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text_excerpt(text, limit)
+
+
 def looks_like_repetitive_generation(text: str) -> bool:
     normalized = re.sub(r"\s+", " ", str(text or "")).strip().lower()
     if not normalized:
@@ -7376,7 +7387,7 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
             for item in (source_payload.get("search_matches") or [])[:4]
             if isinstance(item, dict)
         ],
-        "structured_draft": text_excerpt(str(source_payload.get("structured_draft") or ""), 1400),
+        "evidence_summary": agent_composer_evidence_excerpt(source_payload.get("structured_draft") or "", 650),
     }
     if repair:
         user_payload["quality_repair"] = repair
