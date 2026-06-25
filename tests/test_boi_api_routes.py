@@ -4159,6 +4159,50 @@ def test_boi_agent_approve_requires_confirmation_before_any_mutation(boi_app_mod
         assert "user_confirmed=true is required" in response.json()["detail"]
 
 
+def test_boi_agent_approve_requires_rbac_before_any_mutation(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    async def fail_async(*_args, **_kwargs):
+        raise AssertionError("mutation function must not be called when Agent approval RBAC is denied")
+
+    def fail_sync(*_args, **_kwargs):
+        raise AssertionError("mutation function must not be called when Agent approval RBAC is denied")
+
+    monkeypatch.setattr(boi_app_module, "roles_for", lambda _employee_id: ["boi.viewer"])
+    monkeypatch.setattr(boi_app_module, "publish_event", fail_async)
+    monkeypatch.setattr(boi_app_module, "start_workflow_from_data", fail_async)
+    monkeypatch.setattr(boi_app_module, "invoke_action_gateway", fail_async)
+    monkeypatch.setattr(boi_app_module, "complete_manual_handoff", fail_async)
+    monkeypatch.setattr(boi_app_module, "submit_promotion", fail_async)
+    monkeypatch.setattr(boi_app_module, "apply_source_edit_api", fail_async)
+    monkeypatch.setattr(boi_app_module, "apply_doc_body_edit", fail_async)
+    monkeypatch.setattr(boi_app_module, "create_event_type_draft", fail_sync)
+    monkeypatch.setattr(boi_app_module, "apply_event_type_draft", fail_sync)
+
+    cases = [
+        ("event_publish", {"event_type": "equipment.alarm.raised.v1", "payload": {"title": "alarm"}}),
+        ("workflow_start", {"workflow_key": "equipment-anomaly", "payload": {"equipment_id": "ETCH-VM-01"}}),
+        ("action_invoke", {"action_key": "sop.equipment.request_raw_data", "payload": {"equipment_id": "ETCH-VM-01"}}),
+        ("manual_handoff_complete", {"task_id": "task-1", "note": "done"}),
+        ("event_type_draft", {"event_type": "maintenance.inspection.completed.v1", "name_ko": "점검 완료"}),
+        ("event_type_draft_apply", {"draft_id": "event-type-draft-1"}),
+        ("promotion_submit", {"target_visibility": "team", "title": "Team Draft", "body": "# Summary\n\nDraft"}),
+        ("source_apply", {"path": "data/boi/public/sop/equipment-abnormal-response.md", "base_sha256": "sha", "proposed_content": "content"}),
+        ("doc_body_apply", {"boi_id": "boi:public:sop:equipment-abnormal-response", "base_sha256": "sha", "proposed_body": "# Body"}),
+    ]
+
+    for operation, payload in cases:
+        response = client.post(
+            "/api/agents/boi-wiki/approve?employee_id=100003",
+            json={"operation": operation, "payload": payload, "user_confirmed": True},
+        )
+        assert response.status_code == 403, operation
+        detail = response.json()["detail"]
+        assert detail["message"] == "Agent approval requires an allowed RBAC decision"
+        assert detail["operation"] == operation
+        assert detail["required_role"].startswith("boi.")
+
+
 def test_agent_mutation_apis_reject_employee_spoofing(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     monkeypatch.setattr(

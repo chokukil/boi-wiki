@@ -8791,6 +8791,21 @@ def agent_operation_permission_decision(employee_id: str, operation: str) -> dic
     return role_binding_decision(employee_id, required_role, scope="agent_approve", resource=operation)
 
 
+def require_agent_operation_permission(employee_id: str, operation: str) -> dict[str, Any]:
+    permission = agent_operation_permission_decision(employee_id, operation)
+    if permission.get("allowed"):
+        return permission
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "message": "Agent approval requires an allowed RBAC decision",
+            "operation": operation,
+            "required_role": agent_operation_required_role(operation),
+            "permission": permission,
+        },
+    )
+
+
 def normalize_agent_execution_cards(value: Any, employee_id: str) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
@@ -9817,24 +9832,53 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
         raise HTTPException(status_code=400, detail="user_confirmed=true is required")
     operation = req.operation.strip()
     payload = req.payload or {}
+    supported_operations = {
+        "event_publish",
+        "publish_event",
+        "workflow_start",
+        "start_workflow",
+        "action_invoke",
+        "invoke_action",
+        "manual_handoff_complete",
+        "manual_complete",
+        "event_type_draft",
+        "create_event_type_draft",
+        "event_type_draft_apply",
+        "apply_event_type_draft",
+        "promotion_submit",
+        "submit_promotion",
+        "source_apply",
+        "doc_body_apply",
+    }
+    if operation not in supported_operations:
+        raise HTTPException(status_code=400, detail=f"unsupported Agent approval operation: {req.operation}")
+    permission = require_agent_operation_permission(employee_id, operation)
     if operation in {"event_publish", "publish_event"}:
         result = await publish_event(EventPublishRequest(**payload), employee_id)
-        append_rbac_audit(employee_id, "agent_event_publish", {"operation": operation, "event_type": payload.get("event_type"), "note": req.note})
+        append_rbac_audit(
+            employee_id,
+            "agent_event_publish",
+            {"operation": operation, "event_type": payload.get("event_type"), "note": req.note, "permission": permission},
+        )
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
     if operation in {"workflow_start", "start_workflow"}:
         workflow_key = str(payload.get("workflow_key") or payload.get("key") or "")
         if not workflow_key:
             raise HTTPException(status_code=400, detail="workflow_key is required")
         result = await start_workflow_from_data(workflow_key, payload.get("payload") or payload, employee_id)
-        append_rbac_audit(employee_id, "agent_workflow_start", {"workflow_key": workflow_key, "note": req.note})
+        append_rbac_audit(employee_id, "agent_workflow_start", {"workflow_key": workflow_key, "note": req.note, "permission": permission})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
     if operation in {"action_invoke", "invoke_action"}:
         result = await invoke_action_gateway(ActionInvokeRequest(**payload), employee_id)
-        append_rbac_audit(employee_id, "agent_action_invoke", {"action_key": payload.get("action_key"), "note": req.note})
+        append_rbac_audit(employee_id, "agent_action_invoke", {"action_key": payload.get("action_key"), "note": req.note, "permission": permission})
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
     if operation in {"manual_handoff_complete", "manual_complete"}:
         result = await complete_manual_handoff(ManualHandoffCompleteRequest(**payload), employee_id)
-        append_rbac_audit(employee_id, "agent_manual_handoff_complete", {"task_id": payload.get("task_id"), "note": req.note})
+        append_rbac_audit(
+            employee_id,
+            "agent_manual_handoff_complete",
+            {"task_id": payload.get("task_id"), "note": req.note, "permission": permission},
+        )
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
     if operation in {"event_type_draft", "create_event_type_draft"}:
         draft_payload = {**payload, "user_confirmed": True}
@@ -9858,12 +9902,13 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
                 "team_id": promotion_payload.get("team_id"),
                 "title": promotion_payload.get("title"),
                 "note": req.note,
+                "permission": permission,
             },
         )
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
     if operation == "source_apply":
         result = await apply_source_edit_api(SourceApplyRequest(**payload), employee_id)
-        append_rbac_audit(employee_id, "agent_source_apply", {"path": payload.get("path"), "note": req.note})
+        append_rbac_audit(employee_id, "agent_source_apply", {"path": payload.get("path"), "note": req.note, "permission": permission})
         return {"ok": True, "operation": operation, "status": "applied", "result": result}
     if operation == "doc_body_apply":
         boi_id = str(payload.get("boi_id") or "")
@@ -9871,7 +9916,7 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
             raise HTTPException(status_code=400, detail="boi_id is required")
         body_payload = {key: value for key, value in payload.items() if key != "boi_id"}
         result = await apply_doc_body_edit(boi_id, BodyApplyRequest(**body_payload), employee_id)
-        append_rbac_audit(employee_id, "agent_doc_body_apply", {"boi_id": boi_id, "note": req.note})
+        append_rbac_audit(employee_id, "agent_doc_body_apply", {"boi_id": boi_id, "note": req.note, "permission": permission})
         return {"ok": True, "operation": operation, "status": "applied", "result": result}
     raise HTTPException(status_code=400, detail=f"unsupported Agent approval operation: {req.operation}")
 
