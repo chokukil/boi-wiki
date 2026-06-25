@@ -699,7 +699,7 @@ class NativeBoiAgent:
         }
 
     def _call_tool(self, name: str, args: JsonDict, fn: Callable[[], Any], state: JsonDict) -> Any:
-        self._emit_progress({"stage": "tool_start", "tool": name, "args": compact_tool_args(args), "message": tool_progress_message(name, "start")})
+        self._emit_progress({"stage": "tool_start", "tool": name, "args": compact_tool_args(args)})
         started = time.perf_counter()
         try:
             result = fn()
@@ -720,7 +720,6 @@ class NativeBoiAgent:
                 "status": status,
                 "elapsed_ms": elapsed_ms,
                 "summary": summary,
-                "message": tool_progress_message(name, status, summary=summary),
             }
         )
         return result
@@ -754,32 +753,6 @@ def compact_tool_args(args: JsonDict) -> JsonDict:
         if key in {"query", "boi_id", "trace_id", "workflow_key", "action_key", "event_type", "scope", "limit"}:
             compact[key] = compact_text(str(value), 120) if isinstance(value, str) else value
     return compact
-
-
-def tool_progress_message(tool: str, status: str, *, summary: str = "") -> str:
-    labels = {
-        "ontology_search": "관련 BoI 지식",
-        "boi_get": "BoI 문서",
-        "action_spec_lookup": "Action 명세",
-        "trace_context_lookup": "Trace 근거",
-        "workflow_status": "Workflow 상태",
-        "dictionary_resolve": "업무 용어",
-        "memory_recall": "Private memory",
-        "agent_inbox": "내 Action",
-        "route_classifier": "질문 유형",
-        "answer_composer": "최종 답변",
-    }
-    label = labels.get(tool, "필요한 근거")
-    if status == "start":
-        return f"{label} 확인 중입니다."
-    if status == "ok":
-        detail = f" ({summary})" if summary else ""
-        return f"{label} 확인 완료{detail}."
-    if status == "empty":
-        return f"{label}에서 바로 쓸 수 있는 결과를 찾지 못했습니다."
-    if status == "failed":
-        return f"{label} 확인 중 오류가 발생했습니다."
-    return f"{label} 상태를 확인했습니다."
 
 
 def compact_tool_result(result: Any) -> Any:

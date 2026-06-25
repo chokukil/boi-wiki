@@ -225,6 +225,42 @@ def test_boi_agent_stream_status_plan_without_usable_status_is_failure(boi_app_m
         )
 
 
+def test_native_agent_tool_progress_does_not_generate_user_status_text():
+    from boi_api.app import native_agent
+
+    progress_events: list[dict[str, Any]] = []
+    tools = native_agent.NativeAgentTools(
+        ontology_search=lambda query, scope="all", limit=8: {"ok": True, "count": 1},
+        boi_get=lambda ref: None,
+        event_type_lookup=lambda event_type: None,
+        action_spec_lookup=lambda action_key: None,
+        workflow_status=lambda workflow_key, trace_id: None,
+        trace_context_lookup=lambda trace_id: {"ok": True, "events": [], "actions": []},
+        dictionary_resolve=lambda query: {"ok": True, "terms": []},
+        memory_recall=lambda query, limit=5: {"ok": True, "items": []},
+        agent_inbox=lambda limit=10: {"ok": True, "items": []},
+        llm_json=None,
+    )
+    runtime = native_agent.NativeBoiAgent(
+        tools,
+        native_agent.NativeAgentConfig(require_langgraph=False, progress_callback=progress_events.append),
+    )
+    state: dict[str, Any] = {"tool_trace": []}
+
+    result = runtime._call_tool(
+        "ontology_search",
+        {"query": "SOP"},
+        lambda: {"ok": True, "count": 1},
+        state,
+    )
+
+    assert result["count"] == 1
+    assert len(progress_events) == 2
+    assert {event["stage"] for event in progress_events} == {"tool_start", "tool_done"}
+    assert all("message" not in event for event in progress_events)
+    assert state["tool_trace"][0].summary == "count=1"
+
+
 def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app_module, monkeypatch):
     payloads = []
     statuses = [
