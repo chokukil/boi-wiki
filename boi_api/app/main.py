@@ -228,6 +228,19 @@ BOI_AGENT_EXECUTION_CARD_REQUIRED_FIELDS = [
     "permission",
 ]
 BOI_AGENT_ARTIFACT_TYPES = ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"]
+BOI_AGENT_STATUS_UPDATE_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["message"],
+        "additionalProperties": True,
+        "properties": {
+            "stage": {"type": "string"},
+            "message": {"type": "string"},
+            "source": {"type": "string"},
+        },
+    },
+}
 BOI_AGENT_EXECUTION_CARD_FIELDS = [
     "contract_version",
     "operation",
@@ -286,19 +299,8 @@ BOI_AGENT_RESPONSE_SCHEMA = {
                 },
             },
         },
-        "status_updates": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["message"],
-                "additionalProperties": True,
-                "properties": {
-                    "stage": {"type": "string"},
-                    "message": {"type": "string"},
-                    "source": {"type": "string"},
-                },
-            },
-        },
+        "status_updates": BOI_AGENT_STATUS_UPDATE_SCHEMA,
+        "status_events": BOI_AGENT_STATUS_UPDATE_SCHEMA,
         "tool_trace": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "coverage_report": {"type": "object", "additionalProperties": True},
         "access_summary": {"type": "object", "additionalProperties": True},
@@ -8679,12 +8681,12 @@ def sanitize_agent_reference_value(value: Any, employee_id: str) -> tuple[Any, i
 
 def sanitize_agent_final_references(response: dict[str, Any], employee_id: str) -> int:
     redacted_count = 0
-    for key in ("answer_markdown", "display_markdown", "links", "citations", "suggested_questions", "artifacts", "tool_trace", "status_updates", "context_summary"):
+    for key in ("answer_markdown", "display_markdown", "links", "citations", "suggested_questions", "artifacts", "tool_trace", "status_updates", "status_events", "context_summary"):
         sanitized, count = sanitize_agent_reference_value(response.get(key), employee_id)
         redacted_count += count
         if sanitized is not None:
             response[key] = sanitized
-        elif key in {"links", "citations", "artifacts", "suggested_questions", "tool_trace", "status_updates"}:
+        elif key in {"links", "citations", "artifacts", "suggested_questions", "tool_trace", "status_updates", "status_events"}:
             response[key] = []
         else:
             response[key] = ""
@@ -8903,7 +8905,10 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
     response.setdefault("suggested_questions", [])
     response.setdefault("suggested_questions_source", "suggestions_endpoint_required")
     response.setdefault("tool_trace", [])
+    if not isinstance(response.get("status_updates"), list) and isinstance(response.get("status_events"), list):
+        response["status_updates"] = response["status_events"]
     response.setdefault("status_updates", [])
+    response["status_events"] = list(response["status_updates"])
     response.setdefault("coverage_report", {})
     response.setdefault("access_summary", {})
     response.setdefault("guardrails_applied", [])
@@ -9634,6 +9639,7 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
             if emitted_status_updates:
                 existing_updates = response.get("status_updates") if isinstance(response.get("status_updates"), list) else []
                 response["status_updates"] = [*emitted_status_updates, *existing_updates]
+                response["status_events"] = list(response["status_updates"])
             yield agent_sse_event("final", response)
         except LangflowBoiAgentUnavailable as exc:
             yield agent_sse_event(
@@ -9720,6 +9726,11 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "schema_endpoint": "/api/agents/boi-wiki/response-schema",
             "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
             "required_fields": BOI_AGENT_RESPONSE_REQUIRED_FIELDS,
+            "status_fields": {
+                "canonical": "status_updates",
+                "alias": "status_events",
+                "stream_event": "status",
+            },
             "artifact_types": BOI_AGENT_ARTIFACT_TYPES,
             "execution_card_fields": BOI_AGENT_EXECUTION_CARD_FIELDS,
             "execution_card_required_fields": BOI_AGENT_EXECUTION_CARD_REQUIRED_FIELDS,

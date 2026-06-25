@@ -1267,8 +1267,9 @@
       if (streamError) throw new Error(streamError);
       if (!finalBody) throw new Error("Agent 응답이 완료되지 않았습니다.");
       const body = finalBody;
-      const finalStatusLines = Array.isArray(body.status_updates)
-        ? body.status_updates.map((item) => item?.message || "").filter(Boolean).slice(-6)
+      const responseStatusUpdates = Array.isArray(body.status_updates) ? body.status_updates : (Array.isArray(body.status_events) ? body.status_events : []);
+      const finalStatusLines = responseStatusUpdates.length
+        ? responseStatusUpdates.map((item) => item?.message || "").filter(Boolean).slice(-6)
         : statusLines.slice(-6);
       state.messages[pendingIndex] = {
         role: "assistant",
@@ -1284,7 +1285,8 @@
           router_backend: body.router_backend,
           latency_ms: body.latency_ms,
           tool_trace: body.tool_trace || [],
-          status_updates: body.status_updates || [],
+          status_updates: responseStatusUpdates,
+          status_events: responseStatusUpdates,
           coverage_report: body.coverage_report || {},
           guardrails_applied: body.guardrails_applied || [],
         },

@@ -102,6 +102,19 @@ AGENT_EXECUTION_CARD_REQUIRED_FIELDS = [
     "permission",
 ]
 AGENT_ARTIFACT_TYPES = ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"]
+AGENT_STATUS_UPDATE_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["message"],
+        "additionalProperties": True,
+        "properties": {
+            "stage": {"type": "string"},
+            "message": {"type": "string"},
+            "source": {"type": "string"},
+        },
+    },
+}
 AGENT_RESPONSE_CONTRACT = {
     "version": AGENT_RESPONSE_CONTRACT_VERSION,
     "canonical_endpoint": "/api/agents/boi-wiki/chat",
@@ -111,6 +124,11 @@ AGENT_RESPONSE_CONTRACT = {
     "mcp_resource_template": "boi://agent/response-schema/{version}",
     "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
     "required_fields": AGENT_RESPONSE_REQUIRED_FIELDS,
+    "status_fields": {
+        "canonical": "status_updates",
+        "alias": "status_events",
+        "stream_event": "status",
+    },
     "execution_card_required_fields": AGENT_EXECUTION_CARD_REQUIRED_FIELDS,
     "artifact_types": AGENT_ARTIFACT_TYPES,
 }
@@ -157,19 +175,8 @@ AGENT_RESPONSE_SCHEMA = {
                 },
             },
         },
-        "status_updates": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["message"],
-                "additionalProperties": True,
-                "properties": {
-                    "stage": {"type": "string"},
-                    "message": {"type": "string"},
-                    "source": {"type": "string"},
-                },
-            },
-        },
+        "status_updates": AGENT_STATUS_UPDATE_SCHEMA,
+        "status_events": AGENT_STATUS_UPDATE_SCHEMA,
         "tool_trace": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "coverage_report": {"type": "object", "additionalProperties": True},
         "access_summary": {"type": "object", "additionalProperties": True},

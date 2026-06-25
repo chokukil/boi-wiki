@@ -58,6 +58,12 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "answer_markdown" in body["agent_response_contract"]["required_fields"]
     assert "artifacts" in body["agent_response_contract"]["required_fields"]
     assert "status_updates" in body["agent_response_contract"]["required_fields"]
+    assert "status_events" not in body["agent_response_contract"]["required_fields"]
+    assert body["agent_response_contract"]["status_fields"] == {
+        "canonical": "status_updates",
+        "alias": "status_events",
+        "stream_event": "status",
+    }
     assert "tool_trace" in body["agent_response_contract"]["required_fields"]
     assert "access_summary" in body["agent_response_contract"]["required_fields"]
     assert "guardrails_applied" in body["agent_response_contract"]["required_fields"]
@@ -375,6 +381,7 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
             "citations": [{"label": "SOP", "ref": "boi:public:sop:equipment-abnormal-response"}],
             "artifacts": [{"type": "mermaid", "title": "SOP flow", "source": "flowchart TD\nA[Start] --> B[Action]"}],
             "status_updates": [{"stage": "retrieval", "message": "관련 BoI 지식을 확인했습니다.", "source": "llm_status"}],
+            "status_events": [{"stage": "retrieval", "message": "관련 BoI 지식을 확인했습니다.", "source": "llm_status"}],
             "tool_trace": [{"tool": "ontology_search", "status": "ok", "elapsed_ms": 5, "summary": "best_matches=1"}],
             "execution_cards": [
                 {
@@ -439,6 +446,7 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
     assert agent_result["links"][0]["label"] == "SOP"
     assert agent_result["artifacts"][0]["type"] == "mermaid"
     assert agent_result["status_updates"][0]["source"] == "llm_status"
+    assert agent_result["status_events"] == agent_result["status_updates"]
     assert agent_result["tool_trace"][0]["tool"] == "ontology_search"
     assert agent_result["execution_cards"][0]["requires_confirmation"] is True
     assert agent_result["access_summary"]["can_read"] is True

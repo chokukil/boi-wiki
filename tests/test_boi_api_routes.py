@@ -191,12 +191,19 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["response_contract"]["schema_endpoint"] == "/api/agents/boi-wiki/response-schema"
     assert "boi_wiki_mcp" in body["response_contract"]["consumers"]
     assert "status_updates" in body["response_contract"]["required_fields"]
+    assert "status_events" not in body["response_contract"]["required_fields"]
+    assert body["response_contract"]["status_fields"] == {
+        "canonical": "status_updates",
+        "alias": "status_events",
+        "stream_event": "status",
+    }
     assert "tool_trace" in body["response_contract"]["required_fields"]
     assert "access_summary" in body["response_contract"]["required_fields"]
     assert "execution_card_fields" in body["response_contract"]
     assert "required_role" in body["response_contract"]["execution_card_required_fields"]
     assert "permission" in body["response_contract"]["execution_card_required_fields"]
     assert body["response_contract"]["schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
+    assert "status_events" in body["response_contract"]["schema"]["properties"]
     assert "mermaid" in body["response_contract"]["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
     execution_card_item = body["response_contract"]["schema"]["properties"]["execution_cards"]["items"]
     card_schema = execution_card_item["properties"]
@@ -1090,6 +1097,7 @@ def test_boi_agent_chat_json_embeds_stream_plan_status_for_api_and_mcp(boi_app_m
     assert body["route"] == "deep"
     assert body["intent"] == "diagram"
     assert body["status_updates"][:3] == status_steps
+    assert body["status_events"][:3] == status_steps
     assert body["status_updates"][0]["message"] == "현재 SOP 화면과 접근 권한을 확인합니다."
     assert body["artifacts"][0]["type"] == "mermaid"
 
@@ -1120,6 +1128,7 @@ def test_boi_agent_chat_normalizes_minimal_backend_response_to_agent_contract(bo
     assert body["artifacts"] == []
     assert body["execution_cards"] == []
     assert body["status_updates"] == []
+    assert body["status_events"] == []
     assert body["tool_trace"] == []
     assert body["access_summary"] == {}
     assert body["guardrails_applied"] == []
@@ -3743,6 +3752,7 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert final["links"][0]["label"] == "설비 SOP"
     assert final["used_backend"] == "native_langgraph"
     assert final["status_updates"]
+    assert final["status_events"] == final["status_updates"]
     assert final["status_updates"][0]["message"] == llm_steps[0]["message"]
     assert any(item.get("stage") == "answer_stream" for item in final["status_updates"])
     assert received_routes == [planned_route]
@@ -4538,8 +4548,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "state.messages.slice(-20)" in script
     assert "content.scrollTop = content.scrollHeight" in script
     assert "tool_trace: body.tool_trace || []" in script
-    assert "status_updates: body.status_updates || []" in script
-    assert "const finalStatusLines = Array.isArray(body.status_updates)" in script
+    assert "status_updates: responseStatusUpdates" in script
+    assert "status_events: responseStatusUpdates" in script
+    assert "Array.isArray(body.status_events)" in script
     assert "coverage_report: body.coverage_report || {}" in script
     assert "Agent가 확인한 내용" in script
     assert "renderStatusTrail" in script
