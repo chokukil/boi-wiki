@@ -699,6 +699,8 @@ class NativeBoiAgent:
             status = "ok" if result else "empty"
             summary = summarize_tool_result(result)
         except Exception as exc:  # pragma: no cover - defensive guard for runtime tools.
+            if name == "answer_composer" and self.config.composer_required and isinstance(exc, NativeAgentRuntimeUnavailable):
+                raise
             result = {"error": repr(exc)}
             status = "failed"
             summary = repr(exc)

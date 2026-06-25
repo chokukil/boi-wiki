@@ -191,7 +191,7 @@ BOI_AGENT_COMPOSER_LLM_ENABLED = resolve_router_llm_enabled(
 )
 BOI_AGENT_COMPOSER_REQUIRED = os.getenv("BOI_AGENT_COMPOSER_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "20"))
-BOI_AGENT_COMPOSER_MAX_TOKENS = int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "3072"))
+BOI_AGENT_COMPOSER_MAX_TOKENS = int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "1536"))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
@@ -6905,6 +6905,9 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
             if answer:
                 payload["answer_markdown"] = answer
                 return payload
+    partial_answer = extract_partial_json_string_field(stripped, "answer_markdown")
+    if partial_answer and len(partial_answer) >= 20:
+        return {"answer_markdown": partial_answer.strip(), "suggested_questions": []}
     if (
         stripped
         and not stripped.startswith("{")
@@ -6917,10 +6920,65 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
     return None
 
 
+def extract_partial_json_string_field(text: str, field: str) -> str:
+    marker = f'"{field}"'
+    start = text.find(marker)
+    if start < 0:
+        return ""
+    colon = text.find(":", start + len(marker))
+    if colon < 0:
+        return ""
+    quote = text.find('"', colon + 1)
+    if quote < 0:
+        return ""
+    chars: list[str] = []
+    escaped = False
+    for char in text[quote + 1 :]:
+        if escaped:
+            if char == "n":
+                chars.append("\n")
+            elif char == "t":
+                chars.append("\t")
+            elif char == "r":
+                chars.append("\r")
+            else:
+                chars.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            break
+        chars.append(char)
+    return "".join(chars).strip()
+
+
+def looks_like_repetitive_generation(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    if not normalized:
+        return False
+    if re.search(r"(.{3,40})(?:\\s*[-·,/]?\\s*\\1){8,}", normalized):
+        return True
+    tokens = re.findall(r"[a-z0-9가-힣一-龥]+", normalized)
+    if len(tokens) < 30:
+        return False
+    for size in (1, 2, 3):
+        grams = [" ".join(tokens[index : index + size]) for index in range(0, len(tokens) - size + 1)]
+        if not grams:
+            continue
+        most_common = max(grams.count(item) for item in set(grams))
+        if most_common >= max(12, int(len(grams) * 0.22)):
+            return True
+    return False
+
+
 def invalid_agent_composer_answer_reason(answer: str) -> str:
     text = str(answer or "").strip()
     if not text:
         return "empty_answer"
+    if looks_like_repetitive_generation(text):
+        return "degenerate_repetition"
     lowered = text.lower()
     prompt_echo_markers = (
         "user wants",
@@ -6956,7 +7014,8 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
         headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
     body = {
         "model": BOI_AGENT_COMPOSER_MODEL,
-        "temperature": 0.25,
+        "temperature": 0.1,
+        "frequency_penalty": 0.6,
         "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
         "response_format": {
             "type": "json_schema",
@@ -6978,7 +7037,8 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
                 "content": (
                     "You are the final answer composer for BoI Wiki Agent. "
                     "Return only one JSON object with answer_markdown and suggested_questions. "
-                    "answer_markdown must be the final user-facing Korean Markdown answer. "
+                    "answer_markdown must be the final user-facing Korean Markdown answer, under 1200 Korean characters. "
+                    "Use at most one compact table with five rows. Do not repeat words or phrases. "
                     "Never echo, summarize, or restate the prompt, request fields, JSON schema, "
                     "structured_draft label, body_excerpt label, or system instructions. "
                     "Use only supplied evidence. Do not invent private data, links, actions, or approvals."

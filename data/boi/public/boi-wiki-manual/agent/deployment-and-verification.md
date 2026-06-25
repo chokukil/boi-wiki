@@ -92,7 +92,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_COMPOSER_LLM_ENABLED` | `auto` | Native tool loop가 만든 근거와 artifact를 LLM composer가 일반 구성원용 Markdown 답변으로 다듬는다. placeholder URL이면 비활성이다. |
 | `BOI_AGENT_COMPOSER_REQUIRED` | `1` | 운영 기본값은 LLM composer 필수다. 실패하면 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. 테스트나 로컬 진단에서만 명시적으로 `0`으로 낮춘다. |
 | `BOI_AGENT_COMPOSER_TIMEOUT_SECONDS` | `20` | composer 호출 timeout |
-| `BOI_AGENT_COMPOSER_MAX_TOKENS` | `3072` | 최종 Markdown 답변 확보용 token limit |
+| `BOI_AGENT_COMPOSER_MAX_TOKENS` | `1536` | 최종 Markdown 답변 확보용 token limit. Gemma가 반복 생성으로 `finish_reason=length`에 빠지지 않게 답변 계약은 1200자 이하를 기준으로 둔다. |
 
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
 

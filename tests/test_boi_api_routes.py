@@ -140,7 +140,7 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 12
     assert body["boi_agent"]["status_writer"]["max_tokens"] == 1536
     assert body["boi_agent"]["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
-    assert body["boi_agent"]["composer"]["max_tokens"] == 3072
+    assert body["boi_agent"]["composer"]["max_tokens"] == 1536
     assert body["boi_agent"]["langgraph"]["required"] is True
     assert body["boi_agent"]["langgraph"]["runtime"] in {"LangGraph", "unavailable"}
     assert body["boi_agent"]["cache_warmup"]["enabled"] is True
@@ -656,6 +656,21 @@ def test_boi_agent_unknown_backend_is_service_error(boi_app_module, monkeypatch)
     detail = response.json()["detail"]
     assert detail["status"] == "native_agent_runtime_unavailable"
     assert "Unknown BOI_AGENT_BACKEND: mystery" in detail["message"]
+
+
+def test_boi_agent_composer_parser_recovers_partial_answer_markdown(boi_app_module):
+    partial = '{"answer_markdown": "## 요약\\n\\n설비 이상 SOP는 Event, Action, Manual Handoff를 순서대로 연결합니다.'
+
+    parsed = boi_app_module.parse_agent_compose_payload(partial)
+
+    assert parsed
+    assert parsed["answer_markdown"].startswith("## 요약")
+
+
+def test_boi_agent_composer_rejects_degenerate_repetition(boi_app_module):
+    answer = "## 요약\n\n" + ("적절-적절-적절 " * 30)
+
+    assert boi_app_module.invalid_agent_composer_answer_reason(answer) == "degenerate_repetition"
 
 
 def test_boi_agent_stream_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):
