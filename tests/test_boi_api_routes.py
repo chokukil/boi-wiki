@@ -180,6 +180,8 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["status_writer"]["required"] is True
     assert body["status_writer"]["model"]
     assert body["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
+    assert body["composer"]["timeout_seconds"] <= 12
+    assert body["composer"]["max_attempts"] == 1
     assert body["native_agent"]["langgraph_required"] is True
     assert body["native_agent"]["runtime"] in {"LangGraph", "unavailable"}
     assert body["agent_contract_version"] == "boi-agent.response.v1"
@@ -2232,6 +2234,7 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
     result = boi_app_module.call_boi_agent_composer_llm(
@@ -2309,6 +2312,7 @@ def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, m
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
     result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
@@ -2373,6 +2377,7 @@ def test_boi_agent_composer_llm_repairs_invalid_first_response(boi_app_module, m
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
     result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
@@ -2437,6 +2442,7 @@ def test_boi_agent_composer_llm_rejects_markdown_fence_inside_answer_plan(boi_ap
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
     result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")

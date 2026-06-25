@@ -83,7 +83,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄과 SSE route plan은 LLM stream planner가 생성해야 한다. 실패 시 정해진 대체 문구를 쓰지 않고 장애로 표시한다. 이 설정명은 compose 호환용으로 남아 있지만 런타임 정책은 항상 필수이며, 값을 낮춰도 canned status fallback은 생기지 않는다. |
 | `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible stream planner endpoint. 이름은 호환상 `STATUS`를 유지하지만 SSE에서는 route/status plan을 함께 만든다. |
 | `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |
-| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `30` | stream plan 생성 timeout. Gemma가 route/status JSON을 만들 시간을 주되, 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. 긴 대기 뒤 대체 문구로 숨기지 않고 Agent 장애로 노출한다. |
+| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `12` | stream plan 생성 timeout. Gemma가 route/status JSON을 만들 시간을 주되, 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. 긴 대기 뒤 대체 문구로 숨기지 않고 Agent 장애로 노출한다. |
 | `BOI_AGENT_STATUS_MAX_TOKENS` | `1536` | Gemma 계열 모델이 reasoning token을 먼저 쓸 수 있어 너무 낮추면 `finish_reason=length`로 JSON content가 비며 장애가 된다. compact stream planner prompt 기준 1536을 기본값으로 둔다. |
 | `BOI_AGENT_SUGGESTIONS_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, 현재 페이지 추천 질문은 LLM suggestion writer가 생성해야 한다. 실패하면 템플릿 질문으로 대체하지 않고 `boi_agent_suggestions_unavailable`로 표시한다. |
 | `BOI_AGENT_SUGGESTIONS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible suggestion writer endpoint |
@@ -91,8 +91,9 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS` | `8` | 추천 질문 생성 timeout. 실패 시 Pet Agent는 현재 페이지 질문을 숨기거나 장애로 표시해야 하며, 하드코딩 질문을 운영 fallback으로 쓰지 않는다. |
 | `BOI_AGENT_COMPOSER_LLM_ENABLED` | `auto` | Native tool loop가 만든 근거와 artifact를 LLM composer가 일반 구성원용 Markdown 답변으로 다듬는다. placeholder URL이면 비활성이다. |
 | `BOI_AGENT_COMPOSER_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, composer 실패는 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. Composer는 `answer_markdown` JSON contract만 인정하며 plain Markdown, 잘린 JSON, prompt echo, 반복 생성은 최종 답변으로 복구하지 않는다. |
-| `BOI_AGENT_COMPOSER_TIMEOUT_SECONDS` | `20` | composer 호출 timeout |
+| `BOI_AGENT_COMPOSER_TIMEOUT_SECONDS` | `12` | composer 호출 timeout. 작은 answer plan JSON을 만드는 호출이므로 길게 잡지 않는다. |
 | `BOI_AGENT_COMPOSER_MAX_TOKENS` | `1536` | 최종 Markdown 답변 확보용 token limit. Gemma가 반복 생성으로 `finish_reason=length`에 빠지지 않게 답변 계약은 1200자 이하를 기준으로 둔다. 런타임은 이 값을 최대 1536으로 cap한다. |
+| `BOI_AGENT_COMPOSER_MAX_ATTEMPTS` | `1` | 운영 기본 composer 시도 횟수. repair loop 기능은 남기지만 NAS PoC에서는 장시간 worker 점유를 막기 위해 기본 1회만 호출한다. |
 | `BOI_AGENT_CHAT_TIMEOUT_SECONDS` | `45` | non-stream `/api/agents/boi-wiki/chat` 전체 응답 상한이다. 이 시간을 넘기면 클라이언트가 socket timeout으로 끊기기 전에 `boi_agent_timeout` 503을 반환한다. 대체 답변을 만들지 않으며, MCP/외부 호출자는 Agent 장애로 처리해야 한다. |
 
 Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.

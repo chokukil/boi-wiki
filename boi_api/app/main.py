@@ -195,8 +195,9 @@ BOI_AGENT_COMPOSER_LLM_ENABLED = resolve_router_llm_enabled(
     BOI_AGENT_COMPOSER_BASE_URL,
 )
 BOI_AGENT_COMPOSER_REQUIRED = True
-BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "20"))
+BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_COMPOSER_MAX_TOKENS = min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "1536")), 1536)
+BOI_AGENT_COMPOSER_MAX_ATTEMPTS = max(1, min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_ATTEMPTS", "1")), 3))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
@@ -7458,7 +7459,7 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
         headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
     invalid_reasons: list[str] = []
     repair_payload: dict[str, Any] | None = None
-    for attempt in range(3):
+    for attempt in range(BOI_AGENT_COMPOSER_MAX_ATTEMPTS):
         body = boi_agent_composer_request_body(payload, employee_id, repair=repair_payload)
         try:
             with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:
@@ -9420,6 +9421,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "model": BOI_AGENT_COMPOSER_MODEL,
             "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
             "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
+            "max_attempts": BOI_AGENT_COMPOSER_MAX_ATTEMPTS,
         },
         "chat_timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
         "suggestions": {
