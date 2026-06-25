@@ -302,6 +302,16 @@ async function main() {
     } catch (_error) {
       // The strict report below records whether Mermaid actually rendered or fell back.
     }
+    try {
+      await waitUntil(
+        cdp,
+        `document.querySelectorAll("#boi-agent-root .boi-agent-suggestions [data-question]").length > 0`,
+        12000,
+        250,
+      );
+    } catch (_error) {
+      // The structured report below records whether suggestion buttons returned.
+    }
 
     await cdp.evaluate(`(() => {
       document.querySelector(".boi-agent-expand")?.click();
