@@ -40,7 +40,9 @@ flowchart TD
   D --> E["execute_tools_loop"]
   E --> F["evaluate_coverage"]
   F --> G["compose_answer"]
-  G --> LC{"LLM composer enabled?"}
+  G --> ART{"authoritative typed artifact?"}
+  ART -->|yes| H["verify_acl_and_artifacts"]
+  ART -->|no| LC{"LLM composer enabled?"}
   LC -->|yes| LLM["compose final Markdown<br/>from typed evidence"]
   LC -->|no + required| ERR["service error<br/>native_agent_runtime_unavailable"]
   LC -->|no + explicit dev/test opt-out| DET["structured draft<br/>dev/test only"]
@@ -100,7 +102,7 @@ sequenceDiagram
 |---|---|
 | `diagram` | Mermaid flowchart |
 | `gap_check` | missing Action Spec table |
-| `workflow_explain` | Event -> SOP -> Action -> Manual Handoff table |
+| `workflow_explain` | Event -> SOP -> Action -> Manual Handoff table. `workflow_summary` artifact is authoritative and does not require the LLM composer to rewrite it. |
 | `trace_reasoning` | trace evidence summary |
 | `inbox` | 일반 구성원용 업무 카드 |
 

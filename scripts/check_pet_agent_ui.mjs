@@ -13,6 +13,7 @@ function parseArgs(argv) {
     timeoutMs: 90000,
     screenshot: "",
     strict: false,
+    expectArtifact: "mermaid",
   };
   for (let index = 2; index < argv.length; index += 1) {
     const item = argv[index];
@@ -20,9 +21,10 @@ function parseArgs(argv) {
     else if (item === "--question") args.question = argv[++index];
     else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
     else if (item === "--screenshot") args.screenshot = argv[++index];
+    else if (item === "--expect-artifact") args.expectArtifact = argv[++index] || args.expectArtifact;
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--screenshot FILE] [--strict]`);
+      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|table] [--screenshot FILE] [--strict]`);
       process.exit(0);
     }
   }
@@ -356,6 +358,7 @@ async function main() {
       return {
         open: !!viewer,
         hasMermaid: !!diagram,
+        hasTable: !!viewer?.querySelector(".boi-agent-table-wrap table, .markdown-table"),
         mermaidRendered: !diagram || (diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")),
         rawMermaidFenceLeak: viewer ? new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(viewer.textContent || "") : false,
       };
@@ -415,6 +418,7 @@ async function main() {
         messageCount: root?.querySelectorAll(".boi-agent-message").length || 0,
         mermaidDiagramCount: diagrams.length,
         mermaidRenderedCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")).length,
+        artifactTableCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
         rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
       };
     })()`);
@@ -438,6 +442,8 @@ async function main() {
       };
     })()`);
 
+    const expectsMermaid = args.expectArtifact === "mermaid";
+    const expectsTable = ["workflow_summary", "table"].includes(args.expectArtifact);
     const checks = {
       panel_opened: beforeNew.panelOpen,
       stop_seen_during_generation: beforeNew.stopSeen,
@@ -448,14 +454,19 @@ async function main() {
       expand_control_worked: beforeNew.expanded,
       no_horizontal_overflow: !beforeNew.hasHorizontalOverflow,
       artifact_viewer_opened: artifactViewer.open,
-      artifact_viewer_mermaid_rendered: artifactViewer.open && artifactViewer.mermaidRendered && !artifactViewer.rawMermaidFenceLeak,
+      artifact_viewer_expected_content: expectsMermaid
+        ? artifactViewer.open && artifactViewer.mermaidRendered && !artifactViewer.rawMermaidFenceLeak
+        : artifactViewer.open && artifactViewer.hasTable,
       answer_viewer_opened: answerViewer.open && answerViewer.hasAnswer && answerViewer.hasTable,
       state_restored_after_navigation: afterNavigation.panelOpen && afterNavigation.messageCount >= 2,
-      mermaid_rendered_after_navigation: afterNavigation.mermaidDiagramCount >= 1 && afterNavigation.mermaidRenderedCount >= 1 && !afterNavigation.rawMermaidFenceLeak,
-      mermaid_diagram_present: beforeNew.mermaidDiagramCount >= 1,
-      mermaid_diagram_rendered: beforeNew.mermaidRenderedCount >= 1 && beforeNew.mermaidFallbackCount === 0,
-      mermaid_not_duplicated: beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount,
+      artifact_restored_after_navigation: expectsMermaid
+        ? afterNavigation.mermaidDiagramCount >= 1 && afterNavigation.mermaidRenderedCount >= 1 && !afterNavigation.rawMermaidFenceLeak
+        : afterNavigation.artifactTableCount >= 1,
+      mermaid_diagram_present: expectsMermaid ? beforeNew.mermaidDiagramCount >= 1 : true,
+      mermaid_diagram_rendered: expectsMermaid ? beforeNew.mermaidRenderedCount >= 1 && beforeNew.mermaidFallbackCount === 0 : true,
+      mermaid_not_duplicated: expectsMermaid ? beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount : true,
       markdown_table_rendered: (beforeNew.answerMarkdownTableCount + beforeNew.artifactTableCount) >= 1,
+      expected_table_artifact_rendered: expectsTable ? beforeNew.artifactTableCount >= 1 : true,
       no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
     };
