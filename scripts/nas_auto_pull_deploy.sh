@@ -70,7 +70,7 @@ upsert_env_key() {
   local value="$3"
   local tmp_file
   tmp_file="/tmp/$(basename "$file").tmp.$$"
-  if [[ -r "$file" && -w "$file" ]]; then
+  if [[ -w "$file" ]] && cat "$file" >/dev/null 2>&1; then
     if grep -q "^${key}=" "$file"; then
       sed "s|^${key}=.*|${key}=${value}|" "$file" > "$tmp_file"
     else
