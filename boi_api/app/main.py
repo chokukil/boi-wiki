@@ -8918,7 +8918,17 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "private memory",
             "recent activity",
         ],
-        "write_confirmation_required": ["approve", "manual_handoff_complete", "action_invoke", "promotion_submit", "source_apply", "doc_body_apply"],
+        "write_confirmation_required": [
+            "approve",
+            "event_publish",
+            "workflow_start",
+            "action_invoke",
+            "manual_handoff_complete",
+            "event_type_draft",
+            "promotion_submit",
+            "source_apply",
+            "doc_body_apply",
+        ],
     }
 
 

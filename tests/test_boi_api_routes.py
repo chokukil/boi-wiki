@@ -183,6 +183,10 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["native_agent"]["langgraph_required"] is True
     assert body["native_agent"]["runtime"] in {"LangGraph", "unavailable"}
     assert "progressive response streaming" in body["features"]
+    for operation in body["supported_execution_cards"]:
+        assert operation in body["write_confirmation_required"]
+    for operation in ["event_publish", "workflow_start", "event_type_draft"]:
+        assert operation in body["write_confirmation_required"]
 
 
 def test_boi_agent_stream_status_steps_require_llm_generated_plan(boi_app_module, monkeypatch):
