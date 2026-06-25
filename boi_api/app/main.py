@@ -7347,6 +7347,8 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
     text = str(answer or "").strip()
     if not text:
         return "empty_answer"
+    if re.search(r"(?:ization){2,}|\\text\s*\{|\$|\\\(|\\\)|\bde/v\d+\b", text, flags=re.IGNORECASE):
+        return "corrupt_model_artifact"
     if looks_like_repetitive_generation(text):
         return "degenerate_repetition"
     if re.search(r"[가-힣]{2,}(?:-[가-힣]{2,}){2,}", text):
@@ -7401,7 +7403,7 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
             for item in (source_payload.get("search_matches") or [])[:4]
             if isinstance(item, dict)
         ],
-        "evidence_summary": agent_composer_evidence_excerpt(source_payload.get("structured_draft") or "", 650),
+        "evidence_summary": agent_composer_evidence_excerpt(source_payload.get("structured_draft") or "", 420),
     }
     if repair:
         user_payload["quality_repair"] = repair
@@ -7429,7 +7431,7 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
         "model": BOI_AGENT_COMPOSER_MODEL,
         "temperature": 0,
         "frequency_penalty": 0.6,
-        "max_tokens": min(BOI_AGENT_COMPOSER_MAX_TOKENS, 220),
+        "max_tokens": min(BOI_AGENT_COMPOSER_MAX_TOKENS, 120),
         "response_format": {
             "type": "json_schema",
             "json_schema": {

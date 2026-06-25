@@ -1030,6 +1030,12 @@ def test_boi_agent_composer_rejects_korean_hyphen_noise(boi_app_module):
     assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n업무 지식 베이스리스트-업데이트-리스트") == "korean_hyphen_noise"
 
 
+def test_boi_agent_composer_rejects_corrupt_model_artifacts(boi_app_module):
+    bad = "## 답변\n\nworkflow-key를 de/v1 이벤트에 연결하고 SOP'izationizationization $\\text{_}$ 조각을 포함합니다."
+
+    assert boi_app_module.invalid_agent_composer_answer_reason(bad) == "corrupt_model_artifact"
+
+
 def test_boi_agent_deep_summarize_relation_question_overrides_to_workflow_explain(boi_app_module):
     from boi_api.app import native_agent
 
@@ -2159,7 +2165,7 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     assert "bullets" not in schema["properties"]
     assert "links" not in schema["properties"]
     assert "title" in schema["required"]
-    assert payloads[0]["json"]["max_tokens"] <= 220
+    assert payloads[0]["json"]["max_tokens"] <= 120
     user_payload = json.loads(payloads[0]["json"]["messages"][1]["content"])
     assert "large_unused" not in user_payload
     assert "structured_draft" not in user_payload
