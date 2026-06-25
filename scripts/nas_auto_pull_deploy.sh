@@ -69,15 +69,34 @@ upsert_env_key() {
   local key="$2"
   local value="$3"
   local tmp_file
-  tmp_file="${file}.tmp.$$"
-  if grep -q "^${key}=" "$file"; then
-    sed "s|^${key}=.*|${key}=${value}|" "$file" > "$tmp_file"
-  else
-    cat "$file" > "$tmp_file"
-    printf '\n%s=%s\n' "$key" "$value" >> "$tmp_file"
+  tmp_file="/tmp/$(basename "$file").tmp.$$"
+  if [[ -r "$file" && -w "$file" ]]; then
+    if grep -q "^${key}=" "$file"; then
+      sed "s|^${key}=.*|${key}=${value}|" "$file" > "$tmp_file"
+    else
+      cat "$file" > "$tmp_file"
+      printf '\n%s=%s\n' "$key" "$value" >> "$tmp_file"
+    fi
+    chmod --reference="$file" "$tmp_file" 2>/dev/null || true
+    mv "$tmp_file" "$file"
+    return 0
   fi
-  chmod --reference="$file" "$tmp_file" 2>/dev/null || true
-  mv "$tmp_file" "$file"
+  sudo_env awk -v key="$key" -v value="$value" '
+    BEGIN { updated = 0 }
+    $0 ~ "^" key "=" {
+      print key "=" value
+      updated = 1
+      next
+    }
+    { print }
+    END {
+      if (!updated) {
+        print ""
+        print key "=" value
+      }
+    }
+  ' "$file" > "$tmp_file"
+  sudo_env sh -c 'chmod --reference "$1" "$2" 2>/dev/null || chmod 600 "$2" 2>/dev/null || true; chown --reference "$1" "$2" 2>/dev/null || true; mv "$2" "$1"' sh "$file" "$tmp_file"
 }
 
 sudo_env() {
