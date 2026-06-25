@@ -4071,6 +4071,8 @@ def test_boi_agent_approve_requires_confirmation_before_any_mutation(boi_app_mod
     monkeypatch.setattr(boi_app_module, "invoke_action_gateway", fail_async)
     monkeypatch.setattr(boi_app_module, "complete_manual_handoff", fail_async)
     monkeypatch.setattr(boi_app_module, "submit_promotion", fail_async)
+    monkeypatch.setattr(boi_app_module, "apply_source_edit_api", fail_async)
+    monkeypatch.setattr(boi_app_module, "apply_doc_body_edit", fail_async)
     monkeypatch.setattr(boi_app_module, "create_event_type_draft", fail_sync)
     monkeypatch.setattr(boi_app_module, "apply_event_type_draft", fail_sync)
 
@@ -4082,6 +4084,8 @@ def test_boi_agent_approve_requires_confirmation_before_any_mutation(boi_app_mod
         ("event_type_draft", {"event_type": "maintenance.inspection.completed.v1", "name_ko": "점검 완료"}),
         ("event_type_draft_apply", {"draft_id": "event-type-draft-1"}),
         ("promotion_submit", {"target_visibility": "team", "title": "Team Draft", "body": "# Summary\n\nDraft"}),
+        ("source_apply", {"path": "data/boi/public/sop/equipment-abnormal-response.md", "base_sha256": "sha", "proposed_content": "content"}),
+        ("doc_body_apply", {"boi_id": "boi:public:sop:equipment-abnormal-response", "base_sha256": "sha", "proposed_body": "# Body"}),
     ]
 
     for operation, payload in cases:
@@ -4262,6 +4266,69 @@ def test_boi_agent_approve_promotion_submit_uses_validation_path(boi_app_module)
     detail = response.json()["detail"]
     assert detail["status"] == "validation_failed"
     assert "potential secret token detected" in detail["validation"]["errors"]
+
+
+def test_boi_agent_approve_source_apply_uses_validated_source_apply_path(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "agent-src123"})
+    client = TestClient(boi_app_module.app)
+    source_ref = "data/boi/public/sop/equipment-abnormal-response.md"
+    source_path = boi_app_module.DATA_ROOT / "public" / "sop" / "equipment-abnormal-response.md"
+    before = source_path.read_text(encoding="utf-8")
+    source = client.get(f"/api/source?employee_id=100001&path={source_ref}").json()
+
+    response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "source_apply",
+            "user_confirmed": True,
+            "note": "agent source apply test",
+            "payload": {
+                "path": source_ref,
+                "base_sha256": source["sha256"],
+                "proposed_content": before + "\n<!-- agent source apply test -->\n",
+                "author": "100001",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"] == "source_apply"
+    assert body["status"] == "applied"
+    assert body["result"]["commit_hash"] == "agent-src123"
+    assert "agent source apply test" in source_path.read_text(encoding="utf-8")
+
+
+def test_boi_agent_approve_doc_body_apply_uses_validated_body_apply_path(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "agent-body123"})
+    client = TestClient(boi_app_module.app)
+    boi_id = "boi:public:sop:equipment-abnormal-response"
+    source_path = boi_app_module.DATA_ROOT / "public" / "sop" / "equipment-abnormal-response.md"
+    before = source_path.read_text(encoding="utf-8")
+    editor = client.get(f"/api/docs/{boi_id}/body-editor?employee_id=100001").json()
+
+    response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "doc_body_apply",
+            "user_confirmed": True,
+            "note": "agent body apply test",
+            "payload": {
+                "boi_id": boi_id,
+                "base_sha256": editor["base_sha256"],
+                "proposed_body": "# Agent Body Apply\n\n본문 apply 테스트",
+                "author": "100001",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"] == "doc_body_apply"
+    assert body["status"] == "applied"
+    assert body["result"]["commit_hash"] == "agent-body123"
+    assert "Agent Body Apply" in source_path.read_text(encoding="utf-8")
+    assert source_path.read_text(encoding="utf-8") != before
 
 
 def test_pet_agent_mount_is_available_on_home(boi_app_module):

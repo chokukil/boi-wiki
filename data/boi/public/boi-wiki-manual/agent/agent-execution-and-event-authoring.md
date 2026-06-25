@@ -47,6 +47,8 @@ flowchart TD
   EXEC -->|promotion_submit| PROMO["promotion validation + publish"]
   EXEC -->|event_type_draft| DRAFT["draft + catalog patch proposal"]
   EXEC -->|event_type_draft_apply| APPLY["validated catalog apply"]
+  EXEC -->|source_apply| SRC["validated source apply + commit"]
+  EXEC -->|doc_body_apply| BODY["validated body apply + commit"]
 ```
 
 # API / MCP Contract
@@ -104,8 +106,12 @@ Agent는 실행 대상을 임의로 추정하지 않는다. 아래처럼 필수 
 | `manual_handoff_complete` | Inbox task + 조치 내용 | Inbox 카드에서 조치 내용을 입력 | append-only completion row |
 | `event_type_draft` | versioned Event Type | `maintenance.inspection.completed.v1 이벤트 타입 초안 만들어줘` | Draft + catalog patch proposal |
 | `event_type_draft_apply` | validated `draft_id` | 검토된 Event Type 초안을 catalog에 반영 | validated source edit + commit |
+| `source_apply` | source path + base SHA + proposed content | 검토한 source 변경을 반영해줘 | `/api/source/apply`와 같은 validation + commit |
+| `doc_body_apply` | BoI id + base SHA + proposed body | 이 문서 Body 수정안을 반영해줘 | `/api/docs/{boi_id}/body-apply`와 같은 validation + commit |
 
-확인 카드가 반환되어도 실제 상태 변경은 아직 일어나지 않는다. 사용자가 카드의 primary action을 눌러 `/api/agents/boi-wiki/approve`가 호출되고, RBAC/ACL/classification 검증을 다시 통과해야만 Event, Action, Workflow, draft 생성, 검증된 Event Type catalog 반영이 실행된다.
+확인 카드가 반환되어도 실제 상태 변경은 아직 일어나지 않는다. 사용자가 카드의 primary action을 눌러 `/api/agents/boi-wiki/approve`가 호출되고, RBAC/ACL/classification 검증을 다시 통과해야만 Event, Action, Workflow, draft 생성, 검증된 Event Type catalog 반영, source/body apply가 실행된다.
+
+`source_apply`와 `doc_body_apply`는 Agent 전용 우회 경로가 아니다. 둘 다 `boi.editor` 권한을 요구하고, 기존 Web 편집의 preview, base SHA stale check, source validation, secret scan, rollback, Git commit 정책을 그대로 재사용한다. Agent는 변경 내용을 대신 적용할 수 있지만, 사용자의 명시 확인과 기존 apply validator를 건너뛰면 안 된다.
 
 직접 API를 호출하는 자동화도 같은 경계를 따른다. `/api/workflows/{workflow_key}/start`와 demo workflow start는 entry event를 발행하므로 요청 body에 `user_confirmed: true`가 없으면 400으로 차단된다. PoC 스크립트와 curl 예시는 이 값을 명시해야 하며, 이 control field는 실제 Event payload에는 포함하지 않는다.
 
@@ -166,6 +172,8 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 | API | Purpose |
 |---|---|
 | `POST /api/agents/boi-wiki/approve` | confirmed execution gateway |
+| `POST /api/source/apply` | validated source apply and commit path reused by `source_apply` |
+| `POST /api/docs/{boi_id}/body-apply` | validated body-only apply and commit path reused by `doc_body_apply` |
 | `POST /api/agents/boi-wiki/inbox/{task_id}/snooze` | user-confirmed append-only inbox snooze row |
 | `POST /api/agents/boi-wiki/inbox/{task_id}/dismiss` | user-confirmed append-only inbox dismiss row |
 | `POST /api/promotions/submit` | user-confirmed Team/Public promotion validation and publish path |

@@ -8777,6 +8777,8 @@ def agent_operation_required_role(operation: str) -> str:
         return "boi.action_invoker"
     if normalized in {"event_type_draft", "create_event_type_draft"}:
         return "boi.editor"
+    if normalized in {"source_apply", "doc_body_apply"}:
+        return "boi.editor"
     if normalized in {"event_type_draft_apply", "apply_event_type_draft", "promotion_submit", "submit_promotion"}:
         return "boi.promoter"
     return ""
@@ -9823,6 +9825,18 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
             },
         )
         return {"ok": True, "operation": operation, "status": "executed", "result": result}
+    if operation == "source_apply":
+        result = await apply_source_edit_api(SourceApplyRequest(**payload), employee_id)
+        append_rbac_audit(employee_id, "agent_source_apply", {"path": payload.get("path"), "note": req.note})
+        return {"ok": True, "operation": operation, "status": "applied", "result": result}
+    if operation == "doc_body_apply":
+        boi_id = str(payload.get("boi_id") or "")
+        if not boi_id:
+            raise HTTPException(status_code=400, detail="boi_id is required")
+        body_payload = {key: value for key, value in payload.items() if key != "boi_id"}
+        result = await apply_doc_body_edit(boi_id, BodyApplyRequest(**body_payload), employee_id)
+        append_rbac_audit(employee_id, "agent_doc_body_apply", {"boi_id": boi_id, "note": req.note})
+        return {"ok": True, "operation": operation, "status": "applied", "result": result}
     raise HTTPException(status_code=400, detail=f"unsupported Agent approval operation: {req.operation}")
 
 
