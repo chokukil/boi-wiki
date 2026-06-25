@@ -70,6 +70,7 @@ flowchart TD
 
 - 팀 문서는 팀 멤버에게만 보인다.
 - `team_id`와 `acl:team:{team_id}`가 다르면 lint와 access decision에서 실패한다.
+- `team_id` 또는 `acl_policy`가 빠진 team 문서는 팀 멤버에게도 노출하지 않는다.
 - role binding은 문서 visibility를 넓히지 않는다. 문서 접근은 BoI Profile ACL을 먼저 통과해야 한다.
 - Admin도 private 문서 원문 열람은 기본 차단되며 break-glass 사유와 audit이 필요하다.
 - Break-glass는 정상 BoI Profile에 대한 예외 접근일 뿐이다. path, owner, `acl_policy`, `team_id`가 충돌하는 구조적 오류는 break-glass로도 우회하지 않는다.

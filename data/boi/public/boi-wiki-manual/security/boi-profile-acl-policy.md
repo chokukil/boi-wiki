@@ -55,11 +55,13 @@ flowchart TD
 
 | Visibility | Required path | Required ACL |
 |---|---|---|
-| `private` | `data/boi/private/{숫자 사번}/...` | `owner`와 `acl:private:{사번}`이 path 사번과 일치 |
-| `team` | `data/boi/team/{team_id}/...` | `team_id`, `acl:team:{team_id}`, 팀 멤버십 일치 |
+| `private` | `data/boi/private/{숫자 사번}/...` | `owner`, `acl_policy: acl:private:{사번}`, 요청 사번이 모두 path 사번과 일치 |
+| `team` | `data/boi/team/{team_id}/...` | `team_id`, `acl_policy: acl:team:{team_id}`, 팀 멤버십이 모두 일치 |
 | `public` | `data/boi/public/...` | `acl:public` |
 
 `classification`은 접근을 넓히지 않는다. 이미 읽을 수 있는 문서에 추가 제한을 거는 용도다.
+
+Private과 team 문서는 필수 ACL metadata가 빠져도 차단된다. 예를 들어 private 문서가 올바른 사번 폴더 아래에 있더라도 `owner`나 `acl_policy`가 없으면 `AccessPolicyDecision.can_read=false`가 된다. Team 문서도 `team_id` 또는 `acl_policy`가 빠지면 팀 멤버에게도 노출하지 않는다.
 
 # Decision Fields
 
@@ -80,7 +82,7 @@ flowchart TD
 
 # Lint Boundary
 
-OKF lint는 private/team/public 경로와 ACL 문자열 정책을 검사한다. private 문서가 `data/boi/private/me` 같은 legacy 경로에 있거나 owner가 path 사번과 다르면 실패해야 한다.
+OKF lint는 private/team/public 경로와 ACL 문자열 정책을 검사한다. private 문서가 `data/boi/private/me` 같은 legacy 경로에 있거나 `owner`/`acl_policy`가 빠졌거나 path 사번과 다르면 실패해야 한다. Team 문서도 `team_id`/`acl_policy` 누락 또는 path team과 metadata team 불일치를 실패로 처리해야 한다.
 
 # Break-Glass Boundary
 

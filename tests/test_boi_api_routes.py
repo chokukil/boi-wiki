@@ -1486,6 +1486,111 @@ def test_rbac_me_and_doc_access_guard_private_boi(boi_app_module):
     assert "another employee" in " ".join(denied.json()["access"]["reasons"])
 
 
+def test_doc_access_rejects_private_docs_missing_required_acl_fields(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    cases = [
+        (
+            "boi:private:100001:missing-owner-policy-test",
+            {
+                "acl_policy": "acl:private:100001",
+            },
+            "private owner is required",
+        ),
+        (
+            "boi:private:100001:missing-acl-policy-test",
+            {
+                "owner": "100001",
+            },
+            "private acl_policy is required",
+        ),
+    ]
+    for boi_id, required_field_subset, expected_reason in cases:
+        metadata = {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/reference",
+            "title": f"Malformed Private ACL {boi_id}",
+            "description": "private docs must declare owner and acl_policy explicitly",
+            "tags": ["ACL"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": boi_id,
+            "visibility": "private",
+            "classification": "internal",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "acl-required-fields"}],
+        }
+        metadata.update(required_field_subset)
+        path = boi_app_module.DATA_ROOT / "private" / "100001" / f"{boi_app_module.safe_filename(boi_id)}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            boi_app_module.compose_markdown(metadata, "# Summary\n\nmalformed private ACL fixture"),
+            encoding="utf-8",
+        )
+
+        boi_app_module.invalidate_doc_caches()
+        response = client.get(f"/api/docs/{boi_id}/access?employee_id=100001")
+
+        assert response.status_code == 200
+        access = response.json()["access"]
+        assert access["can_read"] is False
+        assert expected_reason in access["reasons"]
+
+
+def test_doc_access_rejects_team_docs_missing_required_acl_fields(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    cases = [
+        (
+            "boi:team:platform:missing-team-id-policy-test",
+            {
+                "acl_policy": "acl:team:platform",
+            },
+            "team_id is required",
+        ),
+        (
+            "boi:team:platform:missing-team-acl-policy-test",
+            {
+                "team_id": "platform",
+            },
+            "team acl_policy is required",
+        ),
+    ]
+    for boi_id, required_field_subset, expected_reason in cases:
+        metadata = {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/reference",
+            "title": f"Malformed Team ACL {boi_id}",
+            "description": "team docs must declare team_id and acl_policy explicitly",
+            "tags": ["ACL"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": boi_id,
+            "visibility": "team",
+            "classification": "internal",
+            "owner": "platform",
+            "author": {"type": "agent", "agent_id": "pytest"},
+            "status": "draft",
+            "source_refs": [{"type": "test", "ref": "team-acl-required-fields"}],
+        }
+        metadata.update(required_field_subset)
+        path = boi_app_module.DATA_ROOT / "team" / "platform" / f"{boi_app_module.safe_filename(boi_id)}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            boi_app_module.compose_markdown(metadata, "# Summary\n\nmalformed team ACL fixture"),
+            encoding="utf-8",
+        )
+
+        boi_app_module.invalidate_doc_caches()
+        response = client.get(f"/api/docs/{boi_id}/access?employee_id=100001")
+
+        assert response.status_code == 200
+        access = response.json()["access"]
+        assert access["can_read"] is False
+        assert expected_reason in access["reasons"]
+
+
 def test_dev_unknown_employee_gets_viewer_only_rbac(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -4748,7 +4853,7 @@ def test_doc_page_renders_markdown_body(boi_app_module):
             "visibility": "private",
             "classification": "internal",
             "owner": "100001",
-            "acl_policy": {"agent": "boi-writer-v0.1"},
+            "acl_policy": "acl:private:100001",
             "status": "draft",
         },
         "# Summary\n\n본문이 **굵게** 보이고 `inline code`도 보입니다.\n\n1. 첫 번째 확인\n2. 두 번째 확인\n\n- [x] 완료 항목\n- [ ] 대기 항목\n+ 플러스 목록도 지원\n\n| 항목 | 상태 |\n|---|---|\n| Markdown | OK |\n\n항목 | 상태\n--- | ---\nGFM table | OK\n\n| Case | Value | Link |\n| --- | --- | --- |\n| escaped pipe | A\\|B | [SOP](/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001) |\n| code pipe | `a|b` | [Pipe URL](/events?employee_id=100001&trace_id=trace-a|b) |\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\n```python\nprint('plain code')\n```",
@@ -5642,7 +5747,7 @@ def test_doc_page_does_not_rescan_docs_for_each_markdown_link(boi_app_module, mo
             "visibility": "private",
             "classification": "internal",
             "owner": "100001",
-            "acl_policy": {"agent": "boi-writer-v0.1"},
+            "acl_policy": "acl:private:100001",
             "status": "draft",
         },
         "# Summary\n\n" + repeated_links,

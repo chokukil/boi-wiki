@@ -82,28 +82,42 @@ def doc_access_policy(
     elif visibility == "team":
         path_team = parts[1] if len(parts) >= 2 and parts[0] == "team" else ""
         effective_team = team_id or path_team
+        if not path_team:
+            reasons.append("team document is not stored under team/{team_id}")
+        if not team_id:
+            reasons.append("team_id is required")
         if path_team and team_id and path_team != team_id:
             reasons.append("team path and metadata.team_id mismatch")
-        acl_team = path_team or effective_team
-        if acl_policy and acl_team and acl_policy != f"acl:team:{acl_team}":
+        acl_team = team_id or path_team
+        if not acl_policy:
+            reasons.append("team acl_policy is required")
+        elif acl_team and acl_policy != f"acl:team:{acl_team}":
             reasons.append("team acl_policy mismatch")
-        can_read = bool(effective_team and effective_team in set(teams)) and not reasons
+        if not reasons:
+            can_read = bool(effective_team and effective_team in set(teams))
+            if not can_read:
+                reasons.append("employee is not member of team")
         team_id = effective_team
     elif visibility == "private":
         path_employee = parts[1] if len(parts) >= 2 and parts[0] == "private" else ""
         if not path_employee:
             reasons.append("private document is not stored under private/{employee_id}")
-        if owner and owner != path_employee:
+        if not owner:
+            reasons.append("private owner is required")
+        elif path_employee and owner != path_employee:
             reasons.append("private owner does not match path employee")
-        if acl_policy and path_employee and acl_policy != f"acl:private:{path_employee}":
+        if not acl_policy:
+            reasons.append("private acl_policy is required")
+        elif path_employee and acl_policy != f"acl:private:{path_employee}":
             reasons.append("private acl_policy mismatch")
-        if path_employee == employee_id and not reasons:
-            can_read = True
-        elif break_glass and is_admin and path_employee and not reasons:
-            can_read = True
-            reasons.append("break-glass admin read")
-        else:
-            reasons.append("private document belongs to another employee")
+        if not reasons:
+            if path_employee == employee_id:
+                can_read = True
+            elif break_glass and is_admin and path_employee:
+                can_read = True
+                reasons.append("break-glass admin read")
+            else:
+                reasons.append("private document belongs to another employee")
     else:
         reasons.append("unknown visibility")
 
