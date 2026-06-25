@@ -227,6 +227,8 @@ BOI_AGENT_EXECUTION_CARD_FIELDS = [
     "message",
     "primary_label",
     "payload",
+    "required_role",
+    "permission",
     "requires_confirmation",
     "user_confirmed_required",
     "approve_url",
@@ -269,6 +271,8 @@ BOI_AGENT_RESPONSE_SCHEMA = {
                     "user_confirmed_required": {"type": "boolean"},
                     "approve_url": {"type": "string"},
                     "payload": {"type": "object", "additionalProperties": True},
+                    "required_role": {"type": "string"},
+                    "permission": {"type": "object", "additionalProperties": True},
                     "display": {"type": "object", "additionalProperties": True},
                     "technical_details": {"type": "object", "additionalProperties": True},
                 },
@@ -8757,7 +8761,27 @@ def execution_cards_from_artifacts(artifacts: list[dict[str, Any]]) -> list[dict
     return cards
 
 
-def normalize_agent_execution_cards(value: Any) -> list[dict[str, Any]]:
+def agent_operation_required_role(operation: str) -> str:
+    normalized = str(operation or "").strip()
+    if normalized in {"event_publish", "publish_event", "workflow_start", "start_workflow", "manual_handoff_complete", "manual_complete"}:
+        return "boi.workflow_runner"
+    if normalized in {"action_invoke", "invoke_action"}:
+        return "boi.action_invoker"
+    if normalized in {"event_type_draft", "create_event_type_draft"}:
+        return "boi.editor"
+    if normalized in {"event_type_draft_apply", "apply_event_type_draft", "promotion_submit", "submit_promotion"}:
+        return "boi.promoter"
+    return ""
+
+
+def agent_operation_permission_decision(employee_id: str, operation: str) -> dict[str, Any]:
+    required_role = agent_operation_required_role(operation)
+    if not required_role:
+        return {"allowed": True, "reason": "no_role_required", "role": "", "scope": "agent_approve", "resource": operation}
+    return role_binding_decision(employee_id, required_role, scope="agent_approve", resource=operation)
+
+
+def normalize_agent_execution_cards(value: Any, employee_id: str) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     cards: list[dict[str, Any]] = []
@@ -8770,6 +8794,14 @@ def normalize_agent_execution_cards(value: Any) -> list[dict[str, Any]]:
         primary_label = str(item.get("primary_label") or "확인 후 실행")
         display = item.get("display") if isinstance(item.get("display"), dict) else {}
         technical_details = item.get("technical_details") if isinstance(item.get("technical_details"), dict) else {}
+        required_role = str(item.get("required_role") or agent_operation_required_role(operation))
+        permission = item.get("permission") if isinstance(item.get("permission"), dict) else agent_operation_permission_decision(employee_id, operation)
+        allowed = bool(permission.get("allowed", True))
+        status_label = str(display.get("status_label") or ("확인 필요" if allowed else "권한 필요"))
+        risk_label = str(
+            display.get("risk_label")
+            or ("명시 확인 후 실행" if allowed else f"권한 필요: {required_role or 'unknown'}")
+        )
         normalized = {
             **item,
             "contract_version": BOI_AGENT_RESPONSE_CONTRACT_VERSION,
@@ -8779,23 +8811,26 @@ def normalize_agent_execution_cards(value: Any) -> list[dict[str, Any]]:
             "message": message,
             "primary_label": primary_label,
             "payload": item.get("payload") if isinstance(item.get("payload"), dict) else {},
+            "required_role": required_role,
+            "permission": permission,
             "requires_confirmation": bool(item.get("requires_confirmation", True)),
             "user_confirmed_required": bool(item.get("user_confirmed_required", True)),
             "approve_url": str(item.get("approve_url") or "/api/agents/boi-wiki/approve"),
             "display": {
                 "title": str(display.get("title") or title),
-                "status_label": str(display.get("status_label") or "확인 필요"),
+                "status_label": status_label,
                 "why_it_matters": str(
                     display.get("why_it_matters")
                     or message
                     or "이 요청은 BoI Wiki 상태를 변경할 수 있어 실행 전 확인이 필요합니다."
                 ),
                 "next_action": str(display.get("next_action") or primary_label),
-                "risk_label": str(display.get("risk_label") or "명시 확인 후 실행"),
+                "risk_label": risk_label,
                 **{k: v for k, v in display.items() if k not in {"title", "status_label", "why_it_matters", "next_action", "risk_label"}},
             },
             "technical_details": {
                 "operation": operation,
+                "required_role": required_role,
                 **technical_details,
             },
         }
@@ -8855,7 +8890,7 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
         if cards:
             response["execution_cards"] = cards
     response.setdefault("execution_cards", [])
-    response["execution_cards"] = normalize_agent_execution_cards(response.get("execution_cards"))
+    response["execution_cards"] = normalize_agent_execution_cards(response.get("execution_cards"), employee_id)
     display_markdown = markdown_without_duplicate_mermaid_artifacts(answer_markdown, artifacts)
     response["display_markdown"] = display_markdown
     response["answer_html"] = (

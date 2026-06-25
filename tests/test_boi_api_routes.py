@@ -196,6 +196,9 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert "execution_card_fields" in body["response_contract"]
     assert body["response_contract"]["schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
     assert "mermaid" in body["response_contract"]["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
+    card_schema = body["response_contract"]["schema"]["properties"]["execution_cards"]["items"]["properties"]
+    assert card_schema["required_role"]["type"] == "string"
+    assert card_schema["permission"]["type"] == "object"
     assert "progressive response streaming" in body["features"]
     for operation in body["supported_execution_cards"]:
         assert operation in body["write_confirmation_required"]
@@ -1090,6 +1093,40 @@ def test_boi_agent_chat_normalizes_execution_cards_to_agent_schema(boi_app_modul
     assert card["approve_url"] == "/api/agents/boi-wiki/approve"
     assert card["display"]["next_action"]
     assert card["technical_details"]["operation"] == "event_publish"
+
+
+def test_boi_agent_execution_cards_include_required_role_and_permission_decision(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def minimal_card_response(req, employee_id):
+        return {
+            "ok": True,
+            "used_backend": "test_minimal_backend",
+            "answer_markdown": "이 작업은 실행 전 확인이 필요합니다.",
+            "execution_cards": [
+                {
+                    "operation": "event_publish",
+                    "title": "이벤트 발행 확인",
+                    "payload": {"event_type": "meeting.closed.v1"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", minimal_card_response)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100003",
+        json={"question": "meeting.closed.v1 이벤트를 발행해줘", "current_url": "/events"},
+    )
+
+    assert response.status_code == 200
+    card = response.json()["execution_cards"][0]
+    assert card["required_role"] == "boi.workflow_runner"
+    assert card["permission"]["allowed"] is False
+    assert card["permission"]["role"] == "boi.workflow_runner"
+    assert card["display"]["status_label"] == "권한 필요"
+    assert "boi.workflow_runner" in card["display"]["risk_label"]
+    assert card["technical_details"]["required_role"] == "boi.workflow_runner"
 
 
 def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_module, monkeypatch):
@@ -4561,9 +4598,26 @@ const message = {
     { type: "confirmation_required", title: "요청 실행 전 확인", data: { operation: "event_publish", payload: { event_type: "demo.v1" }, primary_label: "요청 실행" } },
   ],
 };
+const executionOnlyMessage = {
+  text: "실행 전 확인이 필요합니다.",
+  artifacts: [],
+  executionCards: [
+    {
+      operation: "event_publish",
+      title: "이벤트 발행 확인",
+      primary_label: "요청 실행",
+      required_role: "boi.workflow_runner",
+      permission: { allowed: false, reason: "missing_role", role: "boi.workflow_runner" },
+      payload: { event_type: "demo.v1" },
+      display: { status_label: "권한 필요", risk_label: "권한 필요: boi.workflow_runner" },
+      technical_details: { operation: "event_publish", required_role: "boi.workflow_runner" },
+    },
+  ],
+};
 
 const items = window.BoiAgentMarkdownDebug.artifactItems(message);
 const html = window.BoiAgentMarkdownDebug.renderArtifacts(message, 0);
+const executionHtml = window.BoiAgentMarkdownDebug.renderArtifacts(executionOnlyMessage, 1);
 console.log(JSON.stringify({
   artifactItemCount: items.length,
   mermaidDiagramCount: (html.match(/mermaid-diagram/g) || []).length,
@@ -4574,6 +4628,8 @@ console.log(JSON.stringify({
   hasImageViewerButton: html.includes("BoI Agent pet") && html.includes("data-open-artifact"),
   hasConfirmationCard: html.includes("요청 실행 전 확인") && html.includes("data-agent-approve"),
   hasTechnicalDetails: html.includes("기술 세부정보"),
+  rendersExecutionCards: executionHtml.includes("이벤트 발행 확인") && executionHtml.includes("권한 필요"),
+  disablesDeniedExecution: executionHtml.includes("boi.workflow_runner") && !executionHtml.includes("data-agent-approve data-operation"),
 }));
 """
     result = subprocess.run(
@@ -4595,6 +4651,8 @@ console.log(JSON.stringify({
     assert payload["hasImageViewerButton"]
     assert payload["hasConfirmationCard"]
     assert payload["hasTechnicalDetails"]
+    assert payload["rendersExecutionCards"]
+    assert payload["disablesDeniedExecution"]
 
 
 def test_server_markdown_renderer_handles_agent_quote_hr_and_inline_styles(boi_app_module):

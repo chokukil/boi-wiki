@@ -512,7 +512,9 @@
   function artifactItems(message) {
     const markdownMermaid = mermaidSourcesFromMarkdown(message.text || "");
     const seenMermaidSources = new Set();
-    return (message.artifacts || []).filter((artifact) => {
+    const seenConfirmation = new Set();
+    const artifacts = [...(message.artifacts || []), ...executionCardArtifacts(message)];
+    return artifacts.filter((artifact) => {
       if (!artifact || typeof artifact !== "object") return false;
       if (artifact.type === "mermaid" && artifact.source) {
         const source = normalizeMermaidSource(artifact.source);
@@ -520,8 +522,36 @@
         seenMermaidSources.add(source);
         if (markdownMermaid.has(source)) return true;
       }
+      if (artifact.type === "confirmation_required") {
+        const data = artifact.data || {};
+        const key = `${data.operation || ""}:${JSON.stringify(data.payload || {})}`;
+        if (seenConfirmation.has(key)) return false;
+        seenConfirmation.add(key);
+      }
       return true;
     });
+  }
+
+  function executionCardArtifacts(message) {
+    const cards = message.executionCards || message.execution_cards || [];
+    if (!Array.isArray(cards)) return [];
+    return cards
+      .filter((card) => card && typeof card === "object")
+      .map((card) => ({
+        type: "confirmation_required",
+        title: card.title || card.operation || "확인 필요",
+        data: {
+          ...card,
+          operation: card.operation || card.type || "",
+          payload: card.payload || {},
+          primary_label: card.primary_label || card.display?.next_action || "확인 후 실행",
+          message: card.message || card.display?.why_it_matters || "",
+          required_role: card.required_role || card.technical_details?.required_role || "",
+          permission: card.permission || {},
+          display: card.display || {},
+          technical_details: card.technical_details || {},
+        },
+      }));
   }
 
   function mermaidSourcesFromArtifacts(message) {
@@ -568,6 +598,12 @@
     const title = artifact.title || data.title || "확인 필요";
     const message = data.message || "상태 변경이나 승인 절차가 필요한 요청입니다. 내용을 확인한 뒤 명시적으로 실행해야 합니다.";
     const primaryLabel = data.primary_label || (canExecute ? "요청 실행" : "먼저 확인");
+    const display = data.display && typeof data.display === "object" ? data.display : {};
+    const permission = data.permission && typeof data.permission === "object" ? data.permission : {};
+    const permissionAllowed = permission.allowed !== false;
+    const requiredRole = data.required_role || data.technical_details?.required_role || permission.role || "";
+    const statusLabel = display.status_label || (permissionAllowed ? "확인 필요" : "권한 필요");
+    const riskLabel = display.risk_label || (permissionAllowed ? "명시 확인 후 실행" : `권한 필요${requiredRole ? `: ${requiredRole}` : ""}`);
     const payloadJson = JSON.stringify(payload);
     return `
       <div class="boi-agent-artifact boi-agent-confirmation-card" data-viewer-id="${escapeAttr(viewerId)}">
@@ -575,13 +611,17 @@
           <strong>${escapeHtml(title)}</strong>
           <button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button>
         </div>
+        <div class="boi-agent-task-status">
+          <span>${escapeHtml(statusLabel)}</span>
+          <small>${escapeHtml(riskLabel)}</small>
+        </div>
         <p>${escapeHtml(message)}</p>
         <div class="boi-agent-confirmation-actions">
           <label class="boi-agent-approve-note">
             <span>실행 사유 / 메모</span>
             <textarea data-agent-approve-note placeholder="필요 시 승인 메모를 남깁니다. 다른 사번 대신 실행하는 예외 사유는 별도 admin_override_reason으로만 처리됩니다."></textarea>
           </label>
-          ${canExecute ? `<button type="button" data-agent-approve data-operation="${escapeAttr(operation)}" data-payload="${escapeAttr(payloadJson)}">${escapeHtml(primaryLabel)}</button>` : `<span>${escapeHtml(primaryLabel)}</span>`}
+          ${canExecute && permissionAllowed ? `<button type="button" data-agent-approve data-operation="${escapeAttr(operation)}" data-payload="${escapeAttr(payloadJson)}">${escapeHtml(primaryLabel)}</button>` : `<span>${escapeHtml(permissionAllowed ? primaryLabel : "권한이 필요합니다")}</span>`}
         </div>
         <details class="boi-agent-technical">
           <summary>기술 세부정보</summary>
@@ -589,6 +629,8 @@
             ${data.route ? `<div><dt>Route</dt><dd>${escapeHtml(data.route)}</dd></div>` : ""}
             ${data.intent ? `<div><dt>Intent</dt><dd>${escapeHtml(data.intent)}</dd></div>` : ""}
             ${operation ? `<div><dt>Operation</dt><dd>${escapeHtml(operation)}</dd></div>` : ""}
+            ${requiredRole ? `<div><dt>Required role</dt><dd>${escapeHtml(requiredRole)}</dd></div>` : ""}
+            ${permission.reason ? `<div><dt>Permission</dt><dd>${escapeHtml(permission.reason)}</dd></div>` : ""}
           </dl>
           ${Object.keys(payload).length ? `<pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre>` : ""}
         </details>
@@ -1220,6 +1262,7 @@
           guardrails_applied: body.guardrails_applied || [],
         },
         artifacts: body.artifacts || [],
+        executionCards: body.execution_cards || [],
       };
       state.currentStatus = "";
       refreshSuggestions();

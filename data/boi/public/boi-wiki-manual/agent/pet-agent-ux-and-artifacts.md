@@ -108,6 +108,21 @@ Pet Agent는 서버가 내려준 `answer_markdown`을 그대로 원문 텍스트
 
 Markdown 본문 스타일은 메시지 작성자 라벨 스타일과 분리한다. 예를 들어 `**굵게**`는 문단 안의 inline emphasis로 남아야 하며, 작성자 라벨처럼 block으로 떨어지면 안 된다. 표 parser는 inline code, link URL, escaped pipe 안의 `|`를 셀 분리자로 오해하지 않아야 한다.
 
+# Execution Cards
+
+상태 변경이 필요한 Agent 응답은 `artifacts`에 confirmation card를 넣을 수도 있고, canonical field인 `execution_cards`에만 넣을 수도 있다. Pet UI는 둘을 같은 승인 카드로 렌더링해야 하며, 같은 operation/payload가 양쪽에 중복되어 있으면 한 번만 보여준다. 이 규칙 덕분에 Web Pet, REST API client, MCP client가 같은 `boi-agent.response.v1` 응답을 소비할 수 있다.
+
+실행 카드는 권한 판단을 UI가 추정하지 않는다. 서버가 내려준 `required_role`과 `permission`을 표시하고, `permission.allowed`가 `false`이면 primary 실행 버튼을 만들지 않는다. 사용자에게는 `권한 필요`와 필요한 role을 보여주고, 자세한 role binding 사유는 `기술 세부정보`에 접는다.
+
+| Field | UI behavior |
+|---|---|
+| `display.title` | 카드 제목 |
+| `display.status_label` | `먼저 확인`, `승인 필요`, `권한 필요` 같은 업무 상태 |
+| `display.risk_label` | 고위험/권한 필요/일반 요청 표시 |
+| `required_role` | 필요한 role을 technical details와 권한 안내에 표시 |
+| `permission.allowed=false` | 실행 버튼 숨김, `권한이 필요합니다` 안내 표시 |
+| `technical_details` | operation, required role, trace/action id 같은 식별자를 접힌 영역에 표시 |
+
 # Artifact Viewer
 
 Artifact는 채팅 안에서는 compact하게 보이고, `크게 보기`를 누르면 modal viewer에서 크게 확인한다. Viewer 대상은 Mermaid, table, image, task card, confirmation card다. Markdown image도 이미지를 클릭하면 같은 viewer로 열린다. Mermaid는 Markdown fenced block과 artifact가 같은 source를 포함하면 하나만 렌더링하고, artifacts 배열 안에 같은 source가 중복되어도 한 번만 보여준다.

@@ -136,6 +136,8 @@ AGENT_RESPONSE_SCHEMA = {
                     "user_confirmed_required": {"type": "boolean"},
                     "approve_url": {"type": "string"},
                     "payload": {"type": "object", "additionalProperties": True},
+                    "required_role": {"type": "string"},
+                    "permission": {"type": "object", "additionalProperties": True},
                     "display": {"type": "object", "additionalProperties": True},
                     "technical_details": {"type": "object", "additionalProperties": True},
                 },

@@ -61,6 +61,9 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "tool_trace" in body["agent_response_contract"]["required_fields"]
     assert "access_summary" in body["agent_response_contract"]["required_fields"]
     assert "guardrails_applied" in body["agent_response_contract"]["required_fields"]
+    card_schema = body["agent_response_schema"]["properties"]["execution_cards"]["items"]["properties"]
+    assert card_schema["required_role"]["type"] == "string"
+    assert card_schema["permission"]["type"] == "object"
     assert "mermaid" in body["agent_response_contract"]["artifact_types"]
     assert "gap_table" in body["agent_response_contract"]["artifact_types"]
     tool_names = [item["name"] for item in body["capability_lists"]["tools"]]

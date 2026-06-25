@@ -68,7 +68,17 @@ BoI Agent의 기준 인터페이스는 Web Pet UI가 아니라 `/api/agents/boi-
 | `guardrails_applied` | 적용된 ACL/RBAC/safety guardrail |
 | `agent_contract_version` | 현재 응답 계약 버전 |
 
-`execution_cards`는 Web UI 전용 데이터가 아니다. MCP client나 외부 시스템도 이 카드의 `approve_url`, `operation`, `payload`, `user_confirmed_required`, `display`, `technical_details`를 사용해 같은 승인 UX를 만들 수 있다. 실제 실행은 카드 표시 시점이 아니라 `/api/agents/boi-wiki/approve` 호출 시점에 다시 RBAC/ACL/classification 검증을 거친다.
+`execution_cards`는 Web UI 전용 데이터가 아니다. MCP client나 외부 시스템도 이 카드의 `approve_url`, `operation`, `payload`, `user_confirmed_required`, `display`, `technical_details`, `required_role`, `permission`을 사용해 같은 승인 UX를 만들 수 있다. 실제 실행은 카드 표시 시점이 아니라 `/api/agents/boi-wiki/approve` 호출 시점에 다시 RBAC/ACL/classification 검증을 거친다.
+
+권한 판단도 클라이언트가 추정하지 않는다. Agent API는 operation별 최소 role을 `required_role`에 넣고, 현재 사번 기준 role binding 결과를 `permission`에 넣는다. `permission.allowed`가 `false`이면 Web Pet은 실행 버튼을 표시하지 않고 `권한 필요` 상태만 보여준다. MCP client도 같은 필드를 읽어 사용자에게 “필요 권한”과 “거부 사유”를 설명해야 하며, 권한이 없는 상태에서 `approve`를 호출해도 서버가 다시 차단한다.
+
+| Card field | Compatibility rule |
+|---|---|
+| `operation` | Web/API/MCP가 같은 mutation 종류로 해석한다. |
+| `required_role` | operation 실행에 필요한 BoI RBAC role이다. |
+| `permission.allowed` | 현재 사번이 이 role을 가진 경우에만 `true`다. |
+| `display.status_label` | 일반 사용자에게 보일 상태 문구다. 권한이 없으면 `권한 필요`를 사용한다. |
+| `technical_details.required_role` | audit/debug용으로 같은 role을 보존한다. |
 
 # User-facing Wording
 
