@@ -7360,30 +7360,24 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
 
 def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *, repair: dict[str, Any] | None = None) -> dict[str, Any]:
     source_payload = payload if isinstance(payload, dict) else {}
-    if repair:
-        user_payload = {
-            "employee_id": employee_id,
-            "question": source_payload.get("question") or "",
-            "route": source_payload.get("route") or "",
-            "intent": source_payload.get("intent") or "",
-            "page_context": source_payload.get("page_context") or {},
-            "search_matches": [
-                {
-                    "label": item.get("label"),
-                    "kind": item.get("kind"),
-                    "type": item.get("type"),
-                    "url": item.get("url"),
-                }
-                for item in (source_payload.get("search_matches") or [])[:4]
-                if isinstance(item, dict)
-            ],
-            "structured_draft": text_excerpt(str(source_payload.get("structured_draft") or ""), 1400),
-        }
-    else:
-        user_payload = {
-            "employee_id": employee_id,
-            **source_payload,
-        }
+    user_payload = {
+        "employee_id": employee_id,
+        "question": source_payload.get("question") or "",
+        "route": source_payload.get("route") or "",
+        "intent": source_payload.get("intent") or "",
+        "page_context": source_payload.get("page_context") or {},
+        "search_matches": [
+            {
+                "label": item.get("label"),
+                "kind": item.get("kind"),
+                "type": item.get("type"),
+                "url": item.get("url"),
+            }
+            for item in (source_payload.get("search_matches") or [])[:4]
+            if isinstance(item, dict)
+        ],
+        "structured_draft": text_excerpt(str(source_payload.get("structured_draft") or ""), 1400),
+    }
     if repair:
         user_payload["quality_repair"] = repair
     system_content = (
@@ -7410,7 +7404,7 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
         "model": BOI_AGENT_COMPOSER_MODEL,
         "temperature": 0,
         "frequency_penalty": 0.6,
-        "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
+        "max_tokens": min(BOI_AGENT_COMPOSER_MAX_TOKENS, 220),
         "response_format": {
             "type": "json_schema",
             "json_schema": {

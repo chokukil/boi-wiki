@@ -2135,7 +2135,10 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
-    result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
+    result = boi_app_module.call_boi_agent_composer_llm(
+        {"structured_draft": "## 초안" + (" 긴 근거" * 800), "large_unused": "x" * 5000},
+        "100001",
+    )
 
     assert result["answer_markdown"].startswith("## 답변")
     assert "현재 화면 근거" in result["answer_markdown"]
@@ -2148,6 +2151,10 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     assert "bullets" not in schema["properties"]
     assert "links" not in schema["properties"]
     assert "title" in schema["required"]
+    assert payloads[0]["json"]["max_tokens"] <= 220
+    user_payload = json.loads(payloads[0]["json"]["messages"][1]["content"])
+    assert "large_unused" not in user_payload
+    assert len(user_payload["structured_draft"]) < 1600
 
 
 def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, monkeypatch):
