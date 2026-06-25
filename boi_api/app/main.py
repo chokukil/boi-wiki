@@ -7231,6 +7231,8 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
         return "empty_answer"
     if looks_like_repetitive_generation(text):
         return "degenerate_repetition"
+    if re.search(r"[가-힣]{2,}(?:-[가-힣]{2,}){2,}", text):
+        return "korean_hyphen_noise"
     if text.count("```") % 2:
         return "broken_markdown_fence"
     if re.search(r"```[^\S\r\n]*json\b", text, flags=re.IGNORECASE):

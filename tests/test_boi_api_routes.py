@@ -988,6 +988,10 @@ def test_boi_agent_composer_rejects_broken_json_fence_fragment(boi_app_module):
     assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n```json\n{\"answer\":\"x\"}\n```") == "json_fence_fragment"
 
 
+def test_boi_agent_composer_rejects_korean_hyphen_noise(boi_app_module):
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n업무 지식 베이스리스트-업데이트-리스트") == "korean_hyphen_noise"
+
+
 def test_boi_agent_deep_summarize_relation_question_overrides_to_workflow_explain(boi_app_module):
     from boi_api.app import native_agent
 
