@@ -25,7 +25,7 @@ review:
 
 # Summary
 
-BoI Wiki에서 “팀”은 문서 공유와 기능 권한을 부여하는 관리 단위다. 물리 조직과 반드시 같을 필요는 없고, 사번을 기준으로 멤버를 추가한다.
+BoI Wiki에서 “팀”은 문서 공유와 기능 권한을 부여하는 관리 단위다. 물리 조직과 반드시 같을 필요는 없고, 7자리 숫자 사번을 기준으로 멤버를 추가한다.
 
 MyAccess나 SSO는 시스템 접근과 사번 확인을 담당한다. BoI 문서, workflow, action, promotion 같은 세부 권한은 BoI Wiki RBAC가 담당한다.
 
@@ -60,7 +60,7 @@ flowchart TD
 |---|---|
 | `GET /api/rbac/me` | 현재 사번의 팀, 역할, 정책 버전 |
 | `GET|POST /api/rbac/teams` | 팀 조회와 생성 |
-| `POST /api/rbac/teams/{team_id}/members` | 사번 멤버 추가 |
+| `POST /api/rbac/teams/{team_id}/members` | 7자리 사번 멤버 추가 |
 | `GET /api/rbac/roles` | 역할 목록 |
 | `GET /api/rbac/audit` | 권한 변경, break-glass, Agent 실행 승인 audit 조회 |
 | `POST /api/rbac/bindings` | 역할 binding 추가 |
@@ -69,6 +69,7 @@ flowchart TD
 # Guardrails
 
 - 팀 문서는 팀 멤버에게만 보인다.
+- 팀 멤버 사번은 7자리 숫자만 허용한다. `private/me` 같은 별칭이나 6자리 임시 값은 RBAC membership에 넣지 않는다.
 - `team_id`와 `acl:team:{team_id}`가 다르면 lint와 access decision에서 실패한다.
 - `team_id` 또는 `acl_policy`가 빠진 team 문서는 팀 멤버에게도 노출하지 않는다.
 - role binding은 문서 visibility를 넓히지 않는다. 문서 접근은 BoI Profile ACL을 먼저 통과해야 한다.

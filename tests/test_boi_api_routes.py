@@ -1894,6 +1894,7 @@ def test_permissions_page_exposes_management_forms_for_admin(boi_app_module):
     assert 'data-rbac-form="member"' in response.text
     assert 'data-rbac-form="binding"' in response.text
     assert 'data-rbac-form="doc-access"' in response.text
+    assert 'pattern="[0-9]{7}"' in response.text
     assert "문서 접근 확인" in response.text
     assert "/api/rbac/teams" in script
     assert "/api/rbac/bindings" in script
@@ -1944,6 +1945,31 @@ def test_rbac_mutation_apis_reject_non_manager(boi_app_module, monkeypatch):
     assert create_team.status_code == 403
     assert add_member.status_code == 403
     assert bind_role.status_code == 403
+
+
+def test_rbac_team_member_requires_seven_digit_employee_id(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    team_id = "pytest-seven-digit-team"
+
+    created = client.post(
+        "/api/rbac/teams?employee_id=100001",
+        json={"team_id": team_id, "display_name": "Seven Digit Team"},
+    )
+    six_digit = client.post(
+        f"/api/rbac/teams/{team_id}/members?employee_id=100001",
+        json={"employee_id": "123456", "role": "member", "action": "add"},
+    )
+    seven_digit = client.post(
+        f"/api/rbac/teams/{team_id}/members?employee_id=100001",
+        json={"employee_id": "1234567", "role": "member", "action": "add"},
+    )
+
+    assert created.status_code == 200
+    assert six_digit.status_code == 400
+    assert "7 digits" in six_digit.text
+    assert seven_digit.status_code == 200
+    assert "1234567" in seven_digit.json()["team"]["members"]
+    assert "123456" not in seven_digit.json()["team"]["members"]
 
 
 def test_rbac_audit_api_requires_manager_and_supports_filters(boi_app_module, monkeypatch):

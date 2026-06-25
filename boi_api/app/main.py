@@ -6026,8 +6026,8 @@ async def api_rbac_add_team_member(
     if not rbac_can_manage(employee_id, team_id=team_id):
         raise HTTPException(status_code=403, detail="team owner or admin role required")
     member_id = req.employee_id.strip()
-    if not re.fullmatch(r"\d{6,7}", member_id):
-        raise HTTPException(status_code=400, detail="employee_id must be 6 or 7 digits")
+    if not re.fullmatch(r"\d{7}", member_id):
+        raise HTTPException(status_code=400, detail="employee_id must be 7 digits")
     state = rbac_state()
     teams = state.setdefault("teams", {})
     if team_id not in teams:

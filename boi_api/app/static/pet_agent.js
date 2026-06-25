@@ -579,7 +579,7 @@
         <div class="boi-agent-confirmation-actions">
           <label class="boi-agent-approve-note">
             <span>실행 사유 / 메모</span>
-            <textarea data-agent-approve-note placeholder="필요 시 실행 사유를 남겨주세요. 다른 사번 대신 실행하는 경우에는 사유가 필요합니다."></textarea>
+            <textarea data-agent-approve-note placeholder="필요 시 승인 메모를 남깁니다. 다른 사번 대신 실행하는 예외 사유는 별도 admin_override_reason으로만 처리됩니다."></textarea>
           </label>
           ${canExecute ? `<button type="button" data-agent-approve data-operation="${escapeAttr(operation)}" data-payload="${escapeAttr(payloadJson)}">${escapeHtml(primaryLabel)}</button>` : `<span>${escapeHtml(primaryLabel)}</span>`}
         </div>
