@@ -30,6 +30,7 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "workflow_status", "description": "Return workflow status for a trace."},
     {"name": "boi_agent_chat", "description": "Ask the page-aware BoI Agent using ontology search, dictionary, memory, inbox context, and BoI ACL guardrails."},
     {"name": "boi_agent_capabilities", "description": "Return BoI Agent backend, response contract, streaming, guardrail, and execution-card capabilities."},
+    {"name": "boi_agent_approve", "description": "Execute a user-confirmed BoI Agent execution card through the same approval API as the Web Pet Agent."},
     {"name": "boi_agent_suggestions", "description": "Return recommended questions for a current BoI Wiki page context."},
     {"name": "ontology_search", "description": "Search the business knowledge graph across Dictionary, SOP, Event Types, Actions, BoI docs, and runtime evidence."},
     {"name": "dictionary_resolve", "description": "Resolve business terms and aliases with private, team, then public priority."},
@@ -427,6 +428,24 @@ async def boi_agent_suggestions(
 async def boi_agent_capabilities(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
     """Return BoI Agent backend, response contract, and guardrail capabilities."""
     return await api_get("/api/agents/boi-wiki/capabilities", employee_id=employee_id)
+
+
+@mcp.tool(name="boi_agent_approve")
+async def boi_agent_approve(
+    operation: str,
+    payload: dict[str, Any] | None = None,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+    note: str = "",
+) -> dict[str, Any]:
+    """Execute a user-confirmed BoI Agent execution card."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before approving a BoI Agent execution card")
+    return await api_post(
+        "/api/agents/boi-wiki/approve",
+        employee_id=employee_id,
+        payload={"operation": operation, "payload": payload or {}, "user_confirmed": True, "note": note},
+    )
 
 
 @mcp.tool(name="ontology_search")
@@ -1221,6 +1240,20 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         )
     elif tool_name == "boi_agent_capabilities":
         result = await api_get("/api/agents/boi-wiki/capabilities", employee_id=employee_id, service_token=True)
+    elif tool_name == "boi_agent_approve":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/agents/boi-wiki/approve",
+            employee_id=employee_id,
+            payload={
+                "operation": str(args.get("operation") or ""),
+                "payload": args.get("payload") or {},
+                "user_confirmed": True,
+                "note": str(args.get("note") or ""),
+            },
+            service_token=True,
+        )
     elif tool_name == "agent_inbox":
         result = await api_get(
             "/api/agents/boi-wiki/inbox",

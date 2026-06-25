@@ -12,7 +12,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-EXPECTED_PROTOCOL = {"tools": 31, "resource_templates": 6, "prompts": 5}
+EXPECTED_PROTOCOL = {"tools": 32, "resource_templates": 6, "prompts": 5}
 
 
 def mcp_auth_headers(service_token: str = "") -> dict[str, str]:
@@ -221,6 +221,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 "workflow_status",
                 "boi_agent_chat",
                 "boi_agent_capabilities",
+                "boi_agent_approve",
                 "boi_agent_suggestions",
                 "ontology_search",
                 "dictionary_resolve",
