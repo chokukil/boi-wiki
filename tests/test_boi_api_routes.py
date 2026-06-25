@@ -1033,6 +1033,67 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert isinstance(body["links"], list)
 
 
+def test_boi_agent_chat_json_embeds_stream_plan_status_for_api_and_mcp(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    planned_route = {
+        "route": "deep",
+        "confidence": 0.93,
+        "intent": "diagram",
+        "reason": "test stream plan",
+        "requires_mutation": False,
+        "requires_deep_reasoning": True,
+        "requires_langflow": False,
+        "router_backend": "llm",
+    }
+    status_steps = [
+        {"stage": "page_context", "message": "현재 SOP 화면과 접근 권한을 확인합니다.", "source": "llm_status"},
+        {"stage": "tool_loop", "message": "SOP 단계와 연결 업무 요청을 조회합니다.", "source": "llm_status"},
+        {"stage": "compose", "message": "다이어그램과 링크를 정리합니다.", "source": "llm_status"},
+    ]
+    received_routes: list[dict[str, Any]] = []
+
+    def fake_stream_plan(req, employee_id: str):
+        return {"route": planned_route, "status_steps": status_steps}
+
+    def fake_agent_response(req, employee_id: str, progress_callback=None, route=None):
+        received_routes.append(route or {})
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "answer_markdown": "## SOP Diagram\n\n```mermaid\nflowchart TD\nA[Start] --> B[End]\n```",
+            "links": [],
+            "citations": [],
+            "artifacts": [{"type": "mermaid", "title": "SOP", "source": "flowchart TD\nA[Start] --> B[End]"}],
+            "route": route["route"],
+            "intent": route["intent"],
+            "router_backend": route["router_backend"],
+            "used_backend": "native_langgraph",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_STATUS_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "agent_stream_plan", fake_stream_plan)
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", fake_agent_response)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "page_context": {"title": "설비 이상 SOP"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert received_routes == [planned_route]
+    assert body["route"] == "deep"
+    assert body["intent"] == "diagram"
+    assert body["status_updates"][:3] == status_steps
+    assert body["status_updates"][0]["message"] == "현재 SOP 화면과 접근 권한을 확인합니다."
+    assert body["artifacts"][0]["type"] == "mermaid"
+
+
 def test_boi_agent_chat_normalizes_minimal_backend_response_to_agent_contract(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

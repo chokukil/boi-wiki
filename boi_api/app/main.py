@@ -9399,12 +9399,35 @@ def agent_chat_response(
     return agent_fast_answer(req, employee_id, route, started_at)
 
 
+def agent_chat_response_with_optional_status_plan(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    """Return the canonical Agent response for JSON/MCP clients.
+
+    Web streaming already calls ``agent_stream_plan`` before running the Agent
+    so users see LLM-authored progress lines. JSON API and MCP clients cannot
+    consume SSE, therefore the same plan is embedded into ``status_updates``
+    when the LLM status/router stack is configured. In local/test runtimes
+    without that stack, explicit non-stream requests keep the existing Agent
+    execution path.
+    """
+    planned_route: dict[str, Any] | None = None
+    planned_status_updates: list[dict[str, Any]] = []
+    if req.mode == "auto" and BOI_AGENT_STATUS_LLM_ENABLED and BOI_AGENT_ROUTER_LLM_ENABLED:
+        stream_plan = agent_stream_plan(req, employee_id)
+        planned_route = stream_plan["route"]
+        planned_status_updates = list(stream_plan.get("status_steps") or [])
+    response = agent_chat_response(req, employee_id, route=planned_route) if planned_route else agent_chat_response(req, employee_id)
+    if planned_status_updates:
+        existing_updates = response.get("status_updates") if isinstance(response.get("status_updates"), list) else []
+        response["status_updates"] = [*planned_status_updates, *existing_updates]
+    return response
+
+
 @app.post("/api/agents/boi-wiki/chat")
 async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(lambda: enrich_agent_answer_html(agent_chat_response(req, employee_id), employee_id)),
+            asyncio.to_thread(lambda: enrich_agent_answer_html(agent_chat_response_with_optional_status_plan(req, employee_id), employee_id)),
             timeout=BOI_AGENT_CHAT_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:
@@ -9428,6 +9451,17 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
                 "message": str(exc),
                 "model": BOI_AGENT_ROUTER_MODEL,
                 "required": BOI_AGENT_ROUTER_REQUIRED,
+            },
+        ) from exc
+    except BoiAgentStatusUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "status_generation_failed",
+                "message": str(exc),
+                "model": BOI_AGENT_STATUS_MODEL,
+                "required": BOI_AGENT_STATUS_REQUIRED,
             },
         ) from exc
     except NativeAgentRuntimeUnavailable as exc:
