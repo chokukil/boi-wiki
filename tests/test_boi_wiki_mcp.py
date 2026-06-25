@@ -34,7 +34,20 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
     assert body["agent_interfaces"]["streaming_api"] == "/api/agents/boi-wiki/chat/stream"
     assert body["agent_interfaces"]["mcp_tool"] == "boi_agent_chat"
+    assert body["agent_interfaces"]["response_contract_version"] == "boi-agent.response.v1"
     assert body["agent_interfaces"]["streaming_events"] == ["status", "answer_delta", "final", "error"]
+    assert body["agent_response_contract"]["version"] == "boi-agent.response.v1"
+    assert body["agent_response_contract"]["canonical_endpoint"] == "/api/agents/boi-wiki/chat"
+    assert body["agent_response_contract"]["stream_endpoint"] == "/api/agents/boi-wiki/chat/stream"
+    assert body["agent_response_contract"]["mcp_tool"] == "boi_agent_chat"
+    assert "web_pet" in body["agent_response_contract"]["consumers"]
+    assert "boi_wiki_mcp" in body["agent_response_contract"]["consumers"]
+    assert "external_api" in body["agent_response_contract"]["consumers"]
+    assert "answer_markdown" in body["agent_response_contract"]["required_fields"]
+    assert "artifacts" in body["agent_response_contract"]["required_fields"]
+    assert "guardrails_applied" in body["agent_response_contract"]["required_fields"]
+    assert "mermaid" in body["agent_response_contract"]["artifact_types"]
+    assert "gap_table" in body["agent_response_contract"]["artifact_types"]
     tool_names = [item["name"] for item in body["capability_lists"]["tools"]]
     assert "source_preview" in tool_names
     assert "source_apply" in tool_names
@@ -77,6 +90,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "doc_body_apply" in body
     assert "promotion_submit" in body
     assert "boi_agent_chat" in body
+    assert "boi-agent.response.v1" in body
     assert "/api/agents/boi-wiki/chat/stream" in body
     assert "answer_delta" in body
     assert "ontology_search" in body

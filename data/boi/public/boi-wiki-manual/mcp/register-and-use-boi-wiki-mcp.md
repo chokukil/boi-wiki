@@ -139,6 +139,8 @@ python scripts/check_boi_wiki_mcp.py \
 
 정상 결과는 protocol count와 bridge 호출이 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
 
+`/health`와 `/status`의 `agent_response_contract.version`은 `boi-agent.response.v1`이어야 한다. Web Pet Agent, REST API, MCP `boi_agent_chat`, 외부 자동화는 모두 이 계약을 기준으로 `answer_markdown`, `links`, `citations`, `artifacts`, `execution_cards`, `guardrails_applied`를 해석한다. MCP client에서 `boi_agent_chat`이 다른 형태의 임의 문자열만 반환하면 구버전 MCP image나 잘못된 bridge endpoint를 보고 있는 상태로 판단한다.
+
 # Troubleshooting
 
 | Symptom | Meaning | Action |

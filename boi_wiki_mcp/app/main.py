@@ -65,10 +65,29 @@ MCP_CAPABILITIES = {
     "resource_templates": len(MCP_RESOURCE_TEMPLATE_CAPABILITIES),
     "prompts": len(MCP_PROMPT_CAPABILITIES),
 }
+AGENT_RESPONSE_CONTRACT_VERSION = "boi-agent.response.v1"
+AGENT_RESPONSE_CONTRACT = {
+    "version": AGENT_RESPONSE_CONTRACT_VERSION,
+    "canonical_endpoint": "/api/agents/boi-wiki/chat",
+    "stream_endpoint": "/api/agents/boi-wiki/chat/stream",
+    "mcp_tool": "boi_agent_chat",
+    "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
+    "required_fields": [
+        "agent_contract_version",
+        "answer_markdown",
+        "links",
+        "citations",
+        "artifacts",
+        "execution_cards",
+        "guardrails_applied",
+    ],
+    "artifact_types": ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"],
+}
 AGENT_INTERFACES = {
     "json_api": "/api/agents/boi-wiki/chat",
     "streaming_api": "/api/agents/boi-wiki/chat/stream",
     "mcp_tool": "boi_agent_chat",
+    "response_contract_version": AGENT_RESPONSE_CONTRACT_VERSION,
     "streaming_protocol": "text/event-stream",
     "streaming_events": ["status", "answer_delta", "final", "error"],
 }
@@ -787,6 +806,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "prompts": MCP_PROMPT_CAPABILITIES,
         },
         "agent_interfaces": AGENT_INTERFACES,
+        "agent_response_contract": AGENT_RESPONSE_CONTRACT,
         "notes": [
             "Open / in a browser for this status page.",
             "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
@@ -867,8 +887,9 @@ async def status_page(request: Request) -> HTMLResponse:
         <dt>Streaming API</dt><dd><code>{payload["agent_interfaces"]["streaming_api"]}</code></dd>
         <dt>Streaming events</dt><dd><code>{", ".join(payload["agent_interfaces"]["streaming_events"])}</code></dd>
         <dt>MCP tool</dt><dd><code>{payload["agent_interfaces"]["mcp_tool"]}</code></dd>
+        <dt>Response contract</dt><dd><code>{payload["agent_response_contract"]["version"]}</code></dd>
       </dl>
-      <p>Web Pet Agent uses the streaming API so long requests can show one-line <code>status</code> updates and incremental <code>answer_delta</code> content. MCP clients normally call <code>boi_agent_chat</code> and receive the final JSON response.</p>
+      <p>Web Pet Agent uses the streaming API so long requests can show one-line <code>status</code> updates and incremental <code>answer_delta</code> content. MCP clients normally call <code>boi_agent_chat</code> and receive the final JSON response using the same <code>{payload["agent_response_contract"]["version"]}</code> contract.</p>
     </section>
     <section>
       <h2>Client Registration</h2>
