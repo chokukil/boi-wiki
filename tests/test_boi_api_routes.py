@@ -969,6 +969,18 @@ def test_boi_agent_composer_rejects_degenerate_repetition(boi_app_module):
     assert boi_app_module.invalid_agent_composer_answer_reason("요약입니다. de la vie, de la vie, de la vie") == "degenerate_repetition"
 
 
+def test_boi_agent_composer_rejects_mixed_language_noise(boi_app_module):
+    mixed_script = (
+        "### Spitzenberg (Spitzenberg)ization of Current Page Content\n\n"
+        "* **核心 (Core/Core)**: BoI Wiki 내용을 operator/العمليات/оператор 관점으로 정리합니다."
+    )
+    english_heading = "### Current Page Content\n\n- BoI Wiki 관련 문서는 아래 링크를 확인하세요."
+
+    assert boi_app_module.invalid_agent_composer_answer_reason(mixed_script) == "non_korean_script"
+    assert boi_app_module.invalid_agent_composer_answer_reason(english_heading) == "english_dominant_line"
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\nBoI Wiki Agent가 SOP와 Action 근거를 한국어로 정리했습니다.") == ""
+
+
 def test_boi_agent_deep_summarize_relation_question_overrides_to_workflow_explain(boi_app_module):
     from boi_api.app import native_agent
 
@@ -2065,6 +2077,56 @@ def test_boi_agent_composer_llm_requests_json_schema(boi_app_module, monkeypatch
     assert result["suggested_questions"] == ["다음 질문"]
     assert payloads[0]["json"]["response_format"]["type"] == "json_schema"
     assert payloads[0]["json"]["response_format"]["json_schema"]["name"] == "boi_agent_final_answer"
+
+
+def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"answer_markdown":"### Current Page Content\\n\\n'
+                                '* **核心**: operator/العمليات/оператор 설명입니다."}'
+                            )
+                        }
+                    },
+                    {
+                        "message": {
+                            "content": '{"answer_markdown":"## 답변\\n\\nBoI Wiki Agent가 확인한 SOP 근거를 한국어로 정리했습니다.","suggested_questions":["관련 Action도 볼까요?"]}'
+                        }
+                    },
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers, json):
+            return FakeResponse()
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
+
+    assert result["answer_markdown"].startswith("## 답변")
+    assert "Current Page Content" not in result["answer_markdown"]
+    assert result["suggested_questions"] == ["관련 Action도 볼까요?"]
 
 
 def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_app_module, monkeypatch):

@@ -7156,6 +7156,73 @@ def looks_like_repetitive_generation(text: str) -> bool:
     return False
 
 
+DISALLOWED_AGENT_SCRIPT_RE = re.compile(
+    r"[\u0370-\u03ff\u0400-\u052f\u0590-\u05ff\u0600-\u06ff\u0750-\u077f\u4e00-\u9fff]"
+)
+ALLOWED_AGENT_LATIN_WORDS = {
+    "acl",
+    "action",
+    "agent",
+    "ai",
+    "api",
+    "boi",
+    "codex",
+    "event",
+    "github",
+    "hbm",
+    "inbox",
+    "json",
+    "kafka",
+    "langflow",
+    "manual",
+    "mcp",
+    "mermaid",
+    "nas",
+    "native",
+    "okf",
+    "rbac",
+    "sop",
+    "sso",
+    "trace",
+    "url",
+    "wiki",
+    "workflow",
+}
+
+
+def agent_quality_text_without_code_and_urls(text: str) -> str:
+    stripped = re.sub(r"```.*?```", " ", str(text or ""), flags=re.DOTALL)
+    stripped = re.sub(r"`[^`]*`", " ", stripped)
+    stripped = re.sub(r"\]\([^)]+\)", "]", stripped)
+    stripped = re.sub(r"https?://\S+", " ", stripped)
+    return stripped
+
+
+def contains_disallowed_agent_script(text: str) -> bool:
+    return bool(DISALLOWED_AGENT_SCRIPT_RE.search(agent_quality_text_without_code_and_urls(text)))
+
+
+def looks_like_english_dominant_agent_line(text: str) -> bool:
+    for raw_line in str(text or "").splitlines():
+        line = re.sub(r"^[#>*\-\s0-9.]+", "", raw_line).strip()
+        if not line:
+            continue
+        line = agent_quality_text_without_code_and_urls(line)
+        if re.search(r"[가-힣]", line):
+            continue
+        latin_words = re.findall(r"\b[A-Za-z][A-Za-z-]{2,}\b", line)
+        if len(latin_words) < 3:
+            continue
+        unexpected = [
+            word
+            for word in latin_words
+            if word.lower().strip("-") not in ALLOWED_AGENT_LATIN_WORDS
+        ]
+        if unexpected:
+            return True
+    return False
+
+
 def invalid_agent_composer_answer_reason(answer: str) -> str:
     text = str(answer or "").strip()
     if not text:
@@ -7179,6 +7246,10 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
         return "prompt_echo"
     if re.match(r"^\s*[-*]\s+user\s+wants\b", text, flags=re.IGNORECASE):
         return "prompt_echo"
+    if contains_disallowed_agent_script(text):
+        return "non_korean_script"
+    if looks_like_english_dominant_agent_line(text):
+        return "english_dominant_line"
     if text.startswith("{") or text.startswith("[") or text.startswith("```json"):
         return "unparsed_json"
     if text.startswith("chatcmpl-"):
@@ -7222,10 +7293,13 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
                     "Return only one JSON object with answer_markdown and suggested_questions. "
                     "answer_markdown must be the final user-facing Korean Markdown answer, under 1200 Korean characters. "
                     "Use 3-7 concise Korean bullets or short sections. Do not write Markdown tables; table artifacts are rendered separately. "
-                    "Do not repeat any word or phrase more than twice. Do not add filler English/French/Latin phrases. "
+                    "Write in Korean sentences. English is allowed only for official product names, action keys, event types, APIs, URLs, or code identifiers. "
+                    "Do not use Chinese characters, Arabic, Cyrillic, Greek, French, German, Latin filler, decorative translations, or English-only section titles. "
+                    "Do not repeat any word or phrase more than twice. "
                     "Never echo, summarize, or restate the prompt, request fields, JSON schema, "
                     "structured_draft label, body_excerpt label, or system instructions. "
-                    "Use only supplied evidence. Do not invent private data, links, actions, or approvals."
+                    "Use only supplied evidence. Do not invent private data, links, actions, or approvals. "
+                    "The service rejects malformed mixed-language answers instead of falling back."
                 ),
             },
             {
@@ -7346,6 +7420,8 @@ def is_usable_llm_status_message(message: str) -> bool:
     if not text:
         return False
     if len(text) > 90:
+        return False
+    if contains_disallowed_agent_script(text):
         return False
     # Drop common local-LLM degeneration patterns instead of showing broken
     # progress text as if it were healthy. This is validation, not a canned
