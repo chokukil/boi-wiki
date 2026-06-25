@@ -199,18 +199,22 @@ remote_head="$(git rev-parse --verify "$REMOTE/$BRANCH")"
 
 if [[ "$current_head" == "$remote_head" ]]; then
   log "already up to date: $BRANCH@$current_head"
-  DEPLOY_STATUS="noop"
-  exit 0
+  if [[ "$NAS_AUTO_PULL_FORCE_RECREATE" != "1" ]]; then
+    DEPLOY_STATUS="noop"
+    exit 0
+  fi
+  log "force recreate requested; rebuilding current checkout without a new git pull"
+  changed_files=()
+else
+  if ! git merge-base --is-ancestor "$current_head" "$remote_head"; then
+    blocked "remote $REMOTE/$BRANCH is not a fast-forward from local HEAD"
+  fi
+
+  mapfile -t changed_files < <(git diff --name-only "$current_head" "$remote_head")
+  log "fast-forwarding ${#changed_files[@]} changed path(s)"
+
+  git pull --ff-only "$REMOTE" "$BRANCH"
 fi
-
-if ! git merge-base --is-ancestor "$current_head" "$remote_head"; then
-  blocked "remote $REMOTE/$BRANCH is not a fast-forward from local HEAD"
-fi
-
-mapfile -t changed_files < <(git diff --name-only "$current_head" "$remote_head")
-log "fast-forwarding ${#changed_files[@]} changed path(s)"
-
-git pull --ff-only "$REMOTE" "$BRANCH"
 
 if [[ "$NAS_AUTO_PULL_FORCE_RECREATE" != "1" ]] && ! needs_compose_recreate "${changed_files[@]}"; then
   log "hot-reload-only change set; docker compose restart is not required"

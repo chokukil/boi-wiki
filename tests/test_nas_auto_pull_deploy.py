@@ -266,6 +266,57 @@ def test_runtime_change_updates_env_revision_and_verifies_running_revision(tmp_p
     assert "DEPLOY_STATUS=success" in result.stdout.splitlines()[-1]
 
 
+def test_force_recreate_rebuilds_even_when_git_is_already_current(tmp_path: Path):
+    work, app = setup_remote_worktree(tmp_path)
+    expected_revision = run(["git", "rev-parse", "--short", "HEAD"], cwd=work).stdout.strip()
+
+    write(app / ".env", "SERVICE_TOKEN=redacted-test-token\nBOI_BUILD_REVISION=oldrev\n")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    compose_calls = tmp_path / "compose-calls.log"
+    write(
+        fake_bin / "sudo",
+        "#!/usr/bin/env bash\n"
+        "exec \"$@\"\n",
+    )
+    write(
+        fake_bin / "docker-compose",
+        "#!/usr/bin/env bash\n"
+        "printf 'env_revision=%s args=%s\\n' \"$BOI_BUILD_REVISION\" \"$*\" >> " + str(compose_calls) + "\n"
+        "exit 0\n",
+    )
+    write(
+        fake_bin / "curl",
+        "#!/usr/bin/env bash\n"
+        "rev=$(awk -F= '/^BOI_BUILD_REVISION=/{print $2}' .env | tail -n1)\n"
+        "printf '{\"build\":{\"revision\":\"%s\"}}\\n' \"$rev\"\n",
+    )
+    for script in ["sudo", "docker-compose", "curl"]:
+        (fake_bin / script).chmod(0o755)
+
+    result = run_deploy_script(
+        app,
+        lock_dir=tmp_path / "force-current.lock",
+        extra_env={
+            "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
+            "SUDO_BIN": str(fake_bin / "sudo"),
+            "DOCKER_COMPOSE_BIN": str(fake_bin / "docker-compose"),
+            "DOCKER_BIN": str(fake_bin / "docker"),
+            "NAS_AUTO_PULL_FORCE_RECREATE": "1",
+            "NAS_RUNTIME_VERIFY_ATTEMPTS": "1",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "already up to date" in result.stdout
+    assert "force recreate requested" in result.stdout
+    assert f"BOI_BUILD_REVISION={expected_revision}" in (app / ".env").read_text(encoding="utf-8")
+    assert "dry run" not in result.stdout
+    assert f"env_revision={expected_revision}" in compose_calls.read_text(encoding="utf-8")
+    assert "up -d --build" in compose_calls.read_text(encoding="utf-8")
+    assert "DEPLOY_STATUS=success" in result.stdout.splitlines()[-1]
+
+
 def test_compose_failure_starts_created_boi_api_container(tmp_path: Path):
     work, app = setup_remote_worktree(tmp_path)
 
