@@ -70,7 +70,7 @@ Claude Desktop에서 remote/HTTP MCP server를 추가할 때 이름은 `boi-wiki
 }
 ```
 
-등록 후 tool 목록에 `boi_search`, `boi_get`, `workflow_status`, `action_invoke`가 보이면 정상이다. 클라이언트 버전에 따라 설정 파일 위치나 transport key 이름은 다를 수 있지만, endpoint는 항상 `http://localhost:8200/mcp`다.
+등록 후 tool 목록에 `boi_search`, `boi_get`, `workflow_status`, `action_invoke`, `boi_agent_chat`, `ontology_search`, `agent_inbox`가 보이면 정상이다. 클라이언트 버전에 따라 설정 파일 위치나 transport key 이름은 다를 수 있지만, endpoint는 항상 `http://localhost:8200/mcp`다.
 
 # Cursor 등록
 
@@ -99,6 +99,12 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 | `actions_search` / `action_get` | multi-action catalog 탐색 |
 | `action_invoke` | Action Gateway 경유 실행. 실제 실행(`dry_run=false`)은 `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
 | `workflow_start` / `workflow_status` | SOP 기반 workflow 실행/상태 확인. `workflow_start`는 entry event를 발행하므로 API/MCP 모두 `user_confirmed=true`가 없으면 차단 |
+| `boi_agent_chat` / `boi_agent_suggestions` | Native BoI Agent의 page-aware 질의응답과 현재 화면 기반 추천 질문 |
+| `ontology_search` | Dictionary, SOP workflow, Event Type, Action Spec, BoI 문서, runtime evidence를 함께 보는 업무 지식 그래프 검색 |
+| `dictionary_resolve` / `dictionary_terms` | private → team → public 우선순위로 업무 용어와 alias 해석 |
+| `agent_memory_search` | 사번별 private Agent Memory BoI 검색 |
+| `agent_inbox` / `manual_handoff_complete` | 담당 action inbox 조회와 사용자 확인된 manual handoff 완료 기록 |
+| `event_type_draft_create` / `event_type_drafts` / `event_type_draft_validate` / `event_type_draft_apply` | 신규 Event Type draft 작성, 조회, 검증, 사용자 승인된 catalog 반영 |
 | `source_preview` / `doc_body_preview` | source/body 수정 전 preview와 validation feedback |
 | `source_apply` / `doc_body_apply` | 사용자 승인된 source/body 수정 apply와 자동 commit |
 | `promotion_submit` | 사용자 승인된 Team/Public promotion candidate 원격 검증/즉시 게시. `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
@@ -108,9 +114,12 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 
 - Resource 예: `boi://docs/boi:public:sop:equipment-abnormal-response`
 - Resource 예: `boi://actions/mcp.boi_search.sample`
+- Resource 예: `boi://search/ontology/설비%20이상`
 - Prompt 예: `create_sop_from_source`, `author_action_spec`, `build_langflow_boi_flow`
 
-현재 프로토콜 기준 기대값은 `tools: 14`, `resources: 0`, `resource_templates: 4`, `prompts: 5`다. `resources: 0`은 오류가 아니다. `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`, `boi://workflows/{workflow_key}/status/{trace_id}` resource template으로 필요한 문서를 읽는다.
+현재 프로토콜 기준 기대값은 `tools: 26`, `resources: 0`, `resource_templates: 5`, `prompts: 5`다. `resources: 0`은 오류가 아니다. 정적 resource를 미리 노출하지 않고 `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`, `boi://workflows/{workflow_key}/status/{trace_id}`, `boi://search/ontology/{query}` resource template으로 필요한 문서와 검색 결과를 읽는다.
+
+검색 tool은 목적별로 나눠 쓴다. 단순 BoI 문서 목록이 필요하면 `boi_search`를 사용한다. SOP, Event, Action, Dictionary, runtime evidence를 관계까지 포함해 탐색하려면 `ontology_search`를 사용한다. 현재 페이지를 바탕으로 답변이나 산출물이 필요하면 `boi_agent_chat`을 사용한다. 세 경로는 모두 BoI API의 ACL/RBAC guardrail을 통과하므로 MCP client가 Web UI보다 더 넓은 문서를 볼 수 없다.
 
 # Validation
 
@@ -128,7 +137,7 @@ python scripts/check_boi_wiki_mcp.py \
   --client-checklist
 ```
 
-정상 결과는 protocol count와 bridge 호출이 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되면 agent가 실제 Wiki에 접근 가능한 상태다.
+정상 결과는 protocol count와 bridge 호출이 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
 
 # Troubleshooting
 
@@ -143,7 +152,7 @@ python scripts/check_boi_wiki_mcp.py \
 
 # Runtime Evidence
 
-상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록을 보여준다. `tools=12`, `resource_templates=4`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다.
+상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록을 보여준다. `tools=26`, `resource_templates=5`, `prompts=5`, `resources=0`이 현재 기준이며, `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 목록에는 `boi_agent_chat`, `ontology_search`, `agent_inbox`, `manual_handoff_complete`, Event Type draft tool이 함께 보여야 한다.
 
 ![BoI Wiki MCP Status capabilities](/public/boi-wiki-manual/_media/browser/mcp-status/20260619-151048-boi-wiki-mcp-status-capabilities-current-1440x1000-89caadae3b92.png)
 
