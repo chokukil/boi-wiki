@@ -66,6 +66,18 @@ Agent는 `view=compact`를 사용한다. Compact mode는 metadata/body 전체를
 - `ontology_search`: Dictionary, SOP, Event, Action, runtime evidence를 함께 반환한다.
 - 앱 route 링크와 raw log 링크는 OKF concept graph edge가 아니라 runtime evidence로 분리한다.
 
+# Dictionary Authoring Boundary
+
+Dictionary는 Agent가 사용자 언어를 업무 개념으로 해석하는 기준이므로 scope별 작성 권한을 분리한다.
+
+| Scope | Authoring rule | Reason |
+|---|---|---|
+| `private` | 본인 사번의 private dictionary에 바로 추가할 수 있다. | 개인 표현, 선호 용어, 임시 업무 맥락을 빠르게 보존한다. |
+| `team` | `boi.editor` 역할과 해당 팀 멤버십이 모두 필요하다. | 팀 dictionary는 팀원 전체의 ontology search와 Agent 답변에 영향을 준다. |
+| `public` | `boi.editor` 이상 권한이 필요하다. | Public dictionary는 전체 사용자의 seed vocabulary이므로 curated knowledge로 취급한다. |
+
+MCP와 Web API 모두 같은 경계를 사용한다. `dictionary_terms` 조회는 private -> team -> public 우선순위로 해석하지만, shared scope 생성은 권한 검사를 통과해야 한다.
+
 # Related Documents
 
 - [Dictionary Authoring Harness](/public/harness/dictionary-authoring-harness.md)

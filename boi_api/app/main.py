@@ -9962,8 +9962,16 @@ async def api_dictionary_terms(employee_id: str = Depends(current_employee), sco
 
 @app.post("/api/dictionary/terms")
 async def api_dictionary_term_create(req: DictionaryTermRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if req.scope in {"team", "public"}:
+        require_employee_role(employee_id, "boi.editor")
+    employee_teams = teams_for(employee_id)
     visibility = "private" if req.scope == "private" else req.scope
-    team_id = req.team_id or (teams_for(employee_id)[0] if req.scope == "team" else None)
+    team_id = req.team_id or (employee_teams[0] if req.scope == "team" and employee_teams else None)
+    if req.scope == "team":
+        if not team_id:
+            raise HTTPException(status_code=400, detail="team_id is required for team dictionary terms")
+        if team_id not in employee_teams and "boi.admin" not in roles_for(employee_id):
+            raise HTTPException(status_code=403, detail=f"employee is not member of team: {team_id}")
     owner = employee_id if req.scope == "private" else (team_id or "public")
     metadata = make_metadata(
         boi_type="boi/dictionary-term",
@@ -9995,6 +10003,11 @@ async def api_dictionary_term_create(req: DictionaryTermRequest, employee_id: st
         doc = write_boi_to_subfolder(metadata, dictionary_body(req), "dictionary")
     else:
         doc = write_boi(metadata, dictionary_body(req))
+        append_rbac_audit(
+            employee_id,
+            "dictionary_term_create",
+            {"scope": req.scope, "term": req.term, "team_id": team_id, "boi_id": (doc.get("metadata") or {}).get("boi_id")},
+        )
     return {"ok": True, "item": doc_result_item(doc, employee_id)}
 
 

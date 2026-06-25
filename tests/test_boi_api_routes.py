@@ -846,6 +846,79 @@ def test_ontology_search_dictionary_and_boi_search_remain_distinct(boi_app_modul
     assert identities.count("boi:public:sop:equipment-abnormal-response") <= 1
 
 
+def test_dictionary_term_create_allows_private_but_rejects_shared_scope_without_editor(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    private_create = client.post(
+        "/api/dictionary/terms?employee_id=100003",
+        json={
+            "scope": "private",
+            "term": "pytest-viewer-private-term",
+            "definition": "개인 용어는 일반 구성원도 추가할 수 있다.",
+        },
+    )
+    team_create = client.post(
+        "/api/dictionary/terms?employee_id=100003",
+        json={
+            "scope": "team",
+            "team_id": "platform",
+            "term": "pytest-viewer-team-term",
+            "definition": "팀 용어는 공유 검색 의미를 바꾸므로 편집 권한이 필요하다.",
+        },
+    )
+    public_create = client.post(
+        "/api/dictionary/terms?employee_id=100003",
+        json={
+            "scope": "public",
+            "term": "pytest-viewer-public-term",
+            "definition": "공개 용어는 공유 검색 의미를 바꾸므로 편집 권한이 필요하다.",
+        },
+    )
+
+    assert private_create.status_code == 200
+    private_item = private_create.json()["item"]
+    assert private_item["metadata"]["visibility"] == "private"
+    assert private_item["metadata"]["owner"] == "100003"
+    assert private_item["metadata"]["acl_policy"] == "acl:private:100003"
+    assert private_item["folder"] == "private/100003/dictionary"
+    assert team_create.status_code == 403
+    assert "missing required role: boi.editor" in team_create.text
+    assert public_create.status_code == 403
+    assert "missing required role: boi.editor" in public_create.text
+
+
+def test_dictionary_term_create_rejects_team_scope_when_editor_is_not_team_member(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    non_member_team = client.post(
+        "/api/dictionary/terms?employee_id=100002",
+        json={
+            "scope": "team",
+            "team_id": "platform",
+            "term": "pytest-editor-wrong-team-term",
+            "definition": "편집자라도 자신이 속하지 않은 팀 용어는 추가할 수 없다.",
+        },
+    )
+    own_team = client.post(
+        "/api/dictionary/terms?employee_id=100002",
+        json={
+            "scope": "team",
+            "team_id": "aix-tf",
+            "term": "pytest-editor-own-team-term",
+            "definition": "편집자는 자신이 속한 팀의 공유 용어를 추가할 수 있다.",
+        },
+    )
+
+    assert non_member_team.status_code == 403
+    assert "employee is not member of team: platform" in non_member_team.text
+    assert own_team.status_code == 200
+    metadata = own_team.json()["item"]["metadata"]
+    assert metadata["visibility"] == "team"
+    assert metadata["team_id"] == "aix-tf"
+    assert metadata["owner"] == "aix-tf"
+    assert metadata["acl_policy"] == "acl:team:aix-tf"
+
+
 def test_ontology_and_boi_search_filter_private_docs_by_employee(boi_app_module):
     client = TestClient(boi_app_module.app)
     boi_id = "boi:private:100002:ontology-acl-private-leak-test"

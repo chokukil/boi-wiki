@@ -63,6 +63,18 @@ flowchart TD
 
 Private과 team 문서는 필수 ACL metadata가 빠져도 차단된다. 예를 들어 private 문서가 올바른 사번 폴더 아래에 있더라도 `owner`나 `acl_policy`가 없으면 `AccessPolicyDecision.can_read=false`가 된다. Team 문서도 `team_id` 또는 `acl_policy`가 빠지면 팀 멤버에게도 노출하지 않는다.
 
+# Shared Knowledge Authoring Boundary
+
+Agent가 사용하는 Dictionary, Memory, SOP, Event Type, Action Spec은 모두 BoI Profile ACL을 따른다. 다만 작성 권한은 scope별로 다르게 둔다.
+
+| Artifact | Private | Team | Public |
+|---|---|---|---|
+| Dictionary term | 본인 private scope에 직접 생성 가능 | `boi.editor` 역할과 해당 팀 멤버십 필요 | `boi.editor` 이상 필요 |
+| Agent memory | 본인 private memory만 생성 가능 | 자동 승격 없음 | 자동 승격 없음 |
+| SOP/Event/Action draft | promotion draft로 생성 | 승인과 lint 후 반영 | 승인과 lint 후 반영 |
+
+이 경계는 Web UI, REST API, MCP bridge 모두에서 동일하게 적용한다. 특히 public/team dictionary는 ontology search와 Agent 답변의 query expansion에 영향을 주므로 일반 구성원의 개인 입력과 같은 권한으로 취급하지 않는다.
+
 # Decision Fields
 
 `AccessPolicyDecision`은 다음 값을 반환한다.
