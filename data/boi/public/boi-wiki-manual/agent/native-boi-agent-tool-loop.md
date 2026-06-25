@@ -42,9 +42,11 @@ flowchart TD
   F --> G["compose_answer"]
   G --> LC{"LLM composer enabled?"}
   LC -->|yes| LLM["compose final Markdown<br/>from typed evidence"]
-  LC -->|no| DET["keep deterministic structured draft"]
+  LC -->|no + required| ERR["service error<br/>native_agent_runtime_unavailable"]
+  LC -->|no + explicit dev/test opt-out| DET["structured draft<br/>dev/test only"]
   LLM --> H["verify_acl_and_artifacts"]
   DET --> H
+  ERR --> I
   H --> I["safety_gate"]
 ```
 
@@ -70,6 +72,9 @@ sequenceDiagram
   opt LLM composer enabled
     Agent->>Tool: answer_composer with compact evidence pack
     Tool-->>Agent: answer_markdown + suggested_questions JSON
+  end
+  alt composer unavailable and required
+    Agent-->>API: native_agent_runtime_unavailable
   end
   Agent-->>API: answer_markdown + links + citations + artifacts
 ```

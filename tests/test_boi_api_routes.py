@@ -606,6 +606,58 @@ def test_boi_agent_hybrid_does_not_hide_langgraph_required_failure(boi_app_modul
     assert response.json()["detail"]["status"] == "native_agent_runtime_unavailable"
 
 
+def test_boi_agent_hybrid_does_not_fallback_on_native_runtime_error(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fail_native(*args, **kwargs):
+        raise RuntimeError("native boom")
+
+    def fail_langflow(*args, **kwargs):
+        raise AssertionError("Native runtime failures must not fall back to Langflow")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "hybrid")
+    monkeypatch.setattr(boi_app_module, "call_native_boi_agent", fail_native)
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "설비 이상 대응 SOP와 Action을 찾아줘",
+            "mode": "fast",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "native_agent_runtime_unavailable"
+    assert "native boom" in detail["message"]
+
+
+def test_boi_agent_unknown_backend_is_service_error(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fail_native(*args, **kwargs):
+        raise AssertionError("Unknown backend must not silently use native")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "mystery")
+    monkeypatch.setattr(boi_app_module, "call_native_boi_agent", fail_native)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "설비 이상 대응 SOP와 Action을 찾아줘",
+            "mode": "fast",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "native_agent_runtime_unavailable"
+    assert "Unknown BOI_AGENT_BACKEND: mystery" in detail["message"]
+
+
 def test_boi_agent_stream_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):
     from boi_api.app import native_agent
 

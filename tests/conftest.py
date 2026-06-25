@@ -60,6 +60,9 @@ def boi_app_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1")
     monkeypatch.setenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
     monkeypatch.setenv("BOI_LLM_API_KEY", "not-needed")
+    # Unit tests use placeholder LLM endpoints unless a test explicitly enables
+    # the composer. Runtime defaults remain stricter.
+    monkeypatch.setenv("BOI_AGENT_COMPOSER_REQUIRED", "0")
 
     FakeKafkaProducer.sent_events = []
     sys.modules.pop("boi_api.app.main", None)

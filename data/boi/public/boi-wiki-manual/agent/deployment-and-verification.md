@@ -66,7 +66,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 
 | Env | Default | Meaning |
 |---|---|---|
-| `BOI_AGENT_BACKEND` | `native` | `native`, `hybrid`, `langflow` |
+| `BOI_AGENT_BACKEND` | `native` | `native`, legacy `hybrid`, debug `langflow`. Unknown values are service errors, not implicit native fallback. |
 | `BOI_AGENT_LANGGRAPH_REQUIRED` | `1` | Native Agent orchestration은 LangGraph가 필수다. LangGraph import나 graph 실행이 실패하면 sequential fallback으로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. |
 | `BOI_AGENT_NATIVE_MAX_TOOL_LOOPS` | `5` | per-run bounded tool loop |
 | `BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS` | `8` | per-tool timeout target |
@@ -90,7 +90,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | `BOI_AGENT_SUGGESTIONS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 현재 페이지 추천 질문을 생성할 model |
 | `BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS` | `8` | 추천 질문 생성 timeout. 실패 시 Pet Agent는 현재 페이지 질문을 숨기거나 장애로 표시해야 하며, 하드코딩 질문을 운영 fallback으로 쓰지 않는다. |
 | `BOI_AGENT_COMPOSER_LLM_ENABLED` | `auto` | Native tool loop가 만든 근거와 artifact를 LLM composer가 일반 구성원용 Markdown 답변으로 다듬는다. placeholder URL이면 비활성이다. |
-| `BOI_AGENT_COMPOSER_REQUIRED` | `0` | 운영에서 최종 답변 품질을 LLM composer 필수로 볼 때 `1`로 설정한다. 실패하면 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. |
+| `BOI_AGENT_COMPOSER_REQUIRED` | `1` | 운영 기본값은 LLM composer 필수다. 실패하면 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. 테스트나 로컬 진단에서만 명시적으로 `0`으로 낮춘다. |
 | `BOI_AGENT_COMPOSER_TIMEOUT_SECONDS` | `20` | composer 호출 timeout |
 | `BOI_AGENT_COMPOSER_MAX_TOKENS` | `3072` | 최종 Markdown 답변 확보용 token limit |
 

@@ -189,7 +189,7 @@ BOI_AGENT_COMPOSER_LLM_ENABLED = resolve_router_llm_enabled(
     "llm_first",
     BOI_AGENT_COMPOSER_BASE_URL,
 )
-BOI_AGENT_COMPOSER_REQUIRED = os.getenv("BOI_AGENT_COMPOSER_REQUIRED", "0").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_COMPOSER_REQUIRED = os.getenv("BOI_AGENT_COMPOSER_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "20"))
 BOI_AGENT_COMPOSER_MAX_TOKENS = int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "3072"))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
@@ -8470,10 +8470,8 @@ def agent_chat_response(
             return call_native_boi_agent(req, employee_id, route, started_at, progress_callback=progress_callback)
         except NativeAgentRuntimeUnavailable:
             raise
-        except Exception:
-            if BOI_AGENT_BACKEND == "hybrid":
-                return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
-            raise
+        except Exception as exc:
+            raise NativeAgentRuntimeUnavailable(f"Native Agent runtime failed: {exc}") from exc
 
     route_name = str(route.get("route") or "fast")
     if route_name in {"manual_handoff", "approval_required"}:
@@ -8481,7 +8479,7 @@ def agent_chat_response(
     if BOI_AGENT_BACKEND == "langflow" and route_name == "deep":
         return call_langflow_boi_agent(req, employee_id, route=route, started_at=started_at)
     if BOI_AGENT_BACKEND not in {"native", "hybrid", "langflow"}:
-        route["reason"] = f"unknown backend {BOI_AGENT_BACKEND}; using native"
+        raise NativeAgentRuntimeUnavailable(f"Unknown BOI_AGENT_BACKEND: {BOI_AGENT_BACKEND}")
     if BOI_AGENT_BACKEND in {"native", "hybrid"} or route_name in {"fast", "deep", "inbox"}:
         return call_native_boi_agent(req, employee_id, route, started_at, progress_callback=progress_callback)
     if route_name == "inbox":

@@ -105,7 +105,7 @@ sequenceDiagram
 | Value | Meaning |
 |---|---|
 | `native` | Default. Fast and deep routes use Native BoI Agent. |
-| `hybrid` | Native first, optional Langflow fallback for non-critical deep request errors. LangGraph required failures are not hidden by this mode. |
+| `hybrid` | Legacy alias for native-first operation. Native runtime failures are not hidden by Langflow fallback. |
 | `langflow` | Legacy/debug mode. Deep route calls Langflow and returns 503 if unavailable. |
 
 # Related Documents
