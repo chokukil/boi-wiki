@@ -46,6 +46,7 @@ flowchart TD
   EXEC -->|manual_complete| MAN["append-only completion row"]
   EXEC -->|promotion_submit| PROMO["promotion validation + publish"]
   EXEC -->|event_type_draft| DRAFT["draft + catalog patch proposal"]
+  EXEC -->|event_type_draft_apply| APPLY["validated catalog apply"]
 ```
 
 # User-facing Wording
@@ -71,8 +72,9 @@ Agent는 실행 대상을 임의로 추정하지 않는다. 아래처럼 필수 
 | `action_invoke` | catalog `action_key` | `sop.equipment.request_raw_data action 실행해줘` | Action Gateway 요청 실행 확인 카드 |
 | `manual_handoff_complete` | Inbox task + 조치 내용 | Inbox 카드에서 조치 내용을 입력 | append-only completion row |
 | `event_type_draft` | versioned Event Type | `maintenance.inspection.completed.v1 이벤트 타입 초안 만들어줘` | Draft + catalog patch proposal |
+| `event_type_draft_apply` | validated `draft_id` | 검토된 Event Type 초안을 catalog에 반영 | validated source edit + commit |
 
-확인 카드가 반환되어도 실제 상태 변경은 아직 일어나지 않는다. 사용자가 카드의 primary action을 눌러 `/api/agents/boi-wiki/approve`가 호출되고, RBAC/ACL/classification 검증을 다시 통과해야만 Event, Action, Workflow, draft 생성이 실행된다.
+확인 카드가 반환되어도 실제 상태 변경은 아직 일어나지 않는다. 사용자가 카드의 primary action을 눌러 `/api/agents/boi-wiki/approve`가 호출되고, RBAC/ACL/classification 검증을 다시 통과해야만 Event, Action, Workflow, draft 생성, 검증된 Event Type catalog 반영이 실행된다.
 
 직접 API를 호출하는 자동화도 같은 경계를 따른다. `/api/workflows/{workflow_key}/start`와 demo workflow start는 entry event를 발행하므로 요청 body에 `user_confirmed: true`가 없으면 400으로 차단된다. PoC 스크립트와 curl 예시는 이 값을 명시해야 하며, 이 control field는 실제 Event payload에는 포함하지 않는다.
 
@@ -114,13 +116,15 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 | `name_ko` | `event_type` 앞의 한국어 업무 표현을 짧은 사용자 표시명으로 정리한다. |
 | `sop_ref` | 현재 SOP 페이지, search knowledge panel의 top SOP, 또는 SOP group 결과에서 우선 선택한다. |
 | `workflow_stage` | 질문 안의 stage 표현을 우선하고, 없으면 관련 Event Type stage 또는 완료/요청 같은 업무 표현으로 보조 추정한다. |
+| `sop_stage_id` | SOP workflow metadata의 stage id가 확인되면 함께 보존해 status/timeline과 맞춘다. |
 | `topic` | 관련 Event Type topic이 있으면 재사용하고, 없으면 event_type 앞 두 segment를 사용한다. |
 | `payload_schema` | `사번`, `담당`, `설비`, `장비` 같은 표현을 보고 최소 payload field를 제안한다. |
 | `recommended_actions` | ontology search에서 연결된 Action 후보를 최대 3개까지 제안한다. |
+| `recommended_manual_actions` | 사람 확인/승인/조치가 필요한 manual action 후보를 action catalog 기준으로 제안한다. |
 
 예를 들어 “장비 점검 완료 이벤트 타입 `maintenance.inspection.completed.v1` 초안을 만들어줘. 작업자는 7자리 사번이고 SOP는 설비 이상 감지 SOP와 연결해줘.”라고 요청하면 Agent는 `name_ko`, `sop_ref`, `topic`, `owner_employee_id` schema 후보까지 confirmation card에 채운다. 사용자가 카드에서 확인하기 전에는 draft 파일도 catalog도 변경되지 않는다.
 
-생성된 초안은 `/event-types` 화면 상단의 `신규 Event Type 초안` 섹션에서도 확인한다. 이 섹션은 현재 사번이 만든 draft와 admin이 볼 수 있는 draft만 보여주며, `validation ok`, warnings, errors, 연결 SOP/stage/action 후보를 함께 표시한다. 화면에 보인다고 해서 catalog에 적용된 것은 아니며, 실제 반영은 validation, review, 명시 승인 이후 별도 적용 절차를 따른다.
+생성된 초안은 `/event-types` 화면 상단의 `신규 Event Type 초안` 섹션에서도 확인한다. 이 섹션은 현재 사번이 만든 draft와 admin이 볼 수 있는 draft만 보여주며, `validation ok`, warnings, errors, 연결 SOP/stage/action 후보를 함께 표시한다. 화면에 보인다고 해서 catalog에 적용된 것은 아니다. 실제 반영은 `boi.promoter` 권한자가 validation을 통과한 draft에 대해 `/api/event-types/drafts/{draft_id}/apply` 또는 `/api/agents/boi-wiki/approve`의 `event_type_draft_apply` operation을 명시 승인할 때만 진행된다. 이 경로는 기존 validated source edit과 같은 validation, rollback, commit 정책을 사용한다.
 
 # Public APIs
 
@@ -133,6 +137,7 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 | `POST /api/event-types/drafts` | create Event Type draft |
 | `GET /api/event-types/drafts` | list visible drafts |
 | `POST /api/event-types/drafts/{draft_id}/validate` | revalidate draft |
+| `POST /api/event-types/drafts/{draft_id}/apply` | apply validated draft to event catalog |
 
 # Related Documents
 

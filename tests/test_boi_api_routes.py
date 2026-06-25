@@ -1389,6 +1389,109 @@ def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_mod
     assert validate.json()["draft"]["validation"]["valid"] is True
 
 
+def test_event_type_draft_apply_updates_catalog_after_confirmation(boi_app_module, monkeypatch, tmp_path):
+    catalog_root = tmp_path / "event_catalog"
+    catalog_root.mkdir(parents=True)
+    catalog_path = catalog_root / "event_types.yaml"
+    catalog_path.write_text("event_types: []\n", encoding="utf-8")
+    monkeypatch.setattr(boi_app_module, "EVENT_CATALOG_ROOT", catalog_root)
+    monkeypatch.setenv("BOI_EDIT_REQUIRE_COMMIT", "false")
+    monkeypatch.setattr(
+        boi_app_module,
+        "roles_for",
+        lambda _employee_id: ["boi.viewer", "boi.editor", "boi.promoter"],
+    )
+    boi_app_module.invalidate_catalog_caches()
+    client = TestClient(boi_app_module.app)
+    event_type = "pytest.applied.event.requested.v1"
+
+    created = client.post(
+        "/api/event-types/drafts?employee_id=100001",
+        json={
+            "event_type": event_type,
+            "name_ko": "적용 이벤트",
+            "description": "draft 검증 후 catalog에 반영되는 이벤트",
+            "workflow_stage": "적용 검증",
+            "sop_stage_id": "apply_check",
+            "wiki_usage": "draft apply 검증용 event type",
+            "recommended_actions": ["boi.materialize_event"],
+            "recommended_manual_actions": ["manual.equipment.confirm_alarm_context"],
+            "user_confirmed": True,
+        },
+    )
+    draft_id = created.json()["draft"]["draft_id"]
+    unconfirmed = client.post(f"/api/event-types/drafts/{draft_id}/apply?employee_id=100001", json={})
+    applied = client.post(
+        f"/api/event-types/drafts/{draft_id}/apply?employee_id=100001",
+        json={"user_confirmed": True, "note": "catalog apply test"},
+    )
+    repeated = client.post(
+        f"/api/event-types/drafts/{draft_id}/apply?employee_id=100001",
+        json={"user_confirmed": True, "note": "catalog apply test"},
+    )
+
+    assert created.status_code == 200
+    assert unconfirmed.status_code == 400
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "applied"
+    assert body["draft"]["status"] == "applied"
+    assert body["draft"]["catalog_entry"]["event_type"] == event_type
+    assert body["draft"]["catalog_entry"]["sop_stage_id"] == "apply_check"
+    assert body["draft"]["catalog_entry"]["recommended_manual_actions"] == ["manual.equipment.confirm_alarm_context"]
+    assert body["apply_result"]["status"] == "applied"
+    assert body["apply_result"]["commit_status"] in {"disabled", "unavailable", "unchanged", "committed"}
+    assert boi_app_module.get_event_type(event_type)["name_ko"] == "적용 이벤트"
+    catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    entry = next(item for item in catalog["event_types"] if item["event_type"] == event_type)
+    assert entry["wiki_usage"] == "draft apply 검증용 event type"
+    assert repeated.status_code == 200
+    assert repeated.json()["status"] == "already_applied"
+
+
+def test_boi_agent_approve_can_apply_event_type_draft(boi_app_module, monkeypatch, tmp_path):
+    catalog_root = tmp_path / "event_catalog"
+    catalog_root.mkdir(parents=True)
+    (catalog_root / "event_types.yaml").write_text("event_types: []\n", encoding="utf-8")
+    monkeypatch.setattr(boi_app_module, "EVENT_CATALOG_ROOT", catalog_root)
+    monkeypatch.setenv("BOI_EDIT_REQUIRE_COMMIT", "false")
+    monkeypatch.setattr(
+        boi_app_module,
+        "roles_for",
+        lambda _employee_id: ["boi.viewer", "boi.editor", "boi.promoter"],
+    )
+    boi_app_module.invalidate_catalog_caches()
+    client = TestClient(boi_app_module.app)
+    event_type = "pytest.agent.apply.requested.v1"
+
+    created = client.post(
+        "/api/event-types/drafts?employee_id=100001",
+        json={
+            "event_type": event_type,
+            "name_ko": "Agent 적용 이벤트",
+            "description": "Agent approve로 catalog에 반영되는 이벤트",
+            "workflow_stage": "Agent 적용",
+            "user_confirmed": True,
+        },
+    )
+    draft_id = created.json()["draft"]["draft_id"]
+    response = client.post(
+        "/api/agents/boi-wiki/approve?employee_id=100001",
+        json={
+            "operation": "event_type_draft_apply",
+            "user_confirmed": True,
+            "note": "agent approved event type apply",
+            "payload": {"draft_id": draft_id},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"] == "event_type_draft_apply"
+    assert body["status"] == "applied"
+    assert boi_app_module.get_event_type(event_type)["workflow_stage"] == "Agent 적용"
+
+
 def test_event_types_page_shows_visible_drafts_without_catalog_apply(boi_app_module):
     client = TestClient(boi_app_module.app)
     event_type = "pytest.visible.draft.requested.v1"

@@ -408,6 +408,16 @@ def invalidate_doc_caches() -> None:
     _SEARCH_INDEX_CACHE["by_employee"] = {}
 
 
+def invalidate_catalog_caches() -> None:
+    _FILE_SIGNATURE_CACHE.clear()
+    _EVENT_TYPES_CACHE["signature"] = None
+    _EVENT_TYPES_CACHE["items"] = []
+    _ACTION_CATALOG_CACHE["signature"] = None
+    _ACTION_CATALOG_CACHE["items"] = []
+    _SEARCH_INDEX_CACHE["signature"] = None
+    _SEARCH_INDEX_CACHE["by_employee"] = {}
+
+
 def invalidate_event_log_caches() -> None:
     _FILE_SIGNATURE_CACHE.clear()
     _EVENT_LOG_CACHE["signature"] = None
@@ -4325,6 +4335,12 @@ def rollback_source_file(source_path: Path, content: str) -> None:
     source_path.write_text(content, encoding="utf-8")
     refresh_git_index_for_path(source_path)
     invalidate_doc_caches()
+    try:
+        resolved = source_path.resolve()
+        if any(root.resolve() == resolved or root.resolve() in resolved.parents for root in (EVENT_CATALOG_ROOT, ACTION_CATALOG_ROOT)):
+            invalidate_catalog_caches()
+    except Exception:
+        pass
 
 
 def apply_source_edit(
@@ -4394,6 +4410,12 @@ def apply_source_edit(
             rollback_source_file(source_path, current_content)
         raise
     refreshed_sha = hashlib.sha256(source_path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    try:
+        resolved = source_path.resolve()
+        if any(root.resolve() == resolved or root.resolve() in resolved.parents for root in (EVENT_CATALOG_ROOT, ACTION_CATALOG_ROOT)):
+            invalidate_catalog_caches()
+    except Exception:
+        pass
     return {
         **preview,
         "ok": True,
@@ -5123,15 +5145,27 @@ class EventTypeDraftRequest(BaseModel):
     event_type: str
     name_ko: str = ""
     description: str = ""
+    default_boi_type: str = ""
+    default_flow_key: str = ""
+    default_visibility: str = ""
     owner: str = ""
     status: str = "draft"
     topic: str = ""
     workflow_stage: str = ""
     sop_ref: str = ""
+    sop_stage_id: str = ""
+    wiki_usage: str = ""
     payload_schema: dict[str, Any] = Field(default_factory=dict)
     recommended_actions: list[str] = Field(default_factory=list)
+    recommended_manual_actions: list[str] = Field(default_factory=list)
     source_refs: list[Any] = Field(default_factory=list)
     user_confirmed: bool = False
+
+
+class EventTypeDraftApplyRequest(BaseModel):
+    user_confirmed: bool = False
+    author: str | None = None
+    note: str = ""
 
 
 class ManualHandoffCompleteRequest(BaseModel):
@@ -6036,10 +6070,23 @@ def validate_event_type_draft_payload(payload: dict[str, Any]) -> dict[str, Any]
     if not payload.get("sop_ref") and not payload.get("workflow_stage"):
         warnings.append("sop_ref or workflow_stage should be provided when this event participates in SOP workflow")
     recommended_actions = payload.get("recommended_actions") or []
-    action_keys = {str(item.get("action_key") or item.get("key") or "") for item in load_action_catalog()}
+    action_catalog = load_action_catalog()
+    actions_by_key = {str(item.get("action_key") or item.get("key") or ""): item for item in action_catalog}
+    action_keys = set(actions_by_key)
     unknown_actions = [item for item in recommended_actions if item not in action_keys]
     if unknown_actions:
         warnings.append(f"unknown recommended action(s): {', '.join(unknown_actions)}")
+    recommended_manual_actions = payload.get("recommended_manual_actions") or []
+    unknown_manual_actions = [item for item in recommended_manual_actions if item not in action_keys]
+    if unknown_manual_actions:
+        warnings.append(f"unknown recommended manual action(s): {', '.join(unknown_manual_actions)}")
+    non_manual_actions = [
+        item
+        for item in recommended_manual_actions
+        if item in actions_by_key and actions_by_key[item].get("connector_kind") != "manual"
+    ]
+    if non_manual_actions:
+        warnings.append(f"recommended_manual_actions must reference manual action(s): {', '.join(non_manual_actions)}")
     return {"valid": not errors, "errors": errors, "warnings": warnings}
 
 
@@ -6062,12 +6109,18 @@ def create_event_type_draft(req: EventTypeDraftRequest, employee_id: str) -> dic
             "event_type": req.event_type,
             "name_ko": req.name_ko or req.event_type,
             "description": req.description,
+            "default_boi_type": req.default_boi_type,
+            "default_flow_key": req.default_flow_key,
+            "default_visibility": req.default_visibility,
             "owner": req.owner or employee_id,
             "topic": req.topic,
             "workflow_stage": req.workflow_stage,
             "sop_ref": req.sop_ref,
+            "sop_stage_id": req.sop_stage_id,
+            "wiki_usage": req.wiki_usage,
             "payload_schema": req.payload_schema,
             "recommended_actions": req.recommended_actions,
+            "recommended_manual_actions": req.recommended_manual_actions,
         },
     }
     event_type_draft_path(draft_id).write_text(json.dumps(row, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -6089,6 +6142,143 @@ def visible_event_type_drafts(employee_id: str) -> list[dict[str, Any]]:
     rows = read_event_type_drafts()
     admin = "boi.admin" in roles_for(employee_id)
     return [row for row in rows if row.get("created_by") == employee_id or admin]
+
+
+def event_type_catalog_path() -> Path:
+    ensure_dirs()
+    EVENT_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
+    return EVENT_CATALOG_ROOT / "event_types.yaml"
+
+
+def event_type_catalog_entry_from_draft(draft: dict[str, Any]) -> dict[str, Any]:
+    proposal = draft.get("proposal") if isinstance(draft.get("proposal"), dict) else {}
+    patch = draft.get("catalog_patch_proposal") if isinstance(draft.get("catalog_patch_proposal"), dict) else {}
+    source = {**proposal, **patch}
+    keep_fields = [
+        "event_type",
+        "name_ko",
+        "description",
+        "default_boi_type",
+        "default_flow_key",
+        "default_visibility",
+        "owner",
+        "status",
+        "topic",
+        "workflow_stage",
+        "sop_ref",
+        "sop_stage_id",
+        "wiki_usage",
+        "payload_schema",
+        "recommended_actions",
+        "recommended_manual_actions",
+    ]
+    entry: dict[str, Any] = {}
+    for field_name in keep_fields:
+        value = source.get(field_name)
+        if value in (None, "", [], {}):
+            continue
+        entry[field_name] = value
+    entry.setdefault("event_type", draft.get("event_type") or proposal.get("event_type"))
+    entry.setdefault("name_ko", proposal.get("name_ko") or draft.get("event_type") or entry.get("event_type"))
+    entry.setdefault("description", proposal.get("description") or "")
+    entry.setdefault("status", proposal.get("status") or "draft")
+    entry.setdefault("topic", proposal.get("topic") or "boi.events")
+    return entry
+
+
+def proposed_event_catalog_content_with_entry(catalog_path: Path, entry: dict[str, Any]) -> str:
+    if catalog_path.exists():
+        parsed = yaml.safe_load(catalog_path.read_text(encoding="utf-8")) or {}
+    else:
+        parsed = {}
+    if isinstance(parsed, list):
+        event_types = parsed
+        parsed = {"event_types": event_types}
+    elif isinstance(parsed, dict):
+        event_types = parsed.get("event_types")
+        if not isinstance(event_types, list):
+            event_types = []
+            parsed["event_types"] = event_types
+    else:
+        parsed = {"event_types": []}
+        event_types = parsed["event_types"]
+    event_type = str(entry.get("event_type") or "")
+    if any(str(item.get("event_type") or "") == event_type for item in event_types if isinstance(item, dict)):
+        raise HTTPException(status_code=409, detail=f"event_type already exists in catalog: {event_type}")
+    event_types.append(entry)
+    return yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)
+
+
+def apply_event_type_draft(draft_id: str, req: EventTypeDraftApplyRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.promoter")
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required to apply an Event Type draft")
+    path = event_type_draft_path(draft_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="draft not found")
+    draft = json.loads(path.read_text(encoding="utf-8"))
+    if draft.get("created_by") != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="Event Type draft is not visible to this employee")
+    if draft.get("status") == "applied" and draft.get("apply_result"):
+        return {"ok": True, "status": "already_applied", "draft": draft, "apply_result": draft.get("apply_result")}
+    validation = validate_event_type_draft_payload(draft.get("proposal") or {})
+    if not validation.get("valid"):
+        draft["validation"] = validation
+        path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "ok": False,
+                "status": "validation_failed",
+                "validation": validation,
+                "draft": draft,
+            },
+        )
+    entry = event_type_catalog_entry_from_draft(draft)
+    catalog_path = event_type_catalog_path()
+    current_content = catalog_path.read_text(encoding="utf-8") if catalog_path.exists() else "event_types: []\n"
+    if not catalog_path.exists():
+        catalog_path.write_text(current_content, encoding="utf-8")
+    base_sha = hashlib.sha256(current_content.encode("utf-8")).hexdigest()
+    proposed_content = proposed_event_catalog_content_with_entry(catalog_path, entry)
+    apply_result = apply_source_edit(
+        source_path=catalog_path,
+        base_sha256=base_sha,
+        proposed_content=proposed_content,
+        employee_id=employee_id,
+        author=req.author,
+        note=req.note or f"Apply Event Type draft {draft_id}",
+    )
+    draft.update(
+        {
+            "status": "applied",
+            "validation": validation,
+            "applied_at": now_iso(),
+            "applied_by": employee_id,
+            "catalog_entry": entry,
+            "apply_result": {
+                "status": apply_result.get("status"),
+                "path": apply_result.get("path"),
+                "commit_status": apply_result.get("commit_status"),
+                "commit_hash": apply_result.get("commit_hash"),
+                "sha256": apply_result.get("sha256"),
+            },
+        }
+    )
+    path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    invalidate_catalog_caches()
+    append_rbac_audit(
+        employee_id,
+        "event_type_draft_apply",
+        {
+            "draft_id": draft_id,
+            "event_type": entry.get("event_type"),
+            "commit_status": apply_result.get("commit_status"),
+            "commit_hash": apply_result.get("commit_hash"),
+            "note": req.note,
+        },
+    )
+    return {"ok": True, "status": "applied", "draft": draft, "apply_result": apply_result}
 
 
 @app.post("/api/event-types/drafts")
@@ -6118,6 +6308,15 @@ async def api_event_type_draft_validate(draft_id: str, employee_id: str = Depend
     path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     append_rbac_audit(employee_id, "event_type_draft_validate", {"draft_id": draft_id, "validation": validation})
     return {"ok": True, "draft": draft}
+
+
+@app.post("/api/event-types/drafts/{draft_id}/apply")
+async def api_event_type_draft_apply(
+    draft_id: str,
+    req: EventTypeDraftApplyRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    return apply_event_type_draft(draft_id, req, employee_id)
 
 
 @app.get("/source", response_class=HTMLResponse)
@@ -8889,6 +9088,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "action_invoke",
             "manual_handoff_complete",
             "event_type_draft",
+            "event_type_draft_apply",
             "promotion_submit",
         ],
         "native_agent": {
@@ -8925,6 +9125,7 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "action_invoke",
             "manual_handoff_complete",
             "event_type_draft",
+            "event_type_draft_apply",
             "promotion_submit",
             "source_apply",
             "doc_body_apply",
@@ -8965,6 +9166,13 @@ async def api_boi_agent_approve(req: BoiAgentApprovalRequest, employee_id: str =
         draft_payload = {**payload, "user_confirmed": True}
         draft = create_event_type_draft(EventTypeDraftRequest(**draft_payload), employee_id)
         return {"ok": True, "operation": operation, "status": "draft_created", "draft": draft}
+    if operation in {"event_type_draft_apply", "apply_event_type_draft"}:
+        draft_id = str(payload.get("draft_id") or "")
+        if not draft_id:
+            raise HTTPException(status_code=400, detail="draft_id is required")
+        apply_req = EventTypeDraftApplyRequest(user_confirmed=True, author=payload.get("author"), note=req.note or str(payload.get("note") or ""))
+        result = apply_event_type_draft(draft_id, apply_req, employee_id)
+        return {"ok": True, "operation": operation, "status": "applied", "result": result}
     if operation in {"promotion_submit", "submit_promotion"}:
         promotion_payload = {**payload, "user_confirmed": True}
         result = await submit_promotion(PromotionSubmitRequest(**promotion_payload), employee_id)
