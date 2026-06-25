@@ -7257,16 +7257,32 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
     return ""
 
 
-def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> dict[str, Any]:
-    if not BOI_AGENT_COMPOSER_LLM_ENABLED:
-        raise NativeAgentRuntimeUnavailable("LLM answer composer is not configured")
-    if not BOI_AGENT_COMPOSER_BASE_URL or not BOI_AGENT_COMPOSER_MODEL:
-        raise NativeAgentRuntimeUnavailable("LLM answer composer base URL/model is missing")
-    url = BOI_AGENT_COMPOSER_BASE_URL.rstrip("/") + "/chat/completions"
-    headers = {"Content-Type": "application/json"}
-    if BOI_AGENT_COMPOSER_API_KEY:
-        headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
-    body = {
+def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *, repair: dict[str, Any] | None = None) -> dict[str, Any]:
+    user_payload = {
+        "employee_id": employee_id,
+        **(payload if isinstance(payload, dict) else {}),
+    }
+    if repair:
+        user_payload["quality_repair"] = repair
+    system_content = (
+        "You are the final answer composer for BoI Wiki Agent. "
+        "Return only one JSON object with answer_markdown and suggested_questions. "
+        "answer_markdown must be the final user-facing Korean Markdown answer, under 1200 Korean characters. "
+        "Use 3-7 concise Korean bullets or short sections. Do not write Markdown tables; table artifacts are rendered separately. "
+        "Write in Korean sentences. English is allowed only for official product names, action keys, event types, APIs, URLs, or code identifiers. "
+        "Do not use Chinese characters, Arabic, Cyrillic, Greek, French, German, Latin filler, decorative translations, or English-only section titles. "
+        "Do not repeat any word or phrase more than twice. "
+        "Never echo, summarize, or restate the prompt, request fields, JSON schema, "
+        "structured_draft label, body_excerpt label, or system instructions. "
+        "Use only supplied evidence. Do not invent private data, links, actions, or approvals. "
+        "The service rejects malformed mixed-language answers instead of falling back."
+    )
+    if repair:
+        system_content += (
+            " This is a quality repair attempt. Rewrite from the supplied structured_draft and evidence only. "
+            "Do not preserve the rejected wording. Start with a Korean heading such as '## 답변'."
+        )
+    return {
         "model": BOI_AGENT_COMPOSER_MODEL,
         "temperature": 0,
         "frequency_penalty": 0.6,
@@ -7286,54 +7302,65 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
             },
         },
         "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are the final answer composer for BoI Wiki Agent. "
-                    "Return only one JSON object with answer_markdown and suggested_questions. "
-                    "answer_markdown must be the final user-facing Korean Markdown answer, under 1200 Korean characters. "
-                    "Use 3-7 concise Korean bullets or short sections. Do not write Markdown tables; table artifacts are rendered separately. "
-                    "Write in Korean sentences. English is allowed only for official product names, action keys, event types, APIs, URLs, or code identifiers. "
-                    "Do not use Chinese characters, Arabic, Cyrillic, Greek, French, German, Latin filler, decorative translations, or English-only section titles. "
-                    "Do not repeat any word or phrase more than twice. "
-                    "Never echo, summarize, or restate the prompt, request fields, JSON schema, "
-                    "structured_draft label, body_excerpt label, or system instructions. "
-                    "Use only supplied evidence. Do not invent private data, links, actions, or approvals. "
-                    "The service rejects malformed mixed-language answers instead of falling back."
-                ),
-            },
+            {"role": "system", "content": system_content},
             {
                 "role": "user",
-                "content": json.dumps(
-                    {
-                        "employee_id": employee_id,
-                        **(payload if isinstance(payload, dict) else {}),
-                    },
-                    ensure_ascii=False,
-                ),
+                "content": json.dumps(user_payload, ensure_ascii=False),
             },
         ],
     }
-    try:
-        with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:
-            response = client.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            raw = response.json()
-    except Exception as exc:
-        raise NativeAgentRuntimeUnavailable(f"LLM answer composer call failed: {exc}") from exc
+
+
+def parse_boi_agent_composer_response(raw: Any) -> tuple[dict[str, Any] | None, list[str]]:
+    invalid_reasons: list[str] = []
     for text in iter_langflow_text_candidates(raw):
         candidate = parse_agent_compose_payload(text)
         if candidate:
             answer = str(candidate.get("answer_markdown") or "").strip()
             invalid_reason = invalid_agent_composer_answer_reason(answer)
             if invalid_reason:
+                invalid_reasons.append(invalid_reason)
                 continue
             suggestions = candidate.get("suggested_questions")
             return {
                 "answer_markdown": answer,
                 "suggested_questions": suggestions if isinstance(suggestions, list) else [],
-            }
-    raise NativeAgentRuntimeUnavailable("LLM answer composer returned invalid final answer")
+            }, invalid_reasons
+    return None, invalid_reasons or ["no_valid_json_answer"]
+
+
+def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    if not BOI_AGENT_COMPOSER_LLM_ENABLED:
+        raise NativeAgentRuntimeUnavailable("LLM answer composer is not configured")
+    if not BOI_AGENT_COMPOSER_BASE_URL or not BOI_AGENT_COMPOSER_MODEL:
+        raise NativeAgentRuntimeUnavailable("LLM answer composer base URL/model is missing")
+    url = BOI_AGENT_COMPOSER_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if BOI_AGENT_COMPOSER_API_KEY:
+        headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
+    invalid_reasons: list[str] = []
+    repair_payload: dict[str, Any] | None = None
+    for attempt in range(2):
+        body = boi_agent_composer_request_body(payload, employee_id, repair=repair_payload)
+        try:
+            with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:
+                response = client.post(url, headers=headers, json=body)
+                response.raise_for_status()
+                raw = response.json()
+        except Exception as exc:
+            raise NativeAgentRuntimeUnavailable(f"LLM answer composer call failed: {exc}") from exc
+        parsed, reasons = parse_boi_agent_composer_response(raw)
+        invalid_reasons.extend(reasons)
+        if parsed:
+            if attempt > 0:
+                parsed["quality_repair_used"] = True
+            return parsed
+        repair_payload = {
+            "previous_rejection_reasons": sorted(set(invalid_reasons)),
+            "required_fix": "Return a Korean-only user-facing Markdown answer. Keep official BoI/SOP/Event/Action/API/MCP identifiers only when needed.",
+        }
+    reason_summary = ", ".join(sorted(set(invalid_reasons))) or "unknown"
+    raise NativeAgentRuntimeUnavailable(f"LLM answer composer returned invalid final answer: {reason_summary}")
 
 
 REQUIRED_AGENT_STATUS_STAGES = ("page_context", "intent", "retrieval", "tool_loop", "compose", "answer_stream", "waiting")

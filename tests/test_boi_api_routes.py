@@ -2129,6 +2129,73 @@ def test_boi_agent_composer_llm_skips_mixed_language_candidate(boi_app_module, m
     assert result["suggested_questions"] == ["관련 Action도 볼까요?"]
 
 
+def test_boi_agent_composer_llm_repairs_invalid_first_response(boi_app_module, monkeypatch):
+    calls: list[dict] = []
+
+    class FakeResponse:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.body
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers, json):
+            calls.append(json)
+            if len(calls) == 1:
+                return FakeResponse(
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": (
+                                        '{"answer_markdown":"### Current Page Content\\n\\n'
+                                        '* **核心**: operator/العمليات/оператор 설명입니다."}'
+                                    )
+                                }
+                            }
+                        ]
+                    }
+                )
+            return FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"answer_markdown":"## 답변\\n\\n현재 페이지의 BoI Wiki 내용을 한국어 업무 문장으로 정리했습니다."}'
+                            }
+                        }
+                    ]
+                }
+            )
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_BASE_URL", "http://composer.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    result = boi_app_module.call_boi_agent_composer_llm({"structured_draft": "## 초안"}, "100001")
+
+    assert len(calls) == 2
+    assert "quality_repair" not in json.loads(calls[0]["messages"][1]["content"])
+    assert json.loads(calls[1]["messages"][1]["content"])["quality_repair"]["previous_rejection_reasons"] == ["non_korean_script"]
+    assert result["quality_repair_used"] is True
+    assert result["answer_markdown"].startswith("## 답변")
+
+
 def test_boi_agent_chat_router_failure_returns_service_error_when_required(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 

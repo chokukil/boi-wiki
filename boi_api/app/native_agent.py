@@ -515,6 +515,8 @@ class NativeBoiAgent:
         )
         if isinstance(result, dict) and str(result.get("answer_markdown") or "").strip() and not result.get("error"):
             state["answer_markdown"] = str(result.get("answer_markdown") or "").strip()
+            if result.get("quality_repair_used"):
+                state["composer_quality_repair_used"] = True
             suggestions = result.get("suggested_questions")
             if isinstance(suggestions, list):
                 state["suggested_questions"] = [str(item).strip() for item in suggestions if str(item).strip()][:4]
@@ -684,6 +686,7 @@ class NativeBoiAgent:
                 "langgraph_available": bool(state.get("langgraph_available")),
                 "composer_backend": state.get("composer_backend") or "deterministic",
                 "composer_error": state.get("composer_error") or "",
+                "composer_quality_repair_used": bool(state.get("composer_quality_repair_used")),
             },
             "route": state.get("route_name"),
             "intent": state.get("intent"),
