@@ -29,7 +29,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 30
+    assert body["capabilities"]["tools"] == 31
     assert body["capabilities"]["resource_templates"] == 6
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
@@ -65,6 +65,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "doc_body_preview" in tool_names
     assert "doc_body_apply" in tool_names
     assert "boi_agent_chat" in tool_names
+    assert "boi_agent_capabilities" in tool_names
     assert "ontology_search" in tool_names
     assert "agent_inbox" in tool_names
     assert "manual_handoff_complete" in tool_names
@@ -96,7 +97,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
-    assert "Tools" in body and "30" in body
+    assert "Tools" in body and "31" in body
     assert "Resource templates" in body and "6" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
@@ -106,6 +107,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "doc_body_apply" in body
     assert "promotion_submit" in body
     assert "boi_agent_chat" in body
+    assert "boi_agent_capabilities" in body
     assert "boi-agent.response.v1" in body
     assert "MCP auth" in body
     assert "not required" in body
@@ -347,6 +349,7 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
     client = TestClient(mcp_module.app)
 
     requests = [
+        ("boi_agent_capabilities", {"employee_id": "100001"}),
         ("boi_agent_suggestions", {"employee_id": "100001", "current_url": "/sops", "page_context": {"title": "SOP"}}),
         ("dictionary_terms", {"employee_id": "100001", "query": "단면검사", "scope": "all", "limit": 5}),
         ("agent_memory_search", {"employee_id": "100001", "query": "선호", "include_archived": False, "limit": 3}),
@@ -387,6 +390,7 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
     assert "user_confirmed=true" in denied.json()["detail"]
     assert approved.status_code == 200
     assert [item["path"] for item in calls] == [
+        "/api/agents/boi-wiki/capabilities",
         "/api/agents/boi-wiki/suggestions",
         "/api/dictionary/terms",
         "/api/agents/boi-wiki/memory",
@@ -438,6 +442,22 @@ def test_boi_wiki_mcp_rbac_tools_delegate_to_boi_api(mcp_module, monkeypatch):
     ]
     assert calls[1]["payload"]["required_role"] == "boi.action_invoker"
     assert calls[3]["params"]["action"] == "team_upsert"
+
+
+def test_boi_wiki_mcp_agent_capabilities_delegate_to_boi_api(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "path": path, "agent_contract_version": "boi-agent.response.v1"}
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+
+    result = asyncio.run(mcp_module.boi_agent_capabilities(employee_id="100001"))
+
+    assert result["path"] == "/api/agents/boi-wiki/capabilities"
+    assert result["agent_contract_version"] == "boi-agent.response.v1"
+    assert calls == [{"method": "get", "path": "/api/agents/boi-wiki/capabilities", "employee_id": "100001"}]
 
 
 def test_boi_wiki_mcp_bridge_covers_event_type_draft_tools(mcp_module, monkeypatch):
@@ -851,7 +871,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 30,
+            "tools": 31,
             "resources": 0,
             "resource_templates": 6,
             "prompts": 5,
@@ -860,6 +880,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
                 "boi_get",
                 "workflow_status",
                 "boi_agent_chat",
+                "boi_agent_capabilities",
                 "ontology_search",
                 "agent_inbox",
                 "event_type_draft_create",
@@ -908,6 +929,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     assert "boi_search" in output
     assert "workflow_status" in output
     assert "boi_agent_chat" in output
+    assert "boi_agent_capabilities" in output
     assert "ontology_search" in output
     assert "agent_inbox" in output
     assert "event_type_draft_create" in output
@@ -927,7 +949,7 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 30,
+            "tools": 31,
             "resources": 0,
             "resource_templates": 6,
             "prompts": 5,
@@ -963,7 +985,7 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 30,
+            "tools": 31,
             "resources": 0,
             "resource_templates": 6,
             "prompts": 5,

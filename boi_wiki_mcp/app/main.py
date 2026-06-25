@@ -29,6 +29,7 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "workflow_start", "description": "Start a config-driven workflow from SOP metadata."},
     {"name": "workflow_status", "description": "Return workflow status for a trace."},
     {"name": "boi_agent_chat", "description": "Ask the page-aware BoI Agent using ontology search, dictionary, memory, inbox context, and BoI ACL guardrails."},
+    {"name": "boi_agent_capabilities", "description": "Return BoI Agent backend, response contract, streaming, guardrail, and execution-card capabilities."},
     {"name": "boi_agent_suggestions", "description": "Return recommended questions for a current BoI Wiki page context."},
     {"name": "ontology_search", "description": "Search the business knowledge graph across Dictionary, SOP, Event Types, Actions, BoI docs, and runtime evidence."},
     {"name": "dictionary_resolve", "description": "Resolve business terms and aliases with private, team, then public priority."},
@@ -420,6 +421,12 @@ async def boi_agent_suggestions(
         employee_id=employee_id,
         payload={"current_url": current_url, "page_context": page_context or {}},
     )
+
+
+@mcp.tool(name="boi_agent_capabilities")
+async def boi_agent_capabilities(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return BoI Agent backend, response contract, and guardrail capabilities."""
+    return await api_get("/api/agents/boi-wiki/capabilities", employee_id=employee_id)
 
 
 @mcp.tool(name="ontology_search")
@@ -1212,6 +1219,8 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             payload={"current_url": str(args.get("current_url") or ""), "page_context": args.get("page_context") or {}},
             service_token=True,
         )
+    elif tool_name == "boi_agent_capabilities":
+        result = await api_get("/api/agents/boi-wiki/capabilities", employee_id=employee_id, service_token=True)
     elif tool_name == "agent_inbox":
         result = await api_get(
             "/api/agents/boi-wiki/inbox",
