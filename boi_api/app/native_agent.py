@@ -43,7 +43,7 @@ ALLOWED_AGENT_INTENTS = {
 }
 DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
 MUTATION_AGENT_INTENTS = {"manual_complete", "approval", "event_publish", "action_invoke", "workflow_start", "event_type_draft"}
-NATIVE_ARTIFACT_AUTHORITATIVE_INTENTS = {"diagram", "gap_check", "inbox"}
+NATIVE_ARTIFACT_AUTHORITATIVE_INTENTS = {"diagram", "workflow_explain", "gap_check", "inbox"}
 
 
 def normalize_native_route(value: str, fallback: str = "fast") -> str:

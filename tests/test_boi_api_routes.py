@@ -482,9 +482,9 @@ def test_boi_agent_native_uses_llm_composer_when_enabled(boi_app_module, monkeyp
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
-            "question": "이 SOP의 Event, Action, Manual Handoff 관계를 설명해줘",
-            "mode": "deep",
-            "intent": "workflow_explain",
+            "question": "이 SOP를 짧게 요약해줘",
+            "mode": "fast",
+            "intent": "summarize",
             "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
         },
     )
@@ -541,9 +541,9 @@ def test_boi_agent_required_llm_composer_failure_is_service_error(boi_app_module
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
-            "question": "이 SOP의 Event, Action, Manual Handoff 관계를 설명해줘",
-            "mode": "deep",
-            "intent": "workflow_explain",
+            "question": "이 SOP를 짧게 요약해줘",
+            "mode": "fast",
+            "intent": "summarize",
             "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
         },
     )
