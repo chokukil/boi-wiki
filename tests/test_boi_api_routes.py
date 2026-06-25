@@ -695,13 +695,46 @@ def test_boi_agent_unknown_backend_is_service_error(boi_app_module, monkeypatch)
     assert "Unknown BOI_AGENT_BACKEND: mystery" in detail["message"]
 
 
-def test_boi_agent_composer_parser_recovers_partial_answer_markdown(boi_app_module):
+def test_boi_agent_composer_parser_rejects_partial_answer_markdown(boi_app_module):
     partial = '{"answer_markdown": "## 요약\\n\\n설비 이상 SOP는 Event, Action, Manual Handoff를 순서대로 연결합니다.'
 
     parsed = boi_app_module.parse_agent_compose_payload(partial)
 
-    assert parsed
-    assert parsed["answer_markdown"].startswith("## 요약")
+    assert parsed is None
+
+
+def test_native_agent_direct_auto_route_requires_llm_classifier(monkeypatch):
+    from boi_api.app import native_agent
+
+    monkeypatch.setattr(native_agent, "StateGraph", None, raising=False)
+    tools = native_agent.NativeAgentTools(
+        ontology_search=lambda query, scope="all", limit=8: {"ok": True, "best_matches": []},
+        boi_get=lambda ref: None,
+        event_type_lookup=lambda event_type: None,
+        action_spec_lookup=lambda action_key: None,
+        workflow_status=lambda workflow_key, trace_id: None,
+        trace_context_lookup=lambda trace_id: {"ok": True, "events": [], "actions": []},
+        dictionary_resolve=lambda query: {"ok": True, "terms": []},
+        memory_recall=lambda query, limit=5: {"ok": True, "items": []},
+        agent_inbox=lambda limit=10: {"ok": True, "items": []},
+        llm_json=None,
+    )
+    runtime = native_agent.NativeBoiAgent(
+        tools,
+        native_agent.NativeAgentConfig(
+            llm_enabled=True,
+            require_langgraph=False,
+            composer_enabled=False,
+            composer_required=False,
+        ),
+    )
+
+    with pytest.raises(native_agent.NativeAgentRuntimeUnavailable, match="route classifier"):
+        runtime.run(
+            {"question": "SOP 찾아줘", "mode": "auto", "current_url": "/"},
+            {},
+            {"page_context": {}, "ontology_search_seed": {}, "access_summary": {}},
+        )
 
 
 def test_boi_agent_composer_rejects_degenerate_repetition(boi_app_module):
@@ -1536,7 +1569,7 @@ def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
     assert payload["confidence"] == 0.92
 
 
-def test_boi_agent_composer_parser_accepts_answer_alias_and_plain_markdown(boi_app_module):
+def test_boi_agent_composer_parser_accepts_json_contract_not_plain_markdown(boi_app_module):
     alias_payload = boi_app_module.parse_agent_compose_payload('{"answer":"## 답변\\n근거를 기준으로 정리했습니다."}')
     plain_payload = boi_app_module.parse_agent_compose_payload("## 답변\n\n근거를 기준으로 정리했습니다.")
     fenced_json_payload = boi_app_module.parse_agent_compose_payload(
@@ -1558,7 +1591,7 @@ def test_boi_agent_composer_parser_accepts_answer_alias_and_plain_markdown(boi_a
     openai_payload = boi_app_module.parse_agent_compose_payload(openai_candidates[0])
 
     assert alias_payload["answer_markdown"].startswith("## 답변")
-    assert plain_payload["answer_markdown"].startswith("## 답변")
+    assert plain_payload is None
     assert fenced_json_payload["answer_markdown"].startswith("## 답변")
     assert openai_candidates[0].startswith("```json")
     assert openai_payload["answer_markdown"].startswith("## 답변")

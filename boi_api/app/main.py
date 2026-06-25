@@ -6926,53 +6926,7 @@ def parse_agent_compose_payload(text: str) -> dict[str, Any] | None:
             if answer:
                 payload["answer_markdown"] = answer
                 return payload
-    partial_answer = extract_partial_json_string_field(stripped, "answer_markdown")
-    if partial_answer and len(partial_answer) >= 20:
-        return {"answer_markdown": partial_answer.strip(), "suggested_questions": []}
-    if (
-        stripped
-        and not stripped.startswith("{")
-        and not stripped.startswith("[")
-        and len(stripped) >= 20
-        and re.search(r"\s", stripped)
-        and not re.fullmatch(r"[A-Za-z0-9_-]+", stripped)
-    ):
-        return {"answer_markdown": stripped}
     return None
-
-
-def extract_partial_json_string_field(text: str, field: str) -> str:
-    marker = f'"{field}"'
-    start = text.find(marker)
-    if start < 0:
-        return ""
-    colon = text.find(":", start + len(marker))
-    if colon < 0:
-        return ""
-    quote = text.find('"', colon + 1)
-    if quote < 0:
-        return ""
-    chars: list[str] = []
-    escaped = False
-    for char in text[quote + 1 :]:
-        if escaped:
-            if char == "n":
-                chars.append("\n")
-            elif char == "t":
-                chars.append("\t")
-            elif char == "r":
-                chars.append("\r")
-            else:
-                chars.append(char)
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == '"':
-            break
-        chars.append(char)
-    return "".join(chars).strip()
 
 
 def looks_like_repetitive_generation(text: str) -> bool:

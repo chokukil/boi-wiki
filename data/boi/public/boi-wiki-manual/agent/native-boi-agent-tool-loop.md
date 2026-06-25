@@ -96,6 +96,12 @@ sequenceDiagram
 | `agent_inbox` | 담당자가 처리해야 할 action inbox 조회 |
 | `answer_composer` | typed tool 결과와 artifact를 근거로 최종 Markdown 답변을 작성하는 LLM composer. 실행 권한이나 ACL을 바꾸지 않는다. |
 
+# LLM Contract Failure Policy
+
+User-facing LLM 단계는 “가능하면 복구”가 아니라 “계약을 지키지 못하면 장애”로 처리한다. Router는 `route`, `intent`, `confidence` JSON을 반환해야 하고, stream planner는 모든 required stage의 한 줄 `status` JSON을 반환해야 하며, composer는 `answer_markdown`을 포함한 JSON object를 반환해야 한다.
+
+Composer 응답이 plain Markdown, 잘린 JSON, OpenAI response id, prompt echo, 반복 생성으로 오면 Native Agent는 이를 최종 답변으로 복구하지 않는다. 해당 요청은 `native_agent_runtime_unavailable`로 노출되고 운영자는 LLM endpoint, token limit, prompt, model 상태를 점검해야 한다. 이 정책은 “짧은 상태 한 줄조차 LLM이 만들지 못하면 서비스 장애”라는 운영 기준과 동일하다.
+
 # Artifact Policy
 
 | Intent | Artifact |

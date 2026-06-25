@@ -331,6 +331,9 @@ class NativeBoiAgent:
             )
             if isinstance(routed, dict) and routed.get("route"):
                 return finalize_native_route(request, routed)
+            raise NativeAgentRuntimeUnavailable("Native Agent route classifier did not return a route")
+        if str(request.get("mode") or "auto") == "auto":
+            raise NativeAgentRuntimeUnavailable("Native Agent route classifier is required but not configured")
         return native_rule_route(request)
 
     def _resolve_page_context(self, state: JsonDict) -> JsonDict:
