@@ -207,8 +207,9 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert "progressive response streaming" in body["features"]
     for operation in body["supported_execution_cards"]:
         assert operation in body["write_confirmation_required"]
-    for operation in ["event_publish", "workflow_start", "event_type_draft"]:
+    for operation in ["event_publish", "workflow_start", "event_type_draft", "source_apply", "doc_body_apply"]:
         assert operation in body["write_confirmation_required"]
+        assert operation in body["supported_execution_cards"]
 
     schema_response = client.get("/api/agents/boi-wiki/response-schema")
     assert schema_response.status_code == 200

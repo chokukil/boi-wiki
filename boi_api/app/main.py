@@ -9723,6 +9723,8 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "event_type_draft",
             "event_type_draft_apply",
             "promotion_submit",
+            "source_apply",
+            "doc_body_apply",
         ],
         "native_agent": {
             "enabled": BOI_AGENT_BACKEND in {"native", "hybrid"},
