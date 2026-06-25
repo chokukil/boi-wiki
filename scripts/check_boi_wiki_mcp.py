@@ -41,6 +41,41 @@ def mcp_auth_headers(service_token: str = "") -> dict[str, str]:
     }
 
 
+def dotenv_value(path: str | os.PathLike[str], key: str) -> str:
+    target = Path(path)
+    if not target.exists():
+        raise FileNotFoundError(f"dotenv file not found: {target}")
+    for raw_line in target.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        if name.strip() != key:
+            continue
+        value = value.strip()
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        return value.strip()
+    return ""
+
+
+def resolve_service_token(args: argparse.Namespace) -> str:
+    direct = str(getattr(args, "service_token", "") or "").strip()
+    if direct:
+        return direct
+    env_name = str(getattr(args, "service_token_env", "") or "").strip()
+    if env_name:
+        token = str(os.getenv(env_name, "") or "").strip()
+        if token:
+            return token
+    dotenv_path = str(getattr(args, "service_token_dotenv", "") or "").strip()
+    if dotenv_path:
+        token = dotenv_value(dotenv_path, "SERVICE_TOKEN")
+        if token:
+            return token
+    return str(os.getenv("SERVICE_TOKEN", "") or "").strip()
+
+
 def attr_any(item: object, *names: str) -> str:
     for name in names:
         value = getattr(item, name, None)
@@ -66,7 +101,7 @@ async def check_protocol(url: str, include_details: bool = False, service_token:
                     "auth_required": True,
                     "transport_mode": "unauthorized",
                     "client_warning": f"{type(exc).__name__}: {exc}",
-                    "message": "MCP endpoint requires a service token; rerun with --service-token and optionally --require-bridge.",
+                    "message": "MCP endpoint requires a service token; rerun with --service-token, --service-token-env, or --service-token-dotenv and optionally --require-bridge.",
                 }
             raise
         direct["client_warning"] = f"{type(exc).__name__}: {exc}"
@@ -420,19 +455,22 @@ async def check_agent_contract(
 
 
 async def main_async(args: argparse.Namespace) -> int:
+    service_token = resolve_service_token(args)
     if getattr(args, "agent_contract_only", False):
         agent_contract = await check_agent_contract(
             boi_api_url=args.boi_api_url,
             mcp_base_url=args.base_url,
             employee_id=args.employee_id,
-            service_token=str(args.service_token or "").strip(),
+            service_token=service_token,
             question=args.agent_question,
             current_url=args.agent_current_url,
         )
-        print(json.dumps({"ok": bool(agent_contract.get("ok")), "agent_contract": agent_contract}, ensure_ascii=False, indent=2))
-        return 0 if agent_contract.get("ok") else 1
+        ok = bool(agent_contract.get("ok"))
+        if bool(getattr(args, "require_bridge", False)):
+            ok = ok and agent_contract.get("mcp_bridge_chat", {}).get("schema_valid") is True
+        print(json.dumps({"ok": ok, "agent_contract": agent_contract}, ensure_ascii=False, indent=2))
+        return 0 if ok else 1
     include_details = bool(args.details or args.client_checklist)
-    service_token = str(args.service_token or "").strip()
     protocol = await check_protocol(args.mcp_url, include_details=include_details, service_token=service_token)
     require_bridge = bool(getattr(args, "require_bridge", False))
     if service_token:
@@ -518,7 +556,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check BoI Wiki MCP protocol and bridge endpoints.")
     parser.add_argument("--base-url", default="http://localhost:8200", help="BoI Wiki MCP service base URL.")
     parser.add_argument("--mcp-url", default="http://localhost:8200/mcp", help="Streamable HTTP MCP URL.")
-    parser.add_argument("--service-token", default=os.getenv("SERVICE_TOKEN", ""))
+    parser.add_argument("--service-token", default="", help="Service token value. Prefer --service-token-env or --service-token-dotenv on shared hosts.")
+    parser.add_argument("--service-token-env", default="", help="Read the service token from this environment variable name.")
+    parser.add_argument("--service-token-dotenv", default="", help="Read SERVICE_TOKEN from a dotenv file without printing it.")
     parser.add_argument("--query", default="SOP")
     parser.add_argument("--employee-id", default="100001")
     parser.add_argument("--boi-api-url", default=os.getenv("BOI_EXTERNAL_URL", "http://localhost:8000"), help="BoI API base URL for AgentResponse contract checks.")

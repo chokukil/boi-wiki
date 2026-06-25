@@ -169,20 +169,21 @@ python scripts/check_boi_wiki_mcp.py \
   --base-url "$BOI_WIKI_MCP_EXTERNAL_URL" \
   --mcp-url "$BOI_WIKI_MCP_EXTERNAL_URL/mcp" \
   --boi-api-url "$BOI_EXTERNAL_URL" \
-  --service-token "$SERVICE_TOKEN" \
+  --service-token-env SERVICE_TOKEN \
   --require-bridge \
   --agent-contract \
   --summary
 ```
 
-NAS host Python처럼 `httpx`나 MCP client library가 없는 환경에서는 AgentResponse 계약만 stdlib 기반으로 확인할 수 있습니다.
+NAS host Python처럼 `httpx`나 MCP client library가 없는 환경에서는 AgentResponse 계약만 stdlib 기반으로 확인할 수 있습니다. NAS app directory에서 실행할 때는 token이 process argument에 남지 않도록 `.env`에서 직접 읽습니다.
 
 ```bash
 python3 scripts/check_boi_wiki_mcp.py \
   --base-url http://127.0.0.1:28200 \
   --boi-api-url http://127.0.0.1:28000 \
-  --service-token "$SERVICE_TOKEN" \
-  --agent-contract-only
+  --service-token-dotenv .env \
+  --agent-contract-only \
+  --require-bridge
 ```
 
 Codex, Claude Desktop, Cursor 등록 전 상세 체크:
@@ -195,7 +196,7 @@ python scripts/check_boi_wiki_mcp.py \
   --client-checklist
 ```
 
-위 명령은 `MCP_REQUIRE_SERVICE_TOKEN=false`인 로컬 개발 endpoint 기준입니다. `MCP_REQUIRE_SERVICE_TOKEN=true`인 protected endpoint에서는 token 없이 protocol check가 `auth_required`로 실패하는 것이 정상이며, `--service-token "$SERVICE_TOKEN"`과 `--require-bridge`를 함께 사용합니다.
+위 명령은 `MCP_REQUIRE_SERVICE_TOKEN=false`인 로컬 개발 endpoint 기준입니다. `MCP_REQUIRE_SERVICE_TOKEN=true`인 protected endpoint에서는 token 없이 protocol check가 `auth_required`로 실패하는 것이 정상이며, shared host에서는 `--service-token-env SERVICE_TOKEN` 또는 `--service-token-dotenv .env`와 `--require-bridge`를 함께 사용합니다.
 
 ## SSO 개발 모드
 

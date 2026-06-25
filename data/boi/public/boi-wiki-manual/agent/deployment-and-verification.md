@@ -58,20 +58,21 @@ python scripts/check_boi_wiki_mcp.py \
   --base-url "$BOI_WIKI_MCP_EXTERNAL_URL" \
   --mcp-url "$BOI_WIKI_MCP_EXTERNAL_URL/mcp" \
   --boi-api-url "$BOI_EXTERNAL_URL" \
-  --service-token "$SERVICE_TOKEN" \
+  --service-token-env SERVICE_TOKEN \
   --require-bridge \
   --agent-contract \
   --summary
 ```
 
-NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다.
+NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다. NAS app directory에서는 token 값을 CLI 인자로 넘기지 않고 `.env`에서 직접 읽는다.
 
 ```bash
 python3 scripts/check_boi_wiki_mcp.py \
   --base-url http://127.0.0.1:28200 \
   --boi-api-url http://127.0.0.1:28000 \
-  --service-token "$SERVICE_TOKEN" \
-  --agent-contract-only
+  --service-token-dotenv .env \
+  --agent-contract-only \
+  --require-bridge
 ```
 
 NAS 배포 후에는 외부 URL에서 다음을 확인한다.

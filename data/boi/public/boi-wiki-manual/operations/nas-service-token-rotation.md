@@ -65,13 +65,14 @@ sudo env PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
 - token 없이 `/mcp`가 401을 반환해야 한다. 단, `MCP_REQUIRE_SERVICE_TOKEN=false`인 로컬 개발 환경에서는 200일 수 있다.
 - 잘못된 token은 `/api/mcp/call`에서 401을 반환해야 한다.
 
-protected MCP와 bridge를 같이 확인하는 명령은 다음 형식이다. token 값은 shell history나 log에 남기지 않는다.
+protected MCP와 bridge를 같이 확인하는 명령은 다음 형식이다. token 값은 shell history나 log에 남기지 않는다. NAS app directory에서는 `.env`에서 직접 읽는 방식을 우선한다.
 
 ```bash
-python scripts/check_boi_wiki_mcp.py \
-  --base-url http://boi-wiki-mcp.example:28200 \
-  --mcp-url http://boi-wiki-mcp.example:28200/mcp \
-  --service-token "$SERVICE_TOKEN" \
+python3 scripts/check_boi_wiki_mcp.py \
+  --base-url http://127.0.0.1:28200 \
+  --boi-api-url http://127.0.0.1:28000 \
+  --service-token-dotenv .env \
+  --agent-contract-only \
   --require-bridge \
   --summary
 ```

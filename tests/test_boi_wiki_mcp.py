@@ -1315,6 +1315,122 @@ def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys)
     assert body["agent_contract"]["mcp_bridge_chat"]["schema_valid"] is True
 
 
+def test_check_boi_wiki_mcp_reads_service_token_from_dotenv_without_printing(monkeypatch, capsys, tmp_path):
+    import scripts.check_boi_wiki_mcp as script
+
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        "\n".join(
+            [
+                "IGNORED=value",
+                "SERVICE_TOKEN=dotenv-secret-token",
+                "OTHER_SECRET=must-not-appear",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    seen: dict[str, str] = {}
+
+    async def fake_check_protocol(*args, **kwargs):
+        seen["protocol_token"] = kwargs.get("service_token", "")
+        return {"tools": 32, "resources": 0, "resource_templates": 6, "prompts": 5}
+
+    async def fake_check_bridge(base_url, service_token, query):
+        seen["bridge_token"] = service_token
+        return {"ok": True, "status": "mcp_invoked", "tool": "boi.search", "request_id": "check-boi-wiki-mcp"}
+
+    async def fake_check_agent_contract(**kwargs):
+        seen["agent_token"] = kwargs.get("service_token", "")
+        return {
+            "ok": True,
+            "schema": {"version": "boi-agent.response.v1"},
+            "rest_chat": {"schema_valid": True},
+            "mcp_bridge_chat": {"schema_valid": True},
+        }
+
+    monkeypatch.delenv("SERVICE_TOKEN", raising=False)
+    monkeypatch.setattr(script, "check_protocol", fake_check_protocol)
+    monkeypatch.setattr(script, "check_bridge", fake_check_bridge)
+    monkeypatch.setattr(script, "check_agent_contract", fake_check_agent_contract)
+    args = argparse.Namespace(
+        base_url="http://localhost:8200",
+        mcp_url="http://localhost:8200/mcp",
+        boi_api_url="http://localhost:8000",
+        service_token="",
+        service_token_env="",
+        service_token_dotenv=str(dotenv),
+        query="SOP",
+        employee_id="100001",
+        agent_contract=True,
+        agent_question="SOP 찾아줘",
+        agent_current_url="/sops",
+        summary=True,
+        details=False,
+        client_checklist=False,
+        full_bridge=False,
+        require_bridge=True,
+    )
+
+    exit_code = asyncio.run(script.main_async(args))
+
+    assert exit_code == 0
+    assert seen == {
+        "protocol_token": "dotenv-secret-token",
+        "bridge_token": "dotenv-secret-token",
+        "agent_token": "dotenv-secret-token",
+    }
+    output = capsys.readouterr().out
+    assert "dotenv-secret-token" not in output
+    assert "must-not-appear" not in output
+    body = json.loads(output)
+    assert body["ok"] is True
+    assert body["bridge"]["status"] == "mcp_invoked"
+
+
+def test_check_boi_wiki_mcp_agent_contract_only_can_require_bridge(monkeypatch, capsys):
+    import scripts.check_boi_wiki_mcp as script
+
+    async def fake_check_agent_contract(**kwargs):
+        return {
+            "ok": True,
+            "schema": {"version": "boi-agent.response.v1"},
+            "rest_chat": {"schema_valid": True},
+            "mcp_bridge_chat": {
+                "schema_valid": None,
+                "status": "skipped",
+                "reason": "service token not provided",
+            },
+        }
+
+    monkeypatch.setattr(script, "check_agent_contract", fake_check_agent_contract)
+    args = argparse.Namespace(
+        base_url="http://localhost:8200",
+        mcp_url="http://localhost:8200/mcp",
+        boi_api_url="http://localhost:8000",
+        service_token="",
+        service_token_env="",
+        service_token_dotenv="",
+        query="SOP",
+        employee_id="100001",
+        agent_contract=False,
+        agent_contract_only=True,
+        agent_question="SOP 찾아줘",
+        agent_current_url="/sops",
+        summary=True,
+        details=False,
+        client_checklist=False,
+        full_bridge=False,
+        require_bridge=True,
+    )
+
+    exit_code = asyncio.run(script.main_async(args))
+
+    assert exit_code == 1
+    body = json.loads(capsys.readouterr().out)
+    assert body["ok"] is False
+    assert body["agent_contract"]["mcp_bridge_chat"]["status"] == "skipped"
+
+
 def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependencies(monkeypatch):
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "check_boi_wiki_mcp.py"
     spec = importlib.util.spec_from_file_location("check_boi_wiki_mcp_no_optional_deps", script_path)
