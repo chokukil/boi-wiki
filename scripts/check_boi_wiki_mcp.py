@@ -301,6 +301,12 @@ def execution_card_required_fields(schema: dict) -> list[str]:
 def validate_agent_response_schema_contract(schema: dict) -> None:
     if not isinstance(schema, dict):
         raise RuntimeError("BoI Agent response-schema endpoint did not return a JSON schema")
+    properties = schema.get("properties", {}) if isinstance(schema.get("properties"), dict) else {}
+    required_fields = set(schema.get("required") or [])
+    if "status_updates" not in required_fields:
+        raise RuntimeError("AgentResponse schema must require canonical status_updates")
+    if "status_events" not in properties:
+        raise RuntimeError("AgentResponse schema must expose status_events compatibility alias")
     required = set(execution_card_required_fields(schema))
     missing = sorted(REQUIRED_EXECUTION_CARD_FIELDS - required)
     if missing:
@@ -314,6 +320,14 @@ def validate_agent_response_schema_contract(schema: dict) -> None:
 def agent_response_summary(response: dict, schema: dict) -> dict:
     validate_agent_response_schema_contract(schema)
     validate_agent_response(response, schema)
+    status_updates = response.get("status_updates")
+    status_events = response.get("status_events")
+    if not isinstance(status_updates, list):
+        raise RuntimeError("AgentResponse must include status_updates as an array")
+    if not isinstance(status_events, list):
+        raise RuntimeError("AgentResponse must include status_events compatibility alias as an array")
+    if status_events != status_updates:
+        raise RuntimeError("AgentResponse status_events must match canonical status_updates")
     return {
         "schema_valid": True,
         "contract_version": response.get("agent_contract_version"),
@@ -322,7 +336,9 @@ def agent_response_summary(response: dict, schema: dict) -> dict:
         "used_backend": response.get("used_backend"),
         "artifact_count": len(response.get("artifacts") or []),
         "execution_card_count": len(response.get("execution_cards") or []),
-        "status_update_count": len(response.get("status_updates") or []),
+        "status_update_count": len(status_updates),
+        "status_event_count": len(status_events),
+        "status_alias_matches": True,
         "tool_trace_count": len(response.get("tool_trace") or []),
     }
 
@@ -344,6 +360,7 @@ def mcp_status_schema_summary(status_payload: dict, api_schema: dict) -> dict:
             .get("const")
         ),
         "required_fields": mcp_schema.get("required") or [],
+        "status_alias_supported": "status_events" in (mcp_schema.get("properties") or {}),
         "execution_card_required": execution_card_required_fields(mcp_schema),
     }
 

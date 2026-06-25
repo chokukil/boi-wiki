@@ -1275,6 +1275,7 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
                 },
             },
             "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
             "tool_trace": {"type": "array"},
             "access_summary": {"type": "object"},
             "guardrails_applied": {"type": "array"},
@@ -1298,6 +1299,7 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
             }
         ],
         "status_updates": [],
+        "status_events": [],
         "tool_trace": [],
         "access_summary": {},
         "guardrails_applied": [],
@@ -1358,8 +1360,56 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
     assert result["ok"] is True
     assert result["schema"]["version"] == "boi-agent.response.v1"
     assert result["rest_chat"]["schema_valid"] is True
+    assert result["rest_chat"]["status_alias_matches"] is True
     assert result["mcp_status_schema"]["matches_api_schema"] is True
+    assert result["mcp_status_schema"]["status_alias_supported"] is True
     assert result["mcp_bridge_chat"]["schema_valid"] is True
+    assert result["mcp_bridge_chat"]["status_alias_matches"] is True
+
+
+def test_check_boi_wiki_mcp_agent_contract_rejects_status_alias_drift():
+    import scripts.check_boi_wiki_mcp as script
+
+    schema = {
+        "type": "object",
+        "required": ["agent_contract_version", "answer_markdown", "execution_cards", "status_updates"],
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "answer_markdown": {"type": "string"},
+            "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "contract_version",
+                        "operation",
+                        "requires_confirmation",
+                        "user_confirmed_required",
+                        "required_role",
+                        "permission",
+                    ],
+                    "properties": {
+                        "contract_version": {"const": "boi-agent.response.v1"},
+                        "operation": {"type": "string"},
+                        "required_role": {"type": "string"},
+                        "permission": {"type": "object"},
+                    },
+                },
+            },
+        },
+    }
+    response = {
+        "agent_contract_version": "boi-agent.response.v1",
+        "answer_markdown": "계약 검증 응답",
+        "execution_cards": [],
+        "status_updates": [{"stage": "retrieval", "message": "검색 중", "source": "llm_status"}],
+        "status_events": [{"stage": "compose", "message": "답변 작성 중", "source": "llm_status"}],
+    }
+
+    with pytest.raises(RuntimeError, match="status_events must match canonical status_updates"):
+        script.agent_response_summary(response, schema)
 
 
 def test_check_boi_wiki_mcp_agent_contract_rejects_mcp_status_schema_drift(monkeypatch):
@@ -1367,10 +1417,12 @@ def test_check_boi_wiki_mcp_agent_contract_rejects_mcp_status_schema_drift(monke
 
     agent_schema = {
         "type": "object",
-        "required": ["agent_contract_version", "answer_markdown", "execution_cards"],
+        "required": ["agent_contract_version", "answer_markdown", "execution_cards", "status_updates"],
         "properties": {
             "agent_contract_version": {"const": "boi-agent.response.v1"},
             "answer_markdown": {"type": "string"},
+            "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
             "execution_cards": {
                 "type": "array",
                 "items": {
@@ -1394,10 +1446,12 @@ def test_check_boi_wiki_mcp_agent_contract_rejects_mcp_status_schema_drift(monke
     }
     drifted_schema = {
         "type": "object",
-        "required": ["agent_contract_version", "answer_markdown", "execution_cards"],
+        "required": ["agent_contract_version", "answer_markdown", "execution_cards", "status_updates"],
         "properties": {
             "agent_contract_version": {"const": "boi-agent.response.v1"},
             "answer_markdown": {"type": "string"},
+            "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
             "execution_cards": {
                 "type": "array",
                 "items": {
@@ -1423,6 +1477,8 @@ def test_check_boi_wiki_mcp_agent_contract_rejects_mcp_status_schema_drift(monke
     agent_response = {
         "agent_contract_version": "boi-agent.response.v1",
         "answer_markdown": "계약 검증 응답",
+        "status_updates": [],
+        "status_events": [],
         "execution_cards": [
             {
                 "contract_version": "boi-agent.response.v1",
@@ -1513,6 +1569,7 @@ def test_check_boi_wiki_mcp_agent_contract_rejects_missing_execution_permission_
                 },
             },
             "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
             "tool_trace": {"type": "array"},
             "access_summary": {"type": "object"},
             "guardrails_applied": {"type": "array"},
@@ -1534,6 +1591,7 @@ def test_check_boi_wiki_mcp_agent_contract_rejects_missing_execution_permission_
             }
         ],
         "status_updates": [],
+        "status_events": [],
         "tool_trace": [],
         "access_summary": {},
         "guardrails_applied": [],
@@ -1800,6 +1858,8 @@ def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependenc
                     },
                 },
             },
+            "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
         },
     }
     response = {
@@ -1811,6 +1871,7 @@ def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependenc
         "artifacts": [],
         "execution_cards": [],
         "status_updates": [],
+        "status_events": [],
         "tool_trace": [],
         "access_summary": {},
         "guardrails_applied": [],
