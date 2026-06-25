@@ -241,6 +241,7 @@ class NativeBoiAgent:
             "citations": [],
             "coverage_report": {},
             "answer_markdown": "",
+            "status_updates": [],
             "access_summary": context_pack.get("access_summary") or {},
             "guardrails_applied": [],
         }
@@ -712,6 +713,7 @@ class NativeBoiAgent:
             "router_confidence": route.get("confidence"),
             "used_backend": "native_langgraph",
             "tool_trace": [item.__dict__ for item in state.get("tool_trace") or []],
+            "status_updates": state.get("status_updates") or [],
             "coverage_report": state.get("coverage_report") or {},
             "deployment_revision": self.config.build_revision,
             "access_summary": state.get("access_summary") or {},

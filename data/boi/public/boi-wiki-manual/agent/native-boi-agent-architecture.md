@@ -96,7 +96,7 @@ sequenceDiagram
   API-->>UI: final full JSON response
 ```
 
-`status` event는 사용자가 장시간 요청을 멈춘 것으로 오해하지 않도록 한 줄 진행 상황만 전달한다. 이 문구는 code rule이 아니라 OpenAI-compatible Gemma stream planner가 생성한다. stream planner는 같은 JSON에서 route도 함께 결정하므로 SSE 요청 하나 안에서 status LLM과 router LLM을 따로 호출하지 않는다. 운영상 서로 다른 3개 LLM-generated status를 요청하고, 서버는 usable한 고유 문장만 표시한다. 모델이 중복 status를 만들면 같은 문장을 heartbeat로 반복하지 않는다. stream planner가 실패하거나 usable status를 하나도 만들지 못하면 SSE 연결을 시작하지 않고 HTTP `503`의 `status_generation_failed` 또는 `boi_agent_router_unavailable`로 중단한다. 실제 최종 응답의 canonical contract는 `final` event의 JSON이며, 기존 `/chat` 응답과 같은 `answer_markdown`, `answer_html`, `links`, `citations`, `artifacts`, `context_summary`, `route`, `intent` 필드를 유지한다.
+`status` event는 사용자가 장시간 요청을 멈춘 것으로 오해하지 않도록 한 줄 진행 상황만 전달한다. 이 문구는 code rule이 아니라 OpenAI-compatible Gemma stream planner가 생성한다. stream planner는 같은 JSON에서 route도 함께 결정하므로 SSE 요청 하나 안에서 status LLM과 router LLM을 따로 호출하지 않는다. 운영상 서로 다른 3개 LLM-generated status를 요청하고, 서버는 usable한 고유 문장만 표시한다. 모델이 중복 status를 만들면 같은 문장을 heartbeat로 반복하지 않는다. stream planner가 실패하거나 usable status를 하나도 만들지 못하면 SSE 연결을 시작하지 않고 HTTP `503`의 `status_generation_failed` 또는 `boi_agent_router_unavailable`로 중단한다. 실제 최종 응답의 canonical contract는 `final` event의 JSON이며, 기존 `/chat` 응답과 같은 `answer_markdown`, `display_markdown`, `answer_html`, `links`, `citations`, `artifacts`, `execution_cards`, `status_updates`, `tool_trace`, `context_summary`, `access_summary`, `guardrails_applied`, `route`, `intent` 필드를 유지한다. Streaming으로 이미 표시한 status는 `status_updates`에도 남겨 MCP나 외부 API 소비자가 non-streaming 환경에서도 같은 진행 기록을 확인할 수 있게 한다.
 
 # Backend Selection
 

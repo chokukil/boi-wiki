@@ -188,6 +188,9 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["response_contract"]["canonical_endpoint"] == "/api/agents/boi-wiki/chat"
     assert body["response_contract"]["approve_endpoint"] == "/api/agents/boi-wiki/approve"
     assert "boi_wiki_mcp" in body["response_contract"]["consumers"]
+    assert "status_updates" in body["response_contract"]["required_fields"]
+    assert "tool_trace" in body["response_contract"]["required_fields"]
+    assert "access_summary" in body["response_contract"]["required_fields"]
     assert "execution_card_fields" in body["response_contract"]
     assert "progressive response streaming" in body["features"]
     for operation in body["supported_execution_cards"]:
@@ -845,6 +848,9 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert body["deployment_revision"]
     assert body["run_id"].startswith("boi-agent-run-")
     assert isinstance(body["tool_trace"], list)
+    assert isinstance(body["status_updates"], list)
+    assert isinstance(body["execution_cards"], list)
+    assert isinstance(body["access_summary"], dict)
     assert "설비" in body["answer_markdown"]
     assert isinstance(body["links"], list)
 
@@ -3186,6 +3192,9 @@ def test_boi_agent_chat_stream_emits_status_delta_and_final(boi_app_module, monk
     assert final["answer_html"]
     assert final["links"][0]["label"] == "설비 SOP"
     assert final["used_backend"] == "native_langgraph"
+    assert final["status_updates"]
+    assert final["status_updates"][0]["message"] == llm_steps[0]["message"]
+    assert any(item.get("stage") == "answer_stream" for item in final["status_updates"])
     assert received_routes == [planned_route]
 
 
@@ -3731,6 +3740,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "state.messages.slice(-20)" in script
     assert "content.scrollTop = content.scrollHeight" in script
     assert "tool_trace: body.tool_trace || []" in script
+    assert "status_updates: body.status_updates || []" in script
+    assert "const finalStatusLines = Array.isArray(body.status_updates)" in script
     assert "coverage_report: body.coverage_report || {}" in script
     assert "Agent가 확인한 내용" in script
     assert "renderStatusTrail" in script

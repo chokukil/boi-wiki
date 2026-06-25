@@ -1196,13 +1196,16 @@
       if (streamError) throw new Error(streamError);
       if (!finalBody) throw new Error("Agent 응답이 완료되지 않았습니다.");
       const body = finalBody;
+      const finalStatusLines = Array.isArray(body.status_updates)
+        ? body.status_updates.map((item) => item?.message || "").filter(Boolean).slice(-6)
+        : statusLines.slice(-6);
       state.messages[pendingIndex] = {
         role: "assistant",
         text: body.display_markdown || body.answer_markdown || streamedText || "",
         html: body.answer_html || "",
         rawText: body.answer_markdown || "",
         links: body.links || [],
-        statusLines: statusLines.slice(-6),
+        statusLines: finalStatusLines.length ? finalStatusLines : statusLines.slice(-6),
         meta: {
           route: body.route,
           intent: body.intent || body.context_summary?.intent,
@@ -1210,6 +1213,7 @@
           router_backend: body.router_backend,
           latency_ms: body.latency_ms,
           tool_trace: body.tool_trace || [],
+          status_updates: body.status_updates || [],
           coverage_report: body.coverage_report || {},
           guardrails_applied: body.guardrails_applied || [],
         },

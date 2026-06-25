@@ -58,9 +58,13 @@ BoI Agent의 기준 인터페이스는 Web Pet UI가 아니라 `/api/agents/boi-
 | Field | Purpose |
 |---|---|
 | `answer_markdown` | 사용자에게 보여줄 Markdown 답변 |
+| `display_markdown` | 중복 Mermaid source를 제거한 표시용 Markdown |
 | `links`, `citations` | 클릭 가능한 BoI/Event/Action/Trace reference |
 | `artifacts` | Mermaid, table, task card, confirmation card 같은 구조화 산출물 |
 | `execution_cards` | 상태 변경이 필요한 요청의 승인 UI/API contract |
+| `status_updates` | streaming에서 사용자에게 보여준 진행 상태를 non-stream API/MCP에서도 확인하기 위한 기록 |
+| `tool_trace` | Agent가 호출한 검색, 문서, workflow, Inbox tool 요약 |
+| `access_summary` | 응답 생성에 적용된 BoI Profile ACL/RBAC decision 요약 |
 | `guardrails_applied` | 적용된 ACL/RBAC/safety guardrail |
 | `agent_contract_version` | 현재 응답 계약 버전 |
 

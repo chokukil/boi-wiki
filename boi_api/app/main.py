@@ -8549,12 +8549,12 @@ def sanitize_agent_reference_value(value: Any, employee_id: str) -> tuple[Any, i
 
 def sanitize_agent_final_references(response: dict[str, Any], employee_id: str) -> int:
     redacted_count = 0
-    for key in ("answer_markdown", "display_markdown", "links", "citations", "suggested_questions", "artifacts", "tool_trace", "context_summary"):
+    for key in ("answer_markdown", "display_markdown", "links", "citations", "suggested_questions", "artifacts", "tool_trace", "status_updates", "context_summary"):
         sanitized, count = sanitize_agent_reference_value(response.get(key), employee_id)
         redacted_count += count
         if sanitized is not None:
             response[key] = sanitized
-        elif key in {"links", "citations", "artifacts", "suggested_questions", "tool_trace"}:
+        elif key in {"links", "citations", "artifacts", "suggested_questions", "tool_trace", "status_updates"}:
             response[key] = []
         else:
             response[key] = ""
@@ -8672,6 +8672,16 @@ def markdown_without_duplicate_mermaid_artifacts(answer_markdown: str, artifacts
 
 def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict[str, Any]:
     response.setdefault("agent_contract_version", BOI_AGENT_RESPONSE_CONTRACT_VERSION)
+    response.setdefault("links", [])
+    response.setdefault("citations", [])
+    response.setdefault("suggested_questions", [])
+    response.setdefault("suggested_questions_source", "suggestions_endpoint_required")
+    response.setdefault("tool_trace", [])
+    response.setdefault("status_updates", [])
+    response.setdefault("coverage_report", {})
+    response.setdefault("access_summary", {})
+    response.setdefault("guardrails_applied", [])
+    response.setdefault("redacted_count", 0)
     answer_markdown = str(response.get("answer_markdown") or "")
     artifacts = normalize_agent_artifacts(response.get("artifacts"), answer_markdown)
     response["artifacts"] = artifacts
@@ -8679,6 +8689,7 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
         cards = execution_cards_from_artifacts(artifacts)
         if cards:
             response["execution_cards"] = cards
+    response.setdefault("execution_cards", [])
     display_markdown = markdown_without_duplicate_mermaid_artifacts(answer_markdown, artifacts)
     response["display_markdown"] = display_markdown
     response["answer_html"] = (
@@ -9274,13 +9285,16 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
 
     async def stream_events():
         emitted_status_messages: set[str] = set()
+        emitted_status_updates: list[dict[str, Any]] = []
 
         def status_event_if_new(step: dict[str, str], elapsed_ms: int) -> str | None:
             message = str(step.get("message") or "")
             if message in emitted_status_messages:
                 return None
             emitted_status_messages.add(message)
-            return agent_sse_event("status", {**step, "elapsed_ms": elapsed_ms})
+            payload = {**step, "elapsed_ms": elapsed_ms}
+            emitted_status_updates.append(payload)
+            return agent_sse_event("status", payload)
 
         initial_status = status_event_if_new(status_steps[0], 0)
         if initial_status:
@@ -9356,6 +9370,9 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                 yield agent_sse_event("answer_delta", {"delta": chunk})
                 if chunk_delay:
                     await asyncio.sleep(chunk_delay)
+            if emitted_status_updates:
+                existing_updates = response.get("status_updates") if isinstance(response.get("status_updates"), list) else []
+                response["status_updates"] = [*emitted_status_updates, *existing_updates]
             yield agent_sse_event("final", response)
         except LangflowBoiAgentUnavailable as exc:
             yield agent_sse_event(
@@ -9440,6 +9457,19 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "stream_endpoint": "/api/agents/boi-wiki/chat/stream",
             "approve_endpoint": "/api/agents/boi-wiki/approve",
             "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
+            "required_fields": [
+                "agent_contract_version",
+                "answer_markdown",
+                "display_markdown",
+                "links",
+                "citations",
+                "artifacts",
+                "execution_cards",
+                "status_updates",
+                "tool_trace",
+                "access_summary",
+                "guardrails_applied",
+            ],
             "artifact_types": ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"],
             "execution_card_fields": [
                 "contract_version",

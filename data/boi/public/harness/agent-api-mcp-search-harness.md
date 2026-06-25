@@ -62,7 +62,7 @@ Intent 기준은 다음처럼 고정한다.
 - `inbox`: Inbox API.
 - `manual_complete`, `approval`: safety/confirmation flow.
 
-예를 들어 “이 SOP를 Mermaid 프로세스 플로우로 보여줘”, “이 Event가 발생하면 어떤 Action이 이어져?”, “부족한 Action Spec 찾아줘”는 검색어가 포함되어 있어도 deep intent다. Deep Agent 입력에는 `question`, `intent`, `current_url`, `page_context_pack`, `ontology_search_seed`, `employee_id`가 함께 들어가며, 최종 응답은 `answer_markdown`, `links`, `citations`, `suggested_questions`, `artifacts`, `context_summary`, `tool_trace`, `coverage_report` JSON contract를 따라야 한다. Mermaid는 `artifacts`와 Markdown code block 둘 다 제공한다.
+예를 들어 “이 SOP를 Mermaid 프로세스 플로우로 보여줘”, “이 Event가 발생하면 어떤 Action이 이어져?”, “부족한 Action Spec 찾아줘”는 검색어가 포함되어 있어도 deep intent다. Deep Agent 입력에는 `question`, `intent`, `current_url`, `page_context_pack`, `ontology_search_seed`, `employee_id`가 함께 들어가며, 최종 응답은 `answer_markdown`, `display_markdown`, `links`, `citations`, `suggested_questions`, `artifacts`, `execution_cards`, `status_updates`, `context_summary`, `tool_trace`, `coverage_report`, `access_summary`, `guardrails_applied` JSON contract를 따라야 한다. Mermaid는 API/MCP 호환성을 위해 `artifacts`에 구조화해서 제공하고, 원본 투명성이 필요할 때만 `answer_markdown`에도 code block으로 남긴다.
 
 Pet UI가 보내는 `current_url`, `page_title`, `selected_text`는 힌트다. 서버는 클라이언트 데이터를 신뢰하지 않고 `current_url` 기준으로 `/docs`, `/workflows/.../status`, `/events`, `/actions/raw`, `/event-types` 데이터를 권한 체크 후 다시 로드한다. Router LLM이 실패하거나 confidence가 낮으면 Agent는 장애 상태로 반환한다. 승인/실행/편집/publish 요청은 Router 결과와 무관하게 safety guard가 최종 차단한다.
 
