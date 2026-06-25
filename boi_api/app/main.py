@@ -9977,6 +9977,27 @@ def completion_request_ids(rows: list[dict[str, Any]] | None = None) -> set[str]
     return completed
 
 
+def visible_manual_handoff_task_row(task_id: str, employee_id: str) -> dict[str, Any]:
+    parent_ref = str(task_id or "").removeprefix("task:")
+    if not parent_ref:
+        raise HTTPException(status_code=400, detail="task_id is required")
+    completed = completion_request_ids()
+    if parent_ref in completed:
+        raise HTTPException(status_code=409, detail="manual handoff task is already completed")
+    for row in cached_action_log_rows():
+        row_refs = {str(row.get("request_id") or ""), str(row.get("_log_ref") or "")}
+        if parent_ref not in row_refs:
+            continue
+        if not action_log_visible_to_employee(row, employee_id):
+            raise HTTPException(status_code=403, detail="manual handoff task is not visible to this employee")
+        result_status = (row.get("result") or {}).get("status") if isinstance(row.get("result"), dict) else ""
+        row_status = str(row.get("status") or result_status or "")
+        if row_status not in {"manual_required", "manual_blocked", "needs_followup"}:
+            raise HTTPException(status_code=400, detail=f"manual handoff task is not completable: {row_status or 'unknown'}")
+        return row
+    raise HTTPException(status_code=404, detail="manual handoff task not found")
+
+
 def agent_inbox_display(row: dict[str, Any], employee_id: str, row_status: str) -> dict[str, str]:
     action_key = str(row.get("action_key") or "")
     action = action_catalog_by_key().get(action_key, {})
@@ -10073,7 +10094,8 @@ async def complete_manual_handoff(req: ManualHandoffCompleteRequest, employee_id
         raise HTTPException(status_code=400, detail="user_confirmed=true is required")
     if not req.note.strip():
         raise HTTPException(status_code=400, detail="completion note is required")
-    parent_request_id = req.task_id.removeprefix("task:")
+    task_row = visible_manual_handoff_task_row(req.task_id, employee_id)
+    parent_request_id = str(task_row.get("request_id") or task_row.get("_log_ref") or req.task_id.removeprefix("task:"))
     row = {
         "request_id": f"manual-completion-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
         "completion_for_request_id": parent_request_id,

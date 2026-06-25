@@ -3736,6 +3736,39 @@ def test_agent_inbox_and_manual_handoff_completion_are_append_only(boi_app_modul
     assert not any(item["request_id"] == "act-manual-required-test" for item in inbox_after.json()["items"])
 
 
+def test_manual_handoff_completion_rejects_task_not_visible_to_employee(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100002",
+            "request_id": "act-manual-required-other-employee",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "다른 사번의 수동 조치",
+            "trace_id": "trace-agent-inbox-other-employee",
+        },
+    )
+
+    inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100001")
+    complete = client.post(
+        "/api/agents/boi-wiki/manual-handoffs/complete?employee_id=100001",
+        json={
+            "task_id": "task:act-manual-required-other-employee",
+            "outcome": "completed",
+            "note": "보이지 않는 업무를 완료하면 안 됨",
+            "user_confirmed": True,
+        },
+    )
+
+    assert inbox.status_code == 200
+    assert not any(item["request_id"] == "act-manual-required-other-employee" for item in inbox.json()["items"])
+    assert complete.status_code == 403
+    assert "not visible" in complete.text
+    completed = boi_app_module.completion_request_ids()
+    assert "act-manual-required-other-employee" not in completed
+
+
 def test_agent_inbox_snooze_and_dismiss_require_confirmation_and_role(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
