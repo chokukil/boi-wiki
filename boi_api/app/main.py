@@ -8750,19 +8750,16 @@ async def api_boi_agent_suggestions(req: BoiAgentSuggestionsRequest, employee_id
     try:
         suggestions = await asyncio.to_thread(call_boi_agent_suggestions_llm, req, employee_id, resolved_context)
     except BoiAgentSuggestionsUnavailable as exc:
-        if BOI_AGENT_SUGGESTIONS_REQUIRED:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "ok": False,
-                    "status": "boi_agent_suggestions_unavailable",
-                    "message": str(exc),
-                    "model": BOI_AGENT_SUGGESTIONS_MODEL,
-                    "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
-                },
-            ) from exc
-        source = "local_template"
-        suggestions = page_context_suggestions(req.current_url, resolved_context)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "boi_agent_suggestions_unavailable",
+                "message": str(exc),
+                "model": BOI_AGENT_SUGGESTIONS_MODEL,
+                "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
+            },
+        ) from exc
     return {
         "ok": True,
         "employee_id": employee_id,

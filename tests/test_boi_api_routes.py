@@ -2849,8 +2849,19 @@ def test_server_markdown_renderer_handles_agent_quote_hr_and_inline_styles(boi_a
 
 
 def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module, monkeypatch):
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", False)
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", False)
+    seen_contexts: list[dict[str, Any]] = []
+
+    def fake_suggestions(req, employee_id: str, page_context: dict[str, Any]):
+        seen_contexts.append(page_context)
+        assert page_context["stage_count"] == 4
+        assert page_context["workflow_action_count"] > 0
+        assert page_context["workflow_manual_action_count"] > 0
+        return [
+            f"{page_context['title']}의 Action과 Manual Handoff 관계를 질문해보세요.",
+            "이 SOP 실행에 필요한 Action Spec 누락 여부를 점검해줘.",
+        ]
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_suggestions_llm", fake_suggestions)
     client = TestClient(boi_app_module.app)
 
     response = client.post(
@@ -2865,6 +2876,8 @@ def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module, monke
     body = response.json()
     suggestions = body["suggestions"]
     joined = " ".join(suggestions)
+    assert body["suggestions_source"] == "llm"
+    assert seen_contexts
     assert body["page_context"]["stage_count"] == 4
     assert body["page_context"]["workflow_action_count"] > 0
     assert body["page_context"]["workflow_manual_action_count"] > 0
@@ -2875,8 +2888,16 @@ def test_boi_agent_suggestions_resolve_current_sop_context(boi_app_module, monke
 
 
 def test_boi_agent_suggestions_use_event_type_context(boi_app_module, monkeypatch):
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", False)
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", False)
+    def fake_suggestions(req, employee_id: str, page_context: dict[str, Any]):
+        assert page_context["event_type"] == "equipment.alarm.raised.v1"
+        assert page_context["sop_ref"]
+        assert page_context["recommended_actions"]
+        return [
+            f"{page_context['event_type']}의 SOP stage를 기준으로 설명해줘.",
+            "recommended action이 실제 Action Spec과 연결되는지 확인해줘.",
+        ]
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_suggestions_llm", fake_suggestions)
     client = TestClient(boi_app_module.app)
 
     response = client.post(
@@ -2885,7 +2906,9 @@ def test_boi_agent_suggestions_use_event_type_context(boi_app_module, monkeypatc
     )
 
     assert response.status_code == 200
-    suggestions = response.json()["suggestions"]
+    body = response.json()
+    assert body["suggestions_source"] == "llm"
+    suggestions = body["suggestions"]
     joined = " ".join(suggestions)
     assert "equipment.alarm.raised.v1" in joined
     assert "SOP stage" in joined
@@ -2893,8 +2916,12 @@ def test_boi_agent_suggestions_use_event_type_context(boi_app_module, monkeypatc
 
 
 def test_boi_agent_suggestions_respect_restricted_context(boi_app_module, monkeypatch):
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", False)
-    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", False)
+    def fake_suggestions(req, employee_id: str, page_context: dict[str, Any]):
+        assert page_context["access"]["classification"] == "restricted"
+        assert page_context["access"]["can_use_in_agent_context"] is False
+        return ["접근 정책 때문에 이 문서의 원문을 Agent 컨텍스트로 쓰지 않는 이유를 알려줘."]
+
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_suggestions_llm", fake_suggestions)
     client = TestClient(boi_app_module.app)
     boi_app_module.write_boi(
         {
@@ -2925,7 +2952,9 @@ def test_boi_agent_suggestions_respect_restricted_context(boi_app_module, monkey
     )
 
     assert response.status_code == 200
-    suggestions = response.json()["suggestions"]
+    body = response.json()
+    assert body["suggestions_source"] == "llm"
+    suggestions = body["suggestions"]
     joined = " ".join(suggestions)
     assert "접근 정책" in joined
     assert "Mermaid" not in joined
