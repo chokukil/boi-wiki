@@ -166,7 +166,7 @@ BOI_AGENT_STATUS_LLM_ENABLED = resolve_router_llm_enabled(
     "llm_first",
     BOI_AGENT_STATUS_BASE_URL,
 )
-BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "30"))
+BOI_AGENT_STATUS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_STATUS_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_STATUS_MAX_TOKENS = int(os.getenv("BOI_AGENT_STATUS_MAX_TOKENS", "1536"))
 # Status text is part of the user-facing Agent contract.  The env name is kept
 # for older compose files/docs, but runtime policy is intentionally not
@@ -197,7 +197,7 @@ BOI_AGENT_COMPOSER_LLM_ENABLED = resolve_router_llm_enabled(
 BOI_AGENT_COMPOSER_REQUIRED = True
 BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_COMPOSER_MAX_TOKENS = min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "1536")), 1536)
-BOI_AGENT_COMPOSER_MAX_ATTEMPTS = max(1, min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_ATTEMPTS", "1")), 3))
+BOI_AGENT_COMPOSER_MAX_ATTEMPTS = max(1, min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_ATTEMPTS", "2")), 3))
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
@@ -3022,22 +3022,23 @@ def ontology_search_payload(
     best_matches = dedupe_ontology_items(best_matches)
 
     graph_paths = []
-    for item in best_matches[:3]:
-        ref = str(item.get("boi_id") or item.get("doc_ref") or "")
-        if not ref:
-            continue
-        doc = find_doc_by_id(ref, employee_id)
-        if not doc:
-            continue
-        relationship = relationship_context_for_doc(doc, employee_id, graph=okf_graph_for_docs([doc], employee_id))
-        graph_paths.append(
-            {
-                "source": okf_concept_id_for_doc(doc),
-                "outgoing_count": len(relationship.get("outgoing") or []),
-                "backlink_count": 0,
-                "url": doc_url_for_ref(stable_doc_ref(doc), employee_id),
-            }
-        )
+    if str(view or "").lower() != "compact":
+        for item in best_matches[:3]:
+            ref = str(item.get("boi_id") or item.get("doc_ref") or "")
+            if not ref:
+                continue
+            doc = find_doc_by_id(ref, employee_id)
+            if not doc:
+                continue
+            relationship = relationship_context_for_doc(doc, employee_id, graph=okf_graph_for_docs([doc], employee_id))
+            graph_paths.append(
+                {
+                    "source": okf_concept_id_for_doc(doc),
+                    "outgoing_count": len(relationship.get("outgoing") or []),
+                    "backlink_count": 0,
+                    "url": doc_url_for_ref(stable_doc_ref(doc), employee_id),
+                }
+            )
 
     citations: list[dict[str, Any]] = []
     seen_citation_keys: set[str] = set()
@@ -8140,14 +8141,69 @@ def link_items_from_agent_context(page_context: dict[str, Any], employee_id: str
     return [item for item in links if item.get("url")]
 
 
+def page_context_ontology_seed(page_context: dict[str, Any], employee_id: str, query: str) -> dict[str, Any]:
+    """Return a compact ontology seed for page-first Agent requests.
+
+    Diagram, workflow explanation, gap check, page QA, and summarization are
+    anchored to the current page. Running a broad ontology search before the
+    page tool loop adds latency and can dilute the evidence. Search requests
+    still use the full ontology retriever; page-first requests get a typed seed
+    that keeps the Agent contract consistent for Web, API, and MCP clients.
+    """
+    title = str(page_context.get("title") or page_context.get("page_kind") or "현재 화면")
+    boi_id = str(page_context.get("boi_id") or page_context.get("sop_ref") or "")
+    current_item: dict[str, Any] = {
+        "kind": "boi",
+        "score": 100,
+        "match_reason": "current_page",
+        "boi_id": boi_id,
+        "title": title,
+        "description": str(page_context.get("description") or ""),
+        "type": str(page_context.get("type") or ""),
+        "url": str(page_context.get("url") or (doc_url_for_ref(boi_id, employee_id) if boi_id else "")),
+        "access": page_context.get("access") or {"can_cite": True, "can_use_in_agent_context": True},
+    }
+    current_items = [current_item] if boi_id or current_item.get("url") else []
+    return {
+        "ok": True,
+        "query": query,
+        "scope": "page_context",
+        "employee_id": employee_id,
+        "current_url": str(page_context.get("url") or ""),
+        "view": "compact",
+        "query_expansion": [query] if query else [],
+        "used_dictionary_terms": [],
+        "knowledge_panel": {"interpreted_as": [title] if title else [], "top_sop": current_items[:1]},
+        "groups": {"current_page": current_items},
+        "best_matches": current_items,
+        "graph_paths": [],
+        "citations": [
+            {"label": title, "ref": boi_id, "url": str(current_item.get("url") or ""), "kind": "current_page"}
+        ] if current_item.get("url") else [],
+        "document_rank_refs": [boi_id] if boi_id else [],
+    }
+
+
+def agent_page_context_has_business_anchor(page_context: dict[str, Any]) -> bool:
+    if not page_context.get("resolved"):
+        return False
+    for key in ("boi_id", "sop_ref", "trace_id", "event_type", "action_key", "log_ref"):
+        if page_context.get(key):
+            return True
+    return str(page_context.get("page_kind") or "") in {"doc", "workflow_status", "action_raw", "event_type"}
+
+
 def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_limit: int = 5) -> dict[str, Any]:
     page_context = resolve_agent_page_context(req.current_url, employee_id)
     ontology_seed: dict[str, Any] = {}
     intent = normalize_agent_intent(str(req.intent or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
     page_first_intents = {"diagram", "workflow_explain", "gap_check", "page_qa", "summarize"}
-    should_seed_search = bool(req.question.strip()) and not (page_context.get("resolved") and intent in page_first_intents)
+    has_page_anchor = agent_page_context_has_business_anchor(page_context)
+    should_seed_search = bool(req.question.strip()) and not (has_page_anchor and intent in page_first_intents)
     if should_seed_search:
         ontology_seed = ontology_search_payload(req.question, employee_id, scope="all", limit=search_limit, current_url=req.current_url, view="compact")
+    elif has_page_anchor and intent in page_first_intents:
+        ontology_seed = page_context_ontology_seed(page_context, employee_id, req.question)
     return {
         "question": req.question,
         "selected_text_excerpt": text_excerpt(req.selected_text, 700) if req.selected_text else "",

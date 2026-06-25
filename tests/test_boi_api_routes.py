@@ -137,7 +137,7 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["router"]["backoff_remaining_seconds"] >= 0
     assert body["boi_agent"]["router"]["max_tokens"] == 1536
     assert "api_key" not in body["boi_agent"]["router"]
-    assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 30
+    assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 12
     assert body["boi_agent"]["status_writer"]["max_tokens"] == 1536
     assert body["boi_agent"]["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["boi_agent"]["composer"]["max_tokens"] == 1536
@@ -181,7 +181,7 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["status_writer"]["model"]
     assert body["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["composer"]["timeout_seconds"] <= 12
-    assert body["composer"]["max_attempts"] == 1
+    assert body["composer"]["max_attempts"] == 2
     assert body["native_agent"]["langgraph_required"] is True
     assert body["native_agent"]["runtime"] in {"LangGraph", "unavailable"}
     assert body["agent_contract_version"] == "boi-agent.response.v1"
@@ -194,6 +194,90 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
         assert operation in body["write_confirmation_required"]
     for operation in ["event_publish", "workflow_start", "event_type_draft"]:
         assert operation in body["write_confirmation_required"]
+
+
+def test_agent_context_pack_uses_current_page_seed_for_page_first_gap_check(boi_app_module, monkeypatch):
+    monkeypatch.setattr(
+        boi_app_module,
+        "resolve_agent_page_context",
+        lambda current_url, employee_id: {
+            "resolved": True,
+            "page_kind": "doc",
+            "boi_id": "boi:public:sop:equipment-abnormal-response",
+            "title": "설비 이상 대응 SOP",
+            "type": "boi/sop",
+            "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "access": {"can_read": True, "can_use_in_agent_context": True, "can_cite": True},
+        },
+    )
+
+    def fail_broad_search(*_args, **_kwargs):
+        raise AssertionError("page-first gap check should not run broad ontology search")
+
+    monkeypatch.setattr(boi_app_module, "ontology_search_payload", fail_broad_search)
+
+    pack = boi_app_module.agent_context_pack(
+        boi_app_module.BoiAgentChatRequest(
+            question="이 SOP를 실행하려면 부족한 Action Spec이 있는지 찾아줘.",
+            current_url="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        ),
+        "100001",
+    )
+
+    seed = pack["ontology_search_seed"]
+    assert seed["ok"] is True
+    assert seed["scope"] == "page_context"
+    assert seed["best_matches"][0]["match_reason"] == "current_page"
+    assert seed["document_rank_refs"] == ["boi:public:sop:equipment-abnormal-response"]
+
+
+def test_ontology_compact_view_skips_graph_path_resolution(boi_app_module, monkeypatch):
+    doc = {
+        "metadata": {
+            "boi_id": "boi:public:sop:sample",
+            "title": "설비 SOP",
+            "description": "설비 이상 대응",
+            "type": "boi/sop",
+            "visibility": "public",
+            "classification": "internal",
+        },
+        "uri": "/public/sop/sample.md",
+        "path": "/tmp/sample.md",
+        "body": "설비 이상 대응",
+    }
+    monkeypatch.setattr(
+        boi_app_module,
+        "search_index_for_employee",
+        lambda employee_id: {
+            "docs": [doc],
+            "doc_records": [
+                {
+                    "ref": "boi:public:sop:sample",
+                    "doc": doc,
+                    "blob": "설비 이상 대응",
+                    "title": "설비 SOP",
+                    "id_text": "boi:public:sop:sample",
+                    "description": "설비 이상 대응",
+                    "type": "boi/sop",
+                    "access": {"can_read": True, "can_use_in_agent_context": True, "can_cite": True},
+                }
+            ],
+            "dictionary": [],
+            "event_types": [],
+            "actions": [],
+        },
+    )
+    monkeypatch.setattr(
+        boi_app_module,
+        "find_doc_by_id",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("compact ontology should not resolve graph docs")),
+    )
+
+    payload = boi_app_module.ontology_search_payload("설비", "100001", view="compact")
+
+    assert payload["view"] == "compact"
+    assert payload["graph_paths"] == []
+    assert payload["best_matches"][0]["boi_id"] == "boi:public:sop:sample"
 
 
 def test_boi_agent_stream_status_steps_require_llm_generated_plan(boi_app_module, monkeypatch):
