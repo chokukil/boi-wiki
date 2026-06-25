@@ -157,11 +157,12 @@ python scripts/check_boi_wiki_mcp.py \
   --mcp-url http://localhost:8200/mcp \
   --boi-api-url http://localhost:8000 \
   --agent-contract \
+  --agent-artifact-smoke \
   --details \
   --client-checklist
 ```
 
-`--agent-contract`는 BoI API의 `/api/agents/boi-wiki/response-schema`를 읽고 MCP `/health`의 `agent_response_schema`가 같은 canonical schema인지 비교한 뒤, REST `/api/agents/boi-wiki/chat` 응답이 같은 `boi-agent.response.v1` JSON Schema를 만족하는지 확인한다. service token이 없으면 MCP bridge의 `boi_agent_chat` contract 검증은 `skipped`로 남지만, REST API contract와 MCP status schema contract는 확인된다. `MCP_REQUIRE_SERVICE_TOKEN=false`인 로컬 개발 endpoint에서는 token 없이 실행해도 protocol count를 확인하고 authenticated bridge는 `skipped`로 표시된다. 이 상태는 등록 전 tool 목록 확인에는 충분하지만, write/action/promotion bridge까지 검증한 것은 아니다.
+`--agent-contract`는 BoI API의 `/api/agents/boi-wiki/response-schema`를 읽고 MCP `/health`의 `agent_response_schema`가 같은 canonical schema인지 비교한 뒤, REST `/api/agents/boi-wiki/chat` 응답이 같은 `boi-agent.response.v1` JSON Schema를 만족하는지 확인한다. `--agent-artifact-smoke`를 더하면 schema뿐 아니라 실제 업무 산출물도 확인한다. smoke 질문은 설비 SOP 페이지 기준 workflow 설명 요청이고, REST API와 MCP bridge 양쪽에서 `workflow_summary` artifact와 row가 반환되어야 한다. service token이 없으면 MCP bridge의 `boi_agent_chat` contract와 artifact 검증은 `skipped`로 남지만, REST API contract, REST artifact, MCP status schema contract는 확인된다. `MCP_REQUIRE_SERVICE_TOKEN=false`인 로컬 개발 endpoint에서는 token 없이 실행해도 protocol count를 확인하고 authenticated bridge는 `skipped`로 표시된다. 이 상태는 등록 전 tool 목록 확인에는 충분하지만, write/action/promotion bridge까지 검증한 것은 아니다.
 
 `MCP_REQUIRE_SERVICE_TOKEN=true`인 protected endpoint에서는 token 없이 protocol check 자체가 `auth_required`로 실패하는 것이 정상이다. 이 경우 아래처럼 환경변수나 NAS `.env`에서 token을 읽게 한다.
 
@@ -175,10 +176,11 @@ python scripts/check_boi_wiki_mcp.py \
   --service-token-env SERVICE_TOKEN \
   --require-bridge \
   --agent-contract \
+  --agent-artifact-smoke \
   --summary
 ```
 
-정상 결과는 protocol count, MCP `/health` AgentResponse schema 일치, authenticated bridge 호출, REST AgentResponse contract, MCP bridge `boi_agent_chat` contract가 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
+정상 결과는 protocol count, MCP `/health` AgentResponse schema 일치, authenticated bridge 호출, REST AgentResponse contract, MCP bridge `boi_agent_chat` contract, REST/MCP bridge `workflow_summary` artifact smoke가 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
 
 NAS host처럼 `httpx`나 MCP client library가 없는 Python 환경에서는 `--agent-contract-only`로 BoI API schema, MCP `/health` schema, REST/MCP bridge AgentResponse contract만 확인할 수 있다. 이 모드는 stdlib HTTP client와 경량 schema 검증을 사용한다. NAS app directory에서 실행할 때는 token이 process argument에 남지 않도록 `.env`에서 직접 읽는다.
 
@@ -188,6 +190,7 @@ python3 scripts/check_boi_wiki_mcp.py \
   --boi-api-url http://127.0.0.1:28000 \
   --service-token-dotenv .env \
   --agent-contract-only \
+  --agent-artifact-smoke \
   --require-bridge
 ```
 

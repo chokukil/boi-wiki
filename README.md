@@ -175,7 +175,21 @@ python scripts/check_boi_wiki_mcp.py \
   --summary
 ```
 
-NAS host Python처럼 `httpx`나 MCP client library가 없는 환경에서는 AgentResponse 계약만 stdlib 기반으로 확인할 수 있습니다. 이 검증은 BoI API canonical schema, MCP `/health` schema, REST chat 응답, authenticated MCP bridge 응답이 모두 같은 `boi-agent.response.v1` 계약을 쓰는지 확인합니다. NAS app directory에서 실행할 때는 token이 process argument에 남지 않도록 `.env`에서 직접 읽습니다.
+REST API와 MCP bridge가 같은 typed artifact를 반환하는지까지 확인하려면 `--agent-artifact-smoke`를 추가합니다. 이 smoke는 설비 SOP 현재 페이지 질문으로 `workflow_summary` artifact를 만들고, REST `/api/agents/boi-wiki/chat`와 MCP `boi_agent_chat` 양쪽에서 같은 `boi-agent.response.v1` 계약, `status_updates`, table artifact row를 검증합니다. Web Pet에서만 표가 보이고 API/MCP에서는 임의 문자열만 내려오는 상태를 배포 성공으로 보지 않기 위한 검사입니다.
+
+```bash
+python scripts/check_boi_wiki_mcp.py \
+  --base-url "$BOI_WIKI_MCP_EXTERNAL_URL" \
+  --mcp-url "$BOI_WIKI_MCP_EXTERNAL_URL/mcp" \
+  --boi-api-url "$BOI_EXTERNAL_URL" \
+  --service-token-env SERVICE_TOKEN \
+  --require-bridge \
+  --agent-contract \
+  --agent-artifact-smoke \
+  --summary
+```
+
+NAS host Python처럼 `httpx`나 MCP client library가 없는 환경에서는 AgentResponse 계약만 stdlib 기반으로 확인할 수 있습니다. 이 검증은 BoI API canonical schema, MCP `/health` schema, REST chat 응답, authenticated MCP bridge 응답이 모두 같은 `boi-agent.response.v1` 계약을 쓰는지 확인합니다. `--agent-artifact-smoke`를 함께 쓰면 stdlib 모드에서도 REST/MCP bridge `workflow_summary` artifact를 검증합니다. NAS app directory에서 실행할 때는 token이 process argument에 남지 않도록 `.env`에서 직접 읽습니다.
 
 ```bash
 python3 scripts/check_boi_wiki_mcp.py \
@@ -183,6 +197,7 @@ python3 scripts/check_boi_wiki_mcp.py \
   --boi-api-url http://127.0.0.1:28000 \
   --service-token-dotenv .env \
   --agent-contract-only \
+  --agent-artifact-smoke \
   --require-bridge
 ```
 

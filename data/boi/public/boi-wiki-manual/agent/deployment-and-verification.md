@@ -49,6 +49,7 @@ pytest tests -q -s
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
 python scripts/check_boi_wiki_mcp.py --summary
 python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:8000 --agent-contract --summary
+python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:8000 --agent-contract --agent-artifact-smoke --summary
 ```
 
 protected MCP endpoint를 외부에 열어 둔 배포에서는 service token을 환경 변수로만 넘겨 `/mcp` protocol, MCP `/health`의 AgentResponse schema, bridge, REST/MCP AgentResponse contract를 모두 확인한다.
@@ -61,10 +62,13 @@ python scripts/check_boi_wiki_mcp.py \
   --service-token-env SERVICE_TOKEN \
   --require-bridge \
   --agent-contract \
+  --agent-artifact-smoke \
   --summary
 ```
 
-NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다. 이 모드도 BoI API canonical schema, MCP `/health` schema, REST chat response, authenticated MCP bridge chat response가 같은 `boi-agent.response.v1` 계약을 쓰는지 확인한다. NAS app directory에서는 token 값을 CLI 인자로 넘기지 않고 `.env`에서 직접 읽는다.
+`--agent-artifact-smoke`는 Agent contract가 단순 schema만 맞는지 보지 않고 대표 업무 산출물까지 확인한다. 현재 기준 smoke 질문은 설비 SOP 페이지에서 “이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘.”이며, 성공 조건은 REST `/api/agents/boi-wiki/chat`와 MCP bridge `boi_agent_chat`이 모두 `workflow_summary` artifact를 반환하고 table row가 1개 이상인 것이다. 이 검사는 Web Pet UI가 표를 예쁘게 렌더링하는지와 별개로, API/MCP 소비자가 typed `artifacts[].type == "workflow_summary"`와 `artifacts[].data[]`를 받을 수 있는지 증명한다.
+
+NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다. 이 모드도 BoI API canonical schema, MCP `/health` schema, REST chat response, authenticated MCP bridge chat response가 같은 `boi-agent.response.v1` 계약을 쓰는지 확인한다. `--agent-artifact-smoke`를 함께 쓰면 stdlib HTTP client만으로도 REST/MCP bridge workflow summary artifact를 검증한다. NAS app directory에서는 token 값을 CLI 인자로 넘기지 않고 `.env`에서 직접 읽는다.
 
 ```bash
 python3 scripts/check_boi_wiki_mcp.py \
@@ -72,6 +76,7 @@ python3 scripts/check_boi_wiki_mcp.py \
   --boi-api-url http://127.0.0.1:28000 \
   --service-token-dotenv .env \
   --agent-contract-only \
+  --agent-artifact-smoke \
   --require-bridge
 ```
 
@@ -87,6 +92,7 @@ NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 | Inbox tab | 업무 카드가 일반 구성원 문구로 표시 |
 | MCP `boi_agent_chat` | same Native Agent API path |
 | MCP `/health` AgentResponse schema | matches `/api/agents/boi-wiki/response-schema` |
+| MCP bridge artifact smoke | REST and MCP `workflow_summary` artifact both valid |
 | MCP `/health` | `mcp_auth.required=true` when `/mcp` is externally reachable |
 | MCP `/mcp` without token | `401 MCP service token is required` when protected |
 | MCP `/mcp` with token | protocol initialize and tool list succeed |
