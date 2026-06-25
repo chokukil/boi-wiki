@@ -404,6 +404,7 @@ def test_boi_agent_stream_status_filters_degenerated_llm_messages(boi_app_module
                     "stage": "intent",
                     "message": "질문의 의도를도를 확인하며 thoughtful-thoughtful 반복이 생겼습니다.",
                 },
+                {"stage": "retrieval", "message": "질문의 의-목을 파악하고 있습니다."},
                 {"stage": "compose", "message": "한 문장으로 상태를 정리합니다."},
             ]
         }

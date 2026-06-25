@@ -7154,6 +7154,8 @@ def is_usable_llm_status_message(message: str) -> bool:
     # status_generation_failed error.
     if re.search(r"[A-Za-z]{8,}", text):
         return False
+    if re.search(r"[가-힣]-[가-힣]", text):
+        return False
     if re.search(r"([A-Za-z]{3,})(?:[-_\s]+\1){1,}", text, flags=re.IGNORECASE):
         return False
     if re.search(r"([가-힣]{2,})(?:을|를|은|는|이|가|의)?[-_\s·/]+\1", text):
