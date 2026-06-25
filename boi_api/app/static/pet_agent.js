@@ -1110,6 +1110,8 @@
       manual_complete: "Manual Handoff 완료 기록을 남겼습니다.",
       event_type_draft: "Event Type 초안을 만들었습니다.",
       create_event_type_draft: "Event Type 초안을 만들었습니다.",
+      event_type_draft_apply: "Event Type 초안을 catalog에 반영했습니다.",
+      apply_event_type_draft: "Event Type 초안을 catalog에 반영했습니다.",
       promotion_submit: "공유 요청을 제출했습니다.",
       submit_promotion: "공유 요청을 제출했습니다.",
     };

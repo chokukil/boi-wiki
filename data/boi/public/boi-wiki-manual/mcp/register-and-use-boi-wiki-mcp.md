@@ -40,9 +40,9 @@ BoI Wiki MCP는 agent-facing 표준 인터페이스다. API를 직접 외우는 
 
 # Codex 등록
 
-Codex에서 BoI Wiki MCP를 사용할 때 이름은 `boi-wiki-mcp`, transport는 Streamable HTTP, URL은 `http://localhost:8200/mcp`로 둔다. 등록 후 `boi_search`, `boi_get`, `workflow_status`, `action_invoke` 같은 tool이 보이면 정상이다.
+Codex에서 BoI Wiki MCP를 사용할 때 이름은 `boi-wiki-mcp`, transport는 Streamable HTTP, URL은 `http://localhost:8200/mcp`로 둔다. 등록 후 `boi_search`, `boi_get`, `workflow_status`, `action_invoke`, `event_type_draft_create` 같은 tool이 보이면 정상이다.
 
-BoI Agent 관련 tool은 BoI API와 같은 guardrail을 사용한다. `boi_search`는 document-only search이고, 복합 업무 탐색은 `ontology_search`, 현재 페이지 기반 질의응답은 `boi_agent_chat`, 담당 업무 확인은 `agent_inbox`를 사용한다. `manual_handoff_complete`, apply, promotion, action 실행 계열은 사용자 확인과 RBAC/ACL 검증 없이는 실행되지 않는다.
+BoI Agent 관련 tool은 BoI API와 같은 guardrail을 사용한다. `boi_search`는 document-only search이고, 복합 업무 탐색은 `ontology_search`, 현재 페이지 기반 질의응답은 `boi_agent_chat`, 담당 업무 확인은 `agent_inbox`를 사용한다. 신규 Event Type은 `event_type_draft_create`로 draft를 만들고 `event_type_draft_validate`로 검증한 뒤, 별도 승인 후 `event_type_draft_apply`로 catalog에 반영한다. `manual_handoff_complete`, `event_type_draft_create`, `event_type_draft_apply`, apply, promotion, action 실행 계열은 사용자 확인과 RBAC/ACL 검증 없이는 실행되지 않는다.
 
 ```json
 {

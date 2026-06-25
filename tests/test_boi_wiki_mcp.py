@@ -28,7 +28,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 22
+    assert body["capabilities"]["tools"] == 26
     assert body["capabilities"]["resource_templates"] == 5
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
@@ -44,6 +44,10 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "ontology_search" in tool_names
     assert "agent_inbox" in tool_names
     assert "manual_handoff_complete" in tool_names
+    assert "event_type_draft_create" in tool_names
+    assert "event_type_drafts" in tool_names
+    assert "event_type_draft_validate" in tool_names
+    assert "event_type_draft_apply" in tool_names
     assert "source_create_draft" not in tool_names
     assert "doc_body_create_draft" not in tool_names
     assert any(item["name"] == "promotion_submit" for item in body["capability_lists"]["tools"])
@@ -63,7 +67,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
-    assert "Tools" in body and "22" in body
+    assert "Tools" in body and "26" in body
     assert "Resource templates" in body and "5" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
@@ -77,6 +81,8 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "answer_delta" in body
     assert "ontology_search" in body
     assert "agent_inbox" in body
+    assert "event_type_draft_create" in body
+    assert "event_type_draft_apply" in body
     assert "boi://docs/{boi_id}" in body
     assert "boi://search/ontology/{query}" in body
     assert "create_sop_from_source" in body
@@ -296,10 +302,96 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
     assert calls[-1]["payload"]["user_confirmed"] is True
 
 
+def test_boi_wiki_mcp_bridge_covers_event_type_draft_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "path": path, "draft": {"draft_id": "event-type-test"}}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "items": [{"draft_id": "event-type-test"}]}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    create_denied = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "event_type_draft_create",
+            "arguments": {"employee_id": "100001", "event_type": "quality.forecast.requested.v1"},
+        },
+    )
+    create_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "event_type_draft_create",
+            "arguments": {
+                "employee_id": "100001",
+                "event_type": "quality.forecast.requested.v1",
+                "name_ko": "품질 예측 요청",
+                "description": "품질 시스템 예측이 필요한 시점",
+                "recommended_actions": ["mcp.timesfm.forecast"],
+                "user_confirmed": True,
+            },
+        },
+    )
+    list_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "event_type_drafts", "arguments": {"employee_id": "100001"}},
+    )
+    validate_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "event_type_draft_validate", "arguments": {"employee_id": "100001", "draft_id": "event-type-test"}},
+    )
+    apply_denied = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "event_type_draft_apply", "arguments": {"employee_id": "100001", "draft_id": "event-type-test"}},
+    )
+    apply_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "event_type_draft_apply",
+            "arguments": {"employee_id": "100001", "draft_id": "event-type-test", "user_confirmed": True, "note": "confirmed"},
+        },
+    )
+
+    assert create_denied.status_code == 400
+    assert "user_confirmed=true" in create_denied.json()["detail"]
+    assert create_ok.status_code == 200
+    assert list_ok.status_code == 200
+    assert validate_ok.status_code == 200
+    assert apply_denied.status_code == 400
+    assert "user_confirmed=true" in apply_denied.json()["detail"]
+    assert apply_ok.status_code == 200
+    assert [item["path"] for item in calls] == [
+        "/api/event-types/drafts",
+        "/api/event-types/drafts",
+        "/api/event-types/drafts/event-type-test/validate",
+        "/api/event-types/drafts/event-type-test/apply",
+    ]
+    assert calls[0]["payload"]["event_type"] == "quality.forecast.requested.v1"
+    assert calls[0]["payload"]["user_confirmed"] is True
+    assert calls[-1]["payload"]["user_confirmed"] is True
+
+
 def test_boi_wiki_mcp_bridge_requires_confirmation_for_write_tools(mcp_module):
     client = TestClient(mcp_module.app)
     for tool, arguments in [
         ("workflow_start", {"workflow_key": "equipment-anomaly"}),
+        ("event_type_draft_create", {"event_type": "quality.forecast.requested.v1"}),
+        ("event_type_draft_apply", {"draft_id": "event-type-test"}),
         ("source_apply", {"path": "data/boi/public/test.md", "base_sha256": "x", "proposed_content": "x"}),
         ("doc_body_apply", {"boi_id": "boi:public:test", "base_sha256": "x", "proposed_body": "x"}),
         ("promotion_submit", {"title": "x", "body": "x", "source_refs": []}),
@@ -402,6 +494,71 @@ def test_mcp_doc_body_apply_requires_user_confirmation(mcp_module, monkeypatch):
 
     assert result["status"] == "applied"
     assert calls[0]["path"] == "/api/docs/boi:public:test/body-apply"
+
+
+def test_mcp_event_type_draft_tools_require_confirmation_for_mutations(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "status": "ok", "draft": {"draft_id": "event-type-test"}}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "items": [{"draft_id": "event-type-test"}]}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(
+            mcp_module.event_type_draft_create(
+                event_type="quality.forecast.requested.v1",
+                employee_id="100001",
+                user_confirmed=False,
+            )
+        )
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(
+            mcp_module.event_type_draft_apply(
+                draft_id="event-type-test",
+                employee_id="100001",
+                user_confirmed=False,
+            )
+        )
+    assert calls == []
+
+    create_result = asyncio.run(
+        mcp_module.event_type_draft_create(
+            event_type="quality.forecast.requested.v1",
+            employee_id="100001",
+            name_ko="품질 예측 요청",
+            user_confirmed=True,
+        )
+    )
+    list_result = asyncio.run(mcp_module.event_type_drafts(employee_id="100001"))
+    validate_result = asyncio.run(mcp_module.event_type_draft_validate(draft_id="event-type-test", employee_id="100001"))
+    apply_result = asyncio.run(
+        mcp_module.event_type_draft_apply(
+            draft_id="event-type-test",
+            employee_id="100001",
+            user_confirmed=True,
+        )
+    )
+
+    assert create_result["ok"] is True
+    assert list_result["items"][0]["draft_id"] == "event-type-test"
+    assert validate_result["ok"] is True
+    assert apply_result["ok"] is True
+    assert [item["path"] for item in calls] == [
+        "/api/event-types/drafts",
+        "/api/event-types/drafts",
+        "/api/event-types/drafts/event-type-test/validate",
+        "/api/event-types/drafts/event-type-test/apply",
+    ]
+    assert calls[0]["payload"]["event_type"] == "quality.forecast.requested.v1"
+    assert calls[0]["payload"]["user_confirmed"] is True
+    assert calls[-1]["payload"]["user_confirmed"] is True
 
 
 def test_mcp_action_invoke_requires_confirmation_for_real_execution(mcp_module, monkeypatch):
@@ -523,7 +680,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 22,
+            "tools": 26,
             "resources": 0,
             "resource_templates": 5,
             "prompts": 5,
@@ -534,6 +691,10 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
                 "boi_agent_chat",
                 "ontology_search",
                 "agent_inbox",
+                "event_type_draft_create",
+                "event_type_drafts",
+                "event_type_draft_validate",
+                "event_type_draft_apply",
                 "action_invoke",
                 "source_preview",
                 "source_apply",
@@ -577,6 +738,8 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     assert "boi_agent_chat" in output
     assert "ontology_search" in output
     assert "agent_inbox" in output
+    assert "event_type_draft_create" in output
+    assert "event_type_draft_apply" in output
     assert "source_apply" in output
     assert "doc_body_apply" in output
     assert "promotion_submit" in output

@@ -3131,6 +3131,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "Action 실행 요청을 보냈습니다." in script
     assert "Manual Handoff 완료 기록을 남겼습니다." in script
     assert "Event Type 초안을 만들었습니다." in script
+    assert "Event Type 초안을 catalog에 반영했습니다." in script
     assert "공유 요청을 제출했습니다." in script
     assert "기술 세부정보" in script
     assert ">Workflow<" not in script

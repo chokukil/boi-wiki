@@ -34,6 +34,10 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "agent_memory_search", "description": "Search private Agent Memory BoI documents for the employee."},
     {"name": "agent_inbox", "description": "Return open manual/approval/follow-up action tasks for an employee."},
     {"name": "manual_handoff_complete", "description": "Append a user-confirmed manual handoff completion row."},
+    {"name": "event_type_draft_create", "description": "Create a user-confirmed Event Type draft and catalog patch proposal."},
+    {"name": "event_type_drafts", "description": "List visible Event Type drafts for the employee."},
+    {"name": "event_type_draft_validate", "description": "Revalidate an Event Type draft before catalog apply."},
+    {"name": "event_type_draft_apply", "description": "Apply a user-confirmed validated Event Type draft to the Event Type catalog."},
     {"name": "source_preview", "description": "Preview and validate a proposed Markdown/YAML source edit before applying it."},
     {"name": "source_apply", "description": "Apply a user-confirmed validated source edit and auto-commit it."},
     {"name": "doc_body_preview", "description": "Preview and validate a proposed BoI document body edit before applying it."},
@@ -391,6 +395,126 @@ async def manual_handoff_complete(
         "/api/agents/boi-wiki/manual-handoffs/complete",
         employee_id=employee_id,
         payload={"task_id": task_id, "note": note, "outcome": outcome, "user_confirmed": user_confirmed},
+    )
+
+
+def event_type_draft_payload_from_args(
+    *,
+    event_type: str,
+    name_ko: str = "",
+    description: str = "",
+    default_boi_type: str = "boi/event",
+    default_flow_key: str = "",
+    default_visibility: str = "private",
+    owner: str = "",
+    status: str = "draft",
+    topic: str = "boi.events",
+    workflow_stage: str = "",
+    sop_ref: str = "",
+    sop_stage_id: str = "",
+    wiki_usage: str = "",
+    payload_schema: dict[str, Any] | None = None,
+    recommended_actions: list[str] | None = None,
+    recommended_manual_actions: list[str] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    return {
+        "event_type": event_type,
+        "name_ko": name_ko,
+        "description": description,
+        "default_boi_type": default_boi_type,
+        "default_flow_key": default_flow_key,
+        "default_visibility": default_visibility,
+        "owner": owner,
+        "status": status,
+        "topic": topic,
+        "workflow_stage": workflow_stage,
+        "sop_ref": sop_ref,
+        "sop_stage_id": sop_stage_id,
+        "wiki_usage": wiki_usage,
+        "payload_schema": payload_schema or {},
+        "recommended_actions": recommended_actions or [],
+        "recommended_manual_actions": recommended_manual_actions or [],
+        "user_confirmed": user_confirmed,
+    }
+
+
+@mcp.tool(name="event_type_draft_create")
+async def event_type_draft_create(
+    event_type: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    name_ko: str = "",
+    description: str = "",
+    default_boi_type: str = "boi/event",
+    default_flow_key: str = "",
+    default_visibility: str = "private",
+    owner: str = "",
+    status: str = "draft",
+    topic: str = "boi.events",
+    workflow_stage: str = "",
+    sop_ref: str = "",
+    sop_stage_id: str = "",
+    wiki_usage: str = "",
+    payload_schema: dict[str, Any] | None = None,
+    recommended_actions: list[str] | None = None,
+    recommended_manual_actions: list[str] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create an Event Type draft. This creates a draft only and never applies the catalog patch."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before creating an Event Type draft")
+    return await api_post(
+        "/api/event-types/drafts",
+        employee_id=employee_id,
+        payload=event_type_draft_payload_from_args(
+            event_type=event_type,
+            name_ko=name_ko,
+            description=description,
+            default_boi_type=default_boi_type,
+            default_flow_key=default_flow_key,
+            default_visibility=default_visibility,
+            owner=owner,
+            status=status,
+            topic=topic,
+            workflow_stage=workflow_stage,
+            sop_ref=sop_ref,
+            sop_stage_id=sop_stage_id,
+            wiki_usage=wiki_usage,
+            payload_schema=payload_schema,
+            recommended_actions=recommended_actions,
+            recommended_manual_actions=recommended_manual_actions,
+            user_confirmed=True,
+        ),
+    )
+
+
+@mcp.tool(name="event_type_drafts")
+async def event_type_drafts(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """List visible Event Type drafts."""
+    return await api_get("/api/event-types/drafts", employee_id=employee_id)
+
+
+@mcp.tool(name="event_type_draft_validate")
+async def event_type_draft_validate(draft_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Revalidate an Event Type draft before catalog apply."""
+    return await api_post(f"/api/event-types/drafts/{draft_id}/validate", employee_id=employee_id)
+
+
+@mcp.tool(name="event_type_draft_apply")
+async def event_type_draft_apply(
+    draft_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    author: str = "boi-wiki-mcp",
+    note: str = "MCP Event Type draft apply",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Apply a validated Event Type draft to the catalog with explicit user confirmation."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before applying an Event Type draft")
+    return await api_post(
+        f"/api/event-types/drafts/{draft_id}/apply",
+        employee_id=employee_id,
+        payload={"author": author, "note": note, "user_confirmed": True},
     )
 
 
@@ -919,6 +1043,54 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "task_id": str(args.get("task_id") or ""),
                 "note": str(args.get("note") or ""),
                 "outcome": str(args.get("outcome") or "completed"),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name in {"event_type_draft_create", "create_event_type_draft"}:
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/event-types/drafts",
+            employee_id=employee_id,
+            payload=event_type_draft_payload_from_args(
+                event_type=str(args.get("event_type") or ""),
+                name_ko=str(args.get("name_ko") or ""),
+                description=str(args.get("description") or ""),
+                default_boi_type=str(args.get("default_boi_type") or "boi/event"),
+                default_flow_key=str(args.get("default_flow_key") or ""),
+                default_visibility=str(args.get("default_visibility") or "private"),
+                owner=str(args.get("owner") or ""),
+                status=str(args.get("status") or "draft"),
+                topic=str(args.get("topic") or "boi.events"),
+                workflow_stage=str(args.get("workflow_stage") or ""),
+                sop_ref=str(args.get("sop_ref") or ""),
+                sop_stage_id=str(args.get("sop_stage_id") or ""),
+                wiki_usage=str(args.get("wiki_usage") or ""),
+                payload_schema=args.get("payload_schema") if isinstance(args.get("payload_schema"), dict) else {},
+                recommended_actions=args.get("recommended_actions") if isinstance(args.get("recommended_actions"), list) else [],
+                recommended_manual_actions=args.get("recommended_manual_actions") if isinstance(args.get("recommended_manual_actions"), list) else [],
+                user_confirmed=True,
+            ),
+            service_token=True,
+        )
+    elif tool_name in {"event_type_drafts", "event_type_draft_list", "list_event_type_drafts"}:
+        result = await api_get("/api/event-types/drafts", employee_id=employee_id, service_token=True)
+    elif tool_name == "event_type_draft_validate":
+        result = await api_post(
+            f"/api/event-types/drafts/{str(args.get('draft_id') or '')}/validate",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name in {"event_type_draft_apply", "apply_event_type_draft"}:
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            f"/api/event-types/drafts/{str(args.get('draft_id') or '')}/apply",
+            employee_id=employee_id,
+            payload={
+                "author": str(args.get("author") or "boi-wiki-mcp"),
+                "note": str(args.get("note") or "MCP Event Type draft apply"),
                 "user_confirmed": True,
             },
             service_token=True,
