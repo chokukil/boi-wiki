@@ -177,6 +177,16 @@ python scripts/check_boi_wiki_mcp.py \
 
 정상 결과는 protocol count, authenticated bridge 호출, REST AgentResponse contract, MCP bridge `boi_agent_chat` contract가 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
 
+NAS host처럼 `httpx`나 MCP client library가 없는 Python 환경에서는 `--agent-contract-only`로 REST/MCP bridge AgentResponse contract만 확인할 수 있다. 이 모드는 stdlib HTTP client와 경량 schema 검증을 사용한다.
+
+```bash
+python3 scripts/check_boi_wiki_mcp.py \
+  --base-url http://127.0.0.1:28200 \
+  --boi-api-url http://127.0.0.1:28000 \
+  --service-token "$SERVICE_TOKEN" \
+  --agent-contract-only
+```
+
 `/health`와 `/status`의 `agent_response_contract.version`은 `boi-agent.response.v1`이어야 한다. Web Pet Agent, REST API, MCP `boi_agent_chat`, 외부 자동화는 모두 이 계약을 기준으로 `answer_markdown`, `display_markdown`, `links`, `citations`, `artifacts`, `execution_cards`, `status_updates`, `tool_trace`, `access_summary`, `guardrails_applied`를 해석한다. REST client는 `agent_response_contract.schema_endpoint`, MCP client는 `agent_response_contract.mcp_resource_template`로 JSON Schema를 확인한다. MCP의 `boi://agent/response-schema/latest`는 BoI API의 `/api/agents/boi-wiki/response-schema`를 canonical source로 사용하므로, 두 endpoint의 required field와 artifact type이 달라지면 배포가 잘못된 상태로 본다. MCP client에서 `boi_agent_chat`이 다른 형태의 임의 문자열만 반환하면 구버전 MCP image나 잘못된 bridge endpoint를 보고 있는 상태로 판단한다.
 
 # Troubleshooting

@@ -64,6 +64,16 @@ python scripts/check_boi_wiki_mcp.py \
   --summary
 ```
 
+NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다.
+
+```bash
+python3 scripts/check_boi_wiki_mcp.py \
+  --base-url http://127.0.0.1:28200 \
+  --boi-api-url http://127.0.0.1:28000 \
+  --service-token "$SERVICE_TOKEN" \
+  --agent-contract-only
+```
+
 NAS 배포 후에는 외부 URL에서 다음을 확인한다.
 
 | Check | Expected |

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import builtins
 import importlib
+import importlib.util
 import json
+from pathlib import Path
 import sys
 
 from fastapi.testclient import TestClient
@@ -1310,6 +1313,93 @@ def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys)
     assert body["agent_contract"]["schema"]["version"] == "boi-agent.response.v1"
     assert body["agent_contract"]["rest_chat"]["schema_valid"] is True
     assert body["agent_contract"]["mcp_bridge_chat"]["schema_valid"] is True
+
+
+def test_check_boi_wiki_mcp_agent_contract_only_works_without_optional_dependencies(monkeypatch):
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "check_boi_wiki_mcp.py"
+    spec = importlib.util.spec_from_file_location("check_boi_wiki_mcp_no_optional_deps", script_path)
+    module = importlib.util.module_from_spec(spec)
+    original_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "httpx" or name == "jsonschema" or name == "mcp" or name.startswith("mcp."):
+            raise ImportError(f"blocked optional dependency: {name}")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    assert module.httpx is None
+    assert module.validate is None
+
+    schema = {
+        "type": "object",
+        "required": [
+            "agent_contract_version",
+            "answer_markdown",
+            "display_markdown",
+            "links",
+            "citations",
+            "artifacts",
+            "execution_cards",
+            "status_updates",
+            "tool_trace",
+            "access_summary",
+            "guardrails_applied",
+        ],
+        "properties": {"agent_contract_version": {"const": "boi-agent.response.v1"}},
+    }
+    response = {
+        "agent_contract_version": "boi-agent.response.v1",
+        "answer_markdown": "ok",
+        "display_markdown": "ok",
+        "links": [],
+        "citations": [],
+        "artifacts": [],
+        "execution_cards": [],
+        "status_updates": [],
+        "tool_trace": [],
+        "access_summary": {},
+        "guardrails_applied": [],
+    }
+
+    class FakeHTTPResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def read(self):
+            return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout=0):
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        if url.endswith("/api/agents/boi-wiki/response-schema"):
+            return FakeHTTPResponse({"agent_contract_version": "boi-agent.response.v1", "schema": schema})
+        if url.endswith("/api/agents/boi-wiki/chat?employee_id=100001"):
+            return FakeHTTPResponse(response)
+        if url.endswith("/api/mcp/call"):
+            return FakeHTTPResponse({"ok": True, "result": response})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(module.urllib_request, "urlopen", fake_urlopen)
+
+    result = asyncio.run(
+        module.check_agent_contract(
+            boi_api_url="http://boi-api.test",
+            mcp_base_url="http://mcp.test",
+            employee_id="100001",
+            service_token="test-token",
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["rest_chat"]["schema_valid"] is True
+    assert result["mcp_bridge_chat"]["schema_valid"] is True
 
 
 def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_breaks(monkeypatch):

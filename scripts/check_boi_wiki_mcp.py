@@ -7,11 +7,25 @@ import json
 import os
 from pathlib import Path
 import sys
+from urllib.parse import urlencode
+import urllib.request as urllib_request
 
-import httpx
-from jsonschema import validate
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+try:
+    import httpx
+except Exception:  # pragma: no cover - exercised by no-optional-deps test.
+    httpx = None
+
+try:
+    from jsonschema import validate
+except Exception:  # pragma: no cover - exercised by no-optional-deps test.
+    validate = None
+
+try:
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+except Exception:  # pragma: no cover - agent-contract-only can run without MCP client libs.
+    ClientSession = None
+    streamablehttp_client = None
 
 EXPECTED_PROTOCOL = {"tools": 32, "resource_templates": 6, "prompts": 5}
 
@@ -60,6 +74,8 @@ async def check_protocol(url: str, include_details: bool = False, service_token:
 
 
 async def check_protocol_mcp_client(url: str, include_details: bool = False, service_token: str = "") -> dict:
+    if ClientSession is None or streamablehttp_client is None:
+        raise RuntimeError("MCP client dependencies are unavailable; install mcp or use --agent-contract-only for AgentResponse checks")
     tools = resources = resource_templates = prompts = None
     close_warning = ""
     try:
@@ -100,6 +116,8 @@ async def check_protocol_mcp_client(url: str, include_details: bool = False, ser
 
 
 async def check_protocol_stateless_json(url: str, include_details: bool = False, service_token: str = "") -> dict:
+    if httpx is None:
+        raise RuntimeError("httpx is unavailable; install httpx or use --agent-contract-only for AgentResponse checks")
     async with httpx.AsyncClient(timeout=30) as client:
         headers = {
             "Content-Type": "application/json",
@@ -157,6 +175,8 @@ async def check_protocol_stateless_json(url: str, include_details: bool = False,
 
 
 async def check_bridge(base_url: str, service_token: str, query: str) -> dict:
+    if httpx is None:
+        raise RuntimeError("httpx is unavailable; install httpx or use --agent-contract-only for AgentResponse checks")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/mcp/call",
@@ -181,8 +201,44 @@ def bridge_summary(bridge: dict) -> dict:
     }
 
 
+def minimal_json_schema_validate(instance: object, schema: dict, path: str = "$") -> None:
+    if not isinstance(schema, dict):
+        return
+    expected_type = schema.get("type")
+    if expected_type == "object" and not isinstance(instance, dict):
+        raise RuntimeError(f"{path} must be an object")
+    if expected_type == "array" and not isinstance(instance, list):
+        raise RuntimeError(f"{path} must be an array")
+    if expected_type == "string" and not isinstance(instance, str):
+        raise RuntimeError(f"{path} must be a string")
+    if expected_type == "boolean" and not isinstance(instance, bool):
+        raise RuntimeError(f"{path} must be a boolean")
+    if expected_type == "integer" and not isinstance(instance, int):
+        raise RuntimeError(f"{path} must be an integer")
+    if "const" in schema and instance != schema.get("const"):
+        raise RuntimeError(f"{path} must equal {schema.get('const')!r}")
+    if isinstance(instance, dict):
+        for key in schema.get("required") or []:
+            if key not in instance:
+                raise RuntimeError(f"{path}.{key} is required")
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        for key, child_schema in properties.items():
+            if key in instance:
+                minimal_json_schema_validate(instance[key], child_schema, f"{path}.{key}")
+    if isinstance(instance, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(instance):
+            minimal_json_schema_validate(item, schema["items"], f"{path}[{index}]")
+
+
+def validate_agent_response(response: dict, schema: dict) -> None:
+    if validate is not None:
+        validate(instance=response, schema=schema)
+        return
+    minimal_json_schema_validate(response, schema)
+
+
 def agent_response_summary(response: dict, schema: dict) -> dict:
-    validate(instance=response, schema=schema)
+    validate_agent_response(response, schema)
     return {
         "schema_valid": True,
         "contract_version": response.get("agent_contract_version"),
@@ -196,6 +252,20 @@ def agent_response_summary(response: dict, schema: dict) -> dict:
     }
 
 
+def urllib_json_request(method: str, url: str, *, headers: dict | None = None, params: dict | None = None, payload: dict | None = None, timeout: int = 60) -> dict:
+    full_url = url
+    if params:
+        full_url = f"{url}?{urlencode(params)}"
+    body = None
+    request_headers = {"Accept": "application/json", **(headers or {})}
+    if payload is not None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        request_headers["Content-Type"] = "application/json"
+    request = urllib_request.Request(full_url, data=body, headers=request_headers, method=method.upper())
+    with urllib_request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 async def check_agent_contract(
     boi_api_url: str,
     mcp_base_url: str,
@@ -206,6 +276,73 @@ async def check_agent_contract(
 ) -> dict:
     api_base = boi_api_url.rstrip("/")
     mcp_base = mcp_base_url.rstrip("/")
+    if httpx is None:
+        schema_payload = await asyncio.to_thread(
+            urllib_json_request,
+            "GET",
+            f"{api_base}/api/agents/boi-wiki/response-schema",
+        )
+        schema = schema_payload.get("schema")
+        if not isinstance(schema, dict):
+            raise RuntimeError("BoI Agent response-schema endpoint did not return a JSON schema")
+        chat_payload = {
+            "question": question,
+            "mode": "fast",
+            "intent": "search",
+            "current_url": current_url,
+            "save_memory": False,
+        }
+        rest_chat = await asyncio.to_thread(
+            urllib_json_request,
+            "POST",
+            f"{api_base}/api/agents/boi-wiki/chat",
+            params={"employee_id": employee_id},
+            payload=chat_payload,
+        )
+        result = {
+            "ok": True,
+            "schema": {
+                "version": schema_payload.get("agent_contract_version"),
+                "required_fields": schema.get("required") or [],
+                "execution_card_required": (
+                    schema.get("properties", {})
+                    .get("execution_cards", {})
+                    .get("items", {})
+                    .get("required", [])
+                ),
+            },
+            "rest_chat": agent_response_summary(rest_chat, schema),
+            "mcp_bridge_chat": {
+                "schema_valid": None,
+                "status": "skipped",
+                "reason": "service token not provided",
+            },
+        }
+        if service_token:
+            bridge_payload = await asyncio.to_thread(
+                urllib_json_request,
+                "POST",
+                f"{mcp_base}/api/mcp/call",
+                headers={"x-service-token": service_token},
+                payload={
+                    "server": {"name": "boi-wiki-mcp"},
+                    "tool": "boi_agent_chat",
+                    "arguments": {
+                        "question": question,
+                        "employee_id": employee_id,
+                        "mode": "fast",
+                        "intent": "search",
+                        "current_url": current_url,
+                        "save_memory": False,
+                    },
+                    "request_id": "check-boi-agent-contract",
+                },
+            )
+            bridge_result = bridge_payload.get("result")
+            if not isinstance(bridge_result, dict):
+                raise RuntimeError("MCP bridge boi_agent_chat did not return a JSON object result")
+            result["mcp_bridge_chat"] = agent_response_summary(bridge_result, schema)
+        return result
     async with httpx.AsyncClient(timeout=60) as client:
         schema_response = await client.get(f"{api_base}/api/agents/boi-wiki/response-schema")
         schema_response.raise_for_status()
@@ -275,6 +412,17 @@ async def check_agent_contract(
 
 
 async def main_async(args: argparse.Namespace) -> int:
+    if getattr(args, "agent_contract_only", False):
+        agent_contract = await check_agent_contract(
+            boi_api_url=args.boi_api_url,
+            mcp_base_url=args.base_url,
+            employee_id=args.employee_id,
+            service_token=str(args.service_token or "").strip(),
+            question=args.agent_question,
+            current_url=args.agent_current_url,
+        )
+        print(json.dumps({"ok": bool(agent_contract.get("ok")), "agent_contract": agent_contract}, ensure_ascii=False, indent=2))
+        return 0 if agent_contract.get("ok") else 1
     include_details = bool(args.details or args.client_checklist)
     service_token = str(args.service_token or "").strip()
     protocol = await check_protocol(args.mcp_url, include_details=include_details, service_token=service_token)
@@ -367,6 +515,7 @@ def main() -> int:
     parser.add_argument("--employee-id", default="100001")
     parser.add_argument("--boi-api-url", default=os.getenv("BOI_EXTERNAL_URL", "http://localhost:8000"), help="BoI API base URL for AgentResponse contract checks.")
     parser.add_argument("--agent-contract", action="store_true", help="Validate REST and optional MCP bridge boi_agent_chat responses against the canonical AgentResponse schema.")
+    parser.add_argument("--agent-contract-only", action="store_true", help="Run only AgentResponse contract checks. This mode can run with stdlib-only Python on NAS hosts.")
     parser.add_argument("--agent-question", default="SOP 찾아줘")
     parser.add_argument("--agent-current-url", default="/sops")
     parser.add_argument("--summary", action="store_true", help="Print only the verification summary.")

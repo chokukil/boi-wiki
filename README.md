@@ -175,6 +175,16 @@ python scripts/check_boi_wiki_mcp.py \
   --summary
 ```
 
+NAS host Python처럼 `httpx`나 MCP client library가 없는 환경에서는 AgentResponse 계약만 stdlib 기반으로 확인할 수 있습니다.
+
+```bash
+python3 scripts/check_boi_wiki_mcp.py \
+  --base-url http://127.0.0.1:28200 \
+  --boi-api-url http://127.0.0.1:28000 \
+  --service-token "$SERVICE_TOKEN" \
+  --agent-contract-only
+```
+
 Codex, Claude Desktop, Cursor 등록 전 상세 체크:
 
 ```bash
