@@ -6778,6 +6778,7 @@ def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id:
                 "Return JSON only.",
                 "Produce 3 to 5 short Korean suggestions.",
                 "Every suggestion must be useful for the current page context.",
+                "Do not use Markdown formatting, code fences, backticks, bullets, or numbering in suggestion text.",
                 "Avoid internal technical words unless they are visible business terms on the page.",
                 "If access.can_use_in_agent_context is false, ask about access policy or allowed related documents instead of document content.",
                 "For mutating work, phrase it as draft/preview/approval, not immediate execution.",
@@ -6817,7 +6818,9 @@ def normalize_llm_suggestions(payload: dict[str, Any]) -> list[str]:
     suggestions: list[str] = []
     for item in payload.get("suggestions") or []:
         text = re.sub(r"\s+", " ", str(item or "")).strip()
+        text = re.sub(r"^\s*(?:[-*•]\s*|\d+[.)]\s+)", "", text).strip()
         text = text.strip("\"'` ")
+        text = text.replace("`", "")
         if not text:
             continue
         if len(text) > 120:

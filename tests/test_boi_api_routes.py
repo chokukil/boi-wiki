@@ -4064,6 +4064,24 @@ def test_boi_agent_suggestions_use_llm_writer_when_required(boi_app_module, monk
     assert "설비 이상 감지·원인 분석·이상 조치 SOP" in prompt
 
 
+def test_boi_agent_suggestions_strip_markdown_artifacts(boi_app_module):
+    suggestions = boi_app_module.normalize_llm_suggestions(
+        {
+            "suggestions": [
+                "1. `equipment.alarm.raised.v1` 발생 시 대응 절차 알려줘",
+                "- 현재 SOP의 Action Spec 누락 점검해줘",
+                "워크플로우를 Mermaid 다이어그램으로 시각화해줘",
+                "24시간 이벤트 로그를 기준으로 이상 흐름 찾아줘",
+            ]
+        }
+    )
+
+    assert suggestions[0] == "equipment.alarm.raised.v1 발생 시 대응 절차 알려줘"
+    assert suggestions[1] == "현재 SOP의 Action Spec 누락 점검해줘"
+    assert suggestions[3] == "24시간 이벤트 로그를 기준으로 이상 흐름 찾아줘"
+    assert all("`" not in item for item in suggestions)
+
+
 def test_boi_agent_suggestions_fail_when_required_llm_unavailable(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
 
