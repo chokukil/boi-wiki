@@ -204,6 +204,7 @@ BOI_AGENT_LANGGRAPH_REQUIRED = os.getenv("BOI_AGENT_LANGGRAPH_REQUIRED", "1").st
 BOI_AGENT_CHAT_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_CHAT_TIMEOUT_SECONDS", "45"))
 BOI_AGENT_STREAM_HEARTBEAT_SECONDS = float(os.getenv("BOI_AGENT_STREAM_HEARTBEAT_SECONDS", "2"))
 BOI_AGENT_CACHE_WARMUP_ON_STARTUP = os.getenv("BOI_AGENT_CACHE_WARMUP_ON_STARTUP", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_AGENT_RESPONSE_CONTRACT_VERSION = "boi-agent.response.v1"
 BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
@@ -8544,15 +8545,33 @@ def execution_cards_from_artifacts(artifacts: list[dict[str, Any]]) -> list[dict
             continue
         data = artifact.get("data") if isinstance(artifact.get("data"), dict) else {}
         operation = str(data.get("operation") or data.get("type") or "confirmation_required")
+        title = str(data.get("title") or artifact.get("title") or "확인 필요")
+        message = str(data.get("message") or "")
+        primary_label = str(data.get("primary_label") or "확인 후 실행")
         cards.append(
             {
+                "contract_version": BOI_AGENT_RESPONSE_CONTRACT_VERSION,
                 "type": operation,
                 "operation": operation,
-                "title": str(data.get("title") or artifact.get("title") or "확인 필요"),
-                "message": str(data.get("message") or ""),
-                "primary_label": str(data.get("primary_label") or "확인 후 실행"),
+                "title": title,
+                "message": message,
+                "primary_label": primary_label,
                 "payload": data.get("payload") or {},
                 "requires_confirmation": True,
+                "user_confirmed_required": True,
+                "approve_url": "/api/agents/boi-wiki/approve",
+                "display": {
+                    "title": title,
+                    "status_label": "확인 필요",
+                    "why_it_matters": message or "이 요청은 BoI Wiki 상태를 변경할 수 있어 실행 전 확인이 필요합니다.",
+                    "next_action": primary_label,
+                    "risk_label": "명시 확인 후 실행",
+                },
+                "technical_details": {
+                    "route": data.get("route"),
+                    "intent": data.get("intent"),
+                    "operation": operation,
+                },
                 "route": data.get("route"),
                 "intent": data.get("intent"),
             }
@@ -8592,6 +8611,7 @@ def markdown_without_duplicate_mermaid_artifacts(answer_markdown: str, artifacts
 
 
 def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    response.setdefault("agent_contract_version", BOI_AGENT_RESPONSE_CONTRACT_VERSION)
     answer_markdown = str(response.get("answer_markdown") or "")
     artifacts = normalize_agent_artifacts(response.get("artifacts"), answer_markdown)
     response["artifacts"] = artifacts
@@ -9354,6 +9374,27 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
         "official_external_interfaces": ["BoI API", "boi-wiki-mcp"],
         "trusted_dev_backend": "Langflow optional visual/debug backend",
         "boi_agent_backend": BOI_AGENT_BACKEND,
+        "agent_contract_version": BOI_AGENT_RESPONSE_CONTRACT_VERSION,
+        "response_contract": {
+            "canonical_endpoint": "/api/agents/boi-wiki/chat",
+            "stream_endpoint": "/api/agents/boi-wiki/chat/stream",
+            "approve_endpoint": "/api/agents/boi-wiki/approve",
+            "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
+            "artifact_types": ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"],
+            "execution_card_fields": [
+                "contract_version",
+                "operation",
+                "title",
+                "message",
+                "primary_label",
+                "payload",
+                "requires_confirmation",
+                "user_confirmed_required",
+                "approve_url",
+                "display",
+                "technical_details",
+            ],
+        },
         "router": {
             "mode": BOI_AGENT_ROUTER_MODE,
             "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,

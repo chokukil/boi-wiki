@@ -49,6 +49,23 @@ flowchart TD
   EXEC -->|event_type_draft_apply| APPLY["validated catalog apply"]
 ```
 
+# API / MCP Contract
+
+BoI Agent의 기준 인터페이스는 Web Pet UI가 아니라 `/api/agents/boi-wiki/chat` 응답 계약이다. Pet Agent, `boi-wiki-mcp`의 `boi_agent_chat`, 외부 자동화는 같은 `boi-agent.response.v1` 계약을 소비한다.
+
+응답은 사람이 읽는 `answer_markdown`과 기계가 해석하는 구조화 필드를 함께 가진다.
+
+| Field | Purpose |
+|---|---|
+| `answer_markdown` | 사용자에게 보여줄 Markdown 답변 |
+| `links`, `citations` | 클릭 가능한 BoI/Event/Action/Trace reference |
+| `artifacts` | Mermaid, table, task card, confirmation card 같은 구조화 산출물 |
+| `execution_cards` | 상태 변경이 필요한 요청의 승인 UI/API contract |
+| `guardrails_applied` | 적용된 ACL/RBAC/safety guardrail |
+| `agent_contract_version` | 현재 응답 계약 버전 |
+
+`execution_cards`는 Web UI 전용 데이터가 아니다. MCP client나 외부 시스템도 이 카드의 `approve_url`, `operation`, `payload`, `user_confirmed_required`, `display`, `technical_details`를 사용해 같은 승인 UX를 만들 수 있다. 실제 실행은 카드 표시 시점이 아니라 `/api/agents/boi-wiki/approve` 호출 시점에 다시 RBAC/ACL/classification 검증을 거친다.
+
 # User-facing Wording
 
 개발자 용어를 사용자 화면에 그대로 노출하지 않는다.

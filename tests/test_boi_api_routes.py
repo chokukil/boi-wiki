@@ -182,6 +182,11 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["native_agent"]["langgraph_required"] is True
     assert body["native_agent"]["runtime"] in {"LangGraph", "unavailable"}
+    assert body["agent_contract_version"] == "boi-agent.response.v1"
+    assert body["response_contract"]["canonical_endpoint"] == "/api/agents/boi-wiki/chat"
+    assert body["response_contract"]["approve_endpoint"] == "/api/agents/boi-wiki/approve"
+    assert "boi_wiki_mcp" in body["response_contract"]["consumers"]
+    assert "execution_card_fields" in body["response_contract"]
     assert "progressive response streaming" in body["features"]
     for operation in body["supported_execution_cards"]:
         assert operation in body["write_confirmation_required"]
@@ -2634,10 +2639,17 @@ def test_boi_agent_event_type_draft_card_uses_ontology_context(boi_app_module, m
     body = response.json()
     assert body["route"] == "approval_required"
     assert body["intent"] == "event_type_draft"
+    assert body["agent_contract_version"] == "boi-agent.response.v1"
     artifact = body["artifacts"][0]
     assert artifact["type"] == "confirmation_required"
     assert body["execution_cards"][0]["operation"] == "event_type_draft"
     assert body["execution_cards"][0]["requires_confirmation"] is True
+    assert body["execution_cards"][0]["user_confirmed_required"] is True
+    assert body["execution_cards"][0]["approve_url"] == "/api/agents/boi-wiki/approve"
+    assert body["execution_cards"][0]["contract_version"] == "boi-agent.response.v1"
+    assert body["execution_cards"][0]["display"]["status_label"] == "확인 필요"
+    assert body["execution_cards"][0]["display"]["next_action"] == "이벤트 유형 초안 만들기"
+    assert body["execution_cards"][0]["technical_details"]["operation"] == "event_type_draft"
     payload = artifact["data"]["payload"]
     assert payload["event_type"] == "maintenance.inspection.completed.v1"
     assert payload["name_ko"] == "장비 점검 완료"
