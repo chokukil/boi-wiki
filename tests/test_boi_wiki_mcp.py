@@ -287,7 +287,16 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
         json={
             "server": {"name": "boi-wiki-mcp"},
             "tool": "boi_agent_chat",
-            "arguments": {"question": "SOP 찾아줘", "employee_id": "100001", "mode": "fast", "current_url": "/sops", "selected_text": "SOP"},
+            "arguments": {
+                "question": "SOP 찾아줘",
+                "employee_id": "100001",
+                "mode": "fast",
+                "intent": "search",
+                "current_url": "/sops",
+                "selected_text": "SOP",
+                "conversation": [{"role": "user", "content": "이전 질문"}],
+                "save_memory": False,
+            },
         },
     )
     inbox = client.post(
@@ -315,7 +324,10 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
     assert inbox.json()["result"]["items"][0]["task_id"] == "task-1"
     assert calls[0]["path"] == "/api/agents/boi-wiki/chat"
     assert calls[0]["payload"]["mode"] == "fast"
+    assert calls[0]["payload"]["intent"] == "search"
     assert calls[0]["payload"]["selected_text"] == "SOP"
+    assert calls[0]["payload"]["conversation"] == [{"role": "user", "content": "이전 질문"}]
+    assert calls[0]["payload"]["save_memory"] is False
     assert calls[1]["path"] == "/api/agents/boi-wiki/inbox"
 
 

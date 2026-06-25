@@ -384,15 +384,27 @@ async def boi_agent_chat(
     question: str,
     employee_id: str = DEFAULT_EMPLOYEE_ID,
     mode: str = "auto",
+    intent: str = "",
     current_url: str = "",
     selected_text: str = "",
     page_context: dict[str, Any] | None = None,
+    conversation: list[dict[str, Any]] | None = None,
+    save_memory: bool = True,
 ) -> dict[str, Any]:
     """Ask the BoI Agent through the official BoI API surface."""
     return await api_post(
         "/api/agents/boi-wiki/chat",
         employee_id=employee_id,
-        payload={"question": question, "mode": mode, "current_url": current_url, "selected_text": selected_text, "page_context": page_context or {}},
+        payload={
+            "question": question,
+            "mode": mode,
+            "intent": intent,
+            "current_url": current_url,
+            "selected_text": selected_text,
+            "page_context": page_context or {},
+            "conversation": conversation or [],
+            "save_memory": bool(save_memory),
+        },
     )
 
 
@@ -1184,9 +1196,12 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             payload={
                 "question": str(args.get("question") or ""),
                 "mode": str(args.get("mode") or "auto"),
+                "intent": str(args.get("intent") or ""),
                 "current_url": str(args.get("current_url") or ""),
                 "selected_text": str(args.get("selected_text") or ""),
                 "page_context": args.get("page_context") or {},
+                "conversation": args.get("conversation") or [],
+                "save_memory": bridge_bool(args.get("save_memory"), True),
             },
             service_token=True,
         )
