@@ -812,16 +812,24 @@ def test_boi_agent_trace_reasoning_uses_llm_composer_when_enabled(boi_app_module
     assert body["suggested_questions_source"] == "llm_composer"
 
 
-def test_boi_agent_diagram_uses_native_artifact_without_llm_composer(boi_app_module, monkeypatch):
+def test_boi_agent_diagram_uses_structured_artifact_with_llm_composer(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    compose_calls: list[dict] = []
 
-    def unexpected_llm(*args, **kwargs):
-        raise AssertionError("diagram artifact path should not call the LLM answer composer")
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        compose_calls.append({"employee_id": employee_id, "task": task, "payload": payload})
+        assert task == "compose"
+        assert "```mermaid" not in payload["structured_draft"]
+        assert "structured artifact" in payload["artifact_policy"]["mermaid"]
+        return {
+            "answer_markdown": "## SOP 프로세스 플로우\n\nSOP 단계와 연결된 Event, Action, Manual Handoff를 업무 관점으로 정리했습니다.",
+            "suggested_questions": ["이 SOP의 부족한 Action Spec을 찾아줘."],
+        }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
-    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", unexpected_llm)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -835,10 +843,13 @@ def test_boi_agent_diagram_uses_native_artifact_without_llm_composer(boi_app_mod
 
     assert response.status_code == 200
     body = response.json()
+    assert compose_calls
     assert body["intent"] == "diagram"
-    assert body["context_summary"]["composer_backend"] == "native_artifact"
+    assert body["context_summary"]["composer_backend"] == "llm"
     assert body["artifacts"][0]["type"] == "mermaid"
+    assert body["answer_markdown"].startswith("## SOP 프로세스 플로우")
     assert "```mermaid" not in body["display_markdown"]
+    assert body["suggested_questions"] == ["이 SOP의 부족한 Action Spec을 찾아줘."]
 
 
 def test_boi_agent_required_llm_composer_failure_is_service_error(boi_app_module, monkeypatch):
@@ -1956,10 +1967,21 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     def fail_langflow(*args, **kwargs):
         raise AssertionError("native diagram path must not call Langflow")
 
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        assert task == "compose"
+        assert payload["intent"] == "diagram"
+        return {
+            "answer_markdown": "## SOP 흐름 도식\n\nAgent가 SOP 근거를 확인해 Mermaid artifact와 함께 정리했습니다.",
+            "suggested_questions": ["이 SOP의 Action Spec 누락을 확인해줘."],
+        }
+
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -1975,13 +1997,13 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     assert body["intent"] == "diagram"
     assert body["used_backend"] == "native_langgraph"
     assert body["artifacts"][0]["type"] == "mermaid"
-    assert "```mermaid" in body["answer_markdown"]
+    assert body["context_summary"]["composer_backend"] == "llm"
+    assert "```mermaid" not in body["answer_markdown"]
     assert "```mermaid" not in body["display_markdown"]
-    assert "원본 매핑" in body["display_markdown"]
+    assert "SOP 근거" in body["display_markdown"]
     assert "answer_html" in body
     assert "```mermaid" not in body["answer_html"]
     assert "mermaid-diagram" not in body["answer_html"]
-    assert '<table class="markdown-table">' in body["answer_html"]
 
 
 def test_boi_agent_deep_request_uses_ontology_match_when_not_on_doc_page(boi_app_module, monkeypatch):
@@ -1999,9 +2021,20 @@ def test_boi_agent_deep_request_uses_ontology_match_when_not_on_doc_page(boi_app
             "router_backend": "llm",
         }
 
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        assert task == "compose"
+        assert payload["intent"] == "diagram"
+        return {
+            "answer_markdown": "## 설비 이상 SOP 프로세스 플로우\n\n설비 이상 감지 SOP를 현재 검색 결과에서 찾아 Mermaid artifact로 정리했습니다.",
+            "suggested_questions": [],
+        }
+
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -2041,9 +2074,20 @@ def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, m
             "router_backend": "llm",
         }
 
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        assert task == "compose"
+        assert payload["intent"] == "workflow_explain"
+        return {
+            "answer_markdown": "## Event, Action, Manual Handoff 관계\n\nAgent가 SOP metadata와 Action Spec 근거를 확인해 관계 표 artifact로 정리했습니다.",
+            "suggested_questions": [],
+        }
+
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
@@ -2056,9 +2100,8 @@ def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, m
     assert response.status_code == 200
     body = response.json()
     assert body["intent"] == "workflow_explain"
-    assert "| 단계 | 이벤트 | 업무 요청 | 수동 조치 | 다음 |" in body["answer_markdown"]
-    assert '<table class="markdown-table">' in body["answer_html"]
-    assert "manual.equipment.confirm_alarm_context" in body["answer_html"]
+    assert body["context_summary"]["composer_backend"] == "llm"
+    assert "관계 표 artifact" in body["answer_markdown"]
     assert any(item.get("type") == "workflow_summary" for item in body["artifacts"])
 
 
@@ -2631,9 +2674,20 @@ def test_boi_agent_manual_handoff_relationship_question_is_not_mutation(boi_app_
             "router_backend": "llm",
         }
 
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        assert task == "compose"
+        assert payload["intent"] == "workflow_explain"
+        return {
+            "answer_markdown": "## SOP 관계 요약\n\nAgent가 Event, Action, Manual Handoff 관계를 업무 관점으로 설명했습니다.",
+            "suggested_questions": [],
+        }
+
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", wrong_fast_router)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
 
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",

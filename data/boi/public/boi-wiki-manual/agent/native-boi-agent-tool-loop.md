@@ -39,10 +39,8 @@ flowchart TD
   C --> D["plan_tools"]
   D --> E["execute_tools_loop"]
   E --> F["evaluate_coverage"]
-  F --> G["compose_answer"]
-  G --> ART{"authoritative typed artifact?"}
-  ART -->|yes| H["verify_acl_and_artifacts"]
-  ART -->|no| LC{"LLM composer enabled?"}
+  F --> G["compose_answer<br/>typed evidence + artifacts"]
+  G --> LC{"LLM composer enabled?"}
   LC -->|yes| LLM["compose final Markdown<br/>from typed evidence"]
   LC -->|no + required| ERR["service error<br/>native_agent_runtime_unavailable"]
   LC -->|no + explicit dev/test opt-out| DET["structured draft<br/>dev/test only"]
@@ -110,11 +108,11 @@ Tool loop의 `tool_start`/`tool_done` callback은 audit/debug용 구조화 trace
 |---|---|
 | `diagram` | Mermaid flowchart |
 | `gap_check` | missing Action Spec table |
-| `workflow_explain` | Event -> SOP -> Action -> Manual Handoff table. `workflow_summary` artifact is authoritative and does not require the LLM composer to rewrite it. |
+| `workflow_explain` | Event -> SOP -> Action -> Manual Handoff table. `workflow_summary` artifact is a verified structured artifact; the LLM composer still writes the user-facing explanation from the same evidence. |
 | `trace_reasoning` | trace evidence summary |
 | `inbox` | 일반 구성원용 업무 카드 |
 
-Mermaid는 `artifacts`와 Markdown code block 둘 다 제공할 수 있다. Pet Agent renderer는 같은 Mermaid source가 중복으로 내려오면 하나만 표시한다. `workflow_summary`와 `gap_table` artifact는 raw JSON이 아니라 table로 렌더링한다. 긴 표, 이미지, task card, confirmation card는 채팅 안에서는 compact하게 보여주고 `크게 보기` viewer에서 크게 확인한다.
+Mermaid와 table은 `artifacts`에 구조화해서 내려온다. LLM composer는 Mermaid source나 raw artifact JSON을 다시 쓰지 않고, artifact가 무엇을 의미하는지와 사용자가 다음에 무엇을 보면 되는지를 설명한다. Pet Agent renderer는 Markdown fenced block과 artifact가 같은 Mermaid source를 포함하면 하나만 표시한다. `workflow_summary`와 `gap_table` artifact는 raw JSON이 아니라 table로 렌더링한다. 긴 표, 이미지, task card, confirmation card는 채팅 안에서는 compact하게 보여주고 `크게 보기` viewer에서 크게 확인한다.
 
 Markdown answer renderer는 GFM-like table, ordered/unordered list, checklist, inline code/link/bold/italic/strike, bare URL link를 지원한다. Agent는 표가 필요한 답변을 만들 때 Markdown table과 structured artifact를 함께 내려도 되지만, 두 경로 모두 사람이 읽는 표로 보여야 한다.
 

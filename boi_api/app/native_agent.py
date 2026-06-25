@@ -43,7 +43,6 @@ ALLOWED_AGENT_INTENTS = {
 }
 DEEP_AGENT_INTENTS = {"diagram", "workflow_explain", "gap_check", "trace_reasoning"}
 MUTATION_AGENT_INTENTS = {"manual_complete", "approval", "event_publish", "action_invoke", "workflow_start", "event_type_draft"}
-NATIVE_ARTIFACT_AUTHORITATIVE_INTENTS = {"diagram", "workflow_explain", "gap_check", "inbox"}
 
 
 def normalize_native_route(value: str, fallback: str = "fast") -> str:
@@ -355,6 +354,11 @@ class NativeBoiAgent:
             state["stop_reason"] = "access_denied"
         if access and access.get("can_use_in_agent_context") is False:
             state.setdefault("guardrails_applied", []).append("classification_redaction")
+            state["answer_markdown"] = (
+                "이 BoI는 보안 등급 정책 때문에 Agent 답변 컨텍스트로 사용할 수 없습니다. "
+                "문서 존재와 접근 정책은 확인할 수 있지만, 본문이나 연결 항목을 바탕으로 한 요약·도식·외부 전달은 제한됩니다."
+            )
+            state["stop_reason"] = "context_restricted"
         return state
 
     def _retrieve_ontology(self, state: JsonDict) -> JsonDict:
@@ -491,10 +495,6 @@ class NativeBoiAgent:
     def _compose_with_llm_if_enabled(self, state: JsonDict) -> None:
         if state.get("stop_reason") or state.get("route_name") in {"manual_handoff", "approval_required"}:
             return
-        if state.get("intent") in NATIVE_ARTIFACT_AUTHORITATIVE_INTENTS and state.get("artifacts"):
-            state["composer_backend"] = "native_artifact"
-            state["composer_skipped_reason"] = "typed_artifact_is_authoritative"
-            return
         if not self.config.composer_enabled:
             if self.config.composer_required:
                 raise NativeAgentRuntimeUnavailable("LLM answer composer is required but not configured")
@@ -519,8 +519,10 @@ class NativeBoiAgent:
                 state["composer_quality_repair_used"] = True
             suggestions = result.get("suggested_questions")
             if isinstance(suggestions, list):
-                state["suggested_questions"] = [str(item).strip() for item in suggestions if str(item).strip()][:4]
-                state["suggested_questions_source"] = "llm_composer"
+                normalized_suggestions = [str(item).strip() for item in suggestions if str(item).strip()][:4]
+                if normalized_suggestions:
+                    state["suggested_questions"] = normalized_suggestions
+                    state["suggested_questions_source"] = "llm_composer"
             state["composer_backend"] = "llm"
             return
         state["composer_backend"] = "deterministic"
