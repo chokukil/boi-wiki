@@ -162,7 +162,7 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["router"]["backoff_remaining_seconds"] >= 0
     assert body["boi_agent"]["router"]["max_tokens"] == 1536
     assert "api_key" not in body["boi_agent"]["router"]
-    assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 12
+    assert body["boi_agent"]["status_writer"]["timeout_seconds"] == 30
     assert body["boi_agent"]["status_writer"]["max_tokens"] == 1536
     assert body["boi_agent"]["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["boi_agent"]["composer"]["max_tokens"] == 1536
@@ -205,7 +205,7 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["status_writer"]["required"] is True
     assert body["status_writer"]["model"]
     assert body["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
-    assert body["composer"]["timeout_seconds"] <= 12
+    assert body["composer"]["timeout_seconds"] <= 30
     assert body["composer"]["max_attempts"] == 2
     assert body["native_agent"]["langgraph_required"] is True
     assert body["native_agent"]["runtime"] in {"LangGraph", "unavailable"}

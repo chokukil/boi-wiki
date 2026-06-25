@@ -18,14 +18,14 @@ def test_env_example_contains_openai_compatible_gemma_defaults():
     assert "BOI_AGENT_STATUS_REQUIRED=1" in env_text
     assert "BOI_AGENT_STATUS_MODEL=google/gemma-4-26b-a4b-qat" in env_text
     assert "BOI_AGENT_STATUS_API_KEY=boi-router-dummy-key" in env_text
-    assert "BOI_AGENT_STATUS_TIMEOUT_SECONDS=12" in env_text
+    assert "BOI_AGENT_STATUS_TIMEOUT_SECONDS=30" in env_text
     assert "BOI_AGENT_STATUS_MAX_TOKENS=1536" in env_text
     assert "BOI_AGENT_SUGGESTIONS_LLM_ENABLED=auto" in env_text
     assert "BOI_AGENT_SUGGESTIONS_REQUIRED=1" in env_text
     assert "BOI_AGENT_SUGGESTIONS_MODEL=google/gemma-4-26b-a4b-qat" in env_text
     assert "BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS=12" in env_text
     assert "BOI_AGENT_COMPOSER_REQUIRED=1" in env_text
-    assert "BOI_AGENT_COMPOSER_TIMEOUT_SECONDS=12" in env_text
+    assert "BOI_AGENT_COMPOSER_TIMEOUT_SECONDS=30" in env_text
     assert "BOI_AGENT_COMPOSER_MAX_TOKENS=1536" in env_text
     assert "BOI_AGENT_COMPOSER_MAX_ATTEMPTS=2" in env_text
     assert "BOI_AGENT_CACHE_WARMUP_ON_STARTUP=1" in env_text
@@ -45,14 +45,14 @@ def test_docker_compose_passes_llm_settings_to_langflow_and_gateway():
     assert "BOI_AGENT_STATUS_LLM_ENABLED: ${BOI_AGENT_STATUS_LLM_ENABLED:-auto}" in compose_text
     assert "BOI_AGENT_STATUS_REQUIRED: ${BOI_AGENT_STATUS_REQUIRED:-1}" in compose_text
     assert "BOI_AGENT_STATUS_BASE_URL: ${BOI_AGENT_STATUS_BASE_URL:-http://llm-gateway.example:1236/v1}" in compose_text
-    assert "BOI_AGENT_STATUS_TIMEOUT_SECONDS: ${BOI_AGENT_STATUS_TIMEOUT_SECONDS:-12}" in compose_text
+    assert "BOI_AGENT_STATUS_TIMEOUT_SECONDS: ${BOI_AGENT_STATUS_TIMEOUT_SECONDS:-30}" in compose_text
     assert "BOI_AGENT_STATUS_MAX_TOKENS: ${BOI_AGENT_STATUS_MAX_TOKENS:-1536}" in compose_text
     assert "BOI_AGENT_SUGGESTIONS_LLM_ENABLED: ${BOI_AGENT_SUGGESTIONS_LLM_ENABLED:-auto}" in compose_text
     assert "BOI_AGENT_SUGGESTIONS_REQUIRED: ${BOI_AGENT_SUGGESTIONS_REQUIRED:-1}" in compose_text
     assert "BOI_AGENT_SUGGESTIONS_BASE_URL: ${BOI_AGENT_SUGGESTIONS_BASE_URL:-http://llm-gateway.example:1236/v1}" in compose_text
     assert "BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS: ${BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS:-12}" in compose_text
     assert "BOI_AGENT_COMPOSER_REQUIRED: ${BOI_AGENT_COMPOSER_REQUIRED:-1}" in compose_text
-    assert "BOI_AGENT_COMPOSER_TIMEOUT_SECONDS: ${BOI_AGENT_COMPOSER_TIMEOUT_SECONDS:-12}" in compose_text
+    assert "BOI_AGENT_COMPOSER_TIMEOUT_SECONDS: ${BOI_AGENT_COMPOSER_TIMEOUT_SECONDS:-30}" in compose_text
     assert "BOI_AGENT_COMPOSER_MAX_TOKENS: ${BOI_AGENT_COMPOSER_MAX_TOKENS:-1536}" in compose_text
     assert "BOI_AGENT_COMPOSER_MAX_ATTEMPTS: ${BOI_AGENT_COMPOSER_MAX_ATTEMPTS:-2}" in compose_text
     assert "BOI_AGENT_CACHE_WARMUP_ON_STARTUP: ${BOI_AGENT_CACHE_WARMUP_ON_STARTUP:-1}" in compose_text
