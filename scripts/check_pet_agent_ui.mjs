@@ -205,7 +205,19 @@ async function main() {
     cdp = new CdpClient(pageTarget.webSocketDebuggerUrl);
     await cdp.connect();
     await cdp.send("Page.enable");
+    await cdp.send("Network.enable");
     await cdp.send("Runtime.enable");
+    const networkProbe = {
+      suggestionRequests: 0,
+      suggestionUrls: [],
+    };
+    cdp.on("Network.requestWillBeSent", (params) => {
+      const url = String(params.request?.url || "");
+      if (url.includes("/api/agents/boi-wiki/suggestions")) {
+        networkProbe.suggestionRequests += 1;
+        networkProbe.suggestionUrls.push(url);
+      }
+    });
     const loaded = cdp.once("Page.loadEventFired");
     await cdp.send("Page.navigate", { url: args.url });
     await loaded;
@@ -329,6 +341,7 @@ async function main() {
         artifactTableCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
         rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
         rawTableSeparatorLeak: new RegExp("\\\\|\\\\s*:?-{3,}:?\\\\s*\\\\|").test(answerText),
+        suggestionButtonCount: root.querySelectorAll(".boi-agent-suggestions [data-question]").length,
       };
     })()`);
 
@@ -467,11 +480,12 @@ async function main() {
       mermaid_not_duplicated: expectsMermaid ? beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount : true,
       markdown_table_rendered: (beforeNew.answerMarkdownTableCount + beforeNew.artifactTableCount) >= 1,
       expected_table_artifact_rendered: expectsTable ? beforeNew.artifactTableCount >= 1 : true,
+      suggestions_refreshed_through_api: networkProbe.suggestionRequests >= 2 && beforeNew.suggestionButtonCount >= 1,
       no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
     };
     const ok = Object.values(checks).every(Boolean);
-    const report = { ok, url: args.url, checks, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, after_navigation: afterNavigation, after_new: afterNew, screenshot: args.screenshot || "" };
+    const report = { ok, url: args.url, checks, network: networkProbe, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, after_navigation: afterNavigation, after_new: afterNew, screenshot: args.screenshot || "" };
     console.log(JSON.stringify(report, null, 2));
     if (args.strict && !ok) process.exitCode = 1;
   } finally {
