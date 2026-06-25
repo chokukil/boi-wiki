@@ -51,7 +51,7 @@ flowchart TD
 
 # API / MCP Contract
 
-BoI Agent의 기준 인터페이스는 Web Pet UI가 아니라 `/api/agents/boi-wiki/chat` 응답 계약이다. Pet Agent, `boi-wiki-mcp`의 `boi_agent_chat`, 외부 자동화는 같은 `boi-agent.response.v1` 계약을 소비한다.
+BoI Agent의 기준 인터페이스는 Web Pet UI가 아니라 `/api/agents/boi-wiki/chat` 응답 계약이다. Pet Agent, `boi-wiki-mcp`의 `boi_agent_chat`, 외부 자동화는 같은 `boi-agent.response.v1` 계약을 소비한다. REST 자동화는 `/api/agents/boi-wiki/response-schema`, MCP client는 `boi://agent/response-schema/latest` resource template으로 같은 JSON Schema를 읽어 필드와 artifact 타입을 검증한다.
 
 응답은 사람이 읽는 `answer_markdown`과 기계가 해석하는 구조화 필드를 함께 가진다.
 

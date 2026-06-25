@@ -206,6 +206,100 @@ BOI_AGENT_CHAT_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_CHAT_TIMEOUT_SECONDS
 BOI_AGENT_STREAM_HEARTBEAT_SECONDS = float(os.getenv("BOI_AGENT_STREAM_HEARTBEAT_SECONDS", "2"))
 BOI_AGENT_CACHE_WARMUP_ON_STARTUP = os.getenv("BOI_AGENT_CACHE_WARMUP_ON_STARTUP", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_AGENT_RESPONSE_CONTRACT_VERSION = "boi-agent.response.v1"
+BOI_AGENT_RESPONSE_REQUIRED_FIELDS = [
+    "agent_contract_version",
+    "answer_markdown",
+    "display_markdown",
+    "links",
+    "citations",
+    "artifacts",
+    "execution_cards",
+    "status_updates",
+    "tool_trace",
+    "access_summary",
+    "guardrails_applied",
+]
+BOI_AGENT_ARTIFACT_TYPES = ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"]
+BOI_AGENT_EXECUTION_CARD_FIELDS = [
+    "contract_version",
+    "operation",
+    "title",
+    "message",
+    "primary_label",
+    "payload",
+    "requires_confirmation",
+    "user_confirmed_required",
+    "approve_url",
+    "display",
+    "technical_details",
+]
+BOI_AGENT_RESPONSE_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://boi-wiki.local/schemas/boi-agent.response.v1.json",
+    "title": "BoI Agent Response",
+    "type": "object",
+    "required": BOI_AGENT_RESPONSE_REQUIRED_FIELDS,
+    "additionalProperties": True,
+    "properties": {
+        "agent_contract_version": {"const": BOI_AGENT_RESPONSE_CONTRACT_VERSION},
+        "answer_markdown": {"type": "string"},
+        "display_markdown": {"type": "string"},
+        "answer_html": {"type": "string"},
+        "links": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "citations": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "artifacts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["type"],
+                "additionalProperties": True,
+                "properties": {"type": {"enum": BOI_AGENT_ARTIFACT_TYPES}},
+            },
+        },
+        "execution_cards": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["contract_version", "operation", "requires_confirmation", "user_confirmed_required"],
+                "additionalProperties": True,
+                "properties": {
+                    "contract_version": {"const": BOI_AGENT_RESPONSE_CONTRACT_VERSION},
+                    "operation": {"type": "string"},
+                    "requires_confirmation": {"type": "boolean"},
+                    "user_confirmed_required": {"type": "boolean"},
+                    "approve_url": {"type": "string"},
+                    "payload": {"type": "object", "additionalProperties": True},
+                    "display": {"type": "object", "additionalProperties": True},
+                    "technical_details": {"type": "object", "additionalProperties": True},
+                },
+            },
+        },
+        "status_updates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["message"],
+                "additionalProperties": True,
+                "properties": {
+                    "stage": {"type": "string"},
+                    "message": {"type": "string"},
+                    "source": {"type": "string"},
+                },
+            },
+        },
+        "tool_trace": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "coverage_report": {"type": "object", "additionalProperties": True},
+        "access_summary": {"type": "object", "additionalProperties": True},
+        "guardrails_applied": {"type": "array", "items": {"type": "string"}},
+        "redacted_count": {"type": "integer", "minimum": 0},
+        "context_summary": {"type": "object", "additionalProperties": True},
+        "suggested_questions": {"type": "array", "items": {"type": "string"}},
+        "route": {"type": "string"},
+        "intent": {"type": "string"},
+        "used_backend": {"type": "string"},
+        "run_id": {"type": "string"},
+    },
+}
 BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
@@ -9456,34 +9550,12 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "canonical_endpoint": "/api/agents/boi-wiki/chat",
             "stream_endpoint": "/api/agents/boi-wiki/chat/stream",
             "approve_endpoint": "/api/agents/boi-wiki/approve",
+            "schema_endpoint": "/api/agents/boi-wiki/response-schema",
             "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
-            "required_fields": [
-                "agent_contract_version",
-                "answer_markdown",
-                "display_markdown",
-                "links",
-                "citations",
-                "artifacts",
-                "execution_cards",
-                "status_updates",
-                "tool_trace",
-                "access_summary",
-                "guardrails_applied",
-            ],
-            "artifact_types": ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"],
-            "execution_card_fields": [
-                "contract_version",
-                "operation",
-                "title",
-                "message",
-                "primary_label",
-                "payload",
-                "requires_confirmation",
-                "user_confirmed_required",
-                "approve_url",
-                "display",
-                "technical_details",
-            ],
+            "required_fields": BOI_AGENT_RESPONSE_REQUIRED_FIELDS,
+            "artifact_types": BOI_AGENT_ARTIFACT_TYPES,
+            "execution_card_fields": BOI_AGENT_EXECUTION_CARD_FIELDS,
+            "schema": BOI_AGENT_RESPONSE_SCHEMA,
         },
         "router": {
             "mode": BOI_AGENT_ROUTER_MODE,
@@ -9572,6 +9644,15 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "source_apply",
             "doc_body_apply",
         ],
+    }
+
+
+@app.get("/api/agents/boi-wiki/response-schema")
+async def api_boi_agent_response_schema() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "agent_contract_version": BOI_AGENT_RESPONSE_CONTRACT_VERSION,
+        "schema": BOI_AGENT_RESPONSE_SCHEMA,
     }
 
 

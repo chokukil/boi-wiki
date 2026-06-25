@@ -30,7 +30,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
     assert body["capabilities"]["tools"] == 26
-    assert body["capabilities"]["resource_templates"] == 5
+    assert body["capabilities"]["resource_templates"] == 6
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
     assert body["agent_interfaces"]["streaming_api"] == "/api/agents/boi-wiki/chat/stream"
@@ -40,7 +40,11 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["agent_response_contract"]["version"] == "boi-agent.response.v1"
     assert body["agent_response_contract"]["canonical_endpoint"] == "/api/agents/boi-wiki/chat"
     assert body["agent_response_contract"]["stream_endpoint"] == "/api/agents/boi-wiki/chat/stream"
+    assert body["agent_response_contract"]["schema_endpoint"] == "/api/agents/boi-wiki/response-schema"
     assert body["agent_response_contract"]["mcp_tool"] == "boi_agent_chat"
+    assert body["agent_response_contract"]["mcp_resource_template"] == "boi://agent/response-schema/{version}"
+    assert body["agent_response_schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
+    assert body["agent_response_schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
     assert body["mcp_auth"]["required"] is False
     assert body["mcp_auth"]["bridge_always_requires_service_token"] is True
     assert "x-service-token" in body["mcp_auth"]["accepted_headers"]
@@ -72,6 +76,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "doc_body_create_draft" not in tool_names
     assert any(item["name"] == "promotion_submit" for item in body["capability_lists"]["tools"])
     assert any(item["uri"] == "boi://docs/{boi_id}" for item in body["capability_lists"]["resource_templates"])
+    assert any(item["uri"] == "boi://agent/response-schema/{version}" for item in body["capability_lists"]["resource_templates"])
     assert any(item["name"] == "create_sop_from_source" for item in body["capability_lists"]["prompts"])
 
 
@@ -88,7 +93,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
     assert "Tools" in body and "26" in body
-    assert "Resource templates" in body and "5" in body
+    assert "Resource templates" in body and "6" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
     assert "workflow_status" in body
@@ -108,6 +113,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "event_type_draft_apply" in body
     assert "boi://docs/{boi_id}" in body
     assert "boi://search/ontology/{query}" in body
+    assert "boi://agent/response-schema/{version}" in body
     assert "create_sop_from_source" in body
     assert "406" in body
     assert "Codex" in body
@@ -122,6 +128,16 @@ def test_boi_wiki_mcp_status_alias_works(mcp_module):
 
     assert response.status_code == 200
     assert "BoI Wiki MCP" in response.text
+
+
+def test_boi_agent_response_schema_resource(mcp_module):
+    body = json.loads(asyncio.run(mcp_module.boi_agent_response_schema_resource("latest")))
+
+    assert body["ok"] is True
+    assert body["agent_contract_version"] == "boi-agent.response.v1"
+    assert body["schema"]["required"] == mcp_module.AGENT_RESPONSE_REQUIRED_FIELDS
+    assert body["schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
+    assert "mermaid" in body["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
 
 
 def test_boi_wiki_mcp_status_uses_forwarded_headers(mcp_module):
@@ -768,7 +784,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
         return {
             "tools": 26,
             "resources": 0,
-            "resource_templates": 5,
+            "resource_templates": 6,
             "prompts": 5,
             "tool_names": [
                 "boi_search",
@@ -844,7 +860,7 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
         return {
             "tools": 26,
             "resources": 0,
-            "resource_templates": 5,
+            "resource_templates": 6,
             "prompts": 5,
         }
 
@@ -880,7 +896,7 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
         return {
             "tools": 26,
             "resources": 0,
-            "resource_templates": 5,
+            "resource_templates": 6,
             "prompts": 5,
         }
 
@@ -918,7 +934,7 @@ def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_brea
         return {
             "tools": 22,
             "resources": 0,
-            "resource_templates": 5,
+            "resource_templates": 6,
             "prompts": 5,
             "tool_names": ["boi_agent_chat", "ontology_search", "agent_inbox"],
             "resource_template_uris": ["boi://search/ontology/{query}"],
@@ -931,7 +947,7 @@ def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_brea
     result = asyncio.run(script.check_protocol("http://localhost:8200/mcp", include_details=True, service_token="test-token"))
 
     assert result["tools"] == 22
-    assert result["resource_templates"] == 5
+    assert result["resource_templates"] == 6
     assert result["prompts"] == 5
     assert result["transport_mode"] == "stateless_json_rpc"
     assert "stream client broke" in result["client_warning"]

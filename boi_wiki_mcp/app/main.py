@@ -53,6 +53,7 @@ MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://actions/{action_key}", "description": "Single action catalog entry."},
     {"uri": "boi://workflows/{workflow_key}/status/{trace_id}", "description": "Workflow status for a trace."},
     {"uri": "boi://search/ontology/{query}", "description": "Ontology-assisted grouped search results."},
+    {"uri": "boi://agent/response-schema/{version}", "description": "BoI Agent response JSON Schema for API, MCP, and Web clients."},
 ]
 MCP_PROMPT_CAPABILITIES = [
     {"name": "create_sop_from_source", "description": "Create a BoI SOP from source material after checking existing wiki context."},
@@ -68,26 +69,80 @@ MCP_CAPABILITIES = {
     "prompts": len(MCP_PROMPT_CAPABILITIES),
 }
 AGENT_RESPONSE_CONTRACT_VERSION = "boi-agent.response.v1"
+AGENT_RESPONSE_REQUIRED_FIELDS = [
+    "agent_contract_version",
+    "answer_markdown",
+    "display_markdown",
+    "links",
+    "citations",
+    "artifacts",
+    "execution_cards",
+    "status_updates",
+    "tool_trace",
+    "access_summary",
+    "guardrails_applied",
+]
+AGENT_ARTIFACT_TYPES = ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"]
 AGENT_RESPONSE_CONTRACT = {
     "version": AGENT_RESPONSE_CONTRACT_VERSION,
     "canonical_endpoint": "/api/agents/boi-wiki/chat",
     "stream_endpoint": "/api/agents/boi-wiki/chat/stream",
+    "schema_endpoint": "/api/agents/boi-wiki/response-schema",
     "mcp_tool": "boi_agent_chat",
+    "mcp_resource_template": "boi://agent/response-schema/{version}",
     "consumers": ["web_pet", "boi_wiki_mcp", "external_api"],
-    "required_fields": [
-        "agent_contract_version",
-        "answer_markdown",
-        "display_markdown",
-        "links",
-        "citations",
-        "artifacts",
-        "execution_cards",
-        "status_updates",
-        "tool_trace",
-        "access_summary",
-        "guardrails_applied",
-    ],
-    "artifact_types": ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"],
+    "required_fields": AGENT_RESPONSE_REQUIRED_FIELDS,
+    "artifact_types": AGENT_ARTIFACT_TYPES,
+}
+AGENT_RESPONSE_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://boi-wiki.local/schemas/boi-agent.response.v1.json",
+    "title": "BoI Agent Response",
+    "type": "object",
+    "required": AGENT_RESPONSE_REQUIRED_FIELDS,
+    "additionalProperties": True,
+    "properties": {
+        "agent_contract_version": {"const": AGENT_RESPONSE_CONTRACT_VERSION},
+        "answer_markdown": {"type": "string"},
+        "display_markdown": {"type": "string"},
+        "answer_html": {"type": "string"},
+        "links": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "citations": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "artifacts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["type"],
+                "additionalProperties": True,
+                "properties": {"type": {"enum": AGENT_ARTIFACT_TYPES}},
+            },
+        },
+        "execution_cards": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "status_updates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["message"],
+                "additionalProperties": True,
+                "properties": {
+                    "stage": {"type": "string"},
+                    "message": {"type": "string"},
+                    "source": {"type": "string"},
+                },
+            },
+        },
+        "tool_trace": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "coverage_report": {"type": "object", "additionalProperties": True},
+        "access_summary": {"type": "object", "additionalProperties": True},
+        "guardrails_applied": {"type": "array", "items": {"type": "string"}},
+        "redacted_count": {"type": "integer", "minimum": 0},
+        "context_summary": {"type": "object", "additionalProperties": True},
+        "suggested_questions": {"type": "array", "items": {"type": "string"}},
+        "route": {"type": "string"},
+        "intent": {"type": "string"},
+        "used_backend": {"type": "string"},
+        "run_id": {"type": "string"},
+    },
 }
 AGENT_INTERFACES = {
     "json_api": "/api/agents/boi-wiki/chat",
@@ -713,6 +768,28 @@ async def ontology_search_resource(query: str) -> str:
     return as_text(await ontology_search(query=query, employee_id=DEFAULT_EMPLOYEE_ID))
 
 
+@mcp.resource("boi://agent/response-schema/{version}")
+async def boi_agent_response_schema_resource(version: str) -> str:
+    """Read the BoI Agent response JSON Schema as JSON text."""
+    requested = str(version or "").strip()
+    if requested and requested not in {"latest", AGENT_RESPONSE_CONTRACT_VERSION}:
+        return as_text(
+            {
+                "ok": False,
+                "error": "unsupported_agent_response_schema_version",
+                "requested_version": requested,
+                "supported_versions": ["latest", AGENT_RESPONSE_CONTRACT_VERSION],
+            }
+        )
+    return as_text(
+        {
+            "ok": True,
+            "agent_contract_version": AGENT_RESPONSE_CONTRACT_VERSION,
+            "schema": AGENT_RESPONSE_SCHEMA,
+        }
+    )
+
+
 @mcp.prompt(name="create_sop_from_source")
 def create_sop_from_source(domain: str = "", target_visibility: str = "private") -> str:
     """Prompt for converting user-provided SOP images/docs into BoI Wiki OKF workflow packages."""
@@ -836,6 +913,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
         },
         "agent_interfaces": AGENT_INTERFACES,
         "agent_response_contract": AGENT_RESPONSE_CONTRACT,
+        "agent_response_schema": AGENT_RESPONSE_SCHEMA,
         "mcp_auth": {
             "required": MCP_REQUIRE_SERVICE_TOKEN,
             "accepted_headers": ["x-service-token", "Authorization: Bearer <token>"],
@@ -924,6 +1002,7 @@ async def status_page(request: Request) -> HTMLResponse:
         <dt>Streaming events</dt><dd><code>{", ".join(payload["agent_interfaces"]["streaming_events"])}</code></dd>
         <dt>MCP tool</dt><dd><code>{payload["agent_interfaces"]["mcp_tool"]}</code></dd>
         <dt>Response contract</dt><dd><code>{payload["agent_response_contract"]["version"]}</code></dd>
+        <dt>Response schema</dt><dd><code>{payload["agent_response_contract"]["mcp_resource_template"]}</code></dd>
       </dl>
       <p>Web Pet Agent uses the streaming API so long requests can show one-line <code>status</code> updates and incremental <code>answer_delta</code> content. MCP clients normally call <code>boi_agent_chat</code> and receive the final JSON response using the same <code>{payload["agent_response_contract"]["version"]}</code> contract.</p>
     </section>

@@ -187,16 +187,25 @@ def test_boi_agent_capabilities_expose_streaming_interface(boi_app_module):
     assert body["agent_contract_version"] == "boi-agent.response.v1"
     assert body["response_contract"]["canonical_endpoint"] == "/api/agents/boi-wiki/chat"
     assert body["response_contract"]["approve_endpoint"] == "/api/agents/boi-wiki/approve"
+    assert body["response_contract"]["schema_endpoint"] == "/api/agents/boi-wiki/response-schema"
     assert "boi_wiki_mcp" in body["response_contract"]["consumers"]
     assert "status_updates" in body["response_contract"]["required_fields"]
     assert "tool_trace" in body["response_contract"]["required_fields"]
     assert "access_summary" in body["response_contract"]["required_fields"]
     assert "execution_card_fields" in body["response_contract"]
+    assert body["response_contract"]["schema"]["properties"]["agent_contract_version"]["const"] == "boi-agent.response.v1"
+    assert "mermaid" in body["response_contract"]["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
     assert "progressive response streaming" in body["features"]
     for operation in body["supported_execution_cards"]:
         assert operation in body["write_confirmation_required"]
     for operation in ["event_publish", "workflow_start", "event_type_draft"]:
         assert operation in body["write_confirmation_required"]
+
+    schema_response = client.get("/api/agents/boi-wiki/response-schema")
+    assert schema_response.status_code == 200
+    schema_body = schema_response.json()
+    assert schema_body["agent_contract_version"] == "boi-agent.response.v1"
+    assert schema_body["schema"]["required"] == body["response_contract"]["required_fields"]
 
 
 def test_agent_context_pack_uses_current_page_seed_for_page_first_gap_check(boi_app_module, monkeypatch):
