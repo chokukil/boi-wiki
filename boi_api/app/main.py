@@ -7141,6 +7141,8 @@ def looks_like_repetitive_generation(text: str) -> bool:
         return False
     if re.search(r"\b(de la vie|de facto)\b", normalized):
         return True
+    if re.search(r"(.{6,80})(?:[.。,:;!?]*\s+\1){2,}", normalized):
+        return True
     if re.search(r"(.{3,40})(?:\\s*[-·,/]?\\s*\\1){4,}", normalized):
         return True
     tokens = re.findall(r"[a-z0-9가-힣一-龥]+", normalized)
@@ -7229,6 +7231,10 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
         return "empty_answer"
     if looks_like_repetitive_generation(text):
         return "degenerate_repetition"
+    if text.count("```") % 2:
+        return "broken_markdown_fence"
+    if re.search(r"```[^\S\r\n]*json\b", text, flags=re.IGNORECASE):
+        return "json_fence_fragment"
     lowered = text.lower()
     prompt_echo_markers = (
         "user wants",
@@ -7340,7 +7346,7 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
         headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
     invalid_reasons: list[str] = []
     repair_payload: dict[str, Any] | None = None
-    for attempt in range(2):
+    for attempt in range(3):
         body = boi_agent_composer_request_body(payload, employee_id, repair=repair_payload)
         try:
             with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:

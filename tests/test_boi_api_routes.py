@@ -964,9 +964,11 @@ def test_native_agent_direct_auto_route_requires_llm_classifier(monkeypatch):
 
 def test_boi_agent_composer_rejects_degenerate_repetition(boi_app_module):
     answer = "## 요약\n\n" + ("적절-적절-적절 " * 30)
+    repeated_phrase = "## 답변\n\narchitecture v0.1 기준입니다. architecture v0.1 기준입니다. architecture v0.1 기준입니다."
 
     assert boi_app_module.invalid_agent_composer_answer_reason(answer) == "degenerate_repetition"
     assert boi_app_module.invalid_agent_composer_answer_reason("요약입니다. de la vie, de la vie, de la vie") == "degenerate_repetition"
+    assert boi_app_module.invalid_agent_composer_answer_reason(repeated_phrase) == "degenerate_repetition"
 
 
 def test_boi_agent_composer_rejects_mixed_language_noise(boi_app_module):
@@ -979,6 +981,11 @@ def test_boi_agent_composer_rejects_mixed_language_noise(boi_app_module):
     assert boi_app_module.invalid_agent_composer_answer_reason(mixed_script) == "non_korean_script"
     assert boi_app_module.invalid_agent_composer_answer_reason(english_heading) == "english_dominant_line"
     assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\nBoI Wiki Agent가 SOP와 Action 근거를 한국어로 정리했습니다.") == ""
+
+
+def test_boi_agent_composer_rejects_broken_json_fence_fragment(boi_app_module):
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n정리했습니다.\n```json way=") == "broken_markdown_fence"
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n```json\n{\"answer\":\"x\"}\n```") == "json_fence_fragment"
 
 
 def test_boi_agent_deep_summarize_relation_question_overrides_to_workflow_explain(boi_app_module):
