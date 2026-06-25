@@ -14,6 +14,8 @@ function parseArgs(argv) {
     screenshot: "",
     strict: false,
     expectArtifact: "mermaid",
+    approveExecutionCard: false,
+    expectApprovalStatus: "",
   };
   for (let index = 2; index < argv.length; index += 1) {
     const item = argv[index];
@@ -22,9 +24,11 @@ function parseArgs(argv) {
     else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
     else if (item === "--screenshot") args.screenshot = argv[++index];
     else if (item === "--expect-artifact") args.expectArtifact = argv[++index] || args.expectArtifact;
+    else if (item === "--approve-execution-card") args.approveExecutionCard = true;
+    else if (item === "--expect-approval-status") args.expectApprovalStatus = argv[++index] || "";
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|table] [--screenshot FILE] [--strict]`);
+      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|table|confirmation_required] [--approve-execution-card] [--expect-approval-status STATUS] [--screenshot FILE] [--strict]`);
       process.exit(0);
     }
   }
@@ -351,6 +355,8 @@ async function main() {
         uniqueMermaidSourceCount: normalizedSources.size,
         answerMarkdownTableCount: answerNode ? answerNode.querySelectorAll(".boi-agent-table-wrap table, .markdown-table").length : 0,
         artifactTableCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
+        confirmationCardCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-confirmation-card").length : 0,
+        approveButtonCount: latestMessage ? latestMessage.querySelectorAll("[data-agent-approve]").length : 0,
         rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
         rawTableSeparatorLeak: new RegExp("\\\\|\\\\s*:?-{3,}:?\\\\s*\\\\|").test(answerText),
         suggestionButtonCount: root.querySelectorAll(".boi-agent-suggestions [data-question]").length,
@@ -384,6 +390,8 @@ async function main() {
         open: !!viewer,
         hasMermaid: !!diagram,
         hasTable: !!viewer?.querySelector(".boi-agent-table-wrap table, .markdown-table"),
+        hasConfirmation: !!viewer?.querySelector(".boi-agent-confirmation-card"),
+        hasApproveButton: !!viewer?.querySelector("[data-agent-approve]"),
         mermaidRendered: !diagram || (diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")),
         rawMermaidFenceLeak: viewer ? new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(viewer.textContent || "") : false,
       };
@@ -406,6 +414,43 @@ async function main() {
     })()`);
     await cdp.evaluate(`document.querySelector("#boi-agent-root .boi-agent-viewer-close")?.click()`);
     await sleep(150);
+
+    let approvalResult = { skipped: !args.approveExecutionCard };
+    if (args.approveExecutionCard) {
+      const beforeApproveCount = await cdp.evaluate(`document.querySelectorAll("#boi-agent-root .boi-agent-message").length`);
+      await cdp.evaluate(`(() => {
+        const note = document.querySelector("#boi-agent-root .boi-agent-confirmation-card [data-agent-approve-note]");
+        if (note) {
+          note.value = "Pet Agent UI smoke confirmation";
+          note.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: note.value }));
+        }
+        document.querySelector("#boi-agent-root [data-agent-approve]")?.click();
+        return true;
+      })()`);
+      await waitUntil(
+        cdp,
+        `(() => {
+          const root = document.querySelector("#boi-agent-root");
+          const count = root.querySelectorAll(".boi-agent-message").length;
+          const latest = root.querySelector(".boi-agent-message.assistant:last-of-type");
+          return !root.querySelector("[data-agent-approve][disabled]") && count > ${Number(beforeApproveCount)} && latest && latest.textContent.trim().length > 10;
+        })()`,
+        args.timeoutMs,
+        250,
+      );
+      approvalResult = await cdp.evaluate(`(() => {
+        const messages = Array.from(document.querySelectorAll("#boi-agent-root .boi-agent-message.assistant"));
+        const latest = messages[messages.length - 1];
+        const text = latest?.textContent.trim() || "";
+        return {
+          skipped: false,
+          messageCount: document.querySelectorAll("#boi-agent-root .boi-agent-message").length,
+          latestText: text,
+          containsDraftCreated: text.includes("이벤트 유형 초안을 만들었습니다"),
+          containsExecuted: /요청을 처리했습니다|요청을 보냈습니다|초안을 만들었습니다|반영했습니다/.test(text),
+        };
+      })()`);
+    }
 
     const navUrl = new URL(args.url);
     navUrl.pathname = "/sops";
@@ -469,6 +514,7 @@ async function main() {
 
     const expectsMermaid = args.expectArtifact === "mermaid";
     const expectsTable = ["workflow_summary", "table"].includes(args.expectArtifact);
+    const expectsConfirmation = args.expectArtifact === "confirmation_required";
     const checks = {
       panel_opened: beforeNew.panelOpen,
       stop_seen_during_generation: beforeNew.stopSeen,
@@ -481,23 +527,30 @@ async function main() {
       artifact_viewer_opened: artifactViewer.open,
       artifact_viewer_expected_content: expectsMermaid
         ? artifactViewer.open && artifactViewer.mermaidRendered && !artifactViewer.rawMermaidFenceLeak
-        : artifactViewer.open && artifactViewer.hasTable,
+        : expectsConfirmation
+          ? artifactViewer.open && artifactViewer.hasConfirmation && artifactViewer.hasApproveButton
+          : artifactViewer.open && artifactViewer.hasTable,
       answer_viewer_opened: expectsTable ? (answerViewer.open && answerViewer.hasAnswer && answerViewer.hasTable) : (answerViewer.open && answerViewer.hasAnswer),
       state_restored_after_navigation: afterNavigation.panelOpen && afterNavigation.messageCount >= 2,
       artifact_restored_after_navigation: expectsMermaid
         ? afterNavigation.mermaidDiagramCount >= 1 && afterNavigation.mermaidRenderedCount >= 1 && !afterNavigation.rawMermaidFenceLeak
-        : afterNavigation.artifactTableCount >= 1,
+        : expectsTable
+          ? afterNavigation.artifactTableCount >= 1
+          : true,
       mermaid_diagram_present: expectsMermaid ? beforeNew.mermaidDiagramCount >= 1 : true,
       mermaid_diagram_rendered: expectsMermaid ? beforeNew.mermaidRenderedCount >= 1 && beforeNew.mermaidFallbackCount === 0 : true,
       mermaid_not_duplicated: expectsMermaid ? beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount : true,
       markdown_table_rendered: expectsTable ? (beforeNew.answerMarkdownTableCount + beforeNew.artifactTableCount) >= 1 : true,
       expected_table_artifact_rendered: expectsTable ? beforeNew.artifactTableCount >= 1 : true,
+      confirmation_card_rendered: expectsConfirmation ? beforeNew.confirmationCardCount >= 1 && beforeNew.approveButtonCount >= 1 : true,
+      execution_card_approved: args.approveExecutionCard ? approvalResult.containsExecuted === true : true,
+      expected_approval_status_seen: args.expectApprovalStatus ? String(approvalResult.latestText || "").includes(args.expectApprovalStatus) : true,
       suggestions_refreshed_through_api: networkProbe.suggestionRequests >= 2 && beforeNew.suggestionButtonCount >= 1,
       no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
     };
     const ok = Object.values(checks).every(Boolean);
-    const report = { ok, url: args.url, checks, network: networkProbe, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, after_navigation: afterNavigation, after_new: afterNew, screenshot: args.screenshot || "" };
+    const report = { ok, url: args.url, checks, network: networkProbe, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, approval: approvalResult, after_navigation: afterNavigation, after_new: afterNew, screenshot: args.screenshot || "" };
     console.log(JSON.stringify(report, null, 2));
     if (args.strict && !ok) process.exitCode = 1;
   } finally {

@@ -160,6 +160,35 @@ HTTP/1.1 503 Service Unavailable
 
 이 smoke는 최종 답변 품질 검증이 아니라 “장시간 Agent 요청이 진행 상태를 계속 보여주는가”를 확인하는 최소 검증이다. 최종 답변 품질은 Pet UI에서 Markdown table, Mermaid artifact, links, Inbox card가 함께 렌더링되는지 별도로 확인한다.
 
+# Pet UI Artifact and Execution Smoke
+
+브라우저 기준 최종 검증은 `scripts/check_pet_agent_ui.mjs`를 사용한다. 이 스크립트는 Headless Chrome으로 실제 Web Pet Agent를 열어 질문 입력, streaming 상태, artifact viewer, 페이지 이동 후 상태 복원, 새 대화, 추천 질문 재조회까지 확인한다.
+
+Mermaid artifact 검증:
+
+```bash
+node scripts/check_pet_agent_ui.mjs \
+  --url "$BOI_EXTERNAL_URL/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001" \
+  --question "이 SOP를 Mermaid 프로세스 플로우로 보여줘." \
+  --expect-artifact mermaid \
+  --strict
+```
+
+Execution card와 사용자 확인 경로 검증:
+
+```bash
+EVENT_TYPE="petagent.ui.smoke.t$(date +%H%M%S).requested.v1"
+node scripts/check_pet_agent_ui.mjs \
+  --url "$BOI_EXTERNAL_URL/event-types?employee_id=100001" \
+  --question "신규 이벤트 타입 ${EVENT_TYPE} 초안을 만들어줘. Pet Agent UI 승인 흐름 smoke 이벤트이고 설명은 UI 확인용이야." \
+  --expect-artifact confirmation_required \
+  --approve-execution-card \
+  --expect-approval-status draft_created \
+  --strict
+```
+
+두 번째 smoke는 catalog apply가 아니라 Event Type draft 생성까지만 수행한다. `EVENT_TYPE` 중간 segment는 숫자로 시작하면 안 되므로 timestamp 앞에 `t`를 붙인다. 성공 기준은 confirmation card에 실행 버튼이 있고, 사용자가 확인한 뒤 `/api/agents/boi-wiki/approve`가 `draft_created` 상태를 반환하는 것이다. 이 검증은 Web Pet, REST approval API, RBAC/ACL guardrail, Event Type draft 저장 경로를 함께 확인한다.
+
 # Related Documents
 
 - [NAS Git Auto Pull Deployment](/public/boi-wiki-manual/operations/nas-git-auto-pull.md)
