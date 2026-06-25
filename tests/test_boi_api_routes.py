@@ -2535,6 +2535,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "answer_delta" in script
     assert "statusLines" in script
     assert "readAgentStream" in script
+    assert "refreshSuggestions" in script
+    assert "body.suggested_questions" not in script
     assert "activeRequest.abort()" in script
     assert "생성을 중지했습니다." in script
     assert "formatAgentStreamError" in script

@@ -1204,7 +1204,7 @@
         artifacts: body.artifacts || [],
       };
       state.currentStatus = "";
-      if (body.suggested_questions) state.suggestions = body.suggested_questions;
+      refreshSuggestions();
     }).catch((error) => {
       if (pageUnloading) {
         const pending = state.messages[pendingIndex] || {};
@@ -1238,17 +1238,23 @@
     });
   }
 
-  Promise.allSettled([
-    api("/api/agents/boi-wiki/suggestions", {
+  function refreshSuggestions() {
+    return api("/api/agents/boi-wiki/suggestions", {
       method: "POST",
       body: JSON.stringify({ current_url: currentUrl(), page_context: { title: pageTitle } }),
     }).then((body) => {
       state.suggestions = body.suggestions || [];
       state.suggestionError = "";
+      render();
     }).catch((error) => {
       state.suggestions = [];
       state.suggestionError = `추천 질문을 생성하지 못했습니다. Agent 상태를 확인해주세요. (${String(error.message || error)})`;
-    }),
+      render();
+    });
+  }
+
+  Promise.allSettled([
+    refreshSuggestions(),
     refreshInbox(),
   ]).finally(render);
 
