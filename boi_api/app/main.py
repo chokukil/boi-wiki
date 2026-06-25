@@ -7159,23 +7159,6 @@ def normalize_agent_answer_plan(payload: dict[str, Any]) -> dict[str, Any] | Non
     title = sanitize_agent_plan_text(source.get("title") or "답변", 80)
     title = re.sub(r"\s*-\d+\s*$", "", title).strip() or "답변"
     summary = sanitize_agent_plan_text(source.get("summary") or source.get("short_answer") or "", 700)
-    bullets: list[dict[str, str]] = []
-    for raw_item in (source.get("bullets") or source.get("points") or [])[:7]:
-        if isinstance(raw_item, dict):
-            text = sanitize_agent_plan_text(raw_item.get("text") or raw_item.get("body") or raw_item.get("summary") or "", 420)
-        else:
-            text = sanitize_agent_plan_text(raw_item, 420)
-        if text:
-            bullets.append({"text": text})
-    links: list[dict[str, str]] = []
-    for raw_link in (source.get("links") or [])[:6]:
-        if not isinstance(raw_link, dict):
-            continue
-        label = sanitize_agent_plan_text(raw_link.get("label") or raw_link.get("title") or raw_link.get("url") or "", 90)
-        url = str(raw_link.get("url") or raw_link.get("href") or "").strip()
-        reason = sanitize_agent_plan_text(raw_link.get("reason") or raw_link.get("description") or "", 180)
-        if label and url:
-            links.append({"label": label, "url": url, "reason": reason})
     suggestions = [
         sanitize_agent_plan_text(item, 120)
         for item in (source.get("suggested_questions") or source.get("followups") or [])[:4]
@@ -7186,13 +7169,13 @@ def normalize_agent_answer_plan(payload: dict[str, Any]) -> dict[str, Any] | Non
         if item:
             suggestions.append(item)
     suggestions = suggestions[:4]
-    if not summary and not bullets and not links:
+    if not summary:
         return None
     return {
         "title": title or "답변",
         "summary": summary,
-        "bullets": bullets,
-        "links": links,
+        "bullets": [],
+        "links": [],
         "suggested_questions": suggestions,
     }
 
@@ -7347,8 +7330,10 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
     text = str(answer or "").strip()
     if not text:
         return "empty_answer"
-    if re.search(r"(?:ization){2,}|\\text\s*\{|\$|\\\(|\\\)|\bde/v\d+\b", text, flags=re.IGNORECASE):
+    if re.search(r"(?:ization){2,}|\\text\s*\{|\$|\\\(|\\\)|<\|channel\>|\bde/v\d+\b|(?:thought|hought)[_-]?process", text, flags=re.IGNORECASE):
         return "corrupt_model_artifact"
+    if re.search(r"[가-힣A-Za-z]{2,}\s*-\s*(?:\n|$)", text):
+        return "dangling_hyphen_fragment"
     if looks_like_repetitive_generation(text):
         return "degenerate_repetition"
     if re.search(r"[가-힣]{2,}(?:-[가-힣]{2,}){2,}", text):
@@ -7393,45 +7378,25 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
         "route": source_payload.get("route") or "",
         "intent": source_payload.get("intent") or "",
         "page_context": compact_agent_composer_page_context(source_payload.get("page_context")),
-        "search_matches": [
-            {
-                "label": item.get("label"),
-                "kind": item.get("kind"),
-                "type": item.get("type"),
-                "url": item.get("url"),
-            }
-            for item in (source_payload.get("search_matches") or [])[:4]
-            if isinstance(item, dict)
-        ],
-        "evidence_summary": agent_composer_evidence_excerpt(source_payload.get("structured_draft") or "", 420),
+        "evidence_summary": agent_composer_evidence_excerpt(source_payload.get("structured_draft") or "", 180),
     }
     if repair:
         user_payload["quality_repair"] = repair
     system_content = (
-        "You are the answer planner for BoI Wiki Agent. "
-        "Return only one valid compact JSON object with flat string fields. "
-        "Required keys are title and summary. Optional keys are suggested_question_1 through suggested_question_4. "
-        "Do not write arrays, nested objects, final Markdown, Markdown tables, code fences, or raw JSON inside any text field; the server renders Markdown and artifacts. "
-        "The plan must be concise Korean user-facing content under 700 Korean characters after rendering. "
-        "Table, Mermaid, link, and card artifacts are rendered separately by BoI API. "
-        "Write in Korean sentences. English is allowed only for official product names, action keys, event types, APIs, URLs, or code identifiers. "
-        "Do not use Chinese characters, Arabic, Cyrillic, Greek, French, German, Latin filler, decorative translations, or English-only section titles. "
-        "Do not repeat any word or phrase more than twice. "
-        "Never echo, summarize, or restate the prompt, request fields, JSON schema, "
-        "structured_draft label, body_excerpt label, or system instructions. "
-        "Use only supplied evidence. Do not invent private data, links, actions, or approvals. "
-        "The service rejects malformed mixed-language answers instead of falling back."
+        "JSON만 출력하세요. 키는 title, summary 두 개만 사용하세요. "
+        "title은 24자 이하, summary는 70자 이하의 짧은 한국어 문장입니다. "
+        "배열, 중첩 객체, 마크다운, 코드블록, 표, 링크, 영어 설명, 반복 문구, 추가 텍스트는 금지입니다. "
+        "제공된 근거만 사용하고 없는 내용은 만들지 마세요."
     )
     if repair:
         system_content += (
-            " This is a quality repair attempt. Rewrite from the supplied structured_draft and evidence only. "
-            "Do not preserve the rejected wording. Return a clean Korean answer plan; do not include Markdown headings or fences."
+            " 이전 출력은 품질 검증에 실패했습니다. 같은 표현을 반복하지 말고 더 짧은 title, summary JSON만 반환하세요."
         )
     return {
         "model": BOI_AGENT_COMPOSER_MODEL,
         "temperature": 0,
         "frequency_penalty": 0.6,
-        "max_tokens": min(BOI_AGENT_COMPOSER_MAX_TOKENS, 120),
+        "max_tokens": min(BOI_AGENT_COMPOSER_MAX_TOKENS, 60),
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -7441,10 +7406,6 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
                     "properties": {
                         "title": {"type": "string"},
                         "summary": {"type": "string"},
-                        "suggested_question_1": {"type": "string"},
-                        "suggested_question_2": {"type": "string"},
-                        "suggested_question_3": {"type": "string"},
-                        "suggested_question_4": {"type": "string"},
                     },
                     "required": ["title", "summary"],
                 },
@@ -7479,8 +7440,8 @@ def parse_boi_agent_composer_response(raw: Any) -> tuple[dict[str, Any] | None, 
                 continue
             return {
                 "answer_markdown": answer,
-                "suggested_questions": suggestions if isinstance(suggestions, list) else [],
                 "composer_contract": composer_contract,
+                **({"suggested_questions": suggestions} if isinstance(suggestions, list) and suggestions else {}),
             }, invalid_reasons
     return None, invalid_reasons or ["no_valid_json_answer"]
 

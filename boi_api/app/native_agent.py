@@ -614,6 +614,22 @@ class NativeBoiAgent:
     def _compose_search_answer(self, state: JsonDict) -> None:
         search = state.get("search") or {}
         page = state.get("page_context") or {}
+        if state.get("intent") in {"summarize", "page_qa"} and page.get("resolved"):
+            title = str(page.get("title") or page.get("page_kind") or "현재 화면")
+            excerpt = compact_plain_markdown_text(str(page.get("body_excerpt") or ""), 300)
+            lines = [f"현재 화면 **{title}** 기준으로 요약합니다."]
+            if excerpt:
+                lines.append(excerpt)
+            if page.get("workflow_key"):
+                lines.append(
+                    f"workflow `{page.get('workflow_key')}` 기준으로 Event {len(page.get('workflow_event_types') or [])}개, "
+                    f"Action {page.get('workflow_action_count') or 0}개, Manual Handoff {page.get('workflow_manual_action_count') or 0}개가 연결되어 있습니다."
+                )
+            state["answer_markdown"] = "\n".join(lines)
+            doc = (state.get("tool_results") or {}).get("current_doc") or {}
+            state["links"] = links_from_doc_and_search(doc, search)
+            state["citations"] = state["links"][:5]
+            return
         lines = []
         if page.get("resolved"):
             lines.append(f"현재 화면 **{page.get('title') or page.get('page_kind')}** 기준으로 관련 지식을 찾았습니다.")
@@ -882,6 +898,17 @@ def strip_mermaid_fences(value: str) -> str:
 def compact_text(value: str, limit: int = 160) -> str:
     text = re.sub(r"\s+", " ", value or "").strip()
     return text[: limit - 1] + "…" if len(text) > limit else text
+
+
+def compact_plain_markdown_text(value: str, limit: int = 360) -> str:
+    text = str(value or "")
+    text = re.split(r"\s+#\s+", text, maxsplit=1)[0]
+    text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\|.*\|\s*$", " ", text, flags=re.MULTILINE)
+    text = re.sub(r"[#|*_>`]+", " ", text)
+    return compact_text(text, limit)
 
 
 def item_label(item: JsonDict) -> str:

@@ -728,6 +728,10 @@ def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_mod
     body = response.json()
     assert compose_calls
     assert compose_calls[0]["payload"]["required_json_schema"]["flat_answer_plan"]
+    assert "현재 화면" in compose_calls[0]["payload"]["structured_draft"]
+    assert "MCP 없이도" not in compose_calls[0]["payload"]["structured_draft"]
+    assert "|" not in compose_calls[0]["payload"]["structured_draft"]
+    assert "# AI Native" not in compose_calls[0]["payload"]["structured_draft"]
     assert body["context_summary"]["composer_backend"] == "llm"
     assert body["context_summary"]["composer_error"] == ""
     assert "설비" in body["answer_markdown"]
@@ -1034,6 +1038,9 @@ def test_boi_agent_composer_rejects_corrupt_model_artifacts(boi_app_module):
     bad = "## 답변\n\nworkflow-key를 de/v1 이벤트에 연결하고 SOP'izationizationization $\\text{_}$ 조각을 포함합니다."
 
     assert boi_app_module.invalid_agent_composer_answer_reason(bad) == "corrupt_model_artifact"
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n업무 지식을-") == "dangling_hyphen_fragment"
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n정리했습니다. thought_process: {") == "corrupt_model_artifact"
+    assert boi_app_module.invalid_agent_composer_answer_reason("## 답변\n\n정리 중 <|channel> 조각") == "corrupt_model_artifact"
 
 
 def test_boi_agent_deep_summarize_relation_question_overrides_to_workflow_explain(boi_app_module):
@@ -2054,6 +2061,7 @@ def test_boi_agent_composer_parser_accepts_json_contract_not_plain_markdown(boi_
 
     assert alias_payload["answer_markdown"].startswith("## 답변")
     assert plan_payload["answer_plan"]["title"] == "답변"
+    assert plan_payload["answer_plan"]["bullets"] == []
     assert plain_payload is None
     assert fenced_json_payload["answer_markdown"].startswith("## 답변")
     assert openai_candidates[0].startswith("```json")
@@ -2156,7 +2164,6 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
 
     assert result["answer_markdown"].startswith("## 답변")
     assert "현재 화면 근거" in result["answer_markdown"]
-    assert result["suggested_questions"] == ["다음 질문"]
     assert result["composer_contract"] == "answer_plan"
     assert payloads[0]["json"]["response_format"]["type"] == "json_schema"
     assert payloads[0]["json"]["response_format"]["json_schema"]["name"] == "boi_agent_answer_plan"
@@ -2164,10 +2171,12 @@ def test_boi_agent_composer_llm_requests_answer_plan_schema(boi_app_module, monk
     assert "answer_markdown" not in schema["properties"]
     assert "bullets" not in schema["properties"]
     assert "links" not in schema["properties"]
+    assert "suggested_question_1" not in schema["properties"]
     assert "title" in schema["required"]
-    assert payloads[0]["json"]["max_tokens"] <= 120
+    assert payloads[0]["json"]["max_tokens"] <= 60
     user_payload = json.loads(payloads[0]["json"]["messages"][1]["content"])
     assert "large_unused" not in user_payload
+    assert "search_matches" not in user_payload
     assert "structured_draft" not in user_payload
     assert len(user_payload["evidence_summary"]) < 800
     assert "##" not in user_payload["evidence_summary"]
