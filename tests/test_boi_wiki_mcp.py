@@ -217,7 +217,26 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
 
     async def fake_api_post(path, **kwargs):
         calls.append({"method": "post", "path": path, **kwargs})
-        return {"ok": True, "answer_markdown": "agent answer"}
+        return {
+            "ok": True,
+            "agent_contract_version": "boi-agent.response.v1",
+            "answer_markdown": "agent answer",
+            "display_markdown": "agent answer",
+            "links": [{"label": "SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+            "citations": [{"label": "SOP", "ref": "boi:public:sop:equipment-abnormal-response"}],
+            "artifacts": [{"type": "mermaid", "title": "SOP flow", "source": "flowchart TD\nA[Start] --> B[Action]"}],
+            "execution_cards": [
+                {
+                    "operation": "event_publish",
+                    "requires_confirmation": True,
+                    "user_confirmed_required": True,
+                    "display": {"title": "이벤트 발행 확인", "next_action": "요청 실행"},
+                }
+            ],
+            "access_summary": {"can_read": True, "can_use_in_agent_context": True},
+            "guardrails_applied": ["acl_policy", "mutation_confirmation"],
+            "redacted_count": 0,
+        }
 
     async def fake_api_get(path, **kwargs):
         calls.append({"method": "get", "path": path, **kwargs})
@@ -247,7 +266,14 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
     )
 
     assert chat.status_code == 200
-    assert chat.json()["result"]["answer_markdown"] == "agent answer"
+    agent_result = chat.json()["result"]
+    assert agent_result["agent_contract_version"] == "boi-agent.response.v1"
+    assert agent_result["answer_markdown"] == "agent answer"
+    assert agent_result["links"][0]["label"] == "SOP"
+    assert agent_result["artifacts"][0]["type"] == "mermaid"
+    assert agent_result["execution_cards"][0]["requires_confirmation"] is True
+    assert agent_result["access_summary"]["can_read"] is True
+    assert "mutation_confirmation" in agent_result["guardrails_applied"]
     assert inbox.status_code == 200
     assert inbox.json()["result"]["items"][0]["task_id"] == "task-1"
     assert calls[0]["path"] == "/api/agents/boi-wiki/chat"
