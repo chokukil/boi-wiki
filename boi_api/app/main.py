@@ -7406,7 +7406,7 @@ def apply_agent_route_overrides(req: BoiAgentChatRequest, route: dict[str, Any])
     deterministic_intent = deterministic_agent_intent(req.question, req.current_url)
     route["intent"] = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_intent)
     # Rules are the safety net for obvious artifact/reasoning requests even when the LLM router says fast.
-    if deterministic_intent in DEEP_AGENT_INTENTS and route.get("route") != "deep":
+    if deterministic_intent in DEEP_AGENT_INTENTS and (route.get("route") != "deep" or route.get("intent") != deterministic_intent):
         route.update(
             {
                 "route": "deep",

@@ -674,6 +674,32 @@ def test_boi_agent_composer_rejects_degenerate_repetition(boi_app_module):
     assert boi_app_module.invalid_agent_composer_answer_reason("요약입니다. de la vie, de la vie, de la vie") == "degenerate_repetition"
 
 
+def test_boi_agent_deep_summarize_relation_question_overrides_to_workflow_explain(boi_app_module):
+    from boi_api.app import native_agent
+
+    request = boi_app_module.BoiAgentChatRequest(
+        question="이 SOP의 Event, Action, Manual Handoff 관계를 짧게 요약해줘.",
+        current_url="/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+    )
+    route = {
+        "route": "deep",
+        "intent": "summarize",
+        "confidence": 0.9,
+        "router_backend": "llm",
+    }
+
+    fixed = boi_app_module.apply_agent_route_overrides(request, route)
+    assert fixed["route"] == "deep"
+    assert fixed["intent"] == "workflow_explain"
+
+    native_fixed = native_agent.finalize_native_route(
+        {"question": request.question, "current_url": request.current_url},
+        {"route": "deep", "intent": "summarize", "router_backend": "llm"},
+    )
+    assert native_fixed["route"] == "deep"
+    assert native_fixed["intent"] == "workflow_explain"
+
+
 def test_boi_agent_stream_fails_when_langgraph_required_but_unavailable(boi_app_module, monkeypatch):
     from boi_api.app import native_agent
 

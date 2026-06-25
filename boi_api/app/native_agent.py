@@ -148,7 +148,7 @@ def finalize_native_route(request: JsonDict, candidate: JsonDict | None) -> Json
     deterministic = deterministic_native_intent(question, current_url)
     route = normalize_native_route(str((candidate or {}).get("route") or ""), fallback=route_for_native_intent(deterministic))
     intent = normalize_native_intent(str((candidate or {}).get("intent") or ""), fallback=deterministic)
-    if deterministic in DEEP_AGENT_INTENTS and route != "deep":
+    if deterministic in DEEP_AGENT_INTENTS and (route != "deep" or intent != deterministic):
         route = "deep"
         intent = deterministic
     if intent in {"event_publish", "action_invoke", "workflow_start", "event_type_draft"}:
