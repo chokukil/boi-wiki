@@ -7154,10 +7154,10 @@ def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
         if len(message) > 90:
             message = message[:89].rstrip() + "…"
         seen.setdefault(stage, message)
-    missing = [stage for stage in REQUIRED_AGENT_STATUS_STAGES if stage not in seen]
-    if missing:
-        raise BoiAgentStatusUnavailable("LLM status writer missed required stages: " + ", ".join(missing))
-    return [{"stage": stage, "message": seen[stage], "source": "llm_status"} for stage in REQUIRED_AGENT_STATUS_STAGES]
+    if not seen:
+        raise BoiAgentStatusUnavailable("LLM status writer returned no usable status message")
+    ordered_stages = [stage for stage in REQUIRED_AGENT_STATUS_STAGES if stage in seen]
+    return [{"stage": stage, "message": seen[stage], "source": "llm_status"} for stage in ordered_stages]
 
 
 def normalize_llm_route_payload(payload: dict[str, Any], req: BoiAgentChatRequest) -> dict[str, Any]:
@@ -7252,13 +7252,14 @@ def stream_plan_prompt_for_request(req: BoiAgentChatRequest, employee_id: str) -
             "JSON only",
             "No markdown",
             "Do not answer the user",
-            "statuses has exactly one Korean nontechnical message for every stage",
+            "statuses has 1-3 Korean nontechnical messages",
+            "Do not include a reason field",
+            "Avoid repeating words",
         ],
         "output_shape": {
             "route": "route",
             "confidence": 0.0,
             "intent": "intent",
-            "reason": "short",
             "requires_mutation": False,
             "requires_deep_reasoning": False,
             "statuses": [{"stage": "stage", "message": "18-70 chars"}],
@@ -7294,16 +7295,17 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
                     "route": {"type": "string", "enum": sorted(ALLOWED_AGENT_ROUTES)},
                     "confidence": {"type": "number"},
                     "intent": {"type": "string", "enum": sorted(ALLOWED_AGENT_INTENTS)},
-                    "reason": {"type": "string"},
                     "requires_mutation": {"type": "boolean"},
                     "requires_deep_reasoning": {"type": "boolean"},
                     "statuses": {
                         "type": "array",
+                        "minItems": 1,
+                        "maxItems": 3,
                         "items": {
                             "type": "object",
                             "properties": {
                                 "stage": {"type": "string", "enum": list(REQUIRED_AGENT_STATUS_STAGES)},
-                                "message": {"type": "string"},
+                                "message": {"type": "string", "maxLength": 90},
                             },
                             "required": ["stage", "message"],
                         },
@@ -7313,7 +7315,6 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
                     "route",
                     "confidence",
                     "intent",
-                    "reason",
                     "requires_mutation",
                     "requires_deep_reasoning",
                     "statuses",
@@ -7325,7 +7326,8 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
     def post_stream_plan(messages: list[dict[str, str]]) -> dict[str, Any]:
         body = {
             "model": BOI_AGENT_STATUS_MODEL,
-            "temperature": 0.1,
+            "temperature": 0,
+            "frequency_penalty": 0.6,
             "max_tokens": max(BOI_AGENT_STATUS_MAX_TOKENS, BOI_AGENT_ROUTER_MAX_TOKENS),
             "response_format": stream_plan_response_format,
             "messages": messages,

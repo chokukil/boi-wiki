@@ -209,13 +209,13 @@ def test_boi_agent_stream_status_steps_require_llm_generated_plan(boi_app_module
     assert all(step["source"] == "llm_status" for step in steps)
 
 
-def test_boi_agent_stream_status_plan_missing_stage_is_failure(boi_app_module):
+def test_boi_agent_stream_status_plan_without_usable_status_is_failure(boi_app_module):
     with pytest.raises(boi_app_module.BoiAgentStatusUnavailable):
         boi_app_module.normalize_llm_status_steps(
             {
                 "statuses": [
-                    {"stage": "page_context", "message": "현재 페이지를 확인하고 있습니다."},
-                    {"stage": "intent", "message": "질문 의도를 보고 있습니다."},
+                    {"stage": "unknown", "message": "현재 페이지를 확인하고 있습니다."},
+                    {"stage": "intent", "message": ""},
                 ]
             }
         )
@@ -302,11 +302,9 @@ def test_boi_agent_stream_plan_uses_single_llm_call_for_route_and_status(boi_app
     assert all(item["source"] == "llm_status" for item in plan["status_steps"])
 
 
-def test_boi_agent_stream_plan_fails_on_incomplete_llm_status_sequence(boi_app_module, monkeypatch):
+def test_boi_agent_stream_plan_fails_when_llm_returns_no_usable_status(boi_app_module, monkeypatch):
     payloads = []
-    incomplete_statuses = [
-        {"stage": "page_context", "message": "현재 SOP 페이지를 확인하고 있습니다."},
-    ]
+    unusable_statuses = [{"stage": "unknown", "message": "현재 SOP 페이지를 확인하고 있습니다."}]
 
     class FakeResponse:
         def __init__(self, payload):
@@ -340,10 +338,9 @@ def test_boi_agent_stream_plan_fails_on_incomplete_llm_status_sequence(boi_app_m
                                         "route": "fast",
                                         "confidence": 0.92,
                                         "intent": "page_qa",
-                                        "reason": "stream plan repair test",
                                         "requires_mutation": False,
                                         "requires_deep_reasoning": False,
-                                        "statuses": incomplete_statuses,
+                                        "statuses": unusable_statuses,
                                     },
                                     ensure_ascii=False,
                                 )
@@ -365,7 +362,7 @@ def test_boi_agent_stream_plan_fails_on_incomplete_llm_status_sequence(boi_app_m
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
 
-    with pytest.raises(boi_app_module.BoiAgentStatusUnavailable, match="missed required stages"):
+    with pytest.raises(boi_app_module.BoiAgentStatusUnavailable, match="no usable status"):
         boi_app_module.call_boi_agent_stream_plan_llm(
             boi_app_module.BoiAgentChatRequest(
                 question="현재 페이지 기준으로 진행 상태 한 줄을 만들고 짧게 답해줘",
@@ -375,6 +372,27 @@ def test_boi_agent_stream_plan_fails_on_incomplete_llm_status_sequence(boi_app_m
         )
 
     assert len(payloads) == 1
+
+
+def test_boi_agent_stream_plan_accepts_single_llm_status_message(boi_app_module):
+    steps = boi_app_module.normalize_llm_status_steps(
+        {
+            "statuses": [
+                {
+                    "stage": "page_context",
+                    "message": "현재 SOP 페이지를 확인하고 있습니다.",
+                }
+            ]
+        }
+    )
+
+    assert steps == [
+        {
+            "stage": "page_context",
+            "message": "현재 SOP 페이지를 확인하고 있습니다.",
+            "source": "llm_status",
+        }
+    ]
 
 
 def test_boi_agent_llm_route_rejects_invalid_route_or_intent(boi_app_module):
