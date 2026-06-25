@@ -6230,6 +6230,81 @@ def validate_event_type_draft_payload(payload: dict[str, Any]) -> dict[str, Any]
     return {"valid": not errors, "errors": errors, "warnings": warnings}
 
 
+def event_type_draft_body(row: dict[str, Any]) -> str:
+    proposal = row.get("proposal") if isinstance(row.get("proposal"), dict) else {}
+    patch = row.get("catalog_patch_proposal") if isinstance(row.get("catalog_patch_proposal"), dict) else {}
+    validation = row.get("validation") if isinstance(row.get("validation"), dict) else {}
+    event_type = str(row.get("event_type") or proposal.get("event_type") or "")
+    validation_status = "valid" if validation.get("valid") else "needs review"
+    recommended_actions = proposal.get("recommended_actions") or []
+    recommended_manual_actions = proposal.get("recommended_manual_actions") or []
+    lines = [
+        "# Summary",
+        "",
+        f"`{event_type}` Event Type catalog 반영 전 검토용 private draft BoI입니다.",
+        "이 문서는 catalog에 즉시 반영되지 않으며, 검증과 명시 승인 후 별도 apply 단계에서만 운영 catalog에 들어갑니다.",
+        "",
+        "# Draft Proposal",
+        "",
+        "| 항목 | 값 |",
+        "|---|---|",
+        f"| Event Type | `{event_type}` |",
+        f"| 표시 이름 | {proposal.get('name_ko') or event_type} |",
+        f"| 설명 | {proposal.get('description') or '-'} |",
+        f"| SOP | {proposal.get('sop_ref') or '-'} |",
+        f"| SOP Stage | {proposal.get('workflow_stage') or proposal.get('sop_stage_id') or '-'} |",
+        f"| 권장 Action | {', '.join(f'`{item}`' for item in recommended_actions) if recommended_actions else '-'} |",
+        f"| 권장 Manual Action | {', '.join(f'`{item}`' for item in recommended_manual_actions) if recommended_manual_actions else '-'} |",
+        f"| Validation | {validation_status} |",
+        "",
+        "# Validation",
+        "",
+        f"- Errors: {', '.join(validation.get('errors') or []) if validation.get('errors') else 'none'}",
+        f"- Warnings: {', '.join(validation.get('warnings') or []) if validation.get('warnings') else 'none'}",
+        "",
+        "# Catalog Patch Proposal",
+        "",
+        "```yaml",
+        yaml.safe_dump(patch, allow_unicode=True, sort_keys=False).strip(),
+        "```",
+        "",
+        "# Next Step",
+        "",
+        "1. Event Type 이름, payload schema, SOP 연결, 권장 Action을 검토합니다.",
+        "2. 필요한 보완을 draft에 반영합니다.",
+        "3. `event_type_draft_validate`로 검증합니다.",
+        "4. `event_type_draft_apply` 또는 Agent 승인 카드로 명시 승인 후 catalog에 반영합니다.",
+    ]
+    return "\n".join(lines)
+
+
+def write_event_type_draft_boi(row: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    proposal = row.get("proposal") if isinstance(row.get("proposal"), dict) else {}
+    event_type = str(row.get("event_type") or proposal.get("event_type") or "")
+    name = str(proposal.get("name_ko") or event_type or "Event Type")
+    metadata = make_metadata(
+        boi_type="boi/event-type",
+        title=f"{name} Event Type 초안",
+        description=f"신규 Event Type `{event_type}` catalog 반영 전 검토용 private draft",
+        owner=employee_id,
+        visibility="private",
+        classification="internal",
+        status="draft",
+        tags=["EventType", "Draft", "BoIAgent"],
+        source_refs=[{"type": "event-type-draft", "ref": str(row.get("draft_id") or ""), "event_type": event_type}],
+    )
+    metadata.update(
+        {
+            "event_type": event_type,
+            "draft_id": row.get("draft_id"),
+            "event_type_draft_status": row.get("status") or "draft",
+            "validation": row.get("validation") or {},
+            "catalog_patch_proposal": row.get("catalog_patch_proposal") or {},
+        }
+    )
+    return write_boi(metadata, event_type_draft_body(row))
+
+
 def create_event_type_draft(req: EventTypeDraftRequest, employee_id: str) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.editor")
     if not req.user_confirmed:
@@ -6263,8 +6338,16 @@ def create_event_type_draft(req: EventTypeDraftRequest, employee_id: str) -> dic
             "recommended_manual_actions": req.recommended_manual_actions,
         },
     }
+    draft_boi = write_event_type_draft_boi(row, employee_id)
+    draft_boi_id = str((draft_boi.get("metadata") or {}).get("boi_id") or "")
+    row["draft_boi_id"] = draft_boi_id
+    row["draft_boi_url"] = doc_url_for_ref(draft_boi_id, employee_id) if draft_boi_id else ""
     event_type_draft_path(draft_id).write_text(json.dumps(row, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    append_rbac_audit(employee_id, "event_type_draft_create", {"draft_id": draft_id, "event_type": req.event_type, "validation": validation})
+    append_rbac_audit(
+        employee_id,
+        "event_type_draft_create",
+        {"draft_id": draft_id, "draft_boi_id": draft_boi_id, "event_type": req.event_type, "validation": validation},
+    )
     return row
 
 

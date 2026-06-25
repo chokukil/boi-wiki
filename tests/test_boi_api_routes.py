@@ -2357,6 +2357,13 @@ def test_event_type_draft_create_and_validate_does_not_apply_catalog(boi_app_mod
     draft = response.json()["draft"]
     assert draft["event_type"] == event_type
     assert draft["validation"]["valid"] is True
+    assert draft["draft_boi_id"].startswith("boi:private:100001:")
+    draft_doc = client.get(f"/api/docs/{draft['draft_boi_id']}/access?employee_id=100001")
+    assert draft_doc.status_code == 200
+    assert draft_doc.json()["access"]["can_read"] is True
+    denied_doc = client.get(f"/api/docs/{draft['draft_boi_id']}/access?employee_id=100002")
+    assert denied_doc.status_code == 200
+    assert denied_doc.json()["access"]["can_read"] is False
     assert boi_app_module.get_event_type(event_type) is None
 
     validate = client.post(f"/api/event-types/drafts/{draft['draft_id']}/validate?employee_id=100001")
@@ -2483,6 +2490,7 @@ def test_event_types_page_shows_visible_drafts_without_catalog_apply(boi_app_mod
         },
     )
     assert response.status_code == 200
+    draft = response.json()["draft"]
     assert boi_app_module.get_event_type(event_type) is None
 
     page = client.get("/event-types?employee_id=100001")
@@ -2491,6 +2499,8 @@ def test_event_types_page_shows_visible_drafts_without_catalog_apply(boi_app_mod
     assert event_type in page.text
     assert "운영 목록에는 아직 반영되지 않음" in page.text
     assert "검증 완료" in page.text
+    assert "Private draft BoI 보기" in page.text
+    assert f"/docs/{draft['draft_boi_id']}?employee_id=100001" in page.text
 
     other_employee = client.get("/event-types?employee_id=100003")
     assert other_employee.status_code == 200

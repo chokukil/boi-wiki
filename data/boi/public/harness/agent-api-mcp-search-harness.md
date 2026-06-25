@@ -103,7 +103,7 @@ private 문서는 `data/boi/private/{7자리사번}` 경로, `owner`, `acl:priva
 
 Agent는 Event 발행, Workflow 시작, Action 호출, Manual Handoff 완료, 신규 Event Type draft 생성을 제안할 수 있다. 하지만 사용자에게는 `simulation`, `preview-only run`, `invoke` 같은 개발자 용어를 노출하지 않고 `먼저 확인`, `요청 실행`, `승인 필요`, `조치 내용 입력 필요`로 표현한다.
 
-신규 Event Type은 catalog에 즉시 반영하지 않고 draft와 catalog patch proposal을 만든다. 적용은 validation, review, 승인, lint 후 별도 apply 단계에서 진행한다.
+신규 Event Type은 catalog에 즉시 반영하지 않고 private draft BoI와 catalog patch proposal을 함께 만든다. 적용은 validation, review, 승인, lint 후 별도 apply 단계에서 진행한다.
 
 - [Agent Execution and Event Authoring](/public/boi-wiki-manual/agent/agent-execution-and-event-authoring.md)
 - [Team RBAC Management](/public/boi-wiki-manual/security/team-rbac-management.md)

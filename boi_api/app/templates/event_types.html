@@ -76,6 +76,9 @@
           </div>
           <p>{{ proposal.description or draft.description or "설명이 아직 없습니다." }}</p>
           <small>작성자: {{ draft.created_by }} · 생성: {{ draft.created_at }} · 상태: 운영 목록에는 아직 반영되지 않음</small>
+          {% if draft.draft_boi_url %}
+          <p><a href="{{ draft.draft_boi_url }}">Private draft BoI 보기</a></p>
+          {% endif %}
           {% if validation.errors %}
           <p><strong>Errors:</strong> {{ validation.errors | join(', ') }}</p>
           {% endif %}
