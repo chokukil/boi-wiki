@@ -91,13 +91,29 @@ def test_okf_lint_reports_invalid_metadata():
             "type": "boi/test",
             "title": "Broken",
             "visibility": "org",
+            "classification": "secret",
             "status": "unknown",
         }
     )
 
     assert "missing required metadata: description" in errors
     assert "visibility must be private/team/public" in errors
+    assert "classification must be internal/confidential/restricted" in errors
     assert "status must be draft/reviewed/approved/deprecated" in errors
+
+
+def test_okf_lint_rejects_unknown_classification(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    metadata = valid_public_metadata("boi:public:lint:bad-classification")
+    metadata["classification"] = "secret"
+    write_markdown(data_root / "boi" / "public" / "bad-classification.md", metadata)
+
+    result = lint_data_root(data_root)
+
+    assert not result.ok
+    assert any("classification must be internal/confidential/restricted" in error for error in result.errors)
 
 
 def test_okf_lint_rejects_private_owner_acl_path_mismatch(tmp_path: Path):

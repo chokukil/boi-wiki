@@ -25,6 +25,7 @@ REQUIRED_FIELDS = [
 ]
 
 VALID_VISIBILITIES = {"private", "team", "public"}
+VALID_CLASSIFICATIONS = {"internal", "confidential", "restricted"}
 VALID_STATUSES = {"draft", "reviewed", "approved", "deprecated"}
 VALID_RETENTION_CLASSES = {"ephemeral", "working", "record", "promoted_source"}
 VALID_ARCHIVE_STATUSES = {"active", "archived", "exported", "deleted"}
@@ -75,6 +76,8 @@ def validate_boi_profile_metadata(metadata: dict[str, Any], promotion: bool = Fa
             errors.append(f"missing required metadata: {field_name}")
     if metadata.get("visibility") not in VALID_VISIBILITIES:
         errors.append("visibility must be private/team/public")
+    if metadata.get("classification") not in VALID_CLASSIFICATIONS:
+        errors.append("classification must be internal/confidential/restricted")
     if metadata.get("status") not in VALID_STATUSES:
         errors.append("status must be draft/reviewed/approved/deprecated")
     if metadata.get("retention_class") and metadata.get("retention_class") not in VALID_RETENTION_CLASSES:
