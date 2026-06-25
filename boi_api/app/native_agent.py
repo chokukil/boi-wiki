@@ -1554,6 +1554,12 @@ def event_type_draft_action_matches_question(action_key: str, item: JsonDict, no
     ).lower()
     combined = f"{action_key.lower()} {text}"
 
+    if action_key.lower() in normalized_question:
+        return True
+    if "direct_development" in action_key.lower() and not re.search(r"direct_development|직개발|직접 개발|직접개발", normalized_question):
+        return False
+    if "stage_analysis" in action_key.lower() and not re.search(r"stage analysis|단계 분석|stage 분석|원인 분석|분석 요청", normalized_question):
+        return False
     if re.search(r"spec|rule|규격|룰|규칙", combined) and not re.search(r"spec|rule|규격|룰|규칙|변경", normalized_question):
         return False
     if re.search(r"approve|approval|승인", combined) and not re.search(r"approve|approval|승인|공유|배포|게시|hold|보류", normalized_question):
@@ -1563,14 +1569,4 @@ def event_type_draft_action_matches_question(action_key: str, item: JsonDict, no
     if "maintenance_guide" in action_key or "보전 가이드" in combined or "정비 가이드" in combined:
         return bool(re.search(r"보전 가이드|정비 가이드|maintenance guide|guide", normalized_question))
 
-    action_tokens = {
-        token
-        for token in re.split(r"[^a-z0-9가-힣]+", combined)
-        if len(token) >= 3 and token not in {"action", "manual", "equipment", "sop", "public"}
-    }
-    question_tokens = {
-        token
-        for token in re.split(r"[^a-z0-9가-힣]+", normalized_question)
-        if len(token) >= 3
-    }
-    return bool(action_tokens & question_tokens)
+    return False
