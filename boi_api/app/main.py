@@ -7956,6 +7956,46 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
     path = parsed.path or "/"
     query = parse_qs(parsed.query)
     context: dict[str, Any] = {"page_kind": "unknown", "resolved": False, "current_url": current_url}
+    if path in {"", "/"}:
+        return {
+            **context,
+            "page_kind": "library",
+            "resolved": True,
+            "title": "BoI Wiki Explorer",
+            "description": "AI Agent의 협업 표준 문서를 업무 단위의 Event, SOP, AI Native Workflow, Action 기준으로 탐색합니다.",
+            "body_excerpt": "BoI Wiki Explorer는 문서, SOP, Event Type, Action, Event Stream을 함께 탐색하는 첫 화면입니다.",
+            "url": app_url("/", employee_id),
+        }
+    if path == "/sops":
+        return {
+            **context,
+            "page_kind": "sops",
+            "resolved": True,
+            "title": "SOP",
+            "description": "SOP와 관련 실행 가이드를 검색하고 확인하는 화면입니다.",
+            "body_excerpt": "SOP 화면은 업무 절차, 연결 Event, Action, Manual Handoff를 확인하는 탐색 화면입니다.",
+            "url": app_url("/sops", employee_id),
+        }
+    if path == "/event-types":
+        return {
+            **context,
+            "page_kind": "event_types",
+            "resolved": True,
+            "title": "Event Types",
+            "description": "Event Broker가 발행하고 SOP/Action과 연결되는 업무 이벤트 정의를 확인하는 화면입니다.",
+            "body_excerpt": "Event Types 화면은 이벤트 정의, 연결 SOP, 권장 Action, 최근 Stream을 기준으로 업무 흐름을 찾는 탐색 화면입니다.",
+            "url": app_url("/event-types", employee_id),
+        }
+    if path == "/actions":
+        return {
+            **context,
+            "page_kind": "actions",
+            "resolved": True,
+            "title": "Actions",
+            "description": "BoI Workflow가 호출할 API, MCP, Langflow, Manual Action 명세를 확인하는 화면입니다.",
+            "body_excerpt": "Actions 화면은 업무 요청 명세, connector, 실행 조건, 승인 필요 여부를 확인하는 탐색 화면입니다.",
+            "url": app_url("/actions", employee_id),
+        }
     if path.startswith("/docs/"):
         boi_id = unquote(path.removeprefix("/docs/"))
         doc = find_doc_by_id(boi_id, employee_id)

@@ -738,6 +738,43 @@ def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_mod
     assert body["suggested_questions_source"] == "llm_composer"
 
 
+def test_boi_agent_home_summary_uses_library_page_context_not_search_hit(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    compose_calls: list[dict] = []
+
+    def fake_llm(employee_id: str, task: str, payload: dict):
+        compose_calls.append({"employee_id": employee_id, "task": task, "payload": payload})
+        assert task == "compose"
+        return {
+            "answer_markdown": "## BoI Wiki Explorer\n\n문서, SOP, Event, Action을 한 화면에서 탐색하는 첫 화면입니다.",
+            "composer_contract": "answer_plan",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "현재 페이지를 한 문장으로 요약해줘",
+            "mode": "fast",
+            "current_url": "/?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert compose_calls
+    assert compose_calls[0]["payload"]["page_context"]["page_kind"] == "library"
+    assert compose_calls[0]["payload"]["page_context"]["title"] == "BoI Wiki Explorer"
+    assert "BoI Wiki Explorer" in compose_calls[0]["payload"]["structured_draft"]
+    assert "설비 이상 감지" not in compose_calls[0]["payload"]["structured_draft"]
+    assert body["context_summary"]["page_context"]["page_kind"] == "library"
+    assert "BoI Wiki Explorer" in body["answer_markdown"]
+
+
 def test_boi_agent_trace_reasoning_uses_llm_composer_when_enabled(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     compose_calls: list[dict] = []
