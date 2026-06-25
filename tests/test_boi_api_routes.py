@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 from fastapi.testclient import TestClient
+from jsonschema import validate
 import pytest
 import yaml
 
@@ -979,6 +980,43 @@ def test_boi_agent_chat_normalizes_minimal_backend_response_to_agent_contract(bo
     assert body["tool_trace"] == []
     assert body["access_summary"] == {}
     assert body["guardrails_applied"] == []
+
+
+def test_boi_agent_chat_normalizes_execution_cards_to_agent_schema(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def minimal_card_response(req, employee_id):
+        return {
+            "ok": True,
+            "used_backend": "test_minimal_backend",
+            "answer_markdown": "이 작업은 실행 전 확인이 필요합니다.",
+            "execution_cards": [
+                {
+                    "operation": "event_publish",
+                    "title": "이벤트 발행 확인",
+                    "payload": {"event_type": "meeting.closed.v1"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", minimal_card_response)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "meeting.closed.v1 이벤트를 발행해줘", "current_url": "/events"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    schema = client.get("/api/agents/boi-wiki/response-schema").json()["schema"]
+    validate(instance=body, schema=schema)
+    card = body["execution_cards"][0]
+    assert card["contract_version"] == "boi-agent.response.v1"
+    assert card["requires_confirmation"] is True
+    assert card["user_confirmed_required"] is True
+    assert card["approve_url"] == "/api/agents/boi-wiki/approve"
+    assert card["display"]["next_action"]
+    assert card["technical_details"]["operation"] == "event_publish"
 
 
 def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_module, monkeypatch):

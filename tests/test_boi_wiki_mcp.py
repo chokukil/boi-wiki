@@ -7,6 +7,7 @@ import json
 import sys
 
 from fastapi.testclient import TestClient
+from jsonschema import validate
 import pytest
 
 
@@ -307,10 +308,14 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
             "tool_trace": [{"tool": "ontology_search", "status": "ok", "elapsed_ms": 5, "summary": "best_matches=1"}],
             "execution_cards": [
                 {
+                    "contract_version": "boi-agent.response.v1",
                     "operation": "event_publish",
+                    "payload": {"event_type": "meeting.closed.v1"},
                     "requires_confirmation": True,
                     "user_confirmed_required": True,
+                    "approve_url": "/api/agents/boi-wiki/approve",
                     "display": {"title": "이벤트 발행 확인", "next_action": "요청 실행"},
+                    "technical_details": {"operation": "event_publish"},
                 }
             ],
             "access_summary": {"can_read": True, "can_use_in_agent_context": True},
@@ -356,6 +361,7 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
 
     assert chat.status_code == 200
     agent_result = chat.json()["result"]
+    validate(instance=agent_result, schema=mcp_module.AGENT_RESPONSE_SCHEMA)
     assert agent_result["agent_contract_version"] == "boi-agent.response.v1"
     assert agent_result["answer_markdown"] == "agent answer"
     assert agent_result["links"][0]["label"] == "SOP"

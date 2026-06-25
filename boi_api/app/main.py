@@ -8757,6 +8757,52 @@ def execution_cards_from_artifacts(artifacts: list[dict[str, Any]]) -> list[dict
     return cards
 
 
+def normalize_agent_execution_cards(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    cards: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        operation = str(item.get("operation") or item.get("type") or "confirmation_required").strip() or "confirmation_required"
+        title = str(item.get("title") or operation)
+        message = str(item.get("message") or "")
+        primary_label = str(item.get("primary_label") or "확인 후 실행")
+        display = item.get("display") if isinstance(item.get("display"), dict) else {}
+        technical_details = item.get("technical_details") if isinstance(item.get("technical_details"), dict) else {}
+        normalized = {
+            **item,
+            "contract_version": BOI_AGENT_RESPONSE_CONTRACT_VERSION,
+            "type": str(item.get("type") or operation),
+            "operation": operation,
+            "title": title,
+            "message": message,
+            "primary_label": primary_label,
+            "payload": item.get("payload") if isinstance(item.get("payload"), dict) else {},
+            "requires_confirmation": bool(item.get("requires_confirmation", True)),
+            "user_confirmed_required": bool(item.get("user_confirmed_required", True)),
+            "approve_url": str(item.get("approve_url") or "/api/agents/boi-wiki/approve"),
+            "display": {
+                "title": str(display.get("title") or title),
+                "status_label": str(display.get("status_label") or "확인 필요"),
+                "why_it_matters": str(
+                    display.get("why_it_matters")
+                    or message
+                    or "이 요청은 BoI Wiki 상태를 변경할 수 있어 실행 전 확인이 필요합니다."
+                ),
+                "next_action": str(display.get("next_action") or primary_label),
+                "risk_label": str(display.get("risk_label") or "명시 확인 후 실행"),
+                **{k: v for k, v in display.items() if k not in {"title", "status_label", "why_it_matters", "next_action", "risk_label"}},
+            },
+            "technical_details": {
+                "operation": operation,
+                **technical_details,
+            },
+        }
+        cards.append(normalized)
+    return cards
+
+
 def normalize_agent_mermaid_source(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
@@ -8809,6 +8855,7 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
         if cards:
             response["execution_cards"] = cards
     response.setdefault("execution_cards", [])
+    response["execution_cards"] = normalize_agent_execution_cards(response.get("execution_cards"))
     display_markdown = markdown_without_duplicate_mermaid_artifacts(answer_markdown, artifacts)
     response["display_markdown"] = display_markdown
     response["answer_html"] = (
