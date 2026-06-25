@@ -161,6 +161,12 @@ def test_boi_agent_response_schema_resource(mcp_module, monkeypatch):
     assert "mermaid" in body["schema"]["properties"]["artifacts"]["items"]["properties"]["type"]["enum"]
 
 
+def test_mcp_static_agent_response_schema_matches_boi_api_contract(mcp_module, boi_app_module):
+    assert mcp_module.AGENT_RESPONSE_REQUIRED_FIELDS == boi_app_module.BOI_AGENT_RESPONSE_REQUIRED_FIELDS
+    assert mcp_module.AGENT_ARTIFACT_TYPES == boi_app_module.BOI_AGENT_ARTIFACT_TYPES
+    assert mcp_module.AGENT_RESPONSE_SCHEMA == boi_app_module.BOI_AGENT_RESPONSE_SCHEMA
+
+
 def test_boi_agent_response_schema_resource_uses_boi_api_as_canonical_schema(mcp_module, monkeypatch):
     calls: list[dict[str, object]] = []
 

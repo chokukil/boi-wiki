@@ -123,7 +123,24 @@ AGENT_RESPONSE_SCHEMA = {
                 "properties": {"type": {"enum": AGENT_ARTIFACT_TYPES}},
             },
         },
-        "execution_cards": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "execution_cards": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["contract_version", "operation", "requires_confirmation", "user_confirmed_required"],
+                "additionalProperties": True,
+                "properties": {
+                    "contract_version": {"const": AGENT_RESPONSE_CONTRACT_VERSION},
+                    "operation": {"type": "string"},
+                    "requires_confirmation": {"type": "boolean"},
+                    "user_confirmed_required": {"type": "boolean"},
+                    "approve_url": {"type": "string"},
+                    "payload": {"type": "object", "additionalProperties": True},
+                    "display": {"type": "object", "additionalProperties": True},
+                    "technical_details": {"type": "object", "additionalProperties": True},
+                },
+            },
+        },
         "status_updates": {
             "type": "array",
             "items": {
