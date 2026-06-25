@@ -7142,6 +7142,29 @@ def parse_stream_plan_payload(text: str) -> dict[str, Any] | None:
     return None
 
 
+def is_usable_llm_status_message(message: str) -> bool:
+    text = str(message or "").strip()
+    if not text:
+        return False
+    if len(text) > 90:
+        return False
+    # Drop common local-LLM degeneration patterns instead of showing broken
+    # progress text as if it were healthy. This is validation, not a canned
+    # replacement: if every generated line is rejected, the Agent returns a
+    # status_generation_failed error.
+    if re.search(r"[A-Za-z]{8,}", text):
+        return False
+    if re.search(r"([A-Za-z]{3,})(?:[-_\s]+\1){1,}", text, flags=re.IGNORECASE):
+        return False
+    if re.search(r"([가-힣]{2,})(?:을|를|은|는|이|가|의)?[-_\s·/]+\1", text):
+        return False
+    if re.search(r"([가-힣]{2,})(?:[-_\s·/]*\1){1,}", text):
+        return False
+    if re.search(r"([가-힣])\1{2,}", text):
+        return False
+    return True
+
+
 def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
     seen: dict[str, str] = {}
     for item in payload.get("statuses") or []:
@@ -7150,6 +7173,8 @@ def normalize_llm_status_steps(payload: dict[str, Any]) -> list[dict[str, str]]:
         stage = str(item.get("stage") or "").strip()
         message = re.sub(r"\s+", " ", str(item.get("message") or "")).strip()
         if stage not in REQUIRED_AGENT_STATUS_STAGES or not message:
+            continue
+        if not is_usable_llm_status_message(message):
             continue
         if len(message) > 90:
             message = message[:89].rstrip() + "…"

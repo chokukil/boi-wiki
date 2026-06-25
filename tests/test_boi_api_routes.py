@@ -395,6 +395,29 @@ def test_boi_agent_stream_plan_accepts_single_llm_status_message(boi_app_module)
     ]
 
 
+def test_boi_agent_stream_status_filters_degenerated_llm_messages(boi_app_module):
+    steps = boi_app_module.normalize_llm_status_steps(
+        {
+            "statuses": [
+                {"stage": "page_context", "message": "현재 페이지의 문서를-문서 내용을 확인합니다."},
+                {
+                    "stage": "intent",
+                    "message": "질문의 의도를도를 확인하며 thoughtful-thoughtful 반복이 생겼습니다.",
+                },
+                {"stage": "compose", "message": "한 문장으로 상태를 정리합니다."},
+            ]
+        }
+    )
+
+    assert steps == [
+        {
+            "stage": "compose",
+            "message": "한 문장으로 상태를 정리합니다.",
+            "source": "llm_status",
+        }
+    ]
+
+
 def test_boi_agent_llm_route_rejects_invalid_route_or_intent(boi_app_module):
     request = boi_app_module.BoiAgentChatRequest(
         question="이 SOP를 Mermaid 프로세스 플로우로 보여줘",
