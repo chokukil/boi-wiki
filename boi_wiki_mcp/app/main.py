@@ -6,6 +6,7 @@ from typing import Any, Literal
 import httpx
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field, ValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.responses import JSONResponse
@@ -15,6 +16,7 @@ SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 DEFAULT_EMPLOYEE_ID = os.getenv("DEFAULT_EMPLOYEE_ID", "100001")
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100").rstrip("/")
 MCP_BACKEND_TIMEOUT_SECONDS = float(os.getenv("MCP_BACKEND_TIMEOUT_SECONDS", "120"))
+MCP_REQUIRE_SERVICE_TOKEN = str(os.getenv("MCP_REQUIRE_SERVICE_TOKEN", "false")).strip().lower() in {"1", "true", "yes", "on"}
 
 DEFAULT_PUBLIC_BASE_URL = "http://localhost:8200"
 MCP_TOOL_CAPABILITIES = [
@@ -765,7 +767,30 @@ class McpBridgeRequest(BaseModel):
     request_id: str | None = None
 
 
+def request_has_service_token(request: Request) -> bool:
+    token = request.headers.get("x-service-token") or ""
+    authorization = request.headers.get("authorization") or ""
+    if authorization.lower().startswith("bearer "):
+        token = token or authorization.split(" ", 1)[1].strip()
+    return bool(token and token == SERVICE_TOKEN)
+
+
+class McpServiceTokenGateMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if MCP_REQUIRE_SERVICE_TOKEN and request.url.path.rstrip("/") == "/mcp":
+            if not request_has_service_token(request):
+                return JSONResponse(
+                    {
+                        "detail": "MCP service token is required",
+                        "accepted_headers": ["x-service-token", "Authorization: Bearer <token>"],
+                    },
+                    status_code=401,
+                )
+        return await call_next(request)
+
+
 app = mcp.streamable_http_app()
+app.add_middleware(McpServiceTokenGateMiddleware)
 
 
 def first_forwarded_value(value: str | None) -> str:
@@ -807,10 +832,16 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
         },
         "agent_interfaces": AGENT_INTERFACES,
         "agent_response_contract": AGENT_RESPONSE_CONTRACT,
+        "mcp_auth": {
+            "required": MCP_REQUIRE_SERVICE_TOKEN,
+            "accepted_headers": ["x-service-token", "Authorization: Bearer <token>"],
+            "bridge_always_requires_service_token": True,
+        },
         "notes": [
             "Open / in a browser for this status page.",
             "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
             "A direct browser/curl request to /mcp may return 406 even when the server is healthy.",
+            "When MCP auth is required, configure the client to send x-service-token or Authorization: Bearer with the shared service token.",
             "Static resources are intentionally empty; use resource templates and tools.",
             "BoI API/MCP are the official external Agent interfaces; Native BoI Agent is the production backend and direct Langflow run URLs are trusted/dev visual-debug only. All Agent/Search/Inbox tools use the same BoI Profile ACL and Team RBAC guardrails as the Web UI.",
         ],
@@ -863,6 +894,7 @@ async def status_page(request: Request) -> HTMLResponse:
         <dt>MCP Streamable HTTP</dt><dd><code>{payload["mcp_endpoint"]}</code></dd>
         <dt>Bridge endpoint</dt><dd><code>{payload["bridge_endpoint"]}</code></dd>
         <dt>Health check</dt><dd><code>{payload["health_endpoint"]}</code></dd>
+        <dt>MCP auth</dt><dd><code>{'required' if payload["mcp_auth"]["required"] else 'not required'}</code></dd>
       </dl>
     </section>
     <section>

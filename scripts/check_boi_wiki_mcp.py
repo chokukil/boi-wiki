@@ -15,6 +15,16 @@ from mcp.client.streamable_http import streamablehttp_client
 EXPECTED_PROTOCOL = {"tools": 26, "resource_templates": 5, "prompts": 5}
 
 
+def mcp_auth_headers(service_token: str = "") -> dict[str, str]:
+    token = str(service_token or "").strip()
+    if not token:
+        return {}
+    return {
+        "x-service-token": token,
+        "Authorization": f"Bearer {token}",
+    }
+
+
 def attr_any(item: object, *names: str) -> str:
     for name in names:
         value = getattr(item, name, None)
@@ -23,21 +33,21 @@ def attr_any(item: object, *names: str) -> str:
     return str(item)
 
 
-async def check_protocol(url: str, include_details: bool = False) -> dict:
+async def check_protocol(url: str, include_details: bool = False, service_token: str = "") -> dict:
     try:
-        return await check_protocol_mcp_client(url, include_details=include_details)
+        return await check_protocol_mcp_client(url, include_details=include_details, service_token=service_token)
     except Exception as exc:
-        direct = await check_protocol_stateless_json(url, include_details=include_details)
+        direct = await check_protocol_stateless_json(url, include_details=include_details, service_token=service_token)
         direct["client_warning"] = f"{type(exc).__name__}: {exc}"
         direct["transport_mode"] = "stateless_json_rpc"
         return direct
 
 
-async def check_protocol_mcp_client(url: str, include_details: bool = False) -> dict:
+async def check_protocol_mcp_client(url: str, include_details: bool = False, service_token: str = "") -> dict:
     tools = resources = resource_templates = prompts = None
     close_warning = ""
     try:
-        async with streamablehttp_client(url) as (read_stream, write_stream, _session_id):
+        async with streamablehttp_client(url, headers=mcp_auth_headers(service_token)) as (read_stream, write_stream, _session_id):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 tools = await session.list_tools()
@@ -73,11 +83,12 @@ async def check_protocol_mcp_client(url: str, include_details: bool = False) -> 
     return result
 
 
-async def check_protocol_stateless_json(url: str, include_details: bool = False) -> dict:
+async def check_protocol_stateless_json(url: str, include_details: bool = False, service_token: str = "") -> dict:
     async with httpx.AsyncClient(timeout=30) as client:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
+            **mcp_auth_headers(service_token),
         }
 
         async def rpc(method: str, request_id: int, params: dict | None = None) -> dict:
@@ -156,8 +167,8 @@ def bridge_summary(bridge: dict) -> dict:
 
 async def main_async(args: argparse.Namespace) -> int:
     include_details = bool(args.details or args.client_checklist)
-    protocol = await check_protocol(args.mcp_url, include_details=include_details)
     service_token = str(args.service_token or "").strip()
+    protocol = await check_protocol(args.mcp_url, include_details=include_details, service_token=service_token)
     require_bridge = bool(getattr(args, "require_bridge", False))
     if service_token:
         bridge = await check_bridge(args.base_url, service_token, args.query)

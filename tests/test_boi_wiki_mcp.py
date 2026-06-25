@@ -41,6 +41,9 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["agent_response_contract"]["canonical_endpoint"] == "/api/agents/boi-wiki/chat"
     assert body["agent_response_contract"]["stream_endpoint"] == "/api/agents/boi-wiki/chat/stream"
     assert body["agent_response_contract"]["mcp_tool"] == "boi_agent_chat"
+    assert body["mcp_auth"]["required"] is False
+    assert body["mcp_auth"]["bridge_always_requires_service_token"] is True
+    assert "x-service-token" in body["mcp_auth"]["accepted_headers"]
     assert "web_pet" in body["agent_response_contract"]["consumers"]
     assert "boi_wiki_mcp" in body["agent_response_contract"]["consumers"]
     assert "external_api" in body["agent_response_contract"]["consumers"]
@@ -92,6 +95,8 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "promotion_submit" in body
     assert "boi_agent_chat" in body
     assert "boi-agent.response.v1" in body
+    assert "MCP auth" in body
+    assert "not required" in body
     assert "/api/agents/boi-wiki/chat/stream" in body
     assert "answer_delta" in body
     assert "ontology_search" in body
@@ -469,6 +474,39 @@ def test_boi_wiki_mcp_streamable_http_initializes(mcp_module):
     assert response.status_code == 200
     body = response.json()
     assert body["result"]["serverInfo"]["name"] == "boi-wiki-mcp"
+
+
+def test_boi_wiki_mcp_streamable_http_can_require_service_token(monkeypatch):
+    monkeypatch.setenv("SERVICE_TOKEN", "test-service-token")
+    monkeypatch.setenv("DEFAULT_EMPLOYEE_ID", "100001")
+    monkeypatch.setenv("MCP_REQUIRE_SERVICE_TOKEN", "true")
+    sys.modules.pop("boi_wiki_mcp.app.main", None)
+    module = importlib.import_module("boi_wiki_mcp.app.main")
+    request_body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "pytest", "version": "0.1"},
+        },
+    }
+    headers = {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+    }
+
+    with TestClient(module.app) as client:
+        denied = client.post("/mcp", headers=headers, json=request_body)
+        allowed = client.post("/mcp", headers={**headers, "x-service-token": "test-service-token"}, json=request_body)
+        health = client.get("/health")
+
+    assert denied.status_code == 401
+    assert denied.json()["detail"] == "MCP service token is required"
+    assert allowed.status_code == 200
+    assert allowed.json()["result"]["serverInfo"]["name"] == "boi-wiki-mcp"
+    assert health.json()["mcp_auth"]["required"] is True
 
 
 def test_mcp_source_apply_requires_user_confirmation(mcp_module, monkeypatch):
@@ -862,11 +900,14 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
 
 def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_breaks(monkeypatch):
     import scripts.check_boi_wiki_mcp as script
+    seen_tokens: list[tuple[str, str]] = []
 
     async def broken_client(*args, **kwargs):
+        seen_tokens.append(("client", str(kwargs.get("service_token") or "")))
         raise RuntimeError("stream client broke before tools/list")
 
     async def stateless_json(*args, **kwargs):
+        seen_tokens.append(("stateless", str(kwargs.get("service_token") or "")))
         return {
             "tools": 22,
             "resources": 0,
@@ -880,10 +921,11 @@ def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_brea
     monkeypatch.setattr(script, "check_protocol_mcp_client", broken_client)
     monkeypatch.setattr(script, "check_protocol_stateless_json", stateless_json)
 
-    result = asyncio.run(script.check_protocol("http://localhost:8200/mcp", include_details=True))
+    result = asyncio.run(script.check_protocol("http://localhost:8200/mcp", include_details=True, service_token="test-token"))
 
     assert result["tools"] == 22
     assert result["resource_templates"] == 5
     assert result["prompts"] == 5
     assert result["transport_mode"] == "stateless_json_rpc"
     assert "stream client broke" in result["client_warning"]
+    assert seen_tokens == [("client", "test-token"), ("stateless", "test-token")]
