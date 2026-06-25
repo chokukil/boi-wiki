@@ -3068,6 +3068,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "formatAgentStreamError" in script
     assert "BoI Agent 장애" in script
     assert "status_generation_failed" in script
+    assert "진행 상태 모델 장애입니다" in script
+    assert "요청을 중단했습니다" in script
     assert "boi-agent-new" in script
     assert "boi-agent-expand" in script
     assert "data-open-answer" in script
