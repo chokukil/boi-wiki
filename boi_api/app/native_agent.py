@@ -87,7 +87,7 @@ def deterministic_native_intent(question: str, current_url: str = "") -> str:
     if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
         return "inbox"
     if (
-        any(term in q for term in ("event type", "event-type", "이벤트 타입", "이벤트 정의", "신규 이벤트"))
+        any(term in q for term in ("event type", "event-type", "이벤트 타입", "이벤트 유형", "이벤트 정의", "신규 이벤트"))
         and any(term in q for term in ("초안", "만들", "생성", "정의", "추가", "draft", "create"))
     ):
         return "event_type_draft"
@@ -1315,7 +1315,7 @@ def event_type_draft_payload_from_state(state: JsonDict) -> JsonDict:
 
 def event_type_draft_name(question: str, event_type: str) -> str:
     before = question.split(event_type, 1)[0]
-    before = re.sub(r"(신규|새로운|event type|이벤트 타입|이벤트|초안|만들어줘|만들|생성|정의|추가)", " ", before, flags=re.IGNORECASE)
+    before = re.sub(r"(신규|새로운|event type|이벤트 타입|이벤트 유형|이벤트|유형|초안|만들어줘|만들|생성|정의|추가)", " ", before, flags=re.IGNORECASE)
     before = re.sub(r"\s+", " ", before).strip(" .,:;/-")
     korean_chunks = re.findall(r"[가-힣A-Za-z0-9·\-/ ]+", before)
     name = " ".join(chunk.strip() for chunk in korean_chunks if chunk.strip()).strip()

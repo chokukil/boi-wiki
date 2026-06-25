@@ -6971,7 +6971,7 @@ def deterministic_agent_intent(question: str, current_url: str = "") -> str:
     if any(term in q for term in ("내 action", "내 액션", "내 할 일", "할 일", "처리해야", "inbox", "대기", "남았", "담당")):
         return "inbox"
     if (
-        any(term in q for term in ("event type", "event-type", "이벤트 타입", "이벤트 정의", "신규 이벤트"))
+        any(term in q for term in ("event type", "event-type", "이벤트 타입", "이벤트 유형", "이벤트 정의", "신규 이벤트"))
         and any(term in q for term in ("초안", "만들", "생성", "정의", "추가", "draft", "create"))
     ):
         return "event_type_draft"

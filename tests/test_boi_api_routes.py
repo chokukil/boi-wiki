@@ -2213,7 +2213,7 @@ def test_boi_agent_event_type_draft_card_uses_ontology_context(boi_app_module, m
     response = client.post(
         "/api/agents/boi-wiki/chat?employee_id=100001",
         json={
-            "question": "장비 점검 완료 이벤트 타입 maintenance.inspection.completed.v1 초안을 만들어줘. 작업자는 7자리 사번이고 SOP는 설비 이상 감지 SOP와 연결해줘.",
+            "question": "장비 점검 완료 이벤트 유형 maintenance.inspection.completed.v1 초안을 만들어줘. 작업자는 7자리 사번이고 SOP는 설비 이상 감지 SOP와 연결해줘.",
             "current_url": "/event-types?employee_id=100001",
             "page_context": {"title": "Event Types"},
         },
