@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import json
 import sys
 
 from fastapi.testclient import TestClient
@@ -767,6 +768,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
         details=True,
         client_checklist=True,
         full_bridge=False,
+        require_bridge=False,
     )
 
     exit_code = asyncio.run(script.main_async(args))
@@ -788,6 +790,74 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     assert "Cursor" in output
     assert "http://localhost:8200/mcp" in output
     assert "folder_tree" not in output
+
+
+def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch, capsys):
+    import scripts.check_boi_wiki_mcp as script
+
+    async def fake_check_protocol(*args, **kwargs):
+        return {
+            "tools": 26,
+            "resources": 0,
+            "resource_templates": 5,
+            "prompts": 5,
+        }
+
+    async def fail_bridge(*args, **kwargs):
+        raise AssertionError("bridge must not be called without a service token")
+
+    monkeypatch.setattr(script, "check_protocol", fake_check_protocol)
+    monkeypatch.setattr(script, "check_bridge", fail_bridge)
+    args = argparse.Namespace(
+        base_url="http://localhost:8200",
+        mcp_url="http://localhost:8200/mcp",
+        service_token="",
+        query="SOP",
+        summary=True,
+        details=False,
+        client_checklist=False,
+        full_bridge=False,
+        require_bridge=False,
+    )
+
+    exit_code = asyncio.run(script.main_async(args))
+
+    assert exit_code == 0
+    body = json.loads(capsys.readouterr().out)
+    assert body["ok"] is True
+    assert body["bridge"]["status"] == "skipped"
+
+
+def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys):
+    import scripts.check_boi_wiki_mcp as script
+
+    async def fake_check_protocol(*args, **kwargs):
+        return {
+            "tools": 26,
+            "resources": 0,
+            "resource_templates": 5,
+            "prompts": 5,
+        }
+
+    monkeypatch.setattr(script, "check_protocol", fake_check_protocol)
+    args = argparse.Namespace(
+        base_url="http://localhost:8200",
+        mcp_url="http://localhost:8200/mcp",
+        service_token="",
+        query="SOP",
+        summary=True,
+        details=False,
+        client_checklist=False,
+        full_bridge=False,
+        require_bridge=True,
+    )
+
+    exit_code = asyncio.run(script.main_async(args))
+
+    assert exit_code == 1
+    body = json.loads(capsys.readouterr().out)
+    assert body["ok"] is False
+    assert body["bridge"]["status"] == "skipped"
 
 
 def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_breaks(monkeypatch):

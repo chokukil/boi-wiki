@@ -157,12 +157,23 @@ def bridge_summary(bridge: dict) -> dict:
 async def main_async(args: argparse.Namespace) -> int:
     include_details = bool(args.details or args.client_checklist)
     protocol = await check_protocol(args.mcp_url, include_details=include_details)
-    bridge = await check_bridge(args.base_url, args.service_token, args.query)
+    service_token = str(args.service_token or "").strip()
+    require_bridge = bool(getattr(args, "require_bridge", False))
+    if service_token:
+        bridge = await check_bridge(args.base_url, service_token, args.query)
+    else:
+        bridge = {
+            "ok": None,
+            "status": "skipped",
+            "tool": "boi.search",
+            "request_id": "check-boi-wiki-mcp",
+            "reason": "service token not provided; authenticated bridge check skipped",
+        }
     ok = (
         protocol["tools"] >= EXPECTED_PROTOCOL["tools"]
         and protocol["resource_templates"] >= EXPECTED_PROTOCOL["resource_templates"]
         and protocol["prompts"] >= EXPECTED_PROTOCOL["prompts"]
-        and bridge.get("ok") is True
+        and (bridge.get("ok") is True or (bridge.get("status") == "skipped" and not require_bridge))
     )
     if args.summary:
         result = {
@@ -217,12 +228,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check BoI Wiki MCP protocol and bridge endpoints.")
     parser.add_argument("--base-url", default="http://localhost:8200", help="BoI Wiki MCP service base URL.")
     parser.add_argument("--mcp-url", default="http://localhost:8200/mcp", help="Streamable HTTP MCP URL.")
-    parser.add_argument("--service-token", default=os.getenv("SERVICE_TOKEN", "dev-service-token-change-me"))
+    parser.add_argument("--service-token", default=os.getenv("SERVICE_TOKEN", ""))
     parser.add_argument("--query", default="SOP")
     parser.add_argument("--summary", action="store_true", help="Print only the verification summary.")
     parser.add_argument("--details", action="store_true", help="Include tool, resource template, and prompt names.")
     parser.add_argument("--client-checklist", action="store_true", help="Include Codex, Claude Desktop, and Cursor registration checklist.")
     parser.add_argument("--full-bridge", action="store_true", help="Include the full bridge response payload.")
+    parser.add_argument("--require-bridge", action="store_true", help="Fail when the authenticated bridge check is skipped or unsuccessful.")
     args = parser.parse_args()
     try:
         return asyncio.run(main_async(args))
