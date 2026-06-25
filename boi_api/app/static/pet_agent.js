@@ -5,7 +5,7 @@
 
   const employeeId = root.dataset.employeeId || new URLSearchParams(location.search).get("employee_id") || "100001";
   const pageTitle = root.dataset.pageTitle || document.title || "BoI Wiki";
-  const storageKey = `boiAgent.v5.${employeeId}`;
+  const storageKey = `boiAgent.v6.${employeeId}`;
   let activeRequest = null;
   let restoreScrollOnce = true;
   let pageUnloading = false;
@@ -436,7 +436,7 @@
     const escapedSource = escapeHtml(source);
     const id = viewerPayload ? ` data-viewer-id="${escapeAttr(viewerPayload.id)}"` : "";
     return `
-      <div class="mermaid-diagram boi-agent-artifact" data-mermaid-state="pending"${id}>
+      <div class="mermaid-diagram boi-agent-artifact" data-mermaid-state="pending" data-mermaid-source="${escapeAttr(source)}"${id}>
         <div class="boi-agent-artifact-title">
           ${title ? `<strong>${escapeHtml(title)}</strong>` : "<strong>Diagram</strong>"}
           ${viewerPayload ? `<button type="button" data-open-artifact="${escapeAttr(viewerPayload.id)}">크게 보기</button>` : ""}
@@ -1086,7 +1086,8 @@
     const node = root.querySelector(`[data-viewer-id="${CSS.escape(id)}"]`);
     if (!node) return;
     if (node.classList.contains("mermaid-diagram")) {
-      const source = node.querySelector(".mermaid-source-fallback code")?.textContent
+      const source = node.dataset.mermaidSource
+        || node.querySelector(".mermaid-source-fallback code")?.textContent
         || node.querySelector(".mermaid")?.textContent
         || "";
       state.viewer = {

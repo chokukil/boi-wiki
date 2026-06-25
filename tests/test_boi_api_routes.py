@@ -4344,7 +4344,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "/static/mermaid_render.js?v=" in response.text
     assert "/static/pet_agent.js?v=" in response.text
     assert "sessionStorage" in script
-    assert "boiAgent.v5" in script
+    assert "boiAgent.v6" in script
     assert "pinToBottom" in script
     assert "captureScrollState" in script
     assert "isNearBottom" in script
@@ -4384,7 +4384,7 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "data-open-artifact" in script
     assert 'data-mermaid-state="pending"' in script
     assert 'data-mermaid-state="pending"] > .mermaid' in style
-    assert "width:min(900px" in style
+    assert "width:min(960px" in style
     assert ".boi-agent-table-wrap, .boi-agent-answer .table-wrap { max-width:100%; margin:9px 0; overflow:auto;" in style
     assert "boi-agent-expand" in script
     assert "currentStatus" in script
@@ -4423,6 +4423,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "답변 크게 보기" in script
     assert "boi-agent-answer-viewer" in script
     assert "seenMermaidSources" in script
+    assert "data-mermaid-source" in script
+    assert "node.dataset.mermaidSource" in script
     assert 'artifact.type === "workflow_summary"' in script
     assert "renderObjectTable(rows)" in script
     assert "JSON.stringify(artifact.data, null, 2)" not in script
@@ -4456,8 +4458,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "boi-agent-dictionary-form" not in script
     assert "event.shiftKey" in script
     assert "/api/agents/boi-wiki/manual-handoffs/complete" in script
-    assert "width:min(900px" in style
-    assert "width:min(1120px" in style
+    assert "width:min(960px" in style
+    assert "width:min(1180px" in style
     assert ".boi-agent-approve-note" in style
     assert ".boi-agent-content { overflow-y:auto; overflow-x:hidden;" in style
     assert ".boi-agent-answer pre, .boi-agent-artifact pre { margin:8px 0; max-height:220px; overflow-y:auto; overflow-x:hidden;" in style
