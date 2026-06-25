@@ -1367,6 +1367,265 @@ def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
     assert result["mcp_bridge_chat"]["status_alias_matches"] is True
 
 
+def test_check_boi_wiki_mcp_agent_contract_artifact_smoke_validates_rest_and_mcp(monkeypatch):
+    import scripts.check_boi_wiki_mcp as script
+
+    agent_schema = {
+        "type": "object",
+        "required": [
+            "agent_contract_version",
+            "answer_markdown",
+            "display_markdown",
+            "links",
+            "citations",
+            "artifacts",
+            "execution_cards",
+            "status_updates",
+            "tool_trace",
+            "access_summary",
+            "guardrails_applied",
+        ],
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "answer_markdown": {"type": "string"},
+            "display_markdown": {"type": "string"},
+            "links": {"type": "array"},
+            "citations": {"type": "array"},
+            "artifacts": {"type": "array"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "contract_version",
+                        "operation",
+                        "requires_confirmation",
+                        "user_confirmed_required",
+                        "required_role",
+                        "permission",
+                    ],
+                    "properties": {
+                        "contract_version": {"const": "boi-agent.response.v1"},
+                        "required_role": {"type": "string"},
+                        "permission": {"type": "object"},
+                    },
+                },
+            },
+            "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
+            "tool_trace": {"type": "array"},
+            "access_summary": {"type": "object"},
+            "guardrails_applied": {"type": "array"},
+        },
+    }
+
+    def agent_response(*, artifacts=None, intent="search"):
+        return {
+            "agent_contract_version": "boi-agent.response.v1",
+            "answer_markdown": "계약 검증 응답",
+            "display_markdown": "계약 검증 응답",
+            "links": [],
+            "citations": [],
+            "artifacts": artifacts or [],
+            "execution_cards": [],
+            "status_updates": [],
+            "status_events": [],
+            "tool_trace": [],
+            "access_summary": {},
+            "guardrails_applied": [],
+            "route": "deep" if artifacts else "fast",
+            "intent": intent,
+            "used_backend": "native_langgraph",
+        }
+
+    smoke_response = agent_response(
+        artifacts=[
+            {
+                "type": "workflow_summary",
+                "title": "SOP 관계 요약",
+                "data": [
+                    {
+                        "stage": "이상 감지",
+                        "events": "equipment.alarm.raised.v1",
+                        "actions": "api.equipment.request_trend_history",
+                        "manual_actions": "manual.root_cause.review",
+                        "next_stage": "원인 분석",
+                    }
+                ],
+            }
+        ],
+        intent="workflow_explain",
+    )
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._body
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.posts = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def get(self, url, **kwargs):
+            if url == "http://boi-api.test/api/agents/boi-wiki/response-schema":
+                return FakeResponse({"ok": True, "agent_contract_version": "boi-agent.response.v1", "schema": agent_schema})
+            if url == "http://mcp.test/health":
+                return FakeResponse({"ok": True, "agent_response_schema": agent_schema})
+            raise AssertionError(url)
+
+        async def post(self, url, **kwargs):
+            self.posts.append((url, kwargs))
+            if url == "http://boi-api.test/api/agents/boi-wiki/chat":
+                payload = kwargs["json"]
+                assert kwargs["params"]["employee_id"] == "100001"
+                if "Manual Handoff 관계" in payload["question"]:
+                    assert "mode" not in payload
+                    return FakeResponse(smoke_response)
+                return FakeResponse(agent_response())
+            if url == "http://mcp.test/api/mcp/call":
+                payload = kwargs["json"]
+                assert kwargs["headers"]["x-service-token"] == "test-service-token"
+                assert payload["tool"] == "boi_agent_chat"
+                arguments = payload["arguments"]
+                if "Manual Handoff 관계" in arguments["question"]:
+                    assert "mode" not in arguments
+                    return FakeResponse({"ok": True, "result": smoke_response})
+                return FakeResponse({"ok": True, "result": agent_response()})
+            raise AssertionError(url)
+
+    monkeypatch.setattr(script.httpx, "AsyncClient", FakeAsyncClient)
+
+    result = asyncio.run(
+        script.check_agent_contract(
+            boi_api_url="http://boi-api.test",
+            mcp_base_url="http://mcp.test",
+            employee_id="100001",
+            service_token="test-service-token",
+            artifact_smoke=True,
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["artifact_smoke"]["rest_chat"]["schema_valid"] is True
+    assert result["artifact_smoke"]["rest_chat"]["workflow_summary"]["row_count"] == 1
+    assert result["artifact_smoke"]["mcp_bridge_chat"]["schema_valid"] is True
+    assert result["artifact_smoke"]["mcp_bridge_chat"]["workflow_summary"]["row_count"] == 1
+
+
+def test_check_boi_wiki_mcp_agent_contract_artifact_smoke_rejects_missing_artifact(monkeypatch):
+    import scripts.check_boi_wiki_mcp as script
+
+    schema = {
+        "type": "object",
+        "required": [
+            "agent_contract_version",
+            "answer_markdown",
+            "display_markdown",
+            "links",
+            "citations",
+            "artifacts",
+            "execution_cards",
+            "status_updates",
+            "tool_trace",
+            "access_summary",
+            "guardrails_applied",
+        ],
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "contract_version",
+                        "operation",
+                        "requires_confirmation",
+                        "user_confirmed_required",
+                        "required_role",
+                        "permission",
+                    ],
+                    "properties": {
+                        "contract_version": {"const": "boi-agent.response.v1"},
+                        "required_role": {"type": "string"},
+                        "permission": {"type": "object"},
+                    },
+                },
+            },
+            "status_updates": {"type": "array"},
+            "status_events": {"type": "array"},
+        },
+    }
+    response = {
+        "agent_contract_version": "boi-agent.response.v1",
+        "answer_markdown": "ok",
+        "display_markdown": "ok",
+        "links": [],
+        "citations": [],
+        "artifacts": [],
+        "execution_cards": [],
+        "status_updates": [],
+        "status_events": [],
+        "tool_trace": [],
+        "access_summary": {},
+        "guardrails_applied": [],
+    }
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._body
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def get(self, url, **kwargs):
+            if url.endswith("/api/agents/boi-wiki/response-schema"):
+                return FakeResponse({"agent_contract_version": "boi-agent.response.v1", "schema": schema})
+            if url.endswith("/health"):
+                return FakeResponse({"ok": True, "agent_response_schema": schema})
+            raise AssertionError(url)
+
+        async def post(self, url, **kwargs):
+            if url.endswith("/api/agents/boi-wiki/chat"):
+                return FakeResponse(response)
+            raise AssertionError(url)
+
+    monkeypatch.setattr(script.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(RuntimeError, match="workflow_summary artifact"):
+        asyncio.run(
+            script.check_agent_contract(
+                boi_api_url="http://boi-api.test",
+                mcp_base_url="http://mcp.test",
+                employee_id="100001",
+                artifact_smoke=True,
+            )
+        )
+
+
 def test_check_boi_wiki_mcp_agent_contract_rejects_status_alias_drift():
     import scripts.check_boi_wiki_mcp as script
 

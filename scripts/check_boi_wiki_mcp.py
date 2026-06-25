@@ -30,6 +30,8 @@ except Exception:  # pragma: no cover - agent-contract-only can run without MCP 
     streamablehttp_client = None
 
 EXPECTED_PROTOCOL = {"tools": 32, "resource_templates": 11, "prompts": 5}
+DEFAULT_AGENT_ARTIFACT_SMOKE_QUESTION = "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘."
+DEFAULT_AGENT_ARTIFACT_SMOKE_CURRENT_URL = "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"
 
 
 def mcp_auth_headers(service_token: str = "") -> dict[str, str]:
@@ -343,6 +345,64 @@ def agent_response_summary(response: dict, schema: dict) -> dict:
     }
 
 
+def workflow_summary_artifact_summary(response: dict) -> dict:
+    artifacts = response.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise RuntimeError("Agent artifact smoke expected artifacts to be an array")
+    matches = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or artifact.get("type") != "workflow_summary":
+            continue
+        rows = artifact.get("data")
+        if not isinstance(rows, list):
+            rows = []
+        row_items = [row for row in rows if isinstance(row, dict)]
+        matches.append(
+            {
+                "title": artifact.get("title") or "",
+                "row_count": len(row_items),
+                "sample_stages": [str(row.get("stage") or "") for row in row_items[:3]],
+            }
+        )
+    if not matches:
+        raise RuntimeError("Agent artifact smoke expected a workflow_summary artifact")
+    max_rows = max(item["row_count"] for item in matches)
+    if max_rows <= 0:
+        raise RuntimeError("Agent workflow_summary artifact must include at least one row")
+    return {
+        "artifact_valid": True,
+        "artifact_type": "workflow_summary",
+        "artifact_count": len(matches),
+        "row_count": max_rows,
+        "samples": matches,
+    }
+
+
+def agent_artifact_response_summary(response: dict, schema: dict) -> dict:
+    summary = agent_response_summary(response, schema)
+    summary["workflow_summary"] = workflow_summary_artifact_summary(response)
+    return summary
+
+
+def default_agent_chat_payload(question: str, current_url: str) -> dict:
+    return {
+        "question": question,
+        "mode": "fast",
+        "intent": "search",
+        "current_url": current_url,
+        "save_memory": False,
+    }
+
+
+def workflow_summary_smoke_payload(question: str, current_url: str) -> dict:
+    return {
+        "question": question,
+        "current_url": current_url,
+        "page_title": "설비 이상 감지·원인 분석·이상 조치 SOP",
+        "save_memory": False,
+    }
+
+
 def mcp_status_schema_summary(status_payload: dict, api_schema: dict) -> dict:
     mcp_schema = status_payload.get("agent_response_schema")
     if not isinstance(mcp_schema, dict):
@@ -495,6 +555,9 @@ async def check_agent_contract(
     service_token: str = "",
     question: str = "SOP 찾아줘",
     current_url: str = "/",
+    artifact_smoke: bool = False,
+    artifact_question: str = DEFAULT_AGENT_ARTIFACT_SMOKE_QUESTION,
+    artifact_current_url: str = DEFAULT_AGENT_ARTIFACT_SMOKE_CURRENT_URL,
 ) -> dict:
     api_base = boi_api_url.rstrip("/")
     mcp_base = mcp_base_url.rstrip("/")
@@ -512,13 +575,7 @@ async def check_agent_contract(
             "GET",
             f"{mcp_base}/health",
         )
-        chat_payload = {
-            "question": question,
-            "mode": "fast",
-            "intent": "search",
-            "current_url": current_url,
-            "save_memory": False,
-        }
+        chat_payload = default_agent_chat_payload(question, current_url)
         rest_chat = await run_blocking(
             urllib_json_request,
             "POST",
@@ -570,6 +627,49 @@ async def check_agent_contract(
             if not isinstance(bridge_result, dict):
                 raise RuntimeError("MCP bridge boi_agent_chat did not return a JSON object result")
             result["mcp_bridge_chat"] = agent_response_summary(bridge_result, schema)
+        if artifact_smoke:
+            artifact_payload = workflow_summary_smoke_payload(artifact_question, artifact_current_url)
+            rest_artifact = await run_blocking(
+                urllib_json_request,
+                "POST",
+                f"{api_base}/api/agents/boi-wiki/chat",
+                params={"employee_id": employee_id},
+                payload=artifact_payload,
+            )
+            result["artifact_smoke"] = {
+                "question": artifact_question,
+                "current_url": artifact_current_url,
+                "rest_chat": agent_artifact_response_summary(rest_artifact, schema),
+                "mcp_bridge_chat": {
+                    "artifact_valid": None,
+                    "schema_valid": None,
+                    "status": "skipped",
+                    "reason": "service token not provided",
+                },
+            }
+            if service_token:
+                bridge_artifact_payload = await run_blocking(
+                    urllib_json_request,
+                    "POST",
+                    f"{mcp_base}/api/mcp/call",
+                    headers={"x-service-token": service_token},
+                    payload={
+                        "server": {"name": "boi-wiki-mcp"},
+                        "tool": "boi_agent_chat",
+                        "arguments": {
+                            "question": artifact_question,
+                            "employee_id": employee_id,
+                            "current_url": artifact_current_url,
+                            "page_title": "설비 이상 감지·원인 분석·이상 조치 SOP",
+                            "save_memory": False,
+                        },
+                        "request_id": "check-boi-agent-artifact-smoke",
+                    },
+                )
+                bridge_artifact_result = bridge_artifact_payload.get("result")
+                if not isinstance(bridge_artifact_result, dict):
+                    raise RuntimeError("MCP bridge artifact smoke did not return a JSON object result")
+                result["artifact_smoke"]["mcp_bridge_chat"] = agent_artifact_response_summary(bridge_artifact_result, schema)
         return result
     async with httpx.AsyncClient(timeout=60) as client:
         schema_response = await client.get(f"{api_base}/api/agents/boi-wiki/response-schema")
@@ -582,13 +682,7 @@ async def check_agent_contract(
         mcp_status_response.raise_for_status()
         mcp_status = mcp_status_response.json()
 
-        chat_payload = {
-            "question": question,
-            "mode": "fast",
-            "intent": "search",
-            "current_url": current_url,
-            "save_memory": False,
-        }
+        chat_payload = default_agent_chat_payload(question, current_url)
         rest_response = await client.post(
             f"{api_base}/api/agents/boi-wiki/chat",
             params={"employee_id": employee_id},
@@ -640,7 +734,59 @@ async def check_agent_contract(
             if not isinstance(bridge_result, dict):
                 raise RuntimeError("MCP bridge boi_agent_chat did not return a JSON object result")
             result["mcp_bridge_chat"] = agent_response_summary(bridge_result, schema)
+        if artifact_smoke:
+            artifact_payload = workflow_summary_smoke_payload(artifact_question, artifact_current_url)
+            rest_artifact_response = await client.post(
+                f"{api_base}/api/agents/boi-wiki/chat",
+                params={"employee_id": employee_id},
+                json=artifact_payload,
+            )
+            rest_artifact_response.raise_for_status()
+            rest_artifact = rest_artifact_response.json()
+            result["artifact_smoke"] = {
+                "question": artifact_question,
+                "current_url": artifact_current_url,
+                "rest_chat": agent_artifact_response_summary(rest_artifact, schema),
+                "mcp_bridge_chat": {
+                    "artifact_valid": None,
+                    "schema_valid": None,
+                    "status": "skipped",
+                    "reason": "service token not provided",
+                },
+            }
+            if service_token:
+                bridge_artifact_response = await client.post(
+                    f"{mcp_base}/api/mcp/call",
+                    headers={"x-service-token": service_token},
+                    json={
+                        "server": {"name": "boi-wiki-mcp"},
+                        "tool": "boi_agent_chat",
+                        "arguments": {
+                            "question": artifact_question,
+                            "employee_id": employee_id,
+                            "current_url": artifact_current_url,
+                            "page_title": "설비 이상 감지·원인 분석·이상 조치 SOP",
+                            "save_memory": False,
+                        },
+                        "request_id": "check-boi-agent-artifact-smoke",
+                    },
+                )
+                bridge_artifact_response.raise_for_status()
+                bridge_artifact_payload = bridge_artifact_response.json()
+                bridge_artifact_result = bridge_artifact_payload.get("result")
+                if not isinstance(bridge_artifact_result, dict):
+                    raise RuntimeError("MCP bridge artifact smoke did not return a JSON object result")
+                result["artifact_smoke"]["mcp_bridge_chat"] = agent_artifact_response_summary(bridge_artifact_result, schema)
         return result
+
+
+def agent_contract_bridge_valid(agent_contract: dict) -> bool:
+    if agent_contract.get("mcp_bridge_chat", {}).get("schema_valid") is not True:
+        return False
+    artifact_smoke = agent_contract.get("artifact_smoke")
+    if artifact_smoke:
+        return artifact_smoke.get("mcp_bridge_chat", {}).get("schema_valid") is True
+    return True
 
 
 async def main_async(args: argparse.Namespace) -> int:
@@ -653,10 +799,11 @@ async def main_async(args: argparse.Namespace) -> int:
             service_token=service_token,
             question=args.agent_question,
             current_url=args.agent_current_url,
+            artifact_smoke=bool(getattr(args, "agent_artifact_smoke", False)),
         )
         ok = bool(agent_contract.get("ok"))
         if bool(getattr(args, "require_bridge", False)):
-            ok = ok and agent_contract.get("mcp_bridge_chat", {}).get("schema_valid") is True
+            ok = ok and agent_contract_bridge_valid(agent_contract)
         print(json.dumps({"ok": ok, "agent_contract": agent_contract}, ensure_ascii=False, indent=2))
         return 0 if ok else 1
     include_details = bool(args.details or args.client_checklist)
@@ -695,9 +842,12 @@ async def main_async(args: argparse.Namespace) -> int:
             service_token=service_token,
             question=args.agent_question,
             current_url=args.agent_current_url,
+            artifact_smoke=bool(getattr(args, "agent_artifact_smoke", False)),
         )
         result["agent_contract"] = agent_contract
         ok = ok and bool(agent_contract.get("ok"))
+        if require_bridge:
+            ok = ok and agent_contract_bridge_valid(agent_contract)
         result["ok"] = ok
     if args.client_checklist:
         client_entry = {
@@ -753,6 +903,7 @@ def main() -> int:
     parser.add_argument("--boi-api-url", default=os.getenv("BOI_EXTERNAL_URL", "http://localhost:8000"), help="BoI API base URL for AgentResponse contract checks.")
     parser.add_argument("--agent-contract", action="store_true", help="Validate REST and optional MCP bridge boi_agent_chat responses against the canonical AgentResponse schema.")
     parser.add_argument("--agent-contract-only", action="store_true", help="Run only AgentResponse contract checks. This mode can run with stdlib-only Python on NAS hosts.")
+    parser.add_argument("--agent-artifact-smoke", action="store_true", help="Also validate a representative workflow_summary Agent artifact through REST and optional MCP bridge.")
     parser.add_argument("--agent-question", default="SOP 찾아줘")
     parser.add_argument("--agent-current-url", default="/sops")
     parser.add_argument("--summary", action="store_true", help="Print only the verification summary.")
