@@ -50,6 +50,30 @@ def append_event_log_row(boi_app_module, row: dict, filename: str = "events-2099
     return f"event:{filename}:{line_number}"
 
 
+def install_fake_boi_agent_router(boi_app_module, monkeypatch, *, route: str | None = None, intent: str | None = None):
+    """Install an LLM-router test double without reintroducing rule fallback."""
+
+    def fake_router(req, employee_id: str):
+        selected_intent = intent or req.intent or "search"
+        selected_intent = boi_app_module.normalize_agent_intent(selected_intent, fallback="search")
+        selected_route = route or boi_app_module.route_for_agent_intent(selected_intent)
+        return {
+            "route": selected_route,
+            "confidence": 0.93,
+            "intent": selected_intent,
+            "reason": "test llm router",
+            "requires_mutation": selected_route in {"manual_handoff", "approval_required"},
+            "requires_deep_reasoning": selected_route == "deep",
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+    return fake_router
+
+
 def test_sops_page_lists_seed_sops(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -1011,6 +1035,7 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
         }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="fast", intent="search")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
@@ -1223,6 +1248,7 @@ def test_boi_agent_fast_summary_uses_llm_answer_planner_when_enabled(boi_app_mod
         }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="fast", intent="summarize")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
@@ -1264,6 +1290,7 @@ def test_boi_agent_home_summary_uses_library_page_context_not_search_hit(boi_app
         }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="fast", intent="summarize")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
@@ -1301,6 +1328,7 @@ def test_boi_agent_trace_reasoning_uses_llm_composer_when_enabled(boi_app_module
         }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="trace_reasoning")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
@@ -1340,6 +1368,7 @@ def test_boi_agent_diagram_uses_structured_artifact_with_llm_composer(boi_app_mo
         }
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="diagram")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", fake_llm)
@@ -1372,6 +1401,7 @@ def test_boi_agent_required_llm_composer_failure_is_service_error(boi_app_module
         return None
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="trace_reasoning")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", empty_llm)
@@ -1399,6 +1429,7 @@ def test_boi_agent_required_llm_composer_disabled_is_service_error(boi_app_modul
         raise AssertionError("disabled composer must fail before calling LLM")
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="trace_reasoning")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", False)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "native_agent_llm_json", unexpected_llm)
@@ -1425,6 +1456,7 @@ def test_boi_agent_chat_fails_when_langgraph_required_but_unavailable(boi_app_mo
     client = TestClient(boi_app_module.app)
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="search")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_LANGGRAPH_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "LANGGRAPH_AVAILABLE", False)
     monkeypatch.setattr(native_agent, "StateGraph", None, raising=False)
@@ -1453,6 +1485,7 @@ def test_boi_agent_hybrid_does_not_hide_langgraph_required_failure(boi_app_modul
         raise AssertionError("LangGraph required failure must not fall back to Langflow")
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "hybrid")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="search")
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_LANGGRAPH_REQUIRED", True)
     monkeypatch.setattr(boi_app_module, "LANGGRAPH_AVAILABLE", False)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
@@ -1481,6 +1514,7 @@ def test_boi_agent_hybrid_does_not_fallback_on_native_runtime_error(boi_app_modu
         raise AssertionError("Native runtime failures must not fall back to Langflow")
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "hybrid")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="fast", intent="search")
     monkeypatch.setattr(boi_app_module, "call_native_boi_agent", fail_native)
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fail_langflow)
 
@@ -1506,6 +1540,7 @@ def test_boi_agent_unknown_backend_is_service_error(boi_app_module, monkeypatch)
         raise AssertionError("Unknown backend must not silently use native")
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "mystery")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="fast", intent="search")
     monkeypatch.setattr(boi_app_module, "call_native_boi_agent", fail_native)
 
     response = client.post(
@@ -1904,6 +1939,7 @@ def test_break_glass_rejects_structurally_invalid_private_policy(boi_app_module)
 
 def test_boi_agent_restricted_docs_are_pruned_from_context_and_artifacts(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="diagram")
     restricted_phrase = "restricted-agent-secret-body-token"
     boi_app_module.write_boi(
         {
@@ -1982,6 +2018,7 @@ def test_boi_agent_restricted_docs_are_pruned_from_context_and_artifacts(boi_app
 
 def test_boi_agent_final_response_filters_inaccessible_doc_references(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="fast", intent="page_qa")
     forbidden_id = "boi:private:100002:agent-final-leak"
     forbidden_doc = boi_app_module.write_boi(
         {
@@ -3212,6 +3249,42 @@ def test_boi_agent_chat_router_failure_is_not_rule_fallback_even_when_required_f
     assert "router timeout" in body["message"]
 
 
+def test_boi_agent_explicit_modes_still_use_llm_router(boi_app_module, monkeypatch):
+    calls: list[str] = []
+
+    def fake_router(req, employee_id: str):
+        calls.append(req.mode)
+        return {
+            "route": "fast",
+            "confidence": 0.92,
+            "intent": "search",
+            "reason": "router selected search",
+            "requires_mutation": False,
+            "requires_deep_reasoning": False,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+
+    fast_req = boi_app_module.BoiAgentChatRequest(question="현재 페이지를 요약해줘", mode="fast", current_url="/")
+    fast_route = boi_app_module.route_boi_agent_request(fast_req, "100001")
+
+    deep_req = boi_app_module.BoiAgentChatRequest(question="현재 페이지를 더 분석해줘", mode="deep", current_url="/")
+    deep_route = boi_app_module.route_boi_agent_request(deep_req, "100001")
+
+    assert calls == ["fast", "deep"]
+    assert fast_route["router_backend"] == "llm"
+    assert fast_route["route"] == "fast"
+    assert "client requested fast mode" in fast_route["reason"]
+    assert deep_route["router_backend"] == "llm"
+    assert deep_route["route"] == "deep"
+    assert deep_route["intent"] == "search"
+    assert "client requested deep mode" in deep_route["reason"]
+
+
 def test_boi_agent_obvious_search_uses_llm_router_first(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     calls = {"router": 0}
@@ -3605,6 +3678,7 @@ def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_modu
         raise boi_app_module.LangflowBoiAgentUnavailable("BoI Agent Flow not found")
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "langflow")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="search")
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
 
     response = client.post(
@@ -3627,6 +3701,7 @@ def test_boi_agent_langflow_diagram_requires_real_mermaid_artifact(boi_app_modul
         return boi_app_module.normalize_langflow_agent_response(run_result, req, employee_id, route=route, started_at=started_at)
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "langflow")
+    install_fake_boi_agent_router(boi_app_module, monkeypatch, route="deep", intent="diagram")
     monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
 
     response = client.post(
