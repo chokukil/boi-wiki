@@ -168,8 +168,10 @@ protected MCP와 bridge를 함께 확인할 때:
 python scripts/check_boi_wiki_mcp.py \
   --base-url "$BOI_WIKI_MCP_EXTERNAL_URL" \
   --mcp-url "$BOI_WIKI_MCP_EXTERNAL_URL/mcp" \
+  --boi-api-url "$BOI_EXTERNAL_URL" \
   --service-token "$SERVICE_TOKEN" \
   --require-bridge \
+  --agent-contract \
   --summary
 ```
 
@@ -274,6 +276,7 @@ shared repo 검증:
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
 pytest tests -q -s
 python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --summary
+python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:8000 --agent-contract --summary
 ```
 
 일반 Local 사용자는 위 명령을 직접 실행하지 않아도 됩니다. `boi-wiki-local`에서는 agent 하네스가 Level 0 self-check를 수행하고, 가능하면 `check.sh` 또는 `check.ps1`을 실행합니다.

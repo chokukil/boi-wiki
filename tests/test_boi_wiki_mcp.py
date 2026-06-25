@@ -1150,6 +1150,168 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
     assert body["bridge"]["status"] == "skipped"
 
 
+def test_check_boi_wiki_mcp_agent_contract_validates_rest_and_mcp(monkeypatch):
+    import scripts.check_boi_wiki_mcp as script
+
+    agent_schema = {
+        "type": "object",
+        "required": [
+            "agent_contract_version",
+            "answer_markdown",
+            "display_markdown",
+            "links",
+            "citations",
+            "artifacts",
+            "execution_cards",
+            "status_updates",
+            "tool_trace",
+            "access_summary",
+            "guardrails_applied",
+        ],
+        "properties": {
+            "agent_contract_version": {"const": "boi-agent.response.v1"},
+            "answer_markdown": {"type": "string"},
+            "display_markdown": {"type": "string"},
+            "links": {"type": "array"},
+            "citations": {"type": "array"},
+            "artifacts": {"type": "array"},
+            "execution_cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["contract_version", "operation", "requires_confirmation", "user_confirmed_required"],
+                    "properties": {"contract_version": {"const": "boi-agent.response.v1"}},
+                },
+            },
+            "status_updates": {"type": "array"},
+            "tool_trace": {"type": "array"},
+            "access_summary": {"type": "object"},
+            "guardrails_applied": {"type": "array"},
+        },
+    }
+    agent_response = {
+        "agent_contract_version": "boi-agent.response.v1",
+        "answer_markdown": "계약 검증 응답",
+        "display_markdown": "계약 검증 응답",
+        "links": [],
+        "citations": [],
+        "artifacts": [],
+        "execution_cards": [
+            {
+                "contract_version": "boi-agent.response.v1",
+                "operation": "event_publish",
+                "requires_confirmation": True,
+                "user_confirmed_required": True,
+            }
+        ],
+        "status_updates": [],
+        "tool_trace": [],
+        "access_summary": {},
+        "guardrails_applied": [],
+    }
+
+    class FakeResponse:
+        def __init__(self, body):
+            self._body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._body
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.calls = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def get(self, url, **kwargs):
+            self.calls.append(("get", url, kwargs))
+            assert url == "http://boi-api.test/api/agents/boi-wiki/response-schema"
+            return FakeResponse({"ok": True, "agent_contract_version": "boi-agent.response.v1", "schema": agent_schema})
+
+        async def post(self, url, **kwargs):
+            self.calls.append(("post", url, kwargs))
+            if url == "http://boi-api.test/api/agents/boi-wiki/chat":
+                assert kwargs["params"]["employee_id"] == "100001"
+                return FakeResponse(agent_response)
+            if url == "http://mcp.test/api/mcp/call":
+                assert kwargs["headers"]["x-service-token"] == "test-service-token"
+                assert kwargs["json"]["tool"] == "boi_agent_chat"
+                return FakeResponse({"ok": True, "result": agent_response})
+            raise AssertionError(url)
+
+    monkeypatch.setattr(script.httpx, "AsyncClient", FakeAsyncClient)
+
+    result = asyncio.run(
+        script.check_agent_contract(
+            boi_api_url="http://boi-api.test",
+            mcp_base_url="http://mcp.test",
+            employee_id="100001",
+            service_token="test-service-token",
+            question="SOP 찾아줘",
+            current_url="/sops",
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["schema"]["version"] == "boi-agent.response.v1"
+    assert result["rest_chat"]["schema_valid"] is True
+    assert result["mcp_bridge_chat"]["schema_valid"] is True
+
+
+def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys):
+    import scripts.check_boi_wiki_mcp as script
+
+    async def fake_check_protocol(*args, **kwargs):
+        return {"tools": 32, "resources": 0, "resource_templates": 6, "prompts": 5}
+
+    async def fake_check_bridge(*args, **kwargs):
+        return {"ok": True, "status": "mcp_invoked", "tool": "boi.search", "request_id": "check-boi-wiki-mcp"}
+
+    async def fake_check_agent_contract(**kwargs):
+        return {
+            "ok": True,
+            "schema": {"version": "boi-agent.response.v1"},
+            "rest_chat": {"schema_valid": True},
+            "mcp_bridge_chat": {"schema_valid": True},
+        }
+
+    monkeypatch.setattr(script, "check_protocol", fake_check_protocol)
+    monkeypatch.setattr(script, "check_bridge", fake_check_bridge)
+    monkeypatch.setattr(script, "check_agent_contract", fake_check_agent_contract)
+    args = argparse.Namespace(
+        base_url="http://localhost:8200",
+        mcp_url="http://localhost:8200/mcp",
+        boi_api_url="http://localhost:8000",
+        service_token="test-service-token",
+        query="SOP",
+        employee_id="100001",
+        agent_contract=True,
+        agent_question="SOP 찾아줘",
+        agent_current_url="/sops",
+        summary=True,
+        details=False,
+        client_checklist=False,
+        full_bridge=False,
+        require_bridge=False,
+    )
+
+    exit_code = asyncio.run(script.main_async(args))
+
+    assert exit_code == 0
+    body = json.loads(capsys.readouterr().out)
+    assert body["ok"] is True
+    assert body["agent_contract"]["schema"]["version"] == "boi-agent.response.v1"
+    assert body["agent_contract"]["rest_chat"]["schema_valid"] is True
+    assert body["agent_contract"]["mcp_bridge_chat"]["schema_valid"] is True
+
+
 def test_check_boi_wiki_mcp_uses_stateless_json_protocol_when_client_stream_breaks(monkeypatch):
     import scripts.check_boi_wiki_mcp as script
     seen_tokens: list[tuple[str, str]] = []

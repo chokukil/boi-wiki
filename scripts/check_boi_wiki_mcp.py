@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 
 import httpx
+from jsonschema import validate
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
@@ -180,6 +181,99 @@ def bridge_summary(bridge: dict) -> dict:
     }
 
 
+def agent_response_summary(response: dict, schema: dict) -> dict:
+    validate(instance=response, schema=schema)
+    return {
+        "schema_valid": True,
+        "contract_version": response.get("agent_contract_version"),
+        "route": response.get("route"),
+        "intent": response.get("intent"),
+        "used_backend": response.get("used_backend"),
+        "artifact_count": len(response.get("artifacts") or []),
+        "execution_card_count": len(response.get("execution_cards") or []),
+        "status_update_count": len(response.get("status_updates") or []),
+        "tool_trace_count": len(response.get("tool_trace") or []),
+    }
+
+
+async def check_agent_contract(
+    boi_api_url: str,
+    mcp_base_url: str,
+    employee_id: str,
+    service_token: str = "",
+    question: str = "SOP 찾아줘",
+    current_url: str = "/",
+) -> dict:
+    api_base = boi_api_url.rstrip("/")
+    mcp_base = mcp_base_url.rstrip("/")
+    async with httpx.AsyncClient(timeout=60) as client:
+        schema_response = await client.get(f"{api_base}/api/agents/boi-wiki/response-schema")
+        schema_response.raise_for_status()
+        schema_payload = schema_response.json()
+        schema = schema_payload.get("schema")
+        if not isinstance(schema, dict):
+            raise RuntimeError("BoI Agent response-schema endpoint did not return a JSON schema")
+
+        chat_payload = {
+            "question": question,
+            "mode": "fast",
+            "intent": "search",
+            "current_url": current_url,
+            "save_memory": False,
+        }
+        rest_response = await client.post(
+            f"{api_base}/api/agents/boi-wiki/chat",
+            params={"employee_id": employee_id},
+            json=chat_payload,
+        )
+        rest_response.raise_for_status()
+        rest_chat = rest_response.json()
+        result = {
+            "ok": True,
+            "schema": {
+                "version": schema_payload.get("agent_contract_version"),
+                "required_fields": schema.get("required") or [],
+                "execution_card_required": (
+                    schema.get("properties", {})
+                    .get("execution_cards", {})
+                    .get("items", {})
+                    .get("required", [])
+                ),
+            },
+            "rest_chat": agent_response_summary(rest_chat, schema),
+            "mcp_bridge_chat": {
+                "schema_valid": None,
+                "status": "skipped",
+                "reason": "service token not provided",
+            },
+        }
+        if service_token:
+            bridge_response = await client.post(
+                f"{mcp_base}/api/mcp/call",
+                headers={"x-service-token": service_token},
+                json={
+                    "server": {"name": "boi-wiki-mcp"},
+                    "tool": "boi_agent_chat",
+                    "arguments": {
+                        "question": question,
+                        "employee_id": employee_id,
+                        "mode": "fast",
+                        "intent": "search",
+                        "current_url": current_url,
+                        "save_memory": False,
+                    },
+                    "request_id": "check-boi-agent-contract",
+                },
+            )
+            bridge_response.raise_for_status()
+            bridge_payload = bridge_response.json()
+            bridge_result = bridge_payload.get("result")
+            if not isinstance(bridge_result, dict):
+                raise RuntimeError("MCP bridge boi_agent_chat did not return a JSON object result")
+            result["mcp_bridge_chat"] = agent_response_summary(bridge_result, schema)
+        return result
+
+
 async def main_async(args: argparse.Namespace) -> int:
     include_details = bool(args.details or args.client_checklist)
     service_token = str(args.service_token or "").strip()
@@ -210,6 +304,18 @@ async def main_async(args: argparse.Namespace) -> int:
     else:
         bridge_result = bridge if args.full_bridge or not include_details else bridge_summary(bridge)
         result = {"ok": ok, "protocol": protocol, "bridge": bridge_result}
+    if getattr(args, "agent_contract", False):
+        agent_contract = await check_agent_contract(
+            boi_api_url=args.boi_api_url,
+            mcp_base_url=args.base_url,
+            employee_id=args.employee_id,
+            service_token=service_token,
+            question=args.agent_question,
+            current_url=args.agent_current_url,
+        )
+        result["agent_contract"] = agent_contract
+        ok = ok and bool(agent_contract.get("ok"))
+        result["ok"] = ok
     if args.client_checklist:
         client_entry = {
             "name": "boi-wiki-mcp",
@@ -258,6 +364,11 @@ def main() -> int:
     parser.add_argument("--mcp-url", default="http://localhost:8200/mcp", help="Streamable HTTP MCP URL.")
     parser.add_argument("--service-token", default=os.getenv("SERVICE_TOKEN", ""))
     parser.add_argument("--query", default="SOP")
+    parser.add_argument("--employee-id", default="100001")
+    parser.add_argument("--boi-api-url", default=os.getenv("BOI_EXTERNAL_URL", "http://localhost:8000"), help="BoI API base URL for AgentResponse contract checks.")
+    parser.add_argument("--agent-contract", action="store_true", help="Validate REST and optional MCP bridge boi_agent_chat responses against the canonical AgentResponse schema.")
+    parser.add_argument("--agent-question", default="SOP 찾아줘")
+    parser.add_argument("--agent-current-url", default="/sops")
     parser.add_argument("--summary", action="store_true", help="Print only the verification summary.")
     parser.add_argument("--details", action="store_true", help="Include tool, resource template, and prompt names.")
     parser.add_argument("--client-checklist", action="store_true", help="Include Codex, Claude Desktop, and Cursor registration checklist.")

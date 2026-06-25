@@ -48,16 +48,19 @@ flowchart TD
 pytest tests -q -s
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
 python scripts/check_boi_wiki_mcp.py --summary
+python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:8000 --agent-contract --summary
 ```
 
-protected MCP endpoint를 외부에 열어 둔 배포에서는 service token을 환경 변수로만 넘겨 `/mcp` protocol과 bridge를 모두 확인한다.
+protected MCP endpoint를 외부에 열어 둔 배포에서는 service token을 환경 변수로만 넘겨 `/mcp` protocol, bridge, REST/MCP AgentResponse contract를 모두 확인한다.
 
 ```bash
 python scripts/check_boi_wiki_mcp.py \
   --base-url "$BOI_WIKI_MCP_EXTERNAL_URL" \
   --mcp-url "$BOI_WIKI_MCP_EXTERNAL_URL/mcp" \
+  --boi-api-url "$BOI_EXTERNAL_URL" \
   --service-token "$SERVICE_TOKEN" \
   --require-bridge \
+  --agent-contract \
   --summary
 ```
 
