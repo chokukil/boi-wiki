@@ -2005,6 +2005,28 @@ def test_boi_agent_chat_returns_503_when_langflow_agent_unavailable(boi_app_modu
     assert "BoI Wiki 기준" not in response.text
 
 
+def test_boi_agent_langflow_diagram_requires_real_mermaid_artifact(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fake_call(req, employee_id: str, route=None, started_at=None):
+        run_result = {"outputs": [{"outputs": [{"results": {"message": {"text": json.dumps({"answer_markdown": "도식 설명만 있습니다.", "artifacts": []}, ensure_ascii=False)}}}]}]}
+        return boi_app_module.normalize_langflow_agent_response(run_result, req, employee_id, route=route, started_at=started_at)
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "langflow")
+    monkeypatch.setattr(boi_app_module, "call_langflow_boi_agent", fake_call)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "이 SOP를 Mermaid로 그려줘", "mode": "deep", "current_url": "/docs/boi:public:sop:equipment-abnormal-response"},
+    )
+
+    assert response.status_code == 503
+    body = response.json()["detail"]
+    assert body["status"] == "langflow_boi_agent_unavailable"
+    assert "required Mermaid artifact" in body["message"]
+    assert "현재 페이지 관계도" not in response.text
+
+
 def parse_sse_events(raw: str) -> list[dict[str, str]]:
     events: list[dict[str, str]] = []
     for block in raw.split("\n\n"):

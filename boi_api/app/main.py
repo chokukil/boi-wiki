@@ -8091,28 +8091,6 @@ def agent_tool_progress_status(payload: dict[str, Any], elapsed_ms: int) -> dict
     }
 
 
-def fallback_mermaid_for_page_context(page_context: dict[str, Any]) -> str:
-    title = str(page_context.get("title") or page_context.get("page_kind") or "BoI Page")
-    linked_items = page_context.get("linked_items") or []
-    lines = [
-        "flowchart TD",
-        f'  current["{mermaid_label(title)}"]',
-    ]
-    for index, item in enumerate(linked_items[:6], start=1):
-        label = str(item.get("title") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or f"Related {index}")
-        lines.append(f'  n{index}["{mermaid_label(label)}"]')
-        lines.append(f"  current --> n{index}")
-    if len(lines) == 2:
-        lines.append('  current --> missing["관련 링크를 더 찾아야 합니다"]')
-    return "\n".join(lines)
-
-
-def mermaid_label(value: str, limit: int = 34) -> str:
-    text = re.sub(r"[\r\n\t]+", " ", str(value or "")).strip()
-    text = text.replace('"', "'")
-    return text[: limit - 1] + "…" if len(text) > limit else text
-
-
 def lightweight_doc_link_items(doc: dict[str, Any], employee_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
     """Extract current-document OKF links without building the full ontology index."""
     items: list[dict[str, Any]] = []
@@ -8431,11 +8409,7 @@ def normalize_langflow_agent_response(
     artifacts = normalize_agent_artifacts(parsed.get("artifacts"), answer_markdown)
     intent = normalize_agent_intent(str(route.get("intent") if route else parsed.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
     if intent == "diagram" and not any(item.get("type") == "mermaid" for item in artifacts):
-        page_context = resolve_agent_page_context(req.current_url, employee_id)
-        fallback_source = fallback_mermaid_for_page_context(page_context)
-        artifacts.append({"type": "mermaid", "title": "현재 페이지 관계도", "source": fallback_source, "fallback": True})
-        if "```mermaid" not in answer_markdown:
-            answer_markdown = answer_markdown.rstrip() + "\n\n```mermaid\n" + fallback_source + "\n```"
+        raise LangflowBoiAgentUnavailable("BoI Agent Flow did not return required Mermaid artifact for diagram intent")
     context_summary = parsed.get("context_summary")
     if not isinstance(context_summary, dict):
         context_summary = {}
