@@ -3339,21 +3339,12 @@ def test_boi_agent_chat_router_failure_is_not_rule_fallback_even_when_required_f
     assert "router timeout" in body["message"]
 
 
-def test_boi_agent_explicit_modes_still_use_llm_router(boi_app_module, monkeypatch):
+def test_boi_agent_explicit_modes_use_request_hint_not_llm_router(boi_app_module, monkeypatch):
     calls: list[str] = []
 
     def fake_router(req, employee_id: str):
         calls.append(req.mode)
-        return {
-            "route": "fast",
-            "confidence": 0.92,
-            "intent": "search",
-            "reason": "router selected search",
-            "requires_mutation": False,
-            "requires_deep_reasoning": False,
-            "requires_langflow": False,
-            "router_backend": "llm",
-        }
+        raise boi_app_module.BoiAgentRouterUnavailable("router should not run for explicit mode")
 
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
@@ -3365,14 +3356,45 @@ def test_boi_agent_explicit_modes_still_use_llm_router(boi_app_module, monkeypat
     deep_req = boi_app_module.BoiAgentChatRequest(question="현재 페이지를 더 분석해줘", mode="deep", current_url="/")
     deep_route = boi_app_module.route_boi_agent_request(deep_req, "100001")
 
-    assert calls == ["fast", "deep"]
-    assert fast_route["router_backend"] == "llm"
+    assert calls == []
+    assert fast_route["router_backend"] == "request_hint"
     assert fast_route["route"] == "fast"
     assert "client requested fast mode" in fast_route["reason"]
-    assert deep_route["router_backend"] == "llm"
+    assert deep_route["router_backend"] == "request_hint"
     assert deep_route["route"] == "deep"
-    assert deep_route["intent"] == "search"
+    assert deep_route["intent"] == "page_qa"
     assert "client requested deep mode" in deep_route["reason"]
+
+
+def test_boi_agent_explicit_fast_search_does_not_fail_on_low_router_confidence(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def low_confidence_router(req, employee_id: str):
+        raise boi_app_module.BoiAgentRouterUnavailable("LLM router confidence is below threshold")
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", low_confidence_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "SOP",
+            "mode": "fast",
+            "intent": "search",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "save_memory": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route"] == "fast"
+    assert body["intent"] == "search"
+    assert body["router_backend"] == "request_hint"
 
 
 def test_boi_agent_obvious_search_uses_llm_router_first(boi_app_module, monkeypatch):

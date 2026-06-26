@@ -8240,6 +8240,39 @@ def apply_agent_route_overrides(req: BoiAgentChatRequest, route: dict[str, Any])
 
 
 def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    if req.mode in {"fast", "deep"} or str(req.intent or "").strip():
+        requested_intent = normalize_agent_intent(
+            req.intent,
+            fallback=deterministic_agent_intent(req.question, req.current_url),
+        )
+        requested_route = route_for_agent_intent(requested_intent)
+        if req.mode == "fast" and requested_route not in {"manual_handoff", "approval_required"}:
+            requested_route = "fast"
+        elif req.mode == "deep":
+            requested_route = "deep"
+        route = {
+            "route": requested_route,
+            "confidence": 1.0,
+            "intent": requested_intent,
+            "reason": "client supplied explicit mode/intent",
+            "requires_mutation": requested_route in {"manual_handoff", "approval_required"},
+            "requires_deep_reasoning": requested_route == "deep",
+            "requires_langflow": False,
+            "router_backend": "request_hint",
+        }
+        route = apply_agent_route_overrides(req, route)
+        if req.mode == "deep" and route.get("route") not in {"manual_handoff", "approval_required"}:
+            route.update(
+                {
+                    "route": "deep",
+                    "reason": f"{route.get('reason') or 'request hint'}; client requested deep mode",
+                    "requires_deep_reasoning": True,
+                    "requires_langflow": False,
+                }
+            )
+        elif req.mode == "fast":
+            route["reason"] = f"{route.get('reason') or 'request hint'}; client requested fast mode"
+        return route
     try:
         route = call_boi_agent_router_llm(req, employee_id)
     except BoiAgentRouterUnavailable:
