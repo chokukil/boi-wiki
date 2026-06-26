@@ -5320,6 +5320,8 @@ def test_boi_agent_suggestions_use_llm_writer_when_required(boi_app_module, monk
     assert "sop.equipment.request_trend_history" in prompt
     assert "manual.equipment.confirm_alarm_context" in prompt
     assert "avoid suggestions that could fit any unrelated page" in prompt
+    assert "natural user-facing sentence" in prompt
+    assert "Mermaid 플로우 생성" in prompt
 
 
 def test_boi_agent_suggestions_strip_markdown_artifacts(boi_app_module):

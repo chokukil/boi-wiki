@@ -7143,6 +7143,9 @@ def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id:
             "rules": [
                 "Return JSON only.",
                 "Produce 3 to 5 short Korean suggestions.",
+                "Write each suggestion as a natural user-facing sentence that can be clicked as-is.",
+                "Use conversational request endings such as '보여줘', '알려줘', '정리해줘', '찾아줘', or '점검해줘'.",
+                "Do not return noun phrases, menu labels, titles, or keyword strings such as 'Mermaid 플로우 생성'.",
                 "Every suggestion must be useful for the current page context.",
                 "Use concrete terms from specific_page_terms where natural; avoid suggestions that could fit any unrelated page.",
                 "Prefer visible business nouns such as the current SOP title, Event Type, workflow stage, Action key, or Manual Handoff name.",
