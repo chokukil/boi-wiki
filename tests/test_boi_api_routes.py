@@ -2421,6 +2421,22 @@ def test_event_type_draft_apply_updates_catalog_after_confirmation(boi_app_modul
     assert body["draft"]["catalog_entry"]["event_type"] == event_type
     assert body["draft"]["catalog_entry"]["sop_stage_id"] == "apply_check"
     assert body["draft"]["catalog_entry"]["recommended_manual_actions"] == ["manual.equipment.confirm_alarm_context"]
+    draft_boi_id = body["draft"]["draft_boi_id"]
+    draft_doc = boi_app_module.find_doc_by_id(draft_boi_id, "100001", include_inaccessible=True)
+    assert draft_doc is not None
+    draft_metadata = draft_doc["metadata"]
+    assert draft_metadata["status"] == "reviewed"
+    assert draft_metadata["event_type_draft_status"] == "applied"
+    assert draft_metadata["catalog_entry"]["event_type"] == event_type
+    assert draft_metadata["apply_result"]["status"] == "applied"
+    assert "catalog 반영 완료 기록" in draft_doc["body"]
+    assert "# Apply Result" in draft_doc["body"]
+    owner_access = client.get(f"/api/docs/{draft_boi_id}/access?employee_id=100001")
+    other_access = client.get(f"/api/docs/{draft_boi_id}/access?employee_id=100002")
+    assert owner_access.status_code == 200
+    assert owner_access.json()["access"]["can_read"] is True
+    assert other_access.status_code == 200
+    assert other_access.json()["access"]["can_read"] is False
     assert body["apply_result"]["status"] == "applied"
     assert body["apply_result"]["commit_status"] in {"disabled", "unavailable", "unchanged", "committed"}
     assert boi_app_module.get_event_type(event_type)["name_ko"] == "적용 이벤트"

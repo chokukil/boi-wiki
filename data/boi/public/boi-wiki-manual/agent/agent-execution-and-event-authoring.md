@@ -171,7 +171,7 @@ Agent는 사용자의 문장을 그대로 빈 template에 넣지 않는다. `eve
 
 Action 추천은 보수적으로 동작한다. 현재 SOP나 ontology search에서 가까운 Action이 보이더라도, 사용자 요청에 `Spec/Rule 변경`, `승인`, `시계열 예측`, `보전 가이드`처럼 명확한 실행 intent가 없으면 초안의 `recommended_actions`에 넣지 않는다. 신규 Event Type에서 잘못된 Action을 붙이는 것보다, 검토자가 명시적으로 Action을 보강하는 편이 안전하다.
 
-생성된 초안은 private `boi/event-type` draft BoI로도 남고, `/event-types` 화면 상단의 `신규 Event Type 초안` 섹션에서도 확인한다. 이 섹션은 현재 사번이 만든 draft와 admin이 볼 수 있는 draft만 보여주며, `validation ok`, warnings, errors, 연결 SOP/stage/action 후보, private draft BoI 링크를 함께 표시한다. Draft 재검증도 같은 가시성 경계를 따른다. 즉 draft id를 알고 있더라도 작성자 또는 admin이 아니면 `/api/event-types/drafts/{draft_id}/validate`로 검증 상태를 갱신할 수 없다. 화면에 보인다고 해서 catalog에 적용된 것은 아니다. 실제 반영은 `boi.promoter` 권한자가 validation을 통과한 draft에 대해 `/api/event-types/drafts/{draft_id}/apply` 또는 `/api/agents/boi-wiki/approve`의 `event_type_draft_apply` operation을 명시 승인할 때만 진행된다. 이 경로는 기존 validated source edit과 같은 validation, rollback, commit 정책을 사용한다.
+생성된 초안은 private `boi/event-type` draft BoI로도 남고, `/event-types` 화면 상단의 `신규 Event Type 초안` 섹션에서도 확인한다. 이 섹션은 현재 사번이 만든 draft와 admin이 볼 수 있는 draft만 보여주며, `validation ok`, warnings, errors, 연결 SOP/stage/action 후보, private draft BoI 링크를 함께 표시한다. Draft 재검증도 같은 가시성 경계를 따른다. 즉 draft id를 알고 있더라도 작성자 또는 admin이 아니면 `/api/event-types/drafts/{draft_id}/validate`로 검증 상태를 갱신할 수 없다. 화면에 보인다고 해서 catalog에 적용된 것은 아니다. 실제 반영은 `boi.promoter` 권한자가 validation을 통과한 draft에 대해 `/api/event-types/drafts/{draft_id}/apply` 또는 `/api/agents/boi-wiki/approve`의 `event_type_draft_apply` operation을 명시 승인할 때만 진행된다. Apply가 끝나면 private draft BoI도 `event_type_draft_status: applied`와 apply result를 포함한 적용 기록으로 갱신된다. 이 경로는 기존 validated source edit과 같은 validation, rollback, commit 정책을 사용한다.
 
 # Public APIs
 

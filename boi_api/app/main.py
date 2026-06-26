@@ -6234,15 +6234,27 @@ def event_type_draft_body(row: dict[str, Any]) -> str:
     proposal = row.get("proposal") if isinstance(row.get("proposal"), dict) else {}
     patch = row.get("catalog_patch_proposal") if isinstance(row.get("catalog_patch_proposal"), dict) else {}
     validation = row.get("validation") if isinstance(row.get("validation"), dict) else {}
+    catalog_entry = row.get("catalog_entry") if isinstance(row.get("catalog_entry"), dict) else {}
+    apply_result = row.get("apply_result") if isinstance(row.get("apply_result"), dict) else {}
     event_type = str(row.get("event_type") or proposal.get("event_type") or "")
     validation_status = "valid" if validation.get("valid") else "needs review"
+    draft_status = str(row.get("status") or "draft")
+    is_applied = draft_status == "applied"
     recommended_actions = proposal.get("recommended_actions") or []
     recommended_manual_actions = proposal.get("recommended_manual_actions") or []
     lines = [
         "# Summary",
         "",
-        f"`{event_type}` Event Type catalog 반영 전 검토용 private draft BoI입니다.",
-        "이 문서는 catalog에 즉시 반영되지 않으며, 검증과 명시 승인 후 별도 apply 단계에서만 운영 catalog에 들어갑니다.",
+        (
+            f"`{event_type}` Event Type catalog 반영 완료 기록입니다."
+            if is_applied
+            else f"`{event_type}` Event Type catalog 반영 전 검토용 private draft BoI입니다."
+        ),
+        (
+            "이 문서는 승인된 draft가 운영 event catalog에 반영된 결과와 근거를 보관합니다."
+            if is_applied
+            else "이 문서는 catalog에 즉시 반영되지 않으며, 검증과 명시 승인 후 별도 apply 단계에서만 운영 catalog에 들어갑니다."
+        ),
         "",
         "# Draft Proposal",
         "",
@@ -6268,41 +6280,115 @@ def event_type_draft_body(row: dict[str, Any]) -> str:
         yaml.safe_dump(patch, allow_unicode=True, sort_keys=False).strip(),
         "```",
         "",
-        "# Next Step",
-        "",
-        "1. Event Type 이름, payload schema, SOP 연결, 권장 Action을 검토합니다.",
-        "2. 필요한 보완을 draft에 반영합니다.",
-        "3. `event_type_draft_validate`로 검증합니다.",
-        "4. `event_type_draft_apply` 또는 Agent 승인 카드로 명시 승인 후 catalog에 반영합니다.",
     ]
+    if is_applied:
+        lines.extend(
+            [
+                "# Apply Result",
+                "",
+                "| 항목 | 값 |",
+                "|---|---|",
+                f"| Applied At | {row.get('applied_at') or '-'} |",
+                f"| Applied By | {row.get('applied_by') or '-'} |",
+                f"| Apply Status | {apply_result.get('status') or '-'} |",
+                f"| Catalog Path | {apply_result.get('path') or '-'} |",
+                f"| Commit Status | {apply_result.get('commit_status') or '-'} |",
+                f"| Commit Hash | {apply_result.get('commit_hash') or '-'} |",
+                "",
+                "# Catalog Entry",
+                "",
+                "```yaml",
+                yaml.safe_dump(catalog_entry, allow_unicode=True, sort_keys=False).strip(),
+                "```",
+                "",
+                "# Next Step",
+                "",
+                "1. Event Types 화면에서 운영 catalog 반영 여부를 확인합니다.",
+                "2. 관련 SOP, Action, Workflow 문서와 링크를 점검합니다.",
+                "3. 운영 배포가 필요한 변경이면 Git commit과 배포 검증 절차를 완료합니다.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "# Next Step",
+                "",
+                "1. Event Type 이름, payload schema, SOP 연결, 권장 Action을 검토합니다.",
+                "2. 필요한 보완을 draft에 반영합니다.",
+                "3. `event_type_draft_validate`로 검증합니다.",
+                "4. `event_type_draft_apply` 또는 Agent 승인 카드로 명시 승인 후 catalog에 반영합니다.",
+            ]
+        )
     return "\n".join(lines)
 
 
-def write_event_type_draft_boi(row: dict[str, Any], employee_id: str) -> dict[str, Any]:
+def upsert_event_type_draft_boi(row: dict[str, Any], employee_id: str) -> dict[str, Any]:
     proposal = row.get("proposal") if isinstance(row.get("proposal"), dict) else {}
     event_type = str(row.get("event_type") or proposal.get("event_type") or "")
     name = str(proposal.get("name_ko") or event_type or "Event Type")
-    metadata = make_metadata(
-        boi_type="boi/event-type",
-        title=f"{name} Event Type 초안",
-        description=f"신규 Event Type `{event_type}` catalog 반영 전 검토용 private draft",
-        owner=employee_id,
-        visibility="private",
-        classification="internal",
-        status="draft",
-        tags=["EventType", "Draft", "BoIAgent"],
-        source_refs=[{"type": "event-type-draft", "ref": str(row.get("draft_id") or ""), "event_type": event_type}],
-    )
+    owner = str(row.get("created_by") or employee_id)
+    draft_status = str(row.get("status") or "draft")
+    is_applied = draft_status == "applied"
+    existing_doc: dict[str, Any] | None = None
+    draft_boi_id = str(row.get("draft_boi_id") or "")
+    if draft_boi_id:
+        existing_doc = find_doc_by_id(draft_boi_id, owner, include_inaccessible=True)
+    if existing_doc:
+        metadata = dict(existing_doc.get("metadata") or {})
+    else:
+        metadata = make_metadata(
+            boi_type="boi/event-type",
+            title=f"{name} Event Type {'적용 기록' if is_applied else '초안'}",
+            description=(
+                f"신규 Event Type `{event_type}` catalog 반영 완료 기록"
+                if is_applied
+                else f"신규 Event Type `{event_type}` catalog 반영 전 검토용 private draft"
+            ),
+            owner=owner,
+            visibility="private",
+            classification="internal",
+            status="reviewed" if is_applied else "draft",
+            tags=["EventType", "Draft", "BoIAgent"],
+            source_refs=[{"type": "event-type-draft", "ref": str(row.get("draft_id") or ""), "event_type": event_type}],
+        )
     metadata.update(
         {
+            "type": "boi/event-type",
+            "title": f"{name} Event Type {'적용 기록' if is_applied else '초안'}",
+            "description": (
+                f"신규 Event Type `{event_type}` catalog 반영 완료 기록"
+                if is_applied
+                else f"신규 Event Type `{event_type}` catalog 반영 전 검토용 private draft"
+            ),
+            "owner": owner,
+            "visibility": "private",
+            "classification": metadata.get("classification") or "internal",
+            "acl_policy": f"acl:private:{owner}",
+            "status": "reviewed" if is_applied else "draft",
+            "tags": metadata.get("tags") or ["EventType", "Draft", "BoIAgent"],
+            "updated_at": now_iso(),
+            "source_refs": metadata.get("source_refs")
+            or [{"type": "event-type-draft", "ref": str(row.get("draft_id") or ""), "event_type": event_type}],
             "event_type": event_type,
             "draft_id": row.get("draft_id"),
-            "event_type_draft_status": row.get("status") or "draft",
+            "event_type_draft_status": draft_status,
             "validation": row.get("validation") or {},
             "catalog_patch_proposal": row.get("catalog_patch_proposal") or {},
         }
     )
+    if row.get("validated_at"):
+        metadata["validated_at"] = row.get("validated_at")
+        metadata["validated_by"] = row.get("validated_by")
+    if is_applied:
+        metadata["catalog_entry"] = row.get("catalog_entry") or {}
+        metadata["apply_result"] = row.get("apply_result") or {}
+        metadata["applied_at"] = row.get("applied_at")
+        metadata["applied_by"] = row.get("applied_by")
     return write_boi(metadata, event_type_draft_body(row))
+
+
+def write_event_type_draft_boi(row: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    return upsert_event_type_draft_boi(row, employee_id)
 
 
 def create_event_type_draft(req: EventTypeDraftRequest, employee_id: str) -> dict[str, Any]:
@@ -6447,6 +6533,11 @@ def apply_event_type_draft(draft_id: str, req: EventTypeDraftApplyRequest, emplo
     validation = validate_event_type_draft_payload(draft.get("proposal") or {})
     if not validation.get("valid"):
         draft["validation"] = validation
+        draft_boi = upsert_event_type_draft_boi(draft, str(draft.get("created_by") or employee_id))
+        draft_boi_id = str((draft_boi.get("metadata") or {}).get("boi_id") or "")
+        if draft_boi_id:
+            draft["draft_boi_id"] = draft_boi_id
+            draft["draft_boi_url"] = doc_url_for_ref(draft_boi_id, str(draft.get("created_by") or employee_id))
         path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         raise HTTPException(
             status_code=422,
@@ -6488,6 +6579,11 @@ def apply_event_type_draft(draft_id: str, req: EventTypeDraftApplyRequest, emplo
             },
         }
     )
+    draft_boi = upsert_event_type_draft_boi(draft, str(draft.get("created_by") or employee_id))
+    draft_boi_id = str((draft_boi.get("metadata") or {}).get("boi_id") or "")
+    if draft_boi_id:
+        draft["draft_boi_id"] = draft_boi_id
+        draft["draft_boi_url"] = doc_url_for_ref(draft_boi_id, str(draft.get("created_by") or employee_id))
     path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     invalidate_catalog_caches()
     append_rbac_audit(
@@ -6530,6 +6626,11 @@ async def api_event_type_draft_validate(draft_id: str, employee_id: str = Depend
     draft["validation"] = validation
     draft["validated_at"] = now_iso()
     draft["validated_by"] = employee_id
+    draft_boi = upsert_event_type_draft_boi(draft, str(draft.get("created_by") or employee_id))
+    draft_boi_id = str((draft_boi.get("metadata") or {}).get("boi_id") or "")
+    if draft_boi_id:
+        draft["draft_boi_id"] = draft_boi_id
+        draft["draft_boi_url"] = doc_url_for_ref(draft_boi_id, str(draft.get("created_by") or employee_id))
     path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     append_rbac_audit(employee_id, "event_type_draft_validate", {"draft_id": draft_id, "validation": validation})
     return {"ok": True, "draft": draft}
