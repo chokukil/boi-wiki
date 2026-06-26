@@ -6876,6 +6876,8 @@ async def list_boi(
     boi_type: str = "",
     folder: str = "",
     archive_status: str = "active",
+    page: int = Query(1, ge=1),
+    limit: int | None = Query(default=None, ge=1, le=200),
 ) -> dict[str, Any]:
     selected_folder = normalize_folder(folder)
     filtered_docs = filter_docs_ontology_aware(
@@ -6888,15 +6890,23 @@ async def list_boi(
         archive_status=archive_status,
     )
     docs = [d for d in filtered_docs if folder_matches(d, selected_folder)]
+    if limit:
+        start = (page - 1) * limit
+        items = docs[start : start + limit]
+    else:
+        items = docs
     return {
         "employee_id": employee_id,
         "teams": teams_for(employee_id),
         "folder": selected_folder,
         "archive_status": archive_status,
+        "page": page,
+        "limit": limit,
         "breadcrumbs": folder_breadcrumbs(selected_folder),
         "folder_tree": build_folder_tree(filtered_docs, selected_folder),
         "count": len(docs),
-        "items": docs,
+        "returned_count": len(items),
+        "items": items,
     }
 
 

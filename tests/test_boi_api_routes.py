@@ -5869,6 +5869,24 @@ def test_boi_api_filters_by_okf_folder_and_returns_tree_context(boi_app_module):
     assert any(child["path"] == "team" for child in body["folder_tree"]["children"])
 
 
+def test_boi_api_respects_explicit_limit_without_changing_total_count(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    full = client.get("/api/boi?employee_id=100001&q=SOP")
+    limited = client.get("/api/boi?employee_id=100001&q=SOP&limit=2&page=1")
+
+    assert full.status_code == 200
+    assert limited.status_code == 200
+    full_body = full.json()
+    limited_body = limited.json()
+    assert full_body["count"] >= 2
+    assert limited_body["count"] == full_body["count"]
+    assert limited_body["returned_count"] == 2
+    assert len(limited_body["items"]) == 2
+    assert limited_body["limit"] == 2
+    assert limited_body["page"] == 1
+
+
 def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
     client = TestClient(boi_app_module.app)
 
