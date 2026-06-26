@@ -1429,6 +1429,8 @@ def test_boi_agent_diagram_uses_structured_artifact_with_llm_composer(boi_app_mo
     assert body["context_summary"]["composer_backend"] == "llm"
     assert body["artifacts"][0]["type"] == "mermaid"
     assert body["answer_markdown"].startswith("## SOP 프로세스 플로우")
+    assert "## 원본 매핑" in body["answer_markdown"]
+    assert "| 단계 | 이벤트 | 업무 요청 | 수동 조치 | 다음 |" in body["answer_markdown"]
     assert "```mermaid" not in body["display_markdown"]
     assert body["suggested_questions"] == ["이 SOP의 부족한 Action Spec을 찾아줘."]
 
@@ -2841,6 +2843,8 @@ def test_boi_agent_mermaid_request_overrides_fast_router_to_deep(boi_app_module,
     assert body["context_summary"]["composer_backend"] == "llm"
     assert "```mermaid" not in body["answer_markdown"]
     assert "```mermaid" not in body["display_markdown"]
+    assert "## 원본 매핑" in body["answer_markdown"]
+    assert "| 단계 | 이벤트 | 업무 요청 | 수동 조치 | 다음 |" in body["answer_markdown"]
     assert "SOP 근거" in body["display_markdown"]
     assert "answer_html" in body
     assert "```mermaid" not in body["answer_html"]

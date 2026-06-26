@@ -542,7 +542,12 @@ class NativeBoiAgent:
             state,
         )
         if isinstance(result, dict) and str(result.get("answer_markdown") or "").strip() and not result.get("error"):
-            state["answer_markdown"] = str(result.get("answer_markdown") or "").strip()
+            composer_answer = str(result.get("answer_markdown") or "").strip()
+            state["answer_markdown"] = merge_composer_answer_with_structured_details(
+                str(state.get("intent") or ""),
+                composer_answer,
+                str(state.get("answer_markdown") or ""),
+            )
             if result.get("quality_repair_used"):
                 state["composer_quality_repair_used"] = True
             suggestions = result.get("suggested_questions")
@@ -924,6 +929,42 @@ def strip_mermaid_fences(value: str) -> str:
         str(value or ""),
         flags=re.IGNORECASE | re.DOTALL,
     ).strip()
+
+
+def remove_mermaid_fences(value: str) -> str:
+    return re.sub(
+        r"```[^\S\r\n]*mermaid[^\S\r\n]*(?:\r?\n).*?(?:\r?\n)?```",
+        "",
+        str(value or ""),
+        flags=re.IGNORECASE | re.DOTALL,
+    ).strip()
+
+
+def structured_details_for_composer_merge(intent: str, structured_answer: str) -> str:
+    draft = str(structured_answer or "").strip()
+    if not draft:
+        return ""
+    if intent == "diagram":
+        without_mermaid = remove_mermaid_fences(draft)
+        marker = "## 원본 매핑"
+        if marker in without_mermaid:
+            return without_mermaid[without_mermaid.index(marker) :].strip()
+        return without_mermaid
+    if intent in {"gap_check", "workflow_explain"} and "|" in draft:
+        return draft
+    if intent in {"trace_reasoning", "inbox"}:
+        return draft
+    return ""
+
+
+def merge_composer_answer_with_structured_details(intent: str, composer_answer: str, structured_answer: str) -> str:
+    answer = str(composer_answer or "").strip()
+    details = structured_details_for_composer_merge(intent, structured_answer)
+    if not answer:
+        return details
+    if not details or details in answer:
+        return answer
+    return f"{answer}\n\n{details}".strip()
 
 
 def compact_text(value: str, limit: int = 160) -> str:
