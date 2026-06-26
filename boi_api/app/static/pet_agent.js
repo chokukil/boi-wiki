@@ -1218,10 +1218,15 @@
     };
     const statusLabel = statusLabels[body?.status] || "";
     const status = statusLabel ? ` 처리 결과: ${statusLabel}.` : "";
+    const draftBoiId = nestedValue(body, "draft.draft_boi_id") || nestedValue(body, "result.draft.draft_boi_id");
+    const draftBoiUrl = nestedValue(body, "draft.draft_boi_url") || nestedValue(body, "result.draft.draft_boi_url");
+    const draftDocUrl = draftBoiId ? `/docs/${encodeURIComponent(draftBoiId)}?employee_id=${encodeURIComponent(employeeId)}` : "";
     const url = nestedValue(body, "result.workflow_status_url")
       || nestedValue(body, "result.status_url")
       || nestedValue(body, "result.raw_url")
-      || nestedValue(body, "draft.url");
+      || nestedValue(body, "draft.url")
+      || draftBoiUrl
+      || draftDocUrl;
     const link = url ? ` [상태 보기](${url})` : "";
     return `${messages[operation] || "요청을 처리했습니다."}${status}${link}`;
   }

@@ -4765,6 +4765,8 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "이벤트 유형 초안을 만들었습니다." in script
     assert "이벤트 유형 초안을 운영 목록에 반영했습니다." in script
     assert "공유 요청을 제출했습니다." in script
+    assert "draft.draft_boi_url" in script
+    assert "result.draft.draft_boi_url" in script
     assert "처리 결과:" in script
     assert "초안 생성 완료" in script
     assert "상태: ${body.status}" not in script
