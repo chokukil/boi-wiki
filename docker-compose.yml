@@ -4,6 +4,7 @@ services:
   langflow-postgres:
     image: postgres:16-alpine
     container_name: boi-langflow-postgres
+    profiles: ["local-full", "full"]
     environment:
       POSTGRES_USER: ${LANGFLOW_POSTGRES_USER:-langflow}
       POSTGRES_PASSWORD: ${LANGFLOW_POSTGRES_PASSWORD:-langflow}
@@ -20,6 +21,7 @@ services:
   langflow:
     image: ${LANGFLOW_IMAGE:-langflowai/langflow@sha256:3ec67ddf344b3f2393b4961aa4f87e8928798f33772fdfdc6d348bfd54f58bf0}
     container_name: boi-langflow
+    profiles: ["local-full", "full"]
     depends_on:
       langflow-postgres:
         condition: service_healthy
@@ -35,7 +37,7 @@ services:
       ACTION_GATEWAY_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       BOI_API_URL: http://boi-api:8000
       BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
-      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:8000}
+      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:28000}
       AUTO_INVOKE_ACTIONS_FOR_EVENTS: ${AUTO_INVOKE_ACTIONS_FOR_EVENTS:-true}
       LANGFLOW_WEBHOOK_AUTH_ENABLE: "True"
       # Local PoC convenience. For intranet deployment, set False and put behind SSO/reverse proxy.
@@ -57,6 +59,7 @@ services:
   kafka:
     image: apache/kafka:3.7.0
     container_name: boi-kafka
+    profiles: ["local-full", "full"]
     ports:
       - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
     environment:
@@ -65,7 +68,7 @@ services:
       KAFKA_PROCESS_ROLES: controller,broker
       KAFKA_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9094}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-localhost}:${KAFKA_EXTERNAL_PORT:-9094}
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -82,6 +85,7 @@ services:
   kafka-init:
     image: apache/kafka:3.7.0
     container_name: boi-kafka-init
+    profiles: ["local-full", "full"]
     depends_on:
       kafka:
         condition: service_healthy
@@ -104,6 +108,7 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: boi-kafka-ui
+    profiles: ["local-full", "full"]
     depends_on:
       kafka:
         condition: service_healthy
@@ -120,28 +125,36 @@ services:
       args:
         BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-unknown}
     container_name: boi-api
+    profiles: ["core", "local-full", "pilot-external", "full"]
     command: >
-      sh -c 'if [ "${BOI_API_WORKERS:-1}" = "1" ]; then
+      sh -c 'if [ -n "${BOI_CONTENT_SAFE_DIRECTORY:-}" ]; then
+        git config --global --add safe.directory "${BOI_CONTENT_SAFE_DIRECTORY}" || true;
+      fi;
+      if [ "${BOI_API_WORKERS:-1}" = "1" ]; then
         exec uvicorn app.main:app --host 0.0.0.0 --port 8000;
       else
         exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "${BOI_API_WORKERS:-1}";
       fi'
-    depends_on:
-      kafka:
-        condition: service_healthy
     ports:
-      - "${BOI_API_PORT:-8000}:8000"
+      - "${BOI_API_PORT:-28000}:8000"
     environment:
-      DATA_ROOT: /data/boi
-      EVENTS_ROOT: /data/events
+      DEPLOY_PROFILE: ${DEPLOY_PROFILE:-local-full}
+      BOI_CONTENT_ROOT: ${BOI_CONTENT_ROOT:-/data/boi}
+      BOI_CONTENT_SAFE_DIRECTORY: ${BOI_CONTENT_SAFE_DIRECTORY:-}
+      BOI_RUNTIME_ROOT: ${BOI_RUNTIME_ROOT:-/data}
+      BOI_AUTO_COMMIT: ${BOI_AUTO_COMMIT:-true}
+      BOI_AUTO_PUSH: ${BOI_AUTO_PUSH:-false}
+      BOI_CONTENT_GIT_REMOTE: ${BOI_CONTENT_GIT_REMOTE:-origin}
+      BOI_CONTENT_GIT_BRANCH: ${BOI_CONTENT_GIT_BRANCH:-}
+      EVENTS_ROOT: ${EVENTS_ROOT:-/data/events}
       EVENT_CATALOG_ROOT: /data/event_catalog
       ACTION_CATALOG_ROOT: /data/action_catalog
-      ACTION_LOG_ROOT: /data/actions
+      ACTION_LOG_ROOT: ${ACTION_LOG_ROOT:-/data/actions}
       ACTION_GATEWAY_URL: http://action-gateway:8100
       ACTION_INVOKE_TIMEOUT_SECONDS: ${ACTION_INVOKE_TIMEOUT_SECONDS:-90}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       BOI_AUTH_MODE: ${BOI_AUTH_MODE:-dev}
-      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:8000}
+      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:28000}
       LANGFLOW_EXTERNAL_URL: ${LANGFLOW_EXTERNAL_URL:-}
       KAFKA_UI_EXTERNAL_URL: ${KAFKA_UI_EXTERNAL_URL:-}
       BOI_WIKI_MCP_EXTERNAL_URL: ${BOI_WIKI_MCP_EXTERNAL_URL:-}
@@ -164,8 +177,17 @@ services:
       HCP_AUTHZ_URL: ${HCP_AUTHZ_URL:-}
       HCP_AUTHZ_CACHE_TTL_SECONDS: ${HCP_AUTHZ_CACHE_TTL_SECONDS:-60}
       DEFAULT_TEAM_ID: ${DEFAULT_TEAM_ID:-aix-tf}
-      KAFKA_BOOTSTRAP: kafka:9092
-      BOI_EVENTS_TOPIC: boi.events
+      KAFKA_MODE: ${KAFKA_MODE:-local}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka:9092}
+      KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-}
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:-}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:-}
+      KAFKA_SSL_CAFILE: ${KAFKA_SSL_CAFILE:-}
+      EVENT_ROUTER_AIOKAFKA_LOG_LEVEL: ${EVENT_ROUTER_AIOKAFKA_LOG_LEVEL:-CRITICAL}
+      BOI_EVENTS_TOPIC: ${BOI_EVENTS_TOPIC:-boi.events}
+      BOI_AUDIT_TOPIC: ${BOI_AUDIT_TOPIC:-boi.audit}
+      BOI_DLQ_TOPIC: ${BOI_DLQ_TOPIC:-boi.dead-letter}
       DEMO_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
       BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}
       BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
@@ -194,6 +216,7 @@ services:
       BOI_AGENT_SUGGESTIONS_MODEL: ${BOI_AGENT_SUGGESTIONS_MODEL:-google/gemma-4-26b-a4b-qat}
       BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS: ${BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS:-12}
       BOI_AGENT_SUGGESTIONS_MAX_TOKENS: ${BOI_AGENT_SUGGESTIONS_MAX_TOKENS:-1024}
+      BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-2}
       BOI_AGENT_COMPOSER_LLM_ENABLED: ${BOI_AGENT_COMPOSER_LLM_ENABLED:-auto}
       BOI_AGENT_COMPOSER_REQUIRED: ${BOI_AGENT_COMPOSER_REQUIRED:-1}
       BOI_AGENT_COMPOSER_BASE_URL: ${BOI_AGENT_COMPOSER_BASE_URL:-http://llm-gateway.example:1236/v1}
@@ -202,6 +225,8 @@ services:
       BOI_AGENT_COMPOSER_TIMEOUT_SECONDS: ${BOI_AGENT_COMPOSER_TIMEOUT_SECONDS:-30}
       BOI_AGENT_COMPOSER_MAX_TOKENS: ${BOI_AGENT_COMPOSER_MAX_TOKENS:-1536}
       BOI_AGENT_COMPOSER_MAX_ATTEMPTS: ${BOI_AGENT_COMPOSER_MAX_ATTEMPTS:-2}
+      BOI_AGENT_LLM_MAX_CONCURRENCY: ${BOI_AGENT_LLM_MAX_CONCURRENCY:-1}
+      BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS: ${BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS:-120}
       BOI_AGENT_BACKEND: ${BOI_AGENT_BACKEND:-native}
       BOI_AGENT_LANGGRAPH_REQUIRED: ${BOI_AGENT_LANGGRAPH_REQUIRED:-1}
       BOI_AGENT_NATIVE_MAX_TOOL_LOOPS: ${BOI_AGENT_NATIVE_MAX_TOOL_LOOPS:-5}
@@ -209,17 +234,18 @@ services:
       BOI_AGENT_CHAT_TIMEOUT_SECONDS: ${BOI_AGENT_CHAT_TIMEOUT_SECONDS:-90}
       BOI_AGENT_CACHE_WARMUP_ON_STARTUP: ${BOI_AGENT_CACHE_WARMUP_ON_STARTUP:-1}
       BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-unknown}
-      LANGFLOW_URL: http://langflow:7860
+      LANGFLOW_MODE: ${LANGFLOW_MODE:-local}
+      LANGFLOW_URL: ${LANGFLOW_URL:-http://langflow:7860}
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
       LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}
       LANGFLOW_BOI_AGENT_ENDPOINT: ${LANGFLOW_BOI_AGENT_ENDPOINT:-boi-agent}
       LANGFLOW_AGENT_TIMEOUT_SECONDS: ${LANGFLOW_AGENT_TIMEOUT_SECONDS:-180}
     volumes:
-      - ./data/boi:/data/boi
-      - ./data/events:/data/events
+      - ${BOI_CONTENT_HOST_PATH:-./data/boi}:${BOI_CONTENT_MOUNT_PATH:-/data/boi}
+      - ${EVENTS_HOST_PATH:-./data/events}:${EVENTS_ROOT:-/data/events}
       - ./data/event_catalog:/data/event_catalog:ro
       - ./data/action_catalog:/data/action_catalog:ro
-      - ./data/actions:/data/actions
+      - ${ACTIONS_HOST_PATH:-./data/actions}:${ACTION_LOG_ROOT:-/data/actions}
     networks: [boi-net]
 
 
@@ -227,6 +253,7 @@ services:
     build:
       context: ./action_gateway
     container_name: boi-action-gateway
+    profiles: ["local-full", "pilot-external", "full"]
     depends_on:
       boi-api:
         condition: service_started
@@ -234,9 +261,10 @@ services:
       - "${ACTION_GATEWAY_PORT:-8100}:8100"
     environment:
       ACTION_CATALOG_ROOT: /data/action_catalog
-      ACTION_LOG_ROOT: /data/actions
+      ACTION_LOG_ROOT: ${ACTION_LOG_ROOT:-/data/actions}
       BOI_API_URL: http://boi-api:8000
-      LANGFLOW_URL: http://langflow:7860
+      LANGFLOW_MODE: ${LANGFLOW_MODE:-local}
+      LANGFLOW_URL: ${LANGFLOW_URL:-http://langflow:7860}
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
       LANGFLOW_AUTH_MODE: ${LANGFLOW_AUTH_MODE:-api-key}
       MCP_BRIDGE_URL: ${MCP_BRIDGE_URL:-}
@@ -249,13 +277,14 @@ services:
       BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
     volumes:
       - ./data/action_catalog:/data/action_catalog:ro
-      - ./data/actions:/data/actions
+      - ${ACTIONS_HOST_PATH:-./data/actions}:${ACTION_LOG_ROOT:-/data/actions}
     networks: [boi-net]
 
   boi-wiki-mcp:
     build:
       context: ./boi_wiki_mcp
     container_name: boi-wiki-mcp
+    profiles: ["local-full", "pilot-external", "full"]
     depends_on:
       boi-api:
         condition: service_started
@@ -277,16 +306,24 @@ services:
     build:
       context: ./event_adapter
     container_name: boi-event-router
+    profiles: ["local-full", "pilot-external", "full"]
+    restart: unless-stopped
     depends_on:
-      kafka-init:
-        condition: service_completed_successfully
       boi-api:
         condition: service_started
       action-gateway:
         condition: service_started
     environment:
-      KAFKA_BOOTSTRAP: kafka:9092
-      BOI_EVENTS_TOPIC: boi.events
+      KAFKA_MODE: ${KAFKA_MODE:-local}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka:9092}
+      KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-}
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:-}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:-}
+      KAFKA_SSL_CAFILE: ${KAFKA_SSL_CAFILE:-}
+      BOI_EVENTS_TOPIC: ${BOI_EVENTS_TOPIC:-boi.events}
+      BOI_AUDIT_TOPIC: ${BOI_AUDIT_TOPIC:-boi.audit}
+      BOI_DLQ_TOPIC: ${BOI_DLQ_TOPIC:-boi.dead-letter}
       EVENT_ROUTER_GROUP_ID: ${EVENT_ROUTER_GROUP_ID:-boi-event-router}
       EVENT_ROUTER_AUTO_OFFSET_RESET: ${EVENT_ROUTER_AUTO_OFFSET_RESET:-earliest}
       BOI_API_URL: http://boi-api:8000
@@ -300,6 +337,10 @@ services:
       EVENT_ROUTER_CONSUMER_SESSION_TIMEOUT_MS: ${EVENT_ROUTER_CONSUMER_SESSION_TIMEOUT_MS:-60000}
       EVENT_ROUTER_CONSUMER_HEARTBEAT_INTERVAL_MS: ${EVENT_ROUTER_CONSUMER_HEARTBEAT_INTERVAL_MS:-10000}
       EVENT_ROUTER_CONSUMER_MAX_POLL_INTERVAL_MS: ${EVENT_ROUTER_CONSUMER_MAX_POLL_INTERVAL_MS:-900000}
+      EVENT_ROUTER_STARTUP_DELAY_SECONDS: ${EVENT_ROUTER_STARTUP_DELAY_SECONDS:-0}
+      EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS: ${EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS:-60}
+      EVENT_ROUTER_TOPIC_READY_INTERVAL_SECONDS: ${EVENT_ROUTER_TOPIC_READY_INTERVAL_SECONDS:-2}
+      EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS: ${EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS:-0}
     networks: [boi-net]
 
 volumes:

@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
-BASE_URL = os.getenv("BOI_API_URL", "http://localhost:8000").rstrip("/")
+BASE_URL = os.getenv("BOI_API_URL", "http://localhost:28000").rstrip("/")
 EMPLOYEE_ID = os.getenv("EMPLOYEE_ID", "100001")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "")
 BOI_AUTH_BEARER = os.getenv("BOI_AUTH_BEARER", "")

@@ -900,7 +900,7 @@ def main() -> int:
     parser.add_argument("--service-token-dotenv", default="", help="Read SERVICE_TOKEN from a dotenv file without printing it.")
     parser.add_argument("--query", default="SOP")
     parser.add_argument("--employee-id", default="100001")
-    parser.add_argument("--boi-api-url", default=os.getenv("BOI_EXTERNAL_URL", "http://localhost:8000"), help="BoI API base URL for AgentResponse contract checks.")
+    parser.add_argument("--boi-api-url", default=os.getenv("BOI_EXTERNAL_URL", "http://localhost:28000"), help="BoI API base URL for AgentResponse contract checks.")
     parser.add_argument("--agent-contract", action="store_true", help="Validate REST and optional MCP bridge boi_agent_chat responses against the canonical AgentResponse schema.")
     parser.add_argument("--agent-contract-only", action="store_true", help="Run only AgentResponse contract checks. This mode can run with stdlib-only Python on NAS hosts.")
     parser.add_argument("--agent-artifact-smoke", action="store_true", help="Also validate a representative workflow_summary Agent artifact through REST and optional MCP bridge.")

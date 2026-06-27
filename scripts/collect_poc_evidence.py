@@ -212,6 +212,7 @@ def build_capture_targets(
         target = dict(entry)
         url = str(target["url"])
         url = base_replace(url, "http://localhost:8000", boi_api_url)
+        url = base_replace(url, "http://localhost:28000", boi_api_url)
         url = base_replace(url, "http://localhost:7860", langflow_url)
         if target["id"] == "private_boi":
             if corrective_uri:
@@ -270,7 +271,7 @@ def capture_targets_markdown(capture_targets: dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect executable BoI Wiki PoC evidence for documents and slides.")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
-    parser.add_argument("--boi-api-url", default="http://localhost:8000")
+    parser.add_argument("--boi-api-url", default="http://localhost:28000")
     parser.add_argument("--action-gateway-url", default="http://localhost:8100")
     parser.add_argument("--langflow-url", default="http://localhost:7860")
     parser.add_argument("--docker-exe", default=DEFAULT_DOCKER_EXE)

@@ -111,6 +111,7 @@ sequenceDiagram
 # Related Documents
 
 - [BoI Agent API, MCP, Ontology Search Harness](/public/harness/agent-api-mcp-search-harness.md)
+- [BoI Agent Implementation Structure](/public/boi-wiki-manual/agent/boi-agent-implementation-structure.md)
 - [Native BoI Agent Tool Loop](/public/boi-wiki-manual/agent/native-boi-agent-tool-loop.md)
 - [Ontology Retrieval and Search](/public/boi-wiki-manual/agent/ontology-retrieval-and-search.md)
 - [Safety, Approval, and Memory](/public/boi-wiki-manual/agent/safety-approval-and-memory.md)

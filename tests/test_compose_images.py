@@ -32,6 +32,69 @@ def test_compose_defines_boi_wiki_mcp_service_and_allowed_host():
     assert "boi-wiki-mcp" in env_example
 
 
+def test_compose_declares_pilot_profiles_and_external_service_modes():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+    local_env = Path(".env.local-full.example").read_text(encoding="utf-8")
+    pilot_env = Path(".env.pilot-external.example").read_text(encoding="utf-8")
+
+    assert 'profiles: ["local-full", "full"]' in compose
+    assert 'profiles: ["core", "local-full", "pilot-external", "full"]' in compose
+    assert 'profiles: ["local-full", "pilot-external", "full"]' in compose
+    assert "DEPLOY_PROFILE: ${DEPLOY_PROFILE:-local-full}" in compose
+    assert "KAFKA_MODE: ${KAFKA_MODE:-local}" in compose
+    assert "LANGFLOW_MODE: ${LANGFLOW_MODE:-local}" in compose
+    assert "KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}" in compose
+    assert "EVENT_ROUTER_AIOKAFKA_LOG_LEVEL: ${EVENT_ROUTER_AIOKAFKA_LOG_LEVEL:-CRITICAL}" in compose
+    assert "BOI_AUTO_PUSH: ${BOI_AUTO_PUSH:-false}" in compose
+    assert "BOI_CONTENT_SAFE_DIRECTORY: ${BOI_CONTENT_SAFE_DIRECTORY:-}" in compose
+    assert "git config --global --add safe.directory" in compose
+    assert '"${BOI_API_PORT:-28000}:8000"' in compose
+    assert "${BOI_CONTENT_HOST_PATH:-./data/boi}:${BOI_CONTENT_MOUNT_PATH:-/data/boi}" in compose
+    assert "EVENT_ROUTER_STARTUP_DELAY_SECONDS: ${EVENT_ROUTER_STARTUP_DELAY_SECONDS:-0}" in compose
+    assert "EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS: ${EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS:-60}" in compose
+    assert "EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS: ${EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS:-0}" in compose
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-2}" in compose
+    assert "BOI_AGENT_LLM_MAX_CONCURRENCY: ${BOI_AGENT_LLM_MAX_CONCURRENCY:-1}" in compose
+    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS: ${BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS:-120}" in compose
+    assert "condition: service_completed_successfully" not in compose
+
+    assert "KAFKA_MODE=local" in local_env
+    assert "LANGFLOW_MODE=local" in local_env
+    assert "BOI_API_PORT=28000" in local_env
+    assert "BOI_EXTERNAL_URL=http://localhost:28000" in local_env
+    assert "BOI_CONTENT_ROOT=/workspace/data/boi" in local_env
+    assert "BOI_CONTENT_SAFE_DIRECTORY=/workspace" in local_env
+    assert "BOI_CONTENT_HOST_PATH=." in local_env
+    assert "BOI_CONTENT_MOUNT_PATH=/workspace" in local_env
+    assert "KAFKA_BOOTSTRAP=kafka:9092" in local_env
+    assert "KAFKA_SMOKE_BOOTSTRAP=localhost:9094" in local_env
+    assert "EVENT_ROUTER_AIOKAFKA_LOG_LEVEL=CRITICAL" in local_env
+    assert "EVENT_ROUTER_STARTUP_DELAY_SECONDS=5" in local_env
+    assert "EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS=60" in local_env
+    assert "EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS=5" in local_env
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=2" in local_env
+    assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in local_env
+    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in local_env
+    assert "KAFKA_MODE=external" in pilot_env
+    assert "LANGFLOW_MODE=external" in pilot_env
+    assert "BOI_API_PORT=28000" in pilot_env
+    assert "BOI_CONTENT_ROOT=/content/boi" in pilot_env
+    assert "BOI_CONTENT_SAFE_DIRECTORY=/content" in pilot_env
+    assert "BOI_CONTENT_HOST_PATH=/srv/boi-wiki/content" in pilot_env
+    assert "BOI_CONTENT_MOUNT_PATH=/content" in pilot_env
+    assert "KAFKA_SECURITY_PROTOCOL=SASL_SSL" in pilot_env
+    assert "BOI_AUTO_PUSH=true" in pilot_env
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=2" in pilot_env
+    assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in pilot_env
+    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in pilot_env
+    assert "KAFKA_MODE=local" in env_example
+    assert "BOI_API_PORT=28000" in env_example
+    assert "BOI_CONTENT_ROOT=/workspace/data/boi" in env_example
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=2" in env_example
+    assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in env_example
+
+
 def test_compose_declares_boi_auth_env_and_sso_dev_overlay():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     overlay = Path("docker-compose.sso-dev.yml").read_text(encoding="utf-8")

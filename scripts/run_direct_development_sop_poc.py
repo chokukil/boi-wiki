@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-BASE_URL = os.getenv("BOI_API_URL", "http://localhost:8000").rstrip("/")
+BASE_URL = os.getenv("BOI_API_URL", "http://localhost:28000").rstrip("/")
 ACTION_INVOKE_URL = os.getenv("ACTION_INVOKE_URL", f"{BASE_URL}/api/actions/invoke").rstrip("/")
 EMPLOYEE_ID = os.getenv("EMPLOYEE_ID", "100001")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "")

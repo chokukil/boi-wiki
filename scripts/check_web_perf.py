@@ -51,7 +51,7 @@ def measure(base_url: str, target: Target, samples: int) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Measure BoI Wiki web route performance.")
-    parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--base-url", default="http://localhost:28000")
     parser.add_argument("--employee-id", default="100001")
     parser.add_argument("--trace-id", default="")
     parser.add_argument("--samples", type=int, default=3)

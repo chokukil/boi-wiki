@@ -9,12 +9,14 @@ import os
 import queue
 import re
 import shutil
+import ssl
 import subprocess
 import tempfile
 import threading
 import time
 import uuid
 import httpx
+from contextlib import contextmanager
 from datetime import date, datetime, timezone, timedelta
 from html import escape as html_escape, unescape as html_unescape
 from pathlib import Path
@@ -126,20 +128,34 @@ def inherit_llm_env_value(raw_value: str | None, fallback: str, *, secret: bool 
 
 
 APP_DIR = Path(__file__).resolve().parent
-DATA_ROOT = Path(os.getenv("DATA_ROOT", "/data/boi"))
-EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT", "/data/events"))
+DEPLOY_PROFILE = os.getenv("DEPLOY_PROFILE", "local-full")
+KAFKA_MODE = os.getenv("KAFKA_MODE", "local").strip().lower()
+LANGFLOW_MODE = os.getenv("LANGFLOW_MODE", "local").strip().lower()
+BOI_CONTENT_ROOT = Path(os.getenv("BOI_CONTENT_ROOT") or os.getenv("DATA_ROOT") or "/data/boi")
+BOI_RUNTIME_ROOT = Path(os.getenv("BOI_RUNTIME_ROOT") or str(BOI_CONTENT_ROOT.parent))
+DATA_ROOT = Path(os.getenv("DATA_ROOT") or str(BOI_CONTENT_ROOT))
+EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT") or str(BOI_RUNTIME_ROOT / "events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog"))
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
-ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT", "/data/actions"))
-DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT", str(DATA_ROOT.parent / "drafts")))
-ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT", str(DATA_ROOT.parent / "activity")))
-RBAC_ROOT = Path(os.getenv("RBAC_ROOT", str(DATA_ROOT.parent / "rbac")))
+ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT") or str(BOI_RUNTIME_ROOT / "actions"))
+DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT") or str(BOI_RUNTIME_ROOT / "drafts"))
+ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT") or str(BOI_RUNTIME_ROOT / "activity"))
+RBAC_ROOT = Path(os.getenv("RBAC_ROOT") or str(BOI_RUNTIME_ROOT / "rbac"))
+SEARCH_INDEX_ROOT = Path(os.getenv("SEARCH_INDEX_ROOT") or str(BOI_RUNTIME_ROOT / "index"))
+BOI_PERSIST_SEARCH_INDEX = os.getenv("BOI_PERSIST_SEARCH_INDEX", "true").lower() in {"1", "true", "yes", "on"}
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
 ACTION_INVOKE_TIMEOUT_SECONDS = float(os.getenv("ACTION_INVOKE_TIMEOUT_SECONDS", "90"))
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 DEFAULT_TEAM_ID = os.getenv("DEFAULT_TEAM_ID", "aix-tf")
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
 BOI_EVENTS_TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
+BOI_AUDIT_TOPIC = os.getenv("BOI_AUDIT_TOPIC", "boi.audit")
+BOI_DLQ_TOPIC = os.getenv("BOI_DLQ_TOPIC", "boi.dead-letter")
+KAFKA_SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+KAFKA_SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM", "")
+KAFKA_SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME", "")
+KAFKA_SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD", "")
+KAFKA_SSL_CAFILE = os.getenv("KAFKA_SSL_CAFILE", "")
 DEMO_EMPLOYEE_ID = os.getenv("DEMO_EMPLOYEE_ID", "100001")
 BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1").rstrip("/")
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
@@ -192,6 +208,7 @@ BOI_AGENT_SUGGESTIONS_LLM_ENABLED = resolve_router_llm_enabled(
 BOI_AGENT_SUGGESTIONS_REQUIRED = True
 BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS", "12"))
 BOI_AGENT_SUGGESTIONS_MAX_TOKENS = int(os.getenv("BOI_AGENT_SUGGESTIONS_MAX_TOKENS", "1024"))
+BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS = max(1, min(int(os.getenv("BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS", "2")), 3))
 BOI_AGENT_COMPOSER_BASE_URL = os.getenv("BOI_AGENT_COMPOSER_BASE_URL", BOI_AGENT_ROUTER_BASE_URL).rstrip("/")
 BOI_AGENT_COMPOSER_API_KEY = os.getenv("BOI_AGENT_COMPOSER_API_KEY", BOI_AGENT_ROUTER_API_KEY)
 BOI_AGENT_COMPOSER_MODEL = os.getenv("BOI_AGENT_COMPOSER_MODEL", BOI_AGENT_ROUTER_MODEL)
@@ -205,6 +222,9 @@ BOI_AGENT_COMPOSER_REQUIRED = True
 BOI_AGENT_COMPOSER_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_COMPOSER_TIMEOUT_SECONDS", "30"))
 BOI_AGENT_COMPOSER_MAX_TOKENS = min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_TOKENS", "1536")), 1536)
 BOI_AGENT_COMPOSER_MAX_ATTEMPTS = max(1, min(int(os.getenv("BOI_AGENT_COMPOSER_MAX_ATTEMPTS", "2")), 3))
+BOI_AGENT_LLM_MAX_CONCURRENCY = max(1, int(os.getenv("BOI_AGENT_LLM_MAX_CONCURRENCY", "1")))
+BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS", "120"))
+_BOI_AGENT_LLM_SEMAPHORE = threading.BoundedSemaphore(BOI_AGENT_LLM_MAX_CONCURRENCY)
 BOI_AGENT_BACKEND = os.getenv("BOI_AGENT_BACKEND", "native").strip().lower()
 BOI_AGENT_NATIVE_MAX_TOOL_LOOPS = int(os.getenv("BOI_AGENT_NATIVE_MAX_TOOL_LOOPS", "5"))
 BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS", "8"))
@@ -223,6 +243,9 @@ BOI_AGENT_RESPONSE_REQUIRED_FIELDS = [
     "execution_cards",
     "status_updates",
     "tool_trace",
+    "evidence_ledger",
+    "affordances",
+    "answer_quality",
     "access_summary",
     "guardrails_applied",
 ]
@@ -310,6 +333,9 @@ BOI_AGENT_RESPONSE_SCHEMA = {
         "status_events": BOI_AGENT_STATUS_UPDATE_SCHEMA,
         "tool_trace": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "coverage_report": {"type": "object", "additionalProperties": True},
+        "evidence_ledger": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "affordances": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "answer_quality": {"type": "object", "additionalProperties": True},
         "access_summary": {"type": "object", "additionalProperties": True},
         "guardrails_applied": {"type": "array", "items": {"type": "string"}},
         "redacted_count": {"type": "integer", "minimum": 0},
@@ -322,6 +348,10 @@ BOI_AGENT_RESPONSE_SCHEMA = {
     },
 }
 BOI_BUILD_REVISION = os.getenv("BOI_BUILD_REVISION") or os.getenv("GIT_COMMIT") or "unknown"
+BOI_AUTO_COMMIT = os.getenv("BOI_AUTO_COMMIT", os.getenv("BOI_PROMOTION_AUTO_COMMIT", "true")).lower() in {"1", "true", "yes", "on"}
+BOI_AUTO_PUSH = os.getenv("BOI_AUTO_PUSH", "false").lower() in {"1", "true", "yes", "on"}
+BOI_CONTENT_GIT_REMOTE = os.getenv("BOI_CONTENT_GIT_REMOTE", "origin")
+BOI_CONTENT_GIT_BRANCH = os.getenv("BOI_CONTENT_GIT_BRANCH", "")
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860").rstrip("/")
 LANGFLOW_API_KEY = os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me")
 LANGFLOW_AUTH_MODE = os.getenv("LANGFLOW_AUTH_MODE", "api-key")
@@ -338,6 +368,22 @@ DEFAULT_EXTERNAL_TOOL_PORTS = {
     "KAFKA_UI_EXTERNAL_URL": 28081,
     "BOI_WIKI_MCP_EXTERNAL_URL": 28200,
 }
+
+
+def kafka_client_kwargs() -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "bootstrap_servers": KAFKA_BOOTSTRAP,
+        "security_protocol": KAFKA_SECURITY_PROTOCOL,
+    }
+    if KAFKA_SASL_MECHANISM:
+        kwargs["sasl_mechanism"] = KAFKA_SASL_MECHANISM
+    if KAFKA_SASL_USERNAME:
+        kwargs["sasl_plain_username"] = KAFKA_SASL_USERNAME
+    if KAFKA_SASL_PASSWORD:
+        kwargs["sasl_plain_password"] = KAFKA_SASL_PASSWORD
+    if KAFKA_SSL_CAFILE:
+        kwargs["ssl_context"] = ssl.create_default_context(cafile=KAFKA_SSL_CAFILE)
+    return kwargs
 
 # Development fallback user/team maps. In SSO modes, Keycloak/HCP identity
 # resolves teams and roles and these maps are only used for local compatibility.
@@ -465,6 +511,7 @@ def ensure_dirs() -> None:
     ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTIVITY_ROOT.mkdir(parents=True, exist_ok=True)
     RBAC_ROOT.mkdir(parents=True, exist_ok=True)
+    SEARCH_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
@@ -2887,6 +2934,62 @@ def search_tokens_for_query(query: str, employee_id: str, *, dictionary: dict[st
     return [normalize_search_token(token) for token in dict.fromkeys(tokens) if normalize_search_token(token)]
 
 
+def search_index_signature() -> tuple[Any, ...]:
+    return (
+        markdown_signature(),
+        glob_signature(EVENT_CATALOG_ROOT, "*.yaml"),
+        glob_signature(ACTION_CATALOG_ROOT, "*.yaml"),
+    )
+
+
+def search_index_signature_hash(signature: tuple[Any, ...]) -> str:
+    payload = json.dumps(signature, ensure_ascii=False, default=str, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def persisted_search_index_path(employee_id: str) -> Path:
+    return SEARCH_INDEX_ROOT / f"search-index-{employee_hash(employee_id)}.json"
+
+
+def read_persisted_search_index(employee_id: str, signature: tuple[Any, ...]) -> dict[str, Any] | None:
+    if not BOI_PERSIST_SEARCH_INDEX:
+        return None
+    path = persisted_search_index_path(employee_id)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if payload.get("signature_hash") != search_index_signature_hash(signature):
+        return None
+    index = payload.get("index")
+    return index if isinstance(index, dict) else None
+
+
+def write_persisted_search_index(employee_id: str, signature: tuple[Any, ...], index: dict[str, Any]) -> None:
+    if not BOI_PERSIST_SEARCH_INDEX:
+        return
+    try:
+        SEARCH_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
+        persisted_search_index_path(employee_id).write_text(
+            json.dumps(
+                {
+                    "signature_hash": search_index_signature_hash(signature),
+                    "built_at": now_iso(),
+                    "employee_id_hash": employee_hash(employee_id),
+                    "doc_count": len(index.get("docs") or []),
+                    "index": index,
+                },
+                ensure_ascii=False,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        return
+
+
 def weighted_text_score(blob: str, tokens: list[str], *, title: str = "", id_text: str = "", description: str = "") -> int:
     if not tokens:
         return 0
@@ -2910,14 +3013,17 @@ def weighted_text_score(blob: str, tokens: list[str], *, title: str = "", id_tex
 
 
 def search_index_for_employee(employee_id: str) -> dict[str, Any]:
-    signature = (
-        markdown_signature(),
-        glob_signature(EVENT_CATALOG_ROOT, "*.yaml"),
-        glob_signature(ACTION_CATALOG_ROOT, "*.yaml"),
-    )
+    signature = search_index_signature()
     cached = _SEARCH_INDEX_CACHE.get("by_employee", {}).get(employee_id)
     if _SEARCH_INDEX_CACHE.get("signature") == signature and cached:
         return cached
+    persisted = read_persisted_search_index(employee_id, signature)
+    if persisted is not None:
+        if _SEARCH_INDEX_CACHE.get("signature") != signature:
+            _SEARCH_INDEX_CACHE["signature"] = signature
+            _SEARCH_INDEX_CACHE["by_employee"] = {}
+        _SEARCH_INDEX_CACHE["by_employee"][employee_id] = persisted
+        return persisted
     docs = accessible_docs(employee_id)
     doc_records = []
     for doc in docs:
@@ -2947,6 +3053,7 @@ def search_index_for_employee(employee_id: str) -> dict[str, Any]:
         _SEARCH_INDEX_CACHE["signature"] = signature
         _SEARCH_INDEX_CACHE["by_employee"] = {}
     _SEARCH_INDEX_CACHE["by_employee"][employee_id] = index
+    write_persisted_search_index(employee_id, signature, index)
     return index
 
 
@@ -4938,8 +5045,8 @@ def read_promotion_report(promotion_id: str) -> dict[str, Any]:
 
 
 def git_commit_for_path(path: Path, message: str) -> dict[str, str]:
-    if os.getenv("BOI_PROMOTION_AUTO_COMMIT", "true").lower() not in {"1", "true", "yes", "on"}:
-        return {"status": "disabled", "commit_hash": ""}
+    if not BOI_AUTO_COMMIT:
+        return {"status": "disabled", "commit_hash": "", "push_status": "disabled"}
     try:
         root = subprocess.run(
             ["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"],
@@ -4971,9 +5078,28 @@ def git_commit_for_path(path: Path, message: str) -> dict[str, str]:
             capture_output=True,
             check=True,
         ).stdout.strip()
-        return {"status": "committed" if commit.returncode == 0 else "unchanged", "commit_hash": current}
+        result = {"status": "committed" if commit.returncode == 0 else "unchanged", "commit_hash": current, "push_status": "disabled"}
+        if BOI_AUTO_PUSH and result["status"] == "committed":
+            branch = BOI_CONTENT_GIT_BRANCH
+            if not branch:
+                branch = subprocess.run(
+                    ["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                ).stdout.strip()
+            push = subprocess.run(
+                ["git", "-C", root, "push", BOI_CONTENT_GIT_REMOTE, branch],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            result["push_status"] = "pushed" if push.returncode == 0 else "failed"
+            if push.returncode != 0:
+                result["push_error"] = (push.stdout + push.stderr).strip()
+        return result
     except Exception as exc:
-        return {"status": "failed", "commit_hash": "", "error": repr(exc)}
+        return {"status": "failed", "commit_hash": "", "push_status": "not_started", "error": repr(exc)}
 
 
 def promotion_validation_failure(errors: list[str], warnings: list[str], metadata: dict[str, Any] | None = None) -> None:
@@ -5209,6 +5335,7 @@ class BoiAgentChatRequest(BaseModel):
 class BoiAgentSuggestionsRequest(BaseModel):
     current_url: str = ""
     page_context: dict[str, Any] = Field(default_factory=dict)
+    answer_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class BoiAgentApprovalRequest(BaseModel):
@@ -5486,11 +5613,174 @@ async def okf_media(media_path: str) -> FileResponse:
     return FileResponse(target_path)
 
 
+def git_content_status() -> dict[str, Any]:
+    try:
+        root = subprocess.run(
+            ["git", "-C", str(DATA_ROOT), "rev-parse", "--show-toplevel"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        branch = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        revision = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--short", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        porcelain = subprocess.run(
+            ["git", "-C", root, "status", "--porcelain"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.splitlines()
+        return {
+            "available": True,
+            "root": root,
+            "branch": branch,
+            "revision": revision,
+            "dirty": bool(porcelain),
+            "dirty_count": len(porcelain),
+            "auto_commit": BOI_AUTO_COMMIT,
+            "auto_push": BOI_AUTO_PUSH,
+            "remote": BOI_CONTENT_GIT_REMOTE,
+            "target_branch": BOI_CONTENT_GIT_BRANCH or branch,
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "root": str(DATA_ROOT),
+            "auto_commit": BOI_AUTO_COMMIT,
+            "auto_push": BOI_AUTO_PUSH,
+            "remote": BOI_CONTENT_GIT_REMOTE,
+            "target_branch": BOI_CONTENT_GIT_BRANCH,
+            "error": type(exc).__name__,
+        }
+
+
+def runtime_readiness_status(git_status: dict[str, Any], boi_agent: dict[str, Any]) -> dict[str, Any]:
+    failures: list[str] = []
+    warnings: list[str] = []
+    if DEPLOY_PROFILE in {"local-full", "pilot-external"}:
+        if not BOI_BUILD_REVISION or BOI_BUILD_REVISION == "unknown":
+            failures.append("build.revision is unknown")
+        if BOI_AUTO_COMMIT and not git_status.get("available"):
+            failures.append("git.available is false while BOI_AUTO_COMMIT=true")
+        if BOI_AGENT_BACKEND != "native":
+            failures.append("boi_agent.backend is not native")
+        required_llm_components = {
+            "router": boi_agent.get("router") or {},
+            "status_writer": boi_agent.get("status_writer") or {},
+            "composer": boi_agent.get("composer") or {},
+            "suggestions": boi_agent.get("suggestions") or {},
+        }
+        for name, component in required_llm_components.items():
+            if component.get("required") and not component.get("llm_enabled"):
+                failures.append(f"boi_agent.{name}.llm_enabled is false")
+        langgraph = boi_agent.get("langgraph") or {}
+        if langgraph.get("required") and not langgraph.get("available"):
+            failures.append("boi_agent.langgraph.available is false")
+    if KAFKA_MODE == "disabled":
+        warnings.append("KAFKA_MODE=disabled: event broker publish is disabled")
+    if LANGFLOW_MODE == "disabled":
+        warnings.append("LANGFLOW_MODE=disabled: Langflow action workflows are disabled")
+    return {
+        "ok": not failures,
+        "failures": failures,
+        "warnings": warnings,
+        "profile": DEPLOY_PROFILE,
+        "checked_at": now_iso(),
+    }
+
+
 @app.get("/api/runtime/config")
 async def runtime_config() -> dict[str, Any]:
+    markdown_sig = markdown_signature()
+    search_sig = search_index_signature()
+    git_status = git_content_status()
+    boi_agent = {
+        "backend": BOI_AGENT_BACKEND,
+        "router": {
+            "mode": BOI_AGENT_ROUTER_MODE,
+            "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,
+            "required": BOI_AGENT_ROUTER_REQUIRED,
+            "base_url": BOI_AGENT_ROUTER_BASE_URL,
+            "model": BOI_AGENT_ROUTER_MODEL,
+            "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
+            "failure_backoff_seconds": BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS,
+            "backoff_remaining_seconds": round(router_llm_backoff_remaining(), 1),
+            "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
+            "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
+        },
+        "status_writer": {
+            "llm_enabled": BOI_AGENT_STATUS_LLM_ENABLED,
+            "required": BOI_AGENT_STATUS_REQUIRED,
+            "base_url": BOI_AGENT_STATUS_BASE_URL,
+            "model": BOI_AGENT_STATUS_MODEL,
+            "timeout_seconds": BOI_AGENT_STATUS_TIMEOUT_SECONDS,
+            "max_tokens": BOI_AGENT_STATUS_MAX_TOKENS,
+        },
+        "composer": {
+            "llm_enabled": BOI_AGENT_COMPOSER_LLM_ENABLED,
+            "required": BOI_AGENT_COMPOSER_REQUIRED,
+            "base_url": BOI_AGENT_COMPOSER_BASE_URL,
+            "model": BOI_AGENT_COMPOSER_MODEL,
+            "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
+            "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
+        },
+        "suggestions": {
+            "llm_enabled": BOI_AGENT_SUGGESTIONS_LLM_ENABLED,
+            "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
+            "base_url": BOI_AGENT_SUGGESTIONS_BASE_URL,
+            "model": BOI_AGENT_SUGGESTIONS_MODEL,
+            "timeout_seconds": BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS,
+            "max_tokens": BOI_AGENT_SUGGESTIONS_MAX_TOKENS,
+            "max_attempts": BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS,
+        },
+        "llm_concurrency": {
+            "max_concurrency": BOI_AGENT_LLM_MAX_CONCURRENCY,
+            "queue_timeout_seconds": BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS,
+        },
+        "chat_timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
+        "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
+        "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
+        "langgraph": {
+            "available": LANGGRAPH_AVAILABLE,
+            "required": BOI_AGENT_LANGGRAPH_REQUIRED,
+            "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "unavailable",
+        },
+        "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
+        "cache_warmup": agent_cache_warmup_state(),
+    }
     return {
         "build": {
             "revision": BOI_BUILD_REVISION,
+        },
+        "readiness": runtime_readiness_status(git_status, boi_agent),
+        "deployment": {
+            "profile": DEPLOY_PROFILE,
+            "content_root": str(DATA_ROOT),
+            "runtime_root": str(BOI_RUNTIME_ROOT),
+            "events_root": str(EVENTS_ROOT),
+            "actions_root": str(ACTION_LOG_ROOT),
+            "draft_root": str(DRAFT_ROOT),
+            "activity_root": str(ACTIVITY_ROOT),
+            "rbac_root": str(RBAC_ROOT),
+        },
+        "git": git_status,
+        "index": {
+            "markdown_documents": len(markdown_sig),
+            "persisted_enabled": BOI_PERSIST_SEARCH_INDEX,
+            "persisted_root": str(SEARCH_INDEX_ROOT),
+            "search_cache_ready": _SEARCH_INDEX_CACHE.get("signature") == search_sig,
+            "doc_index_ready": _DOC_INDEX_CACHE.get("signature") == markdown_sig,
+            "graph_index_ready": _OKF_GRAPH_INDEX_CACHE.get("signature") == markdown_sig,
+            "cache_warmup": agent_cache_warmup_state(),
         },
         "llm": {
             "provider": "openai-compatible",
@@ -5498,49 +5788,25 @@ async def runtime_config() -> dict[str, Any]:
             "model": BOI_LLM_MODEL,
             "api_key_configured": bool(BOI_LLM_API_KEY),
         },
-        "boi_agent": {
-            "backend": BOI_AGENT_BACKEND,
-            "router": {
-                "mode": BOI_AGENT_ROUTER_MODE,
-                "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,
-                "required": BOI_AGENT_ROUTER_REQUIRED,
-                "base_url": BOI_AGENT_ROUTER_BASE_URL,
-                "model": BOI_AGENT_ROUTER_MODEL,
-                "timeout_seconds": BOI_AGENT_ROUTER_TIMEOUT_SECONDS,
-                "failure_backoff_seconds": BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS,
-                "backoff_remaining_seconds": round(router_llm_backoff_remaining(), 1),
-                "max_tokens": BOI_AGENT_ROUTER_MAX_TOKENS,
-                "confidence_threshold": BOI_AGENT_ROUTER_CONFIDENCE_THRESHOLD,
-            },
-            "status_writer": {
-                "llm_enabled": BOI_AGENT_STATUS_LLM_ENABLED,
-                "required": BOI_AGENT_STATUS_REQUIRED,
-                "base_url": BOI_AGENT_STATUS_BASE_URL,
-                "model": BOI_AGENT_STATUS_MODEL,
-                "timeout_seconds": BOI_AGENT_STATUS_TIMEOUT_SECONDS,
-                "max_tokens": BOI_AGENT_STATUS_MAX_TOKENS,
-            },
-            "composer": {
-                "llm_enabled": BOI_AGENT_COMPOSER_LLM_ENABLED,
-                "required": BOI_AGENT_COMPOSER_REQUIRED,
-                "base_url": BOI_AGENT_COMPOSER_BASE_URL,
-                "model": BOI_AGENT_COMPOSER_MODEL,
-                "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
-                "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
-            },
-            "chat_timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
-            "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
-            "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
-            "langgraph": {
-                "available": LANGGRAPH_AVAILABLE,
-                "required": BOI_AGENT_LANGGRAPH_REQUIRED,
-                "runtime": "LangGraph" if LANGGRAPH_AVAILABLE else "unavailable",
-            },
-            "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
-            "cache_warmup": agent_cache_warmup_state(),
+        "boi_agent": boi_agent,
+        "event_broker": {
+            "type": "kafka",
+            "mode": KAFKA_MODE,
+            "bootstrap": KAFKA_BOOTSTRAP,
+            "topic": BOI_EVENTS_TOPIC,
+            "audit_topic": BOI_AUDIT_TOPIC,
+            "dlq_topic": BOI_DLQ_TOPIC,
+            "security_protocol": KAFKA_SECURITY_PROTOCOL,
+            "sasl_configured": bool(KAFKA_SASL_MECHANISM and KAFKA_SASL_USERNAME),
+            "ssl_cafile_configured": bool(KAFKA_SSL_CAFILE),
         },
-        "event_broker": {"type": "kafka", "bootstrap": KAFKA_BOOTSTRAP, "topic": BOI_EVENTS_TOPIC},
-        "connectors": {"action_gateway_url": ACTION_GATEWAY_URL, "langflow": "peer_connector"},
+        "connectors": {
+            "action_gateway_url": ACTION_GATEWAY_URL,
+            "langflow_mode": LANGFLOW_MODE,
+            "langflow_url": LANGFLOW_URL,
+            "langflow_auth_mode": LANGFLOW_AUTH_MODE,
+            "langflow_agent_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
+        },
     }
 
 
@@ -7120,6 +7386,46 @@ def suggestion_specific_terms(page_context: dict[str, Any]) -> list[str]:
 
 def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id: str, page_context: dict[str, Any]) -> str:
     specific_terms = suggestion_specific_terms(page_context)
+    answer_context = req.answer_context if isinstance(req.answer_context, dict) else {}
+    if answer_context:
+        return json.dumps(
+            {
+                "task": "boi_agent_answer_followups",
+                "language": "ko",
+                "employee_id": employee_id,
+                "current_url": req.current_url,
+                "resolved_page_context": suggestion_context_for_llm(page_context),
+                "specific_page_terms": specific_terms,
+                "answer_context": redact_sensitive(answer_context),
+                "capabilities": [
+                    "답변 근거를 더 자세히 설명",
+                    "BoI/SOP/Event/Action ontology search",
+                    "SOP Mermaid diagram",
+                    "Event to Action workflow explanation",
+                    "Action Spec gap check",
+                    "Trace reasoning",
+                    "Inbox 업무 확인",
+                    "신규 이벤트 유형 초안 제안",
+                    "승인/조치가 필요한 업무를 확인 카드로 준비",
+                ],
+                "rules": [
+                    "Return JSON only.",
+                    "Produce 3 to 5 short Korean follow-up questions.",
+                    "Every suggestion must be based on answer_context, not only the current page.",
+                    "Prefer concrete artifacts, evidence, links, action affordances, or missing context from answer_context.",
+                    "Do not repeat the user's original question.",
+                    "Do not return generic starter questions that could appear before the answer.",
+                    "Write each suggestion as a natural user-facing sentence that can be clicked as-is.",
+                    "Use conversational request endings such as '보여줘', '알려줘', '정리해줘', '찾아줘', '점검해줘', or '초안 만들어줘'.",
+                    "For mutating work, phrase it as draft/preview/approval/먼저 확인, not immediate execution.",
+                    "Do not use Markdown formatting, code fences, backticks, bullets, or numbering in suggestion text.",
+                    "Do not mention links or actions that are not present in answer_context.",
+                    "If access.can_use_in_agent_context is false, ask about access policy or allowed related documents instead of hidden content.",
+                ],
+                "output_shape": {"suggestions": ["답변을 바탕으로 한 후속 질문 한 문장"]},
+            },
+            ensure_ascii=False,
+        )
     return json.dumps(
         {
             "task": "boi_agent_page_suggestions_only",
@@ -7203,6 +7509,18 @@ def normalize_llm_suggestions(payload: dict[str, Any]) -> list[str]:
     return normalized
 
 
+@contextmanager
+def boi_agent_llm_slot(component: str):
+    start = time.perf_counter()
+    acquired = _BOI_AGENT_LLM_SEMAPHORE.acquire(timeout=BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS)
+    if not acquired:
+        raise TimeoutError(f"BoI Agent LLM queue timed out for {component}")
+    try:
+        yield {"component": component, "queue_wait_ms": int((time.perf_counter() - start) * 1000)}
+    finally:
+        _BOI_AGENT_LLM_SEMAPHORE.release()
+
+
 def call_boi_agent_suggestions_llm(req: BoiAgentSuggestionsRequest, employee_id: str, page_context: dict[str, Any]) -> list[str]:
     if not BOI_AGENT_SUGGESTIONS_LLM_ENABLED:
         raise BoiAgentSuggestionsUnavailable("LLM suggestion writer is not configured")
@@ -7212,38 +7530,81 @@ def call_boi_agent_suggestions_llm(req: BoiAgentSuggestionsRequest, employee_id:
     headers = {"Content-Type": "application/json"}
     if BOI_AGENT_SUGGESTIONS_API_KEY:
         headers["Authorization"] = f"Bearer {BOI_AGENT_SUGGESTIONS_API_KEY}"
-    body = {
-        "model": BOI_AGENT_SUGGESTIONS_MODEL,
-        "temperature": 0.35,
-        "max_tokens": BOI_AGENT_SUGGESTIONS_MAX_TOKENS,
-        "response_format": {"type": "text"},
-        "messages": [
+    base_prompt = suggestions_prompt_for_request(req, employee_id, page_context)
+    last_error = ""
+    last_excerpt = ""
+    for attempt in range(BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS):
+        messages = [
             {
                 "role": "system",
                 "content": (
                     "You write concise, page-aware suggestion buttons for BoI Agent. "
-                    "Return only JSON and never answer the user's task."
+                    "Return only one JSON object shaped exactly like "
+                    '{"suggestions":["...","...","..."]}. Never answer the user task.'
                 ),
             },
-            {"role": "user", "content": suggestions_prompt_for_request(req, employee_id, page_context)},
-        ],
-    }
-    try:
-        with httpx.Client(timeout=BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS) as client:
-            response = client.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        raise BoiAgentSuggestionsUnavailable(f"LLM suggestion writer call failed: {exc}") from exc
-    parsed = None
-    for text in iter_langflow_text_candidates(payload):
-        candidate = parse_suggestions_payload(text)
-        if candidate:
-            parsed = candidate
-            break
-    if not parsed:
-        raise BoiAgentSuggestionsUnavailable("LLM suggestion writer returned invalid JSON")
-    return normalize_llm_suggestions(parsed)
+            {"role": "user", "content": base_prompt},
+        ]
+        if attempt > 0:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "repair_required": True,
+                            "previous_error": last_error,
+                            "previous_response_excerpt": last_excerpt,
+                            "must_return": {"suggestions": ["짧은 한국어 후속 질문", "짧은 한국어 후속 질문", "짧은 한국어 후속 질문"]},
+                            "rules": [
+                                "Return JSON only.",
+                                "No Markdown fences.",
+                                "No prose outside JSON.",
+                                "The suggestions array must contain 3 to 5 strings.",
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            )
+        body = {
+            "model": BOI_AGENT_SUGGESTIONS_MODEL,
+            "temperature": 0.25 if attempt > 0 else 0.35,
+            "max_tokens": BOI_AGENT_SUGGESTIONS_MAX_TOKENS,
+            "response_format": {"type": "text"},
+            "messages": messages,
+        }
+        try:
+            with boi_agent_llm_slot("suggestions"):
+                with httpx.Client(timeout=BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS) as client:
+                    response = client.post(url, headers=headers, json=body)
+                    response.raise_for_status()
+                    payload = response.json()
+        except Exception as exc:
+            last_error = f"call_failed:{type(exc).__name__}"
+            last_excerpt = str(exc)[:500]
+            if attempt + 1 >= BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:
+                raise BoiAgentSuggestionsUnavailable(f"LLM suggestion writer call failed: {exc}") from exc
+            continue
+        parsed = None
+        raw_candidates: list[str] = []
+        for text in iter_langflow_text_candidates(payload):
+            raw_candidates.append(text_excerpt(text, 700))
+            candidate = parse_suggestions_payload(text)
+            if candidate:
+                parsed = candidate
+                break
+        if not parsed:
+            last_error = "invalid_json"
+            last_excerpt = raw_candidates[0] if raw_candidates else text_excerpt(json.dumps(payload, ensure_ascii=False), 700)
+            continue
+        try:
+            return normalize_llm_suggestions(parsed)
+        except BoiAgentSuggestionsUnavailable as exc:
+            last_error = str(exc)
+            last_excerpt = text_excerpt(json.dumps(parsed, ensure_ascii=False), 700)
+            if attempt + 1 >= BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:
+                raise
+    raise BoiAgentSuggestionsUnavailable(last_error or "LLM suggestion writer returned invalid JSON")
 
 
 def agent_link_for_item(item: dict[str, Any]) -> dict[str, str]:
@@ -7820,10 +8181,11 @@ def call_boi_agent_composer_llm(payload: dict[str, Any], employee_id: str) -> di
     for attempt in range(BOI_AGENT_COMPOSER_MAX_ATTEMPTS):
         body = boi_agent_composer_request_body(payload, employee_id, repair=repair_payload)
         try:
-            with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:
-                response = client.post(url, headers=headers, json=body)
-                response.raise_for_status()
-                raw = response.json()
+            with boi_agent_llm_slot("composer"):
+                with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:
+                    response = client.post(url, headers=headers, json=body)
+                    response.raise_for_status()
+                    raw = response.json()
         except Exception as exc:
             raise NativeAgentRuntimeUnavailable(f"LLM answer composer call failed: {exc}") from exc
         parsed, reasons = parse_boi_agent_composer_response(raw)
@@ -8030,10 +8392,11 @@ def call_boi_agent_status_llm(req: BoiAgentChatRequest, employee_id: str) -> lis
         ],
     }
     try:
-        with httpx.Client(timeout=BOI_AGENT_STATUS_TIMEOUT_SECONDS) as client:
-            response = client.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            payload = response.json()
+        with boi_agent_llm_slot("status"):
+            with httpx.Client(timeout=BOI_AGENT_STATUS_TIMEOUT_SECONDS) as client:
+                response = client.post(url, headers=headers, json=body)
+                response.raise_for_status()
+                payload = response.json()
     except Exception as exc:
         raise BoiAgentStatusUnavailable(f"LLM status writer call failed: {exc}") from exc
     parsed = None
@@ -8110,10 +8473,11 @@ def call_boi_agent_stream_plan_llm(req: BoiAgentChatRequest, employee_id: str) -
             "messages": messages,
         }
         try:
-            with httpx.Client(timeout=max(BOI_AGENT_STATUS_TIMEOUT_SECONDS, BOI_AGENT_ROUTER_TIMEOUT_SECONDS)) as client:
-                response = client.post(url, headers=headers, json=body)
-                response.raise_for_status()
-                return response.json()
+            with boi_agent_llm_slot("stream_plan"):
+                with httpx.Client(timeout=max(BOI_AGENT_STATUS_TIMEOUT_SECONDS, BOI_AGENT_ROUTER_TIMEOUT_SECONDS)) as client:
+                    response = client.post(url, headers=headers, json=body)
+                    response.raise_for_status()
+                    return response.json()
         except Exception as exc:
             raise BoiAgentStatusUnavailable(f"LLM stream plan call failed: {exc}") from exc
 
@@ -8180,10 +8544,11 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
         ],
     }
     try:
-        with httpx.Client(timeout=BOI_AGENT_ROUTER_TIMEOUT_SECONDS) as client:
-            response = client.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            payload = response.json()
+        with boi_agent_llm_slot("router"):
+            with httpx.Client(timeout=BOI_AGENT_ROUTER_TIMEOUT_SECONDS) as client:
+                response = client.post(url, headers=headers, json=body)
+                response.raise_for_status()
+                payload = response.json()
     except Exception as exc:
         if BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS > 0:
             _BOI_AGENT_ROUTER_BACKOFF_UNTIL = time.monotonic() + BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS
@@ -9144,6 +9509,9 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
     response.setdefault("citations", [])
     response.setdefault("suggested_questions", [])
     response.setdefault("suggested_questions_source", "suggestions_endpoint_required")
+    response.setdefault("evidence_ledger", [])
+    response.setdefault("affordances", [])
+    response.setdefault("answer_quality", {})
     response.setdefault("tool_trace", [])
     if not isinstance(response.get("status_updates"), list) and isinstance(response.get("status_events"), list):
         response["status_updates"] = response["status_events"]
@@ -9177,6 +9545,246 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
         else ""
     )
     return response
+
+
+def _agent_evidence_item(
+    *,
+    kind: str,
+    label: str,
+    url: str = "",
+    source: str = "",
+    confidence: float = 1.0,
+    used_for: list[str] | None = None,
+    access_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    access = access_summary or {}
+    return {
+        "kind": kind,
+        "label": label,
+        "url": normalize_agent_href(url) if url else "",
+        "source": source,
+        "confidence": confidence,
+        "acl_decision": {
+            "can_read": access.get("can_read", True),
+            "can_cite": access.get("can_cite", True),
+            "classification": access.get("classification") or "",
+        },
+        "used_for": used_for or ["answer"],
+    }
+
+
+def build_agent_evidence_ledger(response: dict[str, Any], req: BoiAgentChatRequest, employee_id: str) -> list[dict[str, Any]]:
+    access = response.get("access_summary") if isinstance(response.get("access_summary"), dict) else {}
+    context = response.get("context_summary") if isinstance(response.get("context_summary"), dict) else {}
+    page = context.get("page_context") if isinstance(context.get("page_context"), dict) else {}
+    items: list[dict[str, Any]] = []
+    if page:
+        title = str(page.get("title") or page.get("page_kind") or req.page_context.get("title") or "현재 페이지")
+        items.append(
+            _agent_evidence_item(
+                kind="current_page",
+                label=title,
+                url=req.current_url,
+                source="page_context",
+                used_for=["answer", "followup"],
+                access_summary=access,
+            )
+        )
+    seen_urls = {item.get("url") for item in items if item.get("url")}
+    for source_name, used_for in (("citations", ["answer", "citation", "followup"]), ("links", ["answer", "reference", "followup"])):
+        for link in response.get(source_name) or []:
+            if not isinstance(link, dict):
+                continue
+            url = normalize_agent_href(link.get("url") or link.get("href") or "")
+            label = str(link.get("label") or link.get("title") or url or "").strip()
+            if not label or (url and url in seen_urls):
+                continue
+            if url:
+                seen_urls.add(url)
+            items.append(
+                _agent_evidence_item(
+                    kind=str(link.get("kind") or source_name.rstrip("s") or "reference"),
+                    label=label,
+                    url=url,
+                    source=source_name,
+                    used_for=used_for,
+                    access_summary=access,
+                )
+            )
+    for artifact in normalize_agent_artifacts(response.get("artifacts"), str(response.get("answer_markdown") or "")):
+        title = str(artifact.get("title") or artifact.get("type") or "artifact")
+        items.append(
+            _agent_evidence_item(
+                kind=f"artifact:{artifact.get('type')}",
+                label=title,
+                source="agent_artifact",
+                used_for=["answer", "followup"],
+                access_summary=access,
+            )
+        )
+    for card in normalize_agent_execution_cards(response.get("execution_cards"), employee_id):
+        display = card.get("display") if isinstance(card.get("display"), dict) else {}
+        items.append(
+            _agent_evidence_item(
+                kind=f"execution:{card.get('operation') or card.get('type')}",
+                label=str(display.get("title") or card.get("title") or card.get("operation") or "확인 카드"),
+                source="execution_card",
+                confidence=0.9,
+                used_for=["action_affordance", "followup"],
+                access_summary=access,
+            )
+        )
+    sanitized, _count = sanitize_agent_reference_value(items[:24], employee_id)
+    return sanitized if isinstance(sanitized, list) else []
+
+
+def build_agent_affordances(response: dict[str, Any], req: BoiAgentChatRequest, employee_id: str) -> list[dict[str, Any]]:
+    artifacts = normalize_agent_artifacts(response.get("artifacts"), str(response.get("answer_markdown") or ""))
+    artifact_types = {str(item.get("type") or "") for item in artifacts}
+    cards = normalize_agent_execution_cards(response.get("execution_cards"), employee_id)
+    links = [item for item in (response.get("links") or []) if isinstance(item, dict) and item.get("url")]
+    intent = str(response.get("intent") or (response.get("context_summary") or {}).get("intent") or "")
+    affordances: list[dict[str, Any]] = []
+
+    def add(kind: str, label: str, question_hint: str, url: str = "", operation: str = "") -> None:
+        affordances.append(
+            {
+                "type": kind,
+                "label": label,
+                "question_hint": question_hint,
+                "url": normalize_agent_href(url) if url else "",
+                "operation": operation,
+                "requires_confirmation": kind in {"create_draft", "request_execution", "complete_handoff", "approval"},
+            }
+        )
+
+    add("ask_more", "근거 자세히 보기", "방금 답변의 근거를 더 자세히 설명해줘.")
+    if links:
+        first = links[0]
+        add("open_reference", str(first.get("label") or "관련 문서 열기"), "가장 중요한 관련 문서를 기준으로 더 설명해줘.", str(first.get("url") or ""))
+    if "mermaid" in artifact_types:
+        add("check_gap", "Action Spec 누락 점검", "이 Mermaid 흐름에서 부족한 Action Spec을 점검해줘.")
+        add("make_artifact", "관계 표로 보기", "이 흐름을 Event, Action, Manual Handoff 관계 표로 정리해줘.")
+    if "workflow_summary" in artifact_types:
+        add("make_artifact", "Mermaid로 보기", "이 관계 표를 Mermaid 프로세스 플로우로 다시 보여줘.")
+        add("check_gap", "부족한 명세 점검", "이 관계 표에서 부족한 업무 요청 명세를 찾아줘.")
+    if "gap_table" in artifact_types or intent == "gap_check":
+        add("create_draft", "부족 명세 초안", "누락된 업무 요청 명세 초안을 먼저 만들어줘.", operation="event_type_draft")
+    for card in cards:
+        operation = str(card.get("operation") or "")
+        display = card.get("display") if isinstance(card.get("display"), dict) else {}
+        label = str(display.get("title") or card.get("title") or operation or "확인 필요")
+        if "handoff" in operation:
+            add("complete_handoff", label, "이 조치 내용을 입력해서 완료 기록을 남기고 싶어.", operation=operation)
+        elif "approval" in operation or card.get("requires_confirmation"):
+            add("approval", label, "이 요청을 실행하기 전에 확인할 내용을 정리해줘.", operation=operation)
+        else:
+            add("request_execution", label, "이 요청을 실행하기 전에 먼저 확인해줘.", operation=operation)
+    sanitized, _count = sanitize_agent_reference_value(affordances[:12], employee_id)
+    return sanitized if isinstance(sanitized, list) else []
+
+
+def compact_answer_context_for_followups(req: BoiAgentChatRequest, response: dict[str, Any]) -> dict[str, Any]:
+    answer_source = re.sub(r"```.*?```", " ", str(response.get("display_markdown") or response.get("answer_markdown") or ""), flags=re.DOTALL)
+    answer_text = text_excerpt(re.sub(r"[#>*_`|\\-]+", " ", answer_source), 900)
+    return {
+        "question": req.question,
+        "answer_summary": answer_text,
+        "route": response.get("route") or (response.get("context_summary") or {}).get("route"),
+        "intent": response.get("intent") or (response.get("context_summary") or {}).get("intent"),
+        "artifacts": [
+            {
+                "type": item.get("type"),
+                "title": item.get("title") or item.get("type"),
+                **({"row_count": len(item.get("data") or [])} if isinstance(item.get("data"), list) else {}),
+            }
+            for item in normalize_agent_artifacts(response.get("artifacts"), str(response.get("answer_markdown") or ""))[:6]
+            if isinstance(item, dict)
+        ],
+        "links": [
+            {"label": item.get("label") or item.get("url"), "url": item.get("url"), "kind": item.get("kind")}
+            for item in (response.get("links") or [])[:8]
+            if isinstance(item, dict)
+        ],
+        "citations": [
+            {"label": item.get("label") or item.get("ref") or item.get("url"), "url": item.get("url"), "kind": item.get("kind")}
+            for item in (response.get("citations") or [])[:6]
+            if isinstance(item, dict)
+        ],
+        "execution_cards": [
+            {
+                "operation": item.get("operation"),
+                "title": item.get("title"),
+                "display": item.get("display"),
+                "requires_confirmation": item.get("requires_confirmation", True),
+            }
+            for item in (response.get("execution_cards") or [])[:5]
+            if isinstance(item, dict)
+        ],
+        "tool_trace": [
+            {"tool": item.get("tool"), "status": item.get("status"), "summary": item.get("summary")}
+            for item in (response.get("tool_trace") or [])[-8:]
+            if isinstance(item, dict)
+        ],
+        "evidence_ledger": response.get("evidence_ledger") or [],
+        "affordances": response.get("affordances") or [],
+        "access_summary": response.get("access_summary") or {},
+        "guardrails_applied": response.get("guardrails_applied") or [],
+    }
+
+
+def add_agent_evidence_and_affordances(response: dict[str, Any], req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    response["evidence_ledger"] = build_agent_evidence_ledger(response, req, employee_id)
+    response["affordances"] = build_agent_affordances(response, req, employee_id)
+    quality = response.get("answer_quality") if isinstance(response.get("answer_quality"), dict) else {}
+    quality.update(
+        {
+            "has_answer": bool(str(response.get("answer_markdown") or response.get("display_markdown") or "").strip()),
+            "evidence_count": len(response["evidence_ledger"]),
+            "affordance_count": len(response["affordances"]),
+            "followups_generated": bool(response.get("suggested_questions")),
+        }
+    )
+    response["answer_quality"] = quality
+    return response
+
+
+def ensure_agent_answer_followups(req: BoiAgentChatRequest, response: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    existing = [str(item).strip() for item in response.get("suggested_questions") or [] if str(item).strip()]
+    has_answer_material = bool(str(response.get("answer_markdown") or response.get("display_markdown") or "").strip() or response.get("artifacts"))
+    if existing or not has_answer_material:
+        quality = response.get("answer_quality") if isinstance(response.get("answer_quality"), dict) else {}
+        quality["followups_generated"] = bool(existing)
+        response["answer_quality"] = quality
+        return response
+    suggestion_req = BoiAgentSuggestionsRequest(
+        current_url=req.current_url,
+        page_context=req.page_context,
+        answer_context=compact_answer_context_for_followups(req, response),
+    )
+    page_context = resolve_agent_page_context(req.current_url, employee_id)
+    if not page_context.get("title") and req.page_context.get("title"):
+        page_context["title"] = req.page_context.get("title")
+    suggestions = call_boi_agent_suggestions_llm(suggestion_req, employee_id, page_context)
+    response["suggested_questions"] = suggestions
+    response["suggested_questions_source"] = "answer_scoped_llm"
+    quality = response.get("answer_quality") if isinstance(response.get("answer_quality"), dict) else {}
+    quality["followups_generated"] = True
+    quality["followup_count"] = len(suggestions)
+    response["answer_quality"] = quality
+    return response
+
+
+def finalize_agent_chat_response(req: BoiAgentChatRequest, employee_id: str, *, route: dict[str, Any] | None = None, progress_callback: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
+    if route is not None or progress_callback is not None:
+        response = agent_chat_response(req, employee_id, route=route, progress_callback=progress_callback)
+    else:
+        response = agent_chat_response_with_optional_status_plan(req, employee_id)
+    response = enrich_agent_answer_html(response, employee_id)
+    response = add_agent_evidence_and_affordances(response, req, employee_id)
+    response = ensure_agent_answer_followups(req, response, employee_id)
+    response = add_agent_evidence_and_affordances(response, req, employee_id)
+    return enrich_agent_answer_html(response, employee_id)
 
 
 def agent_sse_event(event: str, payload: dict[str, Any]) -> str:
@@ -9694,7 +10302,7 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
     append_activity(employee_id, {"activity_type": "agent_question", "target": req.current_url, "title": req.question[:120]})
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(lambda: enrich_agent_answer_html(agent_chat_response_with_optional_status_plan(req, employee_id), employee_id)),
+            asyncio.to_thread(lambda: finalize_agent_chat_response(req, employee_id)),
             timeout=BOI_AGENT_CHAT_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:
@@ -9751,6 +10359,17 @@ async def api_boi_agent_chat(req: BoiAgentChatRequest, employee_id: str = Depend
                 "message": str(exc),
                 "langflow_url": LANGFLOW_URL,
                 "endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
+            },
+        ) from exc
+    except BoiAgentSuggestionsUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "status": "boi_agent_suggestions_unavailable",
+                "message": str(exc),
+                "model": BOI_AGENT_SUGGESTIONS_MODEL,
+                "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
             },
         ) from exc
 
@@ -9828,7 +10447,7 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     return drained
 
         def run_agent() -> dict[str, Any]:
-            return enrich_agent_answer_html(agent_chat_response(req, employee_id, progress_callback=emit_progress, route=planned_route), employee_id)
+            return finalize_agent_chat_response(req, employee_id, route=planned_route, progress_callback=emit_progress)
 
         def run_agent_worker() -> None:
             try:
@@ -9917,6 +10536,16 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
                     "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
                 },
             )
+        except BoiAgentSuggestionsUnavailable as exc:
+            yield agent_sse_event(
+                "error",
+                {
+                    "status": "boi_agent_suggestions_unavailable",
+                    "message": str(exc),
+                    "model": BOI_AGENT_SUGGESTIONS_MODEL,
+                    "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
+                },
+            )
         except Exception as exc:
             yield agent_sse_event("error", {"status": "agent_stream_error", "message": str(exc)})
         finally:
@@ -9932,7 +10561,7 @@ async def api_boi_agent_suggestions(req: BoiAgentSuggestionsRequest, employee_id
     resolved_context = resolve_agent_page_context(req.current_url, employee_id)
     if not resolved_context.get("title") and req.page_context.get("title"):
         resolved_context["title"] = req.page_context.get("title")
-    source = "llm"
+    source = "answer_scoped_llm" if req.answer_context else "llm"
     try:
         suggestions = await asyncio.to_thread(call_boi_agent_suggestions_llm, req, employee_id, resolved_context)
     except BoiAgentSuggestionsUnavailable as exc:
@@ -10299,7 +10928,8 @@ async def api_agent_memory_write(req: AgentMemoryRequest, employee_id: str = Dep
         }
     )
     doc = write_boi_to_subfolder(metadata, req.body, "agent-memory")
-    return {"ok": True, "item": doc_result_item(doc, employee_id)}
+    commit = git_commit_for_path(Path(str(doc["path"])), f"Save BoI agent memory {(doc.get('metadata') or {}).get('boi_id')}")
+    return {"ok": True, "item": doc_result_item(doc, employee_id), "commit": commit}
 
 
 def update_memory_metadata(memory_id: str, employee_id: str, updates: dict[str, Any]) -> dict[str, Any]:
@@ -10406,7 +11036,8 @@ async def api_dictionary_term_create(req: DictionaryTermRequest, employee_id: st
             "dictionary_term_create",
             {"scope": req.scope, "term": req.term, "team_id": team_id, "boi_id": (doc.get("metadata") or {}).get("boi_id")},
         )
-    return {"ok": True, "item": doc_result_item(doc, employee_id)}
+    commit = git_commit_for_path(Path(str(doc["path"])), f"Create BoI dictionary term {(doc.get('metadata') or {}).get('boi_id')}")
+    return {"ok": True, "item": doc_result_item(doc, employee_id), "commit": commit}
 
 
 def dictionary_body(req: DictionaryTermRequest) -> str:
@@ -10718,7 +11349,8 @@ async def create_boi(req: BoiCreate, employee_id: str = Depends(current_employee
     meta.setdefault("owner", employee_id)
     meta.setdefault("visibility", "private")
     doc = write_boi(meta, req.body)
-    return {"ok": True, "item": doc}
+    commit = git_commit_for_path(Path(str(doc["path"])), f"Create BoI {(doc.get('metadata') or {}).get('boi_id')}")
+    return {"ok": True, "item": doc, "commit": commit}
 
 
 @app.post("/api/boi/{boi_id:path}/promote")
@@ -10828,14 +11460,16 @@ async def publish_event(req: EventPublishRequest, employee_id: str = Depends(cur
         "trace_id": req.trace_id or f"trace-{uuid.uuid4().hex}",
     }
     append_event_log(status="published", event=event)
-    await publish_event_to_kafka(event)
-    return {"ok": True, "topic": BOI_EVENTS_TOPIC, "event": event}
+    broker = await publish_event_to_kafka(event)
+    return {"ok": True, "topic": BOI_EVENTS_TOPIC, "event": event, "broker": broker}
 
 
-async def publish_event_to_kafka(event: dict[str, Any]) -> None:
+async def publish_event_to_kafka(event: dict[str, Any]) -> dict[str, Any]:
+    if KAFKA_MODE == "disabled":
+        return {"status": "disabled", "mode": KAFKA_MODE, "topic": BOI_EVENTS_TOPIC}
     timeout = max(1.0, KAFKA_PUBLISH_TIMEOUT_SECONDS)
     producer = AIOKafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP,
+        **kafka_client_kwargs(),
         value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode(),
         request_timeout_ms=int(timeout * 1000),
         retry_backoff_ms=500,
@@ -10845,6 +11479,7 @@ async def publish_event_to_kafka(event: dict[str, Any]) -> None:
         await asyncio.wait_for(producer.start(), timeout=timeout)
         started = True
         await asyncio.wait_for(producer.send_and_wait(BOI_EVENTS_TOPIC, event), timeout=timeout)
+        return {"status": "published", "mode": KAFKA_MODE, "topic": BOI_EVENTS_TOPIC, "bootstrap": KAFKA_BOOTSTRAP}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Kafka publish failed: {type(exc).__name__}") from exc
     finally:

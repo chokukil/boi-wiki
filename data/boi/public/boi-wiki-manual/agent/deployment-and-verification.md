@@ -2,10 +2,10 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
-title: Native BoI Agent Deployment and Verification
-description: Native BoI Agent의 Docker build revision, NAS 배포, smoke verification 기준
-tags: [BoIWiki, Agent, Deployment, NAS, Verification]
-timestamp: 2026-06-23T10:20:00+09:00
+title: Native BoI Agent Pilot Deployment and Verification
+description: Native BoI Agent의 local-full 검증, 사내 Kafka/Langflow 연계, Docker Compose Pilot 배포 기준
+tags: [BoIWiki, Agent, Deployment, Pilot, Verification]
+timestamp: 2026-06-26T00:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:deployment-and-verification
 visibility: public
 classification: internal
@@ -19,7 +19,11 @@ source_refs:
   - type: repo
     ref: docker-compose.yml
   - type: repo
-    ref: scripts/nas_auto_pull_deploy.sh
+    ref: .env.local-full.example
+  - type: repo
+    ref: .env.pilot-external.example
+  - type: repo
+    ref: scripts/check_pilot_external_services.py
 review:
   reviewer: harness-curator
   review_status: reviewed
@@ -27,175 +31,137 @@ review:
 
 # Summary
 
-Native BoI Agent 배포는 “현재 실행 중인 컨테이너가 어떤 Git revision인지” 확인할 수 있어야 한다. Docker build에는 `BOI_BUILD_REVISION`을 넣고, `/api/runtime/config`와 `/api/agents/boi-wiki/capabilities`에서 revision을 확인한다.
+Pilot 배포 기준은 NAS가 아니라 `local-full` 검증 후 사내 Linux Docker 서버에서 `pilot-external` profile을 검증하는 것이다. Native BoI Agent는 BoI API 내부 production path이고, Langflow는 action workflow와 visual/debug backend로 사용한다.
 
 # Verification Flow
 
 ```mermaid
 flowchart TD
-  G["git rev-parse --short HEAD"] --> B["docker compose build<br/>BOI_BUILD_REVISION"]
-  B --> U["docker compose up -d"]
-  U --> C["GET /api/runtime/config"]
-  C --> R{"revision matches Git HEAD?"}
-  R -->|yes| SMOKE["Agent + search + MCP smoke"]
-  R -->|no| FAIL["Fail deployment verification"]
-  SMOKE --> OK["NAS external verification complete"]
+  DEV["Local source + .env.local-full.example"] --> LF["docker compose --profile local-full up -d --build"]
+  LF --> TEST["pytest + okf_lint + Pet Agent + MCP smoke"]
+  TEST --> READY{"Local full stack pass?"}
+  READY -->|no| FIX["Fix locally before pilot"]
+  READY -->|yes| PILOT["Copy same image/config pattern to intranet Docker host"]
+  PILOT --> EXT[".env.pilot-external.example with intranet Kafka/Langflow"]
+  EXT --> SMOKE["Kafka smoke + Langflow smoke + runtime config"]
+  SMOKE --> OK{"Pilot external dependencies healthy?"}
+  OK -->|yes| RELEASE["Pilot ready"]
+  OK -->|no| BLOCK["Block pilot rollout and report dependency failure"]
 ```
+
+# Compose Profiles
+
+| Profile | Services | Purpose |
+|---|---|---|
+| `local-full` | BoI API, Action Gateway, Event Router, MCP, local Kafka, Kafka UI, local Langflow | 전체 기능을 내 Docker에서 재현 |
+| `pilot-external` | BoI API, Action Gateway, Event Router, MCP | 사내 Kafka/Langflow 기존 서비스 연계 |
+| `core` | BoI API | 단일 컨테이너 가능 범위 확인용 |
+
+Pilot 공식 런타임은 Docker Compose다. 단일 Docker는 문서/검색/Native Agent/RBAC 중심의 Core Wiki에만 적합하며, Event Router와 Action Gateway, MCP까지 포함한 업무 런타임에는 사용하지 않는다.
 
 # Required Checks
 
+Local full stack:
+
 ```bash
+cp .env.local-full.example .env
+./scripts/start_local_full.sh
+python scripts/check_local_full_readiness.py --base-url http://localhost:28000
 pytest tests -q -s
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
-python scripts/check_boi_wiki_mcp.py --summary
-python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:8000 --agent-contract --summary
-python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:8000 --agent-contract --agent-artifact-smoke --summary
+python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:28000 --agent-contract --agent-artifact-smoke --summary
+node scripts/check_pet_agent_ui.mjs --url "http://localhost:28000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001" --question "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘." --expect-artifact workflow_summary --strict
 ```
 
-protected MCP endpoint를 외부에 열어 둔 배포에서는 service token을 환경 변수로만 넘겨 `/mcp` protocol, MCP `/health`의 AgentResponse schema, bridge, REST/MCP AgentResponse contract를 모두 확인한다.
+기본 Web 포트는 `28000`이다. 다른 포트를 써야 하면 `.env`의 `BOI_API_PORT`와 `BOI_EXTERNAL_URL`을 함께 바꾼다. `scripts/start_local_full.sh`는 같은 Compose 프로젝트가 떠 있으면 내리고 다시 올리며, 28000을 다른 Docker 컨테이너가 점유 중이면 안전하게 중단한다.
+
+`local-full`은 repo 전체를 컨테이너 `/workspace`에 마운트하고 `BOI_CONTENT_ROOT=/workspace/data/boi`, `BOI_CONTENT_SAFE_DIRECTORY=/workspace`를 사용한다. content root만 단독 마운트하면 `.git`이 보이지 않아 `BOI_AUTO_COMMIT=true`여도 `git.available=false`가 되므로 Pilot 기준 실패다.
+
+Pilot external dependency smoke:
 
 ```bash
-python scripts/check_boi_wiki_mcp.py \
-  --base-url "$BOI_WIKI_MCP_EXTERNAL_URL" \
-  --mcp-url "$BOI_WIKI_MCP_EXTERNAL_URL/mcp" \
-  --boi-api-url "$BOI_EXTERNAL_URL" \
-  --service-token-env SERVICE_TOKEN \
-  --require-bridge \
-  --agent-contract \
-  --agent-artifact-smoke \
-  --summary
+cp .env.pilot-external.example .env
+docker compose --profile pilot-external up -d --build
+python scripts/check_pilot_external_services.py --kafka --consume --timeout 30
+python scripts/check_pilot_external_services.py --langflow --run-langflow-endpoint "$LANGFLOW_BOI_AGENT_ENDPOINT" --timeout 30
 ```
 
-`--agent-artifact-smoke`는 Agent contract가 단순 schema만 맞는지 보지 않고 대표 업무 산출물까지 확인한다. 현재 기준 smoke 질문은 설비 SOP 페이지에서 “이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘.”이며, 성공 조건은 REST `/api/agents/boi-wiki/chat`와 MCP bridge `boi_agent_chat`이 모두 `workflow_summary` artifact를 반환하고 table row가 1개 이상인 것이다. 이 검사는 Web Pet UI가 표를 예쁘게 렌더링하는지와 별개로, API/MCP 소비자가 typed `artifacts[].type == "workflow_summary"`와 `artifacts[].data[]`를 받을 수 있는지 증명한다.
+`pilot-external`은 Kafka topic이나 Langflow flow를 생성하지 않는다. 사내 운영 정책에 따라 미리 provision된 endpoint에 접근 가능한지만 확인한다.
 
-NAS host Python에 `httpx`나 MCP client library가 없는 경우에는 protocol count 대신 AgentResponse contract만 stdlib 기반으로 확인한다. 이 모드도 BoI API canonical schema, MCP `/health` schema, REST chat response, authenticated MCP bridge chat response가 같은 `boi-agent.response.v1` 계약을 쓰는지 확인한다. `--agent-artifact-smoke`를 함께 쓰면 stdlib HTTP client만으로도 REST/MCP bridge workflow summary artifact를 검증한다. NAS app directory에서는 token 값을 CLI 인자로 넘기지 않고 `.env`에서 직접 읽는다.
+# Runtime Config
 
-```bash
-python3 scripts/check_boi_wiki_mcp.py \
-  --base-url http://127.0.0.1:28200 \
-  --boi-api-url http://127.0.0.1:28000 \
-  --service-token-dotenv .env \
-  --agent-contract-only \
-  --agent-artifact-smoke \
-  --require-bridge
-```
+`/api/runtime/config`는 다음 상태를 보여야 한다.
 
-NAS 배포 후에는 외부 URL에서 다음을 확인한다.
-
-| Check | Expected |
+| Field | Expected |
 |---|---|
-| `/api/agents/boi-wiki/capabilities` | `boi_agent_backend=native`, `build_revision` present |
-| `/api/agents/boi-wiki/chat/stream` | first SSE `status` event arrives quickly and includes one-line progress |
-| `/api/search/ontology?q=SOP&view=compact` | grouped compact result |
-| Pet Agent diagram question | Mermaid artifact returned by native backend |
-| Pet Agent workflow summary question | Markdown answer and workflow artifact render as HTML tables |
-| Inbox tab | 업무 카드가 일반 구성원 문구로 표시 |
-| MCP `boi_agent_chat` | same Native Agent API path |
-| MCP `/health` AgentResponse schema | matches `/api/agents/boi-wiki/response-schema` |
-| MCP bridge artifact smoke | REST and MCP `workflow_summary` artifact both valid |
-| MCP `/health` | `mcp_auth.required=true` when `/mcp` is externally reachable |
-| MCP `/mcp` without token | `401 MCP service token is required` when protected |
-| MCP `/mcp` with token | protocol initialize and tool list succeed |
+| `deployment.profile` | `local-full` 또는 `pilot-external` |
+| `deployment.content_root` | Git-backed BoI content root |
+| `deployment.runtime_root` | events/actions/activity/audit runtime root |
+| `event_broker.mode` | `local`, `external`, `disabled` |
+| `connectors.langflow_mode` | `local`, `external`, `disabled` |
+| `git.auto_commit` | Pilot 기본 `true` |
+| `git.auto_push` | Pilot external 기본 `true` |
+| `index.persisted_enabled` | Pilot 기본 `true` |
+| `build.revision` | 실행 중인 image revision |
+| `readiness.ok` | Pilot 검증 통과 여부 |
+| `boi_agent.llm_concurrency.max_concurrency` | local-full 기본 `1` |
+
+secret, token, Kafka password, LLM API key는 runtime config에 노출하지 않는다.
+
+local-full의 Agent LLM 호출은 기본적으로 한 번에 하나만 외부 Gemma gateway를 사용한다. `BOI_AGENT_LLM_MAX_CONCURRENCY=1`은 fallback이 아니라 작은 OpenAI-compatible runtime을 안정적으로 쓰기 위한 backpressure 설정이다. 더 큰 LLM gateway를 쓸 때만 운영자가 부하 테스트 후 값을 올린다. 큐 대기 시간이 `BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS`를 넘으면 Agent는 짧은 규칙 답변을 만들지 않고 장애 상태를 반환한다. composer와 suggestion writer의 `MAX_ATTEMPTS=2`는 같은 LLM에 JSON contract를 재작성시키는 repair 시도이며, canned fallback을 만들지 않는다.
+
+# Content Publishing
+
+Public/Team/Private 문서 변경은 공통 pipeline을 통과한다.
+
+```mermaid
+flowchart LR
+  REQ["User or Agent request"] --> ACL["ACL/RBAC"]
+  ACL --> VALID["OKF/Profile validation"]
+  VALID --> SECRET["Secret and sensitive scan"]
+  SECRET --> WRITE["Write Markdown/YAML"]
+  WRITE --> CACHE["Invalidate cache/index"]
+  CACHE --> COMMIT["Git commit"]
+  COMMIT --> PUSH{"BOI_AUTO_PUSH?"}
+  PUSH -->|yes| REMOTE["Git push"]
+  PUSH -->|no| VERIFY["Local HTTP verify"]
+  REMOTE --> VERIFY
+```
+
+문서 저장소와 런타임 로그는 분리한다.
+
+```bash
+BOI_CONTENT_HOST_PATH=/srv/boi-wiki/content
+BOI_CONTENT_MOUNT_PATH=/content
+BOI_CONTENT_ROOT=/content/boi
+BOI_CONTENT_SAFE_DIRECTORY=/content
+BOI_RUNTIME_ROOT=/runtime
+```
+
+`pilot-external`의 `BOI_CONTENT_HOST_PATH`는 git checkout이어야 한다. 일반 사용자는 Git을 직접 몰라도 된다. 검증, commit, push, cache 반영은 BoI API/Agent가 수행하고 실패 시 사용자에게 원인을 표시한다.
 
 # Environment
 
-| Env | Default | Meaning |
-|---|---|---|
-| `BOI_AGENT_BACKEND` | `native` | `native`, legacy `hybrid`, debug `langflow`. Unknown values are service errors, not implicit native fallback. |
-| `BOI_AGENT_LANGGRAPH_REQUIRED` | `1` | Native Agent orchestration은 LangGraph가 필수다. LangGraph import나 graph 실행이 실패하면 sequential fallback으로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. |
-| `BOI_AGENT_NATIVE_MAX_TOOL_LOOPS` | `5` | per-run bounded tool loop |
-| `BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS` | `8` | per-tool timeout target |
-| `BOI_AGENT_CACHE_WARMUP_ON_STARTUP` | `1` | API 시작 직후 문서, catalog, ontology search index를 백그라운드로 예열해 첫 Agent 질문 지연을 줄인다. LLM은 호출하지 않는다. |
-| `BOI_BUILD_REVISION` | `unknown` | image/runtime revision |
-| `MCP_REQUIRE_SERVICE_TOKEN` | `false` | `true`이면 Streamable HTTP `/mcp`도 `x-service-token` 또는 `Authorization: Bearer`를 요구한다. 외부에서 reachable한 NAS MCP endpoint는 `true`가 권장값이다. |
-| `BOI_AGENT_ROUTER_MODE` | `llm_first` | LLM Router first |
-| `BOI_AGENT_ROUTER_LLM_ENABLED` | `auto` | real LLM URL이면 Router LLM 사용, placeholder URL이면 LLM 비활성으로 해석한다. |
-| `BOI_AGENT_ROUTER_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, Router LLM 비활성, 미설정, timeout, invalid JSON, invalid route/intent, low confidence를 모두 `boi_agent_router_unavailable` 장애로 표시한다. 자동 대화 경로는 규칙 기반 대체 응답으로 우회하지 않는다. |
-| `BOI_AGENT_ROUTER_BASE_URL` | `BOI_LLM_BASE_URL` | OpenAI-compatible Router endpoint |
-| `BOI_AGENT_ROUTER_MODEL` | deployment-specific | OpenAI-compatible Router model |
-| `BOI_AGENT_ROUTER_TIMEOUT_SECONDS` | `30` | Gemma Router response timeout. 운영 모드에서 timeout은 Agent 장애로 노출된다. |
-| `BOI_AGENT_ROUTER_FAILURE_BACKOFF_SECONDS` | `30` | Router timeout/network failure 뒤 같은 worker가 잠시 LLM 호출을 건너뛰고 같은 장애를 빠르게 반환하는 보호 시간 |
-| `BOI_AGENT_ROUTER_MAX_TOKENS` | `1536` | reasoning token을 쓰는 Gemma 계열 Router의 final JSON 확보용 |
-| `BOI_AGENT_STATUS_REQUIRED` | `1` | Web Pet Agent 진행 상태 한 줄과 SSE route plan은 LLM stream planner가 생성해야 한다. 실패 시 정해진 대체 문구를 쓰지 않고 장애로 표시한다. 이 설정명은 compose 호환용으로 남아 있지만 런타임 정책은 항상 필수이며, 값을 낮춰도 canned status fallback은 생기지 않는다. |
-| `BOI_AGENT_STATUS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible stream planner endpoint. 이름은 호환상 `STATUS`를 유지하지만 SSE에서는 route/status plan을 함께 만든다. |
-| `BOI_AGENT_STATUS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 요청별 진행 상태 문구를 생성할 model |
-| `BOI_AGENT_STATUS_TIMEOUT_SECONDS` | `30` | stream plan 생성 timeout. Gemma가 route/status JSON을 만들 시간을 주되, 실패하면 `/chat/stream`은 `status_generation_failed`를 반환한다. 긴 대기 뒤 대체 문구로 숨기지 않고 Agent 장애로 노출한다. |
-| `BOI_AGENT_STATUS_MAX_TOKENS` | `1536` | Gemma 계열 모델이 reasoning token을 먼저 쓸 수 있어 너무 낮추면 `finish_reason=length`로 JSON content가 비며 장애가 된다. compact stream planner prompt 기준 1536을 기본값으로 둔다. |
-| `BOI_AGENT_SUGGESTIONS_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, 현재 페이지 추천 질문은 LLM suggestion writer가 생성해야 한다. 실패하면 템플릿 질문으로 대체하지 않고 `boi_agent_suggestions_unavailable`로 표시한다. |
-| `BOI_AGENT_SUGGESTIONS_BASE_URL` | `BOI_AGENT_ROUTER_BASE_URL` | OpenAI-compatible suggestion writer endpoint |
-| `BOI_AGENT_SUGGESTIONS_MODEL` | `BOI_AGENT_ROUTER_MODEL` | 현재 페이지 추천 질문을 생성할 model |
-| `BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS` | `12` | 추천 질문 생성 timeout. 실패 시 Pet Agent는 현재 페이지 질문을 숨기거나 장애로 표시해야 하며, 하드코딩 질문을 운영 fallback으로 쓰지 않는다. |
-| `BOI_AGENT_COMPOSER_LLM_ENABLED` | `auto` | Native tool loop가 만든 근거와 artifact를 LLM composer가 일반 구성원용 Markdown 답변으로 다듬는다. placeholder URL이면 비활성이다. |
-| `BOI_AGENT_COMPOSER_REQUIRED` | `1` | compose 호환용 설정명이다. 운영 런타임 정책은 항상 필수이며, composer 실패는 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable` 장애로 표시한다. Composer는 `answer_markdown` JSON contract만 인정하며 plain Markdown, 잘린 JSON, prompt echo, 반복 생성은 최종 답변으로 복구하지 않는다. |
-| `BOI_AGENT_COMPOSER_TIMEOUT_SECONDS` | `30` | composer 호출 timeout. 작은 answer plan JSON이라도 NAS Gemma 지연을 고려해 30초까지 기다리며, 실패하면 대체 문구 없이 Agent 장애로 노출한다. |
-| `BOI_AGENT_COMPOSER_MAX_TOKENS` | `1536` | 최종 Markdown 답변 확보용 token limit. Gemma가 반복 생성으로 `finish_reason=length`에 빠지지 않게 답변 계약은 1200자 이하를 기준으로 둔다. 런타임은 이 값을 최대 1536으로 cap한다. |
-| `BOI_AGENT_COMPOSER_MAX_ATTEMPTS` | `2` | 운영 기본 composer 시도 횟수. 첫 응답 JSON이 깨지면 규칙 기반 fallback 대신 같은 LLM에 1회 repair를 요청한다. |
-| `BOI_AGENT_CHAT_TIMEOUT_SECONDS` | `90` | non-stream `/api/agents/boi-wiki/chat` 전체 응답 상한이다. 이 시간을 넘기면 클라이언트가 socket timeout으로 끊기기 전에 `boi_agent_timeout` 503을 반환한다. 대체 답변을 만들지 않으며, MCP/외부 호출자는 Agent 장애로 처리해야 한다. |
-
-Tracked 문서에는 사설 NAS 주소를 고정하지 않는다. 외부 URL과 LLM endpoint는 `.env`에만 둔다.
-
-`/api/runtime/config`는 Router mode, LLM enabled 여부, base URL, model, timeout, backoff, cache warmup 상태를 노출한다. secret은 노출하지 않는다.
-
-# Streaming Smoke
-
-배포 후 Web Pet Agent가 멈춘 것처럼 보이지 않는지 확인하려면 external URL 기준으로 streaming endpoint의 첫 event를 확인한다.
-
-```bash
-curl -N \
-  -H "Content-Type: application/json" \
-  -d '{"question":"현재 페이지 기준으로 설명해줘","current_url":"/"}' \
-  "$BOI_EXTERNAL_URL/api/agents/boi-wiki/chat/stream?employee_id=100001" \
-  | sed -n '1,4p'
-```
-
-기대 결과:
-
-```text
-event: status
-data: {"stage":"page_context","message":"...","source":"llm_status","elapsed_ms":0}
-```
-
-실제 문구는 LLM stream planner가 질문과 현재 페이지에 맞춰 생성한다. 고정 문구가 아니므로 특정 문장과 exact match하지 않는다. 핵심은 첫 `status`에 `source: "llm_status"`가 있고, 긴 작업 중에도 LLM이 만든 한 줄 진행 상태가 반복되는 것이다. stream planner가 route/status JSON plan을 만들지 못하면 SSE가 시작되기 전에 다음처럼 HTTP `503`으로 실패해야 한다.
-
-```text
-HTTP/1.1 503 Service Unavailable
-{"detail":{"status":"status_generation_failed", ...}}
-```
-
-이 오류는 정상 우회가 아니라 Agent streaming 장애로 취급한다.
-
-이 smoke는 최종 답변 품질 검증이 아니라 “장시간 Agent 요청이 진행 상태를 계속 보여주는가”를 확인하는 최소 검증이다. 최종 답변 품질은 Pet UI에서 Markdown table, Mermaid artifact, links, Inbox card가 함께 렌더링되는지 별도로 확인한다.
-
-# Pet UI Artifact and Execution Smoke
-
-브라우저 기준 최종 검증은 `scripts/check_pet_agent_ui.mjs`를 사용한다. 이 스크립트는 Headless Chrome으로 실제 Web Pet Agent를 열어 질문 입력, streaming 상태, artifact viewer, 페이지 이동 후 상태 복원, 새 대화, 추천 질문 재조회까지 확인한다.
-
-Mermaid artifact 검증:
-
-```bash
-node scripts/check_pet_agent_ui.mjs \
-  --url "$BOI_EXTERNAL_URL/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001" \
-  --question "이 SOP를 Mermaid 프로세스 플로우로 보여줘." \
-  --expect-artifact mermaid \
-  --strict
-```
-
-Execution card와 사용자 확인 경로 검증:
-
-```bash
-EVENT_TYPE="petagent.ui.smoke.t$(date +%H%M%S).requested.v1"
-node scripts/check_pet_agent_ui.mjs \
-  --url "$BOI_EXTERNAL_URL/event-types?employee_id=100001" \
-  --question "신규 이벤트 타입 ${EVENT_TYPE} 초안을 만들어줘. Pet Agent UI 승인 흐름 smoke 이벤트이고 설명은 UI 확인용이야." \
-  --expect-artifact confirmation_required \
-  --approve-execution-card \
-  --expect-approval-status draft_created \
-  --strict
-```
-
-두 번째 smoke는 catalog apply가 아니라 Event Type draft 생성까지만 수행한다. `EVENT_TYPE` 중간 segment는 숫자로 시작하면 안 되므로 timestamp 앞에 `t`를 붙인다. 성공 기준은 confirmation card에 실행 버튼이 있고, 사용자가 확인한 뒤 `/api/agents/boi-wiki/approve`가 `draft_created` 상태를 반환하는 것이다. 이 검증은 Web Pet, REST approval API, RBAC/ACL guardrail, Event Type draft 저장 경로를 함께 확인한다.
+| Env | Meaning |
+|---|---|
+| `DEPLOY_PROFILE` | `local-full`, `pilot-external`, `core` |
+| `KAFKA_MODE` | `local`, `external`, `disabled` |
+| `LANGFLOW_MODE` | `local`, `external`, `disabled` |
+| `BOI_CONTENT_ROOT` | BoI Markdown content root |
+| `BOI_CONTENT_HOST_PATH` | host-side git checkout or content mount |
+| `BOI_CONTENT_MOUNT_PATH` | container mount point that contains the git checkout |
+| `BOI_CONTENT_SAFE_DIRECTORY` | Git safe.directory value inside the container |
+| `BOI_RUNTIME_ROOT` | event/action/activity/audit runtime root |
+| `BOI_AUTO_COMMIT` | validated edit after write commit |
+| `BOI_AUTO_PUSH` | validated commit after push |
+| `BOI_CONTENT_GIT_REMOTE` | content Git remote |
+| `BOI_CONTENT_GIT_BRANCH` | push branch |
+| `KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` |
+| `LANGFLOW_URL` | internal/action runtime Langflow URL |
 
 # Related Documents
 
-- [NAS Git Auto Pull Deployment](/public/boi-wiki-manual/operations/nas-git-auto-pull.md)
 - [Native BoI Agent Architecture](/public/boi-wiki-manual/agent/native-boi-agent-architecture.md)
+- [Ontology Retrieval and Search](/public/boi-wiki-manual/agent/ontology-retrieval-and-search.md)
+- [BoI Profile ACL Policy](/public/boi-wiki-manual/security/boi-profile-acl-policy.md)
+- [Team RBAC Management](/public/boi-wiki-manual/security/team-rbac-management.md)

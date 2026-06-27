@@ -125,6 +125,36 @@ def test_event_router_dispatch_timeout_is_configurable(monkeypatch):
     assert dispatch_client_kwargs[0]["timeout"] == 240
 
 
+def test_event_router_builds_external_kafka_security_kwargs(monkeypatch):
+    monkeypatch.setenv("KAFKA_MODE", "external")
+    monkeypatch.setenv("KAFKA_BOOTSTRAP", "kafka.example.internal:9093")
+    monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", "SASL_SSL")
+    monkeypatch.setenv("KAFKA_SASL_MECHANISM", "SCRAM-SHA-512")
+    monkeypatch.setenv("KAFKA_SASL_USERNAME", "boi-service")
+    monkeypatch.setenv("KAFKA_SASL_PASSWORD", "secret-password")
+    router = load_event_router(monkeypatch)
+
+    kwargs = router.kafka_client_kwargs()
+
+    assert router.KAFKA_MODE == "external"
+    assert kwargs["bootstrap_servers"] == "kafka.example.internal:9093"
+    assert kwargs["security_protocol"] == "SASL_SSL"
+    assert kwargs["sasl_mechanism"] == "SCRAM-SHA-512"
+    assert kwargs["sasl_plain_username"] == "boi-service"
+    assert kwargs["sasl_plain_password"] == "secret-password"
+
+
+def test_event_router_startup_delay_is_configurable(monkeypatch):
+    monkeypatch.setenv("EVENT_ROUTER_STARTUP_DELAY_SECONDS", "4.5")
+    monkeypatch.setenv("EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS", "12")
+    monkeypatch.setenv("EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS", "3")
+    router = load_event_router(monkeypatch)
+
+    assert router.STARTUP_DELAY_SECONDS == 4.5
+    assert router.TOPIC_READY_TIMEOUT_SECONDS == 12
+    assert router.POST_TOPIC_READY_DELAY_SECONDS == 3
+
+
 def test_event_router_uses_manual_offset_commit(monkeypatch):
     router = load_event_router(monkeypatch)
     source = Path(router.__file__).read_text(encoding="utf-8")

@@ -354,7 +354,7 @@ def build_deck(evidence: dict[str, Any], out_path: Path, notes_path: Path) -> No
     slide = prs.slides.add_slide(blank)
     add_title(slide, "Appendix A. 기술 구성", "실행 중인 PoC 스택과 연결 포인트")
     add_bullets(slide, 0.9, 2.0, 5.5, 3.4, [
-        "boi-api: http://localhost:8000",
+        "boi-api: http://localhost:28000",
         "action-gateway: http://localhost:8100",
         "langflow: http://localhost:7860",
         "kafka-ui: http://localhost:8081",

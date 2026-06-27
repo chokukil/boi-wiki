@@ -383,6 +383,19 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
             "status_updates": [{"stage": "retrieval", "message": "관련 BoI 지식을 확인했습니다.", "source": "llm_status"}],
             "status_events": [{"stage": "retrieval", "message": "관련 BoI 지식을 확인했습니다.", "source": "llm_status"}],
             "tool_trace": [{"tool": "ontology_search", "status": "ok", "elapsed_ms": 5, "summary": "best_matches=1"}],
+            "evidence_ledger": [
+                {
+                    "kind": "current_page",
+                    "label": "SOP",
+                    "url": "/sops",
+                    "source": "page_context",
+                    "confidence": 1.0,
+                    "acl_decision": {"can_read": True, "can_cite": True},
+                    "used_for": ["answer", "followup"],
+                }
+            ],
+            "affordances": [{"type": "ask_more", "label": "근거 자세히 보기", "question_hint": "근거를 더 설명해줘."}],
+            "answer_quality": {"followups_generated": True, "evidence_count": 1, "affordance_count": 1},
             "execution_cards": [
                 {
                     "contract_version": "boi-agent.response.v1",
@@ -479,7 +492,15 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
 
     requests = [
         ("boi_agent_capabilities", {"employee_id": "100001"}),
-        ("boi_agent_suggestions", {"employee_id": "100001", "current_url": "/sops", "page_context": {"title": "SOP"}}),
+        (
+            "boi_agent_suggestions",
+            {
+                "employee_id": "100001",
+                "current_url": "/sops",
+                "page_context": {"title": "SOP"},
+                "answer_context": {"intent": "diagram", "affordances": [{"type": "check_gap"}]},
+            },
+        ),
         ("dictionary_terms", {"employee_id": "100001", "query": "단면검사", "scope": "all", "limit": 5}),
         ("agent_memory_search", {"employee_id": "100001", "query": "선호", "include_archived": False, "limit": 3}),
         ("rbac_me", {"employee_id": "100001"}),
@@ -529,6 +550,7 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         "/api/rbac/audit",
         "/api/agents/boi-wiki/manual-handoffs/complete",
     ]
+    assert calls[1]["payload"]["answer_context"]["intent"] == "diagram"
     assert calls[-1]["payload"]["user_confirmed"] is True
 
 

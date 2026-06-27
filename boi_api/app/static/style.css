@@ -235,6 +235,11 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .boi-agent-suggestions button { padding:7px 10px; border:1px solid #bfdbfe; border-radius:999px; background:#fff; color:#1d4ed8; font-size:12px; font-weight:800; box-shadow:0 2px 8px rgba(37,99,235,.07); }
 .boi-agent-suggestions button:hover { border-color:#60a5fa; background:#eff6ff; }
 .boi-agent-suggestions-loading { align-self:center; color:#64748b; font-size:12px; font-weight:700; }
+.boi-agent-message-followups { margin-top:10px; padding-top:9px; border-top:1px solid #e5e7eb; }
+.boi-agent-message-followups > strong { display:block; margin-bottom:7px; color:#475569; font-size:12px; }
+.boi-agent-message-followups > div { display:flex; flex-wrap:wrap; gap:7px; }
+.boi-agent-message-followups button { padding:7px 10px; border:1px solid #bae6fd; border-radius:999px; background:#f8fafc; color:#0369a1; font-size:12px; font-weight:800; }
+.boi-agent-message-followups button:hover { border-color:#38bdf8; background:#ecfeff; }
 .boi-agent-chat-form { display:grid; gap:9px; }
 .boi-agent-chat-form textarea { width:100%; min-height:86px; resize:vertical; }
 .boi-agent-form-actions { display:flex; justify-content:flex-end; gap:8px; }

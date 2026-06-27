@@ -103,7 +103,7 @@ docker compose -f docker-compose.yml -f docker-compose.sso-dev.yml up -d --build
 
 개발 realm에는 `100001`, `100002`, `100003` 사용자가 있고 비밀번호는 모두 `password`다. `100001`은 `aix-tf`, `platform`, admin 역할을 가진다. `100002`는 `aix-tf`, `100003`은 `platform`만 가진다.
 
-BoI Wiki는 `http://localhost:8000/auth/login`에서 Keycloak으로 이동한다. Langflow는 `langflow-hynix` SSO 이미지로 뜨며 `http://localhost:7860`에서 같은 realm을 사용한다.
+BoI Wiki는 `http://localhost:28000/auth/login`에서 Keycloak으로 이동한다. Langflow는 `langflow-hynix` SSO 이미지로 뜨며 `http://localhost:7860`에서 같은 realm을 사용한다.
 
 SSO overlay는 Langflow-Hynix가 실제로 읽는 환경변수를 사용한다.
 

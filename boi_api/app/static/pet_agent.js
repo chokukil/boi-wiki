@@ -664,6 +664,7 @@
     renderCellValue,
     renderRunSummary,
     renderArtifacts,
+    renderMessageFollowups,
     artifactItems,
     listLineInfo,
     splitTableRow,
@@ -762,7 +763,22 @@
       <ol aria-label="Agent 진행 단계">
         ${lines.map((line, index) => `<li class="${index === lines.length - 1 ? "current" : ""}">${escapeHtml(line)}</li>`).join("")}
       </ol>
-    </details>`;
+      </details>`;
+  }
+
+  function renderMessageFollowups(message) {
+    if (message.role !== "assistant") return "";
+    const suggestions = Array.isArray(message.suggestedQuestions)
+      ? message.suggestedQuestions.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    if (!suggestions.length) return "";
+    return `
+      <div class="boi-agent-message-followups" aria-label="다음에 물어볼 수 있는 질문">
+        <strong>다음에 물어볼 수 있는 질문</strong>
+        <div>
+          ${suggestions.map((item) => `<button type="button" data-question="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}
+        </div>
+      </div>`;
   }
 
   function tabLabel(tab) {
@@ -789,6 +805,7 @@
           ${message.role === "assistant" && answerHtml ? `<div class="boi-agent-answer-actions"><button type="button" data-open-answer="answer-${index}">답변 크게 보기</button></div>` : ""}
           ${renderRunSummary(message)}
           ${renderArtifacts(message, index)}
+          ${renderMessageFollowups(message)}
           ${renderLinks(message.links || [])}
         </article>`;
       })
@@ -853,10 +870,10 @@
         <strong>현재 페이지를 보고 있습니다</strong>
         <p>${escapeHtml(pageTitle)}</p>
       </section>
-      <div class="boi-agent-suggestions">
+      ${!state.messages.length ? `<div class="boi-agent-suggestions">
         ${state.suggestions.map((item) => `<button type="button" data-question="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}
         ${state.suggestionsLoading ? `<span class="boi-agent-suggestions-loading" aria-live="polite">추천 질문 생성 중...</span>` : ""}
-      </div>
+      </div>` : ""}
       ${state.suggestionError ? `<p class="boi-agent-hint error">${escapeHtml(state.suggestionError)}</p>` : ""}
       ${renderMessages()}
       <form class="boi-agent-chat-form">
@@ -1329,9 +1346,10 @@
         },
         artifacts: body.artifacts || [],
         executionCards: body.execution_cards || [],
+        suggestedQuestions: body.suggested_questions || [],
       };
       state.currentStatus = "";
-      refreshSuggestions();
+      if (!state.messages.length) refreshSuggestions();
     }).catch((error) => {
       if (pageUnloading) {
         const pending = state.messages[pendingIndex] || {};

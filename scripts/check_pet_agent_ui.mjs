@@ -8,7 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 function parseArgs(argv) {
   const args = {
-    url: "http://localhost:8000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+    url: "http://localhost:28000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
     question: "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
     timeoutMs: 90000,
     screenshot: "",
@@ -227,7 +227,7 @@ async function main() {
     await loaded;
     await waitUntil(
       cdp,
-      "document.readyState === 'complete' && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
+      "['interactive','complete'].includes(document.readyState) && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
       15000,
     );
 
@@ -271,6 +271,13 @@ async function main() {
       return true;
     })()`);
     await waitUntil(cdp, "!!document.querySelector('.boi-agent-panel.open .boi-agent-chat-form textarea')", 10000);
+    const starterBeforeAsk = await cdp.evaluate(`(() => {
+      const root = document.querySelector("#boi-agent-root");
+      return {
+        count: root.querySelectorAll(".boi-agent-suggestions [data-question]").length,
+        texts: Array.from(root.querySelectorAll(".boi-agent-suggestions [data-question]")).map((button) => button.textContent.trim()).filter(Boolean),
+      };
+    })()`);
     await cdp.evaluate(`(() => {
       const textarea = document.querySelector(".boi-agent-chat-form textarea");
       textarea.value = ${JSON.stringify(args.question)};
@@ -365,7 +372,10 @@ async function main() {
         approveButtonCount: latestMessage ? latestMessage.querySelectorAll("[data-agent-approve]").length : 0,
         rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
         rawTableSeparatorLeak: new RegExp("\\\\|\\\\s*:?-{3,}:?\\\\s*\\\\|").test(answerText),
-        suggestionButtonCount: root.querySelectorAll(".boi-agent-suggestions [data-question]").length,
+        starterSuggestionButtonCount: root.querySelectorAll(".boi-agent-suggestions [data-question]").length,
+        answerFollowupButtonCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
+        starterSuggestionTexts: Array.from(root.querySelectorAll(".boi-agent-suggestions [data-question]")).map((button) => button.textContent.trim()).filter(Boolean),
+        answerFollowupTexts: latestMessage ? Array.from(latestMessage.querySelectorAll(".boi-agent-message-followups [data-question]")).map((button) => button.textContent.trim()).filter(Boolean) : [],
       };
     })()`);
 
@@ -387,7 +397,7 @@ async function main() {
           if (!diagram) return true;
           return diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg");
         })()`,
-        8000,
+        28000,
         250,
       );
     } catch (_error) {
@@ -476,7 +486,7 @@ async function main() {
     await navLoaded;
     await waitUntil(
       cdp,
-      "document.readyState === 'complete' && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
+      "['interactive','complete'].includes(document.readyState) && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
       15000,
     );
     try {
@@ -505,9 +515,56 @@ async function main() {
         mermaidDiagramCount: diagrams.length,
         mermaidRenderedCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")).length,
         artifactTableCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
+        answerFollowupButtonCount: latest ? latest.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
         rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
       };
     })()`);
+
+    let followupClick = { skipped: true, reason: "no answer follow-up button" };
+    if (beforeNew.answerFollowupButtonCount > 0) {
+      const beforeFollowupMessageCount = await cdp.evaluate(`document.querySelectorAll("#boi-agent-root .boi-agent-message").length`);
+      const clickedQuestion = await cdp.evaluate(`(() => {
+        const latest = document.querySelector("#boi-agent-root .boi-agent-message.assistant:last-of-type");
+        const button = latest?.querySelector(".boi-agent-message-followups [data-question]");
+        const question = button?.textContent.trim() || "";
+        button?.click();
+        return question;
+      })()`);
+      try {
+        await waitUntil(
+          cdp,
+          `(() => {
+            const root = document.querySelector("#boi-agent-root");
+            const count = root.querySelectorAll(".boi-agent-message").length;
+            const latest = root.querySelector(".boi-agent-message.assistant:last-of-type");
+            return !root.querySelector(".boi-agent-stop") && count > ${Number(beforeFollowupMessageCount)} && latest && latest.textContent.trim().length > 20;
+          })()`,
+          args.timeoutMs,
+          250,
+        );
+      } catch (error) {
+        followupClick = { skipped: false, clickedQuestion, ok: false, error: error.message };
+      }
+      if (followupClick.skipped !== false || followupClick.ok !== false) {
+        followupClick = await cdp.evaluate(`(() => {
+          const root = document.querySelector("#boi-agent-root");
+          const messages = Array.from(root.querySelectorAll(".boi-agent-message"));
+          const latestUser = Array.from(root.querySelectorAll(".boi-agent-message.user")).pop();
+          const latestAssistant = Array.from(root.querySelectorAll(".boi-agent-message.assistant")).pop();
+          const latestUserText = latestUser?.querySelector(".boi-agent-answer")?.textContent.trim()
+            || (latestUser?.textContent || "").replace(/^\\s*You\\s*/i, "").trim();
+          return {
+            skipped: false,
+            ok: true,
+            clickedQuestion: ${JSON.stringify(clickedQuestion)},
+            messageCount: messages.length,
+            latestUserText,
+            latestAssistantTextLength: (latestAssistant?.textContent.trim() || "").length,
+            latestFollowupCount: latestAssistant ? latestAssistant.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
+          };
+        })()`);
+      }
+    }
 
     if (args.screenshot) {
       const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
@@ -563,12 +620,16 @@ async function main() {
       expected_approval_status_seen: args.expectApprovalStatus
         ? approvalResult.approvalStatus === args.expectApprovalStatus || String(approvalResult.latestText || "").includes(args.expectApprovalStatus)
         : true,
-      suggestions_refreshed_through_api: networkProbe.suggestionRequests >= 2 && beforeNew.suggestionButtonCount >= 1,
+      page_starter_suggestions_loaded: networkProbe.suggestionRequests >= 1 && starterBeforeAsk.count >= 1,
+      answer_followups_rendered: beforeNew.answerFollowupButtonCount >= 1,
+      answer_followups_are_answer_scoped: beforeNew.answerFollowupButtonCount >= 1 && beforeNew.answerFollowupTexts.some((text) => !beforeNew.starterSuggestionTexts.includes(text)),
+      answer_followups_restored_after_navigation: afterNavigation.answerFollowupButtonCount >= 1,
+      followup_click_sent_new_question: followupClick.ok === true && followupClick.latestUserText === followupClick.clickedQuestion && followupClick.latestAssistantTextLength > 20,
       no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
     };
     const ok = Object.values(checks).every(Boolean);
-    const report = { ok, url: args.url, checks, network: networkProbe, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, approval: approvalResult, after_navigation: afterNavigation, after_new: afterNew, screenshot: args.screenshot || "" };
+    const report = { ok, url: args.url, checks, network: networkProbe, starter_before_ask: starterBeforeAsk, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, approval: approvalResult, after_navigation: afterNavigation, followup_click: followupClick, after_new: afterNew, screenshot: args.screenshot || "" };
     console.log(JSON.stringify(report, null, 2));
     if (args.strict && !ok) process.exitCode = 1;
   } finally {

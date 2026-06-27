@@ -110,7 +110,7 @@ def check_generic_url(client: httpx.Client, target: dict[str, Any]) -> dict[str,
 def check_target(client: httpx.Client, target: dict[str, Any], service_token: str, langflow_api_key: str) -> dict[str, Any]:
     parsed = urlparse(str(target["url"]))
     host = parsed.netloc
-    if host.endswith(":8000"):
+    if host.endswith(":28000") or host.endswith(":8000"):
         return check_boi_url(client, target, service_token)
     if host.endswith(":7860") and parsed.path.startswith("/flow/"):
         return check_langflow_url(client, target, langflow_api_key)

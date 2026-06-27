@@ -18,6 +18,8 @@
 * [BoI Profile ACL Policy](security/boi-profile-acl-policy.md)
 * [Team RBAC Management](security/team-rbac-management.md)
 * [Native BoI Agent Architecture](agent/native-boi-agent-architecture.md)
+* [BoI Agent Implementation Structure](agent/boi-agent-implementation-structure.md)
+* [Native BoI Agent Pilot Deployment and Verification](agent/deployment-and-verification.md)
 * [Agent Guardrail and ACL](agent/agent-guardrail-and-acl.md)
 * [Pet Agent UX and Artifacts](agent/pet-agent-ux-and-artifacts.md)
 * [Agent Execution and Event Authoring](agent/agent-execution-and-event-authoring.md)

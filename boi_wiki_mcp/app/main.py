@@ -90,6 +90,9 @@ AGENT_RESPONSE_REQUIRED_FIELDS = [
     "execution_cards",
     "status_updates",
     "tool_trace",
+    "evidence_ledger",
+    "affordances",
+    "answer_quality",
     "access_summary",
     "guardrails_applied",
 ]
@@ -179,6 +182,9 @@ AGENT_RESPONSE_SCHEMA = {
         "status_events": AGENT_STATUS_UPDATE_SCHEMA,
         "tool_trace": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "coverage_report": {"type": "object", "additionalProperties": True},
+        "evidence_ledger": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "affordances": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "answer_quality": {"type": "object", "additionalProperties": True},
         "access_summary": {"type": "object", "additionalProperties": True},
         "guardrails_applied": {"type": "array", "items": {"type": "string"}},
         "redacted_count": {"type": "integer", "minimum": 0},
@@ -485,12 +491,13 @@ async def boi_agent_suggestions(
     employee_id: str = DEFAULT_EMPLOYEE_ID,
     current_url: str = "",
     page_context: dict[str, Any] | None = None,
+    answer_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return recommended BoI Agent questions for a page context."""
     return await api_post(
         "/api/agents/boi-wiki/suggestions",
         employee_id=employee_id,
-        payload={"current_url": current_url, "page_context": page_context or {}},
+        payload={"current_url": current_url, "page_context": page_context or {}, "answer_context": answer_context or {}},
     )
 
 
@@ -1349,7 +1356,11 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         result = await api_post(
             "/api/agents/boi-wiki/suggestions",
             employee_id=employee_id,
-            payload={"current_url": str(args.get("current_url") or ""), "page_context": args.get("page_context") or {}},
+            payload={
+                "current_url": str(args.get("current_url") or ""),
+                "page_context": args.get("page_context") or {},
+                "answer_context": args.get("answer_context") or {},
+            },
             service_token=True,
         )
     elif tool_name == "boi_agent_capabilities":

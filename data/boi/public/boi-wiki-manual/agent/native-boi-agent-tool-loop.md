@@ -116,6 +116,12 @@ Mermaid와 table은 `artifacts`에 구조화해서 내려온다. LLM composer는
 
 Markdown answer renderer는 GFM-like table, ordered/unordered list, checklist, inline code/link/bold/italic/strike, bare URL link를 지원한다. Agent는 표가 필요한 답변을 만들 때 Markdown table과 structured artifact를 함께 내려도 되지만, 두 경로 모두 사람이 읽는 표로 보여야 한다.
 
+# Evidence Ledger and Affordance
+
+Native Agent는 답변 직전에 사용한 근거를 `evidence_ledger`로 모은다. 항목은 `kind`, `label`, `url`, `source`, `confidence`, `acl_decision`, `used_for`를 가진다. 답변, citation, Mermaid/table artifact, follow-up 질문은 이 ledger에 남은 항목만 사용한다. ledger에 없는 문서나 실행 로그를 follow-up에서 새로 암시하지 않는다.
+
+`affordances`는 답변 뒤에 사용자가 할 수 있는 다음 행동이다. 예를 들어 `ask_more`, `open_reference`, `make_artifact`, `check_gap`, `create_draft`, `request_execution`, `complete_handoff`, `approval`이 있다. mutation 성격의 affordance는 즉시 실행하지 않고 confirmation card나 승인 흐름으로만 표현한다. answer-scoped follow-up writer는 이 affordance와 evidence ledger를 함께 보고 후속 질문을 만든다.
+
 # Guardrails in the Loop
 
 Tool 결과는 `access_policy_gate`를 통과한 뒤 state에 들어간다. 답변 생성 후에는 `verify_links_and_artifacts`가 links, citations, Mermaid, table, task card 안의 BoI/Event/Action reference를 다시 검사한다. 이 단계가 실패하면 Agent는 원문을 숨기고 접근 제한 사유를 설명해야 한다.

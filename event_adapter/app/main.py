@@ -2,14 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import signal
+import ssl
 from typing import Any
 
 import httpx
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
+KAFKA_MODE = os.getenv("KAFKA_MODE", "local").strip().lower()
+KAFKA_SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+KAFKA_SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM", "")
+KAFKA_SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME", "")
+KAFKA_SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD", "")
+KAFKA_SSL_CAFILE = os.getenv("KAFKA_SSL_CAFILE", "")
+KAFKA_CLIENT_LOG_LEVEL = os.getenv("EVENT_ROUTER_AIOKAFKA_LOG_LEVEL", "CRITICAL").upper()
 TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
 AUDIT_TOPIC = os.getenv("BOI_AUDIT_TOPIC", "boi.audit")
 DLQ_TOPIC = os.getenv("BOI_DLQ_TOPIC", "boi.dead-letter")
@@ -22,6 +31,30 @@ ACTION_GATEWAY_SERVICE_TOKEN = os.getenv("ACTION_GATEWAY_SERVICE_TOKEN", BOI_API
 AUTO_ROUTE_EVENTS = os.getenv("AUTO_ROUTE_EVENTS", "true").lower() == "true"
 
 stop_event = asyncio.Event()
+
+_kafka_log_level = getattr(logging, KAFKA_CLIENT_LOG_LEVEL, logging.ERROR)
+logging.getLogger("aiokafka").setLevel(_kafka_log_level)
+logging.getLogger("kafka").setLevel(_kafka_log_level)
+if _kafka_log_level >= logging.CRITICAL:
+    logging.disable(logging.ERROR)
+elif _kafka_log_level >= logging.ERROR:
+    logging.disable(logging.WARNING)
+
+
+def kafka_client_kwargs() -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "bootstrap_servers": KAFKA_BOOTSTRAP,
+        "security_protocol": KAFKA_SECURITY_PROTOCOL,
+    }
+    if KAFKA_SASL_MECHANISM:
+        kwargs["sasl_mechanism"] = KAFKA_SASL_MECHANISM
+    if KAFKA_SASL_USERNAME:
+        kwargs["sasl_plain_username"] = KAFKA_SASL_USERNAME
+    if KAFKA_SASL_PASSWORD:
+        kwargs["sasl_plain_password"] = KAFKA_SASL_PASSWORD
+    if KAFKA_SSL_CAFILE:
+        kwargs["ssl_context"] = ssl.create_default_context(cafile=KAFKA_SSL_CAFILE)
+    return kwargs
 
 
 def _env_float(name: str, default: float) -> float:
@@ -41,6 +74,10 @@ AUDIT_TEXT_LIMIT = int(_env_float("EVENT_ROUTER_AUDIT_TEXT_LIMIT", 600))
 CONSUMER_SESSION_TIMEOUT_MS = int(_env_float("EVENT_ROUTER_CONSUMER_SESSION_TIMEOUT_MS", 60_000))
 CONSUMER_HEARTBEAT_INTERVAL_MS = int(_env_float("EVENT_ROUTER_CONSUMER_HEARTBEAT_INTERVAL_MS", 10_000))
 CONSUMER_MAX_POLL_INTERVAL_MS = int(_env_float("EVENT_ROUTER_CONSUMER_MAX_POLL_INTERVAL_MS", 900_000))
+STARTUP_DELAY_SECONDS = _env_float("EVENT_ROUTER_STARTUP_DELAY_SECONDS", 0)
+TOPIC_READY_TIMEOUT_SECONDS = _env_float("EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS", 60)
+TOPIC_READY_INTERVAL_SECONDS = _env_float("EVENT_ROUTER_TOPIC_READY_INTERVAL_SECONDS", 2)
+POST_TOPIC_READY_DELAY_SECONDS = _env_float("EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS", 0)
 
 
 def _decode(value: bytes) -> dict[str, Any]:
@@ -159,6 +196,47 @@ async def emit(producer: AIOKafkaProducer, topic: str, payload: dict[str, Any]) 
     await producer.send_and_wait(topic, payload)
 
 
+async def wait_for_topic_readiness() -> None:
+    try:
+        from aiokafka.admin import AIOKafkaAdminClient
+    except Exception as exc:  # pragma: no cover - dependency is present in the container image
+        print(json.dumps({"status": "topic-readiness-unavailable", "error": repr(exc)}, ensure_ascii=False), flush=True)
+        return
+    deadline = asyncio.get_running_loop().time() + max(TOPIC_READY_TIMEOUT_SECONDS, 0)
+    last_error = ""
+    while True:
+        admin = AIOKafkaAdminClient(**kafka_client_kwargs())
+        try:
+            await admin.start()
+            topics = await admin.list_topics()
+            if TOPIC in topics:
+                print(json.dumps({"status": "topic-ready", "topic": TOPIC, "mode": KAFKA_MODE}, ensure_ascii=False), flush=True)
+                return
+            last_error = f"topic {TOPIC} not listed"
+        except Exception as exc:
+            last_error = repr(exc)
+        finally:
+            try:
+                await admin.close()
+            except Exception:
+                pass
+        if asyncio.get_running_loop().time() >= deadline:
+            raise RuntimeError(f"Kafka topic readiness timed out for {TOPIC}: {last_error}")
+        print(
+            json.dumps(
+                {
+                    "status": "topic-wait",
+                    "topic": TOPIC,
+                    "mode": KAFKA_MODE,
+                    "error": last_error,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        await asyncio.sleep(max(TOPIC_READY_INTERVAL_SECONDS, 0.2))
+
+
 async def write_boi_event_audit(event: dict[str, Any], status: str, result: dict[str, Any] | None = None, error: str | None = None) -> None:
     """Mirror Kafka processing status into BoI Wiki's business-facing Event Stream."""
     url = f"{BOI_API_URL.rstrip('/')}/api/events/audit"
@@ -236,9 +314,43 @@ async def process_event(event: dict[str, Any], producer: AIOKafkaProducer) -> No
 
 
 async def main() -> None:
+    if KAFKA_MODE == "disabled":
+        print("event-router disabled: KAFKA_MODE=disabled", flush=True)
+        return
+    if STARTUP_DELAY_SECONDS > 0:
+        print(
+            json.dumps(
+                {
+                    "status": "startup-wait",
+                    "delay_seconds": STARTUP_DELAY_SECONDS,
+                    "reason": "waiting for Kafka topic readiness",
+                    "mode": KAFKA_MODE,
+                    "topic": TOPIC,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        await asyncio.sleep(STARTUP_DELAY_SECONDS)
+    await wait_for_topic_readiness()
+    if POST_TOPIC_READY_DELAY_SECONDS > 0:
+        print(
+            json.dumps(
+                {
+                    "status": "post-topic-ready-wait",
+                    "delay_seconds": POST_TOPIC_READY_DELAY_SECONDS,
+                    "reason": "waiting for Kafka consumer group coordinator readiness",
+                    "mode": KAFKA_MODE,
+                    "topic": TOPIC,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        await asyncio.sleep(POST_TOPIC_READY_DELAY_SECONDS)
     consumer = AIOKafkaConsumer(
         TOPIC,
-        bootstrap_servers=KAFKA_BOOTSTRAP,
+        **kafka_client_kwargs(),
         group_id=GROUP_ID,
         value_deserializer=_decode,
         enable_auto_commit=False,
@@ -247,10 +359,10 @@ async def main() -> None:
         heartbeat_interval_ms=CONSUMER_HEARTBEAT_INTERVAL_MS,
         max_poll_interval_ms=CONSUMER_MAX_POLL_INTERVAL_MS,
     )
-    producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP, value_serializer=_encode)
+    producer = AIOKafkaProducer(**kafka_client_kwargs(), value_serializer=_encode)
     await consumer.start()
     await producer.start()
-    print(f"event-router started: topic={TOPIC}, kafka={KAFKA_BOOTSTRAP}, action_gateway={ACTION_GATEWAY_URL}", flush=True)
+    print(f"event-router started: mode={KAFKA_MODE}, topic={TOPIC}, kafka={KAFKA_BOOTSTRAP}, action_gateway={ACTION_GATEWAY_URL}", flush=True)
     try:
         while not stop_event.is_set():
             msg_batch = await consumer.getmany(timeout_ms=1000, max_records=10)

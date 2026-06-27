@@ -166,10 +166,52 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["status_writer"]["max_tokens"] == 1536
     assert body["boi_agent"]["composer"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["boi_agent"]["composer"]["max_tokens"] == 1536
+    assert body["boi_agent"]["suggestions"]["model"] == "google/gemma-4-26b-a4b-qat"
+    assert body["boi_agent"]["suggestions"]["required"] is True
+    assert body["boi_agent"]["suggestions"]["max_attempts"] >= 1
+    assert "api_key" not in body["boi_agent"]["suggestions"]
+    assert body["boi_agent"]["llm_concurrency"]["max_concurrency"] >= 1
+    assert body["boi_agent"]["llm_concurrency"]["queue_timeout_seconds"] >= 1
     assert body["boi_agent"]["langgraph"]["required"] is True
     assert body["boi_agent"]["langgraph"]["runtime"] in {"LangGraph", "unavailable"}
     assert body["boi_agent"]["cache_warmup"]["enabled"] is True
     assert body["boi_agent"]["cache_warmup"]["status"] in {"not_started", "running", "completed", "failed", "disabled"}
+    assert body["readiness"]["profile"] == "local-full"
+    assert isinstance(body["readiness"]["ok"], bool)
+    assert isinstance(body["readiness"]["failures"], list)
+    assert body["deployment"]["profile"] == "local-full"
+    assert body["deployment"]["content_root"].endswith("/boi")
+    assert body["deployment"]["runtime_root"]
+    assert body["git"]["auto_commit"] is True
+    assert body["git"]["auto_push"] is False
+    assert body["index"]["persisted_enabled"] is True
+    assert body["index"]["markdown_documents"] > 0
+    assert body["event_broker"]["mode"] == "local"
+    assert body["event_broker"]["security_protocol"] == "PLAINTEXT"
+    assert body["event_broker"]["sasl_configured"] is False
+    assert body["connectors"]["langflow_mode"] == "local"
+    assert "KAFKA_SASL_PASSWORD" not in response.text
+
+
+def test_publish_event_kafka_disabled_keeps_event_log_without_broker_publish(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(boi_app_module, "KAFKA_MODE", "disabled")
+    boi_app_module.AIOKafkaProducer.sent_events = []
+
+    response = client.post(
+        "/api/events/publish?employee_id=100001",
+        json={
+            "event_type": "equipment.alarm.raised.v1",
+            "actor_employee_id": "100001",
+            "payload": {"equipment_id": "ETCH-VM-01"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["broker"]["status"] == "disabled"
+    assert boi_app_module.AIOKafkaProducer.sent_events == []
+    assert boi_app_module.cached_event_log_rows()
 
 
 def test_agent_cache_warmup_populates_runtime_indexes(boi_app_module):
@@ -1155,6 +1197,94 @@ def test_boi_agent_chat_normalizes_minimal_backend_response_to_agent_contract(bo
     assert body["tool_trace"] == []
     assert body["access_summary"] == {}
     assert body["guardrails_applied"] == []
+
+
+def test_boi_agent_chat_generates_answer_scoped_followups_when_backend_omits_them(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    seen_requests: list[Any] = []
+
+    def minimal_agent_response(req, employee_id):
+        return {
+            "ok": True,
+            "used_backend": "native_langgraph",
+            "answer_markdown": "## SOP 흐름\n\n설비 이상 SOP를 Mermaid artifact와 원본 매핑 표로 정리했습니다.",
+            "links": [{"label": "설비 SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+            "citations": [{"label": "설비 SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+            "artifacts": [{"type": "mermaid", "title": "SOP", "source": "flowchart TD\nA[이상 감지] --> B[원인 분석]"}],
+            "tool_trace": [{"tool": "boi_get", "status": "ok", "summary": "설비 SOP"}],
+            "route": "deep",
+            "intent": "diagram",
+            "suggested_questions": [],
+            "suggested_questions_source": "suggestions_endpoint_required",
+        }
+
+    def fake_suggestions(req, employee_id: str, page_context: dict[str, Any]):
+        seen_requests.append(req)
+        assert req.answer_context["question"] == "이 SOP를 Mermaid 프로세스 플로우로 보여줘."
+        assert req.answer_context["intent"] == "diagram"
+        assert req.answer_context["artifacts"][0]["type"] == "mermaid"
+        assert req.answer_context["links"][0]["label"] == "설비 SOP"
+        return [
+            "이 Mermaid에서 원인 분석 단계의 Action Spec 누락을 점검해줘.",
+            "이 SOP의 Event와 Manual Handoff 관계를 표로 다시 정리해줘.",
+            "이 흐름을 실행하려면 먼저 확인해야 할 승인 항목을 알려줘.",
+        ]
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", minimal_agent_response)
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_suggestions_llm", fake_suggestions)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "page_context": {"title": "설비 이상 SOP"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert seen_requests
+    assert body["suggested_questions_source"] == "answer_scoped_llm"
+    assert body["suggested_questions"][0].startswith("이 Mermaid")
+    assert body["evidence_ledger"]
+    assert body["affordances"]
+    assert body["answer_quality"]["followups_generated"] is True
+
+
+def test_boi_agent_chat_fails_when_answer_scoped_followups_unavailable(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def minimal_agent_response(req, employee_id):
+        return {
+            "ok": True,
+            "used_backend": "native_langgraph",
+            "answer_markdown": "현재 SOP 근거를 확인했습니다.",
+            "route": "fast",
+            "intent": "page_qa",
+            "suggested_questions": [],
+            "suggested_questions_source": "suggestions_endpoint_required",
+        }
+
+    def broken_suggestions(req, employee_id: str, page_context: dict[str, Any]):
+        raise boi_app_module.BoiAgentSuggestionsUnavailable("answer follow-up model timeout")
+
+    monkeypatch.setattr(boi_app_module, "agent_chat_response", minimal_agent_response)
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_suggestions_llm", broken_suggestions)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "현재 화면 기준으로 설명해줘.",
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "boi_agent_suggestions_unavailable"
+    assert detail["required"] is True
+    assert "answer follow-up model timeout" in detail["message"]
 
 
 def test_boi_agent_chat_normalizes_execution_cards_to_agent_schema(boi_app_module, monkeypatch):
@@ -2900,8 +3030,8 @@ def test_boi_agent_deep_request_uses_ontology_match_when_not_on_doc_page(boi_app
     assert "설비 이상 감지" in body["answer_markdown"]
     assert "workflow metadata 확인 필요" not in body["answer_markdown"]
     assert any(item.get("type") == "mermaid" for item in body["artifacts"])
-    assert body["suggested_questions"] == []
-    assert body["suggested_questions_source"] == "suggestions_endpoint_required"
+    assert body["suggested_questions"]
+    assert body["suggested_questions_source"] == "answer_scoped_llm"
 
 
 def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, monkeypatch):
@@ -4709,7 +4839,9 @@ def test_pet_agent_mount_is_available_on_home(boi_app_module):
     assert "state.inboxGroups = body.groups || []" in script
     assert "renderInboxGroup" in script
     assert "개별 업무" in script
-    assert "body.suggested_questions" not in script
+    assert "suggestedQuestions: body.suggested_questions || []" in script
+    assert "renderMessageFollowups" in script
+    assert "다음에 물어볼 수 있는 질문" in script
     assert "activeRequest.abort()" in script
     assert "생성을 중지했습니다." in script
     assert "formatAgentStreamError" in script
@@ -5322,6 +5454,83 @@ def test_boi_agent_suggestions_use_llm_writer_when_required(boi_app_module, monk
     assert "avoid suggestions that could fit any unrelated page" in prompt
     assert "natural user-facing sentence" in prompt
     assert "Mermaid 플로우 생성" in prompt
+
+
+def test_boi_agent_suggestions_accept_answer_context_for_followups(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    payloads: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "suggestions": [
+                                        "방금 만든 Mermaid에서 Action Spec 누락을 점검해줘.",
+                                        "원본 매핑 표를 기준으로 수동 조치만 따로 정리해줘.",
+                                        "이 SOP 실행 전 승인이나 확인이 필요한 항목을 알려줘.",
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, headers, json):
+            payloads.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            return FakeResponse()
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_REQUIRED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_BASE_URL", "http://router.example/v1")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_MODEL", "google/gemma-4-26b-a4b-qat")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_SUGGESTIONS_API_KEY", "dummy")
+    monkeypatch.setattr(boi_app_module.httpx, "Client", FakeClient)
+
+    response = client.post(
+        "/api/agents/boi-wiki/suggestions?employee_id=100001",
+        json={
+            "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+            "page_context": {"title": "설비 이상 SOP"},
+            "answer_context": {
+                "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
+                "answer_summary": "Mermaid artifact와 원본 매핑 표를 생성했습니다.",
+                "route": "deep",
+                "intent": "diagram",
+                "artifacts": [{"type": "mermaid", "title": "SOP workflow"}],
+                "affordances": [{"type": "check_gap", "label": "Action Spec 누락 점검"}],
+                "links": [{"label": "설비 SOP", "url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions_source"] == "answer_scoped_llm"
+    assert body["suggestions"][0].startswith("방금 만든 Mermaid")
+    prompt = payloads[0]["json"]["messages"][1]["content"]
+    assert "boi_agent_answer_followups" in prompt
+    assert "answer_context" in prompt
+    assert "Action Spec 누락 점검" in prompt
+    assert "boi_agent_page_suggestions_only" not in prompt
 
 
 def test_boi_agent_suggestions_strip_markdown_artifacts(boi_app_module):

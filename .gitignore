@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.example
+!.env.local-full.example
+!.env.pilot-external.example
 
 __pycache__/
 *.py[cod]
