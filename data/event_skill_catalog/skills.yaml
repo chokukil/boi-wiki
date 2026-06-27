@@ -1,0 +1,18 @@
+event_skills:
+  - skill_key: event.workflow_trigger
+    title: Workflow Entry Event
+    description: Event Broker가 workflow나 capability의 시작점을 식별할 수 있게 하는 이벤트 능력
+    intents: [workflow_start, event_publish, workflow_explain]
+    trigger_terms: [이벤트 발생, workflow 시작, 워크플로우 시작, trigger]
+    required_contract_fields: [event_type, topic, payload_schema, trace_policy]
+    affordances: [request_execution, open_reference]
+    validation_checks: [payload_schema_valid, topic_present, actor_policy_present]
+
+  - skill_key: event.workflow_transition
+    title: Workflow Transition Event
+    description: 한 SOP stage의 결과를 다음 stage로 넘기는 이벤트 전환 능력
+    intents: [workflow_explain, trace_reasoning]
+    trigger_terms: [다음 단계, 전환, emits event, next event]
+    required_contract_fields: [event_type, emits_event_types, trace_policy]
+    affordances: [ask_more, open_reference, request_execution]
+    validation_checks: [trace_policy_present, emitted_event_exists]

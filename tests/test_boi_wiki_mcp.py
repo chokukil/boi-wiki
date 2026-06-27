@@ -33,7 +33,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 32
+    assert body["capabilities"]["tools"] == 37
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
@@ -96,6 +96,11 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "event_type_drafts" in tool_names
     assert "event_type_draft_validate" in tool_names
     assert "event_type_draft_apply" in tool_names
+    assert "capabilities_search" in tool_names
+    assert "capability_get" in tool_names
+    assert "capability_deduplicate" in tool_names
+    assert "event_skills_list" in tool_names
+    assert "action_skills_list" in tool_names
     assert "source_create_draft" not in tool_names
     assert "doc_body_create_draft" not in tool_names
     assert any(item["name"] == "promotion_submit" for item in body["capability_lists"]["tools"])
@@ -118,7 +123,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
-    assert "Tools" in body and "32" in body
+    assert "Tools" in body and "37" in body
     assert "Resource templates" in body and "11" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
@@ -143,6 +148,10 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "rbac_audit" in body
     assert "event_type_draft_create" in body
     assert "event_type_draft_apply" in body
+    assert "capabilities_search" in body
+    assert "capability_deduplicate" in body
+    assert "event_skills_list" in body
+    assert "action_skills_list" in body
     assert "boi://docs/{boi_id}" in body
     assert "boi://search/ontology/{query}" in body
     assert "boi://agent/response-schema/{version}" in body
@@ -473,6 +482,58 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
     assert calls[0]["payload"]["conversation"] == [{"role": "user", "content": "이전 질문"}]
     assert calls[0]["payload"]["save_memory"] is False
     assert calls[1]["path"] == "/api/agents/boi-wiki/inbox"
+
+
+def test_boi_wiki_mcp_exposes_capability_and_skill_tools(mcp_module, monkeypatch):
+    async def fake_api_get(path, **kwargs):
+        if path == "/api/capabilities":
+            return {"ok": True, "items": [{"capability_key": "equipment-anomaly-response"}]}
+        if path == "/api/capabilities/equipment-anomaly-response":
+            return {"ok": True, "item": {"capability_key": "equipment-anomaly-response", "workflow_engine": "event_native"}}
+        if path == "/api/event-skills":
+            return {"ok": True, "items": [{"skill_key": "event.workflow_trigger"}]}
+        if path == "/api/action-skills":
+            return {"ok": True, "items": [{"skill_key": "event.publish"}]}
+        raise AssertionError(f"unexpected GET {path}")
+
+    async def fake_api_post(path, **kwargs):
+        assert path == "/api/capabilities/deduplicate"
+        return {"ok": True, "recommendation": "reuse", "candidates": [{"capability_key": "equipment-anomaly-response"}]}
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    client = TestClient(mcp_module.app)
+
+    status = client.get("/health")
+    tool_names = [item["name"] for item in status.json()["capability_lists"]["tools"]]
+    for name in [
+        "capabilities_search",
+        "capability_get",
+        "capability_deduplicate",
+        "event_skills_list",
+        "action_skills_list",
+    ]:
+        assert name in tool_names
+
+    search = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "capabilities_search", "arguments": {"employee_id": "100001"}},
+    )
+    dedupe = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "capability_deduplicate",
+            "arguments": {"employee_id": "100001", "event_type": "equipment.alarm.raised.v1"},
+        },
+    )
+
+    assert search.status_code == 200
+    assert search.json()["result"]["items"][0]["capability_key"] == "equipment-anomaly-response"
+    assert dedupe.status_code == 200
+    assert dedupe.json()["result"]["recommendation"] == "reuse"
 
 
 def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp_module, monkeypatch):
@@ -1109,7 +1170,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 32,
+            "tools": 37,
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
@@ -1189,7 +1250,7 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 32,
+            "tools": 37,
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
@@ -1225,7 +1286,7 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 32,
+            "tools": 37,
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
@@ -1926,7 +1987,7 @@ def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys)
     import scripts.check_boi_wiki_mcp as script
 
     async def fake_check_protocol(*args, **kwargs):
-        return {"tools": 32, "resources": 0, "resource_templates": 11, "prompts": 5}
+        return {"tools": 37, "resources": 0, "resource_templates": 11, "prompts": 5}
 
     async def fake_check_bridge(*args, **kwargs):
         return {"ok": True, "status": "mcp_invoked", "tool": "boi.search", "request_id": "check-boi-wiki-mcp"}
@@ -1987,7 +2048,7 @@ def test_check_boi_wiki_mcp_reads_service_token_from_dotenv_without_printing(mon
 
     async def fake_check_protocol(*args, **kwargs):
         seen["protocol_token"] = kwargs.get("service_token", "")
-        return {"tools": 32, "resources": 0, "resource_templates": 11, "prompts": 5}
+        return {"tools": 37, "resources": 0, "resource_templates": 11, "prompts": 5}
 
     async def fake_check_bridge(base_url, service_token, query):
         seen["bridge_token"] = service_token

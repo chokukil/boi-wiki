@@ -1,0 +1,50 @@
+action_skills:
+  - skill_key: evidence.quality_trend
+    title: 품질 Trend 근거 확인
+    description: 품질 시스템 또는 simulator에서 Response Trend 근거를 수집하는 action 능력
+    intents: [trace_reasoning, workflow_explain, gap_check]
+    trigger_terms: [Response Trend, trend, 이상탐지, 품질 시스템]
+    required_evidence: [event_context, quality_trend_contract]
+    supported_artifacts: [workflow_summary, table]
+    affordances: [open_reference, check_gap, request_execution]
+    risk_policy: low
+
+  - skill_key: evidence.raw_data_lookup
+    title: Raw/Source Data 근거 확인
+    description: Raw Data나 Source Data 참조를 확보하는 action 능력
+    intents: [trace_reasoning, workflow_explain, gap_check]
+    trigger_terms: [Raw Data, Source Data, 원본 데이터]
+    required_evidence: [event_context, source_system_contract]
+    supported_artifacts: [table]
+    affordances: [open_reference, check_gap, request_execution]
+    risk_policy: low
+
+  - skill_key: timeseries.forecast
+    title: 시계열 예측
+    description: TimesFM 같은 forecast connector로 업무 시계열 예측을 수행하는 action 능력
+    intents: [trace_reasoning, action_invoke, workflow_explain]
+    trigger_terms: [예측, forecast, 시계열, TimesFM]
+    required_evidence: [series, horizon, frequency]
+    supported_artifacts: [table, chart]
+    affordances: [request_execution, open_reference]
+    risk_policy: low
+
+  - skill_key: event.publish
+    title: Event 발행
+    description: Event Broker에 다음 workflow event를 발행하는 action 능력
+    intents: [event_publish, workflow_start, workflow_explain]
+    trigger_terms: [이벤트 발행, 다음 이벤트, workflow 시작]
+    required_evidence: [event_contract, payload_template]
+    supported_artifacts: [confirmation_required]
+    affordances: [request_execution]
+    risk_policy: medium
+
+  - skill_key: manual.handoff_complete
+    title: Manual Handoff 완료
+    description: 사람이 조치 내용과 outcome을 기록해 manual handoff를 완료하는 능력
+    intents: [manual_complete, inbox]
+    trigger_terms: [조치 완료, handoff 완료, 조치내용 입력]
+    required_evidence: [inbox_task, manual_action_contract]
+    supported_artifacts: [task_cards, confirmation_required]
+    affordances: [complete_handoff]
+    risk_policy: medium

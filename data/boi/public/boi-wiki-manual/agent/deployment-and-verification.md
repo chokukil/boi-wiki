@@ -69,11 +69,14 @@ cp .env.local-full.example .env
 python scripts/check_local_full_readiness.py --base-url http://localhost:28000
 pytest tests -q -s
 python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links
-python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:28000 --agent-contract --agent-artifact-smoke --summary
-node scripts/check_pet_agent_ui.mjs --url "http://localhost:28000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001" --question "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘." --expect-artifact workflow_summary --strict
+python scripts/check_boi_agent_scenarios.py --base-url http://localhost:28000 --strict --summary
+node scripts/check_pet_agent_ui.mjs --scenario-file tests/fixtures/boi_agent_ui_scenarios.yaml --strict
+python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:28000 --agent-contract --agent-artifact-smoke --agent-scenario-file tests/fixtures/boi_agent_scenarios.json --summary
 ```
 
 기본 Web 포트는 `28000`이다. 다른 포트를 써야 하면 `.env`의 `BOI_API_PORT`와 `BOI_EXTERNAL_URL`을 함께 바꾼다. `scripts/start_local_full.sh`는 같은 Compose 프로젝트가 떠 있으면 내리고 다시 올리며, 28000을 다른 Docker 컨테이너가 점유 중이면 안전하게 중단한다.
+
+BoI Agent 검증은 단일 happy path가 아니라 시나리오 매트릭스 기준이다. REST scenario runner는 API contract, evidence ledger, affordance, answer-scoped follow-up, confirmation-only mutation boundary를 확인한다. Web Pet scenario runner는 같은 질문을 UI에서 실행해 Markdown table, Mermaid, artifact viewer, follow-up click, navigation restore를 확인한다. MCP smoke는 같은 scenario file을 REST Agent와 optional authenticated bridge 기준으로 재검증한다.
 
 `local-full`은 repo 전체를 컨테이너 `/workspace`에 마운트하고 `BOI_CONTENT_ROOT=/workspace/data/boi`, `BOI_CONTENT_SAFE_DIRECTORY=/workspace`를 사용한다. content root만 단독 마운트하면 `.git`이 보이지 않아 `BOI_AUTO_COMMIT=true`여도 `git.available=false`가 되므로 Pilot 기준 실패다.
 

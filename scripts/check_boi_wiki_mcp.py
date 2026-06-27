@@ -12,6 +12,17 @@ from urllib.parse import urlencode
 from urllib import error as urllib_error
 import urllib.request as urllib_request
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.check_boi_agent_scenarios import (
+    ScenarioValidationError,
+    load_scenarios as load_agent_scenarios,
+    run_scenario as run_agent_scenario,
+    validate_scenario_response as validate_agent_scenario_response,
+)
+
 try:
     import httpx
 except Exception:  # pragma: no cover - exercised by no-optional-deps test.
@@ -29,7 +40,7 @@ except Exception:  # pragma: no cover - agent-contract-only can run without MCP 
     ClientSession = None
     streamablehttp_client = None
 
-EXPECTED_PROTOCOL = {"tools": 32, "resource_templates": 11, "prompts": 5}
+EXPECTED_PROTOCOL = {"tools": 37, "resource_templates": 11, "prompts": 5}
 DEFAULT_AGENT_ARTIFACT_SMOKE_QUESTION = "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘."
 DEFAULT_AGENT_ARTIFACT_SMOKE_CURRENT_URL = "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"
 
@@ -789,6 +800,75 @@ def agent_contract_bridge_valid(agent_contract: dict) -> bool:
     return True
 
 
+async def check_agent_scenarios(
+    *,
+    boi_api_url: str,
+    mcp_base_url: str,
+    employee_id: str,
+    service_token: str = "",
+    scenario_file: str = "",
+    timeout: float = 120.0,
+) -> dict:
+    scenarios = load_agent_scenarios(scenario_file or None)
+    rest_results = []
+    failures = []
+    for scenario in scenarios:
+        try:
+            rest_results.append(
+                await run_blocking(
+                    run_agent_scenario,
+                    boi_api_url,
+                    scenario,
+                    employee_id,
+                    timeout,
+                )
+            )
+        except Exception as exc:
+            failures.append({"id": str(scenario.get("id") or ""), "surface": "rest", "error": str(exc)})
+    bridge_results = []
+    bridge_status = "skipped"
+    if service_token:
+        bridge_status = "checked"
+        for scenario in scenarios:
+            try:
+                payload = await run_blocking(
+                    urllib_json_request,
+                    "POST",
+                    f"{mcp_base_url.rstrip('/')}/api/mcp/call",
+                    headers={"x-service-token": service_token},
+                    payload={
+                        "server": {"name": "boi-wiki-mcp"},
+                        "tool": "boi_agent_chat",
+                        "arguments": {
+                            "question": scenario.get("question") or "",
+                            "employee_id": str(scenario.get("employee_id") or employee_id),
+                            "current_url": scenario.get("current_url") or "",
+                            "page_title": scenario.get("page_title") or "",
+                            "save_memory": False,
+                        },
+                        "request_id": f"check-boi-agent-scenario-{scenario.get('id') or 'scenario'}",
+                    },
+                    timeout=int(timeout),
+                )
+                result = payload.get("result")
+                if not isinstance(result, dict):
+                    raise ScenarioValidationError("MCP bridge boi_agent_chat did not return a JSON object result")
+                bridge_results.append(validate_agent_scenario_response(scenario, result))
+            except Exception as exc:
+                failures.append({"id": str(scenario.get("id") or ""), "surface": "mcp_bridge", "error": str(exc)})
+    return {
+        "ok": not failures,
+        "scenario_count": len(scenarios),
+        "rest": rest_results,
+        "mcp_bridge": {
+            "status": bridge_status,
+            "results": bridge_results,
+            **({"reason": "service token not provided"} if not service_token else {}),
+        },
+        "failures": failures,
+    }
+
+
 async def main_async(args: argparse.Namespace) -> int:
     service_token = resolve_service_token(args)
     if getattr(args, "agent_contract_only", False):
@@ -804,7 +884,20 @@ async def main_async(args: argparse.Namespace) -> int:
         ok = bool(agent_contract.get("ok"))
         if bool(getattr(args, "require_bridge", False)):
             ok = ok and agent_contract_bridge_valid(agent_contract)
-        print(json.dumps({"ok": ok, "agent_contract": agent_contract}, ensure_ascii=False, indent=2))
+        payload = {"ok": ok, "agent_contract": agent_contract}
+        if getattr(args, "agent_scenario_file", ""):
+            agent_scenarios = await check_agent_scenarios(
+                boi_api_url=args.boi_api_url,
+                mcp_base_url=args.base_url,
+                employee_id=args.employee_id,
+                service_token=service_token,
+                scenario_file=args.agent_scenario_file,
+                timeout=args.agent_scenario_timeout,
+            )
+            payload["agent_scenarios"] = agent_scenarios
+            ok = ok and bool(agent_scenarios.get("ok"))
+            payload["ok"] = ok
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if ok else 1
     include_details = bool(args.details or args.client_checklist)
     protocol = await check_protocol(args.mcp_url, include_details=include_details, service_token=service_token)
@@ -848,6 +941,20 @@ async def main_async(args: argparse.Namespace) -> int:
         ok = ok and bool(agent_contract.get("ok"))
         if require_bridge:
             ok = ok and agent_contract_bridge_valid(agent_contract)
+        result["ok"] = ok
+    if getattr(args, "agent_scenario_file", ""):
+        agent_scenarios = await check_agent_scenarios(
+            boi_api_url=args.boi_api_url,
+            mcp_base_url=args.base_url,
+            employee_id=args.employee_id,
+            service_token=service_token,
+            scenario_file=args.agent_scenario_file,
+            timeout=args.agent_scenario_timeout,
+        )
+        result["agent_scenarios"] = agent_scenarios
+        ok = ok and bool(agent_scenarios.get("ok"))
+        if require_bridge and service_token:
+            ok = ok and bool(agent_scenarios.get("mcp_bridge", {}).get("results"))
         result["ok"] = ok
     if args.client_checklist:
         client_entry = {
@@ -904,6 +1011,8 @@ def main() -> int:
     parser.add_argument("--agent-contract", action="store_true", help="Validate REST and optional MCP bridge boi_agent_chat responses against the canonical AgentResponse schema.")
     parser.add_argument("--agent-contract-only", action="store_true", help="Run only AgentResponse contract checks. This mode can run with stdlib-only Python on NAS hosts.")
     parser.add_argument("--agent-artifact-smoke", action="store_true", help="Also validate a representative workflow_summary Agent artifact through REST and optional MCP bridge.")
+    parser.add_argument("--agent-scenario-file", default="", help="Validate BoI Agent REST and optional MCP bridge responses with a scenario matrix JSON/YAML file.")
+    parser.add_argument("--agent-scenario-timeout", type=float, default=120.0, help="Per-scenario Agent HTTP timeout seconds.")
     parser.add_argument("--agent-question", default="SOP 찾아줘")
     parser.add_argument("--agent-current-url", default="/sops")
     parser.add_argument("--summary", action="store_true", help="Print only the verification summary.")

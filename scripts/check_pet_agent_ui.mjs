@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createWriteStream, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { get } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +16,7 @@ function parseArgs(argv) {
     expectArtifact: "mermaid",
     approveExecutionCard: false,
     expectApprovalStatus: "",
+    scenarioFile: "",
   };
   for (let index = 2; index < argv.length; index += 1) {
     const item = argv[index];
@@ -24,15 +25,82 @@ function parseArgs(argv) {
     else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
     else if (item === "--screenshot") args.screenshot = argv[++index];
     else if (item === "--expect-artifact") args.expectArtifact = argv[++index] || args.expectArtifact;
+    else if (item === "--scenario-file") args.scenarioFile = argv[++index] || "";
     else if (item === "--approve-execution-card") args.approveExecutionCard = true;
     else if (item === "--expect-approval-status") args.expectApprovalStatus = argv[++index] || "";
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|table|confirmation_required] [--approve-execution-card] [--expect-approval-status STATUS] [--screenshot FILE] [--strict]`);
+      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|table|confirmation_required] [--scenario-file FILE] [--approve-execution-card] [--expect-approval-status STATUS] [--screenshot FILE] [--strict]`);
       process.exit(0);
     }
   }
   return args;
+}
+
+function loadScenarioFile(path) {
+  const raw = readFileSync(path, "utf8");
+  const payload = JSON.parse(raw);
+  const scenarios = Array.isArray(payload) ? payload : payload.scenarios;
+  if (!Array.isArray(scenarios)) throw new Error(`${path} must contain a scenario list or {"scenarios":[...]}`);
+  return scenarios.filter((scenario) => scenario && typeof scenario === "object");
+}
+
+function runNodeScenario(scriptPath, parentArgs, scenario) {
+  const childArgs = [
+    scriptPath,
+    "--url", scenario.url || scenario.current_url || parentArgs.url,
+    "--question", scenario.question || parentArgs.question,
+    "--expect-artifact", scenario.expect_artifact || scenario.expectArtifact || parentArgs.expectArtifact,
+    "--timeout-ms", String(scenario.timeout_ms || scenario.timeoutMs || parentArgs.timeoutMs),
+  ];
+  if (parentArgs.strict || scenario.strict) childArgs.push("--strict");
+  if (scenario.approve_execution_card || scenario.approveExecutionCard) childArgs.push("--approve-execution-card");
+  if (scenario.expect_approval_status || scenario.expectApprovalStatus) {
+    childArgs.push("--expect-approval-status", scenario.expect_approval_status || scenario.expectApprovalStatus);
+  }
+  if (scenario.screenshot) childArgs.push("--screenshot", scenario.screenshot);
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, childArgs, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("close", (code) => {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(stdout);
+      } catch (_error) {
+        parsed = { ok: false, parse_error: "child output was not JSON", stdout: stdout.slice(0, 2000) };
+      }
+      resolve({
+        id: scenario.id || "",
+        name: scenario.name || "",
+        ok: code === 0 && parsed?.ok === true,
+        exitCode: code,
+        report: parsed,
+        stderr: stderr.trim(),
+      });
+    });
+  });
+}
+
+async function runScenarioSuite(args) {
+  const scenarios = loadScenarioFile(args.scenarioFile);
+  const results = [];
+  for (const scenario of scenarios) {
+    results.push(await runNodeScenario(process.argv[1], args, scenario));
+  }
+  const failures = results.filter((result) => !result.ok);
+  const report = {
+    ok: failures.length === 0,
+    scenarioFile: args.scenarioFile,
+    scenarioCount: scenarios.length,
+    passed: results.length - failures.length,
+    failed: failures.length,
+    results,
+  };
+  console.log(JSON.stringify(report, null, 2));
+  if (args.strict && failures.length) process.exitCode = 1;
 }
 
 function findChrome() {
@@ -187,6 +255,10 @@ async function terminateChrome(child) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  if (args.scenarioFile) {
+    await runScenarioSuite(args);
+    return;
+  }
   const chrome = findChrome();
   const profileDir = mkdtempSync(join(tmpdir(), "boi-agent-chrome-"));
   const port = 9333 + Math.floor(Math.random() * 1000);

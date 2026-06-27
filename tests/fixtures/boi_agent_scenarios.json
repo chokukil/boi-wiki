@@ -1,0 +1,93 @@
+{
+  "scenarios": [
+    {
+      "id": "sop-workflow-summary",
+      "name": "SOP Event/Action/Manual Handoff relationship",
+      "question": "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘.",
+      "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "expect": {
+        "route": "deep",
+        "intent": "workflow_explain",
+        "artifact_types": ["workflow_summary"],
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true
+      }
+    },
+    {
+      "id": "sop-mermaid",
+      "name": "SOP Mermaid diagram",
+      "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
+      "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "expect": {
+        "route": "deep",
+        "intent": "diagram",
+        "artifact_types": ["mermaid"],
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true
+      }
+    },
+    {
+      "id": "sop-gap-check",
+      "name": "Action Spec gap check",
+      "question": "이 SOP를 실행하려면 부족한 Action Spec이 있는지 찾아줘.",
+      "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "expect": {
+        "route": "deep",
+        "intent": "gap_check",
+        "artifact_types": ["gap_table"],
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true
+      }
+    },
+    {
+      "id": "event-to-action",
+      "name": "Event to Capability/SOP/Action flow",
+      "question": "equipment.alarm.raised.v1 이벤트가 발생하면 뭘 해야 해?",
+      "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "expect": {
+        "route": "deep",
+        "intent": "workflow_explain",
+        "artifact_types": ["workflow_summary"],
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true,
+        "event_type": "equipment.alarm.raised.v1",
+        "capability_key": "equipment-anomaly-response"
+      }
+    },
+    {
+      "id": "action-invoke-confirmation",
+      "name": "Action invoke confirmation only",
+      "question": "api.equipment.request_trend_history Action 실행해줘.",
+      "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "expect": {
+        "route": "approval_required",
+        "intent": "action_invoke",
+        "artifact_types": ["confirmation_required"],
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "mutation_confirmation_only": true
+      }
+    },
+    {
+      "id": "unknown-capability",
+      "name": "Unknown capability should not hallucinate execution",
+      "question": "우주선 연료 펌프 보정 이벤트가 발생하면 자동으로 처리해줘.",
+      "current_url": "/",
+      "expect": {
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "forbid_answer_terms": ["처리했습니다", "실행했습니다", "발행했습니다"]
+      }
+    }
+  ]
+}

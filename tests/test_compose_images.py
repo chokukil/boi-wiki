@@ -54,7 +54,7 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "EVENT_ROUTER_STARTUP_DELAY_SECONDS: ${EVENT_ROUTER_STARTUP_DELAY_SECONDS:-0}" in compose
     assert "EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS: ${EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS:-60}" in compose
     assert "EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS: ${EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS:-0}" in compose
-    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-2}" in compose
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-3}" in compose
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY: ${BOI_AGENT_LLM_MAX_CONCURRENCY:-1}" in compose
     assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS: ${BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS:-120}" in compose
     assert "condition: service_completed_successfully" not in compose
@@ -73,7 +73,7 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "EVENT_ROUTER_STARTUP_DELAY_SECONDS=5" in local_env
     assert "EVENT_ROUTER_TOPIC_READY_TIMEOUT_SECONDS=60" in local_env
     assert "EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS=5" in local_env
-    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=2" in local_env
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in local_env
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in local_env
     assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in local_env
     assert "KAFKA_MODE=external" in pilot_env
@@ -85,13 +85,13 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "BOI_CONTENT_MOUNT_PATH=/content" in pilot_env
     assert "KAFKA_SECURITY_PROTOCOL=SASL_SSL" in pilot_env
     assert "BOI_AUTO_PUSH=true" in pilot_env
-    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=2" in pilot_env
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in pilot_env
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in pilot_env
     assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in pilot_env
     assert "KAFKA_MODE=local" in env_example
     assert "BOI_API_PORT=28000" in env_example
     assert "BOI_CONTENT_ROOT=/workspace/data/boi" in env_example
-    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=2" in env_example
+    assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in env_example
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in env_example
 
 

@@ -193,6 +193,94 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert "KAFKA_SASL_PASSWORD" not in response.text
 
 
+def test_capability_registries_and_api_expose_event_native_contract(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    capabilities = client.get("/api/capabilities?employee_id=100001")
+    event_skills = client.get("/api/event-skills?employee_id=100001")
+    action_skills = client.get("/api/action-skills?employee_id=100001")
+
+    assert capabilities.status_code == 200
+    capability_body = capabilities.json()
+    assert capability_body["ok"] is True
+    assert capability_body["count"] >= 1
+    equipment = next(item for item in capability_body["items"] if item["capability_key"] == "equipment-anomaly-response")
+    assert equipment["workflow_engine"] == "event_native"
+    assert equipment["entry_events"] == ["equipment.alarm.raised.v1"]
+    assert "sop.equipment.request_trend_history" in equipment["action_refs"]
+    assert "event.publish" in equipment["action_skill_refs"]
+
+    detail = client.get("/api/capabilities/equipment-anomaly-response?employee_id=100001")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["item"]["event_contracts"][0]["event_type"] == "equipment.alarm.raised.v1"
+    assert detail_body["item"]["event_contracts"][0]["trace_policy"] == "required"
+    assert detail_body["item"]["required_connectors"]
+    assert "langflow" not in detail_body["item"]["required_connectors"]
+
+    assert event_skills.status_code == 200
+    assert any(item["skill_key"] == "event.workflow_trigger" for item in event_skills.json()["items"])
+    assert action_skills.status_code == 200
+    assert any(item["skill_key"] == "evidence.quality_trend" for item in action_skills.json()["items"])
+
+
+def test_capability_deduplicate_prefers_existing_event_and_action_contracts(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/capabilities/deduplicate?employee_id=100001",
+        json={
+            "event_type": "equipment.alarm.raised.v1",
+            "payload_schema": {"required": ["equipment_id", "alarm_code"]},
+            "action_keys": ["sop.equipment.request_trend_history"],
+            "connector": {"kind": "api", "url": "http://quality-system.example/response-trend"},
+            "terms": ["Response Trend", "설비 Alarm"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["recommendation"] in {"reuse", "extend"}
+    assert body["candidates"]
+    top = body["candidates"][0]
+    assert top["capability_key"] == "equipment-anomaly-response"
+    assert "event_type" in top["matched_on"]
+    assert "action_key" in top["matched_on"]
+
+
+def test_ontology_search_groups_capabilities_without_changing_document_search(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    ontology = client.get("/api/search/ontology?employee_id=100001&q=equipment.alarm.raised.v1&view=compact")
+    docs = client.get("/api/boi?employee_id=100001&q=equipment.alarm.raised.v1")
+
+    assert ontology.status_code == 200
+    ontology_body = ontology.json()
+    capability_items = ontology_body["groups"]["capabilities"]
+    assert any(item["capability_key"] == "equipment-anomaly-response" for item in capability_items)
+    assert ontology_body["knowledge_panel"]["top_capability"][0]["capability_key"] == "equipment-anomaly-response"
+
+    assert docs.status_code == 200
+    assert "capabilities" not in docs.json()
+
+
+def test_capabilities_page_renders_registration_studio_entry_and_nav(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    home = client.get("/?employee_id=100001")
+    page = client.get("/capabilities?employee_id=100001")
+
+    assert home.status_code == 200
+    assert "등록/연결" in home.text
+    assert page.status_code == 200
+    assert "Capability Registration Studio" in page.text
+    assert "Event-Native" in page.text
+    assert "equipment-anomaly-response" in page.text
+    assert "Langflow는 선택 connector" in page.text
+    assert "중복 검사" in page.text
+
+
 def test_publish_event_kafka_disabled_keeps_event_log_without_broker_publish(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     monkeypatch.setattr(boi_app_module, "KAFKA_MODE", "disabled")
@@ -3080,6 +3168,45 @@ def test_boi_agent_workflow_explain_renders_relationship_table(boi_app_module, m
     assert any(item.get("type") == "workflow_summary" for item in body["artifacts"])
 
 
+def test_boi_agent_event_question_uses_capability_context(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+
+    def fake_router(req, employee_id: str):
+        return {
+            "route": "deep",
+            "confidence": 0.96,
+            "intent": "workflow_explain",
+            "reason": "event to capability question",
+            "requires_mutation": False,
+            "requires_deep_reasoning": True,
+            "requires_langflow": False,
+            "router_backend": "llm",
+        }
+
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_MODE", "llm_first")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", False)
+    monkeypatch.setattr(boi_app_module, "call_boi_agent_router_llm", fake_router)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={
+            "question": "equipment.alarm.raised.v1 이벤트가 발생하면 뭘 해야 해?",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["event_context"]["event_type"] == "equipment.alarm.raised.v1"
+    assert body["capability_context"]["capability_key"] == "equipment-anomaly-response"
+    assert body["capability_context"]["workflow_engine"] == "event_native"
+    assert "Event" in body["answer_markdown"]
+    assert "sop.equipment.request_trend_history" in body["answer_markdown"]
+    assert any(item.get("type") == "workflow_summary" for item in body["artifacts"])
+    assert any(item.get("skill_key") == "event.publish" for item in body["affordances"])
+
+
 def test_boi_agent_router_parser_accepts_reasoning_content_json(boi_app_module):
     payload = boi_app_module.parse_router_payload(
         'thinking about policy {"allowed_routes":["fast"]} final {"route":"fast","confidence":0.92,"intent":"lookup"}'
@@ -5549,6 +5676,64 @@ def test_boi_agent_suggestions_strip_markdown_artifacts(boi_app_module):
     assert suggestions[1] == "현재 SOP의 Action Spec 누락 점검해줘"
     assert suggestions[3] == "24시간 이벤트 로그를 기준으로 이상 흐름 찾아줘"
     assert all("`" not in item for item in suggestions)
+
+
+def test_boi_agent_suggestions_accept_single_answer_scoped_question(boi_app_module):
+    suggestions = boi_app_module.normalize_llm_suggestions(
+        {
+            "suggestions": [
+                "부족한 업무 요청 명세 초안을 먼저 만들어줘",
+            ]
+        }
+    )
+
+    assert suggestions == [
+        "부족한 업무 요청 명세 초안을 먼저 만들어줘",
+    ]
+
+
+def test_boi_agent_suggestions_parse_plain_llm_question_lines(boi_app_module):
+    payload = boi_app_module.parse_suggestions_payload(
+        "1. 이 요청과 유사한 Capability를 먼저 검색해줘.\n"
+        "2. 신규 Event Type 초안을 만들기 전에 필요한 payload를 정리해줘."
+    )
+
+    assert payload == {
+        "suggestions": [
+            "이 요청과 유사한 Capability를 먼저 검색해줘.",
+            "신규 Event Type 초안을 만들기 전에 필요한 payload를 정리해줘.",
+        ]
+    }
+
+
+def test_boi_agent_suggestions_parse_common_llm_alias_fields(boi_app_module):
+    payload = boi_app_module.parse_suggestions_payload(
+        '검토 결과입니다.\n{"suggested_questions":["승인 전에 필요한 근거 문서를 보여줘."]}'
+    )
+
+    assert payload == {"suggestions": ["승인 전에 필요한 근거 문서를 보여줘."]}
+
+
+def test_boi_agent_suggestions_parse_raw_json_array(boi_app_module):
+    payload = boi_app_module.parse_suggestions_payload(
+        '["이 Action을 실행하기 전에 입력 payload를 점검해줘."]'
+    )
+
+    assert payload == {"suggestions": ["이 Action을 실행하기 전에 입력 payload를 점검해줘."]}
+
+
+def test_boi_agent_suggestions_drop_placeholder_questions(boi_app_module):
+    suggestions = boi_app_module.normalize_llm_suggestions(
+        {
+            "suggestions": [
+                "...",
+                "확인",
+                "이 답변의 근거 문서를 자세히 설명해줘",
+            ]
+        }
+    )
+
+    assert suggestions == ["이 답변의 근거 문서를 자세히 설명해줘"]
 
 
 def test_boi_agent_suggestions_fail_when_required_llm_unavailable(boi_app_module, monkeypatch):

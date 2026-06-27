@@ -149,6 +149,9 @@ services:
       EVENTS_ROOT: ${EVENTS_ROOT:-/data/events}
       EVENT_CATALOG_ROOT: /data/event_catalog
       ACTION_CATALOG_ROOT: /data/action_catalog
+      CAPABILITY_CATALOG_ROOT: ${CAPABILITY_CATALOG_ROOT:-/data/capability_catalog}
+      EVENT_SKILL_CATALOG_ROOT: ${EVENT_SKILL_CATALOG_ROOT:-/data/event_skill_catalog}
+      ACTION_SKILL_CATALOG_ROOT: ${ACTION_SKILL_CATALOG_ROOT:-/data/action_skill_catalog}
       ACTION_LOG_ROOT: ${ACTION_LOG_ROOT:-/data/actions}
       ACTION_GATEWAY_URL: http://action-gateway:8100
       ACTION_INVOKE_TIMEOUT_SECONDS: ${ACTION_INVOKE_TIMEOUT_SECONDS:-90}
@@ -216,7 +219,7 @@ services:
       BOI_AGENT_SUGGESTIONS_MODEL: ${BOI_AGENT_SUGGESTIONS_MODEL:-google/gemma-4-26b-a4b-qat}
       BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS: ${BOI_AGENT_SUGGESTIONS_TIMEOUT_SECONDS:-12}
       BOI_AGENT_SUGGESTIONS_MAX_TOKENS: ${BOI_AGENT_SUGGESTIONS_MAX_TOKENS:-1024}
-      BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-2}
+      BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-3}
       BOI_AGENT_COMPOSER_LLM_ENABLED: ${BOI_AGENT_COMPOSER_LLM_ENABLED:-auto}
       BOI_AGENT_COMPOSER_REQUIRED: ${BOI_AGENT_COMPOSER_REQUIRED:-1}
       BOI_AGENT_COMPOSER_BASE_URL: ${BOI_AGENT_COMPOSER_BASE_URL:-http://llm-gateway.example:1236/v1}
@@ -245,6 +248,9 @@ services:
       - ${EVENTS_HOST_PATH:-./data/events}:${EVENTS_ROOT:-/data/events}
       - ./data/event_catalog:/data/event_catalog:ro
       - ./data/action_catalog:/data/action_catalog:ro
+      - ./data/capability_catalog:/data/capability_catalog:ro
+      - ./data/event_skill_catalog:/data/event_skill_catalog:ro
+      - ./data/action_skill_catalog:/data/action_skill_catalog:ro
       - ${ACTIONS_HOST_PATH:-./data/actions}:${ACTION_LOG_ROOT:-/data/actions}
     networks: [boi-net]
 

@@ -31,6 +31,8 @@ BoI Agent의 production path는 `boi-api` 내부 Native Agent다. Langflow는 vi
 
 Native Agent는 LangGraph state graph와 typed tool dispatcher를 함께 제공한다. LLM은 Router, stream planner, 선택적 planner/composer에 쓰이고, 실행 경계는 Python typed tool dispatcher가 통제한다. Router는 `llm_first`가 기본이며 운영 필수 구성이다. 이때 Router LLM은 사용자 답변을 생성하지 않고 `route`, `intent`, `confidence` JSON만 반환한다. Router LLM이 비활성, 미설정, timeout, invalid JSON, low confidence 중 하나라도 해당하면 `/chat`은 rules로 우회하지 않고 `boi_agent_router_unavailable`을 반환한다. Native Agent orchestration도 운영 기본값에서는 LangGraph가 필수다. LangGraph import나 graph 실행이 실패하면 sequential runtime으로 조용히 낮아지지 않고 `native_agent_runtime_unavailable`으로 실패한다. Tool loop는 BoI Wiki 검색, 문서 조회, Action Spec, Workflow Status, Dictionary, Memory를 typed dispatcher로 조회하고, 최종 답변은 이 근거와 artifact를 바탕으로 LLM composer가 업무 문장으로 다듬는다. 단, composer는 Mermaid, workflow table, gap table 같은 typed evidence를 대체하지 못한다. BoI API는 composer가 만든 설명문과 Native Agent가 만든 구조화 상세를 병합해 `answer_markdown`과 `artifacts`에 보존한다. Composer가 required로 설정된 운영에서 실패하면 deterministic answer로 숨기지 않고 `native_agent_runtime_unavailable`으로 실패한다. Web Pet Agent의 진행 상태 한 줄도 정해진 대체 문구로 우회하지 않는다. `/chat/stream`은 별도 status LLM과 router LLM을 중복 호출하지 않고, stream planner가 요청별 `route + status` JSON을 한 번에 만든다. `BOI_AGENT_STATUS_REQUIRED=1`일 때 stream planner가 route와 서로 다른 3개의 status를 만들도록 요청하며, usable한 고유 status가 하나도 없으면 `/chat/stream`은 `status_generation_failed` 또는 `boi_agent_router_unavailable`로 중단하고 Agent UI는 장애로 표시한다.
 
+Pilot runtime에서는 Agent가 Event Type을 1급 context로 다룬다. 질문이나 현재 페이지에서 Event Type이 확인되면 `data/capability_catalog/capabilities.yaml`에서 해당 Event를 지원하는 Capability Pack을 찾고, `event_context`, `capability_context`, Action/Event Skill refs를 Agent state에 넣는다. 이 덕분에 “이 이벤트가 발생하면?” 같은 질문은 Event → Capability → SOP Stage → Action → Manual Handoff → Next Event 흐름으로 답한다. Capability가 없으면 임의로 추정하지 않고 등록/연결을 제안한다.
+
 # Architecture
 
 ```mermaid
@@ -43,6 +45,7 @@ flowchart TD
   ROUTER --> AGENT["Native BoI Agent<br/>LangGraph-compatible runtime"]
   AGENT --> ACL["Access Policy Gate<br/>visibility + classification + team RBAC"]
   AGENT --> RET["Ontology Retrieval<br/>Dictionary + OKF graph + catalogs"]
+  AGENT --> CAP["Event/Capability Matching<br/>Event Contract + Skill Registry"]
   AGENT --> TOOLS["Typed Tool Dispatcher"]
   TOOLS --> DOCS["BoI Markdown / OKF docs"]
   TOOLS --> LOGS["Event / Action / Activity JSONL"]

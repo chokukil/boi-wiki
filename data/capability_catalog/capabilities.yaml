@@ -1,0 +1,131 @@
+capabilities:
+  - capability_key: equipment-anomaly-response
+    title: 설비 이상 대응 Event-Native Workflow
+    description: 설비 알람 이벤트를 시작점으로 이상 감지, 원인 분석, 보전 가이드, 이상 조치를 Event Broker 중심으로 연결하는 업무 능력
+    domain: manufacturing-equipment
+    owner: AIX 확산 TF
+    status: reviewed
+    workflow_engine: event_native
+    required_connectors: [event_broker, boi_writer, api, manual]
+    optional_connectors: [langflow, mcp]
+    entry_events:
+      - equipment.alarm.raised.v1
+    emitted_events:
+      - trend.anomaly.detected.v1
+      - root_cause.analysis.requested.v1
+      - maintenance.guide.requested.v1
+      - corrective_action.requested.v1
+    event_skill_refs:
+      - event.workflow_trigger
+      - event.workflow_transition
+    action_skill_refs:
+      - evidence.quality_trend
+      - evidence.raw_data_lookup
+      - event.publish
+      - manual.handoff_complete
+    action_refs:
+      - sop.equipment.request_trend_history
+      - sop.equipment.request_raw_data
+      - sop.equipment.create_root_cause_event
+      - sop.equipment.create_maintenance_guide_event
+      - sop.equipment.create_corrective_action_event
+      - sop.equipment.notify_action_owner
+      - manual.equipment.confirm_alarm_context
+      - manual.equipment.review_root_cause
+      - manual.equipment.confirm_maintenance_done
+    sop_refs:
+      - boi:public:sop:equipment-abnormal-response
+    event_contracts:
+      - event_type: equipment.alarm.raised.v1
+        topic: boi.events
+        payload_schema:
+          type: object
+          required: [equipment_id, alarm_code]
+          properties:
+            equipment_id: {type: string}
+            alarm_code: {type: string}
+            lot_id: {type: string}
+            wafer_id: {type: string}
+            owner: {type: string}
+        trace_policy: required
+        idempotency_key_fields: [event_type, trace_id, payload.equipment_id, payload.alarm_code]
+        actor_policy: authenticated_employee
+        visibility_policy: private_by_default
+        workflow_key: equipment-anomaly
+        sop_ref: boi:public:sop:equipment-abnormal-response
+        sop_stage_id: detect
+    required_evidence:
+      - current_event
+      - sop_stage
+      - action_results
+    supported_artifacts:
+      - workflow_summary
+      - mermaid
+      - task_cards
+    affordances:
+      - ask_more
+      - open_reference
+      - make_artifact
+      - check_gap
+      - request_execution
+      - complete_handoff
+    rbac_policy:
+      read_role: boi.viewer
+      run_role: boi.workflow_runner
+      invoke_role: boi.action_invoker
+    risk_policy:
+      default_risk: medium
+      mutation_requires_confirmation: true
+
+  - capability_key: timeseries-forecast
+    title: 시계열 예측
+    description: 명시적인 forecast 이벤트나 payload 요청을 TimesFM MCP action으로 연결하는 선택형 예측 업무 능력
+    domain: analytics
+    owner: AIX 확산 TF
+    status: reviewed
+    workflow_engine: event_native
+    required_connectors: [event_broker, boi_writer, mcp]
+    optional_connectors: []
+    entry_events:
+      - timeseries.forecast.requested.v1
+    emitted_events: []
+    event_skill_refs:
+      - event.workflow_trigger
+    action_skill_refs:
+      - timeseries.forecast
+    action_refs:
+      - mcp.timesfm.forecast
+    sop_refs: []
+    event_contracts:
+      - event_type: timeseries.forecast.requested.v1
+        topic: boi.events
+        payload_schema:
+          type: object
+          required: [series, horizon, frequency]
+          properties:
+            series: {type: array}
+            horizon: {type: integer}
+            frequency: {type: string}
+        trace_policy: optional
+        idempotency_key_fields: [event_type, trace_id]
+        actor_policy: authenticated_employee
+        visibility_policy: private_by_default
+    required_evidence:
+      - series
+      - horizon
+      - frequency
+    supported_artifacts:
+      - table
+      - chart
+      - boi_analysis
+    affordances:
+      - ask_more
+      - open_reference
+      - request_execution
+    rbac_policy:
+      read_role: boi.viewer
+      run_role: boi.workflow_runner
+      invoke_role: boi.action_invoker
+    risk_policy:
+      default_risk: low
+      mutation_requires_confirmation: true

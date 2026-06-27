@@ -7,6 +7,7 @@ BoI Wiki는 OKF 기반의 AI Native Workflow 지식/런타임 시스템입니다
 - BoI Wiki Web UI와 BoI API
 - Kafka Event Broker와 Event Router
 - API, Webhook, MCP, Langflow, Manual, Event Broker, BoI Writer action을 실행하는 Action Gateway
+- Event Contract, Capability Pack, Action/Event Skill registry
 - agent가 사용할 BoI Wiki MCP 서버
 - Langflow reference flow와 BoI custom component 연계
 - OKF Markdown 원본 문서, action catalog, event catalog, runtime smoke test
@@ -26,6 +27,7 @@ BoI Wiki는 OKF 기반의 AI Native Workflow 지식/런타임 시스템입니다
 - Kafka가 실제 Event Broker 역할을 합니다.
 - Event Router가 Kafka의 업무 이벤트를 소비합니다.
 - Action Gateway가 이벤트별 등록 connector action을 실행합니다.
+- Capability Pack이 Event, SOP Stage, Action, Manual Handoff, evidence, affordance, RBAC/ACL policy를 함께 묶습니다.
 - connector는 BoI Writer, Langflow Webhook, HTTP API, generic Webhook, MCP bridge, Manual, Event Broker 등을 포함합니다.
 - BoI Wiki는 SOP, 이벤트 기반 업무 맥락, 분석 결과, action 초안, 재사용 가능한 조직 지식, validated source edits, Team/Public promotion status를 저장합니다.
 
@@ -51,6 +53,8 @@ Business Event
 cp .env.local-full.example .env
 ./scripts/start_local_full.sh
 python scripts/check_local_full_readiness.py --base-url http://localhost:28000
+python scripts/check_boi_agent_scenarios.py --base-url http://localhost:28000 --strict --summary
+node scripts/check_pet_agent_ui.mjs --scenario-file tests/fixtures/boi_agent_ui_scenarios.yaml --strict
 ```
 
 기본 Web 포트는 `28000`입니다. 다른 포트를 써야 하면 `.env` 또는 실행 환경에 `BOI_API_PORT=xxxxx`, `BOI_EXTERNAL_URL=http://localhost:xxxxx`를 지정합니다. `scripts/start_local_full.sh`는 `.env.local-full.example`을 기본값으로 읽고, `.env`가 있으면 그 값을 오버레이합니다. 같은 Compose 프로젝트가 이미 떠 있으면 먼저 내리고 다시 올립니다. 28000을 다른 Docker 컨테이너가 점유 중이면 기본적으로 중단하고 알려주며, 로컬 검증용으로 강제 정리가 필요할 때만 `BOI_FORCE_PORT_RECLAIM=1 ./scripts/start_local_full.sh`를 사용합니다.
@@ -60,6 +64,7 @@ python scripts/check_local_full_readiness.py --base-url http://localhost:28000
 열어볼 화면:
 
 - BoI Wiki: http://localhost:28000/?employee_id=100001
+- 등록/연결: http://localhost:28000/capabilities?employee_id=100001
 - Event Types: http://localhost:28000/event-types?employee_id=100001
 - Event Stream: http://localhost:28000/events?employee_id=100001
 - SOP: http://localhost:28000/sops?employee_id=100001
@@ -70,6 +75,8 @@ python scripts/check_local_full_readiness.py --base-url http://localhost:28000
 - Langflow: http://localhost:7860
 
 기본 인증 모드는 `BOI_AUTH_MODE=dev`입니다. PoC와 테스트 편의를 위해 `employee_id` selector/query를 허용합니다.
+
+BoI Agent의 Pilot 완료 기준은 단일 질문이 아니라 REST/Web Pet/MCP 시나리오 매트릭스 통과입니다. 상세 기준은 http://localhost:28000/docs/boi:public:boi-wiki-manual:agent:boi-agent-scenario-validation?employee_id=100001 에 정리되어 있습니다.
 
 ## Pilot 배포 모델
 

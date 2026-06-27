@@ -260,6 +260,8 @@ class NativeBoiAgent:
             "route": route,
             "context_pack": context_pack,
             "page_context": context_pack.get("page_context") or {},
+            "event_context": context_pack.get("event_context") or {},
+            "capability_context": context_pack.get("capability_context") or {},
             "search": context_pack.get("ontology_search_seed") or {},
             "tool_trace": [],
             "tool_results": {},
@@ -411,6 +413,10 @@ class NativeBoiAgent:
             target_boi_id = str(page_context.get("boi_id") or "")
             if not target_boi_id:
                 target_boi_id = best_boi_ref_from_search(state.get("search") or {}, prefer_sop=True)
+            if not target_boi_id:
+                capability_context = state.get("capability_context") if isinstance(state.get("capability_context"), dict) else {}
+                sop_refs = capability_context.get("sop_refs") if isinstance(capability_context.get("sop_refs"), list) else []
+                target_boi_id = str((sop_refs or [""])[0] or "")
             if target_boi_id:
                 planned.append({"tool": "boi_get", "args": {"boi_id": target_boi_id}})
         if intent == "trace_reasoning" and page_context.get("trace_id"):
@@ -453,6 +459,7 @@ class NativeBoiAgent:
                 limit = int(args.get("limit") or 5)
                 results["memory"] = self._call_tool(tool, args, lambda query=query, limit=limit: self.tools.memory_recall(query, limit), state)
         self._expand_action_specs_from_doc(state)
+        self._expand_action_specs_from_capability(state)
         return state
 
     def _expand_action_specs_from_doc(self, state: JsonDict) -> None:
@@ -475,6 +482,32 @@ class NativeBoiAgent:
         if looked_up:
             state.setdefault("tool_results", {})["action_specs"] = looked_up
 
+    def _expand_action_specs_from_capability(self, state: JsonDict) -> None:
+        capability = state.get("capability_context") if isinstance(state.get("capability_context"), dict) else {}
+        actions = []
+        for key in capability.get("action_refs") or []:
+            key = str(key or "")
+            if key and key not in actions:
+                actions.append(key)
+        if not actions:
+            return
+        existing = (state.get("tool_results") or {}).get("action_specs") or []
+        seen = {
+            str(((item.get("item") if isinstance(item, dict) else {}) or item or {}).get("action_key") or "")
+            for item in existing
+            if isinstance(item, dict)
+        }
+        looked_up = list(existing) if isinstance(existing, list) else []
+        for action_key in actions[:12]:
+            if action_key in seen:
+                continue
+            result = self._call_tool("action_spec_lookup", {"action_key": action_key}, lambda action_key=action_key: self.tools.action_spec_lookup(action_key), state)
+            if result:
+                looked_up.append(result)
+                seen.add(action_key)
+        if looked_up:
+            state.setdefault("tool_results", {})["action_specs"] = looked_up
+
     def _evaluate_coverage(self, state: JsonDict) -> JsonDict:
         intent = state.get("intent")
         results = state.get("tool_results") or {}
@@ -482,12 +515,13 @@ class NativeBoiAgent:
             "page_context": bool((state.get("page_context") or {}).get("resolved")),
             "ontology_search": bool((state.get("search") or {}).get("best_matches")),
             "current_doc": bool(results.get("current_doc")),
+            "capability_context": bool((state.get("capability_context") or {}).get("capability_key")),
             "action_specs": bool(results.get("action_specs")),
             "trace_context": bool(results.get("trace_context") or results.get("workflow_status")),
         }
         required = ["ontology_search"]
         if intent in {"diagram", "workflow_explain", "gap_check"}:
-            required.append("current_doc")
+            required.append("current_doc" if checks.get("current_doc") or not checks.get("capability_context") else "capability_context")
         if intent == "gap_check":
             required.append("action_specs")
         if intent == "trace_reasoning":
@@ -565,19 +599,21 @@ class NativeBoiAgent:
 
     def _compose_diagram_answer(self, state: JsonDict) -> None:
         doc = (state.get("tool_results") or {}).get("current_doc") or {}
-        mermaid = workflow_mermaid(doc)
-        mapping_rows = workflow_summary_rows(doc)
+        capability = state.get("capability_context") if isinstance(state.get("capability_context"), dict) else {}
+        event_context = state.get("event_context") if isinstance(state.get("event_context"), dict) else {}
+        mermaid = workflow_mermaid(doc) if doc else capability_workflow_mermaid(capability, event_context)
+        mapping_rows = workflow_summary_rows(doc) if doc else capability_workflow_summary_rows(capability, event_context)
         state["artifacts"] = [{"type": "mermaid", "title": "SOP workflow", "source": mermaid}]
-        title = doc_title(doc, "현재 SOP")
+        title = doc_title(doc, str(capability.get("title") or "현재 Capability"))
         state["answer_markdown"] = (
             f"## {title} 프로세스 플로우\n\n"
-            "SOP metadata의 단계, 이벤트, 업무 요청, 수동 조치 항목을 기준으로 그렸습니다. "
+            "SOP/Capability metadata의 단계, 이벤트, 업무 요청, 수동 조치 항목을 기준으로 그렸습니다. "
             "다이어그램은 읽기 쉽게 단계와 구체 항목 이름을 중심으로 표시하고, 전체 원본 매핑은 아래 표에 남겼습니다.\n\n"
             f"```mermaid\n{mermaid}\n```\n"
             "\n## 원본 매핑\n\n"
             + markdown_table(mapping_rows, ["stage", "events", "actions", "manual_actions", "next_stage"])
         )
-        state["links"] = links_from_doc_and_search(doc, state.get("search") or {})
+        state["links"] = links_from_doc_and_search(doc, state.get("search") or {}) if doc else capability_links(capability, event_context)
         state["citations"] = state["links"][:5]
 
     def _compose_gap_answer(self, state: JsonDict) -> None:
@@ -594,15 +630,25 @@ class NativeBoiAgent:
 
     def _compose_workflow_answer(self, state: JsonDict) -> None:
         doc = (state.get("tool_results") or {}).get("current_doc") or {}
-        rows = workflow_summary_rows(doc)
+        capability = state.get("capability_context") if isinstance(state.get("capability_context"), dict) else {}
+        event_context = state.get("event_context") if isinstance(state.get("event_context"), dict) else {}
+        rows = workflow_summary_rows(doc) if doc else capability_workflow_summary_rows(capability, event_context)
         state["artifacts"] = [{"type": "workflow_summary", "data": rows}]
-        lines = [f"## {doc_title(doc, 'BoI 업무 흐름')} 관계 요약", ""]
+        title = doc_title(doc, str(capability.get("title") or "BoI 업무 흐름"))
+        lines = [f"## {title} 관계 요약", ""]
+        if event_context.get("event_type") or capability.get("capability_key"):
+            lines.append(
+                f"- Event: `{event_context.get('event_type') or '-'}`"
+                f"\n- Capability: `{capability.get('capability_key') or '-'}`"
+                f"\n- Workflow engine: `{capability.get('workflow_engine') or 'event_native'}`"
+            )
+            lines.append("")
         if rows:
             lines.append(markdown_table(rows, ["stage", "events", "actions", "manual_actions", "next_stage"]))
         if not rows:
             lines.append("현재 문서에서 업무 흐름 metadata를 찾지 못했습니다. 연결된 SOP/이벤트/업무 요청 문서를 더 확인해야 합니다.")
         state["answer_markdown"] = "\n".join(lines)
-        state["links"] = links_from_doc_and_search(doc, state.get("search") or {})
+        state["links"] = links_from_doc_and_search(doc, state.get("search") or {}) if doc else capability_links(capability, event_context)
         state["citations"] = state["links"][:5]
 
     def _compose_trace_answer(self, state: JsonDict) -> None:
@@ -739,6 +785,8 @@ class NativeBoiAgent:
                 "composer_error": state.get("composer_error") or "",
                 "composer_quality_repair_used": bool(state.get("composer_quality_repair_used")),
             },
+            "event_context": state.get("event_context") or {},
+            "capability_context": state.get("capability_context") or {},
             "route": state.get("route_name"),
             "intent": state.get("intent"),
             "router_backend": route.get("router_backend"),
@@ -1114,6 +1162,72 @@ def workflow_summary_rows(doc: JsonDict) -> list[JsonDict]:
             }
         )
     return rows
+
+
+def _registry_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item or "").strip()]
+    if value:
+        return [str(value)]
+    return []
+
+
+def capability_workflow_summary_rows(capability: JsonDict, event_context: JsonDict | None = None) -> list[JsonDict]:
+    if not isinstance(capability, dict) or not capability.get("capability_key"):
+        return []
+    event_context = event_context if isinstance(event_context, dict) else {}
+    entry_events = _registry_list(capability.get("entry_events"))
+    emitted_events = _registry_list(capability.get("emitted_events"))
+    actions = _registry_list(capability.get("action_refs"))
+    automated = [item for item in actions if not item.startswith("manual.")]
+    manual = [item for item in actions if item.startswith("manual.")]
+    stage = str(event_context.get("sop_stage_id") or capability.get("workflow_key") or capability.get("capability_key") or "")
+    primary_event = str(event_context.get("event_type") or "")
+    events = [primary_event] if primary_event else entry_events
+    next_events = [item for item in emitted_events if item not in set(events)]
+    return [
+        {
+            "stage": stage,
+            "events": ", ".join(events or entry_events),
+            "actions": ", ".join(automated),
+            "manual_actions": ", ".join(manual),
+            "next_stage": ", ".join(next_events[:4]) if next_events else "완료",
+        }
+    ]
+
+
+def capability_workflow_mermaid(capability: JsonDict, event_context: JsonDict | None = None) -> str:
+    rows = capability_workflow_summary_rows(capability, event_context)
+    if not rows:
+        return 'flowchart TD\n  current["현재 질문"] --> missing["Capability 연결 필요"]'
+    row = rows[0]
+    lines = ["flowchart TD"]
+    lines.append(f'  e1["{mermaid_label(row.get("events") or "Event", 30)}"] --> s1["{mermaid_label(row.get("stage") or "SOP Stage", 30)}"]')
+    actions = [item.strip() for item in str(row.get("actions") or "").split(",") if item.strip()]
+    manuals = [item.strip() for item in str(row.get("manual_actions") or "").split(",") if item.strip()]
+    next_events = [item.strip() for item in str(row.get("next_stage") or "").split(",") if item.strip() and item.strip() != "완료"]
+    for index, action in enumerate(actions[:4], start=1):
+        lines.append(f'  s1 --> a{index}["{mermaid_label(action, 30)}"]')
+    for index, action in enumerate(manuals[:3], start=1):
+        lines.append(f'  s1 --> m{index}["{mermaid_label(action, 30)}"]')
+    for index, event_type in enumerate(next_events[:3], start=1):
+        lines.append(f'  s1 --> ne{index}["{mermaid_label(event_type, 30)}"]')
+    return "\n".join(lines)
+
+
+def capability_links(capability: JsonDict, event_context: JsonDict | None = None) -> list[JsonDict]:
+    if not isinstance(capability, dict):
+        return []
+    links: list[JsonDict] = []
+    for sop_ref in _registry_list(capability.get("sop_refs"))[:3]:
+        links.append({"label": sop_ref, "url": f"/docs/{sop_ref}", "kind": "sop"})
+    event_context = event_context if isinstance(event_context, dict) else {}
+    event_type = str(event_context.get("event_type") or "")
+    if event_type:
+        links.append({"label": event_type, "url": f"/event-types/{event_type}", "kind": "event_type"})
+    for action_key in _registry_list(capability.get("action_refs"))[:5]:
+        links.append({"label": action_key, "url": f"/actions/{action_key}", "kind": "action"})
+    return links
 
 
 def markdown_table(rows: list[JsonDict], columns: list[str]) -> str:

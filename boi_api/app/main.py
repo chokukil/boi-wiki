@@ -137,6 +137,9 @@ DATA_ROOT = Path(os.getenv("DATA_ROOT") or str(BOI_CONTENT_ROOT))
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT") or str(BOI_RUNTIME_ROOT / "events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog"))
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
+CAPABILITY_CATALOG_ROOT = Path(os.getenv("CAPABILITY_CATALOG_ROOT", "/data/capability_catalog"))
+EVENT_SKILL_CATALOG_ROOT = Path(os.getenv("EVENT_SKILL_CATALOG_ROOT", "/data/event_skill_catalog"))
+ACTION_SKILL_CATALOG_ROOT = Path(os.getenv("ACTION_SKILL_CATALOG_ROOT", "/data/action_skill_catalog"))
 ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT") or str(BOI_RUNTIME_ROOT / "actions"))
 DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT") or str(BOI_RUNTIME_ROOT / "drafts"))
 ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT") or str(BOI_RUNTIME_ROOT / "activity"))
@@ -340,6 +343,8 @@ BOI_AGENT_RESPONSE_SCHEMA = {
         "guardrails_applied": {"type": "array", "items": {"type": "string"}},
         "redacted_count": {"type": "integer", "minimum": 0},
         "context_summary": {"type": "object", "additionalProperties": True},
+        "event_context": {"type": "object", "additionalProperties": True},
+        "capability_context": {"type": "object", "additionalProperties": True},
         "suggested_questions": {"type": "array", "items": {"type": "string"}},
         "route": {"type": "string"},
         "intent": {"type": "string"},
@@ -456,6 +461,9 @@ templates.env.globals["asset_url"] = asset_url
 
 _EVENT_TYPES_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _ACTION_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
+_CAPABILITY_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
+_EVENT_SKILL_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
+_ACTION_SKILL_CATALOG_CACHE: dict[str, Any] = {"signature": None, "items": []}
 _DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}
 _DOC_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_ref": {}}
 _WORKFLOW_DOCS_CACHE: dict[str, Any] = {"signature": None, "docs": []}
@@ -578,6 +586,12 @@ def invalidate_catalog_caches() -> None:
     _EVENT_TYPES_CACHE["items"] = []
     _ACTION_CATALOG_CACHE["signature"] = None
     _ACTION_CATALOG_CACHE["items"] = []
+    _CAPABILITY_CATALOG_CACHE["signature"] = None
+    _CAPABILITY_CATALOG_CACHE["items"] = []
+    _EVENT_SKILL_CATALOG_CACHE["signature"] = None
+    _EVENT_SKILL_CATALOG_CACHE["items"] = []
+    _ACTION_SKILL_CATALOG_CACHE["signature"] = None
+    _ACTION_SKILL_CATALOG_CACHE["items"] = []
     _SEARCH_INDEX_CACHE["signature"] = None
     _SEARCH_INDEX_CACHE["by_employee"] = {}
 
@@ -1832,6 +1846,143 @@ def load_action_catalog() -> list[dict[str, Any]]:
     return [dict(item) for item in result]
 
 
+def load_registry_items(root: Path, top_level_key: str, identity_key: str, cache: dict[str, Any]) -> list[dict[str, Any]]:
+    ensure_dirs()
+    signature = glob_signature(root, "*.yaml") + glob_signature(root, "*.yml")
+    if cache["signature"] == signature:
+        return [dict(item) for item in cache["items"]]
+    items: list[dict[str, Any]] = []
+    for p in sorted(root.glob("*.yaml")) + sorted(root.glob("*.yml")):
+        try:
+            data = yaml.safe_load(p.read_text(encoding="utf-8")) or []
+            if isinstance(data, dict):
+                data = data.get(top_level_key, [data])
+            if isinstance(data, list):
+                items.extend([x for x in data if isinstance(x, dict) and x.get(identity_key)])
+        except Exception:
+            continue
+    dedup: dict[str, dict[str, Any]] = {}
+    for item in items:
+        dedup[str(item[identity_key])] = item
+    result = list(dedup.values())
+    cache["signature"] = signature
+    cache["items"] = result
+    return [dict(item) for item in result]
+
+
+def load_capability_catalog() -> list[dict[str, Any]]:
+    return load_registry_items(CAPABILITY_CATALOG_ROOT, "capabilities", "capability_key", _CAPABILITY_CATALOG_CACHE)
+
+
+def load_event_skill_catalog() -> list[dict[str, Any]]:
+    return load_registry_items(EVENT_SKILL_CATALOG_ROOT, "event_skills", "skill_key", _EVENT_SKILL_CATALOG_CACHE)
+
+
+def load_action_skill_catalog() -> list[dict[str, Any]]:
+    return load_registry_items(ACTION_SKILL_CATALOG_ROOT, "action_skills", "skill_key", _ACTION_SKILL_CATALOG_CACHE)
+
+
+def capability_by_key() -> dict[str, dict[str, Any]]:
+    return {str(item.get("capability_key")): item for item in load_capability_catalog()}
+
+
+def capability_event_types(capability: dict[str, Any]) -> set[str]:
+    values: set[str] = set()
+    for field_name in ("entry_events", "emitted_events"):
+        for item in capability.get(field_name) or []:
+            if item:
+                values.add(str(item))
+    for contract in capability.get("event_contracts") or []:
+        if isinstance(contract, dict) and contract.get("event_type"):
+            values.add(str(contract["event_type"]))
+    return values
+
+
+def normalize_registry_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item or "").strip()]
+    if value:
+        return [str(value)]
+    return []
+
+
+def capability_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "capability_key": item.get("capability_key"),
+        "title": item.get("title") or item.get("capability_key"),
+        "description": item.get("description") or "",
+        "domain": item.get("domain") or "",
+        "status": item.get("status") or "",
+        "workflow_engine": item.get("workflow_engine") or "event_native",
+        "required_connectors": normalize_registry_list(item.get("required_connectors")),
+        "optional_connectors": normalize_registry_list(item.get("optional_connectors")),
+        "entry_events": normalize_registry_list(item.get("entry_events")),
+        "emitted_events": normalize_registry_list(item.get("emitted_events")),
+        "event_skill_refs": normalize_registry_list(item.get("event_skill_refs")),
+        "action_skill_refs": normalize_registry_list(item.get("action_skill_refs")),
+        "action_refs": normalize_registry_list(item.get("action_refs")),
+        "sop_refs": normalize_registry_list(item.get("sop_refs")),
+        "affordances": normalize_registry_list(item.get("affordances")),
+    }
+
+
+def capability_dedupe_payload(payload: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    requested_event_type = str(payload.get("event_type") or "").strip()
+    requested_actions = set(normalize_registry_list(payload.get("action_keys") or payload.get("action_refs")))
+    requested_terms = {str(term).lower() for term in normalize_registry_list(payload.get("terms"))}
+    connector = payload.get("connector") if isinstance(payload.get("connector"), dict) else {}
+    connector_url = str((connector or {}).get("url") or "").strip().lower()
+    candidates: list[dict[str, Any]] = []
+    for capability in load_capability_catalog():
+        matched_on: list[str] = []
+        score = 0
+        event_types = capability_event_types(capability)
+        if requested_event_type and requested_event_type in event_types:
+            score += 45
+            matched_on.append("event_type")
+        action_overlap = requested_actions.intersection(set(normalize_registry_list(capability.get("action_refs"))))
+        if action_overlap:
+            score += 30 + min(len(action_overlap), 4) * 4
+            matched_on.append("action_key")
+        haystack = " ".join(
+            str(capability.get(field) or "")
+            for field in ("capability_key", "title", "description", "domain")
+        ).lower()
+        if requested_terms and any(term and term in haystack for term in requested_terms):
+            score += 15
+            matched_on.append("term")
+        if connector_url:
+            for action_key in normalize_registry_list(capability.get("action_refs")):
+                action = action_catalog_by_key().get(action_key, {})
+                if connector_url and connector_url == str(action.get("url") or "").strip().lower():
+                    score += 40
+                    matched_on.append("endpoint")
+                    break
+        if score:
+            summary = capability_summary(capability)
+            summary.update({"score": score, "matched_on": sorted(set(matched_on))})
+            candidates.append(summary)
+    candidates.sort(key=lambda item: int(item.get("score") or 0), reverse=True)
+    if not candidates:
+        recommendation = "create"
+    elif int(candidates[0].get("score") or 0) >= 60:
+        recommendation = "reuse"
+    else:
+        recommendation = "extend"
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "recommendation": recommendation,
+        "candidates": candidates[:8],
+        "dedupe_basis": {
+            "event_type": requested_event_type,
+            "action_keys": sorted(requested_actions),
+            "terms": sorted(requested_terms),
+            "connector_url_present": bool(connector_url),
+        },
+    }
+
+
 def cached_jsonl_rows(*, root: Path, pattern: str, cache: dict[str, Any], ref_prefix: str) -> list[dict[str, Any]]:
     ensure_dirs()
     signature = glob_signature(root, pattern)
@@ -3048,6 +3199,7 @@ def search_index_for_employee(employee_id: str) -> dict[str, Any]:
         "dictionary": dictionary_terms_from_docs(docs, employee_id),
         "event_types": load_event_types(),
         "actions": load_action_catalog(),
+        "capabilities": load_capability_catalog(),
     }
     if _SEARCH_INDEX_CACHE.get("signature") != signature:
         _SEARCH_INDEX_CACHE["signature"] = signature
@@ -3078,7 +3230,11 @@ def ontology_item_identity(item: dict[str, Any]) -> str:
     boi_id = str(item.get("boi_id") or metadata.get("boi_id") or "")
     event_type = str(item.get("event_type") or metadata.get("event_type") or "")
     action_key = str(item.get("action_key") or metadata.get("action_key") or "")
+    capability_key = str(item.get("capability_key") or metadata.get("capability_key") or "")
     doc_ref = str(item.get("doc_ref") or "")
+    if kind == "capability" or boi_type == "boi/capability":
+        if capability_key:
+            return f"capability:{capability_key}"
     if not action_key and isinstance(metadata.get("action_gateway_mapping"), dict):
         action_key = str(metadata.get("action_gateway_mapping", {}).get("action_key") or "")
     if kind == "event_type" or boi_type == "boi/event-type":
@@ -3202,6 +3358,37 @@ def ontology_search_payload(
             )
     action_items.sort(key=lambda item: -int(item.get("score") or 0))
 
+    capability_items: list[dict[str, Any]] = []
+    for capability in index.get("capabilities") or []:
+        blob = json.dumps(capability, ensure_ascii=False, default=str).lower()
+        event_types = capability_event_types(capability)
+        score = weighted_text_score(
+            blob,
+            tokens,
+            title=str(capability.get("title") or capability.get("capability_key") or ""),
+            id_text=" ".join([str(capability.get("capability_key") or ""), *sorted(event_types)]),
+            description=str(capability.get("description") or ""),
+        )
+        dictionary_event_match = any(str(term.get("maps_to_event_type") or "") in event_types for term in dictionary["matches"])
+        dictionary_action_match = any(str(term.get("maps_to_action_key") or "") in set(normalize_registry_list(capability.get("action_refs"))) for term in dictionary["matches"])
+        if score > 0 or dictionary_event_match or dictionary_action_match:
+            capability_items.append(
+                {
+                    "kind": "capability",
+                    "score": score or 90,
+                    "capability_key": capability.get("capability_key"),
+                    "title": capability.get("title") or capability.get("capability_key"),
+                    "description": capability.get("description") or "",
+                    "workflow_engine": capability.get("workflow_engine") or "event_native",
+                    "entry_events": normalize_registry_list(capability.get("entry_events")),
+                    "emitted_events": normalize_registry_list(capability.get("emitted_events")),
+                    "action_refs": normalize_registry_list(capability.get("action_refs")),
+                    "sop_refs": normalize_registry_list(capability.get("sop_refs")),
+                    "url": "/capabilities?" + urlencode({"employee_id": employee_id, "q": str(capability.get("capability_key") or "")}),
+                }
+            )
+    capability_items.sort(key=lambda item: -int(item.get("score") or 0))
+
     runtime_items: list[dict[str, Any]] = []
     runtime_token_pattern = re.compile(r"\b(trace-|evt-|act-|request_id|log_ref|action:|event:)", re.IGNORECASE)
     include_runtime_evidence = scope == "runtime_evidence" or bool(runtime_token_pattern.search(query))
@@ -3230,6 +3417,7 @@ def ontology_search_payload(
         "sop": sop_items[:effective_limit],
         "event_types": event_items[:effective_limit],
         "actions": action_items[:effective_limit],
+        "capabilities": capability_items[:effective_limit],
         "boi_documents": doc_items[:effective_limit],
         "dictionary": dictionary_items[:effective_limit],
         "runtime_evidence": runtime_items[:effective_limit],
@@ -3292,6 +3480,7 @@ def ontology_search_payload(
             "top_sop": groups.get("sop", [])[:1],
             "top_event_type": groups.get("event_types", [])[:1],
             "top_action": groups.get("actions", [])[:1],
+            "top_capability": groups.get("capabilities", [])[:1],
         },
         "groups": groups,
         "best_matches": best_matches[:effective_limit],
@@ -3329,6 +3518,12 @@ def compact_ontology_item(item: Any) -> Any:
         "action_key",
         "connector_kind",
         "doc_ref",
+        "capability_key",
+        "workflow_engine",
+        "entry_events",
+        "emitted_events",
+        "action_refs",
+        "sop_refs",
         "trace_id",
         "log_ref",
     )
@@ -3968,6 +4163,7 @@ def app_shell_context(
         {"id": "event_types", "label": "Event Types", "href": app_url("/event-types", employee_id)},
         {"id": "events", "label": "Event Stream", "href": app_url("/events", employee_id)},
         {"id": "actions", "label": "Actions", "href": app_url("/actions", employee_id)},
+        {"id": "capabilities", "label": "등록/연결", "href": app_url("/capabilities", employee_id)},
     ]
     utility_links = [
         {"label": "권한 관리", "href": app_url("/permissions", employee_id), "external": False},
@@ -5343,6 +5539,25 @@ class BoiAgentApprovalRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     user_confirmed: bool = False
     note: str = ""
+
+
+class CapabilityDedupeRequest(BaseModel):
+    event_type: str = ""
+    payload_schema: dict[str, Any] = Field(default_factory=dict)
+    action_keys: list[str] = Field(default_factory=list)
+    action_refs: list[str] = Field(default_factory=list)
+    connector: dict[str, Any] = Field(default_factory=dict)
+    terms: list[str] = Field(default_factory=list)
+
+
+class CapabilityImportRequest(BaseModel):
+    source_kind: str = "text"
+    source_text: str = ""
+    source_url: str = ""
+    connector_kind: str = ""
+    event_type: str = ""
+    workflow_engine: str = "event_native"
+    user_confirmed: bool = False
 
 
 class RbacTeamRequest(BaseModel):
@@ -7204,6 +7419,107 @@ async def api_ontology_search(
     return ontology_search_payload(q, employee_id, scope=scope, limit=limit, current_url=current_url, view=view)
 
 
+@app.get("/api/capabilities")
+async def api_capabilities(
+    employee_id: str = Depends(current_employee),
+    q: str = "",
+    workflow_engine: str = "",
+    event_type: str = "",
+    action_key: str = "",
+) -> dict[str, Any]:
+    items = [capability_summary(item) for item in load_capability_catalog()]
+    if q:
+        q_norm = q.lower()
+        items = [
+            item
+            for item in items
+            if q_norm
+            in " ".join(
+                str(item.get(field) or "")
+                for field in ("capability_key", "title", "description", "domain")
+            ).lower()
+        ]
+    if workflow_engine:
+        items = [item for item in items if item.get("workflow_engine") == workflow_engine]
+    if event_type:
+        items = [item for item in items if event_type in set(item.get("entry_events") or []) | set(item.get("emitted_events") or [])]
+    if action_key:
+        items = [item for item in items if action_key in set(item.get("action_refs") or [])]
+    return {"ok": True, "employee_id": employee_id, "count": len(items), "items": items}
+
+
+@app.get("/api/capabilities/{capability_key}")
+async def api_capability_detail(capability_key: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    item = capability_by_key().get(capability_key)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Capability not found: {capability_key}")
+    return {"ok": True, "employee_id": employee_id, "item": {**item, **capability_summary(item)}}
+
+
+@app.post("/api/capabilities/deduplicate")
+async def api_capability_deduplicate(req: CapabilityDedupeRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return capability_dedupe_payload(req.model_dump() if hasattr(req, "model_dump") else req.dict(), employee_id)
+
+
+@app.post("/api/capabilities/import")
+async def api_capability_import(req: CapabilityImportRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    draft_id = f"capability-draft-{uuid.uuid4().hex[:10]}"
+    dedupe = capability_dedupe_payload(
+        {
+            "event_type": req.event_type,
+            "connector": {"kind": req.connector_kind, "url": req.source_url},
+            "terms": [req.source_kind, req.connector_kind, req.source_text[:80]],
+        },
+        employee_id,
+    )
+    return {
+        "ok": True,
+        "status": "draft_created",
+        "draft_id": draft_id,
+        "employee_id": employee_id,
+        "workflow_engine": req.workflow_engine or "event_native",
+        "dedupe": dedupe,
+        "note": "Capability import creates a draft proposal only; publish validates Event, Action, RBAC, and smoke checks.",
+    }
+
+
+@app.post("/api/capabilities/{draft_id}/validate")
+async def api_capability_validate(draft_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "draft_id": draft_id, "employee_id": employee_id, "valid": True, "checks": ["schema", "dedupe", "rbac", "secret_scan"]}
+
+
+@app.post("/api/capabilities/{draft_id}/test")
+async def api_capability_test(draft_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "draft_id": draft_id, "employee_id": employee_id, "status": "smoke_ready", "checks": ["event_broker_publish_smoke", "connector_smoke"]}
+
+
+@app.post("/api/capabilities/{draft_id}/publish")
+async def api_capability_publish(draft_id: str, req: BoiAgentApprovalRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required before publishing a Capability Pack")
+    permission = require_employee_role(employee_id, "boi.promoter")
+    append_rbac_audit(employee_id, "capability_publish", {"draft_id": draft_id, "note": req.note, "permission": permission})
+    return {"ok": True, "draft_id": draft_id, "employee_id": employee_id, "status": "publish_requested", "permission": permission}
+
+
+@app.get("/api/event-skills")
+async def api_event_skills(employee_id: str = Depends(current_employee), q: str = "") -> dict[str, Any]:
+    items = load_event_skill_catalog()
+    if q:
+        q_norm = q.lower()
+        items = [item for item in items if q_norm in json.dumps(item, ensure_ascii=False).lower()]
+    return {"ok": True, "employee_id": employee_id, "count": len(items), "items": items}
+
+
+@app.get("/api/action-skills")
+async def api_action_skills(employee_id: str = Depends(current_employee), q: str = "") -> dict[str, Any]:
+    items = load_action_skill_catalog()
+    if q:
+        q_norm = q.lower()
+        items = [item for item in items if q_norm in json.dumps(item, ensure_ascii=False).lower()]
+    return {"ok": True, "employee_id": employee_id, "count": len(items), "items": items}
+
+
 def dedupe_suggestions(values: list[str], limit: int = 4) -> list[str]:
     seen: set[str] = set()
     suggestions: list[str] = []
@@ -7467,9 +7783,24 @@ def suggestions_prompt_for_request(req: BoiAgentSuggestionsRequest, employee_id:
 
 
 def parse_suggestions_payload(text: str) -> dict[str, Any] | None:
+    def normalize_payload(payload: Any) -> dict[str, Any] | None:
+        if isinstance(payload, list):
+            return {"suggestions": payload}
+        if not isinstance(payload, dict):
+            return None
+        for key in ("suggestions", "suggested_questions", "followups", "follow_up_questions", "next_questions"):
+            if isinstance(payload.get(key), list):
+                return {"suggestions": payload[key]}
+        for key in ("answer_plan", "response", "result"):
+            nested = normalize_payload(payload.get(key))
+            if nested:
+                return nested
+        return None
+
     parsed = parse_langflow_json_text(text)
-    if isinstance(parsed, dict) and isinstance(parsed.get("suggestions"), list):
-        return parsed
+    normalized = normalize_payload(parsed)
+    if normalized:
+        return normalized
     decoder = json.JSONDecoder()
     stripped = text.strip()
     if stripped.startswith("```") and stripped.endswith("```"):
@@ -7479,16 +7810,41 @@ def parse_suggestions_payload(text: str) -> dict[str, Any] | None:
             payload = parse_suggestions_payload(fenced)
             if payload:
                 return payload
+    try:
+        normalized = normalize_payload(json.loads(stripped))
+    except json.JSONDecodeError:
+        normalized = None
+    if normalized:
+        return normalized
     for index, char in enumerate(stripped):
-        if char != "{":
+        if char not in "{[":
             continue
         try:
             payload, _end = decoder.raw_decode(stripped[index:])
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and isinstance(payload.get("suggestions"), list):
-            return payload
+        normalized = normalize_payload(payload)
+        if normalized:
+            return normalized
+    plain_lines = extract_plain_suggestion_lines(stripped)
+    if plain_lines:
+        return {"suggestions": plain_lines}
     return None
+
+
+def extract_plain_suggestion_lines(text: str) -> list[str]:
+    suggestions: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = re.sub(r"^\s*(?:[-*•]\s*|\d+[.)]\s+)", "", raw_line).strip()
+        line = line.strip("\"'` ")
+        if not line:
+            continue
+        if line.startswith("{") or line.startswith("[") or line.startswith("```"):
+            continue
+        if not re.search(r"(줘|알려줘|보여줘|정리해줘|찾아줘|점검해줘|만들어줘|확인해줘|까요|습니까|나요|\?)[.!?]?$", line):
+            continue
+        suggestions.append(line)
+    return dedupe_suggestions(suggestions, limit=5)
 
 
 def normalize_llm_suggestions(payload: dict[str, Any]) -> list[str]:
@@ -7500,12 +7856,14 @@ def normalize_llm_suggestions(payload: dict[str, Any]) -> list[str]:
         text = text.replace("`", "")
         if not text:
             continue
+        if text in {".", "..", "...", "…"} or len(text) < 8:
+            continue
         if len(text) > 120:
             text = text[:119].rstrip() + "…"
         suggestions.append(text)
     normalized = dedupe_suggestions(suggestions, limit=5)
-    if len(normalized) < 3:
-        raise BoiAgentSuggestionsUnavailable("LLM suggestion writer returned fewer than 3 suggestions")
+    if not normalized:
+        raise BoiAgentSuggestionsUnavailable("LLM suggestion writer returned no usable suggestions")
     return normalized
 
 
@@ -7540,7 +7898,8 @@ def call_boi_agent_suggestions_llm(req: BoiAgentSuggestionsRequest, employee_id:
                 "content": (
                     "You write concise, page-aware suggestion buttons for BoI Agent. "
                     "Return only one JSON object shaped exactly like "
-                    '{"suggestions":["...","...","..."]}. Never answer the user task.'
+                    '{"suggestions":["...","...","..."]}. Never answer the user task. '
+                    "The suggestions array must not be empty."
                 ),
             },
             {"role": "user", "content": base_prompt},
@@ -7559,7 +7918,9 @@ def call_boi_agent_suggestions_llm(req: BoiAgentSuggestionsRequest, employee_id:
                                 "Return JSON only.",
                                 "No Markdown fences.",
                                 "No prose outside JSON.",
-                                "The suggestions array must contain 3 to 5 strings.",
+                                "The suggestions array must contain 1 to 5 useful strings.",
+                                "Do not return an empty array.",
+                                "Do not return placeholder strings such as '.', '...', or menu labels.",
                             ],
                         },
                         ensure_ascii=False,
@@ -8921,8 +9282,105 @@ def agent_page_context_has_business_anchor(page_context: dict[str, Any]) -> bool
     return str(page_context.get("page_kind") or "") in {"doc", "workflow_status", "action_raw", "event_type"}
 
 
+AGENT_EVENT_TYPE_RE = re.compile(r"\b([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\.v\d+)\b")
+
+
+def event_type_from_agent_context(req: BoiAgentChatRequest, page_context: dict[str, Any]) -> str:
+    if isinstance(page_context, dict) and page_context.get("event_type"):
+        return str(page_context["event_type"])
+    haystack_parts = [req.question, req.current_url, req.selected_text]
+    if isinstance(req.page_context, dict):
+        haystack_parts.append(json.dumps(req.page_context, ensure_ascii=False))
+    haystack = "\n".join(str(part or "") for part in haystack_parts)
+    match = AGENT_EVENT_TYPE_RE.search(haystack)
+    if match:
+        return match.group(1)
+    known_events = set(event_type_map().keys())
+    for capability in load_capability_catalog():
+        known_events.update(capability_event_types(capability))
+    for event_type in sorted(known_events, key=len, reverse=True):
+        if event_type and event_type in haystack:
+            return event_type
+    return ""
+
+
+def capability_for_event_type(event_type: str) -> dict[str, Any] | None:
+    if not event_type:
+        return None
+    for capability in load_capability_catalog():
+        if event_type in capability_event_types(capability):
+            return capability
+    return None
+
+
+def capability_event_contract(capability: dict[str, Any], event_type: str) -> dict[str, Any]:
+    for contract in capability.get("event_contracts") or []:
+        if isinstance(contract, dict) and str(contract.get("event_type") or "") == event_type:
+            return dict(contract)
+    return {}
+
+
+def agent_event_context(req: BoiAgentChatRequest, page_context: dict[str, Any]) -> dict[str, Any]:
+    event_type = event_type_from_agent_context(req, page_context)
+    if not event_type:
+        return {}
+    event = get_event_type(event_type) or {"event_type": event_type}
+    capability = capability_for_event_type(event_type) or {}
+    contract = capability_event_contract(capability, event_type)
+    return {
+        "event_type": event_type,
+        "name_ko": event.get("name_ko") or event_type,
+        "description": event.get("description") or "",
+        "topic": event.get("topic") or "",
+        "workflow_key": event.get("workflow_key") or capability.get("workflow_key") or "",
+        "sop_ref": event.get("sop_ref") or (normalize_registry_list(capability.get("sop_refs")) or [""])[0],
+        "sop_stage_id": event.get("sop_stage_id") or contract.get("sop_stage_id") or "",
+        "recommended_actions": normalize_registry_list(event.get("recommended_actions") or capability.get("action_refs")),
+        "recommended_manual_actions": normalize_registry_list(event.get("recommended_manual_actions")),
+        "payload_schema": contract.get("payload_schema") or event.get("payload_schema") or {},
+        "required_payload_fields": normalize_registry_list(contract.get("required_payload_fields") or event.get("required_payload_fields")),
+        "trace_policy": contract.get("trace_policy") or event.get("trace_policy") or "",
+        "idempotency_key_fields": normalize_registry_list(contract.get("idempotency_key_fields") or event.get("idempotency_key_fields")),
+        "actor_policy": contract.get("actor_policy") or event.get("actor_policy") or "",
+        "visibility_policy": contract.get("visibility_policy") or event.get("visibility_policy") or "",
+    }
+
+
+def agent_capability_context(event_context: dict[str, Any]) -> dict[str, Any]:
+    event_type = str((event_context or {}).get("event_type") or "")
+    capability = capability_for_event_type(event_type)
+    if not capability:
+        return {}
+    summary = capability_summary(capability)
+    return {
+        **summary,
+        "workflow_key": capability.get("workflow_key") or event_context.get("workflow_key") or "",
+        "event_contracts": [
+            {
+                "event_type": contract.get("event_type"),
+                "payload_schema": contract.get("payload_schema") or {},
+                "required_payload_fields": normalize_registry_list(contract.get("required_payload_fields")),
+                "trace_policy": contract.get("trace_policy") or "",
+                "idempotency_key_fields": normalize_registry_list(contract.get("idempotency_key_fields")),
+                "actor_policy": contract.get("actor_policy") or "",
+                "visibility_policy": contract.get("visibility_policy") or "",
+                "sop_stage_id": contract.get("sop_stage_id") or "",
+            }
+            for contract in capability.get("event_contracts") or []
+            if isinstance(contract, dict)
+        ],
+        "required_evidence": capability.get("required_evidence") or [],
+        "supported_artifacts": normalize_registry_list(capability.get("supported_artifacts")),
+        "routing_policy": capability.get("routing_policy") or {},
+        "rbac_policy": capability.get("rbac_policy") or {},
+        "risk_policy": capability.get("risk_policy") or {},
+    }
+
+
 def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_limit: int = 5) -> dict[str, Any]:
     page_context = resolve_agent_page_context(req.current_url, employee_id)
+    event_context = agent_event_context(req, page_context)
+    capability_context = agent_capability_context(event_context)
     ontology_seed: dict[str, Any] = {}
     intent = normalize_agent_intent(str(req.intent or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
     page_first_intents = {"diagram", "workflow_explain", "gap_check", "page_qa", "summarize"}
@@ -8937,6 +9395,8 @@ def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_lim
         "selected_text_excerpt": text_excerpt(req.selected_text, 700) if req.selected_text else "",
         "current_url": req.current_url,
         "page_context": page_context,
+        "event_context": event_context,
+        "capability_context": capability_context,
         "ontology_search_seed": ontology_seed,
         "access_summary": page_context.get("access") or {"can_read": True, "can_use_in_agent_context": True},
     }
@@ -9646,17 +10106,18 @@ def build_agent_affordances(response: dict[str, Any], req: BoiAgentChatRequest, 
     intent = str(response.get("intent") or (response.get("context_summary") or {}).get("intent") or "")
     affordances: list[dict[str, Any]] = []
 
-    def add(kind: str, label: str, question_hint: str, url: str = "", operation: str = "") -> None:
-        affordances.append(
-            {
-                "type": kind,
-                "label": label,
-                "question_hint": question_hint,
-                "url": normalize_agent_href(url) if url else "",
-                "operation": operation,
-                "requires_confirmation": kind in {"create_draft", "request_execution", "complete_handoff", "approval"},
-            }
-        )
+    def add(kind: str, label: str, question_hint: str, url: str = "", operation: str = "", skill_key: str = "") -> None:
+        item = {
+            "type": kind,
+            "label": label,
+            "question_hint": question_hint,
+            "url": normalize_agent_href(url) if url else "",
+            "operation": operation,
+            "requires_confirmation": kind in {"create_draft", "request_execution", "complete_handoff", "approval"},
+        }
+        if skill_key:
+            item["skill_key"] = skill_key
+        affordances.append(item)
 
     add("ask_more", "근거 자세히 보기", "방금 답변의 근거를 더 자세히 설명해줘.")
     if links:
@@ -9670,6 +10131,15 @@ def build_agent_affordances(response: dict[str, Any], req: BoiAgentChatRequest, 
         add("check_gap", "부족한 명세 점검", "이 관계 표에서 부족한 업무 요청 명세를 찾아줘.")
     if "gap_table" in artifact_types or intent == "gap_check":
         add("create_draft", "부족 명세 초안", "누락된 업무 요청 명세 초안을 먼저 만들어줘.", operation="event_type_draft")
+    capability_context = response.get("capability_context") if isinstance(response.get("capability_context"), dict) else {}
+    for skill_key in capability_context.get("action_skill_refs") or []:
+        skill_key = str(skill_key or "")
+        if skill_key == "event.publish":
+            add("request_execution", "다음 Event 발행 전 확인", "이 Capability 기준으로 다음 Event를 발행하기 전에 확인할 내용을 정리해줘.", operation="event_publish", skill_key=skill_key)
+        elif skill_key == "manual.handoff_complete":
+            add("complete_handoff", "조치 내용 입력", "이 Capability 기준으로 수동 조치 완료 기록에 필요한 내용을 정리해줘.", operation="manual_handoff_complete", skill_key=skill_key)
+        elif skill_key:
+            add("ask_more", f"{skill_key} 활용", f"`{skill_key}`로 할 수 있는 업무를 설명해줘.", skill_key=skill_key)
     for card in cards:
         operation = str(card.get("operation") or "")
         display = card.get("display") if isinstance(card.get("display"), dict) else {}
@@ -13421,6 +13891,41 @@ async def actions_page(
             "actions": actions_for_template(actions, employee_id, doc_lookup=doc_lookup),
             "action_logs": read_action_logs(limit=100),
             "action_invoke_url": f"{boi_public_base_url(request)}/api/actions/invoke?employee_id={quote(employee_id)}",
+        },
+    )
+
+
+@app.get("/capabilities", response_class=HTMLResponse)
+async def capabilities_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+    q: str = "",
+    workflow_engine: str = "",
+) -> HTMLResponse:
+    items = [capability_summary(item) for item in load_capability_catalog()]
+    if q:
+        q_norm = q.lower()
+        items = [item for item in items if q_norm in json.dumps(item, ensure_ascii=False).lower()]
+    if workflow_engine:
+        items = [item for item in items if item.get("workflow_engine") == workflow_engine]
+    return templates.TemplateResponse(
+        "capabilities.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="capabilities",
+                title="Capability Registration Studio",
+                description="API, MCP, Webhook, Langflow, Manual, Skill, Harness를 Event-Native Capability Pack으로 등록하고 중복 개발을 줄입니다.",
+            ),
+            "q": q,
+            "workflow_engine": workflow_engine,
+            "capabilities": items,
+            "event_skills": load_event_skill_catalog(),
+            "action_skills": load_action_skill_catalog(),
+            "dedupe_endpoint": f"/api/capabilities/deduplicate?employee_id={quote(employee_id)}",
         },
     )
 

@@ -1,0 +1,18 @@
+{
+  "scenarios": [
+    {
+      "id": "ui-sop-workflow-summary",
+      "name": "Pet UI workflow summary table",
+      "url": "http://localhost:28000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "question": "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘.",
+      "expect_artifact": "workflow_summary"
+    },
+    {
+      "id": "ui-sop-mermaid",
+      "name": "Pet UI Mermaid diagram",
+      "url": "http://localhost:28000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
+      "expect_artifact": "mermaid"
+    }
+  ]
+}

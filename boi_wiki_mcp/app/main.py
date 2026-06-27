@@ -52,6 +52,11 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "doc_body_apply", "description": "Apply a user-confirmed validated BoI document body edit and auto-commit it."},
     {"name": "promotion_submit", "description": "Submit a user-confirmed Team/Public promotion candidate for synchronous validation and immediate publish."},
     {"name": "promotion_status", "description": "Return promotion publish, validation, HOTL, and commit status."},
+    {"name": "capabilities_search", "description": "Search Event-native Capability Packs that connect Event Types, SOP stages, Actions, Manual Handoffs, and runtime smoke evidence."},
+    {"name": "capability_get", "description": "Return one Capability Pack with Event Contract, workflow engine, linked actions, skills, and policy metadata."},
+    {"name": "capability_deduplicate", "description": "Check whether a proposed API/MCP/Event/Action registration duplicates or extends an existing Capability Pack."},
+    {"name": "event_skills_list", "description": "List Event Skill registry entries used by BoI Agent and Capability registration."},
+    {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and Capability registration."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://docs/{boi_id}", "description": "Public BoI document as JSON text. Use employee-scoped templates for private/team content."},
@@ -189,6 +194,8 @@ AGENT_RESPONSE_SCHEMA = {
         "guardrails_applied": {"type": "array", "items": {"type": "string"}},
         "redacted_count": {"type": "integer", "minimum": 0},
         "context_summary": {"type": "object", "additionalProperties": True},
+        "event_context": {"type": "object", "additionalProperties": True},
+        "capability_context": {"type": "object", "additionalProperties": True},
         "suggested_questions": {"type": "array", "items": {"type": "string"}},
         "route": {"type": "string"},
         "intent": {"type": "string"},
@@ -381,6 +388,63 @@ async def action_get(action_key: str, employee_id: str = DEFAULT_EMPLOYEE_ID) ->
     if not body["items"]:
         raise RuntimeError(f"Action not found: {action_key}")
     return {"ok": True, "item": body["items"][0]}
+
+
+@mcp.tool(name="capabilities_search")
+async def capabilities_search(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    query: str = "",
+    workflow_engine: str = "",
+    event_type: str = "",
+    action_key: str = "",
+) -> dict[str, Any]:
+    """Search Event-native Capability Packs."""
+    return await api_get(
+        "/api/capabilities",
+        employee_id=employee_id,
+        params={"q": query, "workflow_engine": workflow_engine, "event_type": event_type, "action_key": action_key},
+    )
+
+
+@mcp.tool(name="capability_get")
+async def capability_get(capability_key: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return one Capability Pack."""
+    return await api_get(f"/api/capabilities/{capability_key}", employee_id=employee_id)
+
+
+@mcp.tool(name="capability_deduplicate")
+async def capability_deduplicate(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    event_type: str = "",
+    action_keys: list[str] | None = None,
+    terms: list[str] | None = None,
+    connector: dict[str, Any] | None = None,
+    payload_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Find duplicate or reusable Capability Packs for a proposed registration."""
+    return await api_post(
+        "/api/capabilities/deduplicate",
+        employee_id=employee_id,
+        payload={
+            "event_type": event_type,
+            "action_keys": action_keys or [],
+            "terms": terms or [],
+            "connector": connector or {},
+            "payload_schema": payload_schema or {},
+        },
+    )
+
+
+@mcp.tool(name="event_skills_list")
+async def event_skills_list(employee_id: str = DEFAULT_EMPLOYEE_ID, query: str = "") -> dict[str, Any]:
+    """List Event Skill registry entries."""
+    return await api_get("/api/event-skills", employee_id=employee_id, params={"q": query})
+
+
+@mcp.tool(name="action_skills_list")
+async def action_skills_list(employee_id: str = DEFAULT_EMPLOYEE_ID, query: str = "") -> dict[str, Any]:
+    """List Action Skill registry entries."""
+    return await api_get("/api/action-skills", employee_id=employee_id, params={"q": query})
 
 
 @mcp.tool(name="action_invoke")
@@ -1306,6 +1370,37 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         if not result.get("items"):
             return JSONResponse({"detail": f"Action not found: {args.get('action_key') or ''}"}, status_code=404)
         result = {"ok": True, "item": result["items"][0]}
+    elif tool_name == "capabilities_search":
+        result = await api_get(
+            "/api/capabilities",
+            employee_id=employee_id,
+            params={
+                "q": str(args.get("query") or args.get("q") or ""),
+                "workflow_engine": str(args.get("workflow_engine") or ""),
+                "event_type": str(args.get("event_type") or ""),
+                "action_key": str(args.get("action_key") or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "capability_get":
+        result = await api_get(f"/api/capabilities/{str(args.get('capability_key') or '')}", employee_id=employee_id, service_token=True)
+    elif tool_name == "capability_deduplicate":
+        result = await api_post(
+            "/api/capabilities/deduplicate",
+            employee_id=employee_id,
+            payload={
+                "event_type": str(args.get("event_type") or ""),
+                "payload_schema": args.get("payload_schema") or {},
+                "action_keys": args.get("action_keys") or args.get("action_refs") or [],
+                "connector": args.get("connector") or {},
+                "terms": args.get("terms") or [],
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_skills_list":
+        result = await api_get("/api/event-skills", employee_id=employee_id, params={"q": str(args.get("query") or args.get("q") or "")}, service_token=True)
+    elif tool_name == "action_skills_list":
+        result = await api_get("/api/action-skills", employee_id=employee_id, params={"q": str(args.get("query") or args.get("q") or "")}, service_token=True)
     elif tool_name == "action_invoke":
         if bridge_bool(args.get("dry_run"), True) is False and not bridge_bool(args.get("user_confirmed")):
             return bridge_confirmation_error(req.tool)
