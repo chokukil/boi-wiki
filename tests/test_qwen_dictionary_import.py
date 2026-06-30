@@ -105,3 +105,42 @@ def test_qwen_import_override_writes_canonical_alias_and_manifest(tmp_path):
     assert manifest_rows[0]["canonical_term"] == "Word Line Disturbance Test"
     assert manifest_rows[0]["curation_status"] == "curated"
     assert manifest_rows[1]["canonical_term"] == "Memory Stack Height"
+
+
+def test_qwen_import_exclude_action_records_manifest_without_markdown(tmp_path):
+    from scripts.import_qwen_dictionary import import_qwen_dictionary
+
+    source = tmp_path / "source_terms.jsonl"
+    overrides = tmp_path / "curation_overrides.yaml"
+    output_root = tmp_path / "dictionary"
+    manifest = tmp_path / "import_manifest.jsonl"
+    source.write_text(
+        json.dumps({"term": "Noise / 123", "definition": "bad extractor noise"}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    overrides.write_text(
+        yaml.safe_dump(
+            {
+                "overrides": [
+                    {
+                        "source_term": "Noise / 123",
+                        "action": "exclude",
+                        "curation_status": "excluded",
+                        "compound_reason": "extractor noise",
+                    }
+                ]
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = import_qwen_dictionary(source, overrides, output_root, manifest)
+
+    assert result["selected_count"] == 0
+    assert result["excluded_count"] == 1
+    assert not list(output_root.glob("*.md"))
+    row = json.loads(manifest.read_text(encoding="utf-8").strip())
+    assert row["action"] == "exclude"
+    assert row["curation_status"] == "excluded"

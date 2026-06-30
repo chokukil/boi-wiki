@@ -186,8 +186,12 @@ def test_dictionary_authoring_harness_documents_quality_gate():
 
     assert metadata["boi_id"] == "boi:public:harness:dictionary-authoring-harness"
     assert "dictionary_resolve" in body
+    assert "Bulk Dictionary Curation" in body
     assert "Granularity Rule" in body
     assert "term_kind" in body
+    assert "`replace_with_canonical`" in body
+    assert "`needs_parent_curation`" in body
+    assert "`exclude`" in body
     assert "Slash/Numeric Bundle Rule" in body
     assert "pytest tests/test_public_dictionary_quality.py -q -s" in body
     assert "python scripts/okf_lint.py --root data --include-logs --strict-media --strict-links" in body

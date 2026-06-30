@@ -17,6 +17,7 @@ ALLOWED_ACTIONS = {
     "replace_with_canonical",
     "split_into_terms",
     "alias_to_existing",
+    "exclude",
     "exclude_from_public",
     "needs_parent_curation",
 }
@@ -210,7 +211,7 @@ def import_qwen_dictionary(source_path: Path, overrides_path: Path, output_root:
             override = {"action": "keep", "canonical_term": source_term, "term_kind": source.get("term_kind") or "concept", "curation_status": "selected"}
 
         action = str(override.get("action") or "keep")
-        if action in {"exclude_from_public", "alias_to_existing", "needs_parent_curation"}:
+        if action in {"exclude", "exclude_from_public", "alias_to_existing", "needs_parent_curation"}:
             if action == "needs_parent_curation":
                 needs_parent_count += 1
             else:
