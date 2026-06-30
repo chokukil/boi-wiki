@@ -139,7 +139,7 @@ Dictionary는 사람이 쉽게 입력할 수 있어야 한다. 기본 폼은 다
 - memory/package: `DRAM`, `NAND Flash`, `HBM`, `TSV`, `Advanced Packaging`, `Hybrid Bonding`, `Interposer`
 - AI Native Workflow: `Event Broker`, `Action Gateway`, `Manual Handoff`, `Approval`, `Time Series Forecast`, `TimesFM`
 
-Agent는 사용자의 용어가 낯설거나 약어일 때 바로 전체 wiki를 훑지 말고 `dictionary_resolve`를 먼저 호출한다. `maps_to_event_type`, `maps_to_action_key`, `maps_to_sop`가 있는 경우 해당 Event/Action/SOP를 context pack에 포함한다. 관련 mapping이 없으면 dictionary term과 backlink를 근거로 `ontology_search`를 호출한다.
+Agent는 사용자의 용어가 낯설거나 약어일 때 바로 전체 wiki를 훑지 말고 `dictionary_resolve`를 먼저 호출한다. 기본 응답은 compact/bounded contract이며 match 8건, 최대 25건, query expansion 24개를 넘기지 않는다. `overflow.has_more=true`이면 전체 dictionary를 읽지 말고 검색어, domain, scope를 좁힌다. `maps_to_event_type`, `maps_to_action_key`, `maps_to_sop`가 있는 경우 해당 Event/Action/SOP를 context pack에 포함한다. 관련 mapping이 없으면 dictionary term과 backlink를 근거로 `ontology_search`를 호출한다.
 
 ## Memory
 

@@ -1075,6 +1075,131 @@ def test_ontology_search_dictionary_and_boi_search_remain_distinct(boi_app_modul
     assert identities.count("boi:public:sop:equipment-abnormal-response") <= 1
 
 
+def test_dictionary_resolve_is_bounded_for_large_match_sets(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    terms = []
+    for index in range(40):
+        terms.append(
+            {
+                "term": f"scale-term-{index:03d}",
+                "definition": "대량 dictionary context budget 검증용 설명입니다. " * 20,
+                "aliases": ["ETCH", *[f"alias-{index}-{alias_index}" for alias_index in range(20)]],
+                "related_terms": [f"related-{index}-{related_index}" for related_index in range(20)],
+                "scope": "public",
+                "priority": 2,
+                "domain": "scale-test",
+                "url": f"/docs/scale-term-{index:03d}",
+            }
+        )
+    monkeypatch.setattr(boi_app_module, "dictionary_terms_for_employee", lambda employee_id, scope="all": terms)
+
+    response = client.get("/api/dictionary/resolve?employee_id=100001&q=etch&limit=8")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["matches"]) == 8
+    assert body["overflow"]["total_matches"] == 40
+    assert body["overflow"]["omitted_count"] == 32
+    assert len(body["expanded_terms"]) <= 24
+    assert all(len(item.get("definition", "")) <= 240 for item in body["matches"])
+    assert all(len(item.get("aliases", [])) <= 8 for item in body["matches"])
+    assert all(len(item.get("related_terms", [])) <= 8 for item in body["matches"])
+
+
+def test_dictionary_terms_support_cursor_pagination_and_compact_items(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    terms = [
+        {
+            "term": f"cursor-term-{index:03d}",
+            "definition": "cursor pagination validation " * 30,
+            "aliases": [f"alias-{index}-{alias_index}" for alias_index in range(12)],
+            "related_terms": [f"related-{index}-{related_index}" for related_index in range(12)],
+            "scope": "public",
+            "priority": 2,
+        }
+        for index in range(12)
+    ]
+    monkeypatch.setattr(boi_app_module, "dictionary_terms_for_employee", lambda employee_id, scope="all": terms)
+
+    first = client.get("/api/dictionary/terms?employee_id=100001&limit=5")
+    second = client.get("/api/dictionary/terms?employee_id=100001&limit=5&cursor=5")
+
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["total"] == 12
+    assert first_body["count"] == 5
+    assert first_body["next_cursor"] == "5"
+    assert len(first_body["items"][0]["definition"]) <= 240
+    assert len(first_body["items"][0]["aliases"]) <= 8
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["items"][0]["term"] == "cursor-term-005"
+    assert second_body["next_cursor"] == "10"
+
+
+def test_dictionary_resolve_returns_canonical_term_kind_and_alias_match(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    dist = client.get("/api/dictionary/resolve?employee_id=100001&q=0-PG%20Dist")
+    stack = client.get("/api/dictionary/resolve?employee_id=100001&q=4HI")
+    terms = client.get("/api/dictionary/terms?employee_id=100001&q=Memory%20Stack%20Height")
+
+    assert dist.status_code == 200
+    dist_match = dist.json()["matches"][0]
+    assert dist_match["term"] == "Word Line Disturbance Test"
+    assert dist_match["term_kind"] == "test-method"
+    assert dist_match["matched_as"] == "alias"
+    assert dist_match["matched_value"] == "0-PG Dist"
+    assert "NAND Flash" in dist_match["broader"]
+
+    assert stack.status_code == 200
+    stack_match = stack.json()["matches"][0]
+    assert stack_match["term"] == "Memory Stack Height"
+    assert stack_match["term_kind"] == "concept"
+    assert stack_match["matched_as"] == "alias"
+    assert stack_match["matched_value"] == "4HI"
+
+    assert terms.status_code == 200
+    assert terms.json()["items"][0]["term_kind"] == "concept"
+
+
+def test_compact_ontology_search_caps_dictionary_context_budget(boi_app_module, monkeypatch):
+    terms = [
+        {
+            "term": f"ontology-scale-{index:03d}",
+            "definition": "compact ontology context budget validation " * 30,
+            "aliases": ["ETCH", *[f"alias-{index}-{alias_index}" for alias_index in range(20)]],
+            "related_terms": [f"related-{index}-{related_index}" for related_index in range(20)],
+            "scope": "public",
+            "priority": 2,
+        }
+        for index in range(30)
+    ]
+    monkeypatch.setattr(boi_app_module, "dictionary_terms_for_employee", lambda employee_id, scope="all": terms)
+    monkeypatch.setattr(
+        boi_app_module,
+        "search_index_for_employee",
+        lambda employee_id: {
+            "doc_records": [],
+            "dictionary": [],
+            "event_types": [],
+            "actions": [],
+            "workflow_definitions": [],
+        },
+    )
+
+    payload = boi_app_module.ontology_search_payload("etch", "100001", limit=8, view="compact")
+
+    assert payload["view"] == "compact"
+    assert len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= 96 * 1024
+    assert len(payload["query_expansion"]) <= 24
+    assert payload["dictionary_overflow"]["total_matches"] == 30
+    for item in payload["groups"]["dictionary"]:
+        assert len(item.get("definition", "")) <= 240
+        assert len(item.get("aliases", [])) <= 8
+        assert len(item.get("related_terms", [])) <= 8
+
+
 def test_dictionary_term_create_allows_private_but_rejects_shared_scope_without_editor(boi_app_module):
     client = TestClient(boi_app_module.app)
 

@@ -121,7 +121,7 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 | `workflow_definitions_search` / `workflow_definition_get` / `workflow_definition_deduplicate` | 내부 WorkflowDefinition 조회, 상세 확인, 신규 등록 전 중복 후보 산출. Web UI에서는 SOP 추가나 BoI Wiki 탐색 후보로만 노출 |
 | `event_skills_list` / `action_skills_list` | Event Skill과 Action Skill registry 조회 |
 | `ontology_search` | Dictionary, SOP workflow, Event Type, Action Spec, BoI 문서, runtime evidence를 함께 보는 업무 지식 그래프 검색 |
-| `dictionary_resolve` / `dictionary_terms` | private → team → public 우선순위로 업무 용어와 alias 해석 |
+| `dictionary_resolve` / `dictionary_terms` | private → team → public 우선순위로 업무 용어와 alias 해석. 기본은 compact/bounded 응답이며 `dictionary_terms`는 cursor/domain/scope 기반으로 탐색 |
 | `agent_memory_search` | 사번별 private Agent Memory BoI 검색 |
 | `boi_inbox` / `boi_inbox_report_get` / `boi_inbox_decision_preview` / `boi_inbox_decision_submit` | BoI Inbox 보고서 목록, 검증된 보고서 BoI 조회, 승인/반려/보류/추가 근거 요청 검토와 기록. 고위험 group bulk approve는 차단하며, 실제 기록은 개별 task 사유와 `user_confirmed=true`가 있어야 한다. |
 | `data_lake_status` / `data_lake_sources` / `data_lake_query_plan` / `data_lake_query_preview` / `data_lake_query_execute` / `data_lake_artifact_get` / `data_lake_import_sources` | Optional Data Lake 도구. PostgreSQL/MinIO가 없는 기본 profile에서는 disabled contract를 반환하며 BoI Wiki core를 실패시키지 않는다. 실행은 plan/preview 이후 `user_confirmed=true`가 필요하다. `data_lake_import_sources`는 선택한 source profile을 private OKF Data Context BoI로 materialize할 때만 사용한다. |

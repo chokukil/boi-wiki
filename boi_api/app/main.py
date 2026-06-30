@@ -572,6 +572,7 @@ _FILE_SIGNATURE_CACHE: dict[str, tuple[float, tuple[tuple[str, int, int], ...]]]
 _DOC_BODY_HTML_CACHE: dict[tuple[Any, ...], Markup] = {}
 _OKF_GRAPH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
 _SEARCH_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
+_DICTIONARY_INDEX_CACHE: dict[str, Any] = {"signature": None, "by_employee": {}}
 _AGENT_CACHE_WARMUP_LOCK = threading.Lock()
 _AGENT_CACHE_WARMUP_STATE: dict[str, Any] = {
     "enabled": BOI_AGENT_CACHE_WARMUP_ON_STARTUP,
@@ -660,6 +661,37 @@ def markdown_signature() -> tuple[tuple[str, int, int], ...]:
     return cached_signature(f"markdown:{DATA_ROOT}", lambda: file_signature(sorted(DATA_ROOT.rglob("*.md"))))
 
 
+def dictionary_markdown_paths() -> list[Path]:
+    if not DATA_ROOT.exists():
+        return []
+    paths: list[Path] = []
+    for path in DATA_ROOT.rglob("*.md"):
+        if not path.is_file():
+            continue
+        try:
+            parts = path.relative_to(DATA_ROOT).parts
+        except ValueError:
+            parts = path.parts
+        if "dictionary" in parts:
+            paths.append(path)
+    return sorted(paths)
+
+
+def dictionary_markdown_signature() -> tuple[tuple[str, int, int], ...]:
+    return cached_signature(f"dictionary-markdown:{DATA_ROOT}", lambda: file_signature(dictionary_markdown_paths()))
+
+
+def non_dictionary_markdown_signature() -> tuple[tuple[str, int, int], ...]:
+    if not DATA_ROOT.exists():
+        return ()
+
+    def compute() -> tuple[tuple[str, int, int], ...]:
+        dictionary_paths = set(dictionary_markdown_paths())
+        return file_signature([path for path in sorted(DATA_ROOT.rglob("*.md")) if path not in dictionary_paths])
+
+    return cached_signature(f"non-dictionary-markdown:{DATA_ROOT}", compute)
+
+
 def materialized_log_signature() -> tuple[tuple[str, int, int], ...]:
     return file_signature(materialized_log_paths())
 
@@ -678,6 +710,8 @@ def invalidate_doc_caches() -> None:
     _OKF_GRAPH_INDEX_CACHE["by_employee"] = {}
     _SEARCH_INDEX_CACHE["signature"] = None
     _SEARCH_INDEX_CACHE["by_employee"] = {}
+    _DICTIONARY_INDEX_CACHE["signature"] = None
+    _DICTIONARY_INDEX_CACHE["by_employee"] = {}
 
 
 def invalidate_catalog_caches() -> None:
@@ -698,6 +732,8 @@ def invalidate_catalog_caches() -> None:
     _AGENT_RESPONSE_PROFILE_CACHE["items"] = []
     _SEARCH_INDEX_CACHE["signature"] = None
     _SEARCH_INDEX_CACHE["by_employee"] = {}
+    _DICTIONARY_INDEX_CACHE["signature"] = None
+    _DICTIONARY_INDEX_CACHE["by_employee"] = {}
 
 
 def invalidate_event_log_caches() -> None:
@@ -3165,6 +3201,8 @@ def default_rbac_state() -> dict[str, Any]:
 def invalidate_rbac_state_cache() -> None:
     _RBAC_STATE_CACHE["signature"] = None
     _RBAC_STATE_CACHE["state"] = None
+    _DICTIONARY_INDEX_CACHE["signature"] = None
+    _DICTIONARY_INDEX_CACHE["by_employee"] = {}
 
 
 def rbac_state_signature() -> tuple[str, int, int] | tuple[str, int, int, str]:
@@ -3747,6 +3785,16 @@ def dictionary_priority(scope: str) -> int:
     return {"private": 0, "team": 1, "public": 2}.get(scope, 9)
 
 
+DICTIONARY_RESOLVE_DEFAULT_LIMIT = 8
+DICTIONARY_RESOLVE_MAX_LIMIT = 25
+DICTIONARY_TERMS_DEFAULT_LIMIT = 100
+DICTIONARY_TERMS_MAX_LIMIT = 500
+DICTIONARY_DEFINITION_EXCERPT_CHARS = 240
+DICTIONARY_ALIASES_CONTEXT_LIMIT = 8
+DICTIONARY_RELATED_CONTEXT_LIMIT = 8
+DICTIONARY_EXPANSION_CONTEXT_LIMIT = 24
+
+
 def is_dictionary_doc(doc: dict[str, Any]) -> bool:
     metadata = doc.get("metadata") or {}
     uri = str(doc.get("uri") or "")
@@ -3765,6 +3813,9 @@ def dictionary_term_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, 
         "definition": metadata.get("definition") or metadata.get("description") or "",
         "aliases": aliases,
         "domain": metadata.get("domain") or "",
+        "term_kind": metadata.get("term_kind") or "",
+        "curation_status": metadata.get("curation_status") or "",
+        "compound_reason": metadata.get("compound_reason") or "",
         "examples": metadata.get("examples") or [],
         "links": links,
         "related_terms": metadata.get("related_terms") or [],
@@ -3782,8 +3833,26 @@ def dictionary_term_for_doc(doc: dict[str, Any], employee_id: str) -> dict[str, 
     }
 
 
+def dictionary_index_signature() -> tuple[Any, ...]:
+    return (
+        dictionary_markdown_signature(),
+        rbac_state_signature(),
+    )
+
+
 def dictionary_terms_for_employee(employee_id: str, scope: str = "all") -> list[dict[str, Any]]:
-    return dictionary_terms_from_docs(accessible_docs(employee_id), employee_id, scope=scope)
+    signature = dictionary_index_signature()
+    if _DICTIONARY_INDEX_CACHE.get("signature") != signature:
+        _DICTIONARY_INDEX_CACHE["signature"] = signature
+        _DICTIONARY_INDEX_CACHE["by_employee"] = {}
+    by_employee = _DICTIONARY_INDEX_CACHE.setdefault("by_employee", {})
+    terms = by_employee.get(employee_id)
+    if terms is None:
+        terms = dictionary_terms_from_docs(accessible_docs(employee_id), employee_id, scope="all")
+        by_employee[employee_id] = terms
+    if scope and scope != "all":
+        return [term for term in terms if term.get("scope") == scope]
+    return list(terms)
 
 
 def dictionary_terms_from_docs(docs: list[dict[str, Any]], employee_id: str, scope: str = "all") -> list[dict[str, Any]]:
@@ -3795,38 +3864,134 @@ def dictionary_terms_from_docs(docs: list[dict[str, Any]], employee_id: str, sco
     return terms
 
 
+def dictionary_limit(value: int | str | None, *, default: int = DICTIONARY_RESOLVE_DEFAULT_LIMIT, max_limit: int = DICTIONARY_RESOLVE_MAX_LIMIT) -> int:
+    try:
+        parsed = int(value if value is not None else default)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, max_limit))
+
+
+def compact_dictionary_values(values: Any, limit: int) -> list[str]:
+    compact: list[str] = []
+    for item in values or []:
+        text = str(item or "").strip()
+        if text and text not in compact:
+            compact.append(text)
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def compact_dictionary_term(term: dict[str, Any], *, view: str = "compact") -> dict[str, Any]:
+    if str(view or "compact").lower() == "full":
+        return dict(term)
+    compact = dict(term)
+    if compact.get("definition"):
+        compact["definition"] = text_excerpt(str(compact.get("definition") or ""), DICTIONARY_DEFINITION_EXCERPT_CHARS)
+    compact["aliases"] = compact_dictionary_values(compact.get("aliases"), DICTIONARY_ALIASES_CONTEXT_LIMIT)
+    compact["related_terms"] = compact_dictionary_values(compact.get("related_terms"), DICTIONARY_RELATED_CONTEXT_LIMIT)
+    compact["broader"] = compact_dictionary_values(compact.get("broader"), DICTIONARY_RELATED_CONTEXT_LIMIT)
+    compact["narrower"] = compact_dictionary_values(compact.get("narrower"), DICTIONARY_RELATED_CONTEXT_LIMIT)
+    compact["same_as"] = compact_dictionary_values(compact.get("same_as"), DICTIONARY_ALIASES_CONTEXT_LIMIT)
+    return compact
+
+
+def dictionary_overflow(total: int, returned: int) -> dict[str, Any]:
+    omitted = max(0, total - returned)
+    return {
+        "total_matches": total,
+        "returned_count": returned,
+        "omitted_count": omitted,
+        "has_more": omitted > 0,
+        "next_cursor": str(returned) if omitted > 0 else "",
+        "refine_hint": "검색어를 더 구체화하거나 domain/scope 필터를 사용하세요." if omitted > 0 else "",
+    }
+
+
 def normalize_search_token(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
-def resolve_dictionary_query_from_terms(query: str, terms: list[dict[str, Any]]) -> dict[str, Any]:
+def dictionary_candidate_match(query: str, term: dict[str, Any]) -> tuple[bool, str, str]:
     normalized = normalize_search_token(query)
+    candidate_groups = (
+        ("canonical", [term.get("term", "")]),
+        ("alias", term.get("aliases") or []),
+        ("same_as", term.get("same_as") or []),
+    )
+    if not normalized:
+        return True, "browse", ""
+    for matched_as, candidates in candidate_groups:
+        for candidate in candidates:
+            candidate_text = str(candidate or "").strip()
+            candidate_normalized = normalize_search_token(candidate_text)
+            if not candidate_normalized:
+                continue
+            if normalized == candidate_normalized or normalized in candidate_normalized or candidate_normalized in normalized:
+                return True, matched_as, candidate_text
+    return False, "", ""
+
+
+def resolve_dictionary_query_from_terms(
+    query: str,
+    terms: list[dict[str, Any]],
+    *,
+    limit: int | str | None = DICTIONARY_RESOLVE_DEFAULT_LIMIT,
+    view: str = "compact",
+    include_all: bool = False,
+) -> dict[str, Any]:
     matches: list[dict[str, Any]] = []
     for term in terms:
-        candidates = [term.get("term", ""), *(term.get("aliases") or [])]
-        haystack = "\n".join(str(candidate) for candidate in candidates).lower()
-        if not normalized or normalized in haystack or any(normalize_search_token(candidate) in normalized for candidate in candidates if candidate):
-            matches.append(term)
+        matched, matched_as, matched_value = dictionary_candidate_match(query, term)
+        if matched:
+            annotated = dict(term)
+            if matched_as:
+                annotated["matched_as"] = matched_as
+            if matched_value:
+                annotated["matched_value"] = matched_value
+            matches.append(annotated)
     matches.sort(key=lambda item: (item.get("priority", 9), -len(str(item.get("term") or ""))))
+    effective_limit = len(matches) if include_all else dictionary_limit(limit)
+    bounded_matches = matches[:effective_limit]
     expansion: list[str] = [query] if query else []
-    for term in matches[:8]:
-        expansion.extend([str(term.get("term") or ""), *[str(alias) for alias in term.get("aliases") or []]])
+    for term in bounded_matches:
+        expansion.extend([str(term.get("term") or ""), *compact_dictionary_values(term.get("aliases"), DICTIONARY_ALIASES_CONTEXT_LIMIT)])
         for key in ("maps_to_event_type", "maps_to_action_key", "maps_to_sop"):
             value = str(term.get(key) or "")
             if value:
                 expansion.append(value)
-        expansion.extend(str(item) for item in term.get("related_terms") or [])
-    unique_expansion = [item for item in dict.fromkeys(item.strip() for item in expansion if str(item).strip())]
+        expansion.extend(compact_dictionary_values(term.get("same_as"), DICTIONARY_ALIASES_CONTEXT_LIMIT))
+        expansion.extend(compact_dictionary_values(term.get("broader"), DICTIONARY_RELATED_CONTEXT_LIMIT))
+        expansion.extend(compact_dictionary_values(term.get("narrower"), DICTIONARY_RELATED_CONTEXT_LIMIT))
+        expansion.extend(compact_dictionary_values(term.get("related_terms"), DICTIONARY_RELATED_CONTEXT_LIMIT))
+    unique_expansion = [item for item in dict.fromkeys(item.strip() for item in expansion if str(item).strip())][:DICTIONARY_EXPANSION_CONTEXT_LIMIT]
+    compact_matches = [compact_dictionary_term(term, view=view) for term in bounded_matches]
     return {
         "query": query,
-        "matches": matches,
-        "canonical_terms": [term for term in matches[:3]],
+        "matches": compact_matches,
+        "canonical_terms": [compact_dictionary_term(term, view=view) for term in matches[:3]],
         "expanded_terms": unique_expansion,
+        "overflow": dictionary_overflow(len(matches), len(compact_matches)),
     }
 
 
-def resolve_dictionary_query(query: str, employee_id: str, *, scope: str = "all") -> dict[str, Any]:
-    return resolve_dictionary_query_from_terms(query, dictionary_terms_for_employee(employee_id, scope=scope))
+def resolve_dictionary_query(
+    query: str,
+    employee_id: str,
+    *,
+    scope: str = "all",
+    limit: int | str | None = DICTIONARY_RESOLVE_DEFAULT_LIMIT,
+    view: str = "compact",
+    include_all: bool = False,
+) -> dict[str, Any]:
+    return resolve_dictionary_query_from_terms(
+        query,
+        dictionary_terms_for_employee(employee_id, scope=scope),
+        limit=limit,
+        view=view,
+        include_all=include_all,
+    )
 
 
 def search_tokens_for_query(query: str, employee_id: str, *, dictionary: dict[str, Any] | None = None) -> list[str]:
@@ -3838,7 +4003,7 @@ def search_tokens_for_query(query: str, employee_id: str, *, dictionary: dict[st
 
 def search_index_signature() -> tuple[Any, ...]:
     return (
-        markdown_signature(),
+        non_dictionary_markdown_signature(),
         glob_signature(EVENT_CATALOG_ROOT, "*.yaml"),
         glob_signature(ACTION_CATALOG_ROOT, "*.yaml"),
     )
@@ -3927,8 +4092,9 @@ def search_index_for_employee(employee_id: str) -> dict[str, Any]:
         _SEARCH_INDEX_CACHE["by_employee"][employee_id] = persisted
         return persisted
     docs = accessible_docs(employee_id)
+    search_docs = [doc for doc in docs if not is_dictionary_doc(doc)]
     doc_records = []
-    for doc in docs:
+    for doc in search_docs:
         metadata = doc.get("metadata") or {}
         access = access_policy_for_doc(doc, employee_id)
         ref = stable_doc_ref(doc)
@@ -3945,9 +4111,9 @@ def search_index_for_employee(employee_id: str) -> dict[str, Any]:
             }
         )
     index = {
-        "docs": docs,
+        "docs": search_docs,
         "doc_records": doc_records,
-        "dictionary": dictionary_terms_from_docs(docs, employee_id),
+        "dictionary": [],
         "event_types": load_event_types(),
         "actions": load_action_catalog(),
         "workflow_definitions": load_workflow_definition_catalog(),
@@ -4036,10 +4202,10 @@ def ontology_search_payload(
         scope = "workflow_definitions"
     effective_limit = max(1, min(int(limit or 8), 50))
     index = search_index_for_employee(employee_id)
-    dictionary_terms = index.get("dictionary") or []
+    dictionary_terms = dictionary_terms_for_employee(employee_id, scope="all")
     if scope in {"private", "team", "public"}:
         dictionary_terms = [term for term in dictionary_terms if term.get("scope") == scope]
-    dictionary = resolve_dictionary_query_from_terms(query, dictionary_terms)
+    dictionary = resolve_dictionary_query_from_terms(query, dictionary_terms, limit=effective_limit, view="compact")
     tokens = search_tokens_for_query(query, employee_id, dictionary=dictionary)
 
     doc_hits: list[tuple[int, dict[str, Any]]] = []
@@ -4236,6 +4402,7 @@ def ontology_search_payload(
         "current_url": current_url,
         "query_expansion": dictionary.get("expanded_terms", []),
         "used_dictionary_terms": dictionary_items,
+        "dictionary_overflow": dictionary.get("overflow") or {},
         "knowledge_panel": {
             "interpreted_as": [term.get("term") for term in dictionary.get("canonical_terms") or []],
             "top_sop": groups.get("sop", [])[:1],
@@ -4282,6 +4449,15 @@ def compact_ontology_item(item: Any) -> Any:
         "term",
         "definition",
         "aliases",
+        "term_kind",
+        "curation_status",
+        "compound_reason",
+        "related_terms",
+        "broader",
+        "narrower",
+        "same_as",
+        "matched_as",
+        "matched_value",
         "event_type",
         "workflow_stage",
         "sop_ref",
@@ -4305,6 +4481,15 @@ def compact_ontology_item(item: Any) -> Any:
     compact = {key: item.get(key) for key in keys if item.get(key) not in (None, "", [], {})}
     if compact.get("description"):
         compact["description"] = text_excerpt(str(compact["description"]), 260)
+    if compact.get("definition"):
+        compact["definition"] = text_excerpt(str(compact["definition"]), DICTIONARY_DEFINITION_EXCERPT_CHARS)
+    if "aliases" in compact:
+        compact["aliases"] = compact_dictionary_values(compact.get("aliases"), DICTIONARY_ALIASES_CONTEXT_LIMIT)
+    for key in ("related_terms", "broader", "narrower"):
+        if key in compact:
+            compact[key] = compact_dictionary_values(compact.get(key), DICTIONARY_RELATED_CONTEXT_LIMIT)
+    if "same_as" in compact:
+        compact["same_as"] = compact_dictionary_values(compact.get("same_as"), DICTIONARY_ALIASES_CONTEXT_LIMIT)
     return compact
 
 
@@ -4350,8 +4535,9 @@ def compact_ontology_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "employee_id": payload.get("employee_id", ""),
         "current_url": payload.get("current_url", ""),
         "view": "compact",
-        "query_expansion": payload.get("query_expansion") or [],
+        "query_expansion": compact_dictionary_values(payload.get("query_expansion") or [], DICTIONARY_EXPANSION_CONTEXT_LIMIT),
         "used_dictionary_terms": [compact_ontology_item(item) for item in payload.get("used_dictionary_terms") or []],
+        "dictionary_overflow": payload.get("dictionary_overflow") or {},
         "knowledge_panel": compact_knowledge,
         "groups": compact_groups,
         "best_matches": [compact_ontology_item(item) for item in best_matches],
@@ -6857,8 +7043,15 @@ class DictionaryTermRequest(BaseModel):
     term: str
     definition: str
     aliases: list[str] = Field(default_factory=list)
+    term_kind: Literal["concept", "acronym", "test-method", "variant-group", "variant"] | None = None
+    curation_status: str = ""
+    compound_reason: str = ""
     example: str = ""
     links: list[str] = Field(default_factory=list)
+    related_terms: list[str] = Field(default_factory=list)
+    broader: list[str] = Field(default_factory=list)
+    narrower: list[str] = Field(default_factory=list)
+    same_as: list[str] = Field(default_factory=list)
     scope: Literal["private", "team", "public"] = "private"
     team_id: str | None = None
     domain: str = ""
@@ -7278,6 +7471,7 @@ async def api_runtime_log_maintenance_run(req: RuntimeLogMaintenanceRequest, emp
 @app.get("/api/runtime/config")
 async def runtime_config() -> dict[str, Any]:
     markdown_sig = markdown_signature()
+    dictionary_sig = dictionary_index_signature()
     search_sig = search_index_signature()
     git_status = git_content_status()
     langflow_simulator = langflow_simulator_health_status()
@@ -7367,6 +7561,14 @@ async def runtime_config() -> dict[str, Any]:
             "persisted_enabled": BOI_PERSIST_SEARCH_INDEX,
             "persisted_root": str(SEARCH_INDEX_ROOT),
             "search_cache_ready": _SEARCH_INDEX_CACHE.get("signature") == search_sig,
+            "dictionary_index": {
+                "dictionary_documents": len(dictionary_sig[0]) if dictionary_sig and isinstance(dictionary_sig[0], tuple) else 0,
+                "cache_ready": _DICTIONARY_INDEX_CACHE.get("signature") == dictionary_sig,
+                "default_resolve_limit": DICTIONARY_RESOLVE_DEFAULT_LIMIT,
+                "max_resolve_limit": DICTIONARY_RESOLVE_MAX_LIMIT,
+                "definition_excerpt_chars": DICTIONARY_DEFINITION_EXCERPT_CHARS,
+                "max_expanded_terms": DICTIONARY_EXPANSION_CONTEXT_LIMIT,
+            },
             "doc_index_ready": _DOC_INDEX_CACHE.get("signature") == markdown_sig,
             "graph_index_ready": _OKF_GRAPH_INDEX_CACHE.get("signature") == markdown_sig,
             "cache_warmup": agent_cache_warmup_state(),
@@ -12871,7 +13073,7 @@ def native_agent_tools(employee_id: str, current_url: str = "") -> NativeAgentTo
         action_spec_lookup=lambda action_key: native_agent_action_spec_tool(action_key, employee_id),
         workflow_status=lambda workflow_key, trace_id: native_agent_workflow_status_tool(workflow_key, trace_id, employee_id),
         trace_context_lookup=lambda trace_id: native_agent_trace_context_tool(trace_id, employee_id),
-        dictionary_resolve=lambda query: {"ok": True, **resolve_dictionary_query(query, employee_id, scope="all")},
+        dictionary_resolve=lambda query: {"ok": True, "view": "compact", **resolve_dictionary_query(query, employee_id, scope="all", limit=DICTIONARY_RESOLVE_DEFAULT_LIMIT, view="compact")},
         memory_recall=lambda query, limit=5: native_agent_memory_tool(query, employee_id, limit=limit),
         agent_inbox=lambda limit=10: agent_inbox_payload(employee_id, status="open", limit=limit, include_context="compact"),
         llm_json=lambda task, payload: native_agent_llm_json(employee_id, task, payload),
@@ -15369,18 +15571,65 @@ async def api_agent_memory_undo(memory_id: str, employee_id: str = Depends(curre
 
 
 @app.get("/api/dictionary/resolve")
-async def api_dictionary_resolve(employee_id: str = Depends(current_employee), q: str = "", scope: str = "all") -> dict[str, Any]:
-    return {"ok": True, **resolve_dictionary_query(q, employee_id, scope=scope)}
+async def api_dictionary_resolve(
+    employee_id: str = Depends(current_employee),
+    q: str = "",
+    scope: str = "all",
+    limit: int = DICTIONARY_RESOLVE_DEFAULT_LIMIT,
+    view: str = "compact",
+    include_all: bool = False,
+) -> dict[str, Any]:
+    if include_all:
+        require_employee_role(employee_id, "boi.admin")
+    return {
+        "ok": True,
+        "view": "full" if str(view or "").lower() == "full" and include_all else "compact",
+        **resolve_dictionary_query(
+            q,
+            employee_id,
+            scope=scope,
+            limit=limit,
+            view="full" if str(view or "").lower() == "full" and include_all else "compact",
+            include_all=include_all,
+        ),
+    }
 
 
 @app.get("/api/dictionary/terms")
-async def api_dictionary_terms(employee_id: str = Depends(current_employee), scope: str = "all", q: str = "", limit: int = 100) -> dict[str, Any]:
+async def api_dictionary_terms(
+    employee_id: str = Depends(current_employee),
+    scope: str = "all",
+    q: str = "",
+    limit: int = DICTIONARY_TERMS_DEFAULT_LIMIT,
+    cursor: str = "0",
+    domain: str = "",
+    view: str = "compact",
+) -> dict[str, Any]:
     items = dictionary_terms_for_employee(employee_id, scope=scope)
     if q:
         q_lower = normalize_search_token(q)
         items = [item for item in items if q_lower in normalize_search_token(json.dumps(item, ensure_ascii=False, default=str))]
-    items = items[: max(1, min(limit, 500))]
-    return {"ok": True, "count": len(items), "items": items}
+    if domain:
+        domain_lower = normalize_search_token(domain)
+        items = [item for item in items if normalize_search_token(str(item.get("domain") or "")) == domain_lower]
+    total = len(items)
+    try:
+        offset = max(0, int(cursor or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    effective_limit = dictionary_limit(limit, default=DICTIONARY_TERMS_DEFAULT_LIMIT, max_limit=DICTIONARY_TERMS_MAX_LIMIT)
+    page = items[offset: offset + effective_limit]
+    response_items = [compact_dictionary_term(item, view=view) for item in page]
+    next_offset = offset + len(page)
+    return {
+        "ok": True,
+        "count": len(response_items),
+        "total": total,
+        "cursor": str(offset),
+        "next_cursor": str(next_offset) if next_offset < total else "",
+        "items": response_items,
+        "view": "full" if str(view or "").lower() == "full" else "compact",
+    }
 
 
 @app.post("/api/dictionary/terms")
@@ -15414,8 +15663,15 @@ async def api_dictionary_term_create(req: DictionaryTermRequest, employee_id: st
             "term": req.term,
             "definition": req.definition,
             "aliases": req.aliases,
+            "term_kind": req.term_kind or "",
+            "curation_status": req.curation_status,
+            "compound_reason": req.compound_reason,
             "examples": [req.example] if req.example else [],
             "links": req.links,
+            "related_terms": req.related_terms,
+            "broader": req.broader,
+            "narrower": req.narrower,
+            "same_as": req.same_as,
             "domain": req.domain,
             "maps_to_event_type": req.maps_to_event_type,
             "maps_to_action_key": req.maps_to_action_key,
@@ -15436,21 +15692,33 @@ async def api_dictionary_term_create(req: DictionaryTermRequest, employee_id: st
 
 
 def dictionary_body(req: DictionaryTermRequest) -> str:
+    related_links = req.related_terms or req.same_as or req.broader or req.narrower
     lines = [
         "# Summary",
         "",
         req.definition,
         "",
-        "## Usage",
+        "# BoI Usage",
         "",
         f"- Term: {req.term}",
     ]
     if req.aliases:
         lines.append(f"- Aliases: {', '.join(req.aliases)}")
+    if req.term_kind:
+        lines.append(f"- Term kind: {req.term_kind}")
     if req.example:
-        lines.extend(["", "## Example", "", req.example])
+        lines.extend(["", "# Agent Notes", "", f"- Example: {req.example}"])
+    else:
+        lines.extend(["", "# Agent Notes", "", "- Add field usage examples before public/team promotion."])
+    lines.extend(["", "# Related Dictionary Terms", ""])
+    if related_links:
+        lines.extend([f"- {term}" for term in related_links])
+    else:
+        lines.append("- Related term candidates are not set yet.")
     if req.links:
-        lines.extend(["", "## Links", "", *[f"- {link}" for link in req.links]])
+        lines.extend(["", "# Citations", "", *[f"- {link}" for link in req.links]])
+    else:
+        lines.extend(["", "# Citations", "", "- BoI Agent dictionary form"])
     return "\n".join(lines).strip() + "\n"
 
 

@@ -879,9 +879,15 @@ async def ontology_search(
 
 
 @mcp.tool(name="dictionary_resolve")
-async def dictionary_resolve(query: str, employee_id: str = DEFAULT_EMPLOYEE_ID, scope: str = "all") -> dict[str, Any]:
+async def dictionary_resolve(
+    query: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    scope: str = "all",
+    limit: int = 8,
+    view: str = "compact",
+) -> dict[str, Any]:
     """Resolve dictionary terms and aliases by private, team, then public priority."""
-    return await api_get("/api/dictionary/resolve", employee_id=employee_id, params={"q": query, "scope": scope})
+    return await api_get("/api/dictionary/resolve", employee_id=employee_id, params={"q": query, "scope": scope, "limit": limit, "view": view})
 
 
 @mcp.tool(name="dictionary_terms")
@@ -890,9 +896,16 @@ async def dictionary_terms(
     scope: str = "all",
     query: str = "",
     limit: int = 100,
+    cursor: str = "0",
+    domain: str = "",
+    view: str = "compact",
 ) -> dict[str, Any]:
     """List accessible BoI dictionary terms."""
-    return await api_get("/api/dictionary/terms", employee_id=employee_id, params={"scope": scope, "q": query, "limit": limit})
+    return await api_get(
+        "/api/dictionary/terms",
+        employee_id=employee_id,
+        params={"scope": scope, "q": query, "limit": limit, "cursor": cursor, "domain": domain, "view": view},
+    )
 
 
 @mcp.tool(name="agent_memory_search")
@@ -2816,14 +2829,26 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         result = await api_get(
             "/api/dictionary/resolve",
             employee_id=employee_id,
-            params={"q": str(args.get("query") or args.get("q") or ""), "scope": str(args.get("scope") or "all")},
+            params={
+                "q": str(args.get("query") or args.get("q") or ""),
+                "scope": str(args.get("scope") or "all"),
+                "limit": int(args.get("limit") or 8),
+                "view": str(args.get("view") or "compact"),
+            },
             service_token=True,
         )
     elif tool_name == "dictionary_terms":
         result = await api_get(
             "/api/dictionary/terms",
             employee_id=employee_id,
-            params={"scope": str(args.get("scope") or "all"), "q": str(args.get("query") or args.get("q") or ""), "limit": int(args.get("limit") or 100)},
+            params={
+                "scope": str(args.get("scope") or "all"),
+                "q": str(args.get("query") or args.get("q") or ""),
+                "limit": int(args.get("limit") or 100),
+                "cursor": str(args.get("cursor") or "0"),
+                "domain": str(args.get("domain") or ""),
+                "view": str(args.get("view") or "compact"),
+            },
             service_token=True,
         )
     elif tool_name == "agent_memory_search":
