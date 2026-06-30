@@ -111,8 +111,57 @@ Public dictionary는 최소 다음 범주를 유지한다.
 4. 용어 정의는 공식 reference, 기존 SOP/Event/Action 문서, 팀 지식을 근거로 쓴다.
 5. `related_terms`를 metadata에 넣고 본문 `# Related Dictionary Terms`에 실제 Markdown links로 반복한다.
 6. `maps_to_*`는 실제 catalog/BoI로 resolve될 때만 넣는다.
-7. `index.md`를 갱신한다.
+7. `index.md`에는 대표 domain entry만 유지한다. 전체 term 목록을 직접 나열하지 않고 업무 용어 UI/API cursor 검색으로 찾게 한다.
 8. 저장 전 self-check와 repository test를 실행한다.
+
+# Context Budget Rule
+
+Dictionary는 수천~수만 건으로 커질 수 있으므로 Agent/MCP 기본 경로는 항상 compact retrieval을 사용한다.
+
+| Contract | 기준 |
+|---|---|
+| `dictionary_resolve` 기본 match | 8건 |
+| `dictionary_resolve` 최대 match | 25건 |
+| `definition` excerpt | 240자 이하 |
+| `aliases` | term당 8개 이하 |
+| `related_terms` | term당 8개 이하 |
+| `query_expansion` | 전체 24개 이하 |
+
+match가 더 많으면 `overflow.total_matches`, `overflow.omitted_count`, `overflow.refine_hint`를 보고 검색어, domain, scope를 좁힌다. full 목록은 admin/debug 목적 외에는 사용하지 않는다.
+
+# Large Dictionary Authoring
+
+대량 용어를 추가할 때는 domain/folder 단위로 나누고 다음 순서를 따른다.
+
+1. `dictionary_resolve`로 중복과 private/team/public overlay를 확인한다.
+2. 새 term은 가장 좁은 scope에 먼저 만든다.
+3. `same_as`와 `aliases`는 동의어, `broader/narrower`는 계층, `related_terms`는 약한 참고 관계로 분리한다.
+4. 관계는 depth 1 기준으로 충분히 설명하고, 무의미한 dense graph를 만들지 않는다.
+5. Public/team 승격 전 ontology search 영향 preview와 context budget test를 확인한다.
+
+# Granularity Rule
+
+Public dictionary는 상위 개념과 세부 현업 용어를 모두 허용한다. 다만 세부 test/mode/variant 용어는 graph 없이 단독 canonical로 승격하지 않는다. 세부 용어가 public에 올라가려면 상위 public term과의 관계가 metadata와 Markdown 본문 양쪽에 남아야 한다.
+
+권장 `term_kind`는 다음 중 하나다.
+
+| term_kind | 사용 기준 |
+|---|---|
+| `concept` | 여러 업무/문서에서 재사용되는 상위 개념 |
+| `acronym` | 현장 약어 또는 시스템 약어 |
+| `test-method` | 특정 평가/검증 방법 |
+| `variant-group` | 여러 조건/모드/수치 variant를 묶은 표현 |
+| `variant` | 상위 test-method나 variant-group에 속한 개별 변형 |
+
+`test-method`, `variant-group`, `variant`는 `broader` 또는 `related_terms`에 상위 public term을 반드시 연결한다. 본문 `# Related Dictionary Terms`에도 같은 상위 term을 Markdown link로 표시한다.
+
+## Slash/Numeric Bundle Rule
+
+`/`, 숫자 variant, 조건 묶음형 용어는 기본적으로 canonical title 후보가 아니라 `상위 개념 + alias/variant` 후보로 검토한다.
+
+예를 들어 `0-PG Dist / 1-NG Dist`는 그대로 public canonical로 승격하지 않고 [Word Line Disturbance Test](/public/dictionary/word-line-disturbance-test.md)의 alias 또는 variant로 둔다. `2HI / 4HI / 8HI Stack`도 그대로 canonical로 두지 않고 [Memory Stack Height](/public/dictionary/memory-stack-height.md)의 alias 또는 하위 variant로 정리한다.
+
+Qwen 같은 자동 추출 source에서 slash/numeric bundle이 들어오면 override 없이 `selected public canonical`로 쓰지 않는다. import manifest에는 `needs_parent_curation`, `compound_reason`, `canonical_term`, `broader` 판단을 남긴 뒤 curator가 `replace_with_canonical`, `split_into_terms`, `alias_to_existing`, `exclude_from_public` 중 하나를 선택한다.
 
 # Quality Gates
 
@@ -127,7 +176,7 @@ pytest tests/test_boi_api_routes.py -q -s -k "ontology_search or dictionary or b
 품질 게이트는 다음을 보장한다.
 
 - seed domain coverage가 일정 수준 이하로 떨어지지 않는다.
-- 모든 public term이 index에 포함된다.
+- public index가 모든 term을 직접 나열하지 않고 scale policy와 대표 domain entry를 설명한다.
 - 모든 public term이 source/citation과 related term을 갖는다.
 - related dictionary links가 실제 파일로 resolve된다.
 - Event/Action/SOP mapping이 실제 catalog/BoI로 resolve된다.

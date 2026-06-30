@@ -1,0 +1,39 @@
+overrides:
+  - source_term: "0-PG Dist / 1-NG Dist"
+    action: replace_with_canonical
+    canonical_term: "Word Line Disturbance Test"
+    term_kind: test-method
+    aliases:
+      - "0-PG Dist"
+      - "1-NG Dist"
+      - "0-PG Dist / 1-NG Dist"
+    broader:
+      - "Reliability Test"
+      - "NAND Flash"
+    related_terms:
+      - "Reliability Test"
+      - "NAND Flash"
+    domain: reliability
+    curation_status: curated
+    compound_reason: "slash-bundle of program-state-specific disturbance test variants"
+  - source_term: "2HI / 4HI / 8HI Stack"
+    action: replace_with_canonical
+    canonical_term: "Memory Stack Height"
+    term_kind: concept
+    aliases:
+      - "2HI"
+      - "4HI"
+      - "8HI"
+      - "2HI Stack"
+      - "4HI Stack"
+      - "8HI Stack"
+      - "3DS Stack Height"
+    broader:
+      - "Advanced Packaging"
+    related_terms:
+      - "Advanced Packaging"
+      - "HBM"
+      - "TSV"
+    domain: advanced-packaging
+    curation_status: curated
+    compound_reason: "numeric variant bundle for memory stack height"
