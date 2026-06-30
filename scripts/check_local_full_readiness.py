@@ -48,7 +48,7 @@ def main() -> int:
         failures.append("git.available must be true when git.auto_commit is true")
     if nested_get(body, "boi_agent.backend") != "native":
         failures.append("boi_agent.backend must be native")
-    for component in ("router", "status_writer", "composer", "suggestions"):
+    for component in ("router", "status_writer", "composer", "suggestions", "work_context_narrative"):
         if nested_get(body, f"boi_agent.{component}.required") and not nested_get(body, f"boi_agent.{component}.llm_enabled"):
             failures.append(f"boi_agent.{component}.llm_enabled must be true")
     if int(nested_get(body, "boi_agent.llm_concurrency.max_concurrency") or 0) < 1:

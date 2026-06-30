@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SOP 수행 이력 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main class="page-content">
+    {% with title="SOP 수행 이력", description="SOP 기준 최근 실행 현황, 남은 승인, 수동 조치를 확인합니다.", eyebrow=None, primary_action={"label": "SOP 카탈로그", "href": sops_url, "kind": "secondary"} %}
+      {% include "_section_intro.html" %}
+    {% endwith %}
+    <section class="panel">
+      <div class="summary-grid">
+        <div class="summary-card"><span>최근 실행</span><strong>{{ history.count }}</strong></div>
+        <div class="summary-card"><span>승인 필요</span><strong>{{ items | selectattr('approval_count') | list | length }}</strong></div>
+        <div class="summary-card"><span>수동 조치 포함</span><strong>{{ items | selectattr('manual_count') | list | length }}</strong></div>
+      </div>
+    </section>
+
+    <section class="doc-list">
+      {% for item in items %}
+      <article class="doc-row sop-history-card">
+        <div class="doc-row-header">
+          <div>
+            <span class="badge status">{{ item.status_label }}</span>
+            <strong>{{ item.sop_title }}</strong>
+          </div>
+          <small>{{ item.last_logged_at }}</small>
+        </div>
+        <p>최근 Event <code>{{ item.last_event_type }}</code> 기준으로 trace <code>{{ item.trace_id }}</code>의 실행 현황을 확인했습니다.</p>
+        <div class="artifact-table-wrap">
+          <table class="markdown-table">
+            <thead>
+              <tr>
+                <th>발생 Event</th>
+                <th>실행 Action</th>
+                <th>남은 수동 조치</th>
+                <th>승인 필요</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>{{ item.event_count }}</td>
+                <td>{{ item.action_count }}</td>
+                <td>{{ item.manual_count }}</td>
+                <td>{{ item.approval_count }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="trace-link-row">
+          <a href="{{ item.status_page_url }}">Timeline 보기</a>
+          <a href="{{ item.trace_events_url }}">Event 발생 이력</a>
+          <a href="{{ event_pattern_preview_url }}">반복 패턴으로 Event 초안 검토</a>
+        </div>
+      </article>
+      {% else %}
+      <section class="empty-state">
+        <strong>SOP 수행 이력이 아직 없습니다.</strong>
+        <p>Event Broker로 업무 Event가 발생하고 trace가 연결되면 이 화면에 SOP별 실행 현황이 표시됩니다.</p>
+      </section>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

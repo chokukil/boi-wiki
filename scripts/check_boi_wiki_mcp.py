@@ -40,7 +40,7 @@ except Exception:  # pragma: no cover - agent-contract-only can run without MCP 
     ClientSession = None
     streamablehttp_client = None
 
-EXPECTED_PROTOCOL = {"tools": 37, "resource_templates": 11, "prompts": 5}
+EXPECTED_PROTOCOL = {"tools": 80, "resource_templates": 11, "prompts": 5}
 DEFAULT_AGENT_ARTIFACT_SMOKE_QUESTION = "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘."
 DEFAULT_AGENT_ARTIFACT_SMOKE_CURRENT_URL = "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"
 
@@ -973,8 +973,37 @@ async def main_async(args: argparse.Namespace) -> int:
                 "dictionary_resolve",
                 "dictionary_terms",
                 "agent_memory_search",
+                "boi_inbox",
+                "boi_inbox_report_get",
+                "boi_inbox_decision_preview",
+                "boi_inbox_decision_submit",
+                "data_lake_status",
+                "data_lake_sources",
+                "data_lake_query_plan",
+                "data_lake_query_preview",
+                "data_lake_query_execute",
+                "data_lake_artifact_get",
+                "data_lake_import_sources",
                 "agent_inbox",
                 "manual_handoff_complete",
+                "registration_plan",
+                "registration_verification_preview",
+                "registration_draft_create",
+                "registration_drafts",
+                "registration_draft_validate",
+                "registration_draft_publish",
+                "sop_registration_plan",
+                "sop_registration_preview",
+                "sop_registration_draft_create",
+                "sop_registration_validate",
+                "sop_registration_publish",
+                "sop_draft_create",
+                "action_draft_create",
+                "event_publish_plan",
+                "event_publish_preview",
+                "event_pattern_preview",
+                "event_pattern_promote_to_draft",
+                "sop_run_history",
                 "event_type_draft_create",
                 "event_type_drafts",
                 "event_type_draft_validate",

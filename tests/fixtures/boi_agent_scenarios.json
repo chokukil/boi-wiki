@@ -46,8 +46,43 @@
       }
     },
     {
+      "id": "trend-required-data",
+      "name": "Action requirement from current SOP",
+      "question": "설비 이상 감지 시 Trend 확인을 위해 어떤 데이터가 필요한지 알려줘",
+      "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "expect": {
+        "route": "fast",
+        "intent": "page_qa",
+        "artifact_types": ["action_requirements"],
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true,
+        "require_answer_terms": ["equipment_id", "response_series"]
+      }
+    },
+    {
+      "id": "workflow-status-manual-summary",
+      "name": "Workflow Status remaining manual work",
+      "question": "남은 수동 조치 5건을 일반 업무 관점으로 정리해줘.",
+      "current_url": "/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-90fec4f5af564e7a8590053ea7c926ae",
+      "expect": {
+        "route": "fast",
+        "intent": "workflow_explain",
+        "response_profile": "workflow_manual_summary",
+        "goal_type": "workflow_manual_summary",
+        "artifact_types": ["manual_handoff_summary"],
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true,
+        "require_answer_terms": ["수동 조치", "5건"],
+        "forbid_answer_terms": ["수동 조치 사항이 없습니다"]
+      }
+    },
+    {
       "id": "event-to-action",
-      "name": "Event to Capability/SOP/Action flow",
+      "name": "Event to WorkflowDefinition/SOP/Action flow",
       "question": "equipment.alarm.raised.v1 이벤트가 발생하면 뭘 해야 해?",
       "current_url": "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
       "expect": {
@@ -59,7 +94,7 @@
         "require_affordances": true,
         "require_links_or_citations": true,
         "event_type": "equipment.alarm.raised.v1",
-        "capability_key": "equipment-anomaly-response"
+        "workflow_definition_key": "equipment-anomaly-response"
       }
     },
     {
@@ -78,9 +113,9 @@
       }
     },
     {
-      "id": "unknown-capability",
-      "name": "Unknown capability should not hallucinate execution",
-      "question": "우주선 연료 펌프 보정 이벤트가 발생하면 자동으로 처리해줘.",
+      "id": "unknown-workflow-definition",
+      "name": "Unknown workflow definition should not hallucinate execution",
+      "question": "EUV 노광 Overlay drift 보정 이벤트가 발생하면 자동으로 처리해줘.",
       "current_url": "/",
       "expect": {
         "min_followups": 1,

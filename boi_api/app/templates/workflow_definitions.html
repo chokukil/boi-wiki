@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>업무 흐름 정의 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+{% include "_app_shell.html" %}
+
+<main class="page-content">
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h1>업무 흐름 정의</h1>
+        <p>BoI Wiki에서 기존 SOP, Event, Action, Skill을 먼저 찾고 재사용합니다. 부족한 항목만 draft로 보완해 업무 흐름 정의에 연결합니다.</p>
+      </div>
+      <a class="page-action-link primary" href="#add-workflow-definition">추가 시작</a>
+    </div>
+    <p>새 API, MCP, Skill, Event, Action을 따로따로 만들기 전에 먼저 <strong>어떤 업무 BoI를 채워야 하는지</strong>를 확인합니다. 업무 흐름 정의는 그 업무 목적과 근거, 다음 행동, 완결 조건을 묶는 내부 실행 정의입니다.</p>
+    <p>SOP가 있는 정형 업무는 SOP 실행 흐름으로 정렬하고, SOP가 없는 반복/비정형 업무는 업무 BoI와 처리 패턴을 기준으로 초안을 만들 수 있습니다.</p>
+    <div class="badges">
+      <span class="badge">업무 목적</span>
+      <span class="badge">업무 BoI</span>
+      <span class="badge">근거</span>
+      <span class="badge">다음 행동</span>
+      <span class="badge">완결 조건</span>
+    </div>
+  </section>
+
+  <section id="add-workflow-definition" class="panel catalog-draft-panel">
+    <div class="section-heading">
+      <div>
+        <h2>추가 / 연결 시작</h2>
+        <p>이 화면의 추가는 새 항목을 바로 만드는 버튼이 아니라, 기존 항목을 찾고 재사용할지 확장할지 결정하는 시작점입니다.</p>
+      </div>
+      {% if start %}<span class="badge">시작 위치: {{ start }}</span>{% endif %}
+    </div>
+    <div class="grid two-col">
+      <article class="card">
+        <h3>1. 어떤 업무를 완성하나요?</h3>
+        <p>업무 목적, 채워야 할 업무 BoI, 필요한 근거, 완결 조건을 먼저 적습니다.</p>
+      </article>
+      <article class="card">
+        <h3>2. 기존 항목을 재사용하나요?</h3>
+        <p>SOP, Event 정의, Action, Skill/Connector, 기존 업무 흐름 정의를 중복 검색합니다.</p>
+      </article>
+      <article class="card">
+        <h3>3. 부족한 항목만 draft로 만듭니다</h3>
+        <p>없는 Event, Action, SOP, Skill은 바로 운영 반영하지 않고 검증 가능한 초안으로 남깁니다.</p>
+      </article>
+      <article class="card">
+        <h3>4. 검증 후 publish합니다</h3>
+        <p>schema, smoke, 권한, approval을 통과한 항목만 BoI Wiki에 반영합니다.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="panel page-filterbar">
+    <h2>기존 업무 흐름 찾기</h2>
+    <p>새 업무를 만들기 전에 기존 SOP, 업무 흐름 정의, 이벤트 정의, Action, Skill을 재사용할 수 있는지 먼저 확인합니다.</p>
+    <form method="get" action="/workflows/definitions" class="catalog-filter-form">
+      <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+      <label>
+        검색
+        <input name="q" value="{{ q }}" placeholder="업무 목적, SOP, Event, Action, API, MCP..." />
+      </label>
+      <label>
+        업무 유형
+        <select name="process_model">
+          <option value="">전체</option>
+          <option value="sop_based" {% if process_model == "sop_based" %}selected{% endif %}>SOP 기반 업무</option>
+          <option value="pattern_based" {% if process_model == "pattern_based" %}selected{% endif %}>반복 업무</option>
+          <option value="ad_hoc" {% if process_model == "ad_hoc" %}selected{% endif %}>비정형 업무</option>
+          <option value="external_orchestrator" {% if process_model == "external_orchestrator" %}selected{% endif %}>외부 오케스트레이션</option>
+        </select>
+      </label>
+      <label>
+        Workflow Engine
+        <select name="workflow_engine">
+          <option value="">전체</option>
+          <option value="event_native" {% if workflow_engine == "event_native" %}selected{% endif %}>event_native</option>
+          <option value="external_orchestrator" {% if workflow_engine == "external_orchestrator" %}selected{% endif %}>external_orchestrator</option>
+          <option value="manual_only" {% if workflow_engine == "manual_only" %}selected{% endif %}>manual_only</option>
+          <option value="langflow_assisted" {% if workflow_engine == "langflow_assisted" %}selected{% endif %}>langflow_assisted</option>
+        </select>
+      </label>
+      <button type="submit">조회</button>
+    </form>
+    <p><strong>중복 확인 API:</strong> <code>{{ dedupe_endpoint }}</code></p>
+  </section>
+
+  <section class="grid">
+    {% for workflow in workflow_definitions %}
+    <article class="card">
+      <div class="badges">
+        <span class="badge">{{ workflow.workflow_engine }}</span>
+        <span class="badge">{{ workflow.process_model_label or workflow.process_model }}</span>
+        <span class="badge">{{ workflow.domain or "domain" }}</span>
+        <span class="badge">{{ workflow.status or "status" }}</span>
+      </div>
+      <h2>{{ workflow.title }}</h2>
+      <p>{{ workflow.business_goal or workflow.description }}</p>
+      <dl class="metadata-list">
+        <div><dt>채워야 할 업무 BoI</dt><dd>{{ workflow.work_boi_outputs | join(', ') or '-' }}</dd></div>
+        <div><dt>완결 조건</dt><dd>{{ workflow.completion_conditions | join(' / ') or '-' }}</dd></div>
+        <div><dt>SOP 연결</dt><dd>{{ workflow.sop_refs | join(', ') or 'SOP 없음 · 업무 BoI 기준' }}</dd></div>
+        <div><dt>필요 근거</dt><dd>{{ workflow.evidence_requirements | join(', ') or '-' }}</dd></div>
+      </dl>
+      <details>
+        <summary>구성 요소와 내부 식별자 보기</summary>
+        <dl class="metadata-list">
+          <div><dt>업무 흐름 정의 Key</dt><dd><code>{{ workflow.workflow_definition_key }}</code></dd></div>
+          <div><dt>시작 Event</dt><dd>{{ workflow.entry_events | join(', ') or '-' }}</dd></div>
+          <div><dt>완결/다음 Event</dt><dd>{{ workflow.emitted_events | join(', ') or '완료 또는 단일 실행' }}</dd></div>
+          <div><dt>Action</dt><dd>{{ workflow.action_refs | join(', ') or '-' }}</dd></div>
+          <div><dt>Action Skills</dt><dd>{{ workflow.action_skill_refs | join(', ') or '-' }}</dd></div>
+          <div><dt>Required Connectors</dt><dd>{{ workflow.required_connectors | join(', ') or '-' }}</dd></div>
+        </dl>
+      </details>
+    </article>
+    {% else %}
+    <article class="card">
+      <h2>등록된 업무 흐름이 없습니다</h2>
+      <p>업무 목적, 필요한 업무 BoI, 근거, 다음 행동을 입력해 첫 업무 흐름 정의 draft를 만들 수 있습니다.</p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="panel">
+    <h2>구성요소 카탈로그</h2>
+    <p>Event Skills와 Action Skills는 업무 흐름 정의를 구성하는 하위 카탈로그입니다. 새 업무 등록 시 먼저 재사용 후보로 확인합니다.</p>
+    <div class="grid two-col">
+      <article>
+        <h3>Event Skills</h3>
+        <ul>
+          {% for skill in event_skills %}
+          <li><code>{{ skill.skill_key }}</code> - {{ skill.title }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+      <article>
+        <h3>Action Skills</h3>
+        <ul>
+          {% for skill in action_skills %}
+          <li><code>{{ skill.skill_key }}</code> - {{ skill.title }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -12,6 +12,13 @@
 <body>
   {% include "_app_shell.html" %}
   <main class="doc-page">
+    {% if shell.page_actions %}
+    <nav class="document-actions" aria-label="Document actions">
+      {% for action in shell.page_actions %}
+      <a class="page-action-link {% if action.kind %}{{ action.kind }}{% endif %}" href="{{ action.href }}">{{ action.label }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
     {% if doc.metadata.event_type %}
     <section class="doc-context-strip">
       <span class="badge event">{{ doc.metadata.event_label or doc.metadata.event_type }}</span>
@@ -177,7 +184,7 @@
   -d '{"user_confirmed":true,"payload":{"title":"Workflow start","workflow":"{{ workflow_poc.workflow_key }}"}}'</pre>
     </section>
     {% endif %}
-    {% if doc.metadata.visibility == 'private' %}
+    {% if doc.metadata.visibility == 'private' and doc.metadata.type != 'boi/inbox-review-report' %}
     <section class="promotion-help">
       <h2>Promotion API</h2>
       <p>명시적 요청 기반 Team 승격 테스트:</p>

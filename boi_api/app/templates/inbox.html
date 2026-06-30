@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BoI Inbox · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+
+  <main class="page-content boi-inbox-page">
+    {% if view == "history" %}
+      {% set intro_title = "처리 이력" %}
+      {% set intro_description = "승인, 반려, 보류, 추가 근거 요청으로 처리한 보고서 이력을 확인합니다." %}
+    {% elif view == "decisions" %}
+      {% set intro_title = "승인/조치" %}
+      {% set intro_description = "검토가 필요한 보고서를 보고 사유를 남긴 뒤 승인, 반려, 보류, 추가 근거 요청을 기록합니다." %}
+    {% else %}
+      {% set intro_title = "받은 보고서" %}
+      {% set intro_description = "검증된 보고서 BoI를 기준으로 현재 처리할 업무를 확인합니다." %}
+    {% endif %}
+    {% with title=intro_title, description=intro_description, eyebrow=None, primary_action=None %}
+      {% include "_section_intro.html" %}
+    {% endwith %}
+
+    <section class="panel boi-inbox-summary-panel">
+      <div class="status-summary-grid">
+        {% if view == "history" %}
+        <div class="status-summary-card"><span>처리 기록</span><strong>{{ history_count }}</strong></div>
+        <div class="status-summary-card"><span>확인 방식</span><strong>사유 기록</strong></div>
+        <div class="status-summary-card"><span>정렬</span><strong>최신순</strong></div>
+        {% else %}
+        <div class="status-summary-card"><span>열린 업무</span><strong>{{ open_count }}</strong></div>
+        <div class="status-summary-card"><span>검증 보고서</span><strong>{{ report_count }}</strong></div>
+        <div class="status-summary-card"><span>그룹</span><strong>{{ groups|length }}</strong></div>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if view == "history" %}
+    <section class="doc-list boi-inbox-list boi-inbox-history-list">
+      {% for item in history_items %}
+      <article class="doc-row boi-inbox-card boi-inbox-history-card">
+        <div class="doc-row-header">
+          <div>
+            <span class="badge status">{{ item.decision_label }}</span>
+            <strong>{{ item.target_title }}</strong>
+          </div>
+          <small>{{ item.logged_at_label or item.logged_at }}</small>
+        </div>
+        {% if item.target_context %}<p>{{ item.target_context }}</p>{% endif %}
+        <p><strong>사유:</strong> {{ item.note }}</p>
+      </article>
+      {% else %}
+      <section class="empty-state">
+        <strong>아직 처리 이력이 없습니다.</strong>
+        <p>승인, 반려, 보류, 추가 근거 요청을 기록하면 이곳에서 최신순으로 확인할 수 있습니다.</p>
+      </section>
+      {% endfor %}
+    </section>
+    {% else %}
+    <section class="toolbar page-filterbar boi-inbox-filterbar">
+      <form method="get" action="/inbox">
+        <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+        <input type="hidden" name="view" value="{{ view }}" />
+        <label>상태</label>
+        <select name="status">
+          <option value="open" {% if status == "open" %}selected{% endif %}>열린 업무</option>
+        </select>
+        <label>Limit</label>
+        <input name="limit" type="number" min="1" max="200" value="{{ limit }}" />
+        <button type="submit">조회</button>
+      </form>
+    </section>
+
+    <section class="doc-list boi-inbox-list">
+      {% for item in items %}
+      {% set display = item.display or {} %}
+      {% set brief = item.brief or item.item_brief or {} %}
+      <article class="doc-row boi-inbox-card">
+        <div class="doc-row-header">
+          <div>
+            <span class="badge status">{{ display.status_label or item.status }}</span>
+            {% if display.risk_label %}<span class="badge warning">{{ display.risk_label }}</span>{% endif %}
+            <strong>{{ brief.event_or_stage or display.title or "검토 보고서" }}</strong>
+          </div>
+          <small>{{ brief.occurred_at_label or brief.age_label or item.logged_at }}</small>
+        </div>
+        <p>{{ brief.unique_context or brief.difference_summary or display.why_it_matters or "개별 업무 맥락을 확인한 뒤 판단합니다." }}</p>
+        {% if brief.next_check or brief.recommended_next_check %}
+        <p><strong>확인할 일:</strong> {{ brief.next_check or brief.recommended_next_check }}</p>
+        {% endif %}
+        <div class="trace-link-row boi-inbox-actions">
+          {% if item.report_boi_url %}
+          <a class="button primary" href="{{ item.report_boi_url }}">검증된 보고서 BoI</a>
+          {% else %}
+          <span class="badge warning">{{ item.report_boi_link.label if item.report_boi_link else "보고서 준비 중" }}</span>
+          <form method="post" action="/inbox/reports/{{ item.report_id }}/refresh?employee_id={{ employee_id }}" class="inline-form">
+            <button class="button secondary" type="submit">보고서 생성</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if view == "decisions" %}
+        {% if item.report_boi_url %}
+        <form
+          class="inbox-decision-form"
+          data-inbox-decision-form
+          method="post"
+          action="/inbox/tasks/{{ item.task_id | urlencode }}/decision?employee_id={{ employee_id }}"
+        >
+          <div class="inbox-decision-controls">
+            <label>
+              판단
+              <select name="decision" required>
+                <option value="approve">승인</option>
+                <option value="reject">반려</option>
+                <option value="defer">보류</option>
+                <option value="request_more_evidence">추가 근거 요청</option>
+              </select>
+            </label>
+            <label class="inbox-decision-note">
+              사유
+              <textarea name="note" required rows="3" placeholder="사유를 입력하세요. 예: Raw Data 확인 전이라 반려"></textarea>
+            </label>
+            <input type="hidden" name="user_confirmed" value="true" />
+            <button class="button primary" type="submit">사유 남기고 기록</button>
+          </div>
+          <p class="muted">검증된 보고서 BoI를 확인한 뒤 승인, 반려, 보류, 추가 근거 요청 중 하나를 기록합니다.</p>
+        </form>
+        {% else %}
+        <p class="muted">보고서가 준비되면 이 화면에서 승인, 반려, 보류, 추가 근거 요청을 기록할 수 있습니다.</p>
+        {% endif %}
+        {% endif %}
+      </article>
+      {% else %}
+      <section class="empty-state">
+        <strong>현재 받은 보고서가 없습니다.</strong>
+        <p>Event Broker와 Action Gateway에서 승인 또는 수동 조치가 필요한 업무가 생기면 이곳에 검증된 보고서 BoI가 도착합니다.</p>
+      </section>
+      {% endfor %}
+    </section>
+
+    {% if groups %}
+    <section class="doc-list boi-inbox-list boi-inbox-rollups">
+      <h2>묶음 요약</h2>
+      {% for group in groups %}
+      {% set narrative = group.group_narrative or {} %}
+      {% set display = group.display or {} %}
+      <article class="doc-row boi-inbox-card">
+        <div class="doc-row-header">
+          <div>
+            <span class="badge status">{{ display.status_label or group.status }}</span>
+            {% if display.risk_label %}<span class="badge warning">{{ display.risk_label }}</span>{% endif %}
+            <strong>{{ display.title }}</strong>
+          </div>
+          {% if group.group_context_summary and group.group_context_summary.latest_at %}
+          <small>{{ group.group_context_summary.latest_at }}</small>
+          {% endif %}
+        </div>
+        {% if narrative.state == "ready" and narrative.narrative_quality == "ready" %}
+        <p>{{ narrative.summary }}</p>
+        {% if narrative.priority_note %}<p><strong>확인 순서:</strong> {{ narrative.priority_note }}</p>{% endif %}
+        {% else %}
+        <p>보고서 품질을 확인하는 중입니다. 준비가 끝나면 검증된 보고서 BoI로 확인할 수 있습니다.</p>
+        {% endif %}
+
+        {% if group.preview_items %}
+        <div class="boi-inbox-preview-list">
+          {% for preview in group.preview_items[:3] %}
+          {% set brief = preview.brief or preview.item_brief or {} %}
+          <div class="boi-inbox-preview-item">
+            <strong>{{ brief.occurred_at_label or brief.occurred_at or "시간 확인 중" }}</strong>
+            <span>{{ brief.unique_context or brief.difference_summary or "개별 확인 포인트를 준비 중입니다." }}</span>
+            {% if brief.next_check or brief.recommended_next_check %}
+            <em>{{ brief.next_check or brief.recommended_next_check }}</em>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <p class="muted">묶음은 우선순위와 처리 순서를 보여줍니다. 판단은 아래 개별 업무의 검증된 보고서 BoI에서 진행합니다.</p>
+
+        <details class="boi-inbox-details">
+          <summary>개별 업무 비교 {{ group.count }}건 보기</summary>
+          <div class="doc-list compact">
+            {% for item in group["items"][:10] %}
+            {% set brief = item.brief or item.item_brief or {} %}
+            <article class="doc-row">
+              <div class="doc-row-header">
+                <strong>{{ brief.event_or_stage or item.display.title }}</strong>
+                <small>{{ brief.occurred_at_label or brief.age_label }}</small>
+              </div>
+              <p>{{ brief.unique_context or brief.difference_summary or item.display.why_it_matters }}</p>
+              {% if brief.next_check or brief.recommended_next_check %}
+              <p><strong>확인할 일:</strong> {{ brief.next_check or brief.recommended_next_check }}</p>
+              {% endif %}
+              <div class="trace-link-row">
+                {% if item.report_boi_url %}<a href="{{ item.report_boi_url }}">이 항목 보고서</a>{% endif %}
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+        </details>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% endif %}
+  </main>
+</body>
+</html>

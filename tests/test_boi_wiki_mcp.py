@@ -33,14 +33,42 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 37
+    assert body["capabilities"]["tools"] == 80
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
+    group_names = [group["name"] for group in body["tool_groups"]]
+    assert group_names[:6] == ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"]
+    boi_inbox_group = next(group for group in body["tool_groups"] if group["name"] == "BoI Inbox")
+    boi_inbox_tools = {tool["name"] for tool in boi_inbox_group["tools"]}
+    assert {"boi_inbox", "boi_inbox_report_get", "boi_inbox_decision_preview", "boi_inbox_decision_submit"} <= boi_inbox_tools
+    data_lake_group = next(group for group in body["tool_groups"] if group["name"] == "Optional Data Lake")
+    data_lake_tools = {tool["name"] for tool in data_lake_group["tools"]}
+    assert {
+        "data_lake_status",
+        "data_lake_sources",
+        "data_lake_query_plan",
+        "data_lake_query_preview",
+        "data_lake_query_execute",
+        "data_lake_artifact_get",
+        "data_lake_import_sources",
+    } <= data_lake_tools
+    assert "Deprecated / Compatibility" in group_names
+    deprecated = next(group for group in body["tool_groups"] if group["name"] == "Deprecated / Compatibility")
+    assert [tool["name"] for tool in deprecated["tools"]] == [
+        "agent_inbox",
+        "agent_inbox_context",
+        "agent_inbox_decision_preview",
+        "agent_inbox_decision_submit",
+        "agent_inbox_review_report",
+        "capabilities_search",
+        "capability_deduplicate",
+        "capability_get",
+    ]
     assert body["agent_interfaces"]["json_api"] == "/api/agents/boi-wiki/chat"
     assert body["agent_interfaces"]["streaming_api"] == "/api/agents/boi-wiki/chat/stream"
     assert body["agent_interfaces"]["mcp_tool"] == "boi_agent_chat"
     assert body["agent_interfaces"]["response_contract_version"] == "boi-agent.response.v1"
-    assert body["agent_interfaces"]["streaming_events"] == ["status", "answer_delta", "final", "error"]
+    assert body["agent_interfaces"]["streaming_events"] == ["accepted", "status", "answer_delta", "answer_ready", "followups", "final", "error"]
     assert body["agent_response_contract"]["version"] == "boi-agent.response.v1"
     assert body["agent_response_contract"]["canonical_endpoint"] == "/api/agents/boi-wiki/chat"
     assert body["agent_response_contract"]["stream_endpoint"] == "/api/agents/boi-wiki/chat/stream"
@@ -77,6 +105,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "permission" in execution_card_item["required"]
     assert "mermaid" in body["agent_response_contract"]["artifact_types"]
     assert "gap_table" in body["agent_response_contract"]["artifact_types"]
+    assert "action_requirements" in body["agent_response_contract"]["artifact_types"]
     tool_names = [item["name"] for item in body["capability_lists"]["tools"]]
     assert "source_preview" in tool_names
     assert "source_apply" in tool_names
@@ -86,16 +115,51 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "boi_agent_capabilities" in tool_names
     assert "boi_agent_approve" in tool_names
     assert "ontology_search" in tool_names
+    assert "boi_inbox" in tool_names
+    assert "boi_inbox_report_get" in tool_names
+    assert "boi_inbox_decision_preview" in tool_names
+    assert "boi_inbox_decision_submit" in tool_names
+    assert "data_lake_status" in tool_names
+    assert "data_lake_query_preview" in tool_names
     assert "agent_inbox" in tool_names
+    assert "work_context_get" in tool_names
+    assert "agent_inbox_context" in tool_names
+    assert "similar_cases_search" in tool_names
+    assert "agent_signals" in tool_names
+    assert "work_patterns_search" in tool_names
+    assert "work_pattern_derive" in tool_names
+    assert "skill_candidate_create" in tool_names
     assert "manual_handoff_complete" in tool_names
     assert "rbac_me" in tool_names
     assert "rbac_check" in tool_names
     assert "doc_access_check" in tool_names
     assert "rbac_audit" in tool_names
+    assert "registration_draft_create" in tool_names
+    assert "registration_plan" in tool_names
+    assert "registration_verification_preview" in tool_names
+    assert "registration_drafts" in tool_names
+    assert "registration_draft_validate" in tool_names
+    assert "registration_draft_publish" in tool_names
+    assert "sop_registration_plan" in tool_names
+    assert "sop_registration_preview" in tool_names
+    assert "sop_registration_draft_create" in tool_names
+    assert "sop_registration_validate" in tool_names
+    assert "sop_registration_publish" in tool_names
+    assert "sop_draft_create" in tool_names
+    assert "action_draft_create" in tool_names
     assert "event_type_draft_create" in tool_names
+    assert "event_publish_plan" in tool_names
+    assert "event_publish_preview" in tool_names
+    assert "event_pattern_preview" in tool_names
+    assert "event_pattern_promote_to_draft" in tool_names
+    assert "sop_run_history" in tool_names
     assert "event_type_drafts" in tool_names
     assert "event_type_draft_validate" in tool_names
     assert "event_type_draft_apply" in tool_names
+    assert "workflow_definitions_search" in tool_names
+    assert "workflow_definition_get" in tool_names
+    assert "workflow_definition_deduplicate" in tool_names
+    assert "workflow_definition_publish" in tool_names
     assert "capabilities_search" in tool_names
     assert "capability_get" in tool_names
     assert "capability_deduplicate" in tool_names
@@ -123,7 +187,12 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
-    assert "Tools" in body and "37" in body
+    assert "Tools" in body and "80" in body
+    assert "Tools by BoI Wiki IA" in body
+    assert "BoI Inbox" in body
+    assert "Optional Data Lake" in body
+    assert "Event Broker" in body
+    assert "Deprecated / Compatibility" in body
     assert "Resource templates" in body and "11" in body
     assert "Prompts" in body and "5" in body
     assert "boi_search" in body
@@ -146,10 +215,16 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "rbac_check" in body
     assert "doc_access_check" in body
     assert "rbac_audit" in body
+    assert "registration_draft_create" in body
+    assert "registration_draft_publish" in body
+    assert "sop_registration_plan" in body
+    assert "sop_registration_draft_create" in body
+    assert "sop_draft_create" in body
+    assert "action_draft_create" in body
     assert "event_type_draft_create" in body
     assert "event_type_draft_apply" in body
-    assert "capabilities_search" in body
-    assert "capability_deduplicate" in body
+    assert "workflow_definitions_search" in body
+    assert "workflow_definition_deduplicate" in body
     assert "event_skills_list" in body
     assert "action_skills_list" in body
     assert "boi://docs/{boi_id}" in body
@@ -405,6 +480,15 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
             ],
             "affordances": [{"type": "ask_more", "label": "근거 자세히 보기", "question_hint": "근거를 더 설명해줘."}],
             "answer_quality": {"followups_generated": True, "evidence_count": 1, "affordance_count": 1},
+            "goal_model": {
+                "goal_type": "wiki_search",
+                "intent": "search",
+                "response_profile": "search",
+                "route": "fast",
+                "source": "agent_goal_registry",
+            },
+            "response_profile": "search",
+            "component_errors": [],
             "execution_cards": [
                 {
                     "contract_version": "boi-agent.response.v1",
@@ -455,7 +539,7 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
         headers={"x-service-token": "test-service-token"},
         json={
             "server": {"name": "boi-wiki-mcp"},
-            "tool": "agent_inbox",
+            "tool": "boi_inbox",
             "arguments": {"employee_id": "100001", "limit": 3},
         },
     )
@@ -477,19 +561,20 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
     assert inbox.json()["result"]["items"][0]["task_id"] == "task-1"
     assert calls[0]["path"] == "/api/agents/boi-wiki/chat"
     assert calls[0]["payload"]["mode"] == "fast"
+    assert calls[1]["path"] == "/api/inbox"
     assert calls[0]["payload"]["intent"] == "search"
     assert calls[0]["payload"]["selected_text"] == "SOP"
     assert calls[0]["payload"]["conversation"] == [{"role": "user", "content": "이전 질문"}]
     assert calls[0]["payload"]["save_memory"] is False
-    assert calls[1]["path"] == "/api/agents/boi-wiki/inbox"
+    assert calls[1]["params"]["include_context"] == "compact"
 
 
-def test_boi_wiki_mcp_exposes_capability_and_skill_tools(mcp_module, monkeypatch):
+def test_boi_wiki_mcp_exposes_workflow_definition_and_skill_tools(mcp_module, monkeypatch):
     async def fake_api_get(path, **kwargs):
-        if path == "/api/capabilities":
-            return {"ok": True, "items": [{"capability_key": "equipment-anomaly-response"}]}
-        if path == "/api/capabilities/equipment-anomaly-response":
-            return {"ok": True, "item": {"capability_key": "equipment-anomaly-response", "workflow_engine": "event_native"}}
+        if path == "/api/workflow-definitions":
+            return {"ok": True, "items": [{"workflow_definition_key": "equipment-anomaly-response"}]}
+        if path == "/api/workflow-definitions/equipment-anomaly-response":
+            return {"ok": True, "item": {"workflow_definition_key": "equipment-anomaly-response", "workflow_engine": "event_native"}}
         if path == "/api/event-skills":
             return {"ok": True, "items": [{"skill_key": "event.workflow_trigger"}]}
         if path == "/api/action-skills":
@@ -497,8 +582,8 @@ def test_boi_wiki_mcp_exposes_capability_and_skill_tools(mcp_module, monkeypatch
         raise AssertionError(f"unexpected GET {path}")
 
     async def fake_api_post(path, **kwargs):
-        assert path == "/api/capabilities/deduplicate"
-        return {"ok": True, "recommendation": "reuse", "candidates": [{"capability_key": "equipment-anomaly-response"}]}
+        assert path == "/api/workflow-definitions/deduplicate"
+        return {"ok": True, "recommendation": "reuse", "candidates": [{"workflow_definition_key": "equipment-anomaly-response"}]}
 
     monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
     monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
@@ -507,9 +592,9 @@ def test_boi_wiki_mcp_exposes_capability_and_skill_tools(mcp_module, monkeypatch
     status = client.get("/health")
     tool_names = [item["name"] for item in status.json()["capability_lists"]["tools"]]
     for name in [
-        "capabilities_search",
-        "capability_get",
-        "capability_deduplicate",
+        "workflow_definitions_search",
+        "workflow_definition_get",
+        "workflow_definition_deduplicate",
         "event_skills_list",
         "action_skills_list",
     ]:
@@ -518,20 +603,20 @@ def test_boi_wiki_mcp_exposes_capability_and_skill_tools(mcp_module, monkeypatch
     search = client.post(
         "/api/mcp/call",
         headers={"x-service-token": "test-service-token"},
-        json={"server": {"name": "boi-wiki-mcp"}, "tool": "capabilities_search", "arguments": {"employee_id": "100001"}},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "workflow_definitions_search", "arguments": {"employee_id": "100001"}},
     )
     dedupe = client.post(
         "/api/mcp/call",
         headers={"x-service-token": "test-service-token"},
         json={
             "server": {"name": "boi-wiki-mcp"},
-            "tool": "capability_deduplicate",
+            "tool": "workflow_definition_deduplicate",
             "arguments": {"employee_id": "100001", "event_type": "equipment.alarm.raised.v1"},
         },
     )
 
     assert search.status_code == 200
-    assert search.json()["result"]["items"][0]["capability_key"] == "equipment-anomaly-response"
+    assert search.json()["result"]["items"][0]["workflow_definition_key"] == "equipment-anomaly-response"
     assert dedupe.status_code == 200
     assert dedupe.json()["result"]["recommendation"] == "reuse"
 
@@ -564,6 +649,13 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         ),
         ("dictionary_terms", {"employee_id": "100001", "query": "단면검사", "scope": "all", "limit": 5}),
         ("agent_memory_search", {"employee_id": "100001", "query": "선호", "include_archived": False, "limit": 3}),
+        ("work_context_get", {"employee_id": "100001", "task_id": "task:act-1"}),
+        ("agent_inbox_context", {"employee_id": "100001", "task_id": "task:act-1"}),
+        ("similar_cases_search", {"employee_id": "100001", "task_id": "task:act-1", "action_key": "manual.equipment.confirm_alarm_context", "limit": 3}),
+        ("agent_signals", {"employee_id": "100001", "current_url": "/docs/boi:public:sop:equipment-abnormal-response"}),
+        ("work_patterns_search", {"employee_id": "100001", "query": "Mermaid", "limit": 3}),
+        ("work_pattern_derive", {"employee_id": "100001", "limit": 3}),
+        ("skill_candidate_create", {"employee_id": "100001", "pattern_id": "pattern-1", "title": "Mermaid 정리 Skill 후보"}),
         ("rbac_me", {"employee_id": "100001"}),
         ("rbac_check", {"employee_id": "100001", "required_role": "boi.action_invoker", "scope": "action", "resource": "sop.equipment.request_raw_data"}),
         ("doc_access_check", {"employee_id": "100001", "boi_id": "boi:public:sop:equipment-abnormal-response"}),
@@ -605,6 +697,12 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         "/api/agents/boi-wiki/suggestions",
         "/api/dictionary/terms",
         "/api/agents/boi-wiki/memory",
+        "/api/context/work",
+        "/api/agents/boi-wiki/inbox/task:act-1/context",
+        "/api/agents/boi-wiki/inbox/task:act-1/history",
+        "/api/agents/boi-wiki/signals",
+        "/api/agents/boi-wiki/patterns",
+        "/api/agents/boi-wiki/patterns/derive",
         "/api/rbac/me",
         "/api/rbac/check",
         "/api/docs/boi:public:sop:equipment-abnormal-response/access",
@@ -799,16 +897,251 @@ def test_boi_wiki_mcp_bridge_covers_event_type_draft_tools(mcp_module, monkeypat
     assert calls[-1]["payload"]["user_confirmed"] is True
 
 
+def test_boi_wiki_mcp_bridge_covers_registration_draft_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "path": path, "draft": {"draft_id": "registration-test", "entry_kind": kwargs.get("payload", {}).get("entry_kind")}}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "items": [{"draft_id": "registration-test", "entry_kind": "sop"}]}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    create_denied = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "sop_draft_create",
+            "arguments": {"employee_id": "100001", "title": "설비 이상 SOP"},
+        },
+    )
+    create_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "sop_draft_create",
+            "arguments": {
+                "employee_id": "100001",
+                "scope": "team",
+                "folder": "team/aix-tf/equipment/anomaly",
+                "title": "설비 이상 SOP",
+                "business_goal": "알람 발생 시 원인 분석 근거와 수동 조치를 표준화한다.",
+                "steps": ["이상 감지", "원인 분석", "이상 조치"],
+                "evidence_requirements": ["Trend", "Raw Data"],
+                "user_confirmed": True,
+            },
+        },
+    )
+    list_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "registration_drafts", "arguments": {"employee_id": "100001", "entry_kind": "sop"}},
+    )
+    validate_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "registration_draft_validate", "arguments": {"employee_id": "100001", "draft_id": "registration-test"}},
+    )
+    publish_denied = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "registration_draft_publish", "arguments": {"employee_id": "100001", "draft_id": "registration-test"}},
+    )
+    publish_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "registration_draft_publish",
+            "arguments": {"employee_id": "100001", "draft_id": "registration-test", "user_confirmed": True, "note": "confirmed"},
+        },
+    )
+
+    assert create_denied.status_code == 400
+    assert "user_confirmed=true" in create_denied.json()["detail"]
+    assert create_ok.status_code == 200
+    assert list_ok.status_code == 200
+    assert validate_ok.status_code == 200
+    assert publish_denied.status_code == 400
+    assert "user_confirmed=true" in publish_denied.json()["detail"]
+    assert publish_ok.status_code == 200
+    assert [item["path"] for item in calls] == [
+        "/api/registration/drafts",
+        "/api/registration/drafts",
+        "/api/registration/drafts/registration-test/validate",
+        "/api/registration/drafts/registration-test/publish",
+    ]
+    assert calls[0]["payload"]["entry_kind"] == "sop"
+    assert calls[0]["payload"]["steps"] == ["이상 감지", "원인 분석", "이상 조치"]
+    assert calls[-1]["payload"]["user_confirmed"] is True
+
+
+def test_boi_wiki_mcp_bridge_covers_natural_language_registration_and_event_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "path": path, "payload": kwargs.get("payload", {})}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "path": path, "items": []}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    for tool, arguments in [
+        ("registration_plan", {"employee_id": "100001", "entry_kind": "event", "raw_request": "ETCH alarm을 Event로 만들고 싶어"}),
+        ("registration_verification_preview", {"employee_id": "100001", "entry_kind": "event", "plan": {"draft_payload": {"event_type": "equipment.alarm.raised.v1"}}}),
+        ("sop_registration_plan", {"employee_id": "100001", "raw_request": "ETCH alarm 대응 SOP를 Event와 Action까지 연결하고 싶어", "focus": "event"}),
+        ("sop_registration_preview", {"employee_id": "100001", "plan": {"plan_type": "sop_registration_plan"}, "payload": {"sop_mode": "draft"}}),
+        ("event_publish_plan", {"employee_id": "100001", "raw_request": "ETCH 장비 Alarm 발생했어"}),
+        ("event_publish_preview", {"employee_id": "100001", "event_type": "equipment.alarm.raised.v1"}),
+        ("event_pattern_preview", {"employee_id": "100001", "q": "raw data", "limit": 3}),
+        ("sop_run_history", {"employee_id": "100001", "limit": 5}),
+    ]:
+        response = client.post(
+            "/api/mcp/call",
+            headers={"x-service-token": "test-service-token"},
+            json={"server": {"name": "boi-wiki-mcp"}, "tool": tool, "arguments": arguments},
+        )
+        assert response.status_code == 200, response.text
+
+    promote_denied = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "event_pattern_promote_to_draft", "arguments": {"employee_id": "100001"}},
+    )
+    promote_ok = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "event_pattern_promote_to_draft",
+            "arguments": {"employee_id": "100001", "preview": {"suggested_event_type": "raw.data.pattern_detected.v1"}, "user_confirmed": True},
+        },
+    )
+
+    assert promote_denied.status_code == 400
+    assert "user_confirmed=true" in promote_denied.json()["detail"]
+    assert promote_ok.status_code == 200
+    assert [item["path"] for item in calls] == [
+        "/api/registration/plan",
+        "/api/registration/verification-preview",
+        "/api/sop-registration/plan",
+        "/api/sop-registration/preview",
+        "/api/events/plan",
+        "/api/events/verification-preview",
+        "/api/events/patterns/preview",
+        "/api/sops/history",
+        "/api/events/patterns/promote-to-draft",
+    ]
+
+
+def test_boi_wiki_mcp_bridge_covers_optional_data_lake_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "path": path, "payload": kwargs.get("payload", {})}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "path": path, "enabled": False, "items": []}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    for tool, arguments in [
+        ("data_lake_status", {"employee_id": "100001"}),
+        ("data_lake_sources", {"employee_id": "100001"}),
+        ("data_lake_query_plan", {"employee_id": "100001", "question": "ETCH trend raw data 찾아줘", "source": "mes"}),
+        (
+            "data_lake_query_preview",
+            {
+                "employee_id": "100001",
+                "question": "LOT별 pressure spike",
+                "source": "mes",
+                "sql": "select * from etch where lot_id = :lot",
+                "parameters": {"lot": "LOT-A"},
+                "limit": 20,
+            },
+        ),
+        (
+            "data_lake_query_execute",
+            {
+                "employee_id": "100001",
+                "question": "승인 전 raw data 확인",
+                "sql": "select 1",
+                "user_confirmed": True,
+            },
+        ),
+        ("data_lake_artifact_get", {"employee_id": "100001", "artifact_id": "artifact-1"}),
+        (
+            "data_lake_import_sources",
+            {
+                "employee_id": "100001",
+                "source_ids": ["ontology.exports.etch_process_sequence"],
+                "user_confirmed": True,
+            },
+        ),
+    ]:
+        response = client.post(
+            "/api/mcp/call",
+            headers={"x-service-token": "test-service-token"},
+            json={"server": {"name": "boi-wiki-mcp"}, "tool": tool, "arguments": arguments},
+        )
+        assert response.status_code == 200, response.text
+
+    execute_denied = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "data_lake_query_execute", "arguments": {"employee_id": "100001", "sql": "select 1"}},
+    )
+
+    assert execute_denied.status_code == 400
+    assert "user_confirmed=true" in execute_denied.json()["detail"]
+    assert [item["path"] for item in calls] == [
+        "/api/data-lake/status",
+        "/api/data-lake/sources",
+        "/api/data-lake/query/plan",
+        "/api/data-lake/query/preview",
+        "/api/data-lake/query/execute",
+        "/api/data-lake/artifacts/artifact-1",
+        "/api/data-lake/import",
+    ]
+    assert calls[4]["payload"]["user_confirmed"] is True
+    assert calls[6]["payload"]["user_confirmed"] is True
+
+
 def test_boi_wiki_mcp_bridge_requires_confirmation_for_write_tools(mcp_module):
     client = TestClient(mcp_module.app)
     for tool, arguments in [
         ("workflow_start", {"workflow_key": "equipment-anomaly"}),
         ("boi_agent_approve", {"operation": "event_publish", "payload": {"event_type": "meeting.closed.v1"}}),
+        ("registration_draft_create", {"entry_kind": "sop", "title": "x"}),
+        ("sop_registration_draft_create", {"payload": {"sop_mode": "draft"}}),
+        ("sop_draft_create", {"title": "x"}),
+        ("action_draft_create", {"title": "x"}),
+        ("registration_draft_publish", {"draft_id": "registration-test"}),
+        ("sop_registration_publish", {"draft_id": "sop-registration-test"}),
+        ("event_pattern_promote_to_draft", {"preview": {"suggested_event_type": "x.detected.v1"}}),
         ("event_type_draft_create", {"event_type": "quality.forecast.requested.v1"}),
         ("event_type_draft_apply", {"draft_id": "event-type-test"}),
         ("source_apply", {"path": "data/boi/public/test.md", "base_sha256": "x", "proposed_content": "x"}),
         ("doc_body_apply", {"boi_id": "boi:public:test", "base_sha256": "x", "proposed_body": "x"}),
         ("promotion_submit", {"title": "x", "body": "x", "source_refs": []}),
+        ("data_lake_query_execute", {"sql": "select 1"}),
+        ("data_lake_import_sources", {"source_ids": ["ontology.exports.etch_process_sequence"]}),
     ]:
         response = client.post(
             "/api/mcp/call",
@@ -918,6 +1251,92 @@ def test_boi_wiki_mcp_streamable_http_can_require_service_token(monkeypatch):
     assert allowed.status_code == 200
     assert allowed.json()["result"]["serverInfo"]["name"] == "boi-wiki-mcp"
     assert health.json()["mcp_auth"]["required"] is True
+
+
+def test_mcp_registration_draft_tools_require_confirmation_for_mutations(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "status": "ok", "draft": {"draft_id": "registration-test"}}
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "items": [{"draft_id": "registration-test"}]}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.registration_draft_create(entry_kind="sop", title="설비 이상 SOP", employee_id="100001"))
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.sop_draft_create(title="설비 이상 SOP", employee_id="100001"))
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.action_draft_create(title="Trend 조회 Action", employee_id="100001"))
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.registration_draft_publish(draft_id="registration-test", employee_id="100001"))
+    assert calls == []
+
+    create_result = asyncio.run(
+        mcp_module.registration_draft_create(
+            entry_kind="action",
+            employee_id="100001",
+            title="Trend 조회 Action",
+            business_goal="설비 이상 분석 전 Trend 근거를 조회한다.",
+            connector_kind="api",
+            connector_config={"method": "POST", "endpoint": "https://quality.example/api/trends"},
+            input_fields=["equipment_id", "time_window"],
+            output_fields=["trend_summary"],
+            user_confirmed=True,
+        )
+    )
+    action_result = asyncio.run(
+        mcp_module.action_draft_create(
+            employee_id="100001",
+            title="TimesFM 예측 Action",
+            business_goal="시계열 예측이 필요한 경우 MCP tool을 명시적으로 호출한다.",
+            connector_kind="mcp",
+            connector_config={"server": "timesfm", "tool": "forecast"},
+            input_fields=["series"],
+            output_fields=["forecast"],
+            user_confirmed=True,
+        )
+    )
+    sop_result = asyncio.run(
+        mcp_module.sop_draft_create(
+            employee_id="100001",
+            title="설비 이상 SOP",
+            steps=["이상 감지", "원인 분석"],
+            user_confirmed=True,
+        )
+    )
+    list_result = asyncio.run(mcp_module.registration_drafts(employee_id="100001", entry_kind="action"))
+    validate_result = asyncio.run(mcp_module.registration_draft_validate(draft_id="registration-test", employee_id="100001"))
+    publish_result = asyncio.run(mcp_module.registration_draft_publish(draft_id="registration-test", employee_id="100001", user_confirmed=True))
+
+    assert create_result["ok"] is True
+    assert action_result["ok"] is True
+    assert sop_result["ok"] is True
+    assert list_result["items"][0]["draft_id"] == "registration-test"
+    assert validate_result["ok"] is True
+    assert publish_result["ok"] is True
+    assert [item["path"] for item in calls] == [
+        "/api/registration/drafts",
+        "/api/registration/drafts",
+        "/api/registration/drafts",
+        "/api/registration/drafts",
+        "/api/registration/drafts/registration-test/validate",
+        "/api/registration/drafts/registration-test/publish",
+    ]
+    assert calls[0]["payload"]["entry_kind"] == "action"
+    assert calls[0]["payload"]["connector_kind"] == "api"
+    assert calls[0]["payload"]["connector_config"]["endpoint"] == "https://quality.example/api/trends"
+    assert calls[0]["payload"]["input_fields"] == ["equipment_id", "time_window"]
+    assert calls[1]["payload"]["entry_kind"] == "action"
+    assert calls[1]["payload"]["connector_kind"] == "mcp"
+    assert calls[1]["payload"]["connector_config"]["tool"] == "forecast"
+    assert calls[2]["payload"]["entry_kind"] == "sop"
+    assert calls[-1]["payload"]["user_confirmed"] is True
 
 
 def test_mcp_source_apply_requires_user_confirmation(mcp_module, monkeypatch):
@@ -1170,7 +1589,7 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 37,
+            "tools": 80,
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
@@ -1183,6 +1602,14 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
                 "boi_agent_approve",
                 "ontology_search",
                 "agent_inbox",
+                "registration_draft_create",
+                "registration_drafts",
+                "registration_draft_validate",
+                "registration_draft_publish",
+                "sop_registration_plan",
+                "sop_registration_draft_create",
+                "sop_draft_create",
+                "action_draft_create",
                 "event_type_draft_create",
                 "event_type_drafts",
                 "event_type_draft_validate",
@@ -1233,6 +1660,12 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     assert "boi_agent_approve" in output
     assert "ontology_search" in output
     assert "agent_inbox" in output
+    assert "registration_draft_create" in output
+    assert "registration_draft_publish" in output
+    assert "sop_registration_plan" in output
+    assert "sop_registration_draft_create" in output
+    assert "sop_draft_create" in output
+    assert "action_draft_create" in output
     assert "event_type_draft_create" in output
     assert "event_type_draft_apply" in output
     assert "source_apply" in output
@@ -1250,7 +1683,7 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 37,
+            "tools": 80,
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
@@ -1286,7 +1719,7 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
 
     async def fake_check_protocol(*args, **kwargs):
         return {
-            "tools": 37,
+            "tools": 80,
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
@@ -1987,7 +2420,7 @@ def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys)
     import scripts.check_boi_wiki_mcp as script
 
     async def fake_check_protocol(*args, **kwargs):
-        return {"tools": 37, "resources": 0, "resource_templates": 11, "prompts": 5}
+        return {"tools": 80, "resources": 0, "resource_templates": 11, "prompts": 5}
 
     async def fake_check_bridge(*args, **kwargs):
         return {"ok": True, "status": "mcp_invoked", "tool": "boi.search", "request_id": "check-boi-wiki-mcp"}
@@ -2048,7 +2481,7 @@ def test_check_boi_wiki_mcp_reads_service_token_from_dotenv_without_printing(mon
 
     async def fake_check_protocol(*args, **kwargs):
         seen["protocol_token"] = kwargs.get("service_token", "")
-        return {"tools": 37, "resources": 0, "resource_templates": 11, "prompts": 5}
+        return {"tools": 80, "resources": 0, "resource_templates": 11, "prompts": 5}
 
     async def fake_check_bridge(base_url, service_token, query):
         seen["bridge_token"] = service_token

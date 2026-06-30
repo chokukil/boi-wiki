@@ -85,8 +85,43 @@ def built_in_scenarios() -> list[dict[str, Any]]:
             },
         },
         {
+            "id": "trend-required-data",
+            "name": "Action requirement from current SOP",
+            "question": "설비 이상 감지 시 Trend 확인을 위해 어떤 데이터가 필요한지 알려줘",
+            "current_url": DEFAULT_CURRENT_URL,
+            "expect": {
+                "route": "fast",
+                "intent": "page_qa",
+                "artifact_types": ["action_requirements"],
+                "min_followups": 1,
+                "require_evidence": True,
+                "require_affordances": True,
+                "require_links_or_citations": True,
+                "require_answer_terms": ["equipment_id", "response_series"],
+            },
+        },
+        {
+            "id": "workflow-status-manual-summary",
+            "name": "Workflow Status remaining manual work",
+            "question": "남은 수동 조치 5건을 일반 업무 관점으로 정리해줘.",
+            "current_url": "/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-90fec4f5af564e7a8590053ea7c926ae",
+            "expect": {
+                "route": "fast",
+                "intent": "workflow_explain",
+                "response_profile": "workflow_manual_summary",
+                "goal_type": "workflow_manual_summary",
+                "artifact_types": ["manual_handoff_summary"],
+                "min_followups": 1,
+                "require_evidence": True,
+                "require_affordances": True,
+                "require_links_or_citations": True,
+                "require_answer_terms": ["수동 조치", "5건"],
+                "forbid_answer_terms": ["수동 조치 사항이 없습니다"],
+            },
+        },
+        {
             "id": "event-to-action",
-            "name": "Event to Capability/SOP/Action flow",
+            "name": "Event to WorkflowDefinition/SOP/Action flow",
             "question": "equipment.alarm.raised.v1 이벤트가 발생하면 뭘 해야 해?",
             "current_url": DEFAULT_CURRENT_URL,
             "expect": {
@@ -98,7 +133,7 @@ def built_in_scenarios() -> list[dict[str, Any]]:
                 "require_affordances": True,
                 "require_links_or_citations": True,
                 "event_type": "equipment.alarm.raised.v1",
-                "capability_key": "equipment-anomaly-response",
+                "workflow_definition_key": "equipment-anomaly-response",
             },
         },
         {
@@ -117,9 +152,9 @@ def built_in_scenarios() -> list[dict[str, Any]]:
             },
         },
         {
-            "id": "unknown-capability",
-            "name": "Unknown capability should not hallucinate execution",
-            "question": "우주선 연료 펌프 보정 이벤트가 발생하면 자동으로 처리해줘.",
+            "id": "unknown-workflow-definition",
+            "name": "Unknown workflow definition should not hallucinate execution",
+            "question": "EUV 노광 Overlay drift 보정 이벤트가 발생하면 자동으로 처리해줘.",
             "current_url": "/",
             "expect": {
                 "min_followups": 1,
@@ -158,6 +193,10 @@ def normalize_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def json_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def artifact_types(response: dict[str, Any]) -> list[str]:
     found = []
     for artifact in normalize_list(response.get("artifacts")):
@@ -179,6 +218,10 @@ def assert_followups_are_supported(scenario: dict[str, Any], response: dict[str,
     for suggestion in suggestions:
         if suggestion in {".", "..", "...", "…"} or len(suggestion) < 8:
             failures.append(f"suggested question is too short or placeholder: {suggestion!r}")
+        if not any("\uac00" <= char <= "\ud7a3" for char in suggestion):
+            failures.append(f"suggested question must contain Korean text: {suggestion!r}")
+        if "->" in suggestion or suggestion.lower().startswith(("idea ", "suggestion ", "follow-up ", "question ", "focus on ")):
+            failures.append(f"suggested question leaks model planning text: {suggestion!r}")
         if question and suggestion == question:
             failures.append("suggested_questions must not repeat the original question")
         lower = suggestion.lower()
@@ -209,6 +252,9 @@ def assert_mutation_confirmation_only(response: dict[str, Any], failures: list[s
 def validate_scenario_response(scenario: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
     expect = normalize_dict(scenario.get("expect"))
     failures: list[str] = []
+    expected_http_status = int(expect.get("expect_http_status") or 200)
+    if expected_http_status != 200:
+        failures.append(f"expect_http_status expected {expected_http_status}, got 200")
     if response.get("agent_contract_version") != AGENT_CONTRACT_VERSION:
         failures.append(f"agent_contract_version must be {AGENT_CONTRACT_VERSION}")
     if not str(response.get("answer_markdown") or response.get("display_markdown") or "").strip():
@@ -217,6 +263,14 @@ def validate_scenario_response(scenario: dict[str, Any], response: dict[str, Any
         failures.append(f"route expected {expect['route']!r}, got {response.get('route')!r}")
     if expect.get("intent") and response.get("intent") != expect["intent"]:
         failures.append(f"intent expected {expect['intent']!r}, got {response.get('intent')!r}")
+    if expect.get("response_profile") and response.get("response_profile") != expect["response_profile"]:
+        failures.append(
+            f"response_profile expected {expect['response_profile']!r}, got {response.get('response_profile')!r}"
+        )
+    if expect.get("goal_type"):
+        goal_model = normalize_dict(response.get("goal_model"))
+        if goal_model.get("goal_type") != expect["goal_type"]:
+            failures.append(f"goal_type expected {expect['goal_type']!r}, got {goal_model.get('goal_type')!r}")
 
     found_artifacts = artifact_types(response)
     for expected_type in normalize_list(expect.get("artifact_types")):
@@ -236,6 +290,30 @@ def validate_scenario_response(scenario: dict[str, Any], response: dict[str, Any
         failures.append("links or citations must not be empty")
     if expect.get("mutation_confirmation_only"):
         assert_mutation_confirmation_only(response, failures)
+    expected_operation = str(expect.get("expect_execution_operation") or "")
+    if expected_operation:
+        operation_dump = json_text(response)
+        operations = [
+            str(item.get("operation") or "")
+            for item in normalize_list(response.get("execution_cards"))
+            if isinstance(item, dict)
+        ]
+        artifact_operations = [
+            str(item.get("operation") or "")
+            for item in normalize_list(response.get("artifacts"))
+            if isinstance(item, dict) and item.get("operation")
+        ]
+        if expected_operation not in operations and expected_operation not in artifact_operations and expected_operation not in operation_dump:
+            failures.append(f"expected execution operation {expected_operation!r}, got {operations + artifact_operations!r}")
+    expected_component_status = str(expect.get("expect_component_error_status") or "")
+    if expected_component_status:
+        statuses = [
+            str(item.get("status") or "")
+            for item in normalize_list(response.get("component_errors"))
+            if isinstance(item, dict)
+        ]
+        if expected_component_status not in statuses:
+            failures.append(f"expected component error status {expected_component_status!r}, got {statuses!r}")
 
     event_type = str(expect.get("event_type") or "")
     if event_type:
@@ -243,14 +321,29 @@ def validate_scenario_response(scenario: dict[str, Any], response: dict[str, Any
         answer_dump = json.dumps(response, ensure_ascii=False)
         if event_context.get("event_type") != event_type and event_type not in answer_dump:
             failures.append(f"expected event_type {event_type!r} in event_context or response")
-    capability_key = str(expect.get("capability_key") or "")
-    if capability_key:
-        capability_context = normalize_dict(response.get("capability_context"))
+    workflow_definition_key = str(expect.get("workflow_definition_key") or "")
+    if workflow_definition_key:
+        workflow_definition_context = normalize_dict(response.get("workflow_definition_context"))
         answer_dump = json.dumps(response, ensure_ascii=False)
-        if capability_context.get("capability_key") != capability_key and capability_key not in answer_dump:
-            failures.append(f"expected capability_key {capability_key!r} in capability_context or response")
+        if workflow_definition_context.get("workflow_definition_key") != workflow_definition_key and workflow_definition_key not in answer_dump:
+            failures.append(f"expected workflow_definition_key {workflow_definition_key!r} in workflow_definition_context or response")
 
     answer_text = str(response.get("answer_markdown") or response.get("display_markdown") or "")
+    response_dump = json_text(response)
+    artifact_dump = json_text(response.get("artifacts") or [])
+    followup_text = " ".join(str(item) for item in normalize_list(response.get("suggested_questions")))
+    for term in normalize_list(expect.get("require_json_terms")):
+        if str(term) not in response_dump:
+            failures.append(f"response JSON must include term {term!r}")
+    for term in normalize_list(expect.get("require_artifact_terms")):
+        if str(term) not in artifact_dump:
+            failures.append(f"artifacts must include term {term!r}")
+    for term in normalize_list(expect.get("require_followup_terms")):
+        if str(term) not in followup_text:
+            failures.append(f"suggested_questions must include term {term!r}")
+    for term in normalize_list(expect.get("forbid_followup_terms")):
+        if str(term) in followup_text:
+            failures.append(f"suggested_questions must not include term {term!r}")
     for term in normalize_list(expect.get("require_answer_terms")):
         if str(term) not in answer_text:
             failures.append(f"answer must include term {term!r}")
@@ -267,12 +360,49 @@ def validate_scenario_response(scenario: dict[str, Any], response: dict[str, Any
         "name": scenario.get("name") or "",
         "route": response.get("route"),
         "intent": response.get("intent"),
+        "response_profile": response.get("response_profile"),
         "used_backend": response.get("used_backend"),
         "artifact_types": found_artifacts,
         "followup_count": len(normalize_list(response.get("suggested_questions"))),
         "evidence_count": len(normalize_list(response.get("evidence_ledger"))),
         "affordance_count": len(normalize_list(response.get("affordances"))),
         "execution_card_count": len(normalize_list(response.get("execution_cards"))),
+    }
+
+
+def validate_error_scenario_response(scenario: dict[str, Any], status_code: int, payload: Any, body_text: str) -> dict[str, Any]:
+    expect = normalize_dict(scenario.get("expect"))
+    expected_http_status = int(expect.get("expect_http_status") or 200)
+    failures: list[str] = []
+    if status_code != expected_http_status:
+        failures.append(f"HTTP status expected {expected_http_status}, got {status_code}")
+    dump = json_text(payload if payload is not None else body_text)
+    for term in normalize_list(expect.get("require_json_terms")):
+        if str(term) not in dump:
+            failures.append(f"error JSON must include term {term!r}")
+    for term in normalize_list(expect.get("forbid_answer_terms")):
+        if str(term) in dump:
+            failures.append(f"error body must not include term {term!r}")
+    expected_component_status = str(expect.get("expect_component_error_status") or "")
+    if expected_component_status and expected_component_status not in dump:
+        failures.append(f"expected component error status {expected_component_status!r} in error body")
+    if failures:
+        scenario_id = scenario.get("id") or scenario.get("name") or "unnamed"
+        raise ScenarioValidationError(f"{scenario_id}: " + "; ".join(failures))
+    return {
+        "ok": True,
+        "id": scenario.get("id") or "",
+        "name": scenario.get("name") or "",
+        "http_status": status_code,
+        "route": "",
+        "intent": "",
+        "response_profile": "",
+        "used_backend": "",
+        "artifact_types": [],
+        "followup_count": 0,
+        "evidence_count": 0,
+        "affordance_count": 0,
+        "execution_card_count": 0,
     }
 
 
@@ -308,6 +438,15 @@ def run_scenario(base_url: str, scenario: dict[str, Any], employee_id: str, time
         response = post_json(url, payload, timeout)
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        try:
+            error_payload = json.loads(body)
+        except json.JSONDecodeError:
+            error_payload = None
+        expected_status = int(normalize_dict(scenario.get("expect")).get("expect_http_status") or 200)
+        if exc.code == expected_status:
+            summary = validate_error_scenario_response(scenario, exc.code, error_payload, body)
+            summary["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+            return summary
         raise ScenarioValidationError(f"{scenario.get('id') or 'scenario'}: HTTP {exc.code} {body[:500]}") from exc
     summary = validate_scenario_response(scenario, response)
     summary["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
@@ -328,7 +467,9 @@ def main() -> int:
     scenarios = load_scenarios(scenario_path if scenario_path.exists() else None)
     results: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
-    for scenario in scenarios:
+    for index, scenario in enumerate(scenarios, start=1):
+        scenario_id = str(scenario.get("id") or f"scenario-{index}")
+        print(f"[{index}/{len(scenarios)}] {scenario_id}: {scenario.get('question') or ''}", file=sys.stderr, flush=True)
         try:
             results.append(run_scenario(args.base_url, scenario, args.employee_id, args.timeout))
         except Exception as exc:

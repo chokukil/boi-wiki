@@ -1,0 +1,12 @@
+<section class="panel section-intro-panel">
+  <div class="section-heading">
+    <div>
+      {% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}
+      <h2>{{ title }}</h2>
+      <p>{{ description }}</p>
+    </div>
+    {% if primary_action %}
+    <a class="page-action-link {{ primary_action.kind or 'primary' }}" href="{{ primary_action.href }}">{{ primary_action.label }}</a>
+    {% endif %}
+  </div>
+</section>

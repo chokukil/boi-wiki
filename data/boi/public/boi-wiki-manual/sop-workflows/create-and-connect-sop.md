@@ -48,6 +48,8 @@ review:
 2. `pytest tests -q -s`
 3. `python scripts/check_boi_wiki_mcp.py`
 4. `python scripts/run_equipment_sop_poc.py`
+5. `python scripts/run_equipment_sop_poc.py --scenario-profile semiconductor-varied --count 8`
+6. `python scripts/check_langflow_universal_simulator.py --langflow-url http://localhost:7860 --boi-api-url http://localhost:28000`
 
 SSO dev overlay에서 검증할 때는 BoI API가 Keycloak session 또는 service token을 요구한다. 자동 smoke는 browser login을 쓰지 않으므로 다음처럼 service token을 명시한다.
 
@@ -56,6 +58,8 @@ SERVICE_TOKEN="$SERVICE_TOKEN" python scripts/run_equipment_sop_poc.py
 ```
 
 사용자 bearer token으로 검증해야 하면 `BOI_AUTH_BEARER`를 넘긴다. `SERVICE_TOKEN`과 `BOI_AUTH_BEARER`가 모두 있으면 둘 다 헤더에 붙지만, 일반 검증에서는 하나만 사용한다.
+
+반도체 업무 차이를 검증할 때는 단일 고정 payload를 seed하지 않는다. `semiconductor-varied` profile은 ETCH pressure spike, CVD temperature drift, Metrology ring pattern, Furnace recipe mismatch를 Event Broker publish와 Action Gateway 실행 경로로 생성한다. Inbox와 Agent는 이 경로에서 생성된 장비, LOT, Wafer, Alarm, Trend/Raw 상태, 승인 위험도를 기준으로 업무 차이를 비교해야 한다.
 
 # Citations
 

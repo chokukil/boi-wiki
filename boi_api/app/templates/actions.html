@@ -3,24 +3,191 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoI Action Catalog</title>
+  <title>Action 카탈로그 · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
 </head>
 <body>
 {% include "_app_shell.html" %}
 
+{% if view == "history" %}
+  {% set action_intro_title = "Action 실행 이력" %}
+  {% set action_intro_description = "실행 요청, 승인 필요, 수동 조치, 결과 로그를 확인합니다." %}
+  {% set action_intro_primary = {"label": "Action 카탈로그", "href": "/actions?employee_id=" ~ employee_id, "kind": "secondary"} %}
+{% else %}
+  {% set action_intro_title = "Action 카탈로그" %}
+  {% set action_intro_description = "API, MCP, Webhook, Manual 등 실행 단위를 찾아 업무 흐름에 연결합니다." %}
+  {% set action_intro_primary = {"label": "Action 추가", "href": "/sops/new?employee_id=" ~ employee_id ~ "&focus=action", "kind": "primary"} %}
+{% endif %}
+{% with title=action_intro_title, description=action_intro_description, eyebrow=None, primary_action=action_intro_primary %}
+  {% include "_section_intro.html" %}
+{% endwith %}
+
+{% if view == "history" %}
+<section class="toolbar page-filterbar event-filterbar action-history-filterbar">
+  <form method="get" action="/actions" class="event-filter-form action-history-filter-form">
+    <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+    <input type="hidden" name="view" value="history" />
+    {% if time_preset %}<input type="hidden" name="time_preset" value="{{ time_preset }}" />{% endif %}
+    <div class="filter-group">
+      <label for="action-history-query">업무 조건</label>
+      <input id="action-history-query" name="q" value="{{ q }}" placeholder="예: trend, 승인 지연, request id" />
+    </div>
+    <div class="filter-group">
+      <label for="action-history-status">상태</label>
+      <select id="action-history-status" name="status">
+        <option value="" {% if not status %}selected{% endif %}>전체</option>
+        {% for option in action_status_options %}
+        <option value="{{ option.value }}" {% if status == option.value %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="action-history-connector">Connector</label>
+      <select id="action-history-connector" name="connector_kind">
+        <option value="" {% if not connector_kind %}selected{% endif %}>전체</option>
+        {% for connector in connector_options %}
+        <option value="{{ connector }}" {% if connector_kind == connector %}selected{% endif %}>{{ connector }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="action-history-event-type">Event Type</label>
+      <select id="action-history-event-type" name="event_type">
+        <option value="" {% if not event_type %}selected{% endif %}>전체</option>
+        {% for e in event_types %}
+        <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="action-history-action-key">Action / Trace</label>
+      <div class="inline-fields">
+        <input id="action-history-action-key" name="action_key" value="{{ action_key }}" placeholder="action_key" />
+        <input name="trace_id" value="{{ trace_id }}" placeholder="trace_id" />
+      </div>
+    </div>
+    <div class="filter-group">
+      <label for="action-history-request-id">Request / 기간</label>
+      <div class="inline-fields">
+        <input id="action-history-request-id" name="request_id" value="{{ request_id }}" placeholder="request_id" />
+        <input name="from_time" value="{{ from_time }}" type="datetime-local" aria-label="from time" />
+        <span class="range-separator">~</span>
+        <input name="to_time" value="{{ to_time }}" type="datetime-local" aria-label="to time" />
+      </div>
+    </div>
+    <div class="filter-group paging-filter">
+      <label for="action-history-limit">Limit</label>
+      <div class="inline-fields compact">
+        <input id="action-history-limit" name="limit" value="{{ limit }}" type="number" min="1" max="200" />
+        <button type="submit">조회</button>
+      </div>
+    </div>
+  </form>
+</section>
+
+<main class="action-history-page">
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>Action 실행 조건</h2>
+        <p>검색과 필터로 실행 요청, 실패, 승인 필요, 수동 조치, 결과 로그를 좁혀 확인합니다.</p>
+      </div>
+      <button
+        type="button"
+        class="secondary-button"
+        data-boi-agent-question="현재 Action 실행 이력 필터 조건을 기준으로 실패 원인, 승인 필요 항목, 다음 확인 순서를 업무 관점으로 분석해줘."
+      >Agent에게 이 조건으로 분석</button>
+    </div>
+    {% if active_history_filters %}
+    <div class="active-filter-row action-history-filter-chips">
+      {% for filter in active_history_filters %}
+      <span class="badge status">{{ filter.label }}: {{ filter.value }}</span>
+      {% endfor %}
+      <a href="{{ clear_history_url }}">필터 초기화</a>
+    </div>
+    {% endif %}
+    {% if action_history.time_filter_error %}
+    <div class="active-filter-row"><span class="badge warning">시간 필터 오류</span><span>{{ action_history.time_filter_error }}</span></div>
+    {% elif action_history.time_filter and action_history.time_filter.active %}
+    <div class="active-filter-row"><span class="badge status">시간 범위</span><span>{{ action_history.time_filter.label }}</span></div>
+    {% endif %}
+    <div class="status-summary-grid action-history-summary">
+      <div class="status-summary-card"><span>전체</span><strong>{{ action_history.summary.total }}</strong></div>
+      <div class="status-summary-card"><span>실패</span><strong>{{ action_history.summary.failed }}</strong></div>
+      <div class="status-summary-card"><span>승인 필요</span><strong>{{ action_history.summary.approval_required }}</strong></div>
+      <div class="status-summary-card"><span>수동 조치</span><strong>{{ action_history.summary.manual_required }}</strong></div>
+      <div class="status-summary-card"><span>Event 발행</span><strong>{{ action_history.summary.event_published }}</strong></div>
+      <div class="status-summary-card"><span>BoI 생성</span><strong>{{ action_history.summary.materialized }}</strong></div>
+    </div>
+  </section>
+
+  <section id="action-logs" class="panel">
+    <div class="pagination-bar">
+      <div>
+        <h2>Action 실행 이력</h2>
+        <p>최근 Action 실행 요청, 승인 대기, 수동 조치, 결과 로그를 시간순으로 확인합니다.</p>
+      </div>
+      <div class="pagination-actions">
+        <span>{{ action_logs|length }} / {{ action_history.total }} shown</span>
+        {% if next_history_url %}<a class="button secondary" href="{{ next_history_url }}">다음 더 보기</a>{% endif %}
+      </div>
+    </div>
+    <div class="doc-list action-history-list">
+      {% for log in action_logs %}
+      <article class="doc-row event-row action-history-row">
+        <div class="doc-row-main">
+          <div>
+            <span class="badge {% if log.status == 'failed' %}warning{% else %}status{% endif %}">{{ log.status_label }}</span>
+            {% if log.connector_kind %}<span class="badge">{{ log.connector_kind }}</span>{% endif %}
+            {% if log.risk_level %}<span class="badge">{{ log.risk_level }}</span>{% endif %}
+            <strong>{{ log.action_display_name }}</strong>
+          </div>
+          <small>{{ log.logged_at }}</small>
+        </div>
+        <p><code>{{ log.action_key }}</code></p>
+        <p>{{ log.result_summary }}</p>
+        <small>
+          {% if log.request_id %}request={{ log.request_id }}{% endif %}
+          {% if log.event_type %} · event={{ log.event_type }}{% endif %}
+          {% if log.trace_id %} · trace={{ log.trace_id }}{% endif %}
+        </small>
+        <div class="event-summary-line trace-link-row action-history-links">
+          {% for link in log.user_links or [] %}
+          <a href="{{ link.url|safe }}">{{ link.label }}</a>
+          {% endfor %}
+        </div>
+        {% if log.technical_links %}
+        <details class="technical-details">
+          <summary>기술 세부정보</summary>
+          {% for link in log.technical_links %}
+          <p><code>{{ link.label }}</code> {{ link.url }}</p>
+          {% endfor %}
+        </details>
+        {% endif %}
+      </article>
+      {% else %}
+      <section class="empty-state">
+        <strong>조건에 맞는 Action 실행 이력이 없습니다.</strong>
+        <p>필터를 줄이거나 전체 기간으로 전환해 다시 확인하세요.</p>
+        <p><a href="{{ clear_history_url }}">필터 초기화</a></p>
+      </section>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+{% else %}
 <section class="panel page-filterbar">
-  <h2>Filter</h2>
+  <h2>Action 찾기</h2>
   <form method="get" action="/actions">
     <input type="hidden" name="employee_id" value="{{ employee_id }}" />
     <select name="event_type">
-      <option value="">All Event Types</option>
+      <option value="">전체 Event Type</option>
       {% for e in event_types %}
       <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
       {% endfor %}
     </select>
-    <input name="action_key" value="{{ action_key }}" placeholder="action_key" />
-    <button type="submit">Apply</button>
+    <input name="action_key" value="{{ action_key }}" placeholder="Action key" />
+    <button type="submit">조회</button>
   </form>
 </section>
 
@@ -29,44 +196,32 @@
   <article class="card">
     <div class="badges">
       <span class="badge">{{ a.risk_level or 'risk' }}</span>
-      {% if a.approval_required %}<span class="badge warning">approval required</span>{% endif %}
+      {% if a.approval_required %}<span class="badge warning">승인 필요</span>{% endif %}
       <span class="badge">{{ a.type or 'action' }}</span>
       {% if a.connector_kind %}<span class="badge">{{ a.connector_kind }}</span>{% endif %}
-      {% if a.execution_mode == 'human' %}<span class="badge manual">manual handoff</span>{% endif %}
+      {% if a.execution_mode == 'human' %}<span class="badge manual">수동 조치</span>{% endif %}
     </div>
     <h3>{{ a.name_ko or a.action_key }}</h3>
     <p><code>{{ a.action_key }}</code></p>
     <p>{{ a.description }}</p>
-    <p><strong>Events:</strong> {{ (a.event_types or []) | join(', ') }}</p>
+    <p><strong>연결 Event:</strong> {{ (a.event_types or []) | join(', ') }}</p>
     <p><strong>Owner:</strong> {{ a.owner }}</p>
     {% if a.doc_url %}
-    <p><strong>Spec:</strong> <a href="{{ a.doc_url }}">{{ a.doc_ref }}</a>{% if a.doc_uri %} <code>{{ a.doc_uri }}</code>{% endif %}</p>
+    <p><strong>명세:</strong> <a href="{{ a.doc_url }}">{{ a.doc_ref }}</a>{% if a.doc_uri %} <code>{{ a.doc_uri }}</code>{% endif %}</p>
     {% endif %}
     {% if a.requires_manual_action %}
-    <p><strong>Manual approval:</strong> <code>{{ a.requires_manual_action }}</code></p>
+    <p><strong>필요 수동 조치:</strong> <code>{{ a.requires_manual_action }}</code></p>
     {% endif %}
     {% if a.execution_mode == 'human' %}
-    <p><strong>Execution:</strong> manual handoff; 자동 실행되지 않고 담당자 판단/승인/완료 확인으로 기록됩니다.</p>
+    <p><strong>실행 방식:</strong> 담당자 판단/승인/완료 확인으로 기록됩니다.</p>
     {% endif %}
+    <p><strong>SOP 연결:</strong> <a href="/sops/new?employee_id={{ employee_id }}&focus=action&action_key={{ a.action_key | urlencode }}">SOP 추가에서 연결</a></p>
     <pre>curl -X POST "{{ action_invoke_url }}" \
   -H "Content-Type: application/json" \
   -d '{"action_key":"{{ a.action_key }}","payload":{"equipment_id":"EQP-001","lot_id":"LOT-001","owner":"100001"},"dry_run":true}'</pre>
   </article>
   {% endfor %}
 </section>
-
-<section class="panel">
-  <h2>Recent Action Logs</h2>
-  {% for log in action_logs %}
-    <div class="event-row">
-      <span class="badge">{{ log.status }}</span>
-      <code>{{ log.action_key }}</code>
-      <span>{{ log.logged_at }}</span>
-      <span>{{ log.event_type or '' }}</span>
-    </div>
-  {% else %}
-    <p>No action logs yet.</p>
-  {% endfor %}
-</section>
+{% endif %}
 </body>
 </html>

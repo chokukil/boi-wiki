@@ -102,6 +102,9 @@ python scripts/check_pilot_external_services.py --langflow --run-langflow-endpoi
 | `deployment.runtime_root` | events/actions/activity/audit runtime root |
 | `event_broker.mode` | `local`, `external`, `disabled` |
 | `connectors.langflow_mode` | `local`, `external`, `disabled` |
+| `langflow_simulator.health` | `ok` after Universal Simulator smoke |
+| `langflow_simulator.flow_audit.ok` | `true` after runtime flow audit |
+| `langflow_simulator.coverage_score` | `>= 0.85` after smoke |
 | `git.auto_commit` | Pilot 기본 `true` |
 | `git.auto_push` | Pilot external 기본 `true` |
 | `index.persisted_enabled` | Pilot 기본 `true` |
@@ -111,7 +114,14 @@ python scripts/check_pilot_external_services.py --langflow --run-langflow-endpoi
 
 secret, token, Kafka password, LLM API key는 runtime config에 노출하지 않는다.
 
-local-full의 Agent LLM 호출은 기본적으로 한 번에 하나만 외부 Gemma gateway를 사용한다. `BOI_AGENT_LLM_MAX_CONCURRENCY=1`은 fallback이 아니라 작은 OpenAI-compatible runtime을 안정적으로 쓰기 위한 backpressure 설정이다. 더 큰 LLM gateway를 쓸 때만 운영자가 부하 테스트 후 값을 올린다. 큐 대기 시간이 `BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS`를 넘으면 Agent는 짧은 규칙 답변을 만들지 않고 장애 상태를 반환한다. composer와 suggestion writer의 `MAX_ATTEMPTS=2`는 같은 LLM에 JSON contract를 재작성시키는 repair 시도이며, canned fallback을 만들지 않는다.
+local-full의 Agent LLM 호출은 기본적으로 한 번에 하나만 외부 Gemma gateway를 사용한다. `BOI_AGENT_LLM_MAX_CONCURRENCY=1`은 작은 OpenAI-compatible runtime을 안정적으로 쓰기 위한 backpressure 설정이다. 더 큰 LLM gateway를 쓸 때만 운영자가 부하 테스트 후 값을 올린다. 큐 대기 시간이 `BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS`를 넘거나 composer/suggestion/status writer가 실패하면 Agent는 짧은 규칙 답변을 꾸며 만들지 않고 `component_errors` 또는 streaming `diagnostic`에 실패 원인을 남긴다. typed answer와 artifact를 만들 근거가 있으면 답변은 유지한다. composer와 suggestion writer의 `MAX_ATTEMPTS=2`는 같은 LLM에 JSON contract를 재작성시키는 repair 시도이며, canned fallback을 만들지 않는다.
+
+Langflow는 optional workflow backend다. local-full PoC에서 Universal Simulator smoke는 실행 전 확인/PoC용 dry-run 경로가 정상인지 검증한다. Verified Inbox report의 실제 의사결정 근거는 Event, Action 결과, 생성 BoI, Data Lake, manual note, 과거 처리 사례를 우선하며, simulator 결과는 기본 보고서 근거로 섞지 않는다. 아래 smoke는 Langflow flow run과 BoI API의 구조화 simulator endpoint를 함께 확인하고, 결과를 `data/actions/_health/langflow_universal_simulator.json`에 남겨 `/api/runtime/config`가 읽게 한다.
+
+```bash
+python scripts/check_langflow_universal_simulator.py --langflow-url http://localhost:7860 --boi-api-url http://localhost:28000
+python scripts/check_inbox_narrative_quality.py --base-url http://localhost:28000 --summary
+```
 
 # Content Publishing
 

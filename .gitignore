@@ -13,6 +13,7 @@ __pycache__/
 data/events/*.jsonl
 data/actions/
 data/boi/private/*/boi-private-*.md
+data/boi/private/*/inbox-reports/
 data/boi/team/*/boi-team-*.md
 data/boi/public/boi-public-*.md
 

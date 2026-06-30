@@ -1,0 +1,44 @@
+response_profiles:
+  - response_profile: qa
+    description: 짧은 질문 답변. 결론과 핵심 근거를 먼저 보여줍니다.
+    artifact_types: []
+
+  - response_profile: search
+    description: ontology search 결과를 관련성 설명과 그룹으로 보여줍니다.
+    artifact_types: []
+
+  - response_profile: doc_summary
+    description: 현재 문서나 페이지를 업무 관점으로 요약합니다.
+    artifact_types: []
+
+  - response_profile: artifact_generation
+    description: Mermaid, 표, 체크리스트 등 산출물을 생성합니다.
+    artifact_types: ["mermaid", "workflow_summary"]
+
+  - response_profile: workflow_summary
+    description: Event, SOP Stage, Action, Manual Handoff, 다음 Event 관계를 표와 설명으로 보여줍니다.
+    artifact_types: ["workflow_summary"]
+
+  - response_profile: workflow_manual_summary
+    description: Workflow Status에서 남은 수동 조치, 승인, 담당자 확인 업무를 카드로 보여줍니다.
+    artifact_types: ["manual_handoff_summary"]
+
+  - response_profile: gap_table
+    description: 부족한 Action/Event/evidence 명세를 표로 보여줍니다.
+    artifact_types: ["gap_table"]
+
+  - response_profile: action_requirements
+    description: Action 판단에 필요한 입력 데이터와 결과 계약을 표로 보여줍니다.
+    artifact_types: ["action_requirements"]
+
+  - response_profile: trace_reasoning
+    description: trace/action/generated BoI 근거를 모아 진행과 판단 근거를 설명합니다.
+    artifact_types: []
+
+  - response_profile: task_cards
+    description: Inbox 업무를 일반 구성원용 카드로 보여줍니다.
+    artifact_types: ["task_cards"]
+
+  - response_profile: confirmation_required
+    description: 실행/게시/승인/수정 같은 상태 변경 요청을 실행 전 확인 카드로 보여줍니다.
+    artifact_types: ["confirmation_required"]

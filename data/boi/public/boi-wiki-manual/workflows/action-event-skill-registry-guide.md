@@ -6,7 +6,7 @@ title: Action and Event Skill Registry Guide
 description: BoI Agent가 Event와 Action을 업무 의미로 이해하도록 Skill registry를 관리하는 기준
 tags: [BoIWiki, SkillRegistry, Agent, Action, Event]
 timestamp: 2026-06-27T11:15:00+09:00
-boi_id: boi:public:boi-wiki-manual:capabilities:action-event-skill-registry-guide
+boi_id: boi:public:boi-wiki-manual:workflows:action-event-skill-registry-guide
 visibility: public
 classification: internal
 owner: AIX 확산 TF
@@ -35,11 +35,11 @@ review:
 |---|---|
 | `data/event_skill_catalog/skills.yaml` | Event를 trigger, transition, escalation 등으로 해석 |
 | `data/action_skill_catalog/skills.yaml` | Action을 evidence collection, forecast, publish, manual completion 등으로 해석 |
-| `data/capability_catalog/capabilities.yaml` | Event Skill과 Action Skill을 Capability 안에서 조합 |
+| `data/workflow_catalog/workflows.yaml` | Event Skill과 Action Skill을 WorkflowDefinition 안에서 조합 |
 
 # Agent Rule
 
-BoI Agent는 추천 질문과 실행 카드를 만들 때 Capability의 `affordances`, `event_skill_refs`, `action_skill_refs`를 먼저 본다. Registry에 없는 후속 행동은 추천하지 않는다.
+BoI Agent는 추천 질문과 실행 카드를 만들 때 WorkflowDefinition의 `affordances`, `event_skill_refs`, `action_skill_refs`를 먼저 본다. Registry에 없는 후속 행동은 추천하지 않는다.
 
 # Example
 
@@ -53,4 +53,4 @@ action_skills:
       requires_confirmation: true
 ```
 
-이 Skill이 연결된 Capability는 Agent가 “다음 Event 발행 전 확인” 같은 confirmation card를 만들 수 있다.
+이 Skill이 연결된 WorkflowDefinition는 Agent가 “다음 Event 발행 전 확인” 같은 confirmation card를 만들 수 있다.

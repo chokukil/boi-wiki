@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -145,6 +146,78 @@ def test_langflow_audit_script_checks_runtime_connected_boi_components():
     assert "/api/v1/flows/" in script
 
 
+def test_langflow_universal_simulator_smoke_checks_business_evidence_contract():
+    script = Path("scripts/check_langflow_universal_simulator.py").read_text(encoding="utf-8")
+
+    assert "boi-universal-action-simulator" in script
+    assert "/api/simulations/universal-agent" in script
+    assert "coverage_score" in script
+    assert "evidence_packets" in script
+    assert "business_context" in script
+    assert "equipment_id" in script
+    assert "lot_id" in script
+    assert "wafer_id" in script
+    assert "alarm_code" in script
+    assert "outdated component" in script
+    assert "LANGFLOW_SIMULATOR_HEALTH_FILE" in script
+
+
+def test_inbox_narrative_quality_script_blocks_system_terms_and_repetition():
+    script = Path("scripts/check_inbox_narrative_quality.py").read_text(encoding="utf-8")
+
+    assert "group_narrative" in script
+    assert "narrative_quality" in script
+    assert "서로\\s*다른\\s*trace" in script
+    assert "같은\\s*Action" in script
+    assert "source_ids?" in script
+    assert "preview item contexts are repetitive" in script
+    assert "check_report_document" in script
+    assert "checked_ready_reports" in script
+    assert "검증된 보고서 BoI" in script
+    assert "report document is missing required section" in script
+
+
+def test_inbox_narrative_quality_can_require_ready_report_documents():
+    script_path = Path("scripts/check_inbox_narrative_quality.py")
+    spec = importlib.util.spec_from_file_location("check_inbox_narrative_quality", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.report_sample_errors(0, require_ready_report=True) == ["no ready report documents were checked"]
+    assert module.report_sample_errors(0, require_ready_report=False) == []
+    assert module.report_sample_errors(1, require_ready_report=True) == []
+
+
+def test_inbox_narrative_quality_samples_item_reports_not_group_rollups():
+    script_path = Path("scripts/check_inbox_narrative_quality.py")
+    spec = importlib.util.spec_from_file_location("check_inbox_narrative_quality", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    body = {
+        "items": [
+            {
+                "report_state": "ready",
+                "report_boi_url": "/docs/boi:item-report",
+                "report_boi_link": {"label": "검증된 보고서 BoI"},
+            }
+        ],
+        "groups": [
+            {
+                "report_state": "ready",
+                "report_boi_url": "/docs/boi:group-rollup",
+                "report_boi_link": {"label": "검증된 보고서 BoI"},
+            }
+        ],
+    }
+
+    assert module.report_urls_from_inbox(body, limit=5) == ["/docs/boi:item-report"]
+
+
 def test_langflow_custom_components_include_prompt_result_and_simulation_agent():
     prompt = Path("langflow/custom_components/boi/boi_prompt_composer.py").read_text(encoding="utf-8")
     result = Path("langflow/custom_components/boi/boi_result_composer.py").read_text(encoding="utf-8")
@@ -191,3 +264,11 @@ def test_equipment_sop_smoke_script_supports_sso_auth_headers():
     assert '"x-service-token"' in script
     assert '"Authorization"' in script
     assert "request_headers(content_type=True)" in script
+    assert "--scenario-profile" in script
+    assert "semiconductor-varied" in script
+    assert "ETCH-VM-01" in script
+    assert "CVD-ALD-02" in script
+    assert "MET-OVL-03" in script
+    assert "FURN-HT-04" in script
+    assert "missing_evidence" in script
+    assert "approval_risk" in script

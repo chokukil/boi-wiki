@@ -12,7 +12,25 @@
       "name": "Pet UI Mermaid diagram",
       "url": "http://localhost:28000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
       "question": "이 SOP를 Mermaid 프로세스 플로우로 보여줘.",
-      "expect_artifact": "mermaid"
+      "expect_artifact": "mermaid",
+      "expect_evidence_artifact": "workflow_summary",
+      "forbid_inline_artifact": "workflow_summary",
+      "expect_followup_loading": true,
+      "forbid_visible_terms": ["Context 없음", "missing context", "trace context"]
+    },
+    {
+      "id": "ui-trend-required-data",
+      "name": "Pet UI action requirement table",
+      "url": "http://localhost:28000/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001",
+      "question": "설비 이상 감지 시 Trend 확인을 위해 어떤 데이터가 필요한지 알려줘",
+      "expect_artifact": "action_requirements"
+    },
+    {
+      "id": "ui-workflow-manual-summary",
+      "name": "Pet UI workflow manual handoff summary",
+      "url": "http://localhost:28000/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-90fec4f5af564e7a8590053ea7c926ae",
+      "question": "남은 수동 조치 5건을 일반 업무 관점으로 정리해줘.",
+      "expect_artifact": "manual_handoff_summary"
     }
   ]
 }

@@ -5,7 +5,7 @@
 
   const employeeId = root.dataset.employeeId || new URLSearchParams(location.search).get("employee_id") || "100001";
   const pageTitle = root.dataset.pageTitle || document.title || "BoI Wiki";
-  const storageKey = `boiAgent.v6.${employeeId}`;
+  const storageKey = `boiAgent.v7.${employeeId}`;
   let activeRequest = null;
   let restoreScrollOnce = true;
   let pageUnloading = false;
@@ -26,8 +26,8 @@
       suggestions: [],
       suggestionsLoading: false,
       suggestionError: "",
-      inbox: [],
-      inboxGroups: [],
+      signal: null,
+      signals: [],
       messages: [],
       draft: "",
       busyTask: "",
@@ -42,7 +42,7 @@
   function loadState() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || "{}");
-      return { ...defaultState(), ...saved, suggestions: [], suggestionsLoading: false, suggestionError: "", inbox: [], inboxGroups: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
+      return { ...defaultState(), ...saved, tab: "agent", suggestions: [], suggestionsLoading: false, suggestionError: "", signal: null, signals: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
     } catch (_error) {
       return defaultState();
     }
@@ -115,6 +115,18 @@
     });
   }
 
+  function recordActivity(activityType, target, title, metadata) {
+    return api("/api/agents/boi-wiki/activity", {
+      method: "POST",
+      body: JSON.stringify({
+        activity_type: activityType,
+        target: target || "",
+        title: title || "",
+        metadata: metadata || {},
+      }),
+    }).catch(() => null);
+  }
+
   function sseUrl(path) {
     const url = new URL(path, location.origin);
     url.searchParams.set("employee_id", employeeId);
@@ -171,17 +183,14 @@
 
   function formatAgentStreamError(payload) {
     const status = String(payload?.status || "agent_stream_error");
-    const message = String(payload?.message || "").trim();
     const labels = {
-      status_generation_failed: "진행 상태 모델 장애입니다. LLM 상태 문구를 만들지 못해 요청을 중단했습니다.",
-      boi_agent_router_unavailable: "질문 의도 판단 모델 장애입니다. LLM 라우터가 요청을 분류하지 못해 요청을 중단했습니다.",
-      native_agent_runtime_unavailable: "Native Agent 실행 엔진을 사용할 수 없습니다.",
-      langflow_boi_agent_unavailable: "Langflow Agent backend에 연결하지 못했습니다.",
-      agent_stream_error: "Agent 스트리밍 처리 중 오류가 발생했습니다.",
+      status_generation_failed: "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      boi_agent_router_unavailable: "답변을 완성하지 못했습니다. 질문을 조금 더 구체적으로 적어 다시 시도해 주세요.",
+      native_agent_runtime_unavailable: "답변을 완성하지 못했습니다. 확인할 근거를 줄여 다시 요청해 주세요.",
+      langflow_boi_agent_unavailable: "연결된 SOP/Action 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      agent_stream_error: "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
     };
-    const label = labels[status] || "Agent 처리 중 오류가 발생했습니다.";
-    const detail = message ? ` ${message}` : "";
-    return `BoI Agent 장애: ${label} (${status}).${detail}`;
+    return labels[status] || "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
   }
 
   function escapeHtml(value) {
@@ -437,8 +446,9 @@
   function renderMermaidBlock(source, title, viewerPayload) {
     const escapedSource = escapeHtml(source);
     const id = viewerPayload ? ` data-viewer-id="${escapeAttr(viewerPayload.id)}"` : "";
+    const attrs = viewerPayload?.attrs || "";
     return `
-      <div class="mermaid-diagram boi-agent-artifact" data-mermaid-state="pending" data-mermaid-source="${escapeAttr(source)}"${id}>
+      <div class="mermaid-diagram boi-agent-artifact" data-mermaid-state="pending" data-mermaid-source="${escapeAttr(source)}"${id}${attrs}>
         <div class="boi-agent-artifact-title">
           ${title ? `<strong>${escapeHtml(title)}</strong>` : "<strong>Diagram</strong>"}
           ${viewerPayload ? `<button type="button" data-open-artifact="${escapeAttr(viewerPayload.id)}">크게 보기</button>` : ""}
@@ -531,7 +541,7 @@
         seenConfirmation.add(key);
       }
       return true;
-    });
+    }).map(normalizeArtifactPresentation);
   }
 
   function executionCardArtifacts(message) {
@@ -541,6 +551,11 @@
       .filter((card) => card && typeof card === "object")
       .map((card) => ({
         type: "confirmation_required",
+        role: "primary",
+        display_mode: "inline",
+        priority: 10,
+        reason: "상태 변경 전 사용자 확인이 필요한 요청",
+        user_requested: true,
         title: card.title || card.operation || "확인 필요",
         data: {
           ...card,
@@ -556,6 +571,65 @@
       }));
   }
 
+  function normalizeArtifactPresentation(artifact) {
+    const type = String(artifact?.type || "");
+    const defaults = {
+      role: "primary",
+      display_mode: "inline",
+      priority: 10,
+      reason: "요청에 맞춰 바로 확인할 산출물",
+      user_requested: true,
+    };
+    if (!["mermaid", "gap_table", "workflow_summary", "manual_handoff_summary", "action_requirements", "task_cards", "confirmation_required", "image"].includes(type)) {
+      defaults.role = "supporting";
+      defaults.display_mode = "collapsed";
+      defaults.priority = 60;
+      defaults.reason = "답변을 보강하는 참고 자료";
+      defaults.user_requested = false;
+    }
+    const role = ["primary", "supporting", "evidence", "diagnostic"].includes(artifact.role) ? artifact.role : defaults.role;
+    const displayMode = ["inline", "collapsed", "viewer_only", "hidden_diagnostic"].includes(artifact.display_mode) ? artifact.display_mode : defaults.display_mode;
+    return {
+      ...artifact,
+      role,
+      display_mode: displayMode,
+      priority: Number.isFinite(Number(artifact.priority)) ? Number(artifact.priority) : defaults.priority,
+      reason: artifact.reason || defaults.reason,
+      user_requested: typeof artifact.user_requested === "boolean" ? artifact.user_requested : defaults.user_requested,
+      default_collapsed: Boolean(artifact.default_collapsed || role === "evidence" || role === "diagnostic" || displayMode !== "inline"),
+    };
+  }
+
+  function artifactPresentationRole(artifact) {
+    return normalizeArtifactPresentation(artifact).role;
+  }
+
+  function artifactDisplayMode(artifact) {
+    return normalizeArtifactPresentation(artifact).display_mode;
+  }
+
+  function inlineArtifactItems(message) {
+    return artifactItems(message)
+      .filter((artifact) => artifactPresentationRole(artifact) === "primary" && artifactDisplayMode(artifact) === "inline")
+      .sort((a, b) => Number(a.priority || 50) - Number(b.priority || 50));
+  }
+
+  function supportingArtifactItems(message) {
+    return artifactItems(message)
+      .filter((artifact) => {
+        const role = artifactPresentationRole(artifact);
+        const mode = artifactDisplayMode(artifact);
+        return role !== "diagnostic" && !(role === "primary" && mode === "inline") && mode !== "hidden_diagnostic";
+      })
+      .sort((a, b) => Number(a.priority || 50) - Number(b.priority || 50));
+  }
+
+  function diagnosticArtifactItems(message) {
+    return artifactItems(message)
+      .filter((artifact) => artifactPresentationRole(artifact) === "diagnostic" || artifactDisplayMode(artifact) === "hidden_diagnostic")
+      .sort((a, b) => Number(a.priority || 80) - Number(b.priority || 80));
+  }
+
   function mermaidSourcesFromArtifacts(message) {
     const found = new Set();
     for (const artifact of message.artifacts || []) {
@@ -564,35 +638,89 @@
     return found;
   }
 
-  function renderArtifacts(message, messageIndex) {
-    const artifacts = artifactItems(message);
-    if (!artifacts.length) return "";
-    return `<div class="boi-agent-artifacts">${artifacts.map((artifact, artifactIndex) => {
-      const viewerId = `artifact-${messageIndex}-${artifactIndex}`;
-      if (artifact.type === "mermaid" && artifact.source) {
-        return renderMermaidBlock(artifact.source, artifact.title || "Diagram", { id: viewerId, type: "mermaid", source: artifact.source });
-      }
-      if (artifact.type === "gap_table" && Array.isArray(artifact.data)) {
-        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "명세 점검")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(artifact.data)}</div>`;
-      }
-      if (artifact.type === "workflow_summary" && artifact.data) {
-        const rows = Array.isArray(artifact.data) ? artifact.data : [artifact.data];
-        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "업무 흐름 요약")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(rows)}</div>`;
-      }
-      if (artifact.type === "task_cards" && Array.isArray(artifact.data)) {
-        return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "처리할 일")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
-      }
-      if (artifact.type === "confirmation_required" && artifact.data) {
-        return renderConfirmationArtifact(artifact, viewerId);
-      }
-      if (artifact.type === "image" && artifact.url) {
-        return `<figure class="boi-agent-artifact boi-agent-image-artifact" data-viewer-id="${escapeAttr(viewerId)}"><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Image")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div><img src="${escapeAttr(artifact.url)}" alt="${escapeAttr(artifact.alt || artifact.title || "Artifact image")}"></figure>`;
-      }
-      return "";
-    }).join("")}</div>`;
+  function renderTaskDisplay(item) {
+    const title = item.title || item.name || item.action_key || "처리할 일";
+    const statusLabel = item.status_label || item.status || "확인 필요";
+    const riskLabel = item.risk_label || item.priority_label || "";
+    const why = item.why_it_matters || item.summary || item.description || "";
+    const nextAction = item.next_action || item.recommended_next_check || "";
+    const primaryUrl = item.primary_url || item.url || "";
+    const primaryLabel = item.primary_label || "자세히 보기";
+    return `
+      <section class="boi-agent-task-display">
+        <div class="boi-agent-task-title">
+          <strong>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(statusLabel)}</span>
+        </div>
+        ${riskLabel ? `<small>${escapeHtml(riskLabel)}</small>` : ""}
+        ${why ? `<p>${escapeHtml(why)}</p>` : ""}
+        ${nextAction ? `<p><strong>다음 행동</strong> ${escapeHtml(nextAction)}</p>` : ""}
+        ${primaryUrl ? `<a href="${escapeAttr(primaryUrl)}">${escapeHtml(primaryLabel)}</a>` : ""}
+      </section>`;
   }
 
-  function renderConfirmationArtifact(artifact, viewerId) {
+  function renderArtifactNode(artifact, viewerId) {
+    const presentationAttrs = ` data-artifact-type="${escapeAttr(artifact.type || "")}" data-artifact-role="${escapeAttr(artifact.role || "")}" data-artifact-display="${escapeAttr(artifact.display_mode || "")}"`;
+    if (artifact.type === "mermaid" && artifact.source) {
+      return renderMermaidBlock(artifact.source, artifact.title || "Diagram", { id: viewerId, type: "mermaid", source: artifact.source, attrs: presentationAttrs });
+    }
+    if (artifact.type === "gap_table" && Array.isArray(artifact.data)) {
+      return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "명세 점검")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(artifact.data)}</div>`;
+    }
+    if (artifact.type === "workflow_summary" && artifact.data) {
+      const rows = Array.isArray(artifact.data) ? artifact.data : [artifact.data];
+      return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "업무 흐름 요약")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(rows)}</div>`;
+    }
+    if (artifact.type === "manual_handoff_summary" && artifact.data) {
+      const rows = Array.isArray(artifact.data) ? artifact.data : [artifact.data];
+      return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "수동 조치 정리")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${rows.map((item) => renderTaskDisplay({
+        title: item.title || item.action_key || "수동 조치",
+        status_label: item.status_label || "조치 필요",
+        why_it_matters: item.why_it_matters || item.required_evidence || "",
+        next_action: item.next_action || "",
+        risk_label: item.risk_label || "수동 조치",
+        primary_label: "근거 보기",
+        primary_url: item.doc_uri || "",
+      })).join("")}</div>`;
+    }
+    if (artifact.type === "action_requirements" && artifact.data) {
+      const rows = Array.isArray(artifact.data) ? artifact.data : [artifact.data];
+      return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "필요 데이터")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(rows)}</div>`;
+    }
+    if (artifact.type === "task_cards" && Array.isArray(artifact.data)) {
+      return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "처리할 일")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
+    }
+    if (artifact.type === "confirmation_required" && artifact.data) {
+      return renderConfirmationArtifact(artifact, viewerId, presentationAttrs);
+    }
+    if (artifact.type === "image" && artifact.url) {
+      return `<figure class="boi-agent-artifact boi-agent-image-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Image")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div><img src="${escapeAttr(artifact.url)}" alt="${escapeAttr(artifact.alt || artifact.title || "Artifact image")}"></figure>`;
+    }
+    return "";
+  }
+
+  function renderArtifacts(message, messageIndex) {
+    const artifacts = inlineArtifactItems(message);
+    if (!artifacts.length) return "";
+    return `<div class="boi-agent-artifacts">${artifacts.map((artifact, artifactIndex) => renderArtifactNode(artifact, `artifact-${messageIndex}-${artifactIndex}`)).join("")}</div>`;
+  }
+
+  function renderSupportingArtifacts(message, messageIndex) {
+    const artifacts = supportingArtifactItems(message);
+    if (!artifacts.length) return "";
+    return `<details class="boi-agent-artifact-group boi-agent-evidence-artifacts">
+      <summary>근거 자료 보기 <span>${artifacts.length}개</span></summary>
+      <div>${artifacts.map((artifact, artifactIndex) => renderArtifactNode(artifact, `artifact-${messageIndex}-evidence-${artifactIndex}`)).join("")}</div>
+    </details>`;
+  }
+
+  function renderDiagnosticArtifacts(message, messageIndex) {
+    const artifacts = diagnosticArtifactItems(message);
+    if (!artifacts.length) return "";
+    return `<div class="boi-agent-diagnostic-artifacts">${artifacts.map((artifact, artifactIndex) => renderArtifactNode(artifact, `artifact-${messageIndex}-diagnostic-${artifactIndex}`)).join("")}</div>`;
+  }
+
+  function renderConfirmationArtifact(artifact, viewerId, presentationAttrs) {
     const data = artifact.data || {};
     const operation = String(data.operation || "");
     const payload = data.payload && typeof data.payload === "object" ? data.payload : {};
@@ -608,7 +736,7 @@
     const riskLabel = display.risk_label || (permissionAllowed ? "명시 확인 후 실행" : `권한 필요${requiredRole ? `: ${requiredRole}` : ""}`);
     const payloadJson = JSON.stringify(payload);
     return `
-      <div class="boi-agent-artifact boi-agent-confirmation-card" data-viewer-id="${escapeAttr(viewerId)}">
+      <div class="boi-agent-artifact boi-agent-confirmation-card" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs || ""}>
         <div class="boi-agent-artifact-title">
           <strong>${escapeHtml(title)}</strong>
           <button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button>
@@ -664,8 +792,14 @@
     renderCellValue,
     renderRunSummary,
     renderArtifacts,
+    renderSupportingArtifacts,
+    renderDiagnosticDetails,
     renderMessageFollowups,
     artifactItems,
+    inlineArtifactItems,
+    supportingArtifactItems,
+    diagnosticArtifactItems,
+    normalizeArtifactPresentation,
     listLineInfo,
     splitTableRow,
     mermaidSourcesFromMarkdown,
@@ -691,10 +825,10 @@
       page_qa: "현재 페이지 답변",
       summarize: "요약",
       diagram: "도식 생성",
-      workflow_explain: "업무 흐름 분석",
+      workflow_explain: "SOP 실행 흐름 분석",
       gap_check: "누락 점검",
       trace_reasoning: "실행 근거 분석",
-      inbox: "Inbox",
+      inbox: "업무함 안내",
       manual_complete: "조치 확인",
       approval: "승인 필요",
       access_denied: "권한 확인",
@@ -702,7 +836,7 @@
     const routeLabels = {
       manual_handoff: "조치 확인",
       approval_required: "승인 필요",
-      inbox: "Inbox",
+      inbox: "업무함 안내",
     };
     if (meta.intent && intentLabels[meta.intent]) chips.push(intentLabels[meta.intent]);
     if (!chips.length && meta.route && routeLabels[meta.route]) chips.push(routeLabels[meta.route]);
@@ -716,10 +850,10 @@
       boi_get: "BoI 문서 조회",
       action_spec_lookup: "Action 명세 확인",
       trace_context_lookup: "Trace 근거 확인",
-      workflow_status: "업무 흐름 상태 확인",
+      workflow_status: "실행 현황 확인",
       dictionary_resolve: "업무 용어 확인",
       memory_recall: "Private memory 확인",
-      agent_inbox: "Inbox 확인",
+      agent_inbox: "업무함 확인",
       route_classifier: "질문 유형 판단",
     }[tool] || "근거 확인";
   }
@@ -747,12 +881,46 @@
     const coverageScore = Number.isFinite(Number(coverage.coverage_score)) ? Math.round(Number(coverage.coverage_score) * 100) : null;
     const missing = Array.isArray(coverage.missing) ? coverage.missing : [];
     return `
-      <details class="boi-agent-run-summary">
-        <summary>Agent가 확인한 내용${coverageScore !== null ? ` · ${coverageScore}%` : ""}</summary>
+      <section class="boi-agent-run-summary">
+        <h4>Agent가 확인한 근거${coverageScore !== null ? ` · ${coverageScore}%` : ""}</h4>
         ${toolRows ? `<ul>${toolRows}</ul>` : ""}
         ${missing.length ? `<p>더 확인이 필요한 항목: ${missing.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}</p>` : ""}
         ${guardrails.length ? `<p>권한/보안 가드레일 적용: ${guardrails.length}건</p>` : ""}
-      </details>`;
+      </section>`;
+  }
+
+  function componentDisplayLabel(component) {
+    return {
+      router: "질문 이해 보조",
+      stream_plan: "진행 상태 준비",
+      answer_composer: "답변 표현 보조",
+      followup_suggestions: "다음 질문 제안",
+      status_writer: "진행 상태 문구",
+    }[component] || "보조 기능";
+  }
+
+  function componentStatusLabel(item) {
+    const status = item?.status || "";
+    if (item?.recoverable === true) return "기본 답변 유지";
+    return {
+      failed: "확인 필요",
+      invalid_output: "확인 필요",
+      not_configured: "설정 확인 필요",
+      status_generation_failed: "상태 문구 생략",
+      boi_agent_router_unavailable: "기본 이해 경로 사용",
+    }[status] || "확인";
+  }
+
+  function renderComponentDiagnostics(message) {
+    const errors = Array.isArray(message.componentErrors) ? message.componentErrors : [];
+    if (!errors.length) return "";
+    return `
+      <section class="boi-agent-run-summary compact">
+        <h4>보조 기능 상태</h4>
+        <ul>${errors.slice(0, 6).map((item) => `
+          <li><strong>${escapeHtml(componentDisplayLabel(item.component))}</strong><span>${escapeHtml(componentStatusLabel(item))}</span></li>
+        `).join("")}</ul>
+      </section>`;
   }
 
   function renderStatusTrail(message) {
@@ -771,18 +939,41 @@
     const suggestions = Array.isArray(message.suggestedQuestions)
       ? message.suggestedQuestions.map((item) => String(item || "").trim()).filter(Boolean)
       : [];
-    if (!suggestions.length) return "";
+    const stateLabel = message.followupState || (suggestions.length ? "ready" : (message.followupError ? "error" : ""));
+    if (stateLabel === "loading") {
+      return `
+        <div class="boi-agent-message-followups loading" aria-label="다음에 물어볼 질문 준비 중">
+          <strong>다음에 물어볼 질문을 준비 중입니다...</strong>
+          <div class="boi-agent-followup-skeleton" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+        </div>`;
+    }
+    if (!suggestions.length && !message.followupError) return "";
     return `
-      <div class="boi-agent-message-followups" aria-label="다음에 물어볼 수 있는 질문">
-        <strong>다음에 물어볼 수 있는 질문</strong>
-        <div>
+      <div class="boi-agent-message-followups ${stateLabel === "cancelled" ? "cancelled" : ""}" aria-label="다음에 물어볼 수 있는 질문">
+        <strong>${message.followupError ? "추천 질문 상태" : "다음에 물어볼 수 있는 질문"}</strong>
+        ${message.followupError ? `<p class="boi-agent-hint error">${escapeHtml(message.followupError)}</p>` : ""}
+        ${suggestions.length ? `<div>
           ${suggestions.map((item) => `<button type="button" data-question="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}
-        </div>
+        </div>` : ""}
       </div>`;
   }
 
-  function tabLabel(tab) {
-    return { agent: "Agent", inbox: "Inbox" }[tab] || tab;
+  function renderDiagnosticDetails(message, messageIndex) {
+    if (message.role !== "assistant") return "";
+    const statusTrail = renderStatusTrail(message);
+    const runSummary = renderRunSummary(message);
+    const componentDiagnostics = renderComponentDiagnostics(message);
+    const diagnosticArtifacts = renderDiagnosticArtifacts(message, messageIndex);
+    if (!statusTrail && !runSummary && !componentDiagnostics && !diagnosticArtifacts) return "";
+    return `<details class="boi-agent-artifact-group boi-agent-diagnostic-details">
+      <summary>처리 과정 보기</summary>
+      ${statusTrail}
+      ${runSummary}
+      ${componentDiagnostics}
+      ${diagnosticArtifacts}
+    </details>`;
   }
 
   function renderMessages() {
@@ -800,11 +991,11 @@
           <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
           ${renderMessageMeta(message)}
           ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
-          ${renderStatusTrail(message)}
           ${answerHtml ? `<div class="boi-agent-answer" data-answer-id="answer-${index}">${answerHtml}</div>` : ""}
           ${message.role === "assistant" && answerHtml ? `<div class="boi-agent-answer-actions"><button type="button" data-open-answer="answer-${index}">답변 크게 보기</button></div>` : ""}
-          ${renderRunSummary(message)}
           ${renderArtifacts(message, index)}
+          ${renderSupportingArtifacts(message, index)}
+          ${renderDiagnosticDetails(message, index)}
           ${renderMessageFollowups(message)}
           ${renderLinks(message.links || [])}
         </article>`;
@@ -816,7 +1007,7 @@
     captureScrollState();
     syncViewportPosition();
     persistState();
-    const launcherStatus = state.sending ? state.currentStatus || "" : (state.inbox.length ? `${state.inbox.length}개 Action` : "무엇을 도와드릴까요");
+    const launcherStatus = state.sending ? state.currentStatus || "" : (state.signal?.message || "무엇을 도와드릴까요");
     root.innerHTML = `
       <button class="boi-agent-launcher" type="button" aria-expanded="${state.open ? "true" : "false"}">
         <span class="boi-agent-launcher-copy">
@@ -824,7 +1015,6 @@
           <small aria-live="polite">${escapeHtml(launcherStatus)}</small>
         </span>
         <img class="boi-agent-pet" src="/static/assets/boi-agent-pet.png" alt="" loading="lazy" decoding="async">
-        ${state.inbox.length ? `<strong aria-label="Open action count">${state.inbox.length}</strong>` : ""}
       </button>
       <section class="boi-agent-panel ${state.open ? "open" : ""} ${state.expanded ? "expanded" : ""}" aria-label="BoI Agent">
         <header>
@@ -841,9 +1031,6 @@
             <button type="button" class="boi-agent-close" aria-label="Close">×</button>
           </div>
         </header>
-        <nav class="boi-agent-tabs" aria-label="BoI Agent tabs">
-          ${["agent", "inbox"].map((tab) => `<button type="button" data-tab="${tab}" class="${state.tab === tab ? "active" : ""}">${tabLabel(tab)}</button>`).join("")}
-        </nav>
         ${state.sending && state.currentStatus ? `<div class="boi-agent-live-status" aria-live="polite"><strong>진행 상태</strong><span>${escapeHtml(state.currentStatus)}</span></div>` : ""}
         <div class="boi-agent-content">${renderTab()}</div>
       </section>
@@ -855,16 +1042,6 @@
   }
 
   function renderTab() {
-    if (state.tab === "inbox") {
-      if (!state.inbox.length) return `<div class="boi-agent-empty">현재 처리할 Action이 없습니다.</div>`;
-      const groups = state.inboxGroups.length ? state.inboxGroups : state.inbox.map((item) => ({
-        group_id: item.task_id || item.request_id || item.log_ref || item.action_key || "task",
-        count: 1,
-        display: item.display || {},
-        items: [item],
-      }));
-      return `<div class="boi-agent-list">${groups.map(renderInboxGroup).join("")}</div>`;
-    }
       return `
       <section class="boi-agent-context-card">
         <strong>현재 페이지를 보고 있습니다</strong>
@@ -887,79 +1064,6 @@
     `;
   }
 
-  function renderTaskDisplay(display, rawItem) {
-    const item = display || {};
-    const fallback = rawItem || {};
-    return `
-      <div class="boi-agent-task-display">
-        <div class="boi-agent-task-title">
-          <strong>${escapeHtml(item.title || fallback.action_key || "업무 확인")}</strong>
-          <span>${escapeHtml(item.status_label || fallback.status || "확인 필요")}</span>
-        </div>
-        ${item.risk_label ? `<small>${escapeHtml(item.risk_label)}</small>` : ""}
-        <p>${escapeHtml(item.why_it_matters || fallback.summary || "")}</p>
-        ${item.next_action ? `<p class="boi-agent-next-action">${escapeHtml(item.next_action)}</p>` : ""}
-      </div>`;
-  }
-
-  function renderInboxGroup(group) {
-    const display = group.display || {};
-    const items = Array.isArray(group.items) ? group.items : [];
-    const count = Number(group.count || items.length || 0);
-    const detailsOpen = count === 1 ? " open" : "";
-    return `
-      <article class="boi-agent-task boi-agent-task-group">
-        ${renderTaskDisplay(display, { status: group.status, action_key: group.action_key, summary: "" })}
-        <div class="boi-agent-links">
-          ${display.primary_url ? `<a href="${escapeAttr(display.primary_url)}">${escapeHtml(display.primary_label || "업무 상태 보기")}</a>` : ""}
-        </div>
-        <details class="boi-agent-task-items"${detailsOpen}>
-          <summary>${count > 1 ? `개별 업무 ${count}건 보기` : "개별 업무 보기"}</summary>
-          <div class="boi-agent-task-item-list">
-            ${items.map(renderInboxItem).join("")}
-          </div>
-        </details>
-      </article>`;
-  }
-
-  function renderInboxItem(item) {
-    const isManual = ["manual_required", "manual_blocked", "needs_followup"].includes(item.status || "");
-    const display = item.display || {};
-    return `
-      <section class="boi-agent-task-item">
-        <div class="boi-agent-links">
-          ${display.primary_url ? `<a href="${escapeAttr(display.primary_url)}">${escapeHtml(display.primary_label || "업무 상태 보기")}</a>` : ""}
-          ${item.workflow_url ? `<a href="${escapeAttr(item.workflow_url)}">업무 흐름</a>` : ""}
-          ${item.raw_url ? `<a href="${escapeAttr(item.raw_url)}">원본 기록</a>` : ""}
-        </div>
-        <details class="boi-agent-technical">
-          <summary>기술 세부정보</summary>
-          <dl>
-            ${item.status ? `<div><dt>상태</dt><dd>${escapeHtml(item.status)}</dd></div>` : ""}
-            ${item.action_key ? `<div><dt>Action</dt><dd>${escapeHtml(item.action_key)}</dd></div>` : ""}
-            ${item.request_id ? `<div><dt>요청</dt><dd>${escapeHtml(item.request_id)}</dd></div>` : ""}
-            ${item.trace_id ? `<div><dt>Trace</dt><dd>${escapeHtml(item.trace_id)}</dd></div>` : ""}
-          </dl>
-        </details>
-        ${isManual ? `
-	          <form class="boi-agent-handoff-form" data-task-id="${escapeAttr(item.task_id || "")}">
-	            <label>
-	              <span>조치 결과</span>
-	              <select name="outcome">
-	                <option value="completed">완료</option>
-	                <option value="not_needed">필요 없음</option>
-	                <option value="blocked">보류</option>
-	              </select>
-	            </label>
-	            <label>
-	              <span>조치 내용</span>
-	              <textarea name="note" placeholder="수행한 확인, 판단, 조치 내용을 남겨주세요." required></textarea>
-	            </label>
-	            <button type="submit" ${state.busyTask === item.task_id ? "disabled" : ""}>완료 기록</button>
-	          </form>` : `<p class="boi-agent-hint">승인이 필요한 업무입니다. 업무 흐름과 원본 기록을 확인한 뒤 명시 승인으로 처리합니다.</p>`}
-      </section>`;
-  }
-
   function renderViewer() {
     if (!state.viewer) return "";
     return `
@@ -977,6 +1081,15 @@
   function bind() {
     root.querySelector(".boi-agent-launcher")?.addEventListener("click", () => {
       state.open = !state.open;
+      if (state.signal && state.open) {
+        state.tab = state.signal.target_tab || "agent";
+        if (state.signal.signal_id) {
+          api(`/api/agents/boi-wiki/signals/${encodeURIComponent(state.signal.signal_id)}/seen`, {
+            method: "POST",
+            body: JSON.stringify({ note: "Pet launcher signal opened", metadata: { type: state.signal.type || "" } }),
+          }).catch(() => null);
+        }
+      }
       render();
     });
     root.querySelector(".boi-agent-close")?.addEventListener("click", () => {
@@ -997,15 +1110,6 @@
       state.scrollTop = 0;
       state.pinToBottom = true;
       render();
-    });
-    root.querySelectorAll(".boi-agent-tabs button").forEach((button) => {
-      button.addEventListener("click", () => {
-        state.tab = button.dataset.tab || "agent";
-        render();
-      });
-    });
-    root.querySelectorAll("[data-question]").forEach((button) => {
-      button.addEventListener("click", () => ask(button.dataset.question || ""));
     });
     root.querySelector(".boi-agent-stop")?.addEventListener("click", () => {
       if (activeRequest) activeRequest.abort();
@@ -1032,30 +1136,6 @@
       event.preventDefault();
       const question = new FormData(event.currentTarget).get("question");
       ask(String(question || ""));
-    });
-    root.querySelectorAll(".boi-agent-handoff-form").forEach((handoffForm) => {
-      handoffForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const target = event.currentTarget;
-        const taskId = target.dataset.taskId || "";
-        const data = Object.fromEntries(new FormData(target).entries());
-        state.busyTask = taskId;
-        render();
-        api("/api/agents/boi-wiki/manual-handoffs/complete", {
-          method: "POST",
-          body: JSON.stringify({
-            task_id: taskId,
-            outcome: data.outcome || "completed",
-            note: data.note,
-            user_confirmed: true,
-          }),
-        }).then(() => refreshInbox("조치 완료 기록을 남겼습니다."))
-          .catch((error) => showAgentMessage(`조치 완료 기록에 실패했습니다: ${error.message}`))
-          .finally(() => {
-            state.busyTask = "";
-            render();
-          });
-      });
     });
     root.querySelectorAll("[data-open-artifact]").forEach((button) => {
       button.addEventListener("click", () => openArtifact(button.dataset.openArtifact || ""));
@@ -1092,7 +1172,6 @@
             approval_status: body?.status || "",
             approval_operation: operation,
           });
-          return refreshInbox();
         }).catch((error) => showAgentMessage(`요청 실행에 실패했습니다: ${error.message}`))
           .finally(() => {
             state.busyTask = "";
@@ -1148,6 +1227,10 @@
   function openArtifact(id) {
     const node = root.querySelector(`[data-viewer-id="${CSS.escape(id)}"]`);
     if (!node) return;
+    recordActivity("artifact_open", currentUrl(), node.querySelector("strong")?.textContent || "Artifact 크게 보기", {
+      artifact_id: id,
+      artifact_type: node.classList.contains("mermaid-diagram") ? "mermaid" : "artifact",
+    });
     if (node.classList.contains("mermaid-diagram")) {
       const source = node.dataset.mermaidSource
         || node.querySelector(".mermaid-source-fallback code")?.textContent
@@ -1172,6 +1255,7 @@
   function openAnswer(id) {
     const node = root.querySelector(`[data-answer-id="${CSS.escape(id)}"]`);
     if (!node) return;
+    recordActivity("answer_open", currentUrl(), "답변 크게 보기", { answer_id: id });
     const clone = node.cloneNode(true);
     clone.removeAttribute("data-answer-id");
     state.viewer = {
@@ -1185,6 +1269,7 @@
     const src = image.getAttribute("src") || "";
     if (!src) return;
     const alt = image.getAttribute("alt") || "Image";
+    recordActivity("artifact_open", currentUrl(), alt, { artifact_type: "image", src });
     state.viewer = {
       title: alt,
       html: `<figure class="boi-agent-image-viewer"><img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"></figure>`,
@@ -1212,8 +1297,8 @@
       publish_event: "이벤트 발행 요청을 보냈습니다.",
       workflow_start: "업무 흐름 시작 요청을 보냈습니다.",
       start_workflow: "업무 흐름 시작 요청을 보냈습니다.",
-      action_invoke: "업무 요청 실행 요청을 보냈습니다.",
-      invoke_action: "업무 요청 실행 요청을 보냈습니다.",
+      action_invoke: "Action 실행 요청을 보냈습니다.",
+      invoke_action: "Action 실행 요청을 보냈습니다.",
       manual_handoff_complete: "조치 완료 기록을 남겼습니다.",
       manual_complete: "조치 완료 기록을 남겼습니다.",
       event_type_draft: "이벤트 유형 초안을 만들었습니다.",
@@ -1256,6 +1341,20 @@
     let streamedText = "";
     let streamError = "";
     let finalBody = null;
+    let answerReadyBody = null;
+    const conversationContext = state.messages.slice(-10).map((item) => ({
+      role: item.role,
+      content: item.text,
+      artifacts: item.artifacts || [],
+      links: item.links || [],
+      suggested_questions: item.suggestedQuestions || [],
+      evidence_ledger: item.evidenceLedger || [],
+      affordances: item.affordances || [],
+      work_context_summary: item.workContextSummary || {},
+      goal_model: item.goalModel || {},
+      response_profile: item.responseProfile || "",
+      component_errors: item.componentErrors || [],
+    }));
     state.draft = "";
     state.sending = true;
     state.currentStatus = "";
@@ -1265,6 +1364,57 @@
     state.open = true;
     state.tab = "agent";
     render();
+    function updateAssistantFromBody(body, options = {}) {
+      const responseStatusUpdates = Array.isArray(body.status_updates) ? body.status_updates : (Array.isArray(body.status_events) ? body.status_events : []);
+      const finalStatusLines = responseStatusUpdates.length
+        ? responseStatusUpdates.map((item) => item?.message || "").filter(Boolean).slice(-6)
+        : statusLines.slice(-6);
+      const previous = state.messages[pendingIndex] || {};
+      const previousComponentErrors = Array.isArray(previous.componentErrors) ? previous.componentErrors : [];
+      const bodyComponentErrors = Array.isArray(body.component_errors) ? body.component_errors : [];
+      const componentErrorKeys = new Set();
+      const componentErrors = [...previousComponentErrors, ...bodyComponentErrors].filter((item) => {
+        const key = JSON.stringify({
+          component: item?.component || "",
+          status: item?.status || "",
+          message: item?.message || "",
+        });
+        if (componentErrorKeys.has(key)) return false;
+        componentErrorKeys.add(key);
+        return true;
+      });
+      state.messages[pendingIndex] = {
+        role: "assistant",
+        text: body.display_markdown || body.answer_markdown || streamedText || "",
+        html: body.answer_html || "",
+        rawText: body.answer_markdown || "",
+        links: body.links || [],
+        statusLines: finalStatusLines.length ? finalStatusLines : statusLines.slice(-6),
+        meta: {
+          route: body.route,
+          intent: body.intent || body.context_summary?.intent,
+          used_backend: body.used_backend,
+          router_backend: body.router_backend,
+          latency_ms: body.latency_ms,
+          tool_trace: body.tool_trace || [],
+          status_updates: responseStatusUpdates,
+          status_events: responseStatusUpdates,
+          coverage_report: body.coverage_report || {},
+          guardrails_applied: body.guardrails_applied || [],
+        },
+        artifacts: body.artifacts || [],
+        executionCards: body.execution_cards || [],
+        evidenceLedger: body.evidence_ledger || [],
+        affordances: body.affordances || [],
+        workContextSummary: body.work_context_summary || {},
+        goalModel: body.goal_model || {},
+        responseProfile: body.response_profile || "",
+        componentErrors,
+        suggestedQuestions: Array.isArray(options.suggestedQuestions) ? options.suggestedQuestions : (body.suggested_questions || []),
+        followupState: options.followupState || (Array.isArray(options.suggestedQuestions) && options.suggestedQuestions.length ? "ready" : previous.followupState || ""),
+        followupError: options.followupError || previous.followupError || "",
+      };
+    }
     fetch(sseUrl("/api/agents/boi-wiki/chat/stream"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1274,7 +1424,7 @@
         selected_text: selectedText(),
         current_url: currentUrl(),
         page_context: { title: pageTitle },
-        conversation: state.messages.slice(-10).map((item) => ({ role: item.role, content: item.text })),
+        conversation: conversationContext,
       }),
     }).then(async (response) => {
       if (!response.ok) {
@@ -1288,6 +1438,16 @@
         throw new Error(formatAgentStreamError(detail));
       }
       await readAgentStream(response, {
+        accepted(payload) {
+          const message = payload.message || "요청을 받았습니다.";
+          state.currentStatus = message;
+          state.messages[pendingIndex] = {
+            ...state.messages[pendingIndex],
+            progressText: message,
+            statusLines: [message],
+          };
+          render();
+        },
         status(payload) {
           const message = payload.message || "";
           if (!message) return;
@@ -1310,6 +1470,40 @@
           };
           render();
         },
+        diagnostic(payload) {
+          const existing = state.messages[pendingIndex] || {};
+          const existingComponentErrors = Array.isArray(existing.componentErrors) ? existing.componentErrors : [];
+          state.messages[pendingIndex] = {
+            ...existing,
+            componentErrors: [...existingComponentErrors, payload],
+          };
+          render();
+        },
+        answer_ready(payload) {
+          answerReadyBody = payload;
+          updateAssistantFromBody(payload, { suggestedQuestions: [], followupState: "loading", followupError: "" });
+          state.currentStatus = "답변 정리 완료 · 다음 질문 준비 중";
+          render();
+        },
+        followups(payload) {
+          const existing = state.messages[pendingIndex] || {};
+          if (payload.ok === false) {
+            state.messages[pendingIndex] = {
+              ...existing,
+              followupError: `추천 질문 생성 장애: ${payload.message || payload.status || "상태를 확인해주세요."}`,
+              followupState: "error",
+              suggestedQuestions: [],
+            };
+          } else {
+            state.messages[pendingIndex] = {
+              ...existing,
+              suggestedQuestions: payload.suggested_questions || [],
+              followupState: "ready",
+              followupError: "",
+            };
+          }
+          render();
+        },
         final(payload) {
           finalBody = payload;
         },
@@ -1320,34 +1514,11 @@
       if (streamError) throw new Error(streamError);
       if (!finalBody) throw new Error("Agent 응답이 완료되지 않았습니다.");
       const body = finalBody;
-      const responseStatusUpdates = Array.isArray(body.status_updates) ? body.status_updates : (Array.isArray(body.status_events) ? body.status_events : []);
-      const finalStatusLines = responseStatusUpdates.length
-        ? responseStatusUpdates.map((item) => item?.message || "").filter(Boolean).slice(-6)
-        : statusLines.slice(-6);
       state.pinToBottom = true;
-      state.messages[pendingIndex] = {
-        role: "assistant",
-        text: body.display_markdown || body.answer_markdown || streamedText || "",
-        html: body.answer_html || "",
-        rawText: body.answer_markdown || "",
-        links: body.links || [],
-        statusLines: finalStatusLines.length ? finalStatusLines : statusLines.slice(-6),
-        meta: {
-          route: body.route,
-          intent: body.intent || body.context_summary?.intent,
-          used_backend: body.used_backend,
-          router_backend: body.router_backend,
-          latency_ms: body.latency_ms,
-          tool_trace: body.tool_trace || [],
-          status_updates: responseStatusUpdates,
-          status_events: responseStatusUpdates,
-          coverage_report: body.coverage_report || {},
-          guardrails_applied: body.guardrails_applied || [],
-        },
-        artifacts: body.artifacts || [],
-        executionCards: body.execution_cards || [],
+      updateAssistantFromBody(body, {
         suggestedQuestions: body.suggested_questions || [],
-      };
+        followupState: (body.suggested_questions || []).length ? "ready" : (state.messages[pendingIndex]?.followupState || ""),
+      });
       state.currentStatus = "";
       if (!state.messages.length) refreshSuggestions();
     }).catch((error) => {
@@ -1362,9 +1533,21 @@
         return;
       }
       const message = String(error.message || "");
+      if (error.name === "AbortError" && answerReadyBody) {
+        const existing = state.messages[pendingIndex] || {};
+        state.messages[pendingIndex] = {
+          ...existing,
+          followupState: "cancelled",
+          followupError: "후속 질문 생성을 중지했습니다.",
+          suggestedQuestions: [],
+          progressText: "",
+        };
+        state.currentStatus = "";
+        return;
+      }
       state.messages[pendingIndex] = {
         role: "assistant",
-        text: error.name === "AbortError" ? "생성을 중지했습니다." : (message.startsWith("BoI Agent 장애:") ? message : `Agent 호출에 실패했습니다: ${message}`),
+        text: error.name === "AbortError" ? "생성을 중지했습니다." : (message || "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요."),
       };
       state.currentStatus = "";
     }).finally(() => {
@@ -1376,26 +1559,42 @@
     });
   }
 
-  function refreshInbox(message) {
-    return api("/api/agents/boi-wiki/inbox").then((body) => {
-      state.inbox = body.items || [];
-      state.inboxGroups = body.groups || [];
-      if (message) showAgentMessage(message);
+
+  function refreshSignals() {
+    const url = new URL("/api/agents/boi-wiki/signals", location.origin);
+    url.searchParams.set("current_url", currentUrl());
+    return api(`${url.pathname}${url.search}`).then((body) => {
+      state.signals = body.signals || [];
+      state.signal = state.signals[0] || null;
+    }).catch(() => {
+      state.signals = [];
+      state.signal = null;
     });
   }
 
-  function refreshSuggestions() {
+  function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function refreshSuggestions(attempt = 0) {
     state.suggestionsLoading = true;
     if (state.open && state.tab === "agent") render();
     return api("/api/agents/boi-wiki/suggestions", {
       method: "POST",
       body: JSON.stringify({ current_url: currentUrl(), page_context: { title: pageTitle } }),
     }).then((body) => {
-      state.suggestions = body.suggestions || [];
+      const suggestions = Array.isArray(body.suggestions) ? body.suggestions.filter(Boolean) : [];
+      if (!suggestions.length) {
+        throw new Error(body.status || "empty_suggestions");
+      }
+      state.suggestions = suggestions;
       state.suggestionError = "";
       state.suggestionsLoading = false;
       render();
     }).catch((error) => {
+      if (attempt < 2) {
+        return delay(500 * (attempt + 1)).then(() => refreshSuggestions(attempt + 1));
+      }
       if (!state.suggestions.length) {
         state.suggestionError = `추천 질문을 생성하지 못했습니다. Agent 상태를 확인해주세요. (${String(error.message || error)})`;
       }
@@ -1404,14 +1603,53 @@
     });
   }
 
+  function closeAgentForLinkNavigation(event) {
+    const target = event.target;
+    const link = target instanceof Element ? target.closest("a[href]") : null;
+    if (!link || !root.contains(link)) return;
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (link.dataset.keepAgentOpen === "true") return;
+    const href = (link.getAttribute("href") || "").trim();
+    if (!href || href.toLowerCase().startsWith("javascript:")) return;
+    const linkTarget = (link.getAttribute("target") || "").toLowerCase();
+    if (linkTarget === "_blank") return;
+    state.open = false;
+    state.viewer = null;
+    persistState();
+    window.setTimeout(() => {
+      if (!pageUnloading && !state.open) render();
+    }, 0);
+  }
+
+  render();
   Promise.allSettled([
     refreshSuggestions(),
-    refreshInbox(),
+    refreshSignals(),
   ]).finally(render);
 
   window.visualViewport?.addEventListener("resize", syncViewportPosition);
   window.visualViewport?.addEventListener("scroll", syncViewportPosition);
   window.addEventListener("resize", syncViewportPosition);
+  root.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-question]");
+    if (!button || !root.contains(button)) return;
+    event.preventDefault();
+    const question = button.dataset.question || "";
+    recordActivity("followup_click", currentUrl(), question, { source: "pet_agent" });
+    ask(question);
+  });
+  root.addEventListener("click", closeAgentForLinkNavigation);
+  document.addEventListener("click", (event) => {
+    const trigger = event.target?.closest?.("[data-boi-agent-question]");
+    if (!trigger) return;
+    event.preventDefault();
+    const question = trigger.dataset.boiAgentQuestion || "";
+    if (!question) return;
+    state.open = true;
+    state.tab = "agent";
+    render();
+    ask(question);
+  });
   document.addEventListener("boi:mermaid-rendered", stickToBottomAfterLayout);
   window.addEventListener("pagehide", () => {
     pageUnloading = true;
@@ -1419,8 +1657,22 @@
     persistState();
   });
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && state.viewer) {
+    if (event.key !== "Escape") return;
+    if (state.viewer) {
       state.viewer = null;
+      render();
+      return;
+    }
+    if (state.open) {
+      state.open = false;
+      render();
+    }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!state.open || state.viewer) return;
+    const target = event.target;
+    if (target instanceof Node && !root.contains(target)) {
+      state.open = false;
       render();
     }
   });

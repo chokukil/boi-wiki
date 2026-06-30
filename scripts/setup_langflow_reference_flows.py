@@ -21,7 +21,7 @@ BOI_AGENT_ALLOWED_TOOLS = [
     "boi_get",
     "action_spec_lookup",
     "workflow_status",
-    "agent_inbox",
+    "boi_inbox",
     "manual_handoff_complete",
     "memory_recall",
     "boi_answer",
@@ -599,7 +599,7 @@ def create_boi_agent_flow(
             "instructions": (
                 "Use bounded tool-loop reasoning: plan, call the minimum useful tools, evaluate gaps, then answer. "
                 "For gap checks, cite missing action specs/event types/SOP stages explicitly. "
-                "For inbox, use agent_inbox and explain tasks in user-friendly language. "
+                "For inbox, use boi_inbox and guide users to verified report BoI links rather than rendering task lists inside the Agent. "
                 "manual_handoff_complete is only when the user explicitly asked to complete a handoff and confirmation is present. "
                 "Do not output plain prose; output the JSON contract."
             ),

@@ -42,11 +42,11 @@ flowchart TD
   F --> G["compose_answer<br/>typed evidence + artifacts"]
   G --> LC{"LLM composer enabled?"}
   LC -->|yes| LLM["compose final Markdown<br/>from typed evidence"]
-  LC -->|no + required| ERR["service error<br/>native_agent_runtime_unavailable"]
+  LC -->|disabled / invalid JSON / timeout| ERR["component_errors<br/>keep typed answer"]
   LC -->|no + explicit dev/test opt-out| DET["structured draft<br/>dev/test only"]
   LLM --> H["verify_acl_and_artifacts"]
+  ERR --> H
   DET --> H
-  ERR --> I
   H --> I["safety_gate"]
 ```
 
@@ -91,16 +91,16 @@ sequenceDiagram
 | `trace_context_lookup` | event/action/generated BoI evidence 조회 |
 | `dictionary_resolve` | private -> team -> public 용어 해석 |
 | `memory_recall` | private agent-memory 요약 조회 |
-| `agent_inbox` | 담당자가 처리해야 할 action inbox 조회 |
+| `boi_inbox` | 담당자가 처리해야 할 검증된 BoI Inbox 보고서 조회 |
 | `answer_composer` | typed tool 결과와 artifact를 근거로 최종 Markdown 답변을 작성하는 LLM composer. 실행 권한이나 ACL을 바꾸지 않는다. |
 
 # LLM Contract Failure Policy
 
-User-facing LLM 단계는 “가능하면 복구”가 아니라 “계약을 지키지 못하면 장애”로 처리한다. Router는 `route`, `intent`, `confidence` JSON을 반환해야 하고, stream planner는 모든 required stage의 한 줄 `status` JSON을 반환해야 하며, composer는 `answer_markdown`을 포함한 JSON object를 반환해야 한다.
+User-facing LLM 단계는 “조용히 꾸며내지 않고 계약 실패를 구조화해서 남기는” 방식으로 처리한다. Router는 `route`, `intent`, `confidence` JSON 후보를 반환해야 하고, stream planner는 한 줄 `status` JSON 후보를 반환해야 하며, composer는 answer plan JSON object를 반환해야 한다. 이 계약을 지키지 못하면 서버는 canned fallback 문장을 만들지 않고 `component_errors` 또는 streaming `diagnostic`에 실패 원인을 남긴다.
 
-Composer 응답이 plain Markdown, 잘린 JSON, OpenAI response id, prompt echo, 반복 생성으로 오면 Native Agent는 이를 최종 답변으로 복구하지 않는다. 해당 요청은 `native_agent_runtime_unavailable`로 노출되고 운영자는 LLM endpoint, token limit, prompt, model 상태를 점검해야 한다. 이 정책은 “짧은 상태 한 줄조차 LLM이 만들지 못하면 서비스 장애”라는 운영 기준과 동일하다.
+Composer 응답이 plain Markdown, 잘린 JSON, OpenAI response id, prompt echo, 반복 생성으로 오면 Native Agent는 이를 최종 답변으로 채택하지 않는다. 다만 typed tool loop가 만든 answer/artifact가 있으면 그 결과를 유지하고, composer 실패는 `component_errors`에 기록한다. 운영자는 LLM endpoint, token limit, prompt, model 상태를 점검해야 한다.
 
-Tool loop의 `tool_start`/`tool_done` callback은 audit/debug용 구조화 trace만 남기며, 사용자에게 보이는 진행 문구를 생성하지 않는다. 따라서 stream planner가 status 문장을 만들지 못한 경우 tool trace 문구로 대체하지 않고 `status_generation_failed`로 중단한다.
+Tool loop의 `tool_start`/`tool_done` callback은 audit/debug용 구조화 trace만 남기며, 사용자에게 보이는 진행 문구를 생성하지 않는다. 따라서 stream planner가 status 문장을 만들지 못한 경우 tool trace 문구로 대체하지 않고 `status_generation_failed` diagnostic을 남긴다. 답변 근거가 있으면 Agent는 계속 `answer_ready`와 `final`을 반환한다.
 
 # Artifact Policy
 

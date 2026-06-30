@@ -38,9 +38,10 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     local_env = Path(".env.local-full.example").read_text(encoding="utf-8")
     pilot_env = Path(".env.pilot-external.example").read_text(encoding="utf-8")
 
-    assert 'profiles: ["local-full", "full"]' in compose
-    assert 'profiles: ["core", "local-full", "pilot-external", "full"]' in compose
-    assert 'profiles: ["local-full", "pilot-external", "full"]' in compose
+    assert 'profiles: ["local-full", "local-full-datalake", "full"]' in compose
+    assert 'profiles: ["local-full-datalake"]' in compose
+    assert 'profiles: ["core", "local-full", "local-full-datalake", "pilot-external", "full"]' in compose
+    assert 'profiles: ["local-full", "local-full-datalake", "pilot-external", "full"]' in compose
     assert "DEPLOY_PROFILE: ${DEPLOY_PROFILE:-local-full}" in compose
     assert "KAFKA_MODE: ${KAFKA_MODE:-local}" in compose
     assert "LANGFLOW_MODE: ${LANGFLOW_MODE:-local}" in compose

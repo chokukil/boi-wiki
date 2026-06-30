@@ -2,9 +2,18 @@
 set -euo pipefail
 
 ENV_FILE="${BOI_ENV_FILE:-.env.local-full.example}"
-OVERLAY_ENV_FILE="${BOI_ENV_OVERLAY_FILE:-.env}"
+OVERLAY_ENV_FILES="${BOI_ENV_OVERLAY_FILE:-.env}"
 PROFILE="${BOI_COMPOSE_PROFILE:-local-full}"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-boi-poc}"
+
+if [ -z "${DOCKER_CONFIG:-}" ] && [ -f "${HOME:-}/.docker/config.json" ] && grep -q '"credsStore"[[:space:]]*:[[:space:]]*"desktop.exe"' "$HOME/.docker/config.json"; then
+  if ! docker-credential-desktop.exe version >/dev/null 2>&1; then
+    BOI_TEMP_DOCKER_CONFIG="$(mktemp -d)"
+    printf '{"auths":{}}\n' > "$BOI_TEMP_DOCKER_CONFIG/config.json"
+    export DOCKER_CONFIG="$BOI_TEMP_DOCKER_CONFIG"
+    trap 'rm -rf "$BOI_TEMP_DOCKER_CONFIG"' EXIT
+  fi
+fi
 
 if [ "${1:-}" = "--env-file" ]; then
   ENV_FILE="${2:?missing env file after --env-file}"
@@ -17,9 +26,12 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 ENV_FILES=("$ENV_FILE")
-if [ -f "$OVERLAY_ENV_FILE" ] && [ "$OVERLAY_ENV_FILE" != "$ENV_FILE" ]; then
-  ENV_FILES+=("$OVERLAY_ENV_FILE")
-fi
+IFS=':' read -r -a OVERLAY_FILE_LIST <<< "$OVERLAY_ENV_FILES"
+for OVERLAY_ENV_FILE in "${OVERLAY_FILE_LIST[@]}"; do
+  if [ -f "$OVERLAY_ENV_FILE" ] && [ "$OVERLAY_ENV_FILE" != "$ENV_FILE" ]; then
+    ENV_FILES+=("$OVERLAY_ENV_FILE")
+  fi
+done
 
 read_env_value_from_file() {
   local key="$1"

@@ -10,6 +10,20 @@
 <body>
   {% include "_app_shell.html" %}
 
+  {% if boi_type == "boi/dictionary-term" %}
+    {% set intro_title = "업무 용어" %}
+    {% set intro_description = "현장 용어와 약어를 BoI Wiki 문맥으로 찾아봅니다." %}
+  {% elif visibility == "private" %}
+    {% set intro_title = "내 업무" %}
+    {% set intro_description = "내 private 업무 BoI와 반복 업무 패턴을 확인합니다." %}
+  {% else %}
+    {% set intro_title = "BoI Wiki Explorer" %}
+    {% set intro_description = "public, team, private 아래 업무 단위 폴더와 문서를 탐색합니다." %}
+  {% endif %}
+  {% with title=intro_title, description=intro_description, eyebrow=None, primary_action=None %}
+    {% include "_section_intro.html" %}
+  {% endwith %}
+
   <section class="toolbar page-filterbar">
     <form method="get" action="/">
       {% if folder %}<input type="hidden" name="folder" value="{{ folder }}" />{% endif %}
@@ -29,7 +43,7 @@
         <option value="private" {% if visibility == 'private' %}selected{% endif %}>private</option>
       </select>
       <label>검색</label>
-      <input name="q" value="{{ q }}" placeholder="SOP, 회의, Action, BoI..." />
+      <input name="q" value="{{ q }}" placeholder="업무 BoI, SOP, Event, Action..." />
       <button type="submit">조회</button>
     </form>
   </section>
@@ -52,9 +66,9 @@
         <h2>Event Broker가 보이는 방식</h2>
         <p>Kafka는 뒤에서 이벤트를 전달하고, Wiki는 업무 사용자가 이해할 수 있도록 Event Type과 Event Stream을 보여줍니다.</p>
         <ul>
-          <li><a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>: 어떤 업무 이벤트가 어떤 BoI/Flow를 만드는지</li>
+          <li><a href="/event-types?employee_id={{ employee_id }}">Event Type Catalog</a>: 어떤 업무 이벤트가 어떤 업무 BoI/Flow를 만드는지</li>
           <li><a href="/events?employee_id={{ employee_id }}">Event Stream</a>
-      <a href="/actions?employee_id={{ employee_id }}">Actions</a>: 어떤 이벤트가 발행/처리되었는지</li>
+      <a href="/actions?employee_id={{ employee_id }}">Action</a>: 어떤 이벤트가 발행/처리되었는지</li>
           <li>BoI 문서: <code>source_event.event_type</code>으로 업무 맥락과 연결</li>
         </ul>
       </article>
@@ -90,7 +104,7 @@
         <div class="event-summary-line trace-link-row">
           {% if e.trace_url %}<a href="{{ e.trace_url }}">Trace 보기</a>{% endif %}
           {% if e.event_url %}<a href="{{ e.event_url }}">{{ e.event_id }}</a>{% endif %}
-          {% if e.workflow_status_url %}<a href="{{ e.workflow_status_url|safe }}">Workflow Status</a>{% endif %}
+          {% if e.workflow_status_url %}<a href="{{ e.workflow_status_url|safe }}">업무 상태 보기</a>{% endif %}
           {% if e.stream_url %}<a href="{{ e.stream_url }}">Event Type Stream</a>{% endif %}
         </div>
       </article>

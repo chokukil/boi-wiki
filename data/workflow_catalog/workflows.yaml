@@ -1,7 +1,47 @@
-capabilities:
-  - capability_key: equipment-anomaly-response
-    title: 설비 이상 대응 Event-Native Workflow
-    description: 설비 알람 이벤트를 시작점으로 이상 감지, 원인 분석, 보전 가이드, 이상 조치를 Event Broker 중심으로 연결하는 업무 능력
+workflows:
+  - workflow_definition_key: equipment-anomaly-response
+    title: 설비 이상 대응 업무 흐름
+    description: 설비 알람 이벤트를 시작점으로 이상 감지, 원인 분석, 보전 가이드, 이상 조치를 Event Broker 중심으로 연결하는 업무 흐름
+    business_goal: 설비 이상 발생 시 원인과 조치 근거를 업무 BoI로 남기고 필요한 수동 조치와 업무 요청을 빠르게 연결한다.
+    work_boi_outputs:
+      - 설비 이상 감지 BoI
+      - 원인 분석 BoI
+      - 장비 보전 가이드 BoI
+      - 이상 조치 결과 BoI
+    completion_conditions:
+      - 알람/Trend/Raw Data 근거가 확인된다.
+      - 원인 분석 또는 보전 가이드 요청이 기록된다.
+      - 필요한 수동 조치와 승인 요청이 완료 또는 보류 상태로 남는다.
+      - 후속 Event 또는 완료 BoI가 생성된다.
+    process_model: sop_based
+    primary_sop_ref: boi:public:sop:equipment-abnormal-response
+    evidence_requirements:
+      - current_event
+      - alarm_context
+      - trend_history
+      - raw_data
+      - action_results
+    stage_display:
+      - stage_id: detect
+        label: 이상 감지
+        work_boi: 설비 이상 감지 BoI
+        evidence: Alarm, Trend 이상, Raw Data 요청 근거
+      - stage_id: analyze
+        label: 원인 분석
+        work_boi: 원인 분석 BoI
+        evidence: Trend History, 장비 이력, 품질 시스템 근거
+      - stage_id: guide
+        label: 장비 보전 가이드
+        work_boi: 보전 가이드 BoI
+        evidence: SOP/Runbook, 보전 이력, 담당자 검토
+      - stage_id: correct
+        label: 이상 조치
+        work_boi: 이상 조치 결과 BoI
+        evidence: 조치 내용, 승인 결과, 후속 Event
+    user_facing_next_steps:
+      - 관련 SOP 단계와 필요한 근거를 확인한다.
+      - 부족한 Trend/Raw Data evidence를 요청한다.
+      - 수동 조치 또는 승인 필요 항목을 담당자에게 연결한다.
     domain: manufacturing-equipment
     owner: AIX 확산 TF
     status: reviewed
@@ -77,9 +117,42 @@ capabilities:
       default_risk: medium
       mutation_requires_confirmation: true
 
-  - capability_key: timeseries-forecast
-    title: 시계열 예측
-    description: 명시적인 forecast 이벤트나 payload 요청을 TimesFM MCP action으로 연결하는 선택형 예측 업무 능력
+  - workflow_definition_key: timeseries-forecast
+    title: 시계열 예측 업무 흐름
+    description: 명시적인 forecast 이벤트나 payload 요청을 TimesFM MCP action으로 연결하는 선택형 예측 업무 흐름
+    business_goal: 명시적으로 요청된 시계열 데이터를 예측하고 예측 근거와 한계를 BoI 분석으로 남긴다.
+    work_boi_outputs:
+      - 시계열 예측 요청 BoI
+      - 예측 결과 요약 BoI
+      - 예측 한계와 후속 확인 BoI
+    completion_conditions:
+      - series, horizon, frequency가 확인된다.
+      - TimesFM MCP 사용 여부가 명시 확인된다.
+      - 예측 결과와 한계가 업무 BoI로 기록된다.
+    process_model: ad_hoc
+    primary_sop_ref: ""
+    evidence_requirements:
+      - series
+      - horizon
+      - frequency
+      - forecast_context
+    stage_display:
+      - stage_id: request
+        label: 예측 요청 확인
+        work_boi: 시계열 예측 요청 BoI
+        evidence: series, horizon, frequency
+      - stage_id: forecast
+        label: 예측 실행 전 확인
+        work_boi: 예측 실행 확인 BoI
+        evidence: MCP 사용 가능 여부, 사용자 확인
+      - stage_id: summarize
+        label: 예측 결과 정리
+        work_boi: 예측 결과 요약 BoI
+        evidence: forecast sample, confidence interval, limitations
+    user_facing_next_steps:
+      - 입력 시계열과 예측 기간을 확인한다.
+      - TimesFM 예측 사용을 명시 승인한다.
+      - 결과와 한계를 업무 BoI로 정리한다.
     domain: analytics
     owner: AIX 확산 TF
     status: reviewed

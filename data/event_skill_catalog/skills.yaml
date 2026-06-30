@@ -1,7 +1,7 @@
 event_skills:
   - skill_key: event.workflow_trigger
     title: Workflow Entry Event
-    description: Event Broker가 workflow나 capability의 시작점을 식별할 수 있게 하는 이벤트 능력
+    description: Event Broker가 workflow의 시작점을 식별할 수 있게 하는 이벤트 능력
     intents: [workflow_start, event_publish, workflow_explain]
     trigger_terms: [이벤트 발생, workflow 시작, 워크플로우 시작, trigger]
     required_contract_fields: [event_type, topic, payload_schema, trace_policy]

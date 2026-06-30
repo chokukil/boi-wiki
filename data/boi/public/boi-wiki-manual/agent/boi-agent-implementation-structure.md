@@ -41,9 +41,12 @@ Langflow는 visual workflow, demo, debug backend로 남아 있지만, 운영 기
 
 ```mermaid
 flowchart TD
-  UI["Web Pet Agent UI<br/>Agent / Inbox"] --> CHAT["/api/agents/boi-wiki/chat<br/>/api/agents/boi-wiki/chat/stream"]
-  MCP["boi-wiki-mcp<br/>boi_agent_chat / ontology_search / agent_inbox"] --> CHAT
+  UI["Web Pet Agent UI<br/>Agent only"] --> CHAT["/api/agents/boi-wiki/chat<br/>/api/agents/boi-wiki/chat/stream"]
+  INBOXUI["BoI Inbox UI<br/>/inbox"] --> INBOXAPI["/api/inbox<br/>/api/inbox/reports/*"]
+  MCP["boi-wiki-mcp<br/>boi_agent_chat / ontology_search / boi_inbox"] --> CHAT
+  MCP --> INBOXAPI
   EXT["External REST Client"] --> CHAT
+  EXT --> INBOXAPI
 
   CHAT --> FACADE["BoI Agent API Facade<br/>boi-agent.response.v1"]
   FACADE --> BACKEND{"BOI_AGENT_BACKEND"}
@@ -57,7 +60,7 @@ flowchart TD
   TOOLS --> WF["Workflow Status"]
   TOOLS --> TRACE["Trace / Event / Action Context"]
   TOOLS --> ACTION["Action Spec Lookup"]
-  TOOLS --> INBOX["Agent Inbox"]
+  TOOLS --> INBOX["BoI Inbox Context"]
   TOOLS --> MEMORY["Private Memory Recall"]
   TOOLS --> LLM["LLM JSON Helper<br/>OpenAI-compatible Gemma"]
 
@@ -122,11 +125,11 @@ Web Pet UI는 이 contract를 예쁘게 렌더링하는 client다. MCP client도
 
 # Web Pet UI Rendering
 
-Pet UI는 `Agent`, `Inbox` 탭만 노출한다. Memory와 Dictionary는 Pet 메뉴가 아니라 일반 BoI 문서, MCP, harness 기능으로 다룬다.
+Pet UI는 `Agent` 단일 화면만 노출한다. 업무 검토, 보고서 확인, 승인/반려/보류/추가 근거 요청은 `BoI Inbox` 화면과 `/api/inbox*` 계약이 담당한다. Memory와 Dictionary는 Pet 메뉴가 아니라 일반 BoI 문서, MCP, harness 기능으로 다룬다.
 
 ```mermaid
 flowchart TD
-  RESPONSE["Agent Response"] --> STATE["sessionStorage State<br/>open / tab / messages / draft / scroll"]
+  RESPONSE["Agent Response"] --> STATE["sessionStorage State<br/>open / messages / draft / scroll"]
   STATE --> MSG["Render Message"]
 
   MSG --> MD["Markdown Renderer"]

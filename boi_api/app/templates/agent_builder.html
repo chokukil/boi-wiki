@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Builder · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main>
+    <div class="section-heading">
+      <div>
+        <h2>Agent Builder</h2>
+        <p>BoI Agent가 실제 업무에 사용할 내부 실행 정의, Event, Action, MCP/API 연결 상태를 점검하고 보완합니다.</p>
+      </div>
+    </div>
+    <div class="cards compact">
+      <a class="card event-card" href="{{ workflow_definition_url }}">
+        <strong>내부 실행 정의</strong>
+        <small>WorkflowDefinition</small>
+        <p>업무 목적, 필요한 업무 BoI, 근거, 완결 조건을 Agent가 이해할 수 있게 연결합니다.</p>
+      </a>
+      <a class="card event-card" href="{{ action_url }}">
+        <strong>Action</strong>
+        <small>API / MCP / Webhook / Manual</small>
+        <p>Agent가 제안하거나 실행 전 확인 카드로 보여줄 실행 단위를 확인합니다.</p>
+      </a>
+      <a class="card event-card" href="{{ event_catalog_url }}">
+        <strong>Event</strong>
+        <small>Event Broker</small>
+        <p>어떤 업무 발생 시점이 어떤 업무 흐름과 Action을 시작하는지 확인합니다.</p>
+      </a>
+      <a class="card event-card" href="{{ api_docs_url }}" target="_blank" rel="noopener">
+        <strong>BoI Wiki API</strong>
+        <small>REST</small>
+        <p>Agent, Event, Action, WorkflowDefinition API contract를 확인합니다.</p>
+      </a>
+      {% if mcp_url %}
+      <a class="card event-card" href="{{ mcp_url }}" target="_blank" rel="noopener">
+        <strong>BoI Wiki MCP</strong>
+        <small>MCP</small>
+        <p>외부 Agent와 local harness가 사용할 MCP endpoint 상태를 확인합니다.</p>
+      </a>
+      {% endif %}
+      {% if kafka_url %}
+      <a class="card event-card" href="{{ kafka_url }}" target="_blank" rel="noopener">
+        <strong>Kafka</strong>
+        <small>Event Broker runtime</small>
+        <p>Event topic과 consumer 상태를 확인합니다.</p>
+      </a>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

@@ -3,7 +3,7 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: BoI Agent Scenario Validation Guide
-description: BoI Agent를 단일 happy path가 아니라 REST, Web Pet, MCP, Event, Capability, ACL 시나리오 기준으로 검증하는 Pilot acceptance guide
+description: BoI Agent를 단일 happy path가 아니라 REST, Web Pet, MCP, Event, WorkflowDefinition, ACL 시나리오 기준으로 검증하는 Pilot acceptance guide
 tags: [BoIWiki, Agent, Validation, Scenario, Pilot]
 timestamp: 2026-06-27T00:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:boi-agent-scenario-validation
@@ -29,7 +29,7 @@ review:
 
 # Summary
 
-BoI Agent의 Pilot 완료 기준은 단일 SOP 질문이 아니라 시나리오 매트릭스 통과다. REST API, Web Pet Agent, MCP bridge가 같은 `boi-agent.response.v1` 계약을 반환하고, Event/Capability/Action/Manual Handoff/ACL/RBAC를 같은 의미로 해석해야 한다.
+BoI Agent의 Pilot 완료 기준은 단일 SOP 질문이 아니라 시나리오 매트릭스 통과다. REST API, Web Pet Agent, MCP bridge가 같은 `boi-agent.response.v1` 계약을 반환하고, Event/WorkflowDefinition/Action/Manual Handoff/ACL/RBAC를 같은 의미로 해석해야 한다.
 
 검증 기준 URL은 local-full `http://localhost:28000`이다. NAS는 Pilot acceptance 기준이 아니다.
 
@@ -55,9 +55,9 @@ flowchart TD
 | SOP relationship summary | `workflow_summary` artifact, citations, answer-scoped follow-up |
 | SOP Mermaid diagram | `mermaid` artifact, source mapping, no duplicate rendering in Pet UI |
 | Action Spec gap check | `gap_table`, missing/weak spec explanation, draft/check affordance |
-| Event-to-Action | Event → Capability → SOP Stage → Action → Manual Handoff → Next Event |
+| Event-to-Action | Event → WorkflowDefinition → SOP Stage → Action → Manual Handoff → Next Event |
 | Action/Event mutation request | confirmation card only, no execution before explicit approval |
-| Unknown capability | no hallucinated execution; suggest registration/connection path |
+| Unknown workflow definition | no hallucinated execution; suggest registration/connection path |
 | Inbox | user-facing task card; technical IDs hidden in details |
 | ACL/RBAC negative case | inaccessible private/team/restricted evidence excluded or redacted |
 
@@ -93,5 +93,5 @@ Mutation scenarios are confirmation-only by default. Actual Event publish, Actio
 - [Native BoI Agent Architecture](/public/boi-wiki-manual/agent/native-boi-agent-architecture.md)
 - [Pet Agent UX and Artifacts](/public/boi-wiki-manual/agent/pet-agent-ux-and-artifacts.md)
 - [Agent Guardrail and ACL](/public/boi-wiki-manual/agent/agent-guardrail-and-acl.md)
-- [Event-Native Workflow Guide](/public/boi-wiki-manual/capabilities/event-native-workflow-guide.md)
+- [Event-Native Workflow Guide](/public/boi-wiki-manual/workflows/event-native-workflow-guide.md)
 - [Deployment and Verification](/public/boi-wiki-manual/agent/deployment-and-verification.md)

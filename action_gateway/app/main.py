@@ -115,6 +115,95 @@ def simulation_metadata(action: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+BUSINESS_CONTEXT_ALIASES: dict[str, tuple[str, ...]] = {
+    "equipment_id": ("equipment_id", "equipment", "eqp_id", "tool_id"),
+    "chamber_id": ("chamber_id", "chamber", "module_id"),
+    "fab": ("fab", "fab_id", "site", "site_id"),
+    "lot_id": ("lot_id", "lot", "work_id"),
+    "wafer_id": ("wafer_id", "wafer"),
+    "alarm_code": ("alarm_code", "alarm", "alarm_id", "alarm_family"),
+    "severity": ("severity", "risk_level", "priority"),
+    "process_step": ("process_step", "step", "route_step", "stage_id", "sop_stage_id"),
+    "recipe_id": ("recipe_id", "recipe"),
+    "trend_status": ("trend_status", "trend_result", "response_trend_status"),
+    "raw_data_status": ("raw_data_status", "raw_status", "source_data_status"),
+    "map_pattern": ("map_pattern", "map_pattern_summary"),
+    "root_cause_candidate": ("root_cause_candidate", "root_cause", "cause_candidate"),
+    "missing_evidence": ("missing_evidence", "missing_context", "missing_required_evidence"),
+    "approval_risk": ("approval_risk", "approval_required", "risk_label"),
+}
+
+
+def business_context_scalar(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, bool):
+        return "필요" if value else "불필요"
+    if isinstance(value, (str, int, float)):
+        return str(value).strip()
+    if isinstance(value, list):
+        return ", ".join([item for item in (business_context_scalar(row) for row in value) if item][:4])
+    if isinstance(value, dict):
+        for key in ("label", "name", "title", "status", "summary", "value"):
+            scalar = business_context_scalar(value.get(key))
+            if scalar:
+                return scalar
+        return json.dumps({str(key): value.get(key) for key in sorted(value)[:4]}, ensure_ascii=False, default=str)
+    return str(value).strip()
+
+
+def find_business_context_value(value: Any, aliases: tuple[str, ...], *, depth: int = 0) -> Any:
+    if depth > 7 or value in (None, ""):
+        return None
+    if isinstance(value, dict):
+        lowered = {str(key).lower(): key for key in value.keys()}
+        for alias in aliases:
+            key = lowered.get(alias.lower())
+            if key is not None and value.get(key) not in (None, "", [], {}):
+                return value.get(key)
+        for key in ("business_context", "payload", "fields", "result", "response", "simulation_result", "generated_result", "context_pack", "event", "action"):
+            if key in value:
+                found = find_business_context_value(value.get(key), aliases, depth=depth + 1)
+                if found not in (None, "", [], {}):
+                    return found
+        for item in value.values():
+            found = find_business_context_value(item, aliases, depth=depth + 1)
+            if found not in (None, "", [], {}):
+                return found
+    elif isinstance(value, list):
+        for item in value[:20]:
+            found = find_business_context_value(item, aliases, depth=depth + 1)
+            if found not in (None, "", [], {}):
+                return found
+    return None
+
+
+def business_context_fingerprint(*values: Any) -> dict[str, str]:
+    context: dict[str, str] = {}
+    for field, aliases in BUSINESS_CONTEXT_ALIASES.items():
+        for value in values:
+            scalar = business_context_scalar(find_business_context_value(value, aliases))
+            if scalar:
+                context[field] = scalar
+                break
+    return context
+
+
+def evidence_summary_from_packets(packets: Any) -> dict[str, Any]:
+    packet_items = [item for item in packets if isinstance(item, dict)] if isinstance(packets, list) else []
+    return {
+        "count": len(packet_items),
+        "acquired": [
+            {
+                "title": str(item.get("title") or item.get("evidence_key") or "근거"),
+                "status": str(item.get("status") or ""),
+                "summary": str(item.get("summary") or ""),
+            }
+            for item in packet_items[:5]
+        ],
+    }
+
+
 def append_action_log(row: dict[str, Any]) -> None:
     ensure_dirs()
     payload = {"logged_at": now_iso(), **row}
@@ -642,7 +731,14 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
             "action": {k: action.get(k) for k in ["action_key", "name_ko", "risk_level", "owner", "description", "type", "doc_ref", "connector_kind"]},
             **simulation_metadata(action),
         }
-        append_action_log({**base_log, "status": "approval_required", "payload": req.payload})
+        append_action_log(
+            {
+                **base_log,
+                "status": "approval_required",
+                "payload": req.payload,
+                "business_context": business_context_fingerprint(base_log, req.event, req.payload, action),
+            }
+        )
         return result
 
     try:
@@ -701,7 +797,19 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                         seen_refs.add(marker)
                 body["source_refs"] = refs
                 payload = body.get("payload")
-                if isinstance(payload, dict) and "prior_action_refs" not in payload:
+                if not isinstance(payload, dict):
+                    payload = {}
+                    body["payload"] = payload
+                prior_business_context = business_context_fingerprint(req.event, req.payload, context.get("simulation_agent"), action)
+                source_payload = req.payload if isinstance(req.payload, dict) else (req.event.get("payload") if isinstance(req.event, dict) else {})
+                if isinstance(source_payload, dict):
+                    for key, value in source_payload.items():
+                        if key in BUSINESS_CONTEXT_ALIASES and key not in payload and value not in (None, "", []):
+                            payload[key] = value
+                for key, value in prior_business_context.items():
+                    payload.setdefault(key, value)
+                payload["business_context"] = {**(payload.get("business_context") if isinstance(payload.get("business_context"), dict) else {}), **prior_business_context}
+                if "prior_action_refs" not in payload:
                     payload["prior_action_refs"] = action_refs
             async with httpx.AsyncClient(timeout=float(action.get("timeout_seconds", 20))) as client:
                 resp = await client.post(url, headers={"x-service-token": SERVICE_TOKEN}, json=body)
@@ -965,6 +1073,13 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
             )
             if key in result
         }
+        business_context = business_context_fingerprint(base_log, req.event, req.payload, result, simulation_log)
+        simulation_log["business_context"] = business_context
+        packets = simulation_log.get("evidence_packets") or result.get("evidence_packets") or []
+        simulation_log["evidence_summary"] = evidence_summary_from_packets(packets)
+        if isinstance(result, dict):
+            result.setdefault("business_context", business_context)
+            result.setdefault("evidence_summary", simulation_log["evidence_summary"])
         append_action_log({**base_log, **simulation_log, "status": result.get("status"), "result": result})
         return result
     except HTTPException:

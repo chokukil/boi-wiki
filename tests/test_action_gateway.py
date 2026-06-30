@@ -577,12 +577,18 @@ def test_universal_simulator_uses_simulation_agent_result_when_langflow_renderer
     assert "SIMULATED BoI Wiki Simulation Result" in body["message"]
     assert body["coverage_score"] == 1.0
     assert body["evidence_packets"][0]["evidence_key"] == "response_trend"
+    assert body["business_context"]["lot_id"] == "1.10"
+    assert body["business_context"]["trend_status"]
+    assert body["evidence_summary"]["count"] >= 1
 
     logs = client.get("/api/actions/logs", headers={"x-service-token": "test-service-token"}).json()["items"]
     assert logs[0]["status"] == "langflow_invoked"
     assert logs[0]["langflow_renderer_status"] == "timeout_fallback"
     assert logs[0]["coverage_score"] == 1.0
     assert logs[0]["evidence_packets"][0]["provenance"] == "simulated_prerequisite"
+    assert logs[0]["business_context"]["lot_id"] == "1.10"
+    assert logs[0]["business_context"]["trend_status"]
+    assert logs[0]["evidence_summary"]["count"] >= 1
 
 
 def test_universal_simulator_uses_simulation_agent_result_when_langflow_flow_resolve_times_out(tmp_path, monkeypatch):
@@ -829,6 +835,12 @@ def test_event_publish_action_delegates_with_service_token(tmp_path, monkeypatch
     assert FakeAsyncClient.requests[0]["url"] == "http://boi-api:8000/api/events/publish?employee_id=100001"
     assert FakeAsyncClient.requests[0]["headers"]["x-service-token"] == "test-service-token"
     assert FakeAsyncClient.requests[0]["json"]["event_type"] == "root_cause.analysis.requested.v1"
+    published_payload = FakeAsyncClient.requests[0]["json"]["payload"]
+    assert published_payload["equipment_id"] == "ETCH-VM-01"
+    assert published_payload["lot_id"] == "LOT-001"
+    assert published_payload["wafer_id"] == "WF-001"
+    assert published_payload["business_context"]["alarm_code"] == "RESPONSE_CHAIN_ABNORMAL"
+    assert "prior_action_refs" in published_payload
 
 
 def test_high_risk_api_action_invokes_endpoint_only_after_approval(tmp_path, monkeypatch):

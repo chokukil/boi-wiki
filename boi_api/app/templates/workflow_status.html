@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Workflow Status · {{ trace_id }} · BoI Wiki</title>
+  <title>업무 상태 보기 · {{ trace_id }} · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('workflow_status.js') }}" defer></script>
 </head>
@@ -18,18 +18,18 @@
         <p><strong>SOP</strong> <a href="{{ payload.sop_url }}">{{ payload.sop_ref }}</a> <code>{{ payload.sop_uri }}</code></p>
       </div>
       <div class="status-summary-grid">
-        <div class="status-summary-card"><span>Events</span><strong>{{ summary.event_count }}</strong></div>
-        <div class="status-summary-card"><span>Actions</span><strong>{{ summary.action_count }}</strong></div>
-        <div class="status-summary-card"><span>Generated BoIs</span><strong>{{ summary.generated_doc_count }}</strong></div>
-        <div class="status-summary-card"><span>Manual</span><strong>{{ summary.manual_count }}</strong></div>
-        <div class="status-summary-card"><span>Approvals</span><strong>{{ summary.approval_count }}</strong></div>
+        <div class="status-summary-card"><span>Event</span><strong>{{ summary.event_count }}</strong></div>
+        <div class="status-summary-card"><span>Action</span><strong>{{ summary.action_count }}</strong></div>
+        <div class="status-summary-card"><span>생성 BoI</span><strong>{{ summary.generated_doc_count }}</strong></div>
+        <div class="status-summary-card"><span>수동 조치</span><strong>{{ summary.manual_count }}</strong></div>
+        <div class="status-summary-card"><span>승인 필요</span><strong>{{ summary.approval_count }}</strong></div>
       </div>
     </section>
 
     <section class="workflow-panel">
       <div class="section-heading">
-        <h2>Timeline</h2>
-        <a class="button secondary" href="{{ events_url }}">Stream 보기</a>
+        <h2>처리 타임라인</h2>
+        <a class="button secondary" href="{{ events_url }}">Event 발생 이력</a>
       </div>
       <div class="workflow-timeline">
         {% for stage in timeline %}
@@ -52,7 +52,7 @@
                 <small>
                   {% if event.url %}<a href="{{ event.url }}">{{ event.event_id }}</a>{% else %}{{ event.event_id }}{% endif %}
                   · {{ event.logged_at }}
-                  {% if event.trace_url %} · <a href="{{ event.trace_url }}">Trace Events</a>{% endif %}
+                  {% if event.trace_url %} · <a href="{{ event.trace_url }}">Event 이력</a>{% endif %}
                 </small>
               </li>
               {% endfor %}
@@ -67,7 +67,7 @@
     </section>
 
     <section class="workflow-panel">
-      <h2>Actions</h2>
+      <h2>Action 실행 결과</h2>
       {% if action_rows %}
       <div class="action-summary-table">
         <table class="markdown-table workflow-actions-table">
@@ -129,7 +129,7 @@
     </section>
 
     <section class="workflow-panel">
-      <h2>Manual Handoffs</h2>
+      <h2>수동 조치</h2>
       {% if manual_rows %}
       <ul class="relationship-list workflow-relationship-list">
         {% for item in manual_rows %}
@@ -146,7 +146,7 @@
     </section>
 
     <section class="workflow-panel">
-      <h2>Approvals</h2>
+      <h2>승인 필요</h2>
       {% if approval_rows %}
       <ul class="relationship-list workflow-relationship-list">
         {% for item in approval_rows %}
@@ -163,7 +163,7 @@
     </section>
 
     <section class="workflow-panel">
-      <h2>Generated BoIs</h2>
+      <h2>생성 BoI</h2>
       {% if generated_docs %}
       <ul class="relationship-list workflow-relationship-list">
         {% for doc in generated_docs %}
@@ -180,7 +180,7 @@
     </section>
 
     <section class="workflow-panel">
-      <h2>Trace Graph</h2>
+      <h2>실행 관계</h2>
       <p class="muted">{{ graph.node_count }} nodes · {{ graph.edge_count }} edges · 전체 OKF graph가 아니라 이 trace 실행 관계만 표시합니다.</p>
       {% if graph_edges %}
       <ul class="relationship-list workflow-relationship-list">

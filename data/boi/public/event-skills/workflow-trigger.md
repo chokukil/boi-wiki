@@ -26,7 +26,7 @@ review:
 
 # Summary
 
-`event.workflow_trigger`는 Event가 SOP workflow를 시작한다는 의미를 가진다. 이 Skill이 Capability에 연결되면 BoI Agent는 Event Type을 시작점으로 SOP, Action, Manual Handoff, Next Event를 설명할 수 있다.
+`event.workflow_trigger`는 Event가 SOP workflow를 시작한다는 의미를 가진다. 이 Skill이 Workflow 정의에 연결되면 BoI Agent는 Event Type을 시작점으로 SOP, Action, Manual Handoff, Next Event를 설명할 수 있다.
 
 # Required Context
 

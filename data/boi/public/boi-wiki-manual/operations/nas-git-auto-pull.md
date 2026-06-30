@@ -56,7 +56,7 @@ Git worktree가 최신 commit으로 pull된 상태와 실제 서비스가 새 re
 
 Runtime code 배포 필수 권한은 다음과 같다.
 
-| Capability | Required for | Verification |
+| WorkflowDefinition | Required for | Verification |
 |---|---|---|
 | Git worktree write | `git fetch`, `git pull --ff-only` | `git rev-parse HEAD`가 remote `main`과 일치 |
 | root-owned `.env` update | `BOI_BUILD_REVISION`, Agent LLM env 갱신 | `.env` 값을 출력하지 않고 `/api/runtime/config` revision으로 확인 |

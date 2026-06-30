@@ -4,7 +4,7 @@ services:
   langflow-postgres:
     image: postgres:16-alpine
     container_name: boi-langflow-postgres
-    profiles: ["local-full", "full"]
+    profiles: ["local-full", "local-full-datalake", "full"]
     environment:
       POSTGRES_USER: ${LANGFLOW_POSTGRES_USER:-langflow}
       POSTGRES_PASSWORD: ${LANGFLOW_POSTGRES_PASSWORD:-langflow}
@@ -21,7 +21,7 @@ services:
   langflow:
     image: ${LANGFLOW_IMAGE:-langflowai/langflow@sha256:3ec67ddf344b3f2393b4961aa4f87e8928798f33772fdfdc6d348bfd54f58bf0}
     container_name: boi-langflow
-    profiles: ["local-full", "full"]
+    profiles: ["local-full", "local-full-datalake", "full"]
     depends_on:
       langflow-postgres:
         condition: service_healthy
@@ -59,7 +59,7 @@ services:
   kafka:
     image: apache/kafka:3.7.0
     container_name: boi-kafka
-    profiles: ["local-full", "full"]
+    profiles: ["local-full", "local-full-datalake", "full"]
     ports:
       - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
     environment:
@@ -85,7 +85,7 @@ services:
   kafka-init:
     image: apache/kafka:3.7.0
     container_name: boi-kafka-init
-    profiles: ["local-full", "full"]
+    profiles: ["local-full", "local-full-datalake", "full"]
     depends_on:
       kafka:
         condition: service_healthy
@@ -108,7 +108,7 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: boi-kafka-ui
-    profiles: ["local-full", "full"]
+    profiles: ["local-full", "local-full-datalake", "full"]
     depends_on:
       kafka:
         condition: service_healthy
@@ -119,13 +119,47 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     networks: [boi-net]
 
+  data-lake-postgres:
+    image: postgres:16-alpine
+    container_name: boi-data-lake-postgres
+    profiles: ["local-full-datalake"]
+    ports:
+      - "${BOI_DATALAKE_POSTGRES_PORT:-15432}:5432"
+    environment:
+      POSTGRES_USER: ${BOI_DATALAKE_POSTGRES_USER:-boi_datalake}
+      POSTGRES_PASSWORD: ${BOI_DATALAKE_POSTGRES_PASSWORD:-boi_datalake}
+      POSTGRES_DB: ${BOI_DATALAKE_POSTGRES_DB:-boi_datalake}
+    volumes:
+      - boi-data-lake-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOI_DATALAKE_POSTGRES_USER:-boi_datalake} -d ${BOI_DATALAKE_POSTGRES_DB:-boi_datalake}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [boi-net]
+
+  data-lake-minio:
+    image: minio/minio:latest
+    container_name: boi-data-lake-minio
+    profiles: ["local-full-datalake"]
+    command: server /data --console-address ":9001"
+    ports:
+      - "${BOI_DATALAKE_MINIO_PORT:-19000}:9000"
+      - "${BOI_DATALAKE_MINIO_CONSOLE_PORT:-19001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${BOI_DATALAKE_MINIO_ROOT_USER:-boi_datalake}
+      MINIO_ROOT_PASSWORD: ${BOI_DATALAKE_MINIO_ROOT_PASSWORD:-boi_datalake_password}
+    volumes:
+      - boi-data-lake-minio-data:/data
+    networks: [boi-net]
+
   boi-api:
     build:
       context: ./boi_api
       args:
-        BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-unknown}
+        BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
     container_name: boi-api
-    profiles: ["core", "local-full", "pilot-external", "full"]
+    profiles: ["core", "local-full", "local-full-datalake", "pilot-external", "full"]
     command: >
       sh -c 'if [ -n "${BOI_CONTENT_SAFE_DIRECTORY:-}" ]; then
         git config --global --add safe.directory "${BOI_CONTENT_SAFE_DIRECTORY}" || true;
@@ -149,9 +183,10 @@ services:
       EVENTS_ROOT: ${EVENTS_ROOT:-/data/events}
       EVENT_CATALOG_ROOT: /data/event_catalog
       ACTION_CATALOG_ROOT: /data/action_catalog
-      CAPABILITY_CATALOG_ROOT: ${CAPABILITY_CATALOG_ROOT:-/data/capability_catalog}
+      WORKFLOW_CATALOG_ROOT: ${WORKFLOW_CATALOG_ROOT:-/data/workflow_catalog}
       EVENT_SKILL_CATALOG_ROOT: ${EVENT_SKILL_CATALOG_ROOT:-/data/event_skill_catalog}
       ACTION_SKILL_CATALOG_ROOT: ${ACTION_SKILL_CATALOG_ROOT:-/data/action_skill_catalog}
+      AGENT_CATALOG_ROOT: ${AGENT_CATALOG_ROOT:-/data/agent_catalog}
       ACTION_LOG_ROOT: ${ACTION_LOG_ROOT:-/data/actions}
       ACTION_GATEWAY_URL: http://action-gateway:8100
       ACTION_INVOKE_TIMEOUT_SECONDS: ${ACTION_INVOKE_TIMEOUT_SECONDS:-90}
@@ -236,7 +271,13 @@ services:
       BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS: ${BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS:-8}
       BOI_AGENT_CHAT_TIMEOUT_SECONDS: ${BOI_AGENT_CHAT_TIMEOUT_SECONDS:-90}
       BOI_AGENT_CACHE_WARMUP_ON_STARTUP: ${BOI_AGENT_CACHE_WARMUP_ON_STARTUP:-1}
-      BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-unknown}
+      BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
+      BOI_DATALAKE_ENABLED: ${BOI_DATALAKE_ENABLED:-false}
+      BOI_DATALAKE_PROFILE: ${BOI_DATALAKE_PROFILE:-disabled}
+      BOI_DATALAKE_POSTGRES_DSN: ${BOI_DATALAKE_POSTGRES_DSN:-}
+      BOI_DATALAKE_MINIO_ENDPOINT: ${BOI_DATALAKE_MINIO_ENDPOINT:-}
+      BOI_DATALAKE_BUCKET: ${BOI_DATALAKE_BUCKET:-boi-datalake}
+      BOI_DATALAKE_FIXTURE_ROOT: ${BOI_DATALAKE_FIXTURE_ROOT:-/fixtures/ontology}
       LANGFLOW_MODE: ${LANGFLOW_MODE:-local}
       LANGFLOW_URL: ${LANGFLOW_URL:-http://langflow:7860}
       LANGFLOW_API_KEY: ${LANGFLOW_API_KEY:-dev-langflow-key-change-me}
@@ -248,10 +289,12 @@ services:
       - ${EVENTS_HOST_PATH:-./data/events}:${EVENTS_ROOT:-/data/events}
       - ./data/event_catalog:/data/event_catalog:ro
       - ./data/action_catalog:/data/action_catalog:ro
-      - ./data/capability_catalog:/data/capability_catalog:ro
+      - ./data/workflow_catalog:/data/workflow_catalog:ro
       - ./data/event_skill_catalog:/data/event_skill_catalog:ro
       - ./data/action_skill_catalog:/data/action_skill_catalog:ro
+      - ./data/agent_catalog:/data/agent_catalog:ro
       - ${ACTIONS_HOST_PATH:-./data/actions}:${ACTION_LOG_ROOT:-/data/actions}
+      - ${BOI_DATALAKE_FIXTURE_HOST_PATH:-./data/data_lake_fixtures}:${BOI_DATALAKE_FIXTURE_ROOT:-/fixtures/ontology}:ro
     networks: [boi-net]
 
 
@@ -259,7 +302,7 @@ services:
     build:
       context: ./action_gateway
     container_name: boi-action-gateway
-    profiles: ["local-full", "pilot-external", "full"]
+    profiles: ["local-full", "local-full-datalake", "pilot-external", "full"]
     depends_on:
       boi-api:
         condition: service_started
@@ -290,7 +333,7 @@ services:
     build:
       context: ./boi_wiki_mcp
     container_name: boi-wiki-mcp
-    profiles: ["local-full", "pilot-external", "full"]
+    profiles: ["local-full", "local-full-datalake", "pilot-external", "full"]
     depends_on:
       boi-api:
         condition: service_started
@@ -312,7 +355,7 @@ services:
     build:
       context: ./event_adapter
     container_name: boi-event-router
-    profiles: ["local-full", "pilot-external", "full"]
+    profiles: ["local-full", "local-full-datalake", "pilot-external", "full"]
     restart: unless-stopped
     depends_on:
       boi-api:
@@ -351,6 +394,8 @@ services:
 
 volumes:
   langflow-postgres-data:
+  boi-data-lake-postgres-data:
+  boi-data-lake-minio-data:
 
 networks:
   boi-net:

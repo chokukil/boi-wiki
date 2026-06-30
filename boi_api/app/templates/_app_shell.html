@@ -40,19 +40,14 @@
     <a data-nav-id="{{ item.id }}" class="global-nav-link {% if shell.active_nav == item.id %}active{% endif %}" href="{{ item.href }}" {% if shell.active_nav == item.id %}aria-current="page"{% endif %}>{{ item.label }}</a>
     {% endfor %}
   </div>
-  <div class="utility-nav" aria-label="Tools">
-    {% for item in shell.utility_links %}
-    <a href="{{ item.href }}" {% if item.external %}target="_blank" rel="noopener"{% endif %}>{{ item.label }}</a>
-    {% endfor %}
-  </div>
 </nav>
 
-{% if shell.page_actions %}
-<section class="page-actions" aria-label="Page actions">
-  {% for action in shell.page_actions %}
-  <a class="page-action-link {% if action.kind %}{{ action.kind }}{% endif %}" href="{{ action.href }}">{{ action.label }}</a>
+{% if shell.section_subnav %}
+<nav class="section-subnav" aria-label="Section navigation">
+  {% for item in shell.section_subnav %}
+  <a data-subnav-id="{{ item.id }}" class="section-subnav-link {% if item.active %}active{% endif %}" href="{{ item.href }}" {% if item.active %}aria-current="page"{% endif %} {% if item.external %}target="_blank" rel="noopener"{% endif %}>{{ item.label }}</a>
   {% endfor %}
-</section>
+</nav>
 {% endif %}
 
 <div

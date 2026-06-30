@@ -8,6 +8,9 @@
 </head>
 <body>
   {% include "_app_shell.html" %}
+  {% with title="SOP 카탈로그", description="공식 절차가 있는 업무를 단계와 근거 중심으로 찾습니다.", eyebrow=None, primary_action={"label": "SOP 추가", "href": "/sops/new?employee_id=" ~ employee_id, "kind": "primary"} %}
+    {% include "_section_intro.html" %}
+  {% endwith %}
   <section class="toolbar page-filterbar catalog-filterbar">
     <form method="get" action="/sops" class="catalog-filter-form">
       <input type="hidden" name="employee_id" value="{{ employee_id }}" />
@@ -49,7 +52,7 @@
   <main>
     <div class="pagination-bar">
       <div>
-        <h2>SOP Documents ({{ total_sop_docs }})</h2>
+        <h2>SOP 문서 ({{ total_sop_docs }})</h2>
         {% if has_active_filter %}
         <div class="active-filter-row">
           <span class="badge status">필터 적용</span>

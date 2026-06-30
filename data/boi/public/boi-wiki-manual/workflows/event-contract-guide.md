@@ -6,7 +6,7 @@ title: Event Contract Guide
 description: Event Broker 기반 BoI workflow에서 Event Type을 1급 계약으로 정의하는 기준
 tags: [BoIWiki, EventBroker, EventType, Contract]
 timestamp: 2026-06-27T11:05:00+09:00
-boi_id: boi:public:boi-wiki-manual:capabilities:event-contract-guide
+boi_id: boi:public:boi-wiki-manual:workflows:event-contract-guide
 visibility: public
 classification: internal
 owner: AIX 확산 TF
@@ -19,7 +19,7 @@ source_refs:
   - type: repo
     ref: data/event_catalog/events.yaml
   - type: repo
-    ref: data/capability_catalog/capabilities.yaml
+    ref: data/workflow_catalog/workflows.yaml
 review:
   reviewer: harness-curator
   review_status: reviewed
@@ -45,7 +45,7 @@ Event Type은 BoI runtime의 시작점이자 전이 계약이다. Pilot에서는
 | `recommended_actions` | 자동 또는 권장 Action |
 | `recommended_manual_actions` | 담당자 수동 조치 |
 | `emits_event_types` | 후속 Event Type |
-| `capability_refs` | 지원 Capability Pack |
+| `workflow_definition_refs` | 지원 WorkflowDefinition |
 
 # Lifecycle
 
@@ -65,4 +65,4 @@ stateDiagram-v2
 
 # Agent Use
 
-BoI Agent는 “이 이벤트가 발생하면?” 질문을 Event Type에서 시작해 Capability Pack, SOP Stage, Action, Manual Handoff, Next Event 순서로 해석한다. 연결된 Capability가 없으면 임의 답변 대신 등록/연결 후보를 제안한다.
+BoI Agent는 “이 이벤트가 발생하면?” 질문을 Event Type에서 시작해 WorkflowDefinition, SOP Stage, Action, Manual Handoff, Next Event 순서로 해석한다. 연결된 WorkflowDefinition이 없으면 임의 답변 대신 업무 흐름 연결 후보를 제안한다.

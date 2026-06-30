@@ -15,7 +15,8 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
    - Use `ontology_search` first when the user asks broad domain/search questions across SOP/Event/Action/Dictionary/runtime evidence.
    - Use `boi_agent_chat` when the user asks a page-aware question or wants recommendations from current context.
    - Use `boi_search` only when the task needs a BoI document list.
-   - Use `agent_inbox` for "what do I need to act on" questions.
+   - Use `boi_inbox` for "what do I need to act on" questions. Use `agent_inbox` only as a deprecated compatibility alias.
+   - Use `data_lake_status` before any Data Lake query. Data Lake is optional; BoI Wiki core must work without PostgreSQL or MinIO.
    - Use `dictionary_resolve` before interpreting shop-floor aliases, acronyms, or user-specific terms.
 2. If MCP is unavailable, read repo harness files:
    - `harness/sop-authoring-harness.md`
@@ -30,10 +31,13 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 - Web and MCP source/body edits use preview, validation, apply, and auto-commit. MCP apply tools require explicit `user_confirmed: true`. Team/Public promotion is separate: after user preview approval, call the validated promotion publish path and treat HOTL as post-publication oversight.
 - Native BoI Agent in `boi-api` is the production Agent backend. Langflow is one connector/debug backend, not the default Agent engine.
 - Langflow is one connector kind among `api`, `webhook`, `mcp`, `manual`, `event_broker`, and `boi_writer`; do not model BoI Wiki as Langflow-only.
+- Langflow Universal Simulator is a dry-run/PoC tool, not verified report evidence. Do not treat simulated values as actual decision evidence unless the UI/report labels them as `시뮬레이션 결과`.
 - BoI API/MCP are the official external Agent interfaces. Langflow direct run URLs are trusted/dev integration paths, not user-facing public APIs.
 - Always search existing SOPs, event types, action specs, manual tasks, and harness docs before creating new ones.
 - Keep images under `_media/`, update `media-manifest.yaml`, and use standard Markdown image syntax.
 - Private memory and dictionary entries are BoI documents. Do not promote them automatically to Team/Public.
+- BoI Inbox is a dedicated top-level UI. Pet Agent must guide users to `/inbox` or a verified report BoI link instead of rendering Inbox task cards itself.
+- Data Lake queries follow `plan → preview → confirmed execute`. Never ask users for direct DB credentials or connect to PostgreSQL/MinIO outside BoI API/MCP.
 
 ## SOP Work
 
@@ -55,6 +59,9 @@ For each action, create or update the public action-spec BoI document and the ca
 - Keep `/api/boi` and MCP `boi_search` document-only for compatibility.
 - Use `/api/search/ontology` or MCP `ontology_search` for grouped knowledge graph exploration.
 - Use `/api/agents/boi-wiki/chat` or MCP `boi_agent_chat` for page-aware answers. Expect `used_backend=native_langgraph` unless the user explicitly asks to test Langflow legacy/debug mode.
+- Use `/api/inbox` or MCP `boi_inbox` for verified decision reports. Use `boi_inbox_report_get` before recommending approval/rejection.
+- Use `data_lake_query_plan` and `data_lake_query_preview` when structured evidence may exist. Only call `data_lake_query_execute` with explicit user confirmation, and only when Data Lake is enabled.
+- Use `data_lake_import_sources` only to materialize selected source profiles as private OKF Data Context BoI documents. This is optional report context, not a core runtime dependency.
 - Use dictionary priority `private → team → public` when expanding terms.
 - Runtime links, raw logs, and recent activity are evidence signals, not OKF concept graph edges.
 - Mutating Agent operations such as manual handoff completion, source/body apply, promotion, and action invoke require explicit user confirmation.

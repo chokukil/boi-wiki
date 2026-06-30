@@ -78,11 +78,11 @@
             <span class="badge {{ m.visibility }}">{{ m.visibility }}</span>
             <span class="badge status">{{ m.status }}</span>
             {% if m.event_type %}<span class="badge event">{{ m.event_label or m.event_type }}</span>{% endif %}
-            <strong>{{ m.title }}</strong>
+            <strong>{{ m.title|user_facing_catalog }}</strong>
           </div>
           <small>{{ m.type }} · {{ m.timestamp }} · {{ m.boi_id }}</small>
         </div>
-        <p>{{ m.description }}</p>
+        <p>{{ m.description|user_facing_catalog }}</p>
         <span class="folder-path">{{ doc.folder or 'root' }}</span>
       </a>
       {% else %}

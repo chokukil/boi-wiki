@@ -3,12 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Event Stream · BoI Wiki</title>
+  <title>Event Broker · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('events.js') }}" defer></script>
 </head>
 <body>
   {% include "_app_shell.html" %}
+  {% with title="Event 발생 이력", description="발생한 업무 Event와 trace 흐름을 확인합니다.", eyebrow=None, primary_action=None %}
+    {% include "_section_intro.html" %}
+  {% endwith %}
   <section class="toolbar page-filterbar event-filterbar">
     <form method="get" action="/events" class="event-filter-form">
       <input type="hidden" name="employee_id" value="{{ employee_id }}" />
@@ -21,6 +24,10 @@
           <option value="{{ e.event_type }}" {% if event_type == e.event_type %}selected{% endif %}>{{ e.name_ko }} / {{ e.event_type }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div class="filter-group event-query-filter">
+        <label for="event-query-filter">업무 조건</label>
+        <input id="event-query-filter" name="q" value="{{ q }}" placeholder="예: raw data, alarm, 승인 지연" />
       </div>
       <div class="filter-group id-filter">
         <label for="trace-filter">Trace / Event ID</label>
@@ -53,6 +60,27 @@
     </form>
   </section>
   <main>
+    <section class="panel event-pattern-panel">
+      <div class="section-heading">
+        <div>
+          <h2>기존 이력으로 Event 정의 만들기</h2>
+          <p>현재 필터 조건에 맞는 발생 이력을 요약해 새 Event 정의 초안 후보를 검토합니다. 운영 catalog에는 바로 반영되지 않습니다.</p>
+        </div>
+        <button
+          type="button"
+          class="secondary-button event-pattern-preview-button"
+          data-employee-id="{{ employee_id }}"
+          data-q="{{ q }}"
+          data-event-type="{{ event_type }}"
+          data-trace-id="{{ trace_id }}"
+          data-event-id="{{ event_id }}"
+          data-from-time="{{ from_time }}"
+          data-to-time="{{ to_time }}"
+          data-limit="{{ limit }}"
+        >이 조건으로 Event 초안 검토</button>
+      </div>
+      <div class="event-pattern-preview-result" role="status" aria-live="polite"></div>
+    </section>
     <div class="pagination-bar">
       <div>
         <h2>Events ({{ total_events }})</h2>
@@ -82,7 +110,7 @@
         <div class="event-summary-line trace-link-row">
           <a href="{{ e.trace_url }}">Trace 보기</a>
           {% if e.workflow_status_url %}
-          <a href="{{ e.workflow_status_url|safe }}">Workflow Status</a>
+          <a href="{{ e.workflow_status_url|safe }}">업무 상태 보기</a>
           {% endif %}
         </div>
         {% endif %}
@@ -98,7 +126,7 @@
             {% if summary.boi_missing %}<span class="badge warning">BoI missing</span><code>{{ summary.boi_missing }}</code>{% endif %}
             {% if e.trace_url %}<a href="{{ e.trace_url }}">Trace 보기</a>{% endif %}
             {% if e.workflow_status_url %}
-            <a href="{{ e.workflow_status_url|safe }}">Workflow Status</a>
+            <a href="{{ e.workflow_status_url|safe }}">업무 상태 보기</a>
             {% endif %}
           </div>
           <div class="action-summary-table">

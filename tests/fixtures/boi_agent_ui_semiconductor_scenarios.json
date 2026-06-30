@@ -1,0 +1,29 @@
+{
+  "scenarios": [
+    {
+      "id": "ui-direct-development-reporting-mermaid",
+      "name": "Pet UI direct development reporting Mermaid",
+      "url": "http://localhost:28000/docs/boi:public:sop:direct-development-reporting?employee_id=100001",
+      "question": "직개발 결과 확인 및 Reporting SOP를 Mermaid로 그려줘.",
+      "expect_artifact": "mermaid",
+      "expect_evidence_artifact": "workflow_summary",
+      "forbid_inline_artifact": "workflow_summary",
+      "expect_followup_loading": true,
+      "forbid_visible_terms": ["Context 없음", "missing context", "trace context"]
+    },
+    {
+      "id": "ui-cross-section-prereq",
+      "name": "Pet UI cross-section prerequisites",
+      "url": "http://localhost:28000/docs/boi:public:sop:direct-development-reporting?employee_id=100001",
+      "question": "단면검사 판단 전에 Response Trend와 Map View에서 뭘 확인해야 해?",
+      "expect_artifact": "action_requirements"
+    },
+    {
+      "id": "ui-process-hold-approval",
+      "name": "Pet UI process hold confirmation",
+      "url": "http://localhost:28000/docs/boi:public:actions:api:block-process-progress?employee_id=100001",
+      "question": "공정 진행 금지 요청 실행해줘.",
+      "expect_artifact": "confirmation_required"
+    }
+  ]
+}

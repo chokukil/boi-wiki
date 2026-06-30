@@ -14,6 +14,10 @@ function parseArgs(argv) {
     screenshot: "",
     strict: false,
     expectArtifact: "mermaid",
+    expectEvidenceArtifact: "",
+    forbidInlineArtifact: "",
+    expectFollowupLoading: false,
+    forbidVisibleTerms: [],
     approveExecutionCard: false,
     expectApprovalStatus: "",
     scenarioFile: "",
@@ -25,12 +29,16 @@ function parseArgs(argv) {
     else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
     else if (item === "--screenshot") args.screenshot = argv[++index];
     else if (item === "--expect-artifact") args.expectArtifact = argv[++index] || args.expectArtifact;
+    else if (item === "--expect-evidence-artifact") args.expectEvidenceArtifact = argv[++index] || "";
+    else if (item === "--forbid-inline-artifact") args.forbidInlineArtifact = argv[++index] || "";
+    else if (item === "--expect-followup-loading") args.expectFollowupLoading = true;
+    else if (item === "--forbid-visible-term") args.forbidVisibleTerms.push(argv[++index] || "");
     else if (item === "--scenario-file") args.scenarioFile = argv[++index] || "";
     else if (item === "--approve-execution-card") args.approveExecutionCard = true;
     else if (item === "--expect-approval-status") args.expectApprovalStatus = argv[++index] || "";
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|table|confirmation_required] [--scenario-file FILE] [--approve-execution-card] [--expect-approval-status STATUS] [--screenshot FILE] [--strict]`);
+      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|action_requirements|table|manual_handoff_summary|task_cards|confirmation_required] [--expect-evidence-artifact TYPE] [--forbid-inline-artifact TYPE] [--expect-followup-loading] [--forbid-visible-term TEXT] [--scenario-file FILE] [--approve-execution-card] [--expect-approval-status STATUS] [--screenshot FILE] [--strict]`);
       process.exit(0);
     }
   }
@@ -45,6 +53,25 @@ function loadScenarioFile(path) {
   return scenarios.filter((scenario) => scenario && typeof scenario === "object");
 }
 
+function parseChildReport(stdout, stderr) {
+  const trimmedStdout = String(stdout || "").trim();
+  const trimmedStderr = String(stderr || "").trim();
+  for (const candidate of [trimmedStdout, trimmedStderr]) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch (_error) {
+      // Keep trying. Fatal child errors are intentionally structured but may be written to stderr.
+    }
+  }
+  return {
+    ok: false,
+    parse_error: "child output was not JSON",
+    stdout: trimmedStdout.slice(0, 2000),
+    stderr: trimmedStderr.slice(0, 2000),
+  };
+}
+
 function runNodeScenario(scriptPath, parentArgs, scenario) {
   const childArgs = [
     scriptPath,
@@ -53,6 +80,15 @@ function runNodeScenario(scriptPath, parentArgs, scenario) {
     "--expect-artifact", scenario.expect_artifact || scenario.expectArtifact || parentArgs.expectArtifact,
     "--timeout-ms", String(scenario.timeout_ms || scenario.timeoutMs || parentArgs.timeoutMs),
   ];
+  const expectEvidenceArtifact = scenario.expect_evidence_artifact || scenario.expectEvidenceArtifact || parentArgs.expectEvidenceArtifact;
+  const forbidInlineArtifact = scenario.forbid_inline_artifact || scenario.forbidInlineArtifact || parentArgs.forbidInlineArtifact;
+  const forbidVisibleTerms = scenario.forbid_visible_terms || scenario.forbidVisibleTerms || parentArgs.forbidVisibleTerms || [];
+  if (expectEvidenceArtifact) childArgs.push("--expect-evidence-artifact", expectEvidenceArtifact);
+  if (forbidInlineArtifact) childArgs.push("--forbid-inline-artifact", forbidInlineArtifact);
+  if (scenario.expect_followup_loading || scenario.expectFollowupLoading || parentArgs.expectFollowupLoading) childArgs.push("--expect-followup-loading");
+  for (const term of Array.isArray(forbidVisibleTerms) ? forbidVisibleTerms : [forbidVisibleTerms]) {
+    if (term) childArgs.push("--forbid-visible-term", term);
+  }
   if (parentArgs.strict || scenario.strict) childArgs.push("--strict");
   if (scenario.approve_execution_card || scenario.approveExecutionCard) childArgs.push("--approve-execution-card");
   if (scenario.expect_approval_status || scenario.expectApprovalStatus) {
@@ -66,12 +102,7 @@ function runNodeScenario(scriptPath, parentArgs, scenario) {
     child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
     child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
     child.on("close", (code) => {
-      let parsed = null;
-      try {
-        parsed = JSON.parse(stdout);
-      } catch (_error) {
-        parsed = { ok: false, parse_error: "child output was not JSON", stdout: stdout.slice(0, 2000) };
-      }
+      const parsed = parseChildReport(stdout, stderr);
       resolve({
         id: scenario.id || "",
         name: scenario.name || "",
@@ -87,8 +118,13 @@ function runNodeScenario(scriptPath, parentArgs, scenario) {
 async function runScenarioSuite(args) {
   const scenarios = loadScenarioFile(args.scenarioFile);
   const results = [];
-  for (const scenario of scenarios) {
-    results.push(await runNodeScenario(process.argv[1], args, scenario));
+  for (let index = 0; index < scenarios.length; index += 1) {
+    const scenario = scenarios[index];
+    const scenarioId = scenario.id || `scenario-${index + 1}`;
+    console.error(`[${index + 1}/${scenarios.length}] ${scenarioId}: ${scenario.question || args.question}`);
+    const result = await runNodeScenario(process.argv[1], args, scenario);
+    console.error(`[${index + 1}/${scenarios.length}] ${scenarioId}: ${result.ok ? "ok" : "failed"}`);
+    results.push(result);
   }
   const failures = results.filter((result) => !result.ok);
   const report = {
@@ -259,9 +295,11 @@ async function main() {
     await runScenarioSuite(args);
     return;
   }
+  const log = (message) => console.error(`[pet-ui] ${message}`);
   const chrome = findChrome();
   const profileDir = mkdtempSync(join(tmpdir(), "boi-agent-chrome-"));
   const port = 9333 + Math.floor(Math.random() * 1000);
+  log(`starting Chrome on port ${port}`);
   const child = spawn(chrome, [
     "--headless=new",
     "--no-sandbox",
@@ -275,6 +313,7 @@ async function main() {
   let cdp;
   try {
     await waitForJson(`http://127.0.0.1:${port}/json/version`, 10000);
+    log("Chrome DevTools endpoint ready");
     const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`, 5000);
     const pageTarget = targets.find((target) => target.type === "page" && target.webSocketDebuggerUrl);
     if (!pageTarget) throw new Error("Chrome page target not found");
@@ -283,6 +322,7 @@ async function main() {
     await cdp.send("Page.enable");
     await cdp.send("Network.enable");
     await cdp.send("Runtime.enable");
+    log(`navigating to ${args.url}`);
     const networkProbe = {
       suggestionRequests: 0,
       suggestionUrls: [],
@@ -297,6 +337,7 @@ async function main() {
     const loaded = cdp.once("Page.loadEventFired");
     await cdp.send("Page.navigate", { url: args.url });
     await loaded;
+    log("page loaded");
     await waitUntil(
       cdp,
       "['interactive','complete'].includes(document.readyState) && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
@@ -309,6 +350,7 @@ async function main() {
         liveStatuses: [],
         statusTrailCounts: [],
         stopSeen: false,
+        followupLoadingSeen: false,
         panelOpenSeen: false,
         viewerSeen: false,
         lastRenderAt: Date.now(),
@@ -322,6 +364,7 @@ async function main() {
         const trail = root.querySelectorAll(".boi-agent-status-trail li");
         if (panel) probe.panelOpenSeen = true;
         if (root.querySelector(".boi-agent-stop")) probe.stopSeen = true;
+        if (root.querySelector(".boi-agent-message-followups.loading")) probe.followupLoadingSeen = true;
         if (root.querySelector(".boi-agent-viewer")) probe.viewerSeen = true;
         if (status && status.textContent.trim()) probe.liveStatuses.push(status.textContent.trim());
         if (trail.length) probe.statusTrailCounts.push(trail.length);
@@ -337,12 +380,31 @@ async function main() {
       record();
       return true;
     })()`);
+    log("opening Agent panel");
 
     await cdp.evaluate(`(() => {
       document.querySelector(".boi-agent-launcher").click();
+      document.querySelector('#boi-agent-root [data-tab="agent"]')?.click();
       return true;
     })()`);
     await waitUntil(cdp, "!!document.querySelector('.boi-agent-panel.open .boi-agent-chat-form textarea')", 10000);
+    log("Agent panel open");
+    try {
+      await waitUntil(
+        cdp,
+        `(() => {
+          const root = document.querySelector("#boi-agent-root");
+          const buttons = root.querySelectorAll(".boi-agent-suggestions [data-question]");
+          const loading = root.querySelector(".boi-agent-suggestions-loading");
+          const error = root.querySelector(".boi-agent-hint.error");
+          return buttons.length > 0 || (!loading && !!error);
+        })()`,
+        45000,
+        250,
+      );
+    } catch (_error) {
+      // Starter suggestions are asynchronous. The strict report below records if they never appear.
+    }
     const starterBeforeAsk = await cdp.evaluate(`(() => {
       const root = document.querySelector("#boi-agent-root");
       return {
@@ -350,6 +412,7 @@ async function main() {
         texts: Array.from(root.querySelectorAll(".boi-agent-suggestions [data-question]")).map((button) => button.textContent.trim()).filter(Boolean),
       };
     })()`);
+    log(`starter suggestions: ${starterBeforeAsk.count}`);
     await cdp.evaluate(`(() => {
       const textarea = document.querySelector(".boi-agent-chat-form textarea");
       textarea.value = ${JSON.stringify(args.question)};
@@ -357,6 +420,7 @@ async function main() {
       document.querySelector(".boi-agent-chat-form").requestSubmit();
       return true;
     })()`);
+    log(`submitted question: ${args.question}`);
 
     await waitUntil(
       cdp,
@@ -365,11 +429,12 @@ async function main() {
         const latest = root.querySelector(".boi-agent-message.assistant:last-of-type");
         const answer = latest?.querySelector(".boi-agent-answer");
         const artifact = latest?.querySelector(".boi-agent-artifact");
-        return !root.querySelector(".boi-agent-stop") && latest && ((answer && answer.textContent.trim().length > 30) || artifact);
+        return latest && ((answer && answer.textContent.trim().length > 30) || artifact);
       })()`,
       args.timeoutMs,
       250,
     );
+    log("assistant answer rendered");
 
     try {
       await waitUntil(
@@ -390,16 +455,17 @@ async function main() {
         cdp,
         `(() => {
           const root = document.querySelector("#boi-agent-root");
-          const buttons = root.querySelectorAll(".boi-agent-suggestions [data-question]");
-          const loading = root.querySelector(".boi-agent-suggestions-loading");
-          const error = root.querySelector(".boi-agent-hint.error");
-          return buttons.length > 0 || (!loading && !!error);
+          const latest = root.querySelector(".boi-agent-message.assistant:last-of-type");
+          const followups = latest?.querySelector(".boi-agent-message-followups");
+          const followupButtons = latest?.querySelectorAll(".boi-agent-message-followups [data-question]") || [];
+          const followupError = latest?.querySelector(".boi-agent-message-followups .boi-agent-hint.error");
+          return followupButtons.length > 0 || !!followupError || (!root.querySelector(".boi-agent-stop") && !followups?.classList.contains("loading"));
         })()`,
-        20000,
+        Math.min(args.timeoutMs, 60000),
         250,
       );
     } catch (_error) {
-      // The structured report below records whether suggestion buttons returned.
+      // Follow-up generation is async. The structured report below records whether it finished.
     }
 
     await cdp.evaluate(`(() => {
@@ -407,11 +473,14 @@ async function main() {
       return true;
     })()`);
     await sleep(150);
+    log("collecting rendered answer state");
     const beforeNew = await cdp.evaluate(`(() => {
       const root = document.querySelector("#boi-agent-root");
       const probe = window.__boiAgentUiProbe || {};
       const uniqueAnswers = Array.from(new Set(probe.answerTexts || []));
       const latestMessage = root.querySelector(".boi-agent-message.assistant:last-of-type");
+      const persisted = JSON.parse(sessionStorage.getItem("boiAgent.v7.100001") || "{}");
+      const persistedLatestAssistant = Array.from(persisted.messages || []).filter((item) => item.role === "assistant").pop() || {};
       const answerNode = latestMessage?.querySelector(".boi-agent-answer");
       const diagrams = Array.from(latestMessage?.querySelectorAll(".boi-agent-artifacts .mermaid-diagram, .boi-agent-answer .mermaid-diagram") || []);
       const normalizedSources = new Set(diagrams.map((diagram) => {
@@ -419,10 +488,17 @@ async function main() {
         return source.trim().replace(/\\s+/g, " ");
       }).filter(Boolean));
       const answerText = answerNode?.textContent || "";
+      const inlineArtifactTypes = Array.from(latestMessage?.querySelectorAll(".boi-agent-artifacts [data-artifact-type]") || []).map((node) => node.dataset.artifactType || "").filter(Boolean);
+      const evidenceArtifactTypes = Array.from(latestMessage?.querySelectorAll(".boi-agent-evidence-artifacts [data-artifact-type]") || []).map((node) => node.dataset.artifactType || "").filter(Boolean);
+      const visibleText = [
+        answerText,
+        latestMessage ? Array.from(latestMessage.querySelectorAll(".boi-agent-artifacts")).map((node) => node.textContent || "").join("\\n") : "",
+      ].join("\\n");
       return {
         panelOpen: !!root.querySelector(".boi-agent-panel.open"),
         expanded: !!root.querySelector(".boi-agent-panel.expanded"),
         stopSeen: !!probe.stopSeen,
+        followupLoadingSeen: !!probe.followupLoadingSeen,
         liveStatusCount: (probe.liveStatuses || []).length,
         statusTrailMax: Math.max(0, ...(probe.statusTrailCounts || [0])),
         answerSnapshotCount: uniqueAnswers.length,
@@ -440,17 +516,24 @@ async function main() {
         uniqueMermaidSourceCount: normalizedSources.size,
         answerMarkdownTableCount: answerNode ? answerNode.querySelectorAll(".boi-agent-table-wrap table, .markdown-table").length : 0,
         artifactTableCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
+        evidenceArtifactTableCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-evidence-artifacts .boi-agent-table-wrap table").length : 0,
+        inlineArtifactTypes,
+        evidenceArtifactTypes,
+        taskCardCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-artifacts .boi-agent-task-display").length : 0,
         confirmationCardCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-confirmation-card").length : 0,
         approveButtonCount: latestMessage ? latestMessage.querySelectorAll("[data-agent-approve]").length : 0,
+        persistedArtifactTypes: Array.isArray(persistedLatestAssistant.artifacts) ? persistedLatestAssistant.artifacts.map((item) => item?.type || "").filter(Boolean) : [],
         rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
         rawTableSeparatorLeak: new RegExp("\\\\|\\\\s*:?-{3,}:?\\\\s*\\\\|").test(answerText),
         starterSuggestionButtonCount: root.querySelectorAll(".boi-agent-suggestions [data-question]").length,
         answerFollowupButtonCount: latestMessage ? latestMessage.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
         starterSuggestionTexts: Array.from(root.querySelectorAll(".boi-agent-suggestions [data-question]")).map((button) => button.textContent.trim()).filter(Boolean),
         answerFollowupTexts: latestMessage ? Array.from(latestMessage.querySelectorAll(".boi-agent-message-followups [data-question]")).map((button) => button.textContent.trim()).filter(Boolean) : [],
+        visibleText,
       };
     })()`);
 
+    log("opening artifact viewer");
     await cdp.evaluate(`(() => {
       document.querySelector("[data-open-artifact]")?.click();
       return true;
@@ -482,6 +565,7 @@ async function main() {
         open: !!viewer,
         hasMermaid: !!diagram,
         hasTable: !!viewer?.querySelector(".boi-agent-table-wrap table, .markdown-table"),
+        hasTaskCard: !!viewer?.querySelector(".boi-agent-task-display"),
         hasConfirmation: !!viewer?.querySelector(".boi-agent-confirmation-card"),
         hasApproveButton: !!viewer?.querySelector("[data-agent-approve]"),
         mermaidRendered: !diagram || (diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")),
@@ -491,6 +575,7 @@ async function main() {
     await cdp.evaluate(`document.querySelector("#boi-agent-root .boi-agent-viewer-close")?.click()`);
     await sleep(150);
 
+    log("opening answer viewer");
     await cdp.evaluate(`(() => {
       document.querySelector("[data-open-answer]")?.click();
       return true;
@@ -554,6 +639,7 @@ async function main() {
     navUrl.pathname = "/sops";
     navUrl.search = "employee_id=100001";
     const navLoaded = cdp.once("Page.loadEventFired");
+    log("navigating away to test restore");
     await cdp.send("Page.navigate", { url: navUrl.toString() });
     await navLoaded;
     await waitUntil(
@@ -587,6 +673,7 @@ async function main() {
         mermaidDiagramCount: diagrams.length,
         mermaidRenderedCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")).length,
         artifactTableCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
+        taskCardCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-task-display").length : 0,
         answerFollowupButtonCount: latest ? latest.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
         rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
       };
@@ -594,6 +681,7 @@ async function main() {
 
     let followupClick = { skipped: true, reason: "no answer follow-up button" };
     if (beforeNew.answerFollowupButtonCount > 0) {
+      log("clicking answer follow-up");
       const beforeFollowupMessageCount = await cdp.evaluate(`document.querySelectorAll("#boi-agent-root .boi-agent-message").length`);
       const clickedQuestion = await cdp.evaluate(`(() => {
         const latest = document.querySelector("#boi-agent-root .boi-agent-message.assistant:last-of-type");
@@ -639,6 +727,7 @@ async function main() {
     }
 
     if (args.screenshot) {
+      log(`capturing screenshot to ${args.screenshot}`);
       const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
       createWriteStream(args.screenshot).end(Buffer.from(screenshot.data, "base64"));
     }
@@ -658,11 +747,14 @@ async function main() {
     })()`);
 
     const expectsMermaid = args.expectArtifact === "mermaid";
-    const expectsTable = ["workflow_summary", "table"].includes(args.expectArtifact);
+    const expectsTable = ["workflow_summary", "action_requirements", "table"].includes(args.expectArtifact);
+    const expectsTaskCards = ["manual_handoff_summary", "task_cards"].includes(args.expectArtifact);
     const expectsConfirmation = args.expectArtifact === "confirmation_required";
+    const forbidVisibleTerms = Array.isArray(args.forbidVisibleTerms) ? args.forbidVisibleTerms.filter(Boolean) : [];
     const checks = {
       panel_opened: beforeNew.panelOpen,
       stop_seen_during_generation: beforeNew.stopSeen,
+      followup_loading_seen: args.expectFollowupLoading ? beforeNew.followupLoadingSeen : true,
       live_status_seen: beforeNew.liveStatusCount > 0,
       status_trail_seen: beforeNew.statusTrailMax >= 1,
       streamed_answer_updates_seen: beforeNew.answerSnapshotCount >= 2 || beforeNew.answerTextLength < 180,
@@ -674,19 +766,26 @@ async function main() {
         ? artifactViewer.open && artifactViewer.mermaidRendered && !artifactViewer.rawMermaidFenceLeak
         : expectsConfirmation
           ? artifactViewer.open && artifactViewer.hasConfirmation && artifactViewer.hasApproveButton
-          : artifactViewer.open && artifactViewer.hasTable,
+          : expectsTaskCards
+            ? artifactViewer.open && artifactViewer.hasTaskCard
+            : artifactViewer.open && artifactViewer.hasTable,
       answer_viewer_opened: answerViewer.open && answerViewer.hasAnswer,
       state_restored_after_navigation: afterNavigation.panelOpen && afterNavigation.messageCount >= 2,
       artifact_restored_after_navigation: expectsMermaid
         ? afterNavigation.mermaidDiagramCount >= 1 && afterNavigation.mermaidRenderedCount >= 1 && !afterNavigation.rawMermaidFenceLeak
         : expectsTable
           ? afterNavigation.artifactTableCount >= 1
-          : true,
+          : expectsTaskCards
+            ? afterNavigation.taskCardCount >= 1
+            : true,
       mermaid_diagram_present: expectsMermaid ? beforeNew.mermaidDiagramCount >= 1 : true,
       mermaid_diagram_rendered: expectsMermaid ? beforeNew.mermaidRenderedCount >= 1 && beforeNew.mermaidFallbackCount === 0 : true,
       mermaid_not_duplicated: expectsMermaid ? beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount : true,
       markdown_table_rendered: expectsTable ? (beforeNew.answerMarkdownTableCount + beforeNew.artifactTableCount) >= 1 : true,
       expected_table_artifact_rendered: expectsTable ? beforeNew.artifactTableCount >= 1 : true,
+      expected_evidence_artifact_rendered: args.expectEvidenceArtifact ? beforeNew.evidenceArtifactTypes.includes(args.expectEvidenceArtifact) : true,
+      forbidden_inline_artifact_absent: args.forbidInlineArtifact ? !beforeNew.inlineArtifactTypes.includes(args.forbidInlineArtifact) : true,
+      expected_task_card_artifact_rendered: expectsTaskCards ? beforeNew.taskCardCount >= 1 : true,
       confirmation_card_rendered: expectsConfirmation ? beforeNew.confirmationCardCount >= 1 && beforeNew.approveButtonCount >= 1 : true,
       execution_card_approved: args.approveExecutionCard ? approvalResult.containsExecuted === true : true,
       expected_approval_status_seen: args.expectApprovalStatus
@@ -698,9 +797,11 @@ async function main() {
       answer_followups_restored_after_navigation: afterNavigation.answerFollowupButtonCount >= 1,
       followup_click_sent_new_question: followupClick.ok === true && followupClick.latestUserText === followupClick.clickedQuestion && followupClick.latestAssistantTextLength > 20,
       no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
+      forbidden_visible_terms_absent: forbidVisibleTerms.length ? forbidVisibleTerms.every((term) => !String(beforeNew.visibleText || "").includes(term)) : true,
       new_chat_cleared_messages: afterNew.messageCount === 0 && afterNew.draft === "",
     };
     const ok = Object.values(checks).every(Boolean);
+    log(`completed with ok=${ok}`);
     const report = { ok, url: args.url, checks, network: networkProbe, starter_before_ask: starterBeforeAsk, before_new: beforeNew, artifact_viewer: artifactViewer, answer_viewer: answerViewer, approval: approvalResult, after_navigation: afterNavigation, followup_click: followupClick, after_new: afterNew, screenshot: args.screenshot || "" };
     console.log(JSON.stringify(report, null, 2));
     if (args.strict && !ok) process.exitCode = 1;
@@ -716,6 +817,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(JSON.stringify({ ok: false, error: error.message }, null, 2));
+  console.log(JSON.stringify({ ok: false, error: error.message }, null, 2));
   process.exit(1);
 });

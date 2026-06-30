@@ -56,7 +56,7 @@ def boi_app_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("EVENTS_ROOT", str(tmp_path / "events"))
     monkeypatch.setenv("EVENT_CATALOG_ROOT", str(Path.cwd() / "data" / "event_catalog"))
     monkeypatch.setenv("ACTION_CATALOG_ROOT", str(Path.cwd() / "data" / "action_catalog"))
-    monkeypatch.setenv("CAPABILITY_CATALOG_ROOT", str(Path.cwd() / "data" / "capability_catalog"))
+    monkeypatch.setenv("WORKFLOW_CATALOG_ROOT", str(Path.cwd() / "data" / "workflow_catalog"))
     monkeypatch.setenv("EVENT_SKILL_CATALOG_ROOT", str(Path.cwd() / "data" / "event_skill_catalog"))
     monkeypatch.setenv("ACTION_SKILL_CATALOG_ROOT", str(Path.cwd() / "data" / "action_skill_catalog"))
     monkeypatch.setenv("ACTION_LOG_ROOT", str(tmp_path / "actions"))

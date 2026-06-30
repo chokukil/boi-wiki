@@ -23,6 +23,24 @@ COMMON_COVERAGE = [
     "citation",
 ]
 
+BUSINESS_CONTEXT_ALIASES: dict[str, tuple[str, ...]] = {
+    "equipment_id": ("equipment_id", "equipment", "eqp_id", "tool_id"),
+    "chamber_id": ("chamber_id", "chamber", "module_id"),
+    "fab": ("fab", "fab_id", "site", "site_id"),
+    "lot_id": ("lot_id", "lot", "work_id"),
+    "wafer_id": ("wafer_id", "wafer"),
+    "alarm_code": ("alarm_code", "alarm", "alarm_id", "alarm_family"),
+    "severity": ("severity", "risk_level", "priority"),
+    "process_step": ("process_step", "step", "route_step", "stage_id", "sop_stage_id"),
+    "recipe_id": ("recipe_id", "recipe"),
+    "trend_status": ("trend_status", "trend_result", "response_trend_status"),
+    "raw_data_status": ("raw_data_status", "raw_status", "source_data_status"),
+    "map_pattern": ("map_pattern", "map_pattern_summary"),
+    "root_cause_candidate": ("root_cause_candidate", "root_cause", "cause_candidate"),
+    "missing_evidence": ("missing_evidence", "missing_context", "missing_required_evidence"),
+    "approval_risk": ("approval_risk", "approval_required", "risk_label"),
+}
+
 
 def _stringify(value: Any) -> str:
     if isinstance(value, str):
@@ -31,6 +49,35 @@ def _stringify(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, default=str)
     except Exception:
         return str(value)
+
+
+def _business_scalar(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, bool):
+        return "필요" if value else "불필요"
+    if isinstance(value, (str, int, float)):
+        return str(value).strip()
+    if isinstance(value, list):
+        return ", ".join([item for item in (_business_scalar(row) for row in value) if item][:4])
+    if isinstance(value, dict):
+        for key in ("label", "name", "title", "status", "summary", "value"):
+            scalar = _business_scalar(value.get(key))
+            if scalar:
+                return scalar
+        return json.dumps({str(key): value.get(key) for key in sorted(value)[:4]}, ensure_ascii=False, default=str)
+    return str(value).strip()
+
+
+def _business_context(*values: Any) -> dict[str, str]:
+    context: dict[str, str] = {}
+    for field, aliases in BUSINESS_CONTEXT_ALIASES.items():
+        for value in values:
+            scalar = _business_scalar(_find_nested_key(value, set(aliases)))
+            if scalar:
+                context[field] = scalar
+                break
+    return context
 
 
 def _lower_blob(value: Any) -> str:
@@ -515,6 +562,14 @@ def build_simulation_agent_result(
         packets=_extract_prior_evidence_packets(prior_results),
         simulation_depth=simulation_depth,
     )
+    business_context = _business_context(
+        event,
+        payload,
+        evidence_packets,
+        action,
+        stage or {},
+        prior_results,
+    )
 
     selected: dict[str, dict[str, Any]] = {}
     context_docs: list[dict[str, str]] = []
@@ -731,6 +786,7 @@ def build_simulation_agent_result(
             "documents": context_docs,
             "event": event,
             "payload": payload,
+            "business_context": business_context,
             "action": {
                 "action_key": action_key,
                 "doc_ref": action.get("doc_ref"),
@@ -749,6 +805,7 @@ def build_simulation_agent_result(
             "prior_results": prior_results,
             "evidence_packets": evidence_packets,
         },
+        "business_context": business_context,
         "evidence_packets": evidence_packets,
         "retrieval_trace": trace,
         "coverage_report": {
@@ -774,6 +831,7 @@ def build_simulation_agent_result(
                 "recommended_next_event": next_event,
                 "human_review_required": "manual" in manual_condition or action.get("risk_level") in {"medium", "high"},
                 "real_system_connected": False,
+                "business_context": business_context,
                 "evidence_packets": evidence_packets,
             },
         },

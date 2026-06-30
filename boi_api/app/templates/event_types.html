@@ -8,6 +8,9 @@
 </head>
 <body>
   {% include "_app_shell.html" %}
+  {% with title="Event 카탈로그", description="업무가 발생하거나 전환되는 시점을 정의한 목록입니다.", eyebrow=None, primary_action={"label": "Event 추가", "href": "/sops/new?employee_id=" ~ employee_id ~ "&focus=event", "kind": "primary"} %}
+    {% include "_section_intro.html" %}
+  {% endwith %}
   <section class="toolbar page-filterbar catalog-filterbar">
     <form method="get" action="/event-types" class="catalog-filter-form event-type-filter-form">
       <input type="hidden" name="employee_id" value="{{ employee_id }}" />

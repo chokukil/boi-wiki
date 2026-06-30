@@ -36,13 +36,52 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "dictionary_resolve", "description": "Resolve business terms and aliases with private, team, then public priority."},
     {"name": "dictionary_terms", "description": "List accessible BoI dictionary terms by scope."},
     {"name": "agent_memory_search", "description": "Search private Agent Memory BoI documents for the employee."},
-    {"name": "agent_inbox", "description": "Return open manual/approval/follow-up action tasks for an employee."},
+    {"name": "work_context_get", "description": "Return the shared Work Context Pack plus source-bound LLM narrative state for a task, trace, action, SOP, or current page."},
+    {"name": "boi_inbox", "description": "Return BoI Inbox report cards, verified report BoI links, priorities, and user links for an employee."},
+    {"name": "boi_inbox_report_get", "description": "Return one verified BoI Inbox review report and its materialized BoI document."},
+    {"name": "boi_inbox_decision_preview", "description": "Preview BoI Inbox approval/reject/defer/more-evidence decisions, including high-risk bulk approval guardrails."},
+    {"name": "boi_inbox_decision_submit", "description": "Submit a user-confirmed BoI Inbox decision with a required note for one task."},
+    {"name": "data_lake_status", "description": "Return optional BoI Data Lake enablement, PostgreSQL/MinIO configuration status, and DB-less core boundary."},
+    {"name": "data_lake_sources", "description": "List optional Data Lake sources and OKF Data Context entries available to the employee."},
+    {"name": "data_lake_query_plan", "description": "Turn a natural-language data need into a Data Lake query plan without executing SQL."},
+    {"name": "data_lake_query_preview", "description": "Preview a Data Lake query and expected evidence/artifacts before execution."},
+    {"name": "data_lake_query_execute", "description": "Execute a user-confirmed Data Lake query through BoI API and return artifact links."},
+    {"name": "data_lake_artifact_get", "description": "Return metadata and access link for a Data Lake evidence artifact."},
+    {"name": "data_lake_import_sources", "description": "Materialize selected Data Lake source profiles as private OKF Data Context BoI documents after explicit confirmation."},
+    {"name": "agent_inbox_context", "description": "Return Work Context Pack details and work_context_narrative for one visible Inbox task."},
+    {"name": "similar_cases_search", "description": "Return ACL-filtered similar handling cases, anonymous patterns, and narrative source fields for an Inbox task/action."},
+    {"name": "agent_signals", "description": "Return proactive Pet Agent signal candidates ranked by Inbox, current page, and work context."},
+    {"name": "work_patterns_search", "description": "Search private work-pattern BoI assets derived from Agent activity."},
+    {"name": "work_pattern_derive", "description": "Derive private work-pattern and skill candidate suggestions from recent Agent activity."},
+    {"name": "skill_candidate_create", "description": "Create a private candidate payload for turning repeated work patterns into a Skill draft."},
+    {"name": "agent_inbox", "description": "Return open manual/approval/follow-up action tasks with user_links and work_context_narrative state for an employee."},
+    {"name": "agent_inbox_review_report", "description": "Return a decision-ready Inbox review report for one task or group without exposing raw trace/action identifiers in the visible report."},
+    {"name": "agent_inbox_decision_preview", "description": "Preview Inbox approval/reject/defer/more-evidence decisions, including high-risk bulk approval guardrails."},
+    {"name": "agent_inbox_decision_submit", "description": "Submit a user-confirmed Inbox decision with a required note for one task."},
     {"name": "manual_handoff_complete", "description": "Append a user-confirmed manual handoff completion row."},
     {"name": "rbac_me", "description": "Return the employee's BoI Wiki teams, roles, and permission-management capability."},
     {"name": "rbac_check", "description": "Check whether an employee has a required BoI Wiki role for a scope/resource."},
     {"name": "doc_access_check", "description": "Evaluate BoI Profile ACL/classification access for one document."},
     {"name": "rbac_audit", "description": "Return recent BoI Wiki RBAC/break-glass audit rows for permission managers."},
+    {"name": "registration_draft_create", "description": "Create a user-confirmed SOP/Event/Action registration draft after dedupe-oriented inputs are collected."},
+    {"name": "registration_plan", "description": "Turn a natural-language SOP/Event/Action registration request into recommended existing items, fields, and draft payload."},
+    {"name": "registration_verification_preview", "description": "Preview business flow, history, permission, and validation checks before creating or publishing a registration draft."},
+    {"name": "registration_drafts", "description": "List visible SOP/Event/Action registration drafts for the employee."},
+    {"name": "registration_draft_validate", "description": "Validate a registration draft before any catalog publish request."},
+    {"name": "registration_draft_publish", "description": "Request publish for a validated registration draft with explicit user confirmation."},
+    {"name": "sop_registration_plan", "description": "Plan an integrated SOP addition flow that optionally connects Event, SOP, Action, and schedule drafts."},
+    {"name": "sop_registration_preview", "description": "Preview an integrated SOP addition flow before creating any draft."},
+    {"name": "sop_registration_draft_create", "description": "Create a user-confirmed integrated SOP registration draft without applying catalog/runtime changes."},
+    {"name": "sop_registration_validate", "description": "Validate an integrated SOP registration draft."},
+    {"name": "sop_registration_publish", "description": "Request publish for a validated integrated SOP registration draft with explicit user confirmation."},
+    {"name": "sop_draft_create", "description": "Shortcut for creating a user-confirmed SOP registration draft."},
+    {"name": "action_draft_create", "description": "Shortcut for creating a user-confirmed Action registration draft."},
     {"name": "event_type_draft_create", "description": "Create a user-confirmed Event Type draft and catalog patch proposal."},
+    {"name": "event_publish_plan", "description": "Turn a natural-language business event request into an Event publish plan and candidate Event Types."},
+    {"name": "event_publish_preview", "description": "Preview what happens when an Event is published, including workflow linkage and recent history."},
+    {"name": "event_pattern_preview", "description": "Preview whether filtered Event history can be promoted into a new Event Type draft."},
+    {"name": "event_pattern_promote_to_draft", "description": "Create a user-confirmed Event Type draft from an Event history pattern preview."},
+    {"name": "sop_run_history", "description": "Return SOP-oriented run history cards instead of raw Event Stream rows."},
     {"name": "event_type_drafts", "description": "List visible Event Type drafts for the employee."},
     {"name": "event_type_draft_validate", "description": "Revalidate an Event Type draft before catalog apply."},
     {"name": "event_type_draft_apply", "description": "Apply a user-confirmed validated Event Type draft to the Event Type catalog."},
@@ -52,11 +91,15 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "doc_body_apply", "description": "Apply a user-confirmed validated BoI document body edit and auto-commit it."},
     {"name": "promotion_submit", "description": "Submit a user-confirmed Team/Public promotion candidate for synchronous validation and immediate publish."},
     {"name": "promotion_status", "description": "Return promotion publish, validation, HOTL, and commit status."},
-    {"name": "capabilities_search", "description": "Search Event-native Capability Packs that connect Event Types, SOP stages, Actions, Manual Handoffs, and runtime smoke evidence."},
-    {"name": "capability_get", "description": "Return one Capability Pack with Event Contract, workflow engine, linked actions, skills, and policy metadata."},
-    {"name": "capability_deduplicate", "description": "Check whether a proposed API/MCP/Event/Action registration duplicates or extends an existing Capability Pack."},
-    {"name": "event_skills_list", "description": "List Event Skill registry entries used by BoI Agent and Capability registration."},
-    {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and Capability registration."},
+    {"name": "workflow_definitions_search", "description": "Search WorkflowDefinitions that connect business BoI purpose, SOP stages, Event Types, Actions, Manual Handoffs, and runtime smoke evidence."},
+    {"name": "workflow_definition_get", "description": "Return one WorkflowDefinition with Event Contract, workflow engine, linked actions, skills, and policy metadata."},
+    {"name": "workflow_definition_deduplicate", "description": "Check whether a proposed API/MCP/Event/Action registration duplicates or extends an existing WorkflowDefinition."},
+    {"name": "workflow_definition_publish", "description": "Publish a user-confirmed validated WorkflowDefinition draft."},
+    {"name": "capabilities_search", "description": "[Deprecated alias] Use workflow_definitions_search."},
+    {"name": "capability_get", "description": "[Deprecated alias] Use workflow_definition_get."},
+    {"name": "capability_deduplicate", "description": "[Deprecated alias] Use workflow_definition_deduplicate."},
+    {"name": "event_skills_list", "description": "List Event Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
+    {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://docs/{boi_id}", "description": "Public BoI document as JSON text. Use employee-scoped templates for private/team content."},
@@ -84,6 +127,144 @@ MCP_CAPABILITIES = {
     "resource_templates": len(MCP_RESOURCE_TEMPLATE_CAPABILITIES),
     "prompts": len(MCP_PROMPT_CAPABILITIES),
 }
+
+MCP_TOOL_IA_GROUPS = [
+    (
+        "BoI Wiki",
+        {
+            "boi_search",
+            "boi_get",
+            "okf_graph_doc",
+            "ontology_search",
+            "dictionary_resolve",
+            "dictionary_terms",
+            "work_context_get",
+            "agent_memory_search",
+            "similar_cases_search",
+            "agent_signals",
+            "work_patterns_search",
+            "work_pattern_derive",
+            "skill_candidate_create",
+            "boi_agent_chat",
+            "boi_agent_suggestions",
+            "boi_agent_capabilities",
+            "boi_agent_approve",
+        },
+    ),
+    (
+        "BoI Inbox",
+        {
+            "boi_inbox",
+            "boi_inbox_report_get",
+            "boi_inbox_decision_preview",
+            "boi_inbox_decision_submit",
+        },
+    ),
+    (
+        "SOP",
+        {
+            "sop_registration_plan",
+            "sop_registration_preview",
+            "sop_registration_draft_create",
+            "sop_registration_validate",
+            "sop_registration_publish",
+            "sop_draft_create",
+            "sop_run_history",
+            "workflow_start",
+            "workflow_status",
+        },
+    ),
+    (
+        "Event Broker",
+        {
+            "event_publish_plan",
+            "event_publish_preview",
+            "event_pattern_preview",
+            "event_pattern_promote_to_draft",
+            "event_type_draft_create",
+            "event_type_drafts",
+            "event_type_draft_validate",
+            "event_type_draft_apply",
+            "event_skills_list",
+        },
+    ),
+    (
+        "Action",
+        {
+            "actions_search",
+            "action_get",
+            "action_invoke",
+            "action_draft_create",
+            "action_skills_list",
+            "manual_handoff_complete",
+        },
+    ),
+    (
+        "Advanced",
+        {
+            "rbac_me",
+            "rbac_check",
+            "doc_access_check",
+            "rbac_audit",
+            "registration_plan",
+            "registration_verification_preview",
+            "registration_draft_create",
+            "registration_drafts",
+            "registration_draft_validate",
+            "registration_draft_publish",
+            "workflow_definitions_search",
+            "workflow_definition_get",
+            "workflow_definition_deduplicate",
+            "workflow_definition_publish",
+            "source_preview",
+            "source_apply",
+            "doc_body_preview",
+            "doc_body_apply",
+            "promotion_submit",
+            "promotion_status",
+        },
+    ),
+    (
+        "Optional Data Lake",
+        {
+            "data_lake_status",
+            "data_lake_sources",
+            "data_lake_query_plan",
+            "data_lake_query_preview",
+            "data_lake_query_execute",
+            "data_lake_artifact_get",
+            "data_lake_import_sources",
+        },
+    ),
+    (
+        "Deprecated / Compatibility",
+        {
+            "agent_inbox",
+            "agent_inbox_context",
+            "agent_inbox_review_report",
+            "agent_inbox_decision_preview",
+            "agent_inbox_decision_submit",
+            "capabilities_search",
+            "capability_get",
+            "capability_deduplicate",
+        },
+    ),
+]
+
+
+def mcp_tool_groups() -> list[dict[str, Any]]:
+    tools_by_name = {str(item.get("name") or ""): item for item in MCP_TOOL_CAPABILITIES}
+    grouped: list[dict[str, Any]] = []
+    assigned: set[str] = set()
+    for group_name, names in MCP_TOOL_IA_GROUPS:
+        items = [tools_by_name[name] for name in sorted(names) if name in tools_by_name]
+        assigned.update(str(item.get("name") or "") for item in items)
+        grouped.append({"name": group_name, "tools": items})
+    remaining = [item for item in MCP_TOOL_CAPABILITIES if str(item.get("name") or "") not in assigned]
+    if remaining:
+        grouped.append({"name": "Other", "tools": remaining})
+    return grouped
+
 AGENT_RESPONSE_CONTRACT_VERSION = "boi-agent.response.v1"
 AGENT_RESPONSE_REQUIRED_FIELDS = [
     "agent_contract_version",
@@ -98,6 +279,9 @@ AGENT_RESPONSE_REQUIRED_FIELDS = [
     "evidence_ledger",
     "affordances",
     "answer_quality",
+    "goal_model",
+    "response_profile",
+    "component_errors",
     "access_summary",
     "guardrails_applied",
 ]
@@ -109,7 +293,18 @@ AGENT_EXECUTION_CARD_REQUIRED_FIELDS = [
     "required_role",
     "permission",
 ]
-AGENT_ARTIFACT_TYPES = ["mermaid", "gap_table", "workflow_summary", "task_cards", "confirmation_required", "image"]
+AGENT_ARTIFACT_TYPES = [
+    "mermaid",
+    "gap_table",
+    "workflow_summary",
+    "manual_handoff_summary",
+    "action_requirements",
+    "task_cards",
+    "confirmation_required",
+    "image",
+]
+AGENT_ARTIFACT_ROLES = ["primary", "supporting", "evidence", "diagnostic"]
+AGENT_ARTIFACT_DISPLAY_MODES = ["inline", "collapsed", "viewer_only", "hidden_diagnostic"]
 AGENT_STATUS_UPDATE_SCHEMA = {
     "type": "array",
     "items": {
@@ -160,7 +355,15 @@ AGENT_RESPONSE_SCHEMA = {
                 "type": "object",
                 "required": ["type"],
                 "additionalProperties": True,
-                "properties": {"type": {"enum": AGENT_ARTIFACT_TYPES}},
+                "properties": {
+                    "type": {"enum": AGENT_ARTIFACT_TYPES},
+                    "role": {"enum": AGENT_ARTIFACT_ROLES},
+                    "display_mode": {"enum": AGENT_ARTIFACT_DISPLAY_MODES},
+                    "priority": {"type": "integer"},
+                    "reason": {"type": "string"},
+                    "user_requested": {"type": "boolean"},
+                    "default_collapsed": {"type": "boolean"},
+                },
             },
         },
         "execution_cards": {
@@ -190,12 +393,22 @@ AGENT_RESPONSE_SCHEMA = {
         "evidence_ledger": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "affordances": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "answer_quality": {"type": "object", "additionalProperties": True},
+        "goal_model": {"type": "object", "additionalProperties": True},
+        "response_profile": {"type": "string"},
+        "component_errors": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "access_summary": {"type": "object", "additionalProperties": True},
         "guardrails_applied": {"type": "array", "items": {"type": "string"}},
         "redacted_count": {"type": "integer", "minimum": 0},
         "context_summary": {"type": "object", "additionalProperties": True},
         "event_context": {"type": "object", "additionalProperties": True},
-        "capability_context": {"type": "object", "additionalProperties": True},
+        "workflow_definition_context": {"type": "object", "additionalProperties": True},
+        "work_context_summary": {"type": "object", "additionalProperties": True},
+        "historical_patterns": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "recommended_next_steps": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "personalization_used": {"type": "object", "additionalProperties": True},
+        "work_patterns_used": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "pattern_candidates": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "skill_candidates": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "suggested_questions": {"type": "array", "items": {"type": "string"}},
         "route": {"type": "string"},
         "intent": {"type": "string"},
@@ -209,7 +422,7 @@ AGENT_INTERFACES = {
     "mcp_tool": "boi_agent_chat",
     "response_contract_version": AGENT_RESPONSE_CONTRACT_VERSION,
     "streaming_protocol": "text/event-stream",
-    "streaming_events": ["status", "answer_delta", "final", "error"],
+    "streaming_events": ["accepted", "status", "answer_delta", "answer_ready", "followups", "final", "error"],
 }
 
 
@@ -390,6 +603,71 @@ async def action_get(action_key: str, employee_id: str = DEFAULT_EMPLOYEE_ID) ->
     return {"ok": True, "item": body["items"][0]}
 
 
+@mcp.tool(name="workflow_definitions_search")
+async def workflow_definitions_search(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    query: str = "",
+    workflow_engine: str = "",
+    event_type: str = "",
+    action_key: str = "",
+) -> dict[str, Any]:
+    """Search WorkflowDefinitions."""
+    return await api_get(
+        "/api/workflow-definitions",
+        employee_id=employee_id,
+        params={"q": query, "workflow_engine": workflow_engine, "event_type": event_type, "action_key": action_key},
+    )
+
+
+@mcp.tool(name="workflow_definition_get")
+async def workflow_definition_get(workflow_definition_key: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return one WorkflowDefinition."""
+    return await api_get(f"/api/workflow-definitions/{workflow_definition_key}", employee_id=employee_id)
+
+
+@mcp.tool(name="workflow_definition_deduplicate")
+async def workflow_definition_deduplicate(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    event_type: str = "",
+    action_keys: list[str] | None = None,
+    terms: list[str] | None = None,
+    connector: dict[str, Any] | None = None,
+    payload_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Find duplicate or reusable WorkflowDefinitions for a proposed registration."""
+    return await api_post(
+        "/api/workflow-definitions/deduplicate",
+        employee_id=employee_id,
+        payload={
+            "event_type": event_type,
+            "action_keys": action_keys or [],
+            "terms": terms or [],
+            "connector": connector or {},
+            "payload_schema": payload_schema or {},
+        },
+    )
+
+
+@mcp.tool(name="workflow_definition_publish")
+async def workflow_definition_publish(
+    draft_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+    note: str = "",
+) -> dict[str, Any]:
+    """Publish a user-confirmed validated WorkflowDefinition draft."""
+    return await api_post(
+        f"/api/workflow-definitions/{draft_id}/publish",
+        employee_id=employee_id,
+        payload={
+            "operation": "workflow_definition_publish",
+            "payload": {"draft_id": draft_id},
+            "user_confirmed": user_confirmed,
+            "note": note,
+        },
+    )
+
+
 @mcp.tool(name="capabilities_search")
 async def capabilities_search(
     employee_id: str = DEFAULT_EMPLOYEE_ID,
@@ -398,18 +676,20 @@ async def capabilities_search(
     event_type: str = "",
     action_key: str = "",
 ) -> dict[str, Any]:
-    """Search Event-native Capability Packs."""
-    return await api_get(
-        "/api/capabilities",
-        employee_id=employee_id,
-        params={"q": query, "workflow_engine": workflow_engine, "event_type": event_type, "action_key": action_key},
-    )
+    """Deprecated alias for workflow_definitions_search."""
+    body = await workflow_definitions_search(employee_id, query, workflow_engine, event_type, action_key)
+    body["deprecated_alias"] = "capabilities_search"
+    body["canonical_tool"] = "workflow_definitions_search"
+    return body
 
 
 @mcp.tool(name="capability_get")
 async def capability_get(capability_key: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
-    """Return one Capability Pack."""
-    return await api_get(f"/api/capabilities/{capability_key}", employee_id=employee_id)
+    """Deprecated alias for workflow_definition_get."""
+    body = await workflow_definition_get(capability_key, employee_id=employee_id)
+    body["deprecated_alias"] = "capability_get"
+    body["canonical_tool"] = "workflow_definition_get"
+    return body
 
 
 @mcp.tool(name="capability_deduplicate")
@@ -421,18 +701,11 @@ async def capability_deduplicate(
     connector: dict[str, Any] | None = None,
     payload_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Find duplicate or reusable Capability Packs for a proposed registration."""
-    return await api_post(
-        "/api/capabilities/deduplicate",
-        employee_id=employee_id,
-        payload={
-            "event_type": event_type,
-            "action_keys": action_keys or [],
-            "terms": terms or [],
-            "connector": connector or {},
-            "payload_schema": payload_schema or {},
-        },
-    )
+    """Deprecated alias for workflow_definition_deduplicate."""
+    body = await workflow_definition_deduplicate(employee_id, event_type, action_keys, terms, connector, payload_schema)
+    body["deprecated_alias"] = "capability_deduplicate"
+    body["canonical_tool"] = "workflow_definition_deduplicate"
+    return body
 
 
 @mcp.tool(name="event_skills_list")
@@ -637,10 +910,365 @@ async def agent_memory_search(
     )
 
 
+@mcp.tool(name="work_context_get")
+async def work_context_get(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    task_id: str = "",
+    trace_id: str = "",
+    event_id: str = "",
+    action_key: str = "",
+    sop_ref: str = "",
+    sop_stage_id: str = "",
+    workflow_definition_key: str = "",
+    capability_key: str = "",
+    current_url: str = "",
+) -> dict[str, Any]:
+    """Return the shared Work Context Pack for a task, trace, action, SOP, or current page."""
+    return await api_get(
+        "/api/context/work",
+        employee_id=employee_id,
+        params={
+            "task_id": task_id,
+            "trace_id": trace_id,
+            "event_id": event_id,
+            "action_key": action_key,
+            "sop_ref": sop_ref,
+            "sop_stage_id": sop_stage_id,
+            "workflow_definition_key": workflow_definition_key or capability_key,
+            "current_url": current_url,
+        },
+    )
+
+
+@mcp.tool(name="agent_inbox_context")
+async def agent_inbox_context(task_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return the Work Context Pack details for one visible Inbox task."""
+    return await api_get(f"/api/agents/boi-wiki/inbox/{task_id}/context", employee_id=employee_id)
+
+
+@mcp.tool(name="similar_cases_search")
+async def similar_cases_search(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    task_id: str = "",
+    action_key: str = "",
+    event_type: str = "",
+    sop_stage_id: str = "",
+    workflow_definition_key: str = "",
+    capability_key: str = "",
+    limit: int = 12,
+) -> dict[str, Any]:
+    """Return ACL-filtered similar handling cases and anonymous patterns for a task or action."""
+    if task_id:
+        return await api_get(
+            f"/api/agents/boi-wiki/inbox/{task_id}/history",
+            employee_id=employee_id,
+            params={"limit": limit},
+        )
+    context = await api_get(
+        "/api/context/work",
+        employee_id=employee_id,
+        params={
+            "action_key": action_key,
+            "event_type": event_type,
+            "sop_stage_id": sop_stage_id,
+            "workflow_definition_key": workflow_definition_key or capability_key,
+        },
+    )
+    return {
+        "ok": bool(context.get("ok", True)),
+        "similar_cases": (context.get("similar_cases") or [])[:limit],
+        "historical_patterns": context.get("historical_patterns") or [],
+        "context_id": context.get("context_id"),
+    }
+
+
+@mcp.tool(name="agent_signals")
+async def agent_signals(employee_id: str = DEFAULT_EMPLOYEE_ID, current_url: str = "", limit: int = 5) -> dict[str, Any]:
+    """Return proactive BoI Agent signal candidates for the current employee/page."""
+    return await api_get(
+        "/api/agents/boi-wiki/signals",
+        employee_id=employee_id,
+        params={"current_url": current_url, "limit": limit},
+    )
+
+
+@mcp.tool(name="work_patterns_search")
+async def work_patterns_search(
+    query: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    include_archived: bool = False,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Search private work-pattern BoI assets derived from Agent activity."""
+    return await api_get(
+        "/api/agents/boi-wiki/patterns",
+        employee_id=employee_id,
+        params={"q": query, "include_archived": str(include_archived).lower(), "limit": limit},
+    )
+
+
+@mcp.tool(name="work_pattern_derive")
+async def work_pattern_derive(employee_id: str = DEFAULT_EMPLOYEE_ID, limit: int = 8) -> dict[str, Any]:
+    """Derive private work-pattern and skill candidate suggestions from recent Agent activity."""
+    return await api_post(
+        "/api/agents/boi-wiki/patterns/derive",
+        employee_id=employee_id,
+        payload={"limit": limit},
+    )
+
+
+@mcp.tool(name="skill_candidate_create")
+async def skill_candidate_create(
+    pattern_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    title: str = "",
+    description: str = "",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create a non-published private Skill candidate payload from a repeated work pattern."""
+    return {
+        "ok": True,
+        "published": False,
+        "requires_confirmation": not user_confirmed,
+        "candidate": {
+            "type": "skill_candidate",
+            "employee_id": employee_id,
+            "pattern_id": pattern_id,
+            "title": title or "반복 업무 Skill 후보",
+            "description": description or "반복 업무 패턴을 Skill 초안으로 전환하기 위한 개인 후보입니다.",
+            "promotion_status": "private_draft_only",
+        },
+    }
+
+
+@mcp.tool(name="boi_inbox")
+async def boi_inbox(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    status: str = "open",
+    limit: int = 50,
+    include_context: str = "compact",
+) -> dict[str, Any]:
+    """Return BoI Inbox report cards for the employee."""
+    return await api_get(
+        "/api/inbox",
+        employee_id=employee_id,
+        params={"status": status, "limit": limit, "include_context": include_context},
+    )
+
+
+@mcp.tool(name="boi_inbox_report_get")
+async def boi_inbox_report_get(
+    report_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Return one verified BoI Inbox report and its materialized BoI document."""
+    return await api_get(f"/api/inbox/reports/{report_id}", employee_id=employee_id)
+
+
+@mcp.tool(name="boi_inbox_decision_preview")
+async def boi_inbox_decision_preview(
+    group_id: str,
+    decision: Literal["approve", "reject", "defer", "request_more_evidence"],
+    note: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    selected_task_ids: list[str] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Preview a BoI Inbox group decision while preserving high-risk guardrails."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before previewing a BoI Inbox decision")
+    return await api_post(
+        f"/api/inbox/groups/{group_id}/decision-preview",
+        employee_id=employee_id,
+        payload={
+            "decision": decision,
+            "note": note,
+            "selected_task_ids": selected_task_ids or [],
+            "user_confirmed": user_confirmed,
+        },
+    )
+
+
+@mcp.tool(name="boi_inbox_decision_submit")
+async def boi_inbox_decision_submit(
+    task_id: str,
+    decision: Literal["approve", "reject", "defer", "request_more_evidence"],
+    note: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Submit a user-confirmed BoI Inbox decision for one task."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before submitting a BoI Inbox decision")
+    return await api_post(
+        f"/api/inbox/tasks/{task_id}/decision",
+        employee_id=employee_id,
+        payload={"decision": decision, "note": note, "user_confirmed": user_confirmed},
+    )
+
+
+@mcp.tool(name="data_lake_status")
+async def data_lake_status(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return optional Data Lake status without requiring the adapter to be enabled."""
+    return await api_get("/api/data-lake/status", employee_id=employee_id)
+
+
+@mcp.tool(name="data_lake_sources")
+async def data_lake_sources(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """List optional Data Lake sources visible to the employee."""
+    return await api_get("/api/data-lake/sources", employee_id=employee_id)
+
+
+@mcp.tool(name="data_lake_query_plan")
+async def data_lake_query_plan(
+    question: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    source: str = "",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Plan a Data Lake query without executing SQL."""
+    return await api_post(
+        "/api/data-lake/query/plan",
+        employee_id=employee_id,
+        payload={"question": question, "source": source, "limit": limit},
+    )
+
+
+@mcp.tool(name="data_lake_query_preview")
+async def data_lake_query_preview(
+    question: str = "",
+    sql: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    source: str = "",
+    limit: int = 50,
+    parameters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preview a Data Lake query before execution."""
+    return await api_post(
+        "/api/data-lake/query/preview",
+        employee_id=employee_id,
+        payload={"question": question, "source": source, "sql": sql, "parameters": parameters or {}, "limit": limit},
+    )
+
+
+@mcp.tool(name="data_lake_query_execute")
+async def data_lake_query_execute(
+    question: str = "",
+    sql: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    source: str = "",
+    limit: int = 50,
+    parameters: dict[str, Any] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Execute a user-confirmed Data Lake query through BoI API."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before executing a Data Lake query")
+    return await api_post(
+        "/api/data-lake/query/execute",
+        employee_id=employee_id,
+        payload={
+            "question": question,
+            "source": source,
+            "sql": sql,
+            "parameters": parameters or {},
+            "limit": limit,
+            "user_confirmed": True,
+        },
+    )
+
+
+@mcp.tool(name="data_lake_artifact_get")
+async def data_lake_artifact_get(artifact_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return Data Lake artifact metadata or a disabled contract."""
+    return await api_get(f"/api/data-lake/artifacts/{artifact_id}", employee_id=employee_id)
+
+
+@mcp.tool(name="data_lake_import_sources")
+async def data_lake_import_sources(
+    source_ids: list[str] | None = None,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Materialize Data Lake source profiles as private OKF Data Context BoI documents."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before importing Data Lake source context")
+    return await api_post(
+        "/api/data-lake/import",
+        employee_id=employee_id,
+        payload={"source_ids": source_ids or [], "user_confirmed": True},
+    )
+
+
 @mcp.tool(name="agent_inbox")
-async def agent_inbox(employee_id: str = DEFAULT_EMPLOYEE_ID, status: str = "open", limit: int = 50) -> dict[str, Any]:
+async def agent_inbox(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    status: str = "open",
+    limit: int = 50,
+    include_context: str = "compact",
+) -> dict[str, Any]:
     """Return manual/approval/follow-up tasks for the employee."""
-    return await api_get("/api/agents/boi-wiki/inbox", employee_id=employee_id, params={"status": status, "limit": limit})
+    return await api_get(
+        "/api/agents/boi-wiki/inbox",
+        employee_id=employee_id,
+        params={"status": status, "limit": limit, "include_context": include_context},
+    )
+
+
+@mcp.tool(name="agent_inbox_review_report")
+async def agent_inbox_review_report(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    task_id: str = "",
+    group_id: str = "",
+) -> dict[str, Any]:
+    """Return a decision-ready Inbox review report for a task or group."""
+    if group_id:
+        return await api_get(f"/api/agents/boi-wiki/inbox/groups/{group_id}/review-report", employee_id=employee_id)
+    if task_id:
+        return await api_get(f"/api/agents/boi-wiki/inbox/{task_id}/review-report", employee_id=employee_id)
+    raise RuntimeError("task_id or group_id is required")
+
+
+@mcp.tool(name="agent_inbox_decision_preview")
+async def agent_inbox_decision_preview(
+    group_id: str,
+    decision: Literal["approve", "reject", "defer", "request_more_evidence"],
+    note: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    selected_task_ids: list[str] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Preview a group Inbox decision while preserving high-risk bulk approval guardrails."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before previewing an Inbox decision")
+    return await api_post(
+        f"/api/agents/boi-wiki/inbox/groups/{group_id}/decision-preview",
+        employee_id=employee_id,
+        payload={
+            "decision": decision,
+            "note": note,
+            "selected_task_ids": selected_task_ids or [],
+            "user_confirmed": user_confirmed,
+        },
+    )
+
+
+@mcp.tool(name="agent_inbox_decision_submit")
+async def agent_inbox_decision_submit(
+    task_id: str,
+    decision: Literal["approve", "reject", "defer", "request_more_evidence"],
+    note: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Submit a user-confirmed Inbox decision for one task."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before submitting an Inbox decision")
+    return await api_post(
+        f"/api/agents/boi-wiki/inbox/{task_id}/decision",
+        employee_id=employee_id,
+        payload={"decision": decision, "note": note, "user_confirmed": user_confirmed},
+    )
 
 
 @mcp.tool(name="manual_handoff_complete")
@@ -710,6 +1338,388 @@ async def rbac_audit(employee_id: str = DEFAULT_EMPLOYEE_ID, limit: int = 100, a
         "/api/rbac/audit",
         employee_id=employee_id,
         params={"limit": max(1, min(int(limit or 100), 500)), "actor": actor, "action": action},
+    )
+
+
+def registration_draft_payload_from_args(
+    *,
+    entry_kind: Literal["sop", "event", "action"],
+    scope: str = "private",
+    folder: str = "",
+    title: str = "",
+    business_goal: str = "",
+    description: str = "",
+    steps: list[str] | None = None,
+    evidence_requirements: list[str] | None = None,
+    payload_fields: list[str] | None = None,
+    input_fields: list[str] | None = None,
+    output_fields: list[str] | None = None,
+    execution_kind: str = "",
+    connector_kind: str = "",
+    connector_config: dict[str, Any] | None = None,
+    input_schema: dict[str, Any] | None = None,
+    output_schema: dict[str, Any] | None = None,
+    sample_payload: dict[str, Any] | None = None,
+    result_mapping: dict[str, Any] | None = None,
+    risk_policy: dict[str, Any] | None = None,
+    linked_sop_ref: str = "",
+    linked_workflow_definition_key: str = "",
+    linked_event_types: list[str] | None = None,
+    linked_action_keys: list[str] | None = None,
+    event_type: str = "",
+    action_key: str = "",
+    topic: str = "",
+    risk_level: str = "",
+    approval_required: bool = False,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    return {
+        "entry_kind": entry_kind,
+        "scope": scope,
+        "folder": folder,
+        "title": title,
+        "business_goal": business_goal,
+        "description": description,
+        "steps": steps or [],
+        "evidence_requirements": evidence_requirements or [],
+        "payload_fields": payload_fields or [],
+        "input_fields": input_fields or [],
+        "output_fields": output_fields or [],
+        "execution_kind": execution_kind,
+        "connector_kind": connector_kind,
+        "connector_config": connector_config or {},
+        "input_schema": input_schema or {},
+        "output_schema": output_schema or {},
+        "sample_payload": sample_payload or {},
+        "result_mapping": result_mapping or {},
+        "risk_policy": risk_policy or {},
+        "linked_sop_ref": linked_sop_ref,
+        "linked_workflow_definition_key": linked_workflow_definition_key,
+        "linked_event_types": linked_event_types or [],
+        "linked_action_keys": linked_action_keys or [],
+        "event_type": event_type,
+        "action_key": action_key,
+        "topic": topic,
+        "risk_level": risk_level,
+        "approval_required": bool(approval_required),
+        "user_confirmed": bool(user_confirmed),
+    }
+
+
+async def registration_draft_create_impl(
+    *,
+    employee_id: str,
+    user_confirmed: bool,
+    **payload_kwargs: Any,
+) -> dict[str, Any]:
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before creating a registration draft")
+    payload = registration_draft_payload_from_args(user_confirmed=True, **payload_kwargs)
+    return await api_post("/api/registration/drafts", employee_id=employee_id, payload=payload)
+
+
+@mcp.tool(name="registration_draft_create")
+async def registration_draft_create(
+    entry_kind: Literal["sop", "event", "action"],
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    scope: str = "private",
+    folder: str = "",
+    title: str = "",
+    business_goal: str = "",
+    description: str = "",
+    steps: list[str] | None = None,
+    evidence_requirements: list[str] | None = None,
+    payload_fields: list[str] | None = None,
+    input_fields: list[str] | None = None,
+    output_fields: list[str] | None = None,
+    execution_kind: str = "",
+    connector_kind: str = "",
+    connector_config: dict[str, Any] | None = None,
+    input_schema: dict[str, Any] | None = None,
+    output_schema: dict[str, Any] | None = None,
+    sample_payload: dict[str, Any] | None = None,
+    result_mapping: dict[str, Any] | None = None,
+    risk_policy: dict[str, Any] | None = None,
+    linked_sop_ref: str = "",
+    linked_workflow_definition_key: str = "",
+    linked_event_types: list[str] | None = None,
+    linked_action_keys: list[str] | None = None,
+    event_type: str = "",
+    action_key: str = "",
+    topic: str = "",
+    risk_level: str = "",
+    approval_required: bool = False,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create a SOP/Event/Action registration draft. This creates a draft only and never applies catalog changes."""
+    return await registration_draft_create_impl(
+        employee_id=employee_id,
+        user_confirmed=user_confirmed,
+        entry_kind=entry_kind,
+        scope=scope,
+        folder=folder,
+        title=title,
+        business_goal=business_goal,
+        description=description,
+        steps=steps,
+        evidence_requirements=evidence_requirements,
+        payload_fields=payload_fields,
+        input_fields=input_fields,
+        output_fields=output_fields,
+        execution_kind=execution_kind,
+        connector_kind=connector_kind,
+        connector_config=connector_config,
+        input_schema=input_schema,
+        output_schema=output_schema,
+        sample_payload=sample_payload,
+        result_mapping=result_mapping,
+        risk_policy=risk_policy,
+        linked_sop_ref=linked_sop_ref,
+        linked_workflow_definition_key=linked_workflow_definition_key,
+        linked_event_types=linked_event_types,
+        linked_action_keys=linked_action_keys,
+        event_type=event_type,
+        action_key=action_key,
+        topic=topic,
+        risk_level=risk_level,
+        approval_required=approval_required,
+    )
+
+
+@mcp.tool(name="registration_plan")
+async def registration_plan(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    entry_kind: str = "",
+    raw_request: str = "",
+    scope: str = "private",
+    folder: str = "",
+    connector_kind: str = "",
+    selected_refs: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Plan a SOP/Event/Action registration from natural language before creating any draft."""
+    return await api_post(
+        "/api/registration/plan",
+        employee_id=employee_id,
+        payload={
+            "entry_kind": entry_kind,
+            "raw_request": raw_request,
+            "scope": scope,
+            "folder": folder,
+            "connector_kind": connector_kind,
+            "selected_refs": selected_refs or {},
+        },
+    )
+
+
+@mcp.tool(name="registration_verification_preview")
+async def registration_verification_preview(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    entry_kind: str = "",
+    plan: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+    draft_id: str = "",
+) -> dict[str, Any]:
+    """Preview business checks, permission, and history before draft creation or publish."""
+    return await api_post(
+        "/api/registration/verification-preview",
+        employee_id=employee_id,
+        payload={"entry_kind": entry_kind, "plan": plan or {}, "payload": payload or {}, "draft_id": draft_id},
+    )
+
+
+@mcp.tool(name="sop_registration_plan")
+async def sop_registration_plan(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    raw_request: str = "",
+    scope: str = "private",
+    folder: str = "",
+    focus: str = "",
+    selected_refs: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Plan one integrated SOP addition flow with optional Event, SOP, Action, and schedule sections."""
+    return await api_post(
+        "/api/sop-registration/plan",
+        employee_id=employee_id,
+        payload={
+            "raw_request": raw_request,
+            "scope": scope,
+            "folder": folder,
+            "focus": focus,
+            "selected_refs": selected_refs or {},
+            "payload": payload or {},
+        },
+    )
+
+
+@mcp.tool(name="sop_registration_preview")
+async def sop_registration_preview(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    plan: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preview an integrated SOP addition flow before creating any draft."""
+    return await api_post(
+        "/api/sop-registration/preview",
+        employee_id=employee_id,
+        payload={"plan": plan or {}, "payload": payload or {}},
+    )
+
+
+@mcp.tool(name="sop_registration_draft_create")
+async def sop_registration_draft_create(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    plan: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create an integrated SOP registration draft. This creates a draft only and never applies catalog changes."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before creating a SOP registration draft")
+    return await api_post(
+        "/api/sop-registration/drafts",
+        employee_id=employee_id,
+        payload={"plan": plan or {}, "payload": payload or {}},
+    )
+
+
+@mcp.tool(name="sop_registration_validate")
+async def sop_registration_validate(draft_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Validate an integrated SOP registration draft."""
+    return await api_post(f"/api/sop-registration/drafts/{draft_id}/validate", employee_id=employee_id)
+
+
+@mcp.tool(name="sop_registration_publish")
+async def sop_registration_publish(
+    draft_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    note: str = "",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Request publish for an integrated SOP registration draft with explicit user confirmation."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before publishing a SOP registration draft")
+    return await api_post(
+        f"/api/sop-registration/drafts/{draft_id}/publish",
+        employee_id=employee_id,
+        payload={"operation": "sop_registration_publish", "payload": {"draft_id": draft_id}, "user_confirmed": True, "note": note},
+    )
+
+
+@mcp.tool(name="registration_drafts")
+async def registration_drafts(employee_id: str = DEFAULT_EMPLOYEE_ID, entry_kind: str = "") -> dict[str, Any]:
+    """List visible registration drafts."""
+    return await api_get("/api/registration/drafts", employee_id=employee_id, params={"entry_kind": entry_kind})
+
+
+@mcp.tool(name="registration_draft_validate")
+async def registration_draft_validate(draft_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Validate a registration draft before publish request."""
+    return await api_post(f"/api/registration/drafts/{draft_id}/validate", employee_id=employee_id)
+
+
+@mcp.tool(name="registration_draft_publish")
+async def registration_draft_publish(
+    draft_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    note: str = "",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Request publish for a validated registration draft with explicit user confirmation."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before publishing a registration draft")
+    return await api_post(
+        f"/api/registration/drafts/{draft_id}/publish",
+        employee_id=employee_id,
+        payload={"operation": "registration_draft_publish", "payload": {"draft_id": draft_id}, "user_confirmed": True, "note": note},
+    )
+
+
+@mcp.tool(name="sop_draft_create")
+async def sop_draft_create(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    scope: str = "private",
+    folder: str = "",
+    title: str = "",
+    business_goal: str = "",
+    description: str = "",
+    steps: list[str] | None = None,
+    evidence_requirements: list[str] | None = None,
+    linked_workflow_definition_key: str = "",
+    linked_event_types: list[str] | None = None,
+    linked_action_keys: list[str] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create a SOP registration draft through the common registration engine."""
+    return await registration_draft_create_impl(
+        employee_id=employee_id,
+        user_confirmed=user_confirmed,
+        entry_kind="sop",
+        scope=scope,
+        folder=folder,
+        title=title,
+        business_goal=business_goal,
+        description=description,
+        steps=steps,
+        evidence_requirements=evidence_requirements,
+        linked_workflow_definition_key=linked_workflow_definition_key,
+        linked_event_types=linked_event_types,
+        linked_action_keys=linked_action_keys,
+    )
+
+
+@mcp.tool(name="action_draft_create")
+async def action_draft_create(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    scope: str = "private",
+    folder: str = "",
+    title: str = "",
+    business_goal: str = "",
+    description: str = "",
+    input_fields: list[str] | None = None,
+    output_fields: list[str] | None = None,
+    execution_kind: str = "",
+    connector_kind: str = "",
+    connector_config: dict[str, Any] | None = None,
+    input_schema: dict[str, Any] | None = None,
+    output_schema: dict[str, Any] | None = None,
+    sample_payload: dict[str, Any] | None = None,
+    result_mapping: dict[str, Any] | None = None,
+    risk_policy: dict[str, Any] | None = None,
+    linked_sop_ref: str = "",
+    linked_workflow_definition_key: str = "",
+    linked_event_types: list[str] | None = None,
+    action_key: str = "",
+    risk_level: str = "",
+    approval_required: bool = False,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create an Action registration draft through the common registration engine."""
+    return await registration_draft_create_impl(
+        employee_id=employee_id,
+        user_confirmed=user_confirmed,
+        entry_kind="action",
+        scope=scope,
+        folder=folder,
+        title=title,
+        business_goal=business_goal,
+        description=description,
+        input_fields=input_fields,
+        output_fields=output_fields,
+        execution_kind=execution_kind,
+        connector_kind=connector_kind,
+        connector_config=connector_config,
+        input_schema=input_schema,
+        output_schema=output_schema,
+        sample_payload=sample_payload,
+        result_mapping=result_mapping,
+        risk_policy=risk_policy,
+        linked_sop_ref=linked_sop_ref,
+        linked_workflow_definition_key=linked_workflow_definition_key,
+        linked_event_types=linked_event_types,
+        action_key=action_key,
+        risk_level=risk_level,
+        approval_required=approval_required,
     )
 
 
@@ -831,6 +1841,95 @@ async def event_type_draft_apply(
         employee_id=employee_id,
         payload={"author": author, "note": note, "user_confirmed": True},
     )
+
+
+@mcp.tool(name="event_publish_plan")
+async def event_publish_plan(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    raw_request: str = "",
+    event_type: str = "",
+    payload: dict[str, Any] | None = None,
+    selected_refs: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Plan a business Event publish request from natural language."""
+    return await api_post(
+        "/api/events/plan",
+        employee_id=employee_id,
+        payload={"raw_request": raw_request, "event_type": event_type, "payload": payload or {}, "selected_refs": selected_refs or {}},
+    )
+
+
+@mcp.tool(name="event_publish_preview")
+async def event_publish_preview(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    event_type: str = "",
+    plan: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preview workflow linkage and recent history before Event publish confirmation."""
+    return await api_post(
+        "/api/events/verification-preview",
+        employee_id=employee_id,
+        payload={"event_type": event_type, "plan": plan or {}, "payload": payload or {}},
+    )
+
+
+@mcp.tool(name="event_pattern_preview")
+async def event_pattern_preview(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    event_type: str = "",
+    trace_id: str = "",
+    event_id: str = "",
+    q: str = "",
+    from_time: str = "",
+    to_time: str = "",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Preview promotion candidates from filtered Event history."""
+    return await api_post(
+        "/api/events/patterns/preview",
+        employee_id=employee_id,
+        payload={
+            "event_type": event_type,
+            "trace_id": trace_id,
+            "event_id": event_id,
+            "q": q,
+            "from_time": from_time,
+            "to_time": to_time,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool(name="event_pattern_promote_to_draft")
+async def event_pattern_promote_to_draft(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    preview: dict[str, Any] | None = None,
+    event_type: str = "",
+    title: str = "",
+    description: str = "",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create an Event Type draft from a pattern preview with explicit confirmation."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before creating an Event Type draft from a pattern")
+    return await api_post(
+        "/api/events/patterns/promote-to-draft",
+        employee_id=employee_id,
+        payload={
+            "preview": preview or {},
+            "event_type": event_type,
+            "title": title,
+            "description": description,
+            "user_confirmed": True,
+        },
+    )
+
+
+@mcp.tool(name="sop_run_history")
+async def sop_run_history(employee_id: str = DEFAULT_EMPLOYEE_ID, limit: int = 50) -> dict[str, Any]:
+    """Return SOP-oriented run history and timeline summary cards."""
+    return await api_get("/api/sops/history", employee_id=employee_id, params={"limit": limit})
 
 
 @mcp.tool(name="source_preview")
@@ -1190,6 +2289,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "resource_templates": MCP_RESOURCE_TEMPLATE_CAPABILITIES,
             "prompts": MCP_PROMPT_CAPABILITIES,
         },
+        "tool_groups": mcp_tool_groups(),
         "agent_interfaces": AGENT_INTERFACES,
         "agent_response_contract": AGENT_RESPONSE_CONTRACT,
         "agent_response_schema": AGENT_RESPONSE_SCHEMA,
@@ -1213,6 +2313,7 @@ async def status_page(request: Request) -> HTMLResponse:
     payload = status_payload(request)
     capabilities = payload["capabilities"]
     capability_lists = payload["capability_lists"]
+    tool_groups = payload["tool_groups"]
 
     def render_items(items: list[dict[str, str]], key: str) -> str:
         if not items:
@@ -1223,6 +2324,14 @@ async def status_page(request: Request) -> HTMLResponse:
             description = escape(str(item.get("description") or ""))
             rows.append(f"<li><code>{name}</code><span>{description}</span></li>")
         return "<ul class=\"capability-list\">" + "".join(rows) + "</ul>"
+
+    def render_tool_groups(groups: list[dict[str, Any]]) -> str:
+        parts = []
+        for group in groups:
+            name = escape(str(group.get("name") or ""))
+            tools = group.get("tools") if isinstance(group.get("tools"), list) else []
+            parts.append(f"<h3>{name}</h3>{render_items(tools, 'name')}")
+        return "".join(parts)
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -1266,7 +2375,9 @@ async def status_page(request: Request) -> HTMLResponse:
         <dt>Resource templates</dt><dd>{capabilities["resource_templates"]}</dd>
         <dt>Prompts</dt><dd>{capabilities["prompts"]}</dd>
       </dl>
-      <h3>Tools</h3>
+      <h3>Tools by BoI Wiki IA</h3>
+      {render_tool_groups(tool_groups)}
+      <h3>All tools</h3>
       {render_items(capability_lists["tools"], "name")}
       <h3>Resource templates</h3>
       {render_items(capability_lists["resource_templates"], "uri")}
@@ -1321,6 +2432,14 @@ def bridge_bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def bridge_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value is None:
+        return []
+    return [item.strip() for item in str(value).replace("\n", ",").split(",") if item.strip()]
+
+
 def bridge_confirmation_error(tool: str) -> JSONResponse:
     return JSONResponse({"detail": f"user_confirmed=true is required before calling {tool}"}, status_code=400)
 
@@ -1370,9 +2489,9 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         if not result.get("items"):
             return JSONResponse({"detail": f"Action not found: {args.get('action_key') or ''}"}, status_code=404)
         result = {"ok": True, "item": result["items"][0]}
-    elif tool_name == "capabilities_search":
+    elif tool_name in {"workflow_definitions_search", "capabilities_search"}:
         result = await api_get(
-            "/api/capabilities",
+            "/api/workflow-definitions",
             employee_id=employee_id,
             params={
                 "q": str(args.get("query") or args.get("q") or ""),
@@ -1382,11 +2501,18 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
             service_token=True,
         )
-    elif tool_name == "capability_get":
-        result = await api_get(f"/api/capabilities/{str(args.get('capability_key') or '')}", employee_id=employee_id, service_token=True)
-    elif tool_name == "capability_deduplicate":
+        if tool_name == "capabilities_search":
+            result["deprecated_alias"] = "capabilities_search"
+            result["canonical_tool"] = "workflow_definitions_search"
+    elif tool_name in {"workflow_definition_get", "capability_get"}:
+        workflow_definition_key = str(args.get("workflow_definition_key") or args.get("capability_key") or "")
+        result = await api_get(f"/api/workflow-definitions/{workflow_definition_key}", employee_id=employee_id, service_token=True)
+        if tool_name == "capability_get":
+            result["deprecated_alias"] = "capability_get"
+            result["canonical_tool"] = "workflow_definition_get"
+    elif tool_name in {"workflow_definition_deduplicate", "capability_deduplicate"}:
         result = await api_post(
-            "/api/capabilities/deduplicate",
+            "/api/workflow-definitions/deduplicate",
             employee_id=employee_id,
             payload={
                 "event_type": str(args.get("event_type") or ""),
@@ -1394,6 +2520,22 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "action_keys": args.get("action_keys") or args.get("action_refs") or [],
                 "connector": args.get("connector") or {},
                 "terms": args.get("terms") or [],
+            },
+            service_token=True,
+        )
+        if tool_name == "capability_deduplicate":
+            result["deprecated_alias"] = "capability_deduplicate"
+            result["canonical_tool"] = "workflow_definition_deduplicate"
+    elif tool_name == "workflow_definition_publish":
+        draft_id = str(args.get("draft_id") or "")
+        result = await api_post(
+            f"/api/workflow-definitions/{draft_id}/publish",
+            employee_id=employee_id,
+            payload={
+                "operation": "workflow_definition_publish",
+                "payload": {"draft_id": draft_id},
+                "user_confirmed": bool(args.get("user_confirmed")),
+                "note": str(args.get("note") or ""),
             },
             service_token=True,
         )
@@ -1474,11 +2616,168 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
             service_token=True,
         )
+    elif tool_name == "boi_inbox":
+        result = await api_get(
+            "/api/inbox",
+            employee_id=employee_id,
+            params={
+                "status": str(args.get("status") or "open"),
+                "limit": int(args.get("limit") or 50),
+                "include_context": str(args.get("include_context") or "compact"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "boi_inbox_report_get":
+        result = await api_get(
+            f"/api/inbox/reports/{str(args.get('report_id') or '')}",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "boi_inbox_decision_preview":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            f"/api/inbox/groups/{str(args.get('group_id') or '')}/decision-preview",
+            employee_id=employee_id,
+            payload={
+                "decision": str(args.get("decision") or ""),
+                "note": str(args.get("note") or ""),
+                "selected_task_ids": args.get("selected_task_ids") if isinstance(args.get("selected_task_ids"), list) else [],
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "boi_inbox_decision_submit":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            f"/api/inbox/tasks/{str(args.get('task_id') or '')}/decision",
+            employee_id=employee_id,
+            payload={
+                "decision": str(args.get("decision") or ""),
+                "note": str(args.get("note") or ""),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "data_lake_status":
+        result = await api_get("/api/data-lake/status", employee_id=employee_id, service_token=True)
+    elif tool_name == "data_lake_sources":
+        result = await api_get("/api/data-lake/sources", employee_id=employee_id, service_token=True)
+    elif tool_name == "data_lake_query_plan":
+        result = await api_post(
+            "/api/data-lake/query/plan",
+            employee_id=employee_id,
+            payload={
+                "question": str(args.get("question") or ""),
+                "source": str(args.get("source") or ""),
+                "limit": int(args.get("limit") or 50),
+            },
+            service_token=True,
+        )
+    elif tool_name == "data_lake_query_preview":
+        result = await api_post(
+            "/api/data-lake/query/preview",
+            employee_id=employee_id,
+            payload={
+                "question": str(args.get("question") or ""),
+                "source": str(args.get("source") or ""),
+                "sql": str(args.get("sql") or ""),
+                "parameters": args.get("parameters") if isinstance(args.get("parameters"), dict) else {},
+                "limit": int(args.get("limit") or 50),
+            },
+            service_token=True,
+        )
+    elif tool_name == "data_lake_query_execute":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/data-lake/query/execute",
+            employee_id=employee_id,
+            payload={
+                "question": str(args.get("question") or ""),
+                "source": str(args.get("source") or ""),
+                "sql": str(args.get("sql") or ""),
+                "parameters": args.get("parameters") if isinstance(args.get("parameters"), dict) else {},
+                "limit": int(args.get("limit") or 50),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "data_lake_artifact_get":
+        result = await api_get(
+            f"/api/data-lake/artifacts/{str(args.get('artifact_id') or '')}",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "data_lake_import_sources":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        source_ids = args.get("source_ids")
+        if not isinstance(source_ids, list):
+            source_ids = []
+        result = await api_post(
+            "/api/data-lake/import",
+            employee_id=employee_id,
+            payload={
+                "source_ids": [str(source_id) for source_id in source_ids],
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
     elif tool_name == "agent_inbox":
         result = await api_get(
             "/api/agents/boi-wiki/inbox",
             employee_id=employee_id,
-            params={"status": str(args.get("status") or "open"), "limit": int(args.get("limit") or 50)},
+            params={
+                "status": str(args.get("status") or "open"),
+                "limit": int(args.get("limit") or 50),
+                "include_context": str(args.get("include_context") or "compact"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "agent_inbox_review_report":
+        group_id = str(args.get("group_id") or "")
+        task_id = str(args.get("task_id") or "")
+        if group_id:
+            result = await api_get(
+                f"/api/agents/boi-wiki/inbox/groups/{group_id}/review-report",
+                employee_id=employee_id,
+                service_token=True,
+            )
+        elif task_id:
+            result = await api_get(
+                f"/api/agents/boi-wiki/inbox/{task_id}/review-report",
+                employee_id=employee_id,
+                service_token=True,
+            )
+        else:
+            result = {"ok": False, "error": "task_id or group_id is required"}
+    elif tool_name == "agent_inbox_decision_preview":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            f"/api/agents/boi-wiki/inbox/groups/{str(args.get('group_id') or '')}/decision-preview",
+            employee_id=employee_id,
+            payload={
+                "decision": str(args.get("decision") or ""),
+                "note": str(args.get("note") or ""),
+                "selected_task_ids": args.get("selected_task_ids") if isinstance(args.get("selected_task_ids"), list) else [],
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "agent_inbox_decision_submit":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            f"/api/agents/boi-wiki/inbox/{str(args.get('task_id') or '')}/decision",
+            employee_id=employee_id,
+            payload={
+                "decision": str(args.get("decision") or ""),
+                "note": str(args.get("note") or ""),
+                "user_confirmed": True,
+            },
             service_token=True,
         )
     elif tool_name == "rbac_me":
@@ -1534,6 +2833,84 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             params={"q": str(args.get("query") or args.get("q") or ""), "include_archived": str(bridge_bool(args.get("include_archived"))).lower(), "limit": int(args.get("limit") or 20)},
             service_token=True,
         )
+    elif tool_name == "work_context_get":
+        result = await api_get(
+            "/api/context/work",
+            employee_id=employee_id,
+            params={
+                "task_id": str(args.get("task_id") or ""),
+                "trace_id": str(args.get("trace_id") or ""),
+                "event_id": str(args.get("event_id") or ""),
+                "action_key": str(args.get("action_key") or ""),
+                "sop_ref": str(args.get("sop_ref") or ""),
+                "sop_stage_id": str(args.get("sop_stage_id") or ""),
+                "workflow_definition_key": str(args.get("workflow_definition_key") or args.get("capability_key") or ""),
+                "current_url": str(args.get("current_url") or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "agent_inbox_context":
+        result = await api_get(
+            f"/api/agents/boi-wiki/inbox/{str(args.get('task_id') or '')}/context",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "similar_cases_search":
+        task_id = str(args.get("task_id") or "")
+        if task_id:
+            result = await api_get(
+                f"/api/agents/boi-wiki/inbox/{task_id}/history",
+                employee_id=employee_id,
+                params={"limit": int(args.get("limit") or 12)},
+                service_token=True,
+            )
+        else:
+            result = await api_get(
+                "/api/context/work",
+                employee_id=employee_id,
+                params={
+                    "action_key": str(args.get("action_key") or ""),
+                    "event_type": str(args.get("event_type") or ""),
+                    "sop_stage_id": str(args.get("sop_stage_id") or ""),
+                    "workflow_definition_key": str(args.get("workflow_definition_key") or args.get("capability_key") or ""),
+                },
+                service_token=True,
+            )
+    elif tool_name == "agent_signals":
+        result = await api_get(
+            "/api/agents/boi-wiki/signals",
+            employee_id=employee_id,
+            params={"current_url": str(args.get("current_url") or ""), "limit": int(args.get("limit") or 5)},
+            service_token=True,
+        )
+    elif tool_name == "work_patterns_search":
+        result = await api_get(
+            "/api/agents/boi-wiki/patterns",
+            employee_id=employee_id,
+            params={"q": str(args.get("query") or args.get("q") or ""), "include_archived": str(bridge_bool(args.get("include_archived"))).lower(), "limit": int(args.get("limit") or 20)},
+            service_token=True,
+        )
+    elif tool_name == "work_pattern_derive":
+        result = await api_post(
+            "/api/agents/boi-wiki/patterns/derive",
+            employee_id=employee_id,
+            payload={"limit": int(args.get("limit") or 8)},
+            service_token=True,
+        )
+    elif tool_name == "skill_candidate_create":
+        result = {
+            "ok": True,
+            "published": False,
+            "requires_confirmation": not bridge_bool(args.get("user_confirmed")),
+            "candidate": {
+                "type": "skill_candidate",
+                "employee_id": employee_id,
+                "pattern_id": str(args.get("pattern_id") or ""),
+                "title": str(args.get("title") or "반복 업무 Skill 후보"),
+                "description": str(args.get("description") or "반복 업무 패턴을 Skill 초안으로 전환하기 위한 개인 후보입니다."),
+                "promotion_status": "private_draft_only",
+            },
+        }
     elif tool_name == "manual_handoff_complete":
         if not bridge_bool(args.get("user_confirmed")):
             return bridge_confirmation_error(req.tool)
@@ -1546,6 +2923,222 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "outcome": str(args.get("outcome") or "completed"),
                 "user_confirmed": True,
             },
+            service_token=True,
+        )
+    elif tool_name == "registration_plan":
+        result = await api_post(
+            "/api/registration/plan",
+            employee_id=employee_id,
+            payload={
+                "entry_kind": str(args.get("entry_kind") or ""),
+                "raw_request": str(args.get("raw_request") or args.get("request") or ""),
+                "scope": str(args.get("scope") or "private"),
+                "folder": str(args.get("folder") or ""),
+                "connector_kind": str(args.get("connector_kind") or ""),
+                "selected_refs": args.get("selected_refs") if isinstance(args.get("selected_refs"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "registration_verification_preview":
+        result = await api_post(
+            "/api/registration/verification-preview",
+            employee_id=employee_id,
+            payload={
+                "entry_kind": str(args.get("entry_kind") or ""),
+                "plan": args.get("plan") if isinstance(args.get("plan"), dict) else {},
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+                "draft_id": str(args.get("draft_id") or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "sop_registration_plan":
+        result = await api_post(
+            "/api/sop-registration/plan",
+            employee_id=employee_id,
+            payload={
+                "raw_request": str(args.get("raw_request") or args.get("request") or ""),
+                "scope": str(args.get("scope") or "private"),
+                "folder": str(args.get("folder") or ""),
+                "focus": str(args.get("focus") or ""),
+                "selected_refs": args.get("selected_refs") if isinstance(args.get("selected_refs"), dict) else {},
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "sop_registration_preview":
+        result = await api_post(
+            "/api/sop-registration/preview",
+            employee_id=employee_id,
+            payload={
+                "plan": args.get("plan") if isinstance(args.get("plan"), dict) else {},
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "sop_registration_draft_create":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/sop-registration/drafts",
+            employee_id=employee_id,
+            payload={
+                "plan": args.get("plan") if isinstance(args.get("plan"), dict) else {},
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "sop_registration_validate":
+        result = await api_post(
+            f"/api/sop-registration/drafts/{str(args.get('draft_id') or '')}/validate",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "sop_registration_publish":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        draft_id = str(args.get("draft_id") or "")
+        result = await api_post(
+            f"/api/sop-registration/drafts/{draft_id}/publish",
+            employee_id=employee_id,
+            payload={
+                "operation": "sop_registration_publish",
+                "payload": {"draft_id": draft_id},
+                "user_confirmed": True,
+                "note": str(args.get("note") or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name in {"registration_draft_create", "sop_draft_create", "action_draft_create"}:
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        if tool_name == "sop_draft_create":
+            entry_kind = "sop"
+        elif tool_name == "action_draft_create":
+            entry_kind = "action"
+        else:
+            entry_kind = str(args.get("entry_kind") or "")
+        result = await api_post(
+            "/api/registration/drafts",
+            employee_id=employee_id,
+            payload=registration_draft_payload_from_args(
+                entry_kind=entry_kind,  # type: ignore[arg-type]
+                scope=str(args.get("scope") or "private"),
+                folder=str(args.get("folder") or ""),
+                title=str(args.get("title") or args.get("name") or ""),
+                business_goal=str(args.get("business_goal") or ""),
+                description=str(args.get("description") or ""),
+                steps=bridge_list(args.get("steps")),
+                evidence_requirements=bridge_list(args.get("evidence_requirements")),
+                payload_fields=bridge_list(args.get("payload_fields")),
+                input_fields=bridge_list(args.get("input_fields")),
+                output_fields=bridge_list(args.get("output_fields")),
+                execution_kind=str(args.get("execution_kind") or ""),
+                connector_kind=str(args.get("connector_kind") or ""),
+                connector_config=args.get("connector_config") if isinstance(args.get("connector_config"), dict) else {},
+                input_schema=args.get("input_schema") if isinstance(args.get("input_schema"), dict) else {},
+                output_schema=args.get("output_schema") if isinstance(args.get("output_schema"), dict) else {},
+                sample_payload=args.get("sample_payload") if isinstance(args.get("sample_payload"), dict) else {},
+                result_mapping=args.get("result_mapping") if isinstance(args.get("result_mapping"), dict) else {},
+                risk_policy=args.get("risk_policy") if isinstance(args.get("risk_policy"), dict) else {},
+                linked_sop_ref=str(args.get("linked_sop_ref") or args.get("sop_ref") or ""),
+                linked_workflow_definition_key=str(args.get("linked_workflow_definition_key") or args.get("workflow_definition_key") or ""),
+                linked_event_types=bridge_list(args.get("linked_event_types")),
+                linked_action_keys=bridge_list(args.get("linked_action_keys")),
+                event_type=str(args.get("event_type") or ""),
+                action_key=str(args.get("action_key") or ""),
+                topic=str(args.get("topic") or ""),
+                risk_level=str(args.get("risk_level") or ""),
+                approval_required=bridge_bool(args.get("approval_required")),
+                user_confirmed=True,
+            ),
+            service_token=True,
+        )
+    elif tool_name in {"registration_drafts", "registration_draft_list", "list_registration_drafts"}:
+        result = await api_get(
+            "/api/registration/drafts",
+            employee_id=employee_id,
+            params={"entry_kind": str(args.get("entry_kind") or "")},
+            service_token=True,
+        )
+    elif tool_name == "registration_draft_validate":
+        result = await api_post(
+            f"/api/registration/drafts/{str(args.get('draft_id') or '')}/validate",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "registration_draft_publish":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        draft_id = str(args.get("draft_id") or "")
+        result = await api_post(
+            f"/api/registration/drafts/{draft_id}/publish",
+            employee_id=employee_id,
+            payload={
+                "operation": "registration_draft_publish",
+                "payload": {"draft_id": draft_id},
+                "user_confirmed": True,
+                "note": str(args.get("note") or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_publish_plan":
+        result = await api_post(
+            "/api/events/plan",
+            employee_id=employee_id,
+            payload={
+                "raw_request": str(args.get("raw_request") or args.get("request") or ""),
+                "event_type": str(args.get("event_type") or ""),
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+                "selected_refs": args.get("selected_refs") if isinstance(args.get("selected_refs"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_publish_preview":
+        result = await api_post(
+            "/api/events/verification-preview",
+            employee_id=employee_id,
+            payload={
+                "event_type": str(args.get("event_type") or ""),
+                "plan": args.get("plan") if isinstance(args.get("plan"), dict) else {},
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_pattern_preview":
+        result = await api_post(
+            "/api/events/patterns/preview",
+            employee_id=employee_id,
+            payload={
+                "event_type": str(args.get("event_type") or ""),
+                "trace_id": str(args.get("trace_id") or ""),
+                "event_id": str(args.get("event_id") or ""),
+                "q": str(args.get("q") or ""),
+                "from_time": str(args.get("from_time") or ""),
+                "to_time": str(args.get("to_time") or ""),
+                "limit": int(args.get("limit") or 50),
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_pattern_promote_to_draft":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/events/patterns/promote-to-draft",
+            employee_id=employee_id,
+            payload={
+                "preview": args.get("preview") if isinstance(args.get("preview"), dict) else {},
+                "event_type": str(args.get("event_type") or ""),
+                "title": str(args.get("title") or ""),
+                "description": str(args.get("description") or ""),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "sop_run_history":
+        result = await api_get(
+            "/api/sops/history",
+            employee_id=employee_id,
+            params={"limit": int(args.get("limit") or 50)},
             service_token=True,
         )
     elif tool_name in {"event_type_draft_create", "create_event_type_draft"}:
