@@ -151,6 +151,11 @@ INBOX_REPORT_CACHE_ROOT = Path(os.getenv("INBOX_REPORT_CACHE_ROOT") or str(BOI_R
 LANGFLOW_SIMULATOR_HEALTH_FILE = Path(
     os.getenv("LANGFLOW_SIMULATOR_HEALTH_FILE") or str(ACTION_LOG_ROOT / "_health" / "langflow_universal_simulator.json")
 )
+_RUNTIME_LOG_DEFAULT_MAX_BYTES = 25 * 1024 * 1024 if "pilot" in DEPLOY_PROFILE.lower() else 10 * 1024 * 1024
+BOI_RUNTIME_LOG_MAX_BYTES = int(os.getenv("BOI_RUNTIME_LOG_MAX_BYTES", str(_RUNTIME_LOG_DEFAULT_MAX_BYTES)) or _RUNTIME_LOG_DEFAULT_MAX_BYTES)
+BOI_RUNTIME_LOG_RETENTION_DAYS = int(os.getenv("BOI_RUNTIME_LOG_RETENTION_DAYS", "30") or "30")
+BOI_RUNTIME_LOG_ARCHIVE_ENABLED = os.getenv("BOI_RUNTIME_LOG_ARCHIVE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+BOI_RUNTIME_INDEX_ENABLED = os.getenv("BOI_RUNTIME_INDEX_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT") or str(BOI_RUNTIME_ROOT / "drafts"))
 ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT") or str(BOI_RUNTIME_ROOT / "activity"))
 RBAC_ROOT = Path(os.getenv("RBAC_ROOT") or str(BOI_RUNTIME_ROOT / "rbac"))
@@ -2274,6 +2279,120 @@ def cached_jsonl_rows(*, root: Path, pattern: str, cache: dict[str, Any], ref_pr
     return rows
 
 
+def runtime_log_index_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".idx")
+
+
+def runtime_log_line_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    last_byte = b""
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            count += chunk.count(b"\n")
+            last_byte = chunk[-1:]
+    if path.stat().st_size > 0 and last_byte != b"\n":
+        count += 1
+    return count
+
+
+def runtime_log_segment_path(root: Path, prefix: str, now: datetime | None = None) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    current = now or datetime.now(KST)
+    date_text = current.strftime("%Y%m%d")
+    max_bytes = max(1, int(BOI_RUNTIME_LOG_MAX_BYTES or _RUNTIME_LOG_DEFAULT_MAX_BYTES))
+    base = root / f"{prefix}-{date_text}.jsonl"
+    if not base.exists() or base.stat().st_size < max_bytes:
+        return base
+    segment = 2
+    while True:
+        candidate = root / f"{prefix}-{date_text}-{segment:04d}.jsonl"
+        if not candidate.exists() or candidate.stat().st_size < max_bytes:
+            return candidate
+        segment += 1
+
+
+def runtime_log_employee_id(row: dict[str, Any]) -> str:
+    if row.get("employee_id"):
+        return str(row.get("employee_id") or "")
+    actor = row.get("actor")
+    if isinstance(actor, dict) and actor.get("employee_id"):
+        return str(actor.get("employee_id") or "")
+    payload = row.get("payload")
+    if isinstance(payload, dict) and payload.get("employee_id"):
+        return str(payload.get("employee_id") or "")
+    return ""
+
+
+def runtime_log_index_row(row: dict[str, Any], *, log_ref: str, log_path: Path, line_number: int) -> dict[str, Any]:
+    return {
+        "log_ref": log_ref,
+        "file": log_path.name,
+        "line_number": line_number,
+        "logged_at": str(row.get("logged_at") or ""),
+        "employee_id": runtime_log_employee_id(row),
+        "trace_id": str(row.get("trace_id") or ""),
+        "event_id": str(row.get("event_id") or ""),
+        "event_type": str(row.get("event_type") or ""),
+        "action_key": str(row.get("action_key") or ""),
+        "request_id": str(row.get("request_id") or ""),
+        "status": str(row.get("status") or ""),
+        "connector_kind": str(row.get("connector_kind") or row.get("action_type") or ""),
+    }
+
+
+def append_runtime_log_index(log_path: Path, row: dict[str, Any], *, log_ref: str, line_number: int) -> None:
+    if not BOI_RUNTIME_INDEX_ENABLED:
+        return
+    index_path = runtime_log_index_path(log_path)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_row = runtime_log_index_row(row, log_ref=log_ref, log_path=log_path, line_number=line_number)
+    with index_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(index_row, ensure_ascii=False, default=str) + "\n")
+
+
+def append_runtime_jsonl_row(*, root: Path, prefix: str, ref_prefix: str, row: dict[str, Any]) -> dict[str, Any]:
+    path = runtime_log_segment_path(root, prefix)
+    line_number = runtime_log_line_count(path) + 1
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    log_ref = f"{ref_prefix}:{path.name}:{line_number}"
+    append_runtime_log_index(path, row, log_ref=log_ref, line_number=line_number)
+    item = dict(row)
+    item["_log_ref"] = log_ref
+    return item
+
+
+def runtime_log_index_rows(root: Path, prefix: str) -> list[dict[str, Any]]:
+    if not BOI_RUNTIME_INDEX_ENABLED:
+        return []
+    rows: list[dict[str, Any]] = []
+    for index_path in sorted(root.glob(f"{prefix}-*.jsonl.idx"), reverse=True):
+        try:
+            lines = index_path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            continue
+        for line in reversed(lines):
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(row, dict) and row.get("log_ref"):
+                rows.append(row)
+    return rows
+
+
+def runtime_log_indexes_complete(root: Path, prefix: str) -> bool:
+    log_paths = [path for path in root.glob(f"{prefix}-*.jsonl") if path.is_file()]
+    if not log_paths:
+        return False
+    return all(runtime_log_index_path(path).exists() for path in log_paths)
+
+
 def cached_action_log_rows() -> list[dict[str, Any]]:
     return cached_jsonl_rows(root=ACTION_LOG_ROOT, pattern="actions-*.jsonl", cache=_ACTION_LOG_CACHE, ref_prefix="action")
 
@@ -2425,6 +2544,58 @@ def action_log_search_text(row: dict[str, Any], action: dict[str, Any] | None = 
     return " ".join(parts).lower()
 
 
+def indexed_action_log_rows_for_filters(
+    *,
+    employee_id: str,
+    action_lookup: dict[str, dict[str, Any]],
+    status_filter: str,
+    connector_filter: str,
+    event_filter: str,
+    action_filter: str,
+    trace_filter: str,
+    request_filter: str,
+    q_filter: str,
+    time_filter: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    if not BOI_RUNTIME_INDEX_ENABLED or not runtime_log_indexes_complete(ACTION_LOG_ROOT, "actions"):
+        return None
+    entries = runtime_log_index_rows(ACTION_LOG_ROOT, "actions")
+    if not entries:
+        return None
+    matched: list[dict[str, Any]] = []
+    for entry in entries:
+        if status_filter and normalize_action_log_status(entry.get("status")) != status_filter:
+            continue
+        if connector_filter and str(entry.get("connector_kind") or "").lower() != connector_filter:
+            continue
+        if event_filter and str(entry.get("event_type") or "") != event_filter:
+            continue
+        if action_filter and str(entry.get("action_key") or "") != action_filter:
+            continue
+        if trace_filter and str(entry.get("trace_id") or "") != trace_filter:
+            continue
+        if request_filter and str(entry.get("request_id") or "") != request_filter:
+            continue
+        if time_filter.get("active"):
+            try:
+                logged_at = parse_event_time_value(str(entry.get("logged_at") or ""), field_name="logged_at")
+            except ValueError:
+                logged_at = None
+            if time_filter.get("from_dt") and (not logged_at or logged_at < time_filter["from_dt"]):
+                continue
+            if time_filter.get("to_dt") and (not logged_at or logged_at > time_filter["to_dt"]):
+                continue
+        row = read_jsonl_row_by_ref(log_ref=str(entry.get("log_ref") or ""), root=ACTION_LOG_ROOT, ref_prefix="action")
+        if row is None:
+            continue
+        if not action_log_visible_to_employee(row, employee_id):
+            continue
+        if q_filter and q_filter not in action_log_search_text(row, action_lookup.get(str(row.get("action_key") or ""))):
+            continue
+        matched.append(normalize_action_log_for_template(row, employee_id, action_lookup=action_lookup))
+    return matched
+
+
 def normalize_action_log_for_template(
     row: dict[str, Any],
     employee_id: str,
@@ -2512,32 +2683,54 @@ def filter_action_logs_payload(
         time_filter_error = str(exc)
 
     matched: list[dict[str, Any]] = []
-    for row in cached_action_log_rows():
-        normalized = normalize_action_log_for_template(row, employee_id, action_lookup=action_lookup)
-        if status_filter and normalized.get("status") != status_filter:
-            continue
-        if connector_filter and str(normalized.get("connector_kind") or "").lower() != connector_filter:
-            continue
-        if event_filter and normalized.get("event_type") != event_filter:
-            continue
-        if action_filter and normalized.get("action_key") != action_filter:
-            continue
-        if trace_filter and normalized.get("trace_id") != trace_filter:
-            continue
-        if request_filter and normalized.get("request_id") != request_filter:
-            continue
-        if time_filter.get("active"):
-            try:
-                logged_at = parse_event_time_value(str(normalized.get("logged_at") or ""), field_name="logged_at")
-            except ValueError:
-                logged_at = None
-            if time_filter.get("from_dt") and (not logged_at or logged_at < time_filter["from_dt"]):
+    indexed_rows = indexed_action_log_rows_for_filters(
+        employee_id=employee_id,
+        action_lookup=action_lookup,
+        status_filter=status_filter,
+        connector_filter=connector_filter,
+        event_filter=event_filter,
+        action_filter=action_filter,
+        trace_filter=trace_filter,
+        request_filter=request_filter,
+        q_filter=q_filter,
+        time_filter=time_filter,
+    )
+    if indexed_rows is not None:
+        matched = indexed_rows
+    elif not any([status_filter, connector_filter, event_filter, action_filter, trace_filter, request_filter, q_filter, time_filter.get("active")]):
+        fast_limit = min(2000, effective_offset + effective_limit + 1)
+        matched = [
+            normalize_action_log_for_template(row, employee_id, action_lookup=action_lookup)
+            for row in read_recent_action_logs_fast(limit=fast_limit)
+            if action_log_visible_to_employee(row, employee_id)
+        ]
+    else:
+        for row in cached_action_log_rows():
+            normalized = normalize_action_log_for_template(row, employee_id, action_lookup=action_lookup)
+            if status_filter and normalized.get("status") != status_filter:
                 continue
-            if time_filter.get("to_dt") and (not logged_at or logged_at > time_filter["to_dt"]):
+            if connector_filter and str(normalized.get("connector_kind") or "").lower() != connector_filter:
                 continue
-        if q_filter and q_filter not in action_log_search_text(row, action_lookup.get(str(row.get("action_key") or ""))):
-            continue
-        matched.append(normalized)
+            if event_filter and normalized.get("event_type") != event_filter:
+                continue
+            if action_filter and normalized.get("action_key") != action_filter:
+                continue
+            if trace_filter and normalized.get("trace_id") != trace_filter:
+                continue
+            if request_filter and normalized.get("request_id") != request_filter:
+                continue
+            if time_filter.get("active"):
+                try:
+                    logged_at = parse_event_time_value(str(normalized.get("logged_at") or ""), field_name="logged_at")
+                except ValueError:
+                    logged_at = None
+                if time_filter.get("from_dt") and (not logged_at or logged_at < time_filter["from_dt"]):
+                    continue
+                if time_filter.get("to_dt") and (not logged_at or logged_at > time_filter["to_dt"]):
+                    continue
+            if q_filter and q_filter not in action_log_search_text(row, action_lookup.get(str(row.get("action_key") or ""))):
+                continue
+            matched.append(normalized)
 
     summary = {
         "total": len(matched),
@@ -2627,20 +2820,11 @@ def read_recent_action_logs_fast(limit: int = 200, action_key: str | None = None
 def append_action_log_row(row: dict[str, Any]) -> dict[str, Any]:
     ensure_dirs()
     row = dict(row)
+    row.setdefault("logged_at", now_iso())
     row.setdefault("business_context", business_context_fingerprint(row))
     row.setdefault("business_context_quality", business_context_quality(row.get("business_context") or {}))
-    path = ACTION_LOG_ROOT / f"actions-{datetime.now(KST).strftime('%Y%m%d')}.jsonl"
-    line_number = 1
-    if path.exists():
-        try:
-            line_number = len(path.read_text(encoding="utf-8").splitlines()) + 1
-        except Exception:
-            line_number = 1
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    item = append_runtime_jsonl_row(root=ACTION_LOG_ROOT, prefix="actions", ref_prefix="action", row=row)
     invalidate_action_log_caches()
-    item = dict(row)
-    item["_log_ref"] = f"action:{path.name}:{line_number}"
     return item
 
 
@@ -2867,9 +3051,7 @@ def append_event_log(*, status: str, event: dict[str, Any], result: dict[str, An
         payload["result"] = result
     if error is not None:
         payload["error"] = error
-    path = EVENTS_ROOT / f"events-{datetime.now(KST).strftime('%Y%m%d')}.jsonl"
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    append_runtime_jsonl_row(root=EVENTS_ROOT, prefix="events", ref_prefix="event", row=payload)
     invalidate_event_log_caches()
 
 
@@ -5216,8 +5398,6 @@ def candidate_okf_lint_report(source_path: Path, proposed_content: str) -> dict[
     with tempfile.TemporaryDirectory(prefix="boi-edit-", dir=str(temp_parent) if temp_parent else None) as temp_dir:
         temp_root = Path(temp_dir)
         copy_optional_tree(DATA_ROOT, temp_root / "boi")
-        copy_optional_tree(EVENTS_ROOT, temp_root / "events")
-        copy_optional_tree(ACTION_LOG_ROOT, temp_root / "actions")
         candidate_path = candidate_path_in_temp_data_root(temp_root, source_path)
         if candidate_path is None:
             return None
@@ -6627,6 +6807,11 @@ class InboxDecisionRequest(BaseModel):
     user_confirmed: bool = False
 
 
+class RuntimeLogMaintenanceRequest(BaseModel):
+    operation: Literal["rebuild_index"] = "rebuild_index"
+    user_confirmed: bool = False
+
+
 class DataLakeQueryRequest(BaseModel):
     question: str = ""
     source: str = ""
@@ -6956,6 +7141,140 @@ def runtime_readiness_status(git_status: dict[str, Any], boi_agent: dict[str, An
     }
 
 
+def runtime_log_files_health(*, include_line_counts: bool = True) -> list[dict[str, Any]]:
+    files: list[dict[str, Any]] = []
+    for kind, root, prefix in (
+        ("action", ACTION_LOG_ROOT, "actions"),
+        ("event", EVENTS_ROOT, "events"),
+    ):
+        for path in sorted(root.glob(f"{prefix}-*.jsonl")):
+            if not path.is_file():
+                continue
+            index_path = runtime_log_index_path(path)
+            size = path.stat().st_size
+            files.append(
+                {
+                    "kind": kind,
+                    "file": path.name,
+                    "path": str(path),
+                    "bytes": size,
+                    "line_count": runtime_log_line_count(path) if include_line_counts else None,
+                    "index_path": str(index_path),
+                    "index_exists": index_path.exists(),
+                    "index_bytes": index_path.stat().st_size if index_path.exists() else 0,
+                    "over_limit": size > BOI_RUNTIME_LOG_MAX_BYTES,
+                    "modified_at": datetime.fromtimestamp(path.stat().st_mtime, tz=KST).replace(microsecond=0).isoformat(),
+                }
+            )
+    files.sort(key=lambda item: (item["bytes"], item["file"]), reverse=True)
+    return files
+
+
+def runtime_log_health_payload(*, include_line_counts: bool = True) -> dict[str, Any]:
+    files = runtime_log_files_health(include_line_counts=include_line_counts)
+    total_bytes = sum(int(item.get("bytes") or 0) for item in files)
+    largest = files[0] if files else {}
+    warnings: list[dict[str, Any]] = []
+    for item in files:
+        if item.get("over_limit"):
+            warnings.append(
+                {
+                    "kind": item.get("kind"),
+                    "file": item.get("file"),
+                    "warning": "file_exceeds_rotation_limit",
+                    "bytes": item.get("bytes"),
+                    "max_bytes": BOI_RUNTIME_LOG_MAX_BYTES,
+                }
+            )
+        if BOI_RUNTIME_INDEX_ENABLED and not item.get("index_exists"):
+            warnings.append(
+                {
+                    "kind": item.get("kind"),
+                    "file": item.get("file"),
+                    "warning": "missing_sidecar_index",
+                }
+            )
+    return {
+        "ok": True,
+        "checked_at": now_iso(),
+        "config": {
+            "max_bytes": BOI_RUNTIME_LOG_MAX_BYTES,
+            "retention_days": BOI_RUNTIME_LOG_RETENTION_DAYS,
+            "archive_enabled": BOI_RUNTIME_LOG_ARCHIVE_ENABLED,
+            "index_enabled": BOI_RUNTIME_INDEX_ENABLED,
+        },
+        "summary": {
+            "segment_count": len(files),
+            "total_bytes": total_bytes,
+            "largest_file": largest.get("file", ""),
+            "largest_file_bytes": int(largest.get("bytes") or 0),
+            "warning_count": len(warnings),
+            "last_rotation": "",
+        },
+        "warnings": warnings,
+        "files": files,
+    }
+
+
+def rebuild_runtime_log_index(path: Path, ref_prefix: str) -> int:
+    index_path = runtime_log_index_path(path)
+    tmp_path = index_path.with_suffix(index_path.suffix + ".tmp")
+    count = 0
+    with path.open("r", encoding="utf-8") as source, tmp_path.open("w", encoding="utf-8") as target:
+        for line_number, line in enumerate(source, start=1):
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(row, dict):
+                continue
+            log_ref = f"{ref_prefix}:{path.name}:{line_number}"
+            target.write(json.dumps(runtime_log_index_row(row, log_ref=log_ref, log_path=path, line_number=line_number), ensure_ascii=False, default=str) + "\n")
+            count += 1
+    tmp_path.replace(index_path)
+    return count
+
+
+@app.get("/api/runtime/log-health")
+async def api_runtime_log_health(_employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return runtime_log_health_payload()
+
+
+@app.post("/api/runtime/log-maintenance/preview")
+async def api_runtime_log_maintenance_preview(_req: RuntimeLogMaintenanceRequest, _employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    health = runtime_log_health_payload()
+    return {
+        "ok": True,
+        "operation": "rebuild_index",
+        "actions": [
+            {"kind": item["kind"], "file": item["file"], "action": "rebuild_index"}
+            for item in health["files"]
+            if not item.get("index_exists")
+        ],
+        "health": health,
+    }
+
+
+@app.post("/api/runtime/log-maintenance/run")
+async def api_runtime_log_maintenance_run(req: RuntimeLogMaintenanceRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.admin")
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="runtime log maintenance requires user_confirmed=true")
+    rebuilt: list[dict[str, Any]] = []
+    if req.operation == "rebuild_index":
+        for kind, root, prefix, ref_prefix in (
+            ("action", ACTION_LOG_ROOT, "actions", "action"),
+            ("event", EVENTS_ROOT, "events", "event"),
+        ):
+            for path in sorted(root.glob(f"{prefix}-*.jsonl")):
+                if not path.is_file():
+                    continue
+                rebuilt.append({"kind": kind, "file": path.name, "rows": rebuild_runtime_log_index(path, ref_prefix)})
+        invalidate_action_log_caches()
+        invalidate_event_log_caches()
+    return {"ok": True, "operation": req.operation, "rebuilt": rebuilt, "health": runtime_log_health_payload()}
+
+
 @app.get("/api/runtime/config")
 async def runtime_config() -> dict[str, Any]:
     markdown_sig = markdown_signature()
@@ -7088,6 +7407,7 @@ async def runtime_config() -> dict[str, Any]:
             "max_in_flight": INBOX_REPORT_BACKGROUND_MAX_IN_FLIGHT,
         },
         "data_lake": data_lake_status_payload(),
+        "runtime_logs": runtime_log_health_payload(include_line_counts=False),
         "langflow_simulator": langflow_simulator,
     }
 
@@ -22273,7 +22593,7 @@ async def actions_page(
                 }
                 | {
                     str(item.get("connector_kind") or "")
-                    for item in cached_action_log_rows()
+                    for item in action_history.get("items", [])
                     if str(item.get("connector_kind") or "")
                 }
             ),

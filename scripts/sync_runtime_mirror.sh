@@ -10,8 +10,12 @@ mkdir -p "$DST"
 # --protect=<path> form so tests can assert the contract without depending on
 # rsync filter shorthand.
 # --protect=data/events/*.jsonl
+# --protect=data/events/*.jsonl.idx
 # --protect=data/actions/*.jsonl
+# --protect=data/actions/*.jsonl.idx
 # --protect=data/boi/private/*/boi-private-*.md
+# --protect=data/boi/private/*/**/boi-private-*.md
+# --protect=data/boi/private/*/inbox-reports/*
 # --protect=data/boi/team/*/boi-team-*.md
 # --protect=data/boi/public/boi-public-*.md
 rsync -rltD \
@@ -20,8 +24,12 @@ rsync -rltD \
   --no-owner \
   --no-group \
   --filter='P data/events/*.jsonl' \
+  --filter='P data/events/*.jsonl.idx' \
   --filter='P data/actions/*.jsonl' \
+  --filter='P data/actions/*.jsonl.idx' \
   --filter='P data/boi/private/*/boi-private-*.md' \
+  --filter='P data/boi/private/*/**/boi-private-*.md' \
+  --filter='P data/boi/private/*/inbox-reports/*' \
   --filter='P data/boi/team/*/boi-team-*.md' \
   --filter='P data/boi/public/boi-public-*.md' \
   --exclude '.git' \

@@ -20,6 +20,8 @@ from pydantic import BaseModel, Field
 KST = timezone(timedelta(hours=9))
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
 ACTION_LOG_ROOT = Path(os.getenv("ACTION_LOG_ROOT", "/data/actions"))
+BOI_RUNTIME_LOG_MAX_BYTES = int(os.getenv("BOI_RUNTIME_LOG_MAX_BYTES", str(10 * 1024 * 1024)) or str(10 * 1024 * 1024))
+BOI_RUNTIME_INDEX_ENABLED = os.getenv("BOI_RUNTIME_INDEX_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
 BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000")
 LANGFLOW_URL = os.getenv("LANGFLOW_URL", "http://langflow:7860")
@@ -60,6 +62,63 @@ def now_iso() -> str:
 def ensure_dirs() -> None:
     ACTION_CATALOG_ROOT.mkdir(parents=True, exist_ok=True)
     ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def runtime_log_index_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".idx")
+
+
+def runtime_log_line_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    last_byte = b""
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            count += chunk.count(b"\n")
+            last_byte = chunk[-1:]
+    if path.stat().st_size > 0 and last_byte != b"\n":
+        count += 1
+    return count
+
+
+def runtime_log_segment_path() -> Path:
+    ACTION_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    date_text = datetime.now(KST).strftime("%Y%m%d")
+    max_bytes = max(1, BOI_RUNTIME_LOG_MAX_BYTES)
+    base = ACTION_LOG_ROOT / f"actions-{date_text}.jsonl"
+    if not base.exists() or base.stat().st_size < max_bytes:
+        return base
+    segment = 2
+    while True:
+        candidate = ACTION_LOG_ROOT / f"actions-{date_text}-{segment:04d}.jsonl"
+        if not candidate.exists() or candidate.stat().st_size < max_bytes:
+            return candidate
+        segment += 1
+
+
+def append_runtime_log_index(path: Path, row: dict[str, Any], *, log_ref: str, line_number: int) -> None:
+    if not BOI_RUNTIME_INDEX_ENABLED:
+        return
+    index_row = {
+        "log_ref": log_ref,
+        "file": path.name,
+        "line_number": line_number,
+        "logged_at": str(row.get("logged_at") or ""),
+        "employee_id": str(row.get("employee_id") or ""),
+        "trace_id": str(row.get("trace_id") or ""),
+        "event_id": str(row.get("event_id") or ""),
+        "event_type": str(row.get("event_type") or ""),
+        "action_key": str(row.get("action_key") or ""),
+        "request_id": str(row.get("request_id") or ""),
+        "status": str(row.get("status") or ""),
+        "connector_kind": str(row.get("connector_kind") or row.get("action_type") or ""),
+    }
+    with runtime_log_index_path(path).open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(index_row, ensure_ascii=False, default=str) + "\n")
 
 
 def load_catalog() -> list[dict[str, Any]]:
@@ -207,9 +266,11 @@ def evidence_summary_from_packets(packets: Any) -> dict[str, Any]:
 def append_action_log(row: dict[str, Any]) -> None:
     ensure_dirs()
     payload = {"logged_at": now_iso(), **row}
-    path = ACTION_LOG_ROOT / f"actions-{datetime.now(KST).strftime('%Y%m%d')}.jsonl"
+    path = runtime_log_segment_path()
+    line_number = runtime_log_line_count(path) + 1
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    append_runtime_log_index(path, payload, log_ref=f"action:{path.name}:{line_number}", line_number=line_number)
 
 
 def read_action_logs(limit: int = 200, action_key: str | None = None, trace_id: str | None = None) -> list[dict[str, Any]]:
