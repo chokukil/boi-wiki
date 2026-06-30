@@ -139,6 +139,31 @@ match가 더 많으면 `overflow.total_matches`, `overflow.omitted_count`, `over
 4. 관계는 depth 1 기준으로 충분히 설명하고, 무의미한 dense graph를 만들지 않는다.
 5. Public/team 승격 전 ontology search 영향 preview와 context budget test를 확인한다.
 
+# Bulk Dictionary Curation
+
+대량 dictionary 후보를 반영할 때는 개별 용어마다 importer, API resolver, route test를 수정하지 않는다. 일반적인 용어 추가/수정은 source candidate data와 curator override/manifest 같은 data layer에서 처리한다.
+
+Code 변경이 필요한 경우는 다음으로 제한한다.
+
+- dictionary 문서 schema 또는 required metadata 계약이 바뀔 때
+- resolver matching 정책, scope 우선순위, context budget 같은 공통 동작이 바뀔 때
+- 품질 gate 또는 lint rule처럼 모든 dictionary term에 적용되는 검증 기준이 바뀔 때
+
+개별 용어 판단은 다음 action 중 하나로 기록한다.
+
+| Action | 기준 |
+|---|---|
+| `keep` | 후보 term 자체가 canonical public/team/private term으로 적합할 때 |
+| `replace_with_canonical` | 후보 term을 상위 canonical term의 alias 또는 variant로 흡수할 때 |
+| `split_into_terms` | 후보 표현이 둘 이상의 독립 term으로 나뉠 때 |
+| `alias_to_existing` | 기존 term의 alias로만 보존하고 새 문서는 만들지 않을 때 |
+| `exclude` | 오류, noise, 중복, public 부적합 후보일 때. 기존 importer 호환 alias로 `exclude_from_public`도 허용한다. |
+| `needs_parent_curation` | 상위 개념이나 관계 판단이 부족할 때 |
+
+Slash, 숫자 묶음, 조건 묶음, mode/test variant 표현은 기본적으로 단독 canonical로 승격하지 않는다. 먼저 상위 개념, alias, broader/narrower 관계를 검토하고, 상위 term이 없으면 parent curation 대상으로 남긴다.
+
+Public으로 승격하는 term은 최소한 `term`, `definition`, `aliases`, `domain`, `examples`, `related_terms`, `source_refs`를 가져야 한다. `test-method`, `variant-group`, `variant` 성격의 term은 상위 term과의 관계가 metadata와 Markdown body 양쪽에 남아야 한다.
+
 # Granularity Rule
 
 Public dictionary는 상위 개념과 세부 현업 용어를 모두 허용한다. 다만 세부 test/mode/variant 용어는 graph 없이 단독 canonical로 승격하지 않는다. 세부 용어가 public에 올라가려면 상위 public term과의 관계가 metadata와 Markdown 본문 양쪽에 남아야 한다.
