@@ -9,6 +9,7 @@ from pathlib import Path
 
 BLOCKED_PATTERNS = (
     "data/actions/*",
+    "data/private-trash/*",
     "data/events/*.jsonl",
     "data/boi/private/*/inbox-reports/*",
     "data/boi/private/*/boi-private-*.md",

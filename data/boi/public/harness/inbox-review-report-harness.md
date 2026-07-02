@@ -35,8 +35,13 @@ review:
 
 Data Lake가 켜져 있고 관련 source가 있으면 sample/profile/artifact link를 자동 근거 후보로 붙일 수 있다. 없으면 근거를 꾸미지 않고 Event, Action, 생성 BoI, manual note, 과거 사례만 사용한다.
 
+검증 보고서 BoI는 같은 업무 키에 대해 파일을 무한 생성하지 않는다. `employee_id + report_id/task_id + contract_version` 안정 키 기준으로 active report 1개를 갱신하며, 구버전 또는 hash만 다른 반복 report는 `private_memory_cleanup_preview`에서 quarantine 후보가 되어야 한다. 최신 1개, memory/protected/promoted 문서는 삭제 후보가 아니다.
+
+기본 BoI Explorer와 `/api/boi`는 generated/background report를 숨긴다. 보고서 목록은 `/inbox` 또는 `include_generated=true` 명시 필터에서 확인한다. 이 기준이 깨지면 private Second Brain이 generated report log로 오염된 것으로 보고 실패 처리한다.
+
 ```bash
 python scripts/check_inbox_narrative_quality.py --base-url http://localhost:28000 --summary --require-ready-report
 node scripts/check_boi_inbox_ui.mjs --strict
 pytest tests/test_boi_api_routes.py -q -s -k "boi_inbox or agent_inbox"
+pytest tests/test_boi_api_routes.py -q -s -k "private_memory or inbox_report"
 ```

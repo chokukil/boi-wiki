@@ -16,6 +16,7 @@ mkdir -p "$DST"
 # --protect=data/boi/private/*/boi-private-*.md
 # --protect=data/boi/private/*/**/boi-private-*.md
 # --protect=data/boi/private/*/inbox-reports/*
+# --protect=data/private-trash/*
 # --protect=data/boi/team/*/boi-team-*.md
 # --protect=data/boi/public/boi-public-*.md
 rsync -rltD \
@@ -30,6 +31,7 @@ rsync -rltD \
   --filter='P data/boi/private/*/boi-private-*.md' \
   --filter='P data/boi/private/*/**/boi-private-*.md' \
   --filter='P data/boi/private/*/inbox-reports/*' \
+  --filter='P data/private-trash/*' \
   --filter='P data/boi/team/*/boi-team-*.md' \
   --filter='P data/boi/public/boi-public-*.md' \
   --exclude '.git' \

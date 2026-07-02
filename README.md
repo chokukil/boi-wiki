@@ -56,6 +56,10 @@ python scripts/check_local_full_readiness.py --base-url http://localhost:28000
 python scripts/check_langflow_universal_simulator.py --langflow-url http://localhost:7860 --boi-api-url http://localhost:28000
 SERVICE_TOKEN=dev-service-token-change-me python scripts/run_equipment_sop_poc.py --scenario-profile semiconductor-varied --count 8
 python scripts/check_inbox_narrative_quality.py --base-url http://localhost:28000 --summary --require-ready-report
+python scripts/check_agent_sandbox.py --base-url http://localhost:28000 --employee-id 100001 --strict-openai --summary
+python scripts/check_agent_builder_mcp_bridge.py --mcp-base-url http://localhost:8200 --employee-id 100001 --summary
+node scripts/check_agent_builder_ui.mjs --url http://localhost:28000/agents/builder?employee_id=100001 --strict
+python scripts/check_boi_operations_center.py --base-url http://localhost:28000 --employee-id 100001 --summary
 python scripts/check_boi_agent_scenarios.py --base-url http://localhost:28000 --strict --summary
 node scripts/check_pet_agent_ui.mjs --scenario-file tests/fixtures/boi_agent_ui_scenarios.yaml --strict
 ```
@@ -68,6 +72,7 @@ node scripts/check_pet_agent_ui.mjs --scenario-file tests/fixtures/boi_agent_ui_
 
 - BoI Wiki: http://localhost:28000/?employee_id=100001
 - BoI Inbox: http://localhost:28000/inbox?employee_id=100001
+- BoI Operations Center: http://localhost:28000/ops?employee_id=100001
 - SOP: http://localhost:28000/sops?employee_id=100001
 - SOP 추가: http://localhost:28000/sops/new?employee_id=100001
 - Event Broker: http://localhost:28000/events?employee_id=100001
@@ -365,6 +370,7 @@ python scripts/okf_lint.py --root data --include-logs --strict-media --strict-li
 pytest tests -q -s
 python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --summary
 python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --boi-api-url http://localhost:28000 --agent-contract --summary
+python scripts/check_agent_builder_mcp_bridge.py --mcp-base-url http://localhost:8200 --employee-id 100001 --summary
 ```
 
 일반 Local 사용자는 위 명령을 직접 실행하지 않아도 됩니다. `boi-wiki-local`에서는 agent 하네스가 Level 0 self-check를 수행하고, 가능하면 `check.sh` 또는 `check.ps1`을 실행합니다.

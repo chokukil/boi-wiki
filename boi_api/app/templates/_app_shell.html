@@ -50,11 +50,15 @@
 </nav>
 {% endif %}
 
+{% if not shell.hide_pet_agent %}
 <div
   id="boi-agent-root"
   data-employee-id="{{ shell.employee_id }}"
   data-current-url="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
   data-page-title="{{ shell.title }}"
 ></div>
+{% endif %}
 <script src="{{ asset_url('mermaid_render.js') }}" defer></script>
+{% if not shell.hide_pet_agent %}
 <script src="{{ asset_url('pet_agent.js') }}" defer></script>
+{% endif %}

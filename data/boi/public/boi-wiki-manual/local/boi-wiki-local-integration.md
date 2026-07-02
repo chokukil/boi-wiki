@@ -55,6 +55,19 @@ flowchart LR
 | 업무 context pack | `context-packs/` | Agent/MCP가 읽는 업무 맥락 |
 | 반복 업무 패턴 | `reports/`, `notes/`, future `work-patterns/` | WorkflowDefinition 또는 Skill 후보 |
 
+# Local Lifecycle
+
+`boi-wiki-local`은 shared Web runtime에 private 원문을 자동 전송하지 않는다. 하지만 lifecycle metadata는 Web과 맞춘다.
+
+| Metadata | Use |
+|---|---|
+| `artifact_visibility` | `memory`, `working`, `background`, `archived`, `delete_candidate`, `protected` |
+| `lifecycle_state` | 현재 보관 상태 |
+| `memory_candidate` | Agent가 장기 기억 후보로 제안했는지 |
+| `cleanup_policy` | keep, generated artifact cleanup, promotion protected 같은 정책 |
+
+Local generated artifact는 `.boi-trash/{cleanup_id}/`로 quarantine하고 7일 후 hard delete한다. 삭제 전에는 preview를 보여줘야 하며, promotion draft, 사용자가 직접 작성한 memory/working 문서, protected 문서는 cleanup 대상이 아니다. Web으로 promotion하기 전에는 local cleanup이 promotion 대상 원문을 보호해야 한다.
+
 # MCP 사용 기준
 
 MCP가 있으면 agent는 shared BoI Wiki에서 다음을 조회한다.
@@ -80,6 +93,8 @@ MCP가 있으면 agent는 shared BoI Wiki에서 다음을 조회한다.
 # Guardrail
 
 Local Private 원문은 사용자 명시 승인 없이 원격으로 보내지 않는다. shared로 보내는 것은 검증된 promotion candidate, context pack 요약, 또는 draft proposal이다. 7자리 사번 기반 private path와 `local_owner_ref`는 항상 일치해야 한다.
+
+Generated report나 sandbox artifact를 shared로 보낼 때도 raw 원문 전체를 기본 전송하지 않는다. 필요한 경우 summary/profile/artifact reference를 만들고, 사용자가 선택한 promotion candidate만 Web API/MCP로 보낸다.
 
 # Related Documents
 

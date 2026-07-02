@@ -21,6 +21,7 @@ function parseArgs(argv) {
     approveExecutionCard: false,
     expectApprovalStatus: "",
     scenarioFile: "",
+    turnsJson: "",
   };
   for (let index = 2; index < argv.length; index += 1) {
     const item = argv[index];
@@ -36,9 +37,10 @@ function parseArgs(argv) {
     else if (item === "--scenario-file") args.scenarioFile = argv[++index] || "";
     else if (item === "--approve-execution-card") args.approveExecutionCard = true;
     else if (item === "--expect-approval-status") args.expectApprovalStatus = argv[++index] || "";
+    else if (item === "--turns-json") args.turnsJson = argv[++index] || "";
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|action_requirements|table|manual_handoff_summary|task_cards|confirmation_required] [--expect-evidence-artifact TYPE] [--forbid-inline-artifact TYPE] [--expect-followup-loading] [--forbid-visible-term TEXT] [--scenario-file FILE] [--approve-execution-card] [--expect-approval-status STATUS] [--screenshot FILE] [--strict]`);
+      console.log(`Usage: node scripts/check_pet_agent_ui.mjs [--url URL] [--question TEXT] [--expect-artifact mermaid|workflow_summary|action_requirements|table|manual_handoff_summary|task_cards|confirmation_required] [--expect-evidence-artifact TYPE] [--forbid-inline-artifact TYPE] [--expect-followup-loading] [--forbid-visible-term TEXT] [--scenario-file FILE] [--approve-execution-card] [--expect-approval-status STATUS] [--turns-json JSON] [--screenshot FILE] [--strict]`);
       process.exit(0);
     }
   }
@@ -73,13 +75,15 @@ function parseChildReport(stdout, stderr) {
 }
 
 function runNodeScenario(scriptPath, parentArgs, scenario) {
+  const turns = Array.isArray(scenario.turns) ? scenario.turns : [];
   const childArgs = [
     scriptPath,
     "--url", scenario.url || scenario.current_url || parentArgs.url,
-    "--question", scenario.question || parentArgs.question,
+    "--question", scenario.question || turns[0]?.question || parentArgs.question,
     "--expect-artifact", scenario.expect_artifact || scenario.expectArtifact || parentArgs.expectArtifact,
     "--timeout-ms", String(scenario.timeout_ms || scenario.timeoutMs || parentArgs.timeoutMs),
   ];
+  if (turns.length) childArgs.push("--turns-json", JSON.stringify(turns));
   const expectEvidenceArtifact = scenario.expect_evidence_artifact || scenario.expectEvidenceArtifact || parentArgs.expectEvidenceArtifact;
   const forbidInlineArtifact = scenario.forbid_inline_artifact || scenario.forbidInlineArtifact || parentArgs.forbidInlineArtifact;
   const forbidVisibleTerms = scenario.forbid_visible_terms || scenario.forbidVisibleTerms || parentArgs.forbidVisibleTerms || [];
@@ -121,7 +125,7 @@ async function runScenarioSuite(args) {
   for (let index = 0; index < scenarios.length; index += 1) {
     const scenario = scenarios[index];
     const scenarioId = scenario.id || `scenario-${index + 1}`;
-    console.error(`[${index + 1}/${scenarios.length}] ${scenarioId}: ${scenario.question || args.question}`);
+    console.error(`[${index + 1}/${scenarios.length}] ${scenarioId}: ${scenario.question || scenario.turns?.[0]?.question || args.question}`);
     const result = await runNodeScenario(process.argv[1], args, scenario);
     console.error(`[${index + 1}/${scenarios.length}] ${scenarioId}: ${result.ok ? "ok" : "failed"}`);
     results.push(result);
@@ -289,6 +293,174 @@ async function terminateChrome(child) {
   }
 }
 
+function asList(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value.map((item) => String(item || "")).filter(Boolean) : [String(value)];
+}
+
+async function submitAgentQuestion(cdp, question) {
+  return cdp.evaluate(`(() => {
+    const root = document.querySelector("#boi-agent-root");
+    const form = root?.querySelector(".boi-agent-chat-form");
+    const textarea = form?.querySelector("textarea");
+    if (!form || !textarea) return { ok: false, reason: "chat form missing" };
+    textarea.value = ${JSON.stringify(question)};
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: textarea.value }));
+    form.requestSubmit();
+    return { ok: true };
+  })()`);
+}
+
+async function collectAgentFormState(cdp) {
+  return cdp.evaluate(`(() => {
+    const root = document.querySelector("#boi-agent-root");
+    const form = root?.querySelector(".boi-agent-chat-form");
+    const textarea = form?.querySelector("textarea");
+    const submit = form?.querySelector('button[type="submit"]');
+    return {
+      hasForm: !!form,
+      textareaDisabled: !!textarea?.disabled,
+      submitDisabled: !!submit?.disabled,
+      hasStopButton: !!root?.querySelector(".boi-agent-stop"),
+      draft: textarea?.value || "",
+    };
+  })()`);
+}
+
+async function collectLatestAgentTurn(cdp) {
+  return cdp.evaluate(`(() => {
+    const root = document.querySelector("#boi-agent-root");
+    const messages = Array.from(root?.querySelectorAll(".boi-agent-message") || []);
+    const latestUser = Array.from(root?.querySelectorAll(".boi-agent-message.user") || []).pop();
+    const latestAssistant = Array.from(root?.querySelectorAll(".boi-agent-message.assistant") || []).pop();
+    const latestUserText = latestUser?.querySelector(".boi-agent-answer")?.textContent.trim()
+      || (latestUser?.textContent || "").replace(/^\\s*You\\s*/i, "").trim();
+    const latestAssistantText = latestAssistant?.querySelector(".boi-agent-answer")?.textContent.trim()
+      || latestAssistant?.textContent.trim()
+      || "";
+    const storageRecords = Object.keys(sessionStorage)
+      .filter((key) => key.startsWith("boiAgent.v8.") && !key.includes(".lastContext."))
+      .map((key) => {
+        try {
+          const value = JSON.parse(sessionStorage.getItem(key) || "{}");
+          return { key, value, count: Array.isArray(value.messages) ? value.messages.length : 0 };
+        } catch (_error) {
+          return { key, value: {}, count: 0 };
+        }
+      })
+      .sort((left, right) => right.count - left.count);
+    const persisted = storageRecords[0]?.value || {};
+    const persistedAssistant = Array.from(persisted.messages || []).filter((item) => item.role === "assistant").pop() || {};
+    return {
+      messageCount: messages.length,
+      latestUserText,
+      latestAssistantText,
+      latestAssistantTextLength: latestAssistantText.length,
+      followupLoadingCount: root?.querySelectorAll(".boi-agent-message-followups.loading").length || 0,
+      answerFollowupButtonCount: latestAssistant ? latestAssistant.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
+      semanticRoute: persistedAssistant.semanticRoute || {},
+      relatedItemContext: persistedAssistant.relatedItemContext || {},
+      responseProfile: persistedAssistant.responseProfile || "",
+      storageKey: storageRecords[0]?.key || "",
+    };
+  })()`);
+}
+
+function turnExpectationsOk(turn, result) {
+  const answerText = String(result.latestAssistantText || "");
+  const expectTexts = asList(turn.expect_text || turn.expectText);
+  const forbidTexts = asList(turn.forbid_text || turn.forbidText || turn.forbid_visible_terms || turn.forbidVisibleTerms);
+  const semanticTarget = turn.expect_semantic_target || turn.expectSemanticTarget || "";
+  const relatedScope = turn.expect_related_scope || turn.expectRelatedScope || "";
+  const semanticRoute = result.semanticRoute || {};
+  const relatedItemContext = result.relatedItemContext || {};
+  return {
+    answer_rendered: result.latestAssistantTextLength > 20,
+    expected_text_seen: expectTexts.length ? expectTexts.every((text) => answerText.includes(text)) : true,
+    forbidden_text_absent: forbidTexts.length ? forbidTexts.every((text) => !answerText.includes(text)) : true,
+    semantic_target_matched: semanticTarget
+      ? [semanticRoute.target_kind, semanticRoute.targetKind, semanticRoute.kind].filter(Boolean).includes(semanticTarget)
+      : true,
+    related_scope_matched: relatedScope ? relatedItemContext.scope === relatedScope : true,
+    input_enabled_after_answer: result.formState?.hasForm === true
+      && result.formState?.textareaDisabled === false
+      && result.formState?.submitDisabled === false
+      && result.formState?.hasStopButton === false,
+  };
+}
+
+async function runMultiTurnAgentSmoke(cdp, args, log, networkProbe, starterBeforeAsk) {
+  const turns = JSON.parse(args.turnsJson || "[]");
+  const turnResults = [];
+  for (let index = 0; index < turns.length; index += 1) {
+    const turn = turns[index] || {};
+    const question = String(turn.question || "").trim();
+    if (!question) throw new Error(`turn ${index + 1} is missing question`);
+    const beforeCount = await cdp.evaluate(`document.querySelectorAll("#boi-agent-root .boi-agent-message").length`);
+    const beforeFormState = await collectAgentFormState(cdp);
+    if (beforeFormState.hasStopButton || beforeFormState.textareaDisabled || beforeFormState.submitDisabled) {
+      throw new Error(`turn ${index + 1} cannot start because input is blocked`);
+    }
+    log(`submitted turn ${index + 1}: ${question}`);
+    const submitResult = await submitAgentQuestion(cdp, question);
+    if (!submitResult?.ok) throw new Error(submitResult?.reason || `turn ${index + 1} submit failed`);
+    await waitUntil(
+      cdp,
+      `(() => {
+        const root = document.querySelector("#boi-agent-root");
+        const count = root.querySelectorAll(".boi-agent-message").length;
+        const latest = root.querySelector(".boi-agent-message.assistant:last-of-type");
+        const answer = latest?.querySelector(".boi-agent-answer");
+        return count >= ${Number(beforeCount) + 2} && answer && answer.textContent.trim().length > 20 && !root.querySelector(".boi-agent-stop");
+      })()`,
+      args.timeoutMs,
+      250,
+    );
+    const formState = await collectAgentFormState(cdp);
+    const latest = await collectLatestAgentTurn(cdp);
+    const result = {
+      turn: index + 1,
+      question,
+      beforeFormState,
+      formState,
+      ...latest,
+    };
+    result.checks = turnExpectationsOk(turn, result);
+    turnResults.push(result);
+  }
+
+  if (args.screenshot) {
+    log(`capturing screenshot to ${args.screenshot}`);
+    const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+    createWriteStream(args.screenshot).end(Buffer.from(screenshot.data, "base64"));
+  }
+
+  const checks = {
+    panel_opened: !!(await cdp.evaluate(`!!document.querySelector("#boi-agent-root .boi-agent-panel.open")`)),
+    starter_suggestions_nonblocking: networkProbe.suggestionRequests >= 0 && starterBeforeAsk.count >= 0,
+    turns_completed: turnResults.length === turns.length,
+    answer_rendered_each_turn: turnResults.every((item) => item.checks.answer_rendered),
+    input_enabled_after_each_answer: turnResults.every((item) => item.checks.input_enabled_after_answer),
+    expected_text_seen: turnResults.every((item) => item.checks.expected_text_seen),
+    forbidden_text_absent: turnResults.every((item) => item.checks.forbidden_text_absent),
+    semantic_targets_matched: turnResults.every((item) => item.checks.semantic_target_matched),
+    related_scopes_matched: turnResults.every((item) => item.checks.related_scope_matched),
+  };
+  const ok = Object.values(checks).every(Boolean);
+  const report = {
+    ok,
+    url: args.url,
+    mode: "multi_turn",
+    checks,
+    network: networkProbe,
+    starter_before_ask: starterBeforeAsk,
+    turns: turnResults,
+    screenshot: args.screenshot || "",
+  };
+  console.log(JSON.stringify(report, null, 2));
+  if (args.strict && !ok) process.exitCode = 1;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (args.scenarioFile) {
@@ -413,6 +585,12 @@ async function main() {
       };
     })()`);
     log(`starter suggestions: ${starterBeforeAsk.count}`);
+
+    if (args.turnsJson) {
+      await runMultiTurnAgentSmoke(cdp, args, log, networkProbe, starterBeforeAsk);
+      return;
+    }
+
     await cdp.evaluate(`(() => {
       const textarea = document.querySelector(".boi-agent-chat-form textarea");
       textarea.value = ${JSON.stringify(args.question)};
@@ -479,7 +657,17 @@ async function main() {
       const probe = window.__boiAgentUiProbe || {};
       const uniqueAnswers = Array.from(new Set(probe.answerTexts || []));
       const latestMessage = root.querySelector(".boi-agent-message.assistant:last-of-type");
-      const persisted = JSON.parse(sessionStorage.getItem("boiAgent.v7.100001") || "{}");
+      const persisted = Object.keys(sessionStorage)
+        .filter((key) => key.startsWith("boiAgent.v8.") && !key.includes(".lastContext."))
+        .map((key) => {
+          try {
+            const value = JSON.parse(sessionStorage.getItem(key) || "{}");
+            return { key, value, count: Array.isArray(value.messages) ? value.messages.length : 0 };
+          } catch (_error) {
+            return { key, value: {}, count: 0 };
+          }
+        })
+        .sort((left, right) => right.count - left.count)[0]?.value || {};
       const persistedLatestAssistant = Array.from(persisted.messages || []).filter((item) => item.role === "assistant").pop() || {};
       const answerNode = latestMessage?.querySelector(".boi-agent-answer");
       const diagrams = Array.from(latestMessage?.querySelectorAll(".boi-agent-artifacts .mermaid-diagram, .boi-agent-answer .mermaid-diagram") || []);
@@ -635,50 +823,6 @@ async function main() {
       })()`);
     }
 
-    const navUrl = new URL(args.url);
-    navUrl.pathname = "/sops";
-    navUrl.search = "employee_id=100001";
-    const navLoaded = cdp.once("Page.loadEventFired");
-    log("navigating away to test restore");
-    await cdp.send("Page.navigate", { url: navUrl.toString() });
-    await navLoaded;
-    await waitUntil(
-      cdp,
-      "['interactive','complete'].includes(document.readyState) && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
-      15000,
-    );
-    try {
-      await waitUntil(
-        cdp,
-        `(() => {
-          const root = document.querySelector("#boi-agent-root");
-          const latest = root?.querySelector(".boi-agent-message.assistant:last-of-type");
-          const diagrams = Array.from(latest?.querySelectorAll(".mermaid-diagram") || []);
-          return diagrams.length > 0 && diagrams.every((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg"));
-        })()`,
-        12000,
-        250,
-      );
-    } catch (_error) {
-      // The structured report below records restoration/render status.
-    }
-    const afterNavigation = await cdp.evaluate(`(() => {
-      const root = document.querySelector("#boi-agent-root");
-      const latest = root?.querySelector(".boi-agent-message.assistant:last-of-type");
-      const diagrams = Array.from(latest?.querySelectorAll(".mermaid-diagram") || []);
-      const answerText = latest?.querySelector(".boi-agent-answer")?.textContent || "";
-      return {
-        panelOpen: !!root?.querySelector(".boi-agent-panel.open"),
-        messageCount: root?.querySelectorAll(".boi-agent-message").length || 0,
-        mermaidDiagramCount: diagrams.length,
-        mermaidRenderedCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")).length,
-        artifactTableCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
-        taskCardCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-task-display").length : 0,
-        answerFollowupButtonCount: latest ? latest.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
-        rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
-      };
-    })()`);
-
     let followupClick = { skipped: true, reason: "no answer follow-up button" };
     if (beforeNew.answerFollowupButtonCount > 0) {
       log("clicking answer follow-up");
@@ -726,6 +870,35 @@ async function main() {
       }
     }
 
+    const navUrl = new URL(args.url);
+    navUrl.pathname = "/sops";
+    navUrl.search = "employee_id=100001";
+    const navLoaded = cdp.once("Page.loadEventFired");
+    log("navigating away to test context reset");
+    await cdp.send("Page.navigate", { url: navUrl.toString() });
+    await navLoaded;
+    await waitUntil(
+      cdp,
+      "['interactive','complete'].includes(document.readyState) && !!document.querySelector('#boi-agent-root .boi-agent-launcher')",
+      15000,
+    );
+    const afterNavigation = await cdp.evaluate(`(() => {
+      const root = document.querySelector("#boi-agent-root");
+      const latest = root?.querySelector(".boi-agent-message.assistant:last-of-type");
+      const diagrams = Array.from(latest?.querySelectorAll(".mermaid-diagram") || []);
+      const answerText = latest?.querySelector(".boi-agent-answer")?.textContent || "";
+      return {
+        panelOpen: !!root?.querySelector(".boi-agent-panel.open"),
+        messageCount: root?.querySelectorAll(".boi-agent-message").length || 0,
+        mermaidDiagramCount: diagrams.length,
+        mermaidRenderedCount: diagrams.filter((diagram) => diagram.dataset.mermaidState === "rendered" && !!diagram.querySelector("svg")).length,
+        artifactTableCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-table-wrap table").length : 0,
+        taskCardCount: latest ? latest.querySelectorAll(".boi-agent-artifacts .boi-agent-task-display").length : 0,
+        answerFollowupButtonCount: latest ? latest.querySelectorAll(".boi-agent-message-followups [data-question]").length : 0,
+        rawMermaidFenceLeak: new RegExp(String.fromCharCode(96, 96, 96) + "\\\\s*mermaid", "i").test(answerText),
+      };
+    })()`);
+
     if (args.screenshot) {
       log(`capturing screenshot to ${args.screenshot}`);
       const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
@@ -770,14 +943,11 @@ async function main() {
             ? artifactViewer.open && artifactViewer.hasTaskCard
             : artifactViewer.open && artifactViewer.hasTable,
       answer_viewer_opened: answerViewer.open && answerViewer.hasAnswer,
-      state_restored_after_navigation: afterNavigation.panelOpen && afterNavigation.messageCount >= 2,
-      artifact_restored_after_navigation: expectsMermaid
-        ? afterNavigation.mermaidDiagramCount >= 1 && afterNavigation.mermaidRenderedCount >= 1 && !afterNavigation.rawMermaidFenceLeak
-        : expectsTable
-          ? afterNavigation.artifactTableCount >= 1
-          : expectsTaskCards
-            ? afterNavigation.taskCardCount >= 1
-            : true,
+      different_context_reset_after_navigation: !afterNavigation.panelOpen && afterNavigation.messageCount === 0,
+      stale_artifact_not_restored_after_navigation: afterNavigation.mermaidDiagramCount === 0
+        && afterNavigation.artifactTableCount === 0
+        && afterNavigation.taskCardCount === 0
+        && !afterNavigation.rawMermaidFenceLeak,
       mermaid_diagram_present: expectsMermaid ? beforeNew.mermaidDiagramCount >= 1 : true,
       mermaid_diagram_rendered: expectsMermaid ? beforeNew.mermaidRenderedCount >= 1 && beforeNew.mermaidFallbackCount === 0 : true,
       mermaid_not_duplicated: expectsMermaid ? beforeNew.mermaidDiagramCount === beforeNew.uniqueMermaidSourceCount : true,
@@ -794,7 +964,7 @@ async function main() {
       page_starter_suggestions_loaded: networkProbe.suggestionRequests >= 1 && starterBeforeAsk.count >= 1,
       answer_followups_rendered: beforeNew.answerFollowupButtonCount >= 1,
       answer_followups_are_answer_scoped: beforeNew.answerFollowupButtonCount >= 1 && beforeNew.answerFollowupTexts.some((text) => !beforeNew.starterSuggestionTexts.includes(text)),
-      answer_followups_restored_after_navigation: afterNavigation.answerFollowupButtonCount >= 1,
+      answer_followups_not_restored_after_context_change: afterNavigation.answerFollowupButtonCount === 0,
       followup_click_sent_new_question: followupClick.ok === true && followupClick.latestUserText === followupClick.clickedQuestion && followupClick.latestAssistantTextLength > 20,
       no_raw_markdown_leak: !beforeNew.rawMermaidFenceLeak && !beforeNew.rawTableSeparatorLeak,
       forbidden_visible_terms_absent: forbidVisibleTerms.length ? forbidVisibleTerms.every((term) => !String(beforeNew.visibleText || "").includes(term)) : true,

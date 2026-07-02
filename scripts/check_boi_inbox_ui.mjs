@@ -183,7 +183,7 @@ async function terminateChrome(child) {
 
 function checkReport(snapshot, consoleErrors, apiManifest) {
   const expectedNav = ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"];
-  const expectedSubnav = ["받은 보고서", "승인/조치", "처리 이력"];
+  const expectedSubnav = ["BoI Operations Center", "받은 보고서", "승인/조치", "처리 이력"];
   const checks = {
     page_loaded: snapshot.readyState === "complete" && snapshot.hasInboxPage,
     primary_nav_order: JSON.stringify(snapshot.primaryNavLabels) === JSON.stringify(expectedNav),
@@ -214,6 +214,49 @@ function checkReport(snapshot, consoleErrors, apiManifest) {
   return { ok: Object.values(checks).every(Boolean), checks };
 }
 
+function checkOpsReport(snapshot, consoleErrors, apiManifest) {
+  const expectedNav = ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"];
+  const expectedSubnav = ["BoI Operations Center", "받은 보고서", "승인/조치", "처리 이력"];
+  const checks = {
+    page_loaded: snapshot.readyState === "complete" && snapshot.hasOpsPage,
+    primary_nav_order: JSON.stringify(snapshot.primaryNavLabels) === JSON.stringify(expectedNav),
+    boi_inbox_active: snapshot.activeNavLabel === "BoI Inbox" && ["inbox", "boi_inbox"].includes(snapshot.activeNavId),
+    subnav_order: JSON.stringify(snapshot.subnavLabels) === JSON.stringify(expectedSubnav),
+    section_intro_matches: snapshot.introTitle === "BoI Operations Center" && /SOP/.test(snapshot.introDescription || ""),
+    no_header_actions: !snapshot.hasPagePrimaryActions && !snapshot.hasUtilityNav,
+    summary_cards_present: snapshot.summaryCardCount >= 4,
+    modebar_present: snapshot.opsModeCount >= 3,
+    workstream_map_present: snapshot.opsSopNodeCount > 0 || snapshot.emptyStatePresent,
+    workstream_weight_present: snapshot.opsWeightedNodeCount > 0 || snapshot.emptyStatePresent,
+    workstream_edge_badges_present: snapshot.opsEdgeCount > 0 && snapshot.opsEdgeBadgeCount > 0 || snapshot.emptyStatePresent,
+    queue_present: snapshot.opsQueueCount > 0 || snapshot.emptyStatePresent,
+    decision_panel_present: snapshot.opsDecisionPanelPresent,
+    run_selection_updates_drawer: snapshot.emptyStatePresent || snapshot.opsRunClickProof?.clicked === true,
+    decision_tab_exposes_actions: snapshot.emptyStatePresent || snapshot.opsDecisionTabProof?.clicked === true,
+    evidence_tab_exposes_workspace: snapshot.opsEvidenceTabProof?.clicked === true,
+    source_backed_sandbox_nodes_optional: snapshot.opsSandboxNodeCount >= 0 && snapshot.opsEvidenceNodeCount >= 0,
+    sandbox_drawer_present: snapshot.opsSandboxDrawerOpen,
+    sandbox_jobs_or_empty_state_present: snapshot.opsSandboxJobCount > 0 || snapshot.opsSandboxEmptyVisible,
+    sandbox_artifacts_visible_when_jobs_exist: snapshot.opsSandboxJobCount === 0 || snapshot.opsSandboxArtifactLinkCount > 0 || snapshot.opsSandboxSummaryVisible,
+    sandbox_actions_work_when_jobs_exist: snapshot.opsSandboxJobCount === 0 || /보고서 .*연결했습니다/.test(snapshot.opsSandboxActionStatus || ""),
+    ops_nodes_do_not_overlap: snapshot.emptyStatePresent || snapshot.opsNodeOverlapCount === 0,
+    ops_edge_labels_do_not_cover_nodes: snapshot.emptyStatePresent || snapshot.opsLargeEdgeLabelOverlapCount === 0,
+    ops_sop_node_density_reduced: snapshot.emptyStatePresent || snapshot.opsSopNodePreviewMax <= 1,
+    agent_has_no_inbox_tab: !snapshot.agentHasInboxTab && !snapshot.agentHasLegacyInboxText,
+    api_ops_manifest_present: apiManifest?.ok === true
+      && Array.isArray(apiManifest?.workstream_nodes)
+      && Array.isArray(apiManifest?.priority_queue)
+      && apiManifest?.summary
+      && typeof apiManifest.summary.open_count === "number",
+    api_ops_visual_model_present: Array.isArray(apiManifest?.workstream_nodes)
+      && Array.isArray(apiManifest?.workstream_edges)
+      && apiManifest.workstream_nodes.filter((node) => node.type === "sop_workstream").every((node) => node.size_class && node.visual_state)
+      && (apiManifest.workstream_edges.length > 0 || apiManifest.summary?.open_count === 0),
+    console_clean: relevantConsoleErrors(consoleErrors).length === 0,
+  };
+  return { ok: Object.values(checks).every(Boolean), checks };
+}
+
 function relevantConsoleErrors(consoleErrors) {
   return consoleErrors.filter((message) => {
     const text = String(message || "");
@@ -225,6 +268,8 @@ function relevantConsoleErrors(consoleErrors) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  const isOps = new URL(args.url).pathname === "/ops";
+  const pageSelector = isOps ? ".ops-page" : ".boi-inbox-page";
   const chrome = findChrome();
   const profileDir = mkdtempSync(join(tmpdir(), "boi-inbox-chrome-"));
   const port = 9433 + Math.floor(Math.random() * 1000);
@@ -261,17 +306,26 @@ async function main() {
     const loaded = cdp.once("Page.loadEventFired");
     await cdp.send("Page.navigate", { url: args.url });
     await loaded;
-    await waitUntil(cdp, `document.readyState === "complete" && !!document.querySelector(".boi-inbox-page")`, args.timeoutMs);
+    await waitUntil(cdp, `document.readyState === "complete" && !!document.querySelector(${JSON.stringify(pageSelector)})`, args.timeoutMs);
 
-    await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
-    await cdp.evaluate(`(() => {
-      const panel = document.querySelector("#boi-agent-root .boi-agent-panel.open");
-      if (!panel) document.querySelector("#boi-agent-root .boi-agent-launcher")?.click();
-      return true;
-    })()`);
-    await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
+    if (!isOps) {
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
+      await cdp.evaluate(`(() => {
+        const panel = document.querySelector("#boi-agent-root .boi-agent-panel.open");
+        if (!panel) document.querySelector("#boi-agent-root .boi-agent-launcher")?.click();
+        return true;
+      })()`);
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
+    }
+    if (isOps) {
+      await waitUntil(
+        cdp,
+        `!!document.querySelector(".ops-center-shell") && (document.querySelectorAll(".ops-workstream-node").length > 0 || document.querySelectorAll(".ops-focus-item").length > 0)`,
+        args.timeoutMs
+      );
+    }
 
-    const decisionsHref = await cdp.evaluate(`document.querySelector('.section-subnav-link[href*="view=decisions"]')?.href || ""`);
+    const decisionsHref = isOps ? "" : await cdp.evaluate(`document.querySelector('.section-subnav-link[href*="view=decisions"]')?.href || ""`);
     if (decisionsHref) {
       const decisionsLoaded = cdp.once("Page.loadEventFired");
       await cdp.send("Page.navigate", { url: decisionsHref });
@@ -280,7 +334,7 @@ async function main() {
     }
     const decisionsTitle = await cdp.evaluate(`document.querySelector(".section-intro-panel h2")?.textContent.trim() || ""`);
 
-    const historyHref = await cdp.evaluate(`document.querySelector('.section-subnav-link[href*="view=history"]')?.href || ""`);
+    const historyHref = isOps ? "" : await cdp.evaluate(`document.querySelector('.section-subnav-link[href*="view=history"]')?.href || ""`);
     if (historyHref) {
       const historyLoaded = cdp.once("Page.loadEventFired");
       await cdp.send("Page.navigate", { url: historyHref });
@@ -292,14 +346,102 @@ async function main() {
     const reportsLoaded = cdp.once("Page.loadEventFired");
     await cdp.send("Page.navigate", { url: args.url });
     await reportsLoaded;
-    await waitUntil(cdp, `document.readyState === "complete" && !!document.querySelector(".boi-inbox-page")`, args.timeoutMs);
-    await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
-    await cdp.evaluate(`(() => {
-      const panel = document.querySelector("#boi-agent-root .boi-agent-panel.open");
-      if (!panel) document.querySelector("#boi-agent-root .boi-agent-launcher")?.click();
-      return true;
-    })()`);
-    await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
+    await waitUntil(cdp, `document.readyState === "complete" && !!document.querySelector(${JSON.stringify(pageSelector)})`, args.timeoutMs);
+    if (!isOps) {
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
+      await cdp.evaluate(`(() => {
+        const panel = document.querySelector("#boi-agent-root .boi-agent-panel.open");
+        if (!panel) document.querySelector("#boi-agent-root .boi-agent-launcher")?.click();
+        return true;
+      })()`);
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
+    }
+    let opsRunClickProof = { clicked: false, reason: isOps ? "not_checked" : "not_ops" };
+    let opsDecisionTabProof = { clicked: false, reason: isOps ? "not_checked" : "not_ops" };
+    let opsEvidenceTabProof = { clicked: false, reason: isOps ? "not_checked" : "not_ops" };
+    if (isOps) {
+      await waitUntil(
+        cdp,
+        `!!document.querySelector(".ops-center-shell") && (document.querySelectorAll(".ops-workstream-node").length > 0 || document.querySelectorAll(".ops-focus-item").length > 0)`,
+        args.timeoutMs
+      );
+      opsRunClickProof = await cdp.evaluate(`(() => {
+        const item = document.querySelector(".ops-focus-item");
+        if (!item) return { clicked: false, reason: "empty_queue" };
+        const label = item.innerText || "";
+        item.click();
+        return { clicked: true, label };
+      })()`);
+      if (opsRunClickProof.clicked) {
+        await waitUntil(
+          cdp,
+          `(() => {
+            const text = document.querySelector(".ops-context-drawer")?.innerText || "";
+            return /현재 단계/.test(text) && /왜 나에게 왔나/.test(text) && /업무 맥락/.test(text) && /의사결정 흐름/.test(text);
+          })()`,
+          args.timeoutMs
+        );
+      }
+      opsDecisionTabProof = await cdp.evaluate(`(() => {
+        const button = Array.from(document.querySelectorAll(".ops-drawer-tabs button"))
+          .find((item) => (item.textContent || "").trim() === "판단");
+        if (!button) return { clicked: false, reason: "decision_tab_missing" };
+        button.click();
+        const text = document.querySelector(".ops-context-drawer")?.innerText || "";
+        return { clicked: true, hasDecisionButtons: /승인/.test(text) && /반려/.test(text) && /추가 근거 요청/.test(text) };
+      })()`);
+      await waitUntil(
+        cdp,
+        `(() => {
+          const text = document.querySelector(".ops-context-drawer")?.innerText || "";
+          return /의사결정 흐름/.test(text) && /보고서 보기/.test(text) && /승인/.test(text) && /반려/.test(text) && /보류/.test(text);
+        })()`,
+        args.timeoutMs
+      );
+      opsEvidenceTabProof = await cdp.evaluate(`(() => {
+        const button = Array.from(document.querySelectorAll(".ops-drawer-tabs button"))
+          .find((item) => (item.textContent || "").trim() === "근거");
+        if (!button) return { clicked: false, reason: "evidence_tab_missing" };
+        button.click();
+        const text = document.querySelector(".ops-context-drawer")?.innerText || "";
+        return { clicked: true, hasWorkspace: /Computational Evidence Workspace/.test(text) };
+      })()`);
+      await waitUntil(
+        cdp,
+        `/Computational Evidence Workspace/.test(document.querySelector(".ops-context-drawer")?.innerText || "")`,
+        args.timeoutMs
+      );
+      await cdp.evaluate(`(() => {
+        const node = document.querySelector(".ops-sandboxJobNode-node, .ops-evidenceNode-node");
+        if (node) node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        return !!node;
+      })()`);
+      await waitUntil(
+        cdp,
+        `(() => {
+          const drawer = document.querySelector(".ops-context-drawer");
+          if (!drawer) return false;
+          const text = drawer.innerText || "";
+          return /Computational Evidence Workspace|최근 Sandbox 결과/.test(text) && !/Sandbox 결과를 불러오는 중입니다/.test(text);
+        })()`,
+        args.timeoutMs
+      );
+      const sandboxJobCount = await cdp.evaluate(`document.querySelectorAll("[data-sandbox-job-id]").length`);
+      if (sandboxJobCount > 0) {
+        await cdp.evaluate(`document.querySelector("[data-sandbox-adopt]")?.click()`);
+        await waitUntil(
+          cdp,
+          `/검증 근거로 채택했습니다|근거 채택 실패/.test(document.querySelector(".ops-context-drawer")?.innerText || "")`,
+          args.timeoutMs
+        );
+        await cdp.evaluate(`document.querySelector("[data-sandbox-attach]")?.click()`);
+        await waitUntil(
+          cdp,
+          `/보고서 .*연결했습니다|보고서 반영 실패/.test(document.querySelector(".ops-context-drawer")?.innerText || "")`,
+          args.timeoutMs
+        );
+      }
+    }
 
     const snapshot = await cdp.evaluate(`(() => {
       const text = document.body.innerText || "";
@@ -310,6 +452,7 @@ async function main() {
         url: location.href,
         title: document.title,
         hasInboxPage: !!document.querySelector(".boi-inbox-page"),
+        hasOpsPage: !!document.querySelector(".ops-page"),
         primaryNavLabels: Array.from(document.querySelectorAll(".primary-nav .global-nav-link")).map((item) => item.textContent.trim()).filter(Boolean),
         activeNavId: document.querySelector(".primary-nav .global-nav-link.active")?.dataset.navId || "",
         activeNavLabel: document.querySelector(".primary-nav .global-nav-link.active")?.textContent.trim() || "",
@@ -318,7 +461,63 @@ async function main() {
         introDescription: document.querySelector(".section-intro-panel p:not(.eyebrow)")?.textContent.trim() || "",
         hasPagePrimaryActions: !!document.querySelector(".page-primary-actions"),
         hasUtilityNav: !!document.querySelector(".utility-nav"),
-        summaryCardCount: document.querySelectorAll(".status-summary-card").length,
+        summaryCardCount: document.querySelectorAll(".status-summary-card, .ops-center-metrics strong").length,
+        opsModeCount: document.querySelectorAll(".ops-flow-panel-toolbar button").length,
+        opsSopNodeCount: document.querySelectorAll(".ops-workstream-node").length,
+        opsWeightedNodeCount: document.querySelectorAll(".ops-workstream-node.risk-high, .ops-workstream-node.risk-medium, .ops-workstream-node.risk-normal").length,
+        opsEdgeCount: document.querySelectorAll(".react-flow__edge").length,
+        opsEdgeBadgeCount: document.querySelectorAll(".ops-rf-edge-label, .react-flow__edge-text").length,
+        opsQueueCount: document.querySelectorAll(".ops-focus-item").length,
+        opsDecisionPanelPresent: !!document.querySelector(".ops-context-drawer"),
+        opsEvidenceNodeCount: document.querySelectorAll(".ops-evidenceNode-node").length,
+        opsSandboxNodeCount: document.querySelectorAll(".ops-sandboxJobNode-node").length,
+        opsSandboxDrawerOpen: /Computational Evidence Workspace/.test(document.querySelector(".ops-context-drawer")?.innerText || ""),
+        opsSandboxJobCount: document.querySelectorAll("[data-sandbox-job-id]").length,
+        opsSandboxArtifactLinkCount: document.querySelectorAll(".ops-sandbox-artifacts a").length,
+        opsSandboxSummaryVisible: /GPT-5\\.5 검증 요약/.test(document.querySelector(".ops-context-drawer")?.innerText || ""),
+        opsSandboxEmptyVisible: /Sandbox 실행 결과가 없습니다/.test(document.querySelector(".ops-context-drawer")?.innerText || ""),
+        opsSandboxActionStatus: document.querySelector(".ops-sandbox-action-status")?.textContent?.trim() || "",
+        opsNodeOverlapCount: (() => {
+          const rects = Array.from(document.querySelectorAll(".react-flow__node"))
+            .map((node) => {
+              const rect = node.getBoundingClientRect();
+              return { id: node.getAttribute("data-id") || node.className || "", left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+            })
+            .filter((rect) => rect.width > 8 && rect.height > 8);
+          let overlaps = 0;
+          for (let left = 0; left < rects.length; left += 1) {
+            for (let right = left + 1; right < rects.length; right += 1) {
+              const a = rects[left];
+              const b = rects[right];
+              const x = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+              const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+              if (x * y > 24) overlaps += 1;
+            }
+          }
+          return overlaps;
+        })(),
+        opsLargeEdgeLabelOverlapCount: (() => {
+          const nodeRects = Array.from(document.querySelectorAll(".react-flow__node"))
+            .map((node) => node.getBoundingClientRect())
+            .filter((rect) => rect.width > 8 && rect.height > 8);
+          const labelRects = Array.from(document.querySelectorAll(".ops-rf-edge-label:not(.dot-only), .react-flow__edge-text"))
+            .map((label) => label.getBoundingClientRect())
+            .filter((rect) => rect.width > 18 && rect.height > 12);
+          let overlaps = 0;
+          for (const label of labelRects) {
+            for (const node of nodeRects) {
+              const x = Math.max(0, Math.min(label.right, node.right) - Math.max(label.left, node.left));
+              const y = Math.max(0, Math.min(label.bottom, node.bottom) - Math.max(label.top, node.top));
+              if (x * y > 20) overlaps += 1;
+            }
+          }
+          return overlaps;
+        })(),
+        opsSopNodePreviewMax: Math.max(0, ...Array.from(document.querySelectorAll(".ops-workstream-node")).map((node) => node.querySelectorAll("[data-run-preview]").length)),
+        opsRunClickProof: ${JSON.stringify(opsRunClickProof)},
+        opsDecisionTabProof: ${JSON.stringify(opsDecisionTabProof)},
+        opsEvidenceTabProof: ${JSON.stringify(opsEvidenceTabProof)},
+        opsRunDrawerHadCoreSections: ${JSON.stringify(Boolean(opsRunClickProof.clicked))},
         inboxCardCount: document.querySelectorAll(".boi-inbox-list .boi-inbox-card").length,
         emptyStatePresent: !!document.querySelector(".empty-state"),
         reportLinkCount: Array.from(document.querySelectorAll("a")).filter((item) => /보고서 BoI/.test(item.textContent || "")).length,
@@ -335,14 +534,14 @@ async function main() {
     })()`);
 
     const employeeId = new URL(args.url).searchParams.get("employee_id") || "100001";
-    const apiUrl = new URL("/api/inbox", args.url);
+    const apiUrl = new URL(isOps ? "/api/ops/overview" : "/api/inbox", args.url);
     apiUrl.searchParams.set("employee_id", employeeId);
-    apiUrl.searchParams.set("limit", "5");
+    if (!isOps) apiUrl.searchParams.set("limit", "5");
     const apiManifest = await waitForJson(apiUrl.toString(), args.timeoutMs);
 
     if (args.screenshot) await cdp.screenshot(args.screenshot);
     const report = {
-      ...checkReport(snapshot, consoleErrors, apiManifest),
+      ...(isOps ? checkOpsReport(snapshot, consoleErrors, apiManifest) : checkReport(snapshot, consoleErrors, apiManifest)),
       url: args.url,
       browser: "Chrome DevTools Protocol",
       snapshot,
@@ -350,6 +549,14 @@ async function main() {
         ok: apiManifest?.ok,
         canonical: apiManifest?.canonical,
         context_mode: apiManifest?.context_mode,
+        employee_id: apiManifest?.employee_id,
+        open_count: apiManifest?.summary?.open_count,
+        workstream_count: apiManifest?.workstream_nodes?.length,
+        priority_count: apiManifest?.priority_queue?.length,
+        sandbox_node_count: snapshot.opsSandboxNodeCount,
+        sandbox_job_count: snapshot.opsSandboxJobCount,
+        sandbox_artifact_link_count: snapshot.opsSandboxArtifactLinkCount,
+        sandbox_action_status: snapshot.opsSandboxActionStatus,
         count: apiManifest?.count,
         group_count: apiManifest?.group_count,
         report_count: apiManifest?.report_count,

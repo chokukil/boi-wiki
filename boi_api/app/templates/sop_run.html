@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SOP 실행 상태 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+
+  <main class="page-content sop-run-page">
+    {% with title=run.sop_title, description="선택한 SOP 실행 흐름의 현재 단계와 판단 근거를 확인합니다.", eyebrow="SOP Lens", primary_action=None %}
+      {% include "_section_intro.html" %}
+    {% endwith %}
+
+    <section class="workflow-status-hero">
+      <div>
+        <h2>{{ run.sop_title }} · {{ run.business_brief }}</h2>
+        <p><strong>현재 단계:</strong> {{ run.current_stage_label }}</p>
+        <p><strong>상태:</strong> {{ run.status }} · <strong>위험도:</strong> {{ run.risk }}</p>
+        <p>{{ decision_packet.why_assigned }}</p>
+      </div>
+      <div class="status-summary-grid">
+        <div class="status-summary-card"><span>확보 근거</span><strong>{{ decision_packet.available_evidence|length }}</strong></div>
+        <div class="status-summary-card"><span>부족 근거</span><strong>{{ decision_packet.missing_evidence|length }}</strong></div>
+        <div class="status-summary-card"><span>권장 조치</span><strong>{{ decision_packet.recommended_action }}</strong></div>
+      </div>
+    </section>
+
+    <section class="sop-lens-layout">
+      <section class="workflow-panel">
+        <h2>SOP 진행 다이어그램</h2>
+        <div class="sop-stage-flow">
+          {% for node in nodes %}
+          <button
+            type="button"
+            role="button"
+            class="sop-stage-node status-{{ node.data.status }} {% if node.id == current_stage_id %}active{% endif %}"
+            data-stage-node
+            data-stage-id="{{ node.id }}"
+            data-stage-title="{{ node.data.title }}"
+            data-stage-status="{{ node.data.status }}"
+            data-stage-risk="{{ node.data.risk }}"
+            data-stage-summary="{{ node.data.title }} 단계는 현재 {{ node.data.status }} 상태입니다. {{ run.business_brief }} 기준으로 판단 근거를 확인하세요."
+            data-stage-next="{{ decision_packet.recommended_action }}"
+            aria-pressed="{% if node.id == current_stage_id %}true{% else %}false{% endif %}">
+            <small>{{ loop.index }}</small>
+            <strong>{{ node.data.title }}</strong>
+            <span>{{ node.data.status }}</span>
+          </button>
+          {% if not loop.last %}<div class="sop-stage-edge">→</div>{% endif %}
+          {% endfor %}
+        </div>
+      </section>
+
+      <aside class="workflow-panel">
+        <h2>판단 패널</h2>
+        <div class="stage-decision-card">
+          <span class="badge status" data-stage-panel-status>{{ run.status }}</span>
+          <h3 data-stage-panel-title>{{ decision_packet.current_stage }}</h3>
+          <p data-stage-panel-summary>{{ decision_packet.why_assigned }}</p>
+        </div>
+        <h3>관련 BoI / 근거</h3>
+        <ul class="evidence-packet-list">
+          {% for packet in evidence_packets %}
+          <li class="evidence-{{ packet.state }}">
+            <strong>{{ packet.label }}</strong>
+            <span>{{ packet.state }}</span>
+            {% if packet.missing_reason %}<small>{{ packet.missing_reason }}</small>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        <h3>다음 조치</h3>
+        <p data-stage-panel-next>{{ decision_packet.recommended_action }}</p>
+        <div class="raw-workflow-actions">
+          {% if ops_center_enabled %}
+          <a class="button secondary" href="/ops?employee_id={{ employee_id }}">Operations Center</a>
+          {% endif %}
+          {% if run.sop_url %}<a class="button secondary" href="{{ run.sop_url }}">관련 SOP 보기</a>{% endif %}
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script src="{{ asset_url('sop_run.js') }}"></script>
+</body>
+</html>

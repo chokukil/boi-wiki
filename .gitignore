@@ -9,10 +9,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+node_modules/
 
 data/events/*.jsonl
 data/events/*.jsonl.idx
 data/actions/
+data/private-trash/
 data/boi/private/*/boi-private-*.md
 data/boi/private/*/**/boi-private-*.md
 data/boi/private/*/inbox-reports/

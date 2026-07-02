@@ -33,14 +33,48 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 80
+    assert body["capabilities"]["tools"] == 108
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     group_names = [group["name"] for group in body["tool_groups"]]
     assert group_names[:6] == ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"]
     boi_inbox_group = next(group for group in body["tool_groups"] if group["name"] == "BoI Inbox")
     boi_inbox_tools = {tool["name"] for tool in boi_inbox_group["tools"]}
-    assert {"boi_inbox", "boi_inbox_report_get", "boi_inbox_decision_preview", "boi_inbox_decision_submit"} <= boi_inbox_tools
+    assert {
+        "boi_inbox",
+        "boi_inbox_report_get",
+        "boi_inbox_decision_preview",
+        "boi_inbox_decision_submit",
+        "boi_ops_overview",
+        "boi_ops_recent_events",
+        "agent_draft_create",
+        "agent_draft_test",
+        "agent_draft_publish",
+        "agent_catalog_search",
+        "agent_link_to_me",
+        "agent_unlink_from_me",
+        "agent_conversation_create",
+        "agent_conversation_message",
+        "agent_sandbox_job_create",
+        "agent_sandbox_job_get",
+        "agent_sandbox_job_events",
+        "agent_sandbox_adopt_evidence",
+        "reporting_analysis_plan",
+        "reporting_analysis_job_create",
+        "reporting_report_draft_create",
+        "reporting_report_publish",
+    } <= boi_inbox_tools
+    boi_wiki_group = next(group for group in body["tool_groups"] if group["name"] == "BoI Wiki")
+    boi_wiki_tools = {tool["name"] for tool in boi_wiki_group["tools"]}
+    assert {
+        "private_memory_cleanup_preview",
+        "private_memory_cleanup_run",
+        "private_memory_restore",
+        "private_memory_mark_memory",
+    } <= boi_wiki_tools
+    sop_group = next(group for group in body["tool_groups"] if group["name"] == "SOP")
+    sop_tools = {tool["name"] for tool in sop_group["tools"]}
+    assert {"sop_catalog_search", "sop_run_get", "sop_run_graph", "sop_run_context"} <= sop_tools
     data_lake_group = next(group for group in body["tool_groups"] if group["name"] == "Optional Data Lake")
     data_lake_tools = {tool["name"] for tool in data_lake_group["tools"]}
     assert {
@@ -119,9 +153,31 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "boi_inbox_report_get" in tool_names
     assert "boi_inbox_decision_preview" in tool_names
     assert "boi_inbox_decision_submit" in tool_names
+    assert "boi_ops_overview" in tool_names
+    assert "agent_draft_create" in tool_names
+    assert "agent_draft_test" in tool_names
+    assert "agent_draft_publish" in tool_names
+    assert "agent_catalog_search" in tool_names
+    assert "agent_link_to_me" in tool_names
+    assert "agent_unlink_from_me" in tool_names
+    assert "agent_conversation_create" in tool_names
+    assert "agent_conversation_message" in tool_names
+    assert "agent_sandbox_job_create" in tool_names
+    assert "agent_sandbox_job_get" in tool_names
+    assert "agent_sandbox_job_events" in tool_names
+    assert "agent_sandbox_adopt_evidence" in tool_names
+    assert "boi_ops_recent_events" in tool_names
+    assert "sop_catalog_search" in tool_names
+    assert "sop_run_get" in tool_names
+    assert "sop_run_graph" in tool_names
+    assert "sop_run_context" in tool_names
     assert "data_lake_status" in tool_names
     assert "data_lake_query_preview" in tool_names
     assert "agent_inbox" in tool_names
+    assert "private_memory_cleanup_preview" in tool_names
+    assert "private_memory_cleanup_run" in tool_names
+    assert "private_memory_restore" in tool_names
+    assert "private_memory_mark_memory" in tool_names
     assert "work_context_get" in tool_names
     assert "agent_inbox_context" in tool_names
     assert "similar_cases_search" in tool_names
@@ -187,7 +243,7 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "http://boi-wiki-mcp.example:28200/mcp" in body
     assert "http://localhost:8200/mcp" not in body
     assert "Streamable HTTP" in body
-    assert "Tools" in body and "80" in body
+    assert "Tools" in body and "86" in body
     assert "Tools by BoI Wiki IA" in body
     assert "BoI Inbox" in body
     assert "Optional Data Lake" in body
@@ -211,6 +267,8 @@ def test_boi_wiki_mcp_status_page_explains_human_browser_usage(mcp_module):
     assert "answer_delta" in body
     assert "ontology_search" in body
     assert "agent_inbox" in body
+    assert "boi_ops_overview" in body
+    assert "sop_run_graph" in body
     assert "rbac_me" in body
     assert "rbac_check" in body
     assert "doc_access_check" in body
@@ -569,6 +627,230 @@ def test_boi_wiki_mcp_bridge_invokes_agent_chat_and_inbox_tools(mcp_module, monk
     assert calls[1]["params"]["include_context"] == "compact"
 
 
+def test_boi_wiki_mcp_bridge_invokes_ops_and_sop_scope_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        if path == "/api/ops/overview":
+            return {"ok": True, "workstream_nodes": [{"id": "employee:100001"}], "priority_queue": []}
+        if path == "/api/ops/recent-events":
+            return {"ok": True, "items": [{"type": "boi.ops.task.created"}]}
+        if path == "/api/sops":
+            return {"ok": True, "scope": kwargs["params"]["scope"], "items": [{"title": "설비 이상 SOP"}]}
+        if path == "/api/sop-runs/run-1":
+            return {"ok": True, "run": {"run_id": "run-1"}}
+        if path == "/api/sop-runs/run-1/graph":
+            return {"ok": True, "run_id": "run-1", "nodes": [{"id": "detect"}]}
+        if path == "/api/sop-runs/run-1/context":
+            return {"ok": True, "decision_packet": {"why_assigned": "확인 필요"}}
+        raise AssertionError(f"unexpected GET {path}")
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    for tool, arguments in [
+        ("boi_ops_overview", {"employee_id": "100001"}),
+        ("boi_ops_recent_events", {"employee_id": "100001", "limit": 5}),
+        ("sop_catalog_search", {"employee_id": "100001", "scope": "catalog_search", "query": "설비 이상", "limit": 7}),
+        ("sop_run_get", {"employee_id": "100001", "run_id": "run-1"}),
+        ("sop_run_graph", {"employee_id": "100001", "run_id": "run-1"}),
+        ("sop_run_context", {"employee_id": "100001", "run_id": "run-1"}),
+    ]:
+        response = client.post(
+            "/api/mcp/call",
+            headers={"x-service-token": "test-service-token"},
+            json={"server": {"name": "boi-wiki-mcp"}, "tool": tool, "arguments": arguments},
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert response.json()["result"]["ok"] is True
+
+    assert [call["path"] for call in calls] == [
+        "/api/ops/overview",
+        "/api/ops/recent-events",
+        "/api/sops",
+        "/api/sop-runs/run-1",
+        "/api/sop-runs/run-1/graph",
+        "/api/sop-runs/run-1/context",
+    ]
+    assert calls[2]["params"] == {"scope": "catalog_search", "q": "설비 이상", "limit": 7}
+    assert all(call["employee_id"] == "100001" for call in calls)
+    assert all(call["service_token"] is True for call in calls)
+
+
+def test_boi_wiki_mcp_bridge_invokes_agent_builder_and_sandbox_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        if path == "/api/agents/drafts":
+            payload = kwargs["payload"]
+            return {"ok": True, "draft": {"draft_id": "agent-draft-1", "files": payload["files"], "runtime": {"model": "gpt-5.5"}}}
+        if path == "/api/agents/drafts/agent-draft-1/test":
+            return {"ok": True, "draft_id": "agent-draft-1", "test": {"runtime_backend": "agents_sdk", "model": "gpt-5.5"}}
+        if path == "/api/agents/drafts/agent-draft-1/publish":
+            return {"ok": True, "draft": {"draft_id": "agent-draft-1", "status": "published", "scope": kwargs["payload"]["scope"]}}
+        if path == "/api/agents/agent-1/link-to-me":
+            return {"ok": True, "agent": {"agent_id": "agent-1", "is_linked_to_me": True}}
+        if path == "/api/agents/agent-1/unlink-from-me":
+            return {"ok": True, "agent_id": "agent-1", "linked": False}
+        if path == "/api/agents/agent-1/conversations":
+            return {"ok": True, "conversation": {"conversation_id": "agent-conv-1", "agent_id": "agent-1"}}
+        if path == "/api/agents/agent-1/conversations/agent-conv-1/messages":
+            return {"ok": True, "message": {"role": "assistant", "content": "확인했습니다."}}
+        if path == "/api/agents/sandbox/jobs":
+            return {"ok": True, "job": {"job_id": "sandbox-job-1", "status": "completed", "artifacts": [{"path": "result.csv"}]}}
+        if path == "/api/agents/sandbox/jobs/sandbox-job-1/adopt-evidence":
+            return {"ok": True, "job": {"job_id": "sandbox-job-1", "evidence_state": kwargs["payload"]["evidence_state"]}}
+        raise AssertionError(f"unexpected POST {path}")
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        if path == "/api/agents/sandbox/jobs/sandbox-job-1":
+            return {"ok": True, "job": {"job_id": "sandbox-job-1", "status": "completed"}}
+        if path == "/api/agents/sandbox/jobs/sandbox-job-1/events":
+            return {"ok": True, "job_id": "sandbox-job-1", "items": [{"type": "boi.sandbox.job.executed"}]}
+        if path == "/api/agents":
+            return {"ok": True, "items": [{"agent_id": "agent-1"}]}
+        raise AssertionError(f"unexpected GET {path}")
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    client = TestClient(mcp_module.app)
+
+    create = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "agent_draft_create",
+            "arguments": {
+                "employee_id": "100001",
+                "title": "MCP Evidence Agent",
+                "prompt": "Raw Data를 검증해줘.",
+                "files": [{"name": "raw.csv", "note": "sample"}],
+                "urls": ["https://example.com/spec"],
+                "git_repos": ["https://github.com/example/repo"],
+                "mcp_servers": ["boi-wiki-local"],
+                "skills": ["data-analytics:validate-data"],
+                "scope": "private",
+            },
+        },
+    )
+    assert create.status_code == 200
+    assert create.json()["result"]["draft"]["runtime"]["model"] == "gpt-5.5"
+
+    for tool, arguments in [
+        ("agent_draft_test", {"employee_id": "100001", "draft_id": "agent-draft-1"}),
+        (
+            "agent_sandbox_job_create",
+            {
+                "employee_id": "100001",
+                "title": "MCP Sandbox",
+                "task": "CSV를 검증해줘.",
+                "code": "print('ok')",
+                "language": "python",
+                "evidence_intent": "mcp_validation",
+                "user_confirmed": True,
+            },
+        ),
+        ("agent_sandbox_job_get", {"employee_id": "100001", "job_id": "sandbox-job-1"}),
+        ("agent_sandbox_job_events", {"employee_id": "100001", "job_id": "sandbox-job-1"}),
+    ]:
+        response = client.post(
+            "/api/mcp/call",
+            headers={"x-service-token": "test-service-token"},
+            json={"server": {"name": "boi-wiki-mcp"}, "tool": tool, "arguments": arguments},
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert response.json()["result"]["ok"] is True
+
+    publish_without_confirmation = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "agent_draft_publish", "arguments": {"employee_id": "100001", "draft_id": "agent-draft-1"}},
+    )
+    assert publish_without_confirmation.status_code == 400
+    assert "user_confirmed=true" in publish_without_confirmation.json()["detail"]
+
+    publish = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "agent_draft_publish",
+            "arguments": {"employee_id": "100001", "draft_id": "agent-draft-1", "scope": "team", "note": "reviewed", "user_confirmed": True},
+        },
+    )
+    assert publish.status_code == 200
+    assert publish.json()["result"]["draft"]["status"] == "published"
+
+    for tool, arguments in [
+        ("agent_catalog_search", {"employee_id": "100001", "scope": "mine", "q": "evidence", "limit": 5}),
+        ("agent_link_to_me", {"employee_id": "100001", "agent_id": "agent-1"}),
+        ("agent_conversation_create", {"employee_id": "100001", "agent_id": "agent-1", "title": "검증 대화"}),
+        ("agent_conversation_message", {"employee_id": "100001", "agent_id": "agent-1", "conversation_id": "agent-conv-1", "message": "확인해줘"}),
+        ("agent_unlink_from_me", {"employee_id": "100001", "agent_id": "agent-1"}),
+    ]:
+        response = client.post(
+            "/api/mcp/call",
+            headers={"x-service-token": "test-service-token"},
+            json={"server": {"name": "boi-wiki-mcp"}, "tool": tool, "arguments": arguments},
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+    adopt_without_confirmation = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={"server": {"name": "boi-wiki-mcp"}, "tool": "agent_sandbox_adopt_evidence", "arguments": {"employee_id": "100001", "job_id": "sandbox-job-1"}},
+    )
+    assert adopt_without_confirmation.status_code == 400
+    assert "user_confirmed=true" in adopt_without_confirmation.json()["detail"]
+
+    adopt = client.post(
+        "/api/mcp/call",
+        headers={"x-service-token": "test-service-token"},
+        json={
+            "server": {"name": "boi-wiki-mcp"},
+            "tool": "agent_sandbox_adopt_evidence",
+            "arguments": {
+                "employee_id": "100001",
+                "job_id": "sandbox-job-1",
+                "evidence_state": "verified_evidence",
+                "validation_note": "checked",
+                "user_confirmed": True,
+            },
+        },
+    )
+    assert adopt.status_code == 200
+    assert adopt.json()["result"]["job"]["evidence_state"] == "verified_evidence"
+
+    create_call = calls[0]
+    assert create_call["path"] == "/api/agents/drafts"
+    assert create_call["payload"]["files"] == [{"name": "raw.csv", "note": "sample"}]
+    assert create_call["payload"]["mcp_servers"] == ["boi-wiki-local"]
+    assert create_call["payload"]["skills"] == ["data-analytics:validate-data"]
+    assert [call["path"] for call in calls] == [
+        "/api/agents/drafts",
+        "/api/agents/drafts/agent-draft-1/test",
+        "/api/agents/sandbox/jobs",
+        "/api/agents/sandbox/jobs/sandbox-job-1",
+        "/api/agents/sandbox/jobs/sandbox-job-1/events",
+        "/api/agents/drafts/agent-draft-1/publish",
+        "/api/agents",
+        "/api/agents/agent-1/link-to-me",
+        "/api/agents/agent-1/conversations",
+        "/api/agents/agent-1/conversations/agent-conv-1/messages",
+        "/api/agents/agent-1/unlink-from-me",
+        "/api/agents/sandbox/jobs/sandbox-job-1/adopt-evidence",
+    ]
+    assert all(call["employee_id"] == "100001" for call in calls)
+    assert all(call["service_token"] is True for call in calls)
+
+
 def test_boi_wiki_mcp_exposes_workflow_definition_and_skill_tools(mcp_module, monkeypatch):
     async def fake_api_get(path, **kwargs):
         if path == "/api/workflow-definitions":
@@ -649,6 +931,10 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         ),
         ("dictionary_terms", {"employee_id": "100001", "query": "단면검사", "scope": "all", "limit": 5}),
         ("agent_memory_search", {"employee_id": "100001", "query": "선호", "include_archived": False, "limit": 3}),
+        ("private_memory_cleanup_preview", {"employee_id": "100001", "scope": "generated"}),
+        ("private_memory_cleanup_run", {"employee_id": "100001", "cleanup_id": "pytest", "selected_boi_ids": ["boi:private:100001:test"], "user_confirmed": True}),
+        ("private_memory_restore", {"employee_id": "100001", "cleanup_id": "pytest", "boi_ids": ["boi:private:100001:test"], "user_confirmed": True}),
+        ("private_memory_mark_memory", {"employee_id": "100001", "boi_id": "boi:private:100001:test", "user_confirmed": True}),
         ("work_context_get", {"employee_id": "100001", "task_id": "task:act-1"}),
         ("agent_inbox_context", {"employee_id": "100001", "task_id": "task:act-1"}),
         ("similar_cases_search", {"employee_id": "100001", "task_id": "task:act-1", "action_key": "manual.equipment.confirm_alarm_context", "limit": 3}),
@@ -697,6 +983,10 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         "/api/agents/boi-wiki/suggestions",
         "/api/dictionary/terms",
         "/api/agents/boi-wiki/memory",
+        "/api/private-memory/cleanup-preview",
+        "/api/private-memory/cleanup-run",
+        "/api/private-memory/restore",
+        "/api/docs/boi:private:100001:test/mark-memory",
         "/api/context/work",
         "/api/agents/boi-wiki/inbox/task:act-1/context",
         "/api/agents/boi-wiki/inbox/task:act-1/history",

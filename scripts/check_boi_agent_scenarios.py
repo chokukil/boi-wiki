@@ -271,6 +271,27 @@ def validate_scenario_response(scenario: dict[str, Any], response: dict[str, Any
         goal_model = normalize_dict(response.get("goal_model"))
         if goal_model.get("goal_type") != expect["goal_type"]:
             failures.append(f"goal_type expected {expect['goal_type']!r}, got {goal_model.get('goal_type')!r}")
+    expected_semantic_target = str(expect.get("semantic_target_kind") or "")
+    if expected_semantic_target:
+        semantic_route = normalize_dict(response.get("semantic_route"))
+        if semantic_route.get("target_kind") != expected_semantic_target:
+            failures.append(
+                f"semantic_route.target_kind expected {expected_semantic_target!r}, got {semantic_route.get('target_kind')!r}"
+            )
+    expected_related_scope = str(expect.get("related_scope") or "")
+    if expected_related_scope:
+        related_item_context = normalize_dict(response.get("related_item_context"))
+        semantic_route = normalize_dict(response.get("semantic_route"))
+        found_scope = related_item_context.get("scope") or semantic_route.get("scope")
+        if found_scope != expected_related_scope:
+            failures.append(f"related scope expected {expected_related_scope!r}, got {found_scope!r}")
+    expected_continuation = str(expect.get("expect_continuation_of") or "")
+    if expected_continuation:
+        semantic_route = normalize_dict(response.get("semantic_route"))
+        related_item_context = normalize_dict(response.get("related_item_context"))
+        found_continuation = semantic_route.get("continuation_of") or related_item_context.get("continuation_of")
+        if found_continuation != expected_continuation:
+            failures.append(f"continuation_of expected {expected_continuation!r}, got {found_continuation!r}")
 
     found_artifacts = artifact_types(response)
     for expected_type in normalize_list(expect.get("artifact_types")):
