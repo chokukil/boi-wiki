@@ -160,6 +160,303 @@ def route_candidate_from_goal_profile(profile: JsonDict | None) -> JsonDict | No
     }
 
 
+def is_strong_agent_goal_profile(profile: JsonDict | None) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    if str(profile.get("goal_type") or "") == "page_question_answer":
+        return False
+    try:
+        score = int(profile.get("_match_score") or 0)
+    except (TypeError, ValueError):
+        score = 0
+    return score >= 20
+
+
+def semantic_route_should_override_profile(semantic: JsonDict | None, profile: JsonDict | None, question: str) -> bool:
+    if not semantic:
+        return False
+    if not is_strong_agent_goal_profile(profile):
+        return True
+    goal_type = str((profile or {}).get("goal_type") or "")
+    if goal_type != "workflow_relationship_summary":
+        return False
+    text = semantic_route_text(question)
+    lookup_terms = ("뭐", "무엇", "어떤", "목록", "보여", "찾", "링크", "있")
+    flow_terms = ("흐름", "관계", "발생하면", "요약", "정리", "표", "플로우")
+    return any(term in text for term in lookup_terms) and not any(term in text for term in flow_terms)
+
+
+RELATED_AFFORDANCE_TERMS: dict[str, tuple[str, ...]] = {
+    "related_sop": ("sop", "절차", "표준", "수행 이력", "수행이력"),
+    "related_event": ("event", "이벤트", "발생 이력", "발생이력"),
+    "related_action": ("action", "액션", "조치", "실행 이력", "실행이력"),
+    "related_boi": ("boi", "근거 문서", "참고 문서", "boi 문서"),
+}
+RELATED_AFFORDANCE_LABELS: dict[str, str] = {
+    "related_sop": "관련 SOP",
+    "related_event": "관련 Event",
+    "related_action": "관련 Action",
+    "related_boi": "관련 BoI 문서",
+}
+RELATED_AFFORDANCE_RELATION_TERMS = (
+    "관련",
+    "연결",
+    "있",
+    "뭐",
+    "무엇",
+    "어떤",
+    "목록",
+    "보여",
+    "찾",
+    "링크",
+)
+DIALOG_CONTINUATION_TERMS = (
+    "전체",
+    "리스트",
+    "목록",
+    "더",
+    "다른",
+    "나머지",
+    "이어",
+    "계속",
+    "보여",
+    "알려",
+)
+CURRENT_PAGE_QA_TERMS = ("보고서", "문서", "본문", "현재 페이지", "현재 화면", "이 페이지", "이 화면", "여기")
+CURRENT_PAGE_ANSWER_TERMS = ("뭐", "무엇", "어떤", "왜", "어떻게", "요약", "정리", "설명", "확인")
+ARTIFACT_ROUTE_TERMS = ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")
+RELATED_AFFORDANCE_PAGE_KINDS = {"doc", "workflow_status", "events", "event_type", "action_raw", "actions", "action_history"}
+SOP_SCOPE_ALL_TERMS = ("전체", "전부", "모든", "목록", "리스트", "카탈로그")
+SOP_SCOPE_CURRENT_TERMS = ("현재", "이 페이지", "이 화면", "보고서", "문서", "연결된", "직접 연결")
+SOP_QUERY_STOPWORDS = (
+    "sop",
+    "전체",
+    "전부",
+    "모든",
+    "목록",
+    "리스트",
+    "카탈로그",
+    "관련",
+    "연결",
+    "연결된",
+    "현재",
+    "페이지",
+    "화면",
+    "보고서",
+    "문서",
+    "보여",
+    "보여줘",
+    "알려",
+    "알려줘",
+    "찾",
+    "찾아",
+    "찾아줘",
+    "있는",
+    "있니",
+    "뭐",
+    "무엇",
+)
+
+
+def dialog_context_from_conversation(
+    conversation: Any,
+    *,
+    current_url: str = "",
+    page_context: JsonDict | None = None,
+) -> JsonDict:
+    if not isinstance(conversation, list):
+        return {}
+    previous_user_question = ""
+    previous_assistant_summary = ""
+    previous_related_target = ""
+    previous_related_scope = ""
+    previous_links: list[JsonDict] = []
+    for turn in reversed(conversation[-8:]):
+        if not isinstance(turn, dict):
+            continue
+        role = str(turn.get("role") or "").lower()
+        if role == "user" and not previous_user_question:
+            previous_user_question = str(turn.get("content") or turn.get("text") or "").strip()[:300]
+        if role != "assistant":
+            continue
+        if not previous_assistant_summary:
+            previous_assistant_summary = str(turn.get("content") or turn.get("text") or "").strip()[:500]
+        related_context = turn.get("related_item_context") if isinstance(turn.get("related_item_context"), dict) else {}
+        semantic_context = turn.get("semantic_route") if isinstance(turn.get("semantic_route"), dict) else {}
+        target = str(related_context.get("target_kind") or semantic_context.get("target_kind") or "").strip()
+        scope = str(related_context.get("scope") or semantic_context.get("scope") or "").strip()
+        if not target and str(turn.get("response_profile") or "") == "related_items":
+            links = turn.get("links") if isinstance(turn.get("links"), list) else []
+            link_kinds = {str(item.get("kind") or "") for item in links if isinstance(item, dict)}
+            if "sop" in link_kinds or "related_sop" in link_kinds:
+                target = "related_sop"
+            elif "event" in link_kinds or "event_type" in link_kinds or "related_event" in link_kinds:
+                target = "related_event"
+            elif "action" in link_kinds or "related_action" in link_kinds:
+                target = "related_action"
+            elif "boi" in link_kinds or "related_boi" in link_kinds:
+                target = "related_boi"
+        if target.startswith("related_") and not previous_related_target:
+            previous_related_target = target
+            previous_related_scope = scope
+            previous_links = [item for item in (turn.get("links") if isinstance(turn.get("links"), list) else []) if isinstance(item, dict)][:8]
+    if not previous_user_question and not previous_related_target:
+        return {}
+    return {
+        "previous_user_question": previous_user_question,
+        "previous_assistant_summary": previous_assistant_summary,
+        "previous_related_target": previous_related_target,
+        "previous_related_scope": previous_related_scope,
+        "previous_links": previous_links,
+        "current_page_fingerprint": str((page_context or {}).get("boi_id") or current_url or ""),
+    }
+
+
+def sop_catalog_query_from_question(question: str) -> str:
+    text = re.sub(r"[?？!！,.，。]+", " ", str(question or "").strip(), flags=re.UNICODE)
+    tokens = [token for token in re.split(r"\s+", text) if token]
+    kept: list[str] = []
+    for token in tokens:
+        lowered = token.lower()
+        if lowered in SOP_QUERY_STOPWORDS:
+            continue
+        reduced = lowered
+        for suffix in ("를", "을", "이", "가", "은", "는", "와", "과", "의", "으로", "로", "에", "에서"):
+            if len(reduced) > len(suffix) + 1 and reduced.endswith(suffix):
+                reduced = reduced[: -len(suffix)]
+                break
+        if reduced and reduced not in SOP_QUERY_STOPWORDS:
+            kept.append(reduced)
+    return " ".join(kept).strip()
+
+
+def sop_scope_from_question(question: str, dialog_context: JsonDict | None = None) -> JsonDict:
+    text = semantic_route_text(question)
+    previous_scope = str((dialog_context or {}).get("previous_related_scope") or "")
+    continuation_terms = [term for term in DIALOG_CONTINUATION_TERMS if term.lower() in text]
+    if previous_scope in {"catalog_all", "catalog_search", "current_page_related"} and continuation_terms:
+        return {"scope": previous_scope, "query": sop_catalog_query_from_question(question)}
+    query = sop_catalog_query_from_question(question)
+    current_terms = [term for term in SOP_SCOPE_CURRENT_TERMS if term.lower() in text]
+    if current_terms:
+        return {"scope": "current_page_related", "query": query}
+    all_terms = [term for term in SOP_SCOPE_ALL_TERMS if term.lower() in text]
+    if all_terms and not query:
+        return {"scope": "catalog_all", "query": ""}
+    if query:
+        return {"scope": "catalog_search", "query": query}
+    return {"scope": "current_page_related", "query": ""}
+
+
+def semantic_route_candidate(
+    question: str,
+    current_url: str = "",
+    page_context: JsonDict | None = None,
+    dialog_context: JsonDict | None = None,
+) -> JsonDict | None:
+    page_kind = infer_agent_page_kind(current_url, page_context or {})
+    text = semantic_route_text(question)
+    if page_kind not in RELATED_AFFORDANCE_PAGE_KINDS:
+        return None
+    if any(term.lower() in text for term in ARTIFACT_ROUTE_TERMS):
+        return None
+    candidates = semantic_route_candidates(question, current_url, page_context, dialog_context)
+    if not candidates:
+        return None
+    best = candidates[0]
+    if not str(best.get("target_kind") or "").startswith("related_"):
+        return None
+    score = float(best.get("score") or 0.0)
+    if score < 0.56:
+        return None
+    target_kind = str(best.get("target_kind") or "")
+    sop_scope = best.get("scope") if target_kind == "related_sop" else ""
+    sop_query = best.get("query") if target_kind == "related_sop" else ""
+    return {
+        "route": "fast",
+        "intent": "search",
+        "response_profile": "related_items",
+        "confidence": round(min(0.95, max(0.55, score)), 2),
+        "router_backend": "semantic_hybrid_router",
+        "reason": f"semantic affordance route: {target_kind}",
+        "requires_mutation": False,
+        "requires_deep_reasoning": False,
+        "requires_langflow": False,
+        "llm_reranker_used": False,
+        "semantic_route": {
+            "target_kind": target_kind,
+            "confidence": round(min(0.95, max(0.55, score)), 2),
+            "matched_affordance": target_kind,
+            "scope": sop_scope,
+            "query": sop_query,
+            "continuation_of": str(best.get("continuation_of") or ""),
+            "resolved_from_turn": str(best.get("resolved_from_turn") or ""),
+        },
+        "matched_affordance": target_kind,
+        "route_candidates": candidates[:5],
+    }
+
+
+def semantic_route_candidates(
+    question: str,
+    current_url: str = "",
+    page_context: JsonDict | None = None,
+    dialog_context: JsonDict | None = None,
+) -> list[JsonDict]:
+    text = semantic_route_text(question)
+    page_kind = infer_agent_page_kind(current_url, page_context or {})
+    candidates: list[JsonDict] = []
+    relation_score = 0.18 if any(term.lower() in text for term in RELATED_AFFORDANCE_RELATION_TERMS) else 0.0
+    for target_kind, terms in RELATED_AFFORDANCE_TERMS.items():
+        matched_terms = [term for term in terms if term.lower() in text]
+        if not matched_terms:
+            continue
+        score = 0.45 + relation_score + min(0.26, 0.08 * len(matched_terms))
+        if page_kind in {"doc", "workflow_status", "events", "event_type", "action_raw"}:
+            score += 0.06
+        candidate = {
+                "target_kind": target_kind,
+                "score": round(min(score, 0.95), 2),
+                "reason": f"{RELATED_AFFORDANCE_LABELS.get(target_kind, target_kind)} affordance matched",
+                "matched_terms": matched_terms[:5],
+            }
+        if target_kind == "related_sop":
+            candidate.update(sop_scope_from_question(question, dialog_context))
+        candidates.append(candidate)
+    has_related_candidate = any(str(item.get("target_kind") or "").startswith("related_") for item in candidates)
+    previous_target = str((dialog_context or {}).get("previous_related_target") or "")
+    continuation_terms = [term for term in DIALOG_CONTINUATION_TERMS if term.lower() in text]
+    if previous_target.startswith("related_") and continuation_terms and not has_related_candidate:
+        candidate = {
+                "target_kind": previous_target,
+                "score": 0.74,
+                "reason": "continued previous related-item request",
+                "matched_terms": continuation_terms[:5],
+                "continuation_of": previous_target,
+                "resolved_from_turn": "previous_assistant",
+            }
+        if previous_target == "related_sop":
+            candidate.update(sop_scope_from_question(question, dialog_context))
+        candidates.append(candidate)
+    page_terms = [term for term in CURRENT_PAGE_QA_TERMS if term.lower() in text]
+    answer_terms = [term for term in CURRENT_PAGE_ANSWER_TERMS if term.lower() in text]
+    if page_terms and answer_terms:
+        candidates.append(
+            {
+                "target_kind": "current_page_answer",
+                "score": round(0.5 + min(0.25, 0.05 * (len(page_terms) + len(answer_terms))), 2),
+                "reason": "current page question terms matched",
+                "matched_terms": (page_terms + answer_terms)[:5],
+            }
+        )
+    candidates.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    return candidates
+
+
+def semantic_route_text(question: str) -> str:
+    return re.sub(r"\s+", " ", str(question or "").strip().lower())
+
+
 def normalize_native_route(value: str, fallback: str = "fast") -> str:
     route = str(value or "").strip().lower().replace("-", "_")
     return route if route in ALLOWED_AGENT_ROUTES else fallback
@@ -196,7 +493,12 @@ def safety_route_override(question: str) -> str | None:
     return None
 
 
-def deterministic_native_intent(question: str, current_url: str = "") -> str:
+def deterministic_native_intent(
+    question: str,
+    current_url: str = "",
+    page_context: JsonDict | None = None,
+    dialog_context: JsonDict | None = None,
+) -> str:
     q = str(question or "").lower()
     if looks_like_unregistered_event_workflow_request(question):
         return "event_type_draft"
@@ -213,6 +515,8 @@ def deterministic_native_intent(question: str, current_url: str = "") -> str:
         return "action_invoke"
     if safety := safety_route_override(q):
         return "manual_complete" if safety == "manual_handoff" else "approval"
+    if semantic_route_candidate(question, current_url, page_context, dialog_context):
+        return "search"
     return "page_qa" if current_url else "search"
 
 
@@ -233,7 +537,12 @@ def route_for_native_intent(intent: str) -> str:
 
 
 def native_rule_route(request: JsonDict, reason: str = "native_rules") -> JsonDict:
-    deterministic = deterministic_native_intent(str(request.get("question") or ""), str(request.get("current_url") or ""))
+    deterministic = deterministic_native_intent(
+        str(request.get("question") or ""),
+        str(request.get("current_url") or ""),
+        request.get("page_context") if isinstance(request.get("page_context"), dict) else {},
+        request.get("dialog_context") if isinstance(request.get("dialog_context"), dict) else {},
+    )
     requested_intent = normalize_native_intent(str(request.get("intent") or ""), fallback=deterministic) if request.get("intent") else deterministic
     requested_mode = str(request.get("mode") or "auto")
     route = route_for_native_intent(requested_intent)
@@ -247,7 +556,12 @@ def native_rule_route(request: JsonDict, reason: str = "native_rules") -> JsonDi
 def finalize_native_route(request: JsonDict, candidate: JsonDict | None) -> JsonDict:
     question = str(request.get("question") or "")
     current_url = str(request.get("current_url") or "")
-    deterministic = deterministic_native_intent(question, current_url)
+    deterministic = deterministic_native_intent(
+        question,
+        current_url,
+        request.get("page_context") if isinstance(request.get("page_context"), dict) else {},
+        request.get("dialog_context") if isinstance(request.get("dialog_context"), dict) else {},
+    )
     route = normalize_native_route(str((candidate or {}).get("route") or ""), fallback=route_for_native_intent(deterministic))
     intent = normalize_native_intent(str((candidate or {}).get("intent") or ""), fallback=deterministic)
     if looks_like_unregistered_event_workflow_request(question) and intent in {"approval", "action_invoke", "event_publish", "workflow_start"}:
@@ -288,6 +602,14 @@ def finalize_native_route(request: JsonDict, candidate: JsonDict | None) -> Json
         final_route["response_profile"] = str((candidate or {}).get("response_profile") or "")
     if isinstance((candidate or {}).get("goal_model"), dict):
         final_route["goal_model"] = dict((candidate or {}).get("goal_model") or {})
+    if isinstance((candidate or {}).get("semantic_route"), dict):
+        final_route["semantic_route"] = dict((candidate or {}).get("semantic_route") or {})
+    if isinstance((candidate or {}).get("route_candidates"), list):
+        final_route["route_candidates"] = list((candidate or {}).get("route_candidates") or [])[:5]
+    if (candidate or {}).get("llm_reranker_used") is not None:
+        final_route["llm_reranker_used"] = bool((candidate or {}).get("llm_reranker_used"))
+    if (candidate or {}).get("matched_affordance"):
+        final_route["matched_affordance"] = str((candidate or {}).get("matched_affordance") or "")
     return final_route
 
 
@@ -344,6 +666,7 @@ class NativeAgentTools:
     dictionary_resolve: Callable[[str], JsonDict]
     memory_recall: Callable[[str, int], JsonDict]
     agent_inbox: Callable[[int], JsonDict]
+    sop_catalog_search: Callable[[str, str, int], JsonDict] | None = None
     llm_json: Callable[[str, JsonDict], JsonDict | None] | None = None
 
 
@@ -471,12 +794,31 @@ class NativeBoiAgent:
             state.get("page_context") if isinstance(state.get("page_context"), dict) else {},
             (state.get("context_pack") or {}).get("agent_goal_profiles") if isinstance(state.get("context_pack"), dict) else [],
         )
+        semantic = semantic_route_candidate(
+            str(request.get("question") or ""),
+            str(request.get("current_url") or ""),
+            state.get("page_context") if isinstance(state.get("page_context"), dict) else {},
+            request.get("dialog_context")
+            if isinstance(request.get("dialog_context"), dict)
+            else ((state.get("context_pack") or {}).get("dialog_context") if isinstance(state.get("context_pack"), dict) else {}),
+        )
+        if semantic_route_should_override_profile(semantic, profile, str(request.get("question") or "")):
+            return finalize_native_route(request, semantic)
+        if is_strong_agent_goal_profile(profile):
+            return finalize_native_route(request, route_candidate_from_goal_profile(profile))
         if profile:
             return finalize_native_route(request, route_candidate_from_goal_profile(profile))
         if self.config.llm_enabled and self.tools.llm_json and str(request.get("mode") or "auto") == "auto":
             payload = {
                 "request": request,
-                "deterministic_intent": deterministic_native_intent(str(request.get("question") or ""), str(request.get("current_url") or "")),
+                "deterministic_intent": deterministic_native_intent(
+                    str(request.get("question") or ""),
+                    str(request.get("current_url") or ""),
+                    state.get("page_context") if isinstance(state.get("page_context"), dict) else {},
+                    request.get("dialog_context")
+                    if isinstance(request.get("dialog_context"), dict)
+                    else ((state.get("context_pack") or {}).get("dialog_context") if isinstance(state.get("context_pack"), dict) else {}),
+                ),
                 "allowed_routes": sorted(ALLOWED_AGENT_ROUTES),
                 "allowed_intents": sorted(ALLOWED_AGENT_INTENTS),
             }
@@ -709,6 +1051,8 @@ class NativeBoiAgent:
             self._compose_gap_answer(state)
         elif response_profile == "workflow_manual_summary":
             self._compose_workflow_manual_answer(state)
+        elif response_profile == "related_items":
+            self._compose_related_items_answer(state)
         elif intent == "workflow_explain":
             self._compose_workflow_answer(state)
         elif intent == "trace_reasoning":
@@ -883,6 +1227,178 @@ class NativeBoiAgent:
         state["citations"] = state["links"][:5]
         state["authoritative_answer_contract"] = "workflow_summary"
 
+    def _compose_related_items_answer(self, state: JsonDict) -> None:
+        route = state.get("route") if isinstance(state.get("route"), dict) else {}
+        semantic = route.get("semantic_route") if isinstance(route.get("semantic_route"), dict) else {}
+        target_kind = str(semantic.get("target_kind") or route.get("matched_affordance") or "related_boi")
+        scope = str(semantic.get("scope") or "current_page_related") if target_kind == "related_sop" else "current_page_related"
+        query = str(semantic.get("query") or "")
+        items, overflow = self._related_items_for_target(state, target_kind, scope=scope, query=query)
+        label = RELATED_AFFORDANCE_LABELS.get(target_kind, "관련 항목")
+        item_label_text = label.removeprefix("관련 ")
+        continuation_of = str(semantic.get("continuation_of") or route.get("continuation_of") or "")
+        resolved_from_turn = str(semantic.get("resolved_from_turn") or route.get("resolved_from_turn") or "")
+        page = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+        page_title = str(page.get("title") or page.get("page_kind") or "현재 화면")
+        if items:
+            lines = [f"## {label}", ""]
+            if target_kind == "related_sop" and scope == "catalog_all":
+                lines.append(f"SOP 카탈로그 전체에서 접근 가능한 SOP를 **{len(items)}건** 찾았습니다.")
+                if overflow.get("has_more"):
+                    lines.append(f"아래에는 먼저 볼 {len(items)}건만 표시합니다. 전체 결과는 SOP 카탈로그에서 필터로 이어서 볼 수 있습니다.")
+            elif target_kind == "related_sop" and scope == "catalog_search":
+                shown_query = query or "요청한 조건"
+                lines.append(f"`{shown_query}` 조건에 맞는 SOP를 **{len(items)}건** 찾았습니다.")
+                if overflow.get("has_more"):
+                    lines.append("결과가 더 있습니다. 조건을 좁히거나 SOP 카탈로그에서 이어서 확인하세요.")
+            elif continuation_of == target_kind:
+                lines.append(f"방금 요청한 {item_label_text} 목록 기준으로 이어서 보면, 현재 페이지와 직접 연결된 {item_label_text}는 **{len(items)}건**입니다.")
+            else:
+                lines.append(f"현재 페이지와 직접 연결된 {item_label_text}는 **{len(items)}건**입니다.")
+            for item in items[:5]:
+                title = str(item.get("title") or item.get("ref") or label)
+                reason = str(item.get("reason") or "현재 페이지의 Event/Action 연결에서 확인했습니다.")
+                url = str(item.get("url") or "")
+                if url:
+                    lines.append(f"- [{title}]({url}) - {reason}")
+                else:
+                    lines.append(f"- **{title}** - {reason}")
+        else:
+            if target_kind == "related_sop" and scope == "catalog_search":
+                empty_message = f"`{query or '요청한 조건'}` 조건에 맞는 SOP를 찾지 못했습니다."
+            elif target_kind == "related_sop" and scope == "catalog_all":
+                empty_message = "접근 가능한 SOP 카탈로그 항목을 찾지 못했습니다."
+            else:
+                empty_message = f"현재 페이지 **{page_title}**에서 바로 연결된 {label}을 찾지 못했습니다."
+            lines = [
+                f"## {label}",
+                "",
+                empty_message,
+                "관련 Event, Action, SOP 링크가 있는지 BoI Wiki 검색으로 한 번 더 확인하세요.",
+            ]
+        state["answer_markdown"] = "\n".join(lines).strip()
+        state["links"] = [
+            {"label": str(item.get("title") or item.get("ref") or label), "url": str(item.get("url") or ""), "kind": str(item.get("kind") or target_kind)}
+            for item in items
+            if item.get("url")
+        ]
+        state["citations"] = state["links"][:5]
+        state["related_item_context"] = {
+            "target_kind": target_kind,
+            "items": items,
+            "direct_count": len(items),
+            "scope": scope,
+            "query": query,
+            "continuation_of": continuation_of,
+            "resolved_from_turn": resolved_from_turn,
+            "overflow": overflow,
+        }
+        state["authoritative_answer_contract"] = "related_items_lookup"
+
+    def _related_items_for_target(self, state: JsonDict, target_kind: str, *, scope: str = "current_page_related", query: str = "") -> tuple[list[JsonDict], JsonDict]:
+        if target_kind == "related_sop":
+            return self._related_sop_items(state, scope=scope, query=query)
+        if target_kind == "related_event":
+            return self._related_event_items(state), {"has_more": False, "omitted_count": 0}
+        if target_kind == "related_action":
+            return self._related_action_items(state), {"has_more": False, "omitted_count": 0}
+        return self._related_boi_items(state), {"has_more": False, "omitted_count": 0}
+
+    def _related_sop_items(self, state: JsonDict, *, scope: str = "current_page_related", query: str = "") -> tuple[list[JsonDict], JsonDict]:
+        if scope in {"catalog_all", "catalog_search"} and self.tools.sop_catalog_search is not None:
+            result = self._call_tool(
+                "sop_catalog_search",
+                {"query": query, "scope": scope, "limit": 12},
+                lambda: self.tools.sop_catalog_search(query, scope, 12),
+                state,
+            )
+            raw_items = result.get("items") if isinstance(result, dict) else []
+            items = [
+                {
+                    "kind": "sop",
+                    "ref": str(item.get("boi_id") or item.get("ref") or ""),
+                    "title": str(item.get("title") or item.get("boi_id") or "SOP"),
+                    "url": str(item.get("url") or ""),
+                    "reason": str(item.get("reason") or ("SOP 카탈로그에서 찾았습니다." if scope == "catalog_all" else "검색 조건과 일치합니다.")),
+                }
+                for item in (raw_items or [])
+                if isinstance(item, dict)
+            ]
+            total = int(result.get("total") or len(items)) if isinstance(result, dict) else len(items)
+            return dedupe_related_items(items), {"has_more": total > len(items), "omitted_count": max(0, total - len(items))}
+        refs: list[tuple[str, str]] = []
+        page = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+        event_context = state.get("event_context") if isinstance(state.get("event_context"), dict) else {}
+        definition = state.get("workflow_definition_context") if isinstance(state.get("workflow_definition_context"), dict) else {}
+        add_related_ref(refs, str(page.get("sop_ref") or ""), "현재 화면에 연결된 SOP입니다.")
+        add_related_ref(refs, str(event_context.get("sop_ref") or ""), "현재 Event가 이 SOP 단계에 연결됩니다.")
+        for ref in _registry_list(definition.get("sop_refs")):
+            add_related_ref(refs, ref, "현재 보고서의 Event/Action이 이 SOP 실행 흐름에 포함됩니다.")
+        items: list[JsonDict] = []
+        for ref, reason in refs[:8]:
+            doc = self._call_tool("boi_get", {"boi_id": ref}, lambda ref=ref: self.tools.boi_get(ref), state)
+            title = doc_title(doc if isinstance(doc, dict) else {}, readable_ref_label(ref))
+            url = str((doc or {}).get("url") or f"/docs/{ref}")
+            items.append({"kind": "sop", "ref": ref, "title": title, "url": url, "reason": reason})
+        return dedupe_related_items(items), {"has_more": False, "omitted_count": 0}
+
+    def _related_event_items(self, state: JsonDict) -> list[JsonDict]:
+        page = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+        event_context = state.get("event_context") if isinstance(state.get("event_context"), dict) else {}
+        definition = state.get("workflow_definition_context") if isinstance(state.get("workflow_definition_context"), dict) else {}
+        refs: list[tuple[str, str]] = []
+        add_related_ref(refs, str(page.get("event_type") or ""), "현재 화면에 연결된 Event입니다.")
+        add_related_ref(refs, str(event_context.get("event_type") or ""), "현재 업무 맥락의 기준 Event입니다.")
+        for ref in _registry_list(definition.get("entry_events")) + _registry_list(definition.get("emitted_events")):
+            add_related_ref(refs, ref, "현재 SOP 실행 흐름에서 쓰이는 Event입니다.")
+        for contract in definition.get("event_contracts") or []:
+            if isinstance(contract, dict):
+                add_related_ref(refs, str(contract.get("event_type") or ""), "현재 SOP 실행 흐름의 Event 계약입니다.")
+        items: list[JsonDict] = []
+        for ref, reason in refs[:8]:
+            event = self._call_tool("event_type_lookup", {"event_type": ref}, lambda ref=ref: self.tools.event_type_lookup(ref), state) or {}
+            title = str(event.get("name_ko") or ref)
+            items.append({"kind": "event", "ref": ref, "title": title, "url": f"/event-types/{ref}", "reason": reason})
+        return dedupe_related_items(items)
+
+    def _related_action_items(self, state: JsonDict) -> list[JsonDict]:
+        page = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+        event_context = state.get("event_context") if isinstance(state.get("event_context"), dict) else {}
+        definition = state.get("workflow_definition_context") if isinstance(state.get("workflow_definition_context"), dict) else {}
+        refs: list[tuple[str, str]] = []
+        add_related_ref(refs, str(page.get("action_key") or ""), "현재 화면에 연결된 Action입니다.")
+        for ref in _registry_list(page.get("workflow_actions")):
+            add_related_ref(refs, ref, "현재 화면의 SOP 실행 흐름에 포함된 Action입니다.")
+        for ref in _registry_list(definition.get("action_refs")):
+            add_related_ref(refs, ref, "현재 보고서의 업무 흐름에서 재사용하는 Action입니다.")
+        for ref in _registry_list(event_context.get("recommended_actions")) + _registry_list(event_context.get("recommended_manual_actions")):
+            add_related_ref(refs, ref, "현재 Event가 권장하는 Action입니다.")
+        items: list[JsonDict] = []
+        for ref, reason in refs[:8]:
+            spec = self._call_tool("action_spec_lookup", {"action_key": ref}, lambda ref=ref: self.tools.action_spec_lookup(ref), state) or {}
+            item = spec.get("item") if isinstance(spec.get("item"), dict) else {}
+            title = str(item.get("name_ko") or item.get("name") or ref)
+            items.append({"kind": "action", "ref": ref, "title": title, "url": str(spec.get("url") or ""), "reason": reason})
+        return dedupe_related_items(items)
+
+    def _related_boi_items(self, state: JsonDict) -> list[JsonDict]:
+        search = state.get("search") if isinstance(state.get("search"), dict) else {}
+        items: list[JsonDict] = []
+        for item in search.get("best_matches") or []:
+            url = str(item.get("url") or "")
+            if not url:
+                continue
+            items.append(
+                {
+                    "kind": str(item.get("kind") or "boi"),
+                    "ref": str(item.get("boi_id") or item.get("uri") or item.get("ref") or ""),
+                    "title": item_label(item),
+                    "url": url,
+                    "reason": compact_text(str(item.get("match_reason") or item.get("description") or "BoI Wiki 검색에서 연결 후보로 확인했습니다."), 140),
+                }
+            )
+        return dedupe_related_items(items[:8])
+
     def _compose_trace_answer(self, state: JsonDict) -> None:
         workflow = (state.get("tool_results") or {}).get("workflow_status") or {}
         trace = (state.get("tool_results") or {}).get("trace_context") or {}
@@ -996,6 +1512,14 @@ class NativeBoiAgent:
         if compose_action_requirement_answer(state):
             return
         if state.get("intent") in {"summarize", "page_qa"} and page.get("resolved"):
+            report_answer = compose_current_doc_report_answer(state)
+            if report_answer:
+                state["answer_markdown"] = report_answer
+                doc = (state.get("tool_results") or {}).get("current_doc") or {}
+                state["links"] = links_from_doc_and_search(doc, search)
+                state["citations"] = state["links"][:5]
+                state["authoritative_answer_contract"] = "page_context_report_qa"
+                return
             title = str(page.get("title") or page.get("page_kind") or "현재 화면")
             excerpt = compact_plain_markdown_text(str(page.get("body_excerpt") or ""), 300)
             lines = [f"현재 화면 **{title}** 기준으로 요약합니다."]
@@ -1103,6 +1627,11 @@ class NativeBoiAgent:
             "tool_trace": [item.__dict__ for item in state.get("tool_trace") or []],
             "status_updates": state.get("status_updates") or [],
             "coverage_report": state.get("coverage_report") or {},
+            "semantic_route": route.get("semantic_route") or {},
+            "route_candidates": route.get("route_candidates") or [],
+            "llm_reranker_used": bool(route.get("llm_reranker_used")),
+            "matched_affordance": route.get("matched_affordance") or ((route.get("semantic_route") or {}).get("matched_affordance") if isinstance(route.get("semantic_route"), dict) else ""),
+            "related_item_context": state.get("related_item_context") or {},
             "deployment_revision": self.config.build_revision,
             "access_summary": state.get("access_summary") or {},
             "guardrails_applied": state.get("guardrails_applied") or [],
@@ -1304,9 +1833,7 @@ def structured_details_for_composer_merge(intent: str, structured_answer: str) -
         return ""
     if intent in {"diagram", "gap_check", "workflow_explain"}:
         return ""
-    if intent in {"trace_reasoning", "inbox"}:
-        return draft
-    return ""
+    return draft
 
 
 def merge_composer_answer_with_structured_details(intent: str, composer_answer: str, structured_answer: str) -> str:
@@ -1335,6 +1862,219 @@ def compact_plain_markdown_text(value: str, limit: int = 360) -> str:
     return compact_text(text, limit)
 
 
+def compose_current_doc_report_answer(state: JsonDict) -> str:
+    question = str((state.get("request") or {}).get("question") or state.get("question") or "")
+    body = current_doc_report_text(state)
+    if not body:
+        return ""
+    if is_missing_evidence_question(question):
+        return compose_missing_evidence_answer(body)
+    if is_decision_evidence_question(question):
+        return compose_decision_evidence_answer(body)
+    return ""
+
+
+def current_doc_report_text(state: JsonDict) -> str:
+    page = state.get("page_context") if isinstance(state.get("page_context"), dict) else {}
+    doc = (state.get("tool_results") or {}).get("current_doc")
+    parts: list[str] = []
+    if isinstance(doc, dict):
+        for key in ("body", "body_excerpt", "description"):
+            value = str(doc.get(key) or "").strip()
+            if value:
+                parts.append(value)
+    for key in ("body", "body_excerpt", "summary", "description"):
+        value = str(page.get(key) or "").strip()
+        if value:
+            parts.append(value)
+    text = "\n".join(parts)
+    text = re.sub(r"\bsource_ids?\s*:\s*\S*", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
+def is_missing_evidence_question(question: str) -> bool:
+    text = str(question or "").lower()
+    return any(term in text for term in ("부족", "누락", "보강", "빠진", "missing")) and any(
+        term in text for term in ("근거", "자료", "데이터", "확인", "evidence", "raw")
+    )
+
+
+def is_decision_evidence_question(question: str) -> bool:
+    text = str(question or "").lower()
+    return any(term in text for term in ("판단", "승인", "반려", "결정", "검토")) and any(
+        term in text for term in ("근거", "자료", "데이터", "확인", "보고서")
+    )
+
+
+def compose_missing_evidence_answer(body: str) -> str:
+    lines = report_body_lines(body)
+    missing = select_report_lines(
+        lines,
+        required_any=("부족 근거", "부족한 근거", "누락", "확인 필요", "먼저 확인", "보강"),
+        fallback_any=("Raw Data", "endpoint", "원본 데이터", "Data Lake"),
+    )
+    decision_basis = select_report_lines(
+        lines,
+        required_any=("판단 근거", "근거", "Trend", "Raw Data", "승인 리스크"),
+        fallback_any=("확인됨", "확보", "필요"),
+    )
+    next_checks = select_report_lines(
+        lines,
+        required_any=("먼저 확인", "확인할 일", "확인하세요", "권장 확인", "해당 근거"),
+        fallback_any=(),
+    )
+    if not missing and not any("Raw Data" in line or "endpoint" in line for line in lines):
+        return ""
+    direct = strongest_missing_evidence_sentence(missing or lines)
+    answer_lines = ["## 부족한 근거", "", direct]
+    if missing:
+        answer_lines.extend(["", "확인해야 할 항목:"])
+        answer_lines.extend(f"- {display_report_line(line)}" for line in missing[:4] if line and line not in {direct})
+    if decision_basis:
+        answer_lines.extend(["", "현재 보고서에서 이미 잡힌 판단 근거:"])
+        answer_lines.extend(f"- {display_report_line(line)}" for line in decision_basis[:4])
+    if next_checks:
+        missing_keys = {report_line_dedupe_key(line) for line in missing}
+        next_checks = [
+            line
+            for line in next_checks
+            if report_line_dedupe_key(line) not in missing_keys
+        ]
+    if next_checks:
+        answer_lines.extend(["", "다음 확인:"])
+        answer_lines.extend(f"- {display_report_line(line)}" for line in next_checks[:3])
+    return "\n".join(dedupe_adjacent_report_lines(answer_lines)).strip()
+
+
+def compose_decision_evidence_answer(body: str) -> str:
+    lines = report_body_lines(body)
+    evidence = select_report_lines(
+        lines,
+        required_any=("판단 근거", "Trend", "Raw Data", "원인 후보", "승인 리스크", "이전 단계"),
+        fallback_any=("확인됨", "확보", "확인 필요"),
+    )
+    next_checks = select_report_lines(
+        lines,
+        required_any=("부족 근거", "먼저 확인", "권장 판단", "확인할 일", "조치"),
+        fallback_any=("승인", "반려", "보류", "추가 근거"),
+    )
+    if not evidence and not next_checks:
+        return ""
+    answer_lines = ["## 판단에 필요한 근거", ""]
+    if evidence:
+        answer_lines.append("보고서에서 확인된 근거:")
+        answer_lines.extend(f"- {display_report_line(line)}" for line in evidence[:5])
+    if next_checks:
+        answer_lines.extend(["", "결정 전에 확인할 항목:"])
+        answer_lines.extend(f"- {display_report_line(line)}" for line in next_checks[:4])
+    return "\n".join(dedupe_adjacent_report_lines(answer_lines)).strip()
+
+
+def report_body_lines(body: str) -> list[str]:
+    text = re.sub(r"```.*?```", " ", str(body or ""), flags=re.DOTALL)
+    text = re.sub(r"\s+(#{1,6}\s+)", r"\n\1", text)
+    text = re.sub(r"\s+(-\s+)", r"\n\1", text)
+    text = re.sub(r"\s+(\*\*[^*]{1,40}:\*\*)", r"\n\1", text)
+    candidates: list[str] = []
+    for raw in text.splitlines():
+        line = re.sub(r"^\s{0,3}#{1,6}\s*", "", raw).strip()
+        line = re.sub(r"^\s*[-*]\s*", "", line).strip()
+        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+        line = re.sub(r"\bsource_ids?\s*:\s*\S*", "", line, flags=re.IGNORECASE).strip()
+        pieces = re.split(r"(?<=[.!?。])\s+|(?=\*\*[^*]{1,40}:\*\*)", line)
+        for piece in pieces:
+            piece = re.sub(r"[#*_>`]+", " ", piece).strip()
+            if not piece or piece.lower() in {"body", "metadata", "citations", "relationship graph"}:
+                continue
+            if piece.endswith(":") and len(piece) <= 40:
+                continue
+            if re.fullmatch(r"[-:| ]+", piece):
+                continue
+            if "|" in piece and piece.count("|") >= 2:
+                continue
+            candidates.append(compact_text(piece, 180))
+    return dedupe_report_lines(candidates)
+
+
+def select_report_lines(lines: list[str], *, required_any: tuple[str, ...], fallback_any: tuple[str, ...]) -> list[str]:
+    selected = [
+        line
+        for line in lines
+        if not is_low_signal_report_line(line)
+        and any(term.lower() in line.lower() for term in required_any)
+        and (not fallback_any or any(term.lower() in line.lower() for term in fallback_any))
+    ]
+    if selected:
+        return dedupe_report_lines(selected)
+    return dedupe_report_lines([line for line in lines if not is_low_signal_report_line(line) and any(term.lower() in line.lower() for term in fallback_any)])
+
+
+def is_low_signal_report_line(line: str) -> bool:
+    text = str(line or "")
+    if "부족 근거" in text or "확인할 일" in text or "권장 확인" in text:
+        return False
+    return any(term in text for term in ("판단 대상입니다", "이 문서는 BoI Inbox", "검증된 보고서 BoI"))
+
+
+def display_report_line(line: str) -> str:
+    value = str(line or "").strip()
+    value = re.sub(r"^(권장 확인 순서|판단 메모)\s*:\s*", "", value)
+    value = re.sub(r"^부족 근거\s*:\s*", "", value)
+    value = re.sub(r"^확인할 일\s*:\s*", "", value)
+    return value.strip()
+
+
+def strongest_missing_evidence_sentence(lines: list[str]) -> str:
+    joined = " ".join(lines)
+    if "Raw Data" in joined and "endpoint" in joined:
+        return (
+            "부족한 근거는 **Raw Data endpoint 확인**입니다. "
+            "Trend나 조치 요청은 잡혀 있지만, 승인 또는 반려 전에 원본 Raw Data 접근 경로와 실제 데이터를 먼저 보강해야 합니다."
+        )
+    if "Raw Data" in joined:
+        return "부족한 근거는 **Raw Data 확인**입니다. 승인 또는 반려 전에 원본 데이터와 현재 판단 근거를 대조해야 합니다."
+    first = lines[0] if lines else "보고서에서 부족 근거를 확인해야 합니다."
+    return f"부족한 근거는 **{first}**입니다."
+
+
+def dedupe_report_lines(lines: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        value = str(line or "").strip()
+        if not value:
+            continue
+        key = report_line_dedupe_key(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return out
+
+
+def report_line_dedupe_key(line: str) -> str:
+    value = re.sub(r"\s+", " ", str(line or "")).strip()
+    low = value.lower()
+    if "raw data endpoint" in low:
+        if "부족 근거" in value or "추가 근거" in value:
+            return "missing:raw-data-endpoint"
+        if "확인할 일" in value or "해당 근거" in value or "권장 확인" in value:
+            return "next:raw-data-endpoint"
+    return low
+
+
+def dedupe_adjacent_report_lines(lines: list[str]) -> list[str]:
+    out: list[str] = []
+    last = ""
+    for line in lines:
+        key = re.sub(r"\s+", " ", str(line or "")).strip().lower()
+        if key and key == last:
+            continue
+        out.append(line)
+        last = key
+    return out
+
+
 def item_label(item: JsonDict) -> str:
     return str(item.get("title") or item.get("term") or item.get("event_type") or item.get("action_key") or item.get("boi_id") or item.get("uri") or "결과")
 
@@ -1355,6 +2095,34 @@ def best_boi_ref_from_search(search: JsonDict, *, prefer_sop: bool = False) -> s
 def doc_title(doc: JsonDict, fallback: str) -> str:
     metadata = doc.get("metadata") if isinstance(doc, dict) else {}
     return str((metadata or {}).get("title") or doc.get("title") or fallback)
+
+
+def add_related_ref(refs: list[tuple[str, str]], ref: str, reason: str) -> None:
+    value = str(ref or "").strip()
+    if not value:
+        return
+    if any(existing == value for existing, _ in refs):
+        return
+    refs.append((value, reason))
+
+
+def dedupe_related_items(items: list[JsonDict]) -> list[JsonDict]:
+    seen: set[str] = set()
+    out: list[JsonDict] = []
+    for item in items:
+        key = str(item.get("url") or item.get("ref") or item.get("title") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def readable_ref_label(ref: str) -> str:
+    value = str(ref or "").strip()
+    if not value:
+        return "연결 항목"
+    return value.rsplit(":", 1)[-1].replace("-", " ").replace("_", " ")
 
 
 def workflow_stages(doc: JsonDict) -> list[JsonDict]:

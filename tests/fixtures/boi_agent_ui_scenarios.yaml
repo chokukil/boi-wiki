@@ -31,6 +31,32 @@
       "url": "http://localhost:28000/workflows/equipment-anomaly/status?employee_id=100001&trace_id=trace-90fec4f5af564e7a8590053ea7c926ae",
       "question": "남은 수동 조치 5건을 일반 업무 관점으로 정리해줘.",
       "expect_artifact": "manual_handoff_summary"
+    },
+    {
+      "id": "ui-agent-sop-scope-multiturn",
+      "name": "Pet UI keeps SOP catalog scope across follow-up turns",
+      "url": "http://localhost:28000/docs/boi:public:sop:direct-development-reporting?employee_id=100001",
+      "expect_artifact": "workflow_summary",
+      "timeout_ms": 90000,
+      "turns": [
+        {
+          "question": "SOP 리스트 전부 보여줘",
+          "expect_semantic_target": "related_sop",
+          "expect_related_scope": "catalog_all",
+          "forbid_text": ["현재 페이지와 직접 연결된 SOP는 1건입니다"]
+        },
+        {
+          "question": "전체 리스트 보여줘",
+          "expect_semantic_target": "related_sop",
+          "expect_related_scope": "catalog_all",
+          "forbid_text": ["현재 페이지와 직접 연결된 SOP는 1건입니다"]
+        },
+        {
+          "question": "그럼 action은?",
+          "expect_semantic_target": "related_action",
+          "forbid_text": ["SOP 카탈로그 전체"]
+        }
+      ]
     }
   ]
 }

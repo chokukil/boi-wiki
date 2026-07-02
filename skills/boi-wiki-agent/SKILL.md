@@ -16,6 +16,7 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
    - Use `boi_agent_chat` when the user asks a page-aware question or wants recommendations from current context.
    - Use `boi_search` only when the task needs a BoI document list.
    - Use `boi_inbox` for "what do I need to act on" questions. Use `agent_inbox` only as a deprecated compatibility alias.
+   - Use `private_memory_cleanup_preview` before proposing cleanup of generated private BoI artifacts. Use cleanup run/restore only with explicit confirmation.
    - Use `data_lake_status` before any Data Lake query. Data Lake is optional; BoI Wiki core must work without PostgreSQL or MinIO.
    - Use `dictionary_resolve` before interpreting shop-floor aliases, acronyms, or user-specific terms.
 2. If MCP is unavailable, read repo harness files:
@@ -36,6 +37,7 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 - Always search existing SOPs, event types, action specs, manual tasks, and harness docs before creating new ones.
 - Keep images under `_media/`, update `media-manifest.yaml`, and use standard Markdown image syntax.
 - Private memory and dictionary entries are BoI documents. Do not promote them automatically to Team/Public.
+- Private generated artifacts are not memory. Save user-adopted context as `memory`, active notes as `working`, and inbox reports/sandbox artifacts/generated reports as `background`. Cleanup is preview -> 7-day quarantine -> hard delete, and must never target memory, working, protected, or promoted documents.
 - BoI Inbox is a dedicated top-level UI. Pet Agent must guide users to `/inbox` or a verified report BoI link instead of rendering Inbox task cards itself.
 - Data Lake queries follow `plan → preview → confirmed execute`. Never ask users for direct DB credentials or connect to PostgreSQL/MinIO outside BoI API/MCP.
 
@@ -63,6 +65,7 @@ For each action, create or update the public action-spec BoI document and the ca
 - Use `data_lake_query_plan` and `data_lake_query_preview` when structured evidence may exist. Only call `data_lake_query_execute` with explicit user confirmation, and only when Data Lake is enabled.
 - Use `data_lake_import_sources` only to materialize selected source profiles as private OKF Data Context BoI documents. This is optional report context, not a core runtime dependency.
 - Use dictionary priority `private → team → public` when expanding terms.
+- Use `private_memory_cleanup_preview`, `private_memory_cleanup_run`, `private_memory_restore`, and `private_memory_mark_memory` for private Second Brain lifecycle management. Generated/background documents are hidden from default `/api/boi`/`boi_search`; use explicit generated filters or cleanup/report APIs when needed.
 - Runtime links, raw logs, and recent activity are evidence signals, not OKF concept graph edges.
 - Mutating Agent operations such as manual handoff completion, source/body apply, promotion, and action invoke require explicit user confirmation.
 

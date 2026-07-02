@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BoI Operations Center · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <link rel="stylesheet" href="{{ asset_url('dist/ops-center.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+
+  <main class="page-content ops-page ops-react-page">
+    {% with title="BoI Operations Center", description="나를 중심으로 SOP, Agent, Evidence, 보고서와 판단 흐름을 한 화면에서 연결합니다.", eyebrow=None, primary_action=None %}
+      {% include "_section_intro.html" %}
+    {% endwith %}
+
+    <div id="boi-ops-center" class="ops-center-mount" aria-label="BoI Operations Center"></div>
+    <noscript>
+      <section class="panel">
+        <h2>JavaScript가 필요합니다</h2>
+        <p>BoI Operations Center는 React Flow 기반 업무 캔버스입니다. 브라우저에서 JavaScript를 활성화해 주세요.</p>
+      </section>
+    </noscript>
+  </main>
+
+  <script id="ops-center-bootstrap" type="application/json">{{ ops_bootstrap | tojson }}</script>
+  <script type="module" src="{{ asset_url('dist/ops-center.js') }}"></script>
+</body>
+</html>

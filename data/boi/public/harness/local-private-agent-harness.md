@@ -37,6 +37,18 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 6. 사용자 명시 승인 없이 Local Private 원문이나 Team/Public promotion candidate를 원격 MCP/API/GitHub/외부 서비스에 전송하지 않는다.
 7. 사용자가 승인한 promotion candidate는 MCP `promotion_submit` 또는 Web promotion API로 원격 동기 검증/게시를 요청한다.
 
+# Cleanup and Second Brain Boundary
+
+Local Private는 쓰레기장이 아니라 개인 Second Brain이다. Agent는 생성물을 저장할 때 `artifact_visibility`, `lifecycle_state`, `memory_candidate`, `cleanup_policy`를 남긴다.
+
+- 사용자가 장기 기억으로 채택한 문서는 `memory`로 표시하고 cleanup 대상에서 제외한다.
+- 진행 중 초안과 업무 메모는 `working`으로 둔다.
+- inbox report, sandbox/report artifact, generated BoI는 `background`로 둔다.
+- 중복, superseded, 재생성 가능한 background 산출물은 `delete_candidate`로 분류한다.
+- promotion draft, pinned 문서, 사용자가 직접 보호한 문서는 `protected`로 둔다.
+
+Local cleanup은 Web cleanup과 같은 3단계다: preview, `.boi-trash/{cleanup_id}/` quarantine, 7일 후 hard delete. Preview는 파일을 변경하지 않아야 하며, quarantine manifest에는 원래 경로, BoI ID, 제목, 이동 시각, `delete_after`, restore 방법을 남긴다. Promotion 대상은 cleanup 전에 자동 보호한다.
+
 # Skills-first Use Cases
 
 `boi-wiki-local`은 local MCP를 공식 경로로 요구하지 않는다. Agent는 skills와 이 하네스를 기준으로 다음 작업을 local-only로 완료할 수 있어야 한다.
@@ -58,6 +70,8 @@ Local Private Agent Harness는 일반 사용자가 lint, MCP, Git을 몰라도 a
 | 1 | OS shell | `check.ps1` 또는 `check.sh` no-dependency 구조 점검 |
 | 2 | Developer agent | Python이 있을 때 local strict OKF lint |
 | 3 | Shared repo API | 원격 동기 promotion validation, publish status, HOTL watching |
+
+Cleanup 검증은 `local-private-agent-harness`의 필수 smoke다. Agent는 generated artifact cleanup preview를 먼저 보여주고, 사용자 확인 없이 quarantine 또는 hard delete를 수행하지 않는다. Restore 안내는 quarantine manifest 기준으로 제공한다.
 
 # Citations
 

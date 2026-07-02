@@ -181,6 +181,24 @@ def test_runtime_git_guardrail_blocks_nested_generated_private_boi(tmp_path: Pat
     assert "data/boi/private/100001/data-context/boi-private-100001-generated.md" in result.stdout
 
 
+def test_runtime_git_guardrail_blocks_private_trash(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    trash = repo / "data" / "private-trash" / "100001" / "cleanup-test" / "manifest.json"
+    trash.parent.mkdir(parents=True)
+    trash.write_text("{}\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", str(trash.relative_to(repo))], cwd=repo, check=True)
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "check_runtime_git_guardrails.py"
+    result = subprocess.run(["python", str(script), "--root", str(repo)], cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    assert result.returncode == 1
+    assert "data/private-trash/100001/cleanup-test/manifest.json" in result.stdout
+
+
 def test_runtime_git_guardrail_allows_curated_catalog(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()

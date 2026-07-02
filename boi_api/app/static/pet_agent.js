@@ -5,7 +5,7 @@
 
   const employeeId = root.dataset.employeeId || new URLSearchParams(location.search).get("employee_id") || "100001";
   const pageTitle = root.dataset.pageTitle || document.title || "BoI Wiki";
-  const storageKey = `boiAgent.v7.${employeeId}`;
+  const IDLE_RESET_MS = 2 * 60 * 60 * 1000;
   let activeRequest = null;
   let restoreScrollOnce = true;
   let pageUnloading = false;
@@ -13,6 +13,36 @@
   function currentUrl() {
     return root.dataset.currentUrl || `${location.pathname}${location.search}`;
   }
+
+  function contextFingerprintFromUrl() {
+    const url = new URL(currentUrl(), location.origin);
+    const path = url.pathname;
+    const docMatch = path.match(/^\/docs\/([^/]+)/);
+    if (docMatch) return `doc:${decodeURIComponent(docMatch[1])}`;
+    const workflowMatch = path.match(/^\/workflows\/([^/]+)\/status/);
+    if (workflowMatch) return `workflow:${decodeURIComponent(workflowMatch[1])}:${url.searchParams.get("trace_id") || "latest"}`;
+    const rawActionMatch = path.match(/^\/actions\/raw\/([^/]+)/);
+    if (rawActionMatch) return `action-raw:${decodeURIComponent(rawActionMatch[1])}`;
+    const eventTypeMatch = path.match(/^\/event-types\/([^/]+)/);
+    if (eventTypeMatch) return `event-type:${decodeURIComponent(eventTypeMatch[1])}`;
+    if (path === "/events") return `events:${url.searchParams.get("trace_id") || url.searchParams.get("event_type") || url.searchParams.get("q") || "list"}`;
+    if (path === "/actions") return `actions:${url.searchParams.get("view") || "catalog"}:${url.searchParams.get("action_key") || url.searchParams.get("q") || "all"}`;
+    if (path === "/inbox") return `inbox:${url.searchParams.get("report_id") || url.searchParams.get("task_id") || url.searchParams.get("group_id") || url.searchParams.get("view") || "reports"}`;
+    return `path:${path}`;
+  }
+
+  function storageSafeFingerprint(value) {
+    return String(value || "home").replace(/[^A-Za-z0-9_.:-]+/g, "_").slice(0, 220);
+  }
+
+  const contextFingerprint = storageSafeFingerprint(contextFingerprintFromUrl());
+  const storageKey = `boiAgent.v8.${employeeId}.${contextFingerprint}`;
+  const lastContextStorageKey = `boiAgent.v8.lastContext.${employeeId}`;
+  const lastContextFingerprint = sessionStorage.getItem(lastContextStorageKey) || "";
+  const previousContextStorageKey = lastContextFingerprint && lastContextFingerprint !== contextFingerprint
+    ? `boiAgent.v8.${employeeId}.${storageSafeFingerprint(lastContextFingerprint)}`
+    : "";
+  sessionStorage.setItem(lastContextStorageKey, contextFingerprint);
 
   function selectedText() {
     return String(window.getSelection?.().toString() || "").trim().slice(0, 1200);
@@ -32,9 +62,13 @@
       draft: "",
       busyTask: "",
       sending: false,
+      answerSending: false,
+      followupsLoading: false,
       currentStatus: "",
+      lastActiveAt: Date.now(),
       scrollTop: 0,
       pinToBottom: true,
+      previousContextStorageKey,
       viewer: null,
     };
   }
@@ -42,7 +76,7 @@
   function loadState() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || "{}");
-      return { ...defaultState(), ...saved, tab: "agent", suggestions: [], suggestionsLoading: false, suggestionError: "", signal: null, signals: [], busyTask: "", currentStatus: "", sending: false, viewer: null };
+      return { ...defaultState(), ...saved, tab: "agent", suggestions: [], suggestionsLoading: false, suggestionError: "", signal: null, signals: [], busyTask: "", currentStatus: "", sending: false, answerSending: false, followupsLoading: false, previousContextStorageKey, viewer: null };
     } catch (_error) {
       return defaultState();
     }
@@ -57,6 +91,7 @@
       tab: state.tab,
       messages: state.messages.slice(-20),
       draft: state.draft,
+      lastActiveAt: state.lastActiveAt,
       scrollTop: state.scrollTop,
       pinToBottom: state.pinToBottom,
     };
@@ -1007,7 +1042,7 @@
     captureScrollState();
     syncViewportPosition();
     persistState();
-    const launcherStatus = state.sending ? state.currentStatus || "" : (state.signal?.message || "무엇을 도와드릴까요");
+    const launcherStatus = state.answerSending ? state.currentStatus || "" : (state.signal?.message || "무엇을 도와드릴까요");
     root.innerHTML = `
       <button class="boi-agent-launcher" type="button" aria-expanded="${state.open ? "true" : "false"}">
         <span class="boi-agent-launcher-copy">
@@ -1031,7 +1066,7 @@
             <button type="button" class="boi-agent-close" aria-label="Close">×</button>
           </div>
         </header>
-        ${state.sending && state.currentStatus ? `<div class="boi-agent-live-status" aria-live="polite"><strong>진행 상태</strong><span>${escapeHtml(state.currentStatus)}</span></div>` : ""}
+        ${state.answerSending && state.currentStatus ? `<div class="boi-agent-live-status" aria-live="polite"><strong>진행 상태</strong><span>${escapeHtml(state.currentStatus)}</span></div>` : ""}
         <div class="boi-agent-content">${renderTab()}</div>
       </section>
       ${renderViewer()}
@@ -1051,13 +1086,14 @@
         ${state.suggestions.map((item) => `<button type="button" data-question="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}
         ${state.suggestionsLoading ? `<span class="boi-agent-suggestions-loading" aria-live="polite">추천 질문 생성 중...</span>` : ""}
       </div>` : ""}
+      ${!state.messages.length && state.previousContextStorageKey ? `<button type="button" class="boi-agent-previous-context" data-load-previous-context="true">이전 화면 대화 보기</button>` : ""}
       ${state.suggestionError ? `<p class="boi-agent-hint error">${escapeHtml(state.suggestionError)}</p>` : ""}
       ${renderMessages()}
       <form class="boi-agent-chat-form">
         <textarea name="question" placeholder="현재 페이지 기준으로 묻거나, SOP/Event/Action을 찾아보세요." required>${escapeHtml(state.draft)}</textarea>
         <div class="boi-agent-form-actions">
-          ${state.sending ? `<button type="button" class="boi-agent-stop">중지</button>` : ""}
-          <button type="submit" ${state.sending ? "disabled" : ""}>Agent에게 묻기</button>
+          ${state.answerSending ? `<button type="button" class="boi-agent-stop">중지</button>` : ""}
+          <button type="submit" ${state.answerSending ? "disabled" : ""}>Agent에게 묻기</button>
         </div>
       </form>
       <p class="boi-agent-hint">Enter로 전송, Shift+Enter로 줄바꿈</p>
@@ -1106,9 +1142,23 @@
       state.messages = [];
       state.draft = "";
       state.sending = false;
+      state.answerSending = false;
+      state.followupsLoading = false;
       state.currentStatus = "";
       state.scrollTop = 0;
       state.pinToBottom = true;
+      render();
+    });
+    root.querySelector("[data-load-previous-context]")?.addEventListener("click", () => {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(state.previousContextStorageKey) || "{}");
+        state.messages = Array.isArray(saved.messages) ? saved.messages : [];
+        state.draft = "";
+        state.scrollTop = 0;
+        state.pinToBottom = true;
+      } catch (_error) {
+        state.previousContextStorageKey = "";
+      }
       render();
     });
     root.querySelector(".boi-agent-stop")?.addEventListener("click", () => {
@@ -1204,7 +1254,7 @@
       return;
     }
     if (state.open && state.tab === "agent") {
-      if (state.sending || state.pinToBottom) {
+      if (state.answerSending || state.pinToBottom) {
         content.scrollTop = content.scrollHeight;
       } else {
         content.scrollTop = state.scrollTop;
@@ -1334,7 +1384,12 @@
   }
 
   function ask(question) {
-    if (!question.trim() || state.sending) return;
+    if (!question.trim() || state.answerSending) return;
+    if (Date.now() - Number(state.lastActiveAt || 0) > IDLE_RESET_MS) {
+      state.messages = [];
+      state.scrollTop = 0;
+      state.pinToBottom = true;
+    }
     const controller = new AbortController();
     activeRequest = controller;
     const statusLines = [];
@@ -1354,13 +1409,20 @@
       goal_model: item.goalModel || {},
       response_profile: item.responseProfile || "",
       component_errors: item.componentErrors || [],
+      semantic_route: item.semanticRoute || {},
+      related_item_context: item.relatedItemContext || {},
+      page_fingerprint: item.pageFingerprint || contextFingerprint,
+      created_at: item.createdAt || "",
     }));
     state.draft = "";
     state.sending = true;
+    state.answerSending = true;
+    state.followupsLoading = false;
+    state.lastActiveAt = Date.now();
     state.currentStatus = "";
     state.pinToBottom = true;
-    state.messages.push({ role: "user", text: question });
-    const pendingIndex = state.messages.push({ role: "assistant", text: "", progressText: "" }) - 1;
+    state.messages.push({ role: "user", text: question, createdAt: new Date().toISOString(), pageFingerprint: contextFingerprint });
+    const pendingIndex = state.messages.push({ role: "assistant", text: "", progressText: "", createdAt: new Date().toISOString(), pageFingerprint: contextFingerprint }) - 1;
     state.open = true;
     state.tab = "agent";
     render();
@@ -1409,6 +1471,8 @@
         workContextSummary: body.work_context_summary || {},
         goalModel: body.goal_model || {},
         responseProfile: body.response_profile || "",
+        semanticRoute: body.semantic_route || {},
+        relatedItemContext: body.related_item_context || {},
         componentErrors,
         suggestedQuestions: Array.isArray(options.suggestedQuestions) ? options.suggestedQuestions : (body.suggested_questions || []),
         followupState: options.followupState || (Array.isArray(options.suggestedQuestions) && options.suggestedQuestions.length ? "ready" : previous.followupState || ""),
@@ -1482,7 +1546,11 @@
         answer_ready(payload) {
           answerReadyBody = payload;
           updateAssistantFromBody(payload, { suggestedQuestions: [], followupState: "loading", followupError: "" });
-          state.currentStatus = "답변 정리 완료 · 다음 질문 준비 중";
+          state.answerSending = false;
+          state.sending = false;
+          state.followupsLoading = true;
+          if (activeRequest === controller) activeRequest = null;
+          state.currentStatus = "";
           render();
         },
         followups(payload) {
@@ -1502,6 +1570,7 @@
               followupError: "",
             };
           }
+          state.followupsLoading = false;
           render();
         },
         final(payload) {
@@ -1519,6 +1588,12 @@
         suggestedQuestions: body.suggested_questions || [],
         followupState: (body.suggested_questions || []).length ? "ready" : (state.messages[pendingIndex]?.followupState || ""),
       });
+      state.followupsLoading = false;
+      if (activeRequest === controller) {
+        state.answerSending = false;
+        state.sending = false;
+        activeRequest = null;
+      }
       state.currentStatus = "";
       if (!state.messages.length) refreshSuggestions();
     }).catch((error) => {
@@ -1527,8 +1602,11 @@
         if (pending.role === "assistant" && !pending.text && !pending.rawText && !pending.artifacts?.length) {
           state.messages.splice(pendingIndex, 1);
         }
-        state.sending = false;
-        state.currentStatus = "";
+        if (activeRequest === controller) {
+          state.sending = false;
+          state.answerSending = false;
+          state.currentStatus = "";
+        }
         persistState();
         return;
       }
@@ -1550,11 +1628,18 @@
         text: error.name === "AbortError" ? "생성을 중지했습니다." : (message || "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요."),
       };
       state.currentStatus = "";
+      if (activeRequest === controller) {
+        state.answerSending = false;
+        state.sending = false;
+      }
     }).finally(() => {
       if (pageUnloading) return;
-      if (activeRequest === controller) activeRequest = null;
-      state.sending = false;
-      state.currentStatus = "";
+      if (activeRequest === controller) {
+        activeRequest = null;
+        state.sending = false;
+        state.answerSending = false;
+        state.currentStatus = "";
+      }
       render();
     });
   }

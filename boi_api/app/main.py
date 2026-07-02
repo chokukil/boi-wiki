@@ -58,7 +58,11 @@ from .native_agent import (
     NativeAgentRuntimeUnavailable,
     NativeAgentTools,
     NativeBoiAgent,
+    dialog_context_from_conversation,
     infer_agent_page_kind,
+    is_strong_agent_goal_profile,
+    semantic_route_candidate,
+    semantic_route_should_override_profile,
     select_agent_goal_profile,
 )
 from .access_policy import CLASSIFICATION_POLICY_VERSION, AccessPolicyDecision, doc_access_policy
@@ -102,6 +106,10 @@ def resolve_router_llm_enabled(raw_value: str | None, mode: str, base_url: str) 
         and bool(str(base_url or "").strip())
         and "llm-gateway.example" not in str(base_url or "")
     )
+
+
+def env_flag(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
 LLM_PLACEHOLDER_MARKERS = ("llm-gateway.example",)
@@ -160,6 +168,9 @@ DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT") or str(BOI_RUNTIME_ROOT / "drafts"))
 ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT") or str(BOI_RUNTIME_ROOT / "activity"))
 RBAC_ROOT = Path(os.getenv("RBAC_ROOT") or str(BOI_RUNTIME_ROOT / "rbac"))
 SEARCH_INDEX_ROOT = Path(os.getenv("SEARCH_INDEX_ROOT") or str(BOI_RUNTIME_ROOT / "index"))
+OPS_RUNTIME_INDEX_ROOT = Path(os.getenv("OPS_RUNTIME_INDEX_ROOT") or str(BOI_RUNTIME_ROOT / "ops"))
+PRIVATE_MEMORY_TRASH_ROOT = Path(os.getenv("PRIVATE_MEMORY_TRASH_ROOT") or str(BOI_RUNTIME_ROOT / "private-trash"))
+PRIVATE_MEMORY_QUARANTINE_DAYS = int(os.getenv("PRIVATE_MEMORY_QUARANTINE_DAYS", "7") or "7")
 BOI_PERSIST_SEARCH_INDEX = os.getenv("BOI_PERSIST_SEARCH_INDEX", "true").lower() in {"1", "true", "yes", "on"}
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
 ACTION_INVOKE_TIMEOUT_SECONDS = float(os.getenv("ACTION_INVOKE_TIMEOUT_SECONDS", "90"))
@@ -181,6 +192,20 @@ KAFKA_SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME", "")
 KAFKA_SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD", "")
 KAFKA_SSL_CAFILE = os.getenv("KAFKA_SSL_CAFILE", "")
 DEMO_EMPLOYEE_ID = os.getenv("DEMO_EMPLOYEE_ID", "100001")
+OPENAI_API_URL = os.getenv("OPENAI_API_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
+OPENAI_API_MODEL = os.getenv("OPENAI_API_MODEL", "gpt-5.5")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+BOI_AGENT_RUNTIME = os.getenv("BOI_AGENT_RUNTIME", "agents_sdk" if OPENAI_API_KEY else "native").strip().lower()
+BOI_AGENT_RUNTIME_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_RUNTIME_TIMEOUT_SECONDS", "30"))
+BOI_PET_AGENT_ENABLED = env_flag("BOI_PET_AGENT_ENABLED", "false")
+BOI_OPS_CENTER_ENABLED = env_flag("BOI_OPS_CENTER_ENABLED", "false")
+OPS_CENTER_DOC_BOI_IDS = {"boi:public:boi-wiki-manual:operations:boi-operations-center"}
+OPS_CENTER_DOC_URIS = {"/public/boi-wiki-manual/operations/boi-operations-center.md"}
+BOI_AGENT_SANDBOX_ENABLED = env_flag("BOI_AGENT_SANDBOX_ENABLED", "true")
+BOI_AGENT_SANDBOX_BACKEND = os.getenv("BOI_AGENT_SANDBOX_BACKEND", "unix_local").strip().lower()
+BOI_AGENT_SANDBOX_AUTORUN = env_flag("BOI_AGENT_SANDBOX_AUTORUN", "true")
+BOI_AGENT_SANDBOX_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_SANDBOX_TIMEOUT_SECONDS", "20"))
+BOI_AGENT_SANDBOX_SUMMARY_ENABLED = env_flag("BOI_AGENT_SANDBOX_SUMMARY_ENABLED", "true")
 BOI_LLM_BASE_URL = os.getenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1").rstrip("/")
 BOI_LLM_MODEL = os.getenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
 BOI_LLM_API_KEY = os.getenv("BOI_LLM_API_KEY", "not-needed")
@@ -257,6 +282,51 @@ BOI_WORK_CONTEXT_NARRATIVE_LLM_ENABLED = resolve_router_llm_enabled(
 )
 BOI_WORK_CONTEXT_NARRATIVE_TIMEOUT_SECONDS = float(os.getenv("BOI_WORK_CONTEXT_NARRATIVE_TIMEOUT_SECONDS", "12"))
 BOI_WORK_CONTEXT_NARRATIVE_MAX_TOKENS = int(os.getenv("BOI_WORK_CONTEXT_NARRATIVE_MAX_TOKENS", "768"))
+BOI_AGENT_USE_OPENAI_RUNTIME = env_flag("BOI_AGENT_USE_OPENAI_RUNTIME", "true" if OPENAI_API_KEY else "false")
+if OPENAI_API_KEY and BOI_AGENT_USE_OPENAI_RUNTIME:
+    BOI_LLM_BASE_URL = OPENAI_API_URL
+    BOI_LLM_MODEL = OPENAI_API_MODEL
+    BOI_LLM_API_KEY = OPENAI_API_KEY
+    BOI_AGENT_ROUTER_BASE_URL = OPENAI_API_URL
+    BOI_AGENT_ROUTER_API_KEY = OPENAI_API_KEY
+    BOI_AGENT_ROUTER_MODEL = OPENAI_API_MODEL
+    BOI_AGENT_ROUTER_LLM_ENABLED = resolve_router_llm_enabled(
+        BOI_AGENT_ROUTER_LLM_ENABLED_RAW,
+        BOI_AGENT_ROUTER_MODE,
+        BOI_AGENT_ROUTER_BASE_URL,
+    )
+    BOI_AGENT_STATUS_BASE_URL = OPENAI_API_URL
+    BOI_AGENT_STATUS_API_KEY = OPENAI_API_KEY
+    BOI_AGENT_STATUS_MODEL = OPENAI_API_MODEL
+    BOI_AGENT_STATUS_LLM_ENABLED = resolve_router_llm_enabled(
+        BOI_AGENT_STATUS_LLM_ENABLED_RAW,
+        "llm_first",
+        BOI_AGENT_STATUS_BASE_URL,
+    )
+    BOI_AGENT_SUGGESTIONS_BASE_URL = OPENAI_API_URL
+    BOI_AGENT_SUGGESTIONS_API_KEY = OPENAI_API_KEY
+    BOI_AGENT_SUGGESTIONS_MODEL = OPENAI_API_MODEL
+    BOI_AGENT_SUGGESTIONS_LLM_ENABLED = resolve_router_llm_enabled(
+        BOI_AGENT_SUGGESTIONS_LLM_ENABLED_RAW,
+        "llm_first",
+        BOI_AGENT_SUGGESTIONS_BASE_URL,
+    )
+    BOI_AGENT_COMPOSER_BASE_URL = OPENAI_API_URL
+    BOI_AGENT_COMPOSER_API_KEY = OPENAI_API_KEY
+    BOI_AGENT_COMPOSER_MODEL = OPENAI_API_MODEL
+    BOI_AGENT_COMPOSER_LLM_ENABLED = resolve_router_llm_enabled(
+        BOI_AGENT_COMPOSER_LLM_ENABLED_RAW,
+        "llm_first",
+        BOI_AGENT_COMPOSER_BASE_URL,
+    )
+    BOI_WORK_CONTEXT_NARRATIVE_BASE_URL = OPENAI_API_URL
+    BOI_WORK_CONTEXT_NARRATIVE_API_KEY = OPENAI_API_KEY
+    BOI_WORK_CONTEXT_NARRATIVE_MODEL = OPENAI_API_MODEL
+    BOI_WORK_CONTEXT_NARRATIVE_LLM_ENABLED = resolve_router_llm_enabled(
+        BOI_WORK_CONTEXT_NARRATIVE_LLM_ENABLED_RAW,
+        "llm_first",
+        BOI_WORK_CONTEXT_NARRATIVE_BASE_URL,
+    )
 BOI_AGENT_LLM_MAX_CONCURRENCY = max(1, int(os.getenv("BOI_AGENT_LLM_MAX_CONCURRENCY", "1")))
 BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS", "120"))
 _BOI_AGENT_LLM_SEMAPHORE = threading.BoundedSemaphore(BOI_AGENT_LLM_MAX_CONCURRENCY)
@@ -278,7 +348,21 @@ BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_NATIVE_TOOL_T
 BOI_AGENT_LANGGRAPH_REQUIRED = os.getenv("BOI_AGENT_LANGGRAPH_REQUIRED", "1").strip().lower() not in {"0", "false", "no", "off"}
 BOI_AGENT_CHAT_TIMEOUT_SECONDS = float(os.getenv("BOI_AGENT_CHAT_TIMEOUT_SECONDS", "90"))
 BOI_AGENT_STREAM_HEARTBEAT_SECONDS = float(os.getenv("BOI_AGENT_STREAM_HEARTBEAT_SECONDS", "2"))
+BOI_AGENT_LATENCY_MODE = os.getenv("BOI_AGENT_LATENCY_MODE", "fast_first").strip().lower()
+BOI_AGENT_STATUS_BLOCKING = env_flag(
+    "BOI_AGENT_STATUS_BLOCKING",
+    "false" if BOI_AGENT_LATENCY_MODE in {"fast_first", "fast-first", "fast"} else "true",
+)
+BOI_AGENT_FOLLOWUPS_BLOCKING = env_flag(
+    "BOI_AGENT_FOLLOWUPS_BLOCKING",
+    "false" if BOI_AGENT_LATENCY_MODE in {"fast_first", "fast-first", "fast"} else "true",
+)
+BOI_AGENT_COMPOSER_BLOCKING = env_flag(
+    "BOI_AGENT_COMPOSER_BLOCKING",
+    "false" if BOI_AGENT_LATENCY_MODE in {"fast_first", "fast-first", "fast"} else "true",
+)
 BOI_AGENT_CACHE_WARMUP_ON_STARTUP = os.getenv("BOI_AGENT_CACHE_WARMUP_ON_STARTUP", "1").strip().lower() not in {"0", "false", "no", "off"}
+BOI_OPS_MANIFEST_WARMUP_ON_STARTUP = env_flag("BOI_OPS_MANIFEST_WARMUP_ON_STARTUP", "true")
 BOI_AGENT_RESPONSE_CONTRACT_VERSION = "boi-agent.response.v1"
 BOI_AGENT_RESPONSE_REQUIRED_FIELDS = [
     "agent_contract_version",
@@ -414,6 +498,11 @@ BOI_AGENT_RESPONSE_SCHEMA = {
         "context_summary": {"type": "object", "additionalProperties": True},
         "event_context": {"type": "object", "additionalProperties": True},
         "workflow_definition_context": {"type": "object", "additionalProperties": True},
+        "semantic_route": {"type": "object", "additionalProperties": True},
+        "route_candidates": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "llm_reranker_used": {"type": "boolean"},
+        "matched_affordance": {"type": "string"},
+        "related_item_context": {"type": "object", "additionalProperties": True},
         "suggested_questions": {"type": "array", "items": {"type": "string"}},
         "work_context_summary": {"type": "object", "additionalProperties": True},
         "historical_patterns": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
@@ -550,7 +639,14 @@ templates.env.filters["user_facing_catalog"] = user_facing_catalog_text
 
 def asset_url(path: str) -> str:
     clean_path = str(path or "").lstrip("/")
-    return f"/static/{clean_path}?v={quote(BOI_BUILD_REVISION)}"
+    revision = BOI_BUILD_REVISION
+    if revision == "dev-local":
+        asset_path = APP_DIR / "static" / clean_path
+        try:
+            revision = f"dev-local-{int(asset_path.stat().st_mtime)}"
+        except OSError:
+            revision = BOI_BUILD_REVISION
+    return f"/static/{clean_path}?v={quote(revision)}"
 
 
 templates.env.globals["asset_url"] = asset_url
@@ -582,6 +678,17 @@ _AGENT_CACHE_WARMUP_STATE: dict[str, Any] = {
     "completed_at": "",
     "elapsed_ms": 0,
     "checks": {},
+    "error": "",
+}
+_OPS_MANIFEST_WARMUP_LOCK = threading.Lock()
+_OPS_MANIFEST_WARMUP_STATE: dict[str, Any] = {
+    "enabled": BOI_OPS_MANIFEST_WARMUP_ON_STARTUP,
+    "status": "not_started",
+    "employee_id": "",
+    "started_at": "",
+    "completed_at": "",
+    "elapsed_ms": 0,
+    "source": "",
     "error": "",
 }
 MARKDOWN_RENDERER_VERSION = "2026-06-22-doc-detail-lazy-v1"
@@ -620,6 +727,7 @@ def ensure_dirs() -> None:
     ACTIVITY_ROOT.mkdir(parents=True, exist_ok=True)
     RBAC_ROOT.mkdir(parents=True, exist_ok=True)
     SEARCH_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
+    OPS_RUNTIME_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
@@ -3330,6 +3438,15 @@ def is_accessible(doc: dict[str, Any], employee_id: str) -> bool:
     return access_policy_for_doc(doc, employee_id).can_read
 
 
+def feature_visible_doc(doc: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    boi_id = str(metadata.get("boi_id") or "")
+    uri = str(doc.get("uri") or "")
+    if not BOI_OPS_CENTER_ENABLED and (boi_id in OPS_CENTER_DOC_BOI_IDS or uri in OPS_CENTER_DOC_URIS):
+        return False
+    return True
+
+
 def accessible_docs(employee_id: str) -> list[dict[str, Any]]:
     ensure_dirs()
     signature = markdown_signature()
@@ -3347,7 +3464,8 @@ def accessible_docs(employee_id: str) -> list[dict[str, Any]]:
     docs = [
         doc
         for doc in _DOCS_CACHE["docs"]
-        if doc_access_policy(doc, employee_id=employee_id, teams=teams, roles=roles, data_root=DATA_ROOT).can_read
+        if feature_visible_doc(doc)
+        and doc_access_policy(doc, employee_id=employee_id, teams=teams, roles=roles, data_root=DATA_ROOT).can_read
     ]
     docs.sort(key=lambda d: metadata_sort_value(d["metadata"].get("timestamp")), reverse=True)
     return docs
@@ -3500,6 +3618,8 @@ def browse_url(
     event_type: str = "",
     visibility: str = "",
     boi_type: str = "",
+    include_generated: bool = False,
+    include_archived: bool = False,
 ) -> str:
     params = {"employee_id": employee_id}
     normalized_folder = normalize_folder(folder)
@@ -3513,6 +3633,10 @@ def browse_url(
     }.items():
         if value:
             params[key] = value
+    if include_generated:
+        params["include_generated"] = "true"
+    if include_archived:
+        params["include_archived"] = "true"
     return "/?" + urlencode(params)
 
 
@@ -3556,6 +3680,8 @@ def with_folder_urls(
     event_type: str = "",
     visibility: str = "",
     boi_type: str = "",
+    include_generated: bool = False,
+    include_archived: bool = False,
 ) -> dict[str, Any]:
     item = dict(node)
     item["url"] = browse_url(
@@ -3565,6 +3691,8 @@ def with_folder_urls(
         event_type=event_type,
         visibility=visibility,
         boi_type=boi_type,
+        include_generated=include_generated,
+        include_archived=include_archived,
     )
     item["children"] = [
         with_folder_urls(
@@ -3574,6 +3702,8 @@ def with_folder_urls(
             event_type=event_type,
             visibility=visibility,
             boi_type=boi_type,
+            include_generated=include_generated,
+            include_archived=include_archived,
         )
         for child in node.get("children", [])
     ]
@@ -3588,6 +3718,8 @@ def with_breadcrumb_urls(
     event_type: str = "",
     visibility: str = "",
     boi_type: str = "",
+    include_generated: bool = False,
+    include_archived: bool = False,
 ) -> list[dict[str, str]]:
     return [
         {
@@ -3599,6 +3731,8 @@ def with_breadcrumb_urls(
                 event_type=event_type,
                 visibility=visibility,
                 boi_type=boi_type,
+                include_generated=include_generated,
+                include_archived=include_archived,
             ),
         }
         for crumb in breadcrumbs
@@ -3649,8 +3783,13 @@ def filter_docs(
     visibility: str = "",
     boi_type: str = "",
     archive_status: str = "active",
+    include_generated: bool = False,
+    include_archived: bool = False,
+    include_quarantined: bool = False,
 ) -> list[dict[str, Any]]:
     filtered = docs
+    if include_archived:
+        archive_status = "all"
     if q:
         q_lower = q.lower()
         filtered = [
@@ -3673,6 +3812,12 @@ def filter_docs(
         filtered = [d for d in filtered if d["metadata"].get("type") == boi_type]
     if archive_status and archive_status != "all":
         filtered = [d for d in filtered if d["metadata"].get("archive_status", "active") == archive_status]
+    if not include_generated:
+        filtered = [d for d in filtered if private_doc_visible_by_default(d)]
+    if not include_archived:
+        filtered = [d for d in filtered if private_doc_lifecycle_state(d) != "archived"]
+    if not include_quarantined:
+        filtered = [d for d in filtered if lifecycle_value(d.get("metadata") or {}, "lifecycle_state") != "quarantined"]
     return filtered
 
 
@@ -4560,10 +4705,33 @@ def filter_docs_ontology_aware(
     visibility: str = "",
     boi_type: str = "",
     archive_status: str = "active",
+    include_generated: bool = False,
+    include_archived: bool = False,
+    include_quarantined: bool = False,
 ) -> list[dict[str, Any]]:
     if not q:
-        return filter_docs(docs, q=q, event_type=event_type, visibility=visibility, boi_type=boi_type, archive_status=archive_status)
-    base = filter_docs(docs, q="", event_type=event_type, visibility=visibility, boi_type=boi_type, archive_status=archive_status)
+        return filter_docs(
+            docs,
+            q=q,
+            event_type=event_type,
+            visibility=visibility,
+            boi_type=boi_type,
+            archive_status=archive_status,
+            include_generated=include_generated,
+            include_archived=include_archived,
+            include_quarantined=include_quarantined,
+        )
+    base = filter_docs(
+        docs,
+        q="",
+        event_type=event_type,
+        visibility=visibility,
+        boi_type=boi_type,
+        archive_status=archive_status,
+        include_generated=include_generated,
+        include_archived=include_archived,
+        include_quarantined=include_quarantined,
+    )
     payload = ontology_search_payload(q, employee_id, scope="all", limit=500)
     rank = {ref: index for index, ref in enumerate(payload.get("document_rank_refs") or []) if ref}
     ranked_docs = []
@@ -5122,6 +5290,7 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
             {"id": "my_work", "label": "내 업무", "href": app_url("/", employee_id, visibility="private")},
         ],
         "inbox": [
+            {"id": "ops", "label": "BoI Operations Center", "href": app_url("/ops", employee_id)},
             {"id": "reports", "label": "받은 보고서", "href": app_url("/inbox", employee_id)},
             {"id": "decisions", "label": "승인/조치", "href": app_url("/inbox", employee_id, view="decisions")},
             {"id": "history", "label": "처리 이력", "href": app_url("/inbox", employee_id, view="history")},
@@ -5141,12 +5310,14 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
         ],
         "advanced": [
             {"id": "permissions", "label": "권한 관리", "href": app_url("/permissions", employee_id)},
-            {"id": "agent_builder", "label": "Agent Builder", "href": langflow_public_base_url(request) or app_url("/agents/builder", employee_id), "external": bool(langflow_public_base_url(request))},
+            {"id": "agent_builder", "label": "Agent Builder", "href": app_url("/agents/builder", employee_id)},
             {"id": "kafka", "label": "Kafka", "href": kafka_ui_public_base_url(request) or "#", "external": True},
             {"id": "api_docs", "label": "BoI Wiki API", "href": "/docs", "external": True},
             {"id": "mcp", "label": "BoI Wiki MCP", "href": mcp_public_base_url(request) or "#", "external": True},
         ],
     }
+    if not BOI_OPS_CENTER_ENABLED:
+        items_by_nav["inbox"] = [item for item in items_by_nav["inbox"] if item.get("id") != "ops"]
 
     def active_section_id() -> str:
         if active_nav == "library":
@@ -5160,6 +5331,8 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
                 return "history"
             if query.get("view") == "decisions":
                 return "decisions"
+            if BOI_OPS_CENTER_ENABLED and (path.startswith("/ops") or path.startswith("/sop-runs")):
+                return "ops"
             return "reports"
         if active_nav == "sops":
             if path.startswith("/sops/new") or (path == "/workflows/definitions" and query.get("start") == "sop"):
@@ -5198,6 +5371,7 @@ def app_shell_context(
     title: str,
     description: str = "",
     page_actions: list[dict[str, str]] | None = None,
+    hide_pet_agent: bool | None = None,
 ) -> dict[str, Any]:
     identity = identity_for_employee(employee_id)
     mode = auth_mode()
@@ -5216,6 +5390,7 @@ def app_shell_context(
         "primary_nav": primary_nav,
         "section_subnav": section_subnav_for(active_nav, request, employee_id),
         "page_actions": page_actions or [],
+        "hide_pet_agent": (not BOI_PET_AGENT_ENABLED) if hide_pet_agent is None else hide_pet_agent,
         "auth_mode": mode,
         "dev_mode": mode == "dev",
         "sso_active": mode != "dev",
@@ -6082,6 +6257,71 @@ def private_lifecycle_defaults(
     }
 
 
+GENERATED_BACKGROUND_BOI_TYPES = {
+    "boi/inbox-review-report",
+    "boi/sandbox-artifact",
+    "boi/analysis-report",
+    "boi/data-context",
+}
+GENERATED_BACKGROUND_FOLDERS = {
+    "inbox-reports",
+    "analysis-reports",
+    "data-context",
+}
+
+
+def lifecycle_value(metadata: dict[str, Any], key: str) -> str:
+    value = metadata.get(key)
+    return str(value or "").strip().lower()
+
+
+def private_doc_lifecycle_state(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    explicit = lifecycle_value(metadata, "lifecycle_state")
+    if explicit in {"memory", "working", "background", "archived", "delete_candidate", "protected"}:
+        return explicit
+    artifact_visibility = lifecycle_value(metadata, "artifact_visibility")
+    if artifact_visibility in {"memory", "working", "background", "archived", "delete_candidate", "protected"}:
+        return artifact_visibility
+    archive_status = lifecycle_value(metadata, "archive_status")
+    if archive_status in {"archived", "superseded"}:
+        return "archived"
+    boi_type = str(metadata.get("type") or "")
+    uri_parts = [part for part in normalize_folder(str(doc.get("uri") or "")).split("/") if part]
+    folder_markers = set(uri_parts)
+    if "agent-memory" in folder_markers or boi_type in {"boi/agent-memory", "boi/work-pattern"}:
+        return "memory"
+    if boi_type in GENERATED_BACKGROUND_BOI_TYPES or folder_markers.intersection(GENERATED_BACKGROUND_FOLDERS):
+        return "background"
+    retention_class = lifecycle_value(metadata, "retention_class")
+    if retention_class == "ephemeral":
+        return "background"
+    return "working"
+
+
+def private_doc_is_protected(doc: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    visibility = str(metadata.get("visibility") or "")
+    if visibility and visibility != "private":
+        return True
+    if bool(metadata.get("protected")) or bool(metadata.get("pinned")):
+        return True
+    if metadata.get("promotion") or metadata.get("promoted_from") or metadata.get("promoted_to"):
+        return True
+    if lifecycle_value(metadata, "lifecycle_state") == "protected":
+        return True
+    if lifecycle_value(metadata, "artifact_visibility") in {"memory", "protected"}:
+        return True
+    return private_doc_lifecycle_state(doc) == "memory"
+
+
+def private_doc_visible_by_default(doc: dict[str, Any]) -> bool:
+    metadata = doc.get("metadata") or {}
+    if str(metadata.get("visibility") or "") != "private":
+        return True
+    return private_doc_lifecycle_state(doc) in {"memory", "working", "protected"}
+
+
 def registration_new_context(request: Request, employee_id: str, entry_kind: Literal["sop", "event", "action"]) -> dict[str, Any]:
     action_connector_options = [
         {
@@ -6282,7 +6522,7 @@ def write_boi_to_subfolder(metadata: dict[str, Any], body: str, subfolder: str) 
     normalized = normalize_folder(subfolder)
     if not normalized or any(part in {"..", "."} for part in normalized.split("/")):
         raise HTTPException(status_code=400, detail="invalid BoI subfolder")
-    if not normalized.startswith(("agent-memory", "dictionary", "inbox-reports", "data-context")):
+    if not normalized.startswith(("agent-memory", "dictionary", "inbox-reports", "analysis-reports", "data-context")):
         raise HTTPException(status_code=400, detail="subfolder is not allowlisted for this API")
     errors = validate_metadata(metadata)
     if errors:
@@ -6998,6 +7238,29 @@ class RuntimeLogMaintenanceRequest(BaseModel):
     user_confirmed: bool = False
 
 
+class PrivateMemoryCleanupRunRequest(BaseModel):
+    cleanup_id: str = ""
+    selected_boi_ids: list[str] = Field(default_factory=list)
+    scope: Literal["generated", "all"] = "generated"
+    user_confirmed: bool = False
+
+
+class PrivateMemoryRestoreRequest(BaseModel):
+    cleanup_id: str
+    boi_ids: list[str] = Field(default_factory=list)
+    user_confirmed: bool = False
+
+
+class PrivateMemoryPurgeRequest(BaseModel):
+    employee_id: str = ""
+    user_confirmed: bool = False
+
+
+class PrivateMemoryMarkRequest(BaseModel):
+    note: str = ""
+    user_confirmed: bool = False
+
+
 class DataLakeQueryRequest(BaseModel):
     question: str = ""
     source: str = ""
@@ -7010,6 +7273,101 @@ class DataLakeQueryRequest(BaseModel):
 class DataLakeImportRequest(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     scope: Literal["private"] = "private"
+    user_confirmed: bool = False
+
+
+class AgentDraftRequest(BaseModel):
+    title: str
+    prompt: str
+    files: list[dict[str, Any]] = Field(default_factory=list)
+    urls: list[str] = Field(default_factory=list)
+    git_repos: list[str] = Field(default_factory=list)
+    mcp_servers: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    scope: Literal["private", "team", "public"] = "private"
+
+
+class AgentDraftPublishRequest(BaseModel):
+    scope: Literal["private", "team", "public"] = "private"
+    note: str = ""
+    user_confirmed: bool = False
+
+
+class AgentConversationIngestRequest(BaseModel):
+    title: str = "Agent 대화 기록"
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    visibility: Literal["private", "team", "public"] = "private"
+    user_confirmed: bool = False
+
+
+class AgentConversationCreateRequest(BaseModel):
+    title: str = ""
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentConversationMessageRequest(BaseModel):
+    message: str
+    conversation: list[dict[str, Any]] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentConversationArchiveRequest(BaseModel):
+    user_confirmed: bool = False
+    note: str = ""
+
+
+class SandboxJobRequest(BaseModel):
+    title: str = "Computational Evidence Job"
+    task: str
+    input_artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    code: str = ""
+    language: Literal["python", "javascript", "shell", "notebook", "none"] = "none"
+    evidence_intent: str = ""
+    user_confirmed: bool = False
+
+
+class SandboxAdoptEvidenceRequest(BaseModel):
+    evidence_state: Literal["verified_evidence", "review_required", "simulation_only", "failed"] = "review_required"
+    validation_note: str = ""
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    user_confirmed: bool = False
+
+
+class InboxReportAttachEvidenceRequest(BaseModel):
+    evidence_refs: list[dict[str, Any]] = Field(default_factory=list)
+    note: str = ""
+    user_confirmed: bool = False
+
+
+class ReportingAnalysisPlanRequest(BaseModel):
+    question: str
+    target_refs: list[dict[str, Any]] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReportingAnalysisJobRequest(BaseModel):
+    title: str = "분석 보고서 근거 생성"
+    question: str
+    input_artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    code: str = ""
+    language: Literal["python", "javascript", "shell", "notebook", "none"] = "python"
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    user_confirmed: bool = False
+
+
+class ReportingReportDraftRequest(BaseModel):
+    title: str = "분석 보고서"
+    report_brief: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[dict[str, Any]] = Field(default_factory=list)
+    analysis_job_id: str = ""
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    user_confirmed: bool = False
+
+
+class ReportingReportPublishRequest(BaseModel):
+    visibility: Literal["private", "team", "public"] = "private"
+    note: str = ""
     user_confirmed: bool = False
 
 
@@ -7187,10 +7545,78 @@ def start_agent_cache_warmup() -> None:
     ).start()
 
 
+def ops_manifest_warmup_state() -> dict[str, Any]:
+    with _OPS_MANIFEST_WARMUP_LOCK:
+        return copy.deepcopy(_OPS_MANIFEST_WARMUP_STATE)
+
+
+def warm_ops_runtime_manifest(employee_id: str = DEMO_EMPLOYEE_ID) -> dict[str, Any]:
+    warmup_employee_id = str(employee_id or DEMO_EMPLOYEE_ID)
+    started = time.perf_counter()
+    with _OPS_MANIFEST_WARMUP_LOCK:
+        if _OPS_MANIFEST_WARMUP_STATE.get("status") in {"running", "completed"}:
+            return copy.deepcopy(_OPS_MANIFEST_WARMUP_STATE)
+        _OPS_MANIFEST_WARMUP_STATE.update(
+            {
+                "enabled": BOI_OPS_MANIFEST_WARMUP_ON_STARTUP,
+                "status": "running",
+                "employee_id": warmup_employee_id,
+                "started_at": now_iso(),
+                "completed_at": "",
+                "elapsed_ms": 0,
+                "source": "",
+                "error": "",
+            }
+        )
+    try:
+        _, source = ops_runtime_manifest(warmup_employee_id)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        with _OPS_MANIFEST_WARMUP_LOCK:
+            _OPS_MANIFEST_WARMUP_STATE.update(
+                {
+                    "status": "completed",
+                    "completed_at": now_iso(),
+                    "elapsed_ms": elapsed_ms,
+                    "source": source,
+                    "error": "",
+                }
+            )
+            return copy.deepcopy(_OPS_MANIFEST_WARMUP_STATE)
+    except Exception as exc:  # pragma: no cover - defensive startup path
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        with _OPS_MANIFEST_WARMUP_LOCK:
+            _OPS_MANIFEST_WARMUP_STATE.update(
+                {
+                    "status": "failed",
+                    "completed_at": now_iso(),
+                    "elapsed_ms": elapsed_ms,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            return copy.deepcopy(_OPS_MANIFEST_WARMUP_STATE)
+
+
+def start_ops_manifest_warmup() -> None:
+    with _OPS_MANIFEST_WARMUP_LOCK:
+        _OPS_MANIFEST_WARMUP_STATE["enabled"] = BOI_OPS_MANIFEST_WARMUP_ON_STARTUP
+        if not BOI_OPS_MANIFEST_WARMUP_ON_STARTUP:
+            if _OPS_MANIFEST_WARMUP_STATE.get("status") == "not_started":
+                _OPS_MANIFEST_WARMUP_STATE["status"] = "disabled"
+            return
+        if _OPS_MANIFEST_WARMUP_STATE.get("status") in {"running", "completed"}:
+            return
+    threading.Thread(
+        target=lambda: warm_ops_runtime_manifest(DEMO_EMPLOYEE_ID),
+        name="boi-ops-manifest-warmup",
+        daemon=True,
+    ).start()
+
+
 @app.on_event("startup")
 async def startup() -> None:
     ensure_dirs()
     start_agent_cache_warmup()
+    start_ops_manifest_warmup()
 
 
 @app.get("/health")
@@ -7468,6 +7894,361 @@ async def api_runtime_log_maintenance_run(req: RuntimeLogMaintenanceRequest, emp
     return {"ok": True, "operation": req.operation, "rebuilt": rebuilt, "health": runtime_log_health_payload()}
 
 
+def private_employee_root(employee_id: str) -> Path:
+    return DATA_ROOT / "private" / employee_id
+
+
+def private_trash_employee_root(employee_id: str) -> Path:
+    return PRIVATE_MEMORY_TRASH_ROOT / employee_id
+
+
+def doc_private_relative_path(doc: dict[str, Any], employee_id: str) -> str:
+    source_path = Path(str(doc.get("path") or ""))
+    try:
+        return source_path.relative_to(private_employee_root(employee_id)).as_posix()
+    except ValueError:
+        return source_path.name
+
+
+def doc_sort_timestamp(doc: dict[str, Any]) -> tuple[str, int]:
+    metadata = doc.get("metadata") or {}
+    source_path = Path(str(doc.get("path") or ""))
+    mtime = source_path.stat().st_mtime_ns if source_path.exists() else 0
+    return metadata_sort_value(metadata.get("updated_at") or metadata.get("timestamp")), mtime
+
+
+def cleanup_stable_key(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    report_meta = metadata.get("inbox_report") if isinstance(metadata.get("inbox_report"), dict) else {}
+    report_id = str(report_meta.get("report_id") or "")
+    contract_version = str(report_meta.get("contract_version") or "")
+    if report_id:
+        return f"inbox-report:{report_id}:{contract_version or INBOX_REPORT_CONTRACT_VERSION}"
+    stable_key = str(metadata.get("stable_artifact_key") or "")
+    if stable_key:
+        return stable_key
+    return str(metadata.get("boi_id") or doc.get("uri") or doc.get("path") or "")
+
+
+def cleanup_doc_item(doc: dict[str, Any], employee_id: str, *, reason: str = "", keep: bool = False) -> dict[str, Any]:
+    metadata = doc.get("metadata") or {}
+    boi_id = str(metadata.get("boi_id") or stable_doc_ref(doc))
+    lifecycle_state = private_doc_lifecycle_state(doc)
+    return {
+        "boi_id": boi_id,
+        "title": str(metadata.get("title") or boi_id),
+        "type": str(metadata.get("type") or ""),
+        "uri": str(doc.get("uri") or ""),
+        "relative_path": doc_private_relative_path(doc, employee_id),
+        "path": str(doc.get("path") or ""),
+        "stable_key": cleanup_stable_key(doc),
+        "lifecycle_state": lifecycle_state,
+        "artifact_visibility": str(metadata.get("artifact_visibility") or ""),
+        "archive_status": str(metadata.get("archive_status") or "active"),
+        "updated_at": str(metadata.get("updated_at") or metadata.get("timestamp") or ""),
+        "url": doc_url_for_ref(boi_id, employee_id),
+        "reason": reason,
+        "keep": keep,
+    }
+
+
+def private_docs_for_employee(employee_id: str) -> list[dict[str, Any]]:
+    root = private_employee_root(employee_id)
+    if not root.exists():
+        return []
+    docs: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*.md")):
+        try:
+            docs.append(read_doc(path))
+        except Exception:
+            continue
+    docs.sort(key=doc_sort_timestamp, reverse=True)
+    return docs
+
+
+def private_memory_cleanup_preview_payload(employee_id: str, *, scope: str = "generated") -> dict[str, Any]:
+    docs = private_docs_for_employee(employee_id)
+    groups: dict[str, list[dict[str, Any]]] = {}
+    protected: list[dict[str, Any]] = []
+    generated_count = 0
+    for doc in docs:
+        lifecycle_state = private_doc_lifecycle_state(doc)
+        if lifecycle_state == "background":
+            generated_count += 1
+        if private_doc_is_protected(doc) or lifecycle_state in {"memory", "working", "protected"}:
+            protected.append(cleanup_doc_item(doc, employee_id, reason="protected_or_memory", keep=True))
+            continue
+        if scope == "generated" and lifecycle_state not in {"background", "archived", "delete_candidate"}:
+            continue
+        groups.setdefault(cleanup_stable_key(doc), []).append(doc)
+
+    keep: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    for key, grouped_docs in groups.items():
+        grouped_docs = sorted(grouped_docs, key=doc_sort_timestamp, reverse=True)
+        latest = grouped_docs[0]
+        keep.append(cleanup_doc_item(latest, employee_id, reason="latest_for_stable_key", keep=True))
+        for old_doc in grouped_docs[1:]:
+            candidates.append(cleanup_doc_item(old_doc, employee_id, reason="duplicate_generated_artifact"))
+        if len(grouped_docs) == 1:
+            metadata = latest.get("metadata") or {}
+            lifecycle_state = private_doc_lifecycle_state(latest)
+            if lifecycle_state in {"archived", "delete_candidate"}:
+                candidates.append(cleanup_doc_item(latest, employee_id, reason="archived_or_delete_candidate"))
+                keep = [item for item in keep if item.get("stable_key") != key]
+
+    candidate_ids = {str(item.get("boi_id") or "") for item in candidates}
+    keep = [item for item in keep if str(item.get("boi_id") or "") not in candidate_ids]
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "scope": scope,
+        "quarantine_days": PRIVATE_MEMORY_QUARANTINE_DAYS,
+        "trash_root": str(private_trash_employee_root(employee_id)),
+        "summary": {
+            "total_private_docs": len(docs),
+            "generated_background_docs": generated_count,
+            "keep_count": len(keep),
+            "protected_count": len(protected),
+            "delete_candidate_count": len(candidates),
+        },
+        "keep": keep,
+        "protected": protected[:500],
+        "candidates": candidates,
+    }
+
+
+def cleanup_manifest_path(employee_id: str, cleanup_id: str) -> Path:
+    return private_trash_employee_root(employee_id) / cleanup_id / "manifest.json"
+
+
+def read_cleanup_manifest(employee_id: str, cleanup_id: str) -> dict[str, Any]:
+    path = cleanup_manifest_path(employee_id, cleanup_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="cleanup manifest not found")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"cleanup manifest is unreadable: {exc}") from exc
+
+
+def write_cleanup_manifest(employee_id: str, cleanup_id: str, manifest: dict[str, Any]) -> None:
+    path = cleanup_manifest_path(employee_id, cleanup_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+
+def cleanup_entry_quarantine_path(employee_id: str, cleanup_id: str, entry: dict[str, Any]) -> Path:
+    recorded = Path(str(entry.get("quarantine_path") or ""))
+    if recorded.exists():
+        return recorded
+    rel = normalize_folder(str(entry.get("relative_path") or recorded.name))
+    return private_trash_employee_root(employee_id) / cleanup_id / "files" / rel
+
+
+def cleanup_entry_restore_path(employee_id: str, entry: dict[str, Any]) -> Path:
+    recorded = Path(str(entry.get("original_path") or ""))
+    if recorded.exists() or not entry.get("relative_path"):
+        return recorded
+    rel = normalize_folder(str(entry.get("relative_path") or recorded.name))
+    return private_employee_root(employee_id) / rel
+
+
+def quarantined_doc_lookup(employee_id: str, boi_id: str) -> dict[str, Any] | None:
+    root = private_trash_employee_root(employee_id)
+    if not root.exists():
+        return None
+    for manifest_path in sorted(root.glob("*/manifest.json"), reverse=True):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for entry in manifest.get("entries") or []:
+            if str(entry.get("boi_id") or "") != boi_id:
+                continue
+            if entry.get("restored_at") or entry.get("purged_at"):
+                continue
+            return {**entry, "cleanup_id": str(manifest.get("cleanup_id") or manifest_path.parent.name)}
+    return None
+
+
+@app.get("/api/private-memory/cleanup-preview")
+async def api_private_memory_cleanup_preview(
+    employee_id: str = Depends(current_employee),
+    scope: Literal["generated", "all"] = "generated",
+) -> dict[str, Any]:
+    return private_memory_cleanup_preview_payload(employee_id, scope=scope)
+
+
+@app.post("/api/private-memory/cleanup-run")
+async def api_private_memory_cleanup_run(
+    req: PrivateMemoryCleanupRunRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="private memory cleanup requires user_confirmed=true")
+    preview = private_memory_cleanup_preview_payload(employee_id, scope=req.scope)
+    selected = set(req.selected_boi_ids or [])
+    candidates = [
+        item
+        for item in preview.get("candidates") or []
+        if not selected or str(item.get("boi_id") or "") in selected
+    ]
+    cleanup_id = normalize_search_token(req.cleanup_id) or f"cleanup-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    cleanup_root = private_trash_employee_root(employee_id) / cleanup_id
+    moved_at = now_iso()
+    delete_after = (datetime.now(KST) + timedelta(days=PRIVATE_MEMORY_QUARANTINE_DAYS)).isoformat()
+    entries: list[dict[str, Any]] = []
+    for item in candidates:
+        source_path = Path(str(item.get("path") or ""))
+        if not source_path.exists():
+            continue
+        rel = normalize_folder(str(item.get("relative_path") or source_path.name))
+        dest_path = cleanup_root / "files" / rel
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source_path), str(dest_path))
+        entries.append(
+            {
+                **item,
+                "original_path": str(source_path),
+                "quarantine_path": str(dest_path),
+                "moved_at": moved_at,
+                "delete_after": delete_after,
+                "restore_api": "/api/private-memory/restore",
+            }
+        )
+    manifest = {
+        "ok": True,
+        "cleanup_id": cleanup_id,
+        "employee_id": employee_id,
+        "scope": req.scope,
+        "moved_at": moved_at,
+        "delete_after": delete_after,
+        "quarantine_days": PRIVATE_MEMORY_QUARANTINE_DAYS,
+        "entries": entries,
+    }
+    write_cleanup_manifest(employee_id, cleanup_id, manifest)
+    invalidate_doc_caches()
+    return {"ok": True, "cleanup_id": cleanup_id, "moved_count": len(entries), "manifest": manifest}
+
+
+@app.post("/api/private-memory/restore")
+async def api_private_memory_restore(req: PrivateMemoryRestoreRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="private memory restore requires user_confirmed=true")
+    manifest = read_cleanup_manifest(employee_id, req.cleanup_id)
+    selected = set(req.boi_ids or [])
+    restored: list[dict[str, Any]] = []
+    for entry in manifest.get("entries") or []:
+        if entry.get("restored_at") or entry.get("purged_at"):
+            continue
+        if selected and str(entry.get("boi_id") or "") not in selected:
+            continue
+        source_path = cleanup_entry_quarantine_path(employee_id, req.cleanup_id, entry)
+        dest_path = cleanup_entry_restore_path(employee_id, entry)
+        if not source_path.exists():
+            continue
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        if dest_path.exists():
+            continue
+        shutil.move(str(source_path), str(dest_path))
+        entry["restored_at"] = now_iso()
+        restored.append(entry)
+    write_cleanup_manifest(employee_id, req.cleanup_id, manifest)
+    invalidate_doc_caches()
+    return {"ok": True, "cleanup_id": req.cleanup_id, "restored_count": len(restored), "restored": restored}
+
+
+@app.post("/api/private-memory/purge-expired")
+async def api_private_memory_purge_expired(req: PrivateMemoryPurgeRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="private memory purge requires user_confirmed=true")
+    target_employee = req.employee_id or employee_id
+    if target_employee != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    now = datetime.now(KST)
+    purged: list[dict[str, Any]] = []
+    root = private_trash_employee_root(target_employee)
+    for manifest_path in sorted(root.glob("*/manifest.json")) if root.exists() else []:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        try:
+            delete_after = datetime.fromisoformat(str(manifest.get("delete_after") or ""))
+        except Exception:
+            continue
+        if delete_after > now:
+            continue
+        for entry in manifest.get("entries") or []:
+            if entry.get("restored_at") or entry.get("purged_at"):
+                continue
+            cleanup_id = str(manifest.get("cleanup_id") or manifest_path.parent.name)
+            quarantine_path = cleanup_entry_quarantine_path(target_employee, cleanup_id, entry)
+            if quarantine_path.exists():
+                quarantine_path.unlink()
+            entry["purged_at"] = now_iso()
+            purged.append(entry)
+        write_cleanup_manifest(target_employee, str(manifest.get("cleanup_id") or manifest_path.parent.name), manifest)
+        files_root = manifest_path.parent / "files"
+        if files_root.exists() and not any(files_root.rglob("*")):
+            shutil.rmtree(files_root, ignore_errors=True)
+    return {"ok": True, "employee_id": target_employee, "purged_count": len(purged), "purged": purged}
+
+
+def update_private_doc_lifecycle(boi_id: str, employee_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    doc = find_doc_by_id(boi_id, employee_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    metadata = doc.get("metadata") or {}
+    if str(metadata.get("visibility") or "") != "private" or str(metadata.get("owner") or "") != employee_id:
+        raise HTTPException(status_code=403, detail="only owned private BoI can be updated through private memory lifecycle")
+    source_path = Path(str(doc.get("path") or ""))
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="source file not found")
+    current_meta, body = split_frontmatter(source_path.read_text(encoding="utf-8"))
+    current_meta.update(updates)
+    current_meta["updated_at"] = now_iso()
+    source_path.write_text(compose_markdown(current_meta, body), encoding="utf-8")
+    invalidate_doc_caches()
+    return doc_result_item(read_doc(source_path), employee_id)
+
+
+@app.post("/api/docs/{boi_id:path}/mark-memory")
+async def api_doc_mark_memory(boi_id: str, req: PrivateMemoryMarkRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="marking memory requires user_confirmed=true")
+    item = update_private_doc_lifecycle(
+        boi_id,
+        employee_id,
+        {
+            "artifact_visibility": "memory",
+            "lifecycle_state": "memory",
+            "memory_candidate": False,
+            "cleanup_policy": "keep",
+            "cleanup_note": req.note,
+        },
+    )
+    return {"ok": True, "item": item}
+
+
+@app.post("/api/docs/{boi_id:path}/protect")
+async def api_doc_protect(boi_id: str, req: PrivateMemoryMarkRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="protecting BoI requires user_confirmed=true")
+    item = update_private_doc_lifecycle(
+        boi_id,
+        employee_id,
+        {
+            "protected": True,
+            "lifecycle_state": "protected",
+            "cleanup_policy": "keep",
+            "cleanup_note": req.note,
+        },
+    )
+    return {"ok": True, "item": item}
+
+
 @app.get("/api/runtime/config")
 async def runtime_config() -> dict[str, Any]:
     markdown_sig = markdown_signature()
@@ -7477,6 +8258,7 @@ async def runtime_config() -> dict[str, Any]:
     langflow_simulator = langflow_simulator_health_status()
     boi_agent = {
         "backend": BOI_AGENT_BACKEND,
+        "use_openai_runtime": BOI_AGENT_USE_OPENAI_RUNTIME,
         "router": {
             "mode": BOI_AGENT_ROUTER_MODE,
             "llm_enabled": BOI_AGENT_ROUTER_LLM_ENABLED,
@@ -7529,6 +8311,13 @@ async def runtime_config() -> dict[str, Any]:
             "max_concurrency": BOI_AGENT_LLM_MAX_CONCURRENCY,
             "queue_timeout_seconds": BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS,
         },
+        "latency": {
+            "mode": BOI_AGENT_LATENCY_MODE,
+            "status_blocking": BOI_AGENT_STATUS_BLOCKING,
+            "followups_blocking": BOI_AGENT_FOLLOWUPS_BLOCKING,
+            "composer_blocking": BOI_AGENT_COMPOSER_BLOCKING,
+            "contract": "fast_first" if boi_agent_fast_first_enabled() else "blocking",
+        },
         "chat_timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
         "native_max_tool_loops": BOI_AGENT_NATIVE_MAX_TOOL_LOOPS,
         "native_tool_timeout_seconds": BOI_AGENT_NATIVE_TOOL_TIMEOUT_SECONDS,
@@ -7539,10 +8328,15 @@ async def runtime_config() -> dict[str, Any]:
         },
         "langflow_endpoint": LANGFLOW_BOI_AGENT_ENDPOINT,
         "cache_warmup": agent_cache_warmup_state(),
+        "ops_manifest_warmup": ops_manifest_warmup_state(),
     }
     return {
         "build": {
             "revision": BOI_BUILD_REVISION,
+        },
+        "features": {
+            "pet_agent_enabled": BOI_PET_AGENT_ENABLED,
+            "ops_center_enabled": BOI_OPS_CENTER_ENABLED,
         },
         "readiness": runtime_readiness_status(git_status, boi_agent),
         "deployment": {
@@ -7571,6 +8365,7 @@ async def runtime_config() -> dict[str, Any]:
             },
             "doc_index_ready": _DOC_INDEX_CACHE.get("signature") == markdown_sig,
             "graph_index_ready": _OKF_GRAPH_INDEX_CACHE.get("signature") == markdown_sig,
+            "ops_manifest_warmup": ops_manifest_warmup_state(),
             "cache_warmup": agent_cache_warmup_state(),
         },
         "llm": {
@@ -7579,6 +8374,8 @@ async def runtime_config() -> dict[str, Any]:
             "model": BOI_LLM_MODEL,
             "api_key_configured": bool(BOI_LLM_API_KEY),
         },
+        "openai_runtime": openai_runtime_health_payload(check=False),
+        "agents_sdk_runtime": agents_sdk_status_payload(),
         "boi_agent": boi_agent,
         "event_broker": {
             "type": "kafka",
@@ -7608,10 +8405,26 @@ async def runtime_config() -> dict[str, Any]:
             "warm_limit": INBOX_REPORT_BACKGROUND_WARM_LIMIT,
             "max_in_flight": INBOX_REPORT_BACKGROUND_MAX_IN_FLIGHT,
         },
+        "private_memory": {
+            "trash_root": str(PRIVATE_MEMORY_TRASH_ROOT),
+            "quarantine_days": PRIVATE_MEMORY_QUARANTINE_DAYS,
+            "default_visible_lifecycle_states": ["memory", "working", "protected"],
+            "generated_visible_by_default": False,
+        },
         "data_lake": data_lake_status_payload(),
         "runtime_logs": runtime_log_health_payload(include_line_counts=False),
         "langflow_simulator": langflow_simulator,
     }
+
+
+@app.get("/api/runtime/openai-health")
+async def api_runtime_openai_health() -> dict[str, Any]:
+    return {"ok": True, **openai_runtime_health_payload(check=False)}
+
+
+@app.post("/api/runtime/openai-health/check")
+async def api_runtime_openai_health_check() -> dict[str, Any]:
+    return {"ok": True, **openai_runtime_health_payload(check=True)}
 
 
 @app.get("/api/auth/me")
@@ -7922,6 +8735,9 @@ async def index(
     boi_type: str = "",
     folder: str = "",
     archive_status: str = "active",
+    include_generated: bool = False,
+    include_archived: bool = False,
+    include_quarantined: bool = False,
     partial: str = "",
 ) -> HTMLResponse:
     selected_folder = normalize_folder(folder)
@@ -7934,6 +8750,9 @@ async def index(
         visibility=visibility,
         boi_type=boi_type,
         archive_status=archive_status,
+        include_generated=include_generated,
+        include_archived=include_archived,
+        include_quarantined=include_quarantined,
     )
     folder_tree = with_folder_urls(
         build_folder_tree(filtered_docs, selected_folder),
@@ -7942,6 +8761,8 @@ async def index(
         event_type=event_type,
         visibility=visibility,
         boi_type=boi_type,
+        include_generated=include_generated,
+        include_archived=include_archived,
     )
     docs = [d for d in filtered_docs if folder_matches(d, selected_folder)]
     breadcrumbs = with_breadcrumb_urls(
@@ -7951,6 +8772,8 @@ async def index(
         event_type=event_type,
         visibility=visibility,
         boi_type=boi_type,
+        include_generated=include_generated,
+        include_archived=include_archived,
     )
     recent_event_logs = read_event_logs(limit=8, event_type=event_type or None)
     doc_lookup = build_doc_lookup(accessible)
@@ -7980,6 +8803,9 @@ async def index(
         "boi_type": boi_type,
         "folder": selected_folder,
         "archive_status": archive_status,
+        "include_generated": include_generated,
+        "include_archived": include_archived,
+        "include_quarantined": include_quarantined,
         "folder_tree": folder_tree,
         "breadcrumbs": breadcrumbs,
         "event_context": event_context_for_template(event_type, employee_id),
@@ -7990,6 +8816,74 @@ async def index(
     }
     template_name = "library_fragment.html" if partial == "library" else "index.html"
     return templates.TemplateResponse(template_name, context)
+
+
+def sop_catalog_item(doc: dict[str, Any], employee_id: str, *, reason: str = "") -> dict[str, Any]:
+    metadata = doc.get("metadata") or {}
+    ref = stable_doc_ref(doc)
+    return {
+        "kind": "sop",
+        "ref": ref,
+        "boi_id": str(metadata.get("boi_id") or ref),
+        "title": str(metadata.get("title") or ref),
+        "description": str(metadata.get("summary") or metadata.get("description") or "").strip(),
+        "visibility": str(metadata.get("visibility") or ""),
+        "status": str(metadata.get("status") or ""),
+        "url": doc_url_for_ref(ref, employee_id),
+        "reason": reason or "SOP 카탈로그에서 찾았습니다.",
+    }
+
+
+def sop_catalog_search_payload(
+    employee_id: str,
+    *,
+    q: str = "",
+    scope: str = "catalog_all",
+    limit: int = 20,
+    current_ref: str = "",
+) -> dict[str, Any]:
+    normalized_scope = scope if scope in {"catalog_all", "catalog_search", "current_page_related"} else "catalog_all"
+    safe_limit = max(1, min(int(limit or 20), 100))
+    docs = [doc for doc in accessible_docs(employee_id) if is_sop_related_doc(doc)]
+    if normalized_scope == "current_page_related":
+        related: list[dict[str, Any]] = []
+        if current_ref:
+            doc = find_doc_by_id(current_ref, employee_id)
+            if doc and is_sop_related_doc(doc):
+                related.append(doc)
+        if not related and q:
+            related = filter_sop_docs(docs, q=q, category="sop")
+        items = [sop_catalog_item(doc, employee_id, reason="현재 화면과 직접 연결된 SOP입니다.") for doc in related[:safe_limit]]
+        return {
+            "ok": True,
+            "scope": normalized_scope,
+            "query": q,
+            "total": len(related),
+            "items": items,
+            "overflow": {"has_more": len(related) > len(items), "omitted_count": max(0, len(related) - len(items))},
+        }
+    filtered = filter_sop_docs(docs, q=q if normalized_scope == "catalog_search" else "", category="sop")
+    reason = "SOP 카탈로그 전체 항목입니다." if normalized_scope == "catalog_all" else "검색 조건과 일치하는 SOP입니다."
+    items = [sop_catalog_item(doc, employee_id, reason=reason) for doc in filtered[:safe_limit]]
+    return {
+        "ok": True,
+        "scope": normalized_scope,
+        "query": q if normalized_scope == "catalog_search" else "",
+        "total": len(filtered),
+        "items": items,
+        "overflow": {"has_more": len(filtered) > len(items), "omitted_count": max(0, len(filtered) - len(items))},
+    }
+
+
+@app.get("/api/sops")
+async def api_sops(
+    employee_id: str = Depends(current_employee),
+    scope: str = Query("catalog_all"),
+    q: str = "",
+    current_ref: str = "",
+    limit: int = Query(20, ge=1, le=100),
+) -> dict[str, Any]:
+    return sop_catalog_search_payload(employee_id, q=q, scope=scope, limit=limit, current_ref=current_ref)
 
 
 @app.get("/sops", response_class=HTMLResponse)
@@ -8076,6 +8970,1793 @@ async def api_sop_history(
     limit: int = Query(50, ge=1, le=200),
 ) -> dict[str, Any]:
     return sop_run_history_payload(employee_id, limit=limit)
+
+
+def sop_run_id_for(workflow_key: str, trace_id: str) -> str:
+    digest = hashlib.sha1(f"{workflow_key}|{trace_id}".encode("utf-8")).hexdigest()[:16]
+    return f"run-{digest}"
+
+
+def stage_id_of(stage: dict[str, Any] | None) -> str:
+    if not stage:
+        return ""
+    return str(stage.get("sop_stage_id") or stage.get("id") or stage.get("stage_id") or "")
+
+
+def stage_title_of(stage: dict[str, Any] | None) -> str:
+    if not stage:
+        return "SOP 단계 확인"
+    return str(stage.get("name") or stage.get("stage") or stage_id_of(stage) or "SOP 단계 확인")
+
+
+def stage_for_action_key(workflow: dict[str, Any], action_key: str) -> dict[str, Any] | None:
+    if not workflow or not action_key:
+        return None
+    for stage in workflow.get("expected_stages") or workflow.get("stages") or []:
+        actions = [str(item) for item in (stage.get("automated_actions") or [])]
+        manual_actions = [str(item) for item in (stage.get("manual_actions") or [])]
+        if action_key in actions or action_key in manual_actions:
+            return stage
+    return None
+
+
+def runtime_row_business_context(row: dict[str, Any]) -> dict[str, Any]:
+    context = row.get("business_context") if isinstance(row.get("business_context"), dict) else {}
+    if context:
+        return {key: value for key, value in context.items() if value not in (None, "")}
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    merged: dict[str, Any] = {}
+    for source in (payload, result):
+        for key in ["equipment_id", "chamber_id", "fab", "lot_id", "wafer_id", "alarm_code", "alarm_type", "severity", "trend_status", "raw_data_status"]:
+            if source.get(key) not in (None, ""):
+                merged[key] = source.get(key)
+    return merged
+
+
+def business_brief_from_context(context: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ["equipment_id", "chamber_id", "lot_id", "wafer_id", "alarm_code", "alarm_type"]:
+        value = context.get(key)
+        if value:
+            parts.append(str(value))
+    if context.get("trend_status"):
+        parts.append(f"Trend {context.get('trend_status')}")
+    if context.get("raw_data_status"):
+        parts.append(f"Raw {context.get('raw_data_status')}")
+    return " · ".join(parts[:7]) or "업무 맥락 확인 필요"
+
+
+def status_bucket_for_rows(rows: list[dict[str, Any]]) -> tuple[str, str]:
+    statuses = {str(row.get("status") or "").lower() for row in rows}
+    if statuses & {"approval_required", "handoff_needed"}:
+        return "waiting_decision", "high"
+    if statuses & {"failed", "error", "missing_evidence"}:
+        return "waiting_evidence", "medium"
+    if statuses & {"manual_required", "manual_pending"}:
+        return "waiting_decision", "medium"
+    if statuses & {"materialized", "event_published", "invoked", "dispatched", "processed"}:
+        return "running", "normal"
+    return "running", "normal"
+
+
+def workflow_for_runtime_row(row: dict[str, Any], employee_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    event_type = str(row.get("event_type") or "")
+    if event_type:
+        workflow, stage, _event_def = workflow_for_event_type(event_type, employee_id)
+        if workflow:
+            return workflow, stage
+    action_key = str(row.get("action_key") or "")
+    workflow = workflow_for_action_key(action_key, employee_id) if action_key else None
+    if workflow:
+        return workflow, stage_for_action_key(workflow, action_key)
+    return None, None
+
+
+def collect_sop_run_rows(employee_id: str, limit: int = 500) -> dict[tuple[str, str], dict[str, Any]]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in cached_action_log_rows()[-limit:]:
+        if not action_log_visible_to_employee(row, employee_id):
+            continue
+        trace_id = str(row.get("trace_id") or "")
+        workflow, stage = workflow_for_runtime_row(row, employee_id)
+        if not workflow or not trace_id:
+            continue
+        key = (str(workflow.get("workflow_key") or ""), trace_id)
+        grouped.setdefault(key, {"workflow": workflow, "trace_id": trace_id, "rows": [], "stage_hits": []})
+        grouped[key]["rows"].append(row)
+        if stage:
+            grouped[key]["stage_hits"].append(stage)
+    for row in read_event_logs(limit=limit):
+        trace_id = str(row.get("trace_id") or "")
+        workflow, stage = workflow_for_runtime_row(row, employee_id)
+        if not workflow or not trace_id:
+            continue
+        key = (str(workflow.get("workflow_key") or ""), trace_id)
+        grouped.setdefault(key, {"workflow": workflow, "trace_id": trace_id, "rows": [], "stage_hits": []})
+        grouped[key]["rows"].append(row)
+        if stage:
+            grouped[key]["stage_hits"].append(stage)
+    return grouped
+
+
+OPS_RUNTIME_MANIFEST_VERSION = "ops-runtime-manifest-v1"
+
+
+def ops_runtime_signature_payload() -> dict[str, Any]:
+    return {
+        "version": OPS_RUNTIME_MANIFEST_VERSION,
+        "actions": [list(item) for item in glob_signature(ACTION_LOG_ROOT, "actions-*.jsonl")],
+        "events": [list(item) for item in glob_signature(EVENTS_ROOT, "events-*.jsonl")],
+    }
+
+
+def ops_manifest_path(employee_id: str) -> Path:
+    return OPS_RUNTIME_INDEX_ROOT / f"ops-overview-{safe_filename(employee_id)}.json"
+
+
+def ops_manifest_read(employee_id: str) -> tuple[dict[str, Any] | None, str]:
+    path = ops_manifest_path(employee_id)
+    if not path.exists():
+        return None, "missing"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, "corrupt"
+    if not isinstance(payload, dict):
+        return None, "corrupt"
+    if payload.get("signature") != ops_runtime_signature_payload():
+        return None, "stale"
+    return payload, "ready"
+
+
+def ops_manifest_write(employee_id: str, payload: dict[str, Any]) -> None:
+    path = ops_manifest_path(employee_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def ops_format_time(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    try:
+        parsed = parse_event_time_value(text, field_name="logged_at")
+        return parsed.astimezone(KST).strftime("%m-%d %H:%M")
+    except Exception:
+        return text[:16].replace("T", " ")
+
+
+def ops_focus_points_for_run(run: dict[str, Any]) -> list[str]:
+    points: list[str] = []
+    context = run.get("business_context") if isinstance(run.get("business_context"), dict) else {}
+    if run.get("risk") == "high":
+        points.append("고위험 승인")
+    if run.get("status") == "waiting_evidence" or context.get("missing_evidence"):
+        points.append("근거 부족")
+    if run.get("has_action_failure"):
+        points.append("Action 실패")
+    if run.get("priority") == "medium":
+        points.append("지연")
+    if run.get("report_state") == "ready":
+        points.append("신규 보고서")
+    raw_status = str(context.get("raw_data_status") or "").lower()
+    if raw_status in {"missing", "unavailable", "required"}:
+        points.append("Raw Data 확인")
+    return list(dict.fromkeys(points))[:4]
+
+
+def ops_run_preview_item(run: dict[str, Any]) -> dict[str, Any]:
+    context = run.get("business_context") if isinstance(run.get("business_context"), dict) else {}
+    target_parts = [context.get("equipment_id"), context.get("lot_id"), context.get("wafer_id")]
+    target = " / ".join(str(part) for part in target_parts if part) or str(run.get("business_brief") or "업무 대상 확인 필요")
+    focus_points = ops_focus_points_for_run(run)
+    focus_note = " · ".join(focus_points) if focus_points else "진행 상태 확인"
+    return {
+        "run_id": str(run.get("run_id") or ""),
+        "sop_title": str(run.get("sop_title") or ""),
+        "occurred_label": ops_format_time(run.get("latest_at")),
+        "target": target,
+        "stage": str(run.get("current_stage_label") or ""),
+        "status": str(run.get("status") or ""),
+        "status_line": str(run.get("summary") or run.get("latest_summary") or run.get("current_stage_label") or ""),
+        "focus_note": focus_note,
+        "focus_points": focus_points,
+        "business_brief": str(run.get("business_brief") or ""),
+        "url": str(run.get("url") or ""),
+        "report_url": str(run.get("report_url") or ""),
+    }
+
+
+def sop_runs_payload_from_scan(employee_id: str, *, status: str = "open", limit: int = 50) -> dict[str, Any]:
+    grouped = collect_sop_run_rows(employee_id, limit=800)
+    runs: list[dict[str, Any]] = []
+    for (_workflow_key, trace_id), entry in grouped.items():
+        workflow = entry["workflow"]
+        rows = list(entry.get("rows") or [])
+        if not rows:
+            continue
+        rows.sort(key=lambda item: str(item.get("logged_at") or item.get("timestamp") or ""))
+        row_statuses = {str(row.get("status") or "").lower() for row in rows}
+        current_stage = (entry.get("stage_hits") or [None])[-1]
+        if current_stage is None:
+            current_stage = (workflow.get("expected_stages") or [{}])[0]
+        run_status, risk = status_bucket_for_rows(rows)
+        latest_at = str((rows[-1]).get("logged_at") or (rows[-1]).get("timestamp") or "")
+        business_context = {}
+        for row in reversed(rows):
+            business_context = runtime_row_business_context(row)
+            if business_context:
+                break
+        workflow_key = str(workflow.get("workflow_key") or "")
+        run_id = sop_run_id_for(workflow_key, trace_id)
+        latest_summary = next((str(row.get("summary") or "") for row in reversed(rows) if row.get("summary")), "")
+        if status == "open" and run_status in {"done", "completed"}:
+            continue
+        run_item = {
+                "run_id": run_id,
+                "workflow_key": workflow_key,
+                "trace_id": trace_id,
+                "sop_boi_id": str(workflow.get("sop_ref") or ""),
+                "sop_title": str(workflow.get("sop_title") or workflow_key),
+                "sop_url": str(workflow.get("sop_url") or ""),
+                "current_stage_id": stage_id_of(current_stage),
+                "current_stage_label": stage_title_of(current_stage),
+                "status": run_status,
+                "risk": risk,
+                "priority": "high" if risk == "high" else ("medium" if run_status == "waiting_evidence" else "normal"),
+                "latest_at": latest_at,
+                "business_context": business_context,
+                "business_brief": business_brief_from_context(business_context),
+                "latest_summary": latest_summary,
+                "summary": latest_summary or f"{stage_title_of(current_stage)} 단계에서 {business_brief_from_context(business_context)} 확인이 필요합니다.",
+                "url": app_url(f"/sop-runs/{run_id}", employee_id),
+                "report_state": "ready" if any(str(row.get("boi_id") or "") for row in rows) else "pending",
+                "has_action_failure": bool(row_statuses & {"failed", "error"}),
+                "has_runtime_report": any(str(row.get("boi_id") or "") for row in rows),
+            }
+        run_item["focus_points"] = ops_focus_points_for_run(run_item)
+        runs.append(run_item)
+    runs.sort(key=lambda item: str(item.get("latest_at") or ""), reverse=True)
+    return {"ok": True, "items": runs[:limit], "total": len(runs), "status": status}
+
+
+def ops_filter_runs(runs: list[dict[str, Any]], *, status: str, limit: int) -> list[dict[str, Any]]:
+    items = list(runs)
+    if status == "open":
+        items = [run for run in items if str(run.get("status") or "") not in {"done", "completed"}]
+    items.sort(key=lambda item: str(item.get("latest_at") or ""), reverse=True)
+    return items[:limit]
+
+
+def build_ops_overview_from_runs(
+    employee_id: str,
+    runs: list[dict[str, Any]],
+    *,
+    generated_at: str,
+    source: str,
+    stale: bool = False,
+) -> dict[str, Any]:
+    by_sop: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        sop_id = str(run.get("sop_boi_id") or run.get("workflow_key") or "")
+        node = by_sop.setdefault(
+            sop_id,
+            {
+                "id": sop_id,
+                "type": "sop_workstream",
+                "label": str(run.get("sop_title") or sop_id),
+                "count": 0,
+                "risk": "normal",
+                "status": "running",
+                "url": str(run.get("url") or ""),
+                "badges": [],
+                "preview_items": [],
+            },
+        )
+        node["count"] += 1
+        if run.get("risk") == "high":
+            node["risk"] = "high"
+            node["status"] = "waiting_decision"
+        elif node.get("risk") != "high" and run.get("status") == "waiting_evidence":
+            node["risk"] = "medium"
+            node["status"] = "waiting_evidence"
+        badges: list[str] = []
+        if run.get("has_runtime_report") or run.get("report_state") == "ready":
+            badges.append("보고서")
+        if run.get("status") == "waiting_decision":
+            badges.append("승인")
+        if run.get("status") == "waiting_evidence":
+            badges.append("근거 부족")
+        if run.get("has_action_failure"):
+            badges.append("Action 실패")
+        if run.get("priority") == "medium":
+            badges.append("지연")
+        for badge in badges or ["보고서"]:
+            if badge not in node["badges"]:
+                node["badges"].append(badge)
+        if len(node["preview_items"]) < 3:
+            node["preview_items"].append(ops_run_preview_item(run))
+    positions = [
+        {"x": 18, "y": 22},
+        {"x": 82, "y": 22},
+        {"x": 18, "y": 78},
+        {"x": 82, "y": 78},
+        {"x": 50, "y": 15},
+        {"x": 50, "y": 85},
+    ]
+    for index, node in enumerate(by_sop.values()):
+        count = int(node.get("count") or 0)
+        node["size_class"] = "large" if count >= 8 else ("medium" if count >= 3 else "small")
+        node["visual_state"] = "approval" if node.get("risk") == "high" else ("evidence" if node.get("risk") == "medium" else "running")
+        node["position"] = positions[index % len(positions)]
+        node["overflow_count"] = max(0, count - len(node.get("preview_items") or []))
+    nodes = [
+        {"id": f"employee:{employee_id}", "type": "employee", "label": employee_id, "count": len(runs), "risk": "normal", "position": {"x": 50, "y": 50}},
+        *by_sop.values(),
+    ]
+    edges = []
+    for node in by_sop.values():
+        count = int(node.get("count") or 0)
+        risk = str(node.get("risk") or "normal")
+        edges.append(
+            {
+                "source": f"employee:{employee_id}",
+                "target": node["id"],
+                "badges": node.get("badges") or ["보고서"],
+                "count": count,
+                "risk": risk,
+                "weight": 5 if count >= 8 else (3 if count >= 3 else 2),
+                "from": {"x": 50, "y": 50},
+                "to": node.get("position") or {"x": 50, "y": 50},
+            }
+        )
+    priority_queue = [
+        {
+            "task_id": str(run.get("run_id") or ""),
+            "title": f"{run.get('summary') or run.get('current_stage_label')} · {run.get('sop_title')}",
+            "sop_title": run.get("sop_title"),
+            "business_brief": run.get("business_brief"),
+            "status": run.get("status"),
+            "risk": run.get("risk"),
+            "latest_at": run.get("latest_at"),
+            "run_url": run.get("url"),
+            "preview": ops_run_preview_item(run),
+        }
+        for run in runs[:12]
+    ]
+    high_count = sum(1 for run in runs if run.get("risk") == "high")
+    missing_count = sum(1 for run in runs if run.get("status") == "waiting_evidence")
+    preview_items = [ops_run_preview_item(run) for run in runs[:12]]
+    selected_run_id = str(runs[0].get("run_id") or "") if runs else ""
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "me": {"employee_id": employee_id, "label": user_name_for(employee_id)},
+        "summary": {
+            "open_count": len(runs),
+            "approval_required": high_count,
+            "missing_evidence": missing_count,
+            "delay_risk": sum(1 for run in runs if run.get("priority") == "medium"),
+        },
+        "workstream_nodes": nodes,
+        "workstream_edges": edges,
+        "preview_items": preview_items,
+        "selected_run_id": selected_run_id,
+        "priority_queue": priority_queue,
+        "sop_runs": runs[:24],
+        "selected_run": runs[0] if runs else None,
+        "performance": {"source": source, "generated_at": generated_at, "stale": stale},
+    }
+
+
+def build_ops_runtime_manifest(employee_id: str) -> dict[str, Any]:
+    generated_at = now_iso()
+    all_runs = sop_runs_payload_from_scan(employee_id, status="all", limit=300).get("items") or []
+    open_runs = ops_filter_runs(all_runs, status="open", limit=80)
+    overview = build_ops_overview_from_runs(employee_id, open_runs, generated_at=generated_at, source="manifest")
+    manifest = {
+        "ok": True,
+        "employee_id": employee_id,
+        "signature": ops_runtime_signature_payload(),
+        "generated_at": generated_at,
+        "sop_runs": all_runs,
+        "overview": overview,
+    }
+    ops_manifest_write(employee_id, manifest)
+    return manifest
+
+
+def ops_runtime_manifest(employee_id: str) -> tuple[dict[str, Any], str]:
+    manifest, reason = ops_manifest_read(employee_id)
+    if manifest is not None:
+        return manifest, "manifest"
+    manifest = build_ops_runtime_manifest(employee_id)
+    return manifest, "manifest" if reason == "missing" else "fallback_scan"
+
+
+def sop_runs_payload(employee_id: str, *, status: str = "open", limit: int = 50) -> dict[str, Any]:
+    manifest, source = ops_runtime_manifest(employee_id)
+    runs = ops_filter_runs(list(manifest.get("sop_runs") or []), status=status, limit=limit)
+    return {
+        "ok": True,
+        "items": runs,
+        "total": len(ops_filter_runs(list(manifest.get("sop_runs") or []), status=status, limit=10_000)),
+        "status": status,
+        "performance": {"source": source, "generated_at": manifest.get("generated_at") or "", "stale": False},
+    }
+
+
+def find_sop_run(run_id: str, employee_id: str) -> dict[str, Any]:
+    for run in sop_runs_payload(employee_id, status="all", limit=300).get("items") or []:
+        if run.get("run_id") == run_id:
+            return run
+    raise HTTPException(status_code=404, detail=f"SOP run not found: {run_id}")
+
+
+def evidence_packets_for_status(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    packets: list[dict[str, Any]] = []
+    text = json.dumps(payload, ensure_ascii=False, default=str).lower()
+    if "trend" in text:
+        packets.append({"label": "Trend", "kind": "data", "state": "available", "missing_reason": ""})
+    if "raw" in text or "raw data" in text:
+        state = "missing" if any(term in text for term in ["raw data endpoint", "raw_data_status\": \"missing", "raw 누락"]) else "available"
+        packets.append({"label": "Raw Data", "kind": "data", "state": state, "missing_reason": "Raw Data 확인이 필요합니다." if state == "missing" else ""})
+    if payload.get("generated_docs") or payload.get("generated_boi_refs"):
+        packets.append({"label": "BoI 문서", "kind": "boi", "state": "available", "missing_reason": ""})
+    if not packets:
+        packets.append({"label": "SOP 실행 이력", "kind": "runtime", "state": "available", "missing_reason": ""})
+    return packets
+
+
+def sop_run_graph_payload(run_id: str, employee_id: str) -> dict[str, Any]:
+    run = find_sop_run(run_id, employee_id)
+    status_payload = workflow_status_payload(str(run.get("workflow_key") or ""), str(run.get("trace_id") or ""), employee_id, compact=True)
+    stages = status_payload.get("expected_stages") or []
+    current_stage_id = str(run.get("current_stage_id") or "")
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, str]] = []
+    for index, stage in enumerate(stages):
+        sid = stage_id_of(stage) or f"stage-{index + 1}"
+        if current_stage_id and sid == current_stage_id:
+            node_status = str(run.get("status") or "running")
+        elif current_stage_id and index < next((idx for idx, candidate in enumerate(stages) if stage_id_of(candidate) == current_stage_id), len(stages)):
+            node_status = "done"
+        else:
+            node_status = "not_started"
+        nodes.append(
+            {
+                "id": sid,
+                "type": "sopStage",
+                "data": {
+                    "title": stage_title_of(stage),
+                    "status": node_status,
+                    "owner_employee_id": employee_id,
+                    "risk": run.get("risk"),
+                    "decision_required": node_status in {"waiting_decision", "waiting_evidence"},
+                },
+            }
+        )
+        if index > 0:
+            edges.append({"id": f"{stage_id_of(stages[index - 1]) or index}-{sid}", "source": stage_id_of(stages[index - 1]) or f"stage-{index}", "target": sid})
+    evidence_packets = evidence_packets_for_status(status_payload)
+    missing_evidence = [packet["label"] for packet in evidence_packets if packet.get("state") == "missing"]
+    available_evidence = [packet["label"] for packet in evidence_packets if packet.get("state") != "missing"]
+    recommended = "추가 근거 요청" if missing_evidence else ("검증 보고서 확인 후 승인/반려" if run.get("status") == "waiting_decision" else "SOP 진행 상태 확인")
+    decision_packet = {
+        "why_assigned": f"{run.get('sop_title')}의 {run.get('current_stage_label')} 단계에서 {employee_id}의 확인이 필요합니다.",
+        "current_stage": run.get("current_stage_label"),
+        "available_evidence": available_evidence,
+        "missing_evidence": missing_evidence,
+        "recommended_action": recommended,
+        "decision_actions": ["approve", "reject", "defer", "request_more_evidence"],
+    }
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "run": run,
+        "current_stage_id": current_stage_id,
+        "nodes": nodes,
+        "edges": edges,
+        "evidence_packets": evidence_packets,
+        "decision_packet": decision_packet,
+        "rendered_graph": "\n".join([str(node["data"]["title"]) for node in nodes] + [packet["label"] for packet in evidence_packets]),
+    }
+
+
+def ops_overview_payload(employee_id: str) -> dict[str, Any]:
+    manifest, source = ops_runtime_manifest(employee_id)
+    overview = dict(manifest.get("overview") or {})
+    performance = dict(overview.get("performance") or {})
+    performance["source"] = source
+    performance.setdefault("generated_at", str(manifest.get("generated_at") or ""))
+    performance.setdefault("stale", False)
+    overview["performance"] = performance
+    return overview
+
+
+def ops_recent_events_payload(employee_id: str, *, limit: int = 20) -> dict[str, Any]:
+    runs = sop_runs_payload(employee_id, status="all", limit=max(1, min(limit, 100))).get("items") or []
+    items: list[dict[str, Any]] = []
+    for run in runs[:limit]:
+        run_status = str(run.get("status") or "running")
+        event_type = "boi.ops.sop_run.stage_changed"
+        if run_status == "waiting_decision":
+            event_type = "boi.ops.decision.requested"
+        elif run_status == "waiting_evidence":
+            event_type = "boi.ops.task.updated"
+        elif run.get("report_state") == "ready":
+            event_type = "boi.ops.report.ready"
+        items.append(
+            {
+                "event_id": f"ops:{run.get('run_id') or ''}",
+                "type": event_type,
+                "employee_id": employee_id,
+                "task_id": str(run.get("run_id") or ""),
+                "run_id": str(run.get("run_id") or ""),
+                "sop_boi_id": str(run.get("sop_boi_id") or ""),
+                "sop_title": str(run.get("sop_title") or ""),
+                "stage_id": str(run.get("current_stage_id") or ""),
+                "stage_label": str(run.get("current_stage_label") or ""),
+                "status": run_status,
+                "risk": str(run.get("risk") or "normal"),
+                "occurred_at": str(run.get("latest_at") or ""),
+                "business_context": run.get("business_context") or {},
+                "business_brief": str(run.get("business_brief") or ""),
+                "links": {
+                    "run": str(run.get("url") or ""),
+                    "sop": str(run.get("sop_url") or ""),
+                },
+            }
+        )
+    return {"ok": True, "employee_id": employee_id, "items": items, "count": len(items)}
+
+
+_OPENAI_HEALTH_CACHE: dict[str, Any] = {}
+
+
+def openai_runtime_health_payload(*, check: bool = False) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "api_key_present": bool(OPENAI_API_KEY),
+        "base_url": OPENAI_API_URL,
+        "active_model": OPENAI_API_MODEL,
+        "gpt_5_5_available": None,
+        "models_status": None,
+        "responses_smoke_status": None,
+        "quota_state": "not_configured" if not OPENAI_API_KEY else "unchecked",
+        "last_checked_at": None,
+        "last_error": None,
+    }
+    if _OPENAI_HEALTH_CACHE and not check:
+        cached = dict(_OPENAI_HEALTH_CACHE)
+        cached["api_key_present"] = bool(OPENAI_API_KEY)
+        cached["base_url"] = OPENAI_API_URL
+        cached["active_model"] = OPENAI_API_MODEL
+        return cached
+    if not check or not OPENAI_API_KEY:
+        return payload
+    checked_at = now_iso()
+    try:
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        with httpx.Client(timeout=8) as client:
+            models_response = client.get(f"{OPENAI_API_URL}/models", headers=headers)
+            payload["models_status"] = models_response.status_code
+            if models_response.status_code == 200:
+                models_json = models_response.json()
+                model_ids = {str(item.get("id") or "") for item in models_json.get("data", []) if isinstance(item, dict)}
+                payload["gpt_5_5_available"] = any(model_id.startswith("gpt-5.5") for model_id in model_ids)
+                smoke_response = client.post(
+                    f"{OPENAI_API_URL}/responses",
+                    headers=headers,
+                    json={
+                        "model": OPENAI_API_MODEL,
+                        "input": "Return exactly: boi-openai-smoke-ok",
+                        "max_output_tokens": 16,
+                    },
+                )
+                payload["responses_smoke_status"] = smoke_response.status_code
+                payload["quota_state"] = "ready" if smoke_response.status_code == 200 else "degraded"
+            else:
+                payload["quota_state"] = "degraded"
+    except Exception as exc:
+        payload["quota_state"] = "degraded"
+        payload["last_error"] = str(exc)
+    payload["last_checked_at"] = checked_at
+    _OPENAI_HEALTH_CACHE.clear()
+    _OPENAI_HEALTH_CACHE.update(payload)
+    return payload
+
+
+def ops_canvas_node_position(percent: dict[str, Any] | None, *, fallback_x: float, fallback_y: float) -> dict[str, float]:
+    x = fallback_x
+    y = fallback_y
+    if isinstance(percent, dict):
+        try:
+            x = float(percent.get("x", fallback_x)) / 100 * 980
+            y = float(percent.get("y", fallback_y)) / 100 * 620
+        except Exception:
+            x = fallback_x
+            y = fallback_y
+    return {"x": round(x, 2), "y": round(y, 2)}
+
+
+def ops_canvas_payload(employee_id: str) -> dict[str, Any]:
+    overview = ops_overview_payload(employee_id)
+    raw_nodes = list(overview.get("workstream_nodes") or [])
+    raw_edges = list(overview.get("workstream_edges") or [])
+    runs = list(overview.get("sop_runs") or [])
+    summary = dict(overview.get("summary") or {})
+    sandbox_jobs = [
+        compact_sandbox_job(job)
+        for job in list_runtime_records("sandbox-jobs", limit=12)
+        if str(job.get("employee_id") or employee_id) == employee_id
+    ]
+    linked_agents = search_agent_deployments(employee_id=employee_id, scope="mine", limit=12)
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    person_id = f"person:{employee_id}"
+    nodes.append(
+        {
+            "id": person_id,
+            "type": "personNode",
+            "position": {"x": 460, "y": 285},
+            "data": {
+                "label": user_name_for(employee_id),
+                "employee_id": employee_id,
+                "open_count": int(summary.get("open_count") or 0),
+                "lane": "person",
+                "cluster_id": f"employee:{employee_id}",
+                "display_priority": 0,
+                "collapsed": False,
+            },
+        }
+    )
+    for index, node in enumerate(raw_nodes):
+        if node.get("type") != "sop_workstream":
+            continue
+        node_id = f"sop:{safe_filename(str(node.get('id') or index))}"
+        position = ops_canvas_node_position(node.get("position") if isinstance(node.get("position"), dict) else None, fallback_x=180 + (index % 3) * 300, fallback_y=110 + (index // 3) * 210)
+        nodes.append(
+            {
+                "id": node_id,
+                "type": "sopWorkstreamNode",
+                "position": position,
+                "data": {
+                    "source_id": str(node.get("id") or ""),
+                    "label": str(node.get("label") or "SOP Workstream"),
+                    "count": int(node.get("count") or 0),
+                    "risk": str(node.get("risk") or "normal"),
+                    "status": str(node.get("status") or "running"),
+                    "badges": list(node.get("badges") or []),
+                    "preview_items": list(node.get("preview_items") or []),
+                    "overflow_count": int(node.get("overflow_count") or 0),
+                    "lane": "sop_workstream",
+                    "cluster_id": node_id,
+                    "display_priority": 10 + index,
+                    "collapsed": True,
+                },
+            }
+        )
+        edge_badges = list(node.get("badges") or ["보고서"])
+        risk = str(node.get("risk") or "normal")
+        edges.append(
+            {
+                "id": f"edge:{person_id}:{node_id}",
+                "source": person_id,
+                "target": node_id,
+                "type": "opsLabeled",
+                "data": {
+                    "kind": "assigned_to",
+                    "label": "담당",
+                    "badges": edge_badges,
+                    "risk": risk,
+                    "count": int(node.get("count") or 0),
+                    "bundle_id": "person:sop_workstreams",
+                    "display_mode": "dot",
+                },
+            }
+        )
+    priority_runs = runs[:6]
+    for index, run in enumerate(priority_runs[:3]):
+        run_id = str(run.get("run_id") or f"run-{index}")
+        risk = str(run.get("risk") or "normal")
+        run_node_id = f"run:{safe_filename(run_id)}"
+        nodes.append(
+            {
+                "id": run_node_id,
+                "type": "sopRunNode",
+                "position": {"x": 240 + index * 230, "y": 710},
+                "data": {
+                    "label": str(run.get("current_stage_label") or run.get("sop_title") or "SOP Run"),
+                    "subtitle": str(run.get("business_brief") or run.get("summary") or ""),
+                    "status": str(run.get("status") or ""),
+                    "risk": risk,
+                    "run_id": run_id,
+                    "lane": "selected_run",
+                    "cluster_id": f"sop:{safe_filename(str(run.get('sop_boi_id') or run.get('workflow_key') or 'run'))}",
+                    "display_priority": 30 + index,
+                    "collapsed": True,
+                },
+            }
+        )
+    for index, agent in enumerate(linked_agents):
+        agent_id = str(agent.get("agent_id") or "")
+        if not agent_id:
+            continue
+        node_id = f"agent:{safe_filename(agent_id)}"
+        conversations = list(agent.get("conversations") or [])
+        nodes.append(
+            {
+                "id": node_id,
+                "type": "agentNode",
+                "position": {"x": 1060, "y": 115 + index * 220},
+                "data": {
+                    **agent,
+                    "label": str(agent.get("title") or "BoI Agent"),
+                    "subtitle": str(agent.get("description") or "Operations Center에 연결된 Agent"),
+                    "status": f"대화 {int(agent.get('conversation_count') or 0)}건 · {agent.get('visibility') or 'private'}",
+                    "risk": "normal",
+                    "count": int(agent.get("conversation_count") or 0),
+                    "lane": "agent",
+                    "cluster_id": f"agent:{safe_filename(agent_id)}",
+                    "display_priority": 80 + index,
+                    "collapsed": True,
+                },
+            }
+        )
+        edges.append(
+            {
+                "id": f"edge:{person_id}:{node_id}",
+                "source": person_id,
+                "target": node_id,
+                "type": "opsLabeled",
+                "data": {
+                    "kind": "owns_agent",
+                    "label": "내 Agent",
+                    "badges": ["Agent"],
+                    "risk": "normal",
+                    "count": 1,
+                    "bundle_id": "person:agents",
+                    "display_mode": "dot",
+                },
+            }
+        )
+        for conv_index, conversation in enumerate(conversations[:2]):
+            conversation_id = str(conversation.get("conversation_id") or "")
+            if not conversation_id:
+                continue
+            conv_node_id = f"agent-conversation:{safe_filename(conversation_id)}"
+            nodes.append(
+                {
+                    "id": conv_node_id,
+                    "type": "agentConversationNode",
+                    "position": {"x": 1320, "y": 115 + index * 220 + conv_index * 110},
+                    "data": {
+                        "label": str(conversation.get("title") or "Agent 대화"),
+                        "subtitle": str(conversation.get("latest_message") or "대화 기록"),
+                        "status": f"메시지 {int(conversation.get('message_count') or 0)}건",
+                        "risk": "normal",
+                        "agent_id": agent_id,
+                        "conversation_id": conversation_id,
+                        "lane": "agent_conversation",
+                        "cluster_id": f"agent:{safe_filename(agent_id)}",
+                        "display_priority": 90 + index * 5 + conv_index,
+                        "collapsed": True,
+                    },
+                }
+            )
+            edges.append(
+                {
+                    "id": f"edge:{node_id}:{conv_node_id}",
+                    "source": node_id,
+                    "target": conv_node_id,
+                    "type": "opsLabeled",
+                    "data": {
+                        "kind": "agent_conversation",
+                        "label": "대화",
+                        "badges": ["대화"],
+                        "risk": "normal",
+                        "bundle_id": f"agent:{safe_filename(agent_id)}:conversations",
+                        "display_mode": "dot",
+                    },
+                }
+            )
+    for index, job in enumerate(sandbox_jobs[:4]):
+        job_id = str(job.get("job_id") or "")
+        if not job_id:
+            continue
+        job_node_id = f"sandbox:{safe_filename(job_id)}"
+        issue = str(job.get("status") or "") in {"failed", "pending_confirmation", "pending_external_sandbox"}
+        nodes.append(
+            {
+                "id": job_node_id,
+                "type": "sandboxJobNode",
+                "position": {"x": 1320, "y": 520 + index * 140},
+                "data": {
+                    "label": str(job.get("title") or "Sandbox Job"),
+                    "subtitle": str(job.get("task") or "계산 근거 작업")[:160],
+                    "status": str(job.get("evidence_state") or job.get("status") or "review_required"),
+                    "risk": "medium" if issue else "normal",
+                    "count": len(job.get("artifacts") or []),
+                    "latest_jobs": [job],
+                    "job_id": job_id,
+                    "lane": "agent",
+                    "cluster_id": "sandbox:jobs",
+                    "display_priority": 130 + index,
+                    "collapsed": True,
+                },
+            }
+        )
+        edges.append(
+            {
+                "id": f"edge:{person_id}:{job_node_id}",
+                "source": person_id,
+                "target": job_node_id,
+                "type": "opsLabeled",
+                "data": {
+                    "kind": "produced_evidence",
+                    "label": "Sandbox",
+                    "badges": ["Sandbox"],
+                    "risk": "medium" if issue else "normal",
+                    "bundle_id": "person:sandbox_jobs",
+                    "display_mode": "dot",
+                },
+            }
+        )
+    health = {
+        "runtime_logs": runtime_log_health_payload(include_line_counts=False),
+        "openai": openai_runtime_health_payload(check=False),
+        "manifest": overview.get("performance") or {},
+    }
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "summary": {**summary, "agent_jobs": len(linked_agents) + len(sandbox_jobs)},
+        "nodes": nodes,
+        "edges": edges,
+        "focus_queue": list(overview.get("preview_items") or []),
+        "selected_node_id": person_id,
+        "selected_run_id": str(overview.get("selected_run_id") or ""),
+        "runtime_health": health,
+        "performance": overview.get("performance") or {},
+        "overview": {
+            "priority_queue": overview.get("priority_queue") or [],
+            "sop_runs_total": len(runs),
+            "source": (overview.get("performance") or {}).get("source"),
+            "sandbox_jobs": sandbox_jobs[:6],
+        },
+    }
+
+
+def find_ops_canvas_node(employee_id: str, node_id: str) -> dict[str, Any]:
+    payload = ops_canvas_payload(employee_id)
+    for node in payload.get("nodes") or []:
+        if str(node.get("id") or "") == node_id:
+            return {"ok": True, "node": node}
+    raise HTTPException(status_code=404, detail=f"Operations node not found: {node_id}")
+
+
+def find_ops_canvas_edge(employee_id: str, edge_id: str) -> dict[str, Any]:
+    payload = ops_canvas_payload(employee_id)
+    for edge in payload.get("edges") or []:
+        if str(edge.get("id") or "") == edge_id:
+            return {"ok": True, "edge": edge}
+    raise HTTPException(status_code=404, detail=f"Operations edge not found: {edge_id}")
+
+
+def agent_runtime_root() -> Path:
+    return BOI_RUNTIME_ROOT / "agents"
+
+
+def runtime_record_path(kind: str, record_id: str) -> Path:
+    clean_kind = safe_filename(kind)
+    clean_id = safe_filename(record_id)
+    return agent_runtime_root() / clean_kind / f"{clean_id}.json"
+
+
+def write_runtime_record(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+    record_id = str(payload.get("id") or payload.get("draft_id") or payload.get("job_id") or payload.get("conversation_id") or uuid.uuid4().hex)
+    payload["id"] = record_id
+    payload.setdefault("updated_at", now_iso())
+    path = runtime_record_path(kind, record_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
+    return payload
+
+
+def read_runtime_record(kind: str, record_id: str) -> dict[str, Any]:
+    path = runtime_record_path(kind, record_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"{kind} record not found: {record_id}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"{kind} record is unreadable: {record_id}") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=500, detail=f"{kind} record is invalid: {record_id}")
+    return payload
+
+
+def list_runtime_records(kind: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    root = agent_runtime_root() / safe_filename(kind)
+    if not root.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*.json"), key=lambda item: item.stat().st_mtime if item.exists() else 0, reverse=True):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            records.append(payload)
+        if len(records) >= limit:
+            break
+    return records
+
+
+def agent_id_from_draft_id(draft_id: str) -> str:
+    return f"agent-{safe_filename(draft_id)}"
+
+
+REPORTING_SYSTEM_AGENT_IDS = {
+    "system-analysis-report-agent",
+    "system-data-analysis-agent",
+    "system-report-agent",
+}
+
+
+def reporting_system_agent_deployments() -> list[dict[str, Any]]:
+    now = "2026-07-01T00:00:00+09:00"
+    shared_runtime = {"model": OPENAI_API_MODEL, "backend": BOI_AGENT_RUNTIME, "sandbox_optional": True, "agents_sdk_pattern": "agents_as_tools"}
+    return [
+        {
+            "id": "system-analysis-report-agent",
+            "agent_id": "system-analysis-report-agent",
+            "deployment_id": "system-analysis-report-agent",
+            "kind": "agent_deployment",
+            "title": "분석 보고서 Agent",
+            "prompt": (
+                "Data Analysis Agent와 Report Agent를 함께 사용해 BoI, Data Lake, Sandbox artifact, "
+                "Inbox report를 근거로 시각화가 포함된 업무 보고서를 작성합니다."
+            ),
+            "files": [],
+            "urls": [
+                "https://developers.openai.com/api/docs/guides/agents",
+                "https://developers.openai.com/api/docs/guides/tools-code-interpreter",
+            ],
+            "git_repos": [],
+            "mcp_servers": ["boi-wiki-local", "data-lake"],
+            "skills": ["data-analytics:build-report", "data-analytics:visualize-data", "data-analytics:validate-data"],
+            "visibility": "public",
+            "scope": "public",
+            "created_by": "system",
+            "owner_employee_id": "system",
+            "created_at": now,
+            "published_at": now,
+            "published_by": "system",
+            "publish_note": "BoI system template",
+            "status": "published",
+            "usage_count": 0,
+            "last_used_at": "",
+            "runtime": shared_runtime,
+            "is_system_template": True,
+            "auto_link": True,
+            "operations_visible": True,
+            "specialists": ["system-data-analysis-agent", "system-report-agent"],
+        },
+        {
+            "id": "system-data-analysis-agent",
+            "agent_id": "system-data-analysis-agent",
+            "deployment_id": "system-data-analysis-agent",
+            "kind": "agent_deployment",
+            "title": "Data Analysis Agent",
+            "prompt": (
+                "Data Lake/API/MCP/첨부 파일을 plan, preview, confirmed execute 순서로 분석하고 "
+                "Sandbox에서 표, 차트, 계산 근거 artifact를 생성합니다."
+            ),
+            "files": [],
+            "urls": ["https://developers.openai.com/api/docs/guides/agents/sandboxes"],
+            "git_repos": [],
+            "mcp_servers": ["boi-wiki-local", "data-lake"],
+            "skills": ["data-analytics:visualize-data", "data-analytics:validate-data"],
+            "visibility": "public",
+            "scope": "public",
+            "created_by": "system",
+            "owner_employee_id": "system",
+            "created_at": now,
+            "published_at": now,
+            "published_by": "system",
+            "publish_note": "BoI system template specialist",
+            "status": "published",
+            "usage_count": 0,
+            "last_used_at": "",
+            "runtime": shared_runtime,
+            "is_system_template": True,
+            "auto_link": False,
+            "operations_visible": False,
+        },
+        {
+            "id": "system-report-agent",
+            "agent_id": "system-report-agent",
+            "deployment_id": "system-report-agent",
+            "kind": "agent_deployment",
+            "title": "Report Agent",
+            "prompt": (
+                "AnalysisEvidencePack, WorkContextPack, Inbox report, BoI 문서, 유사 사례를 결합해 "
+                "시각화와 한계, 권장 조치가 포함된 고품질 Report BoI를 작성합니다."
+            ),
+            "files": [],
+            "urls": ["https://developers.openai.com/api/docs/guides/latest-model"],
+            "git_repos": [],
+            "mcp_servers": ["boi-wiki-local"],
+            "skills": ["data-analytics:build-report", "data-analytics:validate-data"],
+            "visibility": "public",
+            "scope": "public",
+            "created_by": "system",
+            "owner_employee_id": "system",
+            "created_at": now,
+            "published_at": now,
+            "published_by": "system",
+            "publish_note": "BoI system template specialist",
+            "status": "published",
+            "usage_count": 0,
+            "last_used_at": "",
+            "runtime": shared_runtime,
+            "is_system_template": True,
+            "auto_link": False,
+            "operations_visible": False,
+        },
+    ]
+
+
+def reporting_system_agent_deployment(agent_id: str) -> dict[str, Any] | None:
+    for agent in reporting_system_agent_deployments():
+        if str(agent.get("agent_id") or "") == agent_id:
+            return agent
+    return None
+
+
+def agent_link_record_id(employee_id: str, agent_id: str) -> str:
+    return f"{safe_filename(employee_id)}--{safe_filename(agent_id)}"
+
+
+def agent_deployment_from_draft(draft: dict[str, Any], *, scope: str, published_by: str, note: str = "") -> dict[str, Any]:
+    draft_id = str(draft.get("draft_id") or draft.get("id") or "")
+    owner_employee_id = str(draft.get("created_by") or published_by)
+    agent_id = str(draft.get("agent_id") or agent_id_from_draft_id(draft_id))
+    now = now_iso()
+    existing: dict[str, Any] = {}
+    try:
+        existing = read_runtime_record("deployments", agent_id)
+    except HTTPException:
+        existing = {}
+    return {
+        **existing,
+        "id": agent_id,
+        "agent_id": agent_id,
+        "deployment_id": agent_id,
+        "kind": "agent_deployment",
+        "draft_id": draft_id,
+        "title": str(draft.get("title") or "BoI Agent"),
+        "prompt": str(draft.get("prompt") or ""),
+        "files": list(draft.get("files") or []),
+        "urls": list(draft.get("urls") or []),
+        "git_repos": list(draft.get("git_repos") or []),
+        "mcp_servers": list(draft.get("mcp_servers") or []),
+        "skills": list(draft.get("skills") or []),
+        "visibility": scope,
+        "scope": scope,
+        "created_by": owner_employee_id,
+        "owner_employee_id": owner_employee_id,
+        "created_at": str(draft.get("created_at") or existing.get("created_at") or now),
+        "published_at": now,
+        "published_by": published_by,
+        "publish_note": note,
+        "status": "published",
+        "usage_count": int(existing.get("usage_count") or 0),
+        "last_used_at": str(existing.get("last_used_at") or ""),
+        "runtime": {"model": OPENAI_API_MODEL, "backend": BOI_AGENT_RUNTIME, "sandbox_optional": True},
+    }
+
+
+def compact_agent_deployment(agent: dict[str, Any], *, employee_id: str) -> dict[str, Any]:
+    agent_id = str(agent.get("agent_id") or agent.get("id") or "")
+    conversations = agent_conversations_for_employee(agent_id, employee_id=employee_id, limit=20)
+    return {
+        "agent_id": agent_id,
+        "deployment_id": str(agent.get("deployment_id") or agent_id),
+        "title": str(agent.get("title") or "BoI Agent"),
+        "description": str(agent.get("prompt") or "")[:220],
+        "visibility": str(agent.get("visibility") or agent.get("scope") or "private"),
+        "created_by": str(agent.get("created_by") or ""),
+        "owner_employee_id": str(agent.get("owner_employee_id") or ""),
+        "created_at": str(agent.get("created_at") or ""),
+        "published_at": str(agent.get("published_at") or ""),
+        "status": str(agent.get("status") or "published"),
+        "usage_count": int(agent.get("usage_count") or 0),
+        "last_used_at": str(agent.get("last_used_at") or ""),
+        "skills": list(agent.get("skills") or [])[:8],
+        "mcp_servers": list(agent.get("mcp_servers") or [])[:8],
+        "urls": list(agent.get("urls") or [])[:8],
+        "is_linked_to_me": agent_linked_to_employee(agent, employee_id),
+        "is_system_template": bool(agent.get("is_system_template")),
+        "operations_visible": bool(agent.get("operations_visible", True)),
+        "specialists": list(agent.get("specialists") or [])[:8],
+        "conversation_count": len(conversations),
+        "conversations": conversations[:5],
+    }
+
+
+def agent_link_payload(agent_id: str, employee_id: str, *, active: bool = True) -> dict[str, Any]:
+    return {
+        "id": agent_link_record_id(employee_id, agent_id),
+        "kind": "agent_link",
+        "agent_id": agent_id,
+        "employee_id": employee_id,
+        "linked_by": employee_id,
+        "linked_at": now_iso(),
+        "active": active,
+    }
+
+
+def read_agent_link(agent_id: str, employee_id: str) -> dict[str, Any] | None:
+    try:
+        return read_runtime_record("agent-links", agent_link_record_id(employee_id, agent_id))
+    except HTTPException:
+        return None
+
+
+def agent_linked_to_employee(agent: dict[str, Any], employee_id: str) -> bool:
+    agent_id = str(agent.get("agent_id") or agent.get("id") or "")
+    link = read_agent_link(agent_id, employee_id)
+    if link is not None:
+        return bool(link.get("active", True))
+    if agent.get("auto_link"):
+        return True
+    return str(agent.get("owner_employee_id") or agent.get("created_by") or "") == employee_id
+
+
+def agent_available_to_employee(agent: dict[str, Any], employee_id: str) -> bool:
+    visibility = str(agent.get("visibility") or agent.get("scope") or "private")
+    if str(agent.get("status") or "") != "published":
+        return False
+    if visibility == "private":
+        return str(agent.get("owner_employee_id") or agent.get("created_by") or "") == employee_id
+    return visibility in {"team", "public"}
+
+
+def read_agent_deployment(agent_id: str) -> dict[str, Any]:
+    system_agent = reporting_system_agent_deployment(agent_id)
+    if system_agent is not None:
+        return system_agent
+    try:
+        agent = read_runtime_record("deployments", agent_id)
+    except HTTPException:
+        # Compatibility for callers that still pass a published draft id.
+        draft = read_runtime_record("drafts", agent_id)
+        if str(draft.get("status") or "") != "published":
+            raise HTTPException(status_code=404, detail=f"Agent deployment not found: {agent_id}")
+        agent = agent_deployment_from_draft(draft, scope=str(draft.get("scope") or "private"), published_by=str(draft.get("published_by") or draft.get("created_by") or ""), note=str(draft.get("publish_note") or ""))
+        write_runtime_record("deployments", agent)
+    return agent
+
+
+def search_agent_deployments(*, employee_id: str, scope: str = "mine", q: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    query = q.strip().lower()
+    deployments_by_id: dict[str, dict[str, Any]] = {str(agent.get("agent_id") or agent.get("id") or ""): agent for agent in reporting_system_agent_deployments()}
+    for agent in list_runtime_records("deployments", limit=500):
+        deployments_by_id[str(agent.get("agent_id") or agent.get("id") or "")] = agent
+    deployments = list(deployments_by_id.values())
+    items: list[dict[str, Any]] = []
+    for agent in deployments:
+        visibility = str(agent.get("visibility") or agent.get("scope") or "private")
+        linked = agent_linked_to_employee(agent, employee_id)
+        available = agent_available_to_employee(agent, employee_id)
+        include = False
+        if scope == "mine":
+            include = available and linked
+        elif scope == "available":
+            include = available and not linked
+        elif scope == "team":
+            include = available and visibility == "team"
+        elif scope == "public":
+            include = available and visibility == "public"
+        else:
+            include = available
+        if not include:
+            continue
+        haystack = " ".join(
+            [
+                str(agent.get("title") or ""),
+                str(agent.get("prompt") or ""),
+                " ".join(str(item) for item in list(agent.get("skills") or [])),
+                " ".join(str(item) for item in list(agent.get("mcp_servers") or [])),
+                " ".join(str(item) for item in list(agent.get("urls") or [])),
+            ]
+        ).lower()
+        if query and query not in haystack:
+            continue
+        items.append(compact_agent_deployment(agent, employee_id=employee_id))
+        if len(items) >= max(1, min(limit, 100)):
+            break
+    return items
+
+
+def agent_conversations_for_employee(agent_id: str, *, employee_id: str, limit: int = 20, include_archived: bool = False) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for record in list_runtime_records("conversations", limit=500):
+        if str(record.get("agent_id") or "") != agent_id:
+            continue
+        if str(record.get("employee_id") or "") != employee_id:
+            continue
+        if record.get("archived") and not include_archived:
+            continue
+        messages = [message for message in list(record.get("messages") or []) if isinstance(message, dict)]
+        records.append(
+            {
+                "conversation_id": str(record.get("conversation_id") or record.get("id") or ""),
+                "agent_id": agent_id,
+                "title": str(record.get("title") or "새 대화"),
+                "updated_at": str(record.get("updated_at") or ""),
+                "created_at": str(record.get("created_at") or ""),
+                "message_count": len(messages),
+                "archived": bool(record.get("archived")),
+                "latest_message": str((messages[-1] if messages else {}).get("content") or "")[:180],
+                "messages": messages[:40],
+            }
+        )
+        if len(records) >= limit:
+            break
+    return records
+
+
+def require_agent_access(agent_id: str, employee_id: str) -> dict[str, Any]:
+    agent = read_agent_deployment(agent_id)
+    if not agent_available_to_employee(agent, employee_id):
+        raise HTTPException(status_code=404, detail=f"Agent not found: {agent_id}")
+    return agent
+
+
+async def append_agent_conversation_message(agent: dict[str, Any], conversation_id: str, req: AgentConversationMessageRequest, employee_id: str) -> dict[str, Any]:
+    conversation = read_runtime_record("conversations", conversation_id)
+    if str(conversation.get("agent_id") or "") != str(agent.get("agent_id") or agent.get("id") or ""):
+        raise HTTPException(status_code=404, detail=f"Conversation not found for agent: {conversation_id}")
+    if str(conversation.get("employee_id") or "") != employee_id:
+        raise HTTPException(status_code=403, detail="conversation access denied")
+    messages = [message for message in list(conversation.get("messages") or []) if isinstance(message, dict)]
+    if req.conversation:
+        messages = [message for message in req.conversation if isinstance(message, dict)]
+    user_message = {"role": "user", "content": req.message, "created_at": now_iso()}
+    messages.append(user_message)
+    sdk_result: dict[str, Any] = {"ok": False, "state": "skipped", "output": ""}
+    if BOI_AGENT_RUNTIME == "agents_sdk" and OPENAI_API_KEY:
+        sdk_result = await run_agents_sdk_text_agent(
+            name=str(agent.get("title") or "BoI Custom Agent")[:80],
+            instructions=(
+                str(agent.get("prompt") or "")
+                + "\n\n당신은 BoI Operations Center에 연결된 업무 Agent입니다. "
+                "사용자 질문에 직접 답하고, 도구 실행/게시/승인 작업은 명시 확인 없이는 수행하지 않습니다. "
+                "답변은 한국어로 간결하게 작성합니다."
+            ),
+            input_text=json.dumps(
+                {
+                    "question": req.message,
+                    "recent_messages": messages[-8:],
+                    "context": req.context,
+                    "agent": compact_agent_deployment(agent, employee_id=employee_id),
+                },
+                ensure_ascii=False,
+            ),
+            employee_id=employee_id,
+            timeout_seconds=min(BOI_AGENT_RUNTIME_TIMEOUT_SECONDS, 18),
+        )
+    assistant_text = str(sdk_result.get("output") or "").strip()
+    if not assistant_text:
+        assistant_text = (
+            f"{agent.get('title') or 'Agent'} 기준으로 요청을 접수했습니다. "
+            "필요한 자료, Sandbox 실행, BoI 저장은 오른쪽 패널에서 명시 확인 후 진행할 수 있습니다."
+        )
+    assistant_message = {
+        "role": "assistant",
+        "content": assistant_text,
+        "created_at": now_iso(),
+        "runtime": {"backend": "agents_sdk" if sdk_result.get("ok") else "contract_only", "model": OPENAI_API_MODEL},
+    }
+    messages.append(assistant_message)
+    conversation["messages"] = messages
+    conversation["updated_at"] = now_iso()
+    conversation["title"] = str(conversation.get("title") or req.message[:40] or "Agent 대화")
+    write_runtime_record("conversations", conversation)
+    agent["usage_count"] = int(agent.get("usage_count") or 0) + 1
+    agent["last_used_at"] = conversation["updated_at"]
+    write_runtime_record("deployments", agent)
+    return {"ok": True, "conversation": conversation, "message": assistant_message, "agent": compact_agent_deployment(agent, employee_id=employee_id)}
+
+
+def compact_sandbox_job(job: dict[str, Any]) -> dict[str, Any]:
+    artifacts = [
+        {
+            "path": item.get("path"),
+            "artifact_url": item.get("artifact_url"),
+            "bytes": item.get("bytes"),
+            "preview": str(item.get("preview") or "")[:500],
+        }
+        for item in list(job.get("artifacts") or [])[:8]
+        if isinstance(item, dict)
+    ]
+    summary = job.get("agents_sdk_summary") if isinstance(job.get("agents_sdk_summary"), dict) else {}
+    return {
+        "job_id": job.get("job_id") or job.get("id"),
+        "title": job.get("title"),
+        "task": job.get("task"),
+        "status": job.get("status"),
+        "evidence_state": job.get("evidence_state"),
+        "execution_mode": job.get("execution_mode"),
+        "runtime_backend": job.get("runtime_backend"),
+        "language": job.get("language"),
+        "created_at": job.get("created_at"),
+        "latency_ms": job.get("latency_ms"),
+        "exit_code": job.get("exit_code"),
+        "stdout_preview": str(job.get("stdout") or "")[-1200:],
+        "stderr_preview": str(job.get("stderr") or "")[-1200:],
+        "validation_result": job.get("validation_result") or {},
+        "summary": {
+            "state": summary.get("state"),
+            "ok": summary.get("ok"),
+            "model": summary.get("model"),
+            "output": summary.get("output"),
+            "error": summary.get("error"),
+        },
+        "artifacts": artifacts,
+    }
+
+
+def agents_sdk_status_payload() -> dict[str, Any]:
+    try:
+        import agents  # type: ignore
+        from agents.sandbox.sandboxes.unix_local import UnixLocalSandboxClient  # noqa: F401
+
+        available = True
+        import_error = ""
+        version = str(getattr(agents, "__version__", "unknown"))
+    except Exception as exc:
+        available = False
+        import_error = f"{type(exc).__name__}: {exc}"
+        version = ""
+    return {
+        "runtime": BOI_AGENT_RUNTIME,
+        "available": available,
+        "version": version,
+        "import_error": import_error,
+        "model": OPENAI_API_MODEL,
+        "api_key_configured": bool(OPENAI_API_KEY),
+        "timeout_seconds": BOI_AGENT_RUNTIME_TIMEOUT_SECONDS,
+        "sandbox": {
+            "enabled": BOI_AGENT_SANDBOX_ENABLED,
+            "backend": BOI_AGENT_SANDBOX_BACKEND,
+            "autorun": BOI_AGENT_SANDBOX_AUTORUN,
+            "timeout_seconds": BOI_AGENT_SANDBOX_TIMEOUT_SECONDS,
+            "summary_enabled": BOI_AGENT_SANDBOX_SUMMARY_ENABLED,
+        },
+    }
+
+
+async def run_agents_sdk_text_agent(
+    *,
+    name: str,
+    instructions: str,
+    input_text: str,
+    employee_id: str,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    if not OPENAI_API_KEY:
+        return {"ok": False, "state": "skipped", "error": "OPENAI_API_KEY is not configured"}
+    try:
+        from agents import Agent, Runner
+        from agents.run_config import RunConfig
+    except Exception as exc:
+        return {"ok": False, "state": "unavailable", "error": f"{type(exc).__name__}: {exc}"}
+    started = time.monotonic()
+    try:
+        agent = Agent(name=name, instructions=instructions, model=OPENAI_API_MODEL)
+        run_config = RunConfig(
+            model=OPENAI_API_MODEL,
+            workflow_name="BoI Agent Runtime",
+            group_id=f"boi:{employee_id}",
+            tracing_disabled=env_flag("BOI_AGENT_TRACING_DISABLED", "false"),
+            trace_metadata={"employee_id": employee_id, "runtime": "agents_sdk"},
+        )
+        result = await asyncio.wait_for(
+            Runner.run(agent, input_text, run_config=run_config, max_turns=4),
+            timeout=timeout_seconds or BOI_AGENT_RUNTIME_TIMEOUT_SECONDS,
+        )
+        output = str(getattr(result, "final_output", "") or "").strip()
+        return {
+            "ok": True,
+            "state": "ready",
+            "backend": "agents_sdk",
+            "model": OPENAI_API_MODEL,
+            "latency_ms": round((time.monotonic() - started) * 1000),
+            "output": output,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "state": "failed",
+            "backend": "agents_sdk",
+            "model": OPENAI_API_MODEL,
+            "latency_ms": round((time.monotonic() - started) * 1000),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def sandbox_artifact_root(job_id: str) -> Path:
+    return agent_runtime_root() / "sandbox-artifacts" / safe_filename(job_id)
+
+
+def write_sandbox_inputs(root: Path, artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    written: list[dict[str, Any]] = []
+    input_dir = root / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    for idx, artifact in enumerate(artifacts or []):
+        if not isinstance(artifact, dict):
+            continue
+        name = safe_filename(str(artifact.get("name") or artifact.get("filename") or f"input-{idx}.txt"))
+        if not name:
+            name = f"input-{idx}.txt"
+        target = input_dir / name
+        if "json" in artifact:
+            target.write_text(json.dumps(artifact.get("json"), ensure_ascii=False, indent=2), encoding="utf-8")
+        else:
+            target.write_text(str(artifact.get("content") or artifact.get("text") or ""), encoding="utf-8")
+        written.append({"name": name, "path": f"input/{name}", "bytes": target.stat().st_size})
+    return written
+
+
+def sandbox_command_for_job(root: Path, job: dict[str, Any]) -> tuple[list[str], Path | None]:
+    language = str(job.get("language") or "none")
+    code = str(job.get("code") or "")
+    if language == "python":
+        script = root / "work.py"
+        script.write_text(code or "print('no code provided')\n", encoding="utf-8")
+        return ["python", str(script)], script
+    if language == "javascript":
+        script = root / "work.js"
+        script.write_text(code or "console.log('no code provided')\n", encoding="utf-8")
+        return ["node", str(script)], script
+    if language == "shell":
+        script = root / "work.sh"
+        script.write_text(code or "echo 'no code provided'\n", encoding="utf-8")
+        script.chmod(0o700)
+        return ["bash", str(script)], script
+    if language == "notebook":
+        script = root / "work.py"
+        script.write_text(code or "print('notebook execution requires exported Python code')\n", encoding="utf-8")
+        return ["python", str(script)], script
+    script = root / "work.py"
+    script.write_text("print('sandbox workspace prepared')\n", encoding="utf-8")
+    return ["python", str(script)], script
+
+
+def collect_sandbox_artifacts(root: Path, job_id: str, employee_id: str, source_script: Path | None) -> list[dict[str, Any]]:
+    artifact_root = sandbox_artifact_root(job_id)
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    items: list[dict[str, Any]] = []
+    skip = {source_script.resolve()} if source_script else set()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            resolved = path.resolve()
+        except Exception:
+            continue
+        if resolved in skip or "/.git/" in str(resolved):
+            continue
+        rel = path.relative_to(root)
+        if rel.parts and rel.parts[0] == "input":
+            continue
+        target = artifact_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(path, target)
+            raw = path.read_bytes()
+        except Exception:
+            continue
+        preview = ""
+        if path.stat().st_size <= 64_000:
+            try:
+                preview = raw.decode("utf-8", errors="replace")[:1200]
+            except Exception:
+                preview = ""
+        items.append(
+            {
+                "path": str(rel),
+                "artifact_url": app_url(
+                    f"/api/agents/sandbox/jobs/{quote(job_id, safe='')}/artifacts/{quote(str(rel), safe='')}",
+                    employee_id,
+                ),
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "preview": preview,
+            }
+        )
+    return items[:50]
+
+
+async def summarize_sandbox_result_with_agents_sdk(job: dict[str, Any]) -> dict[str, Any]:
+    if not BOI_AGENT_SANDBOX_SUMMARY_ENABLED:
+        return {"state": "skipped", "reason": "sandbox summary disabled"}
+    stdout = str(job.get("stdout") or "")[:3000]
+    stderr = str(job.get("stderr") or "")[:1200]
+    artifact_summaries = [
+        {
+            "path": item.get("path"),
+            "bytes": item.get("bytes"),
+            "preview": str(item.get("preview") or "")[:500],
+        }
+        for item in list(job.get("artifacts") or [])[:8]
+    ]
+    prompt = json.dumps(
+        {
+            "task": job.get("task"),
+            "evidence_intent": job.get("evidence_intent"),
+            "exit_code": job.get("exit_code"),
+            "stdout": stdout,
+            "stderr": stderr,
+            "artifacts": artifact_summaries,
+        },
+        ensure_ascii=False,
+    )
+    return await run_agents_sdk_text_agent(
+        name="BoI Evidence Sandbox Reviewer",
+        instructions=(
+            "You review computational evidence for BoI Wiki. "
+            "Summarize what was computed, whether the result can support a business decision, "
+            "and what still needs human review. Respond in Korean in 3 concise bullets."
+        ),
+        input_text=prompt,
+        employee_id=str(job.get("employee_id") or DEMO_EMPLOYEE_ID),
+        timeout_seconds=min(BOI_AGENT_RUNTIME_TIMEOUT_SECONDS, 20),
+    )
+
+
+async def execute_agents_sdk_sandbox_job(job: dict[str, Any]) -> dict[str, Any]:
+    if not BOI_AGENT_SANDBOX_ENABLED:
+        job["status"] = "pending_external_sandbox"
+        job["execution_mode"] = "sandbox_disabled"
+        return job
+    if BOI_AGENT_SANDBOX_BACKEND != "unix_local":
+        job["status"] = "pending_external_sandbox"
+        job["execution_mode"] = f"{BOI_AGENT_SANDBOX_BACKEND}_external_sandbox_required"
+        return job
+    try:
+        from agents.sandbox.sandboxes.unix_local import UnixLocalSandboxClient
+    except Exception as exc:
+        job["status"] = "pending_external_sandbox"
+        job["execution_mode"] = "agents_sdk_unavailable"
+        job["error"] = f"{type(exc).__name__}: {exc}"
+        return job
+    started = time.monotonic()
+    session = None
+    client = UnixLocalSandboxClient()
+    try:
+        session = await client.create()
+        await session.start()
+        root = Path(str(session.state.manifest.root))
+        job["input_files"] = write_sandbox_inputs(root, list(job.get("input_artifacts") or []))
+        command, source_script = sandbox_command_for_job(root, job)
+        result = await session.exec(*command, timeout=BOI_AGENT_SANDBOX_TIMEOUT_SECONDS, shell=False)
+        stdout = bytes(result.stdout or b"").decode("utf-8", errors="replace")
+        stderr = bytes(result.stderr or b"").decode("utf-8", errors="replace")
+        job["stdout"] = stdout[-8000:]
+        job["stderr"] = stderr[-8000:]
+        job["exit_code"] = int(result.exit_code or 0)
+        job["artifacts"] = collect_sandbox_artifacts(
+            root,
+            str(job.get("job_id") or job.get("id")),
+            str(job.get("employee_id") or DEMO_EMPLOYEE_ID),
+            source_script,
+        )
+        job["execution_mode"] = "agents_sdk_unix_local"
+        job["status"] = "completed" if result.ok() else "failed"
+        job["evidence_state"] = "review_required" if result.ok() else "failed"
+        job["validation_result"] = {
+            "state": "passed" if result.ok() else "failed",
+            "message": "Sandbox code executed; human review is required before evidence adoption."
+            if result.ok()
+            else "Sandbox code failed; inspect stderr before retrying.",
+        }
+        job["latency_ms"] = round((time.monotonic() - started) * 1000)
+        job.setdefault("events", []).append(
+            {
+                "type": "boi.sandbox.job.executed",
+                "logged_at": now_iso(),
+                "backend": "agents_sdk_unix_local",
+                "status": job["status"],
+                "exit_code": job["exit_code"],
+            }
+        )
+        job["agents_sdk_summary"] = await summarize_sandbox_result_with_agents_sdk(job)
+    except Exception as exc:
+        job["status"] = "failed"
+        job["evidence_state"] = "failed"
+        job["execution_mode"] = "agents_sdk_unix_local"
+        job["error"] = f"{type(exc).__name__}: {exc}"
+        job["latency_ms"] = round((time.monotonic() - started) * 1000)
+        job.setdefault("events", []).append({"type": "boi.sandbox.job.failed", "logged_at": now_iso(), "error": job["error"]})
+    finally:
+        if session is not None:
+            try:
+                await session.stop()
+            except Exception:
+                pass
+            try:
+                await client.delete(session)
+            except Exception:
+                pass
+    return job
+
+
+def conversation_body_from_messages(messages: list[dict[str, Any]]) -> str:
+    lines = ["# Agent Conversation", ""]
+    for message in messages:
+        role = str(message.get("role") or "message")
+        content = str(message.get("content") or message.get("text") or "").strip()
+        if not content:
+            continue
+        lines.extend([f"## {role}", "", content, ""])
+    if len(lines) <= 2:
+        lines.extend(["대화 내용이 비어 있습니다.", ""])
+    return "\n".join(lines).strip() + "\n"
+
+
+@app.get("/api/sop-runs")
+async def api_sop_runs(
+    employee_id: str = Depends(current_employee),
+    status: str = "open",
+    limit: int = Query(50, ge=1, le=200),
+) -> dict[str, Any]:
+    return sop_runs_payload(employee_id, status=status, limit=limit)
+
+
+@app.get("/api/sop-runs/{run_id}/graph")
+async def api_sop_run_graph(run_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return sop_run_graph_payload(run_id, employee_id)
+
+
+@app.get("/api/sop-runs/{run_id}/context")
+async def api_sop_run_context(run_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    graph = sop_run_graph_payload(run_id, employee_id)
+    run = graph.get("run") or {}
+    return {
+        "ok": True,
+        "run": run,
+        "stage_state": {
+            "stage_id": run.get("current_stage_id"),
+            "label": run.get("current_stage_label"),
+            "status": run.get("status"),
+            "risk": run.get("risk"),
+        },
+        "business_context": run.get("business_context") or {},
+        "focus_points": run.get("focus_points") or ops_focus_points_for_run(run),
+        "decision_packet": graph.get("decision_packet"),
+        "evidence_packets": graph.get("evidence_packets"),
+        "report_target": {
+            "report_id": f"ops-run-{safe_filename(run_id)}",
+            "label": "Operations Center SOP run evidence",
+        },
+        "report_links": [
+            {"label": "SOP Lens", "url": str(run.get("url") or "")},
+            {"label": "관련 SOP", "url": str(run.get("sop_url") or "")},
+        ],
+    }
+
+
+@app.get("/api/sop-runs/{run_id}")
+async def api_sop_run(run_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "run": find_sop_run(run_id, employee_id)}
+
+
+@app.get("/api/ops/overview")
+async def api_ops_overview(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    payload = ops_overview_payload(employee_id)
+    payload["feature_enabled"] = BOI_OPS_CENTER_ENABLED
+    return payload
+
+
+@app.get("/api/ops/canvas")
+async def api_ops_canvas(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    payload = ops_canvas_payload(employee_id)
+    payload["feature_enabled"] = BOI_OPS_CENTER_ENABLED
+    return payload
+
+
+@app.get("/api/ops/nodes/{node_id:path}")
+async def api_ops_node(node_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return find_ops_canvas_node(employee_id, unquote(node_id))
+
+
+@app.get("/api/ops/edges/{edge_id:path}")
+async def api_ops_edge(edge_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return find_ops_canvas_edge(employee_id, unquote(edge_id))
+
+
+@app.get("/api/ops/recent-events")
+async def api_ops_recent_events(
+    employee_id: str = Depends(current_employee),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict[str, Any]:
+    payload = ops_recent_events_payload(employee_id, limit=limit)
+    payload["feature_enabled"] = BOI_OPS_CENTER_ENABLED
+    return payload
+
+
+@app.get("/api/ops/stream")
+async def api_ops_stream(employee_id: str = Depends(current_employee)) -> StreamingResponse:
+    async def event_generator():
+        payload = ops_overview_payload(employee_id)
+        yield "event: boi.ops.workstream.updated\n"
+        yield "data: " + json.dumps(payload, ensure_ascii=False, default=str) + "\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/ops", response_class=HTMLResponse)
+async def ops_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+    if not BOI_OPS_CENTER_ENABLED:
+        return RedirectResponse(app_url("/inbox", employee_id), status_code=303)
+    overview = ops_overview_payload(employee_id)
+    return templates.TemplateResponse(
+        "ops.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="inbox",
+                title="BoI Operations Center",
+                description="나를 중심으로 여러 SOP가 보내온 업무 BoI, 판단 근거, 승인 요청을 한 화면에서 확인합니다.",
+                hide_pet_agent=True,
+            ),
+            "overview": overview,
+            "ops_bootstrap": {"employee_id": employee_id},
+            "summary": overview.get("summary") or {},
+            "workstream_nodes": overview.get("workstream_nodes") or [],
+            "workstream_edges": overview.get("workstream_edges") or [],
+            "priority_queue": overview.get("priority_queue") or [],
+            "sop_runs": overview.get("sop_runs") or [],
+            "selected_run": overview.get("selected_run"),
+        },
+    )
+
+
+@app.get("/sop-runs/{run_id}", response_class=HTMLResponse)
+async def sop_run_page(run_id: str, request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+    graph = sop_run_graph_payload(run_id, employee_id)
+    return templates.TemplateResponse(
+        "sop_run.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="inbox",
+                title="SOP 실행 상태",
+                description="선택한 SOP 실행 인스턴스의 현재 단계, 확보 근거, 부족 근거를 확인합니다.",
+            ),
+            "graph": graph,
+            "run": graph.get("run") or {},
+            "nodes": graph.get("nodes") or [],
+            "edges": graph.get("edges") or [],
+            "evidence_packets": graph.get("evidence_packets") or [],
+            "decision_packet": graph.get("decision_packet") or {},
+            "ops_center_enabled": BOI_OPS_CENTER_ENABLED,
+        },
+    )
 
 
 @app.get("/inbox", response_class=HTMLResponse)
@@ -10412,6 +13093,26 @@ async def doc_page(
 ) -> HTMLResponse:
     doc = find_doc_by_id(boi_id, employee_id)
     if not doc:
+        quarantined = quarantined_doc_lookup(employee_id, boi_id)
+        if quarantined:
+            return templates.TemplateResponse(
+                "missing_doc.html",
+                {
+                    "request": request,
+                    "employee_id": employee_id,
+                    "shell": app_shell_context(
+                        request,
+                        employee_id,
+                        active_nav="library",
+                        title="정리된 Private BoI",
+                        description="이 문서는 generated artifact cleanup으로 quarantine 되었고 보존기간 안에는 복구할 수 있습니다.",
+                        page_actions=[{"label": "BoI 목록", "href": browse_url(employee_id), "kind": "secondary"}],
+                    ),
+                    "boi_id": boi_id,
+                    "cleanup": quarantined,
+                },
+                status_code=410,
+            )
         return templates.TemplateResponse(
             "missing_doc.html",
             {
@@ -10486,6 +13187,9 @@ async def list_boi(
     boi_type: str = "",
     folder: str = "",
     archive_status: str = "active",
+    include_generated: bool = False,
+    include_archived: bool = False,
+    include_quarantined: bool = False,
     page: int = Query(1, ge=1),
     limit: int | None = Query(default=None, ge=1, le=200),
 ) -> dict[str, Any]:
@@ -10498,6 +13202,9 @@ async def list_boi(
         visibility=visibility,
         boi_type=boi_type,
         archive_status=archive_status,
+        include_generated=include_generated,
+        include_archived=include_archived,
+        include_quarantined=include_quarantined,
     )
     docs = [d for d in filtered_docs if folder_matches(d, selected_folder)]
     if limit:
@@ -10510,6 +13217,9 @@ async def list_boi(
         "teams": teams_for(employee_id),
         "folder": selected_folder,
         "archive_status": archive_status,
+        "include_generated": include_generated,
+        "include_archived": include_archived,
+        "include_quarantined": include_quarantined,
         "page": page,
         "limit": limit,
         "breadcrumbs": folder_breadcrumbs(selected_folder),
@@ -10525,15 +13235,20 @@ def api_boi_folders_payload(
     employee_id: str,
     scope: str = "all",
     folder: str = "",
+    include_generated: bool = False,
+    include_archived: bool = False,
 ) -> dict[str, Any]:
     selected_folder = normalize_folder(folder)
     docs = docs_for_folder_scope(accessible_docs(employee_id), scope)
+    docs = filter_docs(docs, include_generated=include_generated, include_archived=include_archived)
     docs = [doc for doc in docs if folder_matches(doc, selected_folder)]
     return {
         "ok": True,
         "employee_id": employee_id,
         "scope": scope,
         "folder": selected_folder,
+        "include_generated": include_generated,
+        "include_archived": include_archived,
         "free_hierarchy": True,
         "allowed_roots": ["public", "team", "private"],
         "teams": teams_for(employee_id),
@@ -10548,8 +13263,16 @@ async def api_boi_folders(
     employee_id: str = Depends(current_employee),
     scope: str = "all",
     folder: str = "",
+    include_generated: bool = False,
+    include_archived: bool = False,
 ) -> dict[str, Any]:
-    return api_boi_folders_payload(employee_id=employee_id, scope=scope, folder=folder)
+    return api_boi_folders_payload(
+        employee_id=employee_id,
+        scope=scope,
+        folder=folder,
+        include_generated=include_generated,
+        include_archived=include_archived,
+    )
 
 
 @app.post("/api/boi/folders")
@@ -11476,7 +14199,30 @@ def safety_route_override(question: str) -> str | None:
     return None
 
 
-def deterministic_agent_intent(question: str, current_url: str = "") -> str:
+def is_current_document_qa_request(question: str, current_url: str = "") -> bool:
+    q = str(question or "").lower()
+    path = urlsplit(str(current_url or "")).path
+    if not path.startswith("/docs/"):
+        return False
+    doc_terms = ("보고서", "문서", "본문", "현재 페이지", "현재 화면", "이 페이지", "이 화면")
+    question_terms = ("뭐", "무엇", "어떤", "어느", "왜", "어떻게", "알려", "설명", "확인")
+    return any(term in q for term in doc_terms) and any(term in q for term in question_terms)
+
+
+def agent_dialog_context(req: BoiAgentChatRequest, page_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    return dialog_context_from_conversation(
+        req.conversation,
+        current_url=req.current_url,
+        page_context=page_context or req.page_context or {},
+    )
+
+
+def deterministic_agent_intent(
+    question: str,
+    current_url: str = "",
+    page_context: dict[str, Any] | None = None,
+    dialog_context: dict[str, Any] | None = None,
+) -> str:
     q = str(question or "").lower()
     if (
         any(term in q for term in ("event type", "event-type", "이벤트 타입", "이벤트 유형", "이벤트 정의", "신규 이벤트"))
@@ -11492,6 +14238,13 @@ def deterministic_agent_intent(question: str, current_url: str = "") -> str:
     if safety := safety_route_override(q):
         return "manual_complete" if safety == "manual_handoff" else "approval"
     profile = select_agent_goal_profile_for_text(question, current_url)
+    semantic = semantic_route_candidate(question, current_url, page_context or {}, dialog_context or {})
+    if semantic_route_should_override_profile(semantic, profile, question):
+        return "search"
+    if is_current_document_qa_request(question, current_url):
+        return "page_qa"
+    if is_strong_agent_goal_profile(profile):
+        return normalize_agent_intent(str(profile.get("intent") or profile.get("goal_type") or ""), fallback="page_qa")
     if profile:
         return normalize_agent_intent(str(profile.get("intent") or profile.get("goal_type") or ""), fallback="page_qa")
     if any(term in q for term in ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")):
@@ -11650,7 +14403,8 @@ def normalize_agent_answer_plan(payload: dict[str, Any]) -> dict[str, Any] | Non
     source = payload.get("answer_plan") if isinstance(payload.get("answer_plan"), dict) else payload
     title = sanitize_agent_plan_text(source.get("title") or "답변", 80)
     title = re.sub(r"\s*-\d+\s*$", "", title).strip() or "답변"
-    summary = sanitize_agent_plan_text(source.get("summary") or source.get("short_answer") or "", 700)
+    direct_answer = sanitize_agent_plan_text(source.get("direct_answer") or "", 900)
+    summary = sanitize_agent_plan_text(source.get("summary") or source.get("short_answer") or direct_answer, 900)
     suggestions = [
         sanitize_agent_plan_text(item, 120)
         for item in (source.get("suggested_questions") or source.get("followups") or [])[:4]
@@ -11666,6 +14420,10 @@ def normalize_agent_answer_plan(payload: dict[str, Any]) -> dict[str, Any] | Non
     return {
         "title": title or "답변",
         "summary": summary,
+        "direct_answer": direct_answer,
+        "evidence_used": source.get("evidence_used") or [],
+        "what_to_check_next": source.get("what_to_check_next") or [],
+        "links_or_actions": source.get("links_or_actions") or [],
         "bullets": [],
         "links": [],
         "suggested_questions": suggestions,
@@ -11678,6 +14436,32 @@ def render_agent_answer_plan(plan: dict[str, Any]) -> str:
     summary = sanitize_agent_plan_text(plan.get("summary") or "", 700)
     if summary:
         parts.append(summary)
+    if plan.get("direct_answer"):
+        direct_answer = sanitize_agent_plan_text(plan.get("direct_answer") or "", 900)
+        if direct_answer and direct_answer not in summary:
+            parts.append(direct_answer)
+    section_specs = (
+        ("evidence_used", "확인한 근거"),
+        ("what_to_check_next", "다음 확인"),
+        ("links_or_actions", "가능한 조치"),
+    )
+    for key, heading in section_specs:
+        raw_items = plan.get(key)
+        if isinstance(raw_items, str):
+            raw_items = [raw_items]
+        if not isinstance(raw_items, list):
+            continue
+        section_lines = []
+        for item in raw_items[:5]:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("label") or item.get("summary") or item.get("action") or item.get("title")
+            else:
+                text = item
+            cleaned = sanitize_agent_plan_text(text, 360)
+            if cleaned:
+                section_lines.append(f"- {cleaned}")
+        if section_lines:
+            parts.append(f"**{heading}**\n" + "\n".join(section_lines))
     bullets = plan.get("bullets") if isinstance(plan.get("bullets"), list) else []
     bullet_lines = []
     for item in bullets[:7]:
@@ -11864,20 +14648,32 @@ def invalid_agent_composer_answer_reason(answer: str) -> str:
 
 def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *, repair: dict[str, Any] | None = None) -> dict[str, Any]:
     source_payload = payload if isinstance(payload, dict) else {}
+    structured_draft = text_excerpt(str(source_payload.get("structured_draft") or ""), 2400)
+    current_doc = source_payload.get("current_doc") if isinstance(source_payload.get("current_doc"), dict) else {}
     user_payload = {
         "employee_id": employee_id,
         "question": source_payload.get("question") or "",
         "route": source_payload.get("route") or "",
         "intent": source_payload.get("intent") or "",
         "page_context": compact_agent_composer_page_context(source_payload.get("page_context")),
-        "evidence_summary": agent_composer_evidence_excerpt(source_payload.get("structured_draft") or "", 180),
+        "current_doc": {
+            "title": str(current_doc.get("title") or "")[:120],
+            "boi_id": str(current_doc.get("boi_id") or "")[:160],
+            "body_excerpt": text_excerpt(str(current_doc.get("body_excerpt") or ""), 900),
+        },
+        "search_matches": source_payload.get("search_matches")[:6] if isinstance(source_payload.get("search_matches"), list) else [],
+        "coverage_report": source_payload.get("coverage_report") if isinstance(source_payload.get("coverage_report"), dict) else {},
+        "tool_trace": source_payload.get("tool_trace")[-8:] if isinstance(source_payload.get("tool_trace"), list) else [],
+        "structured_draft": structured_draft,
+        "evidence_summary": agent_composer_evidence_excerpt(structured_draft, 650),
     }
     if repair:
         user_payload["quality_repair"] = repair
     system_content = (
-        "JSON만 출력하세요. 키는 title, summary 두 개만 사용하세요. "
-        "title은 24자 이하, summary는 70자 이하의 짧은 한국어 문장입니다. "
-        "배열, 중첩 객체, 마크다운, 코드블록, 표, 링크, 영어 설명, 반복 문구, 추가 텍스트는 금지입니다. "
+        "JSON만 출력하세요. 제공된 structured_draft와 current_doc 근거를 우선 사용해 질문에 직접 답하세요. "
+        "title은 24자 이하, summary는 1~2문장, direct_answer는 사용자가 바로 판단할 수 있는 한국어 업무 문장입니다. "
+        "evidence_used, what_to_check_next, links_or_actions는 짧은 문자열 배열만 사용하세요. "
+        "마크다운, 코드블록, 표, 링크, 영어 설명, 반복 문구, 추가 텍스트는 금지입니다. "
         "제공된 근거만 사용하고 없는 내용은 만들지 마세요."
     )
     if repair:
@@ -11888,7 +14684,7 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
         "model": BOI_AGENT_COMPOSER_MODEL,
         "temperature": 0,
         "frequency_penalty": 0.6,
-        "max_tokens": min(BOI_AGENT_COMPOSER_MAX_TOKENS, 60),
+        "max_tokens": max(256, min(BOI_AGENT_COMPOSER_MAX_TOKENS, 768)),
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -11898,6 +14694,10 @@ def boi_agent_composer_request_body(payload: dict[str, Any], employee_id: str, *
                     "properties": {
                         "title": {"type": "string"},
                         "summary": {"type": "string"},
+                        "direct_answer": {"type": "string"},
+                        "evidence_used": {"type": "array", "items": {"type": "string"}},
+                        "what_to_check_next": {"type": "array", "items": {"type": "string"}},
+                        "links_or_actions": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": ["title", "summary"],
                 },
@@ -12339,11 +15139,21 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
 
 
 def apply_agent_route_overrides(req: BoiAgentChatRequest, route: dict[str, Any]) -> dict[str, Any]:
-    deterministic_intent = deterministic_agent_intent(req.question, req.current_url)
-    profile = None if deterministic_intent in MUTATION_AGENT_INTENTS else select_agent_goal_profile_for_request(req)
+    dialog_context = agent_dialog_context(req)
+    deterministic_intent = deterministic_agent_intent(req.question, req.current_url, req.page_context, dialog_context)
+    profile = None if deterministic_intent in MUTATION_AGENT_INTENTS or is_current_document_qa_request(req.question, req.current_url) else select_agent_goal_profile_for_request(req)
+    semantic = None
+    if deterministic_intent not in MUTATION_AGENT_INTENTS:
+        semantic_candidate = semantic_route_candidate(req.question, req.current_url, req.page_context, dialog_context)
+        if semantic_route_should_override_profile(semantic_candidate, profile, req.question):
+            semantic = semantic_candidate
+    if semantic:
+        profile = None
     if profile and int(profile.get("_match_score") or 0) < 20 and route.get("router_backend") in {"llm", "request_hint"}:
         profile = None
     route["intent"] = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_intent)
+    if semantic:
+        route.update(semantic)
     if profile:
         profile_intent = normalize_agent_intent(str(profile.get("intent") or ""), fallback=deterministic_intent)
         profile_route = normalize_agent_route(str(profile.get("route") or route_for_agent_intent(profile_intent)))
@@ -12419,8 +15229,19 @@ def deterministic_agent_route_for_request(
     reason: str = "native goal router",
     component_error: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    deterministic_intent = deterministic_agent_intent(req.question, req.current_url)
-    profile = None if deterministic_intent in MUTATION_AGENT_INTENTS else select_agent_goal_profile_for_request(req)
+    dialog_context = agent_dialog_context(req)
+    deterministic_intent = deterministic_agent_intent(req.question, req.current_url, req.page_context, dialog_context)
+    profile = None if deterministic_intent in MUTATION_AGENT_INTENTS or is_current_document_qa_request(req.question, req.current_url) else select_agent_goal_profile_for_request(req)
+    semantic = None
+    if deterministic_intent not in MUTATION_AGENT_INTENTS:
+        semantic_candidate = semantic_route_candidate(req.question, req.current_url, req.page_context, dialog_context)
+        if semantic_route_should_override_profile(semantic_candidate, profile, req.question):
+            semantic = semantic_candidate
+    if semantic:
+        route = dict(semantic)
+        if component_error:
+            route["component_errors"] = [component_error]
+        return apply_agent_route_overrides(req, route)
     intent = normalize_agent_intent(str((profile or {}).get("intent") or ""), fallback=deterministic_intent)
     route_name = normalize_agent_route(str((profile or {}).get("route") or route_for_agent_intent(intent)))
     route = {
@@ -12451,9 +15272,10 @@ def deterministic_agent_route_for_request(
 
 def route_boi_agent_request(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
     if req.mode in {"fast", "deep"} or str(req.intent or "").strip():
+        dialog_context = agent_dialog_context(req)
         requested_intent = normalize_agent_intent(
             req.intent,
-            fallback=deterministic_agent_intent(req.question, req.current_url),
+            fallback=deterministic_agent_intent(req.question, req.current_url, req.page_context, dialog_context),
         )
         requested_route = route_for_agent_intent(requested_intent)
         if req.mode == "fast" and requested_route not in {"manual_handoff", "approval_required"}:
@@ -12612,6 +15434,21 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
         metadata = doc.get("metadata") or {}
         access = access_policy_for_doc(doc, employee_id)
         source_event = metadata.get("source_event") if isinstance(metadata.get("source_event"), dict) else {}
+        source_refs = metadata.get("source_refs") if isinstance(metadata.get("source_refs"), list) else []
+        source_event_ref = ""
+        source_action_ref = ""
+        compact_source_refs: list[dict[str, Any]] = []
+        for ref in source_refs[:12]:
+            if not isinstance(ref, dict):
+                continue
+            ref_type = str(ref.get("type") or ref.get("kind") or "").strip()
+            ref_value = str(ref.get("ref") or ref.get("event_type") or ref.get("action_key") or "").strip()
+            if ref_type and ref_value:
+                compact_source_refs.append({"type": ref_type, "ref": ref_value})
+            if not source_event_ref and ref_type == "event":
+                source_event_ref = ref_value
+            if not source_action_ref and ref_type == "action":
+                source_action_ref = ref_value
         can_use_context = access.can_use_in_agent_context
         workflow = metadata.get("workflow") if isinstance(metadata.get("workflow"), dict) else {}
         workflow_stages = workflow.get("stages") if isinstance(workflow.get("stages"), list) and can_use_context else []
@@ -12644,8 +15481,9 @@ def resolve_agent_page_context(current_url: str, employee_id: str) -> dict[str, 
             "type": metadata.get("type") or "",
             "visibility": metadata.get("visibility") or "",
             "status": metadata.get("status") or "",
-            "event_type": metadata.get("event_type") or source_event.get("event_type") or "",
-            "action_key": metadata.get("action_key") or "",
+            "event_type": metadata.get("event_type") or source_event.get("event_type") or source_event_ref or "",
+            "action_key": metadata.get("action_key") or source_action_ref or "",
+            "source_refs": compact_source_refs if can_use_context else [],
             "trace_id": source_event.get("trace") or "",
             "workflow_key": workflow.get("workflow_key") or "",
             "stage_count": len(workflow_stages),
@@ -12920,10 +15758,11 @@ def agent_workflow_definition_context(event_context: dict[str, Any]) -> dict[str
 
 def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_limit: int = 5) -> dict[str, Any]:
     page_context = resolve_agent_page_context(req.current_url, employee_id)
+    dialog_context = agent_dialog_context(req, page_context)
     event_context = agent_event_context(req, page_context)
     workflow_definition_context = agent_workflow_definition_context(event_context)
     ontology_seed: dict[str, Any] = {}
-    intent = normalize_agent_intent(str(req.intent or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    intent = normalize_agent_intent(str(req.intent or ""), fallback=deterministic_agent_intent(req.question, req.current_url, page_context, dialog_context))
     page_first_intents = {"diagram", "workflow_explain", "gap_check", "page_qa", "summarize"}
     has_page_anchor = agent_page_context_has_business_anchor(page_context)
     should_seed_search = bool(req.question.strip()) and not (has_page_anchor and intent in page_first_intents)
@@ -12936,6 +15775,7 @@ def agent_context_pack(req: BoiAgentChatRequest, employee_id: str, *, search_lim
         "selected_text_excerpt": text_excerpt(req.selected_text, 700) if req.selected_text else "",
         "current_url": req.current_url,
         "page_context": page_context,
+        "dialog_context": dialog_context,
         "event_context": event_context,
         "workflow_definition_context": workflow_definition_context,
         "ontology_search_seed": ontology_seed,
@@ -13076,6 +15916,7 @@ def native_agent_tools(employee_id: str, current_url: str = "") -> NativeAgentTo
         dictionary_resolve=lambda query: {"ok": True, "view": "compact", **resolve_dictionary_query(query, employee_id, scope="all", limit=DICTIONARY_RESOLVE_DEFAULT_LIMIT, view="compact")},
         memory_recall=lambda query, limit=5: native_agent_memory_tool(query, employee_id, limit=limit),
         agent_inbox=lambda limit=10: agent_inbox_payload(employee_id, status="open", limit=limit, include_context="compact"),
+        sop_catalog_search=lambda query, scope="catalog_search", limit=12: sop_catalog_search_payload(employee_id, q=query, scope=scope, limit=limit),
         llm_json=lambda task, payload: native_agent_llm_json(employee_id, task, payload),
     )
 
@@ -13096,8 +15937,8 @@ def call_native_boi_agent(
             build_revision=BOI_BUILD_REVISION,
             llm_enabled=BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first",
             require_langgraph=BOI_AGENT_LANGGRAPH_REQUIRED,
-            composer_enabled=BOI_AGENT_COMPOSER_LLM_ENABLED,
-            composer_required=BOI_AGENT_COMPOSER_REQUIRED,
+            composer_enabled=BOI_AGENT_COMPOSER_LLM_ENABLED and (BOI_AGENT_COMPOSER_BLOCKING or req.mode == "deep"),
+            composer_required=BOI_AGENT_COMPOSER_REQUIRED and (BOI_AGENT_COMPOSER_BLOCKING or req.mode == "deep"),
             progress_callback=progress_callback,
         ),
     )
@@ -13109,6 +15950,7 @@ def call_native_boi_agent(
             "current_url": req.current_url,
             "selected_text": req.selected_text,
             "page_context": req.page_context,
+            "dialog_context": context_pack.get("dialog_context") or agent_dialog_context(req, context_pack.get("page_context") if isinstance(context_pack.get("page_context"), dict) else {}),
             "conversation": req.conversation[-12:],
             "save_memory": req.save_memory,
         },
@@ -13564,6 +16406,11 @@ def enrich_agent_answer_html(response: dict[str, Any], employee_id: str) -> dict
     response["status_events"] = list(response["status_updates"])
     response.setdefault("coverage_report", {})
     response.setdefault("context_summary", {})
+    response.setdefault("semantic_route", {})
+    response.setdefault("route_candidates", [])
+    response.setdefault("llm_reranker_used", False)
+    response.setdefault("matched_affordance", "")
+    response.setdefault("related_item_context", {})
     response.setdefault("access_summary", {})
     response.setdefault("guardrails_applied", [])
     response.setdefault("redacted_count", 0)
@@ -14030,14 +16877,50 @@ def ensure_agent_answer_followups(req: BoiAgentChatRequest, response: dict[str, 
 
 
 def finalize_agent_chat_response(req: BoiAgentChatRequest, employee_id: str, *, route: dict[str, Any] | None = None, progress_callback: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
+    started_at = time.perf_counter()
     if route is not None or progress_callback is not None:
-        response = agent_chat_response(req, employee_id, route=route, progress_callback=progress_callback)
+        response = call_agent_chat_response_compat(req, employee_id, route=route, progress_callback=progress_callback)
     else:
         response = agent_chat_response_with_optional_status_plan(req, employee_id)
     response = enrich_agent_answer_html(response, employee_id)
     response = add_agent_evidence_and_affordances(response, req, employee_id)
+    if boi_agent_fast_first_enabled() and not BOI_AGENT_FOLLOWUPS_BLOCKING:
+        raw_suggestions = response.get("suggested_questions") or followup_questions_from_affordances(response)
+        try:
+            scoped_suggestions = filter_agent_followups_by_affordances(dedupe_suggestions(raw_suggestions, limit=5), response) if raw_suggestions else []
+        except BoiAgentSuggestionsUnavailable:
+            scoped_suggestions = followup_questions_from_affordances(response)
+        suggestions = remove_repeated_original_suggestions(
+            scoped_suggestions,
+            req.question,
+        )
+        response["suggested_questions"] = suggestions
+        response["suggested_questions_source"] = (
+            response.get("suggested_questions_source")
+            if suggestions and response.get("suggested_questions_source") not in {"", "suggestions_endpoint_required"}
+            else ("affordance_contract_fast_first" if suggestions else "answer_scoped_llm_pending")
+        )
+        quality = response.get("answer_quality") if isinstance(response.get("answer_quality"), dict) else {}
+        quality["followups_generated"] = bool(suggestions)
+        quality["followups_async"] = True
+        response["answer_quality"] = quality
+        response = apply_agent_latency_contract(
+            response,
+            followups_state="ready" if suggestions else "pending",
+            answer_refinement_state="skipped",
+            started_at=started_at,
+        )
+        response = add_agent_evidence_and_affordances(response, req, employee_id)
+        return enrich_agent_answer_html(response, employee_id)
     response = ensure_agent_answer_followups(req, response, employee_id)
     response = add_agent_evidence_and_affordances(response, req, employee_id)
+    context_summary = response.get("context_summary") if isinstance(response.get("context_summary"), dict) else {}
+    response = apply_agent_latency_contract(
+        response,
+        followups_state="ready" if response.get("suggested_questions") else "failed",
+        answer_refinement_state="ready" if context_summary.get("composer_backend") == "llm" else "skipped",
+        started_at=started_at,
+    )
     return enrich_agent_answer_html(response, employee_id)
 
 
@@ -14048,12 +16931,19 @@ def finalize_agent_chat_response_without_followups(
     route: dict[str, Any] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    started_at = time.perf_counter()
     if route is not None or progress_callback is not None:
-        response = agent_chat_response(req, employee_id, route=route, progress_callback=progress_callback)
+        response = call_agent_chat_response_compat(req, employee_id, route=route, progress_callback=progress_callback)
     else:
         response = agent_chat_response_with_optional_status_plan(req, employee_id)
     response = enrich_agent_answer_html(response, employee_id)
     response = add_agent_evidence_and_affordances(response, req, employee_id)
+    response = apply_agent_latency_contract(
+        response,
+        followups_state="pending" if boi_agent_fast_first_enabled() else ("ready" if response.get("suggested_questions") else "pending"),
+        answer_refinement_state="skipped",
+        started_at=started_at,
+    )
     return enrich_agent_answer_html(response, employee_id)
 
 
@@ -14152,7 +17042,10 @@ def lightweight_doc_link_items(doc: dict[str, Any], employee_id: str, *, limit: 
 def agent_fast_answer(req: BoiAgentChatRequest, employee_id: str, route: dict[str, Any], started_at: float) -> dict[str, Any]:
     context_pack = agent_context_pack(req, employee_id)
     page_context = context_pack["page_context"]
-    intent = normalize_agent_intent(str(route.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    intent = normalize_agent_intent(
+        str(route.get("intent") or ""),
+        fallback=deterministic_agent_intent(req.question, req.current_url, page_context, context_pack.get("dialog_context") or {}),
+    )
     if page_context.get("resolved") and intent in {"page_qa", "summarize"}:
         search = {
             "best_matches": page_context.get("linked_items") or [],
@@ -14439,7 +17332,11 @@ def normalize_langflow_agent_response(
     if not isinstance(suggestions, list) or not suggestions:
         suggestions = []
     artifacts = normalize_agent_artifacts(parsed.get("artifacts"), answer_markdown)
-    intent = normalize_agent_intent(str(route.get("intent") if route else parsed.get("intent") or ""), fallback=deterministic_agent_intent(req.question, req.current_url))
+    dialog_context = agent_dialog_context(req)
+    intent = normalize_agent_intent(
+        str(route.get("intent") if route else parsed.get("intent") or ""),
+        fallback=deterministic_agent_intent(req.question, req.current_url, req.page_context, dialog_context),
+    )
     if intent == "diagram" and not any(item.get("type") == "mermaid" for item in artifacts):
         raise LangflowBoiAgentUnavailable("BoI Agent Flow did not return required Mermaid artifact for diagram intent")
     context_summary = parsed.get("context_summary")
@@ -14488,7 +17385,10 @@ def call_langflow_boi_agent(req: BoiAgentChatRequest, employee_id: str, route: d
     if not LANGFLOW_URL or not LANGFLOW_BOI_AGENT_ENDPOINT:
         raise LangflowBoiAgentUnavailable("Langflow BoI Agent endpoint is not configured")
     context_pack = agent_context_pack(req, employee_id, search_limit=6)
-    intent = normalize_agent_intent(str(route.get("intent") if route else req.intent), fallback=deterministic_agent_intent(req.question, req.current_url))
+    intent = normalize_agent_intent(
+        str(route.get("intent") if route else req.intent),
+        fallback=deterministic_agent_intent(req.question, req.current_url, context_pack.get("page_context") if isinstance(context_pack.get("page_context"), dict) else {}, context_pack.get("dialog_context") or {}),
+    )
     payload = {
         "input_value": json.dumps(
             {
@@ -14557,6 +17457,88 @@ def agent_chat_response(
     return agent_fast_answer(req, employee_id, route, started_at)
 
 
+def call_agent_chat_response_compat(
+    req: BoiAgentChatRequest,
+    employee_id: str,
+    *,
+    route: dict[str, Any] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    try:
+        if route is not None or progress_callback is not None:
+            return agent_chat_response(req, employee_id, route=route, progress_callback=progress_callback)
+        return agent_chat_response(req, employee_id)
+    except TypeError as exc:
+        # Several tests and optional local adapters monkeypatch older
+        # two-argument Agent callables. Keep them compatible while the built-in
+        # Agent path uses the route/progress contract.
+        message = str(exc)
+        if "unexpected keyword argument 'route'" not in message and "unexpected keyword argument 'progress_callback'" not in message:
+            raise
+        if progress_callback is not None:
+            try:
+                return agent_chat_response(req, employee_id, progress_callback=progress_callback)
+            except TypeError as second_exc:
+                second_message = str(second_exc)
+                if "unexpected keyword argument 'progress_callback'" not in second_message:
+                    raise
+        return agent_chat_response(req, employee_id)
+
+
+def boi_agent_fast_first_enabled() -> bool:
+    return BOI_AGENT_LATENCY_MODE in {"fast_first", "fast-first", "fast"}
+
+
+def fast_first_agent_route(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
+    if req.mode in {"fast", "deep"} or str(req.intent or "").strip():
+        return route_boi_agent_request(req, employee_id)
+    return deterministic_agent_route_for_request(req, reason="fast-first native goal router")
+
+
+def deterministic_fast_first_status_steps(req: BoiAgentChatRequest, route: dict[str, Any]) -> list[dict[str, str]]:
+    intent = normalize_agent_intent(
+        str(route.get("intent") or ""),
+        fallback=deterministic_agent_intent(req.question, req.current_url, req.page_context, agent_dialog_context(req)),
+    )
+    if intent == "inbox":
+        message = "Inbox 보고서와 관련 근거를 확인합니다."
+    elif intent == "diagram":
+        message = "현재 화면의 업무 흐름과 근거를 확인합니다."
+    elif intent in {"page_qa", "summarize"}:
+        message = "현재 문서에서 질문과 관련된 근거를 확인합니다."
+    else:
+        message = "BoI Wiki에서 질문과 관련된 근거를 확인합니다."
+    return [{"stage": "retrieval", "message": message, "source": "native_status"}]
+
+
+def apply_agent_latency_contract(
+    response: dict[str, Any],
+    *,
+    followups_state: str | None = None,
+    answer_refinement_state: str | None = None,
+    started_at: float | None = None,
+) -> dict[str, Any]:
+    response["latency_contract"] = "fast_first" if boi_agent_fast_first_enabled() else "blocking"
+    timings = response.get("component_timings") if isinstance(response.get("component_timings"), dict) else {}
+    if response.get("latency_ms") is not None:
+        try:
+            timings.setdefault("native_agent_ms", int(response.get("latency_ms") or 0))
+        except (TypeError, ValueError):
+            pass
+    if started_at is not None:
+        timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
+    response["component_timings"] = timings
+    if answer_refinement_state:
+        response["answer_refinement_state"] = answer_refinement_state
+    else:
+        response.setdefault("answer_refinement_state", "skipped")
+    if followups_state:
+        response["followups_state"] = followups_state
+    else:
+        response.setdefault("followups_state", "ready" if response.get("suggested_questions") else "pending")
+    return response
+
+
 def agent_chat_response_with_optional_status_plan(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
     """Return the canonical Agent response for JSON/MCP clients.
 
@@ -14569,7 +17551,9 @@ def agent_chat_response_with_optional_status_plan(req: BoiAgentChatRequest, empl
     """
     planned_route: dict[str, Any] | None = None
     planned_status_updates: list[dict[str, Any]] = []
-    if req.mode == "auto" and BOI_AGENT_STATUS_LLM_ENABLED and BOI_AGENT_ROUTER_LLM_ENABLED:
+    if boi_agent_fast_first_enabled() and not BOI_AGENT_STATUS_BLOCKING:
+        planned_route = fast_first_agent_route(req, employee_id)
+    elif req.mode == "auto" and BOI_AGENT_STATUS_LLM_ENABLED and BOI_AGENT_ROUTER_LLM_ENABLED:
         try:
             stream_plan = agent_stream_plan(req, employee_id)
             planned_route = stream_plan["route"]
@@ -14586,7 +17570,7 @@ def agent_chat_response_with_optional_status_plan(req: BoiAgentChatRequest, empl
                     user_visible=False,
                 ),
             )
-    response = agent_chat_response(req, employee_id, route=planned_route) if planned_route else agent_chat_response(req, employee_id)
+    response = call_agent_chat_response_compat(req, employee_id, route=planned_route) if planned_route else call_agent_chat_response_compat(req, employee_id)
     if planned_status_updates:
         existing_updates = response.get("status_updates") if isinstance(response.get("status_updates"), list) else []
         response["status_updates"] = [*planned_status_updates, *existing_updates]
@@ -14684,44 +17668,48 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
             },
         )
         stream_plan_diagnostic: dict[str, Any] | None = None
-        try:
-            stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)
-            status_steps = list(stream_plan.get("status_steps") or [])
-            planned_route = stream_plan["route"]
-        except (BoiAgentStatusUnavailable, BoiAgentRouterUnavailable) as exc:
-            error_status = "boi_agent_router_unavailable" if isinstance(exc, BoiAgentRouterUnavailable) else "status_generation_failed"
-            stream_plan_diagnostic = agent_component_error(
-                "stream_plan",
-                error_status,
-                str(exc),
-                recoverable=True,
-                user_visible=False,
-            )
-            planned_route = deterministic_agent_route_for_request(
-                req,
-                reason="stream plan unavailable; native goal router",
-                component_error=stream_plan_diagnostic,
-            )
-            status_steps = []
-            yield agent_sse_event(
-                "diagnostic",
-                {
-                    **stream_plan_diagnostic,
-                    "model": BOI_AGENT_STATUS_MODEL,
-                    "required": BOI_AGENT_STATUS_REQUIRED,
-                },
-            )
-        except NativeAgentRuntimeUnavailable as exc:
-            yield agent_sse_event(
-                "error",
-                {
-                    "status": "native_agent_runtime_unavailable",
-                    "message": str(exc),
-                    "langgraph_available": LANGGRAPH_AVAILABLE,
-                    "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
-                },
-            )
-            return
+        if boi_agent_fast_first_enabled() and not BOI_AGENT_STATUS_BLOCKING:
+            planned_route = fast_first_agent_route(req, employee_id)
+            status_steps = deterministic_fast_first_status_steps(req, planned_route)
+        else:
+            try:
+                stream_plan = await asyncio.to_thread(agent_stream_plan, req, employee_id)
+                status_steps = list(stream_plan.get("status_steps") or [])
+                planned_route = stream_plan["route"]
+            except (BoiAgentStatusUnavailable, BoiAgentRouterUnavailable) as exc:
+                error_status = "boi_agent_router_unavailable" if isinstance(exc, BoiAgentRouterUnavailable) else "status_generation_failed"
+                stream_plan_diagnostic = agent_component_error(
+                    "stream_plan",
+                    error_status,
+                    str(exc),
+                    recoverable=True,
+                    user_visible=False,
+                )
+                planned_route = deterministic_agent_route_for_request(
+                    req,
+                    reason="stream plan unavailable; native goal router",
+                    component_error=stream_plan_diagnostic,
+                )
+                status_steps = []
+                yield agent_sse_event(
+                    "diagnostic",
+                    {
+                        **stream_plan_diagnostic,
+                        "model": BOI_AGENT_STATUS_MODEL,
+                        "required": BOI_AGENT_STATUS_REQUIRED,
+                    },
+                )
+            except NativeAgentRuntimeUnavailable as exc:
+                yield agent_sse_event(
+                    "error",
+                    {
+                        "status": "native_agent_runtime_unavailable",
+                        "message": str(exc),
+                        "langgraph_available": LANGGRAPH_AVAILABLE,
+                        "langgraph_required": BOI_AGENT_LANGGRAPH_REQUIRED,
+                    },
+                )
+                return
         if not status_steps and stream_plan_diagnostic is None:
             yield agent_sse_event(
                 "error",
@@ -14925,16 +17913,25 @@ async def api_boi_agent_suggestions(req: BoiAgentSuggestionsRequest, employee_id
     try:
         suggestions = await asyncio.to_thread(call_boi_agent_suggestions_llm, req, employee_id, resolved_context)
     except BoiAgentSuggestionsUnavailable as exc:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "ok": False,
-                "status": "boi_agent_suggestions_unavailable",
-                "message": str(exc),
-                "model": BOI_AGENT_SUGGESTIONS_MODEL,
-                "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
-            },
-        ) from exc
+        fallback_suggestions = page_context_suggestions(req.current_url, resolved_context)
+        return {
+            "ok": True,
+            "employee_id": employee_id,
+            "current_url": req.current_url,
+            "page_context": resolved_context,
+            "suggestions": fallback_suggestions,
+            "suggestions_source": "page_context_after_llm_error" if fallback_suggestions else "unavailable",
+            "suggestions_state": "failed",
+            "component_errors": [
+                {
+                    "component": "followup_suggestions",
+                    "status": "boi_agent_suggestions_unavailable",
+                    "message": str(exc),
+                    "model": BOI_AGENT_SUGGESTIONS_MODEL,
+                    "required": BOI_AGENT_SUGGESTIONS_REQUIRED,
+                }
+            ],
+        }
     return {
         "ok": True,
         "employee_id": employee_id,
@@ -14942,6 +17939,7 @@ async def api_boi_agent_suggestions(req: BoiAgentSuggestionsRequest, employee_id
         "page_context": resolved_context,
         "suggestions": suggestions,
         "suggestions_source": source,
+        "suggestions_state": "ready",
     }
 
 
@@ -14998,6 +17996,13 @@ async def api_boi_agent_capabilities(employee_id: str = Depends(current_employee
             "timeout_seconds": BOI_AGENT_COMPOSER_TIMEOUT_SECONDS,
             "max_tokens": BOI_AGENT_COMPOSER_MAX_TOKENS,
             "max_attempts": BOI_AGENT_COMPOSER_MAX_ATTEMPTS,
+        },
+        "latency": {
+            "mode": BOI_AGENT_LATENCY_MODE,
+            "contract": "fast_first" if boi_agent_fast_first_enabled() else "blocking",
+            "status_blocking": BOI_AGENT_STATUS_BLOCKING,
+            "followups_blocking": BOI_AGENT_FOLLOWUPS_BLOCKING,
+            "composer_blocking": BOI_AGENT_COMPOSER_BLOCKING,
         },
         "chat_timeout_seconds": BOI_AGENT_CHAT_TIMEOUT_SECONDS,
         "suggestions": {
@@ -19155,9 +22160,44 @@ def materialize_inbox_review_report_boi(
     source_refs: list[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     report_hash = inbox_report_hash(report)
-    existing = find_existing_inbox_report_doc(employee_id, report_id, report_hash)
+    existing = find_inbox_report_doc(employee_id, report_id)
     if existing:
-        boi_id = str((existing.get("metadata") or {}).get("boi_id") or "")
+        source_path = Path(str(existing.get("path") or ""))
+        metadata = dict(existing.get("metadata") or {})
+        boi_id = str(metadata.get("boi_id") or "")
+        title = clean_user_visible_text(str(report.get("title") or metadata.get("title") or "Inbox 검토 보고서"), 120)
+        description = clean_user_visible_text(
+            str(((report.get("conclusion") or {}).get("summary") if isinstance(report.get("conclusion"), dict) else "") or title),
+            240,
+        )
+        metadata.update(
+            {
+                "title": title,
+                "description": description,
+                "source_refs": source_refs or metadata.get("source_refs") or [],
+                "status": "reviewed",
+                "updated_at": now_iso(),
+                "artifact_visibility": "background",
+                "lifecycle_state": "background",
+                "memory_candidate": False,
+                "stable_artifact_key": f"inbox-report:{report_id}:{INBOX_REPORT_CONTRACT_VERSION}",
+                "cleanup_policy": {
+                    "kind": "generated_report",
+                    "quarantine_days": PRIVATE_MEMORY_QUARANTINE_DAYS,
+                    "keep_latest_per_stable_key": True,
+                },
+                "inbox_report": {
+                    "report_id": report_id,
+                    "report_hash": report_hash,
+                    "contract_version": INBOX_REPORT_CONTRACT_VERSION,
+                    "generated_at": report.get("generated_at") or now_iso(),
+                    "quality": "verified",
+                },
+            }
+        )
+        if source_path.exists():
+            source_path.write_text(compose_markdown(metadata, inbox_report_visible_markdown(report)), encoding="utf-8")
+            invalidate_doc_caches()
         write_inbox_report_cache(
             employee_id,
             report_id,
@@ -19199,6 +22239,19 @@ def materialize_inbox_review_report_boi(
         "generated_at": report.get("generated_at") or now_iso(),
         "quality": "verified",
     }
+    metadata.update(
+        {
+            "artifact_visibility": "background",
+            "lifecycle_state": "background",
+            "memory_candidate": False,
+            "stable_artifact_key": f"inbox-report:{report_id}:{INBOX_REPORT_CONTRACT_VERSION}",
+            "cleanup_policy": {
+                "kind": "generated_report",
+                "quarantine_days": PRIVATE_MEMORY_QUARANTINE_DAYS,
+                "keep_latest_per_stable_key": True,
+            },
+        }
+    )
     doc = write_boi_to_subfolder(metadata, inbox_report_visible_markdown(report), "inbox-reports")
     boi_id = str((doc.get("metadata") or {}).get("boi_id") or "")
     write_inbox_report_cache(
@@ -20634,6 +23687,629 @@ async def api_agent_inbox_dismiss(
     )
     append_rbac_audit(employee_id, "agent_inbox_dismiss", {"task_id": task_id, "note": req.note})
     return {"ok": True, "item": row}
+
+
+@app.post("/api/agents/drafts")
+async def api_agent_draft_create(req: AgentDraftRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    draft_id = f"agent-draft-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    payload = write_runtime_record(
+        "drafts",
+        {
+            "id": draft_id,
+            "draft_id": draft_id,
+            "kind": "agent_draft",
+            "title": req.title.strip(),
+            "prompt": req.prompt,
+            "files": req.files,
+            "urls": req.urls,
+            "git_repos": req.git_repos,
+            "mcp_servers": req.mcp_servers,
+            "skills": req.skills,
+            "scope": req.scope,
+            "created_by": employee_id,
+            "created_at": now_iso(),
+            "status": "draft",
+            "runtime": {"model": OPENAI_API_MODEL, "sandbox_optional": True},
+        },
+    )
+    return {"ok": True, "draft": payload}
+
+
+@app.post("/api/agents/drafts/{draft_id}/test")
+async def api_agent_draft_test(draft_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    draft = read_runtime_record("drafts", draft_id)
+    if str(draft.get("created_by") or employee_id) != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    sdk_result: dict[str, Any] = {"state": "skipped", "reason": "BOI_AGENT_RUNTIME is not agents_sdk or OpenAI key is not configured"}
+    if BOI_AGENT_RUNTIME == "agents_sdk" and OPENAI_API_KEY:
+        sdk_result = await run_agents_sdk_text_agent(
+            name=f"BoI Agent Builder Test - {str(draft.get('title') or 'Draft')[:40]}",
+            instructions=(
+                "You are testing a BoI Wiki custom agent draft. "
+                "Check whether the prompt is actionable, identify one likely tool boundary, "
+                "and answer in Korean in two short bullets."
+            ),
+            input_text=json.dumps(
+                {
+                    "title": draft.get("title"),
+                    "prompt": draft.get("prompt"),
+                    "files": len(draft.get("files") or []),
+                    "urls": draft.get("urls") or [],
+                    "mcp_servers": draft.get("mcp_servers") or [],
+                    "skills": draft.get("skills") or [],
+                },
+                ensure_ascii=False,
+            ),
+            employee_id=employee_id,
+            timeout_seconds=min(BOI_AGENT_RUNTIME_TIMEOUT_SECONDS, 20),
+        )
+    result = {
+        "state": "ready",
+        "model": OPENAI_API_MODEL,
+        "runtime_backend": "agents_sdk" if sdk_result.get("ok") else "contract_only",
+        "agents_sdk": sdk_result,
+        "sandbox_supported": True,
+        "tool_boundary": {
+            "mcp_servers": draft.get("mcp_servers") or [],
+            "skills": draft.get("skills") or [],
+            "files": len(draft.get("files") or []),
+        },
+        "summary": "Agent draft is ready for interactive test. Tool execution requires explicit user action.",
+    }
+    draft["last_test"] = {**result, "tested_at": now_iso(), "tested_by": employee_id}
+    write_runtime_record("drafts", draft)
+    return {"ok": True, "draft_id": draft_id, "test": result}
+
+
+@app.post("/api/agents/drafts/{draft_id}/publish")
+async def api_agent_draft_publish(draft_id: str, req: AgentDraftPublishRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="agent publish requires user_confirmed=true")
+    draft = read_runtime_record("drafts", draft_id)
+    if str(draft.get("created_by") or employee_id) != employee_id and req.scope != "public":
+        require_employee_role(employee_id, "boi.editor")
+    draft["scope"] = req.scope
+    draft["status"] = "published"
+    draft["published_at"] = now_iso()
+    draft["published_by"] = employee_id
+    draft["publish_note"] = req.note
+    write_runtime_record("drafts", draft)
+    deployment = agent_deployment_from_draft(draft, scope=req.scope, published_by=employee_id, note=req.note)
+    write_runtime_record("deployments", deployment)
+    write_runtime_record("agent-links", agent_link_payload(str(deployment["agent_id"]), employee_id, active=True))
+    append_rbac_audit(employee_id, "agent_draft_publish", {"draft_id": draft_id, "scope": req.scope})
+    return {"ok": True, "draft": draft, "deployment": compact_agent_deployment(deployment, employee_id=employee_id)}
+
+
+@app.get("/api/agents")
+async def api_agents_catalog(
+    scope: Literal["mine", "available", "team", "public"] = "mine",
+    q: str = "",
+    limit: int = 50,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    items = search_agent_deployments(employee_id=employee_id, scope=scope, q=q, limit=limit)
+    return {"ok": True, "scope": scope, "q": q, "items": items, "total": len(items)}
+
+
+@app.post("/api/agents/{agent_id}/link-to-me")
+async def api_agent_link_to_me(agent_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    agent = require_agent_access(agent_id, employee_id)
+    write_runtime_record("agent-links", agent_link_payload(str(agent.get("agent_id") or agent_id), employee_id, active=True))
+    append_rbac_audit(employee_id, "agent_link_to_me", {"agent_id": agent_id})
+    return {"ok": True, "agent": compact_agent_deployment(agent, employee_id=employee_id)}
+
+
+@app.post("/api/agents/{agent_id}/unlink-from-me")
+async def api_agent_unlink_from_me(agent_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    agent = require_agent_access(agent_id, employee_id)
+    write_runtime_record("agent-links", agent_link_payload(str(agent.get("agent_id") or agent_id), employee_id, active=False))
+    append_rbac_audit(employee_id, "agent_unlink_from_me", {"agent_id": agent_id})
+    return {"ok": True, "agent_id": agent_id, "linked": False}
+
+
+@app.get("/api/agents/{agent_id}/conversations")
+async def api_agent_conversations(
+    agent_id: str,
+    include_archived: bool = False,
+    limit: int = 20,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    agent = require_agent_access(agent_id, employee_id)
+    conversations = agent_conversations_for_employee(agent_id, employee_id=employee_id, limit=limit, include_archived=include_archived)
+    return {"ok": True, "agent": compact_agent_deployment(agent, employee_id=employee_id), "items": conversations}
+
+
+@app.post("/api/agents/{agent_id}/conversations")
+async def api_agent_conversation_create(agent_id: str, req: AgentConversationCreateRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    agent = require_agent_access(agent_id, employee_id)
+    if not agent_linked_to_employee(agent, employee_id):
+        write_runtime_record("agent-links", agent_link_payload(agent_id, employee_id, active=True))
+    conversation_id = f"agent-conv-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    record = write_runtime_record(
+        "conversations",
+        {
+            "id": conversation_id,
+            "conversation_id": conversation_id,
+            "agent_id": agent_id,
+            "employee_id": employee_id,
+            "title": req.title.strip() or "새 Agent 대화",
+            "context": req.context,
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+            "archived": False,
+            "messages": [],
+        },
+    )
+    return {"ok": True, "conversation": record, "agent": compact_agent_deployment(agent, employee_id=employee_id)}
+
+
+@app.post("/api/agents/{agent_id}/conversations/{conversation_id}/messages")
+async def api_agent_conversation_message(agent_id: str, conversation_id: str, req: AgentConversationMessageRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    agent = require_agent_access(agent_id, employee_id)
+    return await append_agent_conversation_message(agent, conversation_id, req, employee_id)
+
+
+@app.post("/api/agents/{agent_id}/conversations/{conversation_id}/archive")
+async def api_agent_conversation_archive(agent_id: str, conversation_id: str, req: AgentConversationArchiveRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_agent_access(agent_id, employee_id)
+    record = read_runtime_record("conversations", conversation_id)
+    if str(record.get("agent_id") or "") != agent_id or str(record.get("employee_id") or "") != employee_id:
+        raise HTTPException(status_code=404, detail=f"Agent conversation not found: {conversation_id}")
+    record["archived"] = True
+    record["archived_at"] = now_iso()
+    record["archive_note"] = req.note
+    write_runtime_record("conversations", record)
+    return {"ok": True, "conversation_id": conversation_id, "archived": True}
+
+
+@app.post("/api/agents/{agent_id}/chat")
+async def api_custom_agent_chat(agent_id: str, req: BoiAgentChatRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    agent = require_agent_access(agent_id, employee_id)
+    context_conversation_id = req.page_context.get("conversation_id") if isinstance(req.page_context, dict) else ""
+    if context_conversation_id:
+        conversation_id = str(context_conversation_id)
+    else:
+        created = await api_agent_conversation_create(agent_id, AgentConversationCreateRequest(title=req.question[:40], context=req.page_context if isinstance(req.page_context, dict) else {}), employee_id)
+        conversation_id = str(created["conversation"]["conversation_id"])
+    result = await append_agent_conversation_message(
+        agent,
+        conversation_id,
+        AgentConversationMessageRequest(message=req.question, conversation=req.conversation, context=req.page_context if isinstance(req.page_context, dict) else {}),
+        employee_id,
+    )
+    return {
+        "ok": True,
+        "conversation_id": conversation_id,
+        "agent_id": agent_id,
+        "message": result["message"],
+        "ingest_url": app_url(f"/api/agents/conversations/{conversation_id}/ingest-to-boi", employee_id),
+    }
+
+
+@app.post("/api/agents/conversations/{conversation_id}/ingest-to-boi")
+async def api_agent_conversation_ingest(conversation_id: str, req: AgentConversationIngestRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="conversation ingest requires user_confirmed=true")
+    messages = req.messages
+    if not messages:
+        try:
+            messages = list(read_runtime_record("conversations", conversation_id).get("messages") or [])
+        except HTTPException:
+            messages = []
+    metadata = make_metadata(
+        boi_type="boi/agent-conversation",
+        title=req.title,
+        description="Operations Center Agent 대화에서 저장된 업무 BoI입니다.",
+        owner=employee_id,
+        visibility=req.visibility,
+        classification="internal",
+        source_refs=[{"type": "agent_conversation", "id": conversation_id}],
+        tags=["agent", "conversation", *req.tags],
+        status="draft",
+    )
+    doc = write_boi_to_subfolder(metadata, conversation_body_from_messages(messages), "agent-memory")
+    doc_boi_id = str((doc.get("metadata") or {}).get("boi_id") or doc.get("boi_id") or metadata.get("boi_id") or "")
+    return {"ok": True, "conversation_id": conversation_id, "doc": doc, "doc_url": app_url(f"/docs/{quote(doc_boi_id, safe='')}", employee_id)}
+
+
+@app.post("/api/agents/sandbox/jobs")
+async def api_agent_sandbox_job_create(req: SandboxJobRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    job_id = f"sandbox-job-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    state = "review_required" if req.user_confirmed else "pending_confirmation"
+    payload = write_runtime_record(
+        "sandbox-jobs",
+        {
+            "id": job_id,
+            "job_id": job_id,
+            "title": req.title,
+            "task": req.task,
+            "input_artifacts": req.input_artifacts,
+            "code": req.code,
+            "language": req.language,
+            "evidence_intent": req.evidence_intent,
+            "employee_id": employee_id,
+            "created_at": now_iso(),
+            "status": state,
+            "evidence_state": state,
+            "execution_mode": "pending" if req.user_confirmed and BOI_AGENT_SANDBOX_AUTORUN else "external_sandbox_required",
+            "runtime_backend": "agents_sdk" if BOI_AGENT_SANDBOX_ENABLED else "external",
+            "events": [
+                {
+                    "type": "boi.sandbox.job.created",
+                    "logged_at": now_iso(),
+                    "message": "Sandbox job created. Confirmed jobs run through the configured sandbox backend before evidence adoption.",
+                }
+            ],
+        },
+    )
+    if req.user_confirmed and BOI_AGENT_SANDBOX_AUTORUN:
+        payload = await execute_agents_sdk_sandbox_job(payload)
+        write_runtime_record("sandbox-jobs", payload)
+    return {"ok": True, "job": payload}
+
+
+@app.get("/api/agents/sandbox/jobs")
+async def api_agent_sandbox_jobs_list(employee_id: str = Depends(current_employee), limit: int = Query(20, ge=1, le=100)) -> dict[str, Any]:
+    items = [
+        compact_sandbox_job(job)
+        for job in list_runtime_records("sandbox-jobs", limit=limit * 2)
+        if str(job.get("employee_id") or employee_id) == employee_id
+    ][:limit]
+    summary = {
+        "total": len(items),
+        "completed": sum(1 for item in items if item.get("status") == "completed"),
+        "verified": sum(1 for item in items if item.get("evidence_state") == "verified_evidence"),
+        "failed": sum(1 for item in items if item.get("status") == "failed"),
+    }
+    return {"ok": True, "items": items, "summary": summary, "runtime": agents_sdk_status_payload()}
+
+
+@app.get("/api/agents/sandbox/jobs/{job_id}")
+async def api_agent_sandbox_job_get(job_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    job = read_runtime_record("sandbox-jobs", job_id)
+    if str(job.get("employee_id") or employee_id) != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    return {"ok": True, "job": job}
+
+
+@app.get("/api/agents/sandbox/jobs/{job_id}/events")
+async def api_agent_sandbox_job_events(job_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    job = read_runtime_record("sandbox-jobs", job_id)
+    if str(job.get("employee_id") or employee_id) != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    return {"ok": True, "job_id": job_id, "items": job.get("events") or []}
+
+
+@app.get("/api/agents/sandbox/jobs/{job_id}/artifacts/{artifact_path:path}")
+async def api_agent_sandbox_job_artifact(job_id: str, artifact_path: str, employee_id: str = Depends(current_employee)) -> FileResponse:
+    job = read_runtime_record("sandbox-jobs", job_id)
+    if str(job.get("employee_id") or employee_id) != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    root = sandbox_artifact_root(job_id).resolve()
+    target = (root / artifact_path).resolve()
+    if root not in target.parents and target != root:
+        raise HTTPException(status_code=400, detail="invalid artifact path")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="sandbox artifact not found")
+    return FileResponse(target)
+
+
+@app.post("/api/agents/sandbox/jobs/{job_id}/adopt-evidence")
+async def api_agent_sandbox_job_adopt_evidence(job_id: str, req: SandboxAdoptEvidenceRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="adopt evidence requires user_confirmed=true")
+    job = read_runtime_record("sandbox-jobs", job_id)
+    if str(job.get("employee_id") or employee_id) != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    job["evidence_state"] = req.evidence_state
+    job["validation_note"] = req.validation_note
+    job["source_refs"] = req.source_refs
+    job.setdefault("events", []).append({"type": "boi.sandbox.evidence.adopted", "logged_at": now_iso(), "state": req.evidence_state})
+    write_runtime_record("sandbox-jobs", job)
+    return {"ok": True, "job": job}
+
+
+def reporting_default_analysis_code(question: str) -> str:
+    safe_question = question.replace('"""', "'''")[:800]
+    tiny_png_base64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNg+M8AAAIB"
+        "AQEYnY2wAAAAAElFTkSuQmCC"
+    )
+    return f'''from pathlib import Path
+import base64
+
+question = """{safe_question}"""
+Path("analysis_table.csv").write_text("metric,value\\nrows_checked,2\\nexception_count,0\\n", encoding="utf-8")
+Path("analysis_chart.png").write_bytes(base64.b64decode("{tiny_png_base64}"))
+Path("analysis_summary.md").write_text(
+    "# 분석 요약\\n\\n"
+    + "요청: " + question + "\\n\\n"
+    + "- 핵심 지표 표와 chart artifact를 생성했습니다.\\n"
+    + "- 실제 업무 판단 전 원본 출처와 validation result를 확인하세요.\\n",
+    encoding="utf-8",
+)
+print("boi-reporting-analysis-ok")
+'''
+
+
+def reporting_artifact_kind(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
+        return "chart"
+    if suffix in {".csv", ".tsv", ".xlsx", ".json", ".jsonl"}:
+        return "table"
+    if suffix in {".md", ".html", ".pdf"}:
+        return "report"
+    return "artifact"
+
+
+def reporting_analysis_evidence_pack(job: dict[str, Any], *, employee_id: str) -> dict[str, Any]:
+    artifacts: list[dict[str, Any]] = []
+    for item in list(job.get("artifacts") or [])[:20]:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path") or "")
+        artifacts.append(
+            {
+                "path": path,
+                "kind": reporting_artifact_kind(path),
+                "url": item.get("artifact_url") or "",
+                "bytes": item.get("bytes"),
+                "preview": str(item.get("preview") or "")[:700],
+            }
+        )
+    validation = job.get("validation_result") if isinstance(job.get("validation_result"), dict) else {}
+    state = str(job.get("evidence_state") or "review_required")
+    return {
+        "kind": "AnalysisEvidencePack",
+        "job_id": str(job.get("job_id") or job.get("id") or ""),
+        "title": str(job.get("title") or "분석 근거"),
+        "question": str(job.get("question") or job.get("task") or ""),
+        "evidence_state": state,
+        "status": str(job.get("status") or ""),
+        "source_refs": list(job.get("source_refs") or [])[:12],
+        "artifacts": artifacts,
+        "chart_artifacts": [artifact for artifact in artifacts if artifact.get("kind") == "chart"],
+        "table_artifacts": [artifact for artifact in artifacts if artifact.get("kind") == "table"],
+        "data_quality_notes": [
+            "원본 데이터는 BoI 본문에 복사하지 않고 artifact/Data Lake 링크로 참조합니다.",
+            "검증 전 결과는 review_required 상태이며, 사용자가 채택해야 verified_evidence가 됩니다.",
+        ],
+        "validation_result": validation,
+        "runtime": {
+            "backend": job.get("runtime_backend") or job.get("execution_mode") or "sandbox",
+            "model": OPENAI_API_MODEL,
+            "employee_id": employee_id,
+        },
+    }
+
+
+def reporting_brief_from_plan(req: ReportingAnalysisPlanRequest) -> dict[str, Any]:
+    question = clean_user_visible_text(req.question, 260)
+    return {
+        "kind": "ReportBrief",
+        "question": question,
+        "audience": "BoI Operations Center 사용자",
+        "decision_need": "업무 판단에 필요한 근거, 시각화, 한계, 권장 조치를 확인합니다.",
+        "target_refs": list(req.target_refs or [])[:12],
+        "required_evidence": ["원본 출처", "계산 코드 또는 쿼리", "표/차트 artifact", "validation result"],
+        "visualization_candidates": ["trend", "comparison", "table"],
+    }
+
+
+def reporting_report_boi_markdown(report_boi: dict[str, Any]) -> str:
+    lines: list[str] = ["# 결론", "", str(report_boi.get("conclusion") or "분석 결과를 확인하세요."), ""]
+    lines.extend(["# 업무 맥락", "", str(report_boi.get("business_context") or "선택한 BoI/SOP/Inbox 항목을 기준으로 작성된 보고서입니다."), ""])
+    lines.extend(["# 핵심 시각화", ""])
+    visuals = list(report_boi.get("visuals") or [])
+    if visuals:
+        for visual in visuals[:8]:
+            label = clean_user_visible_text(str(visual.get("label") or "시각화 artifact"), 100)
+            url = str(visual.get("url") or "")
+            note = clean_user_visible_text(str(visual.get("decision_help") or "판단 근거 확인을 돕습니다."), 180)
+            if url:
+                lines.append(f"- [{label}]({url}) - {note}")
+            else:
+                lines.append(f"- {label} - {note}")
+    else:
+        lines.append("- artifact 생성 대기 - 분석 job 결과가 준비되면 chart/table preview를 연결합니다.")
+    lines.extend(["", "# 판단 근거", ""])
+    for item in list(report_boi.get("evidence") or [])[:10]:
+        lines.append(f"- {clean_user_visible_text(str(item), 220)}")
+    lines.extend(["", "# 한계", ""])
+    for item in list(report_boi.get("limitations") or [])[:6]:
+        lines.append(f"- {clean_user_visible_text(str(item), 220)}")
+    lines.extend(["", "# 권장 조치", "", str(report_boi.get("recommended_action") or "보고서 근거를 확인한 뒤 승인, 반려, 보류 또는 추가 근거 요청을 선택하세요."), ""])
+    lines.extend(["# 기술 세부정보", "", "원본 데이터는 본문에 복사하지 않고 artifact 링크와 실행 기록으로 추적합니다."])
+    return "\n".join(lines).strip() + "\n"
+
+
+def reporting_report_boi_from_draft(req: ReportingReportDraftRequest, *, employee_id: str) -> dict[str, Any]:
+    evidence_pack: dict[str, Any] = {}
+    if req.analysis_job_id:
+        try:
+            job = read_runtime_record("sandbox-jobs", req.analysis_job_id)
+            if str(job.get("employee_id") or employee_id) == employee_id:
+                evidence_pack = reporting_analysis_evidence_pack(job, employee_id=employee_id)
+        except HTTPException:
+            evidence_pack = {}
+    artifacts = list(evidence_pack.get("artifacts") or [])
+    visuals = [
+        {
+            "label": artifact.get("path") or "chart artifact",
+            "kind": artifact.get("kind"),
+            "url": artifact.get("url") or "",
+            "decision_help": "수치의 분포, 추세 또는 비교를 빠르게 확인해 판단을 돕습니다.",
+        }
+        for artifact in artifacts
+        if artifact.get("kind") in {"chart", "table", "report"}
+    ][:8]
+    evidence_labels = [
+        clean_user_visible_text(str(ref.get("label") or ref.get("type") or "분석 근거"), 160)
+        for ref in list(req.evidence_refs or [])[:10]
+        if isinstance(ref, dict)
+    ]
+    if evidence_pack:
+        evidence_labels.append(f"Sandbox 분석 job {evidence_pack.get('status') or '상태 확인'} / {evidence_pack.get('evidence_state') or 'review_required'}")
+    report_boi = {
+        "kind": "ReportBoI",
+        "title": clean_user_visible_text(req.title, 120),
+        "brief": req.report_brief,
+        "conclusion": "선택한 근거와 artifact를 기준으로 판단 가능한 보고서 초안을 생성했습니다.",
+        "business_context": clean_user_visible_text(str((req.report_brief or {}).get("question") or req.title), 300),
+        "visuals": visuals or [{"label": "artifact preview", "kind": "artifact", "url": "", "decision_help": "분석 artifact가 준비되면 보고서에 연결합니다."}],
+        "evidence": evidence_labels or ["분석 근거 artifact 확인 필요"],
+        "limitations": [
+            "검증되지 않은 raw data 값은 본문에 복사하지 않았습니다.",
+            "사용자가 evidence를 채택하기 전에는 최종 승인 근거로 사용하지 않습니다.",
+        ],
+        "recommended_action": "artifact와 validation result를 확인한 뒤 BoI Inbox 또는 Operations Center에서 다음 조치를 선택하세요.",
+        "analysis_evidence_pack": evidence_pack,
+    }
+    visible = reporting_report_boi_markdown(report_boi)
+    forbidden = ["source_id", "WorkflowDefinition", "schema", "trace"]
+    if any(term in visible for term in forbidden):
+        raise HTTPException(status_code=500, detail="report BoI visible text contains technical terms")
+    return report_boi
+
+
+@app.post("/api/reporting/analysis-plan")
+async def api_reporting_analysis_plan(req: ReportingAnalysisPlanRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    brief = reporting_brief_from_plan(req)
+    return {
+        "ok": True,
+        "plan": {
+            "kind": "ReportingAnalysisPlan",
+            "recommended_agent_id": "system-analysis-report-agent",
+            "specialist_agents": ["system-data-analysis-agent", "system-report-agent"],
+            "report_brief": brief,
+            "analysis_steps": ["근거 범위 확인", "Data Lake/첨부 파일 plan", "Sandbox 분석", "표/차트 artifact 생성", "보고서 QA"],
+            "visualization_candidates": brief["visualization_candidates"],
+            "sandbox_recommended": True,
+            "data_lake": data_lake_status_payload(),
+            "confirmation_required": True,
+        },
+    }
+
+
+@app.post("/api/reporting/analysis-jobs")
+async def api_reporting_analysis_job_create(req: ReportingAnalysisJobRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    sandbox_req = SandboxJobRequest(
+        title=req.title,
+        task=req.question,
+        input_artifacts=req.input_artifacts,
+        code=req.code or reporting_default_analysis_code(req.question),
+        language=req.language,
+        evidence_intent="reporting_analysis",
+        user_confirmed=req.user_confirmed,
+    )
+    result = await api_agent_sandbox_job_create(sandbox_req, employee_id)
+    job = result["job"]
+    job["question"] = req.question
+    job["source_refs"] = req.source_refs
+    write_runtime_record("sandbox-jobs", job)
+    return {"ok": True, "job": job, "analysis_evidence_pack": reporting_analysis_evidence_pack(job, employee_id=employee_id)}
+
+
+@app.get("/api/reporting/analysis-jobs/{job_id}")
+async def api_reporting_analysis_job_get(job_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    job = read_runtime_record("sandbox-jobs", job_id)
+    if str(job.get("employee_id") or employee_id) != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    return {"ok": True, "job": job, "analysis_evidence_pack": reporting_analysis_evidence_pack(job, employee_id=employee_id)}
+
+
+@app.post("/api/reporting/reports/drafts")
+async def api_reporting_report_draft_create(req: ReportingReportDraftRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="report draft creation requires user_confirmed=true")
+    draft_id = f"report-draft-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    report_boi = reporting_report_boi_from_draft(req, employee_id=employee_id)
+    payload = write_runtime_record(
+        "report-drafts",
+        {
+            "id": draft_id,
+            "draft_id": draft_id,
+            "kind": "report_draft",
+            "title": clean_user_visible_text(req.title, 120),
+            "created_by": employee_id,
+            "created_at": now_iso(),
+            "status": "draft",
+            "report_brief": req.report_brief,
+            "evidence_refs": req.evidence_refs,
+            "analysis_job_id": req.analysis_job_id,
+            "source_refs": req.source_refs,
+            "report_boi": report_boi,
+            "runtime": {"model": OPENAI_API_MODEL, "backend": BOI_AGENT_RUNTIME},
+        },
+    )
+    return {"ok": True, "draft": payload}
+
+
+@app.post("/api/reporting/reports/drafts/{draft_id}/publish")
+async def api_reporting_report_publish(draft_id: str, req: ReportingReportPublishRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="report publish requires user_confirmed=true")
+    if req.visibility in {"team", "public"}:
+        require_employee_role(employee_id, "boi.promoter")
+    draft = read_runtime_record("report-drafts", draft_id)
+    if str(draft.get("created_by") or "") != employee_id:
+        require_employee_role(employee_id, "boi.admin")
+    report_boi = draft.get("report_boi") if isinstance(draft.get("report_boi"), dict) else {}
+    metadata = make_metadata(
+        boi_type="boi/analysis-report",
+        title=str(report_boi.get("title") or draft.get("title") or "분석 보고서"),
+        description="분석 보고서 Agent가 생성한 시각화 포함 Report BoI입니다.",
+        owner=employee_id,
+        visibility=req.visibility,
+        classification="internal",
+        source_refs=[{"type": "analysis_report", "ref": draft_id, "note": "분석 보고서 Agent draft"}],
+        tags=["BoI", "AnalysisReport", "Agent"],
+        status="reviewed",
+    )
+    metadata["analysis_report"] = {
+        "draft_id": draft_id,
+        "analysis_job_id": str(draft.get("analysis_job_id") or ""),
+        "contract_version": "analysis-report.v1",
+        "quality": "verified",
+    }
+    doc = write_boi_to_subfolder(metadata, reporting_report_boi_markdown(report_boi), "analysis-reports")
+    boi_id = str((doc.get("metadata") or {}).get("boi_id") or "")
+    draft["status"] = "published"
+    draft["published_at"] = now_iso()
+    draft["published_by"] = employee_id
+    draft["visibility"] = req.visibility
+    draft["publish_note"] = req.note
+    draft["report_boi_ref"] = boi_id
+    draft["report_boi_url"] = doc_url_for_ref(boi_id, employee_id) if boi_id else ""
+    write_runtime_record("report-drafts", draft)
+    return {
+        "ok": True,
+        "draft_id": draft_id,
+        "report_state": "published",
+        "doc": doc,
+        "doc_url": draft["report_boi_url"],
+        "report_boi_ref": boi_id,
+    }
+
+
+@app.post("/api/inbox/reports/{report_id}/attach-evidence")
+async def api_inbox_report_attach_evidence(report_id: str, req: InboxReportAttachEvidenceRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="attach evidence requires user_confirmed=true")
+    payload = write_runtime_record(
+        "report-evidence",
+        {
+            "id": f"report-evidence-{safe_filename(report_id)}-{uuid.uuid4().hex[:6]}",
+            "report_id": report_id,
+            "employee_id": employee_id,
+            "evidence_refs": req.evidence_refs,
+            "note": req.note,
+            "attached_at": now_iso(),
+        },
+    )
+    return {"ok": True, "attachment": payload}
 
 
 @app.post("/api/boi")
@@ -22879,8 +26555,6 @@ async def agent_builder_page(
     employee_id: str = Depends(current_employee),
 ) -> Any:
     langflow_url = langflow_public_base_url(request)
-    if langflow_url:
-        return RedirectResponse(langflow_url, status_code=303)
     return templates.TemplateResponse(
         "agent_builder.html",
         {
@@ -22891,14 +26565,23 @@ async def agent_builder_page(
                 employee_id,
                 active_nav="advanced",
                 title="Agent Builder",
-                description="BoI Agent가 사용할 내부 실행 정의, Action, Event, MCP/API 연결 상태를 한 곳에서 확인합니다.",
+                description="프롬프트, 파일, URL, MCP, Skill로 업무 Agent를 만들고 GPT-5.5/Agents SDK/Sandbox로 바로 검증합니다.",
             ),
+            "agent_draft_url": app_url("/api/agents/drafts", employee_id),
+            "sandbox_job_url": app_url("/api/agents/sandbox/jobs", employee_id),
+            "openai_health_url": app_url("/api/runtime/openai-health", employee_id),
+            "ops_url": app_url("/ops", employee_id) if BOI_OPS_CENTER_ENABLED else "",
+            "ops_center_enabled": BOI_OPS_CENTER_ENABLED,
             "workflow_definition_url": app_url("/workflows/definitions", employee_id),
             "action_url": app_url("/actions", employee_id),
             "event_catalog_url": app_url("/event-types", employee_id),
             "api_docs_url": "/docs",
+            "langflow_url": langflow_url or "",
             "mcp_url": mcp_public_base_url(request) or "",
             "kafka_url": kafka_ui_public_base_url(request) or "",
+            "agent_runtime": BOI_AGENT_RUNTIME,
+            "agent_model": OPENAI_API_MODEL,
+            "sandbox_enabled": BOI_AGENT_SANDBOX_ENABLED,
         },
     )
 

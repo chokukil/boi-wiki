@@ -176,6 +176,7 @@ services:
       BOI_CONTENT_ROOT: ${BOI_CONTENT_ROOT:-/data/boi}
       BOI_CONTENT_SAFE_DIRECTORY: ${BOI_CONTENT_SAFE_DIRECTORY:-}
       BOI_RUNTIME_ROOT: ${BOI_RUNTIME_ROOT:-/data}
+      PRIVATE_MEMORY_TRASH_ROOT: ${PRIVATE_MEMORY_TRASH_ROOT:-/data/private-trash}
       BOI_AUTO_COMMIT: ${BOI_AUTO_COMMIT:-true}
       BOI_AUTO_PUSH: ${BOI_AUTO_PUSH:-false}
       BOI_CONTENT_GIT_REMOTE: ${BOI_CONTENT_GIT_REMOTE:-origin}
@@ -227,6 +228,16 @@ services:
       BOI_AUDIT_TOPIC: ${BOI_AUDIT_TOPIC:-boi.audit}
       BOI_DLQ_TOPIC: ${BOI_DLQ_TOPIC:-boi.dead-letter}
       DEMO_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
+      OPENAI_API_URL: ${OPENAI_API_URL:-https://api.openai.com/v1}
+      OPENAI_API_MODEL: ${OPENAI_API_MODEL:-gpt-5.5}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      BOI_AGENT_RUNTIME: ${BOI_AGENT_RUNTIME:-agents_sdk}
+      BOI_AGENT_RUNTIME_TIMEOUT_SECONDS: ${BOI_AGENT_RUNTIME_TIMEOUT_SECONDS:-30}
+      BOI_AGENT_SANDBOX_ENABLED: ${BOI_AGENT_SANDBOX_ENABLED:-true}
+      BOI_AGENT_SANDBOX_BACKEND: ${BOI_AGENT_SANDBOX_BACKEND:-unix_local}
+      BOI_AGENT_SANDBOX_AUTORUN: ${BOI_AGENT_SANDBOX_AUTORUN:-true}
+      BOI_AGENT_SANDBOX_TIMEOUT_SECONDS: ${BOI_AGENT_SANDBOX_TIMEOUT_SECONDS:-20}
+      BOI_AGENT_SANDBOX_SUMMARY_ENABLED: ${BOI_AGENT_SANDBOX_SUMMARY_ENABLED:-true}
       BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}
       BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
       BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
@@ -286,6 +297,7 @@ services:
       LANGFLOW_AGENT_TIMEOUT_SECONDS: ${LANGFLOW_AGENT_TIMEOUT_SECONDS:-180}
     volumes:
       - ${BOI_CONTENT_HOST_PATH:-./data/boi}:${BOI_CONTENT_MOUNT_PATH:-/data/boi}
+      - ${PRIVATE_MEMORY_TRASH_HOST_PATH:-./data/private-trash}:${PRIVATE_MEMORY_TRASH_ROOT:-/data/private-trash}
       - ${EVENTS_HOST_PATH:-./data/events}:${EVENTS_ROOT:-/data/events}
       - ./data/event_catalog:/data/event_catalog:ro
       - ./data/action_catalog:/data/action_catalog:ro

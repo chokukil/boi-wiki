@@ -113,6 +113,101 @@
       }
     },
     {
+      "id": "sop-catalog-all-scope",
+      "name": "SOP list all should use catalog_all scope",
+      "question": "SOP 리스트 전부 보여줘",
+      "current_url": "/docs/boi:public:sop:direct-development-reporting?employee_id=100001",
+      "page_title": "직개발 결과 확인 및 Reporting SOP",
+      "expect": {
+        "route": "fast",
+        "intent": "search",
+        "response_profile": "related_items",
+        "semantic_target_kind": "related_sop",
+        "related_scope": "catalog_all",
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true,
+        "require_answer_terms": ["SOP 카탈로그 전체", "직개발 결과 확인"]
+      }
+    },
+    {
+      "id": "sop-catalog-all-continuation",
+      "name": "Follow-up all list should keep previous SOP catalog scope",
+      "question": "전체 리스트 보여줘",
+      "current_url": "/docs/boi:public:sop:direct-development-reporting?employee_id=100001",
+      "page_title": "직개발 결과 확인 및 Reporting SOP",
+      "conversation": [
+        {
+          "role": "user",
+          "content": "SOP 리스트 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "SOP 카탈로그 전체에서 접근 가능한 SOP를 찾았습니다.",
+          "semantic_route": {
+            "target_kind": "related_sop",
+            "scope": "catalog_all"
+          },
+          "related_item_context": {
+            "target_kind": "related_sop",
+            "scope": "catalog_all",
+            "items": []
+          }
+        }
+      ],
+      "expect": {
+        "route": "fast",
+        "intent": "search",
+        "response_profile": "related_items",
+        "semantic_target_kind": "related_sop",
+        "related_scope": "catalog_all",
+        "expect_continuation_of": "related_sop",
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true,
+        "require_answer_terms": ["SOP 카탈로그 전체"]
+      }
+    },
+    {
+      "id": "sop-to-action-turn-switch",
+      "name": "Follow-up action request should switch away from SOP scope",
+      "question": "그럼 action은?",
+      "current_url": "/docs/boi:public:sop:direct-development-reporting?employee_id=100001",
+      "page_title": "직개발 결과 확인 및 Reporting SOP",
+      "conversation": [
+        {
+          "role": "user",
+          "content": "SOP 리스트 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "SOP 카탈로그 전체에서 접근 가능한 SOP를 찾았습니다.",
+          "semantic_route": {
+            "target_kind": "related_sop",
+            "scope": "catalog_all"
+          },
+          "related_item_context": {
+            "target_kind": "related_sop",
+            "scope": "catalog_all",
+            "items": []
+          }
+        }
+      ],
+      "expect": {
+        "route": "fast",
+        "intent": "search",
+        "response_profile": "related_items",
+        "semantic_target_kind": "related_action",
+        "min_followups": 1,
+        "require_evidence": true,
+        "require_affordances": true,
+        "require_links_or_citations": true,
+        "forbid_answer_terms": ["SOP 카탈로그 전체에서 접근 가능한 SOP"]
+      }
+    },
+    {
       "id": "unknown-workflow-definition",
       "name": "Unknown workflow definition should not hallucinate execution",
       "question": "EUV 노광 Overlay drift 보정 이벤트가 발생하면 자동으로 처리해줘.",
