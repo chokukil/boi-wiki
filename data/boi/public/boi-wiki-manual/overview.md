@@ -3,9 +3,9 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: BoI Wiki Manual Overview
-description: BoI Wiki, Workflow/Task Builder, MCP, Data Lake artifact, validated editing, OKF media 운영 가이드 진입점
-tags: [Manual, BoIWiki, Workflow, Task, MCP, DataLake, OKF]
-timestamp: 2026-06-18T15:00:00+09:00
+description: BoI Wiki, Workflow/Task Builder, MCP, Harness acceptance, Source Wiki, Local Second Brain, Data Lake artifact, validated editing, OKF media 운영 가이드 진입점
+tags: [Manual, BoIWiki, Workflow, Task, MCP, Harness, SourceWiki, LocalSecondBrain, DataLake, OKF]
+timestamp: 2026-07-05T22:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:overview
 visibility: public
 classification: internal
@@ -29,6 +29,7 @@ BoI Wiki는 OKF 기반 LLM Wiki와 실행 가능한 workflow runtime을 함께 �
 
 # Core Manuals
 
+- [BoI Wiki 종합 가이드](/public/boi-wiki-manual/guide/final-operator-guide.md)
 - [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)
 - [Multi-action connector guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md)
 - [Langflow connected flow guide](/public/boi-wiki-manual/langflow/connected-flow-guide.md)
@@ -57,6 +58,8 @@ BoI Wiki는 OKF 기반 LLM Wiki와 실행 가능한 workflow runtime을 함께 �
 5. Workflow는 전체 Process, Task는 판단/근거/실행/결과/TAT를 가진 작은 업무 단위다.
 6. BoI Agent, MCP, Search, Inbox, Action 실행은 모두 BoI Profile ACL과 팀 RBAC guardrail을 통과한다.
 7. Data Lake는 MinIO artifact store이며 OKF에는 원본 파일 대신 URL, profile, sample, checksum, validation metadata만 남긴다.
+8. Harness acceptance는 Observation, Context, Control, Action, State, Verification을 API/MCP/test에서 함께 확인한다.
+9. Source Wiki와 Local Second Brain은 선택형 overlay다. repo/source wiki refresh, capture inbox, memory review, promotion preflight는 core를 무겁게 만들지 않고 agent가 반복 운영을 돕는 경량 흐름으로 둔다.
 
 # Local Private
 

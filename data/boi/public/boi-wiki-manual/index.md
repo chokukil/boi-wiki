@@ -1,5 +1,6 @@
 # BoI Wiki Manual
 
+* [BoI Wiki 종합 가이드](guide/final-operator-guide.md)
 * [Overview](overview.md)
 * [업무 BoI-first 개념 모델](concepts/work-boi-first-model.md)
 * [Workflow/Task Builder Step-by-step](sop-workflows/workflow-task-builder-step-by-step.md)

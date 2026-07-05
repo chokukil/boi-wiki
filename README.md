@@ -9,6 +9,7 @@ BoI Wiki는 OKF 기반의 업무 BoI 지식/런타임 시스템입니다. 공식
 - API, Webhook, MCP, Langflow, Manual, Event Broker, BoI Writer action을 실행하는 Action Gateway
 - Event Contract, WorkflowDefinition, Action/Event Skill registry
 - agent가 사용할 BoI Wiki MCP 서버
+- Harness acceptance, Source Wiki, Local Second Brain, promotion preview API/MCP
 - Langflow reference flow와 BoI custom component 연계
 - OKF Markdown 원본 문서, action catalog, event catalog, runtime smoke test
 
@@ -19,6 +20,8 @@ BoI Wiki는 OKF 기반의 업무 BoI 지식/런타임 시스템입니다. 공식
 ```
 
 `boi-wiki-local`은 Web 런타임이 아닙니다. 개인 PC에 두는 OKF Markdown workspace와 Codex/Claude/Cursor 하네스 파일 묶음입니다.
+
+최종 운영 허브는 [BoI Wiki 종합 가이드](data/boi/public/boi-wiki-manual/guide/final-operator-guide.md)입니다.
 
 ## 목적
 
@@ -62,6 +65,7 @@ node scripts/check_agent_builder_ui.mjs --url http://localhost:28000/agents/buil
 python scripts/check_boi_operations_center.py --base-url http://localhost:28000 --employee-id 100001 --summary
 python scripts/check_boi_agent_scenarios.py --base-url http://localhost:28000 --strict --summary
 node scripts/check_pet_agent_ui.mjs --scenario-file tests/fixtures/boi_agent_ui_scenarios.yaml --strict
+curl -s http://localhost:28000/api/harness/acceptance
 ```
 
 기본 Web 포트는 `28000`입니다. 다른 포트를 써야 하면 `.env` 또는 실행 환경에 `BOI_API_PORT=xxxxx`, `BOI_EXTERNAL_URL=http://localhost:xxxxx`를 지정합니다. `scripts/start_local_full.sh`는 `.env.local-full.example`을 기본값으로 읽고, `.env`가 있으면 그 값을 오버레이합니다. 같은 Compose 프로젝트가 이미 떠 있으면 먼저 내리고 다시 올립니다. 28000을 다른 Docker 컨테이너가 점유 중이면 기본적으로 중단하고 알려주며, 로컬 검증용으로 강제 정리가 필요할 때만 `BOI_FORCE_PORT_RECLAIM=1 ./scripts/start_local_full.sh`를 사용합니다.

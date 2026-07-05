@@ -16,6 +16,10 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
    - Use `boi_agent_chat` when the user asks a page-aware question or wants recommendations from current context.
    - Use `boi_search` only when the task needs a BoI document list.
    - Use `boi_inbox` for "what do I need to act on" questions. Use `agent_inbox` only as a deprecated compatibility alias.
+   - Use `harness_acceptance` when checking release readiness or final scenario consistency.
+   - Use `source_wiki_plan` before creating source-grounded repo documentation. Use `source_wiki_job_start` only with explicit confirmation.
+   - Use `promotion_preview` before `promotion_submit`.
+   - Use `agent_memory_review` for Second Brain memory, cleanup, and promotion candidates.
    - Use `private_memory_cleanup_preview` before proposing cleanup of generated private BoI artifacts. Use cleanup run/restore only with explicit confirmation.
    - Use `data_lake_status` before any Data Lake query. Data Lake is optional MinIO-backed artifact storage; BoI Wiki core must work without MinIO. PostgreSQL is only a Legacy DB Demo adapter.
    - Use `data_lake_artifact_upload`, `data_lake_artifact_profile`, `data_lake_artifact_list`, and `data_lake_artifact_attach` for user files or large raw evidence. Never paste large raw files into prompts or BoI body.
@@ -33,6 +37,7 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 - OKF Markdown documents and action catalog are source of truth.
 - Web and MCP source/body edits use preview, validation, apply, and auto-commit. MCP apply tools require explicit `user_confirmed: true`. Team/Public promotion is separate: after user preview approval, call the validated promotion publish path and treat HOTL as post-publication oversight.
 - Treat preview as non-mutating. `boi_inbox_decision_preview`, plan, validation, and dry-run checks can run before confirmation; submit/apply/publish/workflow start/real action invoke/evidence adoption require `user_confirmed=true`.
+- `promotion_preview`, `source_wiki_plan`, `source_wiki_refresh_preview`, and `agent_memory_review` are non-mutating. `promotion_submit`, `source_wiki_job_start`, source/body apply, workflow start, real action invoke, and evidence adoption require `user_confirmed=true`.
 - For high-risk Action Gateway calls, `approved_by` is the approving person or system. It is separate from `user_confirmed` and may still be required after user confirmation.
 - Native BoI Agent in `boi-api` is the production Agent backend. Langflow is one connector/debug backend, not the default Agent engine.
 - Langflow is one connector kind among `api`, `webhook`, `mcp`, `manual`, `event_broker`, and `boi_writer`; do not model BoI Wiki as Langflow-only.
@@ -45,6 +50,8 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 - BoI Inbox is a dedicated top-level UI. Pet Agent must guide users to `/inbox` or a verified report BoI link instead of rendering Inbox task cards itself.
 - Data Lake artifacts use MinIO through BoI API/MCP. Structured SQL-style evidence is a separate Legacy DB Demo path; never ask users for direct DB credentials, never connect to PostgreSQL directly, and never connect to MinIO outside BoI API/MCP.
 - Data Lake artifacts are the default file attachment contract when Data Lake is enabled. Store raw files as private artifacts, then use stable download URLs, bounded profiles, samples, charts, validation metadata, and attach records in runtime stages, Inbox decisions, reports, and Agent conversations. Team/Public sharing requires explicit confirmation.
+- Source Wiki is an optional overlay. Keep BoI core DB-less and OKF/Git-backed; use source inventory, selected/skipped files, commit SHA, citations, validation report, and last-good manifest instead of vendoring OpenWiki into core.
+- Local Second Brain is local-first. In `boi-wiki-local`, use capture inbox, review, cleanup preview, and promotion preflight helpers when available, but never send raw Local Private content remotely without explicit approval.
 - SOP Builder is a design surface, not a raw file upload surface. While authoring `/sops/new`, define required evidence types and where those files will be attached during execution. Actual human-uploaded Raw Data, PDF, PPT, Excel, logs, screenshots, and result files are attached from SOP Run stage panels, Manual Action completion, Inbox decisions, Report BoI review, or Agent conversations.
 - Human-uploaded files are first-class evidence. When a user attaches a file while completing a manual action, making an Inbox decision, reviewing a report, working in a SOP Run stage, or chatting with an Agent, keep `uploaded_by_employee_id`, `attached_from_surface`, `target_type`, `target_id`, `attachment_role`, `human_note`, and `validation_state`. Do not ask for a separate "use as evidence" checkbox; infer the target from the current work context and let the user remove or retarget the attachment.
 
@@ -70,6 +77,10 @@ For each action, create or update the public action-spec BoI document and the ca
 - Use `/api/search/ontology` or MCP `ontology_search` for grouped knowledge graph exploration.
 - Use `/api/agents/boi-wiki/chat` or MCP `boi_agent_chat` for page-aware answers. Expect `used_backend=native_langgraph` unless the user explicitly asks to test Langflow legacy/debug mode.
 - Use `/api/inbox` or MCP `boi_inbox` for verified decision reports. Use `boi_inbox_report_get` before recommending approval/rejection.
+- Use `/api/harness/acceptance` or MCP `harness_acceptance` before final release/readiness claims.
+- Use `/api/source-wikis/*` or MCP `source_wiki_*` for source-grounded repo wiki planning/generation/export.
+- Use `/api/promotions/preview` or MCP `promotion_preview` before calling `promotion_submit`.
+- Use `/api/agents/boi-wiki/memory/review` or MCP `agent_memory_review` before suggesting memory cleanup or promotion candidates.
 - Use `data_lake_query_plan` and `data_lake_query_preview` when structured evidence may exist. Only call `data_lake_query_execute` with explicit user confirmation, and only when a source/adapter is available.
 - Use `data_lake_artifact_upload` for files provided by the user or produced by sandbox/report agents in execution, decision, review, or conversation contexts. Follow with `data_lake_artifact_profile` and `data_lake_artifact_attach` so workflow stages, Inbox tasks, Report BoI, action results, and conversations reference the artifact URL/profile instead of raw content. During SOP authoring, do not upload raw files; define evidence requirements instead. Use `data_lake_artifact_list` before answering questions about what files are attached to a stage, report, Inbox task, conversation, or action result.
 - Use `data_lake_import_sources` only to materialize selected source profiles as private OKF Data Context BoI documents. This is optional report context, not a core runtime dependency.

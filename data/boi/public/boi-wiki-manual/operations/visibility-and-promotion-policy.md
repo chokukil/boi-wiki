@@ -3,9 +3,9 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: Visibility and Promotion Policy
-description: Public, Team, Private, Local Private BoI의 접근 범위와 사용자 승인 기반 승격/HOTL 운영 정책
-tags: [Manual, Visibility, Promotion, HOTL, LocalPrivate]
-timestamp: 2026-06-19T22:30:00+09:00
+description: Public, Team, Private, Local Private BoI의 접근 범위와 promotion preview, 사용자 승인 기반 승격/HOTL 운영 정책
+tags: [Manual, Visibility, Promotion, Preview, HOTL, LocalPrivate]
+timestamp: 2026-07-05T22:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:visibility-and-promotion-policy
 visibility: public
 classification: internal
@@ -27,7 +27,7 @@ review:
 
 # Summary
 
-BoI Wiki는 source/body edit apply와 promotion publish를 분리한다. Web/MCP source/body 직접 수정은 사용자 승인 후 preview, 자동 검증, apply, Git commit을 통과해야 완료된다. Team/Public 승격은 사용자 명시 승인과 자동 검증을 통과하면 즉시 게시한다. 품질과 정책 판단은 사전 전수 승인 대신 HOTL로 운영한다.
+BoI Wiki는 source/body edit apply와 promotion publish를 분리한다. Web/MCP source/body 직접 수정은 사용자 승인 후 preview, 자동 검증, apply, Git commit을 통과해야 완료된다. Team/Public 승격은 먼저 `promotion_preview`로 redaction, source refs, 공개 범위, OKF validation을 비파괴로 확인하고, 사용자 명시 승인과 자동 검증을 통과하면 즉시 게시한다. 품질과 정책 판단은 사전 전수 승인 대신 HOTL로 운영한다.
 
 # Visibility
 
@@ -41,7 +41,7 @@ BoI Wiki는 source/body edit apply와 promotion publish를 분리한다. Web/MCP
 # Promotion Flow
 
 1. agent가 local promotion draft 또는 Web Private 공유본을 만든다.
-2. agent가 민감정보, 출처, 공개 범위, preview/diff, local preflight 결과를 보여준다.
+2. agent가 `promotion_preview` 또는 local preflight로 민감정보, 출처, 공개 범위, preview/diff, OKF validation, duplicate/source citation 상태를 보여준다.
 3. 사용자가 명시적으로 승인한다.
 4. agent가 MCP `promotion_submit` 또는 Web promotion API를 호출한다.
 5. 원격 BoI Wiki가 동기 자동 검증을 실행한다.
@@ -65,7 +65,14 @@ BoI Wiki는 source/body edit apply와 promotion publish를 분리한다. Web/MCP
 
 원격 검증은 최소한 OKF metadata, target visibility, source_refs, reviewer, secret/token 패턴, Team/Public ACL을 확인한다. Direct edit 검증은 여기에 source hash, Markdown/YAML parse, OKF link/media lint, catalog 구조를 더한다. 검증 실패는 공유/수정 실패가 아니라 적용 전 차단이며, agent가 수정안을 만들고 사용자의 재승인을 받은 뒤 다시 submit/apply한다.
 
+# Preview Contract
+
+`promotion_preview`는 문서를 생성하거나 게시하지 않는다. 결과에는 preview id/hash, target visibility, redaction findings, source_refs 상태, OKF validation, duplicate/citation 상태, required confirmation이 들어가야 한다.
+
+`user_confirmed=true`는 사용자가 실행 의도를 확인했다는 guard다. high-risk action은 여기에 더해 `approved_by`가 필요할 수 있다. dry-run이나 preview가 가능하더라도 실제 Action Gateway 호출, Team/Public publish, evidence adoption은 confirmation과 RBAC/approval guard를 통과해야 한다.
+
 # Citations
 
 - [Web Edit and Git Commit Policy](/public/boi-wiki-manual/operations/draft-and-git-policy.md)
 - [Local Private 승격과 공유 절차](/public/boi-wiki-manual/local-private/promotion-flow.md)
+- [BoI Wiki 종합 가이드](/public/boi-wiki-manual/guide/final-operator-guide.md)
