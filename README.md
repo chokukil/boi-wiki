@@ -98,13 +98,14 @@ Pilot 기준은 NAS가 아니라 `local-full` 검증 후 사내 Linux Docker 서
 | Profile | 포함 서비스 | 용도 |
 |---|---|---|
 | `local-full` | BoI API, Action Gateway, Event Router, MCP, local Kafka, Kafka UI, local Langflow | 내 Docker에서 전체 기능 재현 |
-| `local-full-datalake` | `local-full` + optional PostgreSQL/MinIO Data Lake demo | 사내 legacy DB/Data Lake evidence 활용 예시. Core 완료 기준은 아님 |
+| `local-full-datalake` | `local-full` + optional MinIO Data Lake artifact store | 파일/CSV/이미지/보고서 artifact를 MinIO에 저장하고 OKF에는 URL/profile만 남기는 예시. Core 완료 기준은 아님 |
+| `local-full-legacy-db-demo` | `local-full-datalake` + optional PostgreSQL Legacy DB Demo | 사내 legacy DB나 Data Lake SQL API를 흉내내는 structured query adapter 예시. Core 완료 기준은 아님 |
 | `pilot-external` | BoI API, Action Gateway, Event Router, MCP | 사내 Kafka/Langflow 기존 서비스 연계 |
 | `core` | BoI API | 단일 컨테이너 가능 범위 확인용. Workflow runtime 공식 운영용은 아님 |
 
-Data Lake는 선택 기능입니다. BoI Wiki core는 OKF Markdown/JSONL 기반으로 DB 없이 동작해야 하며, PostgreSQL/MinIO가 없다고 `/inbox`, MCP, Agent, OKF lint가 실패하면 안 됩니다. Data Lake를 켠 경우에도 Agent와 UI는 DB에 직접 접속하지 않고 BoI API/MCP의 plan, preview, confirmed execute 경로만 사용합니다.
+Data Lake는 선택 기능입니다. BoI Wiki core는 OKF Markdown/JSONL 기반으로 DB 없이 동작해야 하며, MinIO나 PostgreSQL이 없다고 `/inbox`, MCP, Agent, OKF lint가 실패하면 안 됩니다. 사용자-facing Data Lake는 MinIO artifact store이고, PostgreSQL은 별도 Legacy DB Demo입니다. Data Lake를 켠 경우에도 Agent와 UI는 저장소에 직접 접속하지 않고 BoI API/MCP의 plan, preview, confirmed execute, artifact URL 경로만 사용합니다.
 
-선택형 Data Lake demo는 별도 overlay로만 켭니다. `~/ontology`의 JSON/CSV fixture는 import/demo source이며 BoI Wiki runtime 필수 경로가 아닙니다.
+선택형 Data Lake artifact store는 별도 overlay로만 켭니다. `~/ontology`의 JSON/CSV fixture는 import/demo source이며 BoI Wiki runtime 필수 경로가 아닙니다.
 
 ```bash
 BOI_COMPOSE_PROFILE=local-full-datalake \
@@ -112,7 +113,18 @@ BOI_ENV_FILE=.env.local-full.example \
 BOI_ENV_OVERLAY_FILE=.env:.env.local-full-datalake.example \
 ./scripts/start_local_full.sh
 
-python scripts/check_local_full_datalake.py --base-url http://localhost:28000 --import-data-context
+python scripts/check_local_full_datalake.py --base-url http://localhost:28000 --import-data-context --artifact-smoke
+```
+
+PostgreSQL structured query 예시는 Legacy DB Demo profile에서만 켭니다.
+
+```bash
+BOI_COMPOSE_PROFILE=local-full-legacy-db-demo \
+BOI_ENV_FILE=.env.local-full.example \
+BOI_ENV_OVERLAY_FILE=.env:.env.local-full-datalake.example:.env.local-full-legacy-db-demo.example \
+./scripts/start_local_full.sh
+
+python scripts/check_local_full_datalake.py --base-url http://localhost:28000 --legacy-db-demo-smoke
 ```
 
 기본 `local-full` 경계 확인은 Data Lake가 꺼져 있어도 통과해야 합니다.
@@ -495,6 +507,7 @@ PoC 요소는 다음 기업 내부 서비스로 교체합니다.
 - SSO 모드에서는 사용자 identity가 Keycloak/HCP에서 옵니다. query `employee_id`는 개발 모드 전용입니다.
 - Action Gateway는 allowlisted host만 호출합니다.
 - high-risk action은 approval-required입니다.
+- MCP/API의 `user_confirmed=true`는 사용자가 실행 의도를 확인했다는 guard입니다. high-risk Action Gateway 호출의 `approved_by`는 승인자 기록이며, `user_confirmed`가 `approved_by`를 대체하지 않습니다.
 - Private BoI는 사번 단위로 scope가 제한됩니다.
 - Team/Public promotion은 copy-not-move입니다.
 - Team/Public promotion은 사용자 승인과 자동 검증 후 `review_status: user_confirmed`, `hotl.status: watching`으로 게시됩니다.
