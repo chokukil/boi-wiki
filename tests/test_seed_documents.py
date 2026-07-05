@@ -46,6 +46,59 @@ def test_boi_wiki_manual_and_agent_skill_cover_mcp_actions_langflow_and_media():
     assert "_media/" in skill
 
 
+def test_boi_wiki_manual_matches_workflow_task_builder_model():
+    manual_root = Path("data/boi/public/boi-wiki-manual")
+
+    required_docs = [
+        manual_root / "concepts" / "work-boi-first-model.md",
+        manual_root / "sop-workflows" / "workflow-task-builder-step-by-step.md",
+        manual_root / "sop-workflows" / "create-and-connect-sop.md",
+        manual_root / "data-lake" / "data-lake-artifact-lifecycle.md",
+        manual_root / "workflows" / "workflow-definition-registration-guide.md",
+        manual_root / "mcp" / "register-and-use-boi-wiki-mcp.md",
+        manual_root / "agent" / "work-context-pack.md",
+    ]
+    for path in required_docs:
+        assert path.exists(), path
+
+    concept = (manual_root / "concepts" / "work-boi-first-model.md").read_text(encoding="utf-8")
+    for expected in [
+        "Workflow / Task",
+        "Manual",
+        "Copilot",
+        "Autopilot",
+        "TAT",
+        "Data Lake artifact",
+    ]:
+        assert expected in concept
+
+    overview = (manual_root / "overview.md").read_text(encoding="utf-8")
+    index = (manual_root / "index.md").read_text(encoding="utf-8")
+    assert "Workflow/Task Builder Step-by-step" in overview
+    assert "Workflow/Task Builder Step-by-step" in index
+    assert "Data Lake Artifact Lifecycle" in overview
+    assert "Data Lake Artifact Lifecycle" in index
+
+
+def test_boi_wiki_manual_does_not_regress_to_legacy_registration_or_agent_exposure_copy():
+    roots = [Path("data/boi/public/boi-wiki-manual"), Path("data/boi/public/harness")]
+    text = "\n".join(path.read_text(encoding="utf-8") for root in roots for path in root.rglob("*.md"))
+
+    forbidden = [
+        "Event -> SOP -> Action 3단 구조",
+        "이번에는 건너뛰기",
+        "Pet Agent는 모든 주요 화면에 공통으로 mount",
+        "Web shell은 우측 하단 BoI Agent를 제공한다.",
+    ]
+    for phrase in forbidden:
+        assert phrase not in text
+
+    assert "BOI_PET_AGENT_ENABLED=false" in text
+    assert "BOI_OPS_CENTER_ENABLED=false" in text
+    assert "Workflow/Task Builder Step-by-step" in text
+    assert "Data Lake Artifact Lifecycle" in text
+
+
 def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troubleshooting():
     text = Path("data/boi/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md").read_text(encoding="utf-8")
 
@@ -56,9 +109,13 @@ def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troublesho
     assert "Streamable HTTP" in text
     assert "resources: 0" in text
     assert "resource_templates: 11" in text
-    assert "tools: 86" in text
+    assert "tools: 124" in text
     assert "source_apply" in text
     assert "doc_body_apply" in text
+    assert "harness_acceptance" in text
+    assert "source_wiki_plan" in text
+    assert "promotion_preview" in text
+    assert "agent_memory_review" in text
     assert "promotion_submit" in text
     assert "boi_agent_capabilities" in text
     assert "boi_agent_approve" in text

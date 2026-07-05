@@ -3,9 +3,9 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: SSO and Permission Model
-description: SK hynix Keycloak/HCP SSO, local development auth, BoI Wiki ACL, MCP, Langflow 권한 운영 기준
-tags: [Manual, SSO, Keycloak, HCP, Authorization, Langflow, MCP]
-timestamp: 2026-06-19T09:00:00+09:00
+description: SK hynix Keycloak/HCP SSO, local development auth, BoI Wiki ACL, Inbox 사번 권한, MCP, Langflow 권한 운영 기준
+tags: [Manual, SSO, Keycloak, HCP, Authorization, Inbox, Langflow, MCP]
+timestamp: 2026-07-05T22:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:security:sso-and-permissions
 visibility: public
 classification: internal
@@ -71,6 +71,22 @@ Action과 workflow 실행은 별도 role을 요구한다.
 - `boi.promoter`: 사용자 승인된 Team/Public promotion submit, HOTL 상태 조회/개입.
 - `boi.admin`: 전체 관리와 break-glass 운영.
 
+# Inbox Employee Visibility
+
+BoI Inbox는 인증된 사번을 authoritative identity로 사용한다. `/api/inbox`, `/api/agents/boi-wiki/inbox`, decision preview/submit, snooze, dismiss, manual complete는 같은 visibility helper를 통과해야 한다.
+
+| 대상 | 노출 정책 |
+| --- | --- |
+| `employee_id`가 현재 사번과 같은 task | 노출 |
+| 명시 `assigned_team`, `assigned_role`, `visibility=shared_queue`가 있고 현재 identity가 조건을 만족하는 task | 노출 |
+| `employee_id`가 다른 task | 차단 |
+| `employee_id`가 없고 shared assignment도 없는 task | 기본 숨김 |
+| raw `task_id` | Web UI visible text와 일반 DOM data attribute에 노출하지 않음 |
+
+Web Inbox는 opaque `task_ref`를 사용한다. MCP/API는 전환기 compatibility 때문에 raw `task_id` resolve를 유지할 수 있지만, 새 client 문서와 예제는 `task_ref` 또는 canonical `boi_inbox*` tool만 안내한다. `agent_inbox*`는 deprecated alias다.
+
+개발 모드의 query `employee_id`는 PoC 편의 기능이다. `keycloak`과 `trusted_header` 모드에서는 로그인/헤더 사번과 query 사번이 다르면 403으로 실패해야 한다.
+
 # HCP Role Mapping
 
 BoI Wiki는 두 가지 HCP 응답을 모두 지원한다.
@@ -117,7 +133,7 @@ SSO overlay는 Langflow-Hynix가 실제로 읽는 환경변수를 사용한다.
 
 # MCP and Agent Use
 
-BoI Wiki MCP는 agent가 OKF 문서, action catalog, workflow 상태, source/body preview/apply, promotion submit/status를 다룰 때 사용하는 인터페이스다. 개발 모드에서는 tool argument로 `employee_id`를 넘길 수 있다. SSO/운영 모드에서는 caller identity를 사용해야 하며, 다른 사번을 임의로 지정하는 사용 방식은 허용하지 않는다.
+BoI Wiki MCP는 agent가 OKF 문서, action catalog, workflow 상태, source/body preview/apply, promotion preview/submit/status, source wiki, Inbox task를 다룰 때 사용하는 인터페이스다. 개발 모드에서는 tool argument로 `employee_id`를 넘길 수 있다. SSO/운영 모드에서는 caller identity를 사용해야 하며, 다른 사번을 임의로 지정하는 사용 방식은 허용하지 않는다.
 
 # Production Defaults
 
@@ -131,6 +147,7 @@ BoI Wiki MCP는 agent가 OKF 문서, action catalog, workflow 상태, source/bod
 # Citations
 
 - [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)
+- [BoI Wiki 종합 가이드](/public/boi-wiki-manual/guide/final-operator-guide.md)
 - [BoI Profile ACL Policy](/public/boi-wiki-manual/security/boi-profile-acl-policy.md)
 - [Team RBAC Management](/public/boi-wiki-manual/security/team-rbac-management.md)
 - [Langflow connected flow guide](/public/boi-wiki-manual/langflow/connected-flow-guide.md)

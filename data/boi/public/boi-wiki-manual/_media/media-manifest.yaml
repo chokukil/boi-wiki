@@ -199,3 +199,91 @@ media:
     viewport: 1440x1000
     related_doc: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
     created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-01-workflow-overview.png
+    sha256: e38364c96e808552ca5e9183ea6a4ba8b9c0827c9eb171a5daf71ace103a6ced
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/sops/new?employee_id=100001
+    captured_at: 2026-07-04T14:04:15+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-02-task-map.png
+    sha256: d09f1f8db894249307d508782d692d7ab5b5bfaecd2651d0a75667dc04f072e1
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/sops/new?employee_id=100001
+    captured_at: 2026-07-04T14:04:15+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-03-task-detail.png
+    sha256: 3eb7018bf6138795a21842e3aae523b756ada99e8fc3e09e0f59040045dc442c
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/sops/new?employee_id=100001
+    captured_at: 2026-07-04T14:04:15+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-04-start-signal.png
+    sha256: 8b73129e7d3ef60563590d05f1bce9a7c6b57c911bf3c96b55e5f08878ab021d
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/sops/new?employee_id=100001
+    captured_at: 2026-07-04T14:04:15+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-05-review-save.png
+    sha256: 5f56fd78f0110b37c3bdf4824b92a6920b3d01d257ad56d88e364fe23bbd0cf5
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/sops/new?employee_id=100001
+    captured_at: 2026-07-04T14:04:15+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-06-saved-sop.png
+    sha256: e2564ba22f7b22c63247962072c228948ef647ba3e247be772800f114f8cd211
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/docs/boi:public:sop:direct-development-reporting?employee_id=100001
+    captured_at: 2026-07-04T14:04:15+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-07-runtime-status.png
+    sha256: b53157fc2650d97036f8e23afac94fd2edbbbc4d17b7d538e37555f5ffb0b926
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/workflows/direct-development-reporting/status?employee_id=100001&trace_id=trace-72bf68ba0dcc4ad8b573a071c42f4116
+    captured_at: 2026-07-04T15:50:10+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-08-tat-summary.png
+    sha256: f8d057b3f455613e77358e0d0e451640f0b93b5a4b8b223ef54fdd1851df3b02
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28000/workflows/direct-development-reporting/tat?employee_id=100001
+    captured_at: 2026-07-04T15:50:10+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-top-1440x1100.png
+    sha256: 284b4a607a42ae8b9edec380632250a20ab542c1195d31dfd89f68368ed5ef1c
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:28000/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001
+    captured_at: 2026-07-05T22:06:45+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-harness-1440x1100.png
+    sha256: e8c41e36f36aa7ecabeb011ec458ca7e59727ebbdacf115e6c6c23812db1b091
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:28000/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001#harness-acceptance
+    captured_at: 2026-07-05T22:06:45+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-local-second-brain-1440x1100.png
+    sha256: d9f454a89ab06fc3c54cd167296a8d5cd624cee9fa46fc394b035688aae486fb
+    source_kind: browser-screenshot
+    captured_url: http://127.0.0.1:28000/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001#local-second-brain
+    captured_at: 2026-07-05T22:06:45+09:00
+    viewport: 1440x1100
+    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
+    created_by: codex

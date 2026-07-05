@@ -31,3 +31,7 @@ Default workflow:
 3. Prefer existing action specs. Create new action package drafts only when no suitable action exists.
 4. Use Langflow only when a stage needs LLM/agent reasoning that cannot be represented as API/MCP/Webhook/manual/event-broker actions alone.
 5. For direct source/body edits, use preview, validation, apply, and auto-commit. For Team/Public promotion, use user confirmation plus remote synchronous validation and publish.
+
+Reference walkthrough:
+
+- `data/boi/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md` shows the direct-development Reporting scenario as a Workflow/Task Builder tutorial with screenshots, runtime smoke, and TAT evidence.

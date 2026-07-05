@@ -8,6 +8,7 @@
   <script src="{{ asset_url('doc_graph.js') }}" defer></script>
   <script src="{{ asset_url('doc_metadata.js') }}" defer></script>
   <script src="{{ asset_url('doc_edit.js') }}" defer></script>
+  <script src="{{ asset_url('evidence_tray.js') }}" defer></script>
 </head>
 <body>
   {% include "_app_shell.html" %}
@@ -127,6 +128,34 @@
       </div>
       {% endif %}
     </section>
+    {% set inbox_report_meta = doc.metadata.get('inbox_report') if doc.metadata else {} %}
+    {% if doc.metadata.type == 'boi/inbox-review-report' %}
+    <section
+      class="data-lake-artifact-panel evidence-tray"
+      data-evidence-tray
+      data-target-type="report"
+      data-target-id="{{ inbox_report_meta.report_id or doc.metadata.boi_id }}"
+      data-attached-from-surface="report_boi_review"
+      data-employee-id="{{ employee_id }}">
+      <div class="mode-panel-heading">
+        <strong>보고서 보강 파일</strong>
+        <span>검토 중 추가한 원본 파일은 Data Lake에 저장하고, 보고서에는 링크와 profile만 남깁니다.</span>
+      </div>
+      <div class="artifact-upload-row">
+        <input type="file" data-evidence-file multiple />
+        <select data-evidence-role aria-label="첨부 역할">
+          <option value="evidence">판단 근거</option>
+          <option value="raw_data">Raw Data</option>
+          <option value="result_file">작업 결과</option>
+          <option value="reference">참고 자료</option>
+          <option value="visualization_source">시각화 원본</option>
+        </select>
+        <button type="button" class="secondary-button" data-evidence-upload>파일 첨부</button>
+      </div>
+      <input class="artifact-note-input" data-evidence-note placeholder="한 줄 메모: 예: 보고서 검토 중 추가 확인한 원본 파일" />
+      <div class="artifact-results" data-evidence-results></div>
+    </section>
+    {% endif %}
     <details class="metadata" data-metadata-url="{{ metadata_fragment_url }}">
       <summary class="section-heading">
         <h2>Metadata</h2>

@@ -4,6 +4,7 @@
   const panelSummary = document.querySelector("[data-stage-panel-summary]");
   const panelStatus = document.querySelector("[data-stage-panel-status]");
   const panelNext = document.querySelector("[data-stage-panel-next]");
+  const evidenceTray = document.querySelector("[data-evidence-tray]");
   if (!stageNodes.length || !panelTitle || !panelSummary || !panelStatus || !panelNext) return;
 
   function selectStage(node) {
@@ -16,6 +17,9 @@
     panelSummary.textContent = node.dataset.stageSummary || "이 단계의 업무 맥락을 확인합니다.";
     panelStatus.textContent = node.dataset.stageStatus || "상태 확인";
     panelNext.textContent = node.dataset.stageNext || "검증 보고서와 원본 기록을 확인하세요.";
+    if (evidenceTray && window.BoiEvidenceTray) {
+      void window.BoiEvidenceTray.setTarget(evidenceTray, node.dataset.stageTargetId || "");
+    }
   }
 
   stageNodes.forEach((node) => {

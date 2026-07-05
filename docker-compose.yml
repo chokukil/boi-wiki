@@ -4,7 +4,7 @@ services:
   langflow-postgres:
     image: postgres:16-alpine
     container_name: boi-langflow-postgres
-    profiles: ["local-full", "local-full-datalake", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "full"]
     environment:
       POSTGRES_USER: ${LANGFLOW_POSTGRES_USER:-langflow}
       POSTGRES_PASSWORD: ${LANGFLOW_POSTGRES_PASSWORD:-langflow}
@@ -21,7 +21,7 @@ services:
   langflow:
     image: ${LANGFLOW_IMAGE:-langflowai/langflow@sha256:3ec67ddf344b3f2393b4961aa4f87e8928798f33772fdfdc6d348bfd54f58bf0}
     container_name: boi-langflow
-    profiles: ["local-full", "local-full-datalake", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "full"]
     depends_on:
       langflow-postgres:
         condition: service_healthy
@@ -59,7 +59,7 @@ services:
   kafka:
     image: apache/kafka:3.7.0
     container_name: boi-kafka
-    profiles: ["local-full", "local-full-datalake", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "full"]
     ports:
       - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
     environment:
@@ -85,7 +85,7 @@ services:
   kafka-init:
     image: apache/kafka:3.7.0
     container_name: boi-kafka-init
-    profiles: ["local-full", "local-full-datalake", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "full"]
     depends_on:
       kafka:
         condition: service_healthy
@@ -108,7 +108,7 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: boi-kafka-ui
-    profiles: ["local-full", "local-full-datalake", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "full"]
     depends_on:
       kafka:
         condition: service_healthy
@@ -119,20 +119,20 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     networks: [boi-net]
 
-  data-lake-postgres:
+  legacy-db-demo-postgres:
     image: postgres:16-alpine
-    container_name: boi-data-lake-postgres
-    profiles: ["local-full-datalake"]
+    container_name: boi-legacy-db-demo-postgres
+    profiles: ["local-full-legacy-db-demo"]
     ports:
-      - "${BOI_DATALAKE_POSTGRES_PORT:-15432}:5432"
+      - "${BOI_LEGACY_DB_DEMO_POSTGRES_PORT:-15432}:5432"
     environment:
-      POSTGRES_USER: ${BOI_DATALAKE_POSTGRES_USER:-boi_datalake}
-      POSTGRES_PASSWORD: ${BOI_DATALAKE_POSTGRES_PASSWORD:-boi_datalake}
-      POSTGRES_DB: ${BOI_DATALAKE_POSTGRES_DB:-boi_datalake}
+      POSTGRES_USER: ${BOI_LEGACY_DB_DEMO_POSTGRES_USER:-boi_legacy_demo}
+      POSTGRES_PASSWORD: ${BOI_LEGACY_DB_DEMO_POSTGRES_PASSWORD:-boi_legacy_demo}
+      POSTGRES_DB: ${BOI_LEGACY_DB_DEMO_POSTGRES_DB:-boi_legacy_demo}
     volumes:
-      - boi-data-lake-postgres-data:/var/lib/postgresql/data
+      - boi-legacy-db-demo-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${BOI_DATALAKE_POSTGRES_USER:-boi_datalake} -d ${BOI_DATALAKE_POSTGRES_DB:-boi_datalake}"]
+      test: ["CMD-SHELL", "pg_isready -U ${BOI_LEGACY_DB_DEMO_POSTGRES_USER:-boi_legacy_demo} -d ${BOI_LEGACY_DB_DEMO_POSTGRES_DB:-boi_legacy_demo}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -141,7 +141,7 @@ services:
   data-lake-minio:
     image: minio/minio:latest
     container_name: boi-data-lake-minio
-    profiles: ["local-full-datalake"]
+    profiles: ["local-full-datalake", "local-full-legacy-db-demo"]
     command: server /data --console-address ":9001"
     ports:
       - "${BOI_DATALAKE_MINIO_PORT:-19000}:9000"
@@ -159,7 +159,7 @@ services:
       args:
         BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
     container_name: boi-api
-    profiles: ["core", "local-full", "local-full-datalake", "pilot-external", "full"]
+    profiles: ["core", "local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
     command: >
       sh -c 'if [ -n "${BOI_CONTENT_SAFE_DIRECTORY:-}" ]; then
         git config --global --add safe.directory "${BOI_CONTENT_SAFE_DIRECTORY}" || true;
@@ -285,6 +285,8 @@ services:
       BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
       BOI_DATALAKE_ENABLED: ${BOI_DATALAKE_ENABLED:-false}
       BOI_DATALAKE_PROFILE: ${BOI_DATALAKE_PROFILE:-disabled}
+      BOI_LEGACY_DB_DEMO_ENABLED: ${BOI_LEGACY_DB_DEMO_ENABLED:-false}
+      BOI_LEGACY_DB_DEMO_POSTGRES_DSN: ${BOI_LEGACY_DB_DEMO_POSTGRES_DSN:-}
       BOI_DATALAKE_POSTGRES_DSN: ${BOI_DATALAKE_POSTGRES_DSN:-}
       BOI_DATALAKE_MINIO_ENDPOINT: ${BOI_DATALAKE_MINIO_ENDPOINT:-}
       BOI_DATALAKE_BUCKET: ${BOI_DATALAKE_BUCKET:-boi-datalake}
@@ -314,7 +316,7 @@ services:
     build:
       context: ./action_gateway
     container_name: boi-action-gateway
-    profiles: ["local-full", "local-full-datalake", "pilot-external", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
     depends_on:
       boi-api:
         condition: service_started
@@ -345,7 +347,7 @@ services:
     build:
       context: ./boi_wiki_mcp
     container_name: boi-wiki-mcp
-    profiles: ["local-full", "local-full-datalake", "pilot-external", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
     depends_on:
       boi-api:
         condition: service_started
@@ -367,7 +369,7 @@ services:
     build:
       context: ./event_adapter
     container_name: boi-event-router
-    profiles: ["local-full", "local-full-datalake", "pilot-external", "full"]
+    profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
     restart: unless-stopped
     depends_on:
       boi-api:
@@ -406,7 +408,7 @@ services:
 
 volumes:
   langflow-postgres-data:
-  boi-data-lake-postgres-data:
+  boi-legacy-db-demo-postgres-data:
   boi-data-lake-minio-data:
 
 networks:

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TAT 성과 보기 · {{ workflow_title }} · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+
+  <main class="workflow-status-page workflow-tat-page">
+    {% if shell.page_actions %}
+    <nav class="document-actions" aria-label="TAT actions">
+      {% for action in shell.page_actions %}
+      <a class="page-action-link {% if action.kind %}{{ action.kind }}{% endif %}" href="{{ action.href }}">{{ action.label }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+
+    <section class="workflow-status-hero workflow-tat-hero">
+      <div>
+        <span class="badge status">TAT SCORECARD</span>
+        <h2>{{ workflow_title }}</h2>
+        <p>{{ summary.oi_contract }}</p>
+        {% if payload.sop_url %}<p><a href="{{ payload.sop_url }}">관련 SOP 보기</a></p>{% endif %}
+      </div>
+      <div class="status-summary-grid tat-score-grid">
+        <div class="status-summary-card"><span>최근 Workflow TAT</span><strong>{{ summary.workflow_recent or "실측 전" }}</strong></div>
+        <div class="status-summary-card"><span>기준 TAT</span><strong>{{ summary.baseline or "baseline 미설정" }}</strong></div>
+        <div class="status-summary-card"><span>개선 시간/개선율</span><strong>{{ summary.improvement or "baseline 미설정" }}</strong>{% if improvement.percent is not none %}<small>{{ improvement.percent }}%</small>{% endif %}</div>
+        <div class="status-summary-card"><span>표본 수</span><strong>{{ summary.sample_count }}</strong><small>{{ summary.measurement_quality }}</small></div>
+      </div>
+    </section>
+
+    <section class="workflow-panel tat-insight-grid">
+      <article class="tat-insight-card">
+        <span>병목 Task</span>
+        <strong>{{ (bottlenecks.longest_task or {}).task_name or "실측 전" }}</strong>
+        <p>{{ (bottlenecks.longest_task or {}).display or "Task 실행 데이터가 더 필요합니다." }}</p>
+      </article>
+      <article class="tat-insight-card">
+        <span>최대 개선 Task</span>
+        <strong>{{ (bottlenecks.best_improvement_task or {}).task_name or "baseline 미설정" }}</strong>
+        <p>{{ (bottlenecks.best_improvement_task or {}).display or "Task baseline을 설정하면 개선 효과를 계산합니다." }}</p>
+      </article>
+      <article class="tat-insight-card">
+        <span>품질 Guardrail</span>
+        <strong>{{ guardrails.display }}</strong>
+        <p>실패 {{ guardrails.failed_actions }} · 반려 {{ guardrails.rejected_actions }} · 근거 부족 {{ guardrails.evidence_gap_events }}</p>
+      </article>
+      <article class="tat-insight-card">
+        <span>실행 방식 Mix</span>
+        <strong>Manual {{ mode_mix.manual or 0 }} · Copilot {{ mode_mix.copilot or 0 }} · Autopilot {{ mode_mix.autopilot or 0 }}</strong>
+        <p>Task 실행 방식 전환 효과는 baseline 대비 TAT 변화로 추적합니다.</p>
+      </article>
+    </section>
+
+    <section class="workflow-panel">
+      <div class="section-heading">
+        <h2>Task별 TAT 비교</h2>
+        <span class="muted">기준 TAT와 최근/평균 실측치를 같은 축에서 비교합니다.</span>
+      </div>
+      <div class="tat-task-list">
+        {% for task in task_tat %}
+        {% set tat = task.tat or {} %}
+        {% set baseline = task.baseline or {} %}
+        {% set recent_width = (((tat.recent_ms or 0) / max_task_bar_ms) * 100) | round(1) %}
+        {% set average_width = (((tat.average_ms or 0) / max_task_bar_ms) * 100) | round(1) %}
+        {% set baseline_width = (((baseline.ms or 0) / max_task_bar_ms) * 100) | round(1) %}
+        <article class="tat-task-row">
+          <div class="tat-task-main">
+            <div>
+              <h3>{{ task.task_name }}</h3>
+              <p>
+                <span class="badge execution-{{ task.execution_mode }}">{{ task.execution_mode_label }}</span>
+                <span class="badge status">{{ task.measurement_quality }}</span>
+                {% if task.improvement.state == "improved" %}<span class="badge success">{{ task.improvement.display }}</span>{% endif %}
+                {% if task.improvement.state == "slower" %}<span class="badge warning">{{ task.improvement.display }}</span>{% endif %}
+              </p>
+            </div>
+            <div class="tat-task-values">
+              <span>기준 {{ baseline.display }}</span>
+              <span>최근 {{ tat.recent_display }}</span>
+              <span>평균 {{ tat.average_display }}</span>
+            </div>
+          </div>
+          <div class="tat-bars" aria-label="{{ task.task_name }} TAT comparison">
+            <div class="tat-bar-line"><span>기준</span><div class="tat-bar-track"><i class="tat-bar baseline" style="width: {{ baseline_width }}%"></i></div></div>
+            <div class="tat-bar-line"><span>최근</span><div class="tat-bar-track"><i class="tat-bar recent" style="width: {{ recent_width }}%"></i></div></div>
+            <div class="tat-bar-line"><span>평균</span><div class="tat-bar-track"><i class="tat-bar average" style="width: {{ average_width }}%"></i></div></div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    {% if bottlenecks.low_sample_tasks %}
+    <section class="workflow-panel">
+      <h2>표본 부족 Task</h2>
+      <p class="muted">최근 3건 미만인 Task는 개선 효과를 확정하기보다 관찰 대상으로 봅니다.</p>
+      <ul class="relationship-list workflow-relationship-list">
+        {% for task in bottlenecks.low_sample_tasks %}
+        <li><strong>{{ task.task_name }}</strong><small>sample={{ task.sample_count }}</small></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <details class="raw-log-details">
+      <summary>
+        <span>실측 근거 보기</span>
+        <small>trace/run 원본은 접어서 제공합니다.</small>
+      </summary>
+      <div class="action-summary-table">
+        <table class="markdown-table">
+          <thead><tr><th>Started</th><th>Completed</th><th>TAT</th><th>Events</th><th>Actions</th><th>Trace</th></tr></thead>
+          <tbody>
+            {% for run in runs %}
+            <tr>
+              <td>{{ run.started_at }}</td>
+              <td>{{ run.completed_at }}</td>
+              <td>{{ run.tat_ms }}</td>
+              <td>{{ run.event_count }}</td>
+              <td>{{ run.action_count }}</td>
+              <td><code>{{ run.trace_id }}</code></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </main>
+</body>
+</html>

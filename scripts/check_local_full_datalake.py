@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from urllib.parse import quote
 from typing import Any
 
@@ -39,6 +41,37 @@ def service_ok(status: dict[str, Any], name: str) -> bool:
     services = status.get("services") if isinstance(status.get("services"), dict) else {}
     service = services.get(name) if isinstance(services.get(name), dict) else {}
     return service.get("configured") is True and service.get("reachable") is True
+
+
+def artifact_store_ok(status: dict[str, Any]) -> bool:
+    artifact_store = status.get("artifact_store") if isinstance(status.get("artifact_store"), dict) else {}
+    return artifact_store.get("enabled") is True and artifact_store.get("reachable") is True
+
+
+def legacy_db_demo_ok(status: dict[str, Any]) -> bool:
+    adapter = status.get("structured_query_adapter") if isinstance(status.get("structured_query_adapter"), dict) else {}
+    return adapter.get("enabled") is True and adapter.get("reachable") is True
+
+
+def run_artifact_smoke(base: str, employee: str, timeout: float) -> int:
+    script = Path(__file__).with_name("check_data_lake_artifacts.py")
+    command = [
+        sys.executable,
+        str(script),
+        "--base-url",
+        base,
+        "--employee-id",
+        employee,
+        "--timeout",
+        str(timeout),
+        "--strict",
+    ]
+    completed = subprocess.run(command, text=True, capture_output=True, check=False)  # noqa: S603
+    if completed.stdout:
+        print(completed.stdout.rstrip())
+    if completed.stderr:
+        print(completed.stderr.rstrip(), file=sys.stderr)
+    return completed.returncode
 
 
 def check_disabled_contract(base: str, employee: str, timeout: float, query: dict[str, Any]) -> list[str]:
@@ -87,12 +120,22 @@ def main() -> int:
     parser.add_argument(
         "--no-require-services",
         action="store_true",
-        help="Do not require PostgreSQL and MinIO endpoints to be reachable.",
+        help="Do not require MinIO or Legacy DB Demo endpoints to be reachable.",
     )
     parser.add_argument(
         "--import-data-context",
         action="store_true",
         help="Materialize selected Data Lake source profiles as private OKF Data Context BoI documents.",
+    )
+    parser.add_argument(
+        "--artifact-smoke",
+        action="store_true",
+        help="Run Data Lake artifact upload/profile/download/attach smoke after the query boundary check.",
+    )
+    parser.add_argument(
+        "--legacy-db-demo-smoke",
+        action="store_true",
+        help="Require the optional PostgreSQL Legacy DB Demo structured-query adapter to be configured and reachable.",
     )
     args = parser.parse_args()
 
@@ -121,6 +164,10 @@ def main() -> int:
             print("BoI Wiki Data Lake profile: disabled (allowed)")
             print("- core remains DB-less")
             print("- disabled API contract: OK")
+            if args.artifact_smoke:
+                artifact_code = run_artifact_smoke(base, args.employee_id, args.timeout)
+                if artifact_code != 0:
+                    return artifact_code
             return 0
         failures.append(f"Data Lake must be enabled for this check, got status={status.get('status')!r}")
     if status.get("enabled") is True:
@@ -128,10 +175,10 @@ def main() -> int:
         if not available_sources:
             failures.append("at least one ontology fixture source must be available")
         if not args.no_require_services:
-            if not service_ok(status, "postgres"):
-                failures.append("configured PostgreSQL endpoint must be reachable from BoI API")
-            if not service_ok(status, "minio"):
-                failures.append("configured MinIO endpoint must be reachable from BoI API")
+            if not artifact_store_ok(status):
+                failures.append("configured MinIO Data Lake artifact store must be reachable from BoI API")
+            if args.legacy_db_demo_smoke and not legacy_db_demo_ok(status):
+                failures.append("Legacy DB Demo PostgreSQL adapter must be reachable from BoI API")
         if status.get("status") not in {"ready", "service_degraded"}:
             failures.append(f"unexpected Data Lake status {status.get('status')!r}")
 
@@ -204,13 +251,17 @@ def main() -> int:
 
     print("BoI Wiki Data Lake profile: OK")
     print(f"- status: {status.get('status')}")
-    print(f"- postgres reachable: {service_ok(status, 'postgres')}")
-    print(f"- minio reachable: {service_ok(status, 'minio')}")
+    print(f"- artifact store reachable: {artifact_store_ok(status)}")
+    print(f"- legacy DB demo reachable: {legacy_db_demo_ok(status)}")
     print(f"- selected source: {(preview.get('selected_source') or {}).get('source_id')}")
     print(f"- preview rows: {len(preview.get('rows') or [])}")
     print(f"- execute rows: {len(execute.get('rows') or [])}")
     if args.import_data_context:
         print(f"- imported Data Context BoI: {len(import_result.get('items') or [])}")
+    if args.artifact_smoke:
+        artifact_code = run_artifact_smoke(base, args.employee_id, args.timeout)
+        if artifact_code != 0:
+            return artifact_code
     return 0
 
 

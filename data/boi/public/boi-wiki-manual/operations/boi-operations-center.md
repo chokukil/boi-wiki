@@ -3,7 +3,7 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: BoI Operations Center
-description: 사번 기준으로 여러 SOP workstream, 검증 보고서, 판단 근거, 승인/반려/보류 업무를 한 화면에 모으는 운영 상황실 기준
+description: feature-flagged 사번 기준 업무 상황실 기준
 tags: [Manual, OperationsCenter, SOP, Inbox, WorkContext]
 timestamp: 2026-07-01T18:30:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:boi-operations-center
@@ -28,6 +28,17 @@ review:
 # Summary
 
 BoI Operations Center는 BoI Agent 채팅창이 아니라 사번 기준 업무 상황실이다. 한 사람이 여러 SOP에 동시에 엮이는 것을 기본 전제로 두고, 여러 SOP가 현재 사용자에게 보내는 검증 보고서 BoI, 부족 근거, 승인 요청, 처리 지연을 한 화면에 모아 보여준다.
+
+현재 기본 배포에서는 `BOI_OPS_CENTER_ENABLED=false`로 비공개 상태다. `/ops` 화면과 Inbox subnav의 Operations Center 항목은 flag가 켜진 환경에서만 노출된다. API/MCP contract는 유지하지만 사용자 화면의 기본 업무함은 `/inbox`의 받은 보고서, 승인/조치, 처리 이력이다.
+
+# Availability
+
+| Feature flag | Default | User-facing behavior |
+|---|---:|---|
+| `BOI_OPS_CENTER_ENABLED` | `false` | `/ops` 직접 접근은 `/inbox`로 redirect하고 nav/subnav CTA를 숨긴다 |
+| `BOI_PET_AGENT_ENABLED` | `false` | Pet Agent floating panel을 app shell에 mount하지 않는다 |
+
+문서는 target architecture와 API contract를 설명한다. 현재 사용자-facing 공개 범위는 feature flag 상태와 `/api/runtime/config`의 `features` 값을 따른다.
 
 # Screen Model
 
@@ -110,7 +121,7 @@ Agent/Sandbox API는 다음 경로를 기준으로 한다.
 - `POST /api/agents/sandbox/jobs/{job_id}/adopt-evidence`
 - `POST /api/inbox/reports/{report_id}/attach-evidence`
 
-MCP client는 같은 기능을 `boi_ops_overview`, `boi_ops_canvas`, `boi_ops_recent_events`, `sop_catalog_search`, `sop_run_get`, `sop_run_graph`, `sop_run_context`, `agent_draft_create`, `agent_draft_test`, `agent_sandbox_job_create`, `agent_sandbox_job_get`, `agent_sandbox_adopt_evidence`로 사용한다. 판단 결과 기록은 기존 BoI Inbox decision API를 재사용하고, 승인/반려/보류/추가 근거 요청은 사유와 사용자 확인 없이는 기록하지 않는다.
+MCP client는 같은 기능을 `boi_ops_overview`, `boi_ops_canvas`, `boi_ops_recent_events`, `sop_catalog_search`, `sop_run_get`, `sop_run_graph`, `sop_run_context`, `agent_draft_create`, `agent_draft_test`, `agent_sandbox_job_create`, `agent_sandbox_job_get`, `agent_sandbox_adopt_evidence`로 사용한다. Operations Center가 UI에서 비공개여도 API/MCP compatibility는 유지하며, 응답에는 feature enabled 상태가 포함된다. 판단 결과 기록은 기존 BoI Inbox decision API를 재사용하고, 승인/반려/보류/추가 근거 요청은 사유와 사용자 확인 없이는 기록하지 않는다.
 
 # Verification Harness
 

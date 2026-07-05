@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import base64
 import copy
 import csv
 import hashlib
+import hmac
 import json
+import math
+import mimetypes
 import os
 import queue
 import re
@@ -25,6 +29,7 @@ from html import escape as html_escape, unescape as html_unescape
 from pathlib import Path
 from typing import Any, Callable, Literal
 from urllib.parse import parse_qs, quote, urlencode, urlsplit, unquote
+from urllib import error as urllib_error, request as urllib_request
 
 import yaml
 from aiokafka import AIOKafkaProducer
@@ -171,17 +176,69 @@ SEARCH_INDEX_ROOT = Path(os.getenv("SEARCH_INDEX_ROOT") or str(BOI_RUNTIME_ROOT 
 OPS_RUNTIME_INDEX_ROOT = Path(os.getenv("OPS_RUNTIME_INDEX_ROOT") or str(BOI_RUNTIME_ROOT / "ops"))
 PRIVATE_MEMORY_TRASH_ROOT = Path(os.getenv("PRIVATE_MEMORY_TRASH_ROOT") or str(BOI_RUNTIME_ROOT / "private-trash"))
 PRIVATE_MEMORY_QUARANTINE_DAYS = int(os.getenv("PRIVATE_MEMORY_QUARANTINE_DAYS", "7") or "7")
+SOURCE_WIKI_ROOT = Path(os.getenv("SOURCE_WIKI_ROOT") or str(BOI_RUNTIME_ROOT / "source-wikis"))
+SOURCE_WIKI_MAX_FILE_BYTES = int(os.getenv("SOURCE_WIKI_MAX_FILE_BYTES", "180000") or "180000")
+SOURCE_WIKI_ALLOWED_EXTENSIONS = {
+    ".md",
+    ".mdc",
+    ".txt",
+    ".py",
+    ".js",
+    ".mjs",
+    ".ts",
+    ".tsx",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".sh",
+    ".ps1",
+    ".example",
+}
+SOURCE_WIKI_DEFAULT_EXCLUDES = {
+    ".git",
+    ".pytest_cache",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "outputs",
+    "artifacts",
+    "captures",
+    ".boi-trash",
+}
 BOI_PERSIST_SEARCH_INDEX = os.getenv("BOI_PERSIST_SEARCH_INDEX", "true").lower() in {"1", "true", "yes", "on"}
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
 ACTION_INVOKE_TIMEOUT_SECONDS = float(os.getenv("ACTION_INVOKE_TIMEOUT_SECONDS", "90"))
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
+BOI_UI_REF_SECRET = os.getenv("BOI_UI_REF_SECRET") or SERVICE_TOKEN
 DEFAULT_TEAM_ID = os.getenv("DEFAULT_TEAM_ID", "aix-tf")
 BOI_DATALAKE_ENABLED = os.getenv("BOI_DATALAKE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 BOI_DATALAKE_PROFILE = os.getenv("BOI_DATALAKE_PROFILE", "disabled")
-BOI_DATALAKE_POSTGRES_DSN = os.getenv("BOI_DATALAKE_POSTGRES_DSN", "")
+_LEGACY_DB_DEMO_ENABLED_VALUE = os.getenv("BOI_LEGACY_DB_DEMO_ENABLED", "false")
+BOI_LEGACY_DB_DEMO_ENABLED = _LEGACY_DB_DEMO_ENABLED_VALUE.strip().lower() in {"1", "true", "yes", "on"}
+BOI_LEGACY_DB_DEMO_POSTGRES_DSN = os.getenv("BOI_LEGACY_DB_DEMO_POSTGRES_DSN") or os.getenv("BOI_DATALAKE_POSTGRES_DSN", "")
+BOI_LEGACY_DB_DEMO_POSTGRES_DSN_DEPRECATED_ALIAS_USED = (
+    not os.getenv("BOI_LEGACY_DB_DEMO_POSTGRES_DSN")
+    and bool(os.getenv("BOI_DATALAKE_POSTGRES_DSN"))
+)
+# Deprecated alias kept for one release so older local-full-datalake env files
+# still surface the structured demo adapter instead of silently disappearing.
+BOI_DATALAKE_POSTGRES_DSN = BOI_LEGACY_DB_DEMO_POSTGRES_DSN
 BOI_DATALAKE_MINIO_ENDPOINT = os.getenv("BOI_DATALAKE_MINIO_ENDPOINT", "")
+BOI_DATALAKE_MINIO_ACCESS_KEY = os.getenv(
+    "BOI_DATALAKE_MINIO_ACCESS_KEY",
+    os.getenv("BOI_DATALAKE_MINIO_ROOT_USER", "boi_datalake"),
+)
+BOI_DATALAKE_MINIO_SECRET_KEY = os.getenv(
+    "BOI_DATALAKE_MINIO_SECRET_KEY",
+    os.getenv("BOI_DATALAKE_MINIO_ROOT_PASSWORD", "boi_datalake_password"),
+)
+BOI_DATALAKE_MINIO_REGION = os.getenv("BOI_DATALAKE_MINIO_REGION", "us-east-1")
 BOI_DATALAKE_BUCKET = os.getenv("BOI_DATALAKE_BUCKET", "boi-datalake")
 BOI_DATALAKE_FIXTURE_ROOT = Path(os.getenv("BOI_DATALAKE_FIXTURE_ROOT", "/fixtures/ontology"))
+BOI_DATALAKE_ARTIFACT_ROOT = Path(os.getenv("BOI_DATALAKE_ARTIFACT_ROOT") or str(BOI_RUNTIME_ROOT / "data-lake-artifacts"))
+BOI_DATALAKE_ARTIFACT_PROFILE_ROWS = int(os.getenv("BOI_DATALAKE_ARTIFACT_PROFILE_ROWS", "5") or "5")
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
 BOI_EVENTS_TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
 BOI_AUDIT_TOPIC = os.getenv("BOI_AUDIT_TOPIC", "boi.audit")
@@ -728,6 +785,7 @@ def ensure_dirs() -> None:
     RBAC_ROOT.mkdir(parents=True, exist_ok=True)
     SEARCH_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
     OPS_RUNTIME_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
+    BOI_DATALAKE_ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
@@ -1703,6 +1761,13 @@ def workflow_status_page_url_for_key(workflow_key: str, trace_id: str, employee_
     return f"/workflows/{workflow_key}/status?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
 
 
+def workflow_tat_page_url_for_key(workflow_key: str, employee_id: str, *, trace_id: str = "") -> str:
+    query = {"employee_id": employee_id}
+    if trace_id:
+        query["trace_id"] = trace_id
+    return f"/workflows/{workflow_key}/tat?" + urlencode(query)
+
+
 def workflow_status_api_url_for_key(workflow_key: str, trace_id: str, employee_id: str, **params: str) -> str:
     query = {"trace_id": trace_id, "employee_id": employee_id, **params}
     return f"/api/workflows/{workflow_key}/status?" + urlencode(query)
@@ -2580,6 +2645,50 @@ def read_jsonl_row_by_ref(*, log_ref: str, root: Path, ref_prefix: str) -> dict[
     return None
 
 
+def read_jsonl_rows_by_refs(*, log_refs: list[str], root: Path, ref_prefix: str) -> dict[str, dict[str, Any]]:
+    wanted_by_file: dict[str, dict[int, str]] = {}
+    for log_ref in log_refs:
+        parts = str(log_ref or "").split(":")
+        if len(parts) != 3 or parts[0] != ref_prefix:
+            continue
+        file_name = parts[1]
+        if "/" in file_name or "\\" in file_name or not file_name.endswith(".jsonl"):
+            continue
+        try:
+            line_number = int(parts[2])
+        except ValueError:
+            continue
+        if line_number < 1:
+            continue
+        wanted_by_file.setdefault(file_name, {})[line_number] = log_ref
+    rows: dict[str, dict[str, Any]] = {}
+    for file_name, wanted_lines in wanted_by_file.items():
+        path = (root / file_name).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError:
+            continue
+        if not path.exists():
+            continue
+        remaining = set(wanted_lines)
+        with path.open("r", encoding="utf-8") as handle:
+            for current_line_number, line in enumerate(handle, start=1):
+                if current_line_number not in remaining:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    row = None
+                if isinstance(row, dict):
+                    log_ref = wanted_lines[current_line_number]
+                    row["_log_ref"] = log_ref
+                    rows[log_ref] = row
+                remaining.discard(current_line_number)
+                if not remaining:
+                    break
+    return rows
+
+
 def read_action_logs(limit: int = 200, action_key: str | None = None, offset: int = 0) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in cached_action_log_rows():
@@ -2972,11 +3081,61 @@ def append_action_log_row(row: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def action_log_assignment_values(row: dict[str, Any], *keys: str) -> set[str]:
+    values: set[str] = set()
+    sources: list[dict[str, Any]] = [row]
+    assignment = row.get("assignment")
+    if isinstance(assignment, dict):
+        sources.append(assignment)
+    for source in sources:
+        for key in keys:
+            raw = source.get(key)
+            if raw in (None, ""):
+                continue
+            if isinstance(raw, str):
+                values.update(part.strip() for part in re.split(r"[,\s]+", raw) if part.strip())
+            elif isinstance(raw, (list, tuple, set)):
+                values.update(str(part).strip() for part in raw if str(part).strip())
+            else:
+                values.add(str(raw).strip())
+    return values
+
+
 def action_log_visible_to_employee(row: dict[str, Any], employee_id: str) -> bool:
-    row_employee_id = str(row.get("employee_id") or "")
-    if row_employee_id and row_employee_id != employee_id:
+    employee_id = str(employee_id or "").strip()
+    if not employee_id:
         return False
-    return True
+    row_employee_id = str(row.get("employee_id") or "").strip()
+    if row_employee_id:
+        return row_employee_id == employee_id
+
+    assigned_employee_ids = action_log_assignment_values(
+        row,
+        "assigned_employee_id",
+        "assigned_employee_ids",
+        "assignee_employee_id",
+        "assignee_employee_ids",
+        "employee_ids",
+    )
+    if assigned_employee_ids:
+        return employee_id in assigned_employee_ids
+
+    assigned_teams = action_log_assignment_values(row, "assigned_team", "assigned_teams", "team_id", "team_ids", "teams")
+    if assigned_teams and assigned_teams.intersection(teams_for(employee_id)):
+        return True
+
+    assigned_roles = action_log_assignment_values(
+        row,
+        "assigned_role",
+        "assigned_roles",
+        "required_role",
+        "required_roles",
+        "roles",
+    )
+    if assigned_roles and assigned_roles.intersection(roles_for(employee_id)):
+        return True
+
+    return False
 
 
 def find_action_log_row_by_ref(log_ref: str, employee_id: str | None = None) -> dict[str, Any] | None:
@@ -3011,6 +3170,23 @@ def trace_action_log_rows(trace_id: str, *, event_ids: set[str] | None = None, l
     tokens = [token for token in [trace_id, *sorted(event_id_set)] if token]
     if not tokens:
         return []
+    if BOI_RUNTIME_INDEX_ENABLED:
+        matched_refs: list[str] = []
+        for entry in runtime_log_index_rows(ACTION_LOG_ROOT, "actions"):
+            row_trace_id = str(entry.get("trace_id") or "")
+            row_event_id = str(entry.get("event_id") or "")
+            if row_trace_id != trace_id and row_event_id not in event_id_set:
+                continue
+            log_ref = str(entry.get("log_ref") or "")
+            if not log_ref:
+                continue
+            matched_refs.append(log_ref)
+            if len(matched_refs) >= limit:
+                break
+        rows_by_ref = read_jsonl_rows_by_refs(log_refs=matched_refs, root=ACTION_LOG_ROOT, ref_prefix="action")
+        indexed_rows = [rows_by_ref[ref] for ref in matched_refs if ref in rows_by_ref]
+        if indexed_rows or runtime_log_indexes_complete(ACTION_LOG_ROOT, "actions"):
+            return list(reversed(indexed_rows))
     rows: list[dict[str, Any]] = []
     for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl")):
         with p.open("r", encoding="utf-8") as handle:
@@ -3028,6 +3204,37 @@ def trace_action_log_rows(trace_id: str, *, event_ids: set[str] | None = None, l
                 row["_log_ref"] = f"action:{p.name}:{line_number}"
                 rows.append(row)
     return rows[-limit:]
+
+
+def trace_action_index_rows_for_tat(
+    trace_id: str,
+    *,
+    event_ids: set[str] | None = None,
+    employee_id: str = "",
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    event_id_set = {str(event_id) for event_id in (event_ids or set()) if event_id}
+    if not trace_id and not event_id_set:
+        return []
+    if not BOI_RUNTIME_INDEX_ENABLED:
+        return trace_action_log_rows(trace_id, event_ids=event_id_set, limit=limit)
+    rows: list[dict[str, Any]] = []
+    for entry in runtime_log_index_rows(ACTION_LOG_ROOT, "actions"):
+        row_trace_id = str(entry.get("trace_id") or "")
+        row_event_id = str(entry.get("event_id") or "")
+        if row_trace_id != trace_id and row_event_id not in event_id_set:
+            continue
+        row_employee_id = str(entry.get("employee_id") or "")
+        if employee_id and row_employee_id and row_employee_id != employee_id:
+            continue
+        row = dict(entry)
+        row["_log_ref"] = str(entry.get("log_ref") or "")
+        rows.append(row)
+        if len(rows) >= limit:
+            break
+    if rows or runtime_log_indexes_complete(ACTION_LOG_ROOT, "actions"):
+        return list(reversed(rows))
+    return trace_action_log_rows(trace_id, event_ids=event_id_set, limit=limit)
 
 
 def trace_prior_action_results(trace_id: str, employee_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
@@ -3086,6 +3293,25 @@ def trace_event_log_rows(trace_id: str = "", event_id: str = "", *, limit: int =
     tokens = [token for token in (trace_id, event_id) if token]
     if not tokens:
         return []
+    if BOI_RUNTIME_INDEX_ENABLED:
+        matched_refs: list[str] = []
+        for entry in runtime_log_index_rows(EVENTS_ROOT, "events"):
+            if trace_id and str(entry.get("trace_id") or "") != trace_id:
+                continue
+            if event_id and str(entry.get("event_id") or "") != event_id:
+                continue
+            log_ref = str(entry.get("log_ref") or "")
+            if not log_ref:
+                continue
+            matched_refs.append(log_ref)
+            if len(matched_refs) >= limit:
+                break
+        rows_by_ref = read_jsonl_rows_by_refs(log_refs=matched_refs, root=EVENTS_ROOT, ref_prefix="event")
+        indexed_rows = [rows_by_ref[ref] for ref in matched_refs if ref in rows_by_ref]
+        for row in indexed_rows:
+            row["event_label"] = event_label(row.get("event_type"))
+        if indexed_rows or runtime_log_indexes_complete(EVENTS_ROOT, "events"):
+            return list(reversed(indexed_rows))
     rows: list[dict[str, Any]] = []
     for p in sorted(EVENTS_ROOT.glob("events-*.jsonl")):
         with p.open("r", encoding="utf-8") as handle:
@@ -3103,6 +3329,31 @@ def trace_event_log_rows(trace_id: str = "", event_id: str = "", *, limit: int =
                 row["_log_ref"] = f"event:{p.name}:{line_number}"
                 rows.append(row)
     return rows[-limit:]
+
+
+def workflow_event_log_rows_for_tat(expected_event_types: set[str], *, trace_id: str = "", limit: int = 1000) -> list[dict[str, Any]]:
+    if trace_id:
+        return filtered_event_log_rows(trace_id=trace_id)[:limit]
+    if not BOI_RUNTIME_INDEX_ENABLED:
+        return filtered_event_log_rows()
+    matched_refs: list[str] = []
+    for entry in runtime_log_index_rows(EVENTS_ROOT, "events"):
+        event_type = str(entry.get("event_type") or "")
+        if expected_event_types and event_type not in expected_event_types:
+            continue
+        log_ref = str(entry.get("log_ref") or "")
+        if not log_ref:
+            continue
+        matched_refs.append(log_ref)
+        if len(matched_refs) >= limit:
+            break
+    rows_by_ref = read_jsonl_rows_by_refs(log_refs=matched_refs, root=EVENTS_ROOT, ref_prefix="event")
+    rows = [rows_by_ref[ref] for ref in matched_refs if ref in rows_by_ref]
+    for row in rows:
+        row["event_label"] = event_label(row.get("event_type"))
+    if rows or runtime_log_indexes_complete(EVENTS_ROOT, "events"):
+        return list(reversed(rows))
+    return filtered_event_log_rows()
 
 
 def filtered_event_log_rows(
@@ -6220,6 +6471,10 @@ def target_dir_for(metadata: dict[str, Any]) -> Path:
         if boi_type == "boi/action-spec":
             connector_kind = normalize_folder(str(metadata.get("connector_kind") or "general"))
             return DATA_ROOT / "public" / "actions" / (connector_kind or "general")
+        if boi_type == "boi/source-wiki-page":
+            source_wiki = metadata.get("source_wiki") if isinstance(metadata.get("source_wiki"), dict) else {}
+            wiki_id = normalize_folder(str(source_wiki.get("wiki_id") or metadata.get("source_wiki_id") or "general"))
+            return DATA_ROOT / "public" / "source-wikis" / (wiki_id or "general")
         return DATA_ROOT / "public"
     raise HTTPException(status_code=400, detail=f"Unsupported visibility: {visibility}")
 
@@ -6413,13 +6668,26 @@ def registration_new_context(request: Request, employee_id: str, entry_kind: Lit
                 {"name": "connector_config.note", "label": "운영 메모", "placeholder": "Langflow는 필수 workflow engine이 아니라 optional connector입니다.", "multiline": True},
             ],
         },
+        {
+            "kind": "skill",
+            "label": "Skill",
+            "summary": "BoI Wiki Skill을 단계 실행 능력으로 연결합니다. Script가 있으면 Sandbox 또는 Agent Runtime을 거칩니다.",
+            "examples": ["Raw Data 분석 Skill", "보고서 작성 Skill"],
+            "fields": [
+                {"name": "skill_ref", "label": "Skill", "placeholder": "예: evidence.raw_data_lookup"},
+                {"name": "skill_invocation_mode", "label": "실행 방식", "placeholder": "guide_only / sandbox_run / agent_tool"},
+                {"name": "connector_config.input_contract", "label": "필요 입력", "placeholder": "예: lot_id, wafer_id, data artifact", "multiline": True},
+                {"name": "connector_config.output_artifacts", "label": "예상 산출물", "placeholder": "예: table, chart, report BoI", "multiline": True},
+                {"name": "connector_config.approval_policy", "label": "승인/검증", "placeholder": "stage_owner_confirmed"},
+            ],
+        },
     ]
     config: dict[str, dict[str, Any]] = {
         "sop": {
             "active_nav": "sops",
             "title": "SOP 추가",
             "description": "업무가 시작되는 Event, 수행할 SOP, 필요한 Action을 한 흐름으로 연결합니다.",
-            "question": "어떤 업무를 SOP 실행 흐름으로 정리할까요?",
+            "question": "어떤 맥락의 판단을 SOP로 남길까요?",
             "helper": "업무가 시작되는 Event, 수행할 SOP, 필요한 Action을 한 흐름으로 연결합니다. 모든 항목은 선택 사항입니다.",
             "submit_label": "SOP 실행 흐름 초안 만들기",
             "catalog_url": app_url("/sops", employee_id),
@@ -6678,6 +6946,35 @@ class PromotionSubmitRequest(BaseModel):
     user_confirmed_at: str | None = None
 
 
+class PromotionPreviewRequest(PromotionSubmitRequest):
+    user_confirmed: bool = False
+
+
+class SourceWikiPlanRequest(BaseModel):
+    source_kind: Literal["local_path", "git_url"] = "local_path"
+    source_path: str = ""
+    repo_url: str = ""
+    wiki_id: str = ""
+    title: str = ""
+    description: str = ""
+    include_globs: list[str] = Field(default_factory=list)
+    exclude_globs: list[str] = Field(default_factory=list)
+    max_files: int = 80
+    target_visibility: Literal["public", "team", "private"] = "public"
+    team_id: str | None = None
+
+
+class SourceWikiJobRequest(SourceWikiPlanRequest):
+    user_confirmed: bool = False
+    reviewer: str = "source-wiki-curator"
+
+
+class SourceWikiRefreshPreviewRequest(BaseModel):
+    source_path: str = ""
+    repo_url: str = ""
+    max_files: int = 80
+
+
 class HotlUpdateRequest(BaseModel):
     status: Literal["watching", "hidden", "needs_revision", "rolled_back"]
     note: str = ""
@@ -6705,6 +7002,532 @@ def read_promotion_report(promotion_id: str) -> dict[str, Any]:
     if not path.exists():
         raise HTTPException(status_code=404, detail="promotion report not found")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def source_wiki_manifest_dir(wiki_id: str) -> Path:
+    safe_id = safe_filename(wiki_id or "source-wiki")
+    return SOURCE_WIKI_ROOT / safe_id
+
+
+def source_wiki_manifest_path(wiki_id: str, job_id: str) -> Path:
+    return source_wiki_manifest_dir(wiki_id) / f"{safe_filename(job_id)}.json"
+
+
+def source_wiki_latest_path(wiki_id: str) -> Path:
+    return source_wiki_manifest_dir(wiki_id) / "latest.json"
+
+
+def source_wiki_allowed_roots() -> list[Path]:
+    roots: list[Path] = []
+    configured = os.getenv("SOURCE_WIKI_ALLOWED_ROOTS", "")
+    for item in configured.split(os.pathsep):
+        if item.strip():
+            roots.append(Path(item.strip()))
+    roots.extend([Path.cwd(), DATA_ROOT.parent, DATA_ROOT.parent.parent])
+    local_repo = Path("/home/chokukil/boi-wiki-local")
+    if local_repo.exists():
+        roots.append(local_repo)
+    resolved: list[Path] = []
+    for root in roots:
+        try:
+            resolved_root = root.expanduser().resolve()
+        except Exception:
+            continue
+        if resolved_root.exists() and resolved_root not in resolved:
+            resolved.append(resolved_root)
+    return resolved
+
+
+def source_wiki_repo_allowed(repo_url: str) -> bool:
+    repo_url = str(repo_url or "").strip()
+    if not repo_url:
+        return False
+    allowlist = [item.strip() for item in os.getenv("SOURCE_WIKI_ALLOWED_REPOS", "").split(",") if item.strip()]
+    allowlist.extend(
+        [
+            "https://github.com/chokukil/boi-wiki-local",
+            "https://github.com/chokukil/boi-wiki-local.git",
+            "https://github.com/chokukil/boi-wiki",
+            "https://github.com/chokukil/boi-wiki.git",
+        ]
+    )
+    return repo_url in set(allowlist)
+
+
+def resolve_source_wiki_root(req: SourceWikiPlanRequest | SourceWikiRefreshPreviewRequest) -> tuple[Path, dict[str, Any]]:
+    source_path = str(getattr(req, "source_path", "") or "").strip()
+    repo_url = str(getattr(req, "repo_url", "") or "").strip()
+    if source_path:
+        root = Path(source_path).expanduser().resolve()
+    elif repo_url.endswith("boi-wiki-local") or repo_url.endswith("boi-wiki-local.git"):
+        root = Path("/home/chokukil/boi-wiki-local").resolve()
+    else:
+        raise HTTPException(status_code=400, detail="source_path is required unless repo_url maps to a known local checkout")
+    if not root.exists() or not root.is_dir():
+        raise HTTPException(status_code=404, detail="source wiki root not found")
+    allowed_roots = source_wiki_allowed_roots()
+    if not any(root == allowed or root.is_relative_to(allowed) for allowed in allowed_roots):
+        raise HTTPException(status_code=403, detail="source wiki root is outside SOURCE_WIKI_ALLOWED_ROOTS")
+    if repo_url and not source_wiki_repo_allowed(repo_url):
+        raise HTTPException(status_code=403, detail="repo_url is not allowlisted for source wiki generation")
+    source = {
+        "source_kind": getattr(req, "source_kind", "local_path"),
+        "source_path": str(root),
+        "repo_url": repo_url,
+        "allowed_roots": [str(root) for root in allowed_roots],
+    }
+    return root, source
+
+
+def git_revision_for_root(root: Path) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+    except Exception:
+        return ""
+
+
+def source_wiki_file_allowed(rel: str, path: Path, req: SourceWikiPlanRequest | SourceWikiRefreshPreviewRequest) -> tuple[bool, str]:
+    parts = Path(rel).parts
+    if any(part in SOURCE_WIKI_DEFAULT_EXCLUDES for part in parts):
+        return False, "excluded_directory"
+    if getattr(req, "exclude_globs", None) and any(path.match(pattern) or Path(rel).match(pattern) for pattern in getattr(req, "exclude_globs")):
+        return False, "exclude_glob"
+    include_globs = getattr(req, "include_globs", None) or []
+    if include_globs and not any(path.match(pattern) or Path(rel).match(pattern) for pattern in include_globs):
+        return False, "not_included"
+    if path.suffix.lower() not in SOURCE_WIKI_ALLOWED_EXTENSIONS and path.name not in {"README", "AGENTS", "CLAUDE"}:
+        return False, "unsupported_extension"
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False, "unreadable"
+    if size > SOURCE_WIKI_MAX_FILE_BYTES:
+        return False, "too_large"
+    return True, ""
+
+
+def source_wiki_role_for_path(rel: str) -> str:
+    lower = rel.lower()
+    if lower in {"readme.md", "agents.md", "claude.md", "llm-wiki.md"}:
+        return "entrypoint"
+    if lower.startswith("scripts/") or lower.endswith((".sh", ".ps1")):
+        return "automation"
+    if "promotion-drafts" in lower:
+        return "promotion"
+    if "usage-examples" in lower:
+        return "example"
+    if "dictionary" in lower:
+        return "dictionary"
+    if "context-packs" in lower:
+        return "context"
+    if lower.startswith("data/boi"):
+        return "knowledge"
+    return "supporting"
+
+
+def source_wiki_excerpt(path: Path, limit: int = 900) -> tuple[str, list[str]]:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return "", []
+    headings = [line.strip("# ").strip() for line in content.splitlines() if line.startswith("#")][:8]
+    collapsed = re.sub(r"\s+", " ", content).strip()
+    return text_excerpt(collapsed, limit), headings
+
+
+def source_wiki_inventory(root: Path, req: SourceWikiPlanRequest | SourceWikiRefreshPreviewRequest) -> dict[str, Any]:
+    selected: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    max_files = max(1, min(int(getattr(req, "max_files", 80) or 80), 300))
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            rel = str(path.relative_to(root)).replace("\\", "/")
+        except ValueError:
+            continue
+        allowed, reason = source_wiki_file_allowed(rel, path, req)
+        if not allowed:
+            skipped.append({"path": rel, "reason": reason})
+            continue
+        excerpt, headings = source_wiki_excerpt(path)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected.append(
+            {
+                "path": rel,
+                "size": path.stat().st_size,
+                "sha256": digest,
+                "role": source_wiki_role_for_path(rel),
+                "headings": headings,
+                "excerpt": excerpt,
+            }
+        )
+        if len(selected) >= max_files:
+            break
+    role_counts: dict[str, int] = {}
+    for item in selected:
+        role_counts[str(item.get("role") or "supporting")] = role_counts.get(str(item.get("role") or "supporting"), 0) + 1
+    return {
+        "selected_count": len(selected),
+        "skipped_count": len(skipped),
+        "selected": selected,
+        "skipped": skipped[:500],
+        "role_counts": role_counts,
+        "source_signature": hashlib.sha256(
+            json.dumps([{k: item[k] for k in ("path", "sha256")} for item in selected], sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def source_wiki_outline(wiki_id: str, title: str, inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    selected = inventory.get("selected") or []
+    by_role: dict[str, list[dict[str, Any]]] = {}
+    for item in selected:
+        by_role.setdefault(str(item.get("role") or "supporting"), []).append(item)
+    outline = [
+        {"slug": "overview", "title": f"{title} Overview", "roles": ["entrypoint", "supporting"]},
+        {"slug": "local-second-brain", "title": "Local Second Brain Lifecycle", "roles": ["knowledge", "context", "example"]},
+        {"slug": "promotion-and-remote", "title": "Promotion and Remote BoI Wiki Integration", "roles": ["promotion", "entrypoint"]},
+        {"slug": "automation-and-checks", "title": "Automation and Checks", "roles": ["automation"]},
+        {"slug": "source-map", "title": "Source Map and Citations", "roles": list(by_role)},
+    ]
+    return outline
+
+
+def source_wiki_page_body(title: str, page: dict[str, Any], inventory: dict[str, Any], source: dict[str, Any]) -> str:
+    selected = inventory.get("selected") or []
+    roles = set(page.get("roles") or [])
+    items = [item for item in selected if not roles or item.get("role") in roles]
+    if page.get("slug") == "source-map":
+        items = selected
+    lines = [
+        "# Summary",
+        "",
+        f"`{title}` source-grounded wiki page generated from repository files. Every claim below is backed by the listed source paths.",
+        "",
+        "# Source Snapshot",
+        "",
+        f"- Source: `{source.get('repo_url') or source.get('source_path')}`",
+        f"- Commit: `{source.get('commit_sha') or 'unknown'}`",
+        f"- Selected files: `{inventory.get('selected_count')}`",
+        f"- Source signature: `{inventory.get('source_signature')}`",
+        "",
+        "# Key Sources",
+        "",
+    ]
+    for item in items[:24]:
+        headings = ", ".join(item.get("headings") or []) or "no headings"
+        lines.extend(
+            [
+                f"## `{item.get('path')}`",
+                "",
+                f"- Role: `{item.get('role')}`",
+                f"- SHA256: `{item.get('sha256')}`",
+                f"- Headings: {headings}",
+                "",
+                str(item.get("excerpt") or "No text excerpt available."),
+                "",
+            ]
+        )
+    if not items:
+        lines.append("No matching source files were selected for this page.")
+    lines.extend(
+        [
+            "# Verification Notes",
+            "",
+            "- Refresh compares the current source signature with the last-good manifest.",
+            "- Team/Public publication still requires promotion preview and explicit confirmation.",
+            "- This page is generated from source paths, not from runtime action execution.",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
+def source_wiki_plan_payload(req: SourceWikiPlanRequest, employee_id: str) -> dict[str, Any]:
+    root, source = resolve_source_wiki_root(req)
+    wiki_id = safe_filename(req.wiki_id or root.name or "source-wiki")
+    title = req.title or root.name.replace("-", " ").title()
+    source["commit_sha"] = git_revision_for_root(root)
+    inventory = source_wiki_inventory(root, req)
+    outline = source_wiki_outline(wiki_id, title, inventory)
+    validation_errors: list[str] = []
+    if inventory.get("selected_count", 0) <= 0:
+        validation_errors.append("source wiki requires at least one selected source file")
+    if req.target_visibility == "team" and not (req.team_id or teams_for(employee_id)):
+        validation_errors.append("team source wiki requires team_id or employee team membership")
+    return {
+        "ok": not validation_errors,
+        "wiki_id": wiki_id,
+        "title": title,
+        "description": req.description or f"Source-grounded wiki for {title}",
+        "source": source,
+        "inventory": inventory,
+        "outline": outline,
+        "validation": {"ok": not validation_errors, "errors": validation_errors, "warnings": []},
+        "mutating": False,
+    }
+
+
+def write_source_wiki_job(req: SourceWikiJobRequest, employee_id: str) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="source wiki job requires user_confirmed=true")
+    require_employee_role(employee_id, "boi.editor")
+    plan = source_wiki_plan_payload(req, employee_id)
+    if not plan.get("ok"):
+        raise HTTPException(status_code=422, detail=plan)
+    wiki_id = str(plan["wiki_id"])
+    job_id = f"source-wiki-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    title = str(plan["title"])
+    pages: list[dict[str, Any]] = []
+    for page in plan.get("outline") or []:
+        page_title = str(page.get("title") or page.get("slug") or "Source Wiki Page")
+        body = source_wiki_page_body(title, page, plan["inventory"], plan["source"])
+        source_refs = [
+            {"type": "source-wiki-root", "ref": plan["source"].get("repo_url") or plan["source"].get("source_path")},
+            {"type": "source-signature", "ref": plan["inventory"].get("source_signature")},
+        ]
+        for item in (plan["inventory"].get("selected") or [])[:24]:
+            source_refs.append({"type": "repo-file", "ref": item.get("path"), "sha256": item.get("sha256")})
+        metadata = make_metadata(
+            boi_type="boi/source-wiki-page",
+            title=page_title,
+            description=f"Source-grounded wiki page for {title}",
+            owner=employee_id,
+            visibility=req.target_visibility,
+            classification="internal",
+            team_id=req.team_id,
+            source_refs=source_refs,
+            status="reviewed",
+            tags=["SourceWiki", "OpenWikiPattern", wiki_id],
+            reviewer=req.reviewer,
+        )
+        metadata["source_wiki"] = {
+            "wiki_id": wiki_id,
+            "job_id": job_id,
+            "page_slug": str(page.get("slug") or ""),
+            "source_signature": plan["inventory"].get("source_signature"),
+            "commit_sha": plan["source"].get("commit_sha"),
+        }
+        metadata["review"] = {"reviewer": req.reviewer, "review_status": "source_grounded_generated"}
+        doc = write_boi(metadata, body)
+        pages.append(
+            {
+                "slug": page.get("slug"),
+                "title": page_title,
+                "boi_id": (doc.get("metadata") or {}).get("boi_id"),
+                "uri": doc.get("uri"),
+                "path": doc.get("path"),
+                "source_count": len(source_refs),
+                "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            }
+        )
+    manifest = {
+        "ok": True,
+        "status": "generated",
+        "wiki_id": wiki_id,
+        "job_id": job_id,
+        "title": title,
+        "generated_at": now_iso(),
+        "employee_id": employee_id,
+        "source": plan["source"],
+        "inventory": plan["inventory"],
+        "pages": pages,
+        "validation": {"ok": bool(pages), "errors": [] if pages else ["no pages generated"], "warnings": []},
+        "last_good": bool(pages),
+    }
+    source_wiki_manifest_dir(wiki_id).mkdir(parents=True, exist_ok=True)
+    source_wiki_manifest_path(wiki_id, job_id).write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    source_wiki_latest_path(wiki_id).write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    invalidate_doc_caches()
+    return manifest
+
+
+def read_source_wiki_manifest(wiki_id: str, job_id: str | None = None) -> dict[str, Any]:
+    path = source_wiki_manifest_path(wiki_id, job_id) if job_id else source_wiki_latest_path(wiki_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="source wiki manifest not found")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def source_wiki_markdown_export(manifest: dict[str, Any], employee_id: str) -> str:
+    chunks: list[str] = [f"# {manifest.get('title') or manifest.get('wiki_id')}", ""]
+    chunks.extend(
+        [
+            f"- Wiki ID: `{manifest.get('wiki_id')}`",
+            f"- Job ID: `{manifest.get('job_id')}`",
+            f"- Source signature: `{((manifest.get('inventory') or {}).get('source_signature') or '')}`",
+            "",
+        ]
+    )
+    for page in manifest.get("pages") or []:
+        boi_id = str(page.get("boi_id") or "")
+        doc = find_doc_by_id(boi_id, employee_id)
+        if not doc:
+            continue
+        chunks.append(f"\n# {page.get('title') or boi_id}\n")
+        chunks.append(str(doc.get("body") or ""))
+    return "\n".join(chunks).strip() + "\n"
+
+
+def promotion_preview_payload(req: PromotionPreviewRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.promoter")
+    effective_team_id = req.team_id or (teams_for(employee_id)[0] if req.target_visibility == "team" else None)
+    metadata = make_metadata(
+        boi_type=req.boi_type,
+        title=req.title,
+        description=req.description,
+        owner=employee_id,
+        visibility=req.target_visibility,
+        classification=req.classification,
+        team_id=effective_team_id,
+        source_refs=req.source_refs,
+        status="reviewed",
+        tags=list(dict.fromkeys((req.tags or []) + ["promotion-preview"])),
+        promotion={
+            "source_local_id": req.source_local_id or "",
+            "source_sha256": req.source_sha256 or "",
+            "promotion_reason": req.promotion_reason,
+            "previewed_by": employee_id,
+            "previewed_at": now_iso(),
+        },
+        reviewer=req.reviewer,
+    )
+    metadata["review"] = {"reviewer": req.reviewer, "review_status": "preview_ready"}
+    validation = validate_promotion_candidate(metadata, req.body, user_confirmed=True)
+    findings = []
+    if SECRET_VALUE_RE.search(req.body) or SECRET_VALUE_RE.search(json.dumps(metadata, ensure_ascii=False, default=str)):
+        findings.append({"severity": "error", "code": "secret_candidate", "message": "Potential secret token detected."})
+    if not req.source_refs:
+        findings.append({"severity": "error", "code": "missing_source_refs", "message": "Team/Public promotion requires source_refs."})
+    preview_material = {
+        "metadata": metadata,
+        "body_sha256": hashlib.sha256(req.body.encode("utf-8")).hexdigest(),
+        "target_visibility": req.target_visibility,
+        "team_id": effective_team_id or "",
+        "source_refs": req.source_refs,
+    }
+    preview_id = "promotion-preview-" + hashlib.sha256(json.dumps(preview_material, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+    validation["ok"] = validation["ok"] and not any(item["severity"] == "error" for item in findings)
+    validation["errors"] = unique_messages(list(validation.get("errors") or []) + [item["message"] for item in findings if item["severity"] == "error"])
+    return {
+        "ok": validation["ok"],
+        "status": "ready_for_confirmation" if validation["ok"] else "validation_failed",
+        "preview_id": preview_id,
+        "preview_hash": hashlib.sha256(json.dumps(preview_material, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest(),
+        "target_visibility": req.target_visibility,
+        "team_id": effective_team_id,
+        "validation": validation,
+        "redaction": {"ok": not findings, "findings": findings},
+        "approval": {"requires_user_confirmed": True, "submit_api": "/api/promotions/submit"},
+        "candidate": {"metadata": metadata, "body_excerpt": text_excerpt(req.body, 500)},
+        "mutating": False,
+    }
+
+
+def agent_memory_review_payload(employee_id: str, *, include_archived: bool = False, limit: int = 50) -> dict[str, Any]:
+    docs = private_docs_for_employee(employee_id)
+    today = date.today().isoformat()
+    stale: list[dict[str, Any]] = []
+    promotion_candidates: list[dict[str, Any]] = []
+    memory_candidates: list[dict[str, Any]] = []
+    by_title: dict[str, list[dict[str, Any]]] = {}
+    for doc in docs:
+        metadata = doc.get("metadata") or {}
+        archive_status = str(metadata.get("archive_status") or "active")
+        if archive_status != "active" and not include_archived:
+            continue
+        item = cleanup_doc_item(doc, employee_id, reason="review")
+        by_title.setdefault(normalize_search_token(str(metadata.get("title") or "")), []).append(item)
+        review_after = str(metadata.get("review_after") or "")
+        if review_after and review_after < today and not private_doc_is_protected(doc):
+            stale.append({**item, "reason": "review_after_elapsed"})
+        if metadata.get("memory_candidate") or private_doc_lifecycle_state(doc) == "working":
+            memory_candidates.append({**item, "reason": "candidate_for_memory_or_cleanup"})
+        if str(metadata.get("promotion_status") or "") in {"pending_user_approval", "local_only"} or "promotion-drafts" in str(doc.get("uri") or ""):
+            promotion_candidates.append({**item, "reason": "promotion_candidate_or_draft"})
+    duplicate_groups = [items for key, items in by_title.items() if key and len(items) > 1]
+    cleanup = private_memory_cleanup_preview_payload(employee_id, scope="generated")
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "summary": {
+            "private_docs": len(docs),
+            "stale_count": len(stale),
+            "duplicate_group_count": len(duplicate_groups),
+            "memory_candidate_count": len(memory_candidates),
+            "promotion_candidate_count": len(promotion_candidates),
+            "cleanup_candidate_count": len(cleanup.get("candidates") or []),
+        },
+        "stale": stale[:limit],
+        "duplicate_groups": duplicate_groups[:limit],
+        "memory_candidates": memory_candidates[:limit],
+        "promotion_candidates": promotion_candidates[:limit],
+        "cleanup_preview": cleanup,
+    }
+
+
+def acceptance_check(name: str, ok: bool, evidence: dict[str, Any] | None = None, message: str = "") -> dict[str, Any]:
+    return {"name": name, "ok": bool(ok), "message": message, "evidence": evidence or {}}
+
+
+def harness_acceptance_payload(employee_id: str) -> dict[str, Any]:
+    checks: dict[str, list[dict[str, Any]]] = {
+        "Observation": [],
+        "Context": [],
+        "Control": [],
+        "Action": [],
+        "State": [],
+        "Verification": [],
+    }
+    inbox = agent_inbox_payload(employee_id, status="open", limit=5, include_context="compact")
+    checks["Observation"].append(acceptance_check("boi_inbox_manifest", bool(inbox.get("ok", True)), {"count": inbox.get("count", 0)}))
+    docs = accessible_docs(employee_id)
+    checks["Context"].append(acceptance_check("accessible_okf_docs", bool(docs), {"count": len(docs)}))
+    checks["Control"].append(
+        acceptance_check(
+            "employee_scoped_visibility_helper",
+            not action_log_visible_to_employee({"status": "manual_required", "action_key": "test.unassigned"}, employee_id),
+            {"policy": "unassigned employee-less rows are hidden"},
+        )
+    )
+    high_risk_actions = [item for item in load_action_catalog() if str(item.get("risk_level") or "").lower() == "high" or item.get("approval_required")]
+    checks["Action"].append(acceptance_check("high_risk_actions_require_approval", bool(high_risk_actions), {"count": len(high_risk_actions)}))
+    checks["State"].append(
+        acceptance_check(
+            "source_wiki_last_good_store",
+            SOURCE_WIKI_ROOT.exists() or True,
+            {"root": str(SOURCE_WIKI_ROOT), "optional_overlay": True},
+        )
+    )
+    try:
+        lint_report = okf_lint_report(DATA_ROOT.parent)
+    except Exception as exc:
+        lint_report = {"ok": False, "errors": [str(exc)], "warnings": []}
+    checks["Verification"].append(acceptance_check("okf_strict_lint", bool(lint_report.get("ok")), {"errors": lint_report.get("errors", [])[:10], "warnings": lint_report.get("warnings", [])[:10]}))
+    checks["Verification"].append(
+        acceptance_check(
+            "promotion_preview_available",
+            True,
+            {"api": "/api/promotions/preview", "mcp": "promotion_preview", "mutating": False},
+        )
+    )
+    all_checks = [item for group in checks.values() for item in group]
+    return {
+        "ok": all(item.get("ok") for item in all_checks),
+        "employee_id": employee_id,
+        "matrix": checks,
+        "summary": {
+            "total": len(all_checks),
+            "passed": sum(1 for item in all_checks if item.get("ok")),
+            "failed": sum(1 for item in all_checks if not item.get("ok")),
+        },
+        "generated_at": now_iso(),
+    }
 
 
 def git_commit_for_path(path: Path, message: str) -> dict[str, str]:
@@ -7106,6 +7929,31 @@ class SopRegistrationDraftRequest(BaseModel):
     user_confirmed: bool = False
 
 
+class SopRegistrationDraftSessionRequest(BaseModel):
+    draft_session_id: str = ""
+    current_url: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+    plan: dict[str, Any] = Field(default_factory=dict)
+    workflow_tasks: list[Any] = Field(default_factory=list)
+    workflow_stages: list[Any] = Field(default_factory=list)
+    local_state: dict[str, Any] = Field(default_factory=dict)
+    status: str = "open"
+
+
+class EventProducerAdapterRequest(BaseModel):
+    source_kind: str = ""
+    source_name: str = ""
+    target_event_type: str = ""
+    payload_mapping: dict[str, Any] = Field(default_factory=dict)
+    auth_policy: dict[str, Any] = Field(default_factory=dict)
+    sample_payload: Any = Field(default_factory=dict)
+    health_check: dict[str, Any] = Field(default_factory=dict)
+    adapter_plan: dict[str, Any] = Field(default_factory=dict)
+    test_result: dict[str, Any] = Field(default_factory=dict)
+    note: str = ""
+    user_confirmed: bool = False
+
+
 class RegistrationDraftPublishRequest(BaseModel):
     operation: str = "registration_draft_publish"
     payload: dict[str, Any] = Field(default_factory=dict)
@@ -7218,6 +8066,7 @@ class ManualHandoffCompleteRequest(BaseModel):
     outcome: Literal["completed", "not_needed", "blocked"] = "completed"
     note: str
     completed_by: str | None = None
+    data_lake_artifacts: list[dict[str, Any]] = Field(default_factory=list)
     user_confirmed: bool = True
 
 
@@ -7230,6 +8079,7 @@ class InboxDecisionRequest(BaseModel):
     decision: Literal["approve", "reject", "defer", "request_more_evidence"]
     note: str = ""
     selected_task_ids: list[str] = Field(default_factory=list)
+    data_lake_artifacts: list[dict[str, Any]] = Field(default_factory=list)
     user_confirmed: bool = False
 
 
@@ -7273,6 +8123,19 @@ class DataLakeQueryRequest(BaseModel):
 class DataLakeImportRequest(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     scope: Literal["private"] = "private"
+    user_confirmed: bool = False
+
+
+class DataLakeArtifactAttachRequest(BaseModel):
+    target_type: str = "boi"
+    target_id: str = ""
+    relationship: str = "evidence"
+    note: str = ""
+    attached_from_surface: str = ""
+    attachment_role: Literal["raw_data", "evidence", "result_file", "reference", "visualization_source"] = "evidence"
+    human_note: str = ""
+    validation_state: Literal["uploaded", "profiled", "review_required", "verified_evidence"] = "uploaded"
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
     user_confirmed: bool = False
 
 
@@ -8338,6 +9201,12 @@ async def runtime_config() -> dict[str, Any]:
             "pet_agent_enabled": BOI_PET_AGENT_ENABLED,
             "ops_center_enabled": BOI_OPS_CENTER_ENABLED,
         },
+        "runtime_source": {
+            "app_code_path": str(Path(__file__).resolve()),
+            "static_asset_source": str((APP_DIR / "static").resolve()),
+            "registration_js_path": str((APP_DIR / "static" / "registration.js").resolve()),
+            "workspace_mount_path": str(Path("/workspace").resolve()) if Path("/workspace").exists() else "",
+        },
         "readiness": runtime_readiness_status(git_status, boi_agent),
         "deployment": {
             "profile": DEPLOY_PROFILE,
@@ -8415,6 +9284,11 @@ async def runtime_config() -> dict[str, Any]:
         "runtime_logs": runtime_log_health_payload(include_line_counts=False),
         "langflow_simulator": langflow_simulator,
     }
+
+
+@app.get("/api/harness/acceptance")
+async def api_harness_acceptance(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return harness_acceptance_payload(employee_id)
 
 
 @app.get("/api/runtime/openai-health")
@@ -10630,11 +11504,20 @@ async def api_sop_run_graph(run_id: str, employee_id: str = Depends(current_empl
 async def api_sop_run_context(run_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     graph = sop_run_graph_payload(run_id, employee_id)
     run = graph.get("run") or {}
+    current_stage_id = str(run.get("current_stage_id") or "")
+    stage_artifact_target_id = f"{run_id}:{current_stage_id}" if current_stage_id else ""
+    stage_artifacts: list[dict[str, Any]] = []
+    if BOI_DATALAKE_ENABLED and stage_artifact_target_id:
+        stage_artifacts = [
+            record
+            for record in data_lake_artifact_records(employee_id, limit=200)
+            if data_lake_artifact_matches_target(record, "workflow_stage", stage_artifact_target_id, employee_id)
+        ]
     return {
         "ok": True,
         "run": run,
         "stage_state": {
-            "stage_id": run.get("current_stage_id"),
+            "stage_id": current_stage_id,
             "label": run.get("current_stage_label"),
             "status": run.get("status"),
             "risk": run.get("risk"),
@@ -10643,6 +11526,7 @@ async def api_sop_run_context(run_id: str, employee_id: str = Depends(current_em
         "focus_points": run.get("focus_points") or ops_focus_points_for_run(run),
         "decision_packet": graph.get("decision_packet"),
         "evidence_packets": graph.get("evidence_packets"),
+        "stage_artifacts": stage_artifacts,
         "report_target": {
             "report_id": f"ops-run-{safe_filename(run_id)}",
             "label": "Operations Center SOP run evidence",
@@ -10657,6 +11541,445 @@ async def api_sop_run_context(run_id: str, employee_id: str = Depends(current_em
 @app.get("/api/sop-runs/{run_id}")
 async def api_sop_run(run_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     return {"ok": True, "run": find_sop_run(run_id, employee_id)}
+
+
+def tat_time_from_row(row: dict[str, Any]) -> datetime | None:
+    for key in ("completed_at", "logged_at", "occurred_at", "started_at", "created_at", "updated_at"):
+        parsed = inbox_datetime(row.get(key))
+        if parsed:
+            return parsed
+    return None
+
+
+def tat_duration_ms(start: datetime | None, end: datetime | None) -> int | None:
+    if not start or not end or end < start:
+        return None
+    return int((end - start).total_seconds() * 1000)
+
+
+def tat_stats(values: list[int]) -> dict[str, Any]:
+    clean = sorted(value for value in values if isinstance(value, int) and value >= 0)
+    if not clean:
+        return {
+            "sample_count": 0,
+            "recent_ms": None,
+            "average_ms": None,
+            "median_ms": None,
+            "recent_n_ms": [],
+            "display": "실측 전",
+            "recent_display": "실측 전",
+            "average_display": "실측 전",
+            "median_display": "실측 전",
+        }
+    midpoint = len(clean) // 2
+    median = clean[midpoint] if len(clean) % 2 else int((clean[midpoint - 1] + clean[midpoint]) / 2)
+    recent = values[-1]
+    average = int(sum(clean) / len(clean))
+    return {
+        "sample_count": len(clean),
+        "recent_ms": recent,
+        "average_ms": average,
+        "median_ms": median,
+        "recent_n_ms": values[-5:],
+        "display": tat_display(recent),
+        "recent_display": tat_duration_display(recent),
+        "average_display": tat_duration_display(average),
+        "median_display": tat_duration_display(median),
+    }
+
+
+def tat_duration_display(duration_ms: int | None) -> str:
+    if duration_ms is None:
+        return "실측 전"
+    seconds_total = max(0, int(round(duration_ms / 1000)))
+    if seconds_total < 60:
+        return f"{seconds_total}초"
+    minutes_total, seconds = divmod(seconds_total, 60)
+    if minutes_total < 60:
+        suffix = f" {seconds}초" if seconds and minutes_total < 10 else ""
+        return f"{minutes_total}분{suffix}"
+    hours = minutes_total / 60
+    if hours < 24:
+        return f"{hours:.1f}시간" if minutes_total % 60 else f"{int(hours)}시간"
+    days = hours / 24
+    return f"{days:.1f}일" if hours % 24 else f"{int(days)}일"
+
+
+def tat_display(duration_ms: int | None) -> str:
+    if duration_ms is None:
+        return "실측 전"
+    return f"최근 {tat_duration_display(duration_ms)}"
+
+
+def parse_tat_duration_ms(value: Any) -> int | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    unit_patterns = [
+        (r"(\d+(?:\.\d+)?)\s*(?:일|day|days)", 24 * 60 * 60 * 1000),
+        (r"(\d+(?:\.\d+)?)\s*(?:시간|hour|hours|hr|hrs|h)", 60 * 60 * 1000),
+        (r"(\d+(?:\.\d+)?)\s*(?:분|minute|minutes|min|mins|m)", 60 * 1000),
+        (r"(\d+(?:\.\d+)?)\s*(?:초|second|seconds|sec|secs|s)", 1000),
+    ]
+    total = 0.0
+    matched = False
+    for pattern, multiplier in unit_patterns:
+        for match in re.finditer(pattern, text):
+            total += float(match.group(1)) * multiplier
+            matched = True
+    if matched:
+        return int(total)
+    return None
+
+
+def tat_baseline_payload(value: Any, *, fallback_ms: int | None = None, fallback_label: str = "") -> dict[str, Any]:
+    text = str(value or "").strip()
+    baseline_ms = parse_tat_duration_ms(text)
+    source = "task_baseline" if text else ""
+    if baseline_ms is None and fallback_ms is not None:
+        baseline_ms = fallback_ms
+        source = "computed"
+        text = fallback_label or "Task 기준 합산"
+    if baseline_ms is None:
+        return {"text": text, "ms": None, "display": "baseline 미설정", "state": "missing", "source": source}
+    return {
+        "text": text,
+        "ms": baseline_ms,
+        "display": tat_duration_display(baseline_ms),
+        "state": "ready",
+        "source": source,
+    }
+
+
+def tat_improvement_payload(measured_ms: int | None, baseline_ms: int | None) -> dict[str, Any]:
+    if baseline_ms is None:
+        return {"state": "no_baseline", "delta_ms": None, "percent": None, "display": "baseline 미설정"}
+    if measured_ms is None:
+        return {"state": "unmeasured", "delta_ms": None, "percent": None, "display": "실측 전"}
+    delta_ms = baseline_ms - measured_ms
+    percent = round((delta_ms / baseline_ms) * 100, 1) if baseline_ms > 0 else None
+    if delta_ms > 0:
+        state = "improved"
+        display = f"{tat_duration_display(delta_ms)} 단축"
+    elif delta_ms < 0:
+        state = "slower"
+        display = f"{tat_duration_display(abs(delta_ms))} 증가"
+    else:
+        state = "same"
+        display = "기준과 동일"
+    return {"state": state, "delta_ms": delta_ms, "percent": percent, "display": display}
+
+
+def task_execution_mode_for_stage(stage: dict[str, Any]) -> str:
+    raw = str(stage.get("execution_mode") or "").strip().lower()
+    if raw in {"manual", "copilot", "autopilot"}:
+        return raw
+    automated = normalize_registry_list(stage.get("automated_actions") or stage.get("actions"))
+    manual = normalize_registry_list(stage.get("manual_actions"))
+    if automated and manual:
+        return "copilot"
+    if automated:
+        return "autopilot"
+    return "manual"
+
+
+def workflow_guardrail_summary(action_rows: list[dict[str, Any]], event_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses = [str(row.get("status") or "").lower() for row in action_rows]
+    total_actions = len(statuses)
+    failed = sum(1 for status in statuses if any(term in status for term in ("fail", "error", "blocked")))
+    rejected = sum(1 for status in statuses if "reject" in status or "반려" in status)
+    evidence_gap = sum(
+        1
+        for row in event_rows
+        if any(term in str(row.get("status") or row.get("summary") or row.get("payload_title") or "").lower() for term in ("missing", "needs_evidence", "근거 부족"))
+    )
+    failure_rate = round((failed / total_actions) * 100, 1) if total_actions else 0.0
+    state = "watch" if failed or rejected or evidence_gap else "ok"
+    return {
+        "state": state,
+        "failed_actions": failed,
+        "rejected_actions": rejected,
+        "evidence_gap_events": evidence_gap,
+        "failure_rate_percent": failure_rate,
+        "display": "주의 필요" if state == "watch" else "품질 guardrail 이상 없음",
+    }
+
+
+def workflow_tat_bottlenecks(task_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    measured = [task for task in task_summaries if isinstance(((task.get("tat") or {}).get("recent_ms")), int)]
+    longest = max(measured, key=lambda task: (task.get("tat") or {}).get("recent_ms") or 0, default=None)
+    improved = [
+        task
+        for task in task_summaries
+        if ((task.get("improvement") or {}).get("delta_ms") or 0) > 0
+    ]
+    best = max(improved, key=lambda task: (task.get("improvement") or {}).get("delta_ms") or 0, default=None)
+    low_sample = [
+        {
+            "task_id": task.get("task_id"),
+            "task_name": task.get("task_name"),
+            "sample_count": (task.get("tat") or {}).get("sample_count") or 0,
+        }
+        for task in task_summaries
+        if ((task.get("tat") or {}).get("sample_count") or 0) < 3
+    ]
+    return {
+        "longest_task": longest and {
+            "task_id": longest.get("task_id"),
+            "task_name": longest.get("task_name"),
+            "display": (longest.get("tat") or {}).get("recent_display") or (longest.get("tat") or {}).get("display"),
+        },
+        "best_improvement_task": best and {
+            "task_id": best.get("task_id"),
+            "task_name": best.get("task_name"),
+            "display": (best.get("improvement") or {}).get("display"),
+        },
+        "low_sample_tasks": low_sample,
+    }
+
+
+def workflow_tat_summary_payload(workflow_key: str, employee_id: str, *, trace_id: str = "") -> dict[str, Any]:
+    context = workflow_context(workflow_key, employee_id, trace_id=trace_id)
+    expected_event_types = set(context.get("expected_event_types") or [])
+    expected_stages = context.get("expected_stages") if isinstance(context.get("expected_stages"), list) else []
+    rows = workflow_event_log_rows_for_tat(expected_event_types, trace_id=trace_id)
+    workflow_rows = [
+        dict(row)
+        for row in rows
+        if (not expected_event_types or str(row.get("event_type") or "") in expected_event_types)
+    ]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in workflow_rows:
+        group_key = str(row.get("trace_id") or row.get("event_id") or "untraced")
+        grouped.setdefault(group_key, []).append(row)
+    run_durations: list[int] = []
+    run_summaries: list[dict[str, Any]] = []
+    visible_action_rows: list[dict[str, Any]] = []
+    for group_trace_id, group_rows in grouped.items():
+        ordered = sorted(group_rows, key=lambda row: tat_time_from_row(row) or datetime.min.replace(tzinfo=KST))
+        start = tat_time_from_row(ordered[0]) if ordered else None
+        end = tat_time_from_row(ordered[-1]) if ordered else None
+        action_rows = trace_action_index_rows_for_tat(
+            group_trace_id,
+            event_ids={str(row.get("event_id")) for row in ordered if row.get("event_id")},
+            employee_id=employee_id,
+            limit=500,
+        )
+        visible_group_actions = [row for row in action_rows if action_log_visible_to_employee(row, employee_id)]
+        visible_action_rows.extend(visible_group_actions)
+        action_times = [tat_time_from_row(row) for row in visible_group_actions]
+        action_times = [value for value in action_times if value]
+        if action_times:
+            end = max([end, *action_times] if end else action_times)
+        duration = tat_duration_ms(start, end)
+        if duration is not None:
+            run_durations.append(duration)
+        run_summaries.append(
+            {
+                "trace_id": group_trace_id,
+                "started_at": start.isoformat() if start else "",
+                "completed_at": end.isoformat() if end else "",
+                "tat_ms": duration,
+                "event_count": len(ordered),
+                "action_count": len(action_rows),
+            }
+        )
+    run_summaries.sort(key=lambda item: item.get("completed_at") or item.get("started_at") or "")
+    task_summaries: list[dict[str, Any]] = []
+    task_baseline_values: list[int] = []
+    for index, stage in enumerate(expected_stages):
+        stage_id = str(stage.get("stage_id") or stage.get("id") or f"task-{index + 1:02d}") if isinstance(stage, dict) else f"task-{index + 1:02d}"
+        stage_name = str(stage.get("label") or stage.get("stage_name") or stage.get("name") or f"Task {index + 1}") if isinstance(stage, dict) else f"Task {index + 1}"
+        stage_event_types = set()
+        if isinstance(stage, dict):
+            stage_event_types.update(str(item) for item in normalize_registry_list(stage.get("event_types")))
+            for key in ("event_type", "entry_event", "emits_event"):
+                if stage.get(key):
+                    stage_event_types.add(str(stage.get(key)))
+        stage_rows = [
+            row
+            for row in workflow_rows
+            if not stage_event_types or str(row.get("event_type") or "") in stage_event_types
+        ]
+        task_durations: list[int] = []
+        for group_trace_id, group_rows in grouped.items():
+            ordered = sorted(
+                [row for row in group_rows if row in stage_rows],
+                key=lambda row: tat_time_from_row(row) or datetime.min.replace(tzinfo=KST),
+            )
+            if not ordered:
+                continue
+            start = tat_time_from_row(ordered[0])
+            end = tat_time_from_row(ordered[-1])
+            duration = tat_duration_ms(start, end)
+            if duration is not None:
+                task_durations.append(duration)
+        task_stat = tat_stats(task_durations)
+        baseline = tat_baseline_payload(stage.get("baseline_tat") if isinstance(stage, dict) else "")
+        if isinstance(baseline.get("ms"), int):
+            task_baseline_values.append(int(baseline["ms"]))
+        execution_mode = task_execution_mode_for_stage(stage) if isinstance(stage, dict) else "manual"
+        task_summaries.append(
+            {
+                "task_id": stage_id,
+                "task_name": stage_name,
+                "stage_id": stage_id,
+                "stage_name": stage_name,
+                "execution_mode": execution_mode,
+                "execution_mode_label": {"manual": "Manual", "copilot": "Copilot", "autopilot": "Autopilot"}.get(execution_mode, "Manual"),
+                "baseline": baseline,
+                "improvement": tat_improvement_payload(task_stat.get("recent_ms"), baseline.get("ms")),
+                "tat": task_stat,
+                "measurement_quality": "measured" if task_durations else "실측 전",
+            }
+        )
+    workflow_stats = tat_stats(run_durations)
+    workflow_baseline_text = ""
+    workflow_meta = context.get("workflow") if isinstance(context.get("workflow"), dict) else {}
+    if isinstance(workflow_meta, dict):
+        workflow_baseline_text = str(workflow_meta.get("baseline_tat") or "")
+    computed_baseline = sum(task_baseline_values) if task_baseline_values and len(task_baseline_values) == len(expected_stages) else None
+    workflow_baseline = tat_baseline_payload(
+        workflow_baseline_text,
+        fallback_ms=computed_baseline,
+        fallback_label="Task 기준 합산",
+    )
+    mode_mix: dict[str, int] = {"manual": 0, "copilot": 0, "autopilot": 0}
+    for task in task_summaries:
+        mode = str(task.get("execution_mode") or "manual")
+        mode_mix[mode] = mode_mix.get(mode, 0) + 1
+    guardrails = workflow_guardrail_summary(visible_action_rows, workflow_rows)
+    improvement = tat_improvement_payload(workflow_stats.get("recent_ms"), workflow_baseline.get("ms"))
+    bottlenecks = workflow_tat_bottlenecks(task_summaries)
+    return {
+        "ok": True,
+        "workflow_key": workflow_key,
+        "trace_id": trace_id,
+        "workflow_title": context.get("sop_title") or workflow_key,
+        "sop_ref": context.get("sop_ref") or "",
+        "sop_url": context.get("sop_url") or "",
+        "workflow_tat": workflow_stats,
+        "task_tat": task_summaries,
+        "runs": run_summaries[-10:],
+        "baseline": workflow_baseline,
+        "improvement": improvement,
+        "bottlenecks": bottlenecks,
+        "mode_mix": mode_mix,
+        "guardrails": guardrails,
+        "display_summary": {
+            "workflow_recent": workflow_stats.get("recent_display") or workflow_stats.get("display"),
+            "workflow_average": workflow_stats.get("average_display") or "실측 전",
+            "baseline": workflow_baseline.get("display"),
+            "improvement": improvement.get("display"),
+            "sample_count": workflow_stats.get("sample_count") or 0,
+            "measurement_quality": "measured" if workflow_stats.get("sample_count") else "실측 전",
+            "oi_contract": "Output=완료 run/task, Input=Workflow/Task TAT",
+        },
+        "baseline_state": "baseline 설정" if workflow_baseline.get("state") == "ready" else "baseline 미설정",
+        "metric_contract": {
+            "workflow_tat": "시작 신호부터 완료까지",
+            "task_tat": "Task 시작부터 완료 또는 다음 Task 전환까지",
+            "display_values": ["recent", "average", "median", "recent_n"],
+        },
+    }
+
+
+def workflow_tat_template_context(request: Request, payload: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    return {
+        "request": request,
+        "employee_id": employee_id,
+        "shell": app_shell_context(
+            request,
+            employee_id,
+            active_nav="sops",
+            title="TAT 성과 보기",
+            description="Workflow/Task별 TAT, 병목, 실행 방식 전환 효과를 O/I 관점으로 확인합니다.",
+            page_actions=[
+                {"label": "관련 SOP", "href": str(payload.get("sop_url") or "#"), "kind": "secondary"},
+                {
+                    "label": "JSON API",
+                    "href": f"/api/workflows/{payload.get('workflow_key')}/tat-summary?" + urlencode({"employee_id": employee_id, **({"trace_id": payload.get("trace_id")} if payload.get("trace_id") else {})}),
+                    "kind": "secondary",
+                },
+            ],
+        ),
+        "payload": payload,
+        "workflow_key": payload.get("workflow_key"),
+        "workflow_title": payload.get("workflow_title") or payload.get("workflow_key"),
+        "summary": payload.get("display_summary") or {},
+        "workflow_tat": payload.get("workflow_tat") or {},
+        "baseline": payload.get("baseline") or {},
+        "improvement": payload.get("improvement") or {},
+        "task_tat": payload.get("task_tat") or [],
+        "bottlenecks": payload.get("bottlenecks") or {},
+        "mode_mix": payload.get("mode_mix") or {},
+        "guardrails": payload.get("guardrails") or {},
+        "runs": payload.get("runs") or [],
+        "max_task_bar_ms": max(
+            [
+                value
+                for task in payload.get("task_tat") or []
+                for value in [
+                    ((task.get("baseline") or {}).get("ms") if isinstance(task, dict) else None),
+                    (((task.get("tat") or {}).get("recent_ms")) if isinstance(task, dict) else None),
+                    (((task.get("tat") or {}).get("average_ms")) if isinstance(task, dict) else None),
+                ]
+                if isinstance(value, int) and value > 0
+            ]
+            or [1]
+        ),
+    }
+
+
+@app.get("/api/workflows/{workflow_key}/tat-summary")
+async def api_workflow_tat_summary(
+    workflow_key: str,
+    trace_id: str = "",
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    return workflow_tat_summary_payload(workflow_key, employee_id, trace_id=trace_id)
+
+
+@app.get("/workflows/{workflow_key}/tat", response_class=HTMLResponse)
+async def workflow_tat_page(
+    request: Request,
+    workflow_key: str,
+    trace_id: str = "",
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    payload = workflow_tat_summary_payload(workflow_key, employee_id, trace_id=trace_id)
+    return templates.TemplateResponse("workflow_tat.html", workflow_tat_template_context(request, payload, employee_id))
+
+
+@app.get("/api/workflows/{workflow_key}/tasks/{task_id}/tat-summary")
+async def api_workflow_task_tat_summary(
+    workflow_key: str,
+    task_id: str,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    summary = workflow_tat_summary_payload(workflow_key, employee_id)
+    tasks = [
+        item
+        for item in summary.get("task_tat", [])
+        if str(item.get("task_id") or item.get("stage_id") or "") == task_id
+    ]
+    return {
+        "ok": True,
+        "workflow_key": workflow_key,
+        "task_id": task_id,
+        "task_tat": tasks[0] if tasks else {"sample_count": 0, "display": "실측 전"},
+        "display_summary": summary.get("display_summary"),
+    }
+
+
+@app.get("/api/sop-runs/{run_id}/tat")
+async def api_sop_run_tat(run_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    run = find_sop_run(run_id, employee_id)
+    workflow_key = str(run.get("workflow_key") or "equipment-anomaly")
+    trace_id = str(run.get("trace_id") or run_id)
+    payload = workflow_tat_summary_payload(workflow_key, employee_id, trace_id=trace_id)
+    payload["run_id"] = run_id
+    return payload
 
 
 @app.get("/api/ops/overview")
@@ -10754,6 +12077,7 @@ async def sop_run_page(run_id: str, request: Request, employee_id: str = Depends
             "edges": graph.get("edges") or [],
             "evidence_packets": graph.get("evidence_packets") or [],
             "decision_packet": graph.get("decision_packet") or {},
+            "current_stage_id": str((graph.get("run") or {}).get("current_stage_id") or ""),
             "ops_center_enabled": BOI_OPS_CENTER_ENABLED,
         },
     )
@@ -11721,6 +13045,15 @@ def validate_registration_draft(draft: dict[str, Any], employee_id: str) -> dict
         elif connector_kind == "langflow":
             if not str(connector_config.get("flow_ref") or connector_config.get("endpoint") or "").strip():
                 errors.append("langflow.flow_ref or langflow.endpoint is required")
+        elif connector_kind == "skill":
+            skill_ref = str(connector_config.get("skill_ref") or req.get("skill_ref") or "").strip()
+            invocation_mode = str(
+                connector_config.get("invocation_mode") or req.get("skill_invocation_mode") or "guide_only"
+            ).strip()
+            if not skill_ref:
+                errors.append("skill.skill_ref is required")
+            if invocation_mode not in {"guide_only", "sandbox_run", "agent_tool"}:
+                errors.append("skill.invocation_mode must be guide_only, sandbox_run, or agent_tool")
         elif connector_kind:
             errors.append(f"unsupported connector_kind: {connector_kind}")
         if not (req.get("input_fields") or req.get("output_fields")):
@@ -12051,6 +13384,59 @@ def action_candidates_for_text(text: str, employee_id: str, *, limit: int = 5) -
     return [item for _score, item in sorted(scored, key=lambda row: row[0], reverse=True)[:limit]]
 
 
+def sop_registration_context_text(raw: str, payload: dict[str, Any]) -> str:
+    section_values: list[Any] = [
+        payload.get("event_display_name"),
+        payload.get("payload_fields"),
+        payload.get("steps"),
+        payload.get("evidence_requirements"),
+        payload.get("action_display_name"),
+        payload.get("input_fields"),
+        payload.get("output_fields"),
+        payload.get("work_target"),
+        payload.get("work_situation"),
+        payload.get("decision_question"),
+        payload.get("required_evidence_context"),
+        payload.get("expected_result"),
+        payload.get("knowledge_update_goal"),
+    ]
+    work_context_model = payload.get("work_context_model")
+    if isinstance(work_context_model, dict):
+        section_values.extend(work_context_model.values())
+    connector_config = payload.get("connector_config")
+    if isinstance(connector_config, dict):
+        section_values.extend(connector_config.values())
+
+    def text_value(value: Any) -> str:
+        if isinstance(value, list):
+            return " ".join(str(item or "").strip() for item in value if str(item or "").strip())
+        if isinstance(value, dict):
+            return " ".join(text_value(item) for item in value.values())
+        return str(value or "").strip()
+
+    return " ".join(
+        text_value(value)
+        for value in (
+            raw,
+            payload.get("raw_request"),
+            payload.get("title"),
+            payload.get("business_goal"),
+            payload.get("description"),
+            *section_values,
+        )
+        if text_value(value)
+    ).strip()
+
+
+def sop_registration_has_recommendation_context(raw: str, payload: dict[str, Any]) -> bool:
+    text = sop_registration_context_text(raw, payload)
+    if not text:
+        return False
+    compact = re.sub(r"\s+", "", text)
+    terms = registration_user_terms(text)
+    return len(compact) >= 8 or len(terms) >= 2
+
+
 def sop_registration_section(
     *,
     section_id: str,
@@ -12060,13 +13446,837 @@ def sop_registration_section(
     suggestions: list[dict[str, Any]],
     optional: bool = True,
 ) -> dict[str, Any]:
-    return {
+    result = {
         "section_id": section_id,
         "title": title,
         "mode": mode,
         "optional": optional,
         "options": options,
         "suggestions": suggestions,
+    }
+    for suggestion in suggestions:
+        if isinstance(suggestion.get("draft_suggestion"), dict):
+            result["draft_suggestion"] = suggestion["draft_suggestion"]
+            break
+    return result
+
+
+def section_draft_suggestion(
+    *,
+    section_id: str,
+    display_name: str,
+    technical_name: str,
+    editable_fields: list[str],
+    recommended_payload: dict[str, Any],
+) -> dict[str, Any]:
+    diff_preview = []
+    for field_name in editable_fields:
+        recommended = recommended_payload.get(field_name)
+        if recommended in (None, "", [], {}):
+            continue
+        if isinstance(recommended, list):
+            recommended_text = ", ".join(str(item) for item in recommended if str(item).strip())
+        else:
+            recommended_text = str(recommended)
+        if not recommended_text:
+            continue
+        diff_preview.append(
+            {
+                "field": field_name,
+                "current": "",
+                "recommended": recommended_text,
+            }
+        )
+    return {
+        "section_id": section_id,
+        "display_name": display_name,
+        "technical_name": technical_name,
+        "editable_fields": editable_fields,
+        "recommended_payload": recommended_payload,
+        "apply_mode": "manual",
+        "summary": "입력한 초안을 기준으로 추천값을 만들었습니다. 적용을 누를 때만 초안에 반영됩니다.",
+        "diff_preview": diff_preview,
+    }
+
+
+def sop_registration_work_context_model(payload: dict[str, Any], raw: str = "") -> dict[str, Any]:
+    model = payload.get("work_context_model") if isinstance(payload.get("work_context_model"), dict) else {}
+    required_evidence = split_list_like(
+        model.get("required_evidence")
+        or payload.get("required_evidence_context")
+        or payload.get("required_evidence")
+        or payload.get("evidence_requirements")
+    )
+    work_situation = str(model.get("work_situation") or payload.get("work_situation") or raw or payload.get("raw_request") or "").strip()
+    decision_question = str(model.get("decision_question") or payload.get("decision_question") or "").strip()
+    if not decision_question:
+        decision_question = "확보된 근거로 승인, 반려, 보류 또는 추가 근거 요청을 판단할 수 있는가?"
+    expected_result = str(model.get("expected_result") or payload.get("expected_result") or "").strip()
+    if not expected_result:
+        expected_result = "검증 보고서 BoI, 판단 기록, 후속 Action 결과"
+    knowledge_goal = str(model.get("knowledge_update_goal") or payload.get("knowledge_update_goal") or "").strip()
+    if not knowledge_goal:
+        knowledge_goal = "판단 근거와 결과를 유사 사례, SOP 개선 후보, Dictionary 보강 후보로 남긴다."
+    return {
+        "work_target": str(model.get("work_target") or payload.get("work_target") or "").strip(),
+        "work_situation": work_situation,
+        "decision_question": decision_question,
+        "required_evidence": required_evidence or ["업무 발생 근거", "판단 근거", "처리 결과"],
+        "expected_result": expected_result,
+        "knowledge_update_goal": knowledge_goal,
+    }
+
+
+SOP_TASK_EXECUTION_MODES = {"manual", "copilot", "autopilot"}
+SOP_TASK_COPILOT_SOURCES = {"internal", "external", "mixed", "unknown"}
+SOP_TASK_RUNNER_TYPES = {"human", "agent", "api", "mcp", "webhook", "skill", "external_tool", "mixed"}
+
+
+def normalize_sop_task_execution_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    return mode if mode in SOP_TASK_EXECUTION_MODES else "manual"
+
+
+def normalize_sop_task_copilot_source(value: Any, execution_mode: str) -> str:
+    source = str(value or "").strip().lower()
+    if source in SOP_TASK_COPILOT_SOURCES:
+        return source
+    return "unknown" if execution_mode == "copilot" else ""
+
+
+def normalize_sop_task_runner_type(value: Any, execution_mode: str, *, actions: list[dict[str, Any]], skills: list[dict[str, Any]]) -> str:
+    runner = str(value or "").strip().lower()
+    if runner in SOP_TASK_RUNNER_TYPES:
+        return runner
+    if skills:
+        return "skill"
+    connector_kinds = {str(action.get("connector_kind") or "").strip().lower() for action in actions if isinstance(action, dict)}
+    connector_kinds.discard("")
+    if len(connector_kinds) > 1:
+        return "mixed"
+    if connector_kinds:
+        connector = next(iter(connector_kinds))
+        if connector in {"api", "mcp", "webhook", "skill"}:
+            return connector
+        if connector in {"event_broker", "boi_writer", "langflow"}:
+            return "agent"
+        if connector == "manual":
+            return "human"
+    if execution_mode == "manual":
+        return "human"
+    if execution_mode == "autopilot":
+        return "agent"
+    return "mixed"
+
+
+def sop_registration_workflow_model(payload: dict[str, Any], work_context: dict[str, Any], tasks: list[dict[str, Any]], raw: str = "") -> dict[str, Any]:
+    model = payload.get("workflow_model") if isinstance(payload.get("workflow_model"), dict) else {}
+    title = str(model.get("title") or payload.get("title") or "").strip()
+    description = str(model.get("description") or payload.get("raw_request") or raw or "").strip()
+    business_goal = str(model.get("business_goal") or payload.get("business_goal") or description).strip()
+    return {
+        "title": title or registration_short_label(description or business_goal or "Workflow 초안", 80),
+        "description": description,
+        "business_goal": business_goal,
+        "work_context": work_context,
+        "task_count": len(tasks),
+        "measurement_policy": str(model.get("measurement_policy") or "runtime_trace"),
+        "minimum_save_contract": "workflow_title_or_description_plus_one_task",
+    }
+
+
+def normalize_sop_workflow_stage(stage: Any, index: int, *, work_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    source = stage if isinstance(stage, dict) else {"stage_name": str(stage or "").strip()}
+    work_context = work_context if isinstance(work_context, dict) else {}
+    stage_name = str(source.get("stage_name") or source.get("task_name") or source.get("name") or source.get("title") or source.get("stage") or "").strip()
+    if not stage_name:
+        default_names = ["업무 발생 확인", "근거 확인", "판단", "조치 실행", "결과 기록", "지식 업데이트"]
+        stage_name = default_names[index] if index < len(default_names) else f"단계 {index + 1}"
+    required_evidence = split_list_like(source.get("required_evidence") or source.get("evidence_requirements"))
+    expected_outputs = split_list_like(source.get("expected_outputs") or source.get("outputs"))
+    actions = source.get("actions") if isinstance(source.get("actions"), list) else []
+    normalized_actions: list[dict[str, Any]] = []
+    for action in actions:
+        if isinstance(action, dict):
+            label = str(action.get("label") or action.get("name") or action.get("action_key") or "").strip()
+            if not label:
+                continue
+            normalized_actions.append(
+                {
+                    "label": label,
+                    "action_key": str(action.get("action_key") or action.get("key") or "").strip(),
+                    "connector_kind": str(action.get("connector_kind") or action.get("kind") or "").strip(),
+                    "source": str(action.get("source") or "stage_builder").strip(),
+                }
+            )
+        elif str(action or "").strip():
+            normalized_actions.append({"label": str(action).strip(), "action_key": "", "connector_kind": "", "source": "stage_builder"})
+    skills = source.get("skills") if isinstance(source.get("skills"), list) else []
+    normalized_skills: list[dict[str, Any]] = []
+    for skill in skills:
+        if isinstance(skill, dict):
+            skill_ref = str(skill.get("skill_ref") or skill.get("skill_key") or skill.get("ref") or "").strip()
+            if not skill_ref:
+                continue
+            normalized_skills.append(
+                {
+                    "skill_ref": skill_ref,
+                    "display_label": str(skill.get("display_label") or skill.get("title") or skill_ref).strip(),
+                    "invocation_mode": str(skill.get("invocation_mode") or "guide_only").strip() or "guide_only",
+                    "input_contract": split_list_like(skill.get("input_contract") or skill.get("required_inputs")),
+                    "output_artifacts": split_list_like(skill.get("output_artifacts")),
+                    "approval_policy": str(skill.get("approval_policy") or "stage_owner_confirmed").strip(),
+                    "risk_level": str(skill.get("risk_level") or "low").strip(),
+                }
+            )
+        elif str(skill or "").strip():
+            normalized_skills.append(
+                {
+                    "skill_ref": str(skill).strip(),
+                    "display_label": str(skill).strip(),
+                    "invocation_mode": "guide_only",
+                    "input_contract": [],
+                    "output_artifacts": [],
+                    "approval_policy": "stage_owner_confirmed",
+                    "risk_level": "low",
+                }
+            )
+    execution_mode = normalize_sop_task_execution_mode(source.get("execution_mode"))
+    copilot_source = normalize_sop_task_copilot_source(source.get("copilot_source"), execution_mode)
+    runner_type = normalize_sop_task_runner_type(source.get("runner_type"), execution_mode, actions=normalized_actions, skills=normalized_skills)
+    detail_status = "상세 미정"
+    if stage_name and (required_evidence or work_context.get("required_evidence")):
+        detail_status = "기본 설정"
+    if execution_mode == "autopilot" and not str(source.get("verification_policy") or "").strip():
+        detail_status = "검증 필요"
+    return {
+        "stage_id": str(source.get("stage_id") or source.get("task_id") or source.get("id") or f"task-{index + 1:02d}"),
+        "stage_name": stage_name,
+        "task_id": str(source.get("task_id") or source.get("stage_id") or source.get("id") or f"task-{index + 1:02d}"),
+        "task_name": stage_name,
+        "stage_goal": str(source.get("stage_goal") or source.get("goal") or f"{stage_name} 단계에서 필요한 업무 맥락을 확인합니다.").strip(),
+        "decision_question": str(source.get("decision_question") or work_context.get("decision_question") or "이 단계의 판단 근거가 충분한가?").strip(),
+        "required_evidence": required_evidence or list(work_context.get("required_evidence") or ["업무 발생 근거", "처리 결과"]),
+        "actions": normalized_actions,
+        "skills": normalized_skills,
+        "expected_outputs": expected_outputs or ["단계별 판단 기록 BoI"],
+        "execution_mode": execution_mode,
+        "copilot_source": copilot_source,
+        "runner_type": runner_type,
+        "approval_policy": str(source.get("approval_policy") or ("policy_required" if execution_mode == "autopilot" else "stage_owner_confirmed")).strip(),
+        "verification_policy": str(source.get("verification_policy") or "evidence_required").strip(),
+        "fallback_owner": str(source.get("fallback_owner") or "").strip(),
+        "tat_target": str(source.get("tat_target") or "").strip(),
+        "baseline_tat": str(source.get("baseline_tat") or "").strip(),
+        "measurement_policy": str(source.get("measurement_policy") or "runtime_trace").strip(),
+        "detail_status": detail_status,
+        "knowledge_update_policy": str(
+            source.get("knowledge_update_policy")
+            or work_context.get("knowledge_update_goal")
+            or "확인한 사실, 판단 이유, 결과를 지식 업데이트 후보로 남긴다."
+        ).strip(),
+        "entry_event": str(source.get("entry_event") or "").strip(),
+        "emits_event": str(source.get("emits_event") or "").strip(),
+        "next_stage": str(source.get("next_stage") or "").strip(),
+    }
+
+
+def sop_registration_workflow_stages(payload: dict[str, Any], work_context: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_stages = payload.get("workflow_tasks") or payload.get("workflow_stages")
+    if isinstance(raw_stages, str):
+        parsed = parse_json_object(raw_stages)
+        raw_stages = (
+            parsed.get("workflow_tasks")
+            if isinstance(parsed.get("workflow_tasks"), list)
+            else parsed.get("workflow_stages") if isinstance(parsed.get("workflow_stages"), list) else []
+        )
+    if isinstance(raw_stages, list) and raw_stages:
+        return [normalize_sop_workflow_stage(stage, index, work_context=work_context) for index, stage in enumerate(raw_stages)]
+    step_names = split_list_like(payload.get("steps"))
+    if step_names:
+        return [normalize_sop_workflow_stage({"stage_name": name}, index, work_context=work_context) for index, name in enumerate(step_names)]
+    defaults = [
+        {"stage_name": "첫 Task", "stage_goal": "Workflow에서 먼저 처리할 업무 단위를 정합니다.", "expected_outputs": ["Task 결과 BoI"]},
+    ]
+    return [normalize_sop_workflow_stage(stage, index, work_context=work_context) for index, stage in enumerate(defaults)]
+
+
+def sop_registration_workflow_tasks(payload: dict[str, Any], work_context: dict[str, Any]) -> list[dict[str, Any]]:
+    return sop_registration_workflow_stages(payload, work_context)
+
+
+def sop_registration_stage_action_suggestions(stages: list[dict[str, Any]], action_candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    suggestions: list[dict[str, Any]] = []
+    first_action = action_candidates[0] if action_candidates else {}
+    for stage in stages:
+        stage_name = str(stage.get("stage_name") or "")
+        if "근거" in stage_name or "확인" in stage_name:
+            action_kind = "mcp_or_api"
+            label = "근거 조회 Action"
+        elif "조치" in stage_name:
+            action_kind = "api_or_manual"
+            label = str(first_action.get("label") or "후속 조치 Action")
+        elif "기록" in stage_name or "보고" in stage_name:
+            action_kind = "boi_writer"
+            label = "결과 BoI 작성"
+        else:
+            action_kind = "manual"
+            label = "담당자 판단 기록"
+        suggestions.append(
+            {
+                "stage_id": stage.get("stage_id"),
+                "stage_name": stage_name,
+                "recommended_action_label": label,
+                "recommended_action_kind": action_kind,
+                "reason": "이 단계의 판단 근거와 결과가 BoI 지식으로 남도록 연결합니다.",
+            }
+        )
+    return suggestions
+
+
+def sop_registration_skill_suggestions(payload: dict[str, Any], raw: str, stages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    query_text = " ".join(
+        [
+            raw,
+            str(payload.get("skill_ref") or ""),
+            str(payload.get("decision_question") or ""),
+            " ".join(str(stage.get("stage_name") or "") for stage in stages),
+            " ".join(" ".join(str(item) for item in (stage.get("required_evidence") or [])) for stage in stages),
+        ]
+    )
+    explicit_refs = {
+        str(payload.get("skill_ref") or "").strip(),
+        *[
+            str(skill.get("skill_ref") or "").strip()
+            for stage in stages
+            for skill in (stage.get("skills") or [])
+            if isinstance(skill, dict)
+        ],
+    }
+    suggestions: list[dict[str, Any]] = []
+    for item in load_action_skill_catalog():
+        skill_ref = str(item.get("skill_key") or "").strip()
+        if not skill_ref:
+            continue
+        haystack = " ".join(
+            [
+                skill_ref,
+                str(item.get("title") or ""),
+                str(item.get("description") or ""),
+                " ".join(normalize_registry_list(item.get("trigger_terms"))),
+                " ".join(normalize_registry_list(item.get("required_evidence"))),
+            ]
+        )
+        if skill_ref not in explicit_refs and not registration_candidate_matches(query_text, haystack):
+            continue
+        script_backed = bool(item.get("script") or item.get("scripts") or item.get("script_path") or item.get("tool_name") or item.get("mcp_tool"))
+        suggestions.append(
+            {
+                "skill_ref": skill_ref,
+                "display_label": item.get("title") or skill_ref,
+                "description": item.get("description") or "",
+                "script_backed": script_backed,
+                "invocation_modes": ["sandbox_run", "agent_tool"] if script_backed else ["guide_only"],
+                "required_inputs": normalize_registry_list(item.get("required_evidence")),
+                "output_artifacts": normalize_registry_list(item.get("supported_artifacts")),
+                "risk_level": item.get("risk_policy") or "low",
+                "reason": "업무 맥락과 단계별 근거 요구에 맞는 Skill 후보입니다.",
+            }
+        )
+    return suggestions[:8]
+
+
+def sop_registration_knowledge_update_suggestions(stages: list[dict[str, Any]], work_context: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "kind": "observation_boi",
+            "label": "관찰 BoI",
+            "description": f"{work_context.get('work_situation') or '업무 상황'}에서 확인한 사실을 남깁니다.",
+        },
+        {
+            "kind": "judgment_boi",
+            "label": "판단 BoI",
+            "description": work_context.get("decision_question") or "판단 질문과 결론을 남깁니다.",
+        },
+        {
+            "kind": "result_boi",
+            "label": "결과 BoI",
+            "description": work_context.get("expected_result") or "처리 결과와 후속 Action을 남깁니다.",
+        },
+        {
+            "kind": "knowledge_candidate",
+            "label": "지식 업데이트 후보",
+            "description": work_context.get("knowledge_update_goal") or "SOP/Dictionary/유사 사례 개선 후보를 남깁니다.",
+            "stage_count": len(stages),
+        },
+    ]
+
+
+def sop_registration_okf_materialization_plan(
+    payload: dict[str, Any],
+    *,
+    work_context: dict[str, Any],
+    workflow_stages: list[dict[str, Any]],
+    knowledge_update_suggestions: list[dict[str, Any]],
+    event_producer_adapter_plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    adapter_plan = event_producer_adapter_plan if isinstance(event_producer_adapter_plan, dict) else {}
+    entry_event = str(
+        adapter_plan.get("target_event_type")
+        or (split_list_like(payload.get("linked_event_types")) or [""])[0]
+        or payload.get("event_type")
+        or ""
+    ).strip()
+    stage_transition_events = [
+        {
+            "stage_id": stage.get("stage_id"),
+            "stage_name": stage.get("stage_name"),
+            "entry_event": stage.get("entry_event") or "",
+            "emits_event": stage.get("emits_event") or "",
+        }
+        for stage in workflow_stages
+        if stage.get("entry_event") or stage.get("emits_event")
+    ]
+    event_to_stage_mapping = []
+    if entry_event and workflow_stages:
+        event_to_stage_mapping.append(
+            {
+                "event_type": entry_event,
+                "stage_id": workflow_stages[0].get("stage_id"),
+                "stage_name": workflow_stages[0].get("stage_name"),
+                "mapping_kind": "entry_event",
+            }
+        )
+    for stage in workflow_stages:
+        stage_entry_event = str(stage.get("entry_event") or "").strip()
+        if stage_entry_event:
+            event_to_stage_mapping.append(
+                {
+                    "event_type": stage_entry_event,
+                    "stage_id": stage.get("stage_id"),
+                    "stage_name": stage.get("stage_name"),
+                    "mapping_kind": "stage_transition",
+                }
+            )
+    return {
+        "enabled": True,
+        "summary": "각 단계의 맥락, 판단, 근거, 결과를 검증 가능한 BoI 초안과 지식 업데이트 후보로 정리합니다.",
+        "work_context_seed": work_context,
+        "workflow_tasks": workflow_stages,
+        "entry_event": entry_event,
+        "event_producer_adapter_drafts": [adapter_plan] if adapter_plan and adapter_plan.get("source_kind") != "manual" else [],
+        "stage_transition_events": stage_transition_events,
+        "event_to_stage_mapping": event_to_stage_mapping,
+        "stage_outputs": [
+            {
+                "stage_id": stage.get("stage_id"),
+                "stage_name": stage.get("stage_name"),
+                "expected_outputs": stage.get("expected_outputs") or [],
+                "skills": stage.get("skills") or [],
+                "knowledge_update_policy": stage.get("knowledge_update_policy") or "",
+            }
+            for stage in workflow_stages
+        ],
+        "knowledge_update_candidates": knowledge_update_suggestions,
+        "tat_measurement": {
+            "enabled": True,
+            "workflow_tat": "시작 신호부터 완료까지",
+            "task_tat": "Task 시작부터 완료 또는 다음 Task 전환까지",
+            "display_values": ["recent", "average", "median", "recent_n"],
+            "source": "runtime_event_action_logs",
+        },
+        "relationships": [
+            {
+                "kind": "stage_has_evidence",
+                "stage_id": stage.get("stage_id"),
+                "targets": stage.get("required_evidence") or [],
+            }
+            for stage in workflow_stages
+        ]
+        + [
+            {
+                "kind": "stage_uses_skill",
+                "stage_id": stage.get("stage_id"),
+                "targets": [skill.get("skill_ref")],
+            }
+            for stage in workflow_stages
+            for skill in (stage.get("skills") or [])
+            if isinstance(skill, dict) and skill.get("skill_ref")
+        ],
+        "validation_required": True,
+        "publish_blocked_until_confirmed": True,
+        "artifact_policy": "draft_only_until_validated",
+    }
+
+
+def event_producer_adapter_normalized_kind(source_kind: str) -> str:
+    value = str(source_kind or "").strip().lower()
+    aliases = {
+        "webhook_or_api": "webhook",
+        "api": "api_poll",
+        "data_lake": "data_lake_query",
+        "kafka_direct": "kafka",
+        "manual_start": "manual",
+    }
+    value = aliases.get(value, value)
+    allowed = {"webhook", "api_poll", "mcp", "data_lake_query", "kafka", "manual"}
+    return value if value in allowed else "webhook"
+
+
+def event_producer_adapter_source_name(source_name: str, target_event_type: str, raw: str = "") -> str:
+    candidate = str(source_name or "").strip()
+    if not candidate:
+        candidate = str(target_event_type or "").rsplit(".v", 1)[0].replace(".", "-")
+    if not candidate:
+        candidate = registration_slug(raw, "external-source")
+    return safe_filename(candidate)[:80] or "external-source"
+
+
+def event_producer_adapter_config_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_config = payload.get("event_source_config") if isinstance(payload.get("event_source_config"), dict) else {}
+    mapping = raw_config.get("payload_mapping") if isinstance(raw_config.get("payload_mapping"), dict) else {}
+    sample = raw_config.get("sample_payload")
+    if sample is None:
+        sample = {}
+    return {
+        "source_kind": payload.get("event_source_kind") or payload.get("event_ingestion_kind") or raw_config.get("source_kind") or "",
+        "source_name": raw_config.get("source_name") or raw_config.get("endpoint_hint") or "",
+        "target_event_type": raw_config.get("target_event_type") or payload.get("event_type") or (split_list_like(payload.get("linked_event_types")) or [""])[0],
+        "payload_mapping": mapping,
+        "auth_policy": raw_config.get("auth_policy") if isinstance(raw_config.get("auth_policy"), dict) else {},
+        "sample_payload": sample,
+        "health_check": raw_config.get("health_check") if isinstance(raw_config.get("health_check"), dict) else {},
+    }
+
+
+def json_path_value(source: Any, path: str) -> Any:
+    if not isinstance(source, dict):
+        return None
+    text = str(path or "").strip()
+    if not text:
+        return None
+    if text.startswith("$."):
+        parts = text[2:].split(".")
+    else:
+        parts = text.split(".")
+    cursor: Any = source
+    for part in parts:
+        if isinstance(cursor, dict):
+            cursor = cursor.get(part)
+        else:
+            return None
+    return cursor
+
+
+def event_producer_adapter_sample_event(plan: dict[str, Any]) -> dict[str, Any]:
+    sample_payload = plan.get("sample_payload") if isinstance(plan.get("sample_payload"), dict) else {}
+    mapping = plan.get("payload_mapping") if isinstance(plan.get("payload_mapping"), dict) else {}
+    mapped_payload: dict[str, Any] = {}
+    for target_field, source_path in mapping.items():
+        value = json_path_value(sample_payload, str(source_path))
+        if value is not None:
+            mapped_payload[str(target_field)] = value
+    if not mapped_payload:
+        mapped_payload = dict(sample_payload)
+    return {
+        "event_type": plan.get("target_event_type") or "external.webhook.received.v1",
+        "producer": f"{plan.get('source_kind')}:{plan.get('source_name')}",
+        "payload": mapped_payload,
+        "source_refs": [{"type": "event_producer_adapter", "ref": plan.get("source_name") or ""}],
+        "trace_id": f"trace-{uuid.uuid4().hex}",
+    }
+
+
+def event_producer_adapter_plan_payload(req: EventProducerAdapterRequest, employee_id: str, raw: str = "") -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    source_kind = event_producer_adapter_normalized_kind(req.source_kind)
+    source_name = event_producer_adapter_source_name(req.source_name, req.target_event_type, raw)
+    target_event_type = str(req.target_event_type or "external.webhook.received.v1").strip() or "external.webhook.received.v1"
+    sample_payload = req.sample_payload if isinstance(req.sample_payload, dict) else {}
+    payload_mapping = req.payload_mapping if isinstance(req.payload_mapping, dict) else {}
+    endpoint_path = f"/api/webhooks/{source_name}"
+    plan = {
+        "plan_type": "event_producer_adapter_plan",
+        "source_kind": source_kind,
+        "source_name": source_name,
+        "target_event_type": target_event_type,
+        "payload_mapping": payload_mapping,
+        "auth_policy": req.auth_policy or {"mode": "service_token", "secret_storage": "runtime_env_only"},
+        "sample_payload": sample_payload,
+        "health_check": req.health_check or {},
+        "test_status": "not_tested",
+        "steps": ["설정", "샘플 확인", "테스트", "초안 저장"],
+        "publish_blocked_until_confirmed": True,
+        "validation_required": source_kind != "manual",
+    }
+    if source_kind == "webhook":
+        plan["webhook"] = {
+            "endpoint_path": endpoint_path,
+            "method": "POST",
+            "service_token_required": True,
+            "sample_curl": (
+                f"curl -X POST '{endpoint_path}?employee_id={employee_id}' "
+                "-H 'x-service-token: $SERVICE_TOKEN' -H 'Content-Type: application/json' "
+                f"-d '{{\"event_type\":\"{target_event_type}\",\"payload\":{{}}}}'"
+            ),
+        }
+    elif source_kind == "api_poll":
+        plan["api_poll"] = {
+            "endpoint": req.health_check.get("endpoint") if isinstance(req.health_check, dict) else "",
+            "method": req.health_check.get("method", "GET") if isinstance(req.health_check, dict) else "GET",
+            "schedule": req.health_check.get("schedule", "manual_preview") if isinstance(req.health_check, dict) else "manual_preview",
+            "preview_only": True,
+        }
+    elif source_kind in {"mcp", "data_lake_query"}:
+        plan["tool_query"] = {
+            "source": source_kind,
+            "tool_or_query": str(req.health_check.get("tool_or_query") or req.source_name or "") if isinstance(req.health_check, dict) else req.source_name,
+            "preview_only": True,
+        }
+    elif source_kind == "kafka":
+        plan["kafka"] = {
+            "topic": BOI_EVENTS_TOPIC,
+            "sample_event": {"event_type": target_event_type, "payload": sample_payload},
+            "integration_guide": "외부 시스템 담당자가 이 topic/schema에 맞춰 발행하면 BoI Event Router가 처리합니다.",
+        }
+    elif source_kind == "manual":
+        plan["manual"] = {
+            "publish_api": "/api/events/publish",
+            "requires_confirmation": True,
+        }
+    plan["sample_event_preview"] = event_producer_adapter_sample_event(plan)
+    return {"ok": True, "adapter_plan": plan}
+
+
+def event_producer_adapter_plan_from_payload(payload: dict[str, Any], raw: str, employee_id: str) -> dict[str, Any]:
+    if isinstance(payload.get("event_producer_adapter_plan"), dict):
+        return payload["event_producer_adapter_plan"]
+    config = event_producer_adapter_config_from_payload(payload)
+    return event_producer_adapter_plan_payload(EventProducerAdapterRequest(**config), employee_id, raw=raw)["adapter_plan"]
+
+
+def event_producer_adapter_test_payload(req: EventProducerAdapterRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    plan = req.adapter_plan if isinstance(req.adapter_plan, dict) else event_producer_adapter_plan_payload(req, employee_id)["adapter_plan"]
+    source_kind = event_producer_adapter_normalized_kind(str(plan.get("source_kind") or ""))
+    status_by_kind = {
+        "webhook": "ready_for_sample",
+        "api_poll": "preview_only",
+        "mcp": "preview_only",
+        "data_lake_query": "preview_only",
+        "kafka": "guide_ready",
+        "manual": "manual_publish_preview",
+    }
+    return {
+        "ok": True,
+        "source_kind": source_kind,
+        "test_status": status_by_kind.get(source_kind, "preview_only"),
+        "would_publish": False,
+        "sample_event_preview": event_producer_adapter_sample_event(plan),
+        "notes": ["검증/게시 전에는 Event Broker runtime으로 발행하지 않습니다."],
+    }
+
+
+def event_producer_adapter_draft_root() -> Path:
+    root = BOI_RUNTIME_ROOT / "event-ingestion-adapters"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def event_producer_adapter_draft_path(draft_id: str) -> Path:
+    return event_producer_adapter_draft_root() / f"{safe_filename(draft_id)}.json"
+
+
+def write_event_producer_adapter_draft(draft: dict[str, Any]) -> None:
+    draft["updated_at"] = now_iso()
+    event_producer_adapter_draft_path(str(draft.get("draft_id") or "")).write_text(
+        json.dumps(draft, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
+def read_event_producer_adapter_draft(draft_id: str, employee_id: str) -> dict[str, Any]:
+    path = event_producer_adapter_draft_path(draft_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="event producer adapter draft not found")
+    draft = json.loads(path.read_text(encoding="utf-8"))
+    if draft.get("created_by") != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="event producer adapter draft is not visible to this employee")
+    return draft
+
+
+def create_event_producer_adapter_draft(req: EventProducerAdapterRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    plan = req.adapter_plan if isinstance(req.adapter_plan, dict) and req.adapter_plan else event_producer_adapter_plan_payload(req, employee_id)["adapter_plan"]
+    test_result = req.test_result if isinstance(req.test_result, dict) else {}
+    draft_id = f"event-ingestion-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    draft = {
+        "draft_id": draft_id,
+        "created_by": employee_id,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "status": "draft",
+        "source_kind": plan.get("source_kind"),
+        "source_name": plan.get("source_name"),
+        "target_event_type": plan.get("target_event_type"),
+        "payload_mapping": plan.get("payload_mapping") or {},
+        "auth_policy": plan.get("auth_policy") or {},
+        "sample_payload": plan.get("sample_payload") or {},
+        "health_check": plan.get("health_check") or {},
+        "test_status": test_result.get("test_status") or plan.get("test_status") or "not_tested",
+        "adapter_plan": plan,
+        "test_result": test_result,
+        "publish_blocked_until_confirmed": True,
+    }
+    write_event_producer_adapter_draft(draft)
+    append_rbac_audit(employee_id, "event_producer_adapter_draft_create", {"draft_id": draft_id, "source_kind": draft.get("source_kind")})
+    return draft
+
+
+def sop_registration_event_ingestion_plan(payload: dict[str, Any], raw: str = "") -> dict[str, Any]:
+    source_kind = str(payload.get("event_source_kind") or payload.get("event_ingestion_kind") or "").strip().lower()
+    if not source_kind:
+        source_kind = "manual" if str(payload.get("event_mode") or "") == "skip" else "webhook_or_api"
+    allowed = {"kafka", "webhook", "api_poll", "mcp", "data_lake_query", "manual", "scheduler", "webhook_or_api"}
+    if source_kind not in allowed:
+        source_kind = "webhook_or_api"
+    raw_config = payload.get("event_source_config") if isinstance(payload.get("event_source_config"), dict) else {}
+    source_labels = {
+        "kafka": "외부 시스템이 Kafka/Event Broker로 직접 발행",
+        "webhook": "BoI Wiki Webhook으로 외부 이벤트 수신",
+        "api_poll": "BoI Wiki가 Legacy/API를 주기적으로 조회",
+        "mcp": "MCP/Agent Tool로 외부 시스템 상태 조회",
+        "data_lake_query": "Data Lake query 결과를 Event 후보로 변환",
+        "manual": "사용자 수동 실행",
+        "scheduler": "정해진 일정에 따라 Event 생성",
+        "webhook_or_api": "Webhook 또는 API adapter로 수집",
+    }
+    draft_assets: list[dict[str, Any]] = []
+    if source_kind != "manual":
+        draft_assets.append(
+            {
+                "kind": "event_ingestion_adapter_draft",
+                "source_kind": source_kind,
+                "label": source_labels.get(source_kind) or "Event 수집 adapter 초안",
+                "draft_only": True,
+            }
+        )
+    return {
+        "enabled": True,
+        "source_kind": source_kind,
+        "label": source_labels.get(source_kind) or source_labels["webhook_or_api"],
+        "summary": "외부 시스템을 직접 수정하지 못하는 경우 BoI Wiki가 Webhook/API Poll/MCP/Data Lake adapter로 Event를 수집해 Event Broker로 넘깁니다.",
+        "config": raw_config,
+        "draft_assets": draft_assets,
+        "validation_required": source_kind != "manual",
+        "publish_blocked_until_confirmed": True,
+        "raw_request_excerpt": text_excerpt(raw, 160) if raw else "",
+    }
+
+
+def sop_registration_auto_assetization_plan(payload: dict[str, Any], plan: dict[str, Any] | None = None) -> dict[str, Any]:
+    plan = plan if isinstance(plan, dict) else {}
+    action_sections = plan.get("action_sections") if isinstance(plan.get("action_sections"), list) else []
+    action_section = action_sections[0] if action_sections and isinstance(action_sections[0], dict) else {}
+    event_mode = str(payload.get("event_mode") or (plan.get("event_section") or {}).get("mode") or "skip")
+    sop_mode = str(payload.get("sop_mode") or (plan.get("sop_section") or {}).get("mode") or "skip")
+    action_mode = str(payload.get("action_mode") or action_section.get("mode") or "skip")
+    linked_event_types = split_list_like(payload.get("linked_event_types"))
+    linked_action_keys = split_list_like(payload.get("linked_action_keys"))
+    linked_sop_ref = str(payload.get("linked_sop_ref") or "").strip()
+    connector_kind = str(payload.get("connector_kind") or payload.get("execution_kind") or "manual").strip() or "manual"
+    event_ingestion_plan = payload.get("event_ingestion_plan") if isinstance(payload.get("event_ingestion_plan"), dict) else sop_registration_event_ingestion_plan(payload)
+    draft_assets: list[dict[str, Any]] = []
+    relationships: list[dict[str, Any]] = []
+    for asset in event_ingestion_plan.get("draft_assets") or []:
+        if isinstance(asset, dict):
+            draft_assets.append(asset)
+
+    if event_mode in {"draft", "pattern", "schedule"}:
+        draft_assets.append(
+            {
+                "kind": "event_type_draft",
+                "mode": event_mode,
+                "label": "Event 초안",
+                "draft_only": True,
+            }
+        )
+    for event_type in linked_event_types:
+        relationships.append({"kind": "links_to_event", "target": event_type, "draft_only": True})
+
+    if sop_mode in {"draft", "lightweight"}:
+        draft_assets.append(
+            {
+                "kind": "sop_draft",
+                "mode": sop_mode,
+                "label": "SOP 초안",
+                "draft_only": True,
+            }
+        )
+    if linked_sop_ref:
+        relationships.append({"kind": "links_to_sop", "target": linked_sop_ref, "draft_only": True})
+
+    if action_mode in {"draft", "manual"}:
+        draft_assets.append(
+            {
+                "kind": "action_wrapper_draft",
+                "mode": action_mode,
+                "label": "Action wrapper 초안",
+                "connector_kind": connector_kind,
+                "input_fields": split_list_like(payload.get("input_fields")),
+                "output_fields": split_list_like(payload.get("output_fields")),
+                "draft_only": True,
+            }
+        )
+    workflow_stages = payload.get("workflow_tasks") or payload.get("workflow_stages")
+    if isinstance(workflow_stages, str):
+        parsed = parse_json_object(workflow_stages)
+        workflow_stages = (
+            parsed.get("workflow_tasks")
+            if isinstance(parsed.get("workflow_tasks"), list)
+            else parsed.get("workflow_stages") if isinstance(parsed.get("workflow_stages"), list) else []
+        )
+    stage_skills = [
+        (stage, skill)
+        for stage in (workflow_stages if isinstance(workflow_stages, list) else [])
+        if isinstance(stage, dict)
+        for skill in (stage.get("skills") if isinstance(stage.get("skills"), list) else [])
+        if isinstance(skill, dict) and str(skill.get("skill_ref") or "").strip()
+    ]
+    explicit_skill_ref = str(payload.get("skill_ref") or "").strip()
+    if connector_kind == "skill" or explicit_skill_ref or stage_skills:
+        if explicit_skill_ref:
+            draft_assets.append(
+                {
+                    "kind": "skill_action_draft",
+                    "label": "Skill 기반 Action 초안",
+                    "skill_ref": explicit_skill_ref,
+                    "invocation_mode": str(payload.get("skill_invocation_mode") or "guide_only"),
+                    "draft_only": True,
+                }
+            )
+        for stage, skill in stage_skills:
+            draft_assets.append(
+                {
+                    "kind": "skill_action_draft",
+                    "label": "단계별 Skill 기반 Action 초안",
+                    "stage_id": stage.get("stage_id") or stage.get("id") or "",
+                    "stage_name": stage.get("stage_name") or stage.get("name") or "",
+                    "skill_ref": skill.get("skill_ref"),
+                    "invocation_mode": skill.get("invocation_mode") or "guide_only",
+                    "draft_only": True,
+                }
+            )
+    for action_key in linked_action_keys:
+        relationships.append({"kind": "links_to_action", "target": action_key, "draft_only": True})
+
+    return {
+        "enabled": True,
+        "summary": "선택한 항목은 저장 시 BoI Wiki 초안과 연결 관계로 자동 정리됩니다.",
+        "draft_assets": draft_assets,
+        "relationships": relationships,
+        "validation_required": True,
+        "publish_blocked_until_confirmed": True,
     }
 
 
@@ -12077,6 +14287,11 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
     scope = req.scope
     folder = normalize_folder(req.folder) or registration_default_folder("sop", scope, employee_id)
     focus = req.focus if req.focus in {"event", "sop", "action"} else "sop"
+    recommendation_ready = sop_registration_has_recommendation_context(raw, payload)
+    input_requirements = [
+        "자연어 설명, 제목, 업무 목적 중 하나에 어떤 업무를 SOP화할지 먼저 적어주세요.",
+        "설명이 충분하면 기존 Event/SOP/Action 후보와 초안 추천을 만들 수 있습니다.",
+    ]
     event_plan = registration_plan_payload(
         RegistrationPlanRequest(entry_kind="event", raw_request=raw, current_url=req.current_url, scope=scope, folder=folder),
         employee_id,
@@ -12095,6 +14310,75 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
     action_draft = action_plan.get("draft_payload") if isinstance(action_plan.get("draft_payload"), dict) else {}
     event_draft = event_plan.get("draft_payload") if isinstance(event_plan.get("draft_payload"), dict) else {}
     sop_draft = sop_plan.get("draft_payload") if isinstance(sop_plan.get("draft_payload"), dict) else {}
+    event_payload_fields = split_list_like(payload.get("payload_fields") or event_draft.get("payload_fields"))
+    event_display_name = str(payload.get("event_display_name") or "").strip()
+    if not event_display_name:
+        event_display_name = str((event_candidates[0] or {}).get("label") or "").strip() if event_candidates else ""
+    if not event_display_name:
+        event_display_name = registration_short_label(raw, 36) if raw else "새 업무 시점"
+    event_technical_name = str(event_draft.get("event_type") or ((event_candidates[0] or {}).get("event_type") if event_candidates else "") or "").strip()
+    event_draft_suggestion = section_draft_suggestion(
+        section_id="event",
+        display_name=event_display_name,
+        technical_name=event_technical_name,
+        editable_fields=["event_display_name", "payload_fields"],
+        recommended_payload={
+            "event_display_name": event_display_name,
+            "event_type": event_technical_name,
+            "payload_fields": event_payload_fields,
+        },
+    ) if recommendation_ready else None
+    sop_display_name = registration_short_label(str(payload.get("title") or sop_draft.get("title") or raw or "SOP 초안"), 44)
+    sop_draft_suggestion = section_draft_suggestion(
+        section_id="sop",
+        display_name=sop_display_name,
+        technical_name=str(sop_draft.get("workflow_definition_key") or ""),
+        editable_fields=["title", "steps", "evidence_requirements"],
+        recommended_payload={
+            "title": sop_display_name,
+            "steps": split_list_like(payload.get("steps") or sop_draft.get("steps")),
+            "evidence_requirements": split_list_like(payload.get("evidence_requirements") or sop_draft.get("evidence_requirements")),
+        },
+    ) if recommendation_ready else None
+    action_display_name = str(payload.get("action_display_name") or "").strip()
+    if not action_display_name:
+        action_display_name = str((action_candidates[0] or {}).get("label") or "").strip() if action_candidates else ""
+    if re.search(r"[._:/-]", action_display_name):
+        action_display_name = ""
+    if not action_display_name:
+        action_title_candidate = str(action_draft.get("title") or "").strip()
+        if re.search(r"[._:/-]", action_title_candidate):
+            action_title_candidate = ""
+        action_display_name = registration_short_label(action_title_candidate or raw or "Action 초안", 44)
+    action_draft_suggestion = section_draft_suggestion(
+        section_id="action",
+        display_name=action_display_name,
+        technical_name=str(action_draft.get("action_key") or ((action_candidates[0] or {}).get("action_key") if action_candidates else "") or ""),
+        editable_fields=["action_display_name", "connector_kind", "input_fields", "output_fields"],
+        recommended_payload={
+            "action_display_name": action_display_name,
+            "action_key": str(action_draft.get("action_key") or ""),
+            "connector_kind": str(payload.get("connector_kind") or action_draft.get("connector_kind") or "manual"),
+            "input_fields": split_list_like(payload.get("input_fields") or action_draft.get("input_fields")),
+            "output_fields": split_list_like(payload.get("output_fields") or action_draft.get("output_fields")),
+        },
+    ) if recommendation_ready else None
+    work_context_model = sop_registration_work_context_model(payload, raw)
+    workflow_stages = sop_registration_workflow_stages(payload, work_context_model)
+    workflow_tasks = sop_registration_workflow_tasks(payload, work_context_model)
+    workflow_model = sop_registration_workflow_model(payload, work_context_model, workflow_tasks, raw)
+    stage_action_suggestions = sop_registration_stage_action_suggestions(workflow_stages, action_candidates)
+    skill_suggestions = sop_registration_skill_suggestions(payload, raw, workflow_stages)
+    knowledge_update_suggestions = sop_registration_knowledge_update_suggestions(workflow_stages, work_context_model)
+    event_producer_adapter_plan = event_producer_adapter_plan_from_payload(payload, raw, employee_id)
+    okf_materialization_plan = sop_registration_okf_materialization_plan(
+        payload,
+        work_context=work_context_model,
+        workflow_stages=workflow_stages,
+        knowledge_update_suggestions=knowledge_update_suggestions,
+        event_producer_adapter_plan=event_producer_adapter_plan,
+    )
+    event_ingestion_plan = sop_registration_event_ingestion_plan(payload, raw)
     event_mode = "draft" if focus == "event" else "skip"
     sop_mode = "draft" if focus == "sop" else "skip"
     action_mode = "draft" if focus == "action" else "skip"
@@ -12108,7 +14392,7 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
     if schedule_section.get("enabled") and event_mode == "skip":
         event_mode = "schedule"
     event_suggestions: list[dict[str, Any]] = []
-    if event_candidates:
+    if recommendation_ready and event_candidates:
         first_event = event_candidates[0]
         event_suggestions.append(
             {
@@ -12117,13 +14401,15 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
                 "apply": {"event_mode": "reuse", "linked_event_types": [first_event.get("event_type")]},
             }
         )
-    event_suggestions.append(
-        {
-            "label": "새 Event 초안으로 진행",
-            "description": "입력한 업무 발생 시점을 새 Event 정의 초안으로 남깁니다.",
-            "apply": {"event_mode": "draft", "event_type": event_draft.get("event_type") or "", "payload_fields": event_draft.get("payload_fields") or []},
-        }
-    )
+    if recommendation_ready:
+        event_suggestions.append(
+            {
+                "label": "새 Event 초안으로 진행",
+                "description": "입력한 업무 발생 시점을 새 Event 정의 초안으로 남깁니다.",
+                "apply": {"event_mode": "draft", "event_type": event_draft.get("event_type") or "", "payload_fields": event_draft.get("payload_fields") or []},
+                **({"draft_suggestion": event_draft_suggestion} if event_draft_suggestion else {}),
+            }
+        )
     if schedule_section.get("enabled"):
         event_suggestions.insert(
             0,
@@ -12139,7 +14425,7 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
             },
         )
     sop_suggestions: list[dict[str, Any]] = []
-    if sop_candidates:
+    if recommendation_ready and sop_candidates:
         first_sop = sop_candidates[0]
         sop_suggestions.append(
             {
@@ -12148,15 +14434,17 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
                 "apply": {"sop_mode": "reuse", "linked_sop_ref": first_sop.get("boi_id") or first_sop.get("ref") or ""},
             }
         )
-    sop_suggestions.append(
-        {
-            "label": "SOP 초안 만들기",
-            "description": "기존 SOP가 맞지 않으면 새 SOP 초안을 만듭니다.",
-            "apply": {"sop_mode": "draft", "steps": sop_draft.get("steps") or [], "evidence_requirements": sop_draft.get("evidence_requirements") or []},
-        }
-    )
+    if recommendation_ready:
+        sop_suggestions.append(
+            {
+                "label": "SOP 초안 만들기",
+                "description": "기존 SOP가 맞지 않으면 새 SOP 초안을 만듭니다.",
+                "apply": {"sop_mode": "draft", "steps": sop_draft.get("steps") or [], "evidence_requirements": sop_draft.get("evidence_requirements") or []},
+                **({"draft_suggestion": sop_draft_suggestion} if sop_draft_suggestion else {}),
+            }
+        )
     action_suggestions: list[dict[str, Any]] = []
-    if action_candidates:
+    if recommendation_ready and action_candidates:
         first_action = action_candidates[0]
         action_suggestions.append(
             {
@@ -12165,24 +14453,69 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
                 "apply": {"action_mode": "reuse", "linked_action_keys": [first_action.get("action_key")]},
             }
         )
-    action_suggestions.append(
-        {
-            "label": "Action 초안 만들기",
-            "description": "필요한 실행 단위를 새 Action 초안으로 만듭니다.",
-            "apply": {
-                "action_mode": "draft",
-                "connector_kind": action_draft.get("connector_kind") or "manual",
-                "input_fields": action_draft.get("input_fields") or [],
-                "output_fields": action_draft.get("output_fields") or [],
-            },
-        }
-    )
+    if recommendation_ready:
+        action_suggestions.append(
+            {
+                "label": "Action 초안 만들기",
+                "description": "필요한 실행 단위를 새 Action 초안으로 만듭니다.",
+                "apply": {
+                    "action_mode": "draft",
+                    "connector_kind": action_draft.get("connector_kind") or "manual",
+                    "input_fields": action_draft.get("input_fields") or [],
+                    "output_fields": action_draft.get("output_fields") or [],
+                },
+                **({"draft_suggestion": action_draft_suggestion} if action_draft_suggestion else {}),
+            }
+        )
+    draft_payload = {
+        "entry_kind": "sop",
+        "scope": scope,
+        "folder": folder,
+        "title": registration_short_label(raw, 80) if raw else "SOP 실행 흐름 초안",
+        "business_goal": raw,
+        "description": raw,
+        "event_mode": event_mode,
+        "sop_mode": sop_mode,
+        "action_mode": action_mode,
+        "topic": BOI_EVENTS_TOPIC,
+        "schedule_config": schedule_section.get("schedule_config") or {},
+        "schedule_text": schedule_section.get("schedule_summary") or "",
+        "cron": schedule_section.get("cron") or "",
+        "linked_event_types": split_list_like(payload.get("linked_event_types")),
+        "linked_sop_ref": str(payload.get("linked_sop_ref") or ""),
+        "linked_action_keys": split_list_like(payload.get("linked_action_keys")),
+        "connector_kind": str(payload.get("connector_kind") or action_draft.get("connector_kind") or ""),
+        "skill_ref": str(payload.get("skill_ref") or ""),
+        "skill_invocation_mode": str(payload.get("skill_invocation_mode") or "guide_only"),
+        "input_fields": split_list_like(payload.get("input_fields") or action_draft.get("input_fields")),
+        "output_fields": split_list_like(payload.get("output_fields") or action_draft.get("output_fields")),
+        "work_context_model": work_context_model,
+        "workflow_model": workflow_model,
+        "event_ingestion_plan": event_ingestion_plan,
+        "event_producer_adapter_plan": event_producer_adapter_plan,
+        "workflow_tasks": workflow_tasks,
+        "workflow_stages": workflow_stages,
+        "okf_materialization_plan": okf_materialization_plan,
+        "user_confirmed": False,
+    }
+    auto_assetization_plan = sop_registration_auto_assetization_plan({**payload, **draft_payload})
     return {
         "ok": True,
         "plan_type": "sop_registration_plan",
+        "recommendation_state": "ready" if recommendation_ready else "needs_input",
+        "input_requirements": [] if recommendation_ready else input_requirements,
         "raw_request": raw,
         "focus": focus,
         "scope_folder_suggestion": {"scope": scope, "folder": folder},
+        "work_context_suggestion": work_context_model,
+        "workflow_model_suggestion": workflow_model,
+        "event_ingestion_plan": event_ingestion_plan,
+        "event_producer_adapter_plan": event_producer_adapter_plan,
+        "workflow_task_suggestions": workflow_tasks if recommendation_ready else [],
+        "workflow_stage_suggestions": workflow_stages if recommendation_ready else [],
+        "stage_action_suggestions": stage_action_suggestions if recommendation_ready else [],
+        "skill_suggestions": skill_suggestions if recommendation_ready else [],
+        "knowledge_update_suggestions": knowledge_update_suggestions if recommendation_ready else [],
         "event_section": sop_registration_section(
             section_id="event",
             title="1. Event",
@@ -12192,7 +14525,7 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
                 {"mode": "draft", "label": "새 Event 초안 만들기", "draft_payload": event_draft},
                 {"mode": "pattern", "label": "기존 이력 필터/가공으로 Event 초안 만들기"},
                 {"mode": "schedule", "label": "정해진 시간에 발생하는 Schedule Event 초안"},
-                {"mode": "skip", "label": "이번에는 건너뛰기"},
+                {"mode": "skip", "label": "수동 실행"},
             ],
             suggestions=event_suggestions,
         ),
@@ -12204,7 +14537,7 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
                 {"mode": "reuse", "label": "기존 SOP 선택", "candidates": sop_candidates},
                 {"mode": "draft", "label": "신규 SOP 초안", "draft_payload": sop_draft},
                 {"mode": "lightweight", "label": "간단 절차만 작성하고 나중에 SOP로 보강"},
-                {"mode": "skip", "label": "이번에는 건너뛰기"},
+                {"mode": "skip", "label": "절차는 나중에 정리"},
             ],
             suggestions=sop_suggestions,
         ),
@@ -12227,23 +14560,9 @@ def sop_registration_plan_payload(req: SopRegistrationPlanRequest, employee_id: 
             "Event, SOP, Action 중 필요한 섹션만 선택하세요.",
             "게시 전에는 검증과 사용자 확인이 필요합니다.",
         ],
-        "recommended_next_step": "Agent 제안을 반영하거나 각 섹션에서 기존 항목을 선택한 뒤 실행 전 확인을 보세요.",
-        "draft_payload": {
-            "entry_kind": "sop",
-            "scope": scope,
-            "folder": folder,
-            "title": registration_short_label(raw, 80) if raw else "SOP 실행 흐름 초안",
-            "business_goal": raw,
-            "description": raw,
-            "event_mode": event_mode,
-            "sop_mode": sop_mode,
-            "action_mode": action_mode,
-            "topic": BOI_EVENTS_TOPIC,
-            "schedule_config": schedule_section.get("schedule_config") or {},
-            "schedule_text": schedule_section.get("schedule_summary") or "",
-            "cron": schedule_section.get("cron") or "",
-            "user_confirmed": False,
-        },
+        "recommended_next_step": "추천을 반영하거나 각 섹션에서 기존 항목을 선택한 뒤 실행 전 확인을 보세요." if recommendation_ready else "먼저 어떤 업무를 SOP화할지 설명을 적어주세요.",
+        "auto_assetization_plan": auto_assetization_plan,
+        "draft_payload": draft_payload,
     }
 
 
@@ -12265,15 +14584,20 @@ def sop_registration_preview_payload(req: SopRegistrationPreviewRequest, employe
         cards.append({"title": "Schedule Event", "status": "초안", "body": schedule_section.get("schedule_summary") or f"기본 topic은 {BOI_EVENTS_TOPIC}입니다. 실제 자동 발행기는 v1 범위에 포함하지 않습니다."})
     else:
         schedule_section = plan.get("schedule_section") if isinstance(plan.get("schedule_section"), dict) else {}
+    auto_assetization_plan = sop_registration_auto_assetization_plan(payload, plan)
+    cards.append({"title": "자동 BoI 자산화", "status": "초안", "body": auto_assetization_plan["summary"]})
     return {
         "ok": True,
         "preview_type": "sop_registration_preview",
-        "summary": "SOP 실행 흐름으로 연결할 Event, SOP, Action 선택 상태를 확인했습니다.",
+        "summary": "Workflow Task와 시작/실행 연결 상태를 확인했습니다.",
         "cards": cards,
+        "workflow_model": payload.get("workflow_model") or plan.get("workflow_model_suggestion") or {},
+        "workflow_tasks": payload.get("workflow_tasks") or plan.get("workflow_task_suggestions") or payload.get("workflow_stages") or [],
         "event_section": plan.get("event_section") or {},
         "sop_section": plan.get("sop_section") or {},
         "action_sections": plan.get("action_sections") or [],
         "schedule_section": schedule_section,
+        "auto_assetization_plan": auto_assetization_plan,
         "internal_terms_hidden": ["payload", "schema", "topic", "workflow_definition_key"],
         "payload": payload,
     }
@@ -12298,6 +14622,25 @@ def create_sop_registration_draft(req: SopRegistrationDraftRequest, employee_id:
     scope = scope_for_registration_value(str(payload.get("scope") or (plan.get("scope_folder_suggestion") or {}).get("scope") or "private"))
     folder = normalize_folder(str(payload.get("folder") or (plan.get("scope_folder_suggestion") or {}).get("folder") or registration_default_folder("sop", scope, employee_id)))
     schedule_section = schedule_section_from_payload(payload, raw, plan.get("schedule_section") if isinstance(plan.get("schedule_section"), dict) else {})
+    work_context_model = sop_registration_work_context_model(payload, raw)
+    workflow_stages = sop_registration_workflow_stages(payload, work_context_model)
+    workflow_tasks = sop_registration_workflow_tasks(payload, work_context_model)
+    workflow_model = sop_registration_workflow_model(payload, work_context_model, workflow_tasks, raw)
+    knowledge_update_suggestions = sop_registration_knowledge_update_suggestions(workflow_stages, work_context_model)
+    event_producer_adapter_plan = payload.get("event_producer_adapter_plan") if isinstance(payload.get("event_producer_adapter_plan"), dict) else None
+    if not event_producer_adapter_plan and isinstance(plan.get("event_producer_adapter_plan"), dict):
+        event_producer_adapter_plan = plan["event_producer_adapter_plan"]
+    if not event_producer_adapter_plan:
+        event_producer_adapter_plan = event_producer_adapter_plan_from_payload(payload, raw, employee_id)
+    okf_materialization_plan = sop_registration_okf_materialization_plan(
+        payload,
+        work_context=work_context_model,
+        workflow_stages=workflow_stages,
+        knowledge_update_suggestions=knowledge_update_suggestions,
+        event_producer_adapter_plan=event_producer_adapter_plan,
+    )
+    event_ingestion_plan = sop_registration_event_ingestion_plan(payload, raw)
+    auto_assetization_plan = sop_registration_auto_assetization_plan(payload, plan)
     draft_id = f"sop-registration-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     draft = {
         "draft_id": draft_id,
@@ -12315,6 +14658,14 @@ def create_sop_registration_draft(req: SopRegistrationDraftRequest, employee_id:
         "sop_section": plan.get("sop_section") or {},
         "action_sections": plan.get("action_sections") or [],
         "schedule_section": schedule_section,
+        "work_context_model": work_context_model,
+        "workflow_model": workflow_model,
+        "event_ingestion_plan": event_ingestion_plan,
+        "event_producer_adapter_plan": event_producer_adapter_plan,
+        "workflow_tasks": workflow_tasks,
+        "workflow_stages": workflow_stages,
+        "okf_materialization_plan": okf_materialization_plan,
+        "auto_assetization_plan": auto_assetization_plan,
         "component_draft_payloads": {
             "event": {
                 "entry_kind": "event",
@@ -12325,6 +14676,8 @@ def create_sop_registration_draft(req: SopRegistrationDraftRequest, employee_id:
                 "payload_fields": split_list_like(payload.get("payload_fields") or event_draft.get("payload_fields")),
                 "event_type": payload.get("event_type") or event_draft.get("event_type") or "",
                 "topic": payload.get("topic") or BOI_EVENTS_TOPIC,
+                "event_ingestion_plan": event_ingestion_plan,
+                "event_producer_adapter_plan": event_producer_adapter_plan,
                 "schedule_config": schedule_section.get("schedule_config") or {},
                 "schedule_summary": schedule_section.get("schedule_summary") or "",
                 "cron": schedule_section.get("cron") or "",
@@ -12339,6 +14692,11 @@ def create_sop_registration_draft(req: SopRegistrationDraftRequest, employee_id:
                 "description": payload.get("description") or raw,
                 "steps": split_list_like(payload.get("steps") or sop_draft.get("steps")),
                 "evidence_requirements": split_list_like(payload.get("evidence_requirements") or sop_draft.get("evidence_requirements")),
+                "work_context_model": work_context_model,
+                "workflow_model": workflow_model,
+                "workflow_tasks": workflow_tasks,
+                "workflow_stages": workflow_stages,
+                "okf_materialization_plan": okf_materialization_plan,
             },
             "action": {
                 "entry_kind": "action",
@@ -12347,6 +14705,8 @@ def create_sop_registration_draft(req: SopRegistrationDraftRequest, employee_id:
                 "title": payload.get("action_title") or payload.get("title") or registration_short_label(raw, 80),
                 "business_goal": raw,
                 "connector_kind": payload.get("connector_kind") or action_draft.get("connector_kind") or "manual",
+                "skill_ref": payload.get("skill_ref") or "",
+                "skill_invocation_mode": payload.get("skill_invocation_mode") or "guide_only",
                 "input_fields": split_list_like(payload.get("input_fields") or action_draft.get("input_fields")),
                 "output_fields": split_list_like(payload.get("output_fields") or action_draft.get("output_fields")),
                 "linked_event_types": split_list_like(payload.get("linked_event_types")),
@@ -12371,11 +14731,18 @@ def validate_sop_registration_draft(draft: dict[str, Any], employee_id: str) -> 
     req = draft.get("request") if isinstance(draft.get("request"), dict) else {}
     errors: list[str] = []
     warnings: list[str] = []
-    if not str(req.get("raw_request") or req.get("business_goal") or "").strip():
+    workflow_model = draft.get("workflow_model") if isinstance(draft.get("workflow_model"), dict) else {}
+    workflow_tasks = draft.get("workflow_tasks") if isinstance(draft.get("workflow_tasks"), list) else []
+    workflow_stages = draft.get("workflow_stages") if isinstance(draft.get("workflow_stages"), list) else []
+    has_workflow_summary = bool(
+        str(req.get("raw_request") or req.get("business_goal") or req.get("title") or "").strip()
+        or str(workflow_model.get("title") or workflow_model.get("description") or workflow_model.get("business_goal") or "").strip()
+    )
+    if not has_workflow_summary:
         errors.append("업무 설명이 필요합니다.")
     modes = [str(req.get("event_mode") or "skip"), str(req.get("sop_mode") or "skip"), str(req.get("action_mode") or "skip")]
-    if all(mode == "skip" for mode in modes):
-        errors.append("Event, SOP, Action 중 하나 이상은 선택하거나 초안으로 만들어야 합니다.")
+    if all(mode == "skip" for mode in modes) and not workflow_tasks and not workflow_stages:
+        errors.append("Workflow Task를 하나 이상 추가하거나 Event/SOP/Action 중 하나를 선택해야 합니다.")
     if str(req.get("event_mode") or "") == "schedule":
         schedule_section = draft.get("schedule_section") if isinstance(draft.get("schedule_section"), dict) else {}
         schedule_config = parse_json_object(req.get("schedule_config")) or parse_json_object(schedule_section.get("schedule_config"))
@@ -12387,7 +14754,22 @@ def validate_sop_registration_draft(draft: dict[str, Any], employee_id: str) -> 
         if not has_schedule:
             warnings.append("Schedule Event 초안에는 일정을 선택해 주세요.")
     if str(req.get("sop_mode") or "") in {"draft", "lightweight"} and not split_list_like(req.get("steps")):
-        warnings.append("SOP 단계가 비어 있어 검토 시 보강이 필요합니다.")
+        if not workflow_stages:
+            warnings.append("Workflow Task가 비어 있어 검토 시 보강이 필요합니다.")
+    for stage in workflow_stages:
+        if not isinstance(stage, dict):
+            continue
+        if not str(stage.get("decision_question") or "").strip():
+            warnings.append(f"{stage.get('stage_name') or 'SOP 단계'} 단계의 판단 질문이 필요합니다.")
+        if not stage.get("required_evidence"):
+            warnings.append(f"{stage.get('stage_name') or 'SOP 단계'} 단계의 필요 근거가 필요합니다.")
+        if not stage.get("expected_outputs"):
+            warnings.append(f"{stage.get('stage_name') or 'SOP 단계'} 단계의 결과 BoI/산출물이 필요합니다.")
+        if stage.get("execution_mode") == "autopilot":
+            if not str(stage.get("verification_policy") or "").strip():
+                warnings.append(f"{stage.get('stage_name') or 'Task'} Autopilot에는 검증 정책이 필요합니다.")
+            if not str(stage.get("fallback_owner") or "").strip():
+                warnings.append(f"{stage.get('stage_name') or 'Task'} Autopilot에는 실패 시 담당자가 필요합니다.")
     if str(req.get("action_mode") or "") in {"draft", "manual"} and not str(req.get("connector_kind") or "").strip():
         warnings.append("Action 실행 방식이 비어 있어 Manual Action으로 검토될 수 있습니다.")
     draft["validation"] = {
@@ -12398,6 +14780,91 @@ def validate_sop_registration_draft(draft: dict[str, Any], employee_id: str) -> 
     }
     draft["status"] = "validated" if not errors else "needs_changes"
     return draft
+
+
+def sop_registration_draft_session_root(employee_id: str) -> Path:
+    return BOI_RUNTIME_ROOT / "draft-sessions" / "sop-registration" / safe_filename(employee_id)
+
+
+def sop_registration_draft_session_path(employee_id: str, session_id: str) -> Path:
+    return sop_registration_draft_session_root(employee_id) / f"{safe_filename(session_id)}.json"
+
+
+def sop_registration_draft_session_payload(req: SopRegistrationDraftSessionRequest, employee_id: str, *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    now = now_iso()
+    existing = existing if isinstance(existing, dict) else {}
+    session_id = str(req.draft_session_id or existing.get("draft_session_id") or f"sop-draft-session-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}")
+    payload = req.payload if isinstance(req.payload, dict) else {}
+    plan = req.plan if isinstance(req.plan, dict) else {}
+    raw = str(payload.get("raw_request") or payload.get("business_goal") or plan.get("raw_request") or "")
+    work_context = sop_registration_work_context_model(payload, raw)
+    workflow_tasks = req.workflow_tasks if req.workflow_tasks else payload.get("workflow_tasks")
+    workflow_stages = req.workflow_stages if req.workflow_stages else payload.get("workflow_stages")
+    if workflow_tasks:
+        payload = {**payload, "workflow_tasks": workflow_tasks}
+    if workflow_stages:
+        payload = {**payload, "workflow_stages": workflow_stages}
+    normalized_stages = sop_registration_workflow_stages(payload, work_context)
+    normalized_tasks = sop_registration_workflow_tasks(payload, work_context)
+    workflow_model = sop_registration_workflow_model(payload, work_context, normalized_tasks, raw)
+    local_state = req.local_state if isinstance(req.local_state, dict) else {}
+    return {
+        **existing,
+        "draft_session_id": session_id,
+        "employee_id": employee_id,
+        "created_by": existing.get("created_by") or employee_id,
+        "created_at": existing.get("created_at") or now,
+        "updated_at": now,
+        "status": req.status if req.status in {"open", "discarded", "completed"} else str(existing.get("status") or "open"),
+        "current_url": req.current_url or str(existing.get("current_url") or ""),
+        "payload": payload,
+        "plan": plan,
+        "work_context_model": work_context,
+        "workflow_model": workflow_model,
+        "workflow_tasks": normalized_tasks,
+        "workflow_stages": normalized_stages,
+        "local_state": local_state or existing.get("local_state") or {},
+        "official_draft_id": existing.get("official_draft_id") or "",
+    }
+
+
+def write_sop_registration_draft_session(session: dict[str, Any]) -> dict[str, Any]:
+    employee_id = str(session.get("employee_id") or session.get("created_by") or "")
+    session_id = str(session.get("draft_session_id") or "")
+    if not employee_id or not session_id:
+        raise HTTPException(status_code=400, detail="draft session requires employee_id and draft_session_id")
+    path = sop_registration_draft_session_path(employee_id, session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(session, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return session
+
+
+def read_sop_registration_draft_session(session_id: str, employee_id: str) -> dict[str, Any]:
+    path = sop_registration_draft_session_path(employee_id, session_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="SOP registration draft session not found")
+    session = json.loads(path.read_text(encoding="utf-8"))
+    if session.get("created_by") != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="SOP registration draft session is not visible to this employee")
+    return session
+
+
+def list_sop_registration_draft_sessions(employee_id: str, *, status: str = "open", limit: int = 20) -> list[dict[str, Any]]:
+    root = sop_registration_draft_session_root(employee_id)
+    if not root.exists():
+        return []
+    sessions: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*.json"), key=lambda item: item.stat().st_mtime if item.exists() else 0, reverse=True):
+        try:
+            session = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if status and status != "all" and str(session.get("status") or "") != status:
+            continue
+        sessions.append(session)
+        if len(sessions) >= limit:
+            break
+    return sessions
 
 
 def event_publish_plan_payload(req: EventPublishPlanRequest, employee_id: str) -> dict[str, Any]:
@@ -12587,7 +15054,56 @@ def registration_link_candidates_payload(
     query: str,
     scope: str,
     folder: str,
+    kind: str = "",
+    connector_kind: str = "",
+    limit: int = 20,
+    cursor: str = "",
+    page: int = 1,
+    page_size: int | None = None,
 ) -> dict[str, Any]:
+    normalized_kind = kind if kind in {"sops", "event_types", "actions", "skills"} else ""
+    normalized_connector_kind = str(connector_kind or "").strip()
+    page_limit = min(max(int(page_size or limit or 20), 1), 50)
+    requested_page = max(int(page or 1), 1)
+    try:
+        offset = max(int(cursor), 0) if cursor else (requested_page - 1) * page_limit
+    except ValueError:
+        offset = (requested_page - 1) * page_limit
+
+    def candidate_reason(default: str) -> str:
+        return "입력한 설명과 검색어가 일치합니다." if query else default
+
+    def enrich_candidate(item: dict[str, Any], item_kind: str) -> dict[str, Any]:
+        labels = {"sops": "SOP", "event_types": "Event", "actions": "Action", "skills": "Skill"}
+        hints = {
+            "sops": "선택하면 SOP 초안에 기존 절차 연결 관계로 자동 정리됩니다.",
+            "event_types": "선택하면 SOP 초안에 Event 연결 관계로 자동 정리됩니다.",
+            "actions": "선택하면 SOP 초안에 Action 연결 관계로 자동 정리됩니다.",
+            "skills": "선택하면 해당 SOP 단계의 Skill 기반 Action 초안으로 자동 정리됩니다.",
+        }
+        enriched = dict(item)
+        technical_value = str(enriched.get("value") or "")
+        display_label = str(enriched.get("display_label") or enriched.get("label") or technical_value or "")
+        enriched.setdefault("display_label", display_label)
+        enriched.setdefault("technical_value", technical_value)
+        enriched.setdefault("technical_label", str(enriched.get("technical_label") or technical_value))
+        enriched.setdefault("badges", [labels.get(item_kind, "항목")])
+        enriched.setdefault("assetization_hint", hints.get(item_kind, "선택하면 BoI Wiki 초안 연결 관계로 자동 정리됩니다."))
+        return enriched
+
+    def page_items(items: list[dict[str, Any]], item_kind: str) -> tuple[list[dict[str, Any]], int, str, int, int]:
+        if normalized_kind and normalized_kind == item_kind:
+            start = offset
+            end = offset + page_limit
+        else:
+            start = 0
+            end = 20
+        page_items = [enrich_candidate(item, item_kind) for item in items[start:end]]
+        next_cursor = str(end) if end < len(items) else ""
+        current_page = (start // page_limit) + 1 if page_limit else 1
+        total_pages = max(1, math.ceil(len(items) / page_limit)) if normalized_kind and normalized_kind == item_kind else 1
+        return page_items, len(items), next_cursor, current_page, total_pages
+
     docs = accessible_docs(employee_id)
     if scope and scope != "all":
         docs = docs_for_folder_scope(docs, scope)
@@ -12610,6 +15126,9 @@ def registration_link_candidates_payload(
                 "label": metadata.get("title") or boi_id,
                 "description": metadata.get("description") or doc_folder(doc),
                 "url": f"/docs/{quote(boi_id)}?employee_id={quote(employee_id)}" if boi_id else "",
+                "why_recommended": candidate_reason("접근 가능한 SOP 카탈로그에서 먼저 추천합니다."),
+                "badges": ["SOP"],
+                "assetization_hint": "선택하면 SOP 초안에 기존 절차 연결 관계로 자동 정리됩니다.",
             }
         )
 
@@ -12633,6 +15152,9 @@ def registration_link_candidates_payload(
                 "url": public_link["url"] if public_link else app_url("/", employee_id, q=str(item.get("workflow_definition_key") or "")),
                 "user_link": public_link or user_link("BoI Wiki에서 보기", app_url("/", employee_id, q=str(item.get("workflow_definition_key") or "")), "boi_wiki", "explorer", "boi_wiki"),
                 "workflow_definition_url": workflow_definition_url_for_key(str(item.get("workflow_definition_key") or ""), employee_id),
+                "why_recommended": candidate_reason("연결된 내부 실행 정의와 SOP 참조를 기준으로 찾았습니다."),
+                "badges": ["SOP"],
+                "assetization_hint": "선택하면 SOP 초안에 연결된 절차 후보로 자동 정리됩니다.",
             }
         )
     event_candidates = [
@@ -12641,6 +15163,9 @@ def registration_link_candidates_payload(
             "label": item.get("name_ko") or item.get("event_type") or "Event",
             "description": item.get("description") or "",
             "url": f"/event-types/{quote(str(item.get('event_type') or ''))}?employee_id={quote(employee_id)}",
+            "why_recommended": candidate_reason("Event Broker 카탈로그에서 연결 후보를 찾았습니다."),
+            "badges": ["Event"],
+            "assetization_hint": "선택하면 SOP 초안에 Event 연결 관계로 자동 정리됩니다.",
         }
         for item in load_event_types()
         if registration_candidate_matches(query, item.get("event_type"), item.get("name_ko"), item.get("description"))
@@ -12650,9 +15175,14 @@ def registration_link_candidates_payload(
             "value": item.get("action_key") or "",
             "label": item.get("name_ko") or item.get("name") or item.get("action_key") or "Action",
             "description": item.get("description") or "",
+            "connector_kind": item.get("connector_kind") or "",
             "url": app_url("/actions", employee_id, action_key=str(item.get("action_key") or "")),
+            "why_recommended": candidate_reason("Action 카탈로그에서 연결 후보를 찾았습니다."),
+            "badges": ["Action", item.get("connector_kind") or ""],
+            "assetization_hint": "선택하면 SOP 초안에 Action 연결 관계로 자동 정리됩니다.",
         }
         for item in load_action_catalog()
+        if not normalized_connector_kind or str(item.get("connector_kind") or "") == normalized_connector_kind
         if registration_candidate_matches(
             query,
             item.get("action_key"),
@@ -12662,18 +15192,87 @@ def registration_link_candidates_payload(
             item.get("connector_kind"),
         )
     ]
+    skill_candidates: list[dict[str, Any]] = []
+    for item in load_action_skill_catalog():
+        script_backed = bool(item.get("script") or item.get("scripts") or item.get("script_path") or item.get("tool_name") or item.get("mcp_tool"))
+        if not registration_candidate_matches(
+            query,
+            item.get("skill_key"),
+            item.get("title"),
+            item.get("description"),
+            " ".join(normalize_registry_list(item.get("trigger_terms"))),
+            " ".join(normalize_registry_list(item.get("required_evidence"))),
+        ):
+            continue
+        skill_key = str(item.get("skill_key") or "")
+        skill_candidates.append(
+            {
+                "value": skill_key,
+                "skill_ref": skill_key,
+                "label": item.get("title") or skill_key,
+                "display_label": item.get("title") or skill_key,
+                "description": item.get("description") or "",
+                "technical_value": skill_key,
+                "technical_label": skill_key,
+                "script_backed": script_backed,
+                "invocation_modes": ["sandbox_run", "agent_tool"] if script_backed else ["guide_only"],
+                "required_inputs": normalize_registry_list(item.get("required_evidence")),
+                "output_artifacts": normalize_registry_list(item.get("supported_artifacts")),
+                "risk_level": item.get("risk_policy") or "low",
+                "why_recommended": candidate_reason("Action Skill registry에서 단계별 실행 능력 후보를 찾았습니다."),
+                "badges": ["Skill", "Sandbox 필요" if script_backed else "문서형"],
+                "assetization_hint": "선택하면 SOP 단계에 Skill 기반 Action 초안으로 연결됩니다.",
+            }
+        )
+    sop_page, sop_total, sop_next, sop_current_page, sop_total_pages = page_items(sop_candidates, "sops")
+    event_page, event_total, event_next, event_current_page, event_total_pages = page_items(event_candidates, "event_types")
+    action_page, action_total, action_next, action_current_page, action_total_pages = page_items(action_candidates, "actions")
+    skill_page, skill_total, skill_next, skill_current_page, skill_total_pages = page_items(skill_candidates, "skills")
+    workflow_page = workflow_candidates[:20]
+    groups = {
+        "sops": sop_page,
+        "workflow_definitions": workflow_page,
+        "event_types": event_page,
+        "actions": action_page,
+        "skills": skill_page,
+    }
+    pagination = {
+        "sops": {"total": sop_total, "next_cursor": sop_next, "current_page": sop_current_page, "total_pages": sop_total_pages, "page_size": page_limit},
+        "workflow_definitions": {"total": len(workflow_candidates), "next_cursor": "", "current_page": 1, "total_pages": 1, "page_size": 20},
+        "event_types": {"total": event_total, "next_cursor": event_next, "current_page": event_current_page, "total_pages": event_total_pages, "page_size": page_limit},
+        "actions": {"total": action_total, "next_cursor": action_next, "current_page": action_current_page, "total_pages": action_total_pages, "page_size": page_limit},
+        "skills": {"total": skill_total, "next_cursor": skill_next, "current_page": skill_current_page, "total_pages": skill_total_pages, "page_size": page_limit},
+    }
+    facets = {
+        "kind_counts": {
+            "sops": sop_total,
+            "event_types": event_total,
+            "actions": action_total,
+            "skills": skill_total,
+        },
+        "scope": scope,
+    }
+    selected_items = groups.get(normalized_kind, [])
+    selected_pagination = pagination.get(normalized_kind, {"total": 0, "next_cursor": ""})
     return {
         "ok": True,
         "entry_kind": entry_kind,
         "query": query,
         "scope": scope,
         "folder": folder,
-        "groups": {
-            "sops": sop_candidates[:20],
-            "workflow_definitions": workflow_candidates[:20],
-            "event_types": event_candidates[:20],
-            "actions": action_candidates[:20],
-        },
+        "filters": {"scope": scope, "folder": folder, "connector_kind": normalized_connector_kind},
+        "kind": normalized_kind,
+        "limit": page_limit,
+        "cursor": str(offset) if normalized_kind else "",
+        "page_size": selected_pagination.get("page_size", page_limit) if normalized_kind else page_limit,
+        "current_page": selected_pagination.get("current_page", 1) if normalized_kind else 1,
+        "total_pages": selected_pagination.get("total_pages", 1) if normalized_kind else 1,
+        "items": selected_items,
+        "total": selected_pagination["total"] if normalized_kind else 0,
+        "next_cursor": selected_pagination["next_cursor"] if normalized_kind else "",
+        "facets": facets,
+        "pagination": pagination,
+        "groups": groups,
     }
 
 
@@ -12684,6 +15283,12 @@ async def api_registration_link_candidates(
     q: str = "",
     scope: Literal["public", "team", "private", "all"] = "all",
     folder: str = "",
+    kind: str = "",
+    connector_kind: str = "",
+    limit: int = 20,
+    cursor: str = "",
+    page: int = 1,
+    page_size: int | None = None,
 ) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.viewer")
     return registration_link_candidates_payload(
@@ -12692,6 +15297,12 @@ async def api_registration_link_candidates(
         query=q,
         scope=scope,
         folder=folder,
+        kind=kind,
+        connector_kind=connector_kind,
+        limit=limit,
+        cursor=cursor,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -12703,6 +15314,40 @@ async def api_registration_verification_preview(
     return registration_verification_preview_payload(req, employee_id)
 
 
+@app.post("/api/event-ingestion/adapters/plan")
+async def api_event_ingestion_adapter_plan(req: EventProducerAdapterRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return event_producer_adapter_plan_payload(req, employee_id)
+
+
+@app.post("/api/event-ingestion/adapters/test")
+async def api_event_ingestion_adapter_test(req: EventProducerAdapterRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return event_producer_adapter_test_payload(req, employee_id)
+
+
+@app.post("/api/event-ingestion/adapters/drafts")
+async def api_event_ingestion_adapter_draft_create(req: EventProducerAdapterRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    draft = create_event_producer_adapter_draft(req, employee_id)
+    return {"ok": True, "draft": draft}
+
+
+@app.post("/api/event-ingestion/adapters/{draft_id}/publish-request")
+async def api_event_ingestion_adapter_publish_request(
+    draft_id: str,
+    req: EventProducerAdapterRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required before requesting adapter publish")
+    draft = read_event_producer_adapter_draft(draft_id, employee_id)
+    draft["status"] = "publish_requested"
+    draft["publish_requested_at"] = now_iso()
+    draft["publish_requested_by"] = employee_id
+    draft["publish_note"] = req.note
+    write_event_producer_adapter_draft(draft)
+    append_rbac_audit(employee_id, "event_producer_adapter_publish_request", {"draft_id": draft_id, "note": req.note})
+    return {"ok": True, "draft": draft}
+
+
 @app.post("/api/sop-registration/plan")
 async def api_sop_registration_plan(req: SopRegistrationPlanRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     return sop_registration_plan_payload(req, employee_id)
@@ -12711,6 +15356,58 @@ async def api_sop_registration_plan(req: SopRegistrationPlanRequest, employee_id
 @app.post("/api/sop-registration/preview")
 async def api_sop_registration_preview(req: SopRegistrationPreviewRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     return sop_registration_preview_payload(req, employee_id)
+
+
+@app.post("/api/sop-registration/draft-sessions")
+async def api_sop_registration_draft_session_create(req: SopRegistrationDraftSessionRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    session = sop_registration_draft_session_payload(req, employee_id)
+    write_sop_registration_draft_session(session)
+    return {"ok": True, "session": session}
+
+
+@app.get("/api/sop-registration/draft-sessions")
+async def api_sop_registration_draft_session_list(
+    status: str = "open",
+    limit: int = 20,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    return {"ok": True, "sessions": list_sop_registration_draft_sessions(employee_id, status=status, limit=max(1, min(limit, 100)))}
+
+
+@app.get("/api/sop-registration/draft-sessions/{session_id}")
+async def api_sop_registration_draft_session_get(session_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return {"ok": True, "session": read_sop_registration_draft_session(session_id, employee_id)}
+
+
+@app.patch("/api/sop-registration/draft-sessions/{session_id}")
+async def api_sop_registration_draft_session_autosave(
+    session_id: str,
+    req: SopRegistrationDraftSessionRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    existing = read_sop_registration_draft_session(session_id, employee_id)
+    req.draft_session_id = session_id
+    session = sop_registration_draft_session_payload(req, employee_id, existing=existing)
+    write_sop_registration_draft_session(session)
+    return {"ok": True, "session": session}
+
+
+@app.delete("/api/sop-registration/draft-sessions/{session_id}")
+async def api_sop_registration_draft_session_delete(session_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    existing = read_sop_registration_draft_session(session_id, employee_id)
+    req = SopRegistrationDraftSessionRequest(
+        draft_session_id=session_id,
+        current_url=str(existing.get("current_url") or ""),
+        payload=existing.get("payload") if isinstance(existing.get("payload"), dict) else {},
+        plan=existing.get("plan") if isinstance(existing.get("plan"), dict) else {},
+        workflow_tasks=existing.get("workflow_tasks") if isinstance(existing.get("workflow_tasks"), list) else [],
+        workflow_stages=existing.get("workflow_stages") if isinstance(existing.get("workflow_stages"), list) else [],
+        local_state=existing.get("local_state") if isinstance(existing.get("local_state"), dict) else {},
+        status="discarded",
+    )
+    session = sop_registration_draft_session_payload(req, employee_id, existing=existing)
+    write_sop_registration_draft_session(session)
+    return {"ok": True, "session": session}
 
 
 @app.post("/api/sop-registration/drafts")
@@ -14209,6 +16906,27 @@ def is_current_document_qa_request(question: str, current_url: str = "") -> bool
     return any(term in q for term in doc_terms) and any(term in q for term in question_terms)
 
 
+def is_current_document_local_answer_request(
+    question: str,
+    current_url: str = "",
+    semantic: dict[str, Any] | None = None,
+) -> bool:
+    path = urlsplit(str(current_url or "")).path
+    if not path.startswith("/docs/"):
+        return False
+    semantic_route = semantic.get("semantic_route") if isinstance(semantic, dict) else {}
+    if str((semantic_route or {}).get("target_kind") or semantic.get("matched_affordance") if isinstance(semantic, dict) else "").startswith("related_"):
+        return False
+    q = str(question or "").lower()
+    artifact_terms = ("mermaid", "머메이드", "flowchart", "다이어그램", "도식", "프로세스 플로우", "프로세스플로우", "그려", "그려줘")
+    if any(term in q for term in artifact_terms):
+        return False
+    if is_current_document_qa_request(question, current_url):
+        return True
+    implicit_doc_answer_terms = ("뭐", "무엇", "어떤", "왜", "어떻게", "요약", "정리", "설명", "확인", "부족", "누락")
+    return any(term in q for term in implicit_doc_answer_terms)
+
+
 def agent_dialog_context(req: BoiAgentChatRequest, page_context: dict[str, Any] | None = None) -> dict[str, Any]:
     return dialog_context_from_conversation(
         req.conversation,
@@ -14241,8 +16959,10 @@ def deterministic_agent_intent(
     semantic = semantic_route_candidate(question, current_url, page_context or {}, dialog_context or {})
     if semantic_route_should_override_profile(semantic, profile, question):
         return "search"
-    if is_current_document_qa_request(question, current_url):
-        return "page_qa"
+    if is_current_document_local_answer_request(question, current_url, semantic):
+        profile_intent = normalize_agent_intent(str((profile or {}).get("intent") or ""), fallback="")
+        if not profile or profile_intent not in {"page_qa", "summarize"}:
+            return "page_qa"
     if is_strong_agent_goal_profile(profile):
         return normalize_agent_intent(str(profile.get("intent") or profile.get("goal_type") or ""), fallback="page_qa")
     if profile:
@@ -15141,12 +17861,23 @@ def call_boi_agent_router_llm(req: BoiAgentChatRequest, employee_id: str) -> dic
 def apply_agent_route_overrides(req: BoiAgentChatRequest, route: dict[str, Any]) -> dict[str, Any]:
     dialog_context = agent_dialog_context(req)
     deterministic_intent = deterministic_agent_intent(req.question, req.current_url, req.page_context, dialog_context)
-    profile = None if deterministic_intent in MUTATION_AGENT_INTENTS or is_current_document_qa_request(req.question, req.current_url) else select_agent_goal_profile_for_request(req)
+    allow_semantic_profile = route.get("router_backend") != "request_hint"
+    semantic_candidate = (
+        semantic_route_candidate(req.question, req.current_url, req.page_context, dialog_context)
+        if allow_semantic_profile and deterministic_intent not in MUTATION_AGENT_INTENTS
+        else None
+    )
+    local_current_doc_answer = is_current_document_local_answer_request(req.question, req.current_url, semantic_candidate)
+    profile = None
+    if allow_semantic_profile and deterministic_intent not in MUTATION_AGENT_INTENTS:
+        profile = select_agent_goal_profile_for_request(req)
+        if local_current_doc_answer:
+            profile_intent = normalize_agent_intent(str((profile or {}).get("intent") or ""), fallback="")
+            if profile_intent not in {"page_qa", "summarize"}:
+                profile = None
     semantic = None
-    if deterministic_intent not in MUTATION_AGENT_INTENTS:
-        semantic_candidate = semantic_route_candidate(req.question, req.current_url, req.page_context, dialog_context)
-        if semantic_route_should_override_profile(semantic_candidate, profile, req.question):
-            semantic = semantic_candidate
+    if semantic_route_should_override_profile(semantic_candidate, profile, req.question):
+        semantic = semantic_candidate
     if semantic:
         profile = None
     if profile and int(profile.get("_match_score") or 0) < 20 and route.get("router_backend") in {"llm", "request_hint"}:
@@ -15231,12 +17962,22 @@ def deterministic_agent_route_for_request(
 ) -> dict[str, Any]:
     dialog_context = agent_dialog_context(req)
     deterministic_intent = deterministic_agent_intent(req.question, req.current_url, req.page_context, dialog_context)
-    profile = None if deterministic_intent in MUTATION_AGENT_INTENTS or is_current_document_qa_request(req.question, req.current_url) else select_agent_goal_profile_for_request(req)
-    semantic = None
+    semantic_candidate = (
+        semantic_route_candidate(req.question, req.current_url, req.page_context, dialog_context)
+        if deterministic_intent not in MUTATION_AGENT_INTENTS
+        else None
+    )
+    local_current_doc_answer = is_current_document_local_answer_request(req.question, req.current_url, semantic_candidate)
+    profile = None
     if deterministic_intent not in MUTATION_AGENT_INTENTS:
-        semantic_candidate = semantic_route_candidate(req.question, req.current_url, req.page_context, dialog_context)
-        if semantic_route_should_override_profile(semantic_candidate, profile, req.question):
-            semantic = semantic_candidate
+        profile = select_agent_goal_profile_for_request(req)
+        if local_current_doc_answer:
+            profile_intent = normalize_agent_intent(str((profile or {}).get("intent") or ""), fallback="")
+            if profile_intent not in {"page_qa", "summarize"}:
+                profile = None
+    semantic = None
+    if semantic_route_should_override_profile(semantic_candidate, profile, req.question):
+        semantic = semantic_candidate
     if semantic:
         route = dict(semantic)
         if component_error:
@@ -15921,6 +18662,14 @@ def native_agent_tools(employee_id: str, current_url: str = "") -> NativeAgentTo
     )
 
 
+def boi_agent_should_use_composer_for_route(req: BoiAgentChatRequest, route: dict[str, Any]) -> bool:
+    if BOI_AGENT_COMPOSER_BLOCKING or req.mode == "deep":
+        return True
+    route_name = str(route.get("route") or "").strip()
+    intent = normalize_agent_intent(str(route.get("intent") or ""), fallback="")
+    return route_name == "deep" or bool(route.get("requires_deep_reasoning")) or intent in {"diagram", "gap_check", "workflow_explain", "trace_reasoning"}
+
+
 def call_native_boi_agent(
     req: BoiAgentChatRequest,
     employee_id: str,
@@ -15929,6 +18678,7 @@ def call_native_boi_agent(
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     context_pack = agent_context_pack(req, employee_id, search_limit=8)
+    should_use_composer = boi_agent_should_use_composer_for_route(req, route)
     runtime = NativeBoiAgent(
         native_agent_tools(employee_id, req.current_url),
         NativeAgentConfig(
@@ -15937,8 +18687,8 @@ def call_native_boi_agent(
             build_revision=BOI_BUILD_REVISION,
             llm_enabled=BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first",
             require_langgraph=BOI_AGENT_LANGGRAPH_REQUIRED,
-            composer_enabled=BOI_AGENT_COMPOSER_LLM_ENABLED and (BOI_AGENT_COMPOSER_BLOCKING or req.mode == "deep"),
-            composer_required=BOI_AGENT_COMPOSER_REQUIRED and (BOI_AGENT_COMPOSER_BLOCKING or req.mode == "deep"),
+            composer_enabled=BOI_AGENT_COMPOSER_LLM_ENABLED and should_use_composer,
+            composer_required=BOI_AGENT_COMPOSER_REQUIRED and should_use_composer,
             progress_callback=progress_callback,
         ),
     )
@@ -16884,7 +19634,12 @@ def finalize_agent_chat_response(req: BoiAgentChatRequest, employee_id: str, *, 
         response = agent_chat_response_with_optional_status_plan(req, employee_id)
     response = enrich_agent_answer_html(response, employee_id)
     response = add_agent_evidence_and_affordances(response, req, employee_id)
-    if boi_agent_fast_first_enabled() and not BOI_AGENT_FOLLOWUPS_BLOCKING:
+    response_route = {
+        "route": response.get("route") or (response.get("context_summary") or {}).get("route"),
+        "intent": response.get("intent") or (response.get("context_summary") or {}).get("intent"),
+        "requires_deep_reasoning": bool((response.get("context_summary") or {}).get("requires_deep_reasoning")),
+    }
+    if boi_agent_should_use_fast_first_route(req, response_route) and not BOI_AGENT_FOLLOWUPS_BLOCKING:
         raw_suggestions = response.get("suggested_questions") or followup_questions_from_affordances(response)
         try:
             scoped_suggestions = filter_agent_followups_by_affordances(dedupe_suggestions(raw_suggestions, limit=5), response) if raw_suggestions else []
@@ -17489,6 +20244,31 @@ def boi_agent_fast_first_enabled() -> bool:
     return BOI_AGENT_LATENCY_MODE in {"fast_first", "fast-first", "fast"}
 
 
+def boi_agent_should_use_fast_first_route(
+    req: BoiAgentChatRequest | None = None,
+    route: dict[str, Any] | None = None,
+    *,
+    allow_router_unavailable: bool = False,
+) -> bool:
+    if not boi_agent_fast_first_enabled() or BOI_AGENT_STATUS_BLOCKING:
+        return False
+    router_ready = BOI_AGENT_ROUTER_LLM_ENABLED and BOI_AGENT_ROUTER_MODE == "llm_first"
+    if req is None:
+        if BOI_AGENT_ROUTER_REQUIRED and not router_ready:
+            return False
+        if BOI_AGENT_COMPOSER_REQUIRED and BOI_AGENT_COMPOSER_LLM_ENABLED:
+            return False
+        return True
+    if BOI_AGENT_ROUTER_REQUIRED and not router_ready and not allow_router_unavailable:
+        return False
+    route = route or deterministic_agent_route_for_request(req)
+    if BOI_AGENT_COMPOSER_REQUIRED and BOI_AGENT_COMPOSER_LLM_ENABLED and router_ready:
+        return False
+    if boi_agent_should_use_composer_for_route(req, route):
+        return False
+    return True
+
+
 def fast_first_agent_route(req: BoiAgentChatRequest, employee_id: str) -> dict[str, Any]:
     if req.mode in {"fast", "deep"} or str(req.intent or "").strip():
         return route_boi_agent_request(req, employee_id)
@@ -17551,7 +20331,7 @@ def agent_chat_response_with_optional_status_plan(req: BoiAgentChatRequest, empl
     """
     planned_route: dict[str, Any] | None = None
     planned_status_updates: list[dict[str, Any]] = []
-    if boi_agent_fast_first_enabled() and not BOI_AGENT_STATUS_BLOCKING:
+    if boi_agent_should_use_fast_first_route(req):
         planned_route = fast_first_agent_route(req, employee_id)
     elif req.mode == "auto" and BOI_AGENT_STATUS_LLM_ENABLED and BOI_AGENT_ROUTER_LLM_ENABLED:
         try:
@@ -17668,7 +20448,7 @@ async def api_boi_agent_chat_stream(req: BoiAgentChatRequest, employee_id: str =
             },
         )
         stream_plan_diagnostic: dict[str, Any] | None = None
-        if boi_agent_fast_first_enabled() and not BOI_AGENT_STATUS_BLOCKING:
+        if boi_agent_should_use_fast_first_route(req, allow_router_unavailable=True):
             planned_route = fast_first_agent_route(req, employee_id)
             status_steps = deterministic_fast_first_status_steps(req, planned_route)
         else:
@@ -18502,6 +21282,11 @@ def agent_memory_items(employee_id: str, q: str = "", limit: int = 20, include_a
 async def api_agent_memory(employee_id: str = Depends(current_employee), q: str = "", include_archived: bool = False, limit: int = 20) -> dict[str, Any]:
     items = agent_memory_items(employee_id, q=q, limit=limit, include_archived=include_archived)
     return {"ok": True, "count": len(items), "items": items}
+
+
+@app.get("/api/agents/boi-wiki/memory/review")
+async def api_agent_memory_review(employee_id: str = Depends(current_employee), include_archived: bool = False, limit: int = 50) -> dict[str, Any]:
+    return agent_memory_review_payload(employee_id, include_archived=include_archived, limit=limit)
 
 
 @app.post("/api/agents/boi-wiki/memory")
@@ -21057,6 +23842,7 @@ def agent_inbox_payload(employee_id: str, status: str = "open", limit: int = 50,
         row_business_context = business_context_fingerprint(row)
         item = {
             "task_id": task_id,
+            "task_ref": inbox_task_public_ref(employee_id, task_id),
             "status": row_status,
             "action_key": row.get("action_key") or "",
             "request_id": request_id,
@@ -22644,11 +25430,36 @@ def find_agent_inbox_item(employee_id: str, task_id: str) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail="inbox task not found in current inbox payload")
 
 
-def validate_inbox_decision_request(req: InboxDecisionRequest) -> None:
-    if not req.user_confirmed:
-        raise HTTPException(status_code=400, detail="user_confirmed=true is required")
+def inbox_task_public_ref(employee_id: str, task_id: str) -> str:
+    digest = hashlib.sha256(f"{BOI_UI_REF_SECRET}:{employee_id}:{str(task_id or '').strip()}".encode("utf-8")).hexdigest()[:18]
+    return f"inbox-ref-{digest}"
+
+
+def resolve_agent_inbox_task_ref(employee_id: str, task_ref: str) -> str:
+    value = str(task_ref or "").strip()
+    if value.startswith("task:"):
+        visible_agent_inbox_task_row(
+            value,
+            employee_id,
+            allowed_statuses={"manual_required", "approval_required", "manual_blocked", "needs_followup"},
+        )
+        return value
+    inbox = agent_inbox_payload(employee_id, status="open", limit=200, include_context="")
+    for item in inbox.get("items") or []:
+        if str(item.get("task_ref") or "") == value:
+            return str(item.get("task_id") or "")
+    raise HTTPException(status_code=404, detail="inbox task reference not found")
+
+
+def validate_inbox_decision_preview_request(req: InboxDecisionRequest) -> None:
     if not req.note.strip():
         raise HTTPException(status_code=400, detail="note is required")
+
+
+def validate_inbox_decision_request(req: InboxDecisionRequest) -> None:
+    validate_inbox_decision_preview_request(req)
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required")
 
 
 def inbox_decision_status(decision: str) -> str:
@@ -22804,6 +25615,410 @@ def data_lake_artifact(source: dict[str, Any], req: DataLakeQueryRequest, rows: 
     }
 
 
+def data_lake_artifact_index_root() -> Path:
+    return BOI_DATALAKE_ARTIFACT_ROOT / "metadata"
+
+
+def data_lake_artifact_object_root() -> Path:
+    return BOI_DATALAKE_ARTIFACT_ROOT / "objects"
+
+
+def data_lake_artifact_record_path(artifact_id: str) -> Path:
+    return data_lake_artifact_index_root() / f"{safe_filename(artifact_id)}.json"
+
+
+def data_lake_artifact_download_url(artifact_id: str) -> str:
+    return f"/api/data-lake/artifacts/{quote(artifact_id, safe='')}/download"
+
+
+def data_lake_artifact_api_url(artifact_id: str) -> str:
+    return f"/api/data-lake/artifacts/{quote(artifact_id, safe='')}"
+
+
+def data_lake_artifact_disabled(operation: str, artifact_id: str = "") -> dict[str, Any]:
+    payload = data_lake_disabled_payload(operation)
+    if artifact_id:
+        payload["artifact_id"] = artifact_id
+    return payload
+
+
+def data_lake_artifact_storage_backend() -> str:
+    if BOI_DATALAKE_MINIO_ENDPOINT and BOI_DATALAKE_MINIO_ACCESS_KEY and BOI_DATALAKE_MINIO_SECRET_KEY:
+        return "minio"
+    return "runtime_file"
+
+
+def data_lake_artifact_acl_visible(record: dict[str, Any], employee_id: str) -> bool:
+    visibility = str(record.get("visibility") or "private")
+    owner = str(record.get("owner_employee_id") or "")
+    if visibility in {"public", "team"}:
+        return True
+    return owner == employee_id or "boi.admin" in roles_for(employee_id)
+
+
+def write_data_lake_artifact_record(record: dict[str, Any]) -> dict[str, Any]:
+    record.setdefault("updated_at", now_iso())
+    path = data_lake_artifact_record_path(str(record.get("artifact_id") or ""))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
+    return record
+
+
+def read_data_lake_artifact_record(artifact_id: str, employee_id: str | None = None) -> dict[str, Any] | None:
+    path = data_lake_artifact_record_path(artifact_id)
+    if not path.exists():
+        return None
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Data Lake artifact metadata is unreadable: {artifact_id}") from exc
+    if employee_id and not data_lake_artifact_acl_visible(record, employee_id):
+        raise HTTPException(status_code=403, detail="Data Lake artifact is not visible to this employee")
+    return record
+
+
+def data_lake_artifact_records(employee_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+    root = data_lake_artifact_index_root()
+    if not root.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*.json"), key=lambda item: item.stat().st_mtime if item.exists() else 0, reverse=True):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(record, dict):
+            continue
+        if data_lake_artifact_acl_visible(record, employee_id):
+            records.append(record)
+        if len(records) >= max(1, min(limit, 500)):
+            break
+    return records
+
+
+def data_lake_artifact_attachment_summary(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_id": record.get("artifact_id"),
+        "filename": record.get("filename"),
+        "content_type": record.get("content_type"),
+        "size_bytes": record.get("size_bytes"),
+        "sha256": record.get("sha256"),
+        "download_url": record.get("download_url"),
+        "profile": record.get("profile"),
+        "validation_state": record.get("validation_state") or "uploaded",
+    }
+
+
+def data_lake_artifact_active_attachments(
+    artifact_id: str,
+    employee_id: str,
+    *,
+    target_type: str = "",
+    target_id: str = "",
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for attachment in list_runtime_records("data-lake-artifact-attachments", limit=limit):
+        if str(attachment.get("artifact_id") or "") != artifact_id:
+            continue
+        if str(attachment.get("employee_id") or "") != employee_id and "boi.admin" not in roles_for(employee_id):
+            continue
+        if str(attachment.get("lifecycle_state") or "active") == "detached":
+            continue
+        if target_type and str(attachment.get("target_type") or "") != target_type:
+            continue
+        if target_id and str(attachment.get("target_id") or "") != target_id:
+            continue
+        matches.append(attachment)
+    return matches
+
+
+def data_lake_artifact_matches_target(record: dict[str, Any], target_type: str, target_id: str, employee_id: str) -> bool:
+    if not target_type and not target_id:
+        return True
+    source_context = record.get("source_context") if isinstance(record.get("source_context"), dict) else {}
+    source_matches = True
+    if target_type:
+        source_matches = source_matches and str(source_context.get("target_type") or "") == target_type
+    if target_id:
+        source_matches = source_matches and str(source_context.get("target_id") or "") == target_id
+    if source_matches:
+        return True
+    return bool(
+        data_lake_artifact_active_attachments(
+            str(record.get("artifact_id") or ""),
+            employee_id,
+            target_type=target_type,
+            target_id=target_id,
+        )
+    )
+
+
+def create_data_lake_artifact_attachment(
+    record: dict[str, Any],
+    employee_id: str,
+    *,
+    target_type: str,
+    target_id: str,
+    relationship: str = "evidence",
+    note: str = "",
+    attached_from_surface: str = "",
+    attachment_role: str = "evidence",
+    validation_state: str = "uploaded",
+    source_refs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    artifact_id = str(record.get("artifact_id") or "")
+    clean_target_type = safe_filename(target_type or "boi")
+    clean_target_id = safe_filename(target_id or "unscoped")
+    attachment = write_runtime_record(
+        "data-lake-artifact-attachments",
+        {
+            "id": f"data-lake-attachment-{safe_filename(artifact_id)}-{clean_target_type}-{clean_target_id}-{uuid.uuid4().hex[:6]}",
+            "artifact_id": artifact_id,
+            "employee_id": employee_id,
+            "target_type": target_type or "boi",
+            "target_id": target_id,
+            "relationship": relationship or "evidence",
+            "attachment_role": attachment_role or "evidence",
+            "attached_from_surface": attached_from_surface or "",
+            "human_note": note,
+            "note": note,
+            "validation_state": validation_state or "uploaded",
+            "source_refs": source_refs or [],
+            "artifact": data_lake_artifact_attachment_summary(record),
+            "lifecycle_state": "active",
+            "attached_at": now_iso(),
+        },
+    )
+    if target_type in {"inbox_report", "report"} and target_id:
+        write_runtime_record(
+            "report-evidence",
+            {
+                "id": f"report-evidence-{safe_filename(target_id)}-{uuid.uuid4().hex[:6]}",
+                "report_id": target_id,
+                "employee_id": employee_id,
+                "evidence_refs": [
+                    {
+                        "type": "data_lake_artifact",
+                        "artifact_id": artifact_id,
+                        "label": record.get("filename"),
+                        "download_url": record.get("download_url"),
+                        "profile": record.get("profile"),
+                        "attachment_role": attachment_role or "evidence",
+                        "validation_state": validation_state or "uploaded",
+                    }
+                ],
+                "note": note,
+                "attached_at": now_iso(),
+            },
+        )
+    return attachment
+
+
+def data_lake_local_object_path(object_key: str) -> Path:
+    safe_parts = [safe_filename(part) for part in object_key.split("/") if part]
+    return data_lake_artifact_object_root().joinpath(*safe_parts)
+
+
+def data_lake_local_put_object(object_key: str, content: bytes) -> str:
+    path = data_lake_local_object_path(object_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return str(path)
+
+
+def data_lake_local_get_object(object_key: str) -> bytes:
+    path = data_lake_local_object_path(object_key)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Data Lake artifact object not found")
+    return path.read_bytes()
+
+
+def s3_signing_key(secret_key: str, date_stamp: str, region: str, service: str = "s3") -> bytes:
+    key_date = hmac.new(("AWS4" + secret_key).encode("utf-8"), date_stamp.encode("utf-8"), hashlib.sha256).digest()
+    key_region = hmac.new(key_date, region.encode("utf-8"), hashlib.sha256).digest()
+    key_service = hmac.new(key_region, service.encode("utf-8"), hashlib.sha256).digest()
+    return hmac.new(key_service, b"aws4_request", hashlib.sha256).digest()
+
+
+def data_lake_minio_request(
+    method: str,
+    object_key: str = "",
+    *,
+    body: bytes = b"",
+    content_type: str = "application/octet-stream",
+    bucket_only: bool = False,
+) -> bytes:
+    if not BOI_DATALAKE_MINIO_ENDPOINT:
+        raise RuntimeError("MinIO endpoint is not configured")
+    parsed = urlsplit(BOI_DATALAKE_MINIO_ENDPOINT.rstrip("/"))
+    host = parsed.netloc
+    bucket_path = quote(BOI_DATALAKE_BUCKET, safe="")
+    key_path = "" if bucket_only else "/" + quote(object_key, safe="/")
+    canonical_uri = f"/{bucket_path}{key_path}"
+    endpoint_url = f"{parsed.scheme}://{host}{canonical_uri}"
+    amz_date = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = amz_date[:8]
+    payload_hash = hashlib.sha256(body).hexdigest()
+    headers = {
+        "content-type": content_type,
+        "host": host,
+        "x-amz-content-sha256": payload_hash,
+        "x-amz-date": amz_date,
+    }
+    signed_headers = ";".join(sorted(headers))
+    canonical_headers = "".join(f"{name}:{headers[name]}\n" for name in sorted(headers))
+    canonical_request = "\n".join(
+        [method.upper(), canonical_uri, "", canonical_headers, signed_headers, payload_hash]
+    )
+    credential_scope = f"{date_stamp}/{BOI_DATALAKE_MINIO_REGION}/s3/aws4_request"
+    string_to_sign = "\n".join(
+        [
+            "AWS4-HMAC-SHA256",
+            amz_date,
+            credential_scope,
+            hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
+        ]
+    )
+    signing_key = s3_signing_key(BOI_DATALAKE_MINIO_SECRET_KEY, date_stamp, BOI_DATALAKE_MINIO_REGION)
+    signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    authorization = (
+        "AWS4-HMAC-SHA256 "
+        f"Credential={BOI_DATALAKE_MINIO_ACCESS_KEY}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, Signature={signature}"
+    )
+    request = urllib_request.Request(
+        endpoint_url,
+        data=body if method.upper() in {"PUT", "POST"} else None,
+        method=method.upper(),
+        headers={**headers, "Authorization": authorization},
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=10) as response:  # noqa: S310 - operator-configured local MinIO endpoint.
+            return response.read()
+    except urllib_error.HTTPError as exc:
+        if bucket_only and method.upper() == "PUT" and exc.code in {409, 200}:
+            return b""
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=502, detail=f"Data Lake MinIO request failed: {exc.code} {detail[:200]}") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail=f"Data Lake MinIO endpoint is unreachable: {exc}") from exc
+
+
+def data_lake_minio_ensure_bucket() -> None:
+    data_lake_minio_request("PUT", bucket_only=True, body=b"", content_type="application/octet-stream")
+
+
+def data_lake_put_artifact_object(object_key: str, content: bytes, content_type: str) -> tuple[str, str]:
+    backend = data_lake_artifact_storage_backend()
+    if backend == "minio":
+        data_lake_minio_ensure_bucket()
+        data_lake_minio_request("PUT", object_key, body=content, content_type=content_type)
+        return "minio", ""
+    return "runtime_file", data_lake_local_put_object(object_key, content)
+
+
+def data_lake_get_artifact_object(record: dict[str, Any]) -> bytes:
+    object_key = str(record.get("object_key") or "")
+    if str(record.get("storage_backend") or "") == "minio":
+        return data_lake_minio_request("GET", object_key, content_type=str(record.get("content_type") or "application/octet-stream"))
+    return data_lake_local_get_object(object_key)
+
+
+def data_lake_profile_for_content(content: bytes, filename: str, content_type: str) -> dict[str, Any]:
+    max_rows = max(1, min(BOI_DATALAKE_ARTIFACT_PROFILE_ROWS, 20))
+    lower_name = filename.lower()
+    text_types = {"text/csv", "application/csv", "application/json", "text/plain", "text/markdown"}
+    profile: dict[str, Any] = {
+        "filename": filename,
+        "content_type": content_type,
+        "size_bytes": len(content),
+        "sample_truncated": False,
+    }
+    if content_type in text_types or lower_name.endswith((".csv", ".json", ".jsonl", ".txt", ".md")):
+        decoded = content[: 64 * 1024].decode("utf-8-sig", errors="replace")
+        profile["text_preview"] = decoded[:2000]
+        profile["sample_truncated"] = len(content) > 64 * 1024
+        if lower_name.endswith(".csv") or content_type in {"text/csv", "application/csv"}:
+            rows = list(csv.DictReader(decoded.splitlines()))
+            columns = list(rows[0].keys()) if rows else []
+            profile.update({"kind": "table", "columns": columns, "sample_rows": rows[:max_rows], "row_count_sampled": len(rows)})
+        elif lower_name.endswith(".json") or content_type == "application/json":
+            try:
+                parsed = json.loads(decoded)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, list):
+                rows = [row for row in parsed if isinstance(row, dict)]
+                columns = sorted({key for row in rows[:50] for key in row.keys()})
+                profile.update({"kind": "json", "columns": columns, "sample_rows": rows[:max_rows], "row_count_sampled": len(rows)})
+            elif isinstance(parsed, dict):
+                profile.update({"kind": "json", "keys": list(parsed.keys())[:50], "sample": parsed})
+            else:
+                profile["kind"] = "text"
+        else:
+            profile["kind"] = "text"
+    elif content_type.startswith("image/") or lower_name.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+        profile.update({"kind": "image", "preview": "image artifact; use download_url for original"})
+    elif content_type in {"application/pdf"} or lower_name.endswith(".pdf"):
+        profile.update({"kind": "document", "preview": "PDF artifact; text extraction is not generated in the default profile"})
+    else:
+        profile.update({"kind": "binary", "preview": "Binary artifact; use metadata and download_url for original"})
+    return profile
+
+
+def materialize_data_lake_artifact(
+    *,
+    employee_id: str,
+    filename: str,
+    content_type: str,
+    content: bytes,
+    visibility: str = "private",
+    source_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    ensure_dirs()
+    clean_filename = safe_filename(filename or "artifact.bin")
+    digest = hashlib.sha256(content).hexdigest()
+    artifact_id = f"dla-{digest[:12]}-{uuid.uuid4().hex[:8]}"
+    object_key = f"{visibility}/{employee_id}/{artifact_id}/{clean_filename}"
+    backend, local_path = data_lake_put_artifact_object(object_key, content, content_type)
+    now = now_iso()
+    source_context = source_context if isinstance(source_context, dict) else {}
+    attachment_role = str(source_context.get("attachment_role") or source_context.get("role") or "evidence")
+    if attachment_role not in {"raw_data", "evidence", "result_file", "reference", "visualization_source"}:
+        attachment_role = "evidence"
+    validation_state = str(source_context.get("validation_state") or "uploaded")
+    if validation_state not in {"uploaded", "profiled", "review_required", "verified_evidence"}:
+        validation_state = "uploaded"
+    record = {
+        "artifact_id": artifact_id,
+        "owner_employee_id": employee_id,
+        "uploaded_by_employee_id": employee_id,
+        "visibility": visibility if visibility in {"private", "team", "public"} else "private",
+        "filename": filename or clean_filename,
+        "content_type": content_type or "application/octet-stream",
+        "size_bytes": len(content),
+        "sha256": digest,
+        "object_key": object_key,
+        "local_path": local_path,
+        "storage_backend": backend,
+        "source_context": source_context,
+        "attached_from_surface": source_context.get("attached_from_surface") or source_context.get("surface") or source_context.get("source") or "",
+        "target_type": source_context.get("target_type") or "",
+        "target_id": source_context.get("target_id") or "",
+        "attachment_role": attachment_role,
+        "human_note": source_context.get("human_note") or source_context.get("note") or "",
+        "validation_state": validation_state,
+        "download_url": data_lake_artifact_download_url(artifact_id),
+        "api_url": data_lake_artifact_api_url(artifact_id),
+        "lifecycle_state": "active",
+        "created_at": now,
+        "updated_at": now,
+    }
+    record["profile"] = data_lake_profile_for_content(content, str(record["filename"]), str(record["content_type"]))
+    return write_data_lake_artifact_record(record)
+
+
 def data_lake_source_label(source: dict[str, Any]) -> str:
     meaning = str(source.get("business_meaning") or "").strip()
     if meaning:
@@ -22881,7 +26096,7 @@ def data_lake_context_body(source: dict[str, Any]) -> str:
         "## Related BoI Usage",
         "",
         "- Inbox 검토 보고서에서 관련 Event, Action, 생성 BoI와 함께 판단 근거 후보로 사용합니다.",
-        "- Agent와 UI는 PostgreSQL/MinIO에 직접 접속하지 않고 Data Lake API의 plan, preview, execute 흐름을 사용합니다.",
+        "- Agent와 UI는 MinIO나 Legacy DB Demo에 직접 접속하지 않고 BoI API의 plan, preview, execute, artifact URL 흐름을 사용합니다.",
         "- 큰 원본 데이터는 LLM context에 넣지 않고 sample/profile/artifact link로 연결합니다.",
     ]
     return "\n".join(lines).strip() + "\n"
@@ -22997,10 +26212,19 @@ def data_lake_http_target(endpoint: str) -> tuple[str, int]:
     return parsed.hostname, parsed.port or default_port
 
 
+def legacy_db_demo_postgres_dsn() -> str:
+    return BOI_LEGACY_DB_DEMO_POSTGRES_DSN or BOI_DATALAKE_POSTGRES_DSN
+
+
+def legacy_db_demo_enabled() -> bool:
+    return BOI_LEGACY_DB_DEMO_ENABLED or BOI_LEGACY_DB_DEMO_POSTGRES_DSN_DEPRECATED_ALIAS_USED
+
+
 def data_lake_service_health() -> dict[str, Any]:
-    postgres_host, postgres_port = data_lake_postgres_target(BOI_DATALAKE_POSTGRES_DSN)
+    postgres_dsn = legacy_db_demo_postgres_dsn()
+    postgres_host, postgres_port = data_lake_postgres_target(postgres_dsn)
     minio_host, minio_port = data_lake_http_target(BOI_DATALAKE_MINIO_ENDPOINT)
-    postgres_configured = bool(BOI_DATALAKE_POSTGRES_DSN)
+    postgres_configured = bool(postgres_dsn)
     minio_configured = bool(BOI_DATALAKE_MINIO_ENDPOINT)
     return {
         "postgres": {
@@ -23018,19 +26242,49 @@ def data_lake_service_health() -> dict[str, Any]:
     }
 
 
+def data_lake_artifact_store_status(services: dict[str, Any] | None = None) -> dict[str, Any]:
+    services = services or data_lake_service_health()
+    minio = services.get("minio") if isinstance(services.get("minio"), dict) else {}
+    configured = bool(BOI_DATALAKE_MINIO_ENDPOINT)
+    return {
+        "enabled": BOI_DATALAKE_ENABLED and configured,
+        "backend": "minio" if configured else data_lake_artifact_storage_backend(),
+        "bucket": BOI_DATALAKE_BUCKET if BOI_DATALAKE_ENABLED else "",
+        "configured": configured,
+        "reachable": minio.get("reachable") if configured else None,
+        "core_required": False,
+    }
+
+
+def data_lake_structured_query_adapter_status(services: dict[str, Any] | None = None) -> dict[str, Any]:
+    services = services or data_lake_service_health()
+    postgres = services.get("postgres") if isinstance(services.get("postgres"), dict) else {}
+    configured = bool(legacy_db_demo_postgres_dsn())
+    return {
+        "enabled": BOI_DATALAKE_ENABLED and legacy_db_demo_enabled() and configured,
+        "backend": "postgres" if configured else "",
+        "configured": configured,
+        "reachable": postgres.get("reachable") if configured else None,
+        "demo_only": True,
+        "deprecated_alias_used": BOI_LEGACY_DB_DEMO_POSTGRES_DSN_DEPRECATED_ALIAS_USED,
+    }
+
+
 def data_lake_status_payload() -> dict[str, Any]:
-    configured = bool(BOI_DATALAKE_POSTGRES_DSN or BOI_DATALAKE_MINIO_ENDPOINT)
     fixture_sources = data_lake_fixture_sources()
     fixture_available = any(source.get("available") for source in fixture_sources)
     services = data_lake_service_health()
+    artifact_store = data_lake_artifact_store_status(services)
+    structured_query_adapter = data_lake_structured_query_adapter_status(services)
+    configured = bool(artifact_store.get("configured") or structured_query_adapter.get("configured"))
     status = "disabled"
     if BOI_DATALAKE_ENABLED:
         status = "ready" if fixture_available else "enabled_not_connected"
-        service_values = [
-            service.get("reachable")
-            for service in services.values()
-            if isinstance(service, dict) and service.get("configured")
-        ]
+        service_values = []
+        if artifact_store.get("configured"):
+            service_values.append(artifact_store.get("reachable"))
+        if structured_query_adapter.get("enabled") and structured_query_adapter.get("configured"):
+            service_values.append(structured_query_adapter.get("reachable"))
         if service_values and any(value is False for value in service_values):
             status = "service_degraded"
     return {
@@ -23042,7 +26296,9 @@ def data_lake_status_payload() -> dict[str, Any]:
         "status": status,
         "adapter": "fixture_file" if BOI_DATALAKE_ENABLED and fixture_available else "",
         "configured": configured,
-        "postgres_configured": bool(BOI_DATALAKE_POSTGRES_DSN),
+        "artifact_store": artifact_store,
+        "structured_query_adapter": structured_query_adapter,
+        "postgres_configured": bool(legacy_db_demo_postgres_dsn()),
         "minio_configured": bool(BOI_DATALAKE_MINIO_ENDPOINT),
         "services": services,
         "bucket": BOI_DATALAKE_BUCKET if BOI_DATALAKE_ENABLED else "",
@@ -23083,6 +26339,8 @@ def data_lake_sources_payload(employee_id: str = "") -> dict[str, Any]:
         "enabled": True,
         "operation": "sources",
         "status": "ready" if available_sources else "no_available_fixture",
+        "artifact_store": data_lake_artifact_store_status(),
+        "structured_query_adapter": data_lake_structured_query_adapter_status(),
         "sources": visible_sources,
         "fixture_sources": fixture_sources,
         "artifacts": [],
@@ -23106,6 +26364,8 @@ def data_lake_query_payload(operation: str, req: DataLakeQueryRequest) -> dict[s
             "sql_preview": req.sql,
             "limit": max(1, min(req.limit, 500)),
             "message": "Data Lake profile is enabled, but no configured ontology fixture source is available.",
+            "artifact_store": data_lake_artifact_store_status(),
+            "structured_query_adapter": data_lake_structured_query_adapter_status(),
             "sources": [],
             "artifacts": [],
             "rows": [],
@@ -23136,6 +26396,8 @@ def data_lake_query_payload(operation: str, req: DataLakeQueryRequest) -> dict[s
         "sql_preview": sql_preview,
         "limit": max(1, min(req.limit, 500)),
         "message": "Data Lake evidence is available through the BoI API. Review the preview before confirmed execution.",
+        "artifact_store": data_lake_artifact_store_status(),
+        "structured_query_adapter": data_lake_structured_query_adapter_status(),
         "query_plan": {
             "steps": [
                 "업무 질문에 맞는 Data Lake source 후보를 고릅니다.",
@@ -23316,16 +26578,34 @@ async def inbox_task_decision_page(
     decision = str((form.get("decision") or [""])[0]).strip()
     note = str((form.get("note") or [""])[0]).strip()
     user_confirmed_raw = str((form.get("user_confirmed") or [""])[0]).strip().lower()
+    data_lake_artifacts_raw = str((form.get("data_lake_artifacts") or ["[]"])[0]).strip()
+    try:
+        data_lake_artifacts = json.loads(data_lake_artifacts_raw) if data_lake_artifacts_raw else []
+    except json.JSONDecodeError:
+        data_lake_artifacts = []
+    if not isinstance(data_lake_artifacts, list):
+        data_lake_artifacts = []
     if decision not in {"approve", "reject", "defer", "request_more_evidence"}:
         raise HTTPException(status_code=400, detail="invalid inbox decision")
     req = InboxDecisionRequest(
         decision=decision,  # type: ignore[arg-type]
         note=note,
+        data_lake_artifacts=[item for item in data_lake_artifacts if isinstance(item, dict)],
         user_confirmed=user_confirmed_raw in {"1", "true", "yes", "on"},
     )
     await api_boi_inbox_task_decision(task_id, req, employee_id)
     redirect_url = app_url("/inbox", employee_id, view="history", decision_status="recorded")
     return RedirectResponse(redirect_url, status_code=303)
+
+
+@app.post("/inbox/task-refs/{task_ref:path}/decision")
+async def inbox_task_ref_decision_page(
+    task_ref: str,
+    request: Request,
+    employee_id: str = Depends(current_employee),
+) -> RedirectResponse:
+    task_id = resolve_agent_inbox_task_ref(employee_id, task_ref)
+    return await inbox_task_decision_page(task_id, request, employee_id)
 
 
 @app.post("/api/inbox/tasks/{task_id:path}/decision")
@@ -23415,6 +26695,249 @@ async def api_data_lake_query_execute(
     return payload
 
 
+@app.post("/api/data-lake/artifacts/upload")
+async def api_data_lake_artifact_upload(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not BOI_DATALAKE_ENABLED:
+        payload = data_lake_artifact_disabled("artifact_upload")
+        payload["employee_id"] = employee_id
+        return payload
+
+    request_content_type = str(request.headers.get("content-type") or "")
+    filename = "artifact.bin"
+    content_type = "application/octet-stream"
+    visibility = "private"
+    source_context_raw: Any = {}
+    content = b""
+
+    if "multipart/form-data" in request_content_type.lower():
+        form = await request.form()
+        uploaded = form.get("file")
+        if uploaded is None or not hasattr(uploaded, "read"):
+            raise HTTPException(status_code=400, detail="file is required")
+        content = await uploaded.read()
+        filename = getattr(uploaded, "filename", "") or filename
+        content_type = getattr(uploaded, "content_type", "") or mimetypes.guess_type(filename)[0] or content_type
+        visibility = str(form.get("visibility") or visibility)
+        source_context_raw = form.get("source_context") or {}
+    else:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="JSON upload payload is required")
+        filename = safe_filename(str(payload.get("filename") or filename)) or filename
+        content_type = str(payload.get("content_type") or mimetypes.guess_type(filename)[0] or content_type)
+        visibility = str(payload.get("visibility") or visibility)
+        source_context_raw = payload.get("source_context") or {}
+        encoded = str(payload.get("content_base64") or "")
+        if not encoded:
+            raise HTTPException(status_code=400, detail="content_base64 is required for JSON artifact upload")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="content_base64 must be valid base64") from exc
+
+    try:
+        if isinstance(source_context_raw, str):
+            parsed_context = json.loads(source_context_raw) if source_context_raw else {}
+        elif isinstance(source_context_raw, dict):
+            parsed_context = source_context_raw
+        else:
+            parsed_context = {"value": source_context_raw}
+    except json.JSONDecodeError:
+        parsed_context = {"note": source_context_raw}
+    if not isinstance(parsed_context, dict):
+        parsed_context = {"value": parsed_context}
+    target_type = str(parsed_context.get("target_type") or "").strip()
+    target_ref = str(parsed_context.get("target_ref") or parsed_context.get("target_public_ref") or "").strip()
+    if target_type == "inbox_task" and not str(parsed_context.get("target_id") or "").strip() and target_ref:
+        parsed_context["target_id"] = resolve_agent_inbox_task_ref(employee_id, target_ref)
+        parsed_context["target_ref"] = target_ref
+    if not content:
+        raise HTTPException(status_code=400, detail="artifact file is empty")
+    artifact = materialize_data_lake_artifact(
+        employee_id=employee_id,
+        filename=filename,
+        content_type=content_type,
+        content=content,
+        visibility=visibility,
+        source_context=parsed_context,
+    )
+    attachment = None
+    target_id = str(parsed_context.get("target_id") or "").strip()
+    if target_type and target_id:
+        attachment = create_data_lake_artifact_attachment(
+            artifact,
+            employee_id,
+            target_type=target_type,
+            target_id=target_id,
+            relationship=str(parsed_context.get("relationship") or "evidence"),
+            note=str(parsed_context.get("human_note") or parsed_context.get("note") or ""),
+            attached_from_surface=str(parsed_context.get("attached_from_surface") or parsed_context.get("surface") or parsed_context.get("source") or ""),
+            attachment_role=str(parsed_context.get("attachment_role") or "evidence"),
+            validation_state=str(parsed_context.get("validation_state") or "uploaded"),
+            source_refs=parsed_context.get("source_refs") if isinstance(parsed_context.get("source_refs"), list) else [],
+        )
+    return {
+        "ok": True,
+        "enabled": True,
+        "status": "uploaded",
+        "employee_id": employee_id,
+        "artifact": artifact,
+        "attachment": attachment,
+    }
+
+
+@app.post("/api/data-lake/artifacts/{artifact_id:path}/profile")
+async def api_data_lake_artifact_profile(artifact_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not BOI_DATALAKE_ENABLED:
+        payload = data_lake_artifact_disabled("artifact_profile", artifact_id)
+        payload["employee_id"] = employee_id
+        return payload
+    decoded_artifact_id = unquote(artifact_id)
+    record = read_data_lake_artifact_record(decoded_artifact_id, employee_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Data Lake artifact not found")
+    content = data_lake_get_artifact_object(record)
+    profile = data_lake_profile_for_content(content, str(record.get("filename") or ""), str(record.get("content_type") or "application/octet-stream"))
+    record["profile"] = profile
+    record["validation_state"] = "profiled" if str(record.get("validation_state") or "uploaded") == "uploaded" else record.get("validation_state")
+    write_data_lake_artifact_record(record)
+    return {
+        "ok": True,
+        "enabled": True,
+        "operation": "artifact_profile",
+        "status": "profiled",
+        "employee_id": employee_id,
+        "artifact_id": decoded_artifact_id,
+        "artifact": record,
+        "profile": profile,
+    }
+
+
+@app.post("/api/data-lake/artifacts/{artifact_id:path}/attach")
+async def api_data_lake_artifact_attach(
+    artifact_id: str,
+    req: DataLakeArtifactAttachRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not BOI_DATALAKE_ENABLED:
+        payload = data_lake_artifact_disabled("artifact_attach", artifact_id)
+        payload["employee_id"] = employee_id
+        return payload
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required before attaching Data Lake artifact")
+    decoded_artifact_id = unquote(artifact_id)
+    record = read_data_lake_artifact_record(decoded_artifact_id, employee_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Data Lake artifact not found")
+    attachment = create_data_lake_artifact_attachment(
+        record,
+        employee_id,
+        target_type=req.target_type,
+        target_id=req.target_id,
+        relationship=req.relationship,
+        note=req.human_note or req.note,
+        attached_from_surface=req.attached_from_surface,
+        attachment_role=req.attachment_role,
+        validation_state=req.validation_state,
+        source_refs=req.source_refs,
+    )
+    return {"ok": True, "enabled": True, "status": "attached", "attachment": attachment}
+
+
+@app.delete("/api/data-lake/artifacts/{artifact_id:path}/attach")
+async def api_data_lake_artifact_detach(
+    artifact_id: str,
+    target_type: str = "",
+    target_id: str = "",
+    target_ref: str = "",
+    user_confirmed: bool = False,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not BOI_DATALAKE_ENABLED:
+        payload = data_lake_artifact_disabled("artifact_detach", artifact_id)
+        payload["employee_id"] = employee_id
+        return payload
+    if not user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required before detaching Data Lake artifact")
+    decoded_artifact_id = unquote(artifact_id)
+    record = read_data_lake_artifact_record(decoded_artifact_id, employee_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Data Lake artifact not found")
+    if target_type == "inbox_task" and not target_id and target_ref:
+        target_id = resolve_agent_inbox_task_ref(employee_id, target_ref)
+    detached: list[dict[str, Any]] = []
+    for attachment in data_lake_artifact_active_attachments(decoded_artifact_id, employee_id, target_type=target_type, target_id=target_id):
+        attachment["lifecycle_state"] = "detached"
+        attachment["detached_at"] = now_iso()
+        attachment["detached_by_employee_id"] = employee_id
+        write_runtime_record("data-lake-artifact-attachments", attachment)
+        detached.append(attachment)
+    return {"ok": True, "enabled": True, "status": "detached", "artifact_id": decoded_artifact_id, "detached_count": len(detached), "attachments": detached}
+
+
+@app.get("/api/data-lake/artifacts/{artifact_id:path}/download")
+async def api_data_lake_artifact_download(artifact_id: str, employee_id: str = Depends(current_employee)) -> Any:
+    if not BOI_DATALAKE_ENABLED:
+        payload = data_lake_artifact_disabled("artifact_download", artifact_id)
+        payload["employee_id"] = employee_id
+        return JSONResponse(payload)
+    decoded_artifact_id = unquote(artifact_id)
+    record = read_data_lake_artifact_record(decoded_artifact_id, employee_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Data Lake artifact not found")
+    content_type = str(record.get("content_type") or "application/octet-stream")
+    filename = safe_filename(str(record.get("filename") or f"{decoded_artifact_id}.bin"))
+    if str(record.get("storage_backend") or "") == "runtime_file":
+        path = data_lake_local_object_path(str(record.get("object_key") or ""))
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Data Lake artifact object not found")
+        return FileResponse(path, media_type=content_type, filename=filename)
+    content = data_lake_get_artifact_object(record)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(iter([content]), media_type=content_type, headers=headers)
+
+
+@app.get("/api/data-lake/artifacts")
+async def api_data_lake_artifacts(
+    target_type: str = "",
+    target_id: str = "",
+    limit: int = 50,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not BOI_DATALAKE_ENABLED:
+        payload = data_lake_artifact_disabled("artifact_list")
+        payload["employee_id"] = employee_id
+        payload["items"] = []
+        return payload
+    safe_limit = max(1, min(limit, 200))
+    records = data_lake_artifact_records(employee_id, limit=500)
+    filtered = [
+        record
+        for record in records
+        if data_lake_artifact_matches_target(record, target_type, target_id, employee_id)
+    ][:safe_limit]
+    items: list[dict[str, Any]] = []
+    for record in filtered:
+        artifact_id = str(record.get("artifact_id") or "")
+        item = dict(record)
+        item["attachments"] = data_lake_artifact_active_attachments(artifact_id, employee_id, target_type=target_type, target_id=target_id)
+        items.append(item)
+    return {
+        "ok": True,
+        "enabled": True,
+        "operation": "artifact_list",
+        "status": "ready",
+        "employee_id": employee_id,
+        "target_type": target_type,
+        "target_id": target_id,
+        "count": len(items),
+        "items": items,
+    }
+
+
 @app.get("/api/data-lake/artifacts/{artifact_id:path}")
 async def api_data_lake_artifact(artifact_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     if not BOI_DATALAKE_ENABLED:
@@ -23423,6 +26946,19 @@ async def api_data_lake_artifact(artifact_id: str, employee_id: str = Depends(cu
         payload["artifact_id"] = artifact_id
         return payload
     decoded_artifact_id = unquote(artifact_id)
+    record = read_data_lake_artifact_record(decoded_artifact_id, employee_id)
+    if record:
+        return {
+            "ok": True,
+            "enabled": True,
+            "operation": "artifact_get",
+            "status": "ready",
+            "employee_id": employee_id,
+            "artifact_id": decoded_artifact_id,
+            "artifact": record,
+            "profile": record.get("profile") or {},
+            "rows": [],
+        }
     source = next(
         (
             candidate
@@ -23508,7 +27044,7 @@ async def api_agent_inbox_group_decision_preview(
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.workflow_runner")
-    validate_inbox_decision_request(req)
+    validate_inbox_decision_preview_request(req)
     group = find_agent_inbox_group(employee_id, group_id)
     all_items = [item for item in group.get("items") or [] if isinstance(item, dict)]
     selected_ids = set(req.selected_task_ids or [])
@@ -23570,8 +27106,32 @@ async def api_agent_inbox_item_decision(
             "connector_kind": "manual",
             "target_action_key": task_row.get("action_key") or "",
             "target_event_type": task_row.get("event_type") or "",
+            "data_lake_artifacts": [
+                data_lake_artifact_attachment_summary(item)
+                for item in req.data_lake_artifacts
+                if isinstance(item, dict) and item.get("artifact_id")
+            ],
         }
     )
+    for artifact in req.data_lake_artifacts:
+        artifact_id = str(artifact.get("artifact_id") or "") if isinstance(artifact, dict) else ""
+        if not artifact_id:
+            continue
+        record = read_data_lake_artifact_record(artifact_id, employee_id)
+        if not record:
+            continue
+        create_data_lake_artifact_attachment(
+            record,
+            employee_id,
+            target_type="inbox_task",
+            target_id=task_id,
+            relationship="decision_evidence",
+            note=req.note.strip(),
+            attached_from_surface="boi_inbox_decision",
+            attachment_role=str(artifact.get("attachment_role") or "evidence") if isinstance(artifact, dict) else "evidence",
+            validation_state=str(artifact.get("validation_state") or "uploaded") if isinstance(artifact, dict) else "uploaded",
+            source_refs=[{"type": "inbox_task", "task_id": task_id}],
+        )
     append_rbac_audit(employee_id, "agent_inbox_decision", {"task_id": task_id, "decision": req.decision})
     return {"ok": True, "item": row}
 
@@ -23619,8 +27179,32 @@ async def complete_manual_handoff(req: ManualHandoffCompleteRequest, employee_id
         "logged_at": now_iso(),
         "action_key": "manual.handoff.complete",
         "connector_kind": "manual",
+        "data_lake_artifacts": [
+            data_lake_artifact_attachment_summary(item)
+            for item in req.data_lake_artifacts
+            if isinstance(item, dict) and item.get("artifact_id")
+        ],
     }
     appended = append_action_log_row(row)
+    for artifact in req.data_lake_artifacts:
+        artifact_id = str(artifact.get("artifact_id") or "") if isinstance(artifact, dict) else ""
+        if not artifact_id:
+            continue
+        record = read_data_lake_artifact_record(artifact_id, employee_id)
+        if not record:
+            continue
+        create_data_lake_artifact_attachment(
+            record,
+            employee_id,
+            target_type="action_result",
+            target_id=parent_request_id,
+            relationship="manual_result_evidence",
+            note=req.note.strip(),
+            attached_from_surface="manual_handoff_complete",
+            attachment_role=str(artifact.get("attachment_role") or "result_file") if isinstance(artifact, dict) else "result_file",
+            validation_state=str(artifact.get("validation_state") or "uploaded") if isinstance(artifact, dict) else "uploaded",
+            source_refs=[{"type": "manual_handoff", "task_id": req.task_id, "request_id": parent_request_id}],
+        )
     return {"ok": True, "item": appended}
 
 
@@ -24323,6 +27907,61 @@ async def create_boi(req: BoiCreate, employee_id: str = Depends(current_employee
     return {"ok": True, "item": doc, "commit": commit}
 
 
+@app.post("/api/source-wikis/plan")
+async def api_source_wiki_plan(req: SourceWikiPlanRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    return source_wiki_plan_payload(req, employee_id)
+
+
+@app.post("/api/source-wikis/jobs")
+async def api_source_wiki_job(req: SourceWikiJobRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return write_source_wiki_job(req, employee_id)
+
+
+@app.get("/api/source-wikis/jobs/{job_id}")
+async def api_source_wiki_job_get(job_id: str, wiki_id: str = "", employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    return read_source_wiki_manifest(wiki_id or "source-wiki", job_id)
+
+
+@app.post("/api/source-wikis/{wiki_id}/refresh-preview")
+async def api_source_wiki_refresh_preview(
+    wiki_id: str,
+    req: SourceWikiRefreshPreviewRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    manifest = read_source_wiki_manifest(wiki_id)
+    source = manifest.get("source") if isinstance(manifest.get("source"), dict) else {}
+    if not req.source_path:
+        req.source_path = str(source.get("source_path") or "")
+    if not req.repo_url:
+        req.repo_url = str(source.get("repo_url") or "")
+    root, resolved_source = resolve_source_wiki_root(req)
+    resolved_source["commit_sha"] = git_revision_for_root(root)
+    inventory = source_wiki_inventory(root, req)
+    previous_signature = str((manifest.get("inventory") or {}).get("source_signature") or "")
+    current_signature = str(inventory.get("source_signature") or "")
+    return {
+        "ok": True,
+        "wiki_id": wiki_id,
+        "status": "stale" if previous_signature != current_signature else "fresh",
+        "previous_signature": previous_signature,
+        "current_signature": current_signature,
+        "source": resolved_source,
+        "inventory": inventory,
+        "last_good_job_id": manifest.get("job_id"),
+        "mutating": False,
+    }
+
+
+@app.get("/api/source-wikis/{wiki_id}/markdown")
+async def api_source_wiki_markdown(wiki_id: str, job_id: str = "", employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    manifest = read_source_wiki_manifest(wiki_id, job_id or None)
+    return {"ok": True, "wiki_id": wiki_id, "job_id": manifest.get("job_id"), "markdown": source_wiki_markdown_export(manifest, employee_id)}
+
+
 @app.post("/api/boi/{boi_id:path}/promote")
 async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     source = find_doc_by_id(boi_id, employee_id)
@@ -24364,6 +28003,11 @@ async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Dep
     )
     result["source"] = source_meta.get("boi_id")
     return result
+
+
+@app.post("/api/promotions/preview")
+async def preview_promotion(req: PromotionPreviewRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return promotion_preview_payload(req, employee_id)
 
 
 @app.post("/api/promotions/submit")
@@ -25330,6 +28974,11 @@ def workflow_status_template_context(request: Request, payload: dict[str, Any], 
             title="Workflow Run Status",
             description="Trace가 SOP, Event, Action, Manual Handoff, Generated BoI로 어떻게 이어졌는지 확인합니다.",
             page_actions=[
+                {
+                    "label": "TAT 성과 보기",
+                    "href": workflow_tat_page_url_for_key(str(payload.get("workflow_key") or ""), employee_id, trace_id=str(payload.get("trace_id") or "")),
+                    "kind": "primary",
+                },
                 {"label": "Trace Event Stream", "href": trace_events_url(str(payload.get("trace_id") or ""), employee_id), "kind": "secondary"},
                 {"label": "SOP 보기", "href": str(payload.get("sop_url") or "#"), "kind": "secondary"},
                 {

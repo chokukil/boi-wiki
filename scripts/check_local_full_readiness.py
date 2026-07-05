@@ -15,6 +15,12 @@ def fetch_json(url: str, timeout: float) -> dict[str, Any]:
         return json.loads(response.read().decode("utf-8"))
 
 
+def fetch_text(url: str, timeout: float) -> str:
+    request = urllib.request.Request(url, headers={"accept": "text/plain,*/*"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - operator-supplied local URL
+        return response.read().decode("utf-8", errors="replace")
+
+
 def nested_get(payload: dict[str, Any], path: str) -> Any:
     current: Any = payload
     for part in path.split("."):
@@ -62,6 +68,20 @@ def main() -> int:
     runtime_readiness = body.get("readiness") if isinstance(body.get("readiness"), dict) else {}
     if runtime_readiness.get("failures"):
         failures.extend(str(item) for item in runtime_readiness.get("failures") or [])
+    registration_js_url = args.base_url.rstrip("/") + f"/static/registration.js?v={nested_get(body, 'build.revision') or ''}"
+    try:
+        registration_js = fetch_text(registration_js_url, args.timeout)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        failures.append(f"cannot fetch registration.js from runtime: {exc}")
+    else:
+        stale_patterns = (
+            "auto_apply_seconds",
+            "초 뒤 비어 있는 초안 필드에 자동 적용됩니다",
+            "setTimeout(() => applyDraftSuggestion",
+        )
+        for pattern in stale_patterns:
+            if pattern in registration_js:
+                failures.append(f"registration.js contains stale auto-apply pattern: {pattern}")
 
     if args.json:
         print(json.dumps(body, ensure_ascii=False, indent=2))

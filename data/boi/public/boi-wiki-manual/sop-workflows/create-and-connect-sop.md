@@ -3,8 +3,8 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: SOP Workflow 작성과 Runtime 연결
-description: 사용자 SOP 이미지/문서에서 BoI Wiki SOP, event type, action catalog, Langflow/MCP/API/manual 연결을 만드는 절차
-tags: [Manual, SOP, Workflow, EventBroker, ActionGateway]
+description: 사용자 SOP 이미지/문서에서 Workflow, Task, Event, Action, Skill, Data Lake 근거 요구사항을 만드는 절차
+tags: [Manual, SOP, Workflow, Task, EventBroker, ActionGateway, Skill]
 timestamp: 2026-06-18T15:20:00+09:00
 boi_id: boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop
 visibility: public
@@ -25,22 +25,28 @@ review:
 
 # Summary
 
-사용자가 SOP 문서나 이미지를 주면 agent는 관련 BoI Wiki 문서를 먼저 검색하고, 업무 단계와 event/action/manual handoff를 추출해 OKF SOP package를 만든다.
+사용자가 SOP 문서나 이미지를 주면 agent는 관련 BoI Wiki 문서를 먼저 검색하고, 전체 Workflow와 Task 맵을 추출해 OKF SOP package를 만든다. Task마다 판단 질문, 필요한 근거, 실행 방식, Action 또는 Skill, 결과 BoI, TAT 기준을 정리한다.
 
 원본 SOP 이미지나 업무 화면 캡처는 해석 결과와 분리한다. 원본 asset은 `_media/source/{source-slug}/...`에 보존하고, agent가 임의로 다시 그리거나 파일명을 덮어쓰지 않는다.
 
+일반 사용자가 Web UI에서 직접 따라할 때는 [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)을 기준으로 한다. 이 문서는 `직개발 결과 확인 및 Reporting` 예시를 사용해 Workflow 개요, Task 맵, Task 상세, 시작/연결, 검증·저장, 실행 smoke, TAT 확인을 순서대로 보여준다.
+
 # Package Output
 
-- SOP BoI 문서 with `workflow.workflow_key` and `workflow.stages`
+- SOP BoI 문서 with `workflow.workflow_key`, `workflow.tasks`, legacy `workflow.stages` alias
 - Event Type docs
-- API/Webhook/MCP/Langflow/Manual/Event Broker action spec docs
+- API/Webhook/MCP/Langflow/Manual/Event Broker/Skill action spec docs
 - `data/event_catalog/event_types.yaml` and `data/action_catalog/actions.yaml` draft patches
 - OKF links, citations, media references
 - source media manifest entries for user-supplied SOP images or screenshots
 
-# Workflow Rule
+# Workflow / Task Rule
 
-각 stage는 `id`, `name`, `purpose`, `entry_event`, `event_types`, `next_stage`, `emits_event`, `source_systems`, `automated_actions`, `manual_actions`, `outputs`, `failure_modes`, `acceptance_criteria`를 가져야 한다.
+각 Task는 최소 `task_id`, `task_name`, `stage_goal`, `execution_mode`, `decision_question`, `required_evidence`, `expected_outputs`를 가진다. 구체화된 Task는 `actions`, `skills`, `tat_target`, `baseline_tat`, `measurement_policy`, `approval_policy`, `verification_policy`, `fallback_owner`를 추가한다.
+
+`workflow.stages`는 기존 문서와 runtime 호환을 위한 legacy alias다. 새 문서와 사용자-facing 설명은 `Workflow / Task`를 기준으로 한다. 단계 전환 Event는 Task detail에서 정의하고, Action 또는 Skill이 다음 Event를 발행해야 하면 해당 Task 실행 연결에 `emits_event_type`을 남긴다.
+
+SOP Builder에서는 Raw Data나 작업 결과 파일을 업로드하지 않는다. 실행 중 필요한 원본 파일은 SOP Run, Inbox 판단, Manual Action 완료, Report BoI 검토, Agent 대화에서 Data Lake artifact로 첨부하고, SOP 정의에는 필요한 근거 종류와 첨부 위치만 남긴다.
 
 # Validation
 
@@ -64,4 +70,6 @@ SERVICE_TOKEN="$SERVICE_TOKEN" python scripts/run_equipment_sop_poc.py
 # Citations
 
 - [SOP Authoring Harness](/public/harness/sop-authoring-harness.md)
+- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
+- [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md)
 - [설비 이상 감지·원인 분석·이상 조치 SOP](/public/sop/equipment-abnormal-response.md)

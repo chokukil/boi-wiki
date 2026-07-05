@@ -28,6 +28,9 @@ workflow:
   stages:
     - id: response_trend
       name: Response Trend 확인
+      execution_mode: autopilot
+      tat_target: 30분
+      baseline_tat: 평균 2h
       agent: 직개발 결과 확인 Agent
       entry_event: direct_development.result_check.requested.v1
       next_stage: map_view
@@ -43,6 +46,9 @@ workflow:
       manual_actions: []
     - id: map_view
       name: Map View 확인
+      execution_mode: autopilot
+      tat_target: 30분
+      baseline_tat: 평균 1h
       agent: Map 분석 Agent
       entry_event: direct_development.map_view.requested.v1
       next_stage: cross_section_decision
@@ -58,6 +64,9 @@ workflow:
       manual_actions: []
     - id: cross_section_decision
       name: 단면검사 판단
+      execution_mode: manual
+      tat_target: 15분
+      baseline_tat: 최근 3건 40분
       agent: 담당자 판단
       entry_event: direct_development.cross_section.decision_required.v1
       next_stage: cross_section_execution
@@ -72,6 +81,10 @@ workflow:
         - manual.direct_development.decide_cross_section
     - id: cross_section_execution
       name: 단면검사 의뢰/결과 확인
+      execution_mode: copilot
+      copilot_source: mixed
+      tat_target: 1일
+      baseline_tat: 평균 2일
       agent: 단면검사 Agent
       entry_event: direct_development.cross_section.requested.v1
       next_stage: fab_trend_compare
@@ -88,6 +101,9 @@ workflow:
       manual_actions: []
     - id: fab_trend_compare
       name: 연구소-양산 FAB 비교
+      execution_mode: autopilot
+      tat_target: 1h
+      baseline_tat: 평균 4h
       agent: 비교 Trend 분석 Agent
       entry_event: direct_development.fab_trend.compare_requested.v1
       next_stage: reporting
@@ -103,6 +119,10 @@ workflow:
       manual_actions: []
     - id: reporting
       name: Reporting
+      execution_mode: copilot
+      copilot_source: internal
+      tat_target: 1h
+      baseline_tat: 평균 4h
       agent: Reporting Agent
       entry_event: direct_development.reporting.requested.v1
       next_stage: share
@@ -118,6 +138,10 @@ workflow:
       manual_actions: []
     - id: share
       name: 협의체 공유
+      execution_mode: copilot
+      copilot_source: internal
+      tat_target: 30분
+      baseline_tat: 평균 2h
       agent: 공유 Preview Agent
       entry_event: direct_development.share.requested.v1
       next_stage: complete

@@ -3,8 +3,8 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: Work Context Pack
-description: BoI Agent, Inbox, MCP, skills가 공유하는 업무 맥락 계약
-tags: [BoIWiki, Agent, WorkContext, Inbox, MCP]
+description: BoI Agent, Inbox, MCP, skills가 공유하는 Workflow/Task 업무 맥락 계약
+tags: [BoIWiki, Agent, WorkContext, Workflow, Task, Inbox, MCP]
 timestamp: 2026-06-28T11:30:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:work-context-pack
 visibility: public
@@ -27,7 +27,7 @@ review:
 
 # Summary
 
-`WorkContextPack`은 BoI Agent가 단순 검색 결과를 나열하지 않고 실제 업무 답변을 만들기 위해 사용하는 공통 context 계약이다. Web Pet, REST API, MCP, Inbox, skills/harness는 모두 같은 pack을 기준으로 “지금 어떤 업무를 처리 중인지”, “앞 단계에서 무엇이 처리됐는지”, “비슷한 과거 사례에서 어떻게 했는지”, “다음에 무엇을 해야 하는지”를 이해한다.
+`WorkContextPack`은 BoI Agent가 단순 검색 결과를 나열하지 않고 실제 업무 답변을 만들기 위해 사용하는 공통 context 계약이다. REST API, MCP, Inbox, skills/harness는 모두 같은 pack을 기준으로 “지금 어떤 Workflow/Task를 처리 중인지”, “앞 Task에서 무엇이 처리됐는지”, “비슷한 과거 사례에서 어떻게 했는지”, “다음에 무엇을 해야 하는지”를 이해한다.
 
 # Contract
 
@@ -35,13 +35,18 @@ review:
 flowchart TD
   INPUT["task_id / trace_id / current_url / action_key"] --> PAGE["Page Context"]
   INPUT --> TASK["Inbox Task"]
+  INPUT --> WT["Workflow Task"]
   TASK --> TRACE["Trace Context<br/>events + actions + generated BoI"]
+  WT --> TAT["TAT Summary"]
   TASK --> HIST["Similar Cases<br/>personal + team history"]
   TRACE --> EVIDENCE["Required Evidence"]
+  TRACE --> ART["Data Lake Artifacts"]
   HIST --> PATTERN["Historical Patterns"]
   PAGE --> CAP["Event / WorkflowDefinition Context"]
   CAP --> NEXT["Recommended Next Steps"]
   EVIDENCE --> PACK["WorkContextPack"]
+  ART --> PACK
+  TAT --> PACK
   PATTERN --> PACK
   NEXT --> PACK
 ```
@@ -51,8 +56,11 @@ flowchart TD
 | Field | Meaning |
 |---|---|
 | `task` | 현재 사용자가 처리해야 할 Inbox task. 없으면 현재 페이지와 trace 기준으로 유추한다. |
+| `workflow_task` | 현재 Workflow 안에서 사용자가 보고 있는 Task. `task_name`, `decision_question`, `execution_mode`, `copilot_source`, `runner_type`을 포함한다. |
 | `trace_context` | 같은 trace의 이전 Event, Action, generated BoI 요약 |
 | `required_evidence` | 현재 단계에서 확인해야 하는 근거 항목 |
+| `data_lake_artifacts` | 현재 Task, Inbox task, report, action result, conversation에 연결된 artifact URL/profile/sample/validation 요약 |
+| `tat_summary` | Workflow/Task TAT의 최근 실행, 평균, 중앙값, baseline 대비 변화 |
 | `similar_cases` | action/event/stage/workflow definition 기준으로 찾은 유사 처리 사례 |
 | `historical_patterns` | 유사 사례를 익명 집계한 처리 패턴 |
 | `recommended_next_steps` | 사용자가 지금 취할 수 있는 업무 조치 후보 |
@@ -90,12 +98,16 @@ Inbox group narrative QA는 다음을 차단한다.
 
 Inbox와 Agent 응답은 내부 WorkflowDefinition URL을 사용자 링크로 직접 노출하지 않는다. API 응답의 `workflow_definition_context`나 `workflow_definition_url`은 내부 진단과 MCP/API 호환 필드이고, 사람이 클릭하는 링크는 `user_links`의 `관련 SOP 보기`, `BoI Wiki에서 보기`, `Event 보기`, `Action 보기`, `업무 상태 보기`, `원본 기록` 중 하나로 제공한다.
 
+Task 실행 방식은 사용자에게 `Manual`, `Copilot`, `Autopilot`만 표시한다. 내부 필드인 `execution_mode`, `copilot_source`, `runner_type`은 MCP/API와 진단용으로 유지하되 기본 narrative에는 노출하지 않는다. 외부 Copilot으로 처리한 업무는 세부 tool trace가 없더라도 결과 메모, 판단 근거, Data Lake artifact 또는 BoI 링크가 있으면 context로 인정한다.
+
 # Agent Use
 
 Native BoI Agent는 답변 생성 전에 Work Context Pack을 읽고 `evidence_ledger`, `affordances`, `followup_context`에 반영한다. 따라서 “Trend 확인에 어떤 데이터가 필요해?” 같은 질문은 단순 문서 검색이 아니라 현재 SOP stage, 이전 action 결과, 필요한 evidence, 유사 처리 패턴까지 함께 보고 답해야 한다.
 
 # Related Documents
 
+- [업무 BoI-first 개념 모델](/public/boi-wiki-manual/concepts/work-boi-first-model.md)
 - [Inbox Work Context and Historical Patterns](/public/boi-wiki-manual/agent/inbox-work-context-and-history.md)
+- [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md)
 - [Native BoI Agent Tool Loop](/public/boi-wiki-manual/agent/native-boi-agent-tool-loop.md)
 - [Agent Guardrail and ACL](/public/boi-wiki-manual/agent/agent-guardrail-and-acl.md)
