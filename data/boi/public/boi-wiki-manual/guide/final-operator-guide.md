@@ -33,9 +33,9 @@ source_refs:
   - type: local-template
     ref: boi-wiki-local/scripts/promotion_preflight.py
   - type: generated-source-wiki
-    ref: /public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md
+    ref: /public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md
   - type: generated-source-wiki
-    ref: /public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md
+    ref: /public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md
   - type: source-wiki-manifest
     ref: data/source-wikis/boi-wiki-platform-source/latest.json
   - type: source-wiki-manifest
@@ -172,20 +172,20 @@ BoI Source Wiki는 source inventory, selected/skipped file, commit SHA, generate
 
 2026-07-05 기준 BoI Source Wiki overlay로 실제 repository 내용을 생성했다. 이 문서 묶음은 외부 hosted 서비스가 아니라 BoI API의 `source_wiki_job_start` 흐름으로 만든 source-grounded OKF 문서다.
 
-BoI Wiki Platform Source는 `source-wiki-20260705231621-65eda8a7`, `chokukil/boi-wiki@d5054b8` 기준이다.
+BoI Wiki Platform Source는 `source-wiki-20260706003025-aa8e71f8`, 로컬 checkout `boi-wiki@4ce6413` 기준이다.
 
-- [Overview](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md)
-- [Runtime Surfaces](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-49cae4.md)
-- [Knowledge, Harness, and Catalogs](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-f5ae6e.md)
-- [Automation and Verification](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-cfba2c.md)
-- [Source Map and Citations](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-5c06c7.md)
+- [Overview](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md)
+- [Runtime Surfaces](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-064b5f.md)
+- [Knowledge, Harness, and Catalogs](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-237fbe.md)
+- [Automation and Verification](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-06e792.md)
+- [Source Map and Citations](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-8d7e3d.md)
 
-BoI Wiki Local Source는 `source-wiki-20260705231621-182267f6`, `chokukil/boi-wiki-local@93978a9` 기준이다.
+BoI Wiki Local Source는 `source-wiki-20260706003025-05706f63`, 로컬 checkout `boi-wiki-local@93978a9` 기준이다.
 
-- [Overview](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md)
-- [Local Second Brain Lifecycle](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-43b8d8.md)
-- [Automation and Verification](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-d07b75.md)
-- [Source Map and Citations](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-789369.md)
+- [Overview](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md)
+- [Local Second Brain Lifecycle](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-2d3900.md)
+- [Automation and Verification](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-ee43d6.md)
+- [Source Map and Citations](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-e200c9.md)
 
 Source Wiki 생성 이력/검증 장부는 `data/source-wikis/boi-wiki-platform-source/latest.json`과 `data/source-wikis/boi-wiki-local-source/latest.json`에 남는다. 여기에는 selected/skipped inventory, source SHA, page SHA, validation report, last-good 상태가 들어가므로 로컬/사내 runner가 생성한 repository 문서화를 재생성하거나 비교할 때 기준점으로 쓴다.
 

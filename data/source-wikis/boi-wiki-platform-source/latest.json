@@ -2,24 +2,24 @@
   "ok": true,
   "status": "generated",
   "wiki_id": "boi-wiki-platform-source",
-  "job_id": "source-wiki-20260705231621-65eda8a7",
+  "job_id": "source-wiki-20260706003025-aa8e71f8",
   "title": "BoI Wiki Platform Source",
-  "generated_at": "2026-07-05T23:16:21+09:00",
+  "generated_at": "2026-07-06T00:30:25+09:00",
   "employee_id": "100001",
   "source": {
     "source_kind": "local_path",
     "source_path": "/home/chokukil/boi-wiki",
-    "repo_url": "https://github.com/chokukil/boi-wiki",
+    "repo_url": "",
     "allowed_roots": [
       "/home/chokukil/boi-wiki",
       "/home/chokukil/boi-wiki-local",
       "/home/chokukil/boi-wiki/data"
     ],
-    "commit_sha": "d5054b8"
+    "commit_sha": "4ce6413"
   },
   "inventory": {
     "selected_count": 21,
-    "skipped_count": 13006,
+    "skipped_count": 13071,
     "selected": [
       {
         "path": "README.md",
@@ -48,8 +48,8 @@
       },
       {
         "path": "boi_api/app/main.py",
-        "size": 1376055,
-        "sha256": "7507ac5460ceac0ffded730ab6bcddcfd1427d3fdf8ae9d661d8c787322a4484",
+        "size": 1375779,
+        "sha256": "e6f2c0d8489131d5d26818807308a224185c789439793fc5d562e21791a0c714",
         "role": "runtime",
         "headings": [
           "Deprecated alias kept for one release so older local-full-datalake env files",
@@ -81,8 +81,8 @@
       },
       {
         "path": "data/boi/public/boi-wiki-manual/guide/final-operator-guide.md",
-        "size": 15689,
-        "sha256": "7f1760170ca5c9c93c00fc1e65cf5aa4e0c1b067706aecf5d8bf6ee39fc7a65f",
+        "size": 15512,
+        "sha256": "5fabdecd0918dd1e4c431bc27f85face3280416be043bd38b301d129b8628424",
         "role": "manual",
         "headings": [
           "Summary",
@@ -94,12 +94,12 @@
           "API Surface",
           "MCP Surface"
         ],
-        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1\" type: boi/manual title: BoI Wiki 종합 가이드 description: BoI Wiki 최종 운영 기준, Harness acceptance, Inbox 권한, MCP/API, Source Wiki, Local Second Brain, promotion, 배포 이관 흐름의 허브 문서 tags: [Manual, Guide, Harness, MCP, API, Inbox, SourceWiki, LocalSecondBrain, Promotion] timestamp: 2026-07-05T22:00:00+09:00 boi_id: boi:public:boi-wiki-manual:guide:final-operator-guide visibility: public classification: internal owner: AIX 확산 TF author: type: agent agent_id: codex acl_policy: acl:public status: reviewed source_refs: - type: external ref: https://revfactory.github.io/harness-paper/ - type: external ref: https://openwiki.sh/ - type: external ref: https://github.com/langchain-ai/openwiki - type: external ref: https://github.com/kdsz001/OpenWiki - type: repo ref: boi_api/app/main.py - type: repo ref: boi_wiki_mcp/app/main.py - type: local-template ref: b…"
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1\" type: boi/manual title: BoI Wiki 종합 가이드 description: BoI Wiki 최종 운영 기준, Harness acceptance, Inbox 권한, MCP/API, Source Wiki, Local Second Brain, promotion, 배포 이관 흐름의 허브 문서 tags: [Manual, Guide, Harness, MCP, API, Inbox, SourceWiki, LocalSecondBrain, Promotion] timestamp: 2026-07-05T22:00:00+09:00 boi_id: boi:public:boi-wiki-manual:guide:final-operator-guide visibility: public classification: internal owner: AIX 확산 TF author: type: agent agent_id: codex acl_policy: acl:public status: reviewed source_refs: - type: external ref: https://revfactory.github.io/harness-paper/ - type: external ref: https://github.com/langchain-ai/openwiki - type: external ref: https://github.com/kdsz001/OpenWiki - type: repo ref: boi_api/app/main.py - type: repo ref: boi_wiki_mcp/app/main.py - type: local-template ref: boi-wiki-local/scripts/local_capture.py - ty…"
       },
       {
         "path": "data/boi/public/boi-wiki-manual/local/boi-wiki-local-integration.md",
-        "size": 7264,
-        "sha256": "9363e82318a4b793314b5d528859b58eb3ccfe2d3fb1ce93974b04a693ffdc1d",
+        "size": 7629,
+        "sha256": "cd81efbbc92018f252c9bad3f856d826d5d9714e548f11b2093fdb769756b210",
         "role": "manual",
         "headings": [
           "Summary",
@@ -107,7 +107,7 @@
           "Local에서 다루는 업무",
           "Local Lifecycle",
           "Local Second Brain Helpers",
-          "Source Wiki And OpenWiki",
+          "Source Wiki And Local OpenWiki Pattern",
           "MCP 사용 기준",
           "사용 예시"
         ],
@@ -255,8 +255,8 @@
       },
       {
         "path": "tests/test_source_wiki_hardening.py",
-        "size": 6124,
-        "sha256": "1354a156f54ba17b472f400a50baed98d59e726b66cab6591f8b57d4cdedf382",
+        "size": 6210,
+        "sha256": "c78f7e38eaffb3fa16bbde1cb282a88ae7e3fcc249d1a22fcb1bce39bc2049a6",
         "role": "test",
         "headings": [],
         "excerpt": "from __future__ import annotations from pathlib import Path from fastapi.testclient import TestClient def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_path, monkeypatch): source_root = tmp_path / \"local-source\" source_root.mkdir() (source_root / \"README.md\").write_text(\"# Local Source\\n\\nUse local private notes safely.\", encoding=\"utf-8\") (source_root / \"AGENTS.md\").write_text( \"# Agent Rules\\n\\nDo not submit raw local notes remotely.\\n\\n[link: docs -> missing.md]\\n\\n[image: sample -> evidence/sample.png]\", encoding=\"utf-8\", ) scripts = source_root / \"scripts\" scripts.mkdir() (scripts / \"check.sh\").write_text(\"#!/usr/bin/env sh\\nprintf 'ok\\\\n'\\n\", encoding=\"utf-8\") monkeypatch.setenv(\"SOURCE_WIKI_ALLOWED_ROOTS\", str(source_root)) boi_app_module.SOURCE_WIKI_ROOT = tmp_path / \"source-wikis\" client = TestClient(boi_app_module.app) payload = { \"source_path\": str…"
@@ -409,6 +409,10 @@
       },
       {
         "path": ".git/logs/refs/heads/codex/sop-registration-assetization-ux",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/source-wiki-local-only",
         "reason": "excluded_directory"
       },
       {
@@ -1048,6 +1052,10 @@
         "reason": "excluded_directory"
       },
       {
+        "path": ".git/objects/04/e17ee8c251363b763558bcd34af5143c125788",
+        "reason": "excluded_directory"
+      },
+      {
         "path": ".git/objects/04/f395ed97c8d16699786e41c29ea0ed3c0bf1a2",
         "reason": "excluded_directory"
       },
@@ -1085,6 +1093,10 @@
       },
       {
         "path": ".git/objects/05/4dd16b3dc1f7bec334fb84e127d417f5dffa72",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/52ae8e804ea612e3716382b3c4e067f75c663f",
         "reason": "excluded_directory"
       },
       {
@@ -2128,6 +2140,10 @@
         "reason": "excluded_directory"
       },
       {
+        "path": ".git/objects/0e/5b8875a4e945291f4c5b956407e89947d736ff",
+        "reason": "excluded_directory"
+      },
+      {
         "path": ".git/objects/0e/5e5d04e6aacf1ed531e9a9b0b913f7250fc55f",
         "reason": "excluded_directory"
       },
@@ -2246,22 +2262,6 @@
       {
         "path": ".git/objects/0f/af8f57440eb0ea54de29d46c9ea438ba915831",
         "reason": "excluded_directory"
-      },
-      {
-        "path": ".git/objects/0f/e595f1f24458683c3f13b8419045d97d0a680c",
-        "reason": "excluded_directory"
-      },
-      {
-        "path": ".git/objects/0f/f1f837ee656ad2bdd283d6fb9de9a6304fafce",
-        "reason": "excluded_directory"
-      },
-      {
-        "path": ".git/objects/0f/f2beb9a69d401fb5f1e9e9bc36a5529ea7d7c0",
-        "reason": "excluded_directory"
-      },
-      {
-        "path": ".git/objects/10/12fbe5057420635d216f39c274a5459c2fbfce",
-        "reason": "excluded_directory"
       }
     ],
     "role_counts": {
@@ -2274,53 +2274,53 @@
       "automation": 3,
       "test": 3
     },
-    "source_signature": "3045608ef7830ddce8bdb39ef5f7331ee086413d59dec8cb48e9093e573f920c"
+    "source_signature": "b77a5dd9bba7e00529cdf12284cf7af4f4a10a6891b1dbd767853eb39cf56321"
   },
   "pages": [
     {
       "slug": "overview",
       "title": "BoI Wiki Platform Source Overview",
-      "boi_id": "boi:public:100001:20260705231621:294508",
-      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md",
+      "boi_id": "boi:public:100001:20260706003025:36db14",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md",
       "source_count": 23,
-      "sha256": "25ddf901040fbe763090f3afd9ce96beb4ee044d8ca22f929300503fe2b9aaac"
+      "sha256": "c7df5cab3b387bb82a193b02d9d0ab340b7f592b578c3830e88651b072c2869a"
     },
     {
       "slug": "runtime-surfaces",
       "title": "Runtime Surfaces and Interfaces",
-      "boi_id": "boi:public:100001:20260705231621:49cae4",
-      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-49cae4.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-49cae4.md",
+      "boi_id": "boi:public:100001:20260706003025:064b5f",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-064b5f.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-064b5f.md",
       "source_count": 23,
-      "sha256": "2ee98304a96f98d2bf82e52c30411ca672ec570a76f856ecf6adf39d35e7b4c9"
+      "sha256": "49c44e6fdd97d30a8123135f320863b21e476b3c3291e64f02d8d71722718a0a"
     },
     {
       "slug": "knowledge-harness-catalogs",
       "title": "Knowledge, Harness, and Catalogs",
-      "boi_id": "boi:public:100001:20260705231621:f5ae6e",
-      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-f5ae6e.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-f5ae6e.md",
+      "boi_id": "boi:public:100001:20260706003025:237fbe",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-237fbe.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-237fbe.md",
       "source_count": 23,
-      "sha256": "f658196e28d7c19d97e93ff752f290acfe938195b406353e7dce63c4c6c3b68e"
+      "sha256": "1ac5e9e71022437e1d8a11e2b74ef8128fab7b2b2b75bc4f11cd60c11e1c7c4e"
     },
     {
       "slug": "automation-and-verification",
       "title": "Automation and Verification",
-      "boi_id": "boi:public:100001:20260705231621:cfba2c",
-      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-cfba2c.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-cfba2c.md",
+      "boi_id": "boi:public:100001:20260706003025:06e792",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-06e792.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-06e792.md",
       "source_count": 23,
-      "sha256": "80f20732d73bce3435149a978a482a3635d85ee9448afa89229bc33c6683c1aa"
+      "sha256": "8d1836ad8e6d98e4a8fd22ec3264047ae89ecf73d0dacb46d3077fd596970b4a"
     },
     {
       "slug": "source-map",
       "title": "Source Map and Citations",
-      "boi_id": "boi:public:100001:20260705231621:5c06c7",
-      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-5c06c7.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-5c06c7.md",
+      "boi_id": "boi:public:100001:20260706003025:8d7e3d",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-8d7e3d.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-8d7e3d.md",
       "source_count": 23,
-      "sha256": "5356db82238be58ef637866379898ba4c91b2a2b50ddf3e57b8572a13912a8f6"
+      "sha256": "7879c13e3cafa5d91304ee209a7b46f3929b0e782d653ac9ef04e7b0086b3233"
     }
   ],
   "validation": {

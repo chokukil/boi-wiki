@@ -2,14 +2,14 @@
   "ok": true,
   "status": "generated",
   "wiki_id": "boi-wiki-local-source",
-  "job_id": "source-wiki-20260705231621-182267f6",
+  "job_id": "source-wiki-20260706003025-05706f63",
   "title": "BoI Wiki Local Source",
-  "generated_at": "2026-07-05T23:16:21+09:00",
+  "generated_at": "2026-07-06T00:30:25+09:00",
   "employee_id": "100001",
   "source": {
     "source_kind": "local_path",
     "source_path": "/home/chokukil/boi-wiki-local",
-    "repo_url": "https://github.com/chokukil/boi-wiki-local",
+    "repo_url": "",
     "allowed_roots": [
       "/home/chokukil/boi-wiki",
       "/home/chokukil/boi-wiki-local",
@@ -2243,38 +2243,38 @@
     {
       "slug": "overview",
       "title": "BoI Wiki Local Source Overview",
-      "boi_id": "boi:public:100001:20260705231621:72f0d3",
-      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md",
+      "boi_id": "boi:public:100001:20260706003025:da81ff",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md",
       "source_count": 19,
-      "sha256": "88134d400a53066d470cfdfee238be10b58454af263203b384ccf326dbb6e6cc"
+      "sha256": "16effb01f03cc8211ccfd57af0695f8c2f0dac87f258a2bcde3a8f7f408c3a9f"
     },
     {
       "slug": "local-second-brain",
       "title": "Local Second Brain Lifecycle",
-      "boi_id": "boi:public:100001:20260705231621:43b8d8",
-      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-43b8d8.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-43b8d8.md",
+      "boi_id": "boi:public:100001:20260706003025:2d3900",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-2d3900.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-2d3900.md",
       "source_count": 19,
-      "sha256": "0e50effaace2067a2600aa49f53a2172302ac3fb8a54fd172cf0019484867511"
+      "sha256": "92d229c7862d5eed8c87e40e5cd59ffa34f3da31ad01f43ae4d60f19caf4f44f"
     },
     {
       "slug": "automation-and-verification",
       "title": "Automation and Verification",
-      "boi_id": "boi:public:100001:20260705231621:d07b75",
-      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-d07b75.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-d07b75.md",
+      "boi_id": "boi:public:100001:20260706003025:ee43d6",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-ee43d6.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-ee43d6.md",
       "source_count": 19,
-      "sha256": "c796a2dd14d9c8c69d8a512338588de0e1f48e7125289bdc30615af0de505d56"
+      "sha256": "fb1fe2188ba91ea51be8e3bce15265602a4ebf15e1027f1ef9ea462cee74a33b"
     },
     {
       "slug": "source-map",
       "title": "Source Map and Citations",
-      "boi_id": "boi:public:100001:20260705231621:789369",
-      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-789369.md",
-      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-789369.md",
+      "boi_id": "boi:public:100001:20260706003025:e200c9",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-e200c9.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-e200c9.md",
       "source_count": 19,
-      "sha256": "a7cd3ce6a94092047ae5cd47429cbce9688142a11e20ed72e29b9c5e9e9902d5"
+      "sha256": "b13ca6147f1530c78c1676c6fbdcedfc0ba897e6d8d41954ec1618e6a65023ed"
     }
   ],
   "validation": {
