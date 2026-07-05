@@ -1,0 +1,2286 @@
+{
+  "ok": true,
+  "status": "generated",
+  "wiki_id": "boi-wiki-local-source",
+  "job_id": "source-wiki-20260705231621-182267f6",
+  "title": "BoI Wiki Local Source",
+  "generated_at": "2026-07-05T23:16:21+09:00",
+  "employee_id": "100001",
+  "source": {
+    "source_kind": "local_path",
+    "source_path": "/home/chokukil/boi-wiki-local",
+    "repo_url": "https://github.com/chokukil/boi-wiki-local",
+    "allowed_roots": [
+      "/home/chokukil/boi-wiki",
+      "/home/chokukil/boi-wiki-local",
+      "/home/chokukil/boi-wiki/data"
+    ],
+    "commit_sha": "93978a9"
+  },
+  "inventory": {
+    "selected_count": 17,
+    "skipped_count": 578,
+    "selected": [
+      {
+        "path": ".cursor/rules/boi-wiki-local.mdc",
+        "size": 2681,
+        "sha256": "d76751c4219911df33d258415400073dd7c6044a625fc050fc9e30f24e4dc53f",
+        "role": "supporting",
+        "headings": [],
+        "excerpt": "--- description: BoI Wiki Local workspace rules alwaysApply: true --- This workspace is a Local Private BoI folder. - Start from `data/boi/index.md` and folder `index.md` files. - Do not scan everything first unless broad cleanup/search is requested. - Before writing personal BoI documents, confirm a numeric 7-digit employee ID from `BOI_LOCAL_EMPLOYEE_ID` or the user. - Save personal BoI documents under `data/boi/private/{employee_id}/`. - Save diagrams, event/workflow-definition drafts, context packs, pre-execution simulations, and Langflow plans in their matching folders under `data/boi/private/{employee_id}/`. - One-off or repeated personal work can start as a Local Private work BoI without forcing an SOP. - Save dictionary terms under `data/boi/private/{employee_id}/dictionary/`. - For bulk dictionary candidates, record `keep`, `replace_with_canonical`, `split_into_terms`, `alias_t…"
+      },
+      {
+        "path": "AGENTS.md",
+        "size": 12086,
+        "sha256": "bd7b824d095d8661a742eeb886a0a87b5b0f08c07d9f942af5d79cba57ed42c3",
+        "role": "entrypoint",
+        "headings": [
+          "BoI Wiki Local Agent Rules",
+          "Core Rule",
+          "Navigation",
+          "Employee ID Rule",
+          "Write Targets",
+          "Required Local Private Metadata",
+          "Lifecycle Defaults",
+          "Cleanup"
+        ],
+        "excerpt": "# BoI Wiki Local Agent Rules You are working inside a user's Local Private BoI workspace. ## Core Rule Local Private content stays local unless the user explicitly asks to share and confirms the final preview. ## Navigation - Start from `data/boi/index.md`. - Then read the closest folder `index.md`. - Do not scan every file first unless the user asks for broad cleanup/search. ## Employee ID Rule - Local Private work is keyed by a numeric 7-digit employee ID. - Read `BOI_LOCAL_EMPLOYEE_ID` from `.env` or environment when available. - If no valid 7-digit employee ID is available, ask the user for it before creating personal BoI content. - The template scaffold is `data/boi/private/0000000/`. Do not use `0000000` for real personal work. - Never create or use a non-numeric placeholder private folder. ## Write Targets - Notes and meetings: `data/boi/private/{employee_id}/notes/` - SOP drafts…"
+      },
+      {
+        "path": "CLAUDE.md",
+        "size": 2940,
+        "sha256": "3993f207a0a44af7c27823f22f9f76a6ad1b360b310aee5674e7bdc513c8c41b",
+        "role": "entrypoint",
+        "headings": [
+          "Claude Rules for BoI Wiki Local"
+        ],
+        "excerpt": "# Claude Rules for BoI Wiki Local This folder is a Local Private BoI workspace. - Keep personal content local unless the user explicitly confirms sharing. - Before creating personal BoI content, confirm a numeric 7-digit employee ID from `BOI_LOCAL_EMPLOYEE_ID` or the user. - Store notes in `data/boi/private/{employee_id}/notes/`. - Store SOP drafts in `data/boi/private/{employee_id}/sop-drafts/`. - Store diagrams in `data/boi/private/{employee_id}/diagrams/`. - Store event/workflow-definition plans in `data/boi/private/{employee_id}/event-drafts/` or `data/boi/private/{employee_id}/workflow-simulations/`. - One-off or repeated personal work can start as a Local Private work BoI without forcing an SOP. - Store dictionary terms in `data/boi/private/{employee_id}/dictionary/`. - For bulk dictionary candidates, record curation decisions in local candidate/override/manifest or promotion dra…"
+      },
+      {
+        "path": "README.md",
+        "size": 17808,
+        "sha256": "d07ad3a9a2cbe2e3f6381933502224b572a27614bc709a9176c6f7e07d508ab7",
+        "role": "entrypoint",
+        "headings": [
+          "BoI Wiki Local",
+          "이것은 무엇인가요",
+          "처음 사용하기",
+          "어디에 저장되나요",
+          "Local Private 규칙",
+          "Second Brain과 Cleanup",
+          "공유",
+          "선택 사항: MCP"
+        ],
+        "excerpt": "# BoI Wiki Local BoI Wiki Local은 개인 PC에만 저장되는 Local Private BoI 작업공간입니다. 어렵게 생각하지 않아도 됩니다. Codex, Claude, Cursor 같은 agent에게 아래처럼 말하면 됩니다. ```text 이 boi-wiki-local repo URL 보고 내 PC에 설치해줘. 이 repo 설치해줘. 이 폴더를 BoI Wiki Local로 써줘. ``` 그 다음부터는 자연어로 요청합니다. | 요청 문장 | 실행 성격 | 예제와 결과 | |---|---|---| | 이 회의 내용을 BoI로 정리해줘. | local | [link: 회의 내용 BoI 정리 -> data/boi/private/0000000/usage-examples/natural-language-poc/meeting-to-boi.md] | | 이 SOP 이미지를 BoI Wiki 형식으로 초안 만들어줘. | local + evidence | [link: SOP 이미지 초안 -> data/boi/private/0000000/usage-examples/natural-language-poc/image-to-sop-draft.md] | | 직개발 결과 확인 SOP를 Mermaid 프로세스 플로우로 그려줘. | local | [link: SOP Mermaid flow -> data/boi/private/0000000/usage-examples/natural-language-poc/sop-mermaid-flow.md] | | 이 이벤트가 발생하면 어떤 업무 BoI와 업무 흐름이 이어지는지 알려줘. | live workflow evidence | [link: 업무 흐름 계획 -> data/boi/private/0000000/usage-examples/natural-language-…"
+      },
+      {
+        "path": "check.ps1",
+        "size": 3754,
+        "sha256": "8e8fc0fddfaac34ad463d4f085b6825e5b1e44b90ee8d280ad80074380121fc0",
+        "role": "automation",
+        "headings": [],
+        "excerpt": "param( [string]$Root = (Get-Location).Path ) $EmployeeId = if ($env:BOI_LOCAL_EMPLOYEE_ID) { $env:BOI_LOCAL_EMPLOYEE_ID } else { \"0000000\" } $status = 0 if ($EmployeeId -notmatch '^[0-9]{7}$') { Write-Host \"ERROR BOI_LOCAL_EMPLOYEE_ID must be a numeric 7-digit employee ID.\" $status = 1 } $legacyId = \"m\" + \"e\" if (Test-Path (Join-Path $Root \"data/boi/private/$legacyId\")) { Write-Host \"ERROR legacy non-numeric private folder is not allowed.\" $status = 1 } if ($status -ne 0) { exit $status } $baseRel = \"data/boi/private/$EmployeeId\" $basePath = Join-Path $Root $baseRel $scaffoldPath = Join-Path $Root \"data/boi/private/0000000\" if ($EmployeeId -ne \"0000000\" -and !(Test-Path $basePath) -and (Test-Path $scaffoldPath)) { $installPath = Join-Path $Root \"install.ps1\" if (Test-Path $installPath) { & $installPath -Root $Root | Out-Null } else { Copy-Item -Recurse -Path $scaffoldPath -Destination $…"
+      },
+      {
+        "path": "check.sh",
+        "size": 3201,
+        "sha256": "80c232d4fd239867b63d26dbc87e1096493c5b0c6d2d60f4400cc8603b8ef113",
+        "role": "automation",
+        "headings": [
+          "!/usr/bin/env sh"
+        ],
+        "excerpt": "#!/usr/bin/env sh set -eu ROOT=\"${1:-$(pwd)}\" EMPLOYEE_ID=\"${BOI_LOCAL_EMPLOYEE_ID:-0000000}\" status=0 case \"$EMPLOYEE_ID\" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;; *) printf '%s\\n' \"ERROR BOI_LOCAL_EMPLOYEE_ID must be a numeric 7-digit employee ID.\" status=1 ;; esac LEGACY_ID=\"m\"\"e\" if [ -e \"$ROOT/data/boi/private/$LEGACY_ID\" ]; then printf '%s\\n' \"ERROR legacy non-numeric private folder is not allowed.\" status=1 fi if [ \"$status\" -ne 0 ]; then exit \"$status\" fi BASE_REL=\"data/boi/private/$EMPLOYEE_ID\" BASE=\"$ROOT/$BASE_REL\" SCAFFOLD=\"$ROOT/data/boi/private/0000000\" if [ \"$EMPLOYEE_ID\" != \"0000000\" ] && [ ! -d \"$BASE\" ] && [ -d \"$SCAFFOLD\" ]; then if [ -f \"$ROOT/install.sh\" ]; then sh \"$ROOT/install.sh\" \"$ROOT\" >/dev/null else cp -R \"$SCAFFOLD\" \"$BASE\" find \"$BASE\" -type f -name '*.md' -exec sed -i \\ -e \"s/employee_id: \\\"0000000\\\"/employee_id: \\\"$EMPLOYEE_ID\\\"/g\" \\ -e \"s/local_owner_r…"
+      },
+      {
+        "path": "data/boi/index.md",
+        "size": 445,
+        "sha256": "29a9f3e933c45c85c78cd3d0d1f54846243f675f2be9e4229c7fcb05fc2e4826",
+        "role": "local_knowledge",
+        "headings": [
+          "BoI Wiki Local Bundle"
+        ],
+        "excerpt": "# BoI Wiki Local Bundle * [link: Private Template -> private/0000000/] - 7자리 사번 폴더로 복사되는 Local Private scaffold * [link: Usage Examples -> private/0000000/usage-examples/] - agent에게 바로 줄 수 있는 대표 요청 예제 * [link: Dictionary Template -> private/0000000/dictionary/] - 개인 도메인 용어와 alias scaffold Start here, then open the closest folder `index.md`. MCP is optional; local skills must still work without it."
+      },
+      {
+        "path": "data/boi/log.md",
+        "size": 1014,
+        "sha256": "dd90125b5c3e9e54d946f3a7ac4c73e101dfef087f14a3e614758881db245fe8",
+        "role": "local_knowledge",
+        "headings": [
+          "Local BoI Log",
+          "2026-06-19",
+          "2026-06-20",
+          "2026-06-21",
+          "2026-06-23",
+          "2026-06-30"
+        ],
+        "excerpt": "# Local BoI Log ## 2026-06-19 - Workspace initialized. ## 2026-06-20 - Added local-first task skills for SOP diagrams, event workflow plans, action authoring, context packs, workflow simulations, and Langflow planning. - Added usage examples for MCP-free and optional remote BoI Wiki MCP workflows. - Added natural-language PoC examples with SOP image evidence, generated local BoI outputs, promotion preflight drafts, and shared runtime trace references. ## 2026-06-21 - Strengthened SOP Mermaid diagram harness with overview, swimlane, stage detail, source mapping, and diagram QA rules. ## 2026-06-23 - Added Local Private dictionary scaffold, dictionary authoring skill, and terminology examples aligned with shared BoI Wiki dictionary rules. ## 2026-06-30 - Aligned Local Private dictionary authoring with shared bulk curation and granularity rules. - Added local guidance for candidate actions…"
+      },
+      {
+        "path": "data/boi/private/0000000/index.md",
+        "size": 933,
+        "sha256": "83226dbbe42aac1c7adc3833719133b401cbdb30abba1729051800e6eaad28d3",
+        "role": "local_knowledge",
+        "headings": [
+          "Local Private"
+        ],
+        "excerpt": "# Local Private * [link: Inbox -> inbox.md] - 아직 분류되지 않은 메모 * [link: Notes -> notes/] - 회의록과 개인 업무 메모 * [link: SOP Drafts -> sop-drafts/] - SOP 초안 * [link: Action Drafts -> action-drafts/] - 업무 요청/action 초안 * [link: Event Drafts -> event-drafts/] - Event Type 후보와 업무 흐름 계획 * [link: Dictionary -> dictionary/] - 개인 도메인 용어, 별칭, 개념 연결 초안 * [link: Diagrams -> diagrams/] - Mermaid/SVG 도식 초안 * [link: Context Packs -> context-packs/] - 업무 단위 agent context pack * [link: Workflow Simulations -> workflow-simulations/] - 실행 전 확인과 업무 흐름 시뮬레이션 * [link: Langflow Plans -> langflow-plans/] - BoI 연계 Langflow workflow 설계 * [link: Reports -> reports/] - 주간보고와 업무증빙 * [link: Promotion Drafts -> promotion-drafts/] - 공유 전 정리본 * [link: Usage Examples -> usage-examples/] - 복사해서 쓸 수 있는 대표 요청 예제 * [link: Archive -> _archive/] - 오래된 문서"
+      },
+      {
+        "path": "data/boi/private/0000000/usage-examples/natural-language-poc/README.md",
+        "size": 5005,
+        "sha256": "dfbae19e7ed6fd2814144cc0b7f433c9a6ee75b9ff77542984da93e800cd24a4",
+        "role": "example",
+        "headings": [
+          "Summary",
+          "Examples",
+          "Runtime Evidence",
+          "Real vs Simulated"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1-local\" type: boi/local-example title: \"자연어 요청 E2E PoC 예제 세트\" description: \"BoI Wiki Local 자연어 요청이 local 산출물과 shared BoI Wiki runtime evidence로 이어지는 활용 사례\" timestamp: 2026-06-20T21:50:00+09:00 employee_id: \"0000000\" local_owner_ref: local-private:0000000 visibility: local-private local_only: true promotion_status: local_only retention_class: record retention_until: \"\" archive_status: active review_after: 2026-09-20 contains_sensitive: no source_refs: - type: local-evidence ref: evidence/sop_sample_image.png - type: shared-runtime-trace ref: trace-f91b32904db0434db27c3f84307103ad --- # Summary 이 폴더는 사용자가 agent에게 자연어로 요청했을 때 어떤 local BoI 산출물이 생기고, shared BoI Wiki runtime에서는 Event, Action, Langflow, generated BoI가 어떻게 연결되는지 보여주는 PoC 예제 세트다. 원본 SOP 이미지는 아래 파일로 고정한다. [image: SOP sample image -> evidence/sop_sample_image.png] # Examples | 요청 | 실…"
+      },
+      {
+        "path": "data/boi/private/0000000/usage-examples/natural-language-poc/local-only-mode.md",
+        "size": 1649,
+        "sha256": "2a7c0f3aae8dc768f52a3eb9133d57a6b91389af319372552fdad618af20839f",
+        "role": "example",
+        "headings": [
+          "Prompt",
+          "Generated Output",
+          "Evidence",
+          "How to Verify",
+          "Real vs Simulated"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1-local\" type: boi/local-example title: \"MCP 없이 Local Only 작업 예제\" description: \"MCP 설정 없이 local files만 사용해 BoI 작업을 완료하는 예제\" timestamp: 2026-06-20T22:00:00+09:00 employee_id: \"0000000\" local_owner_ref: local-private:0000000 visibility: local-private local_only: true promotion_status: local_only retention_class: record retention_until: \"\" archive_status: active review_after: 2026-09-20 contains_sensitive: no source_refs: - type: generated-output ref: ../../workflow-simulations/local-only-runbook.md --- # Prompt ```text MCP 설정은 모르겠으니 local만 써줘. 이 SOP 이미지와 회의 내용을 내 PC 안에서만 정리하고, 원격 검색이나 공유는 하지 마. ``` # Generated Output - 생성 문서: [link: local-only-runbook.md -> ../../workflow-simulations/local-only-runbook.md] - agent는 원격 MCP 검색, promotion submit, action invoke를 생략하고 local Markdown만 작성한다. # Evidence - README와 AGENTS 규칙은 MCP를 optional로 정의한다. - `lo…"
+      },
+      {
+        "path": "data/boi/private/0000000/usage-examples/natural-language-poc/promotion-public.md",
+        "size": 1727,
+        "sha256": "834ce324b5d1864ccc5d86471e11914373420dc3aad537a35e42f553c4cf5546",
+        "role": "example",
+        "headings": [
+          "Prompt",
+          "Generated Output",
+          "Evidence",
+          "How to Verify",
+          "Real vs Simulated"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1-local\" type: boi/local-example title: \"Public 공유 승인 필요 워크플로우 예제\" description: \"SOP 초안을 Public BoI Wiki로 공유하기 전 preview/preflight를 만드는 예제\" timestamp: 2026-06-20T21:57:00+09:00 employee_id: \"0000000\" local_owner_ref: local-private:0000000 visibility: local-private local_only: true promotion_status: local_only retention_class: record retention_until: \"\" archive_status: active review_after: 2026-09-20 contains_sensitive: no source_refs: - type: generated-output ref: ../../promotion-drafts/direct-development-reporting-public-promotion-draft.md --- # Prompt ```text 만들어진 SOP 내용 괜찮네. Public으로 공유해줘. ``` # Generated Output - 생성 문서: [link: direct-development-reporting-public-promotion-draft.md -> ../../promotion-drafts/direct-development-reporting-public-promotion-draft.md] - agent는 Public 게시를 바로 실행하지 않고, target visibility, source refs, 민감정보 점검, pre…"
+      },
+      {
+        "path": "data/boi/private/0000000/usage-examples/natural-language-poc/weekly-report-promotion.md",
+        "size": 1697,
+        "sha256": "c28b128d501d62c961cf9f32ca7f39caab43a9ac3780bb9a4f2888ef8b76121e",
+        "role": "example",
+        "headings": [
+          "Prompt",
+          "Generated Output",
+          "Evidence",
+          "How to Verify",
+          "Real vs Simulated"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1-local\" type: boi/local-example title: \"팀 주간보고 승격 예제\" description: \"Local Private 주간보고를 Team visibility 후보로 정리하는 예제\" timestamp: 2026-06-20T21:58:00+09:00 employee_id: \"0000000\" local_owner_ref: local-private:0000000 visibility: local-private local_only: true promotion_status: local_only retention_class: record retention_until: \"\" archive_status: active review_after: 2026-09-20 contains_sensitive: no source_refs: - type: generated-output ref: ../../reports/sample-weekly-report.md - type: generated-output ref: ../../promotion-drafts/sample-weekly-report-team-promotion-draft.md --- # Prompt ```text 팀 주간보고 작성한 거 괜찮아 보이네. 팀 주간보고로 올려줘. ``` # Generated Output - 작성본: [link: sample-weekly-report.md -> ../../reports/sample-weekly-report.md] - 승격 후보: [link: sample-weekly-report-team-promotion-draft.md -> ../../promotion-drafts/sample-weekly-report-te…"
+      },
+      {
+        "path": "llm-wiki.md",
+        "size": 2443,
+        "sha256": "94bd2553df2d63edc9ac3b952c9217b5c887a85f73bc7c789a30168f05ded701",
+        "role": "entrypoint",
+        "headings": [
+          "Local LLM Wiki",
+          "Inbox",
+          "Core Rules",
+          "Useful Requests"
+        ],
+        "excerpt": "# Local LLM Wiki 이 파일 하나만으로도 시작할 수 있습니다. Agent에게 다음처럼 말하세요. ```text 이 파일을 내 BoI Wiki Local inbox처럼 써줘. ``` 커지면 agent가 7자리 사번을 확인한 뒤 `data/boi/private/{7자리사번}/` 아래 OKF Markdown 문서로 나눕니다. ## Inbox - 아직 정리되지 않은 개인 메모를 여기에 임시로 둡니다. ## Core Rules - Local Private content stays local unless the user explicitly approves sharing. - MCP is optional. The official remote MCP is shared BoI Wiki MCP; do not require a local MCP server. - Use skills or the same rules for work BoI notes, SOP diagrams, workflow-definition plans, work request specs, context packs, pre-execution simulations, and Langflow plans. - SOP is important for standardized work, but one-off or repeated personal work can start as a Local Private work BoI without forcing an SOP. - Use `scripts/local_capture.py`, `scripts/local_review.py`, and `scripts/promotion_preflight.py` when available to turn loose notes into OKF documents, memor…"
+      },
+      {
+        "path": "scripts/local_capture.py",
+        "size": 4542,
+        "sha256": "891320eae0dde34262663618b6a63ec5c4c76e6c720f427b59b00fec9dedb3ee",
+        "role": "automation",
+        "headings": [
+          "!/usr/bin/env python3"
+        ],
+        "excerpt": "#!/usr/bin/env python3 \"\"\"Capture a local work note as a private BoI Markdown candidate.\"\"\" from __future__ import annotations import argparse import hashlib import json import os import re import sys from datetime import datetime, timedelta, timezone from pathlib import Path KST = timezone(timedelta(hours=9)) def slugify(value: str) -> str: slug = re.sub(r\"[^A-Za-z0-9._-]+\", \"-\", value.strip().lower()).strip(\"-\") return slug[:80] or \"local-capture\" def employee_id_from_env(raw: str | None) -> str: employee_id = raw or os.getenv(\"BOI_LOCAL_EMPLOYEE_ID\") or \"0000000\" if not re.fullmatch(r\"[0-9]{7}\", employee_id): raise SystemExit(\"BOI_LOCAL_EMPLOYEE_ID must be a numeric 7-digit employee ID\") return employee_id def private_root(root: Path, employee_id: str) -> Path: return root / \"data\" / \"boi\" / \"private\" / employee_id def check_workspace(root: Path, employee_id: str) -> dict[str, object…"
+      },
+      {
+        "path": "scripts/local_review.py",
+        "size": 4690,
+        "sha256": "52c4e55403cb89a9daacec13b9f4871a6aa5f7d877cf0bbea02c39dbfea14b29",
+        "role": "automation",
+        "headings": [
+          "!/usr/bin/env python3"
+        ],
+        "excerpt": "#!/usr/bin/env python3 \"\"\"Review Local Private Second Brain lifecycle candidates.\"\"\" from __future__ import annotations import argparse import json import os import re from collections import defaultdict from datetime import date from pathlib import Path def employee_id_from_env(raw: str | None) -> str: employee_id = raw or os.getenv(\"BOI_LOCAL_EMPLOYEE_ID\") or \"0000000\" if not re.fullmatch(r\"[0-9]{7}\", employee_id): raise SystemExit(\"BOI_LOCAL_EMPLOYEE_ID must be a numeric 7-digit employee ID\") return employee_id def parse_frontmatter(path: Path) -> dict[str, str]: text = path.read_text(encoding=\"utf-8\", errors=\"replace\") if not text.startswith(\"---\"): return {} parts = text.split(\"---\", 2) if len(parts) < 3: return {} meta: dict[str, str] = {} for line in parts[1].splitlines(): if \":\" not in line or line.startswith(\" \"): continue key, value = line.split(\":\", 1) meta[key.strip()] = val…"
+      },
+      {
+        "path": "scripts/promotion_preflight.py",
+        "size": 5116,
+        "sha256": "190d6703e67131d533faea4b6c988020a25528a13d57a3fc856c7dc9c0a202fe",
+        "role": "automation",
+        "headings": [
+          "!/usr/bin/env python3",
+          "Preview Summary",
+          "Sanitized Candidate",
+          "Remote Submit Boundary"
+        ],
+        "excerpt": "#!/usr/bin/env python3 \"\"\"Create a local promotion preflight draft from a private BoI Markdown file.\"\"\" from __future__ import annotations import argparse import hashlib import json import os import re from datetime import datetime, timedelta, timezone from pathlib import Path KST = timezone(timedelta(hours=9)) SECRET_RE = re.compile(r\"(password|secret|token|api[_ -]?key)\\s*[:=]\\s*['\\\"]?[^\\\\s,'\\\"]+\", re.IGNORECASE) def employee_id_from_env(raw: str | None) -> str: employee_id = raw or os.getenv(\"BOI_LOCAL_EMPLOYEE_ID\") or \"0000000\" if not re.fullmatch(r\"[0-9]{7}\", employee_id): raise SystemExit(\"BOI_LOCAL_EMPLOYEE_ID must be a numeric 7-digit employee ID\") return employee_id def slugify(value: str) -> str: slug = re.sub(r\"[^A-Za-z0-9._-]+\", \"-\", value.strip().lower()).strip(\"-\") return slug[:80] or \"promotion-preflight\" def split_frontmatter(text: str) -> tuple[dict[str, str], str]: if …"
+      }
+    ],
+    "skipped": [
+      {
+        "path": ".agents/skills/boi-action-author/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".agents/skills/boi-context-pack-builder/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".agents/skills/boi-dictionary-author/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".agents/skills/boi-event-workflow-planner/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".agents/skills/boi-langflow-connector-planner/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".agents/skills/boi-sop-flow-visualizer/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".agents/skills/boi-wiki-local/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".agents/skills/boi-workflow-simulator/SKILL.md",
+        "reason": "not_included"
+      },
+      {
+        "path": ".codex/config.toml.example",
+        "reason": "not_included"
+      },
+      {
+        "path": ".env",
+        "reason": "not_included"
+      },
+      {
+        "path": ".env.example",
+        "reason": "not_included"
+      },
+      {
+        "path": ".git/COMMIT_EDITMSG",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/FETCH_HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/MERGE_RR",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/ORIG_HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/config",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/description",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/applypatch-msg.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/commit-msg.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/fsmonitor-watchman.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/post-update.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-applypatch.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-commit.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-merge-commit.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-push.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-rebase.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-receive.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/prepare-commit-msg.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/push-to-checkout.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/update.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/index",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/info/exclude",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/boi-wiki-local-bulk-dictionary-curation",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/local-employee-id-cleanup",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/main",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/boi-wiki-local-bulk-dictionary-curation",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/local-private-lifecycle-cleanup",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/main",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/37f7257383d727eb36fe315192cb8280f8d4ce",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/60bed7392bec143b93365eecceb827331cb42f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/90a13178e181a747ddc799f56918575ac3195b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/1eaa9364e9e2a9326e87dda49e21294fc5e6db",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/5fd8ac539a522c58e164f46a4db20c45eab6f9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/e723e9c1bfe00648e6cb094599d6e21770fcab",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/550ea5196de54ffec34b66c29bc8b7fe0ea752",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/7ec27c93ab3fd709c92040bf3d1810952a1682",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/3092cde2d7463bb847aac4feeb1eae85203127",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/fbe09cbe084578cb4aba297a63f0ad389b837d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/6031d43b7885b8ca28e50361b4b389512b71ef",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/76b7fc5ed59591cf622e76b9e8a91204b1720e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/7794af3e1fe999cd4c8df9c2cf6abcc29b7072",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/aa82201d4cfa26ed154f1e7d9e3356c0953e18",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/5c022d310759d30b20f1069d715f6c662d61bc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/7fccfd8236addc70d08812d50109acd5c0a502",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/12008b45b3a4562860216450216dcc93d0065a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/c9e27a2e62c94b97a73554648d3fc9342044bd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/e102a6f81f016fcbf3f77d28c88887ca038953",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/f6d92786617d2ad6f2b01a0cdd7d93d54a4e83",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/3347047084e2e182e7a7583b00e0a3c1f2c21f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/f1a8da4b050f6641333e74698a7c1578bab4d7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/d68c829b2333235c3d7d80c24f0f71c1806a82",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/9b5fcefc81d602d5dc2da4949c536748c07cb9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/b6de49eae415b15ec9ddc08c581c43f175cf83",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/e4ee1bca004545755efe26d98bd0b7f50ebcbd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/e80cf6b3b150d8718b22fb738471c473e0b739",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/10/3db644f876701b18ece1a293fceeca5c87a7f6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/10/5fa1aedc43a59de1b667322e156b8664eb1536",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/10/a22031d2cd634bd0504d5f1b8626b7328f73e8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/10/ad77d8f743f4dcbd9e3da75625c0d0461b1834",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/11/072b332401ec7ba8c9c9281c1d54bcf8757d52",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/11/d83b3e8d86b85f19a1b6f16dd0a1344b236138",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/11/e58823b26f99fa095ee46c23add5929ed23a7c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/12/271f069ffc7f04cdc2e9d74ed1c1ce8746d57d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/12/bfdb3796f3630ddbfcb85e45b20c052389653c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/12/e5d1b4c84e2d713527addb6e9bde5648569f7c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/13/2bc1954c731213258a84c849341da95c075eab",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/13/2f0b983853d273204b42a09b31de512fdb3b10",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/13/789fd9102755b90e82c8df9bf7969692dbb607",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/13/dc99011e75c921cd7955a1798bfd8c4f612272",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/14/2445459b0fce140fde15f364e5f497b862eddd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/14/45e16b6d7a8785a63c58ba52100fca64356d84",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/14/fc901c529b93e3c085caf035e85d3f45b10193",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/15/6e3f500e835cd7c751cea752cd506174ebc6a7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/15/cf6f2aa99a0832891dea92175961546ff93119",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/16/e130e1cb73359bf48e16a01a23f0f526686718",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/17/e3ba76e5f14234fcd55a59a79cdb00da678a7b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/18/e34731c1c2fe6d41df296ef7dda916ea33eb9a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/19/e948042ffba723e4ead11c4ebfab992950e798",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1a/3136ff8051819413291cbbdd88738a9434131f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1a/c9fe68b359c5134ad05f7415c416a04031f620",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1a/cda102916c5aaf82809bbbb31b2f5150f9d68c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1b/4b08f2ab972f90a3247445f9c70b39618b3da2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1b/8ff638bc64db60283419ff72a1c812cea8b52d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1b/d303a8dd905197cbce0db10f378396ae793699",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1c/08793c42d4000c81b36823564159a6e38c0379",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1c/a6dd68cf05c481524e5f03fe861ff44a91340a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1d/b7d29d6a90012521e2a4970603a3ebaaa6b488",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1d/cd003052e8a3d3a75a77e401dada10ee1dcdab",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1e/9ebba8b52c1ac3ec5a1eb375b577625c0ea839",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1e/f3e02a7fabe750edc1b4a9e49de9ffea5a559a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1f/2d50624e3aeb05e8307db37891cab084de2e11",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/1f/50c4bc7e1ccc966f4a558af6a0a0145a1d7522",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/20/c36a02312f902de2c6327b404020a46feaba09",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/22/6b7a5c4a0c92b64e85144657cab27ab65a0f16",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/22/d493a968c5af372edfe0fa033cd3741ee96b2e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/22/d8cd1567e9fba112ae7e83d55b3bffbfe68a5a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/23/f321a7f34a82338367ba5041f81f223e531f01",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/25/4f6507ef0fa9447d4f1bbd5ccb9016984ed374",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/25/8038b68fb3a208774e2c579a3810a680e9686b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/25/9b5749bf1cddc75408ba8564f48518e99ee063",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/25/c3e83dc4a20f9590037ed554966eb5d8ca0cb2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/25/df0e380f347f1adea2d931994aa76d68753988",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/27/4a50bb06edbb88eeef09a9d1ac3f49d2740db8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/27/8d2689ea529d4486d818fde3c8897dde3672f1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/27/f7831277b09d4d261bf976544b1a45466cb77d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/29/442859dca042c61814d2eb1dbabe553db95162",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2b/24065a5abf3a089d34c7bed9d2e79e20c4ab71",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2b/2b9bfa00b0620ed7ec5512eeb8cfb0baae0723",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2b/9cb333217437cdc8daf8f4203505b1090c065c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2b/ba58e9940be829166f9586243d13e80f80698e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2c/953ed8adf4863f3dcedc5903397755810939ba",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2c/d374841ebd14689408a18663ed40e42e980c8b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2d/3b2faf457001e7ae54530518425e82824a5338",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2d/b53ac0685373e5110200e7ceb48050e4109edf",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2e/433da5554acc8d478843e6e15bfc577807a08d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2e/8968ba77de474e4d82b76f18d9cd7d531857c3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2f/6ab35fd45116b5b512d817b24537b3e53f1eb8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/2f/93a98daa36ac9e16b104ee8a20cbd5b5471211",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/30/4ecc6d32266b8b227ce2a69c37bd558d2cc334",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/30/946e6cdb97b687738308fdd160e967e444edff",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/30/a8027447c72ac85d7264549393023e7db66a7a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/31/0e4f99e4033da855e2cb3fc860c679cedf8d55",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/31/417765cb676ecebdb44eb693ae9255a5c13b54",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/32/5954bac88619e8007bd82e8681587fe9cc663a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/32/5da53b13a38c9199934d414c15905501fde767",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/32/ae4cdb9dabe44cd268c615a751fafb3f5ca53b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/33/5b06d3e97d75830cb9b7cc15f03edf0be7e554",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/34/340e2193df9fef881a9fbbd078bf8fa8920120",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/34/bb0fa97c1d7a2fbc170fafc429e4f7372bad6d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/35/312b57d7d3c3cb1e95bc192787f03fa242e010",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/35/c1f4ed976f6a18bfd9063622de3fcc8c53a2e8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/36/55bf66cf1449af1a2cce90cc24cfdcc99b8ec1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/36/5b83daeb8ea414b3d9f5eea0032357e84f63d4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/37/76c6ad43993dd691fa71f8fec7b71b4fbacd62",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/38/ae35fba0f4a7469325b80c0d8b3719ac99b917",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/38/d024279826bbb7b31f033fbbf0321334df45b8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/39/53187a84c7ee28c33c73368384d2d6ea8c4b47",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/39/71312e7af746650990d0f669120c061d42b0d8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/39/936f378f4dc20a5e3cfa4e7af8a5f6252edc8f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/39/ae9bf4c5e80474fff71dd355c5a15ffbda3d39",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3a/462fbc1b3d092adae117f7c10fd02af7d58729",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3a/76130386b0b70edab2487511d596bffec05989",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3a/c1b57f573a496a3f5d42d8647fc39f23619455",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3a/f1b09a9eac06ce520166ddf83b18244d6d7397",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3c/85517260bbf054e0b8b43dddefff98873e7f02",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3c/dee958bf14c18448091371f292d363b6ee19e4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3c/dfe695e83c4f9f9620bc5456a1158f86ff5357",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3d/45c8e0ae3e96607d751b297ed80347c3b9d38a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3e/a73c5abedd36db2f9d5700a3a7f10d6bfec2c7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3f/43f8b1decc3c478a6912fd4b88dafbc10d6881",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3f/97c17a6b9dd93ad70a2bb2a6248ef2810e01a2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/3f/ee18d39d06d6ae2db8d371fc086674e188360d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/40/2c4602cc2a1ac63a23d6c08a4a0933e9ead824",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/40/f3d70202e72c113467fdf3c72c56d465383e75",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/41/4ddae5ce81b310d033ad032d9b3f2b9b8cdb12",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/41/5e0574267842ad35499b30fd2eb39b286e5999",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/42/7cdec976dac79ae6387cc6b9dea9c8f769ebcb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/43/c9f2e31b72ca3131f5c55a05e9117fb2e64405",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/43/e28bba50195c032ef24f9e96d4365da248bf58",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/44/58b2114ef3a941b1d1f3be68e681f055520fe5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/44/ba49b9057d970c61c6792c84de97e93e5f1a12",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/44/faddea68b3b6368fc272d84158ffd9cc3b8c32",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/46/43c0270cddceb893c2f72d73a5b35b30a9fee7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/46/62b8dba5b8525fdbfe6e6603573764dc2ad5f0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/47/66c05470e42e010193327fd60848beba43730e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/48/f5915c0e67138d830c9c168df79468f4b0c2a1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/49/28abfd50ac25772d35a9b102138698a90a1483",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/49/456cf8180682453731b3b4a223f2e8c38d7518",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/49/5ab015ebbb3fdbcfbb72e1d687114ba1d74d31",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/49/79b785e8b589e8d5386d3f9e522280ce9671a9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4a/3c4fb86650018bed56abf90df8099375873056",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4a/6583ac0e0eedcd4a5ae6ae3d7b542347ddd328",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4a/e4edaaf86b96109b9ca01a020cba1f4ba80990",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4b/19eced580e50c3528eb727efc1e3fab73d2433",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4b/c263cd592e2acdd9521391b6a36cd1d8bf4ad0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4c/014637fdac4b44299368fa3bf0bec52250b82e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4c/1a6ebd7ca666ea3e5cd0b9eb6b337806400ff1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4c/fea9a79b1bb473fb13a3bf055cba2fa38ebe8c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/4d/b4e25805fcb9892384ee357a3de463f92a25c4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/51/0f759323bbf6ed1c7798b6076d67d6426c081f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/51/d9b5bb34ee4e3cb290cfdef15d7e5a7a0dd52e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/52/34c5195be84616703285fb461c9622ea0420f0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/53/7728dc46bcf76337ac8affb5dbca8f571c666b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/53/77adb9bb3099cc4f4a330bf62c1106fd7e6183",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/53/c1aa8d8e4dffc48ea15430f0a693ef7ba75cee",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/54/3dc834465162a8ba3fd747b56f3daf7a69b914",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/54/71dcaa7551a93ed7955b75e6e43808024f478b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/54/7ce8d5f8b6dee75d015f9d936a8bb157bd5bd0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/55/38ece823713d6ade5dc87b21dbe7c2e2c1fdb6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/55/4f2f2a0890857c5249b3e1b7afd4655005eb32",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/56/51a53877e4340e576a045fb1360bb27c44f624",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/56/721ac4b9ef10a11f2794efe7d5cd0ca3ecee51",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/57/0236422ef4ffbeb85119035b39dc4e95efb98d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/57/09c4b3d7695d2c6796da4c36e13c56d1b18a8c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/57/998d619aeb65b763d7117d431c421b32e147f2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/59/1f841e2d0c25a3ca0465a6b8168d595ccb6f3a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/59/9f4ecea779e44e04afb3463dda974df027e16b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/59/bcf766252168e1bdbe348d730b7bff0bfac6c0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5a/06a64d8310afb8d861cf8a6c3b55025aecb714",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5a/7298259e45f36867acca5ea5c21d7db689e43f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5a/e4748e5233c338a242ae58034d88c3e64c409d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5b/8035ea9e6688363121889a2bd94ab91ce511be",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5b/a28a44a2c279cf7593289294beceaf1b857e5e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5c/2691c770afe7482e6b0c516c768d938eba7c09",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5c/5fd216e8c2b64983f44266681a94c7e229dc7a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5c/b7c4c26c777abc8ca490b2d3594735675fcf9d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5c/d31b4936b0d90fb9ddaed6c7c778aa7247801f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5c/f2171ff38e4cecbfcfccefc83c5a5d5ee5c74c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5d/35adaa54a708fee74485ef6511db4d8ce44413",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5d/da7c2925f9976735b47391e02cece0de3d571a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5e/23a9a9c591baf837696b874bf5866ce4f8a309",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5f/62f832e0076c0936a245264244c3f1734f9ac1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/5f/849ac20cdd39562de65ab8db026bdd622a2661",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/60/934b3f83cdccc89d24f558cb86236028d0fb02",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/61/480c7b48023fc7fb0938edf5374faaf1e584bb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/61/4e83461897ae59c83294ef170f8fe4a80afb1b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/62/27dd4a5d1c4f0c97c7407d3e5e87c599aa6dc1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/63/5585791e0a12986b986c1db1021ebaae8c6220",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/64/adf440fc131e6aba02854d8fa24a7f48ab20c6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/64/d98b9b514ac1c1681713eab23cd0b62bd4415e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/65/a300192071c1fe4f637c393fce710eb1709b9f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/66/90971b9051839c9529dd264d3e953690b26ab6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/67/167aae5874cb00a698881013ab732a96f69853",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/67/570b14be73a8a27f777bd878535dc65b2c7651",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/67/58e490909c6ff49e6f43e52493c96708e2cddb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/67/ef6e41880c0090c06f43b6c4c7bf4f2ee5560e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/68/0356a7fb9ac5feb6d62fd0822bf46863aa64ed",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/69/76685d67607b12fc4c73960cf009484969f7e3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/69/f7f155d74b0c49460fce621c5d8aff21d69728",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6a/4532a4e04a25b0efcd181966e0659b32751f2b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6b/1babaab822da3da9b66ee08fc78b4abc12ad89",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6b/6e02158d9311e8a50116e725ffb022d99cc449",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6b/a13de67029fb222b05ab6fcd8496cef2b2646b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6b/dadec4740843bc4368e07e0ad97abc717aba0e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6c/4833fdeeb8f52608e10462e8bb288c23f4d113",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6c/8e32b818343ecfc57798d38299e91a17578988",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6c/a252751d614dd08fdf5ced3eb6d16f419640ff",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6d/7bc3fc83587ecc0e6e61df9070330c5f34b1a4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6d/db0ed8e20c5fc576acf5233104a66d3cf34953",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6e/3c686c2cdcc63183d1661aab0583edf6e37e8a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/6f/eda6b072aad640371a5b0a6edca785e9f88e43",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/71/83fc96b9752649816c317e128b3c1bbb76f753",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/72/01bf782cd03c5292e483a255bbca0332bac759",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/72/1b0e40575c21cf7a6dfa22c9855b95a15d8bf2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/73/4be7a61fce0d989e8f5699494975eaa95dec43",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/73/60cce8049d4288c8ec647b953383838326d057",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/76/5ac9f060d7dff2dac7b16323b7b01f779a2e86",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/76/96504f0e40d137eb3276cd21c2ede814202be2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/76/b685db949d0f76f2b7e4c9bc6be08717d52379",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/78/17d0f2b6d54d6763036995ded0c30619932c84",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/78/24f9f9dc187b42ebb04ec42dc44fadbd827757",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/78/3f5553ddc40543b7cc2790423c1df2c4f4b12b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/78/db3fd56a259550fd8eff38302548147b541641",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/78/ddece64906da719a90fe95a897693a90164b80",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/79/8d38bb9ad34896a698105cc8250b5b3c487f59",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/79/c70f9abdba20c0b2eb1fc2de022eff1b500cdc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/79/e992343df2cf0c8020688eecb52cd67bb35f31",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7a/704387612e3d0f58ff23a90d266dfcb7664acb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7a/7436f87a1ce4d913f7c7315fc828f9b350b294",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7a/8bd50df0d99e14a29bc4d93039b27f3f4a3448",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7a/9d43c79e2381bdbe00812dd83323c79dc1a632",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7b/999432a4592b0e523e837514ccd5744ade34a6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7b/b7004ea5070b820d79319d82ccf421cc29c247",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7b/c3764efa4567646e9e1b0cf47c85da53240998",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7c/c8def6264558464b0932852ce845f0d7323493",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7e/24bf1352dca5306dbd45f6dcf81854eac421f0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/7f/2f3fcd84233e46c3d0f1f935ae41e199fceb82",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/80/322c061ea5d3d899a969bba887681169f91f73",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/80/3c73602cab13d3f7d9e25014c5def63fac72d9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/80/64a514ff75ba98d6021c9a4a0b3fa66719f558",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/80/904cc5be9f34a61284ddf1cc7953642dca23cc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/80/9eae472161a7ecf153301e8bbafb5114570781",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/81/3193d920c381f112be515689c617fd639c867b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/81/5a7227b49ea5d1c8c54de504d6956b2bd9c8b1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/81/9b91febd382c4da162942ef2735653738872e8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/82/d7e8a90e49ec943bde01155cdf54cf6f1d9706",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/84/7e383b8f19de167c890203bdb921a61c636589",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/84/d93322c202e49afdfec54e63a642276825610b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/85/d883e9a7688bd5c8add5bab855acf2e5f98a74",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/87/3a6132b21810c198a610fa69afe84318e68a41",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/87/97d0ccee1dbd9700a72ee0bc520bb2ee2703fb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/88/068b4be17bafd882155084c377f2c3578e9ed2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/88/afe5423b3ee090cb2e332e3c25aa42cfa8a524",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/88/e6f74be5872c5eaa2e9a97f66728f2863f1920",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/89/06fe06214bb1541815f6ff9dec88a3f024013f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8a/5815435196793341d9a7247ad4a24c977bc642",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8a/c234d4ece61d240c3940c0e75876ad9e9ca613",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8b/44adbff8c8bc3e74d3b3d25bd57951539722fa",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8b/bee9462dd963e439d668257ade3dec119f97fd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8c/16ae11bbfcd5f324ea8cf8d6559367a65035e2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8c/a0893782a8153de9c3e93be2f3a5436df56faa",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8d/a2d40fee8da2ec49a67eaeb015b5905b3267b6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8d/eb4fe894cb9629c6b03a8d480c7e87d8fca740",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8e/195eea0979922985e97222ecf75b9af0e2519c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8e/cd4e34086a6f1dc14997d4525b5a38b0883481",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8f/563d7e8f838d5a225c7d70936ff5ca28dbe870",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8f/57eb3ed442f12c8266f1e26610fc06ee5025b4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/8f/868fe1a0f402cc55abcebfc0552f397b15f6c9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/90/2f76ce072680d38f567a85a7dfe49c0c709fc1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/92/1505fbbd39ec5621e339c276f67bbd9c4538f6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/92/9160c1aa4e1072e3abf59fa4f42f6de090977b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/93/978a9a82bbafcf57bf83fc0e3ae12debb39bd3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/93/e070f634f45f0989a9375d20f59a99862f9862",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/94/21f08a89c78f9ba9a019cb6325e4e6f3a9ef63",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/94/e18d552cad182dc72b081bce2e2a269f715530",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/95/8e7f1e661cb674ba968402ce4eb6f246b2b8e0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/97/13d569d36ee1afc5a419c8183dae13554ba191",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/97/eac328469a96e689c171cd857cde0ea1c39363",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/98/816b2b5c780371741be3bb3d6a694d4fa56756",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/98/da0f86b2f593ba54e41f315af14ed7e0538d03",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9a/767ed741b618d6a7be39c478598066bd095ea0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9a/771bd301c9d19551b5e82c2ecddd84bf2d477a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9b/454665fde69ce59f45efe781fab9fb2542e1bc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9b/d57cee5c1a1d3f90946c4e34336aa1ec0b5b5d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9c/4300a2b101253db3206a1bb3fd00e8b6c1d748",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9c/4c0d061f0c10719a6a0858d0ded9e6ad10ae54",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9c/82e171e3fb91aa880c0bb9295963e04985bf19",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9d/33907b93aedb2c3070ef1bc42eb424ce5fd463",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9d/3dde0eb6e1a73fa540c8a74106e7fc46a6b864",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9d/54a7b8c4fefda49aa0156eaa893f25abc69819",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9e/86cb91534b607cb10ce772cfd8c7bfac97f874",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9e/c9e2b3522ec58d6313f26bbf289d8448f218f5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/9f/5cdc67c4c35769b759046482e6d1d8c147c344",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a0/ccd221b720beb97a43d5780496939fadc5045a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a1/2eefa97802b51c333647829e7bf61c76959701",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a2/e5d9d3b055d3a10d9d39665faaa4d21363b77d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a3/dc17e7f3008e4cd2e7a315b403c81b6b79cf46",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a3/e083dc5e66d50aee445cc0c5e65b1603bae023",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a4/c4f4f1dcbdc2c62ffe532e9075218f7174ee28",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a5/c1298aba9ddaa65d97ff1380e8b1a1397283a7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a7/8c0b2a3d54f8be258cc5c2abb86c5c6bcbc322",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a8/01fb7db6f5583e43fcbc7030f2d67000202a56",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a8/31e02b2ab8950ac873d4261e832819c7568a9f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/a8/8c5a934fd54f5a4275360ab96796d6d490ee5f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ab/9bf0678ee8073ef9a1d4cb2e758b0f37913e2b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ac/91097c7f653f481d0384535bf90b4f6a38e974",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ac/97a2d5c7f08111b1556f2f2b1957f6255c765a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ad/ae1639f3cd5ec0b680ae80677831ff5cb19217",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ae/51248cdc403b86195750d4ab32cfb812fd3398",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/af/df9b771529df59c3e6172cf64ba919a9c1b88a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b0/7c1fbb37d82c8a00bd60e70264e7792ebff81e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b0/8bed6c817b8ad8e4e5ced53c634063a8c01a62",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b0/911e28912d934308b6d0db1216782eb03e50bc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b1/406a2bf44ac0a3ff39144ac8c4b8ea71b44ec7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b1/72adc827e55ab4d7a5e94427d4b393759ee16d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b1/867c747e7f4f013b00d6d29a68db668a1a5580",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b2/416a85db16766a4a54005cdfececd3ec84bf07",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b2/452c09a0356556a7dd7327623638a237822ebd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b3/6a11ecaccf6c8b3fc3424bbafcb695e3fa2388",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b3/8dad48459d9527ca75ae88c4174040e725ce4b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b3/e33e7a6a847ebc67d197d584fbb1b008988054",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b5/a1a00c64009dd89cb0e1993d93d9b77a271c94",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b5/e2aa58577125bbcbc24c20fae34650a3d0ea58",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b6/396d5be441d56ecf48e2a51beb40f931e88d67",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b7/44eadafcdd10f62dc5c5988830bb0fb2f5c410",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b7/60e4dff710662d76a91fb8904212017701799a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b7/a7c65a20a52e7b05b1956040cd842a95603fe3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b7/bb977f51461da0873c0904c3f8ff02cd09527f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b7/dffe1962413316d0cb202cbc7f611ccb8bad62",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b7/e4a0fa4987a1da370e54bc770eebd963bfda93",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b8/77e591c5bde149896b4e66ee702d5c62278a4e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/b8/f17e4fecc9bfcc0dad4ca215f953fd3545c58e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ba/196e732ead9cfb8d5c67981c8361d87ccccc37",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ba/8fe923e3728da3b9d701fe38b1952e47b2b368",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ba/f10a6c93704be037859a7c440b48628762ed0b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bb/017e1fc74f6725cb752a85d4f90885ebc0b10e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bb/969c94df57b90f44a61b7d634cc8a7356d4e99",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bb/9f87d225171cc083384ec209992771783b4af3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bc/4675c6a984ab1573f94d620c4ba248c1b8baf1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bc/4e2b1ec0e000e82aec39ece01d0cd989e54b44",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bc/5946e8cc86d239ff94afb8b8a74e34a99246e1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bc/82cf0c43ff7b8ae8762f062fc9ffb5fce3442f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bc/852f263ea84ba32902f1bad53fcf5b411ac95f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bc/cb6a49352b54be21d4aa6381fb14d3f1bc15c1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bc/efdc3aa7e2cb94f131bb09d5ea84bec42628e7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bd/044d4e4276f77b173c3c3a8b2af7c4ff146bab",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/be/234cb387cc041dfd0488ce2e2be714502d3e6b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/be/c59ab3135c31b5ebf64c62ab734cb60a015e93",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bf/1faeb901245f4ee1db582adae32e7050e7d82e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/bf/8b0dce58c9e4dcdd22bf6a16960648aca955c1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c0/0a2bc1eab88f981ca0c2880df1ba28a8cab358",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c0/6413373d7ad0b3f96e745a02a89eb2e7a44d94",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c1/0ed3e1bf3c9748bf9905866d0878b837e78c90",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c1/8cb19fe33d079c8562dbff94291f677b79ce69",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c2/71f60be0c81ad15cce8f51a13d2ce175556e72",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c2/c535c56ebd115c50de6325d5565fb782e9a549",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c3/5981f9d6a28ec5ad3d3b592f576bf9615b1b6e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c4/1bba93e0ba72be79ba0ea0be9ba70b6402b3e5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c4/3761f46552e454e387d14739a397a4f95d8931",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c4/d09549e5c258a276abca589689515bd07c07f3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c5/904d4b3c26a342b6dfb488fe0f13765a39ce4d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c5/99c4daa94c687d061f7e4356f4ab046027d705",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c6/c7468900f39794054651bfb87254bf8f76fc43",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c7/0f961c957984c1ce2884249fb37314dfd8dcac",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c7/0fbe4e2e60defbba13d3c270ded5e9898e24fa",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c7/226b1839df0330fedb8403aa629d27706c8953",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c7/3b4dffb144cddd99b9a4f567de84456c8df09b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c7/6cd37f33ab718dd8d6b3f4d4a7e87e9f012650",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c7/be10b63a648c9ca5ff6610ab552e9e162e88ed",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c8/1b5f532445a59e947eebef612df28ffa07816e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/c9/3a7bdb2b255e9bb5e9013f7d5b74056e77c303",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ca/4a12fa9def8c21508152d2814c2d2f9d11804e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/cb/0947775ac896e4dbf04787b5da69c22618727c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/cb/bde0a0bd2b31147c58ea4bc117beb35f2c92c9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/cb/bfe99c2bbb4034f6ff31aa46cfafabf7950288",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/cd/07b2090ab7f0677393a3936257a11d7dcb0f6f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/cd/a42bcba997a8274758f2d995a5a3a052cf203d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/cd/aaa0f47291ffda2aa3606eea7d41659c13ca1a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ce/96ecc638b9ff05f4a50fca2f35ee50621e6914",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ce/e60d1828682a9b5b3924abda9620713133ea21",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d0/7905ab747a68c40db3a7587f27c599f8b26260",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d0/7d4714715bb23d40c72dc5e28b3ca9f21df6a1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d0/f5fdd7766aec7155b3eea36aaab795bf56e6f2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d1/5f13e168d14c30f7d6468bcb3a811eca390fa4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d3/3afe491e5394d01604e9743e2c2746237480af",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d3/89ddc99d00c94ecca186d4168cd9b1f8f03da5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d3/dea74d44b5b4d9460e99d229e77944432482d4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d4/49ce9ca73eb1a608f8c00a0eaa0b94304235b1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d4/7427c73975403c2e4e72a241acc3d16246f813",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d6/e8f8b8470e10eedd8baf29ca00ce4d357853f4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d7/4b2cbb1b74410897a10ae83ba1c0cb6db6a4b8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d8/154609a06be2593a9823929a81a99182d1bced",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/d8/a9588ab05548836d803ef97cb6c680d9bb18d3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/da/3ce04be6d02b5bd0dc72fa11edd50c28d48126",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/da/cddebbdef2e4a2ccae5029fa5327489346c398",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/db/09cd808805603c3c13f6134037dbd8649e0694",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/db/9b46bbc41b6f9d0e5f8434e1d1b82566621ac1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/dd/69a949c92140ff0616d2b76cba8b41b34710e1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/dd/e711a1739b97bedfa9206ccd4ecdf7106bf49e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/dd/fffc268732626609bc7d64a299c4a78648e4fa",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/de/83a7387856447bd974ad7360c0d72270fb87eb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/de/904e8e34a176e740d616df65fc821d643722dc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/de/a19ad74eabdcd581f406f7484c02b13eb835f4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/de/de6e7deb6d6d5585756dd3cc681fa92a842f69",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/df/d7fd99d2a8910c7443f0b461e963bde853f927",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e0/2d8a40eda865ac4025e8c255e98571f33061db",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e0/dac91bd9389a16253967f70025923d47e8af4d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e1/2a489f0fbde733368f3d022a7bb2a725390ed5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e1/e1bba95b4750174fadca52b5ebf139507b2fde",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e2/397b4ab8ef854b42da0361058ef8da9a321e9d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e3/0288c928d2455543aea4a06fd5c86376096639",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e3/0b959017a3c76531ae96b98a20e26b93effa01",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e3/1fd890a4f7d3a10fb049c7b6c9ef6f94cb5e99",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e3/5d940fa70f290c325670420b0094d3b6ef1c09",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e3/adc2811183a4a9fd37fa401f2919a147c115bc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e3/cf1a9f3b81988bcd8ba81bca809f84e6441304",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e4/02d36b79c4621b8db9c1e5d7e074a4ff92d3d3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e4/6b932a97de49cff0652f07749e79d7e5edc4a9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e4/f839dc74b1d4b34bdb663030f95edb6262e812",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e5/dd6c47f27778b142fc0d8864d9a11bf6edc756",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e6/185e33d7459747e42c1acbab416b49becd4d4d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e6/2f7ba9e6100a0b19d3e59bf672cbed15e7fc0f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e6/fb8b462da3762cb70c6e8042f8ae941d396b9c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e7/152215e3fbe06ab9fb9a256efba34823d1a135",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e7/191b91067b07f38e1c6b33c08655eed1bfd264",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e7/2c631f0b5fa42ce03282aa3c63b1ab8643a00d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e7/90436a5a8acec1e1c127fa3b67f48479b42024",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e8/1a7c7dc80b3efbe672a270a6da5d81d5f5132c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e8/28fa72534d8204a363749f99407330da7b1556",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e8/a48cd62d0ca4a0e3e56f0ca612cacac52b3d78",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e9/30d8f51e70ef5434c077fe77ee1565f8e03f9a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e9/37aafa3bda76b34b5424fc1b173da9b84007e0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e9/39c249a94d2678f83e25a93504a0dcbab37b0b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e9/4a9db904a4f77a988744bf2ffbb9cbb14aee79",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e9/97e5ccdc3b2ab78c5bc1cf49db74d97aec1c8d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e9/b617824ebd1d77078edd4dcd07ba5600cef2fe",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/e9/e1cffb84735ab939a11d69883e292e17b2b74e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/eb/6d17e3153a01cd5ff254b4583b8494814852e3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/eb/9a7a62750677d6729c1db47478d516185a8b7b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/eb/de1f5fcc75b1ffd73bd5d7ea4cd1092942021c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/eb/e72949d593657bcc5401e1d4acc4a05f196c04",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ec/0c1a669d53b72ca7f60a488b085e87eec8a11a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ec/63a0d00aa6d8f8d9ab04537f24c234e79c3f62",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ec/84fa4cdaf08614d47ef2b82d423d1a1e6732e7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ec/989c93c9df5b6d133766c7d3b0ca1e0cb4e240",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ed/148c8ff037cf0669fc6f1fcdbeb1c418714317",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ed/6adc6c9f8ff43369747d793801a0c9d8a3d19a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ed/e6b619007853f605ef0d2d8b936afbf58d8a8a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/ef/c926d4d2064a683d0dccf01f953ffba8f5bbc1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f0/e4fe6cf91deb451e58b6f7a68c08deb2c0ffd5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f0/eda8ea74eda5f5d4000c880ebd042bbc60f875",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f1/51ebe1784f84e5aa9b624b103c6d2c527f4562",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f1/7151e2f7fa7d1e0340538d07ccf9b1539e57e9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f1/f1a4d0ff0e82c2585c4ed840121ebdcff1bb81",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f2/061c3858e26cac816135c8d7870d9e3864dc90",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f2/26d7f1f06048b5d5abbe8adba435106c9ddd97",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/f4/200da6c1b8a12ceee31887a675c53ae99930f9",
+        "reason": "excluded_directory"
+      }
+    ],
+    "role_counts": {
+      "supporting": 1,
+      "entrypoint": 4,
+      "automation": 5,
+      "local_knowledge": 3,
+      "example": 4
+    },
+    "source_signature": "e8a60b45eeaa4aca6f179caee983bb2b70eaa03633d8818e4d51ae464918a824"
+  },
+  "pages": [
+    {
+      "slug": "overview",
+      "title": "BoI Wiki Local Source Overview",
+      "boi_id": "boi:public:100001:20260705231621:72f0d3",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md",
+      "source_count": 19,
+      "sha256": "88134d400a53066d470cfdfee238be10b58454af263203b384ccf326dbb6e6cc"
+    },
+    {
+      "slug": "local-second-brain",
+      "title": "Local Second Brain Lifecycle",
+      "boi_id": "boi:public:100001:20260705231621:43b8d8",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-43b8d8.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-43b8d8.md",
+      "source_count": 19,
+      "sha256": "0e50effaace2067a2600aa49f53a2172302ac3fb8a54fd172cf0019484867511"
+    },
+    {
+      "slug": "automation-and-verification",
+      "title": "Automation and Verification",
+      "boi_id": "boi:public:100001:20260705231621:d07b75",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-d07b75.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-d07b75.md",
+      "source_count": 19,
+      "sha256": "c796a2dd14d9c8c69d8a512338588de0e1f48e7125289bdc30615af0de505d56"
+    },
+    {
+      "slug": "source-map",
+      "title": "Source Map and Citations",
+      "boi_id": "boi:public:100001:20260705231621:789369",
+      "uri": "/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-789369.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-789369.md",
+      "source_count": 19,
+      "sha256": "a7cd3ce6a94092047ae5cd47429cbce9688142a11e20ed72e29b9c5e9e9902d5"
+    }
+  ],
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": []
+  },
+  "last_good": true
+}

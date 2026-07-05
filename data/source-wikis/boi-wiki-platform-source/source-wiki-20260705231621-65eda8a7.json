@@ -1,0 +1,2332 @@
+{
+  "ok": true,
+  "status": "generated",
+  "wiki_id": "boi-wiki-platform-source",
+  "job_id": "source-wiki-20260705231621-65eda8a7",
+  "title": "BoI Wiki Platform Source",
+  "generated_at": "2026-07-05T23:16:21+09:00",
+  "employee_id": "100001",
+  "source": {
+    "source_kind": "local_path",
+    "source_path": "/home/chokukil/boi-wiki",
+    "repo_url": "https://github.com/chokukil/boi-wiki",
+    "allowed_roots": [
+      "/home/chokukil/boi-wiki",
+      "/home/chokukil/boi-wiki-local",
+      "/home/chokukil/boi-wiki/data"
+    ],
+    "commit_sha": "d5054b8"
+  },
+  "inventory": {
+    "selected_count": 21,
+    "skipped_count": 13006,
+    "selected": [
+      {
+        "path": "README.md",
+        "size": 35542,
+        "sha256": "2082f0154222abeae09bc0d9a757bc7878c4df0eca4c734b5ea1a4e333c3698a",
+        "role": "entrypoint",
+        "headings": [
+          "BoI Wiki",
+          "목적",
+          "빠른 시작",
+          "Pilot 배포 모델",
+          "사내 Kafka / Langflow 연계",
+          "자동 게시/반영",
+          "Legacy NAS 문서",
+          "저장소 분리"
+        ],
+        "excerpt": "# BoI Wiki BoI Wiki는 OKF 기반의 업무 BoI 지식/런타임 시스템입니다. 공식 SOP가 있는 정형 업무뿐 아니라 반복 업무와 비정형 개인 업무도 업무 목적, 근거, 다음 행동, 완결 조건 중심으로 정리합니다. 이 저장소는 공유 런타임입니다. - BoI Wiki Web UI와 BoI API - Kafka Event Broker와 Event Router - API, Webhook, MCP, Langflow, Manual, Event Broker, BoI Writer action을 실행하는 Action Gateway - Event Contract, WorkflowDefinition, Action/Event Skill registry - agent가 사용할 BoI Wiki MCP 서버 - Harness acceptance, Source Wiki, Local Second Brain, promotion preview API/MCP - Langflow reference flow와 BoI custom component 연계 - OKF Markdown 원본 문서, action catalog, event catalog, runtime smoke test 개인 Local Private 작업은 별도 lightweight workspace 저장소를 사용합니다. ```text /home/chokukil/boi-wiki-local ``` `boi-wiki-local`은 Web 런타임이 아닙니다. 개인 PC에 두는 OKF Markdown workspace와 Codex/Claude/Cursor 하네스 파일 묶음입니다. 최종 운영 허브는 [link: BoI Wiki 종합 가이드 -> data/boi/public/boi-wiki-manual/guide/final-operator-guide.md]입니…"
+      },
+      {
+        "path": "action_gateway/app/main.py",
+        "size": 56211,
+        "sha256": "e8229747c981eda2ca4f90da2491b5301f46e187b602d12c562023560bca1620",
+        "role": "runtime",
+        "headings": [],
+        "excerpt": "from __future__ import annotations import asyncio import json import os import re import uuid from datetime import datetime, timedelta, timezone from pathlib import Path from typing import Any from urllib.parse import urlparse import httpx import yaml from fastapi import Depends, FastAPI, Header, HTTPException from mcp import ClientSession from mcp.client.sse import sse_client from pydantic import BaseModel, Field KST = timezone(timedelta(hours=9)) ACTION_CATALOG_ROOT = Path(os.getenv(\"ACTION_CATALOG_ROOT\", \"/data/action_catalog\")) ACTION_LOG_ROOT = Path(os.getenv(\"ACTION_LOG_ROOT\", \"/data/actions\")) BOI_RUNTIME_LOG_MAX_BYTES = int(os.getenv(\"BOI_RUNTIME_LOG_MAX_BYTES\", str(10 * 1024 * 1024)) or str(10 * 1024 * 1024)) BOI_RUNTIME_INDEX_ENABLED = os.getenv(\"BOI_RUNTIME_INDEX_ENABLED\", \"true\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"} SERVICE_TOKEN = os.getenv(\"SERVICE_TOKEN\", \"dev-se…"
+      },
+      {
+        "path": "boi_api/app/main.py",
+        "size": 1376055,
+        "sha256": "7507ac5460ceac0ffded730ab6bcddcfd1427d3fdf8ae9d661d8c787322a4484",
+        "role": "runtime",
+        "headings": [
+          "Deprecated alias kept for one release so older local-full-datalake env files",
+          "still surface the structured demo adapter instead of silently disappearing.",
+          "Router/status/composer/suggestions are user-facing Agent quality contracts.",
+          "The env names remain for older compose files/docs, but production policy is",
+          "intentionally not downgradeable: if the configured LLM cannot produce these",
+          "fields, the Agent is unhealthy rather than silently falling back to canned",
+          "copy or deterministic routing.",
+          "Status text is part of the user-facing Agent contract.  The env name is kept"
+        ],
+        "excerpt": "from __future__ import annotations import asyncio import ast import base64 import copy import csv import hashlib import hmac import json import math import mimetypes import os import queue import re import shutil import socket import ssl import subprocess import tempfile import threading import time import uuid import httpx from contextlib import contextmanager from datetime import date, datetime, timezone, timedelta from difflib import SequenceMatcher from html import escape as html_escape, unescape as html_unescape from pathlib import Path from typing import Any, Callable, Literal from urllib.parse import parse_qs, quote, urlencode, urlsplit, unquote from urllib import error as urllib_error, request as urllib_request import yaml from aiokafka import AIOKafkaProducer from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request from fastapi.responses import FileRe…"
+      },
+      {
+        "path": "boi_wiki_mcp/app/main.py",
+        "size": 205149,
+        "sha256": "d7d7ec1673187527db4007d6739ea37a7ea9abd39b3e53d682ee62fec36de999",
+        "role": "runtime",
+        "headings": [],
+        "excerpt": "import inspect import json import os from html import escape from typing import Any, Literal from urllib.parse import urlsplit import httpx from mcp.server.fastmcp import FastMCP try: from mcp.server.streamable_http import TransportSecuritySettings except Exception: # pragma: no cover - older mcp releases did not expose this. TransportSecuritySettings = None # type: ignore[assignment] from pydantic import BaseModel, Field, ValidationError from starlette.middleware.base import BaseHTTPMiddleware from starlette.requests import Request from starlette.responses import HTMLResponse from starlette.responses import JSONResponse BOI_API_URL = os.getenv(\"BOI_API_URL\", \"http://boi-api:8000\").rstrip(\"/\") SERVICE_TOKEN = os.getenv(\"SERVICE_TOKEN\", \"dev-service-token-change-me\") DEFAULT_EMPLOYEE_ID = os.getenv(\"DEFAULT_EMPLOYEE_ID\", \"100001\") ACTION_GATEWAY_URL = os.getenv(\"ACTION_GATEWAY_URL\", \"htt…"
+      },
+      {
+        "path": "data/action_catalog/actions.yaml",
+        "size": 46812,
+        "sha256": "d589144d84ad9d30e841a8c1b9152c0cd89aa3d2e2ce111798118b014db7064c",
+        "role": "catalog",
+        "headings": [],
+        "excerpt": "actions: - action_key: boi.materialize_event name_ko: Event를 BoI로 자산화 description: 업무 이벤트를 OKF 기반 BoI 문서로 생성하는 1급 BoI Writer Connector. Langflow/API/Webhook/MCP와 동등한 실행 대상이다. type: boi_materialize connector_kind: boi_writer execution_mode: gateway doc_ref: boi:public:actions:boi-writer:materialize-event enabled: true event_types: [\"*\"] order: 10 owner: AIX 확산 TF risk_level: low approval_required: false dry_run_default: false - action_key: langflow.meeting_writer.sample name_ko: Langflow 회의 BoI Writer Flow 호출 예시 description: Langflow Webhook Flow를 연결하는 1급 Connector 예시. flow_id를 넣고 enabled=true로 바꾸면 Event Router가 직접 호출한다. type: langflow_webhook connector_kind: langflow execution_mode: gateway doc_ref: boi:public:actions:langflow:meeting-writer-sample enabled: false event_types: [meeting.closed.v1] flow_id: ${payload.langflow_flow_id} owner: AIX 확산 TF risk_level: low approval_required: fal…"
+      },
+      {
+        "path": "data/boi/public/boi-wiki-manual/guide/final-operator-guide.md",
+        "size": 15689,
+        "sha256": "7f1760170ca5c9c93c00fc1e65cf5aa4e0c1b067706aecf5d8bf6ee39fc7a65f",
+        "role": "manual",
+        "headings": [
+          "Summary",
+          "Quick Links",
+          "Runtime Evidence",
+          "Final Architecture",
+          "Harness Acceptance",
+          "Inbox Permission",
+          "API Surface",
+          "MCP Surface"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1\" type: boi/manual title: BoI Wiki 종합 가이드 description: BoI Wiki 최종 운영 기준, Harness acceptance, Inbox 권한, MCP/API, Source Wiki, Local Second Brain, promotion, 배포 이관 흐름의 허브 문서 tags: [Manual, Guide, Harness, MCP, API, Inbox, SourceWiki, LocalSecondBrain, Promotion] timestamp: 2026-07-05T22:00:00+09:00 boi_id: boi:public:boi-wiki-manual:guide:final-operator-guide visibility: public classification: internal owner: AIX 확산 TF author: type: agent agent_id: codex acl_policy: acl:public status: reviewed source_refs: - type: external ref: https://revfactory.github.io/harness-paper/ - type: external ref: https://openwiki.sh/ - type: external ref: https://github.com/langchain-ai/openwiki - type: external ref: https://github.com/kdsz001/OpenWiki - type: repo ref: boi_api/app/main.py - type: repo ref: boi_wiki_mcp/app/main.py - type: local-template ref: b…"
+      },
+      {
+        "path": "data/boi/public/boi-wiki-manual/local/boi-wiki-local-integration.md",
+        "size": 7264,
+        "sha256": "9363e82318a4b793314b5d528859b58eb3ccfe2d3fb1ce93974b04a693ffdc1d",
+        "role": "manual",
+        "headings": [
+          "Summary",
+          "Local to Shared Boundary",
+          "Local에서 다루는 업무",
+          "Local Lifecycle",
+          "Local Second Brain Helpers",
+          "Source Wiki And OpenWiki",
+          "MCP 사용 기준",
+          "사용 예시"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1\" type: boi/manual title: BoI Wiki Local 연계 가이드 description: Local Private 업무 BoI를 shared BoI Wiki의 WorkflowDefinition, MCP, Local Second Brain, promotion 흐름과 연결하는 기준 tags: [BoIWiki, LocalPrivate, WorkBoI, WorkflowDefinition, MCP, LocalSecondBrain] timestamp: 2026-07-05T22:00:00+09:00 boi_id: boi:public:boi-wiki-manual:local:boi-wiki-local-integration visibility: public classification: internal owner: AIX 확산 TF author: type: agent agent_id: codex acl_policy: acl:public status: reviewed source_refs: - type: local-template ref: boi-wiki-local/README.md - type: local-template ref: boi-wiki-local/AGENTS.md review: reviewer: harness-curator review_status: reviewed --- # Summary BoI Wiki Local은 개인 PC에서 시작하는 Local Private 업무 BoI 작업공간이다. SOP 초안뿐 아니라 회의록, 임시 분석, 보고 초안, 반복 업무 패턴을 먼저 안전하게 정리하고, 사용자가 명시 승인한 경우에만 shared BoI Wiki로 promotion draft를 보낸다. …"
+      },
+      {
+        "path": "data/boi/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md",
+        "size": 30667,
+        "sha256": "ffe4dbba244724bbb26af6044c688d9b0825826ea90724ba8406ec35e9b61e7d",
+        "role": "manual",
+        "headings": [
+          "Summary",
+          "Endpoint",
+          "Authentication",
+          "Codex 등록",
+          "Claude Desktop 등록",
+          "Cursor 등록",
+          "Tools",
+          "Resources and Prompts"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1\" type: boi/manual title: BoI Wiki MCP 등록과 사용 description: agent가 BoI Wiki를 MCP server 하나로 검색, workflow 실행, action 탐색, source wiki 생성, memory review, promotion preview/게시하도록 등록하는 방법 tags: [Manual, MCP, Agent, BoIWiki, SourceWiki, Harness] timestamp: 2026-07-05T22:00:00+09:00 boi_id: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp visibility: public classification: internal owner: AIX 확산 TF author: type: agent agent_id: codex acl_policy: acl:public status: reviewed source_refs: - type: action-spec ref: boi:public:actions:mcp:boi-search-sample review: reviewer: tf-lead review_status: reviewed --- # Summary BoI Wiki MCP는 agent-facing 표준 인터페이스다. API를 직접 외우는 대신 MCP server를 등록하면 BoI 문서, OKF graph, workflow status, action catalog, source draft 저장, Source Wiki 생성, memory review, Team/Public promotion preview/submit을 같은 방식으로 사용할 수 있다. …"
+      },
+      {
+        "path": "data/boi/public/boi-wiki-manual/security/sso-and-permissions.md",
+        "size": 8217,
+        "sha256": "65f86c7f106808ad6db2ebeef20c3213f37ba2b2fecf1c51c8a65798efd8a50a",
+        "role": "manual",
+        "headings": [
+          "Summary",
+          "SK hynix SSO Baseline",
+          "Auth Modes",
+          "Permission Rules",
+          "Inbox Employee Visibility",
+          "HCP Role Mapping",
+          "Local SSO Development",
+          "MCP and Agent Use"
+        ],
+        "excerpt": "--- okf_version: \"0.1\" boi_profile_version: \"0.1\" type: boi/manual title: SSO and Permission Model description: SK hynix Keycloak/HCP SSO, local development auth, BoI Wiki ACL, Inbox 사번 권한, MCP, Langflow 권한 운영 기준 tags: [Manual, SSO, Keycloak, HCP, Authorization, Inbox, Langflow, MCP] timestamp: 2026-07-05T22:00:00+09:00 boi_id: boi:public:boi-wiki-manual:security:sso-and-permissions visibility: public classification: internal owner: AIX 확산 TF author: type: agent agent_id: codex acl_policy: acl:public status: reviewed source_refs: - type: repo ref: docker-compose.sso-dev.yml - type: repo ref: infra/keycloak/boi-dev-realm.json - type: external ref: https://github.com/YeonghyeonKO/langflow-hynix review: reviewer: tf-lead review_status: reviewed --- # Summary BoI Wiki의 운영 권한은 OKF 문서 ACL과 사용자 identity를 함께 본다. 개발 모드는 사번 selector를 유지하지만, SSO 모드에서는 Keycloak claim과 HCP 권한 응답이 source of truth다. S…"
+      },
+      {
+        "path": "data/event_catalog/event_types.yaml",
+        "size": 13648,
+        "sha256": "8494d7648e3ac0ca7a85224ae4f5536cf0c91d4fd4fe7f28a828f306e930d45c",
+        "role": "catalog",
+        "headings": [],
+        "excerpt": "event_types: - event_type: meeting.closed.v1 name_ko: 회의 종료 description: 회의가 종료되어 회의 요약, 결정사항, Action Item을 BoI로 정리해야 하는 시점 default_boi_type: boi/meeting default_flow_key: boi-meeting-writer-v0.1 default_visibility: private owner: AIX 확산 TF status: poc topic: boi.events wiki_usage: 회의 종료 후 Private BoI를 만들고, 공유 가치가 있으면 Team BoI draft로 승격 - event_type: action.created.v1 name_ko: Action Item 생성 description: 회의/보고/요청에서 담당자별 Action Item이 생성된 시점 default_boi_type: boi/action default_flow_key: boi-action-writer-v0.1 default_visibility: private owner: AIX 확산 TF status: poc topic: boi.events wiki_usage: 담당자 Private BoI로 Action 맥락을 정리하고 진행 상태를 추적 - event_type: report.requested.v1 name_ko: 보고 요청 description: 주간보고/경영진 보고/TF 현황 보고 초안이 필요한 시점 default_boi_type: boi/report default_flow_key: boi-report-draft-v0.1 default_visibility: private owner: AIX 확산 TF status: poc topic: boi.events wiki_usage: 권한 있는…"
+      },
+      {
+        "path": "data/events/README.md",
+        "size": 60,
+        "sha256": "4361163ff6dde31ac8536957765b12c81040ed23e4f12202311d1dd2981fbc9c",
+        "role": "supporting",
+        "headings": [
+          "Event stream logs are written here by BoI API at runtime."
+        ],
+        "excerpt": "# Event stream logs are written here by BoI API at runtime."
+      },
+      {
+        "path": "data/workflow_catalog/workflows.yaml",
+        "size": 7410,
+        "sha256": "ea8d242b6e88b2e341d1617510df18abc6f7ea128526bff2d679f41338de97aa",
+        "role": "catalog",
+        "headings": [],
+        "excerpt": "workflows: - workflow_definition_key: equipment-anomaly-response title: 설비 이상 대응 업무 흐름 description: 설비 알람 이벤트를 시작점으로 이상 감지, 원인 분석, 보전 가이드, 이상 조치를 Event Broker 중심으로 연결하는 업무 흐름 business_goal: 설비 이상 발생 시 원인과 조치 근거를 업무 BoI로 남기고 필요한 수동 조치와 업무 요청을 빠르게 연결한다. work_boi_outputs: - 설비 이상 감지 BoI - 원인 분석 BoI - 장비 보전 가이드 BoI - 이상 조치 결과 BoI completion_conditions: - 알람/Trend/Raw Data 근거가 확인된다. - 원인 분석 또는 보전 가이드 요청이 기록된다. - 필요한 수동 조치와 승인 요청이 완료 또는 보류 상태로 남는다. - 후속 Event 또는 완료 BoI가 생성된다. process_model: sop_based primary_sop_ref: boi:public:sop:equipment-abnormal-response evidence_requirements: - current_event - alarm_context - trend_history - raw_data - action_results stage_display: - stage_id: detect label: 이상 감지 work_boi: 설비 이상 감지 BoI evidence: Alarm, Trend 이상, Raw Data 요청 근거 - stage_id: analyze label: 원인 분석 work_boi: 원인 분석 BoI evidence: Trend History, 장비 이력, 품질 시스템 근거 - stage_id: guide label: 장비 보전 가이…"
+      },
+      {
+        "path": "event_adapter/app/main.py",
+        "size": 15888,
+        "sha256": "ebb5fd44d2fc4e40c3ba9cb2847258a4f35bb93a1714ac7322514de14522215c",
+        "role": "runtime",
+        "headings": [],
+        "excerpt": "from __future__ import annotations import asyncio import json import logging import os import signal import ssl from typing import Any import httpx from aiokafka import AIOKafkaConsumer, AIOKafkaProducer KAFKA_BOOTSTRAP = os.getenv(\"KAFKA_BOOTSTRAP\", \"kafka:9092\") KAFKA_MODE = os.getenv(\"KAFKA_MODE\", \"local\").strip().lower() KAFKA_SECURITY_PROTOCOL = os.getenv(\"KAFKA_SECURITY_PROTOCOL\", \"PLAINTEXT\") KAFKA_SASL_MECHANISM = os.getenv(\"KAFKA_SASL_MECHANISM\", \"\") KAFKA_SASL_USERNAME = os.getenv(\"KAFKA_SASL_USERNAME\", \"\") KAFKA_SASL_PASSWORD = os.getenv(\"KAFKA_SASL_PASSWORD\", \"\") KAFKA_SSL_CAFILE = os.getenv(\"KAFKA_SSL_CAFILE\", \"\") KAFKA_CLIENT_LOG_LEVEL = os.getenv(\"EVENT_ROUTER_AIOKAFKA_LOG_LEVEL\", \"CRITICAL\").upper() TOPIC = os.getenv(\"BOI_EVENTS_TOPIC\", \"boi.events\") AUDIT_TOPIC = os.getenv(\"BOI_AUDIT_TOPIC\", \"boi.audit\") DLQ_TOPIC = os.getenv(\"BOI_DLQ_TOPIC\", \"boi.dead-letter\") GROUP_ID…"
+      },
+      {
+        "path": "harness/README.md",
+        "size": 1274,
+        "sha256": "80ea82e728de3cd7609fd70fe82630d2c15ed335c717cfd8764bfbfe0bc0bca0",
+        "role": "harness",
+        "headings": [
+          "BoI Harness"
+        ],
+        "excerpt": "# BoI Harness This directory is the repo-side source for agent harness guidance. Use these documents before creating or changing curated BoI Wiki knowledge: - `harness-responsibility-matrix.md`: map Observation, Context, Control, Action, State, and Verification to BoI API/MCP/UI/runtime checks. - `web-draft-editing-guide.md`: source/body edits use preview, validation, apply, and auto-commit; Team/Public promotion uses user-confirmed validated publish. - `sop-authoring-harness.md`: create SOP packages with events, actions, citations, and OKF links. - `action-authoring-harness.md`: create executable API/Webhook/MCP/Langflow/manual/event-broker/BoI-writer action packages. - `data-lake-query-harness.md`: use optional Data Lake artifacts and structured demo sources through BoI API/MCP without making MinIO or PostgreSQL core dependencies. - `data-lake-artifact-harness.md`: store file evidence…"
+      },
+      {
+        "path": "scripts/check_boi_wiki_mcp.py",
+        "size": 45803,
+        "sha256": "9502cdee8ffe1e44abd4726f80a07281bba54b3114ed7321b79a71bef4dca734",
+        "role": "automation",
+        "headings": [
+          "!/usr/bin/env python3"
+        ],
+        "excerpt": "#!/usr/bin/env python3 from __future__ import annotations import argparse import asyncio import functools import json import os from pathlib import Path import sys from urllib.parse import urlencode from urllib import error as urllib_error import urllib.request as urllib_request ROOT = Path(__file__).resolve().parents[1] if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT)) from scripts.check_boi_agent_scenarios import ( ScenarioValidationError, load_scenarios as load_agent_scenarios, run_scenario as run_agent_scenario, validate_scenario_response as validate_agent_scenario_response, ) try: import httpx except Exception: # pragma: no cover - exercised by no-optional-deps test. httpx = None try: from jsonschema import validate except Exception: # pragma: no cover - exercised by no-optional-deps test. validate = None try: from mcp import ClientSession from mcp.client.streamable_http …"
+      },
+      {
+        "path": "scripts/check_runtime_git_guardrails.py",
+        "size": 2730,
+        "sha256": "88845814c34eb9701da52b69c982f86f0ad2fc52444398cad711e50bd0bbfe68",
+        "role": "automation",
+        "headings": [
+          "!/usr/bin/env python3"
+        ],
+        "excerpt": "#!/usr/bin/env python3 from __future__ import annotations import argparse import fnmatch import subprocess from pathlib import Path BLOCKED_PATTERNS = ( \"data/actions/*\", \"data/private-trash/*\", \"data/events/*.jsonl\", \"data/boi/private/*/inbox-reports/*\", \"data/boi/private/*/boi-private-*.md\", \"data/boi/private/*/**/boi-private-*.md\", \"data/boi/team/*/boi-team-*.md\", \"data/boi/public/boi-public-*.md\", ) def staged_paths(root: Path) -> list[str]: result = subprocess.run( [\"git\", \"-C\", str(root), \"diff\", \"--cached\", \"--name-only\", \"--diff-filter=ACMRT\"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, ) return [line.strip() for line in result.stdout.splitlines() if line.strip()] def is_blocked_runtime_path(path: str) -> bool: normalized = path.replace(\"\\\\\", \"/\") return any(fnmatch.fnmatch(normalized, pattern) for pattern in BLOCKED_PATTERNS) def file_size(root: Path…"
+      },
+      {
+        "path": "scripts/okf_lint.py",
+        "size": 1690,
+        "sha256": "0009077b474857a04e035a99e7ad87647599a6046bd5e0d1163e781b617430bc",
+        "role": "automation",
+        "headings": [
+          "!/usr/bin/env python3"
+        ],
+        "excerpt": "#!/usr/bin/env python3 from __future__ import annotations import argparse import sys from pathlib import Path ROOT = Path(__file__).resolve().parents[1] if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT)) from boi_api.app.okf import lint_data_root def main() -> int: parser = argparse.ArgumentParser(description=\"Lint OKF/BoI markdown and materialized log payloads.\") parser.add_argument(\"--root\", default=\"data\", help=\"Data root containing boi/, events/, and actions/ directories.\") parser.add_argument(\"--include-logs\", action=\"store_true\", help=\"Also validate materialized BoI payloads in JSONL logs.\") parser.add_argument(\"--strict-links\", action=\"store_true\", help=\"Fail when an internal OKF markdown link cannot be resolved.\") parser.add_argument(\"--strict-media\", action=\"store_true\", help=\"Fail when local markdown images are missing manifest/hash validation.\") args = parser.parse_a…"
+      },
+      {
+        "path": "skills/boi-wiki-agent/SKILL.md",
+        "size": 10866,
+        "sha256": "1aeeb7efb87487ebb9027d6af48e4b55c609dd87613a6d1c20e5dc2f88ba8c47",
+        "role": "supporting",
+        "headings": [
+          "BoI Wiki Agent",
+          "Startup",
+          "Operating Rules",
+          "SOP Work",
+          "Action Work",
+          "Agent / Search Work",
+          "Validation"
+        ],
+        "excerpt": "--- name: boi-wiki-agent description: Use when working on BoI Wiki SOPs, OKF documents, action specs, MCP integration, Langflow BoI flows, workflow runtime, validated edits, or BoI Wiki validation. This skill bootstraps Codex into BoI Wiki MCP and harness resources instead of duplicating the full domain rules. --- # BoI Wiki Agent Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, action catalog entries, Langflow BoI flows, MCP tools/resources/prompts, or validated edits. ## Startup 1. Prefer BoI Wiki MCP if available. - MCP URL: `http://localhost:8200/mcp` - Smoke: `python scripts/check_boi_wiki_mcp.py` - Use `ontology_search` first when the user asks broad domain/search questions across SOP/Event/Action/Dictionary/runtime evidence. - Use `boi_agent_chat` when the user asks a page-aware question or wants recommendations from current context. - Use `boi_search…"
+      },
+      {
+        "path": "tests/test_boi_wiki_mcp.py",
+        "size": 131601,
+        "sha256": "4f5d4ea2cd7c1e8dfa46bfc81f5e2c460340742d3b5bdba0c7ec8c6c949e481c",
+        "role": "test",
+        "headings": [],
+        "excerpt": "from __future__ import annotations import argparse import asyncio import builtins import importlib import importlib.util import json from pathlib import Path import sys from fastapi.testclient import TestClient from jsonschema import validate import pytest @pytest.fixture() def mcp_module(monkeypatch): monkeypatch.setenv(\"SERVICE_TOKEN\", \"test-service-token\") monkeypatch.setenv(\"DEFAULT_EMPLOYEE_ID\", \"100001\") sys.modules.pop(\"boi_wiki_mcp.app.main\", None) return importlib.import_module(\"boi_wiki_mcp.app.main\") def test_boi_wiki_mcp_health(mcp_module): client = TestClient(mcp_module.app) response = client.get(\"/health\", headers={\"host\": \"boi-wiki-mcp.example:28200\"}) assert response.status_code == 200 body = response.json() assert body[\"service\"] == \"boi-wiki-mcp\" assert body[\"mcp_endpoint\"] == \"http://boi-wiki-mcp.example:28200/mcp\" assert body[\"bridge_endpoint\"] == \"http://boi-wiki-mc…"
+      },
+      {
+        "path": "tests/test_seed_documents.py",
+        "size": 5792,
+        "sha256": "6689b360cbd313847a007730065f5053bd0d5c5fdf2af72176cfc529ccd33b9c",
+        "role": "test",
+        "headings": [],
+        "excerpt": "from __future__ import annotations from pathlib import Path def test_cascade_roadmap_seed_boi_exists_for_executive_storyline(): path = Path(\"data/boi/team/aix-tf/team-aix-tf-cascade-roadmap.md\") text = path.read_text(encoding=\"utf-8\") assert \"TM → CEO → AIX 확산 TF\" in text assert \"1인 1 Agent를 조직의 지식으로 축적하는 업무 맥락 자산화 PoC\" in text assert \"2개월 PoC\" in text assert \"2026 H2\" in text assert \"2027\" in text assert \"2028+\" in text assert \"fallback\" not in text.lower() def test_ppt_capture_plan_document_lists_real_poc_screens(): path = Path(\"docs/PPT_CAPTURE_PLAN.md\") text = path.read_text(encoding=\"utf-8\") assert \"BoI Wiki 홈\" in text assert \"Event Type Catalog\" in text assert \"Event Stream\" in text assert \"Action Catalog\" in text assert \"Langflow\" in text assert \"Kafka UI\" in text assert \"실제 화면 캡처\" in text def test_boi_wiki_manual_and_agent_skill_cover_mcp_actions_langflow_and_media(): manual_roo…"
+      },
+      {
+        "path": "tests/test_source_wiki_hardening.py",
+        "size": 6124,
+        "sha256": "1354a156f54ba17b472f400a50baed98d59e726b66cab6591f8b57d4cdedf382",
+        "role": "test",
+        "headings": [],
+        "excerpt": "from __future__ import annotations from pathlib import Path from fastapi.testclient import TestClient def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_path, monkeypatch): source_root = tmp_path / \"local-source\" source_root.mkdir() (source_root / \"README.md\").write_text(\"# Local Source\\n\\nUse local private notes safely.\", encoding=\"utf-8\") (source_root / \"AGENTS.md\").write_text( \"# Agent Rules\\n\\nDo not submit raw local notes remotely.\\n\\n[link: docs -> missing.md]\\n\\n[image: sample -> evidence/sample.png]\", encoding=\"utf-8\", ) scripts = source_root / \"scripts\" scripts.mkdir() (scripts / \"check.sh\").write_text(\"#!/usr/bin/env sh\\nprintf 'ok\\\\n'\\n\", encoding=\"utf-8\") monkeypatch.setenv(\"SOURCE_WIKI_ALLOWED_ROOTS\", str(source_root)) boi_app_module.SOURCE_WIKI_ROOT = tmp_path / \"source-wikis\" client = TestClient(boi_app_module.app) payload = { \"source_path\": str…"
+      }
+    ],
+    "skipped": [
+      {
+        "path": ".env",
+        "reason": "not_included"
+      },
+      {
+        "path": ".env.example",
+        "reason": "not_included"
+      },
+      {
+        "path": ".env.local-full-datalake.example",
+        "reason": "not_included"
+      },
+      {
+        "path": ".env.local-full-legacy-db-demo.example",
+        "reason": "not_included"
+      },
+      {
+        "path": ".env.local-full.example",
+        "reason": "not_included"
+      },
+      {
+        "path": ".env.pilot-external.example",
+        "reason": "not_included"
+      },
+      {
+        "path": ".git/COMMIT_EDITMSG",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/FETCH_HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/MERGE_RR",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/ORIG_HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/config",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/description",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/applypatch-msg.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/commit-msg.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/fsmonitor-watchman.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/post-update.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-applypatch.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-commit.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-merge-commit.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-push.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-rebase.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/pre-receive.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/prepare-commit-msg.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/push-to-checkout.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/hooks/update.sample",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/index",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/info/exclude",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/HEAD",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/agent-rbac-guardrail",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/boi-agent-followups",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/boi-agent-ontology",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/dictionary-bulk-curation-harness",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/native-boi-agent",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/ontology-dictionary-scale",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/runtime-log-stability",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/sop-registration-assetization-ux",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/universal-simulator-agent",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/codex/validated-edit-apply",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/feature/end-to-end-boi-poc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/heads/main",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/agent-rbac-guardrail",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/boi-agent-fast-first",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/boi-agent-followups",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/boi-agent-ontology",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/dictionary-bulk-curation-harness",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/ontology-dictionary-scale",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/runtime-log-stability",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/sop-registration-assetization-ux",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/codex/validated-edit-apply",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/logs/refs/remotes/origin/main",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/0672a18968dc5561b6c013f14b5ba98c19eb41",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/0a0961ae692e0e039b4521a830e3c3a58499a4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/13749f51d482e680f80315de7fbecf3a906060",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/1426010f79c8e9f42385ce7bb80d6319533918",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/1d31ea1c9b1f06e2a733944bafa1d2c4a1e19f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/1f56b09dd32ab3c01dd39c577bf72af49bd07e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/29397ad8beb846821df417c264f9e9c3038193",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/2d7922a9d83fb7eede570f9e74c5f42d8012fd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/2ff20723f0032098913c13ea2c2e0c8a6940f9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/38b2f1c00567f84c4e9bcc550fa7e7fe43c83b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/4202a0b07b4a680e4206748b957a6f75a442b3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/424f9929a7d6032a4fda6a5cf0f999398422f0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/584df048257c5f0f2f43df97bc2fdd9a16fece",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/5be710a91f40c2d586acb2e3be91334aa8b9da",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/669cb463e268556f68dfaf233072c1aabfa660",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/67c3e376b04c864dd05c8e95795885a0f4059c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/8741d06795f21ce91da155b06d2bec49e6918e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/8a22d790a1dcc3706a78dc6e81f10a25818968",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/96d2972f10f4e9c4a777f26b787caf51e0d62f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/a14903ceb5143ce8bdf658776d8fa7ff11020c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/abad434b5f05bc61c5a07b85d022f8dffca93b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/ba1da48f809629a29f5ec0b0cd33698dcf7fbc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/be5ae113a608d144b92ad2aa085f11e7fec1be",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/c2dd73b030903c972b453c4015b41bb7c8e255",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/c861b4908ae29653975f19fec29ca589c66d18",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/ceab21cce9d08f8aa71dbf06d9f89b726a88a1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/df9e3d03936e94a3a4003b9d303e40630fe1a7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/dfc52a6cf015c6dba1a9614e5fb381632ed8c3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/e529f80561bda09faf0d783a6504beb13e47e7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/e5790b3a0257ff19fb059c502e6b75f4d5f8c3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/e835586dea30136dafc6c302357439bfd475c2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/f1b7d345366ac6df23bff7d26374a1a830fcb4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/00/fc018998403d55bc71243721a5bf3b4208d24f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/033f5e1780eba1172243e661353bbb04d5cbf2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/09f85cc0b5cd2f4c0237351972d4ce3b3603ad",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/2afa766ba5725968c3898b393a375a27bc99da",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/306c43baf156dd0b6a4fe2688c99f3b8b2a949",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/40fd505293e43dadf0252c7effd6fcd5893984",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/44889b3c18f1e5495cca1f08d8b50bc989e12d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/4b65183143dcb03daa7e2759e44a7f4cdc3132",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/665e8f935017debfafe25edfb87ca4fd30d88a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/7440df9bc578b741d2ded90e0aca0a9214b680",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/7564bfb5da40ec788c897ab09fb79ab60490f8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/809f4acc545e74847cd068840788afc7f59f99",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/8dd1fd4da9250f3728329b832031a052bf2481",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/920ffadc134fdaabe20d6a813d3e66f7a33171",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/9280fccc7e4386319195b9c9e1d069f15683d8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/974fd0a4ec3128851f4c3614f3a8408cbdf1ad",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/adfc4798f08788b70714d648d874d42b6e9bc1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/adfd2584fbd0b5a6e22fdda5c9cc4b5d970dc0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/b5703e2d373276310a3e7d05ccb11ddf97abb5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/b73214f3720f3b1e64d65efa6126af3c1afb91",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/bf060b8876671157d85e79e239263f1fef8982",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/d7480d55a1d3961aa570548f788fc205491cee",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/de60df4938d0aa3e8680bedd761f472c58a831",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/e977f2bbcdc7e5dba0cb6b2b670f5bbe319acc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/f362a926b4b35e1c2ad88aad03aec85b215182",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/f964fe13630e2b6577e878966cc55e8cb6c08f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/01/ff89ae171ac5f746f130ef360fd93c277567a9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/14153e2301953b42b9af33fbd1472e2ba2f34d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/15c6351e969d38e277038483a98ed2596984f1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/17035fc8090c917b18ca86e151c8eaebfd3fd7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/230cc3aa20616016cc805c2e52e348f4671d04",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/2845a6e4f67871e83ea7cc1a3ce01f970249a3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/2ad31cf569ce1cde368c9be7315d2a7afc8539",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/2e7572db6de9355217acb927dc642123d1b031",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/33b8820100c8409e0e2d94607a60f841112f35",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/39b1238f680c141c15da5bfd4e0c17ca565ada",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/3a985af3beb7d4993431bae7e8c356daf66f08",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/3d9a675535dbb57a2894900e64a51e4468ff84",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/4384f26194c217c78a9e25209820960593396c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/4b7bc5f6702b8856d3b8516f23c15a431e3412",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/55ad0e82209ddb665f4c33a81930b572e1cdd3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/666c2bef6b05858dc3f9b2acbe8f6a07652dde",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/7878faf5ad57f5c7a97875d925a6c0d883f468",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/7bbe72e3d1a142a38d20b3db2bfe8dd74b98f2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/802830611b0f13cb7f47699536580a7791e12a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/8d1c46201c4f7cf59949c41dadea19170121bf",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/9f74196466ab3d110a6f347e1b809a4c77b924",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/a56afb637c4c27bef4b3093b7ad4f24c83b25f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/a78af3ec012ded60257920379861178678d39d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/b1360b0fe5cc5de1525a18a8bda518642b56d6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/b18d0951cce5da653b27d93383c3f44d31603d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/b60f92b122390d5f60a000700d70a9bc462f13",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/b68927392fce6d692cde13d996de0d8ca9d938",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/c8a89638ddd61c34071f8e49e21e637d212ea1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/cd8fc921804e5513ae6a3e56cb8f836dbcb424",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/cdb32662339a4d0224cd162a2cadc0d7228fe6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/d61944306dc84b25109a0d7e6978376155150e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/d8e599fe37591460c938b00e16dabc744954e7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/02/e6e324dc8e5497a833efe38f7aa26817dd18ec",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/0467bb071d61ec9440c0c9803816b636f45246",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/2ab242c5ef8ee9f479c1e12b13241516ba39a2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/300c400f0cfff6ff7cd73c89a4f247c9b7acf9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/3a0e80eed28d77e74d51323df4a4bcf138910d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/4090d79f23f5d13a39172a7783920d6d246c28",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/42c4fb535013ea836c9b8b59b74bd3647dd883",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/46551e5b55f53b1003507118bf364836fa2479",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/4bd301921ca690e4d150cdae65be7f4fc5e7fb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/5024aa49771461bef7db38484ee19f25c33524",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/514484972bcc3ae124b27867c69281daae51de",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/62dcf46e75cdca3dda87f746e072fe9d7d575b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/82db39db1d457ea10ee401f774e52ddac959e7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/8c2f4580908c6596d9b2ac06ce43fbeedd0c2e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/9c0f0713eb4765be0549d3c2e6d09b718195bc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/9e989bebfeb53e9bfbedc646c5f4612e855108",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/a33bd23424283a23ea629edeb591917c865dfb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/a98df85d8ffe9909235432d361df61dd32aa28",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/ab6f4fa12ae5260c1b79d45150d475db922028",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/ad62d595ae190d1a725fccfeb5b9d47ef1cf4f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/b40678590b081ea637a805d1848db13922575d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/b731609c399753a7723e07787db755e6fde450",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/ba50f279c55fcc670a5c7caa2324df9a8aca8d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/bb09dd02fd8bebf5077512253127f647dc23e4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/c24e7e0cff54e91ac6c0b2d38c1efc861ac931",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/c2b6c6d4a579458dd21638ce325d238ada33db",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/c4992e768e7671e65f0afc1c4b2c57071ce9e9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/c6921633d7c3f2cfea0f93cc140697d596f476",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/cf89b869f3b4c63f783c2b9699b0b0cf5e65cc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/d41cb518323cb20d1638d3ee61aca69b9eadb5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/e3ea6834d71981abfcdc828a19fa6967113906",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/e62e329928a0a2e0fc6a430b2491f7b1db9185",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/e8a04d8924f7ff9f2156338ad441cfaa64e1c8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/f1e9b40f9a16e1632a5d1bccfda91e904e82f0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/03/f22612cb1ee4eacf128b9d0855ecc1aa6f2062",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/0196e502c232463d49648daab9c2c0ba9e699d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/06c430e2b9723adace197bd3064d0a82f90ad8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/0d049a36146d0a3af689e4c15a376282023898",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/0d94304dcb1ca4ff45488346bd074ab230cd8b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/0e939717c70d4bdf8a3a38af9cdffe74a304de",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/0e9f9d6349b21f98a9780130d3eeacac717c61",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/1a92372848769da9a68a6355362168c78f7934",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/290c6441b95dc187b710936978c8b7098081f9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/46f2bee6f46814b919db785972fcdac9391c0a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/4d4a277ca885445f606c924ccdbc088f73ea17",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/52565017235c4c80ffb81bb10c6552b1d6a410",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/56bbc0859fbc64548c8a533185c975128a79dd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/5e199207408cd100d30ec8d9dcf36e982f2c85",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/60c8a68fd1d69a37950fb266be37f43f48c9a3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/66a5c8a3287fd330129d889e6abddd1f32d78a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/73d81b53e8dd81e46753a7a25d66a25b9d66fc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/7d529fc425cd4180e74d31586b6c9b5ea076f6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/afe3e711337e411f978c4d29ee544bad1e0f21",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/bc27676a32889e0334ab129a1fc400c2c317e0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/e082bc84e2581882f3bf54bd14592dd957a417",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/f395ed97c8d16699786e41c29ea0ed3c0bf1a2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/f78a34033f45a0f3074eaeeefafa2042267a32",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/04/fcc3c20c18b5c8328dcb1ae233cdab0a8df503",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/06c5ec87cded3d4174c33df4dffb9b723a9483",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/0cbc059f4363ab1e7e11af32e66338c32474db",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/2a2dbca7457ccba02ca8a079b4059292203bc6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/2c99ec693cdbc36766dc5f03bcaf5b9a494cb7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/2dc3cc5d404ba82c4f90e266d30291533d5ff2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/306829a0e650975852c0c8712a5aeac93330cf",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/4dd16b3dc1f7bec334fb84e127d417f5dffa72",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/7b5a98f7e609d5421fdaad508ce22cdb51cfd3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/817743e202197650560d183879a797d3d1ad77",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/90dccee8562c59c784c5247f7b45c98c01c4af",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/9cf4e2c114ab81369fb95d82e52dd8d33d41ad",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/9d4902a4bb17ea4a848ca216d3fc14e72448da",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/9f093faa9f4fb7f00ba5c5ba2238f77d6d518b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/c2b2cbb2539f1191b60069671068d403244f6b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/d28ee6d1ff9d08d1458f994b16ce5fa116ba34",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/d496fb1a6c03049918762d8202f93002a2e1bc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/d7596681989de1c72e79f3c0594b2004545d89",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/d89a1b532d3c72371cc46f54ebed578afd661e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/dffb6dab60a72ab50b09da7fe80828d9b600bc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/eb5c5f2d93bcbc127c1698c10101db4343c3c0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/f5fbaf41f6ef10ff58cd75f1bf20eef35a6670",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/f788f71d8ee9d09bd44f724dc1b21e69a3378c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/05/f819ac69163121474b832d40d38399ad39f59f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/106e144a6bd208e70ea3ca2a92eddcca591164",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/10f2d9ab717a38309ac470c92901c2aa29075a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/1cfbb1dc5f3618df5becca16bf0b2bec371acd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/1df4a9f5935c577b1ee4503bb61286e1b922a6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/22c72e460ad0922f2f4d37f52666eef3e7518f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/23f8b50d85702d17dd56cce6b7d6c909a8e334",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/287dbfbe6866d9dd1d4ef157b32134a4433760",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/2fb4ac97db07d742147a61d5a617f0e5b60aee",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/31e2a5d47a58433bb9aa00bf2603351db51f5c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/33837de97f5b7a874d4be16cad5334f5c8ce26",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/396f1f29801d28d80a8c5f05f2c36b47f7ff89",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/3bd72044e4c64dc06e3c27cbcee11a3a01d6b0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/3dac90b6c62e95556ce2a8b3cafe34b6eeb873",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/4860ce9769f04bd27d848617453322463da566",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/58df893a9ab57af51f51d9e34b7f5db8a12ebf",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/5b2218ab3f310c28e1273f19a0d7d44898f08b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/63dfc6a7b2d2a3a241c1f6fc7302f7acda9f90",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/681dce2255f05d100780b4345c32158c47eda4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/6b4070400aed5725b27d57361855ee1b2ea223",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/6fc5c4a3fe1ed0f7f8e9acb89fba95556f9ee1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/77d4ebade20813c499969f018ed06c6071ba6f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/79a42425f07bf4e3c444531a2ee3dc27182b60",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/83b3327bf14bec3e7aefeb7b4174b928246b82",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/84bf16ea0968d18649924038bdce37ec329f5b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/95a9da46a29fc639c483e3a6d72b221bd49bf1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/ab4c469ba84999b6cdf96bc470ba33f9552752",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/aeebfb46cf151fbbb6920ebb8a71b82c6f81c4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/b770fe2a8c97fe3382bb986abe9f5b2e9789a9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/cbbd456bb7605a456ae623b4522898c02301c1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/d3dee0d5ef937a10902f131701c600434e0a7e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/d59bb26f3f3619e27b163899c6ca71e09eeec6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/e801fc78113e771c450e5a664cb273cf7e1434",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/ee6476aa6bbb97c5fc023e9e93e30f52c4056c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/06/f34175959047b8f8bc5825ea9efae4980defb1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/0b818613c4e4908b466b72946aa5ff9dfd15ce",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/0fc0673096a88b0fe5c6ad31088465abbf4d63",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/10ebb3e628c51570fd47d84f35be2f02e5f964",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/382bc9cde883a3b958c521153bc85db96b55c4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/3add5b45d6ec78858f596232679889fd9da9cd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/4124dd5012c0a4b9e13a79d74fc10e12120505",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/4fcc15452fe2a2130f6c9761691d64fbd23b00",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/538f1d4fb0d075cbd81165873255cbab9da108",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/65f0a419923301947ad56fe35c2eac7cb6a97a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/7a68cc1b2650c72c9606e53928c9bc2a76117b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/7f6ef3546f1d9e058391ebe51962fc5cafb9e6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/ac99ba5a823adbf580efcbb06e6294fedf55cd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/b4f8377a86bc7fe40e0d31ae048ae7b3129f1b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/b70dd032fe2cee6f47094f1a1ff998a1f4ebec",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/c132e4db705113d41d623a4167f464c78a74a9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/ce69810b0c51b164e38715f843976d275ad3fa",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/ea2c7edc6717a75f57f6797d239247c1167006",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/07/f10d832a703f7677380a7efc2c5a04505a3b6e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/064cb6c0069b20ca022cdb9301375ddc340e89",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/07359065dd7225e02fc417f01bbb8ee3f59d91",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/0c85c51bbdb111e28276b15c49f83a36cc04dd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/0ef28f9673d79877847517e72fe09c261abe80",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/1dd467b3d08f08ec176f6e3741764361d336f5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/1f7d9fe8f1e7d015c2d865f90cb9440d32d67b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/3bfcf10f7e333054d4cd3179d3ea32958f568c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/4d842f611e87434fe887d171da40f996bcb66d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/5a2309d9863568bcc0d03c352b9f43ca9fb079",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/5c6166ee7b4e047331d7850dd0e6debc826db6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/5db7ccbc794b9172440fcf4c89a3fa99be4f2e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/6326277c59d0bb5d2f01b03ccc9e2c12f476d2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/691433af8067dc405892a8818b2489ce362337",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/6f43560a940ff2a9ebfc834ce0fb347982327b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/746230de5ead758089e9042bfaac34fb763068",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/78e3657e2ae2cb3fd2e45092e2c5dc737fbb30",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/7a3591bcdf55030622a30decaf458c0b89f7cf",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/7e81ba474586169afdd52972326b8d366b0dd4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/aa38cbe964af469196d5c7e06f381b25afb9d4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/abc6edd9142c55bbab5f6256347aeaf8f0bfd9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/b4a5e9c137f3ee6d672d3c5d51938169ea0916",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/ba0a777194bf97195bd36c79ac975d258d8f95",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/c1457ff5702c85ada16f864168a048e6ddd832",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/c2c5eecadf13870c292547aa5e4e9735fe1a3d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/c436d17158c9da20e6127b4894cc0ee9948d10",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/c5a63927cbce308d6543e6a79744b0780e778b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/c908cd03eb4c59cb1743eb2c20fc67c7376bd3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/e4713d00446ab198baf188984860b54b640be6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/f1badd5ee64de0f9c06bc852d33e4b180acce3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/08/faae78f5d30a5f984416327b01da2c036f99bf",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/04f2e82a690cae80bae9defba5d4eb6d76918c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/05dca8dd5c41d25b612bbdef1940a3b5b3738c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/11c29dc08116148489b8012529e083cf6243ea",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/161982c3bd2726ac80ec1ce06c07f29f22ab08",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/1dfef9255afc9c90af6893a1886b10fd6df75e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/1f84e97adb150fbb2765173bf4b988bdd61344",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/2c9235639e6e96f5a9f9866814f96d8d5fe5b7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/367eccb72d506c1d6f6d084fcfd2a1354e22c9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/384e9fd4e4089d9dd27ea03432878506258b4e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/399f1de2c6deb4a839842675d6d01a5d5cb632",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/3b9d04f3ed78da68c7b2012dcfb98fb6d1f068",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/4b267f0d8427007d68a7cac1fb6780b45d4247",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/4bae0c7647a96018362ae7d24baa1c00da4264",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/4d9b07847a073a4d6d5d74aca5fad4166e847a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/4ed5b3f5119ca2b17b5d9d25c3fb7a21d641e4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/5eb6b919a88d7d1c90616496bc923dda193100",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/66b7ec8ab221bc76be9094cad37015c27ff24a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/6c7e80240c66e6469e54d42338f096ebca155b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/760748af8196034ec9968bc676eb40a14c5678",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/9c207beb30e839fc6f6859cee5097cdbb1fbd8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/a6832ee0e9c99703a0af620c46d89e3563aa84",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/a774d924929efd65c4c621d993b93aefa92be8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/b12d04740c87c87a5b26c6ae401f501675707c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/b1ef2b4163ba575a7c5f8c2fb8d9ad6778eee9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/b27a13d2cab44d7e018aaf610990a63dd5b766",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/b57353c9084f0790954af9f541db659174372e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/b70f662ee14fa857f58c778f063b78ecfc06d1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/cf070c99174c874a3b603185a59072ce71f25d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/e79f0908e0bec791a71fbf1dd33a7e9d3dd896",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/e882670c0a877560533817e3cdfc43efe36fab",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/f4cd162c39fd79ae4966ac85418966f7b9184b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/09/f50a754f7c59d13509c4b7774538d93bd428cb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/03beadd62da78a127300e0ec10f99cc4c00da3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/03fed9cb5a94b8f1e5af494fa329fbf8f064cd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/180917c3092139bdea22ef445ee2b0775460d7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/1aec1364e557bd80a3ab7b97fabff575278c8d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/1e54d23ba7d3ca18e430678a8576d909947755",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/281dbb2da1386b70a0a54d5f5147ba85f65f7f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/2f56ffa8036c2d3ee6a101c7a6676164d1985f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/3167c679923239de1596b9cca9090587e87ddb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/3296189a84f4732c840c34a5b3e4df139382b1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/37ae241884a364d7d7cbcf2e4802389446dee2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/4f3d6c841bf7d3398a736e0be30fb31c8c88fb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/63edf9084fd8286dc6da6a303e69b74d5f58d9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/64ef6a670d6c040ad845ee16f4475297910f01",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/6c8ab7dc8f86e0cdfc19787249bcf6337732d1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/78c83ff757727cf478c67191ad190c493d165d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/94e8e418707c508df5b3b89e9d73d4c2d29e38",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/96614bfb2c080d63a7367b4eef7a546f9b21b1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/b4b54447e2e1b00651e4e12898a59661668cf7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/b516f507436aa778cc67128a65d48dafb04833",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/b531bf3d1f4e2aa25c3248c75b2d262a3e8ffe",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/bb794d26b7571c995671aa6fc6f8b1c1b5a0ff",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/bbfca6b1ac884889fd706e3be8d052905ca2fb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/c11176ed27c76022a0d5dca7b94f981d0d481e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/d16abea2726726615c77b96bbb81571a1c617a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/dfd6137af5acd6863f08894161fe7c6b545a93",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/f08dce1538249a016a5666ca79e4b209f28e97",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0a/fe73a9ff64b1521657ad179049a14c302320a9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/03033f28a4ad9706ed731efe2e92046bfec8e6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/1234d68c6d0a88c29ab5af6a125d707b0c8c79",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/12f961f821829cba759dbfec39ad29bc88f2ad",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/1f2e0567b3a1b5006ad3ac53e151f1062af078",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/21b8d7e3cc02f9cdc4d045520e84a1d50797f6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/2a5a58855e99d24a96ca1b5c31c27a670bfcdf",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/2c5dd0cb44b5dcd81b57e640d88cbdc7ab6774",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/36f854aa8be7fd5e29650fe6f262039a60c437",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/4088b927f6c724e6f1604b39fe24ee4b4c82ec",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/66fcdb4ec7f3f8134b3571699891b2acaf4a92",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/86e85d7037a7a1bc0db281699b05a1e0bd0308",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/8884037d8d3c3c627b36dab6275e87a990136c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/8b8335925d7162611c492825fffd51cd50276b",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/8caf62a34a7d73c4b280a4d98b94e3d92a76de",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/8e35272ac5be0f15b793053e960b33bca6ec29",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/91ee1fd141b14e8af32dec4b41a713c5890104",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/923e2f4e7a7a7e22ca6c19b4b09a20d5245b8f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/94219c290d155513e97131b4d40112bc1404d1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/956dc4d0debb2d90ca5b58db8299b4b5e3c888",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/9f58612b654c4e1a9476c0037d82b8cb17fa7e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/aa60aec483f1c04c7623928952394d650a8b87",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/ac2b696a6aa618f0a337d0a361fcde14aeaad5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/b5eefcb13af5d0e62aee3cc7f13adc56b78628",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/b9004f3efa79e424e13763f37d6f2905d5fb3c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/c36a61258594c6f29017b1f8aa47b05f09c9fe",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/ca16c36b5c6005bcbe8efbffde9366e1de49ac",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/cf87178f6695494b210238cb5af1a25d277359",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/da59049b7277fe162408ee2cc283911e1c56f3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/e2bdea8ea102ac7ce5c19d2fa8b68362e504c9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/e4e5307623da5ca6c4cd22d6dcab3f72011c18",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/e6660c5b721e6033f5abe242ab580d67d84dfa",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/e8f36b83b47f655c66da6bb8acb57dd4ee18bd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/ed4a7dff1a4306cd3525e69500b2f723c2fe7d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/f02a66a02be51c423958e5c149f77971ed89b7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/f2ddcd4e92c8dee41c726ab652479c3a8f68dd",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/fd49f9e17628f756fd17b4913fd7cf172c56c4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0b/ff5383a276c8ff356d70aab27d762cebd52b56",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/00d8582056f0d40e5c89890716b411084bb4e7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/0e53f2b74fd31b05dc9dc8db3464ea9010a118",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/164ad6d133eba6c452fa4ce50ce7f07b732c4a",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/197f3d2a523f01abe6017fdd805fa79aa1aea5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/1e2f1ed988a62216a3c1ed22c375340e36e379",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/2c577d19778bf8690af1d9047a536996c73d43",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/4439ffa47a02bf9c15591afc3c1b9b9b020899",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/4983f9de91cbb73a806a5b38ff63b88e2e3ffc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/55a9c4466476d87eca7c662dcfc2153ea87d08",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/5868c113dbd6705c0aa781572ce8452da0a77d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/60c84595cb9f1a39b9385963718d8cad56de24",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/775051f431fed210a0af269948bebe4668f671",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/811c7447c42b13eef2d9ff9f15c6a6543866c7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/92cb4df1ac5fbe72c797c5bcc1f464b818ca6c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/a202ed8714672994f69720a7539cc3759c8409",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/b0c3b08eb170c8c1d85ff2b648f40f79b04278",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/b0c4d46ed540abc5bf651ccd72549417c0bcdb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/b3a107f0d69a8a7dbd58a44ce395d8b13bbc30",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/b5cb0cda35aefd70af463083858976a7ff8c5e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/bbd066dd48dd33366c4d174869a212aea11742",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/c195fe24e3fbffe9ff83efadefcfeaed86f33e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/c3a978c4d9d5f1204995756c36804eee83a4a3",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/c4e220f195fc8971554c7bf13dad84be4e4d7f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/c9a4366a6c451ee03ac9e6d9f6a4035840d7c6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/da3f2ca9427f4fee8849536fbdcf7ea98d70d1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/e44b86dbb0e34ecc3b89b9a522ca5458a586fb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0c/efe6f66d46ea44f134efd13d045b8fdbc74a71",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/0b80faa6860e5b1d1296ac39bf5a769c6301c4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/0c8afffc455cb02646fcdc902fcab4f2874874",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/0dd6da93949d14186a1f620de1a87b71a6b5cc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/0f890e8934892aaac184a021d00b1c8e3778aa",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/1192999945c2ee986c73f354a162d8671c3a12",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/18ecd3afd416ff77786420aeb23221e2254a41",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/1a4ad3260116e92d54f94821f836104a1a79ab",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/1f82ada3097f41f0278eef3935ca476b0d3cd9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/24feff492e1bffaddce12fd8c4f8f94c4bf186",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/272f2666e981e8dcc58f7c0cbd1b88885f9538",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/376aa714a5071130c840644393a1867a1c8d58",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/3f9e9fe931392b16a79f2e3ce1e46bac93ed5c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/3fd9895914116b03ecf3b6cd4f57c0a4897cb5",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/5688d29bc8ef66e66627afb312e7328836feb2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/717c52f7701b3edc8a08f038dda1dc1bbe3f98",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/78c207e6ed3ed3ca7e61acca08e315ce7b1847",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/85f14677e64ac2cbec80c807445e0a46cdad78",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/8fb1897e96bd8d68c3347e310db1088a23964e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/95809dcadc9dee1303c9c5536c650a63563923",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/9f1d135d6c6e7f747ca5a7d230c5c826a48dc7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/a6740d4ee2ed50c03c7d6032560a7ee99a0663",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/b00a3590231131082fa0c158e09dfda7d8929e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/bab9a8a2c0508ed10b7743158c2d2f298d5cde",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/bb09f74d41fb5b7227a03d758e2bb6a43baf59",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/c47ebc10ddba6d7e6a59311fe7a3b633fc7edb",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/c4f14db3c94eff6acf5f090bf723bda633a644",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/d6285686be39adcc269cefdbecadae6b087812",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/d85af82cb2b7e2fb89e9a15c4e21ef9caa49ed",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/e510f92f9f7133749e8e9449fb7b4197021556",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/f5231d1ab6d9f6983c704acfd1133b2c142e19",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0d/fb42875ca70e7de787942947643156f0f304b9",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/0991708815414fad8e4b2af926111e0b9c5924",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/0c8d435c34c214d3a8fa0b369c6de23f6b9f36",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/1593ad65c0c31a998f0b1917a706641056e96e",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/16b43a85adc4a3f02b21d0ff11eea807f9bec2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/26cd808e3d41f803672dbc2b5c379c6d97deb1",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/38c28ce6d128d99b9e3a1f099fb67e133db0b8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/5238c949ba2d5b7d97d80ce25e85c156226937",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/59f6b0c0a3aef1df6a4a7284058af8286043a6",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/5e5d04e6aacf1ed531e9a9b0b913f7250fc55f",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/6549223d4a6b07535e8d5f06dca0f9ef3f9b58",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/6d9d41b03520d89d9aadf4372445078faff5c4",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/87f81a117e0eb8e2ac22689ccc9cb4106d7fcc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/8b8fcaccbae6718c217ed24fa9d7a482926971",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/a875a60cef3233e6dd0c644551fbcf83575f6d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/a9bf02b1f1ac5aaa1e103c9208ec5aa1c937b2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/aaaddcfdab423faaec8b150f10502832ad6112",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/be46672d47a00f9ea27a5d5edbd97101cfa206",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/c0e415aa7118055c0f30acc393847af75ccc49",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/cb720a4a5a9c83b7eaebf2696ff3e1d36c2565",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/da88ce1da6362b45320218d13f9625938f8cd2",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/e27c92b0f69d31bbbd4a3c3bfffa0659bae070",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0e/efcb34d45e4ca8af406c7055ec692f42beeea0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/0671089e6672e9bd3229d7ef55042eaae1e6d8",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/0cfae10a0279509e5aff2b1ae6cefa5be624ba",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/283139fae4d604398e05bc251edc7a6a97f338",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/345aa8f356446418882eb932aba6773bde6968",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/34f08a89f8cbc27bcd87d50a257fea74034a5d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/36a41b6310e07d1cad1098c2eba0de5b2c1773",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/4b93abc23b90bb1fe153bef4fdcad288e6d524",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/4f32698c7b8e7927e88ff8e41374395e8d7189",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/4ff0d4d56736ccbccf676ab81cd51af64ef998",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/54bb166c88b9fee2c0babf9df85d97c41eb7dc",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/6e36ef1d8bde623e83215ea929d7171f29611d",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/7a5b7f8a687121c34c4dea733a7351efda6379",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/877a0c366c0bb0661ea41ae8be3ddb3780bfd7",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/89e6d8b3044630a79bd368aac3237282675585",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/a042063f81b8cf605db4fe8d47b184059b4205",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/af8f57440eb0ea54de29d46c9ea438ba915831",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/e595f1f24458683c3f13b8419045d97d0a680c",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/f1f837ee656ad2bdd283d6fb9de9a6304fafce",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/0f/f2beb9a69d401fb5f1e9e9bc36a5529ea7d7c0",
+        "reason": "excluded_directory"
+      },
+      {
+        "path": ".git/objects/10/12fbe5057420635d216f39c274a5459c2fbfce",
+        "reason": "excluded_directory"
+      }
+    ],
+    "role_counts": {
+      "entrypoint": 1,
+      "runtime": 4,
+      "catalog": 3,
+      "manual": 4,
+      "supporting": 2,
+      "harness": 1,
+      "automation": 3,
+      "test": 3
+    },
+    "source_signature": "3045608ef7830ddce8bdb39ef5f7331ee086413d59dec8cb48e9093e573f920c"
+  },
+  "pages": [
+    {
+      "slug": "overview",
+      "title": "BoI Wiki Platform Source Overview",
+      "boi_id": "boi:public:100001:20260705231621:294508",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md",
+      "source_count": 23,
+      "sha256": "25ddf901040fbe763090f3afd9ce96beb4ee044d8ca22f929300503fe2b9aaac"
+    },
+    {
+      "slug": "runtime-surfaces",
+      "title": "Runtime Surfaces and Interfaces",
+      "boi_id": "boi:public:100001:20260705231621:49cae4",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-49cae4.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-49cae4.md",
+      "source_count": 23,
+      "sha256": "2ee98304a96f98d2bf82e52c30411ca672ec570a76f856ecf6adf39d35e7b4c9"
+    },
+    {
+      "slug": "knowledge-harness-catalogs",
+      "title": "Knowledge, Harness, and Catalogs",
+      "boi_id": "boi:public:100001:20260705231621:f5ae6e",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-f5ae6e.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-f5ae6e.md",
+      "source_count": 23,
+      "sha256": "f658196e28d7c19d97e93ff752f290acfe938195b406353e7dce63c4c6c3b68e"
+    },
+    {
+      "slug": "automation-and-verification",
+      "title": "Automation and Verification",
+      "boi_id": "boi:public:100001:20260705231621:cfba2c",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-cfba2c.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-cfba2c.md",
+      "source_count": 23,
+      "sha256": "80f20732d73bce3435149a978a482a3635d85ee9448afa89229bc33c6683c1aa"
+    },
+    {
+      "slug": "source-map",
+      "title": "Source Map and Citations",
+      "boi_id": "boi:public:100001:20260705231621:5c06c7",
+      "uri": "/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-5c06c7.md",
+      "path": "/home/chokukil/boi-wiki/data/boi/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-5c06c7.md",
+      "source_count": 23,
+      "sha256": "5356db82238be58ef637866379898ba4c91b2a2b50ddf3e57b8572a13912a8f6"
+    }
+  ],
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": []
+  },
+  "last_good": true
+}
