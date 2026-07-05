@@ -117,10 +117,17 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "dictionary_resolve", "description": "Resolve business terms and aliases with private, team, then public priority."},
     {"name": "dictionary_terms", "description": "List accessible BoI dictionary terms by scope."},
     {"name": "agent_memory_search", "description": "Search private Agent Memory BoI documents for the employee."},
+    {"name": "agent_memory_review", "description": "Review private Second Brain memory, stale docs, duplicates, promotion candidates, and cleanup candidates."},
     {"name": "private_memory_cleanup_preview", "description": "Preview generated/private BoI cleanup candidates without changing files."},
     {"name": "private_memory_cleanup_run", "description": "Move confirmed generated/private cleanup candidates to 7-day quarantine."},
     {"name": "private_memory_restore", "description": "Restore quarantined private BoI documents during the retention window."},
     {"name": "private_memory_mark_memory", "description": "Mark an owned private BoI as user memory so cleanup will preserve it."},
+    {"name": "harness_acceptance", "description": "Return BoI Harness Observation/Context/Control/Action/State/Verification acceptance matrix."},
+    {"name": "source_wiki_plan", "description": "Plan a source-grounded wiki for an allowlisted local checkout or repo without mutating BoI content."},
+    {"name": "source_wiki_job_start", "description": "Generate a user-confirmed source-grounded wiki job with citations, manifest, and last-good revision."},
+    {"name": "source_wiki_job_get", "description": "Return one source-grounded wiki job manifest."},
+    {"name": "source_wiki_refresh_preview", "description": "Preview whether a source-grounded wiki is stale against its last-good manifest."},
+    {"name": "source_wiki_markdown_export", "description": "Export a source-grounded wiki as combined Markdown."},
     {"name": "work_context_get", "description": "Return the shared Work Context Pack plus source-bound LLM narrative state for a task, trace, action, SOP, or current page."},
     {"name": "boi_inbox", "description": "Return BoI Inbox report cards, verified report BoI links, priorities, and user links for an employee."},
     {"name": "boi_inbox_report_get", "description": "Return one verified BoI Inbox review report and its materialized BoI document."},
@@ -206,6 +213,7 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "source_apply", "description": "Apply a user-confirmed validated source edit and auto-commit it."},
     {"name": "doc_body_preview", "description": "Preview and validate a proposed BoI document body edit before applying it."},
     {"name": "doc_body_apply", "description": "Apply a user-confirmed validated BoI document body edit and auto-commit it."},
+    {"name": "promotion_preview", "description": "Preview a Team/Public promotion candidate, redaction checks, source refs, and validation without publishing."},
     {"name": "promotion_submit", "description": "Submit a user-confirmed Team/Public promotion candidate for synchronous validation and immediate publish."},
     {"name": "promotion_status", "description": "Return promotion publish, validation, HOTL, and commit status."},
     {"name": "workflow_definitions_search", "description": "Search WorkflowDefinitions that connect business BoI purpose, SOP stages, Event Types, Actions, Manual Handoffs, and runtime smoke evidence."},
@@ -257,6 +265,7 @@ MCP_TOOL_IA_GROUPS = [
             "dictionary_terms",
             "work_context_get",
             "agent_memory_search",
+            "agent_memory_review",
             "similar_cases_search",
             "agent_signals",
             "work_patterns_search",
@@ -270,6 +279,7 @@ MCP_TOOL_IA_GROUPS = [
             "private_memory_cleanup_run",
             "private_memory_restore",
             "private_memory_mark_memory",
+            "harness_acceptance",
         },
     ),
     (
@@ -364,10 +374,16 @@ MCP_TOOL_IA_GROUPS = [
             "workflow_definition_get",
             "workflow_definition_deduplicate",
             "workflow_definition_publish",
+            "source_wiki_plan",
+            "source_wiki_job_start",
+            "source_wiki_job_get",
+            "source_wiki_refresh_preview",
+            "source_wiki_markdown_export",
             "source_preview",
             "source_apply",
             "doc_body_preview",
             "doc_body_apply",
+            "promotion_preview",
             "promotion_submit",
             "promotion_status",
         },
@@ -1080,6 +1096,26 @@ async def agent_memory_search(
         employee_id=employee_id,
         params={"q": query, "include_archived": str(include_archived).lower(), "limit": limit},
     )
+
+
+@mcp.tool(name="agent_memory_review")
+async def agent_memory_review(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    include_archived: bool = False,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Review private Second Brain memory, stale docs, duplicates, and promotion candidates."""
+    return await api_get(
+        "/api/agents/boi-wiki/memory/review",
+        employee_id=employee_id,
+        params={"include_archived": str(include_archived).lower(), "limit": limit},
+    )
+
+
+@mcp.tool(name="harness_acceptance")
+async def harness_acceptance(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return BoI Harness responsibility/acceptance matrix."""
+    return await api_get("/api/harness/acceptance", employee_id=employee_id)
 
 
 @mcp.tool(name="private_memory_cleanup_preview")
@@ -2655,6 +2691,108 @@ async def sop_run_history(employee_id: str = DEFAULT_EMPLOYEE_ID, limit: int = 5
     return await api_get("/api/sops/history", employee_id=employee_id, params={"limit": limit})
 
 
+@mcp.tool(name="source_wiki_plan")
+async def source_wiki_plan(
+    source_path: str = "",
+    repo_url: str = "",
+    wiki_id: str = "",
+    title: str = "",
+    description: str = "",
+    include_globs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    max_files: int = 80,
+    target_visibility: Literal["public", "team", "private"] = "public",
+    team_id: str | None = None,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Plan a source-grounded wiki without mutating BoI content."""
+    return await api_post(
+        "/api/source-wikis/plan",
+        employee_id=employee_id,
+        payload={
+            "source_kind": "git_url" if repo_url and not source_path else "local_path",
+            "source_path": source_path,
+            "repo_url": repo_url,
+            "wiki_id": wiki_id,
+            "title": title,
+            "description": description,
+            "include_globs": include_globs or [],
+            "exclude_globs": exclude_globs or [],
+            "max_files": max_files,
+            "target_visibility": target_visibility,
+            "team_id": team_id,
+        },
+    )
+
+
+@mcp.tool(name="source_wiki_job_start")
+async def source_wiki_job_start(
+    source_path: str = "",
+    repo_url: str = "",
+    wiki_id: str = "",
+    title: str = "",
+    description: str = "",
+    include_globs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    max_files: int = 80,
+    target_visibility: Literal["public", "team", "private"] = "public",
+    team_id: str | None = None,
+    reviewer: str = "source-wiki-curator",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Start a user-confirmed source-grounded wiki job."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before generating source wiki documents")
+    return await api_post(
+        "/api/source-wikis/jobs",
+        employee_id=employee_id,
+        payload={
+            "source_kind": "git_url" if repo_url and not source_path else "local_path",
+            "source_path": source_path,
+            "repo_url": repo_url,
+            "wiki_id": wiki_id,
+            "title": title,
+            "description": description,
+            "include_globs": include_globs or [],
+            "exclude_globs": exclude_globs or [],
+            "max_files": max_files,
+            "target_visibility": target_visibility,
+            "team_id": team_id,
+            "reviewer": reviewer,
+            "user_confirmed": True,
+        },
+    )
+
+
+@mcp.tool(name="source_wiki_job_get")
+async def source_wiki_job_get(job_id: str, wiki_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return one source-grounded wiki job manifest."""
+    return await api_get(f"/api/source-wikis/jobs/{job_id}", employee_id=employee_id, params={"wiki_id": wiki_id})
+
+
+@mcp.tool(name="source_wiki_refresh_preview")
+async def source_wiki_refresh_preview(
+    wiki_id: str,
+    source_path: str = "",
+    repo_url: str = "",
+    max_files: int = 80,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Preview whether a source-grounded wiki is stale."""
+    return await api_post(
+        f"/api/source-wikis/{wiki_id}/refresh-preview",
+        employee_id=employee_id,
+        payload={"source_path": source_path, "repo_url": repo_url, "max_files": max_files},
+    )
+
+
+@mcp.tool(name="source_wiki_markdown_export")
+async def source_wiki_markdown_export(wiki_id: str, job_id: str = "", employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Export a source-grounded wiki as Markdown."""
+    return await api_get(f"/api/source-wikis/{wiki_id}/markdown", employee_id=employee_id, params={"job_id": job_id})
+
+
 @mcp.tool(name="source_preview")
 async def source_preview(
     path: str,
@@ -2738,6 +2876,46 @@ async def doc_body_apply(
         f"/api/docs/{boi_id}/body-apply",
         employee_id=employee_id,
         payload={"base_sha256": base_sha256, "proposed_body": proposed_body, "author": author, "note": note},
+    )
+
+
+@mcp.tool(name="promotion_preview")
+async def promotion_preview(
+    title: str,
+    body: str,
+    source_refs: list[dict[str, Any]],
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    target_visibility: Literal["team", "public"] = "team",
+    team_id: str | None = None,
+    description: str = "Promoted BoI",
+    boi_type: str = "boi/reference",
+    classification: str = "internal",
+    tags: list[str] | None = None,
+    source_local_id: str | None = None,
+    source_sha256: str | None = None,
+    reviewer: str = "hotl-curator",
+    promotion_reason: str = "User explicitly requested promotion.",
+) -> dict[str, Any]:
+    """Preview a Team/Public promotion candidate without publishing."""
+    return await api_post(
+        "/api/promotions/preview",
+        employee_id=employee_id,
+        payload={
+            "target_visibility": target_visibility,
+            "team_id": team_id,
+            "title": title,
+            "description": description,
+            "body": body,
+            "boi_type": boi_type,
+            "classification": classification,
+            "tags": tags or [],
+            "source_refs": source_refs,
+            "source_local_id": source_local_id,
+            "source_sha256": source_sha256,
+            "reviewer": reviewer,
+            "promotion_reason": promotion_reason,
+            "user_confirmed": False,
+        },
     )
 
 
@@ -3823,6 +4001,15 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             params={"q": str(args.get("query") or args.get("q") or ""), "include_archived": str(bridge_bool(args.get("include_archived"))).lower(), "limit": int(args.get("limit") or 20)},
             service_token=True,
         )
+    elif tool_name == "agent_memory_review":
+        result = await api_get(
+            "/api/agents/boi-wiki/memory/review",
+            employee_id=employee_id,
+            params={"include_archived": str(bridge_bool(args.get("include_archived"))).lower(), "limit": int(args.get("limit") or 50)},
+            service_token=True,
+        )
+    elif tool_name == "harness_acceptance":
+        result = await api_get("/api/harness/acceptance", employee_id=employee_id, service_token=True)
     elif tool_name == "private_memory_cleanup_preview":
         result = await api_get(
             "/api/private-memory/cleanup-preview",
@@ -4265,6 +4452,73 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
             service_token=True,
         )
+    elif tool_name == "source_wiki_plan":
+        result = await api_post(
+            "/api/source-wikis/plan",
+            employee_id=employee_id,
+            payload={
+                "source_kind": "git_url" if str(args.get("repo_url") or "") and not str(args.get("source_path") or "") else "local_path",
+                "source_path": str(args.get("source_path") or ""),
+                "repo_url": str(args.get("repo_url") or ""),
+                "wiki_id": str(args.get("wiki_id") or ""),
+                "title": str(args.get("title") or ""),
+                "description": str(args.get("description") or ""),
+                "include_globs": args.get("include_globs") if isinstance(args.get("include_globs"), list) else [],
+                "exclude_globs": args.get("exclude_globs") if isinstance(args.get("exclude_globs"), list) else [],
+                "max_files": int(args.get("max_files") or 80),
+                "target_visibility": str(args.get("target_visibility") or "public"),
+                "team_id": args.get("team_id"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "source_wiki_job_start":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/source-wikis/jobs",
+            employee_id=employee_id,
+            payload={
+                "source_kind": "git_url" if str(args.get("repo_url") or "") and not str(args.get("source_path") or "") else "local_path",
+                "source_path": str(args.get("source_path") or ""),
+                "repo_url": str(args.get("repo_url") or ""),
+                "wiki_id": str(args.get("wiki_id") or ""),
+                "title": str(args.get("title") or ""),
+                "description": str(args.get("description") or ""),
+                "include_globs": args.get("include_globs") if isinstance(args.get("include_globs"), list) else [],
+                "exclude_globs": args.get("exclude_globs") if isinstance(args.get("exclude_globs"), list) else [],
+                "max_files": int(args.get("max_files") or 80),
+                "target_visibility": str(args.get("target_visibility") or "public"),
+                "team_id": args.get("team_id"),
+                "reviewer": str(args.get("reviewer") or "source-wiki-curator"),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "source_wiki_job_get":
+        result = await api_get(
+            f"/api/source-wikis/jobs/{str(args.get('job_id') or '')}",
+            employee_id=employee_id,
+            params={"wiki_id": str(args.get("wiki_id") or "")},
+            service_token=True,
+        )
+    elif tool_name == "source_wiki_refresh_preview":
+        result = await api_post(
+            f"/api/source-wikis/{str(args.get('wiki_id') or '')}/refresh-preview",
+            employee_id=employee_id,
+            payload={
+                "source_path": str(args.get("source_path") or ""),
+                "repo_url": str(args.get("repo_url") or ""),
+                "max_files": int(args.get("max_files") or 80),
+            },
+            service_token=True,
+        )
+    elif tool_name == "source_wiki_markdown_export":
+        result = await api_get(
+            f"/api/source-wikis/{str(args.get('wiki_id') or '')}/markdown",
+            employee_id=employee_id,
+            params={"job_id": str(args.get("job_id") or "")},
+            service_token=True,
+        )
     elif tool_name == "source_preview":
         result = await api_post(
             "/api/source/preview",
@@ -4318,6 +4572,28 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "proposed_body": str(args.get("proposed_body") or ""),
                 "author": str(args.get("author") or "boi-wiki-mcp"),
                 "note": str(args.get("note") or "MCP validated body edit"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "promotion_preview":
+        result = await api_post(
+            "/api/promotions/preview",
+            employee_id=employee_id,
+            payload={
+                "target_visibility": str(args.get("target_visibility") or "team"),
+                "team_id": args.get("team_id"),
+                "title": str(args.get("title") or ""),
+                "description": str(args.get("description") or "Promoted BoI"),
+                "body": str(args.get("body") or ""),
+                "boi_type": str(args.get("boi_type") or "boi/reference"),
+                "classification": str(args.get("classification") or "internal"),
+                "tags": args.get("tags") if isinstance(args.get("tags"), list) else [],
+                "source_refs": args.get("source_refs") if isinstance(args.get("source_refs"), list) else [],
+                "source_local_id": args.get("source_local_id"),
+                "source_sha256": args.get("source_sha256"),
+                "reviewer": str(args.get("reviewer") or "hotl-curator"),
+                "promotion_reason": str(args.get("promotion_reason") or "User explicitly requested promotion."),
+                "user_confirmed": False,
             },
             service_token=True,
         )

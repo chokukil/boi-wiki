@@ -109,9 +109,13 @@ def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troublesho
     assert "Streamable HTTP" in text
     assert "resources: 0" in text
     assert "resource_templates: 11" in text
-    assert "tools: 111" in text
+    assert "tools: 124" in text
     assert "source_apply" in text
     assert "doc_body_apply" in text
+    assert "harness_acceptance" in text
+    assert "source_wiki_plan" in text
+    assert "promotion_preview" in text
+    assert "agent_memory_review" in text
     assert "promotion_submit" in text
     assert "boi_agent_capabilities" in text
     assert "boi_agent_approve" in text

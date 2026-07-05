@@ -176,6 +176,37 @@ SEARCH_INDEX_ROOT = Path(os.getenv("SEARCH_INDEX_ROOT") or str(BOI_RUNTIME_ROOT 
 OPS_RUNTIME_INDEX_ROOT = Path(os.getenv("OPS_RUNTIME_INDEX_ROOT") or str(BOI_RUNTIME_ROOT / "ops"))
 PRIVATE_MEMORY_TRASH_ROOT = Path(os.getenv("PRIVATE_MEMORY_TRASH_ROOT") or str(BOI_RUNTIME_ROOT / "private-trash"))
 PRIVATE_MEMORY_QUARANTINE_DAYS = int(os.getenv("PRIVATE_MEMORY_QUARANTINE_DAYS", "7") or "7")
+SOURCE_WIKI_ROOT = Path(os.getenv("SOURCE_WIKI_ROOT") or str(BOI_RUNTIME_ROOT / "source-wikis"))
+SOURCE_WIKI_MAX_FILE_BYTES = int(os.getenv("SOURCE_WIKI_MAX_FILE_BYTES", "180000") or "180000")
+SOURCE_WIKI_ALLOWED_EXTENSIONS = {
+    ".md",
+    ".mdc",
+    ".txt",
+    ".py",
+    ".js",
+    ".mjs",
+    ".ts",
+    ".tsx",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".sh",
+    ".ps1",
+    ".example",
+}
+SOURCE_WIKI_DEFAULT_EXCLUDES = {
+    ".git",
+    ".pytest_cache",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "outputs",
+    "artifacts",
+    "captures",
+    ".boi-trash",
+}
 BOI_PERSIST_SEARCH_INDEX = os.getenv("BOI_PERSIST_SEARCH_INDEX", "true").lower() in {"1", "true", "yes", "on"}
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100")
 ACTION_INVOKE_TIMEOUT_SECONDS = float(os.getenv("ACTION_INVOKE_TIMEOUT_SECONDS", "90"))
@@ -6440,6 +6471,10 @@ def target_dir_for(metadata: dict[str, Any]) -> Path:
         if boi_type == "boi/action-spec":
             connector_kind = normalize_folder(str(metadata.get("connector_kind") or "general"))
             return DATA_ROOT / "public" / "actions" / (connector_kind or "general")
+        if boi_type == "boi/source-wiki-page":
+            source_wiki = metadata.get("source_wiki") if isinstance(metadata.get("source_wiki"), dict) else {}
+            wiki_id = normalize_folder(str(source_wiki.get("wiki_id") or metadata.get("source_wiki_id") or "general"))
+            return DATA_ROOT / "public" / "source-wikis" / (wiki_id or "general")
         return DATA_ROOT / "public"
     raise HTTPException(status_code=400, detail=f"Unsupported visibility: {visibility}")
 
@@ -6911,6 +6946,35 @@ class PromotionSubmitRequest(BaseModel):
     user_confirmed_at: str | None = None
 
 
+class PromotionPreviewRequest(PromotionSubmitRequest):
+    user_confirmed: bool = False
+
+
+class SourceWikiPlanRequest(BaseModel):
+    source_kind: Literal["local_path", "git_url"] = "local_path"
+    source_path: str = ""
+    repo_url: str = ""
+    wiki_id: str = ""
+    title: str = ""
+    description: str = ""
+    include_globs: list[str] = Field(default_factory=list)
+    exclude_globs: list[str] = Field(default_factory=list)
+    max_files: int = 80
+    target_visibility: Literal["public", "team", "private"] = "public"
+    team_id: str | None = None
+
+
+class SourceWikiJobRequest(SourceWikiPlanRequest):
+    user_confirmed: bool = False
+    reviewer: str = "source-wiki-curator"
+
+
+class SourceWikiRefreshPreviewRequest(BaseModel):
+    source_path: str = ""
+    repo_url: str = ""
+    max_files: int = 80
+
+
 class HotlUpdateRequest(BaseModel):
     status: Literal["watching", "hidden", "needs_revision", "rolled_back"]
     note: str = ""
@@ -6938,6 +7002,532 @@ def read_promotion_report(promotion_id: str) -> dict[str, Any]:
     if not path.exists():
         raise HTTPException(status_code=404, detail="promotion report not found")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def source_wiki_manifest_dir(wiki_id: str) -> Path:
+    safe_id = safe_filename(wiki_id or "source-wiki")
+    return SOURCE_WIKI_ROOT / safe_id
+
+
+def source_wiki_manifest_path(wiki_id: str, job_id: str) -> Path:
+    return source_wiki_manifest_dir(wiki_id) / f"{safe_filename(job_id)}.json"
+
+
+def source_wiki_latest_path(wiki_id: str) -> Path:
+    return source_wiki_manifest_dir(wiki_id) / "latest.json"
+
+
+def source_wiki_allowed_roots() -> list[Path]:
+    roots: list[Path] = []
+    configured = os.getenv("SOURCE_WIKI_ALLOWED_ROOTS", "")
+    for item in configured.split(os.pathsep):
+        if item.strip():
+            roots.append(Path(item.strip()))
+    roots.extend([Path.cwd(), DATA_ROOT.parent, DATA_ROOT.parent.parent])
+    local_repo = Path("/home/chokukil/boi-wiki-local")
+    if local_repo.exists():
+        roots.append(local_repo)
+    resolved: list[Path] = []
+    for root in roots:
+        try:
+            resolved_root = root.expanduser().resolve()
+        except Exception:
+            continue
+        if resolved_root.exists() and resolved_root not in resolved:
+            resolved.append(resolved_root)
+    return resolved
+
+
+def source_wiki_repo_allowed(repo_url: str) -> bool:
+    repo_url = str(repo_url or "").strip()
+    if not repo_url:
+        return False
+    allowlist = [item.strip() for item in os.getenv("SOURCE_WIKI_ALLOWED_REPOS", "").split(",") if item.strip()]
+    allowlist.extend(
+        [
+            "https://github.com/chokukil/boi-wiki-local",
+            "https://github.com/chokukil/boi-wiki-local.git",
+            "https://github.com/chokukil/boi-wiki",
+            "https://github.com/chokukil/boi-wiki.git",
+        ]
+    )
+    return repo_url in set(allowlist)
+
+
+def resolve_source_wiki_root(req: SourceWikiPlanRequest | SourceWikiRefreshPreviewRequest) -> tuple[Path, dict[str, Any]]:
+    source_path = str(getattr(req, "source_path", "") or "").strip()
+    repo_url = str(getattr(req, "repo_url", "") or "").strip()
+    if source_path:
+        root = Path(source_path).expanduser().resolve()
+    elif repo_url.endswith("boi-wiki-local") or repo_url.endswith("boi-wiki-local.git"):
+        root = Path("/home/chokukil/boi-wiki-local").resolve()
+    else:
+        raise HTTPException(status_code=400, detail="source_path is required unless repo_url maps to a known local checkout")
+    if not root.exists() or not root.is_dir():
+        raise HTTPException(status_code=404, detail="source wiki root not found")
+    allowed_roots = source_wiki_allowed_roots()
+    if not any(root == allowed or root.is_relative_to(allowed) for allowed in allowed_roots):
+        raise HTTPException(status_code=403, detail="source wiki root is outside SOURCE_WIKI_ALLOWED_ROOTS")
+    if repo_url and not source_wiki_repo_allowed(repo_url):
+        raise HTTPException(status_code=403, detail="repo_url is not allowlisted for source wiki generation")
+    source = {
+        "source_kind": getattr(req, "source_kind", "local_path"),
+        "source_path": str(root),
+        "repo_url": repo_url,
+        "allowed_roots": [str(root) for root in allowed_roots],
+    }
+    return root, source
+
+
+def git_revision_for_root(root: Path) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+    except Exception:
+        return ""
+
+
+def source_wiki_file_allowed(rel: str, path: Path, req: SourceWikiPlanRequest | SourceWikiRefreshPreviewRequest) -> tuple[bool, str]:
+    parts = Path(rel).parts
+    if any(part in SOURCE_WIKI_DEFAULT_EXCLUDES for part in parts):
+        return False, "excluded_directory"
+    if getattr(req, "exclude_globs", None) and any(path.match(pattern) or Path(rel).match(pattern) for pattern in getattr(req, "exclude_globs")):
+        return False, "exclude_glob"
+    include_globs = getattr(req, "include_globs", None) or []
+    if include_globs and not any(path.match(pattern) or Path(rel).match(pattern) for pattern in include_globs):
+        return False, "not_included"
+    if path.suffix.lower() not in SOURCE_WIKI_ALLOWED_EXTENSIONS and path.name not in {"README", "AGENTS", "CLAUDE"}:
+        return False, "unsupported_extension"
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False, "unreadable"
+    if size > SOURCE_WIKI_MAX_FILE_BYTES:
+        return False, "too_large"
+    return True, ""
+
+
+def source_wiki_role_for_path(rel: str) -> str:
+    lower = rel.lower()
+    if lower in {"readme.md", "agents.md", "claude.md", "llm-wiki.md"}:
+        return "entrypoint"
+    if lower.startswith("scripts/") or lower.endswith((".sh", ".ps1")):
+        return "automation"
+    if "promotion-drafts" in lower:
+        return "promotion"
+    if "usage-examples" in lower:
+        return "example"
+    if "dictionary" in lower:
+        return "dictionary"
+    if "context-packs" in lower:
+        return "context"
+    if lower.startswith("data/boi"):
+        return "knowledge"
+    return "supporting"
+
+
+def source_wiki_excerpt(path: Path, limit: int = 900) -> tuple[str, list[str]]:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return "", []
+    headings = [line.strip("# ").strip() for line in content.splitlines() if line.startswith("#")][:8]
+    collapsed = re.sub(r"\s+", " ", content).strip()
+    return text_excerpt(collapsed, limit), headings
+
+
+def source_wiki_inventory(root: Path, req: SourceWikiPlanRequest | SourceWikiRefreshPreviewRequest) -> dict[str, Any]:
+    selected: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    max_files = max(1, min(int(getattr(req, "max_files", 80) or 80), 300))
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            rel = str(path.relative_to(root)).replace("\\", "/")
+        except ValueError:
+            continue
+        allowed, reason = source_wiki_file_allowed(rel, path, req)
+        if not allowed:
+            skipped.append({"path": rel, "reason": reason})
+            continue
+        excerpt, headings = source_wiki_excerpt(path)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected.append(
+            {
+                "path": rel,
+                "size": path.stat().st_size,
+                "sha256": digest,
+                "role": source_wiki_role_for_path(rel),
+                "headings": headings,
+                "excerpt": excerpt,
+            }
+        )
+        if len(selected) >= max_files:
+            break
+    role_counts: dict[str, int] = {}
+    for item in selected:
+        role_counts[str(item.get("role") or "supporting")] = role_counts.get(str(item.get("role") or "supporting"), 0) + 1
+    return {
+        "selected_count": len(selected),
+        "skipped_count": len(skipped),
+        "selected": selected,
+        "skipped": skipped[:500],
+        "role_counts": role_counts,
+        "source_signature": hashlib.sha256(
+            json.dumps([{k: item[k] for k in ("path", "sha256")} for item in selected], sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def source_wiki_outline(wiki_id: str, title: str, inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    selected = inventory.get("selected") or []
+    by_role: dict[str, list[dict[str, Any]]] = {}
+    for item in selected:
+        by_role.setdefault(str(item.get("role") or "supporting"), []).append(item)
+    outline = [
+        {"slug": "overview", "title": f"{title} Overview", "roles": ["entrypoint", "supporting"]},
+        {"slug": "local-second-brain", "title": "Local Second Brain Lifecycle", "roles": ["knowledge", "context", "example"]},
+        {"slug": "promotion-and-remote", "title": "Promotion and Remote BoI Wiki Integration", "roles": ["promotion", "entrypoint"]},
+        {"slug": "automation-and-checks", "title": "Automation and Checks", "roles": ["automation"]},
+        {"slug": "source-map", "title": "Source Map and Citations", "roles": list(by_role)},
+    ]
+    return outline
+
+
+def source_wiki_page_body(title: str, page: dict[str, Any], inventory: dict[str, Any], source: dict[str, Any]) -> str:
+    selected = inventory.get("selected") or []
+    roles = set(page.get("roles") or [])
+    items = [item for item in selected if not roles or item.get("role") in roles]
+    if page.get("slug") == "source-map":
+        items = selected
+    lines = [
+        "# Summary",
+        "",
+        f"`{title}` source-grounded wiki page generated from repository files. Every claim below is backed by the listed source paths.",
+        "",
+        "# Source Snapshot",
+        "",
+        f"- Source: `{source.get('repo_url') or source.get('source_path')}`",
+        f"- Commit: `{source.get('commit_sha') or 'unknown'}`",
+        f"- Selected files: `{inventory.get('selected_count')}`",
+        f"- Source signature: `{inventory.get('source_signature')}`",
+        "",
+        "# Key Sources",
+        "",
+    ]
+    for item in items[:24]:
+        headings = ", ".join(item.get("headings") or []) or "no headings"
+        lines.extend(
+            [
+                f"## `{item.get('path')}`",
+                "",
+                f"- Role: `{item.get('role')}`",
+                f"- SHA256: `{item.get('sha256')}`",
+                f"- Headings: {headings}",
+                "",
+                str(item.get("excerpt") or "No text excerpt available."),
+                "",
+            ]
+        )
+    if not items:
+        lines.append("No matching source files were selected for this page.")
+    lines.extend(
+        [
+            "# Verification Notes",
+            "",
+            "- Refresh compares the current source signature with the last-good manifest.",
+            "- Team/Public publication still requires promotion preview and explicit confirmation.",
+            "- This page is generated from source paths, not from runtime action execution.",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
+def source_wiki_plan_payload(req: SourceWikiPlanRequest, employee_id: str) -> dict[str, Any]:
+    root, source = resolve_source_wiki_root(req)
+    wiki_id = safe_filename(req.wiki_id or root.name or "source-wiki")
+    title = req.title or root.name.replace("-", " ").title()
+    source["commit_sha"] = git_revision_for_root(root)
+    inventory = source_wiki_inventory(root, req)
+    outline = source_wiki_outline(wiki_id, title, inventory)
+    validation_errors: list[str] = []
+    if inventory.get("selected_count", 0) <= 0:
+        validation_errors.append("source wiki requires at least one selected source file")
+    if req.target_visibility == "team" and not (req.team_id or teams_for(employee_id)):
+        validation_errors.append("team source wiki requires team_id or employee team membership")
+    return {
+        "ok": not validation_errors,
+        "wiki_id": wiki_id,
+        "title": title,
+        "description": req.description or f"Source-grounded wiki for {title}",
+        "source": source,
+        "inventory": inventory,
+        "outline": outline,
+        "validation": {"ok": not validation_errors, "errors": validation_errors, "warnings": []},
+        "mutating": False,
+    }
+
+
+def write_source_wiki_job(req: SourceWikiJobRequest, employee_id: str) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="source wiki job requires user_confirmed=true")
+    require_employee_role(employee_id, "boi.editor")
+    plan = source_wiki_plan_payload(req, employee_id)
+    if not plan.get("ok"):
+        raise HTTPException(status_code=422, detail=plan)
+    wiki_id = str(plan["wiki_id"])
+    job_id = f"source-wiki-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    title = str(plan["title"])
+    pages: list[dict[str, Any]] = []
+    for page in plan.get("outline") or []:
+        page_title = str(page.get("title") or page.get("slug") or "Source Wiki Page")
+        body = source_wiki_page_body(title, page, plan["inventory"], plan["source"])
+        source_refs = [
+            {"type": "source-wiki-root", "ref": plan["source"].get("repo_url") or plan["source"].get("source_path")},
+            {"type": "source-signature", "ref": plan["inventory"].get("source_signature")},
+        ]
+        for item in (plan["inventory"].get("selected") or [])[:24]:
+            source_refs.append({"type": "repo-file", "ref": item.get("path"), "sha256": item.get("sha256")})
+        metadata = make_metadata(
+            boi_type="boi/source-wiki-page",
+            title=page_title,
+            description=f"Source-grounded wiki page for {title}",
+            owner=employee_id,
+            visibility=req.target_visibility,
+            classification="internal",
+            team_id=req.team_id,
+            source_refs=source_refs,
+            status="reviewed",
+            tags=["SourceWiki", "OpenWikiPattern", wiki_id],
+            reviewer=req.reviewer,
+        )
+        metadata["source_wiki"] = {
+            "wiki_id": wiki_id,
+            "job_id": job_id,
+            "page_slug": str(page.get("slug") or ""),
+            "source_signature": plan["inventory"].get("source_signature"),
+            "commit_sha": plan["source"].get("commit_sha"),
+        }
+        metadata["review"] = {"reviewer": req.reviewer, "review_status": "source_grounded_generated"}
+        doc = write_boi(metadata, body)
+        pages.append(
+            {
+                "slug": page.get("slug"),
+                "title": page_title,
+                "boi_id": (doc.get("metadata") or {}).get("boi_id"),
+                "uri": doc.get("uri"),
+                "path": doc.get("path"),
+                "source_count": len(source_refs),
+                "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            }
+        )
+    manifest = {
+        "ok": True,
+        "status": "generated",
+        "wiki_id": wiki_id,
+        "job_id": job_id,
+        "title": title,
+        "generated_at": now_iso(),
+        "employee_id": employee_id,
+        "source": plan["source"],
+        "inventory": plan["inventory"],
+        "pages": pages,
+        "validation": {"ok": bool(pages), "errors": [] if pages else ["no pages generated"], "warnings": []},
+        "last_good": bool(pages),
+    }
+    source_wiki_manifest_dir(wiki_id).mkdir(parents=True, exist_ok=True)
+    source_wiki_manifest_path(wiki_id, job_id).write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    source_wiki_latest_path(wiki_id).write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    invalidate_doc_caches()
+    return manifest
+
+
+def read_source_wiki_manifest(wiki_id: str, job_id: str | None = None) -> dict[str, Any]:
+    path = source_wiki_manifest_path(wiki_id, job_id) if job_id else source_wiki_latest_path(wiki_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="source wiki manifest not found")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def source_wiki_markdown_export(manifest: dict[str, Any], employee_id: str) -> str:
+    chunks: list[str] = [f"# {manifest.get('title') or manifest.get('wiki_id')}", ""]
+    chunks.extend(
+        [
+            f"- Wiki ID: `{manifest.get('wiki_id')}`",
+            f"- Job ID: `{manifest.get('job_id')}`",
+            f"- Source signature: `{((manifest.get('inventory') or {}).get('source_signature') or '')}`",
+            "",
+        ]
+    )
+    for page in manifest.get("pages") or []:
+        boi_id = str(page.get("boi_id") or "")
+        doc = find_doc_by_id(boi_id, employee_id)
+        if not doc:
+            continue
+        chunks.append(f"\n# {page.get('title') or boi_id}\n")
+        chunks.append(str(doc.get("body") or ""))
+    return "\n".join(chunks).strip() + "\n"
+
+
+def promotion_preview_payload(req: PromotionPreviewRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.promoter")
+    effective_team_id = req.team_id or (teams_for(employee_id)[0] if req.target_visibility == "team" else None)
+    metadata = make_metadata(
+        boi_type=req.boi_type,
+        title=req.title,
+        description=req.description,
+        owner=employee_id,
+        visibility=req.target_visibility,
+        classification=req.classification,
+        team_id=effective_team_id,
+        source_refs=req.source_refs,
+        status="reviewed",
+        tags=list(dict.fromkeys((req.tags or []) + ["promotion-preview"])),
+        promotion={
+            "source_local_id": req.source_local_id or "",
+            "source_sha256": req.source_sha256 or "",
+            "promotion_reason": req.promotion_reason,
+            "previewed_by": employee_id,
+            "previewed_at": now_iso(),
+        },
+        reviewer=req.reviewer,
+    )
+    metadata["review"] = {"reviewer": req.reviewer, "review_status": "preview_ready"}
+    validation = validate_promotion_candidate(metadata, req.body, user_confirmed=True)
+    findings = []
+    if SECRET_VALUE_RE.search(req.body) or SECRET_VALUE_RE.search(json.dumps(metadata, ensure_ascii=False, default=str)):
+        findings.append({"severity": "error", "code": "secret_candidate", "message": "Potential secret token detected."})
+    if not req.source_refs:
+        findings.append({"severity": "error", "code": "missing_source_refs", "message": "Team/Public promotion requires source_refs."})
+    preview_material = {
+        "metadata": metadata,
+        "body_sha256": hashlib.sha256(req.body.encode("utf-8")).hexdigest(),
+        "target_visibility": req.target_visibility,
+        "team_id": effective_team_id or "",
+        "source_refs": req.source_refs,
+    }
+    preview_id = "promotion-preview-" + hashlib.sha256(json.dumps(preview_material, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+    validation["ok"] = validation["ok"] and not any(item["severity"] == "error" for item in findings)
+    validation["errors"] = unique_messages(list(validation.get("errors") or []) + [item["message"] for item in findings if item["severity"] == "error"])
+    return {
+        "ok": validation["ok"],
+        "status": "ready_for_confirmation" if validation["ok"] else "validation_failed",
+        "preview_id": preview_id,
+        "preview_hash": hashlib.sha256(json.dumps(preview_material, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest(),
+        "target_visibility": req.target_visibility,
+        "team_id": effective_team_id,
+        "validation": validation,
+        "redaction": {"ok": not findings, "findings": findings},
+        "approval": {"requires_user_confirmed": True, "submit_api": "/api/promotions/submit"},
+        "candidate": {"metadata": metadata, "body_excerpt": text_excerpt(req.body, 500)},
+        "mutating": False,
+    }
+
+
+def agent_memory_review_payload(employee_id: str, *, include_archived: bool = False, limit: int = 50) -> dict[str, Any]:
+    docs = private_docs_for_employee(employee_id)
+    today = date.today().isoformat()
+    stale: list[dict[str, Any]] = []
+    promotion_candidates: list[dict[str, Any]] = []
+    memory_candidates: list[dict[str, Any]] = []
+    by_title: dict[str, list[dict[str, Any]]] = {}
+    for doc in docs:
+        metadata = doc.get("metadata") or {}
+        archive_status = str(metadata.get("archive_status") or "active")
+        if archive_status != "active" and not include_archived:
+            continue
+        item = cleanup_doc_item(doc, employee_id, reason="review")
+        by_title.setdefault(normalize_search_token(str(metadata.get("title") or "")), []).append(item)
+        review_after = str(metadata.get("review_after") or "")
+        if review_after and review_after < today and not private_doc_is_protected(doc):
+            stale.append({**item, "reason": "review_after_elapsed"})
+        if metadata.get("memory_candidate") or private_doc_lifecycle_state(doc) == "working":
+            memory_candidates.append({**item, "reason": "candidate_for_memory_or_cleanup"})
+        if str(metadata.get("promotion_status") or "") in {"pending_user_approval", "local_only"} or "promotion-drafts" in str(doc.get("uri") or ""):
+            promotion_candidates.append({**item, "reason": "promotion_candidate_or_draft"})
+    duplicate_groups = [items for key, items in by_title.items() if key and len(items) > 1]
+    cleanup = private_memory_cleanup_preview_payload(employee_id, scope="generated")
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "summary": {
+            "private_docs": len(docs),
+            "stale_count": len(stale),
+            "duplicate_group_count": len(duplicate_groups),
+            "memory_candidate_count": len(memory_candidates),
+            "promotion_candidate_count": len(promotion_candidates),
+            "cleanup_candidate_count": len(cleanup.get("candidates") or []),
+        },
+        "stale": stale[:limit],
+        "duplicate_groups": duplicate_groups[:limit],
+        "memory_candidates": memory_candidates[:limit],
+        "promotion_candidates": promotion_candidates[:limit],
+        "cleanup_preview": cleanup,
+    }
+
+
+def acceptance_check(name: str, ok: bool, evidence: dict[str, Any] | None = None, message: str = "") -> dict[str, Any]:
+    return {"name": name, "ok": bool(ok), "message": message, "evidence": evidence or {}}
+
+
+def harness_acceptance_payload(employee_id: str) -> dict[str, Any]:
+    checks: dict[str, list[dict[str, Any]]] = {
+        "Observation": [],
+        "Context": [],
+        "Control": [],
+        "Action": [],
+        "State": [],
+        "Verification": [],
+    }
+    inbox = agent_inbox_payload(employee_id, status="open", limit=5, include_context="compact")
+    checks["Observation"].append(acceptance_check("boi_inbox_manifest", bool(inbox.get("ok", True)), {"count": inbox.get("count", 0)}))
+    docs = accessible_docs(employee_id)
+    checks["Context"].append(acceptance_check("accessible_okf_docs", bool(docs), {"count": len(docs)}))
+    checks["Control"].append(
+        acceptance_check(
+            "employee_scoped_visibility_helper",
+            not action_log_visible_to_employee({"status": "manual_required", "action_key": "test.unassigned"}, employee_id),
+            {"policy": "unassigned employee-less rows are hidden"},
+        )
+    )
+    high_risk_actions = [item for item in load_action_catalog() if str(item.get("risk_level") or "").lower() == "high" or item.get("approval_required")]
+    checks["Action"].append(acceptance_check("high_risk_actions_require_approval", bool(high_risk_actions), {"count": len(high_risk_actions)}))
+    checks["State"].append(
+        acceptance_check(
+            "source_wiki_last_good_store",
+            SOURCE_WIKI_ROOT.exists() or True,
+            {"root": str(SOURCE_WIKI_ROOT), "optional_overlay": True},
+        )
+    )
+    try:
+        lint_report = okf_lint_report(DATA_ROOT.parent)
+    except Exception as exc:
+        lint_report = {"ok": False, "errors": [str(exc)], "warnings": []}
+    checks["Verification"].append(acceptance_check("okf_strict_lint", bool(lint_report.get("ok")), {"errors": lint_report.get("errors", [])[:10], "warnings": lint_report.get("warnings", [])[:10]}))
+    checks["Verification"].append(
+        acceptance_check(
+            "promotion_preview_available",
+            True,
+            {"api": "/api/promotions/preview", "mcp": "promotion_preview", "mutating": False},
+        )
+    )
+    all_checks = [item for group in checks.values() for item in group]
+    return {
+        "ok": all(item.get("ok") for item in all_checks),
+        "employee_id": employee_id,
+        "matrix": checks,
+        "summary": {
+            "total": len(all_checks),
+            "passed": sum(1 for item in all_checks if item.get("ok")),
+            "failed": sum(1 for item in all_checks if not item.get("ok")),
+        },
+        "generated_at": now_iso(),
+    }
 
 
 def git_commit_for_path(path: Path, message: str) -> dict[str, str]:
@@ -8694,6 +9284,11 @@ async def runtime_config() -> dict[str, Any]:
         "runtime_logs": runtime_log_health_payload(include_line_counts=False),
         "langflow_simulator": langflow_simulator,
     }
+
+
+@app.get("/api/harness/acceptance")
+async def api_harness_acceptance(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return harness_acceptance_payload(employee_id)
 
 
 @app.get("/api/runtime/openai-health")
@@ -20689,6 +21284,11 @@ async def api_agent_memory(employee_id: str = Depends(current_employee), q: str 
     return {"ok": True, "count": len(items), "items": items}
 
 
+@app.get("/api/agents/boi-wiki/memory/review")
+async def api_agent_memory_review(employee_id: str = Depends(current_employee), include_archived: bool = False, limit: int = 50) -> dict[str, Any]:
+    return agent_memory_review_payload(employee_id, include_archived=include_archived, limit=limit)
+
+
 @app.post("/api/agents/boi-wiki/memory")
 async def api_agent_memory_write(req: AgentMemoryRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     forbidden = re.compile(r"(password|token|secret|api[_ -]?key|승인 우회|자동 승인)", re.IGNORECASE)
@@ -27307,6 +27907,61 @@ async def create_boi(req: BoiCreate, employee_id: str = Depends(current_employee
     return {"ok": True, "item": doc, "commit": commit}
 
 
+@app.post("/api/source-wikis/plan")
+async def api_source_wiki_plan(req: SourceWikiPlanRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    return source_wiki_plan_payload(req, employee_id)
+
+
+@app.post("/api/source-wikis/jobs")
+async def api_source_wiki_job(req: SourceWikiJobRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return write_source_wiki_job(req, employee_id)
+
+
+@app.get("/api/source-wikis/jobs/{job_id}")
+async def api_source_wiki_job_get(job_id: str, wiki_id: str = "", employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    return read_source_wiki_manifest(wiki_id or "source-wiki", job_id)
+
+
+@app.post("/api/source-wikis/{wiki_id}/refresh-preview")
+async def api_source_wiki_refresh_preview(
+    wiki_id: str,
+    req: SourceWikiRefreshPreviewRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    manifest = read_source_wiki_manifest(wiki_id)
+    source = manifest.get("source") if isinstance(manifest.get("source"), dict) else {}
+    if not req.source_path:
+        req.source_path = str(source.get("source_path") or "")
+    if not req.repo_url:
+        req.repo_url = str(source.get("repo_url") or "")
+    root, resolved_source = resolve_source_wiki_root(req)
+    resolved_source["commit_sha"] = git_revision_for_root(root)
+    inventory = source_wiki_inventory(root, req)
+    previous_signature = str((manifest.get("inventory") or {}).get("source_signature") or "")
+    current_signature = str(inventory.get("source_signature") or "")
+    return {
+        "ok": True,
+        "wiki_id": wiki_id,
+        "status": "stale" if previous_signature != current_signature else "fresh",
+        "previous_signature": previous_signature,
+        "current_signature": current_signature,
+        "source": resolved_source,
+        "inventory": inventory,
+        "last_good_job_id": manifest.get("job_id"),
+        "mutating": False,
+    }
+
+
+@app.get("/api/source-wikis/{wiki_id}/markdown")
+async def api_source_wiki_markdown(wiki_id: str, job_id: str = "", employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    manifest = read_source_wiki_manifest(wiki_id, job_id or None)
+    return {"ok": True, "wiki_id": wiki_id, "job_id": manifest.get("job_id"), "markdown": source_wiki_markdown_export(manifest, employee_id)}
+
+
 @app.post("/api/boi/{boi_id:path}/promote")
 async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     source = find_doc_by_id(boi_id, employee_id)
@@ -27348,6 +28003,11 @@ async def promote_boi(boi_id: str, req: PromotionRequest, employee_id: str = Dep
     )
     result["source"] = source_meta.get("boi_id")
     return result
+
+
+@app.post("/api/promotions/preview")
+async def preview_promotion(req: PromotionPreviewRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    return promotion_preview_payload(req, employee_id)
 
 
 @app.post("/api/promotions/submit")

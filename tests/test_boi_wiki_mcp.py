@@ -33,7 +33,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 116
+    assert body["capabilities"]["tools"] == 124
     assert body["capabilities"]["tools"] == len(body["capability_lists"]["tools"])
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
@@ -79,6 +79,8 @@ def test_boi_wiki_mcp_health(mcp_module):
         "private_memory_cleanup_run",
         "private_memory_restore",
         "private_memory_mark_memory",
+        "agent_memory_review",
+        "harness_acceptance",
     } <= boi_wiki_tools
     sop_group = next(group for group in body["tool_groups"] if group["name"] == "SOP")
     sop_tools = {tool["name"] for tool in sop_group["tools"]}
@@ -106,6 +108,16 @@ def test_boi_wiki_mcp_health(mcp_module):
         "data_lake_artifact_attach",
         "data_lake_import_sources",
     } <= data_lake_tools
+    advanced_group = next(group for group in body["tool_groups"] if group["name"] == "Advanced")
+    advanced_tools = {tool["name"] for tool in advanced_group["tools"]}
+    assert {
+        "source_wiki_plan",
+        "source_wiki_job_start",
+        "source_wiki_job_get",
+        "source_wiki_refresh_preview",
+        "source_wiki_markdown_export",
+        "promotion_preview",
+    } <= advanced_tools
     assert "Deprecated / Compatibility" in group_names
     deprecated = next(group for group in body["tool_groups"] if group["name"] == "Deprecated / Compatibility")
     assert [tool["name"] for tool in deprecated["tools"]] == [
@@ -956,6 +968,8 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         ),
         ("dictionary_terms", {"employee_id": "100001", "query": "단면검사", "scope": "all", "limit": 5}),
         ("agent_memory_search", {"employee_id": "100001", "query": "선호", "include_archived": False, "limit": 3}),
+        ("agent_memory_review", {"employee_id": "100001", "include_archived": False, "limit": 5}),
+        ("harness_acceptance", {"employee_id": "100001"}),
         ("private_memory_cleanup_preview", {"employee_id": "100001", "scope": "generated"}),
         ("private_memory_cleanup_run", {"employee_id": "100001", "cleanup_id": "pytest", "selected_boi_ids": ["boi:private:100001:test"], "user_confirmed": True}),
         ("private_memory_restore", {"employee_id": "100001", "cleanup_id": "pytest", "boi_ids": ["boi:private:100001:test"], "user_confirmed": True}),
@@ -1008,6 +1022,8 @@ def test_boi_wiki_mcp_bridge_covers_agent_dictionary_memory_and_manual_tools(mcp
         "/api/agents/boi-wiki/suggestions",
         "/api/dictionary/terms",
         "/api/agents/boi-wiki/memory",
+        "/api/agents/boi-wiki/memory/review",
+        "/api/harness/acceptance",
         "/api/private-memory/cleanup-preview",
         "/api/private-memory/cleanup-run",
         "/api/private-memory/restore",
@@ -1729,6 +1745,51 @@ def test_mcp_source_apply_requires_user_confirmation(mcp_module, monkeypatch):
 
     assert result["status"] == "applied"
     assert calls[0]["path"] == "/api/source/apply"
+
+
+def test_mcp_source_wiki_and_promotion_preview_tools(mcp_module, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "markdown": "# Export"}
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.source_wiki_job_start(source_path="/tmp/source", wiki_id="source", user_confirmed=False))
+
+    plan = asyncio.run(mcp_module.source_wiki_plan(source_path="/tmp/source", wiki_id="source"))
+    job = asyncio.run(mcp_module.source_wiki_job_start(source_path="/tmp/source", wiki_id="source", user_confirmed=True))
+    refresh = asyncio.run(mcp_module.source_wiki_refresh_preview(wiki_id="source", source_path="/tmp/source"))
+    export = asyncio.run(mcp_module.source_wiki_markdown_export(wiki_id="source"))
+    preview = asyncio.run(
+        mcp_module.promotion_preview(
+            title="Team note",
+            body="# Summary\n\nBody",
+            source_refs=[{"type": "local-private", "ref": "note"}],
+        )
+    )
+
+    assert plan["ok"] is True
+    assert job["ok"] is True
+    assert refresh["ok"] is True
+    assert export["markdown"] == "# Export"
+    assert preview["ok"] is True
+    assert [item["path"] for item in calls] == [
+        "/api/source-wikis/plan",
+        "/api/source-wikis/jobs",
+        "/api/source-wikis/source/refresh-preview",
+        "/api/source-wikis/source/markdown",
+        "/api/promotions/preview",
+    ]
+    assert calls[1]["payload"]["user_confirmed"] is True
+    assert calls[-1]["payload"]["user_confirmed"] is False
 
 
 def test_mcp_doc_body_apply_requires_user_confirmation(mcp_module, monkeypatch):
