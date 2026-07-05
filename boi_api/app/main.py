@@ -34,7 +34,7 @@ from urllib import error as urllib_error, request as urllib_request
 import yaml
 from aiokafka import AIOKafkaProducer
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
@@ -5439,6 +5439,34 @@ def doc_url_for_ref(ref: str, employee_id: str) -> str:
     return f"/docs/{ref}?" + urlencode({"employee_id": employee_id})
 
 
+FINAL_OPERATOR_GUIDE_REF = "boi:public:boi-wiki-manual:guide:final-operator-guide"
+
+
+def final_operator_guide_url(employee_id: str) -> str:
+    return doc_url_for_ref(FINAL_OPERATOR_GUIDE_REF, employee_id)
+
+
+def should_redirect_home_to_guide(
+    request: Request,
+    *,
+    partial: str,
+    q: str,
+    event_type: str,
+    visibility: str,
+    boi_type: str,
+    folder: str,
+    archive_status: str,
+    include_generated: bool,
+    include_archived: bool,
+    include_quarantined: bool,
+) -> bool:
+    if partial or request.query_params.get("view") == "explorer":
+        return False
+    if any([q, event_type, visibility, boi_type, folder, include_generated, include_archived, include_quarantined]):
+        return False
+    return archive_status in {"", "active"}
+
+
 def okf_concept_id_for_doc(doc: dict[str, Any]) -> str:
     uri = str(doc.get("uri") or "").lstrip("/")
     return uri[:-3] if uri.endswith(".md") else uri
@@ -5536,7 +5564,8 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
     query = request.query_params
     items_by_nav: dict[str, list[dict[str, str]]] = {
         "library": [
-            {"id": "explorer", "label": "Explorer", "href": app_url("/", employee_id)},
+            {"id": "guide", "label": "종합 가이드", "href": final_operator_guide_url(employee_id)},
+            {"id": "explorer", "label": "Explorer", "href": app_url("/", employee_id, view="explorer")},
             {"id": "dictionary", "label": "업무 용어", "href": app_url("/", employee_id, boi_type="boi/dictionary-term")},
             {"id": "my_work", "label": "내 업무", "href": app_url("/", employee_id, visibility="private")},
         ],
@@ -5572,6 +5601,8 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
 
     def active_section_id() -> str:
         if active_nav == "library":
+            if path == f"/docs/{FINAL_OPERATOR_GUIDE_REF}":
+                return "guide"
             if query.get("boi_type") == "boi/dictionary-term":
                 return "dictionary"
             if query.get("visibility") == "private":
@@ -5627,7 +5658,7 @@ def app_shell_context(
     identity = identity_for_employee(employee_id)
     mode = auth_mode()
     primary_nav = [
-        {"id": "library", "label": "BoI Wiki", "href": app_url("/", employee_id)},
+        {"id": "library", "label": "BoI Wiki", "href": final_operator_guide_url(employee_id)},
         {"id": "inbox", "label": "BoI Inbox", "href": app_url("/inbox", employee_id)},
         {"id": "sops", "label": "SOP", "href": app_url("/sops", employee_id)},
         {"id": "events", "label": "Event Broker", "href": app_url("/events", employee_id)},
@@ -5638,6 +5669,7 @@ def app_shell_context(
         "title": title,
         "description": description,
         "active_nav": active_nav,
+        "home_url": final_operator_guide_url(employee_id),
         "primary_nav": primary_nav,
         "section_subnav": section_subnav_for(active_nav, request, employee_id),
         "page_actions": page_actions or [],
@@ -9657,7 +9689,22 @@ async def index(
     include_archived: bool = False,
     include_quarantined: bool = False,
     partial: str = "",
-) -> HTMLResponse:
+) -> Response:
+    if should_redirect_home_to_guide(
+        request,
+        partial=partial,
+        q=q,
+        event_type=event_type,
+        visibility=visibility,
+        boi_type=boi_type,
+        folder=folder,
+        archive_status=archive_status,
+        include_generated=include_generated,
+        include_archived=include_archived,
+        include_quarantined=include_quarantined,
+    ):
+        return RedirectResponse(final_operator_guide_url(employee_id), status_code=303)
+
     selected_folder = normalize_folder(folder)
     accessible = accessible_docs(employee_id)
     filtered_docs = filter_docs_ontology_aware(
