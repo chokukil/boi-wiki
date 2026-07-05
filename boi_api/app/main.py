@@ -7155,6 +7155,11 @@ def source_wiki_excerpt(path: Path, limit: int = 900) -> tuple[str, list[str]]:
         lambda match: f"[image: {match.group(1).strip() or 'image'} -> {match.group(2).strip()}]",
         content,
     )
+    content = re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)",
+        lambda match: f"[link: {match.group(1).strip()} -> {match.group(2).strip()}]",
+        content,
+    )
     collapsed = re.sub(r"\s+", " ", content).strip()
     return text_excerpt(collapsed, limit), headings
 
