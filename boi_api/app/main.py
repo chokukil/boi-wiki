@@ -7061,6 +7061,8 @@ def resolve_source_wiki_root(req: SourceWikiPlanRequest | SourceWikiRefreshPrevi
         root = Path(source_path).expanduser().resolve()
     elif repo_url.endswith("boi-wiki-local") or repo_url.endswith("boi-wiki-local.git"):
         root = Path("/home/chokukil/boi-wiki-local").resolve()
+    elif repo_url.endswith("boi-wiki") or repo_url.endswith("boi-wiki.git"):
+        root = Path.cwd().resolve()
     else:
         raise HTTPException(status_code=400, detail="source_path is required unless repo_url maps to a known local checkout")
     if not root.exists() or not root.is_dir():
@@ -7115,7 +7117,17 @@ def source_wiki_role_for_path(rel: str) -> str:
     lower = rel.lower()
     if lower in {"readme.md", "agents.md", "claude.md", "llm-wiki.md"}:
         return "entrypoint"
-    if lower.startswith("scripts/") or lower.endswith((".sh", ".ps1")):
+    if lower.startswith(("boi_api/", "boi_wiki_mcp/", "action_gateway/", "event_adapter/", "mock_hcp/")):
+        return "runtime"
+    if lower.startswith("tests/"):
+        return "test"
+    if lower.startswith("harness/") or lower.startswith("data/boi/public/harness/"):
+        return "harness"
+    if lower.startswith("data/boi/public/boi-wiki-manual/"):
+        return "manual"
+    if lower.startswith(("data/action_catalog/", "data/event_catalog/", "data/workflow_catalog/", "data/action_skill_catalog/", "data/event_skill_catalog/")):
+        return "catalog"
+    if lower.startswith(("scripts/", ".github/")) or lower.endswith((".sh", ".ps1")):
         return "automation"
     if "promotion-drafts" in lower:
         return "promotion"
@@ -7125,6 +7137,8 @@ def source_wiki_role_for_path(rel: str) -> str:
         return "dictionary"
     if "context-packs" in lower:
         return "context"
+    if lower.startswith("data/boi/private/") or lower.startswith("data/boi/index.md") or lower.startswith("data/boi/log.md"):
+        return "local_knowledge"
     if lower.startswith("data/boi"):
         return "knowledge"
     return "supporting"
@@ -7189,13 +7203,31 @@ def source_wiki_outline(wiki_id: str, title: str, inventory: dict[str, Any]) -> 
     by_role: dict[str, list[dict[str, Any]]] = {}
     for item in selected:
         by_role.setdefault(str(item.get("role") or "supporting"), []).append(item)
-    outline = [
+    roles_present = set(by_role)
+    outline: list[dict[str, Any]] = [
         {"slug": "overview", "title": f"{title} Overview", "roles": ["entrypoint", "supporting"]},
-        {"slug": "local-second-brain", "title": "Local Second Brain Lifecycle", "roles": ["knowledge", "context", "example"]},
-        {"slug": "promotion-and-remote", "title": "Promotion and Remote BoI Wiki Integration", "roles": ["promotion", "entrypoint"]},
-        {"slug": "automation-and-checks", "title": "Automation and Checks", "roles": ["automation"]},
-        {"slug": "source-map", "title": "Source Map and Citations", "roles": list(by_role)},
     ]
+    if roles_present.intersection({"runtime"}):
+        outline.append({"slug": "runtime-surfaces", "title": "Runtime Surfaces and Interfaces", "roles": ["runtime"]})
+    if roles_present.intersection({"manual", "harness", "catalog", "knowledge"}):
+        outline.append(
+            {
+                "slug": "knowledge-harness-catalogs",
+                "title": "Knowledge, Harness, and Catalogs",
+                "roles": ["manual", "harness", "catalog", "knowledge"],
+            }
+        )
+    if roles_present.intersection({"local_knowledge", "context", "dictionary", "example", "promotion"}):
+        outline.append(
+            {
+                "slug": "local-second-brain",
+                "title": "Local Second Brain Lifecycle",
+                "roles": ["local_knowledge", "context", "dictionary", "example", "promotion"],
+            }
+        )
+    if roles_present.intersection({"automation", "test"}):
+        outline.append({"slug": "automation-and-verification", "title": "Automation and Verification", "roles": ["automation", "test"]})
+    outline.append({"slug": "source-map", "title": "Source Map and Citations", "roles": list(by_role)})
     return outline
 
 
@@ -7217,9 +7249,18 @@ def source_wiki_page_body(title: str, page: dict[str, Any], inventory: dict[str,
         f"- Selected files: `{inventory.get('selected_count')}`",
         f"- Source signature: `{inventory.get('source_signature')}`",
         "",
-        "# Key Sources",
+        "# Role Counts",
         "",
     ]
+    for role, count in sorted((inventory.get("role_counts") or {}).items()):
+        lines.append(f"- `{role}`: `{count}`")
+    lines.extend(
+        [
+            "",
+            "# Key Sources",
+            "",
+        ]
+    )
     for item in items[:24]:
         headings = ", ".join(item.get("headings") or []) or "no headings"
         lines.extend(

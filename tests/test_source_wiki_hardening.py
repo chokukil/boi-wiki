@@ -51,6 +51,41 @@ def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_pa
     assert "Source Snapshot" in markdown.json()["markdown"]
 
 
+def test_source_wiki_plan_maps_boi_wiki_repo_url_to_runtime_outline(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    payload = {
+        "repo_url": "https://github.com/chokukil/boi-wiki",
+        "wiki_id": "boi-wiki-platform-source",
+        "title": "BoI Wiki Platform Source",
+        "max_files": 1,
+        "include_globs": ["README.md"],
+    }
+
+    response = client.post("/api/source-wikis/plan?employee_id=100001", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    selected = {item["path"]: item["role"] for item in body["inventory"]["selected"]}
+    assert selected["README.md"] == "entrypoint"
+    assert body["source"]["repo_url"] == "https://github.com/chokukil/boi-wiki"
+
+    inventory = {
+        "selected": [
+            {"path": "README.md", "role": "entrypoint"},
+            {"path": "boi_api/app/routes.py", "role": boi_app_module.source_wiki_role_for_path("boi_api/app/routes.py")},
+            {"path": "boi_wiki_mcp/app/main.py", "role": boi_app_module.source_wiki_role_for_path("boi_wiki_mcp/app/main.py")},
+            {
+                "path": "data/boi/public/boi-wiki-manual/guide/final-operator-guide.md",
+                "role": boi_app_module.source_wiki_role_for_path("data/boi/public/boi-wiki-manual/guide/final-operator-guide.md"),
+            },
+            {"path": "tests/test_source_wiki_hardening.py", "role": boi_app_module.source_wiki_role_for_path("tests/test_source_wiki_hardening.py")},
+        ],
+        "role_counts": {},
+    }
+    outline_slugs = {item["slug"] for item in boi_app_module.source_wiki_outline("boi-wiki-platform-source", "BoI Wiki Platform Source", inventory)}
+    assert {"runtime-surfaces", "knowledge-harness-catalogs", "automation-and-verification", "source-map"}.issubset(outline_slugs)
+
+
 def test_promotion_preview_is_non_mutating_and_submit_still_requires_confirmation(boi_app_module):
     client = TestClient(boi_app_module.app)
     public_before = sorted(Path(boi_app_module.DATA_ROOT / "public").rglob("*.md"))
