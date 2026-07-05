@@ -7150,6 +7150,11 @@ def source_wiki_excerpt(path: Path, limit: int = 900) -> tuple[str, list[str]]:
     except Exception:
         return "", []
     headings = [line.strip("# ").strip() for line in content.splitlines() if line.startswith("#")][:8]
+    content = re.sub(
+        r"!\[([^\]]*)\]\(([^)]+)\)",
+        lambda match: f"[image: {match.group(1).strip() or 'image'} -> {match.group(2).strip()}]",
+        content,
+    )
     collapsed = re.sub(r"\s+", " ", content).strip()
     return text_excerpt(collapsed, limit), headings
 

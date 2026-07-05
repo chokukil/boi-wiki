@@ -9,7 +9,10 @@ def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_pa
     source_root = tmp_path / "local-source"
     source_root.mkdir()
     (source_root / "README.md").write_text("# Local Source\n\nUse local private notes safely.", encoding="utf-8")
-    (source_root / "AGENTS.md").write_text("# Agent Rules\n\nDo not submit raw local notes remotely.", encoding="utf-8")
+    (source_root / "AGENTS.md").write_text(
+        "# Agent Rules\n\nDo not submit raw local notes remotely.\n\n![sample](evidence/sample.png)",
+        encoding="utf-8",
+    )
     scripts = source_root / "scripts"
     scripts.mkdir()
     (scripts / "check.sh").write_text("#!/usr/bin/env sh\nprintf 'ok\\n'\n", encoding="utf-8")
@@ -49,6 +52,8 @@ def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_pa
     markdown = client.get("/api/source-wikis/local-source/markdown?employee_id=100001")
     assert markdown.status_code == 200
     assert "Source Snapshot" in markdown.json()["markdown"]
+    assert "![sample]" not in markdown.json()["markdown"]
+    assert "[image: sample -> evidence/sample.png]" in markdown.json()["markdown"]
 
 
 def test_source_wiki_plan_maps_boi_wiki_repo_url_to_runtime_outline(boi_app_module):
