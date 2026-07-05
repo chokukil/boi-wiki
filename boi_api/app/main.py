@@ -7263,6 +7263,7 @@ def source_wiki_page_body(title: str, page: dict[str, Any], inventory: dict[str,
     )
     for item in items[:24]:
         headings = ", ".join(item.get("headings") or []) or "no headings"
+        excerpt = str(item.get("excerpt") or "No text excerpt available.").strip()
         lines.extend(
             [
                 f"## `{item.get('path')}`",
@@ -7271,7 +7272,7 @@ def source_wiki_page_body(title: str, page: dict[str, Any], inventory: dict[str,
                 f"- SHA256: `{item.get('sha256')}`",
                 f"- Headings: {headings}",
                 "",
-                str(item.get("excerpt") or "No text excerpt available."),
+                f"> {excerpt}",
                 "",
             ]
         )
