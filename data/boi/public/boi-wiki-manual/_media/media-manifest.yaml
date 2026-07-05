@@ -263,27 +263,3 @@ media:
     viewport: 1440x1100
     related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
     created_by: codex
-  - path: public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-top-1440x1100.png
-    sha256: 284b4a607a42ae8b9edec380632250a20ab542c1195d31dfd89f68368ed5ef1c
-    source_kind: browser-screenshot
-    captured_url: http://127.0.0.1:28000/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001
-    captured_at: 2026-07-05T22:06:45+09:00
-    viewport: 1440x1100
-    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
-    created_by: codex
-  - path: public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-harness-1440x1100.png
-    sha256: e8c41e36f36aa7ecabeb011ec458ca7e59727ebbdacf115e6c6c23812db1b091
-    source_kind: browser-screenshot
-    captured_url: http://127.0.0.1:28000/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001#harness-acceptance
-    captured_at: 2026-07-05T22:06:45+09:00
-    viewport: 1440x1100
-    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
-    created_by: codex
-  - path: public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-local-second-brain-1440x1100.png
-    sha256: d9f454a89ab06fc3c54cd167296a8d5cd624cee9fa46fc394b035688aae486fb
-    source_kind: browser-screenshot
-    captured_url: http://127.0.0.1:28000/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001#local-second-brain
-    captured_at: 2026-07-05T22:06:45+09:00
-    viewport: 1440x1100
-    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
-    created_by: codex
