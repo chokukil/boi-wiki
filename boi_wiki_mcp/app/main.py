@@ -1,10 +1,16 @@
+import inspect
 import json
 import os
 from html import escape
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.streamable_http import TransportSecuritySettings
+except Exception:  # pragma: no cover - older mcp releases did not expose this.
+    TransportSecuritySettings = None  # type: ignore[assignment]
 from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -19,6 +25,81 @@ MCP_BACKEND_TIMEOUT_SECONDS = float(os.getenv("MCP_BACKEND_TIMEOUT_SECONDS", "12
 MCP_REQUIRE_SERVICE_TOKEN = str(os.getenv("MCP_REQUIRE_SERVICE_TOKEN", "false")).strip().lower() in {"1", "true", "yes", "on"}
 
 DEFAULT_PUBLIC_BASE_URL = "http://localhost:8200"
+
+
+def env_bool(name: str, default: str = "false") -> bool:
+    return str(os.getenv(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def split_env_list(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def host_patterns_from_url(value: str) -> list[str]:
+    parsed = urlsplit(str(value or "").strip())
+    host = parsed.netloc or parsed.path
+    if not host:
+        return []
+    if "@" in host:
+        host = host.rsplit("@", 1)[1]
+    hostname = host.split(":", 1)[0] if not host.startswith("[") else host.split("]", 1)[0] + "]"
+    patterns = [host]
+    if hostname and hostname != host:
+        patterns.append(f"{hostname}:*")
+    return patterns
+
+
+def mcp_transport_security_settings() -> Any:
+    if TransportSecuritySettings is None:
+        return None
+    if not env_bool("MCP_DNS_REBINDING_PROTECTION", "true"):
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    default_hosts = [
+        "127.0.0.1:*",
+        "localhost:*",
+        "[::1]:*",
+        "testserver",
+        "testserver:*",
+        "boi-wiki-mcp:*",
+        "boi-wiki-mcp.example:*",
+    ]
+    hosts = split_env_list(os.getenv("MCP_ALLOWED_HOSTS", ""))
+    if not hosts:
+        hosts = default_hosts + host_patterns_from_url(os.getenv("BOI_WIKI_MCP_EXTERNAL_URL", DEFAULT_PUBLIC_BASE_URL))
+    origins = split_env_list(os.getenv("MCP_ALLOWED_ORIGINS", ""))
+    if not origins:
+        origins = []
+        for host in hosts:
+            if host.startswith("http://") or host.startswith("https://"):
+                origins.append(host)
+                continue
+            origins.append(f"http://{host}")
+            origins.append(f"https://{host}")
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=sorted(set(hosts)),
+        allowed_origins=sorted(set(origins)),
+    )
+
+
+def fastmcp_transport_kwargs() -> dict[str, Any]:
+    if "transport_security" not in inspect.signature(FastMCP).parameters:
+        return {}
+    return {"transport_security": mcp_transport_security_settings()}
+
+
+def mcp_transport_security_summary() -> dict[str, Any]:
+    settings = mcp_transport_security_settings()
+    if settings is None:
+        return {"supported": False, "dns_rebinding_protection": False, "allowed_hosts": [], "allowed_origins": []}
+    return {
+        "supported": True,
+        "dns_rebinding_protection": bool(getattr(settings, "enable_dns_rebinding_protection", False)),
+        "allowed_hosts": list(getattr(settings, "allowed_hosts", []) or []),
+        "allowed_origins": list(getattr(settings, "allowed_origins", []) or []),
+    }
+
+
 MCP_TOOL_CAPABILITIES = [
     {"name": "boi_search", "description": "Search accessible BoI OKF documents by query, folder, event type, visibility, or BoI type."},
     {"name": "boi_get", "description": "Return one accessible BoI document by BoI ID or OKF path."},
@@ -65,12 +146,17 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "reporting_analysis_job_create", "description": "Create a reporting analysis sandbox job for tables, charts, and validation artifacts."},
     {"name": "reporting_report_draft_create", "description": "Create a user-confirmed Report BoI draft from analysis evidence and report brief."},
     {"name": "reporting_report_publish", "description": "Publish a user-confirmed analysis Report BoI draft to a private BoI document."},
-    {"name": "data_lake_status", "description": "Return optional BoI Data Lake enablement, PostgreSQL/MinIO configuration status, and DB-less core boundary."},
+    {"name": "data_lake_status", "description": "Return optional BoI Data Lake artifact-store status, Legacy DB Demo adapter status, and DB-less OKF core boundary."},
     {"name": "data_lake_sources", "description": "List optional Data Lake sources and OKF Data Context entries available to the employee."},
     {"name": "data_lake_query_plan", "description": "Turn a natural-language data need into a Data Lake query plan without executing SQL."},
     {"name": "data_lake_query_preview", "description": "Preview a Data Lake query and expected evidence/artifacts before execution."},
     {"name": "data_lake_query_execute", "description": "Execute a user-confirmed Data Lake query through BoI API and return artifact links."},
+    {"name": "data_lake_artifact_upload", "description": "Upload a bounded file payload as a Data Lake artifact without putting raw content in BoI context."},
+    {"name": "data_lake_artifact_list", "description": "List Data Lake artifacts attached to a workflow stage, Inbox task, report, conversation, or work context."},
     {"name": "data_lake_artifact_get", "description": "Return metadata and access link for a Data Lake evidence artifact."},
+    {"name": "data_lake_artifact_download_url", "description": "Return the stable BoI API download URL for a Data Lake artifact."},
+    {"name": "data_lake_artifact_profile", "description": "Generate or refresh a bounded profile/sample preview for a Data Lake artifact."},
+    {"name": "data_lake_artifact_attach", "description": "Attach a confirmed Data Lake artifact to a report, SOP stage, or BoI evidence target."},
     {"name": "data_lake_import_sources", "description": "Materialize selected Data Lake source profiles as private OKF Data Context BoI documents after explicit confirmation."},
     {"name": "agent_inbox_context", "description": "Return Work Context Pack details and work_context_narrative for one visible Inbox task."},
     {"name": "similar_cases_search", "description": "Return ACL-filtered similar handling cases, anonymous patterns, and narrative source fields for an Inbox task/action."},
@@ -107,6 +193,9 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "event_type_draft_create", "description": "Create a user-confirmed Event Type draft and catalog patch proposal."},
     {"name": "event_publish_plan", "description": "Turn a natural-language business event request into an Event publish plan and candidate Event Types."},
     {"name": "event_publish_preview", "description": "Preview what happens when an Event is published, including workflow linkage and recent history."},
+    {"name": "event_ingestion_adapter_plan", "description": "Plan an Event Producer adapter for Webhook, API poll, MCP/Data Lake, Kafka, or manual SOP start without applying runtime changes."},
+    {"name": "event_ingestion_adapter_test", "description": "Run a preview-only Event Producer adapter test and return sample Event payload mapping without publishing."},
+    {"name": "event_ingestion_adapter_draft_create", "description": "Create a confirmed Event Producer adapter draft for later validation and publish request."},
     {"name": "event_pattern_preview", "description": "Preview whether filtered Event history can be promoted into a new Event Type draft."},
     {"name": "event_pattern_promote_to_draft", "description": "Create a user-confirmed Event Type draft from an Event history pattern preview."},
     {"name": "sop_run_history", "description": "Return SOP-oriented run history cards instead of raw Event Stream rows."},
@@ -235,6 +324,9 @@ MCP_TOOL_IA_GROUPS = [
         {
             "event_publish_plan",
             "event_publish_preview",
+            "event_ingestion_adapter_plan",
+            "event_ingestion_adapter_test",
+            "event_ingestion_adapter_draft_create",
             "event_pattern_preview",
             "event_pattern_promote_to_draft",
             "event_type_draft_create",
@@ -288,7 +380,12 @@ MCP_TOOL_IA_GROUPS = [
             "data_lake_query_plan",
             "data_lake_query_preview",
             "data_lake_query_execute",
+            "data_lake_artifact_upload",
+            "data_lake_artifact_list",
             "data_lake_artifact_get",
+            "data_lake_artifact_download_url",
+            "data_lake_artifact_profile",
+            "data_lake_artifact_attach",
             "data_lake_import_sources",
         },
     ),
@@ -573,6 +670,7 @@ mcp = FastMCP(
     streamable_http_path="/mcp",
     json_response=True,
     stateless_http=True,
+    **fastmcp_transport_kwargs(),
 )
 
 
@@ -1215,8 +1313,6 @@ async def boi_inbox_decision_preview(
     user_confirmed: bool = False,
 ) -> dict[str, Any]:
     """Preview a BoI Inbox group decision while preserving high-risk guardrails."""
-    if not user_confirmed:
-        raise RuntimeError("user_confirmed=true is required before previewing a BoI Inbox decision")
     return await api_post(
         f"/api/inbox/groups/{group_id}/decision-preview",
         employee_id=employee_id,
@@ -1224,7 +1320,7 @@ async def boi_inbox_decision_preview(
             "decision": decision,
             "note": note,
             "selected_task_ids": selected_task_ids or [],
-            "user_confirmed": user_confirmed,
+            "user_confirmed": bool(user_confirmed),
         },
     )
 
@@ -1610,10 +1706,99 @@ async def data_lake_query_execute(
     )
 
 
+@mcp.tool(name="data_lake_artifact_upload")
+async def data_lake_artifact_upload(
+    filename: str,
+    content_base64: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    content_type: str = "application/octet-stream",
+    visibility: str = "private",
+    source_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Upload a file payload as a Data Lake artifact via BoI API."""
+    return await api_post(
+        "/api/data-lake/artifacts/upload",
+        employee_id=employee_id,
+        payload={
+            "filename": filename,
+            "content_base64": content_base64,
+            "content_type": content_type,
+            "visibility": visibility,
+            "source_context": source_context or {},
+        },
+    )
+
+
 @mcp.tool(name="data_lake_artifact_get")
 async def data_lake_artifact_get(artifact_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
     """Return Data Lake artifact metadata or a disabled contract."""
     return await api_get(f"/api/data-lake/artifacts/{artifact_id}", employee_id=employee_id)
+
+
+@mcp.tool(name="data_lake_artifact_list")
+async def data_lake_artifact_list(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    target_type: str = "",
+    target_id: str = "",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """List bounded Data Lake artifact metadata for one work target without returning raw file content."""
+    return await api_get(
+        "/api/data-lake/artifacts",
+        employee_id=employee_id,
+        params={"target_type": target_type, "target_id": target_id, "limit": limit},
+    )
+
+
+@mcp.tool(name="data_lake_artifact_download_url")
+async def data_lake_artifact_download_url(artifact_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Return the stable BoI API artifact download URL."""
+    body = await api_get(f"/api/data-lake/artifacts/{artifact_id}", employee_id=employee_id)
+    artifact = body.get("artifact") if isinstance(body, dict) else {}
+    download_url = artifact.get("download_url") if isinstance(artifact, dict) else ""
+    return {**body, "download_url": download_url or f"/api/data-lake/artifacts/{artifact_id}/download"}
+
+
+@mcp.tool(name="data_lake_artifact_profile")
+async def data_lake_artifact_profile(artifact_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Generate or refresh a bounded Data Lake artifact profile."""
+    return await api_post(f"/api/data-lake/artifacts/{artifact_id}/profile", employee_id=employee_id, payload={})
+
+
+@mcp.tool(name="data_lake_artifact_attach")
+async def data_lake_artifact_attach(
+    artifact_id: str,
+    target_type: str,
+    target_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    relationship: str = "evidence",
+    note: str = "",
+    attached_from_surface: str = "",
+    attachment_role: str = "evidence",
+    human_note: str = "",
+    validation_state: str = "uploaded",
+    source_refs: list[dict[str, Any]] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Attach a confirmed Data Lake artifact to a report, SOP stage, or BoI evidence target."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before attaching a Data Lake artifact")
+    return await api_post(
+        f"/api/data-lake/artifacts/{artifact_id}/attach",
+        employee_id=employee_id,
+        payload={
+            "target_type": target_type,
+            "target_id": target_id,
+            "relationship": relationship,
+            "note": note,
+            "attached_from_surface": attached_from_surface,
+            "attachment_role": attachment_role,
+            "human_note": human_note,
+            "validation_state": validation_state,
+            "source_refs": source_refs or [],
+            "user_confirmed": True,
+        },
+    )
 
 
 @mcp.tool(name="data_lake_import_sources")
@@ -1671,8 +1856,6 @@ async def agent_inbox_decision_preview(
     user_confirmed: bool = False,
 ) -> dict[str, Any]:
     """Preview a group Inbox decision while preserving high-risk bulk approval guardrails."""
-    if not user_confirmed:
-        raise RuntimeError("user_confirmed=true is required before previewing an Inbox decision")
     return await api_post(
         f"/api/agents/boi-wiki/inbox/groups/{group_id}/decision-preview",
         employee_id=employee_id,
@@ -1680,7 +1863,7 @@ async def agent_inbox_decision_preview(
             "decision": decision,
             "note": note,
             "selected_task_ids": selected_task_ids or [],
-            "user_confirmed": user_confirmed,
+            "user_confirmed": bool(user_confirmed),
         },
     )
 
@@ -2306,6 +2489,81 @@ async def event_publish_preview(
     )
 
 
+@mcp.tool(name="event_ingestion_adapter_plan")
+async def event_ingestion_adapter_plan(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    source_kind: str = "",
+    source_name: str = "",
+    target_event_type: str = "",
+    payload_mapping: dict[str, Any] | None = None,
+    auth_policy: dict[str, Any] | None = None,
+    sample_payload: dict[str, Any] | None = None,
+    health_check: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Plan an Event Producer adapter without publishing or changing runtime wiring."""
+    return await api_post(
+        "/api/event-ingestion/adapters/plan",
+        employee_id=employee_id,
+        payload={
+            "source_kind": source_kind,
+            "source_name": source_name,
+            "target_event_type": target_event_type,
+            "payload_mapping": payload_mapping or {},
+            "auth_policy": auth_policy or {},
+            "sample_payload": sample_payload or {},
+            "health_check": health_check or {},
+        },
+    )
+
+
+@mcp.tool(name="event_ingestion_adapter_test")
+async def event_ingestion_adapter_test(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    adapter_plan: dict[str, Any] | None = None,
+    source_kind: str = "",
+    source_name: str = "",
+    target_event_type: str = "",
+    payload_mapping: dict[str, Any] | None = None,
+    sample_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preview-test an Event Producer adapter mapping without publishing an Event."""
+    return await api_post(
+        "/api/event-ingestion/adapters/test",
+        employee_id=employee_id,
+        payload={
+            "adapter_plan": adapter_plan or {},
+            "source_kind": source_kind,
+            "source_name": source_name,
+            "target_event_type": target_event_type,
+            "payload_mapping": payload_mapping or {},
+            "sample_payload": sample_payload or {},
+        },
+    )
+
+
+@mcp.tool(name="event_ingestion_adapter_draft_create")
+async def event_ingestion_adapter_draft_create(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    adapter_plan: dict[str, Any] | None = None,
+    test_result: dict[str, Any] | None = None,
+    note: str = "",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create an Event Producer adapter draft. This never applies Event Broker runtime changes."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before creating an Event Producer adapter draft")
+    return await api_post(
+        "/api/event-ingestion/adapters/drafts",
+        employee_id=employee_id,
+        payload={
+            "adapter_plan": adapter_plan or {},
+            "test_result": test_result or {},
+            "note": note,
+            "user_confirmed": True,
+        },
+    )
+
+
 @mcp.tool(name="event_pattern_preview")
 async def event_pattern_preview(
     employee_id: str = DEFAULT_EMPLOYEE_ID,
@@ -2762,6 +3020,7 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "required": MCP_REQUIRE_SERVICE_TOKEN,
             "accepted_headers": ["x-service-token", "Authorization: Bearer <token>"],
             "bridge_always_requires_service_token": True,
+            "transport_security": mcp_transport_security_summary(),
         },
         "notes": [
             "Open / in a browser for this status page.",
@@ -3099,8 +3358,6 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             service_token=True,
         )
     elif tool_name == "boi_inbox_decision_preview":
-        if not bridge_bool(args.get("user_confirmed")):
-            return bridge_confirmation_error(req.tool)
         result = await api_post(
             f"/api/inbox/groups/{str(args.get('group_id') or '')}/decision-preview",
             employee_id=employee_id,
@@ -3108,7 +3365,7 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "decision": str(args.get("decision") or ""),
                 "note": str(args.get("note") or ""),
                 "selected_task_ids": args.get("selected_task_ids") if isinstance(args.get("selected_task_ids"), list) else [],
-                "user_confirmed": True,
+                "user_confirmed": bridge_bool(args.get("user_confirmed")),
             },
             service_token=True,
         )
@@ -3364,10 +3621,73 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
             service_token=True,
         )
+    elif tool_name == "data_lake_artifact_upload":
+        result = await api_post(
+            "/api/data-lake/artifacts/upload",
+            employee_id=employee_id,
+            payload={
+                "filename": str(args.get("filename") or "artifact.bin"),
+                "content_base64": str(args.get("content_base64") or ""),
+                "content_type": str(args.get("content_type") or "application/octet-stream"),
+                "visibility": str(args.get("visibility") or "private"),
+                "source_context": args.get("source_context") if isinstance(args.get("source_context"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "data_lake_artifact_list":
+        result = await api_get(
+            "/api/data-lake/artifacts",
+            employee_id=employee_id,
+            params={
+                "target_type": str(args.get("target_type") or ""),
+                "target_id": str(args.get("target_id") or ""),
+                "limit": int(args.get("limit") or 50),
+            },
+            service_token=True,
+        )
     elif tool_name == "data_lake_artifact_get":
         result = await api_get(
             f"/api/data-lake/artifacts/{str(args.get('artifact_id') or '')}",
             employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "data_lake_artifact_download_url":
+        result = await api_get(
+            f"/api/data-lake/artifacts/{str(args.get('artifact_id') or '')}",
+            employee_id=employee_id,
+            service_token=True,
+        )
+        artifact = result.get("artifact") if isinstance(result, dict) else {}
+        result["download_url"] = (
+            artifact.get("download_url")
+            if isinstance(artifact, dict)
+            else ""
+        ) or f"/api/data-lake/artifacts/{str(args.get('artifact_id') or '')}/download"
+    elif tool_name == "data_lake_artifact_profile":
+        result = await api_post(
+            f"/api/data-lake/artifacts/{str(args.get('artifact_id') or '')}/profile",
+            employee_id=employee_id,
+            payload={},
+            service_token=True,
+        )
+    elif tool_name == "data_lake_artifact_attach":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            f"/api/data-lake/artifacts/{str(args.get('artifact_id') or '')}/attach",
+            employee_id=employee_id,
+            payload={
+                "target_type": str(args.get("target_type") or "boi"),
+                "target_id": str(args.get("target_id") or ""),
+                "relationship": str(args.get("relationship") or "evidence"),
+                "note": str(args.get("note") or ""),
+                "attached_from_surface": str(args.get("attached_from_surface") or ""),
+                "attachment_role": str(args.get("attachment_role") or "evidence"),
+                "human_note": str(args.get("human_note") or ""),
+                "validation_state": str(args.get("validation_state") or "uploaded"),
+                "source_refs": args.get("source_refs") if isinstance(args.get("source_refs"), list) else [],
+                "user_confirmed": True,
+            },
             service_token=True,
         )
     elif tool_name == "data_lake_import_sources":
@@ -3414,8 +3734,6 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         else:
             result = {"ok": False, "error": "task_id or group_id is required"}
     elif tool_name == "agent_inbox_decision_preview":
-        if not bridge_bool(args.get("user_confirmed")):
-            return bridge_confirmation_error(req.tool)
         result = await api_post(
             f"/api/agents/boi-wiki/inbox/groups/{str(args.get('group_id') or '')}/decision-preview",
             employee_id=employee_id,
@@ -3423,7 +3741,7 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "decision": str(args.get("decision") or ""),
                 "note": str(args.get("note") or ""),
                 "selected_task_ids": args.get("selected_task_ids") if isinstance(args.get("selected_task_ids"), list) else [],
-                "user_confirmed": True,
+                "user_confirmed": bridge_bool(args.get("user_confirmed")),
             },
             service_token=True,
         )
@@ -3816,6 +4134,49 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "event_type": str(args.get("event_type") or ""),
                 "plan": args.get("plan") if isinstance(args.get("plan"), dict) else {},
                 "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_ingestion_adapter_plan":
+        result = await api_post(
+            "/api/event-ingestion/adapters/plan",
+            employee_id=employee_id,
+            payload={
+                "source_kind": str(args.get("source_kind") or ""),
+                "source_name": str(args.get("source_name") or ""),
+                "target_event_type": str(args.get("target_event_type") or ""),
+                "payload_mapping": args.get("payload_mapping") if isinstance(args.get("payload_mapping"), dict) else {},
+                "auth_policy": args.get("auth_policy") if isinstance(args.get("auth_policy"), dict) else {},
+                "sample_payload": args.get("sample_payload") if isinstance(args.get("sample_payload"), dict) else {},
+                "health_check": args.get("health_check") if isinstance(args.get("health_check"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_ingestion_adapter_test":
+        result = await api_post(
+            "/api/event-ingestion/adapters/test",
+            employee_id=employee_id,
+            payload={
+                "adapter_plan": args.get("adapter_plan") if isinstance(args.get("adapter_plan"), dict) else {},
+                "source_kind": str(args.get("source_kind") or ""),
+                "source_name": str(args.get("source_name") or ""),
+                "target_event_type": str(args.get("target_event_type") or ""),
+                "payload_mapping": args.get("payload_mapping") if isinstance(args.get("payload_mapping"), dict) else {},
+                "sample_payload": args.get("sample_payload") if isinstance(args.get("sample_payload"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "event_ingestion_adapter_draft_create":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/event-ingestion/adapters/drafts",
+            employee_id=employee_id,
+            payload={
+                "adapter_plan": args.get("adapter_plan") if isinstance(args.get("adapter_plan"), dict) else {},
+                "test_result": args.get("test_result") if isinstance(args.get("test_result"), dict) else {},
+                "note": str(args.get("note") or ""),
+                "user_confirmed": True,
             },
             service_token=True,
         )

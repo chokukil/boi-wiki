@@ -33,11 +33,19 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 108
+    assert body["capabilities"]["tools"] == 116
+    assert body["capabilities"]["tools"] == len(body["capability_lists"]["tools"])
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     group_names = [group["name"] for group in body["tool_groups"]]
     assert group_names[:6] == ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"]
+    grouped_tool_names = [
+        tool["name"]
+        for group in body["tool_groups"]
+        for tool in group["tools"]
+    ]
+    assert len(grouped_tool_names) == len(set(grouped_tool_names))
+    assert set(grouped_tool_names) == {tool["name"] for tool in body["capability_lists"]["tools"]}
     boi_inbox_group = next(group for group in body["tool_groups"] if group["name"] == "BoI Inbox")
     boi_inbox_tools = {tool["name"] for tool in boi_inbox_group["tools"]}
     assert {
@@ -75,6 +83,13 @@ def test_boi_wiki_mcp_health(mcp_module):
     sop_group = next(group for group in body["tool_groups"] if group["name"] == "SOP")
     sop_tools = {tool["name"] for tool in sop_group["tools"]}
     assert {"sop_catalog_search", "sop_run_get", "sop_run_graph", "sop_run_context"} <= sop_tools
+    event_broker_group = next(group for group in body["tool_groups"] if group["name"] == "Event Broker")
+    event_broker_tools = {tool["name"] for tool in event_broker_group["tools"]}
+    assert {
+        "event_ingestion_adapter_plan",
+        "event_ingestion_adapter_test",
+        "event_ingestion_adapter_draft_create",
+    } <= event_broker_tools
     data_lake_group = next(group for group in body["tool_groups"] if group["name"] == "Optional Data Lake")
     data_lake_tools = {tool["name"] for tool in data_lake_group["tools"]}
     assert {
@@ -83,7 +98,12 @@ def test_boi_wiki_mcp_health(mcp_module):
         "data_lake_query_plan",
         "data_lake_query_preview",
         "data_lake_query_execute",
+        "data_lake_artifact_upload",
+        "data_lake_artifact_list",
         "data_lake_artifact_get",
+        "data_lake_artifact_download_url",
+        "data_lake_artifact_profile",
+        "data_lake_artifact_attach",
         "data_lake_import_sources",
     } <= data_lake_tools
     assert "Deprecated / Compatibility" in group_names
@@ -114,6 +134,8 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_auth"]["required"] is False
     assert body["mcp_auth"]["bridge_always_requires_service_token"] is True
     assert "x-service-token" in body["mcp_auth"]["accepted_headers"]
+    assert body["mcp_auth"]["transport_security"]["supported"] is True
+    assert "testserver" in body["mcp_auth"]["transport_security"]["allowed_hosts"]
     assert "web_pet" in body["agent_response_contract"]["consumers"]
     assert "boi_wiki_mcp" in body["agent_response_contract"]["consumers"]
     assert "external_api" in body["agent_response_contract"]["consumers"]
@@ -206,6 +228,9 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "event_type_draft_create" in tool_names
     assert "event_publish_plan" in tool_names
     assert "event_publish_preview" in tool_names
+    assert "event_ingestion_adapter_plan" in tool_names
+    assert "event_ingestion_adapter_test" in tool_names
+    assert "event_ingestion_adapter_draft_create" in tool_names
     assert "event_pattern_preview" in tool_names
     assert "event_pattern_promote_to_draft" in tool_names
     assert "sop_run_history" in tool_names
@@ -1295,6 +1320,9 @@ def test_boi_wiki_mcp_bridge_covers_natural_language_registration_and_event_tool
         ("sop_registration_preview", {"employee_id": "100001", "plan": {"plan_type": "sop_registration_plan"}, "payload": {"sop_mode": "draft"}}),
         ("event_publish_plan", {"employee_id": "100001", "raw_request": "ETCH 장비 Alarm 발생했어"}),
         ("event_publish_preview", {"employee_id": "100001", "event_type": "equipment.alarm.raised.v1"}),
+        ("event_ingestion_adapter_plan", {"employee_id": "100001", "source_kind": "webhook", "source_name": "equipment-alarm", "target_event_type": "equipment.alarm.raised.v1"}),
+        ("event_ingestion_adapter_test", {"employee_id": "100001", "adapter_plan": {"source_kind": "webhook", "source_name": "equipment-alarm", "target_event_type": "equipment.alarm.raised.v1"}}),
+        ("event_ingestion_adapter_draft_create", {"employee_id": "100001", "adapter_plan": {"source_kind": "webhook"}, "test_result": {"test_status": "ready_for_sample"}, "user_confirmed": True}),
         ("event_pattern_preview", {"employee_id": "100001", "q": "raw data", "limit": 3}),
         ("sop_run_history", {"employee_id": "100001", "limit": 5}),
     ]:
@@ -1330,6 +1358,9 @@ def test_boi_wiki_mcp_bridge_covers_natural_language_registration_and_event_tool
         "/api/sop-registration/preview",
         "/api/events/plan",
         "/api/events/verification-preview",
+        "/api/event-ingestion/adapters/plan",
+        "/api/event-ingestion/adapters/test",
+        "/api/event-ingestion/adapters/drafts",
         "/api/events/patterns/preview",
         "/api/sops/history",
         "/api/events/patterns/promote-to-draft",
@@ -1375,7 +1406,40 @@ def test_boi_wiki_mcp_bridge_covers_optional_data_lake_tools(mcp_module, monkeyp
                 "user_confirmed": True,
             },
         ),
+        (
+            "data_lake_artifact_upload",
+            {
+                "employee_id": "100001",
+                "filename": "raw.csv",
+                "content_base64": "dHMsdmFsdWUKMSwxMAo=",
+                "content_type": "text/csv",
+                "source_context": {"stage_id": "raw_check"},
+            },
+        ),
+        (
+            "data_lake_artifact_list",
+            {
+                "employee_id": "100001",
+                "target_type": "workflow_stage",
+                "target_id": "raw_check",
+            },
+        ),
         ("data_lake_artifact_get", {"employee_id": "100001", "artifact_id": "artifact-1"}),
+        ("data_lake_artifact_download_url", {"employee_id": "100001", "artifact_id": "artifact-1"}),
+        ("data_lake_artifact_profile", {"employee_id": "100001", "artifact_id": "artifact-1"}),
+        (
+            "data_lake_artifact_attach",
+            {
+                "employee_id": "100001",
+                "artifact_id": "artifact-1",
+                "target_type": "inbox_report",
+                "target_id": "report-001",
+                "attached_from_surface": "boi_inbox_decision",
+                "attachment_role": "raw_data",
+                "human_note": "승인 전 사람이 올린 raw data",
+                "user_confirmed": True,
+            },
+        ),
         (
             "data_lake_import_sources",
             {
@@ -1406,11 +1470,16 @@ def test_boi_wiki_mcp_bridge_covers_optional_data_lake_tools(mcp_module, monkeyp
         "/api/data-lake/query/plan",
         "/api/data-lake/query/preview",
         "/api/data-lake/query/execute",
+        "/api/data-lake/artifacts/upload",
+        "/api/data-lake/artifacts",
         "/api/data-lake/artifacts/artifact-1",
+        "/api/data-lake/artifacts/artifact-1",
+        "/api/data-lake/artifacts/artifact-1/profile",
+        "/api/data-lake/artifacts/artifact-1/attach",
         "/api/data-lake/import",
     ]
     assert calls[4]["payload"]["user_confirmed"] is True
-    assert calls[6]["payload"]["user_confirmed"] is True
+    assert calls[10]["payload"]["user_confirmed"] is True
 
 
 def test_boi_wiki_mcp_bridge_requires_confirmation_for_write_tools(mcp_module):
