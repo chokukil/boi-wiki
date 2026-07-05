@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BoI Inbox · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('inbox.js') }}" defer></script>
 </head>
 <body>
   {% include "_app_shell.html" %}
@@ -107,7 +108,7 @@
           class="inbox-decision-form"
           data-inbox-decision-form
           method="post"
-          action="/inbox/tasks/{{ item.task_id | urlencode }}/decision?employee_id={{ employee_id }}"
+          action="/inbox/task-refs/{{ item.task_ref | urlencode }}/decision?employee_id={{ employee_id }}"
         >
           <div class="inbox-decision-controls">
             <label>
@@ -124,6 +125,24 @@
               <textarea name="note" required rows="3" placeholder="사유를 입력하세요. 예: Raw Data 확인 전이라 반려"></textarea>
             </label>
             <input type="hidden" name="user_confirmed" value="true" />
+            <input type="hidden" name="data_lake_artifacts" value="[]" data-inbox-artifacts-field />
+            <section class="data-lake-artifact-panel evidence-tray compact inbox-evidence-tray" data-inbox-artifact-panel data-task-ref="{{ item.task_ref }}" data-report-id="{{ item.report_id }}">
+              <div class="mode-panel-heading">
+                <strong>판단 근거 파일</strong>
+                <span>사람이 확인한 원본 파일은 Data Lake에 저장하고, 판단 기록에는 링크와 profile만 남깁니다.</span>
+              </div>
+              <div class="artifact-upload-row">
+                <input type="file" data-inbox-artifact-file multiple />
+                <select data-inbox-artifact-role aria-label="첨부 역할">
+                  <option value="evidence">판단 근거</option>
+                  <option value="raw_data">Raw Data</option>
+                  <option value="result_file">작업 결과</option>
+                  <option value="reference">참고 자료</option>
+                </select>
+                <button type="button" class="secondary-button" data-inbox-artifact-upload>파일 첨부</button>
+              </div>
+              <div class="artifact-results" data-inbox-artifact-results></div>
+            </section>
             <button class="button primary" type="submit">사유 남기고 기록</button>
           </div>
           <p class="muted">검증된 보고서 BoI를 확인한 뒤 승인, 반려, 보류, 추가 근거 요청 중 하나를 기록합니다.</p>

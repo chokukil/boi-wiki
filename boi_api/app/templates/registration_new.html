@@ -22,7 +22,8 @@
 
   <section class="panel registration-hero">
     <div class="registration-question">{{ question }}</div>
-    <p>Event, SOP, Action은 모두 선택 사항입니다. 필요한 항목만 고르고 나머지는 건너뛰어도 됩니다.</p>
+    <p>Workflow 전체를 먼저 잡고, 필요한 Task만 하나씩 구체화합니다. 내부 ID는 뒤에서 자동 정리됩니다.</p>
+    <p class="registration-auto-assetization">선택한 항목은 저장 시 BoI Wiki 초안과 연결 관계로 자동 정리됩니다.</p>
     <div class="badges">
       {% for item in minimum_fields %}
       <span class="badge">{{ item }}</span>
@@ -30,22 +31,40 @@
     </div>
   </section>
 
-  <section class="registration-layout sop-registration-layout">
-    <aside class="panel registration-stepper" aria-label="Registration steps">
-      <h2>진행 순서</h2>
-      <ol>
-        <li data-registration-step="plan" class="active"><strong>추천 받기</strong><span>자연어 설명으로 기존 Event/SOP/Action을 먼저 찾습니다.</span></li>
-        <li data-registration-step="preview"><strong>선택/보강</strong><span>필요한 섹션만 선택하고 부족한 항목을 보강합니다.</span></li>
-        <li data-registration-step="create"><strong>초안 만들기</strong><span>운영 반영 전 SOP 실행 흐름 draft로 저장합니다.</span></li>
-        <li data-registration-step="validate"><strong>검증/게시 요청</strong><span>권한과 필수 정보를 확인한 뒤 게시 요청합니다.</span></li>
-      </ol>
-    </aside>
+  <nav class="panel sop-wizard-progress" aria-label="SOP builder progress">
+    <button type="button" data-registration-step="context" class="active">
+      <span>1</span><strong>Workflow 개요</strong><small>전체 프로세스</small>
+    </button>
+    <button type="button" data-registration-step="stages">
+      <span>2</span><strong>단계 설계 / Task 맵</strong><small>큰 업무 단위</small>
+    </button>
+    <button type="button" data-registration-step="execution">
+      <span>3</span><strong>실행 연결 / Task 상세</strong><small>실행 방식과 근거</small>
+    </button>
+    <button type="button" data-registration-step="entry">
+      <span>4</span><strong>시작/연결</strong><small>Event와 외부 신호</small>
+    </button>
+    <button type="button" data-registration-step="review">
+      <span>5</span><strong>검증·저장</strong><small>초안과 게시 요청</small>
+    </button>
+  </nav>
 
+  <section class="sop-builder-flow-strip" aria-label="SOP builder flow">
+    <span>업무 맥락</span>
+    <span>시작 신호</span>
+    <span>단계 설계 / Task 맵</span>
+    <span>실행 연결 / Task 상세</span>
+    <span>시작/연결</span>
+    <span>BoI 결과</span>
+    <p>업무 맥락 → 시작 신호 → SOP 단계 → 실행/판단 → BoI 결과 · Workflow → Task → 실행 방식 → 시작 신호 → BoI 결과와 TAT 측정</p>
+  </section>
+
+  <section class="registration-layout sop-registration-layout">
     <section class="panel registration-form-panel">
       <div class="section-heading">
         <div>
-          <h2>SOP 실행 흐름</h2>
-          <p>처음부터 정확한 ID를 알 필요는 없습니다. 업무를 설명하면 Agent가 후보를 추천하고, 선택값을 각 섹션에 반영할 수 있습니다.</p>
+          <h2>내 업무를 SOP로 만들기</h2>
+          <p>한 단계씩 작성하고 다음으로 넘어갑니다. 작성 중인 내용은 자동 저장됩니다.</p>
         </div>
       </div>
 
@@ -58,6 +77,10 @@
         data-link-candidates-url="{{ link_candidates_url }}"
         data-preview-url="{{ preview_api_url }}"
         data-draft-base-url="/api/sop-registration/drafts"
+        data-draft-session-url="/api/sop-registration/draft-sessions"
+        data-event-adapter-plan-url="/api/event-ingestion/adapters/plan"
+        data-event-adapter-test-url="/api/event-ingestion/adapters/test"
+        data-event-adapter-draft-url="/api/event-ingestion/adapters/drafts"
         data-entry-kind="{{ entry_kind }}"
       >
         <input type="hidden" name="entry_kind" value="sop" />
@@ -72,7 +95,20 @@
         <input type="hidden" name="schedule_config" value="" />
         <input type="hidden" name="schedule_text" value="" />
         <input type="hidden" name="cron" value="" />
+        <input type="hidden" name="work_context_model" value="" />
+        <input type="hidden" name="workflow_model" value="" />
+        <input type="hidden" name="workflow_tasks" value="" />
+        <input type="hidden" name="workflow_stages" value="" />
+        <input type="hidden" name="okf_materialization_plan" value="" />
+        <input type="hidden" name="event_producer_adapter_plan" value="" />
+        <input type="hidden" name="skill_ref" value="" />
+        <input type="hidden" name="skill_invocation_mode" value="guide_only" />
 
+        <section class="wizard-step-panel" data-step-panel="context">
+        <div class="mode-panel-heading">
+          <strong>업무 맥락</strong>
+          <span>어떤 상황에서 어떤 판단을 남길지 먼저 정합니다. 이 정보가 이후 Event, 단계, Action, Skill 추천의 기준입니다.</span>
+        </div>
         <div class="form-grid">
           <label class="wide">
             자연어 설명
@@ -104,175 +140,526 @@
           </label>
         </div>
 
+        <section class="work-context-builder" aria-label="업무 맥락">
+          <div class="mode-panel-heading">
+            <strong>업무 맥락</strong>
+            <span>어떤 맥락에서 어떤 판단을 남길지 먼저 잡습니다. 이후 단계와 Action 추천의 기준이 됩니다.</span>
+          </div>
+          <div class="form-grid">
+            <label>
+              업무 대상
+              <input name="work_target" placeholder="예: ETCH-VM-01 / LOT-A / Wafer WF-07" />
+            </label>
+            <label>
+              업무 상황
+              <input name="work_situation" placeholder="예: Alarm 발생 후 Trend 이상 확인" />
+            </label>
+            <label>
+              판단 질문
+              <textarea name="decision_question" placeholder="예: Raw Data까지 확인한 뒤 승인할 수 있는가?"></textarea>
+            </label>
+            <label>
+              필요한 근거
+              <textarea name="required_evidence_context" placeholder="예: Trend, Raw Data, Action 결과, 과거 사례"></textarea>
+            </label>
+            <label>
+              남길 결과
+              <input name="expected_result" placeholder="예: 검증 보고서 BoI, 결정 기록, 후속 Action 결과" />
+            </label>
+            <label>
+              지식 업데이트
+              <input name="knowledge_update_goal" placeholder="예: 유사 Alarm 처리 기준과 SOP 개선 후보로 남김" />
+            </label>
+          </div>
+        </section>
+
+        </section>
+
+        <div class="autosave-banner" data-autosave-banner hidden>
+          <div>
+            <strong>작성 중인 SOP 초안이 있습니다.</strong>
+            <span data-autosave-message>이전 입력을 이어서 작성할 수 있습니다.</span>
+          </div>
+          <div class="autosave-actions">
+            <button type="button" class="secondary-button" data-autosave-action="restore">이어쓰기</button>
+            <button type="button" class="secondary-button" data-autosave-action="new">새로 시작</button>
+            <button type="button" class="secondary-button" data-autosave-action="delete">삭제</button>
+          </div>
+        </div>
+
         <section class="sop-flow-stack" aria-label="SOP flow sections">
-          <article class="sop-flow-section" data-sop-section="event">
+          <article class="sop-flow-section wizard-step-panel" data-step-panel="entry" data-sop-section="event" hidden>
             <div class="sop-flow-section-heading">
               <div>
                 <span class="sop-flow-number">1</span>
                 <h3>Event</h3>
-                <p>업무가 시작되거나 전환되는 시점입니다. 없으면 건너뛰어도 됩니다.</p>
+                <p>업무가 시작되거나 전환되는 시점입니다.</p>
               </div>
-              <span class="sop-flow-mode" data-mode-label="event_mode">건너뛰기</span>
+              <span class="sop-flow-mode" data-mode-label="event_mode">수동 실행</span>
             </div>
             <div class="sop-flow-option-grid">
               <button type="button" data-section-mode="event_mode" data-mode-value="reuse">기존 Event 선택<span>Event Broker에 등록된 Event를 연결합니다.</span></button>
               <button type="button" data-section-mode="event_mode" data-mode-value="draft">새 Event 초안 만들기<span>업무 발생 시점을 새 Event 정의로 제안합니다.</span></button>
-              <button type="button" data-section-mode="event_mode" data-mode-value="pattern">이력 패턴으로 만들기<span>기존 발생 이력을 필터링/가공해 Event 초안을 만듭니다.</span></button>
               <button type="button" data-section-mode="event_mode" data-mode-value="schedule">정해진 시간에 발생<span>클릭으로 일정을 정하고 Event 초안만 만듭니다.</span></button>
-              <button type="button" data-section-mode="event_mode" data-mode-value="skip">이번에는 건너뛰기<span>Event 없이 SOP나 Action만 정리합니다.</span></button>
+              <button type="button" data-section-mode="event_mode" data-mode-value="skip">수동 실행<span>Event 없이 사용자가 필요할 때 실행합니다.</span></button>
             </div>
+            <section class="event-ingestion-panel" aria-label="이 SOP는 어떻게 시작되나요?">
+              <div class="mode-panel-heading">
+                <strong>이 SOP는 어떻게 시작되나요?</strong>
+                <span>외부 시스템을 직접 바꾸기 어렵다면 BoI Wiki가 수신/조회 adapter 초안으로 받아 Event Broker에 연결합니다.</span>
+              </div>
+              <div class="event-source-options" role="group" aria-label="SOP 시작 방식">
+                <label><input type="radio" name="event_source_kind" value="webhook" checked /> 외부 Webhook 수신</label>
+                <label><input type="radio" name="event_source_kind" value="api_poll" /> Legacy/API 주기 조회</label>
+                <label><input type="radio" name="event_source_kind" value="mcp" /> MCP/Data Lake에서 가져오기</label>
+                <label><input type="radio" name="event_source_kind" value="kafka" /> 외부 Kafka 직접 발행</label>
+                <label><input type="radio" name="event_source_kind" value="manual" /> 수동 시작</label>
+              </div>
+              <div class="event-adapter-panels">
+                <section class="event-adapter-panel" data-event-source-panel="webhook">
+                  <strong>Webhook 수신 설정</strong>
+                  <div class="form-grid compact-grid">
+                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: equipment-alarm" /></label>
+                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
+                    <label>Payload mapping<textarea name="event_source_config.payload_mapping" placeholder='예: {"equipment_id":"$.equipment","alarm_code":"$.alarm"}'></textarea></label>
+                    <label>Sample payload<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","alarm":"PRESS-01"}'></textarea></label>
+                  </div>
+                </section>
+                <section class="event-adapter-panel" data-event-source-panel="api_poll" hidden>
+                  <strong>Legacy/API 조회 설정</strong>
+                  <div class="form-grid compact-grid">
+                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: legacy-mes-alarm" /></label>
+                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
+                    <label>API endpoint<input name="event_source_config.health_check.endpoint" placeholder="예: https://legacy.example/api/alarms" /></label>
+                    <label>Method<input name="event_source_config.health_check.method" placeholder="GET" /></label>
+                    <label>조회 주기<input name="event_source_config.health_check.schedule" placeholder="예: every 5 minutes" /></label>
+                    <label>Response mapping<textarea name="event_source_config.payload_mapping" placeholder='예: {"equipment_id":"$.rows.0.eqp_id"}'></textarea></label>
+                  </div>
+                </section>
+                <section class="event-adapter-panel" data-event-source-panel="mcp data_lake_query" hidden>
+                  <strong>MCP/Data Lake Preview 설정</strong>
+                  <div class="form-grid compact-grid">
+                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: mes-query" /></label>
+                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
+                    <label>Tool 또는 Query<input name="event_source_config.health_check.tool_or_query" placeholder="예: data_lake.query.alarm_latest" /></label>
+                    <label>Preview sample<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","alarm":"PRESS-01"}'></textarea></label>
+                    <label>Result mapping<textarea name="event_source_config.payload_mapping" placeholder='예: {"equipment_id":"$.equipment","alarm_code":"$.alarm"}'></textarea></label>
+                  </div>
+                </section>
+                <section class="event-adapter-panel" data-event-source-panel="kafka" hidden>
+                  <strong>외부 Kafka 직접 발행 가이드</strong>
+                  <p class="muted">외부 시스템 담당자가 BoI Event schema에 맞춰 발행합니다. BoI Wiki는 topic/schema/sample payload를 초안에 남깁니다.</p>
+                  <div class="form-grid compact-grid">
+                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: fab-mes-kafka" /></label>
+                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
+                    <label>Sample payload<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment_id":"ETCH-VM-01","alarm_code":"PRESS-01"}'></textarea></label>
+                  </div>
+                </section>
+                <section class="event-adapter-panel" data-event-source-panel="manual" hidden>
+                  <strong>수동 시작</strong>
+                  <p class="muted">별도 adapter를 만들지 않고 사용자가 `/api/events/publish` 확인 흐름으로 Event를 발생시킵니다.</p>
+                  <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: manual.sop.started.v1" /></label>
+                </section>
+              </div>
+              <div class="event-adapter-actions">
+                <button type="button" class="secondary-button" data-event-adapter-action="plan">설정 미리보기</button>
+                <button type="button" class="secondary-button" data-event-adapter-action="test">샘플 테스트</button>
+                <button type="button" class="secondary-button" data-event-adapter-action="draft">Adapter 초안 저장</button>
+              </div>
+              <div class="event-adapter-preview" data-event-adapter-preview hidden></div>
+            </section>
             <div class="sop-flow-fields">
-              <label data-event-mode-field="reuse draft pattern schedule" hidden>
-                Event 이름 후보
-                <input name="event_type" placeholder="예: equipment.alarm.raised.v1" />
-              </label>
-              <label data-event-mode-field="draft pattern schedule" hidden>
-                남길 정보
-                <textarea name="payload_fields" placeholder="예: 설비, Lot, Wafer, Alarm 코드, 담당자"></textarea>
-              </label>
-              <div class="schedule-builder" data-event-mode-field="schedule" hidden>
-                <div class="schedule-builder-heading">
-                  <strong>일정 설정</strong>
+              <section class="sop-flow-mode-panel" data-event-mode-field="reuse" hidden>
+                <div class="mode-panel-heading">
+                  <strong>기존 Event 선택</strong>
+                  <span>Event 이름, 설명, 업무 키워드로 찾아 연결합니다.</span>
+                </div>
+                <div class="selected-link" data-selected-link="linked_event_types">선택 안 됨</div>
+                <div class="inline-catalog-picker" data-inline-picker="linked_event_types" data-picker-kind="event_types"></div>
+              </section>
+
+              <section class="sop-flow-mode-panel" data-event-mode-field="draft" hidden>
+                <div class="mode-panel-heading">
+                  <strong>새 Event 초안</strong>
+                  <span>새 업무 시작 시점과 남길 정보를 간단히 적습니다.</span>
+                </div>
+                <div class="draft-suggestion-card" data-draft-suggestion="event" hidden></div>
+                <label>
+                  업무 시점 이름
+                  <input name="event_display_name" placeholder="예: 회의 종료" data-draft-input="event" />
+                </label>
+                <input type="hidden" name="event_type" />
+                <label>
+                  남길 정보
+                  <textarea name="payload_fields" placeholder="예: 회의 요약, 결정사항, 담당자, Action Item" data-draft-input="event"></textarea>
+                </label>
+                <div class="draft-field-chips" data-draft-field-chips="payload_fields"></div>
+                <div class="section-refine-actions">
+                  <button type="button" class="secondary-button" data-section-refine="event" disabled>이 Event 초안 다듬기</button>
+                  <span data-section-refine-hint="event">업무 시점 이름을 먼저 적어주세요.</span>
+                </div>
+              </section>
+
+              <section class="sop-flow-mode-panel" data-event-mode-field="pattern" hidden>
+                <div class="mode-panel-heading">
+                  <strong>이력 기반 초안 준비 중</strong>
+                  <span>이 기능은 아직 일반 등록 흐름에 열지 않습니다. 기존 호환 payload만 유지합니다.</span>
+                </div>
+                <label>
+                  찾을 이력 기준
+                  <input name="event_type" placeholder="예: alarm, raw data, 승인 지연" />
+                </label>
+                <label>
+                  남길 정보
+                  <textarea name="payload_fields" placeholder="예: 설비, Lot, Wafer, Alarm 코드, 담당자"></textarea>
+                </label>
+                <div class="inline-catalog-picker" data-inline-picker="event_pattern_candidates" data-picker-kind="event_types"></div>
+              </section>
+
+              <section class="sop-flow-mode-panel" data-event-mode-field="schedule" hidden>
+                <div class="mode-panel-heading">
+                  <strong>정해진 시간에 발생</strong>
                   <span>반복 주기와 시간을 선택하면 내부 일정 값은 자동으로 만들어집니다.</span>
                 </div>
-                <div class="schedule-builder-grid">
-                  <label>
-                    반복 유형
-                    <select data-schedule-field="repeat_type">
-                      <option value="weekly" selected>매주</option>
-                      <option value="daily">매일</option>
-                      <option value="monthly">매월</option>
-                      <option value="once">한 번만</option>
-                      <option value="custom">직접 설정</option>
-                    </select>
-                  </label>
-                  <label data-schedule-control="time">
-                    시간
-                    <input type="time" data-schedule-field="time" value="09:00" />
-                  </label>
-                  <label data-schedule-control="month_day" hidden>
-                    매월 날짜
-                    <input type="number" data-schedule-field="month_day" min="1" max="31" value="1" />
-                  </label>
-                  <label data-schedule-control="once_at" hidden>
-                    발생 일시
-                    <input type="datetime-local" data-schedule-field="once_at" />
-                  </label>
-                  <label>
-                    기준 시간대
-                    <select data-schedule-field="timezone">
-                      <option value="Asia/Seoul" selected>한국 시간 기준</option>
-                      <option value="UTC">UTC</option>
-                    </select>
-                  </label>
+                <div class="schedule-builder" data-event-mode-field="schedule" hidden>
+                  <div class="schedule-builder-heading">
+                    <strong>일정 설정</strong>
+                    <span>반복 주기와 시간을 선택하면 내부 일정 값은 자동으로 만들어집니다.</span>
+                  </div>
+                  <div class="schedule-builder-grid">
+                    <label>
+                      반복 유형
+                      <select data-schedule-field="repeat_type">
+                        <option value="weekly" selected>매주</option>
+                        <option value="daily">매일</option>
+                        <option value="monthly">매월</option>
+                        <option value="once">한 번만</option>
+                        <option value="custom">직접 설정</option>
+                      </select>
+                    </label>
+                    <label data-schedule-control="time">
+                      시간
+                      <input type="time" data-schedule-field="time" value="09:00" />
+                    </label>
+                    <label data-schedule-control="month_day" hidden>
+                      매월 날짜
+                      <input type="number" data-schedule-field="month_day" min="1" max="31" value="1" />
+                    </label>
+                    <label data-schedule-control="once_at" hidden>
+                      발생 일시
+                      <input type="datetime-local" data-schedule-field="once_at" />
+                    </label>
+                    <label>
+                      기준 시간대
+                      <select data-schedule-field="timezone">
+                        <option value="Asia/Seoul" selected>한국 시간 기준</option>
+                        <option value="UTC">UTC</option>
+                      </select>
+                    </label>
+                  </div>
+                  <fieldset class="schedule-weekday-picker" data-schedule-control="weekdays">
+                    <legend>요일</legend>
+                    <label><input type="checkbox" data-schedule-weekday value="MON" checked /> 월</label>
+                    <label><input type="checkbox" data-schedule-weekday value="TUE" /> 화</label>
+                    <label><input type="checkbox" data-schedule-weekday value="WED" /> 수</label>
+                    <label><input type="checkbox" data-schedule-weekday value="THU" /> 목</label>
+                    <label><input type="checkbox" data-schedule-weekday value="FRI" /> 금</label>
+                    <label><input type="checkbox" data-schedule-weekday value="SAT" /> 토</label>
+                    <label><input type="checkbox" data-schedule-weekday value="SUN" /> 일</label>
+                  </fieldset>
+                  <p class="schedule-preview" data-schedule-preview>매주 월요일 09:00에 Event 초안이 만들어집니다.</p>
                 </div>
-                <fieldset class="schedule-weekday-picker" data-schedule-control="weekdays">
-                  <legend>요일</legend>
-                  <label><input type="checkbox" data-schedule-weekday value="MON" checked /> 월</label>
-                  <label><input type="checkbox" data-schedule-weekday value="TUE" /> 화</label>
-                  <label><input type="checkbox" data-schedule-weekday value="WED" /> 수</label>
-                  <label><input type="checkbox" data-schedule-weekday value="THU" /> 목</label>
-                  <label><input type="checkbox" data-schedule-weekday value="FRI" /> 금</label>
-                  <label><input type="checkbox" data-schedule-weekday value="SAT" /> 토</label>
-                  <label><input type="checkbox" data-schedule-weekday value="SUN" /> 일</label>
-                </fieldset>
-                <p class="schedule-preview" data-schedule-preview>매주 월요일 09:00에 Event 초안이 만들어집니다.</p>
-              </div>
-              <div class="sop-flow-picker-actions" data-event-mode-field="reuse pattern" hidden>
-                <button type="button" class="secondary-button" data-link-picker="event_types" data-target-field="linked_event_types">기존 Event 탐색</button>
-                <div class="selected-link" data-selected-link="linked_event_types">선택 안 됨</div>
-              </div>
+              </section>
+
+              <section class="sop-flow-mode-panel muted-panel" data-event-mode-field="skip" hidden>
+                <strong>수동 실행으로 정리합니다.</strong>
+                <span>Event 없이 사용자가 필요할 때 SOP나 Action을 실행하는 흐름으로 둡니다.</span>
+              </section>
             </div>
           </article>
 
-          <article class="sop-flow-section" data-sop-section="sop">
+          <article class="sop-flow-section wizard-step-panel" data-step-panel="stages" data-sop-section="sop" hidden>
             <div class="sop-flow-section-heading">
               <div>
                 <span class="sop-flow-number">2</span>
-                <h3>SOP</h3>
-                <p>수행할 절차입니다. 기존 SOP를 연결하거나 새 초안으로 시작합니다.</p>
+                <h3>Task 맵</h3>
+                <p>단계 설계: Workflow 전체를 작은 업무 단위로 나눕니다. 상세가 부족해도 틀부터 저장할 수 있습니다.</p>
               </div>
               <span class="sop-flow-mode" data-mode-label="sop_mode">새 초안</span>
             </div>
             <div class="sop-flow-option-grid">
               <button type="button" data-section-mode="sop_mode" data-mode-value="reuse">기존 SOP 선택<span>이미 있는 절차를 재사용합니다.</span></button>
-              <button type="button" data-section-mode="sop_mode" data-mode-value="draft">신규 SOP 초안<span>단계와 근거를 초안으로 만듭니다.</span></button>
-              <button type="button" data-section-mode="sop_mode" data-mode-value="lightweight">간단 절차만 작성<span>나중에 공식 SOP로 보강합니다.</span></button>
-              <button type="button" data-section-mode="sop_mode" data-mode-value="skip">이번에는 건너뛰기<span>SOP 없이 Event/Action 연결만 정리합니다.</span></button>
+              <button type="button" data-section-mode="sop_mode" data-mode-value="draft">Workflow Task 작성<span>전체 Task 맵을 먼저 만듭니다.</span></button>
+              <button type="button" data-section-mode="sop_mode" data-mode-value="lightweight">틀만 작성<span>상세는 나중에 채웁니다.</span></button>
+              <button type="button" data-section-mode="sop_mode" data-mode-value="skip">절차는 나중에 정리<span>SOP 없이 Event/Action 연결만 먼저 둡니다.</span></button>
             </div>
             <div class="sop-flow-fields">
-              <label>
-                주요 단계
-                <textarea name="steps" placeholder="예: 이상 감지, 원인 분석, 보전 가이드, 이상 조치"></textarea>
-              </label>
-              <label>
-                필요한 근거
-                <textarea name="evidence_requirements" placeholder="예: Trend, Raw Data, 장비 이력, Action 결과"></textarea>
-              </label>
-              <div class="sop-flow-picker-actions">
-                <button type="button" class="secondary-button" data-link-picker="sops" data-target-field="linked_sop_ref">기존 SOP 탐색</button>
+              <section class="sop-flow-mode-panel" data-sop-mode-field="reuse" hidden>
+                <div class="mode-panel-heading">
+                  <strong>기존 SOP 선택</strong>
+                  <span>이미 운영 중인 절차를 찾아 현재 업무에 연결합니다.</span>
+                </div>
                 <div class="selected-link" data-selected-link="linked_sop_ref">선택 안 됨</div>
-              </div>
+                <div class="inline-catalog-picker" data-inline-picker="linked_sop_ref" data-picker-kind="sops"></div>
+              </section>
+
+              <section class="sop-flow-mode-panel" data-sop-mode-field="draft lightweight" hidden>
+                <div class="mode-panel-heading">
+                  <strong>Workflow 단계/Task 설계</strong>
+                  <span>Workflow 전체의 Task를 먼저 잡고, 필요한 Task만 선택해 실행 방식과 판단 근거를 구체화합니다.</span>
+                </div>
+                <div class="draft-suggestion-card" data-draft-suggestion="sop" hidden></div>
+                <div class="workflow-stage-builder" data-stage-builder>
+                  <div class="stage-builder-header">
+                    <strong>단계 설계 / Task 맵</strong>
+                    <button type="button" class="secondary-button" data-stage-action="add">Task 추가</button>
+                  </div>
+                  <div class="stage-timeline" data-stage-list></div>
+                  <section class="stage-detail-panel" data-stage-detail hidden>
+                    <div class="mode-panel-heading">
+                      <strong data-stage-detail-title>Task 편집</strong>
+                      <span>이 Task를 누가 어떻게 처리하고, 어떤 근거와 결과를 남길지 정합니다.</span>
+                    </div>
+                    <div class="form-grid compact-grid">
+                      <label>
+                        Task 이름
+                        <input data-stage-field="stage_name" placeholder="예: 근거 확인" />
+                      </label>
+                      <label>
+                        한 줄 목적
+                        <input data-stage-field="stage_goal" placeholder="예: Trend와 Raw Data 확보 상태 확인" />
+                      </label>
+                      <label>
+                        실행 방식
+                        <select data-stage-field="execution_mode">
+                          <option value="manual">Manual · 사람이 직접 작업</option>
+                          <option value="copilot">Copilot · AI/도구 도움 + 사람 판단</option>
+                          <option value="autopilot">Autopilot · 정책 범위 내 자동 실행</option>
+                        </select>
+                      </label>
+                      <label>
+                        Copilot 방식
+                        <select data-stage-field="copilot_source">
+                          <option value="unknown">아직 정하지 않음</option>
+                          <option value="internal">BoI Wiki Agent/Skill 사용</option>
+                          <option value="external">외부 AI/도구로 처리 후 결과만 기록</option>
+                          <option value="mixed">내부/외부 혼합</option>
+                        </select>
+                      </label>
+                      <label>
+                        판단 질문
+                        <textarea data-stage-field="decision_question" placeholder="예: 판단 근거가 충분한가?"></textarea>
+                      </label>
+                      <label>
+                        필요한 근거
+                        <textarea data-stage-field="required_evidence" placeholder="예: Trend, Raw Data, Action 결과"></textarea>
+                      </label>
+                      <label>
+                        결과 BoI / 산출물
+                        <textarea data-stage-field="expected_outputs" placeholder="예: 판단 근거 BoI, 결과 보고서 BoI"></textarea>
+                      </label>
+                      <label>
+                        지식 업데이트 정책
+                        <textarea data-stage-field="knowledge_update_policy" placeholder="예: 부족 근거와 판단 결과를 유사 사례 후보로 남김"></textarea>
+                      </label>
+                      <label>
+                        목표 TAT
+                        <input data-stage-field="tat_target" placeholder="예: 30분, 2h, 당일" />
+                      </label>
+                      <label>
+                        기준 TAT
+                        <input data-stage-field="baseline_tat" placeholder="예: 평균 90분, 최근 3건 70분" />
+                      </label>
+                      <label>
+                        측정 기준
+                        <select data-stage-field="measurement_policy">
+                          <option value="runtime_trace">실행 이력 기준</option>
+                          <option value="manual_record">사람이 완료 시각 기록</option>
+                          <option value="event_transition">Event 전환 시각 기준</option>
+                        </select>
+                      </label>
+                      <label>
+                        실패 시 담당
+                        <input data-stage-field="fallback_owner" placeholder="예: 담당자 사번 또는 역할" />
+                      </label>
+                    </div>
+                    <div class="stage-action-list" data-stage-actions></div>
+	                    <div class="stage-detail-actions">
+	                      <button type="button" class="secondary-button" data-stage-action="attach-selected-action">선택한 Action/Skill을 이 Task에 연결</button>
+	                      <button type="button" class="secondary-button" data-stage-action="remove">Task 삭제</button>
+                    </div>
+                  </section>
+                </div>
+                <label>
+                  Task 목록
+                  <textarea name="steps" placeholder="예: 이상 감지, 원인 분석, 보전 가이드, 이상 조치" data-draft-input="sop"></textarea>
+                </label>
+                <div class="draft-field-chips" data-draft-field-chips="steps"></div>
+                <label>
+                  필요한 근거
+                  <textarea name="evidence_requirements" placeholder="예: Trend, Raw Data, 장비 이력, Action 결과" data-draft-input="sop"></textarea>
+                </label>
+                <div class="draft-field-chips" data-draft-field-chips="evidence_requirements"></div>
+                <div class="section-refine-actions">
+                  <button type="button" class="secondary-button" data-section-refine="sop" disabled>이 SOP 초안 다듬기 / Workflow Task 추천</button>
+                  <span data-section-refine-hint="sop">Task 목록이나 필요한 근거를 먼저 적어주세요.</span>
+                </div>
+              </section>
+
+              <section class="sop-flow-mode-panel muted-panel" data-sop-mode-field="skip" hidden>
+                <strong>Task 상세는 나중에 정리합니다.</strong>
+                <span>Workflow 틀만 먼저 저장하고, Task 상세는 이후 보강할 수 있습니다.</span>
+              </section>
             </div>
           </article>
 
-          <article class="sop-flow-section" data-sop-section="action">
+          <article class="sop-flow-section wizard-step-panel" data-step-panel="execution" data-sop-section="action" hidden>
             <div class="sop-flow-section-heading">
               <div>
                 <span class="sop-flow-number">3</span>
-                <h3>Action</h3>
-                <p>시스템이나 사람이 수행할 실행 단위입니다. 없으면 SOP 초안만 저장할 수 있습니다.</p>
+                <h3>{% if focus == "action" %}Action{% else %}Task 상세{% endif %}</h3>
+                <p>실행 연결: {% if focus == "action" %}API, MCP, Webhook, Manual 등 실행 단위를 Action 초안으로 정리합니다.{% else %}선택한 Task에 Action, Skill, 실행 방식, 검증 기준을 연결합니다.{% endif %}</p>
               </div>
-              <span class="sop-flow-mode" data-mode-label="action_mode">건너뛰기</span>
+              <span class="sop-flow-mode" data-mode-label="action_mode">Action 없음</span>
             </div>
             <div class="sop-flow-option-grid">
               <button type="button" data-section-mode="action_mode" data-mode-value="reuse">기존 Action 선택<span>등록된 Action을 재사용합니다.</span></button>
               <button type="button" data-section-mode="action_mode" data-mode-value="draft">새 Action 초안<span>API/MCP/Webhook 등 실행 단위를 추가합니다.</span></button>
               <button type="button" data-section-mode="action_mode" data-mode-value="manual">Manual Action 초안<span>사람 판단/승인/완료 확인을 남깁니다.</span></button>
-              <button type="button" data-section-mode="action_mode" data-mode-value="skip">이번에는 건너뛰기<span>Action 없이 SOP 초안만 저장합니다.</span></button>
+              <button type="button" data-section-mode="action_mode" data-mode-value="skip">Action 없이 저장<span>SOP 초안만 먼저 저장합니다.</span></button>
             </div>
             <div class="sop-flow-fields">
-              <div class="connector-card-grid compact">
-                {% for connector in sop_connector_options %}
-                <button
-                  type="button"
-                  class="connector-card {% if connector.kind == 'manual' %}selected{% endif %}"
-                  data-connector-kind="{{ connector.kind }}"
-                  aria-pressed="{% if connector.kind == 'manual' %}true{% else %}false{% endif %}"
-                >
-                  <strong>{{ connector.label }}</strong>
-                  <span>{{ connector.summary }}</span>
-                </button>
-                {% endfor %}
-              </div>
-              <label>
-                입력값
-                <textarea name="input_fields" placeholder="예: lot_id, wafer_id, trend_window"></textarea>
-              </label>
-              <label>
-                결과값
-                <textarea name="output_fields" placeholder="예: trend_status, evidence_refs"></textarea>
-              </label>
-              <label>
-                위험도
-                <select name="risk_level">
-                  <option value="low">low</option>
-                  <option value="medium" selected>medium</option>
-                  <option value="high">high</option>
-                </select>
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="approval_required" value="true" />
-                승인 필요
-              </label>
-              <div class="sop-flow-picker-actions">
-                <button type="button" class="secondary-button" data-link-picker="actions" data-target-field="linked_action_keys">기존 Action 탐색</button>
+              <section class="sop-flow-mode-panel" data-action-mode-field="reuse" hidden>
+                <div class="mode-panel-heading">
+                  <strong>기존 Action 선택</strong>
+                  <span>등록된 API, MCP, Webhook, Manual Action을 찾아 연결합니다.</span>
+                </div>
                 <div class="selected-link" data-selected-link="linked_action_keys">선택 안 됨</div>
-              </div>
+                <div class="inline-catalog-picker" data-inline-picker="linked_action_keys" data-picker-kind="actions"></div>
+              </section>
+
+              <section class="sop-flow-mode-panel" data-action-mode-field="draft" hidden>
+                <div class="mode-panel-heading">
+                  <strong>새 Action 초안</strong>
+                  <span>자동 또는 시스템 실행 단위를 등록 전 초안으로 정리합니다.</span>
+                </div>
+                <div class="draft-suggestion-card" data-draft-suggestion="action" hidden></div>
+                <label>
+                  Action 이름
+                  <input name="action_display_name" placeholder="예: Raw Data 확인 요청" data-draft-input="action" />
+                </label>
+                <input type="hidden" name="action_key" />
+                <div class="connector-card-grid compact">
+                  {% for connector in sop_connector_options %}
+                  <button
+                    type="button"
+                    class="connector-card {% if connector.kind == 'manual' %}selected{% endif %}"
+                    data-connector-kind="{{ connector.kind }}"
+                    aria-pressed="{% if connector.kind == 'manual' %}true{% else %}false{% endif %}"
+                  >
+                    <strong>{{ connector.label }}</strong>
+                    <span>{{ connector.summary }}</span>
+                  </button>
+                  {% endfor %}
+                </div>
+                <div class="connector-panel-stack">
+                  {% for connector in sop_connector_options %}
+                  <section class="connector-panel {% if connector.kind == 'manual' %}active{% endif %}" data-connector-panel="{{ connector.kind }}">
+                    <div class="connector-panel-heading">
+                      <h3>{{ connector.label }} 입력</h3>
+                      <p>{{ connector.summary }}</p>
+                    </div>
+                    <div class="connector-panel-fields">
+                      {% for field in connector.fields %}
+                      <label>
+                        {{ field.label }}
+                        {% if field.multiline %}
+                        <textarea name="{{ field.name }}" placeholder="{{ field.placeholder }}" data-connector-field="{{ connector.kind }}"></textarea>
+                        {% else %}
+                        <input name="{{ field.name }}" placeholder="{{ field.placeholder }}" data-connector-field="{{ connector.kind }}" />
+                        {% endif %}
+                      </label>
+                      {% endfor %}
+                    </div>
+                  </section>
+                  {% endfor %}
+                </div>
+                <section class="skill-action-picker" data-skill-action-picker hidden>
+                  <div class="mode-panel-heading">
+                    <strong>Skill 선택</strong>
+                    <span>BoI Wiki Skill을 이 단계의 실행 능력으로 연결합니다. Script가 있으면 Sandbox 또는 Agent Runtime에서 검증합니다.</span>
+                  </div>
+                  <div class="selected-link" data-selected-link="skill_ref">선택 안 됨</div>
+                  <div class="inline-catalog-picker" data-inline-picker="skill_ref" data-picker-kind="skills"></div>
+                </section>
+                <label>
+                  입력값
+                  <textarea name="input_fields" placeholder="예: lot_id, wafer_id, trend_window" data-draft-input="action"></textarea>
+                </label>
+                <div class="draft-field-chips" data-draft-field-chips="input_fields"></div>
+                <label>
+                  결과값
+                  <textarea name="output_fields" placeholder="예: trend_status, evidence_refs" data-draft-input="action"></textarea>
+                </label>
+                <div class="draft-field-chips" data-draft-field-chips="output_fields"></div>
+                <label>
+                  위험도
+                  <select name="risk_level">
+                    <option value="low">low</option>
+                    <option value="medium" selected>medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="approval_required" value="true" />
+                  승인 필요
+                </label>
+                <div class="section-refine-actions">
+                  <button type="button" class="secondary-button" data-section-refine="action" disabled>이 Action 초안 다듬기</button>
+                  <span data-section-refine-hint="action">Action 이름이나 실행 방식을 먼저 입력해주세요.</span>
+                </div>
+              </section>
+
+              <section class="sop-flow-mode-panel" data-action-mode-field="manual" hidden>
+                <div class="mode-panel-heading">
+                  <strong>Manual Action 초안</strong>
+                  <span>사람이 확인하고 판단해야 하는 조치 기준을 남깁니다.</span>
+                </div>
+                <label>
+                  입력값
+                  <textarea name="input_fields" placeholder="예: lot_id, wafer_id, trend_window"></textarea>
+                </label>
+                <label>
+                  결과값
+                  <textarea name="output_fields" placeholder="예: trend_status, evidence_refs"></textarea>
+                </label>
+                <label>
+                  위험도
+                  <select name="risk_level">
+                    <option value="low">low</option>
+                    <option value="medium" selected>medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="approval_required" value="true" />
+                  승인 필요
+                </label>
+              </section>
+
+              <section class="sop-flow-mode-panel muted-panel" data-action-mode-field="skip" hidden>
+                <strong>Action 없이 저장합니다.</strong>
+                <span>SOP 절차만 먼저 정리하고 실행 단위는 이후 추가할 수 있습니다.</span>
+              </section>
             </div>
           </article>
         </section>
 
+        <section class="wizard-step-panel" data-step-panel="review" hidden>
+        <section class="sop-builder-runtime-note">
+          <strong>운영 중 근거 파일 첨부</strong>
+          <p>이 화면은 SOP 정의를 만드는 곳입니다. Raw Data, PDF, PPT, Excel, 로그, 캡처 같은 실제 업무 근거 파일은 SOP 실행 화면, Inbox 판단, Report BoI 검토에서 Data Lake artifact로 첨부됩니다.</p>
+        </section>
         <details class="advanced-settings">
           <summary>고급 설정</summary>
           <p class="hint">일반 사용자는 이 영역을 열지 않아도 됩니다. 운영자나 개발자가 raw 식별자와 세부 계약을 확인할 때 사용합니다.</p>
@@ -300,25 +687,36 @@
             </label>
           </div>
         </details>
+        </section>
 
         <div class="registration-flow-actions">
-          <section class="registration-primary-action" data-step-panel="plan">
-            <button type="button" class="primary-button" data-registration-action="plan">추천 받기</button>
-            <p>입력한 설명으로 기존 Event/SOP/Action 후보를 먼저 찾습니다.</p>
+          <section class="registration-primary-action" data-step-panel="context">
+            <button type="button" class="secondary-button" data-registration-action="plan" data-recommendation-gated disabled>추천 후보 만들기</button>
+            <p data-recommendation-hint>먼저 어떤 업무인지 적으면 기존 Event/SOP/Action 후보와 다듬기 제안을 만들 수 있습니다.</p>
           </section>
-          <section class="registration-primary-action" data-step-panel="preview" hidden>
+          <section class="registration-primary-action" data-step-panel="entry" hidden>
             <button type="button" class="primary-button" data-registration-action="preview">선택한 항목으로 확인</button>
-            <p>각 섹션의 선택 상태와 권한, 게시 전 확인 사항을 정리합니다.</p>
+            <p>시작 신호와 외부 연결 방식을 확인합니다.</p>
           </section>
-          <section class="registration-primary-action" data-step-panel="create" hidden>
+          <section class="registration-primary-action" data-step-panel="stages" hidden>
+            <button type="button" class="primary-button" data-registration-action="preview">단계 설계 / Task 맵 확인</button>
+            <p>Workflow Task와 필요한 근거, 결과 BoI 구성을 확인합니다.</p>
+          </section>
+          <section class="registration-primary-action" data-step-panel="execution" hidden>
+            <button type="button" class="primary-button" data-registration-action="preview">실행 연결 / Task 상세 확인</button>
+            <p>선택한 Task에 붙은 실행 방식, Action, Skill을 확인합니다.</p>
+          </section>
+          <section class="registration-primary-action" data-step-panel="review" hidden>
             <button type="button" class="primary-button" data-registration-action="create">{{ submit_label }}</button>
             <p>아직 운영 catalog에는 반영하지 않고 SOP 실행 흐름 draft로 저장합니다.</p>
-          </section>
-          <section class="registration-primary-action" data-step-panel="validate" hidden>
             <button type="button" class="primary-button" data-registration-action="validate" disabled>검증하기</button>
             <button type="button" class="secondary-button" data-registration-action="publish" disabled>게시 요청</button>
-            <p>검증 후 게시 요청으로 전환합니다. 실제 반영은 승인 흐름을 따릅니다.</p>
           </section>
+        </div>
+        <div class="sop-wizard-actions">
+          <button type="button" class="secondary-button" data-wizard-nav="prev">이전</button>
+          <button type="button" class="secondary-button" data-wizard-save>임시저장</button>
+          <button type="button" class="primary-button" data-wizard-nav="next">다음</button>
         </div>
         <div class="registration-helper-actions">
           <button type="button" class="secondary-button" data-registration-action="dedupe">기존 항목 검색</button>
@@ -330,13 +728,13 @@
     </section>
 
     <aside class="panel registration-agent-assist">
-      <h2>Agent 제안</h2>
-      <p>설명을 입력한 뒤 추천을 받으면, 이 영역에서 반영 가능한 후보가 표시됩니다.</p>
-      <button type="button" class="primary-button" data-registration-assist>Agent 제안 받기</button>
+      <h2>작성 도우미</h2>
+      <p>입력한 설명과 선택 항목을 바탕으로 누락된 Event/SOP/Action 후보를 제안하고, 저장 시 BoI 자산 초안을 자동 정리합니다.</p>
+      <button type="button" class="secondary-button" data-registration-assist data-recommendation-gated disabled>추천 후보 만들기</button>
       <div class="registration-agent-suggestions" aria-live="polite"></div>
       <details>
-        <summary>게시 전 확인 원칙</summary>
-        <p>초안은 검증과 사용자 확인 전에는 운영 catalog, Event Broker runtime, Action Gateway에 반영되지 않습니다.</p>
+        <summary>자동 자산화 원칙</summary>
+        <p>선택한 항목은 초안과 연결 관계로만 정리됩니다. 검증과 사용자 확인 전에는 운영 catalog, Event Broker runtime, Action Gateway에 반영되지 않습니다.</p>
       </details>
     </aside>
   </section>

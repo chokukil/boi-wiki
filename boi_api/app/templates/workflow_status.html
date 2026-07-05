@@ -11,6 +11,14 @@
   {% include "_app_shell.html" %}
 
   <main class="workflow-status-page">
+    {% if shell.page_actions %}
+    <nav class="document-actions" aria-label="Workflow actions">
+      {% for action in shell.page_actions %}
+      <a class="page-action-link {% if action.kind %}{{ action.kind }}{% endif %}" href="{{ action.href }}">{{ action.label }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+
     <section class="workflow-status-hero">
       <div>
         <span class="badge status">{{ summary.status }}</span>

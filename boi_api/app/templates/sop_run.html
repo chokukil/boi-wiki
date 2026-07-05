@@ -44,6 +44,7 @@
             data-stage-risk="{{ node.data.risk }}"
             data-stage-summary="{{ node.data.title }} 단계는 현재 {{ node.data.status }} 상태입니다. {{ run.business_brief }} 기준으로 판단 근거를 확인하세요."
             data-stage-next="{{ decision_packet.recommended_action }}"
+            data-stage-target-id="{{ run.run_id }}:{{ node.id }}"
             aria-pressed="{% if node.id == current_stage_id %}true{% else %}false{% endif %}">
             <small>{{ loop.index }}</small>
             <strong>{{ node.data.title }}</strong>
@@ -71,6 +72,31 @@
           </li>
           {% endfor %}
         </ul>
+        <section
+          class="data-lake-artifact-panel evidence-tray compact"
+          data-evidence-tray
+          data-target-type="workflow_stage"
+          data-target-id="{{ run.run_id }}:{{ current_stage_id }}"
+          data-attached-from-surface="sop_run_stage"
+          data-employee-id="{{ employee_id }}">
+          <div class="mode-panel-heading">
+            <strong>단계 근거 파일</strong>
+            <span>Raw Data, PDF, Excel, 로그, 캡처는 Data Lake에 저장하고 이 실행 단계에 연결합니다.</span>
+          </div>
+          <div class="artifact-upload-row">
+            <input type="file" data-evidence-file multiple />
+            <select data-evidence-role aria-label="첨부 역할">
+              <option value="raw_data">Raw Data</option>
+              <option value="evidence">판단 근거</option>
+              <option value="result_file">작업 결과</option>
+              <option value="reference">참고 자료</option>
+              <option value="visualization_source">시각화 원본</option>
+            </select>
+            <button type="button" class="secondary-button" data-evidence-upload>파일 첨부</button>
+          </div>
+          <input class="artifact-note-input" data-evidence-note placeholder="한 줄 메모: 예: 승인 전 확인한 압력 raw data" />
+          <div class="artifact-results" data-evidence-results></div>
+        </section>
         <h3>다음 조치</h3>
         <p data-stage-panel-next>{{ decision_packet.recommended_action }}</p>
         <div class="raw-workflow-actions">
@@ -83,6 +109,7 @@
     </section>
   </main>
 
+  <script src="{{ asset_url('evidence_tray.js') }}"></script>
   <script src="{{ asset_url('sop_run.js') }}"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import base64
 from pathlib import Path
 import re
 import shutil
@@ -295,6 +296,10 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     body = response.json()
     assert body["features"]["pet_agent_enabled"] is False
     assert body["features"]["ops_center_enabled"] is False
+    assert body["runtime_source"]["app_code_path"].endswith("main.py")
+    assert body["runtime_source"]["static_asset_source"].endswith("static")
+    assert body["runtime_source"]["registration_js_path"].endswith("registration.js")
+    assert isinstance(body["runtime_source"]["workspace_mount_path"], str)
     assert body["llm"]["base_url"] == "http://llm-gateway.example:1236/v1"
     assert body["llm"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["llm"]["api_key_configured"] is True
@@ -6431,6 +6436,10 @@ def test_agent_inbox_decision_rejects_bulk_high_risk_approve_and_requires_note(b
         f"/api/agents/boi-wiki/inbox/groups/{group['group_id']}/decision-preview?employee_id=100001",
         json={"decision": "approve", "note": "일괄 승인", "selected_task_ids": [item["task_id"] for item in group["items"]], "user_confirmed": True},
     )
+    no_confirmation_preview = client.post(
+        f"/api/agents/boi-wiki/inbox/groups/{group['group_id']}/decision-preview?employee_id=100001",
+        json={"decision": "reject", "note": "일괄 반려 가능 여부 확인", "selected_task_ids": [group["items"][0]["task_id"]]},
+    )
     item_reject = client.post(
         "/api/agents/boi-wiki/inbox/task:act-decision-report-0/decision?employee_id=100001",
         json={"decision": "reject", "note": "Raw Data 확인 전이라 반려", "user_confirmed": True},
@@ -6440,6 +6449,8 @@ def test_agent_inbox_decision_rejects_bulk_high_risk_approve_and_requires_note(b
     assert "note" in str(missing_note.json()["detail"])
     assert bulk_approve.status_code == 400
     assert "bulk approve" in str(bulk_approve.json()["detail"])
+    assert no_confirmation_preview.status_code == 200
+    assert no_confirmation_preview.json()["requires_confirmation"] is True
     assert item_reject.status_code == 200
     assert item_reject.json()["item"]["completion_for_request_id"] == "act-decision-report-0"
     assert item_reject.json()["item"]["decision"] == "reject"
@@ -6500,6 +6511,82 @@ def test_manual_handoff_completion_rejects_task_not_visible_to_employee(boi_app_
     assert "not visible" in complete.text
     completed = boi_app_module.completion_request_ids()
     assert "act-manual-required-other-employee" not in completed
+
+
+def test_agent_inbox_hides_unassigned_employee_less_tasks_by_default(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "request_id": "act-unassigned-inbox-task",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "할당 정보가 없는 Inbox 업무",
+            "trace_id": "trace-agent-inbox-unassigned",
+        },
+    )
+
+    inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100001&limit=100")
+    complete = client.post(
+        "/api/agents/boi-wiki/manual-handoffs/complete?employee_id=100001",
+        json={
+            "task_id": "task:act-unassigned-inbox-task",
+            "outcome": "completed",
+            "note": "할당되지 않은 업무를 완료하면 안 됨",
+            "user_confirmed": True,
+        },
+    )
+    snooze = client.post(
+        "/api/agents/boi-wiki/inbox/task:act-unassigned-inbox-task/snooze?employee_id=100001",
+        json={"note": "할당되지 않은 업무를 미루면 안 됨", "user_confirmed": True},
+    )
+
+    assert inbox.status_code == 200
+    assert not any(item["request_id"] == "act-unassigned-inbox-task" for item in inbox.json()["items"])
+    assert complete.status_code == 403
+    assert snooze.status_code == 403
+    completed = boi_app_module.completion_request_ids()
+    assert "act-unassigned-inbox-task" not in completed
+
+
+def test_agent_inbox_allows_explicit_shared_queue_assignments(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "request_id": "act-shared-team-inbox-task",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "AIX TF 공유 Inbox 업무",
+            "trace_id": "trace-agent-inbox-shared-team",
+            "visibility": "shared_queue",
+            "assigned_team": "aix-tf",
+        },
+    )
+    append_action_log_row(
+        boi_app_module,
+        {
+            "request_id": "act-shared-role-inbox-task",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "Workflow Runner 공유 Inbox 업무",
+            "trace_id": "trace-agent-inbox-shared-role",
+            "visibility": "shared_queue",
+            "assigned_role": "boi.workflow_runner",
+        },
+    )
+
+    aix_inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100001&limit=100")
+    runner_inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100002&limit=100")
+    viewer_inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100003&limit=100")
+
+    assert aix_inbox.status_code == 200
+    assert runner_inbox.status_code == 200
+    assert viewer_inbox.status_code == 200
+    assert any(item["request_id"] == "act-shared-team-inbox-task" for item in aix_inbox.json()["items"])
+    assert any(item["request_id"] == "act-shared-role-inbox-task" for item in runner_inbox.json()["items"])
+    assert not any(item["request_id"] == "act-shared-team-inbox-task" for item in viewer_inbox.json()["items"])
+    assert not any(item["request_id"] == "act-shared-role-inbox-task" for item in viewer_inbox.json()["items"])
 
 
 def test_agent_inbox_snooze_and_dismiss_require_confirmation_and_role(boi_app_module, monkeypatch):
@@ -7619,10 +7706,94 @@ def test_sop_run_graph_and_context_api(boi_app_module):
     page = client.get(f"/sop-runs/{run_id}?employee_id=100001")
     assert page.status_code == 200
     assert "data-stage-node" in page.text
+    assert "data-stage-target-id" in page.text
     assert 'role="button"' in page.text
     assert "data-stage-panel-title" in page.text
     assert "data-stage-panel-summary" in page.text
+    assert "data-evidence-tray" in page.text
+    assert 'data-target-type="workflow_stage"' in page.text
+    assert "단계 근거 파일" in page.text
+    assert "evidence_tray.js" in page.text
     assert "sop_run.js" in page.text
+
+
+def test_workflow_and_sop_run_tat_summary_uses_runtime_timestamps(boi_app_module, monkeypatch):
+    trace_id = "trace-tat-direct-dev"
+    event_rows = [
+        {
+            "event_id": "evt-tat-1",
+            "event_type": "direct_development.result_check.requested.v1",
+            "trace_id": trace_id,
+            "logged_at": "2026-07-01T10:00:00+09:00",
+        },
+        {
+            "event_id": "evt-tat-2",
+            "event_type": "direct_development.map_view.requested.v1",
+            "trace_id": trace_id,
+            "logged_at": "2026-07-01T10:20:00+09:00",
+        },
+        {
+            "event_id": "evt-tat-3",
+            "event_type": "direct_development.cross_section.decision_required.v1",
+            "trace_id": trace_id,
+            "logged_at": "2026-07-01T11:00:00+09:00",
+        },
+    ]
+
+    def fake_event_rows(**kwargs):
+        if kwargs.get("trace_id") and kwargs["trace_id"] != trace_id:
+            return []
+        return event_rows
+
+    def fake_action_rows(row_trace_id, *, event_ids=None, limit=80):
+        if row_trace_id != trace_id:
+            return []
+        return [
+                {
+                    "request_id": "act-tat-1",
+                    "employee_id": "100001",
+                    "trace_id": trace_id,
+                    "event_id": "evt-tat-3",
+                    "status": "completed",
+                    "logged_at": "2026-07-01T11:10:00+09:00",
+                }
+        ]
+
+    monkeypatch.setattr(boi_app_module, "filtered_event_log_rows", fake_event_rows)
+    monkeypatch.setattr(boi_app_module, "trace_action_log_rows", fake_action_rows)
+    client = TestClient(boi_app_module.app)
+
+    workflow = client.get(f"/api/workflows/direct-development-reporting/tat-summary?employee_id=100001&trace_id={trace_id}")
+    assert workflow.status_code == 200
+    body = workflow.json()
+    assert body["workflow_tat"]["sample_count"] == 1
+    assert body["workflow_tat"]["recent_ms"] == 70 * 60 * 1000
+    assert body["workflow_tat"]["recent_display"] == "1.2시간"
+    assert body["task_tat"]
+    assert body["baseline_state"] == "baseline 설정"
+    assert body["baseline"]["display"] != "baseline 미설정"
+    assert body["improvement"]["state"] in {"improved", "slower", "same"}
+    assert body["display_summary"]["oi_contract"] == "Output=완료 run/task, Input=Workflow/Task TAT"
+    assert body["bottlenecks"]["longest_task"]
+    assert body["mode_mix"]["manual"] >= 1
+    assert "0분" not in body["workflow_tat"]["display"]
+
+    task_id = body["task_tat"][0]["task_id"]
+    task = client.get(f"/api/workflows/direct-development-reporting/tasks/{task_id}/tat-summary?employee_id=100001")
+    assert task.status_code == 200
+    assert task.json()["task_tat"]["task_id"] == task_id
+    assert task.json()["display_summary"]["workflow_recent"] == body["display_summary"]["workflow_recent"]
+
+    page = client.get("/workflows/direct-development-reporting/tat?employee_id=100001")
+    assert page.status_code == 200
+    assert "TAT SCORECARD" in page.text
+    assert "Task별 TAT 비교" in page.text
+    assert "실측 근거 보기" in page.text
+    assert "workflow_tat" not in page.text
+
+    status_page = client.get(f"/workflows/direct-development-reporting/status?employee_id=100001&trace_id={trace_id}")
+    assert status_page.status_code == 200
+    assert "TAT 성과 보기" in status_page.text
 
 
 def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app_module):
@@ -7659,7 +7830,11 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
     body = page.text
     assert page.status_code == 200
     assert "승인/조치" in body
+    assert "inbox.js" in body
     assert "data-inbox-decision-form" in body
+    assert "data-inbox-artifact-upload" in body
+    assert "판단 근거 파일" in body
+    assert 'name="data_lake_artifacts"' in body
     assert 'name="decision"' in body
     assert 'name="note"' in body
     assert "승인" in body
@@ -7667,11 +7842,27 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
     assert "보류" in body
     assert "추가 근거 요청" in body
     assert "사유를 입력" in body
-    assert "act-boi-inbox-decision-ui" not in re.sub(r'action="[^"]+"', "", body)
+    assert "act-boi-inbox-decision-ui" not in body
+    assert "task:act-boi-inbox-decision-ui" not in body
+    assert "/inbox/task-refs/inbox-ref-" in body
 
     submit = client.post(
         "/inbox/tasks/task:act-boi-inbox-decision-ui/decision?employee_id=100001",
-        data={"decision": "reject", "note": "Raw Data endpoint 확인 전이라 반려", "user_confirmed": "true"},
+        data={
+            "decision": "reject",
+            "note": "Raw Data endpoint 확인 전이라 반려",
+            "user_confirmed": "true",
+            "data_lake_artifacts": json.dumps(
+                [
+                    {
+                        "artifact_id": "artifact-manual-raw",
+                        "filename": "manual_raw.xlsx",
+                        "download_url": "/api/data-lake/artifacts/artifact-manual-raw/download",
+                        "attachment_role": "raw_data",
+                    }
+                ]
+            ),
+        },
         follow_redirects=False,
     )
     assert submit.status_code == 303
@@ -7685,6 +7876,7 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
     assert decision_rows
     assert decision_rows[-1]["decision"] == "reject"
     assert decision_rows[-1]["note"] == "Raw Data endpoint 확인 전이라 반려"
+    assert decision_rows[-1]["data_lake_artifacts"][0]["artifact_id"] == "artifact-manual-raw"
 
 
 def test_boi_inbox_history_view_lists_recorded_decisions_not_open_tasks(boi_app_module):
@@ -7792,6 +7984,10 @@ def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_repo
     report_page = client.get(web_refresh.headers["location"])
     assert report_page.status_code == 200
     default_visible_html = report_page.text
+    assert "보고서 보강 파일" in default_visible_html
+    assert "data-evidence-tray" in default_visible_html
+    assert 'data-target-type="report"' in default_visible_html
+    assert "evidence_tray.js" in default_visible_html
     for forbidden in ["source_id", "WorkflowDefinition", "schema", "trace-boi-inbox-refresh-item", "act-boi-inbox-refresh-item"]:
         assert forbidden not in default_visible_html
 
@@ -8143,6 +8339,161 @@ def test_data_lake_disabled_contract_is_optional(boi_app_module):
         assert body["user_facing_name"] == "Data Lake"
         assert body["data_lake"]["core_required"] is False
 
+    upload = client.post(
+        "/api/data-lake/artifacts/upload?employee_id=100001",
+        files={"file": ("raw.csv", b"ts,value\n1,10\n", "text/csv")},
+        data={"source_context": json.dumps({"stage_id": "raw_check"}, ensure_ascii=False)},
+    )
+    assert upload.status_code == 200
+    assert upload.json()["status"] == "disabled"
+    assert upload.json()["core_required"] is False
+
+    profile = client.post("/api/data-lake/artifacts/missing-artifact/profile?employee_id=100001")
+    attach = client.post(
+        "/api/data-lake/artifacts/missing-artifact/attach?employee_id=100001",
+        json={"target_type": "inbox_report", "target_id": "report-001", "user_confirmed": True},
+    )
+    for response in (profile, attach):
+        assert response.status_code == 200
+        assert response.json()["status"] == "disabled"
+        assert response.json()["core_required"] is False
+
+
+def test_data_lake_artifact_upload_profile_download_and_attach_contract(boi_app_module, tmp_path, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_PROFILE", "local-full-datalake")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ARTIFACT_ROOT", tmp_path / "artifact-store")
+    client = TestClient(boi_app_module.app)
+
+    content = b"timestamp,equipment_id,lot_id,pressure\n1,ETCH-VM-01,LOT-A,10.2\n2,ETCH-VM-01,LOT-A,11.8\n"
+    upload = client.post(
+        "/api/data-lake/artifacts/upload?employee_id=100001",
+        files={"file": ("pressure_raw.csv", content, "text/csv")},
+        data={
+            "visibility": "private",
+            "source_context": json.dumps(
+                {
+                    "sop_draft_session_id": "draft-session-1",
+                    "target_type": "workflow_stage",
+                    "target_id": "run-raw-data-check:raw_data_check",
+                    "stage_id": "raw_data_check",
+                    "attached_from_surface": "sop_run_stage",
+                    "attachment_role": "raw_data",
+                    "human_note": "압력 raw data 확인",
+                    "business_context": "압력 raw data 확인",
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+
+    assert upload.status_code == 200, upload.text
+    body = upload.json()
+    assert body["status"] == "uploaded"
+    artifact = body["artifact"]
+    assert artifact["artifact_id"]
+    assert artifact["owner_employee_id"] == "100001"
+    assert artifact["visibility"] == "private"
+    assert artifact["filename"] == "pressure_raw.csv"
+    assert artifact["content_type"] == "text/csv"
+    assert artifact["size_bytes"] == len(content)
+    assert artifact["sha256"] == hashlib.sha256(content).hexdigest()
+    assert artifact["download_url"].startswith("/api/data-lake/artifacts/")
+    assert artifact["source_context"]["stage_id"] == "raw_data_check"
+    assert artifact["uploaded_by_employee_id"] == "100001"
+    assert artifact["attached_from_surface"] == "sop_run_stage"
+    assert artifact["target_type"] == "workflow_stage"
+    assert artifact["target_id"] == "run-raw-data-check:raw_data_check"
+    assert artifact["attachment_role"] == "raw_data"
+    assert artifact["human_note"] == "압력 raw data 확인"
+    assert artifact["validation_state"] == "uploaded"
+    assert artifact["storage_backend"] == "runtime_file"
+    assert body["attachment"]["target_type"] == "workflow_stage"
+    assert body["attachment"]["attachment_role"] == "raw_data"
+
+    artifact_id = quote(artifact["artifact_id"], safe="")
+    get_artifact = client.get(f"/api/data-lake/artifacts/{artifact_id}?employee_id=100001")
+    list_artifacts = client.get(
+        "/api/data-lake/artifacts?employee_id=100001&target_type=workflow_stage&target_id=run-raw-data-check%3Araw_data_check"
+    )
+    profile = client.post(f"/api/data-lake/artifacts/{artifact_id}/profile?employee_id=100001")
+    download = client.get(f"/api/data-lake/artifacts/{artifact_id}/download?employee_id=100001")
+    attach = client.post(
+        f"/api/data-lake/artifacts/{artifact_id}/attach?employee_id=100001",
+        json={
+            "target_type": "inbox_report",
+            "target_id": "report-001",
+            "note": "승인 전 raw data 근거로 연결",
+            "attached_from_surface": "boi_inbox_decision",
+            "attachment_role": "raw_data",
+            "human_note": "승인 전 사람이 업로드한 압력 raw data",
+            "validation_state": "review_required",
+            "user_confirmed": True,
+        },
+    )
+    detach = client.delete(
+        f"/api/data-lake/artifacts/{artifact_id}/attach?employee_id=100001"
+        "&target_type=inbox_report&target_id=report-001&user_confirmed=true"
+    )
+
+    assert get_artifact.status_code == 200
+    assert get_artifact.json()["status"] == "ready"
+    assert get_artifact.json()["artifact"]["download_url"].endswith(f"/download")
+    assert list_artifacts.status_code == 200
+    assert list_artifacts.json()["items"][0]["artifact_id"] == artifact["artifact_id"]
+    assert profile.status_code == 200
+    profile_body = profile.json()
+    assert profile_body["status"] == "profiled"
+    assert profile_body["profile"]["kind"] == "table"
+    assert profile_body["profile"]["columns"][:3] == ["timestamp", "equipment_id", "lot_id"]
+    assert profile_body["profile"]["sample_rows"][0]["equipment_id"] == "ETCH-VM-01"
+    assert download.status_code == 200
+    assert download.content == content
+    assert attach.status_code == 200
+    attachment = attach.json()["attachment"]
+    assert attachment["target_type"] == "inbox_report"
+    assert attachment["target_id"] == "report-001"
+    assert attachment["attached_from_surface"] == "boi_inbox_decision"
+    assert attachment["attachment_role"] == "raw_data"
+    assert attachment["human_note"] == "승인 전 사람이 업로드한 압력 raw data"
+    assert attachment["validation_state"] == "review_required"
+    assert attachment["artifact"]["artifact_id"] == artifact["artifact_id"]
+    assert attachment["artifact"]["download_url"] == artifact["download_url"]
+    assert detach.status_code == 200
+    assert detach.json()["detached_count"] == 1
+
+    json_upload = client.post(
+        "/api/data-lake/artifacts/upload?employee_id=100001",
+        json={
+            "filename": "agent-output.json",
+            "content_type": "application/json",
+            "content_base64": base64.b64encode(b'{"status":"ok","value":1}').decode("ascii"),
+            "source_context": {"source": "mcp", "stage_id": "analysis"},
+        },
+    )
+    assert json_upload.status_code == 200, json_upload.text
+    assert json_upload.json()["status"] == "uploaded"
+    assert json_upload.json()["artifact"]["filename"] == "agent-output.json"
+    assert json_upload.json()["artifact"]["source_context"]["source"] == "mcp"
+
+
+def test_sop_builder_hides_runtime_data_lake_upload_contract(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/sops/new?employee_id=100001")
+
+    assert response.status_code == 200
+    text = response.text
+    assert "운영 중 근거 파일 첨부" in text
+    assert "SOP 실행 화면, Inbox 판단, Report BoI 검토" in text
+    assert "Data Lake 첨부" not in text
+    assert "Data Lake로 업로드" not in text
+    assert 'data-artifact-upload' not in text
+    assert 'data-artifact-file' not in text
+    assert 'data-evidence-tray' not in text
+    assert "/api/data-lake/artifacts/upload" not in text
+
 
 def test_data_lake_enabled_fixture_adapter_plan_preview_execute_and_artifact(boi_app_module, tmp_path, monkeypatch):
     fixture_root = tmp_path / "ontology"
@@ -8183,6 +8534,9 @@ def test_data_lake_enabled_fixture_adapter_plan_preview_execute_and_artifact(boi
     assert status.status_code == 200
     assert status.json()["enabled"] is True
     assert status.json()["status"] == "ready"
+    assert status.json()["artifact_store"]["enabled"] is False
+    assert status.json()["structured_query_adapter"]["enabled"] is False
+    assert status.json()["structured_query_adapter"]["demo_only"] is True
     assert any(source["available"] for source in status.json()["fixture_sources"])
     assert sources.status_code == 200
     assert sources.json()["status"] == "ready"
@@ -8214,7 +8568,6 @@ def test_data_lake_status_reports_optional_service_reachability(boi_app_module, 
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_PROFILE", "local-full-datalake")
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_FIXTURE_ROOT", fixture_root)
-    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_POSTGRES_DSN", "postgresql://user:pass@127.0.0.1:1/db")
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "http://127.0.0.1:1")
     client = TestClient(boi_app_module.app)
 
@@ -8226,11 +8579,72 @@ def test_data_lake_status_reports_optional_service_reachability(boi_app_module, 
     assert body["enabled"] is True
     assert body["configured"] is True
     assert body["status"] == "service_degraded"
-    assert body["services"]["postgres"]["configured"] is True
-    assert body["services"]["postgres"]["reachable"] is False
+    assert body["artifact_store"]["enabled"] is True
+    assert body["artifact_store"]["backend"] == "minio"
+    assert body["artifact_store"]["reachable"] is False
+    assert body["structured_query_adapter"]["enabled"] is False
+    assert body["services"]["postgres"]["configured"] is False
+    assert body["services"]["postgres"]["reachable"] is None
     assert body["services"]["minio"]["configured"] is True
     assert body["services"]["minio"]["reachable"] is False
     assert body["adapter"] == "fixture_file"
+
+
+def test_legacy_db_demo_status_is_separate_from_minio_data_lake(boi_app_module, tmp_path, monkeypatch):
+    fixture_root = tmp_path / "ontology"
+    fixture_path = fixture_root / "exports"
+    fixture_path.mkdir(parents=True)
+    (fixture_path / "etch_process_sequence_by_product_route.csv").write_text(
+        "product,route,step,equipment,lot_id\nPFO-A,R1,ETCH,ETCH-VM-01,LOT-A-240626\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_PROFILE", "local-full-legacy-db-demo")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_FIXTURE_ROOT", fixture_root)
+    monkeypatch.setattr(boi_app_module, "BOI_LEGACY_DB_DEMO_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_LEGACY_DB_DEMO_POSTGRES_DSN", "postgresql://user:pass@127.0.0.1:1/db")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_POSTGRES_DSN", "")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "")
+    client = TestClient(boi_app_module.app)
+
+    status = client.get("/api/data-lake/status?employee_id=100001")
+
+    assert status.status_code == 200
+    body = status.json()
+    assert body["enabled"] is True
+    assert body["artifact_store"]["enabled"] is False
+    assert body["structured_query_adapter"]["enabled"] is True
+    assert body["structured_query_adapter"]["backend"] == "postgres"
+    assert body["structured_query_adapter"]["demo_only"] is True
+    assert body["structured_query_adapter"]["reachable"] is False
+    assert body["status"] == "service_degraded"
+
+
+def test_deprecated_datalake_postgres_alias_surfaces_legacy_demo_adapter(boi_app_module, tmp_path, monkeypatch):
+    fixture_root = tmp_path / "ontology"
+    fixture_path = fixture_root / "exports"
+    fixture_path.mkdir(parents=True)
+    (fixture_path / "etch_process_sequence_by_product_route.csv").write_text(
+        "product,route,step,equipment,lot_id\nPFO-A,R1,ETCH,ETCH-VM-01,LOT-A-240626\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_FIXTURE_ROOT", fixture_root)
+    monkeypatch.setattr(boi_app_module, "BOI_LEGACY_DB_DEMO_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_LEGACY_DB_DEMO_POSTGRES_DSN", "")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_POSTGRES_DSN", "postgresql://user:pass@127.0.0.1:1/db")
+    monkeypatch.setattr(boi_app_module, "BOI_LEGACY_DB_DEMO_POSTGRES_DSN_DEPRECATED_ALIAS_USED", True)
+    client = TestClient(boi_app_module.app)
+
+    status = client.get("/api/data-lake/status?employee_id=100001")
+
+    assert status.status_code == 200
+    adapter = status.json()["structured_query_adapter"]
+    assert adapter["enabled"] is True
+    assert adapter["configured"] is True
+    assert adapter["deprecated_alias_used"] is True
 
 
 def test_data_lake_import_materializes_private_data_context_boi(boi_app_module, tmp_path, monkeypatch):
@@ -9792,27 +10206,68 @@ def test_dedicated_registration_new_pages_and_legacy_start_redirects(boi_app_mod
 
     assert response.status_code == 200
     assert "SOP 추가" in response.text
-    assert "어떤 업무를 SOP 실행 흐름으로 정리할까요?" in response.text
+    assert "어떤 맥락의 판단을 SOP로 남길까요?" in response.text
+    assert "Workflow 개요" in response.text
+    assert "Task 상세" in response.text
     assert 'data-entry-kind="sop"' in response.text
     assert 'data-focus=""' in response.text
     assert "/api/sop-registration/drafts" in response.text
+    assert "/api/sop-registration/draft-sessions" in response.text
     assert "/api/sop-registration/plan" in response.text
     assert "1. Event" not in response.text
     assert "<h3>Event</h3>" in response.text
-    assert "<h3>SOP</h3>" in response.text
-    assert "<h3>Action</h3>" in response.text
+    assert "<h3>Task 맵</h3>" in response.text
+    assert "<h3>Task 상세</h3>" in response.text
     assert "기존 Event 선택" in response.text
     assert "새 Event 초안 만들기" in response.text
-    assert "이력 패턴으로 만들기" in response.text
+    assert "이력 패턴으로 만들기" not in response.text
     assert "정해진 시간에 발생" in response.text
+    assert 'data-inline-picker="linked_event_types"' in response.text
+    assert 'class="schedule-builder" data-event-mode-field="schedule" hidden' in response.text
+    assert "없으면 건너뛰어도 됩니다." not in response.text
     assert "기존 SOP 선택" in response.text
-    assert "신규 SOP 초안" in response.text
+    assert "Workflow Task 작성" in response.text
+    assert 'data-inline-picker="linked_sop_ref"' in response.text
     assert "기존 Action 선택" in response.text
     assert "새 Action 초안" in response.text
     assert "Manual Action 초안" in response.text
-    assert "이번에는 건너뛰기" in response.text
-    assert "Agent 제안" in response.text
-    assert "추천 받기" in response.text
+    assert 'data-inline-picker="linked_action_keys"' in response.text
+    assert "이번에는 건너뛰기" not in response.text
+    assert "수동 실행" in response.text
+    assert "절차는 나중에 정리" in response.text
+    assert "Action 없이 저장" in response.text
+    assert "작성 도우미" in response.text
+    assert "업무 맥락" in response.text
+    assert "Event 수집 방식" not in response.text
+    assert "이 SOP는 어떻게 시작되나요?" in response.text
+    assert "외부 Webhook 수신" in response.text
+    assert "Legacy/API 주기 조회" in response.text
+    assert "MCP/Data Lake에서 가져오기" in response.text
+    assert "외부 Kafka 직접 발행" in response.text
+    assert "수동 시작" in response.text
+    assert 'data-event-adapter-action="plan"' in response.text
+    assert 'data-event-adapter-action="test"' in response.text
+    assert 'data-event-adapter-action="draft"' in response.text
+    assert "/api/event-ingestion/adapters/plan" in response.text
+    assert "/api/event-ingestion/adapters/test" in response.text
+    assert "/api/event-ingestion/adapters/drafts" in response.text
+    assert "Task 맵" in response.text
+    assert "선택한 Action/Skill을 이 Task에 연결" in response.text
+    assert 'name="work_context_model"' in response.text
+    assert 'name="workflow_model"' in response.text
+    assert 'name="workflow_tasks"' in response.text
+    assert 'name="workflow_stages"' in response.text
+    assert 'name="okf_materialization_plan"' in response.text
+    assert "추천 후보 만들기" in response.text
+    assert "추천으로 채우기" not in response.text
+    assert "이 Event 초안 다듬기" in response.text
+    assert "Workflow Task 추천" in response.text
+    assert "이 Action 초안 다듬기" in response.text
+    assert "Manual" in response.text
+    assert "Copilot" in response.text
+    assert "Autopilot" in response.text
+    assert "data-recommendation-gated disabled" in response.text
+    assert "추천 받기" not in response.text
     assert "선택한 항목으로 확인" in response.text
     assert "업무 단위 폴더" in response.text
     assert "일정 설정" in response.text
@@ -9857,9 +10312,12 @@ def test_action_new_page_renders_seven_connector_wizard_instead_of_free_text_kin
         assert connector in text
     for connector_kind in ["api", "mcp", "webhook", "manual", "event_broker", "boi_writer", "langflow"]:
         assert f'data-connector-kind="{connector_kind}"' in text
+        assert f'data-connector-panel="{connector_kind}"' in text
     assert 'name="execution_kind"' not in text
     assert 'name="connector_kind"' in text
-    assert 'data-connector-panel="api"' not in text
+    assert '<section class="connector-panel active" data-connector-panel="manual">' in text
+    assert 'name="connector_config.endpoint"' in text
+    assert 'name="connector_config.tool"' in text
 
 
 def test_registration_draft_api_creates_validates_and_requires_confirmation_to_publish(boi_app_module):
@@ -9926,6 +10384,7 @@ def test_action_registration_draft_validates_connector_specific_required_fields(
         "event_broker": {"connector_config": {"event_type": "maintenance.guide.requested.v1", "topic": "boi.events", "idempotency_key_fields": ["trace_id"]}, "input_fields": ["trace_id"], "output_fields": ["event_id"]},
         "boi_writer": {"connector_config": {"boi_type": "boi/analysis", "target_folder": "public/equipment/anomaly-response", "template": "analysis-summary"}, "input_fields": ["source_refs"], "output_fields": ["boi_id"]},
         "langflow": {"connector_config": {"flow_ref": "equipment-stage-analysis", "endpoint": "stage-analysis"}, "input_fields": ["event"], "output_fields": ["analysis"]},
+        "skill": {"connector_config": {"skill_ref": "evidence.raw_data_lookup", "invocation_mode": "sandbox_run"}, "input_fields": ["lot_id", "wafer_id"], "output_fields": ["artifact_url", "validation_result"]},
     }
 
     for connector_kind, payload in connector_cases.items():
@@ -10013,6 +10472,57 @@ def test_registration_plan_preview_and_explorer_support_natural_language_flow(bo
     assert candidate_body["ok"] is True
     assert candidate_body["groups"]["event_types"]
     assert candidate_body["groups"]["actions"]
+    paged = client.get("/api/registration/link-candidates?employee_id=100001&entry_kind=all&kind=event_types&limit=2&scope=all")
+    assert paged.status_code == 200
+    paged_body = paged.json()
+    assert paged_body["kind"] == "event_types"
+    assert len(paged_body["items"]) <= 2
+    assert "total" in paged_body
+    assert "next_cursor" in paged_body
+    assert "facets" in paged_body
+    assert paged_body["current_page"] == 1
+    assert paged_body["page_size"] == 2
+    assert paged_body["total_pages"] >= 1
+    if paged_body["items"]:
+        assert "why_recommended" in paged_body["items"][0]
+        assert "badges" in paged_body["items"][0]
+        assert "assetization_hint" in paged_body["items"][0]
+        assert "display_label" in paged_body["items"][0]
+        assert "technical_value" in paged_body["items"][0]
+        assert "technical_label" in paged_body["items"][0]
+
+    meeting_event = client.get("/api/registration/link-candidates?employee_id=100001&entry_kind=all&kind=event_types&q=%ED%9A%8C%EC%9D%98&scope=all")
+    assert meeting_event.status_code == 200
+    meeting_items = meeting_event.json()["items"]
+    assert meeting_items
+    assert meeting_items[0]["display_label"] == "회의 종료"
+    assert meeting_items[0]["technical_value"] == "meeting.closed.v1"
+    assert meeting_items[0]["technical_label"] == "meeting.closed.v1"
+
+    page_two = client.get("/api/registration/link-candidates?employee_id=100001&entry_kind=all&kind=actions&page=2&page_size=3&scope=all")
+    assert page_two.status_code == 200
+    page_two_body = page_two.json()
+    assert page_two_body["kind"] == "actions"
+    assert page_two_body["current_page"] == 2
+    assert page_two_body["page_size"] == 3
+    assert len(page_two_body["items"]) <= 3
+    assert page_two_body["cursor"] == "3"
+
+    action_first_page = client.get("/api/registration/link-candidates?employee_id=100001&entry_kind=all&kind=actions&page=1&page_size=5&scope=all")
+    assert action_first_page.status_code == 200
+    action_first_page_body = action_first_page.json()
+    assert action_first_page_body["kind"] == "actions"
+    assert action_first_page_body["total"] > 0
+    assert action_first_page_body["items"]
+    assert all("display_label" in item and "technical_value" in item for item in action_first_page_body["items"])
+
+    mcp_actions = client.get("/api/registration/link-candidates?employee_id=100001&entry_kind=all&kind=actions&connector_kind=mcp&page_size=10&scope=all")
+    assert mcp_actions.status_code == 200
+    mcp_actions_body = mcp_actions.json()
+    assert mcp_actions_body["kind"] == "actions"
+    assert mcp_actions_body["items"]
+    assert all(item.get("connector_kind") == "mcp" for item in mcp_actions_body["items"])
+    assert mcp_actions_body["filters"]["connector_kind"] == "mcp"
 
 
 def test_sop_registration_plan_preview_draft_and_publish_guard(boi_app_module):
@@ -10031,14 +10541,31 @@ def test_sop_registration_plan_preview_draft_and_publish_guard(boi_app_module):
     plan = plan_response.json()
     assert plan["ok"] is True
     assert plan["plan_type"] == "sop_registration_plan"
+    assert plan["recommendation_state"] == "ready"
     assert plan["event_section"]["section_id"] == "event"
     assert plan["sop_section"]["section_id"] == "sop"
     assert plan["action_sections"][0]["section_id"] == "action"
     assert plan["schedule_section"]["topic_default"] == boi_app_module.BOI_EVENTS_TOPIC
+    assert "auto_apply_seconds" not in plan["event_section"]["draft_suggestion"]
+    assert plan["event_section"]["draft_suggestion"]["apply_mode"] == "manual"
+    assert plan["event_section"]["draft_suggestion"]["summary"]
+    assert plan["event_section"]["draft_suggestion"]["diff_preview"]
+    assert plan["event_section"]["draft_suggestion"]["display_name"]
+    assert plan["event_section"]["draft_suggestion"]["technical_name"]
+    assert "payload_fields" in plan["event_section"]["draft_suggestion"]["recommended_payload"]
+    assert "auto_apply_seconds" not in plan["sop_section"]["draft_suggestion"]
+    assert plan["sop_section"]["draft_suggestion"]["apply_mode"] == "manual"
+    assert plan["sop_section"]["draft_suggestion"]["diff_preview"]
+    assert "auto_apply_seconds" not in plan["action_sections"][0]["draft_suggestion"]
+    assert plan["action_sections"][0]["draft_suggestion"]["apply_mode"] == "manual"
+    assert plan["action_sections"][0]["draft_suggestion"]["diff_preview"]
+    assert "manual." not in plan["action_sections"][0]["draft_suggestion"]["display_name"]
+    assert "_" not in plan["action_sections"][0]["draft_suggestion"]["display_name"]
     assert plan["draft_payload"]["event_mode"] == "draft"
     assert plan["draft_payload"]["sop_mode"] == "skip"
     assert plan["draft_payload"]["action_mode"] == "skip"
     assert plan["recommended_next_step"]
+    assert plan["auto_assetization_plan"]["publish_blocked_until_confirmed"] is True
 
     preview_response = client.post(
         "/api/sop-registration/preview?employee_id=100001",
@@ -10051,6 +10578,7 @@ def test_sop_registration_plan_preview_draft_and_publish_guard(boi_app_module):
     assert "payload" in preview["internal_terms_hidden"]
     assert "schema" in preview["internal_terms_hidden"]
     assert "topic" in preview["internal_terms_hidden"]
+    assert preview["auto_assetization_plan"]["validation_required"] is True
 
     create_response = client.post(
         "/api/sop-registration/drafts?employee_id=100001",
@@ -10062,6 +10590,7 @@ def test_sop_registration_plan_preview_draft_and_publish_guard(boi_app_module):
     assert draft["status"] == "draft"
     assert draft["catalog_applied"] is False
     assert draft["component_draft_payloads"]["event"]["event_type"]
+    assert draft["auto_assetization_plan"]["publish_blocked_until_confirmed"] is True
 
     draft_id = draft["draft_id"]
     validate_response = client.post(f"/api/sop-registration/drafts/{draft_id}/validate?employee_id=100001")
@@ -10082,6 +10611,454 @@ def test_sop_registration_plan_preview_draft_and_publish_guard(boi_app_module):
     published = publish_response.json()["draft"]
     assert published["status"] == "publish_requested"
     assert published["catalog_applied"] is False
+
+
+def test_sop_registration_plan_requires_business_context_before_suggestions(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    plan_response = client.post(
+        "/api/sop-registration/plan?employee_id=100001",
+        json={
+            "raw_request": "",
+            "scope": "private",
+            "folder": "private/100001/sop-drafts",
+            "focus": "sop",
+            "payload": {"event_mode": "draft", "sop_mode": "draft", "action_mode": "draft"},
+        },
+    )
+
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    assert plan["ok"] is True
+    assert plan["recommendation_state"] == "needs_input"
+    assert plan["input_requirements"]
+    assert "draft_suggestion" not in plan["event_section"]
+    assert "draft_suggestion" not in plan["sop_section"]
+    assert "draft_suggestion" not in plan["action_sections"][0]
+    assert all("draft_suggestion" not in suggestion for suggestion in plan["event_section"]["suggestions"])
+    assert all("draft_suggestion" not in suggestion for suggestion in plan["sop_section"]["suggestions"])
+    assert all("draft_suggestion" not in suggestion for suggestion in plan["action_sections"][0]["suggestions"])
+
+
+def test_sop_registration_plan_uses_section_draft_input_as_recommendation_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    plan_response = client.post(
+        "/api/sop-registration/plan?employee_id=100001",
+        json={
+            "raw_request": "",
+            "scope": "private",
+            "folder": "private/100001/sop-drafts",
+            "focus": "event",
+            "payload": {
+                "event_mode": "draft",
+                "event_display_name": "회의 종료",
+                "payload_fields": ["회의 요약", "결정사항", "담당자", "Action Item"],
+            },
+        },
+    )
+
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    assert plan["recommendation_state"] == "ready"
+    assert plan["event_section"]["draft_suggestion"]["apply_mode"] == "manual"
+    assert plan["event_section"]["draft_suggestion"]["recommended_payload"]["event_display_name"]
+
+
+def test_sop_registration_plan_returns_work_context_and_stage_suggestions(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    plan_response = client.post(
+        "/api/sop-registration/plan?employee_id=100001",
+        json={
+            "raw_request": "ETCH-VM-01 Alarm 발생 시 Trend와 Raw Data를 확인하고 승인 여부를 판단한 뒤 조치 결과를 BoI로 남기는 SOP가 필요해",
+            "scope": "private",
+            "folder": "private/100001/sop-drafts",
+            "focus": "sop",
+            "payload": {
+                "work_target": "ETCH-VM-01 / LOT-A",
+                "work_situation": "Alarm 발생 후 Trend 이상 확인",
+                "decision_question": "Raw Data까지 확인한 뒤 승인할 수 있는가?",
+                "required_evidence_context": ["Trend", "Raw Data", "Action 결과"],
+                "expected_result": "검증 보고서 BoI와 조치 결과",
+                "knowledge_update_goal": "유사 Alarm 처리 기준 보강",
+                "event_source_kind": "webhook",
+                "event_source_config": {"endpoint_hint": "/webhooks/equipment-alarm"},
+            },
+        },
+    )
+
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    assert plan["work_context_suggestion"]["work_target"] == "ETCH-VM-01 / LOT-A"
+    assert plan["work_context_suggestion"]["decision_question"]
+    assert plan["workflow_model_suggestion"]["task_count"] >= 1
+    assert plan["workflow_task_suggestions"]
+    assert plan["workflow_stage_suggestions"]
+    assert all(task["execution_mode"] in {"manual", "copilot", "autopilot"} for task in plan["workflow_task_suggestions"])
+    assert all(stage["decision_question"] for stage in plan["workflow_stage_suggestions"])
+    assert all(stage["required_evidence"] for stage in plan["workflow_stage_suggestions"])
+    assert all(stage["expected_outputs"] for stage in plan["workflow_stage_suggestions"])
+    assert plan["stage_action_suggestions"]
+    assert plan["knowledge_update_suggestions"]
+    assert plan["event_ingestion_plan"]["source_kind"] == "webhook"
+    assert plan["event_ingestion_plan"]["draft_assets"][0]["kind"] == "event_ingestion_adapter_draft"
+    assert plan["draft_payload"]["work_context_model"]["decision_question"]
+    assert plan["draft_payload"]["workflow_model"]["task_count"] >= 1
+    assert plan["draft_payload"]["workflow_tasks"]
+    assert plan["draft_payload"]["event_ingestion_plan"]["source_kind"] == "webhook"
+    assert plan["draft_payload"]["workflow_stages"]
+    assert plan["draft_payload"]["okf_materialization_plan"]["knowledge_update_candidates"]
+
+
+def test_sop_registration_exposes_skill_candidates_for_stage_actions(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    candidates = client.get(
+        "/api/registration/link-candidates?employee_id=100001&entry_kind=all&kind=skills&page=1&page_size=5&scope=all",
+    )
+    assert candidates.status_code == 200
+    body = candidates.json()
+    assert body["kind"] == "skills"
+    assert body["items"]
+    first = body["items"][0]
+    assert first["display_label"]
+    assert first["technical_value"]
+    assert first["skill_ref"] == first["technical_value"]
+    assert first["invocation_modes"]
+    assert first["script_backed"] in {True, False}
+    assert body["facets"]["kind_counts"]["skills"] >= len(body["items"])
+
+    plan_response = client.post(
+        "/api/sop-registration/plan?employee_id=100001",
+        json={
+            "raw_request": "Raw Data와 Trend를 확인해서 보고서 BoI로 남기는 SOP를 만들고 싶어",
+            "scope": "private",
+            "folder": "private/100001/sop-drafts",
+            "payload": {
+                "work_target": "ETCH-VM-01",
+                "decision_question": "Raw Data와 Trend 근거가 충분한가?",
+                "connector_kind": "skill",
+                "skill_ref": "evidence.raw_data_lookup",
+                "workflow_stages": [
+                    {
+                        "stage_name": "근거 확인",
+                        "decision_question": "Raw Data 근거가 충분한가?",
+                        "required_evidence": ["Raw Data", "Trend"],
+                        "skills": [{"skill_ref": "evidence.raw_data_lookup", "invocation_mode": "sandbox_run"}],
+                        "expected_outputs": ["근거 확인 BoI"],
+                    }
+                ],
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    assert plan["skill_suggestions"]
+    assert any(item["skill_ref"] == "evidence.raw_data_lookup" for item in plan["skill_suggestions"])
+    assert plan["draft_payload"]["workflow_stages"][0]["skills"][0]["skill_ref"] == "evidence.raw_data_lookup"
+    assert any(
+        asset["kind"] == "skill_action_draft" and asset["skill_ref"] == "evidence.raw_data_lookup"
+        for asset in plan["auto_assetization_plan"]["draft_assets"]
+    )
+
+
+def test_event_ingestion_adapter_plan_test_draft_and_publish_request(boi_app_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_ROOT", tmp_path / "runtime")
+    client = TestClient(boi_app_module.app)
+
+    plan_response = client.post(
+        "/api/event-ingestion/adapters/plan?employee_id=100001",
+        json={
+            "source_kind": "webhook",
+            "source_name": "equipment-alarm",
+            "target_event_type": "equipment.alarm.raised.v1",
+            "payload_mapping": {"equipment_id": "$.equipment", "alarm_code": "$.alarm"},
+            "sample_payload": {"equipment": "ETCH-VM-01", "alarm": "PRESS-01"},
+        },
+    )
+
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["adapter_plan"]
+    assert plan["source_kind"] == "webhook"
+    assert plan["source_name"] == "equipment-alarm"
+    assert plan["webhook"]["endpoint_path"] == "/api/webhooks/equipment-alarm"
+    assert "SERVICE_TOKEN" in plan["webhook"]["sample_curl"]
+    assert plan["steps"] == ["설정", "샘플 확인", "테스트", "초안 저장"]
+    assert plan["publish_blocked_until_confirmed"] is True
+
+    test_response = client.post(
+        "/api/event-ingestion/adapters/test?employee_id=100001",
+        json={"adapter_plan": plan},
+    )
+
+    assert test_response.status_code == 200
+    test_payload = test_response.json()
+    assert test_payload["test_status"] == "ready_for_sample"
+    assert test_payload["would_publish"] is False
+    assert test_payload["sample_event_preview"]["event_type"] == "equipment.alarm.raised.v1"
+    assert test_payload["sample_event_preview"]["payload"]["equipment_id"] == "ETCH-VM-01"
+
+    draft_response = client.post(
+        "/api/event-ingestion/adapters/drafts?employee_id=100001",
+        json={"adapter_plan": plan, "test_result": test_payload},
+    )
+
+    assert draft_response.status_code == 200
+    draft = draft_response.json()["draft"]
+    assert draft["status"] == "draft"
+    assert draft["source_kind"] == "webhook"
+    assert draft["test_status"] == "ready_for_sample"
+
+    publish_response = client.post(
+        f"/api/event-ingestion/adapters/{draft['draft_id']}/publish-request?employee_id=100001",
+        json={"user_confirmed": True, "note": "request review"},
+    )
+
+    assert publish_response.status_code == 200
+    assert publish_response.json()["draft"]["status"] == "publish_requested"
+
+
+def test_sop_registration_includes_event_producer_adapter_plan_in_draft_and_okf(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    payload = {
+        "raw_request": "외부 설비 Webhook으로 Alarm을 받아 SOP를 시작한다",
+        "scope": "private",
+        "folder": "private/100001/sop-drafts",
+        "event_mode": "draft",
+        "sop_mode": "draft",
+        "action_mode": "skip",
+        "work_target": "ETCH-VM-01",
+        "work_situation": "Alarm 발생",
+        "decision_question": "Trend와 Raw를 보고 조치가 필요한가?",
+        "event_source_kind": "webhook",
+        "event_source_config": {
+            "source_name": "equipment-alarm",
+            "target_event_type": "equipment.alarm.raised.v1",
+            "payload_mapping": {"equipment_id": "$.equipment", "alarm_code": "$.alarm"},
+            "sample_payload": {"equipment": "ETCH-VM-01", "alarm": "PRESS-01"},
+        },
+    }
+
+    plan_response = client.post(
+        "/api/sop-registration/plan?employee_id=100001",
+        json={"raw_request": payload["raw_request"], "payload": payload},
+    )
+
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    assert plan["event_producer_adapter_plan"]["source_kind"] == "webhook"
+    assert plan["draft_payload"]["event_producer_adapter_plan"]["webhook"]["endpoint_path"] == "/api/webhooks/equipment-alarm"
+    assert plan["draft_payload"]["okf_materialization_plan"]["event_producer_adapter_drafts"]
+    assert plan["draft_payload"]["okf_materialization_plan"]["entry_event"] == "equipment.alarm.raised.v1"
+
+    create_response = client.post(
+        "/api/sop-registration/drafts?employee_id=100001",
+        json={"plan": plan, "payload": payload},
+    )
+
+    assert create_response.status_code == 200
+    draft = create_response.json()["draft"]
+    assert draft["event_producer_adapter_plan"]["source_kind"] == "webhook"
+    assert draft["okf_materialization_plan"]["event_to_stage_mapping"][0]["event_type"] == "equipment.alarm.raised.v1"
+    assert draft["component_draft_payloads"]["event"]["event_producer_adapter_plan"]["source_kind"] == "webhook"
+
+
+def test_sop_registration_draft_preserves_workflow_stages_and_okf_materialization(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    workflow_stages = [
+        {
+            "stage_name": "근거 확인",
+            "stage_goal": "Trend와 Raw Data를 검토한다",
+            "decision_question": "판단 근거가 충분한가?",
+            "required_evidence": ["Trend", "Raw Data"],
+            "actions": [{"label": "Raw Data 확인 요청", "action_key": "sop.equipment.raw_data_request"}],
+            "expected_outputs": ["판단 근거 BoI"],
+            "knowledge_update_policy": "부족 근거와 판단 결과를 유사 사례 후보로 남긴다",
+            "execution_mode": "copilot",
+            "copilot_source": "external",
+            "runner_type": "external_tool",
+            "tat_target": "30분",
+            "baseline_tat": "평균 90분",
+        }
+    ]
+    payload = {
+        "raw_request": "설비 Alarm 처리 SOP",
+        "scope": "private",
+        "folder": "private/100001/sop-drafts",
+        "event_mode": "draft",
+        "sop_mode": "draft",
+        "action_mode": "draft",
+        "work_context_model": {
+            "work_target": "ETCH-VM-01",
+            "work_situation": "Alarm 발생",
+            "decision_question": "승인 가능한가?",
+            "required_evidence": ["Trend", "Raw Data"],
+            "expected_result": "검증 보고서 BoI",
+            "knowledge_update_goal": "Alarm 처리 기준 보강",
+        },
+        "workflow_stages": workflow_stages,
+    }
+
+    create_response = client.post("/api/sop-registration/drafts?employee_id=100001", json={"payload": payload})
+
+    assert create_response.status_code == 200
+    draft = create_response.json()["draft"]
+    assert draft["request"]["workflow_stages"] == workflow_stages
+    assert draft["work_context_model"]["work_target"] == "ETCH-VM-01"
+    assert draft["workflow_model"]["task_count"] == 1
+    assert draft["workflow_tasks"][0]["execution_mode"] == "copilot"
+    assert draft["workflow_tasks"][0]["copilot_source"] == "external"
+    assert draft["workflow_tasks"][0]["runner_type"] == "external_tool"
+    assert draft["workflow_tasks"][0]["tat_target"] == "30분"
+    assert draft["workflow_stages"][0]["stage_name"] == "근거 확인"
+    assert draft["workflow_stages"][0]["actions"][0]["label"] == "Raw Data 확인 요청"
+    assert draft["okf_materialization_plan"]["stage_outputs"][0]["stage_name"] == "근거 확인"
+    assert draft["okf_materialization_plan"]["workflow_tasks"][0]["baseline_tat"] == "평균 90분"
+    assert draft["okf_materialization_plan"]["tat_measurement"]["enabled"] is True
+    assert draft["component_draft_payloads"]["sop"]["workflow_tasks"][0]["execution_mode"] == "copilot"
+    assert draft["component_draft_payloads"]["sop"]["workflow_stages"][0]["stage_name"] == "근거 확인"
+    assert draft["component_draft_payloads"]["sop"]["workflow_stages"][0]["decision_question"] == "판단 근거가 충분한가?"
+
+
+def test_sop_registration_accepts_minimal_workflow_task_with_copilot_source(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    payload = {
+        "scope": "private",
+        "folder": "private/100001/sop-drafts",
+        "title": "직개발 Reporting Workflow",
+        "business_goal": "직개발 결과 확인과 보고 흐름을 Task 단위로 먼저 잡는다.",
+        "event_mode": "skip",
+        "sop_mode": "draft",
+        "action_mode": "skip",
+        "workflow_tasks": [
+            {
+                "task_name": "보고 전 근거 확인",
+                "stage_goal": "Trend와 Raw Data를 확인한다.",
+                "execution_mode": "copilot",
+                "copilot_source": "external",
+                "runner_type": "external_tool",
+                "measurement_policy": "manual_record",
+            }
+        ],
+    }
+
+    create_response = client.post("/api/sop-registration/drafts?employee_id=100001", json={"payload": payload})
+
+    assert create_response.status_code == 200
+    draft = create_response.json()["draft"]
+    assert draft["workflow_tasks"][0]["task_name"] == "보고 전 근거 확인"
+    assert draft["workflow_tasks"][0]["execution_mode"] == "copilot"
+    assert draft["workflow_tasks"][0]["copilot_source"] == "external"
+
+    validate_response = client.post(f"/api/sop-registration/drafts/{draft['draft_id']}/validate?employee_id=100001")
+    assert validate_response.status_code == 200
+    validation = validate_response.json()["draft"]["validation"]
+    assert validation["valid"] is True
+
+
+def test_sop_registration_draft_session_autosave_restore_and_delete(boi_app_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_ROOT", tmp_path / "runtime")
+    client = TestClient(boi_app_module.app)
+
+    create_response = client.post(
+        "/api/sop-registration/draft-sessions?employee_id=100001",
+        json={
+            "current_url": "/sops/new?employee_id=100001",
+            "payload": {"raw_request": "설비 Alarm SOP", "title": "Alarm SOP"},
+            "workflow_tasks": [{"task_name": "근거 확인", "execution_mode": "manual"}],
+            "workflow_stages": [{"stage_name": "근거 확인", "decision_question": "근거가 충분한가?"}],
+        },
+    )
+
+    assert create_response.status_code == 200
+    session = create_response.json()["session"]
+    session_id = session["draft_session_id"]
+    assert session["status"] == "open"
+    assert session["payload"]["title"] == "Alarm SOP"
+
+    patch_response = client.patch(
+        f"/api/sop-registration/draft-sessions/{session_id}?employee_id=100001",
+        json={
+            "payload": {"raw_request": "설비 Alarm SOP", "title": "Alarm SOP v2"},
+            "workflow_tasks": [{"task_name": "판단", "execution_mode": "autopilot", "verification_policy": "evidence_required", "fallback_owner": "100001"}],
+            "workflow_stages": [{"stage_name": "판단", "decision_question": "승인 가능한가?"}],
+            "local_state": {"selected_stage_id": "stage-1"},
+        },
+    )
+    assert patch_response.status_code == 200
+    assert patch_response.json()["session"]["payload"]["title"] == "Alarm SOP v2"
+
+    get_response = client.get(f"/api/sop-registration/draft-sessions/{session_id}?employee_id=100001")
+    assert get_response.status_code == 200
+    restored = get_response.json()["session"]
+    assert restored["workflow_tasks"][0]["task_name"] == "판단"
+    assert restored["workflow_tasks"][0]["execution_mode"] == "autopilot"
+    assert restored["workflow_stages"][0]["stage_name"] == "판단"
+    assert restored["local_state"]["selected_stage_id"] == "stage-1"
+
+    list_response = client.get("/api/sop-registration/draft-sessions?employee_id=100001&status=open")
+    assert list_response.status_code == 200
+    assert any(item["draft_session_id"] == session_id for item in list_response.json()["sessions"])
+
+    delete_response = client.delete(f"/api/sop-registration/draft-sessions/{session_id}?employee_id=100001")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["session"]["status"] == "discarded"
+
+
+def test_sop_registration_auto_assetization_plan_for_connector_action(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    plan_response = client.post(
+        "/api/sop-registration/plan?employee_id=100001",
+        json={
+            "raw_request": "MCP 서버로 Raw Data를 조회해서 Trend 보고서 SOP에 연결하고 싶어",
+            "scope": "private",
+            "folder": "private/100001/sop-drafts",
+            "focus": "action",
+            "payload": {
+                "event_mode": "reuse",
+                "sop_mode": "reuse",
+                "action_mode": "draft",
+                "linked_event_types": ["corrective_action.requested.v1"],
+                "linked_sop_ref": "boi:public:sop:direct-development-reporting",
+                "connector_kind": "mcp",
+                "input_fields": ["lot_id", "wafer_id"],
+                "output_fields": ["trend_status", "artifact_url"],
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    auto_plan = plan["auto_assetization_plan"]
+    assert auto_plan["validation_required"] is True
+    assert auto_plan["publish_blocked_until_confirmed"] is True
+    assert any(asset["kind"] == "action_wrapper_draft" and asset["connector_kind"] == "mcp" for asset in auto_plan["draft_assets"])
+    assert any(rel["kind"] == "links_to_sop" for rel in auto_plan["relationships"])
+
+    payload = {
+        **plan["draft_payload"],
+        "event_mode": "reuse",
+        "sop_mode": "reuse",
+        "action_mode": "draft",
+        "linked_event_types": ["corrective_action.requested.v1"],
+        "linked_sop_ref": "boi:public:sop:direct-development-reporting",
+        "connector_kind": "mcp",
+        "input_fields": ["lot_id", "wafer_id"],
+        "output_fields": ["trend_status", "artifact_url"],
+    }
+    preview_response = client.post("/api/sop-registration/preview?employee_id=100001", json={"plan": plan, "payload": payload})
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert any(asset["kind"] == "action_wrapper_draft" for asset in preview["auto_assetization_plan"]["draft_assets"])
+
+    draft_response = client.post("/api/sop-registration/drafts?employee_id=100001", json={"plan": plan, "payload": payload})
+    assert draft_response.status_code == 200
+    draft = draft_response.json()["draft"]
+    assert any(asset["kind"] == "action_wrapper_draft" for asset in draft["auto_assetization_plan"]["draft_assets"])
 
 
 def test_sop_registration_schedule_config_replaces_cron_for_general_users(boi_app_module):
@@ -10191,14 +11168,45 @@ def test_registration_new_pages_use_natural_language_and_preview_flow(boi_app_mo
     response = client.get("/sops/new?employee_id=100001")
     assert response.status_code == 200
     text = response.text
-    assert "어떤 업무를 SOP 실행 흐름으로 정리할까요?" in text
-    assert "추천 받기" in text
-    assert "선택/보강" in text
+    assert "어떤 맥락의 판단을 SOP로 남길까요?" in text
+    assert "sop-wizard-progress" in text
+    assert "업무 맥락" in text
+    assert "시작 신호" in text
+    assert "단계 설계" in text
+    assert "실행 연결" in text
+    assert "검증·저장" in text
+    assert "업무 맥락 → 시작 신호 → SOP 단계 → 실행/판단 → BoI 결과" in text
+    assert "추천 후보 만들기" in text
+    assert "추천으로 채우기" not in text
+    assert "이 Event 초안 다듬기" in text
+    assert "이 SOP 초안 다듬기" in text
+    assert "이 Action 초안 다듬기" in text
+    assert "추천 받기" not in text
+    assert "Agent 제안" not in text
+    assert "Agent 제안 받기" not in text
+    assert "작성 도우미" in text
+    assert "선택한 항목은 저장 시 BoI Wiki 초안과 연결 관계로 자동 정리됩니다." in text
+    assert "wizard-step-panel" in text
+    assert 'data-step-panel="context"' in text
+    assert 'data-step-panel="entry"' in text
+    assert 'data-step-panel="stages"' in text
+    assert 'data-step-panel="execution"' in text
+    assert 'data-step-panel="review"' in text
+    assert "다음" in text
+    assert "이전" in text
+    assert "임시저장" in text
     assert "선택한 항목으로 확인" in text
+    assert "Skill" in text
+    assert "Skill 선택" in text
+    assert 'data-picker-kind="skills"' in text
+    assert 'data-connector-kind="skill"' in text
     assert "폴더 선택" in text
-    assert "기존 Event 탐색" in text
-    assert "기존 SOP 탐색" in text
-    assert "기존 Action 탐색" in text
+    assert "기존 Event 탐색" not in text
+    assert "기존 SOP 탐색" not in text
+    assert "기존 Action 탐색" not in text
+    assert 'data-event-mode-field="reuse" hidden' in text
+    assert 'data-sop-mode-field="reuse" hidden' in text
+    assert 'data-action-mode-field="reuse" hidden' in text
     assert "고급 설정" in text
     assert "직접 ID 입력" not in text
     assert "dry run" not in text.lower()
