@@ -183,8 +183,8 @@ def test_private_generated_docs_are_hidden_by_default_and_visible_with_flag(boi_
     )
     boi_id = str((report.get("metadata") or {}).get("boi_id") or "")
 
-    default_page = client.get("/?employee_id=100001&q=Pytest Generated Report Hidden By Default")
-    explicit_page = client.get("/?employee_id=100001&q=Pytest Generated Report Hidden By Default&include_generated=true")
+    default_page = client.get("/?employee_id=100001&view=explorer&q=Pytest Generated Report Hidden By Default")
+    explicit_page = client.get("/?employee_id=100001&view=explorer&q=Pytest Generated Report Hidden By Default&include_generated=true")
     default_api = client.get("/api/boi?employee_id=100001&q=Pytest Generated Report Hidden By Default")
     explicit_api = client.get("/api/boi?employee_id=100001&q=Pytest Generated Report Hidden By Default&include_generated=true")
 
@@ -463,17 +463,20 @@ def test_boi_folder_api_supports_free_business_unit_hierarchy(boi_app_module):
 def test_workflow_definitions_page_renders_registration_studio_entry_and_nav(boi_app_module):
     client = TestClient(boi_app_module.app)
 
-    home = client.get("/?employee_id=100001")
+    home = client.get("/?employee_id=100001", follow_redirects=False)
+    explorer = client.get("/?employee_id=100001&view=explorer")
     page = client.get("/workflows/definitions?employee_id=100001")
     legacy = client.get("/capabilities?employee_id=100001")
 
-    assert home.status_code == 200
-    assert "BoI Wiki" in home.text
-    assert "BoI Wiki Explorer" in home.text
-    assert "public, team, private 아래 업무 단위 폴더와 문서를 탐색합니다." in home.text
-    assert "업무 BoI를 중심으로 공식 SOP" not in home.text
-    assert "boi-wiki-catalog-intro" not in home.text
-    assert 'data-nav-id="connections"' not in home.text
+    assert home.status_code == 303
+    assert home.headers["location"] == "/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001"
+    assert explorer.status_code == 200
+    assert "BoI Wiki" in explorer.text
+    assert "BoI Wiki Explorer" in explorer.text
+    assert "public, team, private 아래 업무 단위 폴더와 문서를 탐색합니다." in explorer.text
+    assert "업무 BoI를 중심으로 공식 SOP" not in explorer.text
+    assert "boi-wiki-catalog-intro" not in explorer.text
+    assert 'data-nav-id="connections"' not in explorer.text
     assert page.status_code == 200
     assert legacy.status_code == 200
     assert "업무 흐름 정의" in page.text
@@ -6990,7 +6993,7 @@ def test_boi_agent_approve_doc_body_apply_uses_validated_body_apply_path(boi_app
 def test_pet_agent_mount_is_hidden_by_default_on_home(boi_app_module):
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/?employee_id=100001")
+    response = client.get("/?employee_id=100001&view=explorer")
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' not in response.text
@@ -7004,7 +7007,7 @@ def test_pet_agent_mount_is_available_when_feature_enabled(boi_app_module, monke
     client = TestClient(boi_app_module.app)
     monkeypatch.setattr(boi_app_module, "BOI_PET_AGENT_ENABLED", True)
 
-    response = client.get("/?employee_id=100001")
+    response = client.get("/?employee_id=100001&view=explorer")
     script = (boi_app_module.APP_DIR / "static" / "pet_agent.js").read_text(encoding="utf-8")
     style = (boi_app_module.APP_DIR / "static" / "style.css").read_text(encoding="utf-8")
 
@@ -9926,7 +9929,7 @@ def test_doc_markdown_tables_preserve_readable_columns(boi_app_module):
 def test_index_renders_okf_folder_tree_for_accessible_docs(boi_app_module):
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/?employee_id=100001")
+    response = client.get("/?employee_id=100001&view=explorer")
 
     assert response.status_code == 200
     assert 'class="library-layout"' in response.text
@@ -9944,7 +9947,7 @@ def test_index_renders_okf_folder_tree_for_accessible_docs(boi_app_module):
 def test_index_renders_resizable_folder_sidebar_controls(boi_app_module):
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/?employee_id=100001")
+    response = client.get("/?employee_id=100001&view=explorer")
     library_js = Path("boi_api/app/static/library.js").read_text(encoding="utf-8")
     style_css = Path("boi_api/app/static/style.css").read_text(encoding="utf-8")
 
@@ -10047,7 +10050,8 @@ def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
 def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_module):
     client = TestClient(boi_app_module.app)
     cases = {
-        "/?employee_id=100001": ("library", "explorer"),
+        "/?employee_id=100001&view=explorer": ("library", "explorer"),
+        "/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001": ("library", "guide"),
         "/events?employee_id=100001": ("events", "event_history"),
         "/event-types?employee_id=100001": ("events", "event_catalog"),
         "/actions?employee_id=100001": ("actions", "action_catalog"),
@@ -10099,10 +10103,13 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         if active_subnav:
             assert re.search(rf'<a[^>]+data-subnav-id="{active_subnav}"[^>]+aria-current="page"', response.text)
 
-    home = client.get("/?employee_id=100001")
-    assert "BoI Wiki Explorer" in home.text
-    assert "public, team, private 아래 업무 단위 폴더와 문서를 탐색합니다." in home.text
-    assert "<title>BoI Wiki</title>" in home.text
+    home = client.get("/?employee_id=100001", follow_redirects=False)
+    assert home.status_code == 303
+    assert home.headers["location"] == "/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001"
+
+    guide = client.get(home.headers["location"])
+    assert "BoI Wiki 종합 가이드" in guide.text
+    assert "Source Wiki 생성 이력/검증 장부" in guide.text
 
     agent_builder = client.get("/agents/builder?employee_id=100001", follow_redirects=False)
     assert agent_builder.status_code == 200
