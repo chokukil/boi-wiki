@@ -34,6 +34,14 @@ source_refs:
     ref: boi-wiki-local/scripts/local_review.py
   - type: local-template
     ref: boi-wiki-local/scripts/promotion_preflight.py
+  - type: generated-source-wiki
+    ref: /public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md
+  - type: generated-source-wiki
+    ref: /public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md
+  - type: source-wiki-manifest
+    ref: data/source-wikis/boi-wiki-platform-source/latest.json
+  - type: source-wiki-manifest
+    ref: data/source-wikis/boi-wiki-local-source/latest.json
 review:
   reviewer: harness-curator
   review_status: reviewed
@@ -159,6 +167,27 @@ OpenWiki류 접근은 BoI core에 vendoring하지 않고 source-grounded wiki ov
 | kdsz001/OpenWiki desktop | clipboard capture, local SQLite, privacy-first 개인 지식화 UX를 local workflow에 참고 |
 
 BoI Source Wiki는 source inventory, selected/skipped file, commit SHA, generated page, citation, validation report, last-good revision manifest를 남긴다. refresh 실패 시 기존 last-good 문서는 유지한다. 사내 저장소가 GitHub Enterprise, GitLab, Gitea로 바뀌어도 allowlist와 env만 바꾸면 같은 API/MCP 계약을 유지한다.
+
+## Generated BoI Source Wiki
+
+2026-07-05 기준 BoI Source Wiki overlay로 실제 repository 내용을 생성했다. 이 문서 묶음은 public OpenWiki hosted 서비스가 아니라 BoI API의 `source_wiki_job_start` 흐름으로 만든 source-grounded OKF 문서다.
+
+BoI Wiki Platform Source는 `source-wiki-20260705231621-65eda8a7`, `chokukil/boi-wiki@d5054b8` 기준이다.
+
+- [Overview](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md)
+- [Runtime Surfaces](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-49cae4.md)
+- [Knowledge, Harness, and Catalogs](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-f5ae6e.md)
+- [Automation and Verification](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-cfba2c.md)
+- [Source Map and Citations](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-5c06c7.md)
+
+BoI Wiki Local Source는 `source-wiki-20260705231621-182267f6`, `chokukil/boi-wiki-local@93978a9` 기준이다.
+
+- [Overview](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md)
+- [Local Second Brain Lifecycle](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-43b8d8.md)
+- [Automation and Verification](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-d07b75.md)
+- [Source Map and Citations](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-789369.md)
+
+Manifest는 `data/source-wikis/boi-wiki-platform-source/latest.json`과 `data/source-wikis/boi-wiki-local-source/latest.json`에 남는다. 여기에는 selected/skipped inventory, source SHA, page SHA, validation report, last-good 상태가 들어가므로 OpenWiki형 repository 문서화를 재생성하거나 비교할 때 기준점으로 쓴다.
 
 2026-07-05 기준 public [openwiki.sh](https://openwiki.sh/chokukil/boi-wiki-local)는 `chokukil/boi-wiki-local` route를 인식하지만 신규 repository creation이 deployment 정책으로 disabled 상태다. 따라서 hosted 검증은 OpenWiki self-host 배포 또는 `langchain-ai/openwiki` CLI runner에서 진행하고, public hosted 페이지는 아래 상태를 evidence로 남긴다.
 
