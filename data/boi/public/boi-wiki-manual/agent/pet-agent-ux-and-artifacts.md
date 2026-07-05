@@ -3,7 +3,7 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: Pet Agent UX and Artifacts
-description: BoI Agent 우측 하단 Pet UI, artifact 렌더링, Inbox, 대화 상태 유지 기준
+description: feature-flagged BoI Agent Pet UI, artifact 렌더링, Inbox handoff, 대화 상태 유지 기준
 tags: [Manual, Agent, UX, PetAgent, Artifacts]
 timestamp: 2026-06-24T09:15:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:pet-agent-ux-and-artifacts
@@ -27,12 +27,13 @@ review:
 
 # Summary
 
-Pet Agent는 모든 BoI Wiki 화면에서 현재 페이지를 이해하고 질문, 검색, 분석, 초안 작성, 산출물 확인을 돕는 보조 UI다. 업무 검토와 승인 판단은 Pet 안의 탭이 아니라 상단 메뉴 `BoI Inbox`에서 처리한다. Memory와 Dictionary도 Pet 메뉴가 아니라 BoI 문서와 harness/MCP 기능으로 관리한다.
+Pet Agent는 현재 페이지를 이해하고 질문, 검색, 분석, 초안 작성, 산출물 확인을 돕는 보조 UI다. 현재 기본 배포에서는 `BOI_PET_AGENT_ENABLED=false`로 비공개 상태이며, flag가 켜진 환경에서만 app shell에 mount된다. 업무 검토와 승인 판단은 Pet 안의 탭이 아니라 상단 메뉴 `BoI Inbox`에서 처리한다. Memory와 Dictionary도 Pet 메뉴가 아니라 BoI 문서와 harness/MCP 기능으로 관리한다.
 
 Pet 왼쪽 말풍선은 고정 문구가 아니라 `AgentSignal`이다. Signal은 새 BoI Inbox 보고서, 현재 페이지 관련 high-priority task, 빠진 근거, answer-scoped follow-up, page starter 순서로 ranking한다. 업무함 항목은 Pet에 직접 렌더링하지 않고 `/inbox` 보고서로 안내한다. 사용자가 이미 본 signal은 sessionStorage와 activity log에 남겨 반복 노출을 줄인다.
 
 # UX Principles
 
+- 기본 local-full에서는 Pet Agent가 보이지 않는다. 운영자나 PoC owner가 `BOI_PET_AGENT_ENABLED=true`로 켠 경우에만 우측 하단 panel을 렌더링한다.
 - 현재 페이지 context를 기본으로 질문을 추천한다.
 - 링크 클릭으로 페이지가 바뀌면 Pet panel은 닫고, messages와 draft는 sessionStorage에 유지한다.
 - Enter는 전송, Shift+Enter는 줄바꿈이다.
@@ -142,7 +143,7 @@ Markdown 본문 스타일은 메시지 작성자 라벨 스타일과 분리한�
 
 Artifact는 채팅 안에서는 compact하게 보이고, `크게 보기`를 누르면 modal viewer에서 크게 확인한다. Viewer 대상은 Mermaid, table, image, task card, confirmation card다. Markdown image도 이미지를 클릭하면 같은 viewer로 열린다. Mermaid는 Markdown fenced block과 artifact가 같은 source를 포함하면 하나만 렌더링하고, artifacts 배열 안에 같은 source가 중복되어도 한 번만 보여준다.
 
-Pet Agent는 모든 주요 화면에 공통으로 mount된다. 따라서 Mermaid renderer도 문서 상세 전용이 아니라 app shell 전역 script로 로드한다. 사용자가 문서 페이지에서 다이어그램 답변을 받은 뒤 Event Types, Actions, Events 같은 다른 화면으로 이동해도 sessionStorage에서 복원된 Mermaid artifact는 다시 SVG로 렌더링되어야 한다.
+Pet Agent가 활성화된 환경에서는 app shell이 Agent panel과 artifact renderer를 함께 mount한다. 따라서 Mermaid renderer도 문서 상세 전용이 아니라 app shell 전역 script로 로드한다. 사용자가 문서 페이지에서 다이어그램 답변을 받은 뒤 Event Types, Actions, Events 같은 다른 화면으로 이동해도 sessionStorage에서 복원된 Mermaid artifact는 다시 SVG로 렌더링되어야 한다.
 
 Mermaid library 로드 실패는 일시적인 네트워크/CDN 장애일 수 있으므로 실패한 loader promise를 세션 동안 고정하지 않는다. 렌더링 실패 시 해당 diagram은 source fallback을 열어 사용자가 원문을 볼 수 있게 하고, 다음 페이지 이동이나 새 Agent 답변에서 renderer 로드를 다시 시도한다. 이렇게 해야 한 번의 CDN timeout 때문에 이후 모든 artifact가 렌더링되지 않는 상태로 고정되지 않는다.
 

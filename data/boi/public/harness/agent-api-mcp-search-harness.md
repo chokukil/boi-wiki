@@ -42,6 +42,7 @@ BoI Agent를 외부에서 쓸 때 공식 경로는 BoI API와 `boi-wiki-mcp`이�
 | 내부 WorkflowDefinition 중복 확인 | MCP `workflow_definitions_search`, `workflow_definition_deduplicate` | 새 업무/API/MCP/Skill 등록 전 재사용 후보 확인. 사용자 화면에서는 SOP 추가/BoI Wiki 탐색 후보로 표시 |
 | 자연어 SOP 통합 등록 | MCP `sop_registration_plan`, `sop_registration_preview` | 사용자가 schema/topic/key를 몰라도 Event/SOP/Action 후보와 선택 사항을 한 흐름으로 확인 |
 | 개별 등록 계획 | MCP `registration_plan`, `registration_verification_preview` | 기존 호환 경로. 내부 컴포넌트 단위 draft가 필요할 때 사용 |
+| 외부 업무 신호 수집 연결 | MCP `event_ingestion_adapter_plan`, `event_ingestion_adapter_test`, `event_ingestion_adapter_draft_create` | 외부 시스템을 수정하지 못할 때 Webhook/API Poll/MCP/Data Lake/Kafka 가이드/수동 시작 adapter 초안을 만들고 테스트 |
 | Event 발생/패턴 승격 | MCP `event_publish_plan`, `event_publish_preview`, `event_pattern_preview` | 업무 Event 발생 전 확인과 기존 Event Stream 조건의 Event 정의 초안 승격 |
 | SOP 수행 이력 | MCP `sop_run_history` | raw Event Stream 대신 SOP 기준 Timeline과 남은 승인/수동 조치 확인 |
 | 내 중심 업무 상황실 | `GET /api/ops/overview` 또는 MCP `boi_ops_overview` | 사번 기준 SOP workstream map, 우선순위 큐, 열린 SOP run |
@@ -54,7 +55,7 @@ BoI Agent를 외부에서 쓸 때 공식 경로는 BoI API와 `boi-wiki-mcp`이�
 
 SOP 목록과 연결 SOP는 같은 말이 아니다. `SOP 리스트 전부 보여줘`, `전체 SOP 보여줘`, `SOP 목록 알려줘`는 `scope=catalog_all`로 전체 카탈로그를 제한과 overflow와 함께 반환해야 한다. `이 보고서 관련 SOP`, `현재 페이지 SOP`, `연결된 SOP`는 `scope=current_page_related`로 현재 문서, Event, Action, 검증 보고서와 직접 연결된 항목만 반환한다. `설비 이상 SOP`, `직개발 SOP`, `raw data 관련 SOP`처럼 조건이 있는 요청은 `scope=catalog_search`와 query를 사용한다. BoI Agent, MCP `sop_catalog_search`, `/api/sops`, BoI Operations Center의 workstream 선택은 이 resolver 계약을 공유한다.
 
-`boi_search`는 계속 문서 검색 의미를 유지한다. 검색 UX가 부족하다고 해서 `boi_search` 응답에 Action/Event/Dictionary를 섞지 않는다. 복합 탐색은 `ontology_search`를 사용한다. 새 업무를 등록하거나 API/MCP/Skill을 연결할 때는 먼저 `workflow_definitions_search`와 `workflow_definition_deduplicate`로 내부 WorkflowDefinition 재사용 가능성을 확인한다. 다만 외부 UI와 Agent 답변 링크는 `/workflows/definitions`를 직접 노출하지 않고 `관련 SOP 보기`, `BoI Wiki에서 보기`, `Event 보기`, `Action 보기`처럼 5대 메뉴 안의 화면으로 연결한다. 사용자의 자연어 요청은 기본적으로 `sop_registration_plan`과 `sop_registration_preview`로 Event/SOP/Action을 한 흐름에서 정리하고, 내부 컴포넌트 단독 draft가 필요할 때만 `registration_plan`과 `registration_verification_preview`를 사용한다. Event Broker에 새 Event를 발생시키려는 요청은 `event_publish_plan`과 `event_publish_preview`로 기존 Event 후보, 연결 SOP, 과거 이력을 먼저 보여준다. 사람이 보는 Web Pet Agent는 `/chat/stream`을 기본으로 쓰고, MCP와 자동화는 JSON 처리가 쉬운 `/chat` 또는 `boi_agent_chat`을 기본으로 쓴다.
+`boi_search`는 계속 문서 검색 의미를 유지한다. 검색 UX가 부족하다고 해서 `boi_search` 응답에 Action/Event/Dictionary를 섞지 않는다. 복합 탐색은 `ontology_search`를 사용한다. 새 업무를 등록하거나 API/MCP/Skill을 연결할 때는 먼저 `workflow_definitions_search`와 `workflow_definition_deduplicate`로 내부 WorkflowDefinition 재사용 가능성을 확인한다. 다만 외부 UI와 Agent 답변 링크는 `/workflows/definitions`를 직접 노출하지 않고 `관련 SOP 보기`, `BoI Wiki에서 보기`, `Event 보기`, `Action 보기`처럼 5대 메뉴 안의 화면으로 연결한다. 사용자의 자연어 요청은 기본적으로 `sop_registration_plan`과 `sop_registration_preview`로 Event/SOP/Action을 한 흐름에서 정리하고, 내부 컴포넌트 단독 draft가 필요할 때만 `registration_plan`과 `registration_verification_preview`를 사용한다. 외부 시스템을 수정하지 못해 BoI Wiki가 업무 신호를 받아야 할 때는 `event_ingestion_adapter_plan`과 `event_ingestion_adapter_test`로 Webhook/API Poll/MCP/Data Lake/Kafka 연결 초안을 먼저 검증하고, `event_ingestion_adapter_draft_create(user_confirmed=true)`로 draft만 남긴다. Event Broker에 새 Event를 발생시키려는 요청은 `event_publish_plan`과 `event_publish_preview`로 기존 Event 후보, 연결 SOP, 과거 이력을 먼저 보여준다. 사람이 보는 Web Pet Agent는 `/chat/stream`을 기본으로 쓰고, MCP와 자동화는 JSON 처리가 쉬운 `/chat` 또는 `boi_agent_chat`을 기본으로 쓴다.
 
 `boi_search`, `/api/boi`, Explorer 기본 목록은 private `memory`, `working`, `protected` 문서만 대상으로 한다. `boi/inbox-review-report`, sandbox/report artifact, generated BoI 같은 `background` 산출물은 기본 검색 결과에 섞지 않는다. 필요한 경우에만 `include_generated=true` 또는 cleanup/report 전용 API를 사용한다. 외부 agent가 private cleanup을 수행하려면 `private_memory_cleanup_preview`로 후보를 확인하고, `private_memory_cleanup_run`, `private_memory_restore`, `private_memory_mark_memory`는 모두 명시 confirmation을 요구한다.
 
@@ -166,7 +167,7 @@ token, password, secret, 계정정보, high-risk action 자동 승인 선호, �
 
 ## Pet Agent UI
 
-Web shell은 우측 하단 BoI Agent를 제공한다.
+Web shell은 `BOI_PET_AGENT_ENABLED=true`일 때만 우측 하단 BoI Agent를 제공한다. 기본 local-full에서는 Pet Agent가 보이지 않아야 하며, REST/MCP `boi_agent_chat` contract는 UI 노출 여부와 무관하게 유지한다.
 
 - Agent: 현재 페이지 기반 질의응답
 - 추천 질문: 페이지 종류별 next question
@@ -218,7 +219,7 @@ Agent는 단순 검색 결과를 바로 답변으로 내보내지 않는다. `wo
 
 BoI Inbox에서는 `include_context=compact`를 기본으로 사용한다. 같은 유형이 여러 건이면 `group_context_summary`, `group_narrative`, `preview_items`로 시간 범위, 공통점, 주요 차이점, 상위 3건의 다음 확인 사항을 먼저 보여준다. 검증된 보고서는 `report_boi_ref`와 `report_boi_url`로 materialize되어야 하며, 기술 식별자는 보고서 기본 화면이 아니라 기술 세부정보에 접는다. Narrative가 아직 준비되지 않았으면 deterministic 상태 목록을 fallback 답변처럼 보여주지 않고, 보고서 준비/품질 상태만 보여준다.
 
-승인/반려 판단은 `boi_inbox_report_get`의 보고서 품질을 통과해야 한다. 하네스는 보고서의 `conclusion`, `comparison`, `evidence`, `similar_cases`, `actions`를 확인하고, visible report JSON에 `source_id`, raw trace/action id, schema, WorkflowDefinition이 노출되면 실패시킨다. 고위험 group bulk approve는 `boi_inbox_decision_preview`에서 실패해야 하며, 실제 기록은 `boi_inbox_decision_submit`으로 개별 task에 사유와 `user_confirmed=true`가 있을 때만 통과한다.
+승인/반려 판단은 `boi_inbox_report_get`의 보고서 품질을 통과해야 한다. 하네스는 보고서의 `conclusion`, `comparison`, `evidence`, `similar_cases`, `actions`를 확인하고, visible report JSON에 `source_id`, raw trace/action id, schema, WorkflowDefinition이 노출되면 실패시킨다. `boi_inbox_decision_preview`는 confirmation 전에 blocker를 확인할 수 있고 고위험 group bulk approve는 여기서 실패해야 한다. 실제 기록은 `boi_inbox_decision_submit`으로 개별 task에 사유와 `user_confirmed=true`가 있을 때만 통과한다.
 
 개인화는 Pet 메뉴가 아니라 activity와 private BoI 문서로 운영한다. `work_pattern_derive`는 반복 follow-up, artifact viewer 사용, Inbox 처리 방식 같은 활동을 `boi/work-pattern` 후보로 제안한다. 후보는 자동 publish하지 않고 private draft로 남기며, skill이나 Workflow 정의로 전환하려면 사용자 확인과 promotion flow를 거친다.
 

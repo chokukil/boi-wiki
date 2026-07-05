@@ -126,7 +126,7 @@ flowchart TD
 - MCP `boi_inbox_decision_submit`
 - MCP `agent_inbox*` compatibility aliases
 - MCP `similar_cases_search`
-- Optional MCP `data_lake_status`, `data_lake_sources`, `data_lake_query_plan`, `data_lake_query_preview`, `data_lake_query_execute`, `data_lake_artifact_get`
+- Optional MCP `data_lake_status`, `data_lake_sources`, `data_lake_query_plan`, `data_lake_query_preview`, `data_lake_query_execute`, `data_lake_artifact_upload`, `data_lake_artifact_get`, `data_lake_artifact_download_url`, `data_lake_artifact_profile`, `data_lake_artifact_attach`
 
 위 API와 MCP는 같은 `work_context_narrative`, `group_narrative`, `comparison_candidates`, `preview_items[].brief`, `report_boi_ref`, `report_boi_url` contract를 반환한다. Narrative 문장은 source id를 통해 실제 근거에 연결되어야 하지만 source id는 필드에만 남고 사용자 문장에 노출하지 않는다. ACL/RBAC 필터를 통과하지 못한 private/team/restricted 내용은 narrative 입력에도 포함하지 않는다.
 
