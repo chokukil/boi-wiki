@@ -66,15 +66,16 @@ BoI Wiki core는 계속 가볍게 유지한다. source of truth는 OKF Markdown/
 | Data Lake artifact | [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md) |
 | 화면 캡처 규칙 | [OKF Media and Browser Screenshot Guide](/public/boi-wiki-manual/media/okf-media-and-screenshots.md) |
 
-# Runtime Evidence
+# 운영 확인
 
-아래 캡처는 현재 local-full API 렌더 기준으로 생성한 종합 가이드 화면이다.
+종합 가이드는 운영 허브이므로 자체 화면 캡처를 본문에 넣지 않는다. 화면 증거는 Workflow, MCP, Langflow, use case 같은 기능별 문서에 둔다.
 
-![BoI Wiki 종합 가이드 첫 화면](/public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-top-1440x1100.png)
-
-![Harness acceptance matrix](/public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-harness-1440x1100.png)
-
-![Source Wiki and Local Second Brain](/public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-final-operator-guide-local-second-brain-1440x1100.png)
+| 확인 | 방법 |
+|---|---|
+| Harness acceptance | `GET /api/harness/acceptance` |
+| OKF/media 정합성 | `python scripts/okf_lint.py --root data --strict-media` |
+| Data Lake 포함 로컬 smoke | `python scripts/check_local_full_datalake.py --base-url http://localhost:28000 --allow-disabled` |
+| Source Wiki 생성 이력/검증 장부 | `data/source-wikis/boi-wiki-platform-source/latest.json`, `data/source-wikis/boi-wiki-local-source/latest.json` |
 
 # Final Architecture
 

@@ -45,6 +45,8 @@ data/boi/public/boi-wiki-manual/_media/browser/{page-slug}/{yyyyMMdd-HHmmss}-{se
 
 문서에는 표준 Markdown image syntax만 쓴다.
 
+종합 허브나 첫 페이지 문서에는 자기 자신을 캡처한 화면을 inline으로 넣지 않는다. 화면 증거는 기능별 시나리오 문서나 media reference 문서에 둔다.
+
 ```markdown
 ![Workflow Status 화면](/public/boi-wiki-manual/_media/browser/workflow-status/example.png)
 ```
