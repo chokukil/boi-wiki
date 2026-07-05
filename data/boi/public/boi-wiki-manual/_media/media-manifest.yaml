@@ -287,11 +287,3 @@ media:
     viewport: 1440x1100
     related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
     created_by: codex
-  - path: public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-openwiki-boi-wiki-local-generation-disabled-1440x1000.png
-    sha256: 7e8ced5e32a9ef7665fd95399cf27abb5cfafe1b057d40773277a90f4c53b59b
-    source_kind: browser-screenshot
-    captured_url: https://openwiki.sh/chokukil/boi-wiki-local
-    captured_at: 2026-07-05T22:42:00+09:00
-    viewport: 1440x1000
-    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
-    created_by: codex

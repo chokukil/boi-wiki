@@ -19,8 +19,6 @@ source_refs:
   - type: external
     ref: https://revfactory.github.io/harness-paper/
   - type: external
-    ref: https://openwiki.sh/
-  - type: external
     ref: https://github.com/langchain-ai/openwiki
   - type: external
     ref: https://github.com/kdsz001/OpenWiki
@@ -35,9 +33,9 @@ source_refs:
   - type: local-template
     ref: boi-wiki-local/scripts/promotion_preflight.py
   - type: generated-source-wiki
-    ref: /public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md
+    ref: /public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md
   - type: generated-source-wiki
-    ref: /public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md
+    ref: /public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md
   - type: source-wiki-manifest
     ref: data/source-wikis/boi-wiki-platform-source/latest.json
   - type: source-wiki-manifest
@@ -51,7 +49,7 @@ review:
 
 이 문서는 BoI Wiki의 최종 운영 허브다. 일반 구성원은 Inbox, Workflow/Task, Local Private, promotion만 이해하면 되고, DT Platform 담당자와 Legacy System 담당자는 API/MCP/Action Gateway/Source Wiki 계약을 보면 된다.
 
-BoI Wiki core는 계속 가볍게 유지한다. source of truth는 OKF Markdown/JSONL, Git, BoI API/MCP, Action Gateway다. Data Lake, Legacy DB, local memory, hosted OpenWiki는 선택형 overlay이며, core runtime이 이 overlay 없이는 실패하지 않아야 한다.
+BoI Wiki core는 계속 가볍게 유지한다. source of truth는 OKF Markdown/JSONL, Git, BoI API/MCP, Action Gateway다. Data Lake, Legacy DB, local memory, local Source Wiki runner는 선택형 overlay이며, core runtime이 이 overlay 없이는 실패하지 않아야 한다.
 
 # Quick Links
 
@@ -91,7 +89,7 @@ flowchart LR
   API --> GATE["Action Gateway"]
   GATE -->|"API / MCP / Webhook / Manual / Event / BoI Writer / Langflow"| SYS["Legacy & Platform Systems"]
   API -->|"optional"| DL["Data Lake Artifact Store"]
-  API -->|"optional"| SRC["Source Wiki Manifests"]
+  API -->|"optional"| SRC["Source Wiki 생성 이력/검증 장부"]
   OKF --> HOTL["HOTL Review / Git Audit"]
 ```
 
@@ -158,40 +156,38 @@ MCP transport는 `MCP_ALLOWED_HOSTS`와 service token으로 보호한다. 외부
 
 # Source-Grounded Wiki
 
-OpenWiki류 접근은 BoI core에 vendoring하지 않고 source-grounded wiki overlay로 흡수한다.
+Source Wiki는 외부 hosted OpenWiki 서비스가 아니라 BoI API/MCP가 로컬 checkout 또는 사내 allowlist mirror를 읽어 만드는 internal documentation overlay다. 사내 코드와 문서 원문은 외부 hosted OpenWiki, 외부 public GitHub repo, 외부 LLM provider로 보내지 않는다.
 
-| 참고 | BoI 적용 |
+| 항목 | 운영 기준 |
 |---|---|
-| openwiki.sh hosted wiki | merge 후 `chokukil/boi-wiki-local` public repo로 외부 검증 |
-| langchain-ai/openwiki CLI | repo 문서 생성/유지, GitHub Action PR 모델을 참고 |
-| kdsz001/OpenWiki desktop | clipboard capture, local SQLite, privacy-first 개인 지식화 UX를 local workflow에 참고 |
+| 생성 기본 경로 | BoI API `/api/source-wikis/*`와 MCP `source_wiki_*` |
+| 입력 | 로컬 `source_path` 또는 `SOURCE_WIKI_ALLOWED_REPOS`에 등록된 사내 repo mirror |
+| 출력 | OKF Source Wiki 문서와 `data/source-wikis/*/latest.json` |
+| 금지 | 외부 hosted OpenWiki에 사내 repo URL, source path, 코드, 문서 원문 전송 |
+| 참고 패턴 | `langchain-ai/openwiki` local CLI, `kdsz001/OpenWiki` local desktop UX |
 
 BoI Source Wiki는 source inventory, selected/skipped file, commit SHA, generated page, citation, validation report, last-good revision manifest를 남긴다. refresh 실패 시 기존 last-good 문서는 유지한다. 사내 저장소가 GitHub Enterprise, GitLab, Gitea로 바뀌어도 allowlist와 env만 바꾸면 같은 API/MCP 계약을 유지한다.
 
 ## Generated BoI Source Wiki
 
-2026-07-05 기준 BoI Source Wiki overlay로 실제 repository 내용을 생성했다. 이 문서 묶음은 public OpenWiki hosted 서비스가 아니라 BoI API의 `source_wiki_job_start` 흐름으로 만든 source-grounded OKF 문서다.
+2026-07-05 기준 BoI Source Wiki overlay로 실제 repository 내용을 생성했다. 이 문서 묶음은 외부 hosted 서비스가 아니라 BoI API의 `source_wiki_job_start` 흐름으로 만든 source-grounded OKF 문서다.
 
-BoI Wiki Platform Source는 `source-wiki-20260705231621-65eda8a7`, `chokukil/boi-wiki@d5054b8` 기준이다.
+BoI Wiki Platform Source는 `source-wiki-20260706003025-aa8e71f8`, 로컬 checkout `boi-wiki@4ce6413` 기준이다.
 
-- [Overview](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-294508.md)
-- [Runtime Surfaces](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-49cae4.md)
-- [Knowledge, Harness, and Catalogs](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-f5ae6e.md)
-- [Automation and Verification](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-cfba2c.md)
-- [Source Map and Citations](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260705231621-5c06c7.md)
+- [Overview](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md)
+- [Runtime Surfaces](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-064b5f.md)
+- [Knowledge, Harness, and Catalogs](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-237fbe.md)
+- [Automation and Verification](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-06e792.md)
+- [Source Map and Citations](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-8d7e3d.md)
 
-BoI Wiki Local Source는 `source-wiki-20260705231621-182267f6`, `chokukil/boi-wiki-local@93978a9` 기준이다.
+BoI Wiki Local Source는 `source-wiki-20260706003025-05706f63`, 로컬 checkout `boi-wiki-local@93978a9` 기준이다.
 
-- [Overview](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-72f0d3.md)
-- [Local Second Brain Lifecycle](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-43b8d8.md)
-- [Automation and Verification](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-d07b75.md)
-- [Source Map and Citations](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260705231621-789369.md)
+- [Overview](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md)
+- [Local Second Brain Lifecycle](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-2d3900.md)
+- [Automation and Verification](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-ee43d6.md)
+- [Source Map and Citations](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-e200c9.md)
 
-Manifest는 `data/source-wikis/boi-wiki-platform-source/latest.json`과 `data/source-wikis/boi-wiki-local-source/latest.json`에 남는다. 여기에는 selected/skipped inventory, source SHA, page SHA, validation report, last-good 상태가 들어가므로 OpenWiki형 repository 문서화를 재생성하거나 비교할 때 기준점으로 쓴다.
-
-2026-07-05 기준 public [openwiki.sh](https://openwiki.sh/chokukil/boi-wiki-local)는 `chokukil/boi-wiki-local` route를 인식하지만 신규 repository creation이 deployment 정책으로 disabled 상태다. 따라서 hosted 검증은 OpenWiki self-host 배포 또는 `langchain-ai/openwiki` CLI runner에서 진행하고, public hosted 페이지는 아래 상태를 evidence로 남긴다.
-
-![OpenWiki boi-wiki-local generation disabled](/public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-openwiki-boi-wiki-local-generation-disabled-1440x1000.png)
+Source Wiki 생성 이력/검증 장부는 `data/source-wikis/boi-wiki-platform-source/latest.json`과 `data/source-wikis/boi-wiki-local-source/latest.json`에 남는다. 여기에는 selected/skipped inventory, source SHA, page SHA, validation report, last-good 상태가 들어가므로 로컬/사내 runner가 생성한 repository 문서화를 재생성하거나 비교할 때 기준점으로 쓴다.
 
 # Local Second Brain
 
@@ -240,11 +236,11 @@ Action 결과에는 trace id, dry-run 여부, simulation 여부, approval 상태
 |---|---|
 | Git provider | GitHub Enterprise, GitLab, Gitea 모두 env/allowlist로 문서화 |
 | MCP/API URL | user client 설정과 `.env`만 변경 |
-| Source Wiki repo URL | source wiki allowlist에 host/org/repo 추가 |
+| Source Wiki 입력 | 로컬 `source_path` 또는 사내 mirror repo URL을 allowlist에 추가 |
 | Data Lake/Legacy overlay | core 배포와 분리한 profile/feature flag |
-| OpenWiki hosted | 외부 public 검증용. 사내 repo는 내부 hosted/wiki runner로 대체 |
+| OpenWiki류 도구 | 외부 hosted 금지. 필요한 경우 사내 PC/서버에서 local CLI 또는 내부 runner로만 실행 |
 
-core image와 local workspace는 특정 provider SDK에 묶지 않는다. Git push/merge와 OpenWiki refresh는 delivery 절차이며 runtime dependency가 아니다.
+core image와 local workspace는 특정 provider SDK에 묶지 않는다. Git push/merge와 Source Wiki refresh는 delivery 절차이며 runtime dependency가 아니다.
 
 # Operator Acceptance
 
@@ -262,9 +258,8 @@ docker compose --profile local-full-legacy-db-demo config --quiet
 
 시나리오 smoke는 `search -> plan -> preview -> inbox decision -> action dry-run -> approved execution -> evidence ledger` 순서로 검증한다. 실패 시 화면보다 acceptance matrix, 권한 guard, evidence ledger를 먼저 본다.
 
-# External References
+# 참고한 오픈소스 패턴
 
 - [Harness Engineering 2026](https://revfactory.github.io/harness-paper/)
-- [OpenWiki hosted repo wiki](https://openwiki.sh/)
-- [langchain-ai/openwiki](https://github.com/langchain-ai/openwiki)
-- [kdsz001/OpenWiki desktop](https://github.com/kdsz001/OpenWiki)
+- [langchain-ai/openwiki local CLI](https://github.com/langchain-ai/openwiki)
+- [kdsz001/OpenWiki local desktop](https://github.com/kdsz001/OpenWiki)

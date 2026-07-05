@@ -58,10 +58,12 @@ def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_pa
     assert "[image: sample -> evidence/sample.png]" in markdown.json()["markdown"]
 
 
-def test_source_wiki_plan_maps_boi_wiki_repo_url_to_runtime_outline(boi_app_module):
+def test_source_wiki_plan_maps_allowlisted_internal_repo_url_to_runtime_outline(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    repo_url = "https://git.internal.example/boi/boi-wiki"
+    monkeypatch.setenv("SOURCE_WIKI_ALLOWED_REPOS", repo_url)
     payload = {
-        "repo_url": "https://github.com/chokukil/boi-wiki",
+        "repo_url": repo_url,
         "wiki_id": "boi-wiki-platform-source",
         "title": "BoI Wiki Platform Source",
         "max_files": 1,
@@ -74,7 +76,7 @@ def test_source_wiki_plan_maps_boi_wiki_repo_url_to_runtime_outline(boi_app_modu
     body = response.json()
     selected = {item["path"]: item["role"] for item in body["inventory"]["selected"]}
     assert selected["README.md"] == "entrypoint"
-    assert body["source"]["repo_url"] == "https://github.com/chokukil/boi-wiki"
+    assert body["source"]["repo_url"] == repo_url
 
     inventory = {
         "selected": [

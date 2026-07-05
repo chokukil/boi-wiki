@@ -22,8 +22,8 @@ source_refs:
     ref: boi:public:sop:direct-development-reporting
   - type: runtime-trace
     ref: trace-f91b32904db0434db27c3f84307103ad
-  - type: local-repo
-    ref: https://github.com/chokukil/boi-wiki-local/tree/main/data/boi/private/0000000/usage-examples/natural-language-poc
+  - type: local-template
+    ref: boi-wiki-local/data/boi/private/0000000/usage-examples/natural-language-poc
 review:
   reviewer: tf-lead
   review_status: reviewed

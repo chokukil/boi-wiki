@@ -7043,14 +7043,6 @@ def source_wiki_repo_allowed(repo_url: str) -> bool:
     if not repo_url:
         return False
     allowlist = [item.strip() for item in os.getenv("SOURCE_WIKI_ALLOWED_REPOS", "").split(",") if item.strip()]
-    allowlist.extend(
-        [
-            "https://github.com/chokukil/boi-wiki-local",
-            "https://github.com/chokukil/boi-wiki-local.git",
-            "https://github.com/chokukil/boi-wiki",
-            "https://github.com/chokukil/boi-wiki.git",
-        ]
-    )
     return repo_url in set(allowlist)
 
 
