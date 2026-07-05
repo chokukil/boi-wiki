@@ -88,16 +88,17 @@ python3 scripts/promotion_preflight.py --check
 
 local helper는 표준 Python만 사용한다. raw local private 원문은 사용자 승인 없이 원격 API/MCP로 보내지 않는다.
 
-# Source Wiki And OpenWiki
+# Source Wiki And Local OpenWiki Pattern
 
-repo 문서화는 두 단계로 나눈다.
+repo 문서화는 외부 hosted 서비스가 아니라 로컬/사내 runner 경로로만 수행한다.
 
 | 단계 | 용도 |
 |---|---|
-| BoI Source Wiki API/MCP | 사내 OKF source wiki 생성, source inventory, selected/skipped file, commit SHA, citations, validation report, last-good manifest 관리 |
-| hosted OpenWiki | 외부 public repo 검증 또는 사내 mirror repo 문서 사이트 검증 |
+| BoI Source Wiki API/MCP | 기본 경로. 로컬 checkout 또는 사내 allowlist mirror에서 OKF source wiki, inventory, citations, validation report, last-good manifest 생성 |
+| `langchain-ai/openwiki` local CLI | 선택 경로. 사내 PC/서버의 로컬 checkout에서만 실행하고 출력은 repo 내부 `openwiki/` 또는 BoI Source Wiki import 대상으로 둠 |
+| `kdsz001/OpenWiki` desktop | 개인 Local Second Brain UX 참고. clipboard/local SQLite 패턴만 참고하고 core dependency로 넣지 않음 |
 
-`chokukil/boi-wiki-local`은 고도화 커밋이 merge된 뒤 OpenWiki hosted wiki로 먼저 검증한다. 사내 저장소로 옮길 때는 GitHub Enterprise, GitLab, Gitea host를 source wiki allowlist와 MCP/API env에 추가하고 같은 workflow를 유지한다.
+사내 코드와 문서 원문은 외부 hosted OpenWiki, 외부 public GitHub repo, 외부 LLM provider로 보내지 않는다. 사내 저장소로 옮길 때는 GitHub Enterprise, GitLab, Gitea mirror URL을 `SOURCE_WIKI_ALLOWED_REPOS`와 MCP/API env에 추가하고 같은 workflow를 유지한다.
 
 # MCP 사용 기준
 
