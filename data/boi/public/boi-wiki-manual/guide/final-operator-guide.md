@@ -160,6 +160,10 @@ OpenWiki류 접근은 BoI core에 vendoring하지 않고 source-grounded wiki ov
 
 BoI Source Wiki는 source inventory, selected/skipped file, commit SHA, generated page, citation, validation report, last-good revision manifest를 남긴다. refresh 실패 시 기존 last-good 문서는 유지한다. 사내 저장소가 GitHub Enterprise, GitLab, Gitea로 바뀌어도 allowlist와 env만 바꾸면 같은 API/MCP 계약을 유지한다.
 
+2026-07-05 기준 public [openwiki.sh](https://openwiki.sh/chokukil/boi-wiki-local)는 `chokukil/boi-wiki-local` route를 인식하지만 신규 repository creation이 deployment 정책으로 disabled 상태다. 따라서 hosted 검증은 OpenWiki self-host 배포 또는 `langchain-ai/openwiki` CLI runner에서 진행하고, public hosted 페이지는 아래 상태를 evidence로 남긴다.
+
+![OpenWiki boi-wiki-local generation disabled](/public/boi-wiki-manual/_media/browser/final-operator-guide/20260705-openwiki-boi-wiki-local-generation-disabled-1440x1000.png)
+
 # Local Second Brain
 
 `boi-wiki-local` 사용자는 문서를 읽지 않아도 agent가 다음 흐름을 자동 보조해야 한다.
