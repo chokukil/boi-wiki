@@ -488,7 +488,7 @@ def test_workflow_definitions_page_renders_registration_studio_entry_and_nav(boi
     assert "TAT 성과 보기" in page.text
     assert "/workflows/equipment-anomaly/tat?employee_id=100001" in page.text
     assert re.search(r'<a[^>]+data-nav-id="sops"[^>]+aria-current="page"', page.text)
-    assert re.search(r'<a[^>]+data-subnav-id="workflow_definitions"[^>]+aria-current="page"', page.text)
+    assert 'data-subnav-id="workflow_definitions"' not in page.text
 
 
 def test_publish_event_kafka_disabled_keeps_event_log_without_broker_publish(boi_app_module, monkeypatch):
@@ -10098,7 +10098,7 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         "/sops/new?employee_id=100001&focus=event": ("sops", "sop_add"),
         "/sops/new?employee_id=100001&focus=action": ("sops", "sop_add"),
         "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001": ("sops", "sop_catalog"),
-        "/workflows/definitions?employee_id=100001": ("sops", "workflow_definitions"),
+        "/workflows/definitions?employee_id=100001": ("sops", None),
         "/workflows/direct-development-reporting/tat?employee_id=100001": ("sops", "tat"),
         "/permissions?employee_id=100001": ("advanced", "permissions"),
     }

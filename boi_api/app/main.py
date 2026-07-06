@@ -5619,7 +5619,6 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
         "sops": [
             {"id": "sop_catalog", "label": "SOP 카탈로그", "href": app_url("/sops", employee_id)},
             {"id": "sop_add", "label": "SOP 추가", "href": app_url("/sops/new", employee_id)},
-            {"id": "workflow_definitions", "label": "업무 흐름 정의", "href": app_url("/workflows/definitions", employee_id)},
             {"id": "sop_history", "label": "SOP 수행 이력", "href": app_url("/sops/history", employee_id)},
             {"id": "tat", "label": "TAT 성과", "href": default_workflow_tat_page_url(employee_id)},
         ],
@@ -5663,7 +5662,7 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
             if path.startswith("/sops/new") or (path == "/workflows/definitions" and query.get("start") == "sop"):
                 return "sop_add"
             if path == "/workflows/definitions":
-                return "workflow_definitions"
+                return ""
             if path.startswith("/workflows/") and path.endswith("/tat"):
                 return "tat"
             if path.startswith("/sops/history"):
