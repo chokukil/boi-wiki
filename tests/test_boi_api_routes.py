@@ -7871,8 +7871,11 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
     assert page.status_code == 200
     assert "승인/조치" in body
     assert "inbox.js" in body
+    assert "evidence_tray.js" in body
     assert "data-inbox-decision-form" in body
-    assert "data-inbox-artifact-upload" in body
+    assert "data-evidence-upload" in body
+    assert 'data-target-type="inbox_task"' in body
+    assert "data-evidence-artifacts-field" in body
     assert "판단 근거 파일" in body
     assert 'name="data_lake_artifacts"' in body
     assert 'name="decision"' in body
@@ -7917,6 +7920,75 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
     assert decision_rows[-1]["decision"] == "reject"
     assert decision_rows[-1]["note"] == "Raw Data endpoint 확인 전이라 반려"
     assert decision_rows[-1]["data_lake_artifacts"][0]["artifact_id"] == "artifact-manual-raw"
+
+
+def test_boi_inbox_manual_action_view_posts_completion_and_artifacts(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "request_id": "act-boi-inbox-manual-ui",
+            "action_key": "manual.equipment.review_root_cause",
+            "status": "manual_required",
+            "summary": "원인 후보 검토 필요",
+            "trace_id": "trace-boi-inbox-manual-ui",
+            "event_type": "equipment.alarm.raised.v1",
+            "logged_at": "2026-06-30T00:10:00+09:00",
+            "payload": {
+                "equipment_id": "ETCH-VM-13",
+                "lot_id": "LOT-MANUAL-UI",
+                "wafer_id": "WF-31",
+                "raw_data_status": "available",
+            },
+        },
+    )
+    inbox = client.get("/api/inbox?employee_id=100001&limit=50").json()
+    item = next(item for item in inbox["items"] if item["task_id"] == "task:act-boi-inbox-manual-ui")
+    task_ref = boi_app_module.inbox_task_public_ref("100001", item["task_id"])
+    refresh = client.post(f"/api/inbox/reports/{item['report_id']}/refresh?employee_id=100001")
+    assert refresh.status_code == 200
+
+    page = client.get("/inbox?employee_id=100001&view=decisions")
+    body = page.text
+    assert page.status_code == 200
+    assert 'name="outcome"' in body
+    assert "조치 내용" in body
+    assert "조치 근거 파일" in body
+    assert "/complete?employee_id=100001" in body
+    assert "act-boi-inbox-manual-ui" not in body
+    assert "task:act-boi-inbox-manual-ui" not in body
+
+    submit = client.post(
+        f"/inbox/task-refs/{task_ref}/complete?employee_id=100001",
+        data={
+            "outcome": "completed",
+            "note": "원인 후보 검토와 보강 파일 확인 완료",
+            "user_confirmed": "true",
+            "data_lake_artifacts": json.dumps(
+                [
+                    {
+                        "artifact_id": "artifact-manual-result",
+                        "filename": "manual_result.xlsx",
+                        "download_url": "/api/data-lake/artifacts/artifact-manual-result/download",
+                        "attachment_role": "result_file",
+                    }
+                ]
+            ),
+        },
+        follow_redirects=False,
+    )
+    assert submit.status_code == 303
+    completion_rows = [
+        row
+        for row in boi_app_module.cached_action_log_rows()
+        if row.get("completion_for_request_id") == "act-boi-inbox-manual-ui"
+    ]
+    assert completion_rows
+    assert completion_rows[-1]["action_key"] == "manual.handoff.complete"
+    assert completion_rows[-1]["status"] == "manual_completed"
+    assert completion_rows[-1]["note"] == "원인 후보 검토와 보강 파일 확인 완료"
+    assert completion_rows[-1]["data_lake_artifacts"][0]["artifact_id"] == "artifact-manual-result"
 
 
 def test_boi_inbox_history_view_lists_recorded_decisions_not_open_tasks(boi_app_module):
@@ -7992,6 +8064,7 @@ def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_repo
 
     inbox = client.get("/api/inbox?employee_id=100001&limit=10")
     item = next(item for item in inbox.json()["items"] if item["task_id"] == "task:act-boi-inbox-refresh-item")
+    task_ref = boi_app_module.inbox_task_public_ref("100001", item["task_id"])
     report_id = item["report_id"]
 
     first_get = client.get(f"/api/inbox/reports/{report_id}?employee_id=100001")
@@ -8025,11 +8098,47 @@ def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_repo
     assert report_page.status_code == 200
     default_visible_html = report_page.text
     assert "보고서 보강 파일" in default_visible_html
+    assert "조치 기록" in default_visible_html
+    assert 'name="decision"' in default_visible_html
+    assert "사유 남기고 판단 저장" in default_visible_html
+    assert "보강 파일 저장" in default_visible_html
     assert "data-evidence-tray" in default_visible_html
+    assert "data-evidence-artifacts-field" in default_visible_html
     assert 'data-target-type="report"' in default_visible_html
+    assert "/inbox/task-refs/inbox-ref-" in default_visible_html
     assert "evidence_tray.js" in default_visible_html
     for forbidden in ["source_id", "WorkflowDefinition", "schema", "trace-boi-inbox-refresh-item", "act-boi-inbox-refresh-item"]:
         assert forbidden not in default_visible_html
+
+    report_decision = client.post(
+        f"/inbox/task-refs/{task_ref}/decision?employee_id=100001",
+        data={
+            "decision": "defer",
+            "note": "보고서 화면에서 보류 사유 저장",
+            "user_confirmed": "true",
+            "return_to": web_refresh.headers["location"],
+            "data_lake_artifacts": json.dumps(
+                [
+                    {
+                        "artifact_id": "artifact-report-review",
+                        "filename": "report_review.xlsx",
+                        "download_url": "/api/data-lake/artifacts/artifact-report-review/download",
+                        "attachment_role": "evidence",
+                    }
+                ]
+            ),
+        },
+        follow_redirects=False,
+    )
+    assert report_decision.status_code == 303
+    assert report_decision.headers["location"] == web_refresh.headers["location"]
+    decision_rows = [
+        row
+        for row in boi_app_module.cached_action_log_rows()
+        if row.get("completion_for_request_id") == "act-boi-inbox-refresh-item"
+    ]
+    assert decision_rows[-1]["decision"] == "defer"
+    assert decision_rows[-1]["data_lake_artifacts"][0]["artifact_id"] == "artifact-report-review"
 
 
 def test_inbox_review_report_strips_ui_fallback_and_runtime_ids_from_visible_text(boi_app_module):

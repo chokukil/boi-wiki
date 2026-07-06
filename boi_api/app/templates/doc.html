@@ -130,30 +130,96 @@
     </section>
     {% set inbox_report_meta = doc.metadata.get('inbox_report') if doc.metadata else {} %}
     {% if doc.metadata.type == 'boi/inbox-review-report' %}
-    <section
-      class="data-lake-artifact-panel evidence-tray"
-      data-evidence-tray
-      data-target-type="report"
-      data-target-id="{{ inbox_report_meta.report_id or doc.metadata.boi_id }}"
-      data-attached-from-surface="report_boi_review"
-      data-employee-id="{{ employee_id }}">
+    <section class="report-action-panel">
       <div class="mode-panel-heading">
-        <strong>보고서 보강 파일</strong>
-        <span>검토 중 추가한 원본 파일은 Data Lake에 저장하고, 보고서에는 링크와 profile만 남깁니다.</span>
+        <strong>조치 기록</strong>
+        <span>검토 결과와 보강 파일을 같은 기록에 남깁니다.</span>
       </div>
-      <div class="artifact-upload-row">
-        <input type="file" data-evidence-file multiple />
-        <select data-evidence-role aria-label="첨부 역할">
-          <option value="evidence">판단 근거</option>
-          <option value="raw_data">Raw Data</option>
-          <option value="result_file">작업 결과</option>
-          <option value="reference">참고 자료</option>
-          <option value="visualization_source">시각화 원본</option>
-        </select>
-        <button type="button" class="secondary-button" data-evidence-upload>파일 첨부</button>
-      </div>
-      <input class="artifact-note-input" data-evidence-note placeholder="한 줄 메모: 예: 보고서 검토 중 추가 확인한 원본 파일" />
-      <div class="artifact-results" data-evidence-results></div>
+      {% if inbox_report_action and inbox_report_action.available %}
+      <form class="report-action-form" method="post" action="{{ inbox_report_action.action_url }}">
+        <input type="hidden" name="user_confirmed" value="true" />
+        <input type="hidden" name="return_to" value="{{ inbox_report_action.return_to }}" />
+        <input type="hidden" name="data_lake_artifacts" value="[]" data-evidence-artifacts-field />
+        <div class="report-action-grid">
+          <label>
+            {{ inbox_report_action.field_label }}
+            <select name="{{ inbox_report_action.field_name }}" required>
+              {% for choice in inbox_report_action.choices %}
+              <option value="{{ choice.value }}">{{ choice.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            사유
+            <textarea name="note" required rows="3" placeholder="조치 사유와 확인한 근거를 남기세요."></textarea>
+          </label>
+        </div>
+        <section
+          class="data-lake-artifact-panel evidence-tray compact"
+          data-evidence-tray
+          data-target-type="report"
+          data-target-id="{{ inbox_report_meta.report_id or doc.metadata.boi_id }}"
+          data-report-id="{{ inbox_report_meta.report_id or doc.metadata.boi_id }}"
+          data-attached-from-surface="report_boi_review"
+          data-employee-id="{{ employee_id }}">
+          <div class="mode-panel-heading">
+            <strong>보고서 보강 파일</strong>
+            <span>검토 중 추가한 원본 파일은 Data Lake에 저장하고, 조치 기록에는 링크와 profile만 남깁니다.</span>
+          </div>
+          <div class="artifact-upload-row">
+            <input type="file" data-evidence-file multiple />
+            <select data-evidence-role aria-label="첨부 역할">
+              <option value="evidence">판단 근거</option>
+              <option value="raw_data">Raw Data</option>
+              <option value="result_file">작업 결과</option>
+              <option value="reference">참고 자료</option>
+              <option value="visualization_source">시각화 원본</option>
+            </select>
+            <button type="button" class="secondary-button" data-evidence-upload>Data Lake 저장</button>
+          </div>
+          <input class="artifact-note-input" data-evidence-note placeholder="한 줄 메모: 예: 보고서 검토 중 추가 확인한 원본 파일" />
+          <div class="artifact-secondary-actions">
+            <button type="button" class="secondary-button" data-evidence-save-report>보강 파일 저장</button>
+            <span class="muted" data-evidence-save-status></span>
+          </div>
+          <div class="artifact-results" data-evidence-results></div>
+        </section>
+        <button class="button primary" type="submit">{{ inbox_report_action.submit_label }}</button>
+      </form>
+      {% else %}
+      <p class="muted">{{ inbox_report_action.message if inbox_report_action else "현재 Inbox에서 조치할 보고서 대상을 찾을 수 없습니다." }}</p>
+      <a class="button secondary" href="{{ inbox_report_action.inbox_url if inbox_report_action else '/inbox?employee_id=' ~ employee_id }}">Inbox에서 조치하기</a>
+      <section
+        class="data-lake-artifact-panel evidence-tray compact"
+        data-evidence-tray
+        data-target-type="report"
+        data-target-id="{{ inbox_report_meta.report_id or doc.metadata.boi_id }}"
+        data-report-id="{{ inbox_report_meta.report_id or doc.metadata.boi_id }}"
+        data-attached-from-surface="report_boi_review"
+        data-employee-id="{{ employee_id }}">
+        <div class="mode-panel-heading">
+          <strong>보고서 보강 파일</strong>
+          <span>검토 중 추가한 원본 파일은 Data Lake에 저장하고, 보고서에는 링크와 profile만 남깁니다.</span>
+        </div>
+        <div class="artifact-upload-row">
+          <input type="file" data-evidence-file multiple />
+          <select data-evidence-role aria-label="첨부 역할">
+            <option value="evidence">판단 근거</option>
+            <option value="raw_data">Raw Data</option>
+            <option value="result_file">작업 결과</option>
+            <option value="reference">참고 자료</option>
+            <option value="visualization_source">시각화 원본</option>
+          </select>
+          <button type="button" class="secondary-button" data-evidence-upload>Data Lake 저장</button>
+        </div>
+        <input class="artifact-note-input" data-evidence-note placeholder="한 줄 메모: 예: 보고서 검토 중 추가 확인한 원본 파일" />
+        <div class="artifact-secondary-actions">
+          <button type="button" class="secondary-button" data-evidence-save-report>보강 파일 저장</button>
+          <span class="muted" data-evidence-save-status></span>
+        </div>
+        <div class="artifact-results" data-evidence-results></div>
+      </section>
+      {% endif %}
     </section>
     {% endif %}
     <details class="metadata" data-metadata-url="{{ metadata_fragment_url }}">
