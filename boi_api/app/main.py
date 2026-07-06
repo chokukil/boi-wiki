@@ -169,6 +169,8 @@ BOI_RUNTIME_LOG_MAX_BYTES = int(os.getenv("BOI_RUNTIME_LOG_MAX_BYTES", str(_RUNT
 BOI_RUNTIME_LOG_RETENTION_DAYS = int(os.getenv("BOI_RUNTIME_LOG_RETENTION_DAYS", "30") or "30")
 BOI_RUNTIME_LOG_ARCHIVE_ENABLED = os.getenv("BOI_RUNTIME_LOG_ARCHIVE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 BOI_RUNTIME_INDEX_ENABLED = os.getenv("BOI_RUNTIME_INDEX_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+BOI_TRACE_ACTION_FULL_SCAN_MAX_BYTES = int(os.getenv("BOI_TRACE_ACTION_FULL_SCAN_MAX_BYTES", str(64 * 1024 * 1024)) or str(64 * 1024 * 1024))
+BOI_TAT_ACTION_FULL_SCAN_MAX_BYTES = int(os.getenv("BOI_TAT_ACTION_FULL_SCAN_MAX_BYTES", str(64 * 1024 * 1024)) or str(64 * 1024 * 1024))
 DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT") or str(BOI_RUNTIME_ROOT / "drafts"))
 ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT") or str(BOI_RUNTIME_ROOT / "activity"))
 RBAC_ROOT = Path(os.getenv("RBAC_ROOT") or str(BOI_RUNTIME_ROOT / "rbac"))
@@ -1768,6 +1770,10 @@ def workflow_tat_page_url_for_key(workflow_key: str, employee_id: str, *, trace_
     return f"/workflows/{workflow_key}/tat?" + urlencode(query)
 
 
+def default_workflow_tat_page_url(employee_id: str) -> str:
+    return workflow_tat_page_url_for_key("direct-development-reporting", employee_id)
+
+
 def workflow_status_api_url_for_key(workflow_key: str, trace_id: str, employee_id: str, **params: str) -> str:
     query = {"trace_id": trace_id, "employee_id": employee_id, **params}
     return f"/api/workflows/{workflow_key}/status?" + urlencode(query)
@@ -2383,8 +2389,20 @@ def workflow_definition_summary(item: dict[str, Any]) -> dict[str, Any]:
         "ad_hoc": "비정형 업무",
         "external_orchestrator": "외부 오케스트레이션",
     }.get(str(process_model), str(process_model))
+    runtime_workflow_key = str(item.get("workflow_key") or "")
+    event_contracts = item.get("event_contracts") if isinstance(item.get("event_contracts"), list) else []
+    if not runtime_workflow_key:
+        runtime_workflow_key = next(
+            (
+                str(contract.get("workflow_key") or "")
+                for contract in event_contracts
+                if isinstance(contract, dict) and contract.get("workflow_key")
+            ),
+            "",
+        )
     return {
         "workflow_definition_key": item.get("workflow_definition_key"),
+        "runtime_workflow_key": runtime_workflow_key,
         "title": item.get("title") or item.get("workflow_definition_key"),
         "description": item.get("description") or "",
         "business_goal": item.get("business_goal") or item.get("description") or "",
@@ -2600,6 +2618,21 @@ def runtime_log_indexes_complete(root: Path, prefix: str) -> bool:
     if not log_paths:
         return False
     return all(runtime_log_index_path(path).exists() for path in log_paths)
+
+
+def runtime_log_total_size(root: Path, prefix: str) -> int:
+    total = 0
+    for path in root.glob(f"{prefix}-*.jsonl"):
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def runtime_log_full_scan_allowed(root: Path, prefix: str, *, max_bytes: int) -> bool:
+    return runtime_log_total_size(root, prefix) <= max(0, int(max_bytes))
 
 
 def cached_action_log_rows() -> list[dict[str, Any]]:
@@ -3187,6 +3220,8 @@ def trace_action_log_rows(trace_id: str, *, event_ids: set[str] | None = None, l
         indexed_rows = [rows_by_ref[ref] for ref in matched_refs if ref in rows_by_ref]
         if indexed_rows or runtime_log_indexes_complete(ACTION_LOG_ROOT, "actions"):
             return list(reversed(indexed_rows))
+    if not runtime_log_full_scan_allowed(ACTION_LOG_ROOT, "actions", max_bytes=BOI_TRACE_ACTION_FULL_SCAN_MAX_BYTES):
+        return []
     rows: list[dict[str, Any]] = []
     for p in sorted(ACTION_LOG_ROOT.glob("actions-*.jsonl")):
         with p.open("r", encoding="utf-8") as handle:
@@ -3217,6 +3252,8 @@ def trace_action_index_rows_for_tat(
     if not trace_id and not event_id_set:
         return []
     if not BOI_RUNTIME_INDEX_ENABLED:
+        if not runtime_log_full_scan_allowed(ACTION_LOG_ROOT, "actions", max_bytes=BOI_TAT_ACTION_FULL_SCAN_MAX_BYTES):
+            return []
         return trace_action_log_rows(trace_id, event_ids=event_id_set, limit=limit)
     rows: list[dict[str, Any]] = []
     for entry in runtime_log_index_rows(ACTION_LOG_ROOT, "actions"):
@@ -3232,8 +3269,12 @@ def trace_action_index_rows_for_tat(
         rows.append(row)
         if len(rows) >= limit:
             break
-    if rows or runtime_log_indexes_complete(ACTION_LOG_ROOT, "actions"):
+    if rows:
         return list(reversed(rows))
+    if runtime_log_indexes_complete(ACTION_LOG_ROOT, "actions"):
+        return list(reversed(rows))
+    if not runtime_log_full_scan_allowed(ACTION_LOG_ROOT, "actions", max_bytes=BOI_TAT_ACTION_FULL_SCAN_MAX_BYTES):
+        return []
     return trace_action_log_rows(trace_id, event_ids=event_id_set, limit=limit)
 
 
@@ -5578,7 +5619,9 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
         "sops": [
             {"id": "sop_catalog", "label": "SOP 카탈로그", "href": app_url("/sops", employee_id)},
             {"id": "sop_add", "label": "SOP 추가", "href": app_url("/sops/new", employee_id)},
+            {"id": "workflow_definitions", "label": "업무 흐름 정의", "href": app_url("/workflows/definitions", employee_id)},
             {"id": "sop_history", "label": "SOP 수행 이력", "href": app_url("/sops/history", employee_id)},
+            {"id": "tat", "label": "TAT 성과", "href": default_workflow_tat_page_url(employee_id)},
         ],
         "events": [
             {"id": "event_catalog", "label": "Event 카탈로그", "href": app_url("/event-types", employee_id)},
@@ -5619,6 +5662,10 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
         if active_nav == "sops":
             if path.startswith("/sops/new") or (path == "/workflows/definitions" and query.get("start") == "sop"):
                 return "sop_add"
+            if path == "/workflows/definitions":
+                return "workflow_definitions"
+            if path.startswith("/workflows/") and path.endswith("/tat"):
+                return "tat"
             if path.startswith("/sops/history"):
                 return "sop_history"
             return "sop_catalog"
@@ -10020,7 +10067,7 @@ def workflow_for_runtime_row(row: dict[str, Any], employee_id: str) -> tuple[dic
 
 def collect_sop_run_rows(employee_id: str, limit: int = 500) -> dict[tuple[str, str], dict[str, Any]]:
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
-    for row in cached_action_log_rows()[-limit:]:
+    for row in read_recent_action_logs_fast(limit=limit):
         if not action_log_visible_to_employee(row, employee_id):
             continue
         trace_id = str(row.get("trace_id") or "")
@@ -10178,6 +10225,7 @@ def sop_runs_payload_from_scan(employee_id: str, *, status: str = "open", limit:
                 "latest_summary": latest_summary,
                 "summary": latest_summary or f"{stage_title_of(current_stage)} 단계에서 {business_brief_from_context(business_context)} 확인이 필요합니다.",
                 "url": app_url(f"/sop-runs/{run_id}", employee_id),
+                "tat_url": workflow_tat_page_url_for_key(workflow_key, employee_id, trace_id=trace_id),
                 "report_state": "ready" if any(str(row.get("boi_id") or "") for row in rows) else "pending",
                 "has_action_failure": bool(row_statuses & {"failed", "error"}),
                 "has_runtime_report": any(str(row.get("boi_id") or "") for row in rows),
@@ -15048,7 +15096,16 @@ def event_pattern_preview_payload(req: EventPatternPreviewRequest, employee_id: 
 
 def sop_run_history_payload(employee_id: str, *, limit: int = 50) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.viewer")
-    seen: set[tuple[str, str]] = set()
+    action_rows_by_trace: dict[str, list[dict[str, Any]]] = {}
+    for action_row in read_recent_action_logs_fast(limit=2000):
+        if not action_log_visible_to_employee(action_row, employee_id):
+            continue
+        action_trace_id = str(action_row.get("trace_id") or "")
+        if not action_trace_id:
+            continue
+        action_rows_by_trace.setdefault(action_trace_id, []).append(action_row)
+
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
     runs: list[dict[str, Any]] = []
     for row in read_event_logs(limit=500):
         trace_id = str(row.get("trace_id") or "")
@@ -15060,35 +15117,39 @@ def sop_run_history_payload(employee_id: str, *, limit: int = 50) -> dict[str, A
             continue
         workflow_key = str(workflow.get("workflow_key") or "")
         key = (workflow_key, trace_id)
-        if key in seen:
+        grouped.setdefault(key, {"workflow": workflow, "trace_id": trace_id, "events": []})
+        grouped[key]["events"].append(row)
+
+    for (workflow_key, trace_id), group in grouped.items():
+        workflow = group.get("workflow") or {}
+        events = sorted(group.get("events") or [], key=lambda item: str(item.get("logged_at") or ""))
+        if not events:
             continue
-        seen.add(key)
-        try:
-            status = workflow_status_payload(workflow_key, trace_id, employee_id, compact=True)
-        except HTTPException:
-            continue
-        approval_count = len(status.get("approval_required_actions") or [])
-        manual_count = len(status.get("manual_handoffs") or [])
+        last_event = events[-1]
+        action_rows = action_rows_by_trace.get(trace_id, [])
+        normalized_action_statuses = [normalize_action_log_status(row.get("status")) for row in action_rows]
+        approval_count = sum(1 for status in normalized_action_statuses if status == "approval_required")
+        manual_count = sum(1 for status in normalized_action_statuses if status == "manual_required")
         runs.append(
             {
                 "workflow_key": workflow_key,
                 "trace_id": trace_id,
-                "sop_ref": status.get("sop_ref") or workflow.get("sop_ref") or "",
+                "sop_ref": workflow.get("sop_ref") or "",
                 "sop_title": workflow.get("sop_title") or workflow.get("business_goal") or workflow_key,
                 "status_label": "승인 필요" if approval_count else ("수동 조치 확인" if manual_count else "진행 중"),
-                "event_count": len(status.get("events") or []),
-                "action_count": len(status.get("actions") or []),
+                "event_count": len(events),
+                "action_count": len(action_rows),
                 "manual_count": manual_count,
                 "approval_count": approval_count,
-                "last_event_type": event_type,
-                "last_logged_at": row.get("logged_at") or "",
+                "last_event_type": last_event.get("event_type") or "",
+                "last_logged_at": last_event.get("logged_at") or "",
                 "status_page_url": workflow_status_page_url_for_key(workflow_key, trace_id, employee_id),
+                "tat_url": workflow_tat_page_url_for_key(workflow_key, employee_id, trace_id=trace_id),
                 "trace_events_url": trace_events_url(trace_id, employee_id),
             }
         )
-        if len(runs) >= limit:
-            break
-    return {"ok": True, "count": len(runs), "items": runs}
+    runs.sort(key=lambda item: str(item.get("last_logged_at") or ""), reverse=True)
+    return {"ok": True, "count": min(len(runs), limit), "items": runs[:limit]}
 
 
 @app.post("/api/event-types/drafts")
@@ -30366,7 +30427,10 @@ async def workflow_definitions_page(
         "sop": "sops",
         "event-type": "events",
         "action": "actions",
-    }.get(start, "library")
+    }.get(start, "sops")
+    for item in items:
+        workflow_key = str(item.get("runtime_workflow_key") or "")
+        item["tat_url"] = workflow_tat_page_url_for_key(workflow_key, employee_id) if workflow_key else ""
     return templates.TemplateResponse(
         "workflow_definitions.html",
         {

@@ -485,7 +485,10 @@ def test_workflow_definitions_page_renders_registration_studio_entry_and_nav(boi
     assert "equipment-anomaly-response" in page.text
     assert "SOP 기반 업무" in page.text
     assert "중복 확인" in page.text
-    assert re.search(r'<a[^>]+data-nav-id="library"[^>]+aria-current="page"', page.text)
+    assert "TAT 성과 보기" in page.text
+    assert "/workflows/equipment-anomaly/tat?employee_id=100001" in page.text
+    assert re.search(r'<a[^>]+data-nav-id="sops"[^>]+aria-current="page"', page.text)
+    assert re.search(r'<a[^>]+data-subnav-id="workflow_definitions"[^>]+aria-current="page"', page.text)
 
 
 def test_publish_event_kafka_disabled_keeps_event_log_without_broker_publish(boi_app_module, monkeypatch):
@@ -7799,6 +7802,40 @@ def test_workflow_and_sop_run_tat_summary_uses_runtime_timestamps(boi_app_module
     assert "TAT 성과 보기" in status_page.text
 
 
+def test_workflow_tat_skips_large_action_log_full_scan_when_index_is_incomplete(boi_app_module, monkeypatch, tmp_path):
+    action_root = tmp_path / "actions"
+    action_root.mkdir()
+    (action_root / "actions-20990101.jsonl").write_text('{"trace_id":"other"}\n', encoding="utf-8")
+    monkeypatch.setattr(boi_app_module, "ACTION_LOG_ROOT", action_root)
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_INDEX_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_TAT_ACTION_FULL_SCAN_MAX_BYTES", 1)
+
+    def fail_full_scan(*args, **kwargs):
+        raise AssertionError("TAT should not full-scan large action logs when indexes are incomplete")
+
+    monkeypatch.setattr(boi_app_module, "trace_action_log_rows", fail_full_scan)
+
+    rows = boi_app_module.trace_action_index_rows_for_tat(
+        "trace-missing-index",
+        event_ids={"evt-missing-index"},
+        employee_id="100001",
+    )
+    assert rows == []
+
+
+def test_trace_action_lookup_skips_large_action_log_full_scan_when_index_is_incomplete(boi_app_module, monkeypatch, tmp_path):
+    action_root = tmp_path / "actions"
+    action_root.mkdir()
+    (action_root / "actions-20990101.jsonl").write_text('{"trace_id":"trace-target","employee_id":"100001"}\n', encoding="utf-8")
+    monkeypatch.setattr(boi_app_module, "ACTION_LOG_ROOT", action_root)
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_INDEX_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_TRACE_ACTION_FULL_SCAN_MAX_BYTES", 1)
+
+    rows = boi_app_module.trace_action_log_rows("trace-target", limit=10)
+
+    assert rows == []
+
+
 def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app_module):
     client = TestClient(boi_app_module.app)
     append_action_log_row(
@@ -10061,7 +10098,8 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         "/sops/new?employee_id=100001&focus=event": ("sops", "sop_add"),
         "/sops/new?employee_id=100001&focus=action": ("sops", "sop_add"),
         "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001": ("sops", "sop_catalog"),
-        "/workflows/definitions?employee_id=100001": ("library", "explorer"),
+        "/workflows/definitions?employee_id=100001": ("sops", "workflow_definitions"),
+        "/workflows/direct-development-reporting/tat?employee_id=100001": ("sops", "tat"),
         "/permissions?employee_id=100001": ("advanced", "permissions"),
     }
 
@@ -11147,6 +11185,18 @@ def test_sop_registration_schedule_config_replaces_cron_for_general_users(boi_ap
 
 def test_event_pattern_preview_and_sop_history_are_business_oriented(boi_app_module):
     client = TestClient(boi_app_module.app)
+    append_event_log_row(
+        boi_app_module,
+        {
+            "event_id": "evt-sop-history-tat",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": "trace-sop-history-tat",
+            "status": "published",
+            "logged_at": "2099-01-01T10:00:00+09:00",
+            "payload_title": "SOP history TAT link",
+            "payload": {"title": "SOP history TAT link", "equipment_id": "ETCH-HISTORY"},
+        },
+    )
 
     pattern = client.post(
         "/api/events/patterns/preview?employee_id=100001",
@@ -11166,6 +11216,8 @@ def test_event_pattern_preview_and_sop_history_are_business_oriented(boi_app_mod
     assert history_page.status_code == 200
     assert "SOP 수행 이력" in history_page.text
     assert "SOP 기준 최근 실행 현황, 남은 승인, 수동 조치를 확인합니다." in history_page.text
+    assert "TAT 성과 보기" in history_page.text
+    assert "/workflows/equipment-anomaly/tat?employee_id=100001&amp;trace_id=trace-sop-history-tat" in history_page.text
     assert 'href="/sops/history?employee_id=100001"' in client.get("/sops?employee_id=100001").text
 
 

@@ -112,6 +112,7 @@
         <summary>구성 요소와 내부 식별자 보기</summary>
         <dl class="metadata-list">
           <div><dt>업무 흐름 정의 Key</dt><dd><code>{{ workflow.workflow_definition_key }}</code></dd></div>
+          <div><dt>Runtime Workflow</dt><dd>{{ workflow.runtime_workflow_key or '-' }}</dd></div>
           <div><dt>시작 Event</dt><dd>{{ workflow.entry_events | join(', ') or '-' }}</dd></div>
           <div><dt>완결/다음 Event</dt><dd>{{ workflow.emitted_events | join(', ') or '완료 또는 단일 실행' }}</dd></div>
           <div><dt>Action</dt><dd>{{ workflow.action_refs | join(', ') or '-' }}</dd></div>
@@ -119,6 +120,11 @@
           <div><dt>Required Connectors</dt><dd>{{ workflow.required_connectors | join(', ') or '-' }}</dd></div>
         </dl>
       </details>
+      {% if workflow.tat_url %}
+      <div class="trace-link-row">
+        <a href="{{ workflow.tat_url }}">TAT 성과 보기</a>
+      </div>
+      {% endif %}
     </article>
     {% else %}
     <article class="card">
