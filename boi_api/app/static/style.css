@@ -931,6 +931,13 @@ body:has(.ops-react-page) .boi-agent-panel { display:none !important; }
 .evidence-packet-list li { border:1px solid #dbe3ef; border-radius:var(--radius); padding:9px; display:grid; gap:3px; }
 .evidence-packet-list li.evidence-missing { border-color:#fdba74; background:#fff7ed; }
 .evidence-packet-list span, .evidence-packet-list small { color:#64748b; }
+.report-action-panel { border:1px solid #dbe3ef; border-radius:var(--radius); background:#f8fafc; padding:12px; display:grid; gap:10px; margin:16px 0; }
+.report-action-form { display:grid; gap:10px; }
+.report-action-grid { display:grid; grid-template-columns:minmax(160px, 220px) minmax(0, 1fr); gap:10px; align-items:start; }
+.report-action-grid label { display:grid; gap:6px; color:#334155; font-weight:900; }
+.report-action-grid select,
+.report-action-grid textarea { width:100%; border:1px solid #dbe3ef; border-radius:8px; padding:9px; background:#fff; color:#0f172a; font:inherit; font-weight:600; }
+.artifact-secondary-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .data-lake-artifact-panel { border:1px solid #dbe3ef; border-radius:var(--radius); background:#f8fafc; padding:12px; display:grid; gap:10px; margin-top:12px; }
 .data-lake-artifact-panel.drag-over { border-color:#2563eb; background:#eff6ff; box-shadow:0 0 0 3px rgba(37,99,235,.12); }
 .data-lake-artifact-panel.compact { padding:10px; }
@@ -966,7 +973,7 @@ body:has(.ops-react-page) .boi-agent-panel { display:none !important; }
   }
 }
 @media (max-width:1100px) { .toolbar form.event-filter-form, .toolbar form.action-history-filter-form, .toolbar form.catalog-filter-form, .toolbar form.event-type-filter-form { grid-template-columns:1fr 1fr; } }
-@media (max-width:900px) { .spec-columns, .spec-endpoint { grid-template-columns:1fr; } .toolbar form.event-filter-form, .toolbar form.action-history-filter-form, .toolbar form.catalog-filter-form, .toolbar form.event-type-filter-form { grid-template-columns:1fr; } .event-summary-line { align-items:flex-start; } .inline-fields { flex-wrap:wrap; } .range-separator { display:none; } .inline-fields.compact input { max-width:none; } .pagination-bar { align-items:flex-start; flex-direction:column; } .raw-log-details > summary { align-items:flex-start; flex-direction:column; } }
+@media (max-width:900px) { .spec-columns, .spec-endpoint, .report-action-grid { grid-template-columns:1fr; } .toolbar form.event-filter-form, .toolbar form.action-history-filter-form, .toolbar form.catalog-filter-form, .toolbar form.event-type-filter-form { grid-template-columns:1fr; } .event-summary-line { align-items:flex-start; } .inline-fields { flex-wrap:wrap; } .range-separator { display:none; } .inline-fields.compact input { max-width:none; } .pagination-bar { align-items:flex-start; flex-direction:column; } .raw-log-details > summary { align-items:flex-start; flex-direction:column; } }
 @media (max-width:900px) { .artifact-upload-row { grid-template-columns:1fr; } .artifact-card-actions { justify-content:flex-start; } }
 @media (max-width:900px) { .workflow-status-hero { grid-template-columns:1fr; } .workflow-stage-row { grid-template-columns:1fr; } .tat-insight-grid { grid-template-columns:1fr; } .tat-task-main { grid-template-columns:1fr; } }
 @media (max-width:1100px) { .ops-layout, .sop-lens-layout { grid-template-columns:1fr; } .ops-map { min-height:auto; display:grid; gap:10px; } .ops-map-edges { display:none; } .ops-me-node, .ops-sop-node { position:static; transform:none; width:100%; max-width:none; } .ops-sop-node:hover, .ops-sop-node.selected { transform:none; } .ops-workstream-edge-badges { position:static; transform:none; max-width:none; } }

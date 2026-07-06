@@ -9448,6 +9448,27 @@ def safe_next_url(next_url: str | None) -> str:
     return value
 
 
+def first_form_value(form: dict[str, list[str]], key: str, default: str = "") -> str:
+    return str((form.get(key) or [default])[0]).strip()
+
+
+def parse_data_lake_artifacts_field(raw_value: str) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(str(raw_value or "[]"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [item for item in parsed if isinstance(item, dict)]
+
+
+def inbox_form_return_url(form: dict[str, list[str]], employee_id: str, **fallback_params: str) -> str:
+    requested = first_form_value(form, "return_to") or first_form_value(form, "next")
+    if requested:
+        return safe_next_url(requested)
+    return app_url("/inbox", employee_id, **fallback_params)
+
+
 @app.get("/auth/login")
 async def auth_login(next: str = "/") -> RedirectResponse:
     if auth_mode() != "keycloak":
@@ -15932,6 +15953,95 @@ async def apply_doc_body_edit(
     return response
 
 
+INBOX_REPORT_DECISION_CHOICES = [
+    {"value": "approve", "label": "승인"},
+    {"value": "reject", "label": "반려"},
+    {"value": "defer", "label": "보류"},
+    {"value": "request_more_evidence", "label": "추가 근거 요청"},
+]
+
+INBOX_REPORT_MANUAL_OUTCOME_CHOICES = [
+    {"value": "completed", "label": "완료"},
+    {"value": "not_needed", "label": "불필요"},
+    {"value": "blocked", "label": "차단"},
+]
+
+
+def inbox_report_action_context_for_template(doc: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    if metadata.get("type") != "boi/inbox-review-report":
+        return {}
+    report_meta = metadata.get("inbox_report") if isinstance(metadata.get("inbox_report"), dict) else {}
+    report_id = str(report_meta.get("report_id") or "").strip()
+    boi_id = str(metadata.get("boi_id") or "").strip()
+    return_to = doc_url_for_ref(boi_id, employee_id) if boi_id else app_url("/inbox", employee_id, view="decisions")
+    context: dict[str, Any] = {
+        "available": False,
+        "mode": "",
+        "report_id": report_id,
+        "return_to": return_to,
+        "inbox_url": app_url("/inbox", employee_id, view="decisions"),
+        "message": "현재 Inbox에서 조치할 보고서 대상을 찾을 수 없습니다.",
+    }
+    if not report_id:
+        context["message"] = "보고서 식별자가 없어 Inbox 조치와 연결할 수 없습니다."
+        return context
+    target = current_inbox_report_target(employee_id, report_id, include_context="")
+    if not target:
+        context["message"] = "이미 처리되었거나 현재 열린 Inbox 항목이 아닙니다."
+        return context
+    kind, _group_or_item, items = target
+    if kind != "item" or len(items) != 1:
+        context["message"] = "묶음 보고서는 Inbox에서 개별 업무를 선택해 조치합니다."
+        return context
+    item = items[0]
+    task_ref = str(item.get("task_ref") or "").strip()
+    status = str(item.get("status") or "").strip()
+    if not task_ref:
+        context["message"] = "공개 업무 참조가 없어 이 화면에서 바로 조치할 수 없습니다."
+        return context
+    display = item.get("display") if isinstance(item.get("display"), dict) else {}
+    brief = item.get("brief") if isinstance(item.get("brief"), dict) else item.get("item_brief") if isinstance(item.get("item_brief"), dict) else {}
+    target_title = clean_user_visible_text(
+        str(brief.get("event_or_stage") or display.get("title") or item.get("summary") or "Inbox 처리 항목"),
+        120,
+    )
+    base_context = {
+        **context,
+        "available": True,
+        "task_ref": task_ref,
+        "status": status,
+        "status_label": str(display.get("status_label") or work_context_status_label(status) or status),
+        "target_title": target_title,
+    }
+    encoded_ref = quote(task_ref, safe="")
+    employee_query = urlencode({"employee_id": employee_id})
+    if status == "approval_required":
+        return {
+            **base_context,
+            "mode": "decision",
+            "field_name": "decision",
+            "field_label": "판단",
+            "submit_label": "사유 남기고 판단 저장",
+            "choices": INBOX_REPORT_DECISION_CHOICES,
+            "action_url": f"/inbox/task-refs/{encoded_ref}/decision?{employee_query}",
+        }
+    if status in {"manual_required", "manual_blocked", "needs_followup"}:
+        return {
+            **base_context,
+            "mode": "manual_completion",
+            "field_name": "outcome",
+            "field_label": "조치 결과",
+            "submit_label": "조치 내용 저장",
+            "choices": INBOX_REPORT_MANUAL_OUTCOME_CHOICES,
+            "action_url": f"/inbox/task-refs/{encoded_ref}/complete?{employee_query}",
+        }
+    return {
+        **context,
+        "message": f"현재 상태({status or 'unknown'})는 이 화면에서 조치할 수 없습니다.",
+    }
+
+
 @app.get("/docs/{boi_id:path}", response_class=HTMLResponse)
 async def doc_page(
     request: Request,
@@ -16017,6 +16127,7 @@ async def doc_page(
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
             "body_html": doc_body_html_for_request(doc, employee_id, doc_lookup, request),
             "body_editor": body_editor_payload_for_doc(doc, employee_id),
+            "inbox_report_action": inbox_report_action_context_for_template(doc, employee_id),
             "citations": citation_rows_for_doc(doc, employee_id, doc_lookup=doc_lookup),
             "workflow_poc": workflow_poc,
             "metadata_summary_rows": metadata_summary_rows_for_template(doc["metadata"], request),
@@ -26726,26 +26837,20 @@ async def inbox_task_decision_page(
 ) -> RedirectResponse:
     raw_body = (await request.body()).decode("utf-8", errors="replace")
     form = parse_qs(raw_body, keep_blank_values=True)
-    decision = str((form.get("decision") or [""])[0]).strip()
-    note = str((form.get("note") or [""])[0]).strip()
-    user_confirmed_raw = str((form.get("user_confirmed") or [""])[0]).strip().lower()
-    data_lake_artifacts_raw = str((form.get("data_lake_artifacts") or ["[]"])[0]).strip()
-    try:
-        data_lake_artifacts = json.loads(data_lake_artifacts_raw) if data_lake_artifacts_raw else []
-    except json.JSONDecodeError:
-        data_lake_artifacts = []
-    if not isinstance(data_lake_artifacts, list):
-        data_lake_artifacts = []
+    decision = first_form_value(form, "decision")
+    note = first_form_value(form, "note")
+    user_confirmed_raw = first_form_value(form, "user_confirmed").lower()
+    data_lake_artifacts = parse_data_lake_artifacts_field(first_form_value(form, "data_lake_artifacts", "[]"))
     if decision not in {"approve", "reject", "defer", "request_more_evidence"}:
         raise HTTPException(status_code=400, detail="invalid inbox decision")
     req = InboxDecisionRequest(
         decision=decision,  # type: ignore[arg-type]
         note=note,
-        data_lake_artifacts=[item for item in data_lake_artifacts if isinstance(item, dict)],
+        data_lake_artifacts=data_lake_artifacts,
         user_confirmed=user_confirmed_raw in {"1", "true", "yes", "on"},
     )
     await api_boi_inbox_task_decision(task_id, req, employee_id)
-    redirect_url = app_url("/inbox", employee_id, view="history", decision_status="recorded")
+    redirect_url = inbox_form_return_url(form, employee_id, view="history", decision_status="recorded")
     return RedirectResponse(redirect_url, status_code=303)
 
 
@@ -26757,6 +26862,30 @@ async def inbox_task_ref_decision_page(
 ) -> RedirectResponse:
     task_id = resolve_agent_inbox_task_ref(employee_id, task_ref)
     return await inbox_task_decision_page(task_id, request, employee_id)
+
+
+@app.post("/inbox/task-refs/{task_ref:path}/complete")
+async def inbox_task_ref_complete_page(
+    task_ref: str,
+    request: Request,
+    employee_id: str = Depends(current_employee),
+) -> RedirectResponse:
+    task_id = resolve_agent_inbox_task_ref(employee_id, task_ref)
+    raw_body = (await request.body()).decode("utf-8", errors="replace")
+    form = parse_qs(raw_body, keep_blank_values=True)
+    outcome = first_form_value(form, "outcome") or "completed"
+    if outcome not in {"completed", "not_needed", "blocked"}:
+        raise HTTPException(status_code=400, detail="invalid manual completion outcome")
+    req = ManualHandoffCompleteRequest(
+        task_id=task_id,
+        outcome=outcome,  # type: ignore[arg-type]
+        note=first_form_value(form, "note"),
+        data_lake_artifacts=parse_data_lake_artifacts_field(first_form_value(form, "data_lake_artifacts", "[]")),
+        user_confirmed=first_form_value(form, "user_confirmed").lower() in {"1", "true", "yes", "on"},
+    )
+    await complete_manual_handoff(req, employee_id)
+    redirect_url = inbox_form_return_url(form, employee_id, view="reports", completion_status="recorded")
+    return RedirectResponse(redirect_url, status_code=303)
 
 
 @app.post("/api/inbox/tasks/{task_id:path}/decision")
@@ -27055,6 +27184,7 @@ async def api_data_lake_artifact_download(artifact_id: str, employee_id: str = D
 async def api_data_lake_artifacts(
     target_type: str = "",
     target_id: str = "",
+    target_ref: str = "",
     limit: int = 50,
     employee_id: str = Depends(current_employee),
 ) -> dict[str, Any]:
@@ -27063,6 +27193,8 @@ async def api_data_lake_artifacts(
         payload["employee_id"] = employee_id
         payload["items"] = []
         return payload
+    if target_type == "inbox_task" and not target_id and target_ref:
+        target_id = resolve_agent_inbox_task_ref(employee_id, target_ref)
     safe_limit = max(1, min(limit, 200))
     records = data_lake_artifact_records(employee_id, limit=500)
     filtered = [
@@ -27084,6 +27216,7 @@ async def api_data_lake_artifacts(
         "employee_id": employee_id,
         "target_type": target_type,
         "target_id": target_id,
+        "target_ref": target_ref,
         "count": len(items),
         "items": items,
     }
