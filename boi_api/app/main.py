@@ -16,6 +16,7 @@ import re
 import shutil
 import socket
 import ssl
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -24,7 +25,7 @@ import uuid
 import httpx
 from contextlib import contextmanager
 from datetime import date, datetime, timezone, timedelta
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, unified_diff
 from html import escape as html_escape, unescape as html_unescape
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -179,6 +180,7 @@ OPS_RUNTIME_INDEX_ROOT = Path(os.getenv("OPS_RUNTIME_INDEX_ROOT") or str(BOI_RUN
 PRIVATE_MEMORY_TRASH_ROOT = Path(os.getenv("PRIVATE_MEMORY_TRASH_ROOT") or str(BOI_RUNTIME_ROOT / "private-trash"))
 PRIVATE_MEMORY_QUARANTINE_DAYS = int(os.getenv("PRIVATE_MEMORY_QUARANTINE_DAYS", "7") or "7")
 SOURCE_WIKI_ROOT = Path(os.getenv("SOURCE_WIKI_ROOT") or str(BOI_RUNTIME_ROOT / "source-wikis"))
+RELATED_UPDATE_ROOT = Path(os.getenv("RELATED_UPDATE_ROOT") or str(BOI_RUNTIME_ROOT / "related-updates"))
 SOURCE_WIKI_MAX_FILE_BYTES = int(os.getenv("SOURCE_WIKI_MAX_FILE_BYTES", "180000") or "180000")
 SOURCE_WIKI_ALLOWED_EXTENSIONS = {
     ".md",
@@ -243,6 +245,7 @@ BOI_DATALAKE_ARTIFACT_ROOT = Path(os.getenv("BOI_DATALAKE_ARTIFACT_ROOT") or str
 BOI_DATALAKE_ARTIFACT_PROFILE_ROWS = int(os.getenv("BOI_DATALAKE_ARTIFACT_PROFILE_ROWS", "5") or "5")
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
 BOI_EVENTS_TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
+BOI_RAW_SIGNALS_TOPIC = os.getenv("BOI_RAW_SIGNALS_TOPIC", "boi.raw-signals")
 BOI_AUDIT_TOPIC = os.getenv("BOI_AUDIT_TOPIC", "boi.audit")
 BOI_DLQ_TOPIC = os.getenv("BOI_DLQ_TOPIC", "boi.dead-letter")
 KAFKA_SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
@@ -787,7 +790,9 @@ def ensure_dirs() -> None:
     RBAC_ROOT.mkdir(parents=True, exist_ok=True)
     SEARCH_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
     OPS_RUNTIME_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
+    RELATED_UPDATE_ROOT.mkdir(parents=True, exist_ok=True)
     BOI_DATALAKE_ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+    (BOI_RUNTIME_ROOT / "business-event-detector").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "sop_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "action_packages").mkdir(parents=True, exist_ok=True)
     (DRAFT_ROOT / "promotions").mkdir(parents=True, exist_ok=True)
@@ -6423,6 +6428,8 @@ def body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> dict[s
     doc_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
     return {
         "editor_url": "/api/docs/" + doc_ref + "/body-editor?" + urlencode({"employee_id": employee_id}),
+        "impact_url": "/api/docs/" + doc_ref + "/related-update/impact-preview?" + urlencode({"employee_id": employee_id}),
+        "related_update_jobs_url": "/api/docs/" + doc_ref + "/related-update/jobs?" + urlencode({"employee_id": employee_id}),
         "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
     }
 
@@ -6445,8 +6452,509 @@ def full_body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> d
         "base_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         "preview_url": "/api/docs/" + doc_ref + "/body-preview?" + urlencode({"employee_id": employee_id}),
         "apply_url": "/api/docs/" + doc_ref + "/body-apply?" + urlencode({"employee_id": employee_id}),
+        "impact_url": "/api/docs/" + doc_ref + "/related-update/impact-preview?" + urlencode({"employee_id": employee_id}),
+        "related_update_jobs_url": "/api/docs/" + doc_ref + "/related-update/jobs?" + urlencode({"employee_id": employee_id}),
         "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
     }
+
+
+def related_update_manifest_path(job_id: str) -> Path:
+    return RELATED_UPDATE_ROOT / f"{safe_filename(job_id)}.json"
+
+
+def write_related_update_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    RELATED_UPDATE_ROOT.mkdir(parents=True, exist_ok=True)
+    path = related_update_manifest_path(str(manifest.get("job_id") or "related-update"))
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return manifest
+
+
+def read_related_update_manifest(job_id: str) -> dict[str, Any]:
+    path = related_update_manifest_path(job_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="related update job not found")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def require_related_update_manifest_access(manifest: dict[str, Any], employee_id: str) -> None:
+    owner = str(manifest.get("employee_id") or "")
+    if owner and owner != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="related update job is not accessible")
+
+
+def related_update_doc_refs(doc: dict[str, Any]) -> set[str]:
+    metadata = doc.get("metadata") or {}
+    refs = {
+        str(metadata.get("boi_id") or "").strip(),
+        str(doc.get("uri") or "").strip(),
+        str(doc.get("uri") or "").strip().lstrip("/"),
+        okf_concept_id_for_doc(doc),
+    }
+    path_value = str(doc.get("path") or "")
+    if path_value:
+        path = Path(path_value)
+        refs.add(str(path))
+        try:
+            refs.add(source_ref_for_path(path))
+        except Exception:
+            pass
+        try:
+            refs.add(str(path.resolve().relative_to(DATA_ROOT.resolve())).replace("\\", "/"))
+        except Exception:
+            pass
+    normalized: set[str] = set()
+    for ref in refs:
+        clean = str(ref or "").strip()
+        if not clean:
+            continue
+        normalized.add(clean)
+        normalized.add(clean.lstrip("/"))
+        if clean.startswith("data/boi/"):
+            normalized.add(clean.removeprefix("data/boi/"))
+    return normalized
+
+
+def related_update_ref_matches(ref: str, variants: set[str]) -> bool:
+    clean = str(ref or "").strip()
+    if not clean or clean.startswith(("http://", "https://")):
+        return False
+    candidates = {clean, clean.lstrip("/")}
+    if clean.startswith("data/boi/"):
+        candidates.add(clean.removeprefix("data/boi/"))
+    return bool(candidates.intersection(variants))
+
+
+def related_update_find_doc(ref: str, employee_id: str) -> dict[str, Any] | None:
+    if not ref or str(ref).startswith(("http://", "https://")):
+        return None
+    doc = find_doc_by_id(ref, employee_id)
+    if doc:
+        return doc
+    path = find_doc_path_by_ref(ref)
+    if not path:
+        return None
+    try:
+        doc = read_doc(path)
+    except Exception:
+        return None
+    return doc if is_accessible(doc, employee_id) else None
+
+
+def related_update_excluded_doc(doc: dict[str, Any], root_refs: set[str]) -> bool:
+    metadata = doc.get("metadata") or {}
+    doc_refs = related_update_doc_refs(doc)
+    if doc_refs.intersection(root_refs):
+        return True
+    if doc.get("recovered_from_log"):
+        return True
+    if str(metadata.get("type") or "") in {"boi/inbox-review-report"}:
+        return True
+    path = Path(str(doc.get("path") or ""))
+    return not path.exists() or path.suffix.lower() != ".md"
+
+
+def related_update_target_payload(doc: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    metadata = doc.get("metadata") or {}
+    boi_id = str(metadata.get("boi_id") or doc.get("uri") or "")
+    return {
+        "boi_id": boi_id,
+        "title": str(metadata.get("title") or boi_id),
+        "type": str(metadata.get("type") or ""),
+        "uri": str(doc.get("uri") or ""),
+        "url": doc_url_for_ref(boi_id, employee_id) if boi_id else "",
+        "source_path": source_ref_for_path(Path(str(doc.get("path") or ""))),
+    }
+
+
+def related_update_source_signature_from_doc(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    source_wiki = metadata.get("source_wiki") if isinstance(metadata.get("source_wiki"), dict) else {}
+    signature = str(source_wiki.get("source_signature") or "").strip()
+    if signature:
+        return signature
+    for item in metadata.get("source_refs") or []:
+        if isinstance(item, dict) and str(item.get("type") or "") == "source-signature":
+            return str(item.get("ref") or "").strip()
+    return ""
+
+
+def related_update_source_wiki_reason(doc: dict[str, Any], root_refs: set[str]) -> dict[str, str] | None:
+    metadata = doc.get("metadata") or {}
+    source_wiki = metadata.get("source_wiki") if isinstance(metadata.get("source_wiki"), dict) else {}
+    wiki_id = str(source_wiki.get("wiki_id") or metadata.get("source_wiki_id") or "").strip()
+    if not wiki_id:
+        return None
+    root_source_ref_match = False
+    for item in metadata.get("source_refs") or []:
+        if isinstance(item, dict) and related_update_ref_matches(str(item.get("ref") or item.get("uri") or ""), root_refs):
+            root_source_ref_match = True
+            break
+    try:
+        manifest = read_source_wiki_manifest(wiki_id)
+    except Exception:
+        manifest = {}
+    current_signature = str((manifest.get("inventory") or {}).get("source_signature") or "").strip()
+    doc_signature = related_update_source_signature_from_doc(doc)
+    if current_signature and doc_signature and current_signature != doc_signature:
+        return {
+            "kind": "source_wiki_source",
+            "label": "Source Wiki source changed",
+            "detail": f"{wiki_id} source signature changed from {doc_signature} to {current_signature}",
+        }
+    if root_source_ref_match:
+        return {
+            "kind": "source_wiki_source",
+            "label": "Source Wiki cites the updated source",
+            "detail": f"{wiki_id} has a source_ref connected to this document",
+        }
+    return None
+
+
+def related_update_add_candidate(
+    candidates: dict[str, dict[str, Any]],
+    doc: dict[str, Any] | None,
+    employee_id: str,
+    root_refs: set[str],
+    reason: dict[str, str],
+) -> None:
+    if not doc or related_update_excluded_doc(doc, root_refs):
+        return
+    target = related_update_target_payload(doc, employee_id)
+    key = target["boi_id"] or target["uri"]
+    if not key:
+        return
+    item = candidates.setdefault(
+        key,
+        {
+            "target": target,
+            "reasons": [],
+            "reason_kinds": [],
+            "risk": "review_required",
+            "patch_mode": "source_wiki_refresh" if target.get("type") == "boi/source-wiki-page" else "review_note",
+        },
+    )
+    reason_key = (reason.get("kind"), reason.get("detail"))
+    if reason_key not in {(existing.get("kind"), existing.get("detail")) for existing in item["reasons"]}:
+        item["reasons"].append(reason)
+    item["reason_kinds"] = sorted({str(existing.get("kind") or "") for existing in item["reasons"] if existing.get("kind")})
+    if "source_wiki_source" in item["reason_kinds"]:
+        item["risk"] = "generated_source_stale"
+
+
+def related_update_impact_payload(
+    doc: dict[str, Any],
+    employee_id: str,
+    req: RelatedUpdateImpactRequest,
+) -> dict[str, Any]:
+    source_path = Path(str(doc.get("path") or ""))
+    if not source_path.exists() or source_path.suffix.lower() != ".md":
+        raise HTTPException(status_code=404, detail="related update impact is only available for markdown BoI documents")
+    current_content = source_path.read_text(encoding="utf-8")
+    current_sha = check_source_base_sha(source_path, req.base_sha256, action="impact analysis") if req.base_sha256 else hashlib.sha256(current_content.encode("utf-8")).hexdigest()
+    proposed_content = compose_markdown(doc["metadata"], req.proposed_body) if req.proposed_body is not None else current_content
+    proposed_sha = hashlib.sha256(proposed_content.encode("utf-8")).hexdigest()
+    docs = accessible_docs(employee_id)
+    graph = cached_okf_graph_for_docs(docs, employee_id)
+    docs_by_concept = {okf_concept_id_for_doc(item): item for item in docs}
+    root_concept = okf_concept_id_for_doc(doc)
+    root_refs = related_update_doc_refs(doc)
+    candidates: dict[str, dict[str, Any]] = {}
+
+    for edge in graph.get("incoming_by_target", {}).get(root_concept, []):
+        related_update_add_candidate(
+            candidates,
+            docs_by_concept.get(str(edge.get("source") or "")),
+            employee_id,
+            root_refs,
+            {
+                "kind": "backlink",
+                "label": "Markdown backlink",
+                "detail": f"{edge.get('source')} links to {root_concept}",
+            },
+        )
+    for edge in graph.get("outgoing_by_source", {}).get(root_concept, []):
+        related_update_add_candidate(
+            candidates,
+            docs_by_concept.get(str(edge.get("target") or "")),
+            employee_id,
+            root_refs,
+            {
+                "kind": "okf_link",
+                "label": "Markdown link",
+                "detail": f"{root_concept} links to {edge.get('target')}",
+            },
+        )
+
+    for item in docs:
+        for ref_item in (item.get("metadata") or {}).get("source_refs") or []:
+            if not isinstance(ref_item, dict):
+                continue
+            ref = str(ref_item.get("uri") or ref_item.get("ref") or "")
+            if related_update_ref_matches(ref, root_refs):
+                related_update_add_candidate(
+                    candidates,
+                    item,
+                    employee_id,
+                    root_refs,
+                    {
+                        "kind": "source_ref",
+                        "label": "source_refs",
+                        "detail": f"source_ref {ref} points to this document",
+                    },
+                )
+    for ref_item in (doc.get("metadata") or {}).get("source_refs") or []:
+        if not isinstance(ref_item, dict):
+            continue
+        ref = str(ref_item.get("uri") or ref_item.get("ref") or "")
+        related_update_add_candidate(
+            candidates,
+            related_update_find_doc(ref, employee_id),
+            employee_id,
+            root_refs,
+            {
+                "kind": "source_ref",
+                "label": "root source_refs",
+                "detail": f"this document cites {ref}",
+            },
+        )
+
+    for item in docs:
+        reason = related_update_source_wiki_reason(item, root_refs)
+        if reason:
+            related_update_add_candidate(candidates, item, employee_id, root_refs, reason)
+
+    max_items = max(1, min(int(req.max_items or 20), 50))
+    items = sorted(
+        candidates.values(),
+        key=lambda item: (
+            0 if item.get("patch_mode") == "source_wiki_refresh" else 1,
+            str((item.get("target") or {}).get("title") or ""),
+        ),
+    )
+    limited_items = items[:max_items]
+    root_metadata = doc.get("metadata") or {}
+    root_boi_id = str(root_metadata.get("boi_id") or doc.get("uri") or "")
+    return {
+        "ok": True,
+        "mutating": False,
+        "root": {
+            "boi_id": root_boi_id,
+            "title": str(root_metadata.get("title") or root_boi_id),
+            "concept_id": root_concept,
+            "source_path": source_ref_for_path(source_path),
+            "base_sha256": current_sha,
+            "proposed_sha256": proposed_sha,
+            "changed": proposed_sha != current_sha,
+        },
+        "total": len(items),
+        "impacted_count": len(limited_items),
+        "overflow": {"has_more": len(items) > len(limited_items), "omitted_count": max(0, len(items) - len(limited_items))},
+        "items": limited_items,
+    }
+
+
+def related_update_review_body(body: str, root: dict[str, Any], reasons: list[dict[str, Any]], job_id: str) -> str:
+    marker = "## Related Update Review"
+    reason_summary = ", ".join(sorted({str(item.get("kind") or "") for item in reasons if item.get("kind")})) or "related document impact"
+    root_ref = str(root.get("boi_id") or root.get("concept_id") or "updated document")
+    bullet = f"- {now_iso()}: `{root_ref}` 변경 영향 검토 필요 ({reason_summary}). Job `{job_id}`."
+    clean_body = str(body or "").rstrip()
+    if marker in clean_body:
+        return clean_body + "\n" + bullet + "\n"
+    return clean_body + "\n\n" + marker + "\n\n" + bullet + "\n"
+
+
+def related_update_source_wiki_content(target_doc: dict[str, Any], job_id: str) -> str | None:
+    metadata = copy.deepcopy(target_doc.get("metadata") or {})
+    source_wiki = metadata.get("source_wiki") if isinstance(metadata.get("source_wiki"), dict) else {}
+    wiki_id = str(source_wiki.get("wiki_id") or metadata.get("source_wiki_id") or "").strip()
+    if not wiki_id:
+        return None
+    try:
+        manifest = read_source_wiki_manifest(wiki_id)
+    except Exception:
+        return None
+    inventory = manifest.get("inventory") if isinstance(manifest.get("inventory"), dict) else {}
+    source = manifest.get("source") if isinstance(manifest.get("source"), dict) else {}
+    title = str(manifest.get("title") or wiki_id)
+    page_slug = str(source_wiki.get("page_slug") or "").strip()
+    outline = source_wiki_outline(wiki_id, title, inventory)
+    page = next((item for item in outline if str(item.get("slug") or "") == page_slug), None) or (outline[0] if outline else None)
+    if not page:
+        return None
+    signature = str(inventory.get("source_signature") or "")
+    metadata["source_refs"] = [
+        {"type": "source-wiki-root", "ref": source.get("repo_url") or source.get("source_path") or ""},
+        {"type": "source-signature", "ref": signature},
+    ]
+    for item in (inventory.get("selected") or [])[:24]:
+        metadata["source_refs"].append({"type": "repo-file", "ref": item.get("path"), "sha256": item.get("sha256")})
+    metadata["source_wiki"] = {
+        **source_wiki,
+        "wiki_id": wiki_id,
+        "page_slug": str(page.get("slug") or page_slug),
+        "source_signature": signature,
+        "commit_sha": source.get("commit_sha"),
+        "related_update_job_id": job_id,
+    }
+    body = source_wiki_page_body(title, page, inventory, source)
+    return compose_markdown(metadata, body)
+
+
+def related_update_proposed_content(target_doc: dict[str, Any], root: dict[str, Any], reasons: list[dict[str, Any]], job_id: str) -> str:
+    metadata = target_doc.get("metadata") or {}
+    if str(metadata.get("type") or "") == "boi/source-wiki-page":
+        proposed = related_update_source_wiki_content(target_doc, job_id)
+        if proposed is not None:
+            return proposed
+    return compose_markdown(copy.deepcopy(metadata), related_update_review_body(str(target_doc.get("body") or ""), root, reasons, job_id))
+
+
+def related_update_diff(path_ref: str, before: str, after: str) -> str:
+    lines = list(
+        unified_diff(
+            before.splitlines(),
+            after.splitlines(),
+            fromfile=f"{path_ref}:current",
+            tofile=f"{path_ref}:proposed",
+            lineterm="",
+        )
+    )
+    if len(lines) > 360:
+        lines = lines[:360] + ["... diff truncated ..."]
+    return "\n".join(lines)
+
+
+def create_related_update_job(doc: dict[str, Any], employee_id: str, req: RelatedUpdateJobRequest) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="related update job requires user_confirmed=true")
+    if req.target_boi_ids:
+        req.max_items = 50
+    impact = related_update_impact_payload(doc, employee_id, req)
+    selected = {str(item) for item in (req.target_boi_ids or []) if str(item).strip()}
+    job_id = f"related-update-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    patches: list[dict[str, Any]] = []
+    for index, item in enumerate(impact.get("items") or [], start=1):
+        target = item.get("target") or {}
+        target_boi_id = str(target.get("boi_id") or "")
+        if selected and target_boi_id not in selected:
+            continue
+        target_doc = find_doc_by_id(target_boi_id, employee_id)
+        if not target_doc:
+            continue
+        source_path = Path(str(target_doc.get("path") or ""))
+        if not source_path.exists() or source_path.suffix.lower() != ".md":
+            continue
+        before = source_path.read_text(encoding="utf-8")
+        base_sha = hashlib.sha256(before.encode("utf-8")).hexdigest()
+        source_ref = source_ref_for_path(source_path)
+        proposed_content = related_update_proposed_content(target_doc, impact["root"], item.get("reasons") or [], job_id)
+        status = "draft_ready"
+        validation: dict[str, Any] = {"ok": False, "errors": [], "warnings": []}
+        preview: dict[str, Any] = {}
+        error = ""
+        try:
+            preview = source_preview_response(
+                source_path=source_path,
+                proposed_content=proposed_content,
+                employee_id=employee_id,
+                base_sha256=base_sha,
+            )
+            validation = preview.get("validation_report") or preview.get("validation") or validation
+            if not preview.get("changed"):
+                status = "unchanged"
+            elif not preview.get("ok"):
+                status = "validation_failed"
+        except HTTPException as exc:
+            status = "validation_failed"
+            validation = {"ok": False, "errors": [str(exc.detail)], "warnings": []}
+            error = str(exc.detail)
+        patch_id = f"patch-{index}-{safe_filename(target_boi_id)[:64]}"
+        patches.append(
+            {
+                "patch_id": patch_id,
+                "target_boi_id": target_boi_id,
+                "target": target,
+                "source_path": source_ref,
+                "base_sha256": base_sha,
+                "proposed_sha256": hashlib.sha256(proposed_content.encode("utf-8")).hexdigest(),
+                "proposed_content": proposed_content,
+                "reason": ", ".join(item.get("reason_kinds") or []),
+                "reasons": item.get("reasons") or [],
+                "patch_mode": item.get("patch_mode") or "review_note",
+                "status": status,
+                "validation_report": validation,
+                "diff": related_update_diff(source_ref, before, proposed_content),
+                "preview_status": preview.get("status", ""),
+                "error": error,
+            }
+        )
+    manifest = {
+        "ok": True,
+        "status": "drafted" if patches else "no_candidates",
+        "job_id": job_id,
+        "generated_at": now_iso(),
+        "employee_id": employee_id,
+        "root": impact.get("root") or {},
+        "impact": impact,
+        "patches": patches,
+        "apply_url": "/api/docs/related-update/jobs/" + job_id + "/apply?" + urlencode({"employee_id": employee_id}),
+        "applied": [],
+        "mutating": True,
+    }
+    return write_related_update_manifest(manifest)
+
+
+def apply_related_update_job(job_id: str, req: RelatedUpdateApplyRequest, employee_id: str) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="related update apply requires user_confirmed=true")
+    if not req.patch_ids:
+        raise HTTPException(status_code=400, detail="patch_ids is required")
+    manifest = read_related_update_manifest(job_id)
+    require_related_update_manifest_access(manifest, employee_id)
+    patches = manifest.get("patches") if isinstance(manifest.get("patches"), list) else []
+    patch_map = {str(patch.get("patch_id") or ""): patch for patch in patches}
+    results: list[dict[str, Any]] = []
+    for patch_id in req.patch_ids:
+        patch = patch_map.get(str(patch_id))
+        if not patch:
+            results.append({"patch_id": patch_id, "status": "not_found", "ok": False})
+            continue
+        if patch.get("status") not in {"draft_ready", "failed"}:
+            results.append({"patch_id": patch_id, "status": "not_applicable", "ok": False, "detail": patch.get("status")})
+            continue
+        try:
+            result = apply_source_edit(
+                source_path=resolve_source_path(str(patch.get("source_path") or "")),
+                base_sha256=str(patch.get("base_sha256") or ""),
+                proposed_content=str(patch.get("proposed_content") or ""),
+                employee_id=employee_id,
+                author=req.author,
+                note=req.note or f"related update job {job_id}",
+            )
+            patch["status"] = "applied"
+            patch["applied_at"] = now_iso()
+            patch["apply_result"] = {
+                "status": result.get("status"),
+                "commit_status": result.get("commit_status"),
+                "commit_hash": result.get("commit_hash"),
+                "sha256": result.get("sha256"),
+            }
+            results.append({"patch_id": patch_id, "status": "applied", "ok": True, "result": patch["apply_result"]})
+        except HTTPException as exc:
+            patch["status"] = "failed"
+            patch["failure"] = exc.detail
+            results.append({"patch_id": patch_id, "status": "failed", "ok": False, "detail": exc.detail})
+    manifest["applied"] = list(manifest.get("applied") or []) + [item for item in results if item.get("ok")]
+    if any(not item.get("ok") for item in results):
+        manifest["status"] = "partial_failed" if any(item.get("ok") for item in results) else "failed"
+    elif all((patch.get("status") != "draft_ready") for patch in patches):
+        manifest["status"] = "applied"
+    else:
+        manifest["status"] = "partial_applied"
+    manifest["updated_at"] = now_iso()
+    write_related_update_manifest(manifest)
+    return {**manifest, "ok": all(item.get("ok") for item in results), "results": results}
 
 
 def relationship_context_for_doc(
@@ -8066,12 +8574,78 @@ class EventProducerAdapterRequest(BaseModel):
     source_kind: str = ""
     source_name: str = ""
     target_event_type: str = ""
+    occurrence_mode: str = ""
+    trigger_mode: str = ""
     payload_mapping: dict[str, Any] = Field(default_factory=dict)
+    conditions: dict[str, Any] = Field(default_factory=dict)
+    fingerprint_fields: list[str] = Field(default_factory=list)
+    dedupe_window_seconds: int = 600
+    aggregation_window_seconds: int = 600
+    threshold_count: int = 1
     auth_policy: dict[str, Any] = Field(default_factory=dict)
     sample_payload: Any = Field(default_factory=dict)
     health_check: dict[str, Any] = Field(default_factory=dict)
     adapter_plan: dict[str, Any] = Field(default_factory=dict)
     test_result: dict[str, Any] = Field(default_factory=dict)
+    note: str = ""
+    user_confirmed: bool = False
+
+
+class BusinessEventDefinitionRequest(BaseModel):
+    definition_id: str = ""
+    name: str = ""
+    description: str = ""
+    source_kind: str = "webhook"
+    source_name: str = ""
+    target_event_type: str = ""
+    trigger_mode: str = ""
+    occurrence_mode: str = ""
+    payload_mapping: dict[str, Any] = Field(default_factory=dict)
+    conditions: dict[str, Any] = Field(default_factory=dict)
+    fingerprint_fields: list[str] = Field(default_factory=list)
+    dedupe_window_seconds: int = 600
+    aggregation_window_seconds: int = 600
+    threshold_count: int = 1
+    status: str = "draft"
+    workflow_key: str = ""
+    sop_ref: str = ""
+    sop_stage_id: str = ""
+    default_payload: dict[str, Any] = Field(default_factory=dict)
+    manual_input_schema: dict[str, Any] = Field(default_factory=dict)
+    confirmation_policy: dict[str, Any] = Field(default_factory=dict)
+    sample_signal: dict[str, Any] = Field(default_factory=dict)
+    user_confirmed: bool = False
+
+
+class BusinessEventDefinitionTestRequest(BaseModel):
+    definition: dict[str, Any] = Field(default_factory=dict)
+    definition_id: str = ""
+    sample_signal: dict[str, Any] = Field(default_factory=dict)
+
+
+class RawSignalEvaluateRequest(BaseModel):
+    definition_id: str = ""
+    definition: dict[str, Any] = Field(default_factory=dict)
+    source_kind: str = ""
+    source_name: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+    signal: dict[str, Any] = Field(default_factory=dict)
+    occurred_at: str | None = None
+    actor_employee_id: str | None = None
+    trace_id: str | None = None
+    correlation_id: str = ""
+    dry_run: bool = False
+
+
+class BusinessEventRunRequest(BaseModel):
+    payload: dict[str, Any] = Field(default_factory=dict)
+    note: str = ""
+    user_confirmed: bool = False
+
+
+class BusinessEventConfirmRequest(BaseModel):
+    confirmation_id: str = ""
+    decision: Literal["confirm", "reject"] = "confirm"
     note: str = ""
     user_confirmed: bool = False
 
@@ -8424,6 +8998,24 @@ class BodyPreviewRequest(BaseModel):
 
 class BodyApplyRequest(BodyPreviewRequest):
     base_sha256: str
+
+
+class RelatedUpdateImpactRequest(BaseModel):
+    base_sha256: str | None = None
+    proposed_body: str | None = None
+    max_items: int = 20
+
+
+class RelatedUpdateJobRequest(RelatedUpdateImpactRequest):
+    target_boi_ids: list[str] = Field(default_factory=list)
+    user_confirmed: bool = False
+
+
+class RelatedUpdateApplyRequest(BaseModel):
+    patch_ids: list[str] = Field(default_factory=list)
+    user_confirmed: bool = False
+    author: str | None = None
+    note: str = ""
 
 
 class PocConnectorRequest(BaseModel):
@@ -14078,7 +14670,7 @@ def event_producer_adapter_normalized_kind(source_kind: str) -> str:
         "manual_start": "manual",
     }
     value = aliases.get(value, value)
-    allowed = {"webhook", "api_poll", "mcp", "data_lake_query", "kafka", "manual"}
+    allowed = {"webhook", "api_poll", "mcp", "data_lake_query", "kafka", "scheduler", "manual"}
     return value if value in allowed else "webhook"
 
 
@@ -14101,7 +14693,13 @@ def event_producer_adapter_config_from_payload(payload: dict[str, Any]) -> dict[
         "source_kind": payload.get("event_source_kind") or payload.get("event_ingestion_kind") or raw_config.get("source_kind") or "",
         "source_name": raw_config.get("source_name") or raw_config.get("endpoint_hint") or "",
         "target_event_type": raw_config.get("target_event_type") or payload.get("event_type") or (split_list_like(payload.get("linked_event_types")) or [""])[0],
+        "occurrence_mode": payload.get("event_occurrence_mode") or raw_config.get("occurrence_mode") or "",
         "payload_mapping": mapping,
+        "conditions": payload.get("business_event_conditions") if isinstance(payload.get("business_event_conditions"), dict) else raw_config.get("conditions") if isinstance(raw_config.get("conditions"), dict) else {},
+        "fingerprint_fields": split_list_like(payload.get("fingerprint_fields") or raw_config.get("fingerprint_fields")),
+        "dedupe_window_seconds": int(payload.get("dedupe_window_seconds") or raw_config.get("dedupe_window_seconds") or 600),
+        "aggregation_window_seconds": int(payload.get("aggregation_window_seconds") or raw_config.get("aggregation_window_seconds") or 600),
+        "threshold_count": int(payload.get("threshold_count") or raw_config.get("threshold_count") or 1),
         "auth_policy": raw_config.get("auth_policy") if isinstance(raw_config.get("auth_policy"), dict) else {},
         "sample_payload": sample,
         "health_check": raw_config.get("health_check") if isinstance(raw_config.get("health_check"), dict) else {},
@@ -14125,6 +14723,745 @@ def json_path_value(source: Any, path: str) -> Any:
         else:
             return None
     return cursor
+
+
+BUSINESS_EVENT_DECISIONS = {"published", "suppressed", "aggregated", "pending_confirmation", "ignored", "failed"}
+
+
+def business_event_detector_root() -> Path:
+    root = BOI_RUNTIME_ROOT / "business-event-detector"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def business_event_detector_db_path() -> Path:
+    return business_event_detector_root() / "detector.sqlite3"
+
+
+def business_event_db() -> sqlite3.Connection:
+    con = sqlite3.connect(str(business_event_detector_db_path()))
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=3000")
+    business_event_init_db(con)
+    return con
+
+
+def business_event_init_db(con: sqlite3.Connection) -> None:
+    con.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS business_event_definitions (
+            definition_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_name TEXT NOT NULL,
+            target_event_type TEXT NOT NULL,
+            body_json TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_business_event_definitions_source
+            ON business_event_definitions(status, source_kind, source_name);
+        CREATE TABLE IF NOT EXISTS business_event_fingerprints (
+            definition_id TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            last_published TEXT,
+            count INTEGER NOT NULL DEFAULT 0,
+            state_value TEXT,
+            aggregation_json TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (definition_id, fingerprint)
+        );
+        CREATE TABLE IF NOT EXISTS business_event_pending_confirmations (
+            confirmation_id TEXT PRIMARY KEY,
+            definition_id TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            event_json TEXT NOT NULL,
+            decision_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS business_event_decisions (
+            decision_id TEXT PRIMARY KEY,
+            definition_id TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            occurred_at TEXT NOT NULL,
+            summary_json TEXT NOT NULL
+        );
+        """
+    )
+    con.commit()
+
+
+def business_event_source_kind(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "api": "api_poll",
+        "data_lake": "data_lake_query",
+        "direct_input": "manual",
+        "manual_start": "manual",
+        "webhook_or_api": "webhook",
+    }
+    normalized = aliases.get(normalized, normalized)
+    allowed = {"webhook", "api_poll", "mcp", "data_lake_query", "kafka", "scheduler", "manual"}
+    return normalized if normalized in allowed else "webhook"
+
+
+def business_event_occurrence_mode(value: str, source_kind: str = "", conditions: dict[str, Any] | None = None) -> str:
+    text = str(value or "").strip().lower()
+    aliases = {
+        "direct": "immediate",
+        "immediate": "immediate",
+        "always": "immediate",
+        "condition": "condition",
+        "conditional": "condition",
+        "repeated": "repeated",
+        "sustained": "repeated",
+        "aggregate": "repeated",
+        "transition": "transition",
+        "state_change": "transition",
+        "composite": "composite",
+        "combined": "composite",
+        "confirmation": "confirmation",
+        "pending_confirmation": "confirmation",
+        "human_confirmation": "confirmation",
+        "manual": "manual",
+        "manual_run": "manual",
+    }
+    if text in aliases:
+        return aliases[text]
+    if "상태" in text:
+        return "transition"
+    if "반복" in text or "지속" in text:
+        return "repeated"
+    if "여러" in text or "복합" in text:
+        return "composite"
+    if "확인" in text or "검토" in text:
+        return "confirmation"
+    if "직접" in text or "수동" in text:
+        return "manual"
+    if "조건" in text:
+        return "condition"
+    if business_event_source_kind(source_kind) == "manual":
+        return "manual"
+    cond = conditions if isinstance(conditions, dict) else {}
+    if cond.get("required_signals"):
+        return "composite"
+    if cond.get("state_field"):
+        return "transition"
+    if cond.get("threshold_count") or cond.get("window_seconds"):
+        return "repeated"
+    if cond:
+        return "condition"
+    return "immediate"
+
+
+def business_event_mode_label(mode: str) -> str:
+    return {
+        "immediate": "외부 신호가 들어오면 바로 발생",
+        "condition": "조건이 맞을 때 발생",
+        "repeated": "반복되거나 계속되면 발생",
+        "transition": "상태가 바뀌면 발생",
+        "composite": "여러 신호가 모이면 발생",
+        "confirmation": "담당자가 확인하면 발생",
+        "manual": "사람이 직접 실행하면 발생",
+    }.get(mode, "외부 신호가 들어오면 바로 발생")
+
+
+def business_event_definition_id(source_name: str, target_event_type: str, name: str = "") -> str:
+    base = source_name or target_event_type or name or "business-event"
+    return f"bed-{safe_filename(base).strip('-')[:64] or uuid.uuid4().hex[:8]}"
+
+
+def business_event_mapped_payload(definition: dict[str, Any], signal: dict[str, Any]) -> dict[str, Any]:
+    mapping = definition.get("payload_mapping") if isinstance(definition.get("payload_mapping"), dict) else {}
+    source = signal.get("payload") if isinstance(signal.get("payload"), dict) else signal
+    mapped: dict[str, Any] = {}
+    for target_field, source_path in mapping.items():
+        value = json_path_value(source, str(source_path))
+        if value is not None:
+            mapped[str(target_field)] = value
+    if mapped:
+        return mapped
+    if isinstance(signal.get("payload"), dict):
+        return dict(signal["payload"])
+    return dict(signal)
+
+
+def business_event_definition_payload(req: BusinessEventDefinitionRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    source_kind = business_event_source_kind(req.source_kind)
+    target_event_type = str(req.target_event_type or "external.webhook.received.v1").strip() or "external.webhook.received.v1"
+    source_name = event_producer_adapter_source_name(req.source_name, target_event_type, req.name or req.description)
+    conditions = req.conditions if isinstance(req.conditions, dict) else {}
+    occurrence_mode = business_event_occurrence_mode(req.occurrence_mode or req.trigger_mode, source_kind, conditions)
+    definition_id = str(req.definition_id or business_event_definition_id(source_name, target_event_type, req.name)).strip()
+    workflow, stage, event_def = workflow_for_event_type(target_event_type, employee_id)
+    fingerprint_fields = list(req.fingerprint_fields or [])
+    if not fingerprint_fields:
+        props = ((event_def or {}).get("payload_schema") or {}).get("properties") if isinstance((event_def or {}).get("payload_schema"), dict) else {}
+        if "equipment_id" in (props or {}) and "alarm_code" in (props or {}):
+            fingerprint_fields = ["payload.equipment_id", "payload.alarm_code"]
+    definition = {
+        "definition_id": definition_id,
+        "name": req.name or event_label(target_event_type),
+        "description": req.description,
+        "source_kind": source_kind,
+        "source_name": source_name,
+        "target_event_type": target_event_type,
+        "trigger_mode": occurrence_mode,
+        "occurrence_mode": occurrence_mode,
+        "occurrence_label": business_event_mode_label(occurrence_mode),
+        "payload_mapping": req.payload_mapping if isinstance(req.payload_mapping, dict) else {},
+        "conditions": conditions,
+        "fingerprint_fields": fingerprint_fields,
+        "dedupe_window_seconds": max(0, int(req.dedupe_window_seconds or 0)),
+        "aggregation_window_seconds": max(0, int(req.aggregation_window_seconds or 0)),
+        "threshold_count": max(1, int(req.threshold_count or conditions.get("threshold_count") or 1)),
+        "status": req.status or "draft",
+        "workflow_key": req.workflow_key or str((workflow or {}).get("workflow_key") or ""),
+        "sop_ref": req.sop_ref or str((workflow or {}).get("sop_ref") or event_def.get("sop_ref") or ""),
+        "sop_stage_id": req.sop_stage_id or str((stage or {}).get("sop_stage_id") or event_def.get("sop_stage_id") or ""),
+        "default_payload": req.default_payload if isinstance(req.default_payload, dict) else {},
+        "manual_input_schema": req.manual_input_schema if isinstance(req.manual_input_schema, dict) else {},
+        "confirmation_policy": req.confirmation_policy if isinstance(req.confirmation_policy, dict) else {},
+        "sample_signal": req.sample_signal if isinstance(req.sample_signal, dict) else {},
+        "created_by": employee_id,
+        "updated_by": employee_id,
+    }
+    definition["user_summary"] = {
+        "question": "이 업무 이벤트는 언제 발생하나요?",
+        "answer": definition["occurrence_label"],
+        "source": source_kind,
+        "starts_workflow": definition["workflow_key"],
+        "starts_stage": definition["sop_stage_id"],
+        "records": "업무 이벤트 발생 기록, 판단 근거, 실행 결과를 BoI로 남깁니다.",
+    }
+    return definition
+
+
+def write_business_event_definition(definition: dict[str, Any], employee_id: str, *, status: str | None = None) -> dict[str, Any]:
+    now = now_iso()
+    payload = dict(definition)
+    payload["status"] = status or str(payload.get("status") or "draft")
+    payload.setdefault("created_by", employee_id)
+    payload["updated_by"] = employee_id
+    with business_event_db() as con:
+        existing = con.execute(
+            "SELECT created_at, created_by FROM business_event_definitions WHERE definition_id = ?",
+            (payload["definition_id"],),
+        ).fetchone()
+        created_at = str(existing["created_at"]) if existing else now
+        created_by = str(existing["created_by"]) if existing else employee_id
+        con.execute(
+            """
+            INSERT INTO business_event_definitions
+                (definition_id, status, source_kind, source_name, target_event_type, body_json, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(definition_id) DO UPDATE SET
+                status = excluded.status,
+                source_kind = excluded.source_kind,
+                source_name = excluded.source_name,
+                target_event_type = excluded.target_event_type,
+                body_json = excluded.body_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                payload["definition_id"],
+                payload["status"],
+                payload["source_kind"],
+                payload["source_name"],
+                payload["target_event_type"],
+                json.dumps(payload, ensure_ascii=False, default=str),
+                created_by,
+                created_at,
+                now,
+            ),
+        )
+        con.commit()
+    append_rbac_audit(employee_id, "business_event_definition_write", {"definition_id": payload["definition_id"], "status": payload["status"]})
+    return payload
+
+
+def business_event_definition_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    payload = json.loads(str(row["body_json"] or "{}"))
+    payload["status"] = str(row["status"])
+    payload.setdefault("definition_id", str(row["definition_id"]))
+    payload.setdefault("source_kind", str(row["source_kind"]))
+    payload.setdefault("source_name", str(row["source_name"]))
+    payload.setdefault("target_event_type", str(row["target_event_type"]))
+    return payload
+
+
+def read_business_event_definition(definition_id: str) -> dict[str, Any]:
+    with business_event_db() as con:
+        row = con.execute(
+            "SELECT * FROM business_event_definitions WHERE definition_id = ?",
+            (definition_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="business event definition not found")
+    return business_event_definition_from_row(row)
+
+
+def find_active_business_event_definitions(source_kind: str, source_name: str = "") -> list[dict[str, Any]]:
+    normalized_kind = business_event_source_kind(source_kind)
+    with business_event_db() as con:
+        rows = con.execute(
+            """
+            SELECT * FROM business_event_definitions
+            WHERE status = 'active' AND source_kind = ? AND (? = '' OR source_name = ?)
+            ORDER BY updated_at DESC
+            """,
+            (normalized_kind, source_name, source_name),
+        ).fetchall()
+    return [business_event_definition_from_row(row) for row in rows]
+
+
+def business_event_resolve_definition(req: RawSignalEvaluateRequest, employee_id: str) -> dict[str, Any]:
+    if isinstance(req.definition, dict) and req.definition:
+        return business_event_definition_payload(BusinessEventDefinitionRequest(**req.definition), employee_id) if "definition_id" not in req.definition else dict(req.definition)
+    if req.definition_id:
+        return read_business_event_definition(req.definition_id)
+    source_kind = req.source_kind or (req.signal or {}).get("source_kind") or "webhook"
+    source_name = req.source_name or (req.signal or {}).get("source_name") or ""
+    matches = find_active_business_event_definitions(str(source_kind), str(source_name))
+    if not matches and source_name:
+        matches = find_active_business_event_definitions(str(source_kind), "")
+    if not matches:
+        raise HTTPException(status_code=404, detail="no active business event definition matched this signal")
+    return matches[0]
+
+
+def business_event_value(source: dict[str, Any], field: str) -> Any:
+    key = str(field or "").strip()
+    if not key:
+        return None
+    if key.startswith("$."):
+        return json_path_value(source, key)
+    if key.startswith("payload."):
+        return json_path_value(source.get("payload") if isinstance(source.get("payload"), dict) else source, key.removeprefix("payload."))
+    if key.startswith("signal."):
+        return json_path_value(source, key.removeprefix("signal."))
+    if key in source:
+        return source.get(key)
+    payload = source.get("payload") if isinstance(source.get("payload"), dict) else {}
+    if key in payload:
+        return payload.get(key)
+    return json_path_value(source, key)
+
+
+def business_event_condition_matches(rule: dict[str, Any], source: dict[str, Any]) -> bool:
+    field = str(rule.get("field") or rule.get("path") or "")
+    op = str(rule.get("op") or rule.get("operator") or "eq").strip().lower()
+    expected = rule.get("value")
+    actual = business_event_value(source, field)
+    if op in {"exists", "present"}:
+        return actual not in (None, "", [], {})
+    if op in {"not_exists", "missing"}:
+        return actual in (None, "", [], {})
+    if op in {"eq", "=", "=="}:
+        return actual == expected
+    if op in {"ne", "!=", "not"}:
+        return actual != expected
+    if op == "in":
+        values = expected if isinstance(expected, list) else [expected]
+        return actual in values
+    if op == "contains":
+        if isinstance(actual, list):
+            return expected in actual
+        return str(expected) in str(actual or "")
+    try:
+        actual_number = float(actual)
+        expected_number = float(expected)
+    except Exception:
+        return False
+    if op in {"gt", ">"}:
+        return actual_number > expected_number
+    if op in {"gte", ">="}:
+        return actual_number >= expected_number
+    if op in {"lt", "<"}:
+        return actual_number < expected_number
+    if op in {"lte", "<="}:
+        return actual_number <= expected_number
+    return False
+
+
+def business_event_conditions_match(conditions: dict[str, Any], source: dict[str, Any]) -> bool:
+    if not isinstance(conditions, dict) or not conditions:
+        return True
+    if any(key in conditions for key in ("required_signals", "state_field", "threshold_count", "window_seconds")) and not any(
+        key in conditions for key in ("all", "any", "rules", "field", "path")
+    ):
+        return True
+    if "all" in conditions:
+        rules = conditions.get("all") if isinstance(conditions.get("all"), list) else []
+        return all(business_event_condition_matches(rule, source) for rule in rules if isinstance(rule, dict))
+    if "any" in conditions:
+        rules = conditions.get("any") if isinstance(conditions.get("any"), list) else []
+        return any(business_event_condition_matches(rule, source) for rule in rules if isinstance(rule, dict))
+    if "rules" in conditions:
+        rules = conditions.get("rules") if isinstance(conditions.get("rules"), list) else []
+        mode = str(conditions.get("mode") or "all").lower()
+        checks = [business_event_condition_matches(rule, source) for rule in rules if isinstance(rule, dict)]
+        return any(checks) if mode == "any" else all(checks)
+    if conditions.get("field") or conditions.get("path"):
+        return business_event_condition_matches(conditions, source)
+    return True
+
+
+def business_event_time_delta_seconds(value: str | None, now: datetime) -> float | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=KST)
+        return (now - parsed).total_seconds()
+    except Exception:
+        return None
+
+
+def business_event_fingerprint(definition: dict[str, Any], payload: dict[str, Any], signal: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    source = {**signal, "payload": payload}
+    values: dict[str, Any] = {}
+    fields = [str(item) for item in definition.get("fingerprint_fields") or [] if str(item).strip()]
+    for field in fields:
+        values[field] = business_event_value(source, field)
+    if not values:
+        values = {
+            "source_kind": definition.get("source_kind"),
+            "source_name": definition.get("source_name"),
+            "target_event_type": definition.get("target_event_type"),
+            "payload_hash": hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
+        }
+    raw = json.dumps(values, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(f"{definition.get('definition_id')}|{raw}".encode("utf-8")).hexdigest()[:32], values
+
+
+def business_event_fingerprint_row(con: sqlite3.Connection, definition_id: str, fingerprint: str, now: str) -> sqlite3.Row:
+    row = con.execute(
+        "SELECT * FROM business_event_fingerprints WHERE definition_id = ? AND fingerprint = ?",
+        (definition_id, fingerprint),
+    ).fetchone()
+    if row:
+        return row
+    con.execute(
+        """
+        INSERT INTO business_event_fingerprints
+            (definition_id, fingerprint, first_seen, last_seen, count, aggregation_json)
+        VALUES (?, ?, ?, ?, 0, '{}')
+        """,
+        (definition_id, fingerprint, now, now),
+    )
+    return con.execute(
+        "SELECT * FROM business_event_fingerprints WHERE definition_id = ? AND fingerprint = ?",
+        (definition_id, fingerprint),
+    ).fetchone()
+
+
+def business_event_update_fingerprint(
+    con: sqlite3.Connection,
+    *,
+    definition_id: str,
+    fingerprint: str,
+    last_seen: str,
+    count: int,
+    last_published: str | None = None,
+    state_value: str | None = None,
+    aggregation: dict[str, Any] | None = None,
+) -> None:
+    updates = ["last_seen = ?", "count = ?"]
+    values: list[Any] = [last_seen, count]
+    if last_published is not None:
+        updates.append("last_published = ?")
+        values.append(last_published)
+    if state_value is not None:
+        updates.append("state_value = ?")
+        values.append(state_value)
+    if aggregation is not None:
+        updates.append("aggregation_json = ?")
+        values.append(json.dumps(aggregation, ensure_ascii=False, default=str))
+    values.extend([definition_id, fingerprint])
+    con.execute(
+        f"UPDATE business_event_fingerprints SET {', '.join(updates)} WHERE definition_id = ? AND fingerprint = ?",
+        values,
+    )
+
+
+def business_event_event_payload(definition: dict[str, Any], payload: dict[str, Any], req: RawSignalEvaluateRequest, employee_id: str) -> dict[str, Any]:
+    merged = {**(definition.get("default_payload") if isinstance(definition.get("default_payload"), dict) else {}), **payload}
+    merged.setdefault("title", definition.get("name") or event_label(str(definition.get("target_event_type") or "")))
+    if definition.get("workflow_key"):
+        merged.setdefault("workflow", definition.get("workflow_key"))
+    if definition.get("sop_stage_id"):
+        merged.setdefault("sop_stage_id", definition.get("sop_stage_id"))
+    merged.setdefault("owner", employee_id)
+    return merged
+
+
+def business_event_decision_summary(
+    *,
+    definition: dict[str, Any],
+    decision: str,
+    fingerprint: str,
+    fingerprint_values: dict[str, Any],
+    reason: str,
+    event: dict[str, Any] | None = None,
+    count: int = 0,
+    confirmation_id: str = "",
+) -> dict[str, Any]:
+    return {
+        "ok": decision in BUSINESS_EVENT_DECISIONS and decision != "failed",
+        "decision": decision,
+        "definition_id": definition.get("definition_id"),
+        "business_event_name": definition.get("name"),
+        "target_event_type": definition.get("target_event_type"),
+        "occurrence_mode": definition.get("occurrence_mode") or definition.get("trigger_mode"),
+        "occurrence_label": definition.get("occurrence_label") or business_event_mode_label(str(definition.get("occurrence_mode") or "")),
+        "fingerprint": fingerprint,
+        "fingerprint_values": fingerprint_values,
+        "count": count,
+        "reason": reason,
+        "event": event or {},
+        "confirmation_id": confirmation_id,
+        "raw_payload_stored": False,
+    }
+
+
+async def business_event_publish_decision_event(
+    definition: dict[str, Any],
+    payload: dict[str, Any],
+    req: RawSignalEvaluateRequest,
+    employee_id: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    event_payload = business_event_event_payload(definition, payload, req, employee_id)
+    result = await publish_event(
+        EventPublishRequest(
+            event_type=str(definition.get("target_event_type") or "external.webhook.received.v1"),
+            payload=event_payload,
+            actor_employee_id=employee_id,
+            source_refs=[
+                {
+                    "type": "business_event_definition",
+                    "ref": definition.get("definition_id"),
+                    "source_kind": definition.get("source_kind"),
+                    "source_name": definition.get("source_name"),
+                }
+            ],
+            trace_id=req.trace_id or None,
+        ),
+        employee_id=employee_id,
+    )
+    return result.get("event") or {}, result.get("broker") or {}
+
+
+def business_event_pending_confirmation(
+    con: sqlite3.Connection,
+    *,
+    definition: dict[str, Any],
+    fingerprint: str,
+    employee_id: str,
+    event_preview: dict[str, Any],
+    decision: dict[str, Any],
+) -> str:
+    confirmation_id = f"bec-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    now = now_iso()
+    con.execute(
+        """
+        INSERT INTO business_event_pending_confirmations
+            (confirmation_id, definition_id, fingerprint, status, created_by, created_at, updated_at, event_json, decision_json)
+        VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+        """,
+        (
+            confirmation_id,
+            definition.get("definition_id"),
+            fingerprint,
+            employee_id,
+            now,
+            now,
+            json.dumps(event_preview, ensure_ascii=False, default=str),
+            json.dumps(decision, ensure_ascii=False, default=str),
+        ),
+    )
+    return confirmation_id
+
+
+def business_event_audit_decision(con: sqlite3.Connection, summary: dict[str, Any]) -> None:
+    con.execute(
+        """
+        INSERT INTO business_event_decisions
+            (decision_id, definition_id, fingerprint, decision, occurred_at, summary_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            f"bedec-{uuid.uuid4().hex}",
+            summary.get("definition_id") or "",
+            summary.get("fingerprint") or "",
+            summary.get("decision") or "",
+            now_iso(),
+            json.dumps(summary, ensure_ascii=False, default=str),
+        ),
+    )
+
+
+async def evaluate_business_signal(req: RawSignalEvaluateRequest, employee_id: str) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.workflow_runner")
+    require_employee_binding_or_admin_override(
+        employee_id,
+        req.actor_employee_id,
+        operation="business_event_evaluate",
+        mismatch_detail="actor_employee_id must match the authenticated employee",
+        reason=None,
+    )
+    definition = business_event_resolve_definition(req, employee_id)
+    signal = dict(req.signal or req.payload or {})
+    if req.payload and "payload" not in signal:
+        signal.setdefault("payload", req.payload)
+    signal.setdefault("source_kind", req.source_kind or definition.get("source_kind"))
+    signal.setdefault("source_name", req.source_name or definition.get("source_name"))
+    payload = business_event_mapped_payload(definition, signal)
+    source_for_conditions = {**signal, "payload": payload}
+    now_dt = datetime.now(KST)
+    now_text = now_dt.replace(microsecond=0).isoformat()
+    fingerprint, fingerprint_values = business_event_fingerprint(definition, payload, signal)
+    mode = business_event_occurrence_mode(
+        str(definition.get("occurrence_mode") or definition.get("trigger_mode") or ""),
+        str(definition.get("source_kind") or ""),
+        definition.get("conditions") if isinstance(definition.get("conditions"), dict) else {},
+    )
+    conditions = definition.get("conditions") if isinstance(definition.get("conditions"), dict) else {}
+    if not business_event_conditions_match(conditions, source_for_conditions):
+        summary = business_event_decision_summary(
+            definition=definition,
+            decision="ignored",
+            fingerprint=fingerprint,
+            fingerprint_values=fingerprint_values,
+            reason="발생 조건이 맞지 않아 업무 이벤트로 보지 않았습니다.",
+        )
+        with business_event_db() as con:
+            business_event_audit_decision(con, summary)
+            con.commit()
+        return summary
+
+    if req.dry_run:
+        preview_decision = "published"
+        preview_reason = "샘플 기준으로는 업무 이벤트가 발생합니다."
+        event_preview = {
+            "event_type": definition.get("target_event_type"),
+            "payload": business_event_event_payload(definition, payload, req, employee_id),
+            "source_refs": [{"type": "business_event_definition", "ref": definition.get("definition_id")}],
+            "trace_id": req.trace_id or f"trace-{uuid.uuid4().hex}",
+        }
+        if mode == "confirmation":
+            preview_decision = "pending_confirmation"
+            preview_reason = "샘플 기준으로는 담당자 확인 대기 상태가 됩니다."
+        elif mode == "repeated" and max(1, int(definition.get("threshold_count") or conditions.get("threshold_count") or 1)) > 1:
+            preview_decision = "aggregated"
+            preview_reason = "샘플 1건만으로는 반복 기준에 도달하지 않아 같은 업무 사건으로 묶입니다."
+        elif mode == "composite" and conditions.get("required_signals"):
+            preview_decision = "aggregated"
+            preview_reason = "샘플 1건만으로는 필요한 신호가 모두 모였는지 확정할 수 없습니다."
+        elif mode == "transition":
+            preview_decision = "ignored"
+            preview_reason = "샘플 테스트에서는 이전 상태를 바꾸지 않고 전환 기준만 확인합니다."
+        summary = business_event_decision_summary(
+            definition=definition,
+            decision=preview_decision,
+            fingerprint=fingerprint,
+            fingerprint_values=fingerprint_values,
+            reason=preview_reason,
+            event=event_preview if preview_decision in {"published", "pending_confirmation"} else {},
+            count=0,
+        )
+        summary["dry_run"] = True
+        return summary
+
+    with business_event_db() as con:
+        row = business_event_fingerprint_row(con, str(definition.get("definition_id") or ""), fingerprint, now_text)
+        count = int(row["count"] or 0) + 1
+        aggregation = json.loads(str(row["aggregation_json"] or "{}"))
+        last_published_delta = business_event_time_delta_seconds(row["last_published"], now_dt)
+        dedupe_window = int(definition.get("dedupe_window_seconds") or 0)
+        event_preview = {
+            "event_type": definition.get("target_event_type"),
+            "payload": business_event_event_payload(definition, payload, req, employee_id),
+            "source_refs": [{"type": "business_event_definition", "ref": definition.get("definition_id")}],
+            "trace_id": req.trace_id or f"trace-{uuid.uuid4().hex}",
+        }
+
+        if mode == "transition":
+            state_field = str(conditions.get("state_field") or "status")
+            current_state = str(business_event_value(source_for_conditions, state_field) or "")
+            previous_state = str(row["state_value"] or "")
+            allowed_to = conditions.get("to_values") if isinstance(conditions.get("to_values"), list) else []
+            allowed_from = conditions.get("from_values") if isinstance(conditions.get("from_values"), list) else []
+            business_event_update_fingerprint(con, definition_id=str(definition.get("definition_id")), fingerprint=fingerprint, last_seen=now_text, count=count, state_value=current_state)
+            if not previous_state:
+                summary = business_event_decision_summary(definition=definition, decision="ignored", fingerprint=fingerprint, fingerprint_values=fingerprint_values, reason="첫 상태값은 기준 상태로만 저장했습니다.", count=count)
+                business_event_audit_decision(con, summary)
+                con.commit()
+                return summary
+            if previous_state == current_state or (allowed_to and current_state not in allowed_to) or (allowed_from and previous_state not in allowed_from):
+                summary = business_event_decision_summary(definition=definition, decision="ignored", fingerprint=fingerprint, fingerprint_values=fingerprint_values, reason="의미 있는 상태 전환이 아니어서 업무 이벤트로 보지 않았습니다.", count=count)
+                business_event_audit_decision(con, summary)
+                con.commit()
+                return summary
+
+        if mode == "composite":
+            required = [str(item) for item in conditions.get("required_signals") or [] if str(item).strip()]
+            signal_key_field = str(conditions.get("signal_key_field") or "signal_type")
+            signal_key = str(business_event_value(source_for_conditions, signal_key_field) or signal.get("source_name") or definition.get("source_name") or "")
+            seen = set(str(item) for item in aggregation.get("seen_signals") or [])
+            if signal_key:
+                seen.add(signal_key)
+            aggregation["seen_signals"] = sorted(seen)
+            aggregation["last_seen"] = now_text
+            business_event_update_fingerprint(con, definition_id=str(definition.get("definition_id")), fingerprint=fingerprint, last_seen=now_text, count=count, aggregation=aggregation)
+            if required and not set(required).issubset(seen):
+                summary = business_event_decision_summary(definition=definition, decision="aggregated", fingerprint=fingerprint, fingerprint_values=fingerprint_values, reason="필요한 외부 신호가 아직 모두 모이지 않았습니다.", count=count)
+                business_event_audit_decision(con, summary)
+                con.commit()
+                return summary
+
+        if mode == "repeated":
+            threshold = max(1, int(definition.get("threshold_count") or conditions.get("threshold_count") or 1))
+            business_event_update_fingerprint(con, definition_id=str(definition.get("definition_id")), fingerprint=fingerprint, last_seen=now_text, count=count)
+            if count < threshold:
+                summary = business_event_decision_summary(definition=definition, decision="aggregated", fingerprint=fingerprint, fingerprint_values=fingerprint_values, reason=f"반복 기준 {threshold}회에 도달하기 전이라 같은 업무 사건으로 묶었습니다.", count=count)
+                business_event_audit_decision(con, summary)
+                con.commit()
+                return summary
+
+        if mode == "confirmation":
+            summary = business_event_decision_summary(definition=definition, decision="pending_confirmation", fingerprint=fingerprint, fingerprint_values=fingerprint_values, reason="담당자 확인 후 업무 이벤트로 발생합니다.", event=event_preview, count=count)
+            confirmation_id = business_event_pending_confirmation(con, definition=definition, fingerprint=fingerprint, employee_id=employee_id, event_preview=event_preview, decision=summary)
+            summary["confirmation_id"] = confirmation_id
+            business_event_update_fingerprint(con, definition_id=str(definition.get("definition_id")), fingerprint=fingerprint, last_seen=now_text, count=count)
+            business_event_audit_decision(con, summary)
+            con.commit()
+            return summary
+
+        if dedupe_window and last_published_delta is not None and 0 <= last_published_delta <= dedupe_window:
+            business_event_update_fingerprint(con, definition_id=str(definition.get("definition_id")), fingerprint=fingerprint, last_seen=now_text, count=count, aggregation=aggregation)
+            summary = business_event_decision_summary(definition=definition, decision="suppressed", fingerprint=fingerprint, fingerprint_values=fingerprint_values, reason="같은 업무 이벤트가 최근에 발생해 중복으로 묶었습니다.", count=count)
+            business_event_audit_decision(con, summary)
+            con.commit()
+            return summary
+
+    event, broker = await business_event_publish_decision_event(definition, payload, req, employee_id)
+    with business_event_db() as con:
+        business_event_update_fingerprint(con, definition_id=str(definition.get("definition_id")), fingerprint=fingerprint, last_seen=now_text, count=count, last_published=now_text, aggregation=aggregation)
+        summary = business_event_decision_summary(definition=definition, decision="published", fingerprint=fingerprint, fingerprint_values=fingerprint_values, reason="발생 기준을 통과해 업무 이벤트를 발행했습니다.", event=event, count=count)
+        summary["broker"] = broker
+        business_event_audit_decision(con, summary)
+        con.commit()
+    return summary
 
 
 def event_producer_adapter_sample_event(plan: dict[str, Any]) -> dict[str, Any]:
@@ -14194,15 +15531,44 @@ def event_producer_adapter_plan_payload(req: EventProducerAdapterRequest, employ
         }
     elif source_kind == "kafka":
         plan["kafka"] = {
-            "topic": BOI_EVENTS_TOPIC,
+            "topic": BOI_RAW_SIGNALS_TOPIC,
             "sample_event": {"event_type": target_event_type, "payload": sample_payload},
-            "integration_guide": "외부 시스템 담당자가 이 topic/schema에 맞춰 발행하면 BoI Event Router가 처리합니다.",
+            "integration_guide": "외부 신호는 raw topic으로 받고, BoI Wiki가 업무 이벤트 기준을 통과한 경우에만 업무 흐름을 시작합니다.",
+        }
+    elif source_kind == "scheduler":
+        plan["scheduler"] = {
+            "schedule": req.health_check.get("schedule", "manual_preview") if isinstance(req.health_check, dict) else "manual_preview",
+            "preview_only": True,
         }
     elif source_kind == "manual":
         plan["manual"] = {
-            "publish_api": "/api/events/publish",
+            "run_api": f"/api/business-event-definitions/{business_event_definition_id(source_name, target_event_type)}/run",
             "requires_confirmation": True,
         }
+    definition_req = BusinessEventDefinitionRequest(
+        definition_id=business_event_definition_id(source_name, target_event_type),
+        name=event_label(target_event_type),
+        source_kind=source_kind,
+        source_name=source_name,
+        target_event_type=target_event_type,
+        occurrence_mode=req.occurrence_mode or req.trigger_mode or ("manual" if source_kind == "manual" else "immediate"),
+        payload_mapping=payload_mapping,
+        conditions=req.conditions if isinstance(req.conditions, dict) else {},
+        fingerprint_fields=req.fingerprint_fields or (["payload.equipment_id", "payload.alarm_code"] if {"equipment_id", "alarm_code"}.issubset(set(payload_mapping.keys())) else []),
+        dedupe_window_seconds=req.dedupe_window_seconds,
+        aggregation_window_seconds=req.aggregation_window_seconds,
+        threshold_count=req.threshold_count,
+        status="draft",
+        sample_signal=sample_payload,
+    )
+    plan["business_event_definition"] = business_event_definition_payload(definition_req, employee_id)
+    plan["user_facing_summary"] = {
+        "title": "업무 이벤트 정의",
+        "question": "이 업무 이벤트는 언제 발생하나요?",
+        "answer": plan["business_event_definition"].get("occurrence_label"),
+        "source_label": "무엇을 보고 판단하나요?",
+        "workflow_label": "발생하면 어떤 업무를 시작하나요?",
+    }
     plan["sample_event_preview"] = event_producer_adapter_sample_event(plan)
     return {"ok": True, "adapter_plan": plan}
 
@@ -14224,6 +15590,7 @@ def event_producer_adapter_test_payload(req: EventProducerAdapterRequest, employ
         "mcp": "preview_only",
         "data_lake_query": "preview_only",
         "kafka": "guide_ready",
+        "scheduler": "preview_only",
         "manual": "manual_publish_preview",
     }
     return {
@@ -14282,6 +15649,7 @@ def create_event_producer_adapter_draft(req: EventProducerAdapterRequest, employ
         "auth_policy": plan.get("auth_policy") or {},
         "sample_payload": plan.get("sample_payload") or {},
         "health_check": plan.get("health_check") or {},
+        "business_event_definition": plan.get("business_event_definition") or {},
         "test_status": test_result.get("test_status") or plan.get("test_status") or "not_tested",
         "adapter_plan": plan,
         "test_result": test_result,
@@ -15486,6 +16854,188 @@ async def api_registration_verification_preview(
     return registration_verification_preview_payload(req, employee_id)
 
 
+@app.post("/api/business-event-definitions/plan")
+async def api_business_event_definition_plan(
+    req: BusinessEventDefinitionRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    definition = business_event_definition_payload(req, employee_id)
+    return {
+        "ok": True,
+        "plan_type": "business_event_definition_plan",
+        "definition": definition,
+        "question": "이 업무 이벤트는 언제 발생하나요?",
+        "cards": [
+            {"id": "immediate", "label": "바로 발생", "description": "신호 하나가 곧 업무 요청인 경우", "example": "보고서 작성 요청이 오면 바로 업무 흐름을 시작합니다."},
+            {"id": "condition", "label": "조건이 맞으면 발생", "description": "특정 값이나 조건이 맞을 때만 발생", "example": "설비 그룹이 ETCH이고 alarm level이 CRITICAL이면 발생합니다."},
+            {"id": "repeated", "label": "반복되거나 계속되면 발생", "description": "같은 신호를 하나의 업무 사건으로 묶음", "example": "같은 설비 Alarm이 10분 안에 5회 이상이면 발생합니다."},
+            {"id": "transition", "label": "상태가 바뀌면 발생", "description": "정상에서 이상, 이상에서 해소 같은 전환만 봄", "example": "normal에서 alarm으로 바뀔 때만 발생합니다."},
+            {"id": "composite", "label": "여러 신호가 모이면 발생", "description": "여러 조건이 함께 모여 업무 의미가 생김", "example": "Alarm, Trend 이상, 중요 Lot이 함께 확인되면 발생합니다."},
+            {"id": "confirmation", "label": "담당자가 확인하면 발생", "description": "후보로 올리고 사람이 확인 후 발생", "example": "애매한 Alarm 패턴은 Inbox 검토 후 시작합니다."},
+            {"id": "manual", "label": "사람이 직접 실행하면 발생", "description": "외부 신호 없이 사용자가 직접 시작", "example": "담당자가 직접 원인 분석 SOP를 시작합니다."},
+        ],
+        "sections": [
+            "무엇을 보고 판단하나요?",
+            "언제 발생하나요?",
+            "발생하면 어떤 업무를 시작하나요?",
+            "샘플로 확인하기",
+        ],
+        "next_actions": [
+            {"label": "샘플로 확인하기", "action": "test"},
+            {"label": "초안 저장", "action": "draft", "requires_confirmation": True},
+        ],
+    }
+
+
+@app.post("/api/business-event-definitions/test")
+async def api_business_event_definition_test(
+    req: BusinessEventDefinitionTestRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    definition = dict(req.definition or {})
+    if not definition and req.definition_id:
+        definition = read_business_event_definition(req.definition_id)
+    if not definition:
+        raise HTTPException(status_code=400, detail="definition or definition_id is required")
+    sample_signal = req.sample_signal or definition.get("sample_signal") or definition.get("default_payload") or {}
+    decision = await evaluate_business_signal(
+        RawSignalEvaluateRequest(
+            definition=definition,
+            source_kind=str(definition.get("source_kind") or ""),
+            source_name=str(definition.get("source_name") or ""),
+            payload=sample_signal if isinstance(sample_signal, dict) else {},
+            signal=sample_signal if isinstance(sample_signal, dict) else {},
+            dry_run=True,
+        ),
+        employee_id=employee_id,
+    )
+    return {
+        "ok": True,
+        "preview_type": "business_event_definition_test",
+        "would_publish": decision.get("decision") == "published",
+        "decision": decision,
+        "sample_stored": False,
+    }
+
+
+@app.post("/api/business-event-definitions/drafts")
+async def api_business_event_definition_draft_create(
+    req: BusinessEventDefinitionRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required before creating a business event definition draft")
+    definition = business_event_definition_payload(req, employee_id)
+    definition = write_business_event_definition(definition, employee_id, status="draft")
+    return {"ok": True, "draft": definition}
+
+
+@app.post("/api/business-event-definitions/{definition_id}/activate")
+async def api_business_event_definition_activate(
+    definition_id: str,
+    req: BusinessEventDefinitionRequest = BusinessEventDefinitionRequest(),
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    definition = read_business_event_definition(definition_id)
+    definition = write_business_event_definition(definition, employee_id, status="active")
+    return {"ok": True, "definition": definition}
+
+
+@app.post("/api/signals/evaluate")
+async def api_signal_evaluate(
+    req: RawSignalEvaluateRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    return await evaluate_business_signal(req, employee_id)
+
+
+@app.post("/api/business-event-definitions/{definition_id}/run")
+async def api_business_event_definition_run(
+    definition_id: str,
+    req: BusinessEventRunRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required before manually running a business event")
+    definition = read_business_event_definition(definition_id)
+    payload = {**(definition.get("default_payload") if isinstance(definition.get("default_payload"), dict) else {}), **(req.payload or {})}
+    return await evaluate_business_signal(
+        RawSignalEvaluateRequest(
+            definition=definition,
+            source_kind="manual",
+            source_name=str(definition.get("source_name") or "manual"),
+            payload=payload,
+            signal={"payload": payload, "source_kind": "manual", "source_name": definition.get("source_name") or "manual", "manual_note": req.note},
+        ),
+        employee_id,
+    )
+
+
+@app.post("/api/business-event-definitions/{definition_id}/confirm")
+async def api_business_event_definition_confirm(
+    definition_id: str,
+    req: BusinessEventConfirmRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true is required before confirming a business event")
+    confirmation_id = str(req.confirmation_id or "")
+    if not confirmation_id:
+        raise HTTPException(status_code=400, detail="confirmation_id is required")
+    with business_event_db() as con:
+        row = con.execute(
+            "SELECT * FROM business_event_pending_confirmations WHERE confirmation_id = ? AND definition_id = ?",
+            (confirmation_id, definition_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="pending confirmation not found")
+        if str(row["status"]) != "pending":
+            raise HTTPException(status_code=400, detail="confirmation is not pending")
+        event_preview = json.loads(str(row["event_json"] or "{}"))
+        if req.decision == "reject":
+            con.execute(
+                "UPDATE business_event_pending_confirmations SET status = 'rejected', updated_at = ?, decision_json = ? WHERE confirmation_id = ?",
+                (now_iso(), json.dumps({"decision": "rejected", "note": req.note, "by": employee_id}, ensure_ascii=False), confirmation_id),
+            )
+            summary = {"ok": True, "decision": "suppressed", "confirmation_id": confirmation_id, "reason": "담당자가 업무 이벤트 발생을 반려했습니다."}
+            business_event_audit_decision(con, {"definition_id": definition_id, "fingerprint": str(row["fingerprint"]), **summary})
+            con.commit()
+            return summary
+
+    result = await publish_event(
+        EventPublishRequest(
+            event_type=str(event_preview.get("event_type") or "external.webhook.received.v1"),
+            payload=event_preview.get("payload") if isinstance(event_preview.get("payload"), dict) else {},
+            actor_employee_id=employee_id,
+            source_refs=event_preview.get("source_refs") if isinstance(event_preview.get("source_refs"), list) else [],
+            trace_id=str(event_preview.get("trace_id") or "") or None,
+        ),
+        employee_id=employee_id,
+    )
+    with business_event_db() as con:
+        con.execute(
+            "UPDATE business_event_pending_confirmations SET status = 'confirmed', updated_at = ?, decision_json = ? WHERE confirmation_id = ?",
+            (now_iso(), json.dumps({"decision": "confirmed", "note": req.note, "by": employee_id, "event_id": result.get("event", {}).get("event_id")}, ensure_ascii=False), confirmation_id),
+        )
+        con.execute(
+            "UPDATE business_event_fingerprints SET last_published = ? WHERE definition_id = ? AND fingerprint = ?",
+            (now_iso(), definition_id, str(row["fingerprint"])),
+        )
+        summary = {
+            "ok": True,
+            "decision": "published",
+            "confirmation_id": confirmation_id,
+            "event": result.get("event") or {},
+            "broker": result.get("broker") or {},
+            "reason": "담당자가 확인해 업무 이벤트를 발행했습니다.",
+        }
+        business_event_audit_decision(con, {"definition_id": definition_id, "fingerprint": str(row["fingerprint"]), **summary})
+        con.commit()
+    return summary
+
+
 @app.post("/api/event-ingestion/adapters/plan")
 async def api_event_ingestion_adapter_plan(req: EventProducerAdapterRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     return event_producer_adapter_plan_payload(req, employee_id)
@@ -15951,6 +17501,50 @@ async def apply_doc_body_edit(
     )
     response["body_preview_html"] = response.get("preview", {}).get("html", "")
     return response
+
+
+@app.post("/api/docs/{boi_id:path}/related-update/impact-preview")
+async def preview_related_update_impact(
+    boi_id: str,
+    req: RelatedUpdateImpactRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    doc = find_doc_by_id(boi_id, employee_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    return related_update_impact_payload(doc, employee_id, req)
+
+
+@app.post("/api/docs/{boi_id:path}/related-update/jobs")
+async def create_doc_related_update_job(
+    boi_id: str,
+    req: RelatedUpdateJobRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    doc = find_doc_by_id(boi_id, employee_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="BoI not found or not accessible")
+    return create_related_update_job(doc, employee_id, req)
+
+
+@app.get("/api/docs/related-update/jobs/{job_id}")
+async def get_doc_related_update_job(job_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    manifest = read_related_update_manifest(job_id)
+    require_related_update_manifest_access(manifest, employee_id)
+    return manifest
+
+
+@app.post("/api/docs/related-update/jobs/{job_id}/apply")
+async def apply_doc_related_update_job(
+    job_id: str,
+    req: RelatedUpdateApplyRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.editor")
+    return apply_related_update_job(job_id, req, employee_id)
 
 
 INBOX_REPORT_DECISION_CHOICES = [
@@ -29519,6 +31113,24 @@ async def inbound_webhook(
         incoming = await request.json()
     except Exception:
         incoming = {"payload": (await request.body()).decode("utf-8", errors="replace")}
+    active_definitions = find_active_business_event_definitions("webhook", source)
+    if active_definitions:
+        decisions = []
+        for definition in active_definitions:
+            decisions.append(
+                await evaluate_business_signal(
+                    RawSignalEvaluateRequest(
+                        definition=definition,
+                        source_kind="webhook",
+                        source_name=source,
+                        payload=incoming.get("payload") if isinstance(incoming, dict) and isinstance(incoming.get("payload"), dict) else incoming,
+                        signal={"source_kind": "webhook", "source_name": source, "payload": incoming.get("payload") if isinstance(incoming, dict) and isinstance(incoming.get("payload"), dict) else incoming, "webhook_body": incoming},
+                        trace_id=incoming.get("trace_id") if isinstance(incoming, dict) else None,
+                    ),
+                    employee_id=employee_id,
+                )
+            )
+        return {"ok": True, "source": source, "business_event_decisions": decisions}
     event_type = incoming.get("event_type") or "external.webhook.received.v1"
     actor = incoming.get("actor_employee_id") or employee_id
     event = {

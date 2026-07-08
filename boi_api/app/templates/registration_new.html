@@ -49,16 +49,6 @@
     </button>
   </nav>
 
-  <section class="sop-builder-flow-strip" aria-label="SOP builder flow">
-    <span>업무 맥락</span>
-    <span>시작 신호</span>
-    <span>단계 설계 / Task 맵</span>
-    <span>실행 연결 / Task 상세</span>
-    <span>시작/연결</span>
-    <span>BoI 결과</span>
-    <p>업무 맥락 → 시작 신호 → SOP 단계 → 실행/판단 → BoI 결과 · Workflow → Task → 실행 방식 → 시작 신호 → BoI 결과와 TAT 측정</p>
-  </section>
-
   <section class="registration-layout sop-registration-layout">
     <section class="panel registration-form-panel">
       <div class="section-heading">
@@ -192,87 +182,226 @@
             <div class="sop-flow-section-heading">
               <div>
                 <span class="sop-flow-number">1</span>
-                <h3>Event</h3>
-                <p>업무가 시작되거나 전환되는 시점입니다.</p>
+                <h3>업무 이벤트 정의</h3>
+                <p>어떤 순간을 업무가 발생한 것으로 볼지 정합니다.</p>
               </div>
               <span class="sop-flow-mode" data-mode-label="event_mode">수동 실행</span>
             </div>
             <div class="sop-flow-option-grid">
-              <button type="button" data-section-mode="event_mode" data-mode-value="reuse">기존 Event 선택<span>Event Broker에 등록된 Event를 연결합니다.</span></button>
-              <button type="button" data-section-mode="event_mode" data-mode-value="draft">새 Event 초안 만들기<span>업무 발생 시점을 새 Event 정의로 제안합니다.</span></button>
-              <button type="button" data-section-mode="event_mode" data-mode-value="schedule">정해진 시간에 발생<span>클릭으로 일정을 정하고 Event 초안만 만듭니다.</span></button>
-              <button type="button" data-section-mode="event_mode" data-mode-value="skip">수동 실행<span>Event 없이 사용자가 필요할 때 실행합니다.</span></button>
+              <button type="button" data-section-mode="event_mode" data-mode-value="reuse">기존 업무 이벤트 선택<span>이미 등록된 업무 이벤트 정의를 연결합니다.</span></button>
+              <button type="button" data-section-mode="event_mode" data-mode-value="draft">새 업무 이벤트 정의<span>업무가 발생했다고 볼 기준을 새로 만듭니다.</span></button>
+              <button type="button" data-section-mode="event_mode" data-mode-value="schedule">정해진 시간에 발생<span>일정에 따라 업무 이벤트 후보를 만듭니다.</span></button>
+              <button type="button" data-section-mode="event_mode" data-mode-value="skip">사람이 직접 실행<span>외부 신호 없이 필요할 때 직접 시작합니다.</span></button>
             </div>
-            <section class="event-ingestion-panel" aria-label="이 SOP는 어떻게 시작되나요?">
+            <section class="event-ingestion-panel" data-event-definition-panel hidden aria-label="업무 이벤트 정의">
               <div class="mode-panel-heading">
-                <strong>이 SOP는 어떻게 시작되나요?</strong>
-                <span>외부 시스템을 직접 바꾸기 어렵다면 BoI Wiki가 수신/조회 adapter 초안으로 받아 Event Broker에 연결합니다.</span>
+                <strong>이 업무 이벤트는 언제 발생하나요?</strong>
+                <span>외부 신호를 모두 업무로 만들지 않고, BoI Wiki가 업무로 볼 순간만 골라 업무 흐름을 시작합니다.</span>
               </div>
-              <div class="event-source-options" role="group" aria-label="SOP 시작 방식">
-                <label><input type="radio" name="event_source_kind" value="webhook" checked /> 외부 Webhook 수신</label>
-                <label><input type="radio" name="event_source_kind" value="api_poll" /> Legacy/API 주기 조회</label>
-                <label><input type="radio" name="event_source_kind" value="mcp" /> MCP/Data Lake에서 가져오기</label>
-                <label><input type="radio" name="event_source_kind" value="kafka" /> 외부 Kafka 직접 발행</label>
-                <label><input type="radio" name="event_source_kind" value="manual" /> 수동 시작</label>
+              <div class="sop-flow-option-grid business-event-mode-grid" role="group" aria-label="업무 이벤트 발생 방식">
+                <label><input type="radio" name="event_occurrence_mode" value="immediate" checked /> 바로 발생<span>보고서 작성 요청처럼 신호 하나가 곧 업무 요청입니다.</span></label>
+                <label><input type="radio" name="event_occurrence_mode" value="condition" /> 조건이 맞으면 발생<span>설비 그룹, 등급, Lot 같은 값이 맞을 때만 발생합니다.</span></label>
+                <label><input type="radio" name="event_occurrence_mode" value="repeated" /> 반복되거나 계속되면 발생<span>같은 Alarm이 여러 번 오면 하나의 업무 사건으로 묶습니다.</span></label>
+                <label><input type="radio" name="event_occurrence_mode" value="transition" /> 상태가 바뀌면 발생<span>정상에서 이상, 이상에서 해소처럼 전환만 봅니다.</span></label>
+                <label><input type="radio" name="event_occurrence_mode" value="composite" /> 여러 신호가 모이면 발생<span>Alarm, Trend 이상, 중요 Lot이 함께 확인될 때 발생합니다.</span></label>
+                <label><input type="radio" name="event_occurrence_mode" value="confirmation" /> 담당자가 확인하면 발생<span>후보를 올리고 사람이 확인해야 시작합니다.</span></label>
+                <label><input type="radio" name="event_occurrence_mode" value="manual" /> 사람이 직접 실행하면 발생<span>외부 신호 없이 담당자가 직접 시작합니다.</span></label>
               </div>
-              <div class="event-adapter-panels">
-                <section class="event-adapter-panel" data-event-source-panel="webhook">
-                  <strong>Webhook 수신 설정</strong>
+
+              <div class="mode-panel-heading" data-occurrence-source-block>
+                <strong>무엇을 보고 판단하나요?</strong>
+                <span>외부 시스템의 신호를 가져오는 방법을 고릅니다.</span>
+              </div>
+              <div class="event-source-options" data-occurrence-source-block role="group" aria-label="외부 신호 종류">
+                <label><input type="radio" name="event_source_kind" value="webhook" checked /> Webhook</label>
+                <label><input type="radio" name="event_source_kind" value="api_poll" /> API 조회</label>
+                <label><input type="radio" name="event_source_kind" value="mcp" /> MCP 실행 결과</label>
+                <label><input type="radio" name="event_source_kind" value="data_lake_query" /> Data Lake 조회 결과</label>
+                <label><input type="radio" name="event_source_kind" value="kafka" /> Kafka raw topic</label>
+                <label><input type="radio" name="event_source_kind" value="scheduler" /> Scheduler</label>
+              </div>
+
+              <div class="business-event-source-panels" data-occurrence-source-settings>
+                <section class="business-event-source-panel" data-event-source-panel="webhook">
+                  <strong>Webhook으로 들어오는 신호</strong>
+                  <p class="muted">외부 시스템이 BoI Wiki가 만든 Webhook 주소로 신호를 보냅니다.</p>
                   <div class="form-grid compact-grid">
-                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: equipment-alarm" /></label>
-                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
-                    <label>Payload mapping<textarea name="event_source_config.payload_mapping" placeholder='예: {"equipment_id":"$.equipment","alarm_code":"$.alarm"}'></textarea></label>
-                    <label>Sample payload<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","alarm":"PRESS-01"}'></textarea></label>
+                    <label>받을 이름<input name="event_source_config.source_name" placeholder="예: equipment-alarm" /></label>
+                    <label>업무 이벤트 이름<input name="event_source_config.target_event_type" placeholder="예: 설비 Alarm 대응 필요" /></label>
+                    <label class="wide">샘플 신호<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","alarm":"PRESS-01"}'></textarea></label>
                   </div>
+                  <p class="field-hint">미리보기 후 생성될 주소: <code data-webhook-path-preview>/api/webhooks/equipment-alarm</code></p>
                 </section>
-                <section class="event-adapter-panel" data-event-source-panel="api_poll" hidden>
-                  <strong>Legacy/API 조회 설정</strong>
+                <section class="business-event-source-panel" data-event-source-panel="api_poll" hidden>
+                  <strong>API를 주기적으로 조회</strong>
+                  <p class="muted">BoI Wiki가 외부 API를 조회하고, 응답 결과를 업무 이벤트 후보로 판단합니다.</p>
                   <div class="form-grid compact-grid">
                     <label>출처 이름<input name="event_source_config.source_name" placeholder="예: legacy-mes-alarm" /></label>
-                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
-                    <label>API endpoint<input name="event_source_config.health_check.endpoint" placeholder="예: https://legacy.example/api/alarms" /></label>
-                    <label>Method<input name="event_source_config.health_check.method" placeholder="GET" /></label>
+                    <label>업무 이벤트 이름<input name="event_source_config.target_event_type" placeholder="예: 설비 Alarm 대응 필요" /></label>
+                    <label class="wide">API endpoint<input name="event_source_config.health_check.endpoint" placeholder="예: https://legacy.example/api/alarms" /></label>
+                    <label>Method
+                      <select name="event_source_config.health_check.method">
+                        <option value="GET" selected>GET</option>
+                        <option value="POST">POST</option>
+                      </select>
+                    </label>
                     <label>조회 주기<input name="event_source_config.health_check.schedule" placeholder="예: every 5 minutes" /></label>
-                    <label>Response mapping<textarea name="event_source_config.payload_mapping" placeholder='예: {"equipment_id":"$.rows.0.eqp_id"}'></textarea></label>
+                    <label class="wide">응답 샘플<textarea name="event_source_config.sample_payload" placeholder='예: {"rows":[{"equipment":"ETCH-VM-01","alarm":"PRESS-01","level":"CRITICAL"}]}'></textarea></label>
                   </div>
                 </section>
-                <section class="event-adapter-panel" data-event-source-panel="mcp data_lake_query" hidden>
-                  <strong>MCP/Data Lake Preview 설정</strong>
+                <section class="business-event-source-panel" data-event-source-panel="mcp" hidden>
+                  <strong>MCP 실행 결과</strong>
+                  <p class="muted">MCP Tool 실행 결과를 받아 업무 이벤트 후보로 판단합니다.</p>
                   <div class="form-grid compact-grid">
-                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: mes-query" /></label>
-                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
-                    <label>Tool 또는 Query<input name="event_source_config.health_check.tool_or_query" placeholder="예: data_lake.query.alarm_latest" /></label>
-                    <label>Preview sample<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","alarm":"PRESS-01"}'></textarea></label>
-                    <label>Result mapping<textarea name="event_source_config.payload_mapping" placeholder='예: {"equipment_id":"$.equipment","alarm_code":"$.alarm"}'></textarea></label>
+                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: mes-mcp" /></label>
+                    <label>업무 이벤트 이름<input name="event_source_config.target_event_type" placeholder="예: 설비 Alarm 대응 필요" /></label>
+                    <label class="wide">Tool 이름<input name="event_source_config.health_check.tool_or_query" placeholder="예: mes.alarm.latest" /></label>
+                    <label class="wide">실행 입력 예시<textarea name="event_source_config.health_check.input" placeholder='예: {"line":"ETCH","minutes":10}'></textarea></label>
+                    <label class="wide">결과 샘플<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","alarm":"PRESS-01"}'></textarea></label>
                   </div>
                 </section>
-                <section class="event-adapter-panel" data-event-source-panel="kafka" hidden>
-                  <strong>외부 Kafka 직접 발행 가이드</strong>
-                  <p class="muted">외부 시스템 담당자가 BoI Event schema에 맞춰 발행합니다. BoI Wiki는 topic/schema/sample payload를 초안에 남깁니다.</p>
+                <section class="business-event-source-panel" data-event-source-panel="data_lake_query" hidden>
+                  <strong>Data Lake 조회 결과</strong>
+                  <p class="muted">Data Lake query 결과를 받아 업무 이벤트 후보로 판단합니다.</p>
+                  <div class="form-grid compact-grid">
+                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: alarm-data-lake" /></label>
+                    <label>업무 이벤트 이름<input name="event_source_config.target_event_type" placeholder="예: 설비 Alarm 대응 필요" /></label>
+                    <label class="wide">Query 이름 또는 SQL<textarea name="event_source_config.health_check.tool_or_query" placeholder="예: SELECT * FROM alarms WHERE level = 'CRITICAL'"></textarea></label>
+                    <label>조회 주기<input name="event_source_config.health_check.schedule" placeholder="예: every 10 minutes 또는 manual_preview" /></label>
+                    <label class="wide">결과 샘플<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","alarm":"PRESS-01","level":"CRITICAL"}'></textarea></label>
+                  </div>
+                </section>
+                <section class="business-event-source-panel" data-event-source-panel="kafka" hidden>
+                  <strong>Kafka raw topic 신호</strong>
+                  <p class="muted">외부 신호는 <code>boi.raw-signals</code>로 받고, 기준을 통과한 경우에만 업무 이벤트로 발생시킵니다.</p>
                   <div class="form-grid compact-grid">
                     <label>출처 이름<input name="event_source_config.source_name" placeholder="예: fab-mes-kafka" /></label>
-                    <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: equipment.alarm.raised.v1" /></label>
-                    <label>Sample payload<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment_id":"ETCH-VM-01","alarm_code":"PRESS-01"}'></textarea></label>
+                    <label>업무 이벤트 이름<input name="event_source_config.target_event_type" placeholder="예: 설비 Alarm 대응 필요" /></label>
+                    <label class="wide">샘플 메시지<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment_id":"ETCH-VM-01","alarm_code":"PRESS-01"}'></textarea></label>
                   </div>
                 </section>
-                <section class="event-adapter-panel" data-event-source-panel="manual" hidden>
-                  <strong>수동 시작</strong>
-                  <p class="muted">별도 adapter를 만들지 않고 사용자가 `/api/events/publish` 확인 흐름으로 Event를 발생시킵니다.</p>
-                  <label>대상 Event<input name="event_source_config.target_event_type" placeholder="예: manual.sop.started.v1" /></label>
+                <section class="business-event-source-panel" data-event-source-panel="scheduler" hidden>
+                  <strong>Scheduler가 만드는 신호</strong>
+                  <p class="muted">정해진 주기에 내부 신호를 만들고, 기준을 통과하면 업무 이벤트로 봅니다.</p>
+                  <div class="form-grid compact-grid">
+                    <label>출처 이름<input name="event_source_config.source_name" placeholder="예: daily-equipment-check" /></label>
+                    <label>업무 이벤트 이름<input name="event_source_config.target_event_type" placeholder="예: 설비 Daily Check 필요" /></label>
+                    <label>일정 설명<input name="event_source_config.health_check.schedule" placeholder="예: 매일 09:00" /></label>
+                    <label class="wide">기본 입력<textarea name="event_source_config.sample_payload" placeholder='예: {"line":"ETCH","shift":"day"}'></textarea></label>
+                  </div>
                 </section>
               </div>
+
+              <div class="business-event-occurrence-panels">
+                <section class="event-occurrence-panel" data-occurrence-panel="immediate">
+                  <strong>신호 하나가 곧 업무 요청입니다.</strong>
+                  <p class="muted">명확한 API/Webhook 요청처럼 들어온 신호를 바로 업무 이벤트로 봅니다.</p>
+                </section>
+
+                <section class="event-occurrence-panel" data-occurrence-panel="condition" hidden>
+                  <strong>조건이 맞을 때만 발생합니다.</strong>
+                  <div class="form-grid compact-grid">
+                    <label>볼 값<input name="event_condition_field" placeholder="예: payload.level" /></label>
+                    <label>조건
+                      <select name="event_condition_operator">
+                        <option value="eq" selected>같음</option>
+                        <option value="in">목록 중 하나</option>
+                        <option value="contains">포함</option>
+                        <option value="exists">값이 있음</option>
+                      </select>
+                    </label>
+                    <label>기준값<input name="event_condition_value" placeholder="예: CRITICAL" /></label>
+                  </div>
+                </section>
+
+                <section class="event-occurrence-panel" data-occurrence-panel="repeated" hidden>
+                  <strong>반복되거나 계속될 때 하나의 업무 사건으로 묶습니다.</strong>
+                  <div class="form-grid compact-grid">
+                    <label>같은 업무로 묶을 기준<textarea name="fingerprint_fields" placeholder="예: equipment_id, alarm_code"></textarea></label>
+                    <label>중복으로 묶는 시간(초)<input name="dedupe_window_seconds" type="number" min="0" value="600" /></label>
+                    <label>반복 기준 횟수<input name="threshold_count" type="number" min="1" value="2" /></label>
+                  </div>
+                </section>
+
+                <section class="event-occurrence-panel" data-occurrence-panel="transition" hidden>
+                  <strong>상태가 의미 있게 바뀔 때만 발생합니다.</strong>
+                  <div class="form-grid compact-grid">
+                    <label>상태 값 위치<input name="event_state_field" placeholder="예: payload.status" /></label>
+                    <label>이전 상태<input name="event_state_from_values" placeholder="예: normal" /></label>
+                    <label>이후 상태<input name="event_state_to_values" placeholder="예: alarm, resolved" /></label>
+                    <label>같은 업무로 묶을 기준<textarea name="fingerprint_fields" placeholder="예: equipment_id, alarm_code"></textarea></label>
+                  </div>
+                </section>
+
+                <section class="event-occurrence-panel" data-occurrence-panel="composite" hidden>
+                  <strong>필요한 신호가 모두 모였을 때 발생합니다.</strong>
+                  <div class="form-grid compact-grid">
+                    <label>필요한 신호<textarea name="event_required_signals" placeholder="예: alarm, trend_anomaly, important_lot"></textarea></label>
+                    <label>신호 구분 값 위치<input name="event_signal_key_field" placeholder="예: payload.signal_type" /></label>
+                    <label>모으는 시간(초)<input name="aggregation_window_seconds" type="number" min="0" value="600" /></label>
+                  </div>
+                </section>
+
+                <section class="event-occurrence-panel" data-occurrence-panel="confirmation" hidden>
+                  <strong>담당자가 확인해야 업무 이벤트가 발생합니다.</strong>
+                  <div class="form-grid compact-grid">
+                    <label>확인 담당자<input name="event_confirmation_owner" placeholder="예: shift-lead, equipment-owner" /></label>
+                    <label class="wide">확인 기준<textarea name="event_confirmation_note" placeholder="예: Alarm 후보를 Inbox에서 확인한 뒤 SOP를 시작합니다."></textarea></label>
+                  </div>
+                </section>
+
+                <section class="event-occurrence-panel" data-occurrence-panel="manual" hidden>
+                  <strong>외부 신호 없이 사람이 직접 시작합니다.</strong>
+                  <div class="form-grid compact-grid">
+                    <label>수동 실행 이름<input name="event_source_config.source_name" placeholder="예: manual-alarm-review" /></label>
+                    <label>업무 이벤트 이름<input name="event_source_config.target_event_type" placeholder="예: manual.sop.started.v1" /></label>
+                    <label class="wide">담당자 입력 예시<textarea name="event_source_config.sample_payload" placeholder='예: {"equipment":"ETCH-VM-01","reason":"현장 점검 요청"}'></textarea></label>
+                  </div>
+                </section>
+              </div>
+
+              <details class="business-event-advanced" data-occurrence-advanced>
+                <summary>고급 설정</summary>
+                <div class="form-grid compact-grid">
+                  <label>값 연결<textarea name="event_source_config.payload_mapping" placeholder='예: {"equipment_id":"$.equipment","alarm_code":"$.alarm"}'></textarea></label>
+                  <label>조건 JSON<textarea name="business_event_conditions" placeholder='예: {"all":[{"field":"payload.level","op":"eq","value":"CRITICAL"}]}'></textarea></label>
+                  <label>인증 정책<textarea name="event_source_config.auth_policy" placeholder='예: {"type":"service_token"}'></textarea></label>
+                </div>
+                <div class="event-adapter-panels">
+                  <section class="event-adapter-panel" data-event-source-panel="webhook">
+                    <strong>Webhook 신호</strong>
+                    <p class="muted">Webhook 경로와 서비스 토큰 정책은 미리보기에서 확인합니다.</p>
+                  </section>
+                  <section class="event-adapter-panel" data-event-source-panel="api_poll" hidden>
+                    <strong>API 조회 신호</strong>
+                    <p class="muted">API endpoint, Method, 조회 주기는 기본 설정에서 입력합니다.</p>
+                  </section>
+                  <section class="event-adapter-panel" data-event-source-panel="mcp data_lake_query" hidden>
+                    <strong>MCP/Data Lake 신호</strong>
+                    <p class="muted">Tool, Query, 실행 입력은 기본 설정에서 입력합니다.</p>
+                  </section>
+                  <section class="event-adapter-panel" data-event-source-panel="kafka" hidden>
+                    <strong>Kafka raw topic 신호</strong>
+                    <p class="muted">외부 신호를 raw topic으로 받고, 기준을 통과한 경우에만 업무 이벤트로 발생시킵니다.</p>
+                  </section>
+                  <section class="event-adapter-panel" data-event-source-panel="scheduler" hidden>
+                    <strong>Scheduler 신호</strong>
+                    <p class="muted">일정 설명과 기본 입력은 기본 설정에서 입력합니다.</p>
+                  </section>
+                </div>
+              </details>
               <div class="event-adapter-actions">
-                <button type="button" class="secondary-button" data-event-adapter-action="plan">설정 미리보기</button>
-                <button type="button" class="secondary-button" data-event-adapter-action="test">샘플 테스트</button>
-                <button type="button" class="secondary-button" data-event-adapter-action="draft">Adapter 초안 저장</button>
+                <button type="button" class="secondary-button" data-event-adapter-action="plan">발생 기준 미리보기</button>
+                <button type="button" class="secondary-button" data-event-adapter-action="test">샘플로 확인하기</button>
+                <button type="button" class="secondary-button" data-event-adapter-action="draft">업무 이벤트 정의 초안 저장</button>
               </div>
               <div class="event-adapter-preview" data-event-adapter-preview hidden></div>
             </section>
             <div class="sop-flow-fields">
               <section class="sop-flow-mode-panel" data-event-mode-field="reuse" hidden>
                 <div class="mode-panel-heading">
-                  <strong>기존 Event 선택</strong>
-                  <span>Event 이름, 설명, 업무 키워드로 찾아 연결합니다.</span>
+                  <strong>기존 업무 이벤트 선택</strong>
+                  <span>업무 이벤트 이름, 설명, 업무 키워드로 찾아 연결합니다.</span>
                 </div>
                 <div class="selected-link" data-selected-link="linked_event_types">선택 안 됨</div>
                 <div class="inline-catalog-picker" data-inline-picker="linked_event_types" data-picker-kind="event_types"></div>
@@ -280,13 +409,13 @@
 
               <section class="sop-flow-mode-panel" data-event-mode-field="draft" hidden>
                 <div class="mode-panel-heading">
-                  <strong>새 Event 초안</strong>
-                  <span>새 업무 시작 시점과 남길 정보를 간단히 적습니다.</span>
+                  <strong>새 업무 이벤트 초안</strong>
+                  <span>업무가 발생했다고 볼 기준과 남길 정보를 간단히 적습니다.</span>
                 </div>
                 <div class="draft-suggestion-card" data-draft-suggestion="event" hidden></div>
                 <label>
-                  업무 시점 이름
-                  <input name="event_display_name" placeholder="예: 회의 종료" data-draft-input="event" />
+                  업무 이벤트 이름
+                  <input name="event_display_name" placeholder="예: 설비 Alarm 대응 필요" data-draft-input="event" />
                 </label>
                 <input type="hidden" name="event_type" />
                 <label>
@@ -295,8 +424,8 @@
                 </label>
                 <div class="draft-field-chips" data-draft-field-chips="payload_fields"></div>
                 <div class="section-refine-actions">
-                  <button type="button" class="secondary-button" data-section-refine="event" disabled>이 Event 초안 다듬기</button>
-                  <span data-section-refine-hint="event">업무 시점 이름을 먼저 적어주세요.</span>
+                  <button type="button" class="secondary-button" data-section-refine="event" disabled>업무 이벤트 초안 다듬기</button>
+                  <span data-section-refine-hint="event">업무 이벤트 이름을 먼저 적어주세요.</span>
                 </div>
               </section>
 
@@ -367,13 +496,23 @@
                     <label><input type="checkbox" data-schedule-weekday value="SAT" /> 토</label>
                     <label><input type="checkbox" data-schedule-weekday value="SUN" /> 일</label>
                   </fieldset>
-                  <p class="schedule-preview" data-schedule-preview>매주 월요일 09:00에 Event 초안이 만들어집니다.</p>
+                  <p class="schedule-preview" data-schedule-preview>매주 월요일 09:00에 업무 이벤트 초안이 만들어집니다.</p>
                 </div>
               </section>
 
               <section class="sop-flow-mode-panel muted-panel" data-event-mode-field="skip" hidden>
-                <strong>수동 실행으로 정리합니다.</strong>
-                <span>Event 없이 사용자가 필요할 때 SOP나 Action을 실행하는 흐름으로 둡니다.</span>
+                <div class="mode-panel-heading">
+                  <strong>수동 실행으로 정리합니다.</strong>
+                  <span>외부 신호 없이 사용자가 필요할 때 업무 흐름을 직접 시작합니다.</span>
+                </div>
+                <label>
+                  수동 실행 이름
+                  <input name="event_source_config.source_name" placeholder="예: 현장 점검 직접 실행" />
+                </label>
+                <label>
+                  시작할 업무 이벤트
+                  <input name="event_source_config.target_event_type" placeholder="예: manual.sop.started.v1" />
+                </label>
               </section>
             </div>
           </article>
@@ -691,8 +830,8 @@
 
         <div class="registration-flow-actions">
           <section class="registration-primary-action" data-step-panel="context">
-            <button type="button" class="secondary-button" data-registration-action="plan" data-recommendation-gated disabled>추천 후보 만들기</button>
-            <p data-recommendation-hint>먼저 어떤 업무인지 적으면 기존 Event/SOP/Action 후보와 다듬기 제안을 만들 수 있습니다.</p>
+            <button type="button" class="secondary-button" data-registration-action="plan" data-recommendation-gated>추천 후보 만들기</button>
+            <p data-recommendation-hint>단계는 먼저 둘러볼 수 있습니다. 업무 설명을 입력하면 추천 품질이 좋아지고 추천 실행 조건을 만족합니다.</p>
           </section>
           <section class="registration-primary-action" data-step-panel="entry" hidden>
             <button type="button" class="primary-button" data-registration-action="preview">선택한 항목으로 확인</button>
@@ -730,7 +869,7 @@
     <aside class="panel registration-agent-assist">
       <h2>작성 도우미</h2>
       <p>입력한 설명과 선택 항목을 바탕으로 누락된 Event/SOP/Action 후보를 제안하고, 저장 시 BoI 자산 초안을 자동 정리합니다.</p>
-      <button type="button" class="secondary-button" data-registration-assist data-recommendation-gated disabled>추천 후보 만들기</button>
+      <button type="button" class="secondary-button" data-registration-assist data-recommendation-gated>추천 후보 만들기</button>
       <div class="registration-agent-suggestions" aria-live="polite"></div>
       <details>
         <summary>자동 자산화 원칙</summary>

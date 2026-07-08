@@ -7873,6 +7873,8 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
     assert "inbox.js" in body
     assert "evidence_tray.js" in body
     assert "data-inbox-decision-form" in body
+    assert "inbox-action-composer" in body
+    assert "inbox-decision-choice" in body
     assert "data-evidence-upload" in body
     assert 'data-target-type="inbox_task"' in body
     assert "data-evidence-artifacts-field" in body
@@ -7952,6 +7954,8 @@ def test_boi_inbox_manual_action_view_posts_completion_and_artifacts(boi_app_mod
     page = client.get("/inbox?employee_id=100001&view=decisions")
     body = page.text
     assert page.status_code == 200
+    assert "inbox-action-composer" in body
+    assert "inbox-decision-choice" in body
     assert 'name="outcome"' in body
     assert "조치 내용" in body
     assert "조치 근거 파일" in body
@@ -10369,11 +10373,11 @@ def test_dedicated_registration_new_pages_and_legacy_start_redirects(boi_app_mod
     assert "/api/sop-registration/draft-sessions" in response.text
     assert "/api/sop-registration/plan" in response.text
     assert "1. Event" not in response.text
-    assert "<h3>Event</h3>" in response.text
+    assert "<h3>업무 이벤트 정의</h3>" in response.text
     assert "<h3>Task 맵</h3>" in response.text
     assert "<h3>Task 상세</h3>" in response.text
-    assert "기존 Event 선택" in response.text
-    assert "새 Event 초안 만들기" in response.text
+    assert "기존 업무 이벤트 선택" in response.text
+    assert "새 업무 이벤트 정의" in response.text
     assert "이력 패턴으로 만들기" not in response.text
     assert "정해진 시간에 발생" in response.text
     assert 'data-inline-picker="linked_event_types"' in response.text
@@ -10393,12 +10397,18 @@ def test_dedicated_registration_new_pages_and_legacy_start_redirects(boi_app_mod
     assert "작성 도우미" in response.text
     assert "업무 맥락" in response.text
     assert "Event 수집 방식" not in response.text
-    assert "이 SOP는 어떻게 시작되나요?" in response.text
-    assert "외부 Webhook 수신" in response.text
-    assert "Legacy/API 주기 조회" in response.text
-    assert "MCP/Data Lake에서 가져오기" in response.text
-    assert "외부 Kafka 직접 발행" in response.text
-    assert "수동 시작" in response.text
+    assert "이 업무 이벤트는 언제 발생하나요?" in response.text
+    assert "Webhook" in response.text
+    assert "API 조회" in response.text
+    assert "MCP 실행 결과" in response.text
+    assert "Data Lake 조회 결과" in response.text
+    assert "Kafka raw topic" in response.text
+    assert "직접 입력" in response.text
+    assert "Webhook으로 들어오는 신호" in response.text
+    assert "API endpoint" in response.text
+    assert "Tool 이름" in response.text
+    assert "Query 이름 또는 SQL" in response.text
+    assert "boi.raw-signals" in response.text
     assert 'data-event-adapter-action="plan"' in response.text
     assert 'data-event-adapter-action="test"' in response.text
     assert 'data-event-adapter-action="draft"' in response.text
@@ -10414,18 +10424,19 @@ def test_dedicated_registration_new_pages_and_legacy_start_redirects(boi_app_mod
     assert 'name="okf_materialization_plan"' in response.text
     assert "추천 후보 만들기" in response.text
     assert "추천으로 채우기" not in response.text
-    assert "이 Event 초안 다듬기" in response.text
+    assert "업무 이벤트 초안 다듬기" in response.text
     assert "Workflow Task 추천" in response.text
     assert "이 Action 초안 다듬기" in response.text
     assert "Manual" in response.text
     assert "Copilot" in response.text
     assert "Autopilot" in response.text
-    assert "data-recommendation-gated disabled" in response.text
+    assert "단계는 먼저 둘러볼 수 있습니다" in response.text
+    assert "data-recommendation-gated disabled" not in response.text
     assert "추천 받기" not in response.text
     assert "선택한 항목으로 확인" in response.text
     assert "업무 단위 폴더" in response.text
     assert "일정 설정" in response.text
-    assert "매주 월요일 09:00에 Event 초안이 만들어집니다." in response.text
+    assert "매주 월요일 09:00에 업무 이벤트 초안이 만들어집니다." in response.text
     assert 'name="schedule_config"' in response.text
     assert "Cron 표현식" not in response.text
     assert "고급 설정" in response.text
@@ -11343,10 +11354,12 @@ def test_registration_new_pages_use_natural_language_and_preview_flow(boi_app_mo
     assert "단계 설계" in text
     assert "실행 연결" in text
     assert "검증·저장" in text
-    assert "업무 맥락 → 시작 신호 → SOP 단계 → 실행/판단 → BoI 결과" in text
+    assert "sop-builder-flow-strip" not in text
     assert "추천 후보 만들기" in text
+    assert "단계는 먼저 둘러볼 수 있습니다" in text
+    assert "data-recommendation-gated disabled" not in text
     assert "추천으로 채우기" not in text
-    assert "이 Event 초안 다듬기" in text
+    assert "업무 이벤트 초안 다듬기" in text
     assert "이 SOP 초안 다듬기" in text
     assert "이 Action 초안 다듬기" in text
     assert "추천 받기" not in text
@@ -11378,6 +11391,20 @@ def test_registration_new_pages_use_natural_language_and_preview_flow(boi_app_mo
     assert "고급 설정" in text
     assert "직접 ID 입력" not in text
     assert "dry run" not in text.lower()
+
+    registration_js = (boi_app_module.APP_DIR / "static" / "registration.js").read_text(encoding="utf-8")
+    assert "blockedForContext" not in registration_js
+    assert "stepOrderIndex(step) > 0 && !hasRecommendationInput()" not in registration_js
+    assert "button.disabled = index >= wizardSteps.length - 1;" in registration_js
+    assert "button.disabled = false;" in registration_js
+    assert "Task 추천에는 업무 맥락이 필요합니다" in registration_js
+    assert "Action 연결에는 먼저 대상 Task가 필요합니다" in registration_js
+    assert "발생 후 시작할 업무 흐름이 필요합니다" in registration_js
+    assert "stageExampleSeeds" in registration_js
+    assert "stage-example-card" in registration_js
+    assert "data-stage-example" in registration_js
+    assert "예시는 클릭할 때만 실제 Task로 추가되고" in registration_js
+    assert 'makeStage({stage_name: "첫 Task"' not in registration_js
 
     event_redirect = client.get("/event-types/new?employee_id=100001", follow_redirects=False)
     action_redirect = client.get("/actions/new?employee_id=100001", follow_redirects=False)
@@ -11566,10 +11593,15 @@ def test_doc_page_exposes_validated_source_edit_guidance(boi_app_module):
     assert 'data-editor-url="/api/docs/boi:public:sop:equipment-abnormal-response/body-editor?employee_id=100001"' in response.text
     assert "data-base-sha=" not in response.text
     assert '<textarea class="body-draft-textarea" spellcheck="false"></textarea>' in response.text
+    assert 'data-impact-url="/api/docs/boi:public:sop:equipment-abnormal-response/related-update/impact-preview?employee_id=100001"' in response.text
+    assert 'data-related-update-jobs-url="/api/docs/boi:public:sop:equipment-abnormal-response/related-update/jobs?employee_id=100001"' in response.text
+    assert "관련 문서 영향 분석" in response.text
     assert "Body source is loaded on demand." in response.text
     assert "# Summary" in editor.json()["body"]
     assert "Public SOP 문서" in editor.json()["body"]
     assert editor.json()["base_sha256"]
+    assert editor.json()["impact_url"].endswith("/related-update/impact-preview?employee_id=100001")
+    assert editor.json()["related_update_jobs_url"].endswith("/related-update/jobs?employee_id=100001")
     assert "/source?employee_id=100001&amp;path=data%2Fboi%2Fpublic%2Fsop%2Fequipment-abnormal-response.md" in response.text
     assert "/docs/boi:public:harness:web-draft-editing-guide?employee_id=100001" in response.text
 
@@ -11612,6 +11644,213 @@ def test_doc_body_editor_previews_and_applies_with_commit(boi_app_module, monkey
     assert body["commit_status"] == "committed"
     assert body["commit_hash"] == "body123"
     assert "Edited Body Apply" in source_path.read_text(encoding="utf-8")
+
+
+def test_related_update_impact_preview_finds_backlinks_and_source_refs(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    ref_doc = boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/test",
+            "title": "Related Update Source Ref Test",
+            "description": "source_refs should be included in related update impact",
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:private:100001:related-update-source-ref",
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "test"},
+            "acl_policy": "acl:private:100001",
+            "status": "draft",
+            "source_refs": [{"type": "boi", "ref": "boi:public:actions:api:request-trend-history"}],
+        },
+        "# Summary\n\nRelated update source ref test.",
+    )
+
+    response = client.post(
+        "/api/docs/boi:public:actions:api:request-trend-history/related-update/impact-preview?employee_id=100001",
+        json={"max_items": 50},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mutating"] is False
+    by_id = {item["target"]["boi_id"]: item for item in body["items"]}
+    assert "boi:public:sop:equipment-abnormal-response" in by_id
+    assert "backlink" in by_id["boi:public:sop:equipment-abnormal-response"]["reason_kinds"]
+    assert ref_doc["metadata"]["boi_id"] in by_id
+    assert "source_ref" in by_id[ref_doc["metadata"]["boi_id"]]["reason_kinds"]
+
+
+def test_related_update_job_requires_confirmation_and_applies_selected_patch(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "rel123"})
+    client = TestClient(boi_app_module.app)
+    target = boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/test",
+            "title": "Related Update Apply Target",
+            "description": "selected related update patch target",
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:private:100001:related-update-apply-target",
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "test"},
+            "acl_policy": "acl:private:100001",
+            "status": "draft",
+            "source_refs": [{"type": "boi", "ref": "boi:public:actions:api:request-trend-history"}],
+        },
+        "# Summary\n\nApply target before related update.",
+    )
+
+    job_response = client.post(
+        "/api/docs/boi:public:actions:api:request-trend-history/related-update/jobs?employee_id=100001",
+        json={"user_confirmed": True, "target_boi_ids": [target["metadata"]["boi_id"]]},
+    )
+
+    assert job_response.status_code == 200
+    job = job_response.json()
+    assert job["status"] == "drafted"
+    assert (boi_app_module.RELATED_UPDATE_ROOT / f"{job['job_id']}.json").exists()
+    patch = job["patches"][0]
+    assert patch["status"] == "draft_ready"
+    assert "Related Update Review" in patch["proposed_content"]
+    fetched = client.get(f"/api/docs/related-update/jobs/{job['job_id']}?employee_id=100001")
+    assert fetched.status_code == 200
+    assert fetched.json()["job_id"] == job["job_id"]
+
+    unconfirmed = client.post(
+        f"/api/docs/related-update/jobs/{job['job_id']}/apply?employee_id=100001",
+        json={"patch_ids": [patch["patch_id"]]},
+    )
+    assert unconfirmed.status_code == 400
+
+    applied = client.post(
+        f"/api/docs/related-update/jobs/{job['job_id']}/apply?employee_id=100001",
+        json={"user_confirmed": True, "patch_ids": [patch["patch_id"]], "author": "100001"},
+    )
+
+    assert applied.status_code == 200
+    applied_body = applied.json()
+    assert applied_body["ok"] is True
+    assert applied_body["patches"][0]["status"] == "applied"
+    assert applied_body["patches"][0]["apply_result"]["commit_hash"] == "rel123"
+    assert "Related Update Review" in Path(target["path"]).read_text(encoding="utf-8")
+
+
+def test_related_update_apply_stale_base_does_not_overwrite_target(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "rel-stale"})
+    client = TestClient(boi_app_module.app)
+    target = boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/test",
+            "title": "Related Update Stale Target",
+            "description": "stale base should not be overwritten",
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:private:100001:related-update-stale-target",
+            "visibility": "private",
+            "classification": "internal",
+            "owner": "100001",
+            "author": {"type": "agent", "agent_id": "test"},
+            "acl_policy": "acl:private:100001",
+            "status": "draft",
+            "source_refs": [{"type": "boi", "ref": "boi:public:actions:api:request-trend-history"}],
+        },
+        "# Summary\n\nStale target before related update.",
+    )
+    job = client.post(
+        "/api/docs/boi:public:actions:api:request-trend-history/related-update/jobs?employee_id=100001",
+        json={"user_confirmed": True, "target_boi_ids": [target["metadata"]["boi_id"]]},
+    ).json()
+    patch = job["patches"][0]
+    target_path = Path(target["path"])
+    drifted = target_path.read_text(encoding="utf-8") + "\nManual drift after draft.\n"
+    target_path.write_text(drifted, encoding="utf-8")
+
+    response = client.post(
+        f"/api/docs/related-update/jobs/{job['job_id']}/apply?employee_id=100001",
+        json={"user_confirmed": True, "patch_ids": [patch["patch_id"]], "author": "100001"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["results"][0]["status"] == "failed"
+    assert "stale_base" in str(body["results"][0]["detail"])
+    assert target_path.read_text(encoding="utf-8") == drifted
+
+
+def test_related_update_job_generates_source_wiki_refresh_patch(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "sourcewiki"})
+    client = TestClient(boi_app_module.app)
+    wiki_id = "related-update-source-wiki"
+    manifest_dir = boi_app_module.SOURCE_WIKI_ROOT / wiki_id
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "ok": True,
+        "status": "generated",
+        "wiki_id": wiki_id,
+        "job_id": "source-wiki-latest",
+        "title": "Related Update Source Wiki",
+        "source": {"source_path": "/workspace/source", "commit_sha": "abc123"},
+        "inventory": {
+            "source_signature": "new-source-signature",
+            "selected_count": 1,
+            "role_counts": {"entrypoint": 1},
+            "selected": [
+                {
+                    "path": "README.md",
+                    "role": "entrypoint",
+                    "sha256": "readme-sha",
+                    "headings": ["Intro"],
+                    "excerpt": "Updated source wiki excerpt.",
+                }
+            ],
+        },
+        "pages": [],
+    }
+    (manifest_dir / "latest.json").write_text(boi_app_module.json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    metadata = boi_app_module.make_metadata(
+        boi_type="boi/source-wiki-page",
+        title="Related Update Source Wiki Overview",
+        description="stale source wiki page",
+        owner="100001",
+        visibility="public",
+        classification="internal",
+        source_refs=[
+            {"type": "source-wiki-root", "ref": "/workspace/source"},
+            {"type": "source-signature", "ref": "old-source-signature"},
+        ],
+        status="reviewed",
+        tags=["SourceWiki", wiki_id],
+        reviewer="100001",
+    )
+    metadata["source_wiki"] = {
+        "wiki_id": wiki_id,
+        "job_id": "source-wiki-old",
+        "page_slug": "overview",
+        "source_signature": "old-source-signature",
+        "commit_sha": "old",
+    }
+    metadata["review"] = {"reviewer": "100001", "review_status": "source_grounded_generated"}
+    source_wiki_doc = boi_app_module.write_boi(metadata, "# Summary\n\nOld source wiki page.")
+
+    job_response = client.post(
+        "/api/docs/boi:public:sop:equipment-abnormal-response/related-update/jobs?employee_id=100001",
+        json={"user_confirmed": True, "target_boi_ids": [source_wiki_doc["metadata"]["boi_id"]]},
+    )
+
+    assert job_response.status_code == 200
+    job = job_response.json()
+    assert job["patches"][0]["patch_mode"] == "source_wiki_refresh"
+    assert job["patches"][0]["status"] == "draft_ready"
+    assert "new-source-signature" in job["patches"][0]["proposed_content"]
+    assert "Updated source wiki excerpt." in job["patches"][0]["proposed_content"]
 
 
 def test_generated_private_doc_page_uses_direct_lookup_without_accessible_docs(boi_app_module, monkeypatch):

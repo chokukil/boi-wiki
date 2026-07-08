@@ -200,6 +200,13 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "event_type_draft_create", "description": "Create a user-confirmed Event Type draft and catalog patch proposal."},
     {"name": "event_publish_plan", "description": "Turn a natural-language business event request into an Event publish plan and candidate Event Types."},
     {"name": "event_publish_preview", "description": "Preview what happens when an Event is published, including workflow linkage and recent history."},
+    {"name": "business_event_definition_plan", "description": "Plan a user-facing Business Event Definition: when an external signal or manual input should become business work."},
+    {"name": "business_event_definition_test", "description": "Preview how a sample signal would be judged by a Business Event Definition without publishing."},
+    {"name": "business_event_definition_draft_create", "description": "Create a confirmed Business Event Definition draft."},
+    {"name": "business_event_definition_activate", "description": "Activate a Business Event Definition draft for runtime evaluation."},
+    {"name": "business_event_signal_evaluate", "description": "Evaluate an external signal against an active Business Event Definition."},
+    {"name": "business_event_run", "description": "Manually run a Business Event Definition with user-confirmed inputs."},
+    {"name": "business_event_confirm", "description": "Confirm or reject a pending Business Event Definition candidate."},
     {"name": "event_ingestion_adapter_plan", "description": "Plan an Event Producer adapter for Webhook, API poll, MCP/Data Lake, Kafka, or manual SOP start without applying runtime changes."},
     {"name": "event_ingestion_adapter_test", "description": "Run a preview-only Event Producer adapter test and return sample Event payload mapping without publishing."},
     {"name": "event_ingestion_adapter_draft_create", "description": "Create a confirmed Event Producer adapter draft for later validation and publish request."},
@@ -334,6 +341,13 @@ MCP_TOOL_IA_GROUPS = [
         {
             "event_publish_plan",
             "event_publish_preview",
+            "business_event_definition_plan",
+            "business_event_definition_test",
+            "business_event_definition_draft_create",
+            "business_event_definition_activate",
+            "business_event_signal_evaluate",
+            "business_event_run",
+            "business_event_confirm",
             "event_ingestion_adapter_plan",
             "event_ingestion_adapter_test",
             "event_ingestion_adapter_draft_create",
@@ -2525,13 +2539,129 @@ async def event_publish_preview(
     )
 
 
+@mcp.tool(name="business_event_definition_plan")
+async def business_event_definition_plan(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    definition: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Plan a Business Event Definition using user-facing occurrence concepts."""
+    return await api_post("/api/business-event-definitions/plan", employee_id=employee_id, payload=definition or {})
+
+
+@mcp.tool(name="business_event_definition_test")
+async def business_event_definition_test(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    definition: dict[str, Any] | None = None,
+    definition_id: str = "",
+    sample_signal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preview a sample signal decision without publishing a business event."""
+    return await api_post(
+        "/api/business-event-definitions/test",
+        employee_id=employee_id,
+        payload={"definition": definition or {}, "definition_id": definition_id, "sample_signal": sample_signal or {}},
+    )
+
+
+@mcp.tool(name="business_event_definition_draft_create")
+async def business_event_definition_draft_create(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    definition: dict[str, Any] | None = None,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Create a Business Event Definition draft."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before creating a Business Event Definition draft")
+    return await api_post("/api/business-event-definitions/drafts", employee_id=employee_id, payload={**(definition or {}), "user_confirmed": True})
+
+
+@mcp.tool(name="business_event_definition_activate")
+async def business_event_definition_activate(
+    definition_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Activate a Business Event Definition for runtime signal evaluation."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before activating a Business Event Definition")
+    return await api_post(f"/api/business-event-definitions/{definition_id}/activate", employee_id=employee_id, payload={"user_confirmed": True})
+
+
+@mcp.tool(name="business_event_signal_evaluate")
+async def business_event_signal_evaluate(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    definition_id: str = "",
+    source_kind: str = "",
+    source_name: str = "",
+    payload: dict[str, Any] | None = None,
+    signal: dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Evaluate an external signal through the Business Event Definition detector."""
+    return await api_post(
+        "/api/signals/evaluate",
+        employee_id=employee_id,
+        payload={
+            "definition_id": definition_id,
+            "source_kind": source_kind,
+            "source_name": source_name,
+            "payload": payload or {},
+            "signal": signal or {},
+            "dry_run": dry_run,
+        },
+    )
+
+
+@mcp.tool(name="business_event_run")
+async def business_event_run(
+    definition_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    payload: dict[str, Any] | None = None,
+    note: str = "",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Manually run a Business Event Definition."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before manually running a Business Event Definition")
+    return await api_post(
+        f"/api/business-event-definitions/{definition_id}/run",
+        employee_id=employee_id,
+        payload={"payload": payload or {}, "note": note, "user_confirmed": True},
+    )
+
+
+@mcp.tool(name="business_event_confirm")
+async def business_event_confirm(
+    definition_id: str,
+    confirmation_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    decision: str = "confirm",
+    note: str = "",
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Confirm or reject a pending Business Event Definition candidate."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before confirming a Business Event candidate")
+    return await api_post(
+        f"/api/business-event-definitions/{definition_id}/confirm",
+        employee_id=employee_id,
+        payload={"confirmation_id": confirmation_id, "decision": decision, "note": note, "user_confirmed": True},
+    )
+
+
 @mcp.tool(name="event_ingestion_adapter_plan")
 async def event_ingestion_adapter_plan(
     employee_id: str = DEFAULT_EMPLOYEE_ID,
     source_kind: str = "",
     source_name: str = "",
     target_event_type: str = "",
+    occurrence_mode: str = "",
     payload_mapping: dict[str, Any] | None = None,
+    conditions: dict[str, Any] | None = None,
+    fingerprint_fields: list[str] | None = None,
+    dedupe_window_seconds: int = 600,
+    aggregation_window_seconds: int = 600,
+    threshold_count: int = 1,
     auth_policy: dict[str, Any] | None = None,
     sample_payload: dict[str, Any] | None = None,
     health_check: dict[str, Any] | None = None,
@@ -2544,7 +2674,13 @@ async def event_ingestion_adapter_plan(
             "source_kind": source_kind,
             "source_name": source_name,
             "target_event_type": target_event_type,
+            "occurrence_mode": occurrence_mode,
             "payload_mapping": payload_mapping or {},
+            "conditions": conditions or {},
+            "fingerprint_fields": fingerprint_fields or [],
+            "dedupe_window_seconds": dedupe_window_seconds,
+            "aggregation_window_seconds": aggregation_window_seconds,
+            "threshold_count": threshold_count,
             "auth_policy": auth_policy or {},
             "sample_payload": sample_payload or {},
             "health_check": health_check or {},
@@ -2559,7 +2695,10 @@ async def event_ingestion_adapter_test(
     source_kind: str = "",
     source_name: str = "",
     target_event_type: str = "",
+    occurrence_mode: str = "",
     payload_mapping: dict[str, Any] | None = None,
+    conditions: dict[str, Any] | None = None,
+    fingerprint_fields: list[str] | None = None,
     sample_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Preview-test an Event Producer adapter mapping without publishing an Event."""
@@ -2571,7 +2710,10 @@ async def event_ingestion_adapter_test(
             "source_kind": source_kind,
             "source_name": source_name,
             "target_event_type": target_event_type,
+            "occurrence_mode": occurrence_mode,
             "payload_mapping": payload_mapping or {},
+            "conditions": conditions or {},
+            "fingerprint_fields": fingerprint_fields or [],
             "sample_payload": sample_payload or {},
         },
     )
@@ -4324,6 +4466,87 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
             service_token=True,
         )
+    elif tool_name == "business_event_definition_plan":
+        result = await api_post(
+            "/api/business-event-definitions/plan",
+            employee_id=employee_id,
+            payload=args.get("definition") if isinstance(args.get("definition"), dict) else args,
+            service_token=True,
+        )
+    elif tool_name == "business_event_definition_test":
+        result = await api_post(
+            "/api/business-event-definitions/test",
+            employee_id=employee_id,
+            payload={
+                "definition": args.get("definition") if isinstance(args.get("definition"), dict) else {},
+                "definition_id": str(args.get("definition_id") or ""),
+                "sample_signal": args.get("sample_signal") if isinstance(args.get("sample_signal"), dict) else {},
+            },
+            service_token=True,
+        )
+    elif tool_name == "business_event_definition_draft_create":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        definition = args.get("definition") if isinstance(args.get("definition"), dict) else {}
+        result = await api_post(
+            "/api/business-event-definitions/drafts",
+            employee_id=employee_id,
+            payload={**definition, "user_confirmed": True},
+            service_token=True,
+        )
+    elif tool_name == "business_event_definition_activate":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        definition_id = str(args.get("definition_id") or "")
+        result = await api_post(
+            f"/api/business-event-definitions/{definition_id}/activate",
+            employee_id=employee_id,
+            payload={"user_confirmed": True},
+            service_token=True,
+        )
+    elif tool_name == "business_event_signal_evaluate":
+        result = await api_post(
+            "/api/signals/evaluate",
+            employee_id=employee_id,
+            payload={
+                "definition_id": str(args.get("definition_id") or ""),
+                "source_kind": str(args.get("source_kind") or ""),
+                "source_name": str(args.get("source_name") or ""),
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+                "signal": args.get("signal") if isinstance(args.get("signal"), dict) else {},
+                "dry_run": bridge_bool(args.get("dry_run")),
+            },
+            service_token=True,
+        )
+    elif tool_name == "business_event_run":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        definition_id = str(args.get("definition_id") or "")
+        result = await api_post(
+            f"/api/business-event-definitions/{definition_id}/run",
+            employee_id=employee_id,
+            payload={
+                "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+                "note": str(args.get("note") or ""),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
+    elif tool_name == "business_event_confirm":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        definition_id = str(args.get("definition_id") or "")
+        result = await api_post(
+            f"/api/business-event-definitions/{definition_id}/confirm",
+            employee_id=employee_id,
+            payload={
+                "confirmation_id": str(args.get("confirmation_id") or ""),
+                "decision": str(args.get("decision") or "confirm"),
+                "note": str(args.get("note") or ""),
+                "user_confirmed": True,
+            },
+            service_token=True,
+        )
     elif tool_name == "event_ingestion_adapter_plan":
         result = await api_post(
             "/api/event-ingestion/adapters/plan",
@@ -4332,7 +4555,13 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "source_kind": str(args.get("source_kind") or ""),
                 "source_name": str(args.get("source_name") or ""),
                 "target_event_type": str(args.get("target_event_type") or ""),
+                "occurrence_mode": str(args.get("occurrence_mode") or args.get("trigger_mode") or ""),
                 "payload_mapping": args.get("payload_mapping") if isinstance(args.get("payload_mapping"), dict) else {},
+                "conditions": args.get("conditions") if isinstance(args.get("conditions"), dict) else {},
+                "fingerprint_fields": args.get("fingerprint_fields") if isinstance(args.get("fingerprint_fields"), list) else [],
+                "dedupe_window_seconds": int(args.get("dedupe_window_seconds") or 600),
+                "aggregation_window_seconds": int(args.get("aggregation_window_seconds") or 600),
+                "threshold_count": int(args.get("threshold_count") or 1),
                 "auth_policy": args.get("auth_policy") if isinstance(args.get("auth_policy"), dict) else {},
                 "sample_payload": args.get("sample_payload") if isinstance(args.get("sample_payload"), dict) else {},
                 "health_check": args.get("health_check") if isinstance(args.get("health_check"), dict) else {},
@@ -4348,7 +4577,10 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "source_kind": str(args.get("source_kind") or ""),
                 "source_name": str(args.get("source_name") or ""),
                 "target_event_type": str(args.get("target_event_type") or ""),
+                "occurrence_mode": str(args.get("occurrence_mode") or args.get("trigger_mode") or ""),
                 "payload_mapping": args.get("payload_mapping") if isinstance(args.get("payload_mapping"), dict) else {},
+                "conditions": args.get("conditions") if isinstance(args.get("conditions"), dict) else {},
+                "fingerprint_fields": args.get("fingerprint_fields") if isinstance(args.get("fingerprint_fields"), list) else [],
                 "sample_payload": args.get("sample_payload") if isinstance(args.get("sample_payload"), dict) else {},
             },
             service_token=True,

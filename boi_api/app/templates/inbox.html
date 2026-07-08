@@ -112,8 +112,8 @@
           method="post"
           action="/inbox/task-refs/{{ item.task_ref | urlencode }}/decision?employee_id={{ employee_id }}"
         >
-          <div class="inbox-decision-controls">
-            <label>
+          <div class="inbox-decision-controls inbox-action-composer">
+            <label class="inbox-decision-choice">
               판단
               <select name="decision" required>
                 <option value="approve">승인</option>
@@ -163,8 +163,8 @@
           method="post"
           action="/inbox/task-refs/{{ item.task_ref | urlencode }}/complete?employee_id={{ employee_id }}"
         >
-          <div class="inbox-decision-controls">
-            <label>
+          <div class="inbox-decision-controls inbox-action-composer">
+            <label class="inbox-decision-choice">
               조치 결과
               <select name="outcome" required>
                 <option value="completed">완료</option>

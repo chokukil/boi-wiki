@@ -94,7 +94,7 @@ services:
       - -lc
       - |
         set -e
-        for topic in boi.events boi.audit boi.dead-letter; do
+        for topic in boi.events boi.raw-signals boi.audit boi.dead-letter; do
           /opt/kafka/bin/kafka-topics.sh \
             --bootstrap-server kafka:9092 \
             --create --if-not-exists \
@@ -225,6 +225,7 @@ services:
       KAFKA_SSL_CAFILE: ${KAFKA_SSL_CAFILE:-}
       EVENT_ROUTER_AIOKAFKA_LOG_LEVEL: ${EVENT_ROUTER_AIOKAFKA_LOG_LEVEL:-CRITICAL}
       BOI_EVENTS_TOPIC: ${BOI_EVENTS_TOPIC:-boi.events}
+      BOI_RAW_SIGNALS_TOPIC: ${BOI_RAW_SIGNALS_TOPIC:-boi.raw-signals}
       BOI_AUDIT_TOPIC: ${BOI_AUDIT_TOPIC:-boi.audit}
       BOI_DLQ_TOPIC: ${BOI_DLQ_TOPIC:-boi.dead-letter}
       DEMO_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
@@ -385,6 +386,7 @@ services:
       KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:-}
       KAFKA_SSL_CAFILE: ${KAFKA_SSL_CAFILE:-}
       BOI_EVENTS_TOPIC: ${BOI_EVENTS_TOPIC:-boi.events}
+      BOI_RAW_SIGNALS_TOPIC: ${BOI_RAW_SIGNALS_TOPIC:-boi.raw-signals}
       BOI_AUDIT_TOPIC: ${BOI_AUDIT_TOPIC:-boi.audit}
       BOI_DLQ_TOPIC: ${BOI_DLQ_TOPIC:-boi.dead-letter}
       EVENT_ROUTER_GROUP_ID: ${EVENT_ROUTER_GROUP_ID:-boi-event-router}

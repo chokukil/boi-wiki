@@ -33,7 +33,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 124
+    assert body["capabilities"]["tools"] == 131
     assert body["capabilities"]["tools"] == len(body["capability_lists"]["tools"])
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"

@@ -20,6 +20,7 @@ KAFKA_SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD", "")
 KAFKA_SSL_CAFILE = os.getenv("KAFKA_SSL_CAFILE", "")
 KAFKA_CLIENT_LOG_LEVEL = os.getenv("EVENT_ROUTER_AIOKAFKA_LOG_LEVEL", "CRITICAL").upper()
 TOPIC = os.getenv("BOI_EVENTS_TOPIC", "boi.events")
+RAW_SIGNALS_TOPIC = os.getenv("BOI_RAW_SIGNALS_TOPIC", "boi.raw-signals")
 AUDIT_TOPIC = os.getenv("BOI_AUDIT_TOPIC", "boi.audit")
 DLQ_TOPIC = os.getenv("BOI_DLQ_TOPIC", "boi.dead-letter")
 GROUP_ID = os.getenv("EVENT_ROUTER_GROUP_ID", "boi-event-router")
@@ -292,6 +293,30 @@ async def enrich_generated_boi(event: dict[str, Any], dispatch_result: dict[str,
         return {"ok": False, "status": "enrichment_failed", "error": repr(exc)}
 
 
+async def evaluate_raw_signal(signal: dict[str, Any]) -> dict[str, Any]:
+    employee_id = (
+        ((signal.get("actor") or {}).get("employee_id") if isinstance(signal.get("actor"), dict) else "")
+        or str(signal.get("employee_id") or signal.get("actor_employee_id") or "100001")
+    )
+    payload = {
+        "definition_id": str(signal.get("definition_id") or ""),
+        "source_kind": "kafka",
+        "source_name": str(signal.get("source_name") or RAW_SIGNALS_TOPIC),
+        "payload": signal.get("payload") if isinstance(signal.get("payload"), dict) else signal,
+        "signal": {**signal, "source_kind": "kafka", "source_name": str(signal.get("source_name") or RAW_SIGNALS_TOPIC)},
+        "trace_id": signal.get("trace_id"),
+    }
+    async with httpx.AsyncClient(timeout=DISPATCH_HTTP_TIMEOUT_SECONDS) as client:
+        resp = await client.post(
+            f"{BOI_API_URL.rstrip('/')}/api/signals/evaluate",
+            params={"employee_id": employee_id},
+            headers={"x-service-token": BOI_API_SERVICE_TOKEN},
+            json=payload,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 async def process_event(event: dict[str, Any], producer: AIOKafkaProducer) -> None:
     event_type = event.get("event_type", "")
     try:
@@ -310,6 +335,38 @@ async def process_event(event: dict[str, Any], producer: AIOKafkaProducer) -> No
         payload = {"status": "failed", "event": event, "error": repr(exc)}
         await emit(producer, DLQ_TOPIC, payload)
         await write_boi_event_audit(event, "failed", error=repr(exc))
+        print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+async def process_raw_signal(signal: dict[str, Any], producer: AIOKafkaProducer) -> None:
+    try:
+        decision = await evaluate_raw_signal(signal)
+        await emit(
+            producer,
+            AUDIT_TOPIC,
+            {
+                "status": "raw-signal-evaluated",
+                "definition_id": decision.get("definition_id"),
+                "decision": decision.get("decision"),
+                "target_event_type": decision.get("target_event_type"),
+                "fingerprint": decision.get("fingerprint"),
+            },
+        )
+        print(
+            json.dumps(
+                {
+                    "status": "raw-signal-evaluated",
+                    "decision": decision.get("decision"),
+                    "definition_id": decision.get("definition_id"),
+                    "target_event_type": decision.get("target_event_type"),
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+    except Exception as exc:
+        payload = {"status": "raw-signal-failed", "signal_summary": {key: signal.get(key) for key in ("definition_id", "source_name", "trace_id")}, "error": repr(exc)}
+        await emit(producer, DLQ_TOPIC, payload)
         print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
@@ -348,8 +405,11 @@ async def main() -> None:
             flush=True,
         )
         await asyncio.sleep(POST_TOPIC_READY_DELAY_SECONDS)
+    topics = [TOPIC]
+    if RAW_SIGNALS_TOPIC and RAW_SIGNALS_TOPIC not in topics:
+        topics.append(RAW_SIGNALS_TOPIC)
     consumer = AIOKafkaConsumer(
-        TOPIC,
+        *topics,
         **kafka_client_kwargs(),
         group_id=GROUP_ID,
         value_deserializer=_decode,
@@ -362,13 +422,16 @@ async def main() -> None:
     producer = AIOKafkaProducer(**kafka_client_kwargs(), value_serializer=_encode)
     await consumer.start()
     await producer.start()
-    print(f"event-router started: mode={KAFKA_MODE}, topic={TOPIC}, kafka={KAFKA_BOOTSTRAP}, action_gateway={ACTION_GATEWAY_URL}", flush=True)
+    print(f"event-router started: mode={KAFKA_MODE}, topics={','.join(topics)}, kafka={KAFKA_BOOTSTRAP}, action_gateway={ACTION_GATEWAY_URL}", flush=True)
     try:
         while not stop_event.is_set():
             msg_batch = await consumer.getmany(timeout_ms=1000, max_records=10)
             for _tp, messages in msg_batch.items():
                 for msg in messages:
-                    await process_event(msg.value, producer)
+                    if getattr(msg, "topic", TOPIC) == RAW_SIGNALS_TOPIC:
+                        await process_raw_signal(msg.value, producer)
+                    else:
+                        await process_event(msg.value, producer)
                     await consumer.commit()
     finally:
         await consumer.stop()

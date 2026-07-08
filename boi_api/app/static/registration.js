@@ -20,6 +20,37 @@
   const draftSuggestionTimers = {};
   const draftSuggestionSnapshots = {};
   const autosaveKey = `boi:sop-registration:${employeeId}:${window.location.pathname}`;
+  const stageExampleSeeds = [
+    {
+      stage_name: "근거 확인",
+      stage_goal: "Alarm과 Trend 이상 여부를 확인합니다.",
+      decision_question: "업무를 시작할 근거가 충분한가?",
+      required_evidence: ["Alarm 이력", "Trend", "Raw Data"],
+      expected_outputs: ["근거 확인 BoI"],
+      knowledge_update_policy: "확인한 근거와 부족한 데이터를 유사 사례 후보로 남긴다.",
+      execution_mode: "copilot",
+      tat_target: "30분",
+    },
+    {
+      stage_name: "원인 판단",
+      stage_goal: "확인된 근거를 바탕으로 원인 후보를 좁힙니다.",
+      decision_question: "가장 가능성 높은 원인과 추가 확인 항목은 무엇인가?",
+      required_evidence: ["장비 이력", "최근 조치", "Lot 영향"],
+      expected_outputs: ["원인 판단 BoI"],
+      knowledge_update_policy: "판단 이유와 제외한 원인 후보를 함께 남긴다.",
+      execution_mode: "manual",
+    },
+    {
+      stage_name: "조치 확인",
+      stage_goal: "조치 결과와 재발 여부를 확인합니다.",
+      decision_question: "조치 후 상태가 업무 종료 기준을 만족하는가?",
+      required_evidence: ["Action 결과", "상태 전환", "후속 Alarm 여부"],
+      expected_outputs: ["조치 결과 BoI"],
+      knowledge_update_policy: "조치 결과와 재발 방지 후보를 지식 업데이트 대상으로 남긴다.",
+      execution_mode: "manual",
+      tat_target: "당일",
+    },
+  ];
   const pickerTargets = {
     event_mode: {reuse: ["event_types", "linked_event_types"]},
     sop_mode: {reuse: ["sops", "linked_sop_ref"]},
@@ -36,6 +67,7 @@
     "linked_action_keys",
     "required_evidence_context",
     "payload_fields",
+    "fingerprint_fields",
   ]);
   const connectorListFields = new Set([
     "connector_config.idempotency_key_fields",
@@ -53,6 +85,7 @@
     "event_source_config.sample_payload",
     "event_source_config.auth_policy",
     "event_source_config.health_check",
+    "business_event_conditions",
   ]);
   const weekdayLabels = {
     MON: "월요일",
@@ -215,19 +248,74 @@
   }
 
   function selectedEventSourceKind() {
+    const mode = formField("event_mode")?.value || "skip";
+    const occurrence = currentOccurrenceMode();
+    if (mode === "skip" || occurrence === "manual") return "manual";
+    if (mode === "schedule") return "scheduler";
     return form.querySelector('input[name="event_source_kind"]:checked')?.value || "webhook";
+  }
+
+  function currentOccurrenceMode() {
+    if ((formField("event_mode")?.value || "skip") === "skip") return "manual";
+    return form.querySelector('input[name="event_occurrence_mode"]:checked')?.value || "immediate";
+  }
+
+  function togglePanel(panel, active) {
+    if (!panel) return;
+    panel.hidden = !active;
+    panel.querySelectorAll("input, select, textarea, button").forEach((control) => {
+      control.disabled = !active;
+    });
   }
 
   function updateEventSourcePanels() {
     const selected = selectedEventSourceKind();
+    const activeDefinition = (formField("event_mode")?.value || "skip") === "draft" && currentOccurrenceMode() !== "manual";
     form.querySelectorAll("[data-event-source-panel]").forEach((panel) => {
       const allowed = String(panel.dataset.eventSourcePanel || "").split(/\s+/).filter(Boolean);
-      const active = allowed.includes(selected);
-      panel.hidden = !active;
-      panel.querySelectorAll("input, select, textarea, button").forEach((control) => {
-        control.disabled = !active;
-      });
+      togglePanel(panel, activeDefinition && allowed.includes(selected));
     });
+    updateWebhookPathPreview();
+  }
+
+  function updateWebhookPathPreview() {
+    const panel = Array.from(form.querySelectorAll(".business-event-source-panel[data-event-source-panel]"))
+      .find((item) => String(item.dataset.eventSourcePanel || "").split(/\s+/).includes("webhook"));
+    const sourceName = String(panel?.querySelector('[name="event_source_config.source_name"]')?.value || "equipment-alarm").trim() || "equipment-alarm";
+    form.querySelectorAll("[data-webhook-path-preview]").forEach((target) => {
+      target.textContent = `/api/webhooks/${sourceName}`;
+    });
+  }
+
+  function updateOccurrenceModePanels() {
+    const eventMode = formField("event_mode")?.value || "skip";
+    const occurrence = currentOccurrenceMode();
+    const draftActive = eventMode === "draft";
+    const externalSignal = draftActive && occurrence !== "manual";
+    form.querySelectorAll("[data-occurrence-source-block]").forEach((panel) => togglePanel(panel, externalSignal));
+    form.querySelectorAll("[data-occurrence-common-fields]").forEach((panel) => togglePanel(panel, externalSignal));
+    form.querySelectorAll("[data-occurrence-advanced]").forEach((panel) => togglePanel(panel, externalSignal));
+    form.querySelectorAll("[data-occurrence-panel]").forEach((panel) => {
+      const allowed = String(panel.dataset.occurrencePanel || "").split(/\s+/).filter(Boolean);
+      togglePanel(panel, draftActive && allowed.includes(occurrence));
+    });
+    updateEventSourcePanels();
+  }
+
+  function updateEventModePanels() {
+    const mode = formField("event_mode")?.value || "skip";
+    form.querySelectorAll("[data-event-definition-panel]").forEach((panel) => togglePanel(panel, mode === "draft"));
+    updateOccurrenceModePanels();
+  }
+
+  function clearEventAdapterPlan() {
+    const adapterField = formField("event_producer_adapter_plan");
+    if (adapterField) adapterField.value = "";
+    const preview = eventAdapterPreviewTarget();
+    if (preview) {
+      preview.hidden = true;
+      preview.innerHTML = "";
+    }
   }
 
   function isSopRegistration() {
@@ -258,12 +346,12 @@
   function updateRecommendationControls() {
     const ready = hasRecommendationInput();
     document.querySelectorAll("[data-recommendation-gated]").forEach((button) => {
-      button.toggleAttribute("disabled", !ready);
+      button.disabled = false;
     });
     document.querySelectorAll("[data-recommendation-hint]").forEach((hint) => {
       hint.textContent = ready
         ? "입력한 설명으로 기존 Event/SOP/Action 후보와 다듬기 제안을 만듭니다. 적용은 각 섹션에서 직접 선택합니다."
-        : "먼저 어떤 업무인지 적으면 기존 Event/SOP/Action 후보와 다듬기 제안을 만들 수 있습니다.";
+        : "단계는 먼저 둘러볼 수 있습니다. 업무 설명을 입력하면 추천 품질이 좋아지고 추천 실행 조건을 만족합니다.";
     });
     updateSectionRefineControls();
     updateWizardNavButtons();
@@ -346,9 +434,80 @@
       button.disabled = index <= 0;
     });
     form.querySelectorAll("[data-wizard-nav='next']").forEach((button) => {
-      const blockedForContext = currentStep === "context" && !hasRecommendationInput();
-      button.disabled = index >= wizardSteps.length - 1 || blockedForContext;
+      button.disabled = index >= wizardSteps.length - 1;
     });
+  }
+
+  function safeJsonArray(value) {
+    try {
+      const parsed = JSON.parse(String(value || "[]"));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function isPlaceholderWorkflowStage(stage) {
+    if (!stage || typeof stage !== "object") return false;
+    return String(stage.stage_name || stage.task_name || "").trim() === "첫 Task"
+      && String(stage.stage_goal || "").trim() === "Workflow에서 먼저 처리할 업무 단위를 적습니다."
+      && !(Array.isArray(stage.actions) && stage.actions.length)
+      && !(Array.isArray(stage.skills) && stage.skills.length)
+      && !String(stage.entry_event || "").trim()
+      && !String(stage.emits_event || "").trim();
+  }
+
+  function hasMeaningfulWorkflowStage(stage) {
+    if (!stage || typeof stage !== "object" || isPlaceholderWorkflowStage(stage)) return false;
+    const textKeys = ["stage_name", "task_name", "stage_goal", "decision_question", "tat_target", "baseline_tat"];
+    if (textKeys.some((key) => String(stage[key] || "").trim())) return true;
+    const listKeys = ["required_evidence", "expected_outputs", "actions", "skills"];
+    return listKeys.some((key) => Array.isArray(stage[key]) && stage[key].length);
+  }
+
+  function storedWorkflowStages(items) {
+    return Array.isArray(items)
+      ? items.filter(hasMeaningfulWorkflowStage).map((stage) => makeStage(stage))
+      : [];
+  }
+
+  function hasUserWorkflowTask() {
+    if (splitList(formField("steps")?.value || "").some((step) => step !== "첫 Task")) return true;
+    const hiddenStages = [
+      ...safeJsonArray(formField("workflow_tasks")?.value || ""),
+      ...safeJsonArray(formField("workflow_stages")?.value || ""),
+    ];
+    return hiddenStages.some(hasMeaningfulWorkflowStage) || workflowStages.some(hasMeaningfulWorkflowStage);
+  }
+
+  function hasWorkflowTarget() {
+    return Boolean(
+      String(formField("linked_sop_ref")?.value || "").trim()
+      || String(formField("linked_workflow_definition_key")?.value || "").trim()
+      || hasUserWorkflowTask()
+    );
+  }
+
+  function previewDependencyNotice() {
+    if (currentStep === "stages" && !hasRecommendationInput()) {
+      return {
+        title: "Task 추천에는 업무 맥락이 필요합니다",
+        message: "단계 화면은 먼저 둘러볼 수 있습니다. Task를 추천하거나 확인하려면 1단계에서 어떤 업무인지 먼저 적어주세요.",
+      };
+    }
+    if (currentStep === "execution" && !hasUserWorkflowTask()) {
+      return {
+        title: "Action 연결에는 먼저 대상 Task가 필요합니다",
+        message: "실행 연결 화면은 먼저 둘러볼 수 있습니다. 수정하려면 2단계에서 연결할 Task를 작성하거나 선택해주세요.",
+      };
+    }
+    if (currentStep === "entry" && !hasWorkflowTarget()) {
+      return {
+        title: "발생 후 시작할 업무 흐름이 필요합니다",
+        message: "업무 이벤트 정의는 먼저 둘러볼 수 있습니다. 확인하거나 연결하려면 시작할 SOP/Workflow를 먼저 선택하거나 작성해주세요.",
+      };
+    }
+    return null;
   }
 
   function buildWorkContextModel() {
@@ -499,13 +658,16 @@
     const includeStages = ["draft", "lightweight"].includes(sopMode);
     if (workContextField) workContextField.value = JSON.stringify(buildWorkContextModel());
     if (workflowModelField) workflowModelField.value = JSON.stringify(buildWorkflowModel());
-    if (tasksField) tasksField.value = includeStages ? JSON.stringify(workflowTasks()) : "";
-    if (stagesField) stagesField.value = includeStages ? JSON.stringify(workflowStages) : "";
+    if (tasksField) tasksField.value = includeStages && workflowStages.length ? JSON.stringify(workflowTasks()) : "";
+    if (stagesField) stagesField.value = includeStages && workflowStages.length ? JSON.stringify(workflowStages) : "";
     if (okfField) okfField.value = includeStages ? JSON.stringify(okfMaterializationPlan()) : "";
     syncArtifactHidden();
     const stepsField = formField("steps");
     if (stepsField && workflowStages.length && includeStages) {
       stepsField.value = workflowStages.map((stage) => stage.stage_name).filter(Boolean).join(", ");
+      renderDraftFieldChips("steps");
+    } else if (stepsField && includeStages) {
+      stepsField.value = "";
       renderDraftFieldChips("steps");
     }
   }
@@ -516,19 +678,18 @@
 
   function makeStage(seed = {}) {
     const index = workflowStages.length + 1;
-    const workContext = buildWorkContextModel();
     const name = seed.stage_name || seed.task_name || seed.name || seed.title || `Task ${index}`;
     const executionMode = normalizeExecutionMode(seed.execution_mode || (Array.isArray(seed.skills) && seed.skills.length ? "copilot" : "manual"));
     return {
       stage_id: seed.stage_id || seed.task_id || seed.id || `task-${Date.now().toString(36)}-${index}`,
       stage_name: name,
-      stage_goal: seed.stage_goal || seed.goal || `${name} 단계의 목표를 정리합니다.`,
-      decision_question: seed.decision_question || workContext.decision_question || "이 단계의 판단 근거가 충분한가?",
-      required_evidence: splitStageList(seed.required_evidence || seed.evidence_requirements || workContext.required_evidence || "업무 발생 근거, 판단 근거"),
+      stage_goal: seed.stage_goal || seed.goal || "",
+      decision_question: seed.decision_question || "",
+      required_evidence: splitStageList(seed.required_evidence || seed.evidence_requirements || ""),
       actions: Array.isArray(seed.actions) ? seed.actions : [],
       skills: Array.isArray(seed.skills) ? seed.skills : [],
-      expected_outputs: splitStageList(seed.expected_outputs || seed.outputs || "단계별 판단 기록 BoI"),
-      knowledge_update_policy: seed.knowledge_update_policy || workContext.knowledge_update_goal || "확인한 사실, 판단 이유, 결과를 지식 업데이트 후보로 남긴다.",
+      expected_outputs: splitStageList(seed.expected_outputs || seed.outputs || ""),
+      knowledge_update_policy: seed.knowledge_update_policy || "",
       execution_mode: executionMode,
       copilot_source: normalizeCopilotSource(seed.copilot_source, executionMode),
       runner_type: seed.runner_type || (executionMode === "manual" ? "human" : executionMode === "autopilot" ? "agent" : "mixed"),
@@ -548,11 +709,6 @@
     if (workflowStages.length) return;
     const steps = splitList(formField("steps")?.value || "");
     if (steps.length) workflowStages = steps.map((name) => makeStage({stage_name: name}));
-    if (!workflowStages.length) {
-      workflowStages = [
-        makeStage({stage_name: "첫 Task", stage_goal: "Workflow에서 먼저 처리할 업무 단위를 적습니다.", expected_outputs: ["Task 결과 BoI"]}),
-      ];
-    }
     selectedStageId = workflowStages[0]?.stage_id || "";
   }
 
@@ -596,7 +752,12 @@
   function renderStageDetail() {
     const detail = form.querySelector("[data-stage-detail]");
     const stage = selectedStage();
-    if (!detail || !stage) return;
+    if (!detail) return;
+    if (!stage) {
+      detail.hidden = true;
+      renderArtifactResults();
+      return;
+    }
     detail.hidden = false;
     const title = form.querySelector("[data-stage-detail-title]");
     if (title) title.textContent = `${stage.stage_name || "Task"} 편집`;
@@ -613,6 +774,26 @@
     const list = form.querySelector("[data-stage-list]");
     if (!list) return;
     ensureWorkflowStages();
+    if (!workflowStages.length) {
+      list.innerHTML = `
+        <div class="stage-empty-state">
+          <strong>예시를 선택하거나 Task 추가로 시작하세요.</strong>
+          <span>예시는 클릭할 때만 실제 Task로 추가되고, 그 전에는 저장되지 않습니다.</span>
+          <div class="stage-example-grid">
+            ${stageExampleSeeds.map((seed, index) => `
+              <button type="button" class="stage-example-card" data-stage-example="${index}">
+                <small>예시</small>
+                <strong>${escapeHtml(seed.stage_name)}</strong>
+                <span>${escapeHtml(seed.stage_goal)}</span>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `;
+      renderStageDetail();
+      syncHiddenModels();
+      return;
+    }
     list.innerHTML = workflowStages.map((stage, index) => `
       <button type="button" class="stage-card ${stage.stage_id === selectedStageId ? "selected" : ""}" data-stage-select="${escapeHtml(stage.stage_id)}">
         <span class="stage-index">${index + 1}</span>
@@ -657,10 +838,17 @@
   }
 
   function removeSelectedWorkflowStage() {
-    if (!selectedStageId || workflowStages.length <= 1) return;
+    if (!selectedStageId) return;
     const index = workflowStages.findIndex((stage) => stage.stage_id === selectedStageId);
     workflowStages = workflowStages.filter((stage) => stage.stage_id !== selectedStageId);
     selectedStageId = workflowStages[Math.max(0, index - 1)]?.stage_id || workflowStages[0]?.stage_id || "";
+    if (!workflowStages.length) {
+      const stepsField = formField("steps");
+      if (stepsField) {
+        stepsField.value = "";
+        renderDraftFieldChips("steps");
+      }
+    }
     renderWorkflowStages();
     scheduleAutosave();
   }
@@ -1061,19 +1249,19 @@
       renderArtifactResults();
     }
     if (Array.isArray(payload.workflow_tasks) && payload.workflow_tasks.length) {
-      workflowStages = payload.workflow_tasks.map((task) => makeStage(task));
-      selectedStageId = workflowStages[0]?.stage_id || selectedStageId;
+      workflowStages = storedWorkflowStages(payload.workflow_tasks);
+      selectedStageId = workflowStages[0]?.stage_id || "";
     } else if (Array.isArray(payload.workflow_stages) && payload.workflow_stages.length) {
-      workflowStages = payload.workflow_stages.map((stage) => makeStage(stage));
-      selectedStageId = workflowStages[0]?.stage_id || selectedStageId;
+      workflowStages = storedWorkflowStages(payload.workflow_stages);
+      selectedStageId = workflowStages[0]?.stage_id || "";
     }
     ["event_mode", "sop_mode", "action_mode"].forEach((name) => {
       const field = formField(name);
       setSectionMode(name, field?.value || "skip");
     });
     setConnectorKind(selectedConnectorKind() || payload.connector_kind || "manual");
-    updateEventSourcePanels();
     updateScheduleBuilder();
+    updateEventModePanels();
     updateRecommendationControls();
   }
 
@@ -1108,7 +1296,11 @@
     if (label) label.textContent = modeLabelFor(name, value || "skip");
     if (name === "action_mode" && value === "manual") setConnectorKind("manual");
     updateModeFields(name, value || "skip");
-    if (name === "event_mode") updateScheduleBuilder();
+    if (name === "event_mode") {
+      if (options.fromUser) clearEventAdapterPlan();
+      updateScheduleBuilder();
+      updateEventModePanels();
+    }
     maybePrepareDraftSuggestion(name, value || "skip", options);
     updateSectionRefineControls();
     const pickerConfig = pickerTargets[name]?.[value || "skip"];
@@ -1323,8 +1515,8 @@
       renderAgentSuggestions(body);
       if (body?.recommendation_state === "needs_input") {
         return `
-          <strong>업무 설명이 먼저 필요합니다</strong>
-          <p>추천을 만들기 전에 어떤 업무를 SOP 실행 흐름으로 정리할지 자연어 설명, 제목, 업무 목적 중 하나를 먼저 적어주세요.</p>
+          <strong>업무 설명이 필요합니다</strong>
+          <p>단계는 먼저 둘러볼 수 있습니다. 추천을 만들려면 어떤 업무를 SOP 실행 흐름으로 정리할지 자연어 설명, 제목, 업무 목적 중 하나를 먼저 적어주세요.</p>
           ${(body.input_requirements || []).length ? `<ul class="warning-list">${body.input_requirements.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
         `;
       }
@@ -1712,13 +1904,81 @@
     return form.querySelector("[data-event-adapter-preview]");
   }
 
+  function signalFieldPath(value) {
+    const field = String(value || "").trim();
+    if (!field) return "";
+    if (field.startsWith("$.") || field.startsWith("payload.") || field.startsWith("signal.")) return field;
+    return `payload.${field}`;
+  }
+
+  function conditionValue(value, op) {
+    if (op === "exists") return true;
+    if (op === "in") return splitList(value || "");
+    const text = String(value || "").trim();
+    if (text === "true") return true;
+    if (text === "false") return false;
+    if (text && !Number.isNaN(Number(text))) return Number(text);
+    return text;
+  }
+
+  function businessEventConditionsFromPayload(payload, occurrenceMode) {
+    const raw = payload.business_event_conditions && typeof payload.business_event_conditions === "object"
+      ? {...payload.business_event_conditions}
+      : {};
+    if (occurrenceMode === "condition") {
+      const field = signalFieldPath(payload.event_condition_field || "");
+      const op = String(payload.event_condition_operator || "eq").trim() || "eq";
+      if (field) return {...raw, field, op, value: conditionValue(payload.event_condition_value || "", op)};
+    }
+    if (occurrenceMode === "repeated") {
+      return {
+        ...raw,
+        threshold_count: Number(payload.threshold_count || raw.threshold_count || 1),
+        window_seconds: Number(payload.dedupe_window_seconds || raw.window_seconds || 600),
+      };
+    }
+    if (occurrenceMode === "transition") {
+      const stateField = signalFieldPath(payload.event_state_field || raw.state_field || "status");
+      return {
+        ...raw,
+        state_field: stateField,
+        from_values: splitList(payload.event_state_from_values || raw.from_values || ""),
+        to_values: splitList(payload.event_state_to_values || raw.to_values || ""),
+      };
+    }
+    if (occurrenceMode === "composite") {
+      return {
+        ...raw,
+        required_signals: splitList(payload.event_required_signals || raw.required_signals || ""),
+        signal_key_field: signalFieldPath(payload.event_signal_key_field || raw.signal_key_field || "signal_type"),
+        window_seconds: Number(payload.aggregation_window_seconds || raw.window_seconds || 600),
+      };
+    }
+    if (occurrenceMode === "confirmation") {
+      return {
+        ...raw,
+        confirmation_owner: String(payload.event_confirmation_owner || raw.confirmation_owner || "").trim(),
+        confirmation_note: String(payload.event_confirmation_note || raw.confirmation_note || "").trim(),
+      };
+    }
+    return raw;
+  }
+
   function eventAdapterRequestFromPayload(payload) {
     const config = payload.event_source_config || {};
+    const occurrenceMode = payload.event_occurrence_mode || (payload.event_mode === "skip" ? "manual" : "");
+    const sourceKind = occurrenceMode === "manual" ? "manual" : payload.event_source_kind || selectedEventSourceKind();
     return {
-      source_kind: payload.event_source_kind || selectedEventSourceKind(),
+      source_kind: sourceKind,
       source_name: config.source_name || "",
       target_event_type: config.target_event_type || payload.event_type || (payload.linked_event_types || [])[0] || "",
+      occurrence_mode: occurrenceMode,
       payload_mapping: config.payload_mapping && typeof config.payload_mapping === "object" ? config.payload_mapping : {},
+      conditions: businessEventConditionsFromPayload(payload, occurrenceMode),
+      fingerprint_fields: Array.isArray(payload.fingerprint_fields) ? payload.fingerprint_fields.map((item) => String(item || "").startsWith("payload.") ? String(item) : `payload.${item}`) : [],
+      dedupe_window_seconds: Number(payload.dedupe_window_seconds || 600),
+      aggregation_window_seconds: Number(payload.aggregation_window_seconds || 600),
+      threshold_count: Number(payload.threshold_count || 1),
       auth_policy: config.auth_policy && typeof config.auth_policy === "object" ? config.auth_policy : {},
       sample_payload: config.sample_payload && typeof config.sample_payload === "object" ? config.sample_payload : {},
       health_check: config.health_check && typeof config.health_check === "object" ? config.health_check : {},
@@ -1733,11 +1993,12 @@
     const draft = body?.draft || {};
     target.hidden = false;
     target.innerHTML = `
-      <strong>${escapeHtml(kind === "test" ? "샘플 테스트 결과" : kind === "draft" ? "Adapter 초안" : "설정 미리보기")}</strong>
+      <strong>${escapeHtml(kind === "test" ? "샘플 확인 결과" : kind === "draft" ? "업무 이벤트 정의 초안" : "발생 기준 미리보기")}</strong>
       ${plan.source_kind ? `<p>${escapeHtml(plan.source_kind)} · ${escapeHtml(plan.source_name || "")} → ${escapeHtml(plan.target_event_type || "")}</p>` : ""}
+      ${plan.business_event_definition ? `<p><span class="badge">${escapeHtml(plan.business_event_definition.occurrence_label || "업무 이벤트 정의")}</span> ${escapeHtml(plan.business_event_definition.name || "")}</p>` : ""}
       ${plan.webhook ? `<p><code>${escapeHtml(plan.webhook.endpoint_path || "")}</code></p>` : ""}
       ${plan.kafka ? `<p>${escapeHtml(plan.kafka.integration_guide || "")}</p>` : ""}
-      ${test.test_status ? `<p><span class="badge">${escapeHtml(test.test_status)}</span> 실제 Event Broker에는 발행하지 않았습니다.</p>` : ""}
+      ${test.test_status ? `<p><span class="badge">${escapeHtml(test.test_status)}</span> 실제 업무 이벤트는 발생시키지 않았습니다.</p>` : ""}
       ${draft.draft_id ? `<p><span class="badge">draft</span> ${escapeHtml(draft.draft_id)}</p>` : ""}
       <details>
         <summary>세부정보</summary>
@@ -1873,8 +2134,11 @@
     selectedStageId = saved.local_state?.selected_stage_id || "";
     Object.assign(selectedLinkState, saved.local_state?.selected_links || {});
     workflowStages = Array.isArray(saved.workflow_stages)
-      ? saved.workflow_stages
-      : (Array.isArray(saved.workflow_tasks) ? saved.workflow_tasks.map((task) => makeStage(task)) : []);
+      ? storedWorkflowStages(saved.workflow_stages)
+      : (Array.isArray(saved.workflow_tasks) ? storedWorkflowStages(saved.workflow_tasks) : []);
+    selectedStageId = workflowStages.some((stage) => stage.stage_id === selectedStageId)
+      ? selectedStageId
+      : (workflowStages[0]?.stage_id || "");
     applyPayloadToForm(saved.payload || {});
     renderWorkflowStages();
     const step = saved.local_state?.current_step || "context";
@@ -1936,7 +2200,7 @@
         if (!hasRecommendationInput()) {
           currentPlan = null;
           renderResult("plan", {plan_type: "sop_registration_plan", recommendation_state: "needs_input", input_requirements: [
-            "자연어 설명, 제목, 업무 목적 중 하나에 어떤 업무를 SOP화할지 먼저 적어주세요.",
+            "이 단계는 먼저 둘러볼 수 있습니다. 추천을 만들려면 자연어 설명, 제목, 업무 목적 중 하나에 어떤 업무를 SOP화할지 먼저 적어주세요.",
           ]});
           return;
         }
@@ -1954,6 +2218,11 @@
         return;
       }
       if (action === "preview") {
+        const dependencyNotice = previewDependencyNotice();
+        if (dependencyNotice) {
+          setResult("warning", dependencyNotice.title, dependencyNotice.message);
+          return;
+        }
         if (!currentPlan) {
           currentPlan = await postJson(form.dataset.planUrl, planRequestFromPayload(payload));
         }
@@ -2077,6 +2346,13 @@
       selectedStageId = stageSelectButton.dataset.stageSelect || "";
       renderWorkflowStages();
       scheduleAutosave();
+      return;
+    }
+    const stageExampleButton = event.target.closest("[data-stage-example]");
+    if (stageExampleButton) {
+      const index = Number(stageExampleButton.dataset.stageExample || "-1");
+      const seed = stageExampleSeeds[index];
+      if (seed) addWorkflowStage(seed);
       return;
     }
     const stageActionButton = event.target.closest("[data-stage-action]");
@@ -2272,10 +2548,6 @@
     event.preventDefault();
     const step = stepButton.dataset.registrationStep || "";
     if (stepOrderIndex(step) < 0) return;
-    if (currentStep === "context" && stepOrderIndex(step) > 0 && !hasRecommendationInput()) {
-      setResult("warning", "업무 맥락을 먼저 적어주세요", "내 업무를 어떤 맥락에서 판단하고 기록할지 한 줄이라도 적으면 다음 단계로 이동할 수 있습니다.");
-      return;
-    }
     setFlowStage(step);
     scheduleAutosave();
   });
@@ -2300,7 +2572,9 @@
       updateSectionRefineControls();
       if (section === "sop") {
         workflowStages = splitList(formField("steps")?.value || "").map((name, index) => workflowStages[index] ? {...workflowStages[index], stage_name: name} : makeStage({stage_name: name}));
-        selectedStageId = workflowStages[0]?.stage_id || selectedStageId;
+        selectedStageId = workflowStages.some((stage) => stage.stage_id === selectedStageId)
+          ? selectedStageId
+          : (workflowStages[0]?.stage_id || "");
         renderWorkflowStages();
       }
       scheduleAutosave();
@@ -2312,8 +2586,20 @@
       scheduleAutosave();
       return;
     }
-    if (["work_target", "work_situation", "decision_question", "required_evidence_context", "expected_result", "knowledge_update_goal", "event_source_kind"].includes(event.target.name || "") || event.target.name?.startsWith("event_source_config.")) {
+    if (
+      ["work_target", "work_situation", "decision_question", "required_evidence_context", "expected_result", "knowledge_update_goal", "event_source_kind", "fingerprint_fields", "business_event_conditions", "dedupe_window_seconds", "threshold_count", "aggregation_window_seconds"].includes(event.target.name || "")
+      || event.target.name?.startsWith("event_source_config.")
+      || event.target.name?.startsWith("event_condition_")
+      || event.target.name?.startsWith("event_state_")
+      || event.target.name?.startsWith("event_required_")
+      || event.target.name?.startsWith("event_signal_")
+      || event.target.name?.startsWith("event_confirmation_")
+    ) {
       currentPlan = null;
+      if ((event.target.name || "").startsWith("event_") || ["fingerprint_fields", "business_event_conditions", "dedupe_window_seconds", "threshold_count", "aggregation_window_seconds"].includes(event.target.name || "")) {
+        clearEventAdapterPlan();
+      }
+      updateWebhookPathPreview();
       syncHiddenModels();
       renderWorkflowStages();
       updateRecommendationControls();
@@ -2358,9 +2644,15 @@
       scheduleAutosave();
       return;
     }
+    if ((event.target.name || "") === "event_occurrence_mode") {
+      clearEventAdapterPlan();
+      updateOccurrenceModePanels();
+      syncHiddenModels();
+      scheduleAutosave();
+      return;
+    }
     if ((event.target.name || "") === "event_source_kind") {
-      const adapterField = formField("event_producer_adapter_plan");
-      if (adapterField) adapterField.value = "";
+      clearEventAdapterPlan();
       updateEventSourcePanels();
       syncHiddenModels();
       scheduleAutosave();
@@ -2392,9 +2684,9 @@
     setSectionMode(name, field?.value || "skip");
   });
   setConnectorKind(selectedConnectorKind() || "manual");
-  updateEventSourcePanels();
   renderWorkflowStages();
   updateScheduleBuilder();
+  updateEventModePanels();
   updateRecommendationControls();
   updateSectionRefineControls();
   renderArtifactResults();

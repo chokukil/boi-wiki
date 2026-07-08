@@ -101,6 +101,8 @@
       {% if body_editor %}
       <div class="body-editor-panel" hidden
         data-editor-url="{{ body_editor.editor_url }}"
+        data-impact-url="{{ body_editor.impact_url }}"
+        data-related-update-jobs-url="{{ body_editor.related_update_jobs_url }}"
         data-employee-id="{{ employee_id }}">
         <div class="editor-toolbar">
           <strong>Validated Body Editor</strong>
@@ -118,6 +120,19 @@
           <ul class="error-list body-validation-errors"></ul>
           <ul class="warning-list body-validation-warnings"></ul>
           <div class="fix-suggestions body-fix-suggestions"></div>
+        </section>
+        <section class="related-update-panel" aria-live="polite">
+          <div class="related-update-heading">
+            <h3>관련 문서 영향 분석</h3>
+            <span class="related-update-status muted">ready</span>
+          </div>
+          <div class="related-update-summary muted">Preview / Validate 후 영향을 확인할 수 있습니다.</div>
+          <div class="related-update-list"></div>
+          <div class="source-actions related-update-actions">
+            <button type="button" class="preview-related-update">영향 분석</button>
+            <button type="button" class="create-related-update-job" disabled>초안 생성</button>
+            <button type="button" class="apply-related-update-job" disabled>선택 적용</button>
+          </div>
         </section>
         <div class="source-actions">
           <button type="button" class="preview-body-edit">Preview / Validate</button>
