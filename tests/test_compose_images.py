@@ -39,7 +39,7 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     pilot_env = Path(".env.pilot-external.example").read_text(encoding="utf-8")
 
     assert 'profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "full"]' in compose
-    assert 'profiles: ["local-full-datalake", "local-full-legacy-db-demo"]' in compose
+    assert 'profiles: ["data-lake-bundled", "local-full-datalake", "local-full-legacy-db-demo"]' in compose
     assert 'profiles: ["local-full-legacy-db-demo"]' in compose
     assert 'profiles: ["core", "local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]' in compose
     assert 'profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]' in compose
@@ -50,6 +50,13 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "EVENT_ROUTER_AIOKAFKA_LOG_LEVEL: ${EVENT_ROUTER_AIOKAFKA_LOG_LEVEL:-CRITICAL}" in compose
     assert "BOI_AUTO_PUSH: ${BOI_AUTO_PUSH:-false}" in compose
     assert "BOI_CONTENT_SAFE_DIRECTORY: ${BOI_CONTENT_SAFE_DIRECTORY:-}" in compose
+    assert "BOI_RUNTIME_HISTORY_SEED_ROOT: ${BOI_RUNTIME_HISTORY_SEED_ROOT:-}" in compose
+    assert "BOI_INBOX_REPORT_AUTO_GENERATE: ${BOI_INBOX_REPORT_AUTO_GENERATE:-true}" in compose
+    assert "BOI_INBOX_REPORT_BACKFILL_SCOPE: ${BOI_INBOX_REPORT_BACKFILL_SCOPE:-all}" in compose
+    assert "BOI_SEARCH_AUTO_SYNC: ${BOI_SEARCH_AUTO_SYNC:-true}" in compose
+    assert "BOI_DATALAKE_MODE: ${BOI_DATALAKE_MODE:-bundled}" in compose
+    assert "BOI_KNOWLEDGE_HEALTH_ENABLED: ${BOI_KNOWLEDGE_HEALTH_ENABLED:-true}" in compose
+    assert "BOI_EXPECT_MIN_MARKDOWN_DOCUMENTS: ${BOI_EXPECT_MIN_MARKDOWN_DOCUMENTS:-1}" in compose
     assert "git config --global --add safe.directory" in compose
     assert '"${BOI_API_PORT:-28000}:8000"' in compose
     assert "${BOI_CONTENT_HOST_PATH:-./data/boi}:${BOI_CONTENT_MOUNT_PATH:-/data/boi}" in compose
@@ -59,6 +66,7 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-3}" in compose
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY: ${BOI_AGENT_LLM_MAX_CONCURRENCY:-1}" in compose
     assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS: ${BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS:-120}" in compose
+    assert "OPENAI_API_KEY: ${BOI_GPT55_TEST_API_KEY:-}" in compose
     assert "condition: service_completed_successfully" not in compose
 
     assert "KAFKA_MODE=local" in local_env
@@ -67,6 +75,12 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "BOI_EXTERNAL_URL=http://localhost:28000" in local_env
     assert "BOI_CONTENT_ROOT=/workspace/data/boi" in local_env
     assert "BOI_CONTENT_SAFE_DIRECTORY=/workspace" in local_env
+    assert "BOI_RUNTIME_HISTORY_SEED_ROOT=/workspace/data" in local_env
+    assert "BOI_INBOX_REPORT_AUTO_GENERATE=true" in local_env
+    assert "BOI_SEARCH_AUTO_SYNC=true" in local_env
+    assert "BOI_DATALAKE_MODE=bundled" in local_env
+    assert "BOI_KNOWLEDGE_HEALTH_ENABLED=true" in local_env
+    assert "BOI_EXPECT_MIN_MARKDOWN_DOCUMENTS=1" in local_env
     assert "BOI_CONTENT_HOST_PATH=." in local_env
     assert "BOI_CONTENT_MOUNT_PATH=/workspace" in local_env
     assert "KAFKA_BOOTSTRAP=kafka:9092" in local_env
@@ -78,11 +92,18 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in local_env
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in local_env
     assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in local_env
+    assert "BOI_GPT55_TEST_MODE=false" in local_env
+    assert "BOI_GPT55_TEST_API_KEY=" in local_env
     assert "KAFKA_MODE=external" in pilot_env
     assert "LANGFLOW_MODE=external" in pilot_env
     assert "BOI_API_PORT=28000" in pilot_env
-    assert "BOI_CONTENT_ROOT=/content/boi" in pilot_env
+    assert "BOI_CONTENT_ROOT=/content/data/boi" in pilot_env
     assert "BOI_CONTENT_SAFE_DIRECTORY=/content" in pilot_env
+    assert "BOI_RUNTIME_HISTORY_SEED_ROOT=/content/data" in pilot_env
+    assert "BOI_INBOX_REPORT_BACKFILL_SCOPE=all" in pilot_env
+    assert "BOI_SEARCH_AUTO_SYNC=true" in pilot_env
+    assert "BOI_DATALAKE_MODE=bundled" in pilot_env
+    assert "BOI_EXPECT_MIN_MARKDOWN_DOCUMENTS=1" in pilot_env
     assert "BOI_CONTENT_HOST_PATH=/srv/boi-wiki/content" in pilot_env
     assert "BOI_CONTENT_MOUNT_PATH=/content" in pilot_env
     assert "KAFKA_SECURITY_PROTOCOL=SASL_SSL" in pilot_env
@@ -90,11 +111,77 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in pilot_env
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in pilot_env
     assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in pilot_env
+    assert "BOI_GPT55_TEST_MODE=false" in pilot_env
+    assert "BOI_GPT55_TEST_API_KEY=" in pilot_env
     assert "KAFKA_MODE=local" in env_example
     assert "BOI_API_PORT=28000" in env_example
     assert "BOI_CONTENT_ROOT=/workspace/data/boi" in env_example
+    assert "BOI_RUNTIME_HISTORY_SEED_ROOT=/workspace/data" in env_example
+    assert "BOI_EXPECT_MIN_MARKDOWN_DOCUMENTS=1" in env_example
     assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in env_example
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in env_example
+
+
+def test_dev_api_script_defaults_to_repo_content_and_tmp_runtime():
+    script = Path("scripts/start_dev_api.sh").read_text(encoding="utf-8")
+
+    assert "PORT=\"${BOI_DEV_API_PORT:-8765}\"" in script
+    assert 'CONTENT_ROOT="${BOI_DEV_CONTENT_ROOT:-${ROOT}/data/boi}"' in script
+    assert 'RUNTIME_ROOT="${BOI_DEV_RUNTIME_ROOT:-${ROOT}/.tmp/boi-runtime}"' in script
+    assert 'HISTORY_SEED_ROOT="${BOI_DEV_HISTORY_SEED_ROOT:-${ROOT}/data}"' in script
+    assert 'CALLER_CONTENT_ROOT_SET="${BOI_CONTENT_ROOT+x}"' in script
+    assert "never execute the file as shell code" in script
+    assert "BOI_RUNTIME_HISTORY_SEED_ROOT" in script
+    assert "BOI_DEV_API_RESTART=1" in script
+    assert "markdown files" in script
+    assert "history seed root" in script
+    assert 'OPENAI_API_KEY=""' in script
+    assert 'KAFKA_BOOTSTRAP="localhost:${KAFKA_EXTERNAL_PORT:-9094}"' in script
+    assert 'BOI_DEV_START_KAFKA:-1' in script
+    assert "docker compose --profile local-full up -d kafka kafka-init kafka-ui" in script
+    assert 'DATALAKE_MODE="${BOI_DATALAKE_MODE:-bundled}"' in script
+    assert "docker compose --profile data-lake-bundled up -d data-lake-minio" in script
+    assert 'CALLER_DATALAKE_ENDPOINT_SET="${BOI_DATALAKE_MINIO_ENDPOINT+x}"' in script
+    assert 'BOI_DATALAKE_MINIO_ENDPOINT="http://127.0.0.1:${BOI_DATALAKE_MINIO_PORT:-19000}"' in script
+    assert '"http://data-lake-minio:9000"' in script
+    assert '/minio/health/live' in script
+    assert 'for _ in $(seq 1 20)' in script
+    assert 'the API will start in degraded mode' in script
+    assert 'BOI_DEV_START_MCP:-1' in script
+    assert "boi_wiki_mcp.app.main:app" in script
+    assert 'BOI_API_URL="http://${HOST}:${PORT}"' in script
+    assert "check_private_content_writable.sh" in script
+
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert "BOI_DATALAKE_MINIO_ENDPOINT: ${BOI_DATALAKE_MINIO_ENDPOINT:-http://data-lake-minio:9000}" in compose
+
+
+def test_local_starts_preserve_host_ownership_for_private_boi_content():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    dockerfile = Path("boi_api/Dockerfile").read_text(encoding="utf-8")
+    local_start = Path("scripts/start_local_full.sh").read_text(encoding="utf-8")
+    agent_start = Path("scripts/start_agent_v2_stack.sh").read_text(encoding="utf-8")
+    preflight = Path("scripts/check_private_content_writable.sh").read_text(encoding="utf-8")
+    local_env = Path(".env.local-full.example").read_text(encoding="utf-8")
+    pilot_env = Path(".env.pilot-external.example").read_text(encoding="utf-8")
+
+    assert 'user: "${BOI_API_RUN_AS:-0:0}"' in compose
+    assert "HOME=/tmp/boi-home" in dockerfile
+    assert "chmod 1777 /data /runtime /tmp/boi-home" in dockerfile
+    assert 'BOI_API_RUN_AS="${BOI_API_RUN_AS:-$(id -u):$(id -g)}"' in local_start
+    assert 'BOI_API_RUN_AS="${BOI_API_RUN_AS:-$(id -u):$(id -g)}"' in agent_start
+    assert "check_private_content_writable.sh" in local_start
+    assert "check_private_content_writable.sh" in agent_start
+    assert "sudo chown -R" in preflight
+    assert "BOI_API_RUN_AS=1000:1000" in local_env
+    assert "BOI_API_RUN_AS=1000:1000" in pilot_env
+
+
+def test_agent_v2_stack_starts_its_event_broker_dependencies():
+    script = Path("scripts/start_agent_v2_stack.sh").read_text(encoding="utf-8")
+
+    assert "--profile local-full" in script
+    assert "kafka kafka-init event-router" in script
 
 
 def test_compose_declares_boi_auth_env_and_sso_dev_overlay():

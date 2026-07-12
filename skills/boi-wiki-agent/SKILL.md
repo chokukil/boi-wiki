@@ -1,102 +1,95 @@
 ---
 name: boi-wiki-agent
-description: Use when working on BoI Wiki SOPs, OKF documents, action specs, MCP integration, Langflow BoI flows, workflow runtime, validated edits, or BoI Wiki validation. This skill bootstraps Codex into BoI Wiki MCP and harness resources instead of duplicating the full domain rules.
+description: Use BoI Wiki v2 knowledge, current work, SOPs, Business Events, Actions, Skills, and guarded drafts through the shared Web, REST, and MCP capability contract.
 ---
 
 # BoI Wiki Agent
 
-Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, action catalog entries, Langflow BoI flows, MCP tools/resources/prompts, or validated edits.
+Use this skill when a task needs BoI Wiki knowledge or a BoI-backed work operation. The generated Codex contract in `agent_kit/codex/SKILL.md` is the canonical external-Agent reference; keep this repository skill aligned with it.
 
-## Startup
+## Start
 
-1. Prefer BoI Wiki MCP if available.
-   - MCP URL: `http://localhost:8200/mcp`
-   - Smoke: `python scripts/check_boi_wiki_mcp.py`
-   - Use `ontology_search` first when the user asks broad domain/search questions across SOP/Event/Action/Dictionary/runtime evidence.
-   - Use `boi_agent_chat` when the user asks a page-aware question or wants recommendations from current context.
-   - Use `boi_search` only when the task needs a BoI document list.
-   - Use `boi_inbox` for "what do I need to act on" questions. Use `agent_inbox` only as a deprecated compatibility alias.
-   - Use `harness_acceptance` when checking release readiness or final scenario consistency.
-   - Use `source_wiki_plan` before creating source-grounded repo documentation. Use `source_wiki_job_start` only with explicit confirmation.
-   - Use `promotion_preview` before `promotion_submit`.
-   - Use `agent_memory_review` for Second Brain memory, cleanup, and promotion candidates.
-   - Use `private_memory_cleanup_preview` before proposing cleanup of generated private BoI artifacts. Use cleanup run/restore only with explicit confirmation.
-   - Use `data_lake_status` before any Data Lake query. Data Lake is optional MinIO-backed artifact storage; BoI Wiki core must work without MinIO. PostgreSQL is only a Legacy DB Demo adapter.
-   - Use `data_lake_artifact_upload`, `data_lake_artifact_profile`, `data_lake_artifact_list`, and `data_lake_artifact_attach` for user files or large raw evidence. Never paste large raw files into prompts or BoI body.
-   - Use `dictionary_resolve` before interpreting shop-floor aliases, acronyms, or user-specific terms.
-2. If MCP is unavailable, read repo harness files:
-   - `harness/harness-responsibility-matrix.md`
-   - `harness/sop-authoring-harness.md`
-   - `harness/action-authoring-harness.md`
-   - `harness/web-draft-editing-guide.md`
-3. For user-facing guidance, read BoI Wiki manuals under:
-   - `data/boi/public/boi-wiki-manual/`
+1. Prefer the v2 Streamable HTTP MCP endpoint.
+   - Environment-neutral URL: `<BOI_MCP_URL>/mcp/v2`
+   - Local example: `http://localhost:8200/mcp/v2`
+   - Authenticate with `Authorization: Bearer $BOI_PAT`. Never put a PAT in chat or invent an employee ID.
+2. Send ordinary natural-language requests to `boi_agent` without a `capability_id`. BoI Wiki must infer the work intent and route it.
+3. Preserve `work_session_id`, `work_run_id`, source IDs, citation IDs, GoalPlan, artifact IDs, and pending confirmation references across follow-up turns.
+4. Treat `unavailable`, a Harness blocker, or no progress as a real stop. Do not replace them with a canned success response.
 
-## Operating Rules
+## MCP v2 Tools
 
-- OKF Markdown documents and action catalog are source of truth.
-- Web and MCP source/body edits use preview, validation, apply, and auto-commit. MCP apply tools require explicit `user_confirmed: true`. Team/Public promotion is separate: after user preview approval, call the validated promotion publish path and treat HOTL as post-publication oversight.
-- Treat preview as non-mutating. `boi_inbox_decision_preview`, plan, validation, and dry-run checks can run before confirmation; submit/apply/publish/workflow start/real action invoke/evidence adoption require `user_confirmed=true`.
-- `promotion_preview`, `source_wiki_plan`, `source_wiki_refresh_preview`, and `agent_memory_review` are non-mutating. `promotion_submit`, `source_wiki_job_start`, source/body apply, workflow start, real action invoke, and evidence adoption require `user_confirmed=true`.
-- For high-risk Action Gateway calls, `approved_by` is the approving person or system. It is separate from `user_confirmed` and may still be required after user confirmation.
-- Native BoI Agent in `boi-api` is the production Agent backend. Langflow is one connector/debug backend, not the default Agent engine.
-- Langflow is one connector kind among `api`, `webhook`, `mcp`, `manual`, `event_broker`, and `boi_writer`; do not model BoI Wiki as Langflow-only.
-- Langflow Universal Simulator is a dry-run/PoC tool, not verified report evidence. Do not treat simulated values as actual decision evidence unless the UI/report labels them as `시뮬레이션 결과`.
-- BoI API/MCP are the official external Agent interfaces. Langflow direct run URLs are trusted/dev integration paths, not user-facing public APIs.
-- Always search existing SOPs, event types, action specs, manual tasks, and harness docs before creating new ones.
-- Keep images under `_media/`, update `media-manifest.yaml`, and use standard Markdown image syntax.
-- Private memory and dictionary entries are BoI documents. Do not promote them automatically to Team/Public.
-- Private generated artifacts are not memory. Save user-adopted context as `memory`, active notes as `working`, and inbox reports/sandbox artifacts/generated reports as `background`. Cleanup is preview -> 7-day quarantine -> hard delete, and must never target memory, working, protected, or promoted documents.
-- BoI Inbox is a dedicated top-level UI. Pet Agent must guide users to `/inbox` or a verified report BoI link instead of rendering Inbox task cards itself.
-- Data Lake artifacts use MinIO through BoI API/MCP. Structured SQL-style evidence is a separate Legacy DB Demo path; never ask users for direct DB credentials, never connect to PostgreSQL directly, and never connect to MinIO outside BoI API/MCP.
-- Data Lake artifacts are the default file attachment contract when Data Lake is enabled. Store raw files as private artifacts, then use stable download URLs, bounded profiles, samples, charts, validation metadata, and attach records in runtime stages, Inbox decisions, reports, and Agent conversations. Team/Public sharing requires explicit confirmation.
-- Source Wiki is an optional overlay. Keep BoI core DB-less and OKF/Git-backed; use source inventory, selected/skipped files, commit SHA, citations, validation report, and last-good manifest instead of vendoring OpenWiki into core.
-- Local Second Brain is local-first. In `boi-wiki-local`, use capture inbox, review, cleanup preview, and promotion preflight helpers when available, but never send raw Local Private content remotely without explicit approval.
-- SOP Builder is a design surface, not a raw file upload surface. While authoring `/sops/new`, define required evidence types and where those files will be attached during execution. Actual human-uploaded Raw Data, PDF, PPT, Excel, logs, screenshots, and result files are attached from SOP Run stage panels, Manual Action completion, Inbox decisions, Report BoI review, or Agent conversations.
-- Human-uploaded files are first-class evidence. When a user attaches a file while completing a manual action, making an Inbox decision, reviewing a report, working in a SOP Run stage, or chatting with an Agent, keep `uploaded_by_employee_id`, `attached_from_surface`, `target_type`, `target_id`, `attachment_role`, `human_note`, and `validation_state`. Do not ask for a separate "use as evidence" checkbox; infer the target from the current work context and let the user remove or retarget the attachment.
+Use the ten public tools only:
 
-## SOP Work
+- `boi_bootstrap`: identity, readiness, and integration discovery
+- `boi_agent`: natural questions and work continuation
+- `boi_search`: ranked, neighbors, path, impact, or tour retrieval
+- `boi_get`: exact ACL-visible source or citation retrieval
+- `boi_my_work`: current Inbox, Workflow, and Task work
+- `boi_context`: bounded WorkContextPack retrieval
+- `boi_plan`: explicit deterministic draft planning
+- `boi_confirm`: continue a reviewed plan without bypassing guardrails
+- `boi_job_status`: deep-work status and result retrieval
+- `boi_tools_search`: progressive capability discovery
 
-When a user supplies an SOP image, OCR text, or process description:
+Use REST `/api/v2/*` only when MCP is unavailable or a deterministic integration requires it. Web, REST, MCP, and Agent Kit clients must preserve the same source, citation, WorkRun, artifact, and permission results.
 
-1. Search BoI Wiki for related concepts and reusable actions.
-2. Extract workflow stages, entry events, emitted events, evidence, automated actions, manual handoffs, outputs, and failure modes.
-3. Produce a package: SOP doc, event type docs, action specs, manual actions, catalog draft patches, citations, OKF links, and media references.
-4. Use Langflow only when an LLM/agent stage is actually required.
-5. Use `data/boi/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md` as the reference walkthrough when explaining how a regular user turns a process into Workflow/Task, Manual/Copilot/Autopilot, TAT, screenshots, runtime smoke, and BoI evidence.
+## Read And Understand
 
-## Action Work
+- Start with `boi_agent` for a natural request. Use `boi_search(view="ranked")` when the caller needs explicit evidence selection.
+- Use `boi_search` views `neighbors`, `path`, `impact`, and `tour` for relationships, connection paths, change scope, and an order for understanding. Open exact references with `boi_get`.
+- Treat the current page as an interpretation anchor, never as a forced search boundary. Search all ACL-visible Wiki knowledge with ontology, lexical, embedding, and runtime evidence.
+- Cite only returned citation IDs and source URLs. Do not cite a selected source that did not support the answer.
+- `index.md` and `log.md` are navigation files, not knowledge. Never use them in search, embedding, ontology, citation, or current-page context.
+- Documents with `status: deprecated` are historical audit material. Exclude them from normal answers and recommendations unless the user explicitly asks for history.
+- Keep history seed rows out of current work. Use `boi_my_work` for active work and treat old execution history as similar-case evidence only.
 
-Support all connector kinds: `api`, `webhook`, `mcp`, `langflow`, `manual`, `event_broker`, and `boi_writer`.
+## Context, Harness, And Loop
 
-For each action, create or update the public action-spec BoI document and the catalog entry together. High-risk system actions require a manual approval action.
+- Build work from the current goal, Workflow and Task, Task mode, completion checks, required and acquired evidence, related assets, similar cases, and recent loop deltas.
+- Keep large files, CSV, logs, and external-AI transcripts in the Data Library. Pass only an ACL URL, summary, profile, sample, and checksum into context.
+- Every operation follows `preflight -> plan -> validate -> preview/test -> confirmation -> apply/run -> post-verify` as required by its Harness.
+- A loop iteration must add evidence, an Action result, human input, an artifact, a state transition, a blocker, or a knowledge candidate. Repeated query or tool calls without a new delta are a stop condition.
+- Never mark a Task complete from model prose. Completion comes from structured checks, Evidence Ledger entries, Action results, and required human confirmation.
 
-## Agent / Search Work
+## Draft And Execute
 
-- Keep `/api/boi` and MCP `boi_search` document-only for compatibility.
-- Use `/api/search/ontology` or MCP `ontology_search` for grouped knowledge graph exploration.
-- Use `/api/agents/boi-wiki/chat` or MCP `boi_agent_chat` for page-aware answers. Expect `used_backend=native_langgraph` unless the user explicitly asks to test Langflow legacy/debug mode.
-- Use `/api/inbox` or MCP `boi_inbox` for verified decision reports. Use `boi_inbox_report_get` before recommending approval/rejection.
-- Use `/api/harness/acceptance` or MCP `harness_acceptance` before final release/readiness claims.
-- Use `/api/source-wikis/*` or MCP `source_wiki_*` for source-grounded repo wiki planning/generation/export.
-- Use `/api/promotions/preview` or MCP `promotion_preview` before calling `promotion_submit`.
-- Use `/api/agents/boi-wiki/memory/review` or MCP `agent_memory_review` before suggesting memory cleanup or promotion candidates.
-- Use `data_lake_query_plan` and `data_lake_query_preview` when structured evidence may exist. Only call `data_lake_query_execute` with explicit user confirmation, and only when a source/adapter is available.
-- Use `data_lake_artifact_upload` for files provided by the user or produced by sandbox/report agents in execution, decision, review, or conversation contexts. Follow with `data_lake_artifact_profile` and `data_lake_artifact_attach` so workflow stages, Inbox tasks, Report BoI, action results, and conversations reference the artifact URL/profile instead of raw content. During SOP authoring, do not upload raw files; define evidence requirements instead. Use `data_lake_artifact_list` before answering questions about what files are attached to a stage, report, Inbox task, conversation, or action result.
-- Use `data_lake_import_sources` only to materialize selected source profiles as private OKF Data Context BoI documents. This is optional report context, not a core runtime dependency.
-- Use dictionary priority `private → team → public` when expanding terms.
-- Use `private_memory_cleanup_preview`, `private_memory_cleanup_run`, `private_memory_restore`, and `private_memory_mark_memory` for private Second Brain lifecycle management. Generated/background documents are hidden from default `/api/boi`/`boi_search`; use explicit generated filters or cleanup/report APIs when needed.
-- Runtime links, raw logs, and recent activity are evidence signals, not OKF concept graph edges.
-- Mutating Agent operations such as manual handoff completion, source/body apply, promotion, and action invoke require explicit user confirmation.
+- Use `boi_plan` for an explicit deterministic capability such as `business_event.plan`, `sop.plan`, `action.plan`, `skill.plan`, or `knowledge.draft`.
+- Drafts are private and do not change production state.
+- Call `boi_confirm` only after explicit user review. Confirmation cannot bypass ACL, RBAC, publication review, Task mode, Action risk, or system-binding checks.
+- Manual Tasks are performed and confirmed by people. Copilot Tasks let internal or external AI prepare evidence and drafts but require a person to finish. Autopilot Tasks may run only allowlisted low-risk Actions with system-verifiable completion checks.
+- Deep work returns drafts and evidence. Poll its returned reference with `boi_job_status`; never claim completion from an empty artifact or missing Evidence Ledger.
+
+## Domain Work
+
+- Before creating an SOP, Business Event, Action, or Skill, retrieve existing assets and actual usage relationships first.
+- Model a Workflow as a set of Tasks. Keep each Task's purpose, Manual/Copilot/Autopilot mode, completed state, evidence to check, result, exception path, and related Event or Action explicit.
+- A Business Event defines when work begins or changes state. Connect it to a Workflow or Task only when the requested business relationship is supported by evidence.
+- Actions are Task execution mechanisms. Preview or dry-run them before any real side effect, and require risk-appropriate confirmation.
+- Langflow is one connector kind and an optional visual/debug surface, not the default Agent runtime or the source of truth.
+
+## Learn And Publish
+
+- A `KnowledgeCandidate` is reusable private provisional knowledge, not a shared Wiki change.
+- Prefer strengthening an existing canonical asset over creating a duplicate document.
+- Never promote raw chat, full logs, simulated output, or an unverified model answer directly into Team/Public knowledge.
+- Team/Public SOP, Business Event, Action, Skill, and knowledge changes require source-backed diff review and Harness validation.
+- OKF Markdown, Git history, and catalogs remain the source of truth. Search indexes, pgvector, and ontology are rebuildable read models.
+
+## Repository Authoring
+
+- Use the canonical manuals under `data/boi/public/boi-wiki-manual/` for user-facing guidance.
+- Keep screenshots under `_media/`, update `media-manifest.yaml`, and use standard Markdown image syntax.
+- Use canonical `/docs/{boi_id}` links for current guides. Preserve deprecated documents with frontmatter and `status: deprecated` rather than deleting their audit history.
+- Never give `index.md` or `log.md` a synthetic `doc:` identity. Folder navigation must resolve to an OKF overview or canonical guide.
 
 ## Validation
 
-Run the narrowest useful checks first, then full checks before completion:
+Run the narrowest useful checks first, then the shared quality gates before completion:
 
 ```bash
-pytest tests -q -s
-python scripts/okf_lint.py --root data --include-logs --strict-media
-python scripts/check_boi_wiki_mcp.py
-python scripts/audit_langflow_flows.py
-python scripts/run_equipment_sop_poc.py
+python scripts/okf_lint.py --root data --strict-media --strict-links
+python scripts/check_agent_v2_search_quality.py --base-url http://127.0.0.1:8765 --employee-id 100001
+python scripts/check_agent_v2_interface_parity.py --base-url http://127.0.0.1:8765 --employee-id 100001
+python scripts/check_boi_wiki_mcp.py --mcp-url http://localhost:8200/mcp/v2
 ```

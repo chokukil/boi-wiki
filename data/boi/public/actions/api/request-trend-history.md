@@ -119,8 +119,6 @@ example_response:
     source_system: quality_system
     trend_status: simulated_response_trend_anomaly_detected
     anomaly_basis: SOP/action contract based simulation
-curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"sop.equipment.request_trend_history","employee_id":"100001","event":{"event_type":"equipment.alarm.raised.v1","trace_id":"trace-equipment-demo"},"payload":{"equipment_id":"ETCH-VM-01","lot_id":"LOT-POC-001","wafer_id":"WF-POC-001"},"dry_run":false}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: sop.equipment.request_trend_history

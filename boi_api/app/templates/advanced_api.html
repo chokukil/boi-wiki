@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>API · BoI Wiki</title><link rel="stylesheet" href="{{ asset_url('style.css') }}" /></head>
+<body>
+  {% include "_app_shell.html" %}
+  {% with title="API", description="지원되는 v2 계약과 외부 도구 연결 방법을 확인합니다.", eyebrow=None, primary_action={"label":"API Reference","href":"/api/reference","kind":"primary"} %}{% include "_section_intro.html" %}{% endwith %}
+  <main class="page-content advanced-interface-page">
+    <section class="panel interface-status"><div><span class="badge reviewed">지원 계약</span><h2>BoI Wiki API v{{ contract_version }}</h2><p>지식, 현재 업무, SOP, 업무 이벤트, Action과 BoI Agent를 PAT 권한 안에서 사용합니다.</p></div><a class="button primary" href="/api/reference">API Reference 열기</a></section>
+    <section class="panel"><h2>외부에서 사용할 때</h2><ol><li>BoI Agent의 <strong>외부에서 사용</strong>에서 개인 연결 키를 만듭니다.</li><li><code>Authorization: Bearer &lt;BOI_PAT&gt;</code>로 요청합니다.</li><li><code>/openapi-v2.json</code>의 지원 계약만 새 연동에 사용합니다.</li></ol><p><a class="button secondary" href="/agent/access?employee_id={{ employee_id }}">외부에서 사용 설정</a></p></section>
+    <details class="panel technical-details"><summary>호환 API</summary><p>기존 <code>/openapi.json</code>과 <code>/docs</code>는 이전 연동 점검을 위해 유지됩니다. 신규 연동은 v2 reference를 기준으로 합니다.</p></details>
+  </main>
+</body>
+</html>

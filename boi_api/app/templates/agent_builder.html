@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agent Builder · BoI Wiki</title>
+  <title>업무 도우미 만들기 · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('agent_builder.js') }}" defer></script>
 </head>
@@ -16,17 +16,18 @@
         data-openai-health-url="{{ openai_health_url }}"
         data-ops-enabled="{{ 'true' if ops_center_enabled else 'false' }}"
         data-ops-url="{{ ops_url }}"
+        data-langflow-url="{{ langflow_url }}"
         data-employee-id="{{ employee_id }}">
     <section class="page-section agent-builder-hero">
       <div>
-        <p class="eyebrow">Advanced · Agent Builder</p>
-        <h2>Agent Builder</h2>
-        <p>프롬프트와 선택 자료만으로 업무 Agent를 만들고, GPT-5.5/Agents SDK 테스트와 Sandbox 검증을 거친 뒤 BoI Wiki에 배포합니다.</p>
+        <p class="eyebrow">업무 도우미</p>
+        <h2>업무 도우미 만들기</h2>
+        <p>어떤 업무를 도울지, 어떤 지식을 참고할지, 어떤 일을 할 수 있는지만 고르면 BoI Wiki가 검색·근거·흐름 정리를 연결합니다.</p>
       </div>
       <div class="agent-runtime-strip" data-agent-runtime>
-        <span>Model <strong>{{ agent_model }}</strong></span>
-        <span>Runtime <strong>{{ agent_runtime }}</strong></span>
-        <span>Sandbox <strong>{{ 'enabled' if sandbox_enabled else 'disabled' }}</strong></span>
+        <span>검색 <strong>BoI 지식 그래프</strong></span>
+        <span>근거 <strong>첨부·이력 연결</strong></span>
+        <span>흐름 <strong>그림 지원</strong></span>
       </div>
     </section>
 
@@ -34,35 +35,149 @@
       <form class="agent-builder-form page-section" data-agent-builder-form>
         <header class="section-heading">
           <div>
-            <h2>새 Agent 초안</h2>
-            <p class="muted">일반 구성원이 이해할 수 있는 업무 목적을 먼저 쓰고, 필요한 도구와 자료는 선택으로 붙입니다.</p>
+            <h2>새 업무 도우미</h2>
+            <p class="muted">먼저 업무 목적을 적고, 참고할 지식과 할 수 있는 일을 카드로 고릅니다.</p>
           </div>
           <output class="agent-builder-status" data-agent-builder-status>대기 중</output>
         </header>
 
         <label>
-          <span>Agent 이름</span>
-          <input name="title" value="FAB Trend Evidence Helper" placeholder="예: FAB Trend Evidence Helper" required>
+          <span>도우미 이름</span>
+          <input name="title" value="Trend 근거 정리 도우미" placeholder="예: Trend 근거 정리 도우미" required>
         </label>
         <label>
-          <span>무엇을 도와야 하나요?</span>
+          <span>무엇을 도와줄까요?</span>
           <textarea name="prompt" required>Trend, Raw Data, 이전 조치 이력을 확인해 승인/반려 판단에 필요한 근거를 정리해줘.</textarea>
         </label>
-        <div class="agent-builder-grid">
+
+        <section class="agent-builder-choice-section" aria-labelledby="helper-surface-heading">
+          <div>
+            <h3 id="helper-surface-heading">어디에서 쓸까요?</h3>
+            <p class="muted">도우미가 나타날 업무 화면을 고릅니다.</p>
+          </div>
+          <div class="agent-builder-choice-grid">
+            <label class="agent-builder-choice-card"><input type="checkbox" name="helper_surfaces" value="pet" checked><strong>검색 도우미</strong><span>검색 화면에서 질문과 검색을 돕습니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="helper_surfaces" value="task"><strong>Task 처리</strong><span>Manual/Copilot/Autopilot 업무를 돕습니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="helper_surfaces" value="inbox"><strong>Inbox 검토</strong><span>승인·반려 판단 근거를 정리합니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="helper_surfaces" value="sop_builder"><strong>SOP 작성</strong><span>Task와 흐름 그림을 정리합니다.</span></label>
+          </div>
+        </section>
+
+        <section class="agent-builder-choice-section" aria-labelledby="helper-reference-heading">
+          <div>
+            <h3 id="helper-reference-heading">무엇을 참고할까요?</h3>
+            <p class="muted">원본 전문은 넣지 않고 BoI Wiki의 요약 정보, 근거 모음, 유사 사례를 연결합니다.</p>
+          </div>
+          <div class="agent-builder-choice-grid">
+            <label class="agent-builder-choice-card"><input type="checkbox" name="reference_sources" value="boi_docs" checked><strong>BoI 문서</strong><span>업무 지식과 보고서를 찾습니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="reference_sources" value="sops" checked><strong>SOP</strong><span>업무 단계와 종료 기준을 봅니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="reference_sources" value="actions" checked><strong>실행 요청</strong><span>실행하거나 확인할 요청을 찾습니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="reference_sources" value="similar_cases"><strong>유사 사례</strong><span>과거 처리 이력과 근거를 봅니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="reference_sources" value="attachments"><strong>첨부 근거</strong><span>파일 요약 정보와 검증 상태를 참고합니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="reference_sources" value="knowledge_graph"><strong>업무 관계</strong><span>시작 시점, Task, 실행 요청 연결을 봅니다.</span></label>
+          </div>
+        </section>
+
+        <section class="agent-builder-choice-section" aria-labelledby="helper-capability-heading">
+          <div>
+            <h3 id="helper-capability-heading">무엇을 할 수 있나요?</h3>
+            <p class="muted">필요한 일만 고르면 내부 Skill과 연결할 시스템은 BoI Wiki가 초안에 반영합니다.</p>
+          </div>
+          <div class="agent-builder-choice-grid">
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="search" checked><strong>찾기</strong><span>관련 문서와 업무 흐름을 찾습니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="summarize" checked><strong>요약</strong><span>업무 맥락을 짧게 정리합니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="validate"><strong>근거 검증</strong><span>필수 근거와 부족한 점을 확인합니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="chart"><strong>차트</strong><span>데이터를 표와 그림으로 봅니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="report"><strong>보고서 초안</strong><span>판단 근거와 권장 조치를 씁니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="mermaid"><strong>흐름 그림</strong><span>업무 흐름을 그림으로 정리합니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="action_request"><strong>요청 준비</strong><span>Action 실행 전 확인 카드를 만듭니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="capabilities" value="external_lookup"><strong>시스템 조회</strong><span>연결된 시스템의 결과를 참고합니다.</span></label>
+          </div>
+        </section>
+
+        <section class="agent-builder-choice-section" aria-labelledby="helper-skill-heading">
+          <div>
+            <h3 id="helper-skill-heading">이미 있는 능력을 붙일까요?</h3>
+            <p class="muted">BoI Wiki에 등록된 업무 능력을 고르면 도우미가 할 수 있는 일이 더 명확해집니다.</p>
+          </div>
+          <div class="agent-builder-choice-grid">
+            {% for skill in builder_action_skills %}
+            <label class="agent-builder-choice-card">
+              <input type="checkbox" name="selected_skills" value="{{ skill.skill_key }}">
+              <strong>{{ skill.title or skill.skill_key }}</strong>
+              <span>{{ skill.description or skill.skill_key }}</span>
+            </label>
+            {% endfor %}
+            {% for skill in builder_event_skills %}
+            <label class="agent-builder-choice-card">
+              <input type="checkbox" name="selected_skills" value="{{ skill.skill_key }}">
+              <strong>{{ skill.title or skill.skill_key }}</strong>
+              <span>{{ skill.description or skill.skill_key }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="agent-builder-choice-section" aria-labelledby="helper-connection-heading">
+          <div>
+            <h3 id="helper-connection-heading">어디와 연결할까요?</h3>
+            <p class="muted">일반 화면에서는 목적만 고르고, 상세 주소와 인증은 고급 설정에서 조정합니다.</p>
+          </div>
+          <div class="agent-builder-choice-grid">
+            <label class="agent-builder-choice-card"><input type="checkbox" name="connection_presets" value="boi_wiki" checked><strong>BoI Wiki</strong><span>문서, SOP, 업무 이벤트, 실행 이력을 찾습니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="connection_presets" value="data_lake"><strong>원본/첨부 저장소</strong><span>원본 대신 요약, 대표값, 체크섬, 링크를 참고합니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="connection_presets" value="action_gateway"><strong>실행 요청</strong><span>실행 전 확인 카드를 만들고 업무 화면에서 승인합니다.</span></label>
+            <label class="agent-builder-choice-card"><input type="checkbox" name="connection_presets" value="langflow"><strong>흐름 편집기</strong><span>고급 사용자가 시각 흐름을 확인하거나 편집할 때 연결합니다.</span></label>
+          </div>
+          {% if langflow_url %}
+          <a class="agent-builder-inline-link" href="{{ langflow_url }}" target="_blank" rel="noopener">흐름 편집기 열기</a>
+          {% else %}
+          <p class="muted">흐름 편집기 주소가 설정되면 이곳에서 바로 열 수 있습니다.</p>
+          {% endif %}
+        </section>
+
+        <section class="agent-builder-choice-section" aria-labelledby="helper-new-skill-heading">
+          <div>
+            <h3 id="helper-new-skill-heading">필요한 능력이 없나요?</h3>
+            <p class="muted">어떤 능력이 더 필요할지 적어두면 새 능력 초안으로 같이 남깁니다.</p>
+          </div>
+          <div class="agent-builder-grid agent-builder-basic-grid">
+            <label>
+              <span>새 능력 이름</span>
+              <input name="new_skill_title" placeholder="예: Recipe 변경 이력 비교">
+            </label>
+            <label>
+              <span>필요한 이유</span>
+              <textarea name="new_skill_description" placeholder="예: Alarm 판단 전에 Recipe 변경 이력을 자동으로 비교하고 싶어요."></textarea>
+            </label>
+          </div>
+        </section>
+
+        <div class="agent-builder-grid agent-builder-basic-grid">
           <label>
-            <span>저장 범위</span>
+            <span>누가 쓸 수 있나요?</span>
             <select name="scope">
-              <option value="private">private</option>
-              <option value="team">team</option>
-              <option value="public">public</option>
+              <option value="private">나만 사용</option>
+              <option value="team">팀과 함께 사용</option>
+              <option value="public">전체 공개</option>
             </select>
           </label>
           <label>
-            <span>MCP 서버</span>
+            <span>사용 예시</span>
+            <textarea name="use_cases" placeholder="예: Alarm 승인 전에 Trend와 이전 조치 이력을 비교"></textarea>
+          </label>
+        </div>
+
+        <details class="agent-builder-advanced">
+          <summary>고급 설정</summary>
+          <p class="muted">연결할 시스템, 기존 업무 능력, 참고 URL, 코드 저장소, 시험 설정은 고급 사용자만 조정합니다.</p>
+          <div class="agent-builder-grid">
+          <label>
+            <span>연결할 시스템</span>
             <textarea name="mcp_servers" placeholder="boi-wiki-local&#10;data-lake"></textarea>
           </label>
           <label>
-            <span>Skill</span>
+            <span>기존 업무 능력</span>
             <textarea name="skills" placeholder="data-analytics:visualize-data&#10;data-analytics:validate-data"></textarea>
           </label>
           <label>
@@ -70,35 +185,36 @@
             <textarea name="urls" placeholder="https://..."></textarea>
           </label>
           <label>
-            <span>Git repo</span>
+            <span>코드 저장소</span>
             <textarea name="git_repos" placeholder="https://github.com/org/repo"></textarea>
           </label>
           <label>
             <span>첨부 파일 메모</span>
             <textarea name="files" placeholder="fab-trend-sample.csv - Trend raw sample&#10;spec-rule.md - 판단 기준"></textarea>
           </label>
-        </div>
+          </div>
+        </details>
 
         <div class="agent-builder-actions">
           <button type="submit" class="primary">초안 만들기</button>
-          <button type="button" data-agent-builder-test disabled>바로 테스트</button>
+          <button type="button" data-agent-builder-test disabled>먼저 시험해보기</button>
           <button type="button" data-agent-builder-publish disabled>저장/배포</button>
         </div>
-        <p class="muted">테스트는 Agents SDK가 준비되어 있으면 GPT-5.5로 수행하고, 실패해도 화면은 contract-only 상태로 계속 진행합니다.</p>
+        <p class="muted">시험 결과는 초안 검토용입니다. 실제 업무 실행과 승인은 각 업무 화면에서 다시 확인합니다.</p>
       </form>
 
       <aside class="page-section agent-builder-preview">
         <header class="section-heading">
           <div>
-            <h2>검증 결과</h2>
-            <p class="muted">초안, 테스트, 배포, Sandbox 검증 결과가 여기에 누적됩니다.</p>
+            <h2>초안 미리보기</h2>
+            <p class="muted">도우미가 참고할 지식, 할 수 있는 일, 시험 결과가 여기에 누적됩니다.</p>
           </div>
           {% if ops_center_enabled %}
-          <a href="{{ ops_url }}">Operations Center</a>
+          <a href="{{ ops_url }}">업무 상황실</a>
           {% endif %}
         </header>
         <div class="agent-builder-result" data-agent-builder-result>
-          <p class="muted">아직 만든 Agent 초안이 없습니다.</p>
+          <p class="muted">아직 만든 도우미 초안이 없습니다.</p>
         </div>
       </aside>
     </section>
@@ -107,69 +223,73 @@
       <form class="page-section agent-builder-form" data-agent-builder-sandbox-form>
         <header class="section-heading">
           <div>
-            <h2>Sandbox로 검증</h2>
-            <p class="muted">Agent가 사용할 계산 근거, 표, 차트, 보고서 artifact를 격리 workspace에서 만들어 검증합니다.</p>
+            <h2>먼저 시험해보기</h2>
+            <p class="muted">도우미가 만들 표, 차트, 보고서 근거를 별도 작업공간에서 검토합니다.</p>
           </div>
           <output class="agent-builder-status" data-agent-sandbox-status>대기 중</output>
         </header>
         <label>
           <span>검증 제목</span>
-          <input name="title" value="Agent Builder Sandbox Smoke" required>
+          <input name="title" value="도우미 시험 실행" required>
         </label>
         <label>
           <span>검증 요청</span>
           <textarea name="task" required>샘플 데이터를 생성하고 이상 여부를 판단할 수 있는 표와 요약을 만들어줘.</textarea>
         </label>
-        <label>
-          <span>Python 코드</span>
-          <textarea name="code">from pathlib import Path
+        <details class="agent-builder-advanced">
+          <summary>고급 시험 설정</summary>
+          <p class="muted">특정 파일이나 표가 필요한 관리자만 시험 코드를 조정합니다. 일반 검증은 위 요청만으로 실행합니다.</p>
+          <label>
+            <span>고급 시험 코드</span>
+            <textarea name="code">from pathlib import Path
 Path("agent_builder_result.csv").write_text("metric,value\npressure_delta,1.8\nraw_rows,42\n", encoding="utf-8")
-Path("agent_builder_summary.md").write_text("# Agent Builder Sandbox\n\nRaw data 확인 기준을 통과했습니다.\n", encoding="utf-8")
+Path("agent_builder_summary.md").write_text("# 도우미 시험 결과\n\nRaw data 확인 기준을 통과했습니다.\n", encoding="utf-8")
 print("agent-builder-sandbox-ok")</textarea>
-        </label>
+          </label>
+        </details>
         <div class="agent-builder-actions">
-          <button type="submit" class="primary">Sandbox 테스트</button>
+          <button type="submit" class="primary">시험 실행</button>
         </div>
       </form>
 
       <section class="page-section agent-builder-links">
-        <h2>운영 연결</h2>
-        <p class="muted">Builder는 Agent를 만드는 화면이고, 실제 업무 배정과 의사결정은 공개된 업무 화면에서 처리합니다.</p>
+        <h2>업무 연결</h2>
+        <p class="muted">도우미는 검색과 초안을 돕고, 실제 업무 배정과 의사결정은 업무 화면에서 처리합니다.</p>
         <div class="cards compact">
           {% if ops_center_enabled %}
           <a class="card event-card" href="{{ ops_url }}">
-            <strong>BoI Operations Center</strong>
+            <strong>업무 상황실</strong>
             <small>업무 상황실</small>
-            <p>정규 SOP, Agent 작업, Evidence, Decision을 한 canvas에서 확인합니다.</p>
+            <p>정규 SOP, 도우미 작업, 근거와 판단을 한 화면에서 확인합니다.</p>
           </a>
           {% endif %}
           <a class="card event-card" href="{{ action_url }}">
-            <strong>Action</strong>
-            <small>API / MCP / Webhook / Manual</small>
-            <p>Agent가 명시 확인 후 호출할 실행 단위를 관리합니다.</p>
+            <strong>실행 요청</strong>
+            <small>요청과 실행 단위</small>
+            <p>도우미가 제안하고 사람이 확인한 뒤 실행할 요청을 관리합니다.</p>
           </a>
           <a class="card event-card" href="{{ event_catalog_url }}">
-            <strong>Event</strong>
-            <small>Event Broker</small>
-            <p>업무 발생 시점과 Agent/SOP 연결을 확인합니다.</p>
+            <strong>업무 시작 시점</strong>
+            <small>업무가 시작되는 순간</small>
+            <p>업무 발생 시점과 도우미/SOP 연결을 확인합니다.</p>
           </a>
           <a class="card event-card" href="{{ api_docs_url }}" target="_blank" rel="noopener">
-            <strong>BoI Wiki API</strong>
-            <small>REST</small>
-            <p>Agent, Sandbox, Inbox, SOP run API contract를 확인합니다.</p>
+            <strong>연동 문서</strong>
+            <small>관리자용</small>
+            <p>업무 도우미, Inbox, SOP 실행 화면의 연결 상태를 확인합니다.</p>
           </a>
           {% if mcp_url %}
           <a class="card event-card" href="{{ mcp_url }}" target="_blank" rel="noopener">
-            <strong>BoI Wiki MCP</strong>
-            <small>MCP</small>
-            <p>외부 Agent와 Codex/Claude용 MCP endpoint 상태를 확인합니다.</p>
+            <strong>외부 도구 연결</strong>
+            <small>고급 연결</small>
+            <p>외부 도우미와 업무 도구 연결 상태를 확인합니다.</p>
           </a>
           {% endif %}
           {% if langflow_url %}
           <a class="card event-card" href="{{ langflow_url }}" target="_blank" rel="noopener">
-            <strong>Langflow</strong>
-            <small>Optional visual backend</small>
-            <p>시각 Flow 디버그와 connector 확인용입니다. Builder의 기본 runtime은 Agents SDK입니다.</p>
+            <strong>흐름 편집기로 열기</strong>
+            <small>고급 편집</small>
+            <p>고급 사용자가 연결 흐름을 시각적으로 확인할 때 사용합니다.</p>
           </a>
           {% endif %}
         </div>

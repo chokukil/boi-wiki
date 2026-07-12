@@ -52,12 +52,7 @@ recommended_manual_actions: []
 
 # Example
 
-```bash
-curl -X POST "http://localhost:8000/api/workflows/direct-development-reporting/start?employee_id=100001" \
-  -H "x-service-token: $SERVICE_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"user_confirmed":true}'
-```
+BoI Wiki에서는 이 Event Type과 연결된 업무 흐름에서 실행을 시작한다. 외부 Agent는 `/mcp/v2`의 `boi_agent`에 자연어로 요청하고, 반환된 plan과 확인 절차를 이어간다. 사번 query나 service token을 문서에서 복사해 직접 실행하지 않는다.
 
 # Citations
 

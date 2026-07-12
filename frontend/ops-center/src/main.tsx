@@ -361,7 +361,7 @@ function SandboxJobList({
           {job.task && <p>{job.task}</p>}
           {job.summary?.output && (
             <section className="ops-sandbox-summary">
-              <span>GPT-5.5 검증 요약</span>
+              <span>AI 검증 요약</span>
               <p>{job.summary.output}</p>
             </section>
           )}
@@ -564,7 +564,7 @@ function ContextDrawer({
             <p>Sandbox에서 생성된 계산 근거, 표, 보고서 artifact를 확인하고 검증된 결과만 업무 판단 근거로 채택합니다.</p>
             <div className="ops-focus-points">
               <span>source/code/runtime/output 추적</span>
-              <span>GPT-5.5 요약</span>
+              <span>AI 요약</span>
               <span>사용자 확인 후 채택</span>
             </div>
           </section>

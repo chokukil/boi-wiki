@@ -13,6 +13,12 @@ def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_pa
         "# Agent Rules\n\nDo not submit raw local notes remotely.\n\n[docs](missing.md)\n\n![sample](evidence/sample.png)",
         encoding="utf-8",
     )
+    (source_root / "index.md").write_text("# Navigation\n\nFolder links only.", encoding="utf-8")
+    (source_root / "log.md").write_text("# Log\n\nNavigation history only.", encoding="utf-8")
+    (source_root / ".env.example").write_text("API_KEY=replace-me\n", encoding="utf-8")
+    hidden_state = source_root / ".claude"
+    hidden_state.mkdir()
+    (hidden_state / "settings.local.json").write_text('{"local": true}\n', encoding="utf-8")
     scripts = source_root / "scripts"
     scripts.mkdir()
     (scripts / "check.sh").write_text("#!/usr/bin/env sh\nprintf 'ok\\n'\n", encoding="utf-8")
@@ -34,6 +40,13 @@ def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_pa
     assert plan_body["ok"] is True
     assert plan_body["inventory"]["selected_count"] >= 2
     assert plan_body["mutating"] is False
+    selected_paths = {item["path"] for item in plan_body["inventory"]["selected"]}
+    assert {"index.md", "log.md"}.isdisjoint(selected_paths)
+    skipped = {item["path"]: item["reason"] for item in plan_body["inventory"]["skipped"]}
+    assert skipped["index.md"] == "navigation_file"
+    assert skipped["log.md"] == "navigation_file"
+    assert skipped[".env.example"] == "environment_file"
+    assert skipped[".claude/settings.local.json"] == "excluded_directory"
 
     unconfirmed = client.post("/api/source-wikis/jobs?employee_id=100001", json=payload)
     assert unconfirmed.status_code == 400
@@ -44,6 +57,16 @@ def test_source_wiki_plan_job_refresh_and_markdown_export(boi_app_module, tmp_pa
     assert manifest["status"] == "generated"
     assert manifest["pages"]
     assert (boi_app_module.SOURCE_WIKI_ROOT / "local-source" / "latest.json").exists()
+
+    first_page_path = Path(manifest["pages"][0]["path"])
+    (source_root / "README.md").write_text("# Local Source\n\nUpdated source revision.", encoding="utf-8")
+    next_job = client.post("/api/source-wikis/jobs?employee_id=100001", json={**payload, "user_confirmed": True})
+    assert next_job.status_code == 200
+    next_manifest = next_job.json()
+    assert manifest["pages"][0]["boi_id"] in next_manifest["deprecated_pages"]
+    old_metadata, _old_body = boi_app_module.split_frontmatter(first_page_path.read_text(encoding="utf-8"))
+    assert old_metadata["status"] == "deprecated"
+    assert old_metadata["archive_status"] == "archived"
 
     refresh = client.post("/api/source-wikis/local-source/refresh-preview?employee_id=100001", json={"source_path": str(source_root)})
     assert refresh.status_code == 200

@@ -99,8 +99,6 @@ example_response:
   action: langflow.boi.reference_flow
   flow_id: 07b9f3e5-a90b-4a61-8996-a10aa8df2895
   message: Langflow를 통한 업무 맥락 자산화와 Event Broker/Action Gateway의 연동을 검증합니다.
-curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"langflow.boi.reference_flow","employee_id":"100001","event":{"event_type":"equipment.alarm.raised.v1","trace_id":"trace-demo","payload":{"title":"Response Chain 이상 Alarm 발생","equipment_id":"ETCH-VM-01","owner":"100001"}},"payload":{"title":"Response Chain 이상 Alarm 발생","equipment_id":"ETCH-VM-01","owner":"100001"}}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: langflow.boi.reference_flow

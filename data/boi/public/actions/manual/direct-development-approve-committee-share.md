@@ -120,8 +120,6 @@ example_response:
   simulation_label: null
   result:
     message: Action Gateway result recorded.
-curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"manual.direct_development.approve_committee_share","employee_id":"100001","event":{"event_type":"direct_development.share.requested.v1","trace_id":"trace-direct-development-demo"},"payload":{"tech":"Tech-A","work_id":"1.10","owner":"100001"}}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: manual.direct_development.approve_committee_share

@@ -98,8 +98,6 @@ example_response:
   action: langflow.meeting_writer.sample
   result:
     message: PoC endpoint invoked
-curl: 'curl -X POST ''http://langflow:7860/api/v1/webhook/{flow_id}'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"payload":{"equipment_id":"ETCH-VM-01"},"dry_run":false}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: langflow.meeting_writer.sample

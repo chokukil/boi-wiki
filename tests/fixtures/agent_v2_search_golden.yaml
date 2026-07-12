@@ -1,0 +1,49 @@
+thresholds:
+  recall_at_8: 0.85
+  authoritative_top_3: 0.90
+cases:
+  - query: Event Broker
+    expected_any: [boi:public:dictionary:event-broker]
+    authoritative_any: [boi:public:dictionary:event-broker]
+  - query: Cpk
+    expected_any: [boi:public:dictionary:cpk]
+    authoritative_any: [boi:public:dictionary:cpk]
+  - query: Action Gateway
+    expected_any: [boi:public:dictionary:action-gateway]
+    authoritative_any: [boi:public:dictionary:action-gateway]
+  - query: 단면검사
+    expected_any: [boi:public:dictionary:cross-section-inspection]
+    authoritative_any: [boi:public:dictionary:cross-section-inspection]
+  - query: 시계열 예측
+    expected_any: [boi:public:event-types:timeseries.forecast.requested.v1, boi:public:dictionary:time-series-forecast]
+    authoritative_any: [boi:public:event-types:timeseries.forecast.requested.v1, boi:public:dictionary:time-series-forecast]
+  - query: 설비 이상 대응 SOP
+    expected_any: [boi:public:sop:equipment-abnormal-response]
+    authoritative_any: [boi:public:sop:equipment-abnormal-response]
+  - query: SOP 업무 이벤트 Action 연결
+    expected_any: [boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop]
+    authoritative_any: [boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop]
+  - query: 업무 BoI-first 모델
+    expected_any: [boi:public:boi-wiki-manual:concepts:work-boi-first-model]
+    authoritative_any: [boi:public:boi-wiki-manual:concepts:work-boi-first-model]
+  - query: 업무 이벤트 정의 만들기
+    expected_any: [boi:public:boi-wiki-manual:workflows:business-event-definition-guide]
+    authoritative_any: [boi:public:boi-wiki-manual:workflows:business-event-definition-guide]
+  - query: SOP Workflow 작성과 Runtime 연결
+    expected_any: [boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop]
+    authoritative_any: [boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop]
+  - query: BoI Agent로 무엇을 할 수 있나?
+    expected_any: [boi:public:boi-wiki-manual:agent:using-boi-agent]
+    authoritative_any: [boi:public:boi-wiki-manual:agent:using-boi-agent]
+  - query: SOP·Task·업무 이벤트·Action·BoI는 어떻게 연결되나?
+    expected_any: [boi:public:boi-wiki-manual:workflows:business-event-definition-guide, boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step]
+    authoritative_any: [boi:public:boi-wiki-manual:workflows:business-event-definition-guide, boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step]
+  - query: 자료를 업무 근거로 사용하는 방법은?
+    expected_any: [boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle]
+    authoritative_any: [boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle]
+  - query: Codex나 Claude에서 연결하는 방법은?
+    expected_any: [boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp]
+    authoritative_any: [boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp]
+  - query: 업무 결과가 어떻게 지식으로 축적되는가?
+    expected_any: [boi:public:boi-wiki-manual:agent:work-learning-system, boi:public:boi-wiki-manual:knowledge:living-knowledge-system]
+    authoritative_any: [boi:public:boi-wiki-manual:agent:work-learning-system, boi:public:boi-wiki-manual:knowledge:living-knowledge-system]

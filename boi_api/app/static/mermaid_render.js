@@ -1,5 +1,7 @@
 (function () {
-  const CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js";
+  const SCRIPT_URLS = [
+    "/static/vendor/mermaid/mermaid.min.js",
+  ];
   let loadPromise = null;
 
   function diagrams(root) {
@@ -24,36 +26,50 @@
     if (details) details.open = true;
   }
 
-  function loadMermaid() {
-    if (window.mermaid) return Promise.resolve(window.mermaid);
-    if (loadPromise) return loadPromise;
-    loadPromise = new Promise((resolve, reject) => {
+  function loadScript(url) {
+    return new Promise((resolve, reject) => {
       const script = document.createElement("script");
       let settled = false;
       const fail = (error) => {
         if (settled) return;
         settled = true;
-        loadPromise = null;
         script.remove();
         reject(error);
       };
-      script.src = CDN_URL;
+      script.src = url;
       script.async = true;
       script.onload = () => {
         if (settled) return;
         if (!window.mermaid) {
-          fail(new Error("Mermaid library unavailable"));
+          fail(new Error(`Mermaid library unavailable from ${url}`));
           return;
         }
         settled = true;
         resolve(window.mermaid);
       };
-      script.onerror = () => fail(new Error("Mermaid library load failed"));
+      script.onerror = () => fail(new Error(`Mermaid library load failed from ${url}`));
       document.head.appendChild(script);
       window.setTimeout(() => {
-        if (!window.mermaid) fail(new Error("Mermaid library load timed out"));
-      }, 8000);
+        if (!window.mermaid) fail(new Error(`Mermaid library load timed out from ${url}`));
+      }, 30000);
     });
+  }
+
+  function loadMermaid() {
+    if (window.mermaid) return Promise.resolve(window.mermaid);
+    if (loadPromise) return loadPromise;
+    loadPromise = (async () => {
+      let lastError;
+      for (const url of SCRIPT_URLS) {
+        try {
+          return await loadScript(url);
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      loadPromise = null;
+      throw lastError || new Error("Mermaid library unavailable");
+    })();
     return loadPromise;
   }
 

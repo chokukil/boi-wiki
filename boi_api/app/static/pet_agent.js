@@ -184,7 +184,7 @@
 
   async function readAgentStream(response, handlers) {
     if (!response.body || !window.ReadableStream) {
-      throw new Error("이 브라우저는 Agent 스트리밍을 지원하지 않습니다.");
+      throw new Error("이 브라우저는 실시간 답변을 지원하지 않습니다.");
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -222,7 +222,7 @@
       status_generation_failed: "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
       boi_agent_router_unavailable: "답변을 완성하지 못했습니다. 질문을 조금 더 구체적으로 적어 다시 시도해 주세요.",
       native_agent_runtime_unavailable: "답변을 완성하지 못했습니다. 확인할 근거를 줄여 다시 요청해 주세요.",
-      langflow_boi_agent_unavailable: "연결된 SOP/Action 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      langflow_boi_agent_unavailable: "연결된 업무 흐름과 실행 요청 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
       agent_stream_error: "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
     };
     return labels[status] || "답변을 완성하지 못했습니다. 잠시 후 다시 시도해 주세요.";
@@ -482,16 +482,27 @@
     const escapedSource = escapeHtml(source);
     const id = viewerPayload ? ` data-viewer-id="${escapeAttr(viewerPayload.id)}"` : "";
     const attrs = viewerPayload?.attrs || "";
+    const diagramQuestion = "이 Mermaid 흐름을 기준으로 Task와 종료 기준을 나눠줘.";
+    const actionQuestion = "이 Mermaid 흐름에서 부족한 실행 요청과 필요한 입력/출력 근거를 찾아줘.";
+    const eventQuestion = "이 Mermaid 흐름을 업무 이벤트 정의와 SOP 시작 조건으로 연결해줘.";
+    const helperQuestion = "이 Mermaid 흐름을 업무 도우미에게 맡길 수 있는 역할과 참고 자료로 정리해줘.";
     return `
       <div class="mermaid-diagram boi-agent-artifact" data-mermaid-state="pending" data-mermaid-source="${escapeAttr(source)}"${id}${attrs}>
         <div class="boi-agent-artifact-title">
-          ${title ? `<strong>${escapeHtml(title)}</strong>` : "<strong>Diagram</strong>"}
-          ${viewerPayload ? `<button type="button" data-open-artifact="${escapeAttr(viewerPayload.id)}">크게 보기</button>` : ""}
+          ${title ? `<strong>${escapeHtml(title)}</strong>` : "<strong>흐름 그림</strong>"}
+          ${viewerPayload ? `<button type="button" data-open-artifact="${escapeAttr(viewerPayload.id)}">Mermaid로 보기</button>` : ""}
         </div>
         <div class="mermaid">${escapedSource}</div>
-        <p class="mermaid-status">Rendering Mermaid diagram...</p>
+        <p class="mermaid-status">흐름 그림을 준비하고 있습니다...</p>
+        <div class="boi-agent-artifact-actions" aria-label="흐름 그림 다음 작업">
+          <button type="button" data-question="${escapeAttr(diagramQuestion)}">Task로 나누기</button>
+          <button type="button" data-question="${escapeAttr(actionQuestion)}">부족한 실행 요청 찾기</button>
+          <button type="button" data-question="${escapeAttr(eventQuestion)}">업무 이벤트로 연결</button>
+          <button type="button" data-mermaid-workflow-draft>초안 만들기</button>
+          <button type="button" data-question="${escapeAttr(helperQuestion)}">도우미에게 맡기기</button>
+        </div>
         <details class="mermaid-source-fallback">
-          <summary>Mermaid source</summary>
+          <summary>흐름 그림 원문</summary>
           <pre><code>${escapedSource}</code></pre>
         </details>
       </div>`;
@@ -511,7 +522,7 @@
       if (lang === "mermaid") {
         if (!skipMermaidSources.has(normalizeMermaidSource(source))) {
           const id = `markdown-mermaid-${parts.length}-${Math.abs(hashString(source))}`;
-          parts.push(renderMermaidBlock(source, "Diagram", { id, source, type: "mermaid" }));
+          parts.push(renderMermaidBlock(source, "흐름 그림", { id, source, type: "mermaid" }));
         }
       } else {
         const className = lang ? ` class="language-${escapeAttr(lang)}"` : "";
@@ -615,7 +626,7 @@
       reason: "요청에 맞춰 바로 확인할 산출물",
       user_requested: true,
     };
-    if (!["mermaid", "gap_table", "workflow_summary", "manual_handoff_summary", "action_requirements", "task_cards", "confirmation_required", "image"].includes(type)) {
+    if (!["mermaid", "workflow_draft", "gap_table", "workflow_summary", "manual_handoff_summary", "action_requirements", "task_cards", "business_search_results", "confirmation_required", "image"].includes(type)) {
       defaults.role = "supporting";
       defaults.display_mode = "collapsed";
       defaults.priority = 60;
@@ -697,7 +708,10 @@
   function renderArtifactNode(artifact, viewerId) {
     const presentationAttrs = ` data-artifact-type="${escapeAttr(artifact.type || "")}" data-artifact-role="${escapeAttr(artifact.role || "")}" data-artifact-display="${escapeAttr(artifact.display_mode || "")}"`;
     if (artifact.type === "mermaid" && artifact.source) {
-      return renderMermaidBlock(artifact.source, artifact.title || "Diagram", { id: viewerId, type: "mermaid", source: artifact.source, attrs: presentationAttrs });
+      return renderMermaidBlock(artifact.source, artifact.title || "흐름 그림", { id: viewerId, type: "mermaid", source: artifact.source, attrs: presentationAttrs });
+    }
+    if (artifact.type === "workflow_draft" && artifact.data) {
+      return renderWorkflowDraftArtifact(artifact, viewerId, presentationAttrs);
     }
     if (artifact.type === "gap_table" && Array.isArray(artifact.data)) {
       return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "명세 점검")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${renderObjectTable(artifact.data)}</div>`;
@@ -725,6 +739,9 @@
     if (artifact.type === "task_cards" && Array.isArray(artifact.data)) {
       return `<div class="boi-agent-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "처리할 일")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div>${artifact.data.map((item) => renderTaskDisplay(item || {})).join("")}</div>`;
     }
+    if (artifact.type === "business_search_results" && artifact.data) {
+      return renderBusinessSearchResults(artifact, viewerId, presentationAttrs);
+    }
     if (artifact.type === "confirmation_required" && artifact.data) {
       return renderConfirmationArtifact(artifact, viewerId, presentationAttrs);
     }
@@ -732,6 +749,85 @@
       return `<figure class="boi-agent-artifact boi-agent-image-artifact" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}><div class="boi-agent-artifact-title"><strong>${escapeHtml(artifact.title || "Image")}</strong><button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button></div><img src="${escapeAttr(artifact.url)}" alt="${escapeAttr(artifact.alt || artifact.title || "Artifact image")}"></figure>`;
     }
     return "";
+  }
+
+  function renderBusinessSearchResults(artifact, viewerId, presentationAttrs) {
+    const data = artifact.data || {};
+    const sections = Array.isArray(data.sections) ? data.sections : [];
+    const nextActions = Array.isArray(data.next_actions) ? data.next_actions : [];
+    const sectionHtml = sections.map((section) => {
+      const items = Array.isArray(section.items) ? section.items : [];
+      if (!items.length) return "";
+      return `<section class="boi-agent-search-section">
+        <h4>${escapeHtml(section.title || "결과")}</h4>
+        <ul>
+          ${items.map((item) => {
+            const title = item.title || item.ref || "결과";
+            const href = item.url || "";
+            const desc = item.description || item.status || item.kind || "";
+            const chips = [item.event_type, item.action_key, item.trace_id].filter(Boolean).slice(0, 2);
+            return `<li>
+              <strong>${href ? `<a href="${escapeAttr(href)}">${escapeHtml(title)}</a>` : escapeHtml(title)}</strong>
+              ${desc ? `<p>${escapeHtml(desc)}</p>` : ""}
+              ${chips.length ? `<div>${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+            </li>`;
+          }).join("")}
+        </ul>
+      </section>`;
+    }).join("");
+    return `<div class="boi-agent-artifact boi-agent-search-results" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}>
+      <div class="boi-agent-artifact-title">
+        <strong>${escapeHtml(artifact.title || "검색 결과 묶음")}</strong>
+        <button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button>
+      </div>
+      ${sectionHtml}
+      ${nextActions.length ? `<section class="boi-agent-search-next"><h4>다음에 할 일</h4><ul>${nextActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : ""}
+    </div>`;
+  }
+
+  function renderWorkflowDraftArtifact(artifact, viewerId, presentationAttrs) {
+    const data = artifact.data || {};
+    const tasks = Array.isArray(data.workflow_tasks) ? data.workflow_tasks : [];
+    const sections = Array.isArray(data.candidate_sections) ? data.candidate_sections : [];
+    const nextActions = Array.isArray(data.next_actions) ? data.next_actions : [];
+    const taskHtml = tasks.length ? `<section class="boi-agent-workflow-draft-section">
+      <h4>Task 후보</h4>
+      <ol>
+        ${tasks.slice(0, 8).map((task) => `<li>
+          <strong>${escapeHtml(task.name || task.task_id || "Task")}</strong>
+          <span>${escapeHtml(task.execution_mode || "manual")}</span>
+          ${(task.exit_criteria || []).length ? `<p>${escapeHtml((task.exit_criteria || []).join(", "))}</p>` : ""}
+        </li>`).join("")}
+      </ol>
+    </section>` : "";
+    const sectionHtml = sections.map((section) => {
+      const items = Array.isArray(section.items) ? section.items : [];
+      if (!items.length) return "";
+      return `<section class="boi-agent-workflow-draft-section">
+        <h4>${escapeHtml(section.title || "연결 후보")}</h4>
+        <ul>
+          ${items.slice(0, 5).map((item) => {
+            const title = item.title || item.event_type || item.action_key || "후보";
+            const href = item.url || "";
+            const desc = item.description || item.event_type || item.action_key || "";
+            return `<li>
+              <strong>${href ? `<a href="${escapeAttr(href)}">${escapeHtml(title)}</a>` : escapeHtml(title)}</strong>
+              ${desc ? `<p>${escapeHtml(desc)}</p>` : ""}
+            </li>`;
+          }).join("")}
+        </ul>
+      </section>`;
+    }).join("");
+    return `<div class="boi-agent-artifact boi-agent-workflow-draft" data-viewer-id="${escapeAttr(viewerId)}"${presentationAttrs}>
+      <div class="boi-agent-artifact-title">
+        <strong>${escapeHtml(artifact.title || "업무 흐름 초안")}</strong>
+        <button type="button" data-open-artifact="${escapeAttr(viewerId)}">크게 보기</button>
+      </div>
+      ${taskHtml}
+      ${sectionHtml}
+      ${data.sop_builder_url ? `<a class="boi-agent-artifact-link" href="${escapeAttr(data.sop_builder_url)}">SOP Builder에서 이어가기</a>` : ""}
+      ${nextActions.length ? `<section class="boi-agent-search-next"><h4>다음에 할 일</h4><ul>${nextActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : ""}
+    </div>`;
   }
 
   function renderArtifacts(message, messageIndex) {
@@ -860,7 +956,7 @@
       page_qa: "현재 페이지 답변",
       summarize: "요약",
       diagram: "도식 생성",
-      workflow_explain: "SOP 실행 흐름 분석",
+      workflow_explain: "업무 흐름 분석",
       gap_check: "누락 점검",
       trace_reasoning: "실행 근거 분석",
       inbox: "업무함 안내",
@@ -883,11 +979,11 @@
     return {
       ontology_search: "관련 지식 검색",
       boi_get: "BoI 문서 조회",
-      action_spec_lookup: "Action 명세 확인",
-      trace_context_lookup: "Trace 근거 확인",
+      action_spec_lookup: "실행 요청 명세 확인",
+      trace_context_lookup: "처리 이력 근거 확인",
       workflow_status: "실행 현황 확인",
       dictionary_resolve: "업무 용어 확인",
-      memory_recall: "Private memory 확인",
+      memory_recall: "개인 기억 확인",
       agent_inbox: "업무함 확인",
       route_classifier: "질문 유형 판단",
     }[tool] || "근거 확인";
@@ -917,7 +1013,7 @@
     const missing = Array.isArray(coverage.missing) ? coverage.missing : [];
     return `
       <section class="boi-agent-run-summary">
-        <h4>Agent가 확인한 근거${coverageScore !== null ? ` · ${coverageScore}%` : ""}</h4>
+        <h4>확인한 근거 모음${coverageScore !== null ? ` · ${coverageScore}%` : ""}</h4>
         ${toolRows ? `<ul>${toolRows}</ul>` : ""}
         ${missing.length ? `<p>더 확인이 필요한 항목: ${missing.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}</p>` : ""}
         ${guardrails.length ? `<p>권한/보안 가드레일 적용: ${guardrails.length}건</p>` : ""}
@@ -963,7 +1059,7 @@
     if (!lines.length) return "";
     return `<details class="boi-agent-status-trail">
       <summary>진행 단계 ${lines.length}개</summary>
-      <ol aria-label="Agent 진행 단계">
+      <ol aria-label="진행 단계">
         ${lines.map((line, index) => `<li class="${index === lines.length - 1 ? "current" : ""}">${escapeHtml(line)}</li>`).join("")}
       </ol>
       </details>`;
@@ -1023,7 +1119,7 @@
         const approvalOperation = meta.approval_operation ? ` data-agent-approval-operation="${escapeAttr(meta.approval_operation)}"` : "";
         return `
         <article class="boi-agent-message ${message.role === "user" ? "user" : "assistant"}"${approvalStatus}${approvalOperation}>
-          <strong class="boi-agent-message-author">${message.role === "user" ? "You" : "BoI Agent"}</strong>
+          <strong class="boi-agent-message-author">${message.role === "user" ? "나" : "업무 도우미"}</strong>
           ${renderMessageMeta(message)}
           ${message.progressText ? `<p class="boi-agent-progress">${escapeHtml(message.progressText)}</p>` : ""}
           ${answerHtml ? `<div class="boi-agent-answer" data-answer-id="answer-${index}">${answerHtml}</div>` : ""}
@@ -1042,22 +1138,22 @@
     captureScrollState();
     syncViewportPosition();
     persistState();
-    const launcherStatus = state.answerSending ? state.currentStatus || "" : (state.signal?.message || "무엇을 도와드릴까요");
+    const launcherStatus = state.answerSending ? state.currentStatus || "" : (state.signal?.message || "무엇을 찾거나 확인할까요");
     root.innerHTML = `
       <button class="boi-agent-launcher" type="button" aria-expanded="${state.open ? "true" : "false"}">
         <span class="boi-agent-launcher-copy">
-          <span>BoI Agent</span>
+          <span>업무 도우미</span>
           <small aria-live="polite">${escapeHtml(launcherStatus)}</small>
         </span>
         <img class="boi-agent-pet" src="/static/assets/boi-agent-pet.png" alt="" loading="lazy" decoding="async">
       </button>
-      <section class="boi-agent-panel ${state.open ? "open" : ""} ${state.expanded ? "expanded" : ""}" aria-label="BoI Agent">
+      <section class="boi-agent-panel ${state.open ? "open" : ""} ${state.expanded ? "expanded" : ""}" aria-label="업무 도우미">
         <header>
           <div class="boi-agent-header-main">
             <img class="boi-agent-pet small" src="/static/assets/boi-agent-pet.png" alt="" loading="lazy" decoding="async">
             <div>
-              <h2>BoI Agent</h2>
-              <p>${escapeHtml(pageTitle)}</p>
+              <h2>업무 도우미</h2>
+              <p>문서, 업무 흐름, 실행 요청, 유사 사례를 함께 찾습니다.</p>
             </div>
           </div>
           <div class="boi-agent-window-actions">
@@ -1079,8 +1175,9 @@
   function renderTab() {
       return `
       <section class="boi-agent-context-card">
-        <strong>현재 페이지를 보고 있습니다</strong>
+        <strong>업무 맥락을 함께 보고 있습니다</strong>
         <p>${escapeHtml(pageTitle)}</p>
+        <small>궁금한 업무 상황을 검색하듯 물어보세요.</small>
       </section>
       ${!state.messages.length ? `<div class="boi-agent-suggestions">
         ${state.suggestions.map((item) => `<button type="button" data-question="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}
@@ -1090,10 +1187,10 @@
       ${state.suggestionError ? `<p class="boi-agent-hint error">${escapeHtml(state.suggestionError)}</p>` : ""}
       ${renderMessages()}
       <form class="boi-agent-chat-form">
-        <textarea name="question" placeholder="현재 페이지 기준으로 묻거나, SOP/Event/Action을 찾아보세요." required>${escapeHtml(state.draft)}</textarea>
+        <textarea name="question" placeholder="무엇을 찾거나 확인할까요? 문서, 업무 흐름, 실행 요청, 유사 사례를 함께 찾아봅니다." required>${escapeHtml(state.draft)}</textarea>
         <div class="boi-agent-form-actions">
           ${state.answerSending ? `<button type="button" class="boi-agent-stop">중지</button>` : ""}
-          <button type="submit" ${state.answerSending ? "disabled" : ""}>Agent에게 묻기</button>
+          <button type="submit" ${state.answerSending ? "disabled" : ""}>찾아보기</button>
         </div>
       </form>
       <p class="boi-agent-hint">Enter로 전송, Shift+Enter로 줄바꿈</p>
@@ -1104,7 +1201,7 @@
     if (!state.viewer) return "";
     return `
       <div class="boi-agent-viewer-backdrop" role="presentation">
-        <section class="boi-agent-viewer" role="dialog" aria-modal="true" aria-label="Artifact viewer">
+        <section class="boi-agent-viewer" role="dialog" aria-modal="true" aria-label="결과 크게 보기">
           <header>
             <strong>${escapeHtml(state.viewer.title || "Artifact")}</strong>
             <button type="button" class="boi-agent-viewer-close">닫기</button>
@@ -1287,8 +1384,8 @@
         || node.querySelector(".mermaid")?.textContent
         || "";
       state.viewer = {
-        title: node.querySelector("strong")?.textContent || "Diagram",
-        html: renderMermaidBlock(source, node.querySelector("strong")?.textContent || "Diagram", null),
+        title: node.querySelector("strong")?.textContent || "흐름 그림",
+        html: renderMermaidBlock(source, node.querySelector("strong")?.textContent || "흐름 그림", null),
       };
       render();
       return;
@@ -1309,7 +1406,7 @@
     const clone = node.cloneNode(true);
     clone.removeAttribute("data-answer-id");
     state.viewer = {
-      title: "BoI Agent 답변",
+      title: "업무 도우미 답변",
       html: `<div class="boi-agent-answer-viewer">${clone.outerHTML}</div>`,
     };
     render();
@@ -1334,6 +1431,67 @@
     render();
   }
 
+  async function createMermaidWorkflowDraft(button) {
+    const diagram = button.closest(".mermaid-diagram");
+    const source = diagram?.dataset.mermaidSource
+      || diagram?.querySelector(".mermaid-source-fallback code")?.textContent
+      || diagram?.querySelector(".mermaid")?.textContent
+      || "";
+    if (!source.trim() || state.sending) return;
+    button.disabled = true;
+    const previousLabel = button.textContent;
+    button.textContent = "초안 생성 중";
+    recordActivity("mermaid_workflow_draft", currentUrl(), "Mermaid workflow draft", { source_chars: source.length });
+    try {
+      const body = await api("/api/mermaid/workflow-draft", {
+        method: "POST",
+        body: JSON.stringify({
+          title: diagram?.querySelector(".boi-agent-artifact-title strong")?.textContent || "업무 흐름 초안",
+          mermaid_source: source,
+          current_url: currentUrl(),
+          note: "Pet Mermaid artifact에서 생성",
+          scope: "private",
+        }),
+      });
+      const draft = body.draft || {};
+      const tasks = Array.isArray(draft.workflow_tasks) ? draft.workflow_tasks : [];
+      const links = [
+        { label: "SOP Builder에서 이어가기", url: draft.sop_builder_url || `/sops/new?employee_id=${encodeURIComponent(employeeId)}&focus=sop` },
+      ];
+      const workflowDraftArtifact = draft.collaboration_artifact || {
+        type: "workflow_draft",
+        title: draft.title || "업무 흐름 초안",
+        data: {
+          draft_id: draft.draft_id,
+          workflow_tasks: tasks,
+          workflow_edges: draft.workflow_edges || [],
+          candidate_sections: [],
+          next_actions: draft.next_actions || [],
+          sop_builder_url: draft.sop_builder_url || `/sops/new?employee_id=${encodeURIComponent(employeeId)}&focus=sop`,
+        },
+      };
+      state.messages.push({
+        role: "assistant",
+        text: `업무 흐름 초안을 만들었습니다. Task 후보 ${tasks.length}개와 연결 후보를 확인할 수 있습니다.`,
+        links,
+        artifacts: [
+          draft.artifact || { type: "mermaid", title: draft.title || "업무 흐름 초안", source },
+          workflowDraftArtifact,
+        ],
+        meta: { draft_id: draft.draft_id, source: "mermaid_workflow_draft" },
+      });
+      state.open = true;
+      state.tab = "agent";
+      state.pinToBottom = true;
+      render();
+    } catch (error) {
+      showAgentMessage(`Mermaid 흐름 초안을 만들지 못했습니다: ${error.message}`, [], { source: "mermaid_workflow_draft_error" });
+    } finally {
+      button.disabled = false;
+      button.textContent = previousLabel || "초안 만들기";
+    }
+  }
+
   function nestedValue(source, path) {
     return path.split(".").reduce((value, key) => {
       if (!value || typeof value !== "object") return "";
@@ -1347,8 +1505,8 @@
       publish_event: "이벤트 발행 요청을 보냈습니다.",
       workflow_start: "업무 흐름 시작 요청을 보냈습니다.",
       start_workflow: "업무 흐름 시작 요청을 보냈습니다.",
-      action_invoke: "Action 실행 요청을 보냈습니다.",
-      invoke_action: "Action 실행 요청을 보냈습니다.",
+      action_invoke: "실행 요청을 보냈습니다.",
+      invoke_action: "실행 요청을 보냈습니다.",
       manual_handoff_complete: "조치 완료 기록을 남겼습니다.",
       manual_complete: "조치 완료 기록을 남겼습니다.",
       event_type_draft: "이벤트 유형 초안을 만들었습니다.",
@@ -1581,7 +1739,7 @@
         },
       });
       if (streamError) throw new Error(streamError);
-      if (!finalBody) throw new Error("Agent 응답이 완료되지 않았습니다.");
+      if (!finalBody) throw new Error("업무 도우미 응답이 완료되지 않았습니다.");
       const body = finalBody;
       state.pinToBottom = true;
       updateAssistantFromBody(body, {
@@ -1681,7 +1839,7 @@
         return delay(500 * (attempt + 1)).then(() => refreshSuggestions(attempt + 1));
       }
       if (!state.suggestions.length) {
-        state.suggestionError = `추천 질문을 생성하지 못했습니다. Agent 상태를 확인해주세요. (${String(error.message || error)})`;
+        state.suggestionError = `추천 질문을 생성하지 못했습니다. 업무 도우미 상태를 확인해주세요. (${String(error.message || error)})`;
       }
       state.suggestionsLoading = false;
       render();
@@ -1722,6 +1880,12 @@
     const question = button.dataset.question || "";
     recordActivity("followup_click", currentUrl(), question, { source: "pet_agent" });
     ask(question);
+  });
+  root.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-mermaid-workflow-draft]");
+    if (!button || !root.contains(button)) return;
+    event.preventDefault();
+    createMermaidWorkflowDraft(button);
   });
   root.addEventListener("click", closeAgentForLinkNavigation);
   document.addEventListener("click", (event) => {

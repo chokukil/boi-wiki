@@ -2,6 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
+
+def active_markdown_text(root: Path) -> str:
+    rows: list[str] = []
+    for path in root.rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        if text.startswith("---\n"):
+            metadata = yaml.safe_load(text.split("---", 2)[1]) or {}
+            if metadata.get("status") == "deprecated":
+                continue
+        rows.append(text)
+    return "\n".join(rows)
+
 
 def test_cascade_roadmap_seed_boi_exists_for_executive_storyline():
     path = Path("data/boi/team/aix-tf/team-aix-tf-cascade-roadmap.md")
@@ -41,7 +55,12 @@ def test_boi_wiki_manual_and_agent_skill_cover_mcp_actions_langflow_and_media():
     assert (manual_root / "langflow" / "connected-flow-guide.md").exists()
     assert (manual_root / "media" / "okf-media-and-screenshots.md").exists()
     assert (manual_root / "security" / "sso-and-permissions.md").exists()
-    assert "http://localhost:8200/mcp" in skill
+    assert "http://localhost:8200/mcp/v2" in skill
+    assert "boi_agent" in skill
+    assert "boi_tools_search" in skill
+    assert "work_session_id" in skill
+    assert "index.md" in skill
+    assert "status: deprecated" in skill
     assert "Langflow is one connector kind" in skill
     assert "_media/" in skill
 
@@ -74,15 +93,15 @@ def test_boi_wiki_manual_matches_workflow_task_builder_model():
 
     overview = (manual_root / "overview.md").read_text(encoding="utf-8")
     index = (manual_root / "index.md").read_text(encoding="utf-8")
-    assert "Workflow/Task Builder Step-by-step" in overview
-    assert "Workflow/Task Builder Step-by-step" in index
-    assert "Data Lake Artifact Lifecycle" in overview
-    assert "Data Lake Artifact Lifecycle" in index
+    assert "Workflow/Task Builder 따라하기" in overview
+    assert "Workflow/Task Builder 따라하기" in index
+    assert "자료 보관함과 업무 근거" in overview
+    assert "자료 보관함과 업무 근거" in index
 
 
 def test_boi_wiki_manual_does_not_regress_to_legacy_registration_or_agent_exposure_copy():
     roots = [Path("data/boi/public/boi-wiki-manual"), Path("data/boi/public/harness")]
-    text = "\n".join(path.read_text(encoding="utf-8") for root in roots for path in root.rglob("*.md"))
+    text = "\n".join(active_markdown_text(root) for root in roots)
 
     forbidden = [
         "Event -> SOP -> Action 3단 구조",
@@ -93,10 +112,10 @@ def test_boi_wiki_manual_does_not_regress_to_legacy_registration_or_agent_exposu
     for phrase in forbidden:
         assert phrase not in text
 
-    assert "BOI_PET_AGENT_ENABLED=false" in text
+    assert "BOI_PET_AGENT_ENABLED=true" in text
     assert "BOI_OPS_CENTER_ENABLED=false" in text
-    assert "Workflow/Task Builder Step-by-step" in text
-    assert "Data Lake Artifact Lifecycle" in text
+    assert "Workflow/Task Builder 따라하기" in text
+    assert "자료 보관함과 업무 근거" in text
 
 
 def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troubleshooting():
@@ -105,24 +124,24 @@ def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troublesho
     assert "Codex" in text
     assert "Claude Desktop" in text
     assert "Cursor" in text
-    assert "http://localhost:8200/mcp" in text
+    assert "http://localhost:8200" in text
+    assert "<BOI_MCP_URL>/mcp/v2" in text
     assert "Streamable HTTP" in text
-    assert "resources: 0" in text
-    assert "resource_templates: 11" in text
-    assert "tools: 124" in text
-    assert "source_apply" in text
-    assert "doc_body_apply" in text
-    assert "harness_acceptance" in text
-    assert "source_wiki_plan" in text
-    assert "promotion_preview" in text
-    assert "agent_memory_review" in text
-    assert "promotion_submit" in text
-    assert "boi_agent_capabilities" in text
-    assert "boi_agent_approve" in text
-    assert "404" in text
+    assert "10개 도구" in text
+    assert "boi_agent" in text
+    assert "boi_search" in text
+    assert "boi_context" in text
+    assert "boi_plan" in text
+    assert "boi_confirm" in text
+    assert "boi_tools_search" in text
+    assert "neighbors" in text
+    assert "path" in text
+    assert "impact" in text
+    assert "tour" in text
+    assert "BOI_PAT" in text
+    assert "401" in text
     assert "406" in text
-    assert "ClosedResourceError" in text
-    assert "python scripts/check_boi_wiki_mcp.py" in text
+    assert "python scripts/check_agent_v2_interface_parity.py" in text
 
 
 def test_readme_links_mcp_status_and_validation_commands():

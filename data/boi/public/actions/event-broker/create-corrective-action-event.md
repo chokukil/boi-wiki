@@ -97,8 +97,6 @@ example_response:
   action: sop.equipment.create_corrective_action_event
   result:
     message: PoC endpoint invoked
-curl: 'curl -X POST ''http://boi-api:8000/api/events/publish'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"payload":{"equipment_id":"ETCH-VM-01"},"dry_run":false}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: sop.equipment.create_corrective_action_event

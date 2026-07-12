@@ -63,6 +63,19 @@ def boi_app_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BOI_LLM_BASE_URL", "http://llm-gateway.example:1236/v1")
     monkeypatch.setenv("BOI_LLM_MODEL", "google/gemma-4-26b-a4b-qat")
     monkeypatch.setenv("BOI_LLM_API_KEY", "not-needed")
+    monkeypatch.setenv("BOI_AGENT_V2_DATABASE_URL", "")
+    monkeypatch.setenv("BOI_AGENT_V2_REQUIRE_POSTGRES", "0")
+    monkeypatch.setenv("BOI_V2_MODEL_API_KEY", "")
+    monkeypatch.setenv("BOI_V2_MODEL", "")
+    monkeypatch.setenv("BOI_EMBEDDING_API_KEY", "")
+    monkeypatch.setenv("BOI_EMBEDDING_MODEL", "")
+    monkeypatch.setenv("BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS", "false")
+    monkeypatch.setenv("BOI_LMSTUDIO_NATIVE_BASE_URL", "")
+    monkeypatch.setenv("BOI_INBOX_REPORT_AUTO_GENERATE", "0")
+    monkeypatch.setenv("BOI_DATALAKE_MODE", "disabled")
+    monkeypatch.setenv("BOI_KNOWLEDGE_HEALTH_ENABLED", "false")
+    monkeypatch.setenv("BOI_DATALAKE_ENABLED", "false")
+    monkeypatch.setenv("BOI_AGENT_V2_INDEPENDENT_REVIEW", "0")
     # Unit tests use placeholder LLM endpoints unless a test explicitly
     # monkeypatches an LLM caller. The *_REQUIRED env names remain for compose
     # compatibility, but the runtime policy is intentionally not downgradeable.

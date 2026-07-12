@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>자료 보관함 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('data_library.js') }}" defer></script>
+</head>
+<body>
+{% include "_app_shell.html" %}
+
+{% set intro_action = None %}
+{% with title="자료 보관함", description="원본 파일은 안전하게 보관하고 BoI에는 요약, 표본과 연결만 남깁니다.", eyebrow=None, primary_action=intro_action %}
+  {% include "_section_intro.html" %}
+{% endwith %}
+
+<main
+  class="page-content data-library-page"
+  data-data-library
+  data-employee-id="{{ employee_id }}"
+  data-upload-state="{{ data_lake.artifact_store.state }}"
+  data-upload-ready="{{ 'true' if data_lake.artifact_store.upload_ready else 'false' }}"
+>
+  {% if data_lake.enabled %}
+  <section class="panel data-library-upload" data-data-library-upload-panel>
+    <div class="section-heading">
+      <div>
+        <h2>자료 추가</h2>
+        <p>업무에 사용할 파일을 선택하면 내용 전체 대신 확인 가능한 요약과 주소가 BoI에 연결됩니다.</p>
+      </div>
+      <p class="data-library-store-status" data-data-library-store-status role="status" aria-live="polite">
+        {% if data_lake.artifact_store.upload_ready %}자료 추가 가능
+        {% elif data_lake.artifact_store.state == 'checking' %}저장소 연결 확인 중
+        {% elif data_lake.artifact_store.state == 'not_configured' %}운영자 설정 필요
+        {% else %}저장소 연결이 지연되고 있습니다{% endif %}
+      </p>
+    </div>
+    <form data-data-library-upload-form>
+      <label class="data-library-file-picker" data-data-library-file-picker>
+        <input type="file" name="file" required data-data-library-file{% if not data_lake.artifact_store.upload_ready %} disabled{% endif %} />
+        <span class="button secondary">파일 선택</span>
+        <span class="data-library-file-name" data-data-library-file-name>선택한 파일 없음</span>
+      </label>
+      <input type="text" name="note" placeholder="이 자료가 필요한 이유"{% if not data_lake.artifact_store.upload_ready %} disabled{% endif %} />
+      <button class="button primary" type="submit"{% if not data_lake.artifact_store.upload_ready %} disabled{% endif %}>자료 추가</button>
+    </form>
+    <p class="form-status" data-data-library-status aria-live="polite"></p>
+  </section>
+  {% else %}
+  <section class="panel integration-unavailable" role="status">
+    <h2>자료를 추가할 수 없습니다</h2>
+    <p>저장소 연결을 확인하고 있습니다. 기존 BoI와 업무 이력은 계속 사용할 수 있습니다.</p>
+    <a class="button secondary" href="/integrations?employee_id={{ employee_id }}">연결 상태 보기</a>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="pagination-bar">
+      <div>
+        <h2>최근 자료</h2>
+        <p>내가 추가했거나 내 업무에 연결된 자료입니다.</p>
+      </div>
+      <span data-data-library-count>최근 {{ artifacts|length }}건</span>
+    </div>
+    <div class="data-library-list" data-data-library-list>
+      {% for item in artifacts %}
+      <article class="data-library-row">
+        <div class="data-library-row-main">
+          <div>
+            <span class="badge">{{ (item.profile or {}).kind or 'file' }}</span>
+            <strong>{{ item.filename }}</strong>
+          </div>
+          <small>{{ item.created_at }}</small>
+        </div>
+        {% if item.human_note %}<p>{{ item.human_note }}</p>{% endif %}
+        <div class="data-library-meta">
+          <span>{{ item.size_bytes or 0 }} bytes</span>
+          <span>업무 연결 {{ item.attachments|length }}건</span>
+          <span>{{ item.validation_state or 'uploaded' }}</span>
+        </div>
+        <div class="button-row">
+          <a class="button secondary" href="{{ item.download_url }}?employee_id={{ employee_id }}">원본 받기</a>
+          {% if item.target_id %}<span class="muted">연결된 업무 자료</span>{% endif %}
+        </div>
+        <details class="technical-details">
+          <summary>연결 정보</summary>
+          <p><code>{{ item.artifact_id }}</code></p>
+          <p>checksum {{ item.sha256 }}</p>
+        </details>
+      </article>
+      {% else %}
+      <div class="empty-state" data-data-library-empty>
+        <strong>아직 보관한 자료가 없습니다.</strong>
+        <p>업무 보고서, Inbox 판단, Task 결과에서 추가한 파일도 이곳에 함께 표시됩니다.</p>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="data-library-more">
+      <button
+        class="button secondary"
+        type="button"
+        data-data-library-more
+        data-next-cursor="{{ next_cursor }}"
+        {% if not next_cursor %}hidden{% endif %}
+      >더 보기</button>
+    </div>
+  </section>
+</main>
+</body>
+</html>

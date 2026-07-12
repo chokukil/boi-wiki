@@ -103,8 +103,6 @@ example_response:
   manual_handoff:
     owner: AIX 확산 TF / 제조 PoC
     doc_ref: boi:public:actions:manual:confirm-alarm-context
-curl: 'curl -X POST http://localhost:8100/api/actions/invoke -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"manual.equipment.confirm_alarm_context","payload":{"equipment_id":"ETCH-VM-01"}}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: manual.equipment.confirm_alarm_context

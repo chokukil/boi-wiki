@@ -141,24 +141,33 @@ verify_runtime_revision() {
   local expected_revision="$1"
   local attempt
   local runtime_revision
+  local runtime_content_docs
+  local runtime_expected_guide
+  local runtime_payload
   for attempt in $(seq 1 "$NAS_RUNTIME_VERIFY_ATTEMPTS"); do
     if curl -fsS "$NAS_RUNTIME_CONFIG_URL" >/tmp/boi-runtime-config.json; then
-      runtime_revision="$(
+      runtime_payload="$(
         python3 - <<'PY' 2>/dev/null || true
 import json
 body = json.load(open('/tmp/boi-runtime-config.json'))
-print((body.get('build') or {}).get('revision') or body.get('build_revision') or '')
+content = body.get('content') or {}
+index = body.get('index') or {}
+revision = (body.get('build') or {}).get('revision') or body.get('build_revision') or ''
+docs = content.get('markdown_documents', index.get('markdown_documents', 0))
+guide = content.get('expected_guide_exists', False)
+print(f"{revision}\t{docs}\t{str(bool(guide)).lower()}")
 PY
       )"
-      if [[ "$runtime_revision" == "$expected_revision" ]]; then
-        log "runtime revision verified: ${runtime_revision}"
+      IFS=$'\t' read -r runtime_revision runtime_content_docs runtime_expected_guide <<< "$runtime_payload"
+      if [[ "$runtime_revision" == "$expected_revision" && "${runtime_content_docs:-0}" -gt 0 && "$runtime_expected_guide" == "true" ]]; then
+        log "runtime revision/content verified: revision=${runtime_revision} markdown_documents=${runtime_content_docs}"
         return 0
       fi
-      log "runtime revision mismatch attempt=${attempt}: expected=${expected_revision} actual=${runtime_revision:-unknown}"
+      log "runtime verification mismatch attempt=${attempt}: expected_revision=${expected_revision} actual_revision=${runtime_revision:-unknown} markdown_documents=${runtime_content_docs:-unknown} expected_guide=${runtime_expected_guide:-unknown}"
     fi
     sleep 2
   done
-  log "runtime revision verification failed: expected=${expected_revision}"
+  log "runtime revision/content verification failed: expected_revision=${expected_revision}"
   return 1
 }
 

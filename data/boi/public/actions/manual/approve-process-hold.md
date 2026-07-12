@@ -103,8 +103,6 @@ example_response:
   manual_handoff:
     owner: 제조/품질 담당 조직
     doc_ref: boi:public:actions:manual:approve-process-hold
-curl: 'curl -X POST http://localhost:8100/api/actions/invoke -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"manual.equipment.approve_process_hold","payload":{"equipment_id":"ETCH-VM-01"}}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: manual.equipment.approve_process_hold

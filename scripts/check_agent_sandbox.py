@@ -38,16 +38,22 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Check BoI Agent Builder + GPT-5.5 + sandbox evidence flow.")
+    parser = argparse.ArgumentParser(description="Check BoI Agent Builder and sandbox evidence flow.")
     parser.add_argument("--base-url", default="http://localhost:28000")
     parser.add_argument("--employee-id", default="100001")
-    parser.add_argument("--strict-openai", action="store_true", help="Require GPT-5.5 Responses and Agents SDK summary to be ready.")
+    parser.add_argument(
+        "--gpt55-test",
+        action="store_true",
+        help="Explicitly run the optional GPT-5.5 Responses and Agents SDK verification.",
+    )
+    parser.add_argument("--strict-openai", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--summary", action="store_true")
     args = parser.parse_args()
 
     started = time.monotonic()
     base = args.base_url.rstrip("/")
     employee_id = args.employee_id
+    gpt55_test = bool(args.gpt55_test or args.strict_openai)
 
     runtime = request_json("GET", f"{base}/api/runtime/config", timeout=30)
     agents_runtime = runtime.get("agents_sdk_runtime") or {}
@@ -55,8 +61,16 @@ def main() -> int:
     require((agents_runtime.get("sandbox") or {}).get("backend") == "unix_local", "sandbox backend should be unix_local for local-full smoke")
     require(agents_runtime.get("available") is True, f"Agents SDK is not available: {agents_runtime.get('import_error')}")
 
-    checked_openai = request_json("POST", f"{base}/api/runtime/openai-health/check", timeout=60)
-    if args.strict_openai:
+    checked_openai: dict[str, Any] = {
+        "quota_state": "not_requested",
+        "responses_smoke_status": None,
+    }
+    if gpt55_test:
+        require(
+            openai_runtime.get("test_mode") is True,
+            "The server must be started with BOI_GPT55_TEST_MODE=true for an explicit GPT-5.5 test.",
+        )
+        checked_openai = request_json("POST", f"{base}/api/runtime/openai-health/check", timeout=60)
         require(checked_openai.get("gpt_5_5_available") is True, "gpt-5.5 model is not available")
         require(checked_openai.get("responses_smoke_status") == 200, f"Responses smoke failed: {checked_openai}")
         require(checked_openai.get("quota_state") == "ready", f"OpenAI quota state is not ready: {checked_openai.get('quota_state')}")
@@ -75,7 +89,7 @@ def main() -> int:
     )["draft"]
     draft_test = request_json("POST", api_url(base, f"/api/agents/drafts/{draft['draft_id']}/test", employee_id), timeout=60)["test"]
     require(draft_test.get("sandbox_supported") is True, "draft test did not advertise sandbox support")
-    if args.strict_openai:
+    if gpt55_test:
         require(draft_test.get("runtime_backend") == "agents_sdk", f"draft test did not use Agents SDK: {draft_test}")
         require((draft_test.get("agents_sdk") or {}).get("ok") is True, f"Agents SDK draft test failed: {draft_test.get('agents_sdk')}")
 
@@ -199,7 +213,7 @@ print("missing-raw-sandbox-ok")
         require(str(scenario["marker"]) in str(sandbox_job.get("stdout") or ""), "sandbox stdout does not include scenario marker")
         artifact_paths = {str(item.get("path")) for item in sandbox_job.get("artifacts") or []}
         require(set(scenario["expected_artifacts"]).issubset(artifact_paths), f"missing expected artifacts for {scenario['title']}: {artifact_paths}")
-        if args.strict_openai:
+        if gpt55_test:
             summary = sandbox_job.get("agents_sdk_summary") or {}
             require(summary.get("ok") is True, f"gpt-5.5 sandbox summary failed: {summary}")
             require(summary.get("model") == "gpt-5.5", f"sandbox summary did not use gpt-5.5: {summary}")

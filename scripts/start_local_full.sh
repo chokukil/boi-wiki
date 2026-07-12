@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${BOI_ENV_FILE:-.env.local-full.example}"
 OVERLAY_ENV_FILES="${BOI_ENV_OVERLAY_FILE:-.env}"
 PROFILE="${BOI_COMPOSE_PROFILE:-local-full}"
@@ -66,17 +67,29 @@ if [ -z "${BOI_BUILD_REVISION:-}" ]; then
   export BOI_BUILD_REVISION="${BOI_BUILD_REVISION:-dev}"
 fi
 
+export BOI_API_RUN_AS="${BOI_API_RUN_AS:-$(id -u):$(id -g)}"
+"${ROOT}/scripts/check_private_content_writable.sh" "${BOI_LOCAL_PRIVATE_ROOT:-${ROOT}/data/boi/private}"
+
 compose_cmd=(docker compose)
 for file in "${ENV_FILES[@]}"; do
   compose_cmd+=(--env-file "$file")
 done
 compose_cmd+=(--profile "$PROFILE")
 
+DATALAKE_MODE="${BOI_DATALAKE_MODE:-$(read_env_value BOI_DATALAKE_MODE)}"
+DATALAKE_MODE="${DATALAKE_MODE:-bundled}"
+if [ "$DATALAKE_MODE" = "bundled" ]; then
+  compose_cmd+=(--profile data-lake-bundled)
+fi
+export BOI_DATALAKE_MODE="$DATALAKE_MODE"
+
 echo "BoI Wiki local-full start"
 echo "- env files: ${ENV_FILES[*]}"
 echo "- profile: $PROFILE"
 echo "- web port: $PORT"
 echo "- build revision: $BOI_BUILD_REVISION"
+echo "- boi-api user: $BOI_API_RUN_AS"
+echo "- document storage: $BOI_DATALAKE_MODE"
 
 port_owners="$(docker ps --filter "publish=$PORT" --format '{{.ID}} {{.Names}} {{.Label "com.docker.compose.project"}}' || true)"
 if [ -n "$port_owners" ]; then

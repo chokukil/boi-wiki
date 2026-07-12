@@ -1,4 +1,4 @@
-# Public Dictionary
+# 공개 업무 용어
 
 Public dictionary terms help BoI Agent and ontology search understand semiconductor, quality, equipment, packaging, and AI Native Workflow language. Scope priority is Private, Team, then Public; this page is the curated public fallback vocabulary.
 

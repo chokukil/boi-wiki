@@ -1,0 +1,212 @@
+version: "2.0"
+capabilities:
+  - capability_id: knowledge.search
+    title: 업무 지식 찾기
+    description: 빠른 질문, 현재 문서 설명, 관계 확인에 필요한 BoI 문서·SOP·Event·Action·Skill을 함께 찾습니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge, sop, workflow, task, business_event, action, skill, runtime, evidence]
+    examples: [찾아줘, 검색, 관련 문서, 무엇인지 알려줘, 업무 지식]
+    operation: read
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [query]}
+    output_schema: {type: search_results}
+    context_recipe: [page, selected_text, ontology, authoritative_knowledge]
+    evidence_policy: [acl_visible, published_or_reviewed, cite_sources]
+    completion_criteria: [one_or_more_relevant_evidence_or_explicit_no_result]
+    handler: knowledge_search
+    renderer: search
+    permissions: [boi.viewer]
+    readiness: [content]
+
+  - capability_id: work.inbox
+    title: 내 업무 보기
+    description: 현재 처리해야 할 Inbox와 Task만 보여줍니다.
+    primary_asset: runtime
+    supported_assets: [runtime]
+    examples: [내 할 일, 처리할 업무, inbox, 승인 대기, 담당 업무]
+    operation: read
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {}
+    output_schema: {type: task_cards}
+    context_recipe: [current_identity, active_runtime]
+    evidence_policy: [exclude_history_seed, acl_visible]
+    completion_criteria: [current_work_count_reported]
+    handler: work_inbox
+    renderer: task_cards
+    permissions: [boi.viewer]
+    readiness: [content]
+
+  - capability_id: task.work
+    title: Task 진행하기
+    description: 지정한 Task의 업무 맥락, 완료된 모습과 확인할 자료를 바탕으로 사람과 AI가 같은 WorkRun에서 수행·확인·완료 기록을 이어갑니다. Inbox 목록 조회나 등록된 Action의 직접 호출에는 사용하지 않습니다.
+    primary_asset: task
+    supported_assets: [task, runtime, evidence, knowledge]
+    examples: [이 Task 진행, Task 완료, 근거 확인, 결과 기록, 업무 이어서]
+    operation: read
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [query]}
+    output_schema: {type: task_progress}
+    context_recipe: [task, workflow, completion_design, evidence, active_work_run]
+    evidence_policy: [acl_visible, task_completion_contract, human_or_system_confirmation]
+    completion_criteria: [work_run_state_reported, completion_never_self_declared]
+    handler: task_work
+    renderer: task_progress
+    permissions: [boi.viewer]
+    readiness: [content, model]
+
+  - capability_id: cases.similar
+    title: 유사 사례 찾기
+    description: 현재 업무 맥락과 종료 기준이 비슷한 과거 사례를 찾아 근거와 결과를 집중 비교합니다.
+    primary_asset: evidence
+    supported_assets: [evidence, task, runtime]
+    examples: [유사 사례, 비슷한 경우, 과거 처리, 이전 사례]
+    operation: read
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [query]}
+    output_schema: {type: case_results}
+    context_recipe: [task, exit_criteria, evidence_types, history_seed]
+    evidence_policy: [acl_visible, outcome_present]
+    completion_criteria: [similarity_reason_reported]
+    handler: similar_cases
+    renderer: cases
+    permissions: [boi.viewer]
+    readiness: [content]
+
+  - capability_id: business_event.plan
+    title: 업무 이벤트 초안 만들기
+    description: 어떤 순간을 업무 발생으로 볼지 정의하는 초안을 만듭니다.
+    primary_asset: business_event
+    supported_assets: [business_event]
+    examples: [업무 이벤트, 알람 조건, 상태 변경, 반복 신호, event definition]
+    operation: draft
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: business_event_definition_draft}
+    context_recipe: [goal, related_event_types, related_sops, evidence]
+    evidence_policy: [cite_related_contracts]
+    completion_criteria: [trigger_mode_present, target_event_present, source_present]
+    handler: business_event_plan
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+
+  - capability_id: sop.plan
+    title: SOP 초안 만들기
+    description: 목표와 종료 기준을 바탕으로 Workflow와 Task 초안을 만듭니다.
+    primary_asset: sop
+    supported_assets: [sop, workflow, task]
+    examples: [SOP 만들어, workflow 초안, task로 나눠, 절차 작성]
+    operation: draft
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: sop_draft}
+    context_recipe: [goal, related_sops, actions, events, evidence]
+    evidence_policy: [cite_reused_assets, mark_gaps]
+    completion_criteria: [workflow_goal_present, tasks_have_exit_criteria]
+    handler: sop_plan
+    renderer: mermaid_draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+
+  - capability_id: action.plan
+    title: 실행 요청 초안 만들기
+    description: 필요한 입력, 결과 계약과 위험도를 갖춘 Action 초안을 만들고, 이미 등록된 Action의 dry-run 또는 실행 요청은 확인 가능한 실행 계획으로 준비합니다.
+    primary_asset: action
+    supported_assets: [action]
+    examples: [Action 만들어, Action dry-run, 등록된 Action 실행, 실행 연결, API 연결, MCP 연결, Langflow 연결]
+    operation: draft
+    risk: medium
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: action_draft}
+    context_recipe: [goal, action_catalog, related_sops, connector_contract]
+    evidence_policy: [risk_required, preview_only]
+    completion_criteria: [inputs_present, output_contract_present, risk_present]
+    handler: action_plan
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+
+  - capability_id: skill.plan
+    title: Skill 초안 만들기
+    description: 반복 가능한 업무 능력을 입력·출력·근거·테스트가 있는 Skill 초안으로 만듭니다.
+    primary_asset: skill
+    supported_assets: [skill]
+    examples: [Skill 만들어, 업무 도우미, 능력 추가, 반복 업무 자동화]
+    operation: draft
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: skill_draft}
+    context_recipe: [goal, capability_registry, existing_skills, actions]
+    evidence_policy: [tests_required, permissions_required]
+    completion_criteria: [schema_present, tests_present, permissions_present]
+    handler: skill_plan
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+
+  - capability_id: knowledge.draft
+    title: 지식 후보 만들기
+    description: 근거를 갖춘 private 지식 후보를 만듭니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge, evidence]
+    examples: [지식으로 남겨, Wiki에 정리, 자산화, 기억해]
+    operation: draft
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: knowledge_candidate}
+    context_recipe: [goal, evidence, task_outcome]
+    evidence_policy: [provenance_required, private_provisional]
+    completion_criteria: [source_refs_present, status_provisional]
+    handler: knowledge_plan
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+
+  - capability_id: work_routine.plan
+    title: 자동 확인 계획 만들기
+    description: 지식이나 Task를 정해진 시간 또는 업무 상태 변화에 따라 다시 확인하는 계획을 만들고, 사용자 확인 뒤에만 활성화합니다.
+    primary_asset: runtime
+    supported_assets: [runtime, task, knowledge, business_event, evidence]
+    examples: [나중에 다시 확인, 매일 확인, 상태가 바뀌면 알려줘, 자동 확인]
+    operation: draft
+    risk: medium
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: work_routine_draft}
+    context_recipe: [goal, current_page, active_task, source_refs]
+    evidence_policy: [acl_visible, preview_before_activation]
+    completion_criteria: [trigger_present, stop_condition_present, confirmation_required]
+    handler: work_routine_plan
+    renderer: routine_preview
+    permissions: [boi.editor]
+    readiness: [content, model]
+    external: false
+
+  - capability_id: deep.research
+    title: 심층 조사 맡기기
+    description: 장시간·다수 자료·위임 조사가 필요한 내구성 있는 연구 결과물을 격리 작업공간에서 draft로 만듭니다. 일반 답변과 집중 유사 사례 비교에는 사용하지 않습니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge, sop, workflow, task, business_event, action, skill, runtime, evidence]
+    examples: [심층 조사, 자세히 분석, 보고서, 여러 자료 비교, 깊게 찾아]
+    operation: draft
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: deep_work_draft}
+    context_recipe: [goal, bounded_context, evidence, artifact_refs]
+    evidence_policy: [read_only_tools, draft_only, cite_sources]
+    completion_criteria: [artifact_non_empty, evidence_ledger_present]
+    handler: deep_research
+    renderer: deep_job
+    permissions: [boi.editor]
+    readiness: [content, model, deep_worker, postgres]
+    deep: true

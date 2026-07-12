@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BoI Agent · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('task_completion_editor.js') }}" defer></script>
+  <script src="{{ asset_url('agent_workspace_v2.js') }}" defer></script>
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main
+    class="agent-surface-host agent-surface-fullpage"
+    data-agent-v2-workspace
+    data-surface-kind="fullpage"
+    data-page-ref="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
+  >
+    {% include "_agent_surface_v2.html" %}
+  </main>
+</body>
+</html>

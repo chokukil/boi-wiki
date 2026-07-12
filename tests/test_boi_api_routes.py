@@ -270,8 +270,24 @@ def test_inbox_report_materialization_updates_existing_report_boi(boi_app_module
         "evidence": {"items": [{"label": "Trend", "summary": "확인됨", "status": "ready"}]},
     }
 
-    first = boi_app_module.materialize_inbox_review_report_boi("100001", report_id=report_id, report=first_report)
-    second = boi_app_module.materialize_inbox_review_report_boi("100001", report_id=report_id, report=second_report)
+    task_ref = "inbox-ref-report-materialization"
+    first = boi_app_module.materialize_inbox_review_report_boi(
+        "100001",
+        report_id=report_id,
+        report=first_report,
+        task_ref=task_ref,
+    )
+    legacy = boi_app_module.find_reusable_inbox_report_doc("100001", report_id)
+    legacy_path = Path(str(legacy["path"]))
+    legacy_metadata, legacy_body = boi_app_module.split_frontmatter(legacy_path.read_text(encoding="utf-8"))
+    legacy_metadata["inbox_report"]["contract_version"] = "inbox-review-report.v6"
+    legacy_path.write_text(boi_app_module.compose_markdown(legacy_metadata, legacy_body), encoding="utf-8")
+    second = boi_app_module.materialize_inbox_review_report_boi(
+        "100001",
+        report_id=report_id,
+        report=second_report,
+        task_ref=task_ref,
+    )
 
     assert first["report_boi_ref"] == second["report_boi_ref"]
     report_docs = []
@@ -284,7 +300,9 @@ def test_inbox_report_materialization_updates_existing_report_boi(boi_app_module
     metadata, body = report_docs[0]
     assert metadata["artifact_visibility"] == "background"
     assert metadata["lifecycle_state"] == "background"
+    assert metadata["inbox_report"]["contract_version"] == boi_app_module.INBOX_REPORT_CONTRACT_VERSION
     assert "갱신된 보고서" in body
+    assert boi_app_module.read_inbox_report_cache("100001", report_id)["task_ref"] == task_ref
 
 
 def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
@@ -294,7 +312,7 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["features"]["pet_agent_enabled"] is False
+    assert body["features"]["pet_agent_enabled"] is True
     assert body["features"]["ops_center_enabled"] is False
     assert body["runtime_source"]["app_code_path"].endswith("main.py")
     assert body["runtime_source"]["static_asset_source"].endswith("static")
@@ -304,9 +322,11 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["llm"]["model"] == "google/gemma-4-26b-a4b-qat"
     assert body["llm"]["api_key_configured"] is True
     assert "api_key" not in body["llm"]
-    assert body["openai_runtime"]["active_model"] == "gpt-5.5"
+    assert body["openai_runtime"]["active_model"] == ""
+    assert body["openai_runtime"]["configured_test_model"] == "gpt-5.5"
+    assert body["openai_runtime"]["test_mode"] is False
     assert isinstance(body["openai_runtime"]["api_key_present"], bool)
-    assert body["agents_sdk_runtime"]["runtime"] in {"native", "agents_sdk"}
+    assert body["agents_sdk_runtime"]["runtime"] in {"native", "agents_sdk", "disabled_test_only"}
     assert isinstance(body["agents_sdk_runtime"]["available"], bool)
     assert body["agents_sdk_runtime"]["sandbox"]["backend"] in {"unix_local", "docker", "external"}
     assert body["boi_agent"]["router"]["mode"] == "llm_first"
@@ -334,12 +354,30 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert body["boi_agent"]["langgraph"]["runtime"] in {"LangGraph", "unavailable"}
     assert body["boi_agent"]["cache_warmup"]["enabled"] is True
     assert body["boi_agent"]["cache_warmup"]["status"] in {"not_started", "running", "completed", "failed", "disabled"}
+    assert body["knowledge_health"]["enabled"] is False
+    integrations = {item["integration_id"]: item for item in body["integrations"]["items"]}
+    assert "event_broker" in integrations
+    assert integrations["data_lake"]["mode"] == "disabled"
     assert body["readiness"]["profile"] == "local-full"
     assert isinstance(body["readiness"]["ok"], bool)
     assert isinstance(body["readiness"]["failures"], list)
     assert body["deployment"]["profile"] == "local-full"
     assert body["deployment"]["content_root"].endswith("/boi")
     assert body["deployment"]["runtime_root"]
+    assert body["content"]["configured_root"] == body["deployment"]["content_root"]
+    assert body["content"]["root_exists"] is True
+    assert body["content"]["markdown_documents"] > 0
+    assert body["content"]["expected_guide_exists"] is True
+    assert isinstance(body["content"]["recovery_candidates"], list)
+    assert body["runtime_history"]["read_mode"] in {"active_only", "active_plus_seed"}
+    assert "events" in body["runtime_history"]["active"]
+    assert "actions" in body["runtime_history"]["active"]
+    assert isinstance(body["runtime_history"]["inbox_report_docs"], int)
+    assert body["boi_inbox_reports"]["write_root"].endswith("/private")
+    assert isinstance(body["boi_inbox_reports"]["write_root_exists"], bool)
+    assert isinstance(body["boi_inbox_reports"]["write_root_writable"], bool)
+    assert isinstance(body["boi_inbox_reports"]["unwritable_existing_roots"], list)
+    assert isinstance(body["boi_inbox_reports"]["generation_ready"], bool)
     assert body["git"]["auto_commit"] is True
     assert body["git"]["auto_push"] is False
     assert body["index"]["persisted_enabled"] is True
@@ -353,6 +391,511 @@ def test_runtime_config_exposes_sanitized_gemma_settings(boi_app_module):
     assert "flow_audit" in body["langflow_simulator"]
     assert "last_smoke_at" in body["langflow_simulator"]
     assert "KAFKA_SASL_PASSWORD" not in response.text
+
+
+def test_data_library_and_integration_status_are_first_class_routes(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    library = client.get("/data-library?employee_id=100001")
+    integrations = client.get("/integrations?employee_id=100001")
+    status = client.get("/api/integrations/status?employee_id=100001")
+
+    assert library.status_code == 200
+    assert "자료 보관함" in library.text
+    assert "data_library.js" in library.text
+    assert "기존 BoI와 업무 이력은 계속 사용할 수 있습니다" in library.text
+    assert integrations.status_code == 200
+    assert "연결 상태" in integrations.text
+    assert status.status_code == 200
+    assert {item["integration_id"] for item in status.json()["items"]} >= {
+        "event_broker",
+        "data_lake",
+        "action_gateway",
+        "mcp",
+    }
+    assert 'href="/event-types?employee_id=100001"' in library.text
+    assert 'href="/integrations?employee_id=100001"' in integrations.text
+
+
+def test_gpt55_health_probe_is_test_only_and_does_not_call_the_provider_by_default(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.post("/api/runtime/openai-health/check")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["test_only"] is True
+    assert body["test_mode"] is False
+    assert body["quota_state"] == "test_only"
+    assert body["models_status"] is None
+    assert body["responses_smoke_status"] is None
+
+
+def test_runtime_history_seed_root_populates_event_action_inbox_and_sop_history(boi_app_module, monkeypatch, tmp_path):
+    seed_root = tmp_path / "seed-history"
+    seed_events = seed_root / "events"
+    seed_actions = seed_root / "actions"
+    seed_events.mkdir(parents=True)
+    seed_actions.mkdir(parents=True)
+    event_row = {
+        "event_id": "evt-seed-history-001",
+        "event_type": "equipment.alarm.raised.v1",
+        "trace_id": "trace-seed-history-001",
+        "status": "published",
+        "logged_at": "2099-01-02T10:00:00+09:00",
+        "payload_title": "Seed alarm",
+        "payload": {"title": "Seed alarm", "equipment_id": "ETCH-SEED-01", "alarm_code": "PRESSURE"},
+    }
+    action_row = {
+        "employee_id": "100001",
+        "request_id": "act-seed-history-approval",
+        "action_key": "sop.equipment.change_spec_rule",
+        "status": "approval_required",
+        "summary": "Seed history approval required",
+        "trace_id": "trace-seed-history-001",
+        "event_id": "evt-seed-history-001",
+        "event_type": "equipment.alarm.raised.v1",
+        "connector_kind": "api",
+        "logged_at": "2099-01-02T10:01:00+09:00",
+        "payload": {"equipment_id": "ETCH-SEED-01", "alarm_code": "PRESSURE"},
+    }
+    (seed_events / "events-20990102.jsonl").write_text(json.dumps(event_row, ensure_ascii=False) + "\n", encoding="utf-8")
+    (seed_actions / "actions-20990102.jsonl").write_text(json.dumps(action_row, ensure_ascii=False) + "\n", encoding="utf-8")
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_HISTORY_SEED_ROOT", seed_root)
+    boi_app_module.invalidate_event_log_caches()
+    boi_app_module.invalidate_action_log_caches()
+
+    client = TestClient(boi_app_module.app)
+
+    events = client.get("/api/events/log?employee_id=100001&limit=5")
+    assert events.status_code == 200
+    event_payload = events.json()
+    assert event_payload["total"] == 1
+    event_ref = event_payload["items"][0]["_log_ref"]
+    assert event_ref == "event:seed:events-20990102.jsonl:1"
+    assert client.get(f"/api/events/raw/{quote(event_ref, safe='')}?employee_id=100001").status_code == 200
+
+    actions = client.get("/api/actions/logs?employee_id=100001&limit=5")
+    assert actions.status_code == 200
+    action_payload = actions.json()
+    assert action_payload["total"] == 1
+    action_ref = action_payload["items"][0]["_log_ref"]
+    assert action_ref == "action:seed:actions-20990102.jsonl:1"
+    assert client.get(f"/api/actions/raw/{quote(action_ref, safe='')}?employee_id=100001").status_code == 200
+
+    inbox = client.get("/api/inbox?employee_id=100001&limit=5")
+    assert inbox.status_code == 200
+    assert inbox.json()["open_count"] == 1
+
+    history = client.get("/api/sops/history?employee_id=100001&limit=5")
+    assert history.status_code == 200
+    assert len(history.json()["items"]) >= 1
+
+    runtime = client.get("/api/runtime/config")
+    assert runtime.status_code == 200
+    runtime_history = runtime.json()["runtime_history"]
+    assert runtime_history["read_mode"] == "active_plus_seed"
+    assert runtime_history["seed"]["events"]["row_count"] == 1
+    assert runtime_history["seed"]["actions"]["row_count"] == 1
+
+
+def test_oversized_unindexed_seed_action_history_is_not_parsed_during_request(boi_app_module, monkeypatch, tmp_path):
+    root = tmp_path / "actions"
+    root.mkdir()
+    (root / "actions-20990101.jsonl").write_text("{\"status\":\"approval_required\"}\n", encoding="utf-8")
+    source = {
+        "scope": "seed",
+        "root": root,
+        "prefix": "actions",
+        "pattern": "actions-*.jsonl",
+        "ref_prefix": "action",
+        "read_only": True,
+    }
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_HISTORY_SEED_ACTION_FULL_SCAN_MAX_BYTES", 1)
+
+    def fail_if_parsed(_source):
+        raise AssertionError("oversized seed history must not be parsed on a request path")
+
+    monkeypatch.setattr(boi_app_module, "jsonl_rows_for_source", fail_if_parsed)
+
+    assert boi_app_module.seed_action_full_scan_rows(source) == []
+
+
+def test_seed_inbox_item_is_eligible_for_automatic_report_generation(boi_app_module, monkeypatch):
+    started: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        boi_app_module,
+        "start_inbox_report_timer",
+        lambda job, **_kwargs: started.append(job),
+    )
+
+    scheduled = boi_app_module.schedule_inbox_report_generation(
+        "100001",
+        report_id="inbox-report-item-seed",
+        report_type="item",
+        items=[{"task_id": "task:seed", "_log_source": "seed", "_log_summary_only": True}],
+        report_doc_index={},
+    )
+
+    assert scheduled is True
+    assert started[0]["source_kind"] == "seed"
+
+
+def test_inbox_report_refresh_returns_structured_storage_error_and_page_recovers(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    task_id = "task:act-boi-inbox-storage-error"
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "request_id": "act-boi-inbox-storage-error",
+            "action_key": "manual.direct_development.decide_cross_section",
+            "status": "approval_required",
+            "summary": "저장 권한 오류 보고서",
+            "trace_id": "trace-boi-inbox-storage-error",
+            "event_type": "direct_development.share.requested.v1",
+            "logged_at": "2026-07-11T10:00:00+09:00",
+            "payload": {"severity": "high"},
+        },
+    )
+    report_id = boi_app_module.inbox_report_id("item", task_id)
+    monkeypatch.setattr(
+        boi_app_module,
+        "inbox_report_employee_storage_status",
+        lambda _employee_id: {
+            "write_root": "/private/100001/inbox-reports",
+            "write_root_exists": True,
+            "write_root_writable": False,
+            "generation_ready": False,
+        },
+    )
+    monkeypatch.setattr(boi_app_module, "schedule_inbox_report_generation", lambda *_args, **_kwargs: False)
+
+    api_response = client.post(f"/api/inbox/reports/{report_id}/refresh?employee_id=100001")
+
+    assert api_response.status_code == 503
+    assert api_response.json()["detail"] == {
+        "code": "inbox_report_storage_unwritable",
+        "message": "보고서 저장 위치를 확인해주세요. 잠시 후 다시 시도할 수 있습니다.",
+        "retryable": True,
+    }
+
+    page_response = client.post(
+        f"/inbox/reports/{report_id}/refresh?employee_id=100001",
+        data={"return_to": "/inbox?employee_id=100001&view=reports"},
+        follow_redirects=False,
+    )
+
+    assert page_response.status_code == 303
+    assert "report_status=storage_unavailable" in page_response.headers["location"]
+    recovered = client.get(page_response.headers["location"])
+    assert recovered.status_code == 200
+    assert "보고서 준비가 지연되고 있습니다." in recovered.text
+    assert "자동으로 다시 준비합니다." in recovered.text
+    assert "보고서 생성</button>" not in recovered.text
+    assert "/private/100001" not in recovered.text
+    boi_app_module.clear_inbox_report_error(report_id)
+
+
+def test_seed_inbox_item_can_be_materialized_by_explicit_refresh(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    item = {
+        "task_id": "task:seed-manual-report",
+        "_log_source": "seed",
+        "action_key": "manual.direct_development.decide_cross_section",
+        "event_type": "direct_development.share.requested.v1",
+    }
+    report_id = boi_app_module.inbox_report_id("item", item["task_id"])
+    monkeypatch.setattr(
+        boi_app_module,
+        "current_inbox_report_target",
+        lambda *_args, **_kwargs: ("item", item, [item]),
+    )
+    monkeypatch.setattr(boi_app_module, "ensure_inbox_report_storage_writable", lambda _employee_id: None)
+    monkeypatch.setattr(boi_app_module, "hydrate_inbox_report_items", lambda _employee_id, items: items)
+    monkeypatch.setattr(
+        boi_app_module,
+        "inbox_review_report_from_items",
+        lambda *_args, **_kwargs: {"title": "과거 이력 검토 보고서"},
+    )
+    monkeypatch.setattr(
+        boi_app_module,
+        "materialize_inbox_review_report_boi",
+        lambda *_args, **_kwargs: {
+            "report_id": report_id,
+            "report_state": "ready",
+            "report_boi_ref": "boi:private:seed-report",
+            "report_boi_url": "/docs/boi:private:seed-report?employee_id=100001",
+        },
+    )
+
+    response = client.post(f"/api/inbox/reports/{report_id}/refresh?employee_id=100001")
+
+    assert response.status_code == 200
+    assert response.json()["report_state"] == "ready"
+
+
+def test_ready_inbox_report_refresh_reuses_existing_document_without_regeneration(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    report_id = "inbox-report-item-ready"
+    monkeypatch.setattr(
+        boi_app_module,
+        "current_inbox_report_target",
+        lambda *_args, **_kwargs: ("item", {"task_id": "task:ready"}, [{"task_id": "task:ready"}]),
+    )
+    monkeypatch.setattr(
+        boi_app_module,
+        "inbox_report_manifest",
+        lambda *_args, **_kwargs: {
+            "report_id": report_id,
+            "report_state": "ready",
+            "report_boi_ref": "boi:private:ready-report",
+            "report_boi_url": "/docs/boi:private:ready-report?employee_id=100001",
+        },
+    )
+    monkeypatch.setattr(
+        boi_app_module,
+        "hydrate_inbox_report_items",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("ready report must not be regenerated")),
+    )
+
+    response = client.post(f"/api/inbox/reports/{report_id}/refresh?employee_id=100001")
+
+    assert response.status_code == 200
+    assert response.json()["report_boi_ref"] == "boi:private:ready-report"
+
+
+def test_inbox_report_fast_target_uses_coordinator_ref_and_report_id_fallback(boi_app_module, monkeypatch):
+    row = {
+        "employee_id": "100001",
+        "request_id": "act-fast-report-target",
+        "action_key": "manual.direct_development.decide_cross_section",
+        "status": "manual_required",
+        "summary": "빠른 보고서 대상",
+        "trace_id": "trace-fast-report-target",
+        "event_type": "direct_development.cross_section.decision_required.v1",
+        "logged_at": "2026-07-11T12:00:00+09:00",
+    }
+    task_id = "task:act-fast-report-target"
+    task_ref = boi_app_module.inbox_task_public_ref("100001", task_id)
+    report_id = boi_app_module.inbox_report_id("item", task_id)
+
+    class Coordinator:
+        enabled = True
+
+        @staticmethod
+        def state_for(_report_id):
+            return {"employee_id": "100001", "task_ref": task_ref}
+
+    monkeypatch.setattr(boi_app_module, "INBOX_REPORT_COORDINATOR", Coordinator())
+    monkeypatch.setattr(boi_app_module, "read_recent_action_logs_fast", lambda limit=2000: [row])
+    monkeypatch.setattr(boi_app_module, "read_inbox_report_cache", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        boi_app_module,
+        "agent_inbox_payload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("fast target must not rebuild the Inbox")),
+    )
+
+    from_coordinator = boi_app_module.find_inbox_report_item_fast("100001", report_id)
+    assert from_coordinator["task_ref"] == task_ref
+
+    monkeypatch.setattr(Coordinator, "state_for", staticmethod(lambda _report_id: None))
+    from_report_id = boi_app_module.find_inbox_report_item_fast("100001", report_id)
+    assert from_report_id["task_id"] == task_id
+
+
+def test_completed_inbox_report_view_is_read_only_and_keeps_workflow(boi_app_module, monkeypatch):
+    item = {
+        "task_id": "task:act-completed-report",
+        "task_ref": "inbox-ref-completed-report",
+        "status": "manual_required",
+        "is_completed": True,
+        "display": {"title": "완료된 업무", "status_label": "조치 필요"},
+        "item_brief": {"event_or_stage": "완료된 업무"},
+    }
+    doc = {
+        "metadata": {
+            "type": "boi/inbox-review-report",
+            "boi_id": "boi:private:100001:completed-report",
+            "inbox_report": {"report_id": "inbox-report-item-completed"},
+        }
+    }
+    monkeypatch.setattr(boi_app_module, "find_inbox_report_item_fast", lambda *_args: item)
+    monkeypatch.setattr(
+        boi_app_module,
+        "inbox_report_workflow_canvas_for_item",
+        lambda *_args: ({"type": "mermaid", "source": "flowchart LR\n  a --> b", "actions": []}, "sig"),
+    )
+
+    context = boi_app_module.inbox_report_view_context_for_doc(doc, "100001")
+
+    assert context["status"] == "completed"
+    assert context["workflow_canvas"]["source"].startswith("flowchart LR")
+    assert context["action_context"]["available"] is False
+    assert context["action_context"]["status_label"] == "처리 완료"
+    assert "이미 처리된 업무" in context["action_context"]["message"]
+
+
+def test_inbox_workflow_batch_scans_once_and_skips_work_context(boi_app_module, monkeypatch):
+    rows = [
+        {
+            "employee_id": "100001",
+            "request_id": f"act-inbox-workflow-batch-{index}",
+            "action_key": "sop.equipment.change_spec_rule",
+            "status": "approval_required",
+            "event_type": "corrective_action.requested.v1",
+            "logged_at": f"2026-07-11T12:0{index}:00+09:00",
+        }
+        for index in range(3)
+    ]
+    task_refs = [
+        boi_app_module.inbox_task_public_ref("100001", f"task:{row['request_id']}")
+        for row in rows
+    ]
+    scan_calls = 0
+    canvas_calls = 0
+
+    def fake_recent_rows(limit=2000):
+        nonlocal scan_calls
+        scan_calls += 1
+        return rows
+
+    def fake_canvas(employee_id, item, *, context=None):
+        nonlocal canvas_calls
+        canvas_calls += 1
+        assert employee_id == "100001"
+        assert context and context.get("task", {}).get("task_ref") == item.get("task_ref")
+        return {
+            "type": "mermaid",
+            "title": "관련 업무 흐름",
+            "source": f"flowchart LR\n  a{canvas_calls}[\"업무\"]",
+            "actions": [],
+        }
+
+    monkeypatch.setattr(boi_app_module, "read_recent_action_logs_fast", fake_recent_rows)
+    monkeypatch.setattr(boi_app_module, "inbox_report_workflow_source_signature", lambda: "batch-signature")
+    monkeypatch.setattr(boi_app_module, "inbox_workflow_canvas_for_item", fake_canvas)
+    monkeypatch.setattr(
+        boi_app_module,
+        "work_context_pack",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Inbox workflow batch must not build WorkContextPack")),
+    )
+    with boi_app_module._INBOX_WORKFLOW_CANVAS_CACHE_LOCK:
+        boi_app_module._INBOX_WORKFLOW_CANVAS_CACHE.clear()
+
+    client = TestClient(boi_app_module.app)
+    response = client.post(
+        "/api/inbox/workflow-canvases?employee_id=100001",
+        json={"task_refs": [*task_refs, "inbox-ref-not-visible"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert scan_calls == 1
+    assert canvas_calls == 3
+    assert [item["task_ref"] for item in body["items"]] == [*task_refs, "inbox-ref-not-visible"]
+    assert [item["state"] for item in body["items"]] == ["ready", "ready", "ready", "unavailable"]
+    assert all((item.get("canvas") or {}).get("actions", []) == [] for item in body["items"])
+    assert "task:act-" not in json.dumps(body, ensure_ascii=False)
+
+
+def test_inbox_workflow_batch_reuses_canvas_cache(boi_app_module, monkeypatch):
+    item = {
+        "task_id": "task:act-inbox-workflow-cache",
+        "task_ref": "inbox-ref-workflow-cache",
+        "action_key": "sop.equipment.change_spec_rule",
+        "event_type": "corrective_action.requested.v1",
+    }
+    canvas_calls = 0
+
+    def fake_canvas(_employee_id, _item, *, context=None):
+        nonlocal canvas_calls
+        canvas_calls += 1
+        assert context
+        return {"type": "mermaid", "source": "flowchart LR\n  a --> b", "actions": []}
+
+    monkeypatch.setattr(boi_app_module, "inbox_report_workflow_source_signature", lambda: "stable-signature")
+    monkeypatch.setattr(boi_app_module, "inbox_workflow_canvas_for_item", fake_canvas)
+    with boi_app_module._INBOX_WORKFLOW_CANVAS_CACHE_LOCK:
+        boi_app_module._INBOX_WORKFLOW_CANVAS_CACHE.clear()
+
+    first, first_signature = boi_app_module.inbox_workflow_canvas_for_item_fast("100001", item)
+    second, second_signature = boi_app_module.inbox_workflow_canvas_for_item_fast("100001", item)
+
+    assert first["source"] == second["source"]
+    assert first_signature == second_signature == "stable-signature"
+    assert canvas_calls == 1
+
+
+def test_inbox_page_server_renders_only_first_workflow(boi_app_module, monkeypatch):
+    for index in range(3):
+        append_action_log_row(
+            boi_app_module,
+            {
+                "employee_id": "100001",
+                "request_id": f"act-inbox-progressive-{index}",
+                "action_key": "sop.equipment.change_spec_rule",
+                "status": "approval_required",
+                "event_type": "corrective_action.requested.v1",
+                "summary": f"점진 노출 확인 {index}",
+                "logged_at": f"2026-07-11T12:1{index}:00+09:00",
+            },
+        )
+    monkeypatch.setattr(
+        boi_app_module,
+        "work_context_pack",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Inbox SSR must not build WorkContextPack")),
+    )
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/inbox?employee_id=100001&limit=3")
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.count('data-workflow-preloaded="true"') == 1
+    assert body.count('data-workflow-preloaded="false"') == 2
+    assert "flowchart LR" in body
+    assert body.count('data-inbox-workflow-lazy') == 3
+
+
+def test_runtime_config_flags_empty_content_root(boi_app_module, tmp_path, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    empty_root = tmp_path / "empty-content"
+    empty_root.mkdir()
+
+    monkeypatch.setattr(boi_app_module, "DATA_ROOT", empty_root)
+    monkeypatch.setattr(boi_app_module, "BOI_CONTENT_ROOT", empty_root)
+    boi_app_module.invalidate_doc_caches()
+
+    response = client.get("/api/runtime/config")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["content"]["configured_root"] == str(empty_root)
+    assert body["content"]["markdown_documents"] == 0
+    assert body["content"]["expected_guide_exists"] is False
+    assert any("content.markdown_documents is 0" in item for item in body["readiness"]["failures"])
+    assert any(item["markdown_documents"] > 0 for item in body["content"]["recovery_candidates"])
+
+
+def test_runtime_config_fails_readiness_when_inbox_report_storage_is_unwritable(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    diagnostics = {
+        "write_root": "/content/data/boi/private",
+        "write_root_exists": True,
+        "write_root_writable": True,
+        "unwritable_existing_roots": ["/content/data/boi/private/100001/inbox-reports"],
+        "generation_ready": False,
+    }
+    monkeypatch.setattr(boi_app_module, "inbox_report_storage_diagnostics", lambda: diagnostics)
+
+    response = client.get("/api/runtime/config")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["boi_inbox_reports"]["generation_ready"] is False
+    assert body["readiness"]["ok"] is False
+    assert any("boi_inbox_reports.generation_ready is false" in item for item in body["readiness"]["failures"])
 
 
 def test_workflow_definition_registries_and_api_expose_event_native_contract(boi_app_module):
@@ -1504,6 +2047,8 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
 
     def fake_llm(employee_id: str, task: str, payload: dict):
         assert task == "compose"
+        assert payload["hybrid_search"]["read_model"]["target_backend"] == "pgvector"
+        assert payload["hybrid_search"]["reranked_matches"]
         return {
             "answer_markdown": "## Native Agent 답변\n\n설비 이상 대응 SOP와 연결 Action을 확인했습니다.",
             "suggested_questions": ["이 SOP의 Event와 Action 관계를 표로 보여줘."],
@@ -1536,6 +2081,9 @@ def test_boi_agent_chat_uses_native_backend_by_default(boi_app_module, monkeypat
     assert isinstance(body["status_updates"], list)
     assert isinstance(body["execution_cards"], list)
     assert isinstance(body["access_summary"], dict)
+    assert body["context_summary"]["retrieval_backend"] == "hybrid_ontology_pgvector_graph"
+    assert body["hybrid_search_context"]["read_model"]["target_backend"] == "pgvector"
+    assert body["hybrid_search_context"]["reranked_matches"]
     assert "설비" in body["answer_markdown"]
     assert isinstance(body["links"], list)
 
@@ -6993,8 +7541,36 @@ def test_boi_agent_approve_doc_body_apply_uses_validated_body_apply_path(boi_app
     assert source_path.read_text(encoding="utf-8") != before
 
 
-def test_pet_agent_mount_is_hidden_by_default_on_home(boi_app_module):
+def test_pet_agent_mount_uses_v2_by_default_after_work_learning_acceptance(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
+    monkeypatch.delenv("BOI_AGENT_V2_DEFAULT", raising=False)
+
+    response = client.get("/?employee_id=100001&view=explorer")
+
+    assert response.status_code == 200
+    assert 'id="boi-agent-root"' in response.text
+    assert "/static/mermaid_render.js?v=" in response.text
+    assert "/static/pet_agent.js?v=" not in response.text
+    assert "/static/agent_workspace_v2.js?v=" in response.text
+    assert 'data-surface-kind="pet"' in response.text
+    assert "BoI Operations Center" not in response.text
+    assert "boi:public:boi-wiki-manual:operations:boi-operations-center" not in response.text
+
+
+def test_pet_agent_mount_keeps_frozen_v1_as_explicit_rollback_only(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setenv("BOI_AGENT_V2_DEFAULT", "false")
+
+    response = client.get("/?employee_id=100001&view=explorer")
+
+    assert response.status_code == 200
+    assert "/static/pet_agent.js?v=" in response.text
+    assert "/static/agent_workspace_v2.js?v=" not in response.text
+
+
+def test_pet_agent_mount_can_be_hidden_when_feature_disabled(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(boi_app_module, "BOI_PET_AGENT_ENABLED", False)
 
     response = client.get("/?employee_id=100001&view=explorer")
 
@@ -7002,99 +7578,295 @@ def test_pet_agent_mount_is_hidden_by_default_on_home(boi_app_module):
     assert 'id="boi-agent-root"' not in response.text
     assert "/static/mermaid_render.js?v=" in response.text
     assert "/static/pet_agent.js?v=" not in response.text
-    assert "BoI Operations Center" not in response.text
-    assert "boi:public:boi-wiki-manual:operations:boi-operations-center" not in response.text
+    assert "/static/agent_workspace_v2.js?v=" not in response.text
 
 
-def test_pet_agent_mount_is_available_when_feature_enabled(boi_app_module, monkeypatch):
+def test_pet_agent_mount_exposes_search_helper_contract(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     monkeypatch.setattr(boi_app_module, "BOI_PET_AGENT_ENABLED", True)
+    monkeypatch.setenv("BOI_AGENT_V2_DEFAULT", "true")
 
     response = client.get("/?employee_id=100001&view=explorer")
-    script = (boi_app_module.APP_DIR / "static" / "pet_agent.js").read_text(encoding="utf-8")
+    script = (boi_app_module.APP_DIR / "static" / "agent_workspace_v2.js").read_text(encoding="utf-8")
     style = (boi_app_module.APP_DIR / "static" / "style.css").read_text(encoding="utf-8")
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' in response.text
     assert "/static/mermaid_render.js?v=" in response.text
-    assert "/static/pet_agent.js?v=" in response.text
+    assert "/static/agent_workspace_v2.js?v=" in response.text
+    assert 'data-agent-v2-open' in response.text
+    assert 'data-agent-v2-related' in response.text
+    assert 'data-agent-v2-sources' in response.text
+    assert 'data-agent-v2-file' in response.text
+    assert 'data-agent-v2-workbench hidden' in response.text
+    assert 'data-agent-v2-artifact-focus' in response.text
     assert "sessionStorage" in script
-    assert "boiAgent.v8" in script
-    assert "contextFingerprintFromUrl" in script
-    assert "previousContextStorageKey" in script
-    assert "answerSending" in script
-    assert "followupsLoading" in script
-    assert "if (!question.trim() || state.answerSending) return;" in script
-    assert "state.answerSending = false;" in script
-    assert "semanticRoute: body.semantic_route || {}" in script
-    assert "relatedItemContext: body.related_item_context || {}" in script
-    assert "semantic_route: item.semanticRoute || {}" in script
-    assert "related_item_context: item.relatedItemContext || {}" in script
-    assert "boiAgent.v6" not in script
-    assert "boiAgent.v7.${employeeId}" not in script
-    assert "pinToBottom" in script
-    assert "captureScrollState" in script
-    assert "isNearBottom" in script
-    assert "Agent" in script
-    assert "Inbox" not in script
-    assert "boi-agent-meta" in script
-    assert "renderArtifacts" in script
+    assert "work_session_id" in script
+    assert "/sources" in script
+    assert "/api/v2/citations/" in script
+    assert "related_questions" in script
+    assert "/api/data-lake/artifacts/upload" in script
+    assert "setSurfaceMode" in script
+    assert "capability_id:" not in script
+    assert ".agent-surface-launcher" in style
+    assert '.agent-surface-pet { display:block; width:88px; height:88px' in style
     assert "mermaid-diagram" in script
-    assert "BoiAgentMarkdownDebug" in script
-    assert "renderMarkdownTable" in script
-    assert "renderRunSummary" in script
-    assert "html: body.answer_html || \"\"" in script
-    assert "body.display_markdown || body.answer_markdown" in script
-    assert "rawText: body.answer_markdown" in script
-    assert "looksLikeRawMarkdownHtml" in script
-    assert "shouldUseServerHtml" in script
-    assert "const serverHtml = shouldUseServerHtml(message, artifactMermaid)" in script
-    assert "serverHtml || renderMarkdownLite(message.text || \"\", { skipMermaidSources: artifactMermaid })" in script
-    assert "/api/agents/boi-wiki/chat/stream" in script
-    assert "answer_delta" in script
-    assert "diagnostic(payload)" in script
-    assert "componentErrors: [...existingComponentErrors, payload]" in script
-    assert "statusLines" in script
-    assert "statusLines: statusLines.slice(-6)" in script
-    assert 'if (!lines.length) return "";' in script
-    assert "readAgentStream" in script
-    assert "refreshSuggestions" in script
-    assert "suggestionsLoading" in script
-    assert "추천 질문 생성 중..." in script
-    assert ".boi-agent-suggestions-loading" in style
-    assert "state.inboxGroups = body.groups || []" not in script
-    assert "inboxReport" not in script
-    assert "renderInboxReport" not in script
-    assert "data-inbox-report-group" not in script
-    assert "data-inbox-report-task" not in script
-    assert "검토 보고서 보기" not in script
-    assert "/api/agents/boi-wiki/inbox/groups/${encoded}/review-report" not in script
-    assert "/api/agents/boi-wiki/inbox/${encoded}/review-report" not in script
-    assert "/api/agents/boi-wiki/inbox/${encodeURIComponent(draft.taskId)}/decision" not in script
-    assert "판단 사유" not in script
-    assert "추가 근거 요청" not in script
-    assert "renderInboxGroup" not in script
-    assert "group_narrative" not in script
-    assert "narrative_quality" not in script
-    assert "preview.brief" not in script
-    assert "renderInboxLinks" not in script
-    assert "업무 흐름 정의" not in script
-    assert "내부 실행 정의" not in script
-    assert "WorkflowDefinition" not in script
-    assert "업무 흐름 상태 확인" not in script
-    assert "연결된 업무 흐름" not in script
-    assert "suggestedQuestions: body.suggested_questions || []" in script
-    assert "renderMessageFollowups" in script
-    assert "다음에 물어볼 수 있는 질문" in script
-    assert "activeRequest.abort()" in script
-    assert "생성을 중지했습니다." in script
-    assert "formatAgentStreamError" in script
-    assert "답변을 완성하지 못했습니다" in script
-    assert "BoI Agent 장애" not in script
-    assert "진행 상태 모델 장애입니다" not in script
-    assert "LLM 라우터" not in script
-    assert "요청을 중단했습니다" not in script
-    assert "boi-agent-new" in script
+    assert "읽기 크기" in script
+    assert "전체 보기" in script
+    assert "readableMermaidZoom" in script
+    assert "artifactFocusOpen" in script
+    assert ".artifact-focus-open" in style
+    assert "Task 다듬기" in script
+    assert "openTaskSheet" in script
+    assert "saveCurrentNote" in script
+    assert "openCitation" in script
+    assert "patchSources" in script
+    assert "renderRelated" in script
+    assert "data-agent-v2-command" not in response.text
+
+
+def test_agent_v2_sop_turn_uses_the_existing_registration_draft_and_publish_path(
+    boi_app_module,
+    monkeypatch,
+):
+    class SopDraftModel:
+        provider = "test"
+
+        def readiness(self):
+            return {
+                "configured": True,
+                "generation": True,
+                "streaming": True,
+                "embeddings": False,
+                "provider": self.provider,
+                "model": "test-model",
+                "embedding_model": "",
+            }
+
+        def preflight(self):
+            return {**self.readiness(), "ok": True}
+
+        def generate_structured(self, *, system, prompt, schema):
+            required = set(schema.get("required") or [])
+            if "source_kind" in required:
+                return {
+                    "title": "설비 Alarm 접수 이벤트",
+                    "source_kind": "webhook",
+                    "source_name": "equipment-alarm",
+                    "trigger_mode": "immediate",
+                    "target_event_type": "equipment.alarm.raised.v1",
+                    "conditions": {},
+                    "fingerprint_fields": ["equipment_id", "alarm_code"],
+                    "workflow_ref": "",
+                    "assumptions": [],
+                }
+            assert "tasks" in required
+            return {
+                "title": "설비 Alarm 근거 확인 SOP",
+                "goal": "Alarm 접수부터 판단 기록까지 근거를 남긴다.",
+                "tasks": [
+                    {
+                        "task_id": "task-alarm-review",
+                        "name": "Alarm 내용 확인",
+                        "purpose": "Alarm과 설비 상태를 확인한다.",
+                        "execution_mode": "copilot",
+                        "exit_criteria": ["Alarm 내용과 담당자 판단이 기록되었어요"],
+                        "required_evidence": ["Alarm 내용", "담당자 판단 기록"],
+                        "completion_design": {
+                            "version": 1,
+                            "checks": [
+                                {
+                                    "check_id": "alarm-reviewed",
+                                    "label": "Alarm 내용과 담당자 판단이 기록되었어요",
+                                    "confirmation": "human",
+                                    "binding": {"kind": "none", "ref": ""},
+                                }
+                            ],
+                            "evidence": [
+                                {
+                                    "evidence_id": "alarm-detail",
+                                    "label": "Alarm 내용",
+                                    "source_kind": "business_event",
+                                    "ref": "",
+                                    "provided_by": "system",
+                                    "required": True,
+                                },
+                                {
+                                    "evidence_id": "operator-note",
+                                    "label": "담당자 판단 기록",
+                                    "source_kind": "human_note",
+                                    "ref": "",
+                                    "provided_by": "human",
+                                    "required": True,
+                                },
+                            ],
+                        },
+                        "outputs": ["Alarm 판단 기록"],
+                    }
+                ],
+                "mermaid": 'flowchart TD\n  A["Alarm 내용 확인"] --> B["판단 기록"]',
+                "gaps": [],
+            }
+
+        def stream_text(self, *, system, prompt):
+            yield "test"
+
+        def embed(self, texts):
+            raise RuntimeError("embedding is intentionally unavailable in this integration test")
+
+    service = boi_app_module.AGENT_V2_SERVICE
+    model = SopDraftModel()
+    monkeypatch.setattr(service, "model", model)
+    monkeypatch.setattr(service.search, "model", model)
+    client = TestClient(boi_app_module.app)
+
+    turn_response = client.post(
+        "/api/v2/agent/turns?employee_id=100001",
+        json={
+            "question": "설비 Alarm 대응 SOP를 Task와 완료 조건까지 만들어줘",
+            "capability_id": "sop.plan",
+        },
+    )
+
+    assert turn_response.status_code == 200
+    turn = turn_response.json()
+    assert turn["capability_id"] == "sop.plan"
+    assert turn["work_run_id"]
+    plan = service.store.get("plans", turn["plan_ref"])
+    assert plan["domain_operation"] == "sop.draft.publish_request"
+    assert plan["domain_ref"]
+
+    domain_draft = boi_app_module.read_registration_draft(plan["domain_ref"], "100001")
+    assert domain_draft["entry_kind"] == "sop_registration"
+    assert domain_draft["validation"]["valid"] is True
+    task = domain_draft["request"]["workflow_tasks"][0]
+    assert task["task_name"] == "Alarm 내용 확인"
+    assert task["completion_design"]["checks"][0]["label"] == "Alarm 내용과 담당자 판단이 기록되었어요"
+
+    confirm_response = client.post(
+        f"/api/v2/plans/{turn['plan_ref']}/confirm?employee_id=100001",
+        json={"confirmation": "confirm", "reason": "Task와 근거를 검토했습니다."},
+    )
+
+    assert confirm_response.status_code == 200
+    confirmed = confirm_response.json()
+    assert confirmed["work_run_id"] == turn["work_run_id"]
+    assert confirmed["work_run_status"] == "completed"
+    assert confirmed["production_changed"] is False
+    published = boi_app_module.read_registration_draft(plan["domain_ref"], "100001")
+    assert published["status"] == "publish_requested"
+    assert published["catalog_applied"] is False
+    assert published["publish_note"] == "Task와 근거를 검토했습니다."
+
+    candidate_id = "candidate-agent-v2-sop-learning"
+    service.store.put(
+        "knowledge_candidates",
+        candidate_id,
+        {
+            "candidate_id": candidate_id,
+            "employee_id": "100001",
+            "source_work_run_id": turn["work_run_id"],
+            "source_task_ref": "task-alarm-review",
+            "title": "Alarm 검토 시 판단 기록을 함께 남긴다",
+            "summary": "Alarm 내용만 확인하지 않고 담당자 판단과 사용 근거를 함께 기록한다.",
+            "reusable_lesson": "Alarm 내용만 확인하지 않고 담당자 판단과 사용 근거를 함께 기록한다.",
+            "source_refs": [plan["domain_ref"]],
+            "target_asset_ref": plan["domain_ref"],
+            "visibility": "private",
+            "status": "provisional",
+            "novelty": {"checked": True, "duplicate_refs": [], "recommendation": "create_new"},
+            "raw_transcript_stored": False,
+            "revision": 1,
+            "created_at": boi_app_module.now_iso(),
+            "updated_at": boi_app_module.now_iso(),
+        },
+    )
+    monkeypatch.setattr(
+        boi_app_module,
+        "git_commit_for_path",
+        lambda path, message: {"status": "committed", "commit_hash": "agent-v2-promotion-test"},
+    )
+
+    promotion_response = client.post(
+        f"/api/v2/knowledge-candidates/{candidate_id}/promote?employee_id=100001",
+        json={
+            "expected_revision": 1,
+            "target_visibility": "team",
+            "team_id": "aix-tf",
+            "reason": "반복 Alarm 대응에서 재사용할 기준으로 검토했습니다.",
+        },
+    )
+
+    assert promotion_response.status_code == 200
+    promotion = promotion_response.json()
+    assert promotion["production_changed"] is False
+    assert promotion["domain_preview"]["status"] == "ready_for_confirmation"
+    assert promotion["domain_validation"]["valid"] is True
+    assert promotion["plan_ref"]
+    pending_candidate = service.learning.get_candidate(
+        boi_app_module.agent_v2_identity_for_employee("100001"),
+        candidate_id,
+    )
+    assert pending_candidate["status"] == "promotion_requested"
+    assert pending_candidate["promotion"]["preview_id"]
+
+    promotion_confirm = client.post(
+        f"/api/v2/plans/{promotion['plan_ref']}/confirm?employee_id=100001",
+        json={"confirmation": "confirm", "reason": "공유 정본 게시를 최종 확인했습니다."},
+    )
+
+    assert promotion_confirm.status_code == 200
+    promotion_result = promotion_confirm.json()
+    assert promotion_result["production_changed"] is True
+    assert promotion_result["domain_result"]["status"] == "published"
+    promoted_candidate = service.learning.get_candidate(
+        boi_app_module.agent_v2_identity_for_employee("100001"),
+        candidate_id,
+    )
+    assert promoted_candidate["status"] == "reviewed"
+    assert promoted_candidate["promotion"]["status"] == "published"
+    assert promoted_candidate["target_asset_ref"]
+
+    event_turn_response = client.post(
+        "/api/v2/agent/turns?employee_id=100001",
+        json={
+            "question": "설비 Alarm 신호를 업무 이벤트로 판단하는 초안을 만들어줘",
+            "capability_id": "business_event.plan",
+        },
+    )
+
+    assert event_turn_response.status_code == 200, event_turn_response.text
+    event_turn = event_turn_response.json()
+    event_artifact = service.store.get("artifacts", event_turn["artifact_refs"][0]["artifact_id"])
+    assert event_artifact["domain"]["domain_kind"] == "business_event_definition"
+    definition_id = event_artifact["domain"]["domain_ref"]
+    assert boi_app_module.read_business_event_definition(definition_id)["status"] == "draft"
+
+    event_test_response = client.post(
+        "/api/v2/agent/turns?employee_id=100001",
+        json={
+            "question": "이 업무 이벤트를 샘플 신호로 시험해줘",
+            "work_session_id": event_turn["work_session_id"],
+            "capability_id": "business_event.plan",
+            "input_delta": {
+                "operation": "test",
+                "sample_signal": {
+                    "equipment_id": "ETCH-01",
+                    "alarm_code": "PRESSURE_HIGH",
+                },
+            },
+        },
+    )
+
+    assert event_test_response.status_code == 200
+    event_test = event_test_response.json()
+    assert event_test["work_intent"]["operation"] == "test"
+    assert event_test["loop_state"]["status"] == "completed"
+    tested_artifact = service.store.get("artifacts", event_turn["artifact_refs"][0]["artifact_id"])
+    decision = tested_artifact["domain_test"]["decision"]
+    assert decision["decision"] == "published"
+    assert decision["dry_run"] is True
+    assert tested_artifact["domain_test"]["production_changed"] is False
 
 
 def test_boi_inbox_nav_page_and_api_are_canonical(boi_app_module):
@@ -7135,7 +7907,8 @@ def test_boi_inbox_nav_page_and_api_are_canonical(boi_app_module):
     assert "승인/조치" in body
     assert "처리 이력" in body
     assert "보고서" in body
-    assert "보고서 생성" in body
+    assert "보고서 준비 중" in body
+    assert "보고서 생성</button>" not in body
     assert "보고서 상태 보기" not in body
     assert "SOP, 실행 현황, 원본 기록" not in body
     assert "act-boi-inbox-canonical" not in body
@@ -7155,6 +7928,9 @@ def test_boi_inbox_nav_page_and_api_are_canonical(boi_app_module):
     assert "report_boi_link" not in group
     assert any(item.get("report_boi_link", {}).get("label") for item in payload["items"])
     assert all("report_state" in item for item in payload["items"])
+    assert all(item.get("task_ref", "").startswith("inbox-ref-") for item in payload["items"])
+    assert all(item.get("task_id") == item.get("task_ref") for item in payload["items"])
+    assert "task:act-" not in json.dumps(payload["items"], ensure_ascii=False)
     assert "work_context_narrative" not in group["items"][0]
     visible_api_text = json.dumps(
         {
@@ -7377,7 +8153,9 @@ def test_openai_health_contract_is_non_blocking_without_check(boi_app_module):
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["active_model"] == "gpt-5.5"
+    assert body["active_model"] == ""
+    assert body["configured_test_model"] == "gpt-5.5"
+    assert body["test_mode"] is False
     assert "api_key" not in body
     assert body["quota_state"] in {"not_configured", "unchecked", "ready", "degraded"}
 
@@ -7394,18 +8172,43 @@ def test_agent_builder_sandbox_and_report_evidence_contracts(boi_app_module, mon
             "prompt": "Trend와 Raw Data를 확인해줘.",
             "urls": ["https://example.com/manual"],
             "mcp_servers": ["boi-wiki-local"],
-            "skills": ["data-analytics:visualize-data"],
+            "skills": ["data-analytics:visualize-data", "evidence.quality_trend"],
+            "skill_candidates": [{"title": "Recipe 이력 비교", "description": "Recipe 변경 이력을 비교하는 새 능력 후보", "source": "agent_builder"}],
+            "connection_presets": ["boi_wiki", "data_lake", "action_gateway"],
+            "helper_surfaces": ["pet", "task"],
+            "capabilities": ["search", "summarize", "mermaid"],
+            "reference_sources": ["boi_docs", "sops", "actions"],
+            "use_cases": ["Alarm 승인 전에 Trend와 이전 조치 이력을 비교"],
         },
     )
     assert draft_response.status_code == 200
     draft = draft_response.json()["draft"]
     assert draft["runtime"]["model"] == "gpt-5.5"
+    assert draft["runtime"]["search_backbone"] == "ontology_pgvector_graph"
+    assert draft["capabilities"] == ["search", "summarize", "mermaid"]
+    assert draft["helper_surfaces"] == ["pet", "task"]
+    assert "evidence.quality_trend" in draft["skills"]
+    assert draft["skill_candidates"][0]["title"] == "Recipe 이력 비교"
+    assert draft["skill_creator"]["status"] == "draft_ready"
+    assert draft["skill_candidate_drafts"][0]["title"] == "Recipe 이력 비교"
+    assert draft["skill_candidate_drafts"][0]["mutation_policy"] == "draft_only_until_boi_confirmation"
+    assert draft["connection_presets"] == ["boi_wiki", "data_lake", "action_gateway"]
+    candidates = client.get("/api/skills/candidates?employee_id=100001")
+    assert candidates.status_code == 200
+    assert any(item["candidate_id"] == draft["skill_candidate_drafts"][0]["candidate_id"] for item in candidates.json()["items"])
+    direct_candidate = client.post(
+        "/api/skills/candidates?employee_id=100001",
+        json={"title": "Lot Hold 판단 근거 정리", "description": "Hold 판단 근거를 정리하는 능력", "capabilities": ["validate"]},
+    )
+    assert direct_candidate.status_code == 200
+    assert direct_candidate.json()["candidate"]["title"] == "Lot Hold 판단 근거 정리"
 
     test_response = client.post(f"/api/agents/drafts/{draft['draft_id']}/test?employee_id=100001")
     assert test_response.status_code == 200
     test_payload = test_response.json()["test"]
     assert test_payload["sandbox_supported"] is True
     assert test_payload["runtime_backend"] in {"agents_sdk", "contract_only"}
+    assert test_payload["tool_boundary"]["skill_candidates"][0]["title"] == "Recipe 이력 비교"
 
     publish_without_confirmation = client.post(f"/api/agents/drafts/{draft['draft_id']}/publish?employee_id=100001", json={"scope": "private"})
     assert publish_without_confirmation.status_code == 400
@@ -7419,6 +8222,8 @@ def test_agent_builder_sandbox_and_report_evidence_contracts(boi_app_module, mon
     agent_id = deployment["agent_id"]
     assert deployment["owner_employee_id"] == "100001"
     assert deployment["is_linked_to_me"] is True
+    assert deployment["skill_candidates"][0]["title"] == "Recipe 이력 비교"
+    assert deployment["skill_candidate_drafts"][0]["title"] == "Recipe 이력 비교"
 
     mine = client.get("/api/agents?employee_id=100001&scope=mine")
     assert mine.status_code == 200
@@ -7526,33 +8331,312 @@ def test_agent_builder_sandbox_and_report_evidence_contracts(boi_app_module, mon
     assert attach_response.json()["attachment"]["report_id"] == "report-001"
 
 
+def test_hybrid_search_deep_work_and_mermaid_workflow_contracts(boi_app_module, monkeypatch, tmp_path):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_ROOT", tmp_path / "runtime")
+    append_event_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "event_id": "evt-hybrid-runtime",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": "trace-hybrid-runtime",
+            "status": "published",
+            "payload_title": "Mermaid SOP runtime event",
+            "payload": {"summary": "Mermaid SOP smoke event"},
+        },
+    )
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "request_id": "act-hybrid-runtime",
+            "action_key": "sop.equipment.request_trend_history",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": "trace-hybrid-runtime",
+            "status": "success",
+            "summary": "Mermaid SOP runtime action",
+        },
+    )
+    append_event_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100002",
+            "event_id": "evt-hybrid-private-other-employee",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": "trace-hybrid-private-other-employee",
+            "status": "published",
+            "payload_title": "hybrid private other employee event must not leak",
+            "payload": {"summary": "hybrid-private-other-employee-event-leak-sentinel"},
+        },
+    )
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100002",
+            "request_id": "act-hybrid-private-other-employee",
+            "action_key": "sop.equipment.request_trend_history",
+            "event_type": "equipment.alarm.raised.v1",
+            "trace_id": "trace-hybrid-private-other-employee",
+            "status": "success",
+            "summary": "hybrid-private-other-employee-action-leak-sentinel",
+        },
+    )
+    agent_draft = client.post(
+        "/api/agents/drafts?employee_id=100001",
+        json={
+            "title": "Hybrid Trend 업무 도우미",
+            "prompt": "Trend와 Recipe 이력 비교를 도와줘.",
+            "skills": ["evidence.quality_trend"],
+            "skill_candidates": [{"title": "Recipe 이력 비교", "description": "Recipe 변경 이력을 비교하는 새 능력 후보"}],
+            "connection_presets": ["boi_wiki", "data_lake"],
+            "helper_surfaces": ["pet", "task"],
+            "capabilities": ["search", "validate"],
+            "reference_sources": ["boi_docs", "similar_cases"],
+        },
+    )
+    assert agent_draft.status_code == 200
+    draft_id = agent_draft.json()["draft"]["draft_id"]
+    agent_publish = client.post(
+        f"/api/agents/drafts/{draft_id}/publish?employee_id=100001",
+        json={"scope": "private", "note": "hybrid search fixture", "user_confirmed": True},
+    )
+    assert agent_publish.status_code == 200
+
+    hybrid = client.get("/api/search/hybrid?employee_id=100001&q=Mermaid%20SOP&limit=5&view=compact")
+    assert hybrid.status_code == 200
+    hybrid_body = hybrid.json()
+    assert hybrid_body["ok"] is True
+    assert hybrid_body["read_model"]["target_backend"] == "pgvector"
+    assert hybrid_body["read_model"]["active_backend"] in {"pgvector", "local_deterministic_vector_fallback"}
+    assert hybrid_body["index_manifest"]["rebuildable"] is True
+    assert "reranked_matches" in hybrid_body
+    read_model = boi_app_module.hybrid_search_read_model("100001")
+    read_model_text = json.dumps(read_model, ensure_ascii=False, default=str)
+    assert "hybrid-private-other-employee-event-leak-sentinel" not in read_model_text
+    assert "hybrid-private-other-employee-action-leak-sentinel" not in read_model_text
+    read_model_kinds = {item.get("kind") for item in read_model.get("boi_embeddings") or []}
+    assert {"runtime_action", "runtime_event", "action_skill", "event_skill", "agent_helper"}.issubset(read_model_kinds)
+    graph_node_kinds = {item.get("kind") for item in read_model.get("boi_ontology_nodes") or []}
+    assert {"skill", "agent_helper", "dictionary_term", "dictionary_alias", "workflow_task", "evidence", "work_boi_output"}.issubset(graph_node_kinds)
+    graph_relationships = {item.get("relationship") for item in read_model.get("boi_ontology_edges") or []}
+    assert {"aliases", "related_to", "maps_to_event_type", "contains_task", "next_task", "requires_evidence", "produces_boi", "starts_task"}.issubset(graph_relationships)
+    helper_search = client.get("/api/search/hybrid?employee_id=100001&q=Recipe%20%EC%9D%B4%EB%A0%A5%20%EB%B9%84%EA%B5%90&limit=8&view=compact")
+    assert helper_search.status_code == 200
+    helper_kinds = {item.get("kind") for item in helper_search.json()["reranked_matches"]}
+    assert "agent_helper" in helper_kinds
+
+    reindex_preview = client.post("/api/search/reindex?employee_id=100001", json={})
+    assert reindex_preview.status_code == 200
+    assert reindex_preview.json()["status"] == "confirmation_required"
+    reindex = client.post("/api/search/reindex?employee_id=100001", json={"user_confirmed": True})
+    assert reindex.status_code == 200
+    assert reindex.json()["status"] == "reindexed"
+
+    graph = client.get("/api/knowledge-graph?employee_id=100001&q=SOP&limit=20")
+    assert graph.status_code == 200
+    assert "nodes" in graph.json()
+    assert "edges" in graph.json()
+    relationship_graph = client.get("/api/knowledge-graph?employee_id=100001&limit=80")
+    assert relationship_graph.status_code == 200
+    api_node_kinds = {item.get("kind") for item in relationship_graph.json()["nodes"]}
+    api_relationships = {item.get("relationship") for item in relationship_graph.json()["edges"]}
+    assert {"workflow_task", "evidence", "work_boi_output"}.issubset(api_node_kinds)
+    assert {"contains_task", "next_task", "requires_evidence", "produces_boi", "starts_task"}.issubset(api_relationships)
+
+    deep_work = client.post(
+        "/api/agents/deep-work?employee_id=100001",
+        json={
+            "objective": "직개발 결과 확인 SOP를 근거 중심으로 재검토해줘",
+            "work_type": "sop_draft",
+            "max_iterations": 5,
+        },
+    )
+    assert deep_work.status_code == 200
+    draft = deep_work.json()["draft"]
+    assert draft["kind"] == "deep_work_draft"
+    assert draft["runtime"]["target_backend"] == "deepagents"
+    assert draft["runtime"]["boundary"] == "draft_only_until_boi_confirmation"
+    assert draft["deepagents_run"]["status"] in {"skipped", "failed", "executed"}
+    assert draft["deepagents_run"]["tool_policy"] == "read_only_boi_search_context_graph"
+    assert draft["context_manifest"]["loop_policy"]["requires_delta"] is True
+    assert draft["evidence_ledger"]
+
+    mermaid = client.post(
+        "/api/mermaid/workflow-draft?employee_id=100001",
+        json={
+            "title": "Alarm 대응 흐름",
+            "mermaid_source": "flowchart TD\nA[Alarm 확인] --> B[Trend 분석]\nB --> C[조치 승인]",
+        },
+    )
+    assert mermaid.status_code == 200
+    mermaid_draft = mermaid.json()["draft"]
+    assert mermaid_draft["kind"] == "mermaid_workflow_draft"
+    assert [task["name"] for task in mermaid_draft["workflow_tasks"][:3]] == ["Alarm 확인", "Trend 분석", "조치 승인"]
+    assert mermaid_draft["workflow_tasks"][0]["execution_mode"] == "manual"
+    assert mermaid_draft["workflow_tasks"][1]["execution_mode"] == "copilot"
+    assert mermaid_draft["artifact"]["type"] == "mermaid"
+    assert "```" not in mermaid_draft["artifact"]["source"]
+    assert mermaid_draft["collaboration_artifact"]["type"] == "workflow_draft"
+    assert mermaid_draft["collaboration_artifact"]["data"]["workflow_tasks"][0]["name"] == "Alarm 확인"
+    assert mermaid_draft["collaboration_artifact"]["data"]["candidate_sections"]
+    assert mermaid_draft["sop_builder_url"].startswith("/sops/new?")
+    assert f"mermaid_draft_id={mermaid_draft['draft_id']}" in mermaid_draft["sop_builder_url"]
+    builder = client.get(mermaid_draft["sop_builder_url"])
+    assert builder.status_code == 200
+    assert "sop-mermaid-draft-seed" in builder.text
+    assert "mermaid_render.js" in builder.text
+    assert "흐름 그림에서 가져온 Task 후보가 있습니다." in builder.text
+    assert "mermaid-diagram task-console-workflow-canvas sop-builder-mermaid-draft-canvas" in builder.text
+    seed_match = re.search(r'<script id="sop-mermaid-draft-seed" type="application/json">(.*?)</script>', builder.text, flags=re.S)
+    assert seed_match
+    builder_seed = json.loads(seed_match.group(1))
+    assert builder_seed["status"] == "ready"
+    assert builder_seed["title"] == "Alarm 대응 흐름"
+    assert [task["name"] for task in builder_seed["workflow_tasks"][:2]] == ["Alarm 확인", "Trend 분석"]
+    assert builder_seed["workflow_edges"][0]["source"] == "A"
+    assert "Task 후보 불러오기" in builder.text
+
+
+def test_pet_search_returns_business_grouped_results(boi_app_module, monkeypatch):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_BACKEND", "native")
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_ROUTER_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", False)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_REQUIRED", False)
+
+    response = client.post(
+        "/api/agents/boi-wiki/chat?employee_id=100001",
+        json={"question": "Trend 확인 SOP와 유사 사례 찾아줘", "mode": "fast", "intent": "search"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    artifacts = [item for item in body["artifacts"] if item.get("type") == "business_search_results"]
+    assert len(artifacts) == 1
+    mermaid_artifacts = [item for item in body["artifacts"] if item.get("type") == "mermaid" and item.get("title") == "관련 업무 흐름"]
+    assert len(mermaid_artifacts) == 1
+    assert mermaid_artifacts[0]["source"].startswith("flowchart TD")
+    assert "```" not in mermaid_artifacts[0]["source"]
+    assert "검색 질문" in mermaid_artifacts[0]["source"]
+    sections = artifacts[0]["data"]["sections"]
+    section_titles = {section["title"] for section in sections}
+    assert {"문서", "업무 흐름", "관련 실행 요청", "유사 사례"} & section_titles
+    assert artifacts[0]["data"]["next_actions"]
+    assert body["suggested_questions_source"] in {"business_search_affordance", "answer_scoped_llm", "answer_scoped_llm_pending"}
+
+
+def test_deep_work_records_executed_deepagents_draft_artifact(boi_app_module, monkeypatch, tmp_path):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_ROOT", tmp_path / "runtime")
+
+    async def fake_run_deepagents_draft(req, objective, employee_id, context, search, context_manifest):
+        return {
+            "status": "executed",
+            "output_text": "근거 모음과 종료 기준을 기준으로 SOP 초안을 작성했습니다.",
+            "output_excerpt": "근거 모음과 종료 기준을 기준으로 SOP 초안을 작성했습니다.",
+            "tool_policy": "read_only_boi_search_context_graph",
+            "mutation_policy": "draft_only_until_boi_confirmation",
+            "runtime": {"target_backend": "deepagents", "active_backend": "deepagents"},
+        }
+
+    monkeypatch.setattr(boi_app_module, "run_deepagents_draft", fake_run_deepagents_draft)
+
+    response = client.post(
+        "/api/agents/deep-work?employee_id=100001",
+        json={
+            "objective": "Trend 검토 업무를 SOP 초안으로 정리해줘",
+            "work_type": "sop_draft",
+            "max_iterations": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    draft = response.json()["draft"]
+    assert draft["deepagents_run"]["status"] == "executed"
+    deepagents_artifacts = [item for item in draft["draft_artifacts"] if item["type"] == "deepagents_draft"]
+    assert len(deepagents_artifacts) == 1
+    assert "SOP 초안" in deepagents_artifacts[0]["content"]
+    assert deepagents_artifacts[0]["mutation_policy"] == "draft_only_until_boi_confirmation"
+
+
+def test_deepagents_runtime_tools_are_read_only_and_employee_scoped(boi_app_module, monkeypatch, tmp_path):
+    client = TestClient(boi_app_module.app)
+    monkeypatch.setattr(boi_app_module, "BOI_RUNTIME_ROOT", tmp_path / "runtime")
+    monkeypatch.setattr(boi_app_module, "BOI_DEEPAGENTS_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DEEPAGENTS_MODEL", "fake-deepagents-model")
+
+    class FakeDeepAgent:
+        def __init__(self, tools):
+            self.tools = tools
+
+        def invoke(self, payload):
+            search_text = self.tools[0]("SOP")
+            context_text = self.tools[1]()
+            graph_text = self.tools[2]("SOP")
+            assert "boi_embeddings" in search_text
+            assert "context_id" in context_text
+            assert '"nodes"' in graph_text
+            return {"messages": [{"role": "assistant", "content": "SOP 초안과 근거 모음을 draft로 정리했습니다."}]}
+
+    captured_subagents = {}
+
+    def fake_create_deep_agent(*, model, tools, system_prompt, subagents=None):
+        assert model == "fake-deepagents-model"
+        assert "운영 데이터 변경" in system_prompt
+        captured_subagents["items"] = subagents or []
+        return FakeDeepAgent(tools)
+
+    monkeypatch.setattr(boi_app_module, "load_deepagents_create_deep_agent", lambda: (fake_create_deep_agent, ""))
+
+    response = client.post(
+        "/api/agents/deep-work?employee_id=100001",
+        json={
+            "objective": "SOP 근거를 찾아 심층 검토해줘",
+            "work_type": "sop_draft",
+            "max_iterations": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    draft = response.json()["draft"]
+    assert draft["deepagents_run"]["status"] == "executed"
+    assert draft["deepagents_run"]["tool_policy"] == "read_only_boi_search_context_graph"
+    assert draft["deepagents_run"]["mutation_policy"] == "draft_only_until_boi_confirmation"
+    assert draft["deepagents_run"]["subagents"]["enabled"] is True
+    assert {item["name"] for item in draft["deepagents_run"]["subagents"]["items"]} == {"boi-researcher", "boi-context-reviewer"}
+    assert {item["name"] for item in captured_subagents["items"]} == {"boi-researcher", "boi-context-reviewer"}
+    assert any(item["type"] == "deepagents_draft" for item in draft["draft_artifacts"])
+
+
 def test_agent_builder_page_exposes_gems_style_builder(boi_app_module):
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/agents/builder?employee_id=100001")
-    script = (boi_app_module.APP_DIR / "static" / "agent_builder.js").read_text(encoding="utf-8")
+    legacy = client.get("/agents/builder?employee_id=100001", follow_redirects=False)
+    response = client.get("/helpers/new?employee_id=100001")
+    script = (boi_app_module.APP_DIR / "static" / "helper_builder_v2.js").read_text(encoding="utf-8")
     style = (boi_app_module.APP_DIR / "static" / "style.css").read_text(encoding="utf-8")
 
+    assert legacy.status_code == 307
+    assert legacy.headers["location"].startswith("/helpers/new")
+    legacy_draft = client.get("/agents/builder?employee_id=100001&draft_id=agent-draft-example", follow_redirects=False)
+    assert "legacy_draft_id=agent-draft-example" in legacy_draft.headers["location"]
     assert response.status_code == 200
-    assert "/static/agent_builder.js?v=" in response.text
-    assert "프롬프트와 선택 자료만으로 업무 Agent를 만들고" in response.text
-    assert "GPT-5.5/Agents SDK 테스트" in response.text
-    assert 'data-agent-builder-form' in response.text
-    assert 'data-agent-builder-sandbox-form' in response.text
-    assert 'data-ops-url=""' in response.text
-    assert "BoI Operations Center" not in response.text
-    assert 'href="/ops?employee_id=100001"' not in response.text
-    assert "MCP 서버" in response.text
-    assert "Skill" in response.text
-    assert "Git repo" in response.text
-    assert "바로 테스트" in response.text
-    assert "저장/배포" in response.text
-    assert "Sandbox 테스트" in response.text
-    assert "/api/agents/drafts" in script
-    assert "/api/agents/sandbox/jobs" in script
-    assert "user_confirmed: true" in script
-    assert ".agent-builder-layout" in style
-    assert ".agent-builder-result-card" in style
+    assert "/static/helper_builder_v2.js?v=" in response.text
+    assert "나만의 BoI Agent 만들기" in response.text
+    assert "설정하면서 바로 시험해보세요." in response.text
+    assert "어떻게 도와야 하나요?" in response.text
+    assert "무엇을 참고할까요?" in response.text
+    assert "연결할 업무 능력" in response.text
+    assert "연결할 시스템" in response.text
+    assert "실제 질문으로 확인하세요." in response.text
+    assert "/api/v2/helper-drafts/" in script
+    assert "/preview-turns" in script
+    assert 'capability_id: "skill.plan"' in script
+    assert "/api/agents/drafts" not in script
+    assert "pgvector" not in response.text
+    assert "DeepAgents" not in response.text
+    assert ".helper-builder-v2" in style
 
 
 def test_reporting_agents_and_facade_contracts(boi_app_module, monkeypatch, tmp_path):
@@ -7862,7 +8946,8 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
         },
     )
     inbox = client.get("/api/inbox?employee_id=100001&limit=50").json()
-    item = next(item for item in inbox["items"] if item["task_id"] == "task:act-boi-inbox-decision-ui")
+    report_id = boi_app_module.inbox_report_id("item", "task:act-boi-inbox-decision-ui")
+    item = next(item for item in inbox["items"] if item["report_id"] == report_id)
     refresh = client.post(f"/api/inbox/reports/{item['report_id']}/refresh?employee_id=100001")
     assert refresh.status_code == 200
 
@@ -7892,7 +8977,7 @@ def test_boi_inbox_decisions_view_records_item_decision_from_report_card(boi_app
     assert "/inbox/task-refs/inbox-ref-" in body
 
     submit = client.post(
-        "/inbox/tasks/task:act-boi-inbox-decision-ui/decision?employee_id=100001",
+        f"/inbox/tasks/{item['task_id']}/decision?employee_id=100001",
         data={
             "decision": "reject",
             "note": "Raw Data endpoint 확인 전이라 반려",
@@ -7946,8 +9031,9 @@ def test_boi_inbox_manual_action_view_posts_completion_and_artifacts(boi_app_mod
         },
     )
     inbox = client.get("/api/inbox?employee_id=100001&limit=50").json()
-    item = next(item for item in inbox["items"] if item["task_id"] == "task:act-boi-inbox-manual-ui")
-    task_ref = boi_app_module.inbox_task_public_ref("100001", item["task_id"])
+    report_id = boi_app_module.inbox_report_id("item", "task:act-boi-inbox-manual-ui")
+    item = next(item for item in inbox["items"] if item["report_id"] == report_id)
+    task_ref = item["task_ref"]
     refresh = client.post(f"/api/inbox/reports/{item['report_id']}/refresh?employee_id=100001")
     assert refresh.status_code == 200
 
@@ -8040,7 +9126,7 @@ def test_boi_inbox_history_view_lists_recorded_decisions_not_open_tasks(boi_app_
     assert "trace-boi-inbox-history-ui" not in body
 
 
-def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_report(boi_app_module):
+def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_report(boi_app_module, monkeypatch):
     client = TestClient(boi_app_module.app)
     append_action_log_row(
         boi_app_module,
@@ -8067,9 +9153,9 @@ def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_repo
     )
 
     inbox = client.get("/api/inbox?employee_id=100001&limit=10")
-    item = next(item for item in inbox.json()["items"] if item["task_id"] == "task:act-boi-inbox-refresh-item")
-    task_ref = boi_app_module.inbox_task_public_ref("100001", item["task_id"])
-    report_id = item["report_id"]
+    report_id = boi_app_module.inbox_report_id("item", "task:act-boi-inbox-refresh-item")
+    item = next(item for item in inbox.json()["items"] if item["report_id"] == report_id)
+    task_ref = item["task_ref"]
 
     first_get = client.get(f"/api/inbox/reports/{report_id}?employee_id=100001")
     web_refresh = client.post(f"/inbox/reports/{report_id}/refresh?employee_id=100001", follow_redirects=False)
@@ -8098,9 +9184,24 @@ def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_repo
     for forbidden in ["source_id", "WorkflowDefinition", "schema", "trace-boi-inbox-refresh-item", "act-boi-inbox-refresh-item"]:
         assert forbidden not in visible_text
 
+    boi_app_module._INBOX_REPORT_WORKFLOW_CACHE.clear()
+    work_context_calls: list[dict[str, Any]] = []
+    original_work_context_pack = boi_app_module.work_context_pack
+
+    def counted_work_context_pack(*args, **kwargs):
+        work_context_calls.append(dict(kwargs))
+        return original_work_context_pack(*args, **kwargs)
+
+    monkeypatch.setattr(boi_app_module, "work_context_pack", counted_work_context_pack)
     report_page = client.get(web_refresh.headers["location"])
     assert report_page.status_code == 200
     default_visible_html = report_page.text
+    assert "mermaid_render.js" in default_visible_html
+    assert "관련 업무 흐름" in default_visible_html
+    assert "mermaid-diagram task-console-workflow-canvas inbox-workflow-canvas report-workflow-canvas" in default_visible_html
+    assert "흐름 그림 다음 작업" not in default_visible_html
+    assert "부족한 실행 요청 찾기" not in default_visible_html
+    assert "Task로 나누기" not in default_visible_html
     assert "보고서 보강 파일" in default_visible_html
     assert "조치 기록" in default_visible_html
     assert 'name="decision"' in default_visible_html
@@ -8111,6 +9212,8 @@ def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_repo
     assert 'data-target-type="report"' in default_visible_html
     assert "/inbox/task-refs/inbox-ref-" in default_visible_html
     assert "evidence_tray.js" in default_visible_html
+    assert len(work_context_calls) <= 1
+    assert all(call.get("include_narrative") is False for call in work_context_calls)
     for forbidden in ["source_id", "WorkflowDefinition", "schema", "trace-boi-inbox-refresh-item", "act-boi-inbox-refresh-item"]:
         assert forbidden not in default_visible_html
 
@@ -8368,7 +9471,7 @@ def test_inbox_review_report_separates_simulation_from_verified_evidence(boi_app
     assert "Raw Data endpoint 확인" in body
 
 
-def test_boi_inbox_manifest_warms_individual_reports_before_group_rollup(boi_app_module, monkeypatch):
+def test_boi_inbox_manifest_does_not_generate_reports_on_request_path(boi_app_module, monkeypatch):
     monkeypatch.setattr(boi_app_module, "INBOX_REPORT_BACKGROUND_WARM_LIMIT", 1)
     monkeypatch.setattr(boi_app_module, "INBOX_REPORT_BACKGROUND_MAX_IN_FLIGHT", 1)
     monkeypatch.setattr(boi_app_module, "INBOX_REPORT_BACKGROUND_DELAY_SECONDS", 60.0)
@@ -8405,17 +9508,18 @@ def test_boi_inbox_manifest_warms_individual_reports_before_group_rollup(boi_app
 
     assert inbox.status_code == 200
     body = inbox.json()
-    item = next(item for item in body["items"] if item["task_id"] == "task:act-boi-inbox-warm-item-first")
+    report_id = boi_app_module.inbox_report_id("item", "task:act-boi-inbox-warm-item-first")
+    item = next(item for item in body["items"] if item["report_id"] == report_id)
     group = body["groups"][0]
-    assert body["report_warmup_scheduled"] == 1
-    assert item["report_state"] in {"pending", "ready"}
+    assert body["report_warmup_scheduled"] == 0
+    assert item["report_state"] in {"not_ready", "ready"}
     assert group["rollup_only"] is True
     assert group["report_scope"] == "item"
     assert "report_state" not in group
     assert "report_boi_url" not in group
 
 
-def test_boi_inbox_manifest_queues_multiple_item_reports_without_blocking_groups(boi_app_module, monkeypatch):
+def test_boi_inbox_manifest_keeps_multiple_reports_passive_on_request_path(boi_app_module, monkeypatch):
     monkeypatch.setattr(boi_app_module, "INBOX_REPORT_BACKGROUND_WARM_LIMIT", 3)
     monkeypatch.setattr(boi_app_module, "INBOX_REPORT_BACKGROUND_MAX_IN_FLIGHT", 1)
     monkeypatch.setattr(boi_app_module, "INBOX_REPORT_BACKGROUND_DELAY_SECONDS", 60.0)
@@ -8454,13 +9558,44 @@ def test_boi_inbox_manifest_queues_multiple_item_reports_without_blocking_groups
 
     assert inbox.status_code == 200
     body = inbox.json()
-    assert body["report_warmup_scheduled"] == 3
-    queued_items = [item for item in body["items"] if item["task_id"].replace("task:", "") in request_ids]
+    assert body["report_warmup_scheduled"] == 0
+    report_ids = {boi_app_module.inbox_report_id("item", f"task:{request_id}") for request_id in request_ids}
+    queued_items = [item for item in body["items"] if item["report_id"] in report_ids]
     assert len(queued_items) == 3
-    assert {item["report_state"] for item in queued_items} == {"pending"}
+    assert {item["report_state"] for item in queued_items} == {"not_ready"}
     with boi_app_module._INBOX_REPORT_LOCK:
-        assert len(boi_app_module._INBOX_REPORT_IN_FLIGHT) == 1
-        assert len(boi_app_module._INBOX_REPORT_QUEUE) >= 2
+        assert len(boi_app_module._INBOX_REPORT_IN_FLIGHT) == 0
+        assert len(boi_app_module._INBOX_REPORT_QUEUE) == 0
+
+
+def test_inbox_page_uses_automatic_report_status_without_manual_button(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    request_id = "act-boi-inbox-auto-status"
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "request_id": request_id,
+            "action_key": "manual.direct_development.decide_cross_section",
+            "status": "approval_required",
+            "summary": "자동 보고서 상태 확인",
+            "logged_at": "2026-07-11T12:00:00+09:00",
+        },
+    )
+    report_id = boi_app_module.inbox_report_id("item", f"task:{request_id}")
+
+    page = client.get("/inbox?employee_id=100001&limit=1")
+    status = client.get(
+        "/api/inbox/reports/status",
+        params={"employee_id": "100001", "report_ids": report_id},
+    )
+
+    assert page.status_code == 200
+    assert "보고서 생성</button>" not in page.text
+    assert 'data-inbox-report-state' in page.text
+    assert status.status_code == 200
+    assert status.json()["items"][0]["report_id"] == report_id
+    assert status.json()["items"][0]["label"] == "보고서 준비 중"
 
 
 def test_data_lake_disabled_contract_is_optional(boi_app_module):
@@ -8489,7 +9624,7 @@ def test_data_lake_disabled_contract_is_optional(boi_app_module):
         assert body["status"] == "disabled"
         assert body["enabled"] is False
         assert body["core_required"] is False
-        assert body["user_facing_name"] == "Data Lake"
+        assert body["user_facing_name"] == "자료 보관함"
         assert body["data_lake"]["core_required"] is False
 
     upload = client.post(
@@ -8516,7 +9651,16 @@ def test_data_lake_artifact_upload_profile_download_and_attach_contract(boi_app_
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_PROFILE", "local-full-datalake")
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ALLOW_RUNTIME_FILE", True)
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ARTIFACT_ROOT", tmp_path / "artifact-store")
+    knowledge_changes = []
+    monkeypatch.setattr(
+        boi_app_module,
+        "notify_knowledge_changed",
+        lambda record_id, employee_id="", operation="upsert": knowledge_changes.append(
+            (record_id, employee_id, operation)
+        ),
+    )
     client = TestClient(boi_app_module.app)
 
     content = b"timestamp,equipment_id,lot_id,pressure\n1,ETCH-VM-01,LOT-A,10.2\n2,ETCH-VM-01,LOT-A,11.8\n"
@@ -8564,6 +9708,7 @@ def test_data_lake_artifact_upload_profile_download_and_attach_contract(boi_app_
     assert artifact["storage_backend"] == "runtime_file"
     assert body["attachment"]["target_type"] == "workflow_stage"
     assert body["attachment"]["attachment_role"] == "raw_data"
+    assert (f"data_artifact:{artifact['artifact_id']}", "100001", "upsert") in knowledge_changes
 
     artifact_id = quote(artifact["artifact_id"], safe="")
     get_artifact = client.get(f"/api/data-lake/artifacts/{artifact_id}?employee_id=100001")
@@ -8629,6 +9774,73 @@ def test_data_lake_artifact_upload_profile_download_and_attach_contract(boi_app_
     assert json_upload.json()["status"] == "uploaded"
     assert json_upload.json()["artifact"]["filename"] == "agent-output.json"
     assert json_upload.json()["artifact"]["source_context"]["source"] == "mcp"
+
+
+def test_data_lake_artifact_profiles_are_search_read_model_not_raw_fulltext(boi_app_module, tmp_path, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_PROFILE", "local-full-datalake")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ALLOW_RUNTIME_FILE", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ARTIFACT_ROOT", tmp_path / "artifact-store")
+    client = TestClient(boi_app_module.app)
+    sentinel = "SECRET_RAW_LINE_SHOULD_NOT_BE_INDEXED"
+    content = ("col\n" + "\n".join(f"sample-row-{index:03d}" for index in range(260)) + f"\n{sentinel}\n").encode("utf-8")
+
+    upload = client.post(
+        "/api/data-lake/artifacts/upload?employee_id=100001",
+        files={"file": ("pressure_long.csv", content, "text/csv")},
+        data={
+            "visibility": "private",
+            "source_context": json.dumps(
+                {
+                    "target_type": "workflow_stage",
+                    "target_id": "run-long-raw-check:raw_data_check",
+                    "attachment_role": "raw_data",
+                    "human_note": "긴 압력 원본은 링크로만 보관",
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+    assert upload.status_code == 200, upload.text
+    artifact_id = upload.json()["artifact"]["artifact_id"]
+
+    model = boi_app_module.hybrid_search_read_model("100001", rebuild=True)
+    artifact_records = [
+        item for item in model["boi_embeddings"] if item.get("kind") == "data_lake_artifact" and item.get("ref") == artifact_id
+    ]
+    assert len(artifact_records) == 1
+    artifact_record = artifact_records[0]
+    assert artifact_record["metadata"]["profile"]["kind"] == "table"
+    assert artifact_record["metadata"]["profile"]["sample_rows"]
+    assert "pressure_long.csv" in artifact_record["search_text"]
+    searchable_payload = json.dumps(
+        {
+            "record": artifact_record,
+            "nodes": [item for item in model["boi_ontology_nodes"] if artifact_id in item.get("id", "")],
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+    assert sentinel not in searchable_payload
+
+    artifact_node_id = f"data_lake_artifact:{artifact_id}"
+    relationships = {
+        edge.get("relationship")
+        for edge in model["boi_ontology_edges"]
+        if edge.get("target") == artifact_node_id or edge.get("source") == artifact_node_id
+    }
+    assert "has_data_lake_artifact" in relationships
+    assert "backed_by_artifact" in relationships
+    assert any(
+        node.get("kind") == "workflow_task" and node.get("metadata", {}).get("target_id") == "run-long-raw-check:raw_data_check"
+        for node in model["boi_ontology_nodes"]
+    )
+
+    from boi_api.app.native_agent import BUSINESS_SEARCH_SECTION_LABELS, business_search_item_section
+
+    assert BUSINESS_SEARCH_SECTION_LABELS["evidence"] == "근거 모음"
+    assert business_search_item_section({"kind": "data_lake_artifact", "metadata": {"artifact_id": artifact_id}}) == "evidence"
 
 
 def test_sop_builder_hides_runtime_data_lake_upload_contract(boi_app_module):
@@ -8722,6 +9934,14 @@ def test_data_lake_status_reports_optional_service_reachability(boi_app_module, 
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_PROFILE", "local-full-datalake")
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_FIXTURE_ROOT", fixture_root)
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "http://127.0.0.1:1")
+    monkeypatch.setattr(
+        boi_app_module,
+        "data_lake_service_health",
+        lambda: {
+            "postgres": {"configured": False, "reachable": None, "status": "not_configured", "checked_at": 0},
+            "minio": {"configured": True, "reachable": False, "status": "unavailable", "checked_at": time.time()},
+        },
+    )
     client = TestClient(boi_app_module.app)
 
     status = client.get("/api/data-lake/status?employee_id=100001")
@@ -8743,6 +9963,187 @@ def test_data_lake_status_reports_optional_service_reachability(boi_app_module, 
     assert body["adapter"] == "fixture_file"
 
 
+def test_data_lake_local_endpoint_resolution_is_explicit(boi_app_module):
+    assert (
+        boi_app_module.resolve_data_lake_minio_endpoint("bundled", None, "19000")
+        == "http://127.0.0.1:19000"
+    )
+    assert (
+        boi_app_module.resolve_data_lake_minio_endpoint(
+            "bundled",
+            "http://data-lake-minio:9000/",
+            "19000",
+        )
+        == "http://data-lake-minio:9000"
+    )
+    assert boi_app_module.resolve_data_lake_minio_endpoint("external", None, "19000") == ""
+
+
+def test_data_lake_cached_status_keeps_page_fast_and_upload_fails_closed(
+    boi_app_module,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "http://unresolvable.invalid:9000")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ACCESS_KEY", "test-access")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ALLOW_RUNTIME_FILE", False)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ARTIFACT_ROOT", tmp_path / "artifact-store")
+    monkeypatch.setattr(
+        boi_app_module,
+        "data_lake_tcp_reachable",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("request path probed the network")),
+    )
+    monkeypatch.setattr(
+        boi_app_module,
+        "data_lake_service_health",
+        lambda: {
+            "postgres": {"configured": False, "reachable": None, "status": "not_configured", "checked_at": 0},
+            "minio": {"configured": True, "reachable": False, "status": "unavailable", "checked_at": time.time()},
+        },
+    )
+    client = TestClient(boi_app_module.app)
+
+    started = time.perf_counter()
+    status = client.get("/api/data-lake/status?employee_id=100001")
+    status_elapsed = time.perf_counter() - started
+    started = time.perf_counter()
+    library = client.get("/data-library?employee_id=100001")
+    library_elapsed = time.perf_counter() - started
+    started = time.perf_counter()
+    upload = client.post(
+        "/api/data-lake/artifacts/upload?employee_id=100001",
+        content=b"this body must not be parsed",
+        headers={"content-type": "application/json"},
+    )
+    upload_elapsed = time.perf_counter() - started
+
+    assert status.status_code == 200
+    assert status.json()["artifact_store"]["state"] == "unavailable"
+    assert status_elapsed < 0.5
+    assert library.status_code == 200
+    assert 'data-data-library-upload-form' in library.text
+    assert 'data-upload-state="unavailable"' in library.text
+    assert "저장소 연결이 지연되고 있습니다" in library.text
+    assert library_elapsed < 1.0
+    assert upload.status_code == 503
+    assert upload.json() == {
+        "employee_id": "100001",
+        "ok": False,
+        "enabled": True,
+        "status": "unavailable",
+        "code": "data_lake_storage_unavailable",
+        "message": "자료 저장소 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.",
+        "retryable": True,
+    }
+    assert upload_elapsed < 1.0
+
+
+def test_data_lake_artifact_cursor_uses_one_attachment_scan_per_request(boi_app_module, monkeypatch):
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
+    records = [
+        {
+            "artifact_id": f"artifact-{index:03d}",
+            "owner_employee_id": "100001",
+            "visibility": "private",
+            "filename": f"evidence-{index:03d}.csv",
+            "created_at": f"2026-07-12T12:{index % 60:02d}:00+09:00",
+            "source_context": {},
+        }
+        for index in range(75)
+    ]
+    calls = []
+
+    monkeypatch.setattr(boi_app_module, "data_lake_artifact_records", lambda _employee_id, limit=500: records[:limit])
+
+    def list_attachments(kind: str, *, limit: int = 20):
+        calls.append((kind, limit))
+        return [
+            {
+                "artifact_id": record["artifact_id"],
+                "employee_id": "100001",
+                "lifecycle_state": "active",
+                "target_type": "task",
+                "target_id": f"task-{index:03d}",
+            }
+            for index, record in enumerate(records)
+        ]
+
+    monkeypatch.setattr(boi_app_module, "list_runtime_records", list_attachments)
+    client = TestClient(boi_app_module.app)
+
+    first = client.get("/api/data-lake/artifacts?employee_id=100001&limit=30")
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["count"] == 30
+    assert first_body["has_more"] is True
+    assert first_body["next_cursor"]
+    assert len(calls) == 1
+    assert first_body["items"][0]["attachments"][0]["target_id"] == "task-000"
+
+    second = client.get(
+        "/api/data-lake/artifacts",
+        params={"employee_id": "100001", "limit": 30, "cursor": first_body["next_cursor"]},
+    )
+    assert second.status_code == 200
+    assert second.json()["items"][0]["artifact_id"] == "artifact-030"
+    assert len(calls) == 2
+
+    invalid = client.get("/api/data-lake/artifacts?employee_id=100001&cursor=not-a-cursor")
+    assert invalid.status_code == 400
+
+
+def test_data_library_client_polls_storage_and_supports_cursor_loading():
+    script = Path("boi_api/app/static/data_library.js").read_text(encoding="utf-8")
+
+    assert "setTimeout(checkStorageStatus, 2000)" in script
+    assert "/api/data-lake/status" in script
+    assert "payload.next_cursor" in script
+    assert "data_lake_storage_unavailable" not in script
+
+
+def test_agent_inbox_projection_cache_tracks_action_log_signature(boi_app_module, monkeypatch):
+    row = {
+        "request_id": "cache-request-1",
+        "employee_id": "100001",
+        "status": "manual_required",
+        "action_key": "manual.cache-check",
+        "summary": "확인 필요",
+    }
+    calls = []
+
+    monkeypatch.setattr(boi_app_module, "read_recent_action_logs_fast", lambda **_kwargs: [row])
+    monkeypatch.setattr(boi_app_module, "completion_request_ids", lambda _rows=None: set())
+    monkeypatch.setattr(boi_app_module, "action_log_visible_to_employee", lambda _row, _employee_id: True)
+
+    def project(_row, _employee_id, **_kwargs):
+        calls.append(_row["request_id"])
+        return {
+            "task_id": "task:cache-request-1",
+            "status": "manual_required",
+            "action_key": "manual.cache-check",
+            "summary": "확인 필요",
+            "display": {"title": "확인 필요", "status_label": "확인 필요"},
+            "business_context": {},
+        }
+
+    monkeypatch.setattr(boi_app_module, "agent_inbox_item_from_row", project)
+    with boi_app_module._AGENT_INBOX_PAYLOAD_CACHE_LOCK:
+        boi_app_module._AGENT_INBOX_PAYLOAD_CACHE.clear()
+    boi_app_module._ACTION_LOG_CACHE["signature"] = "signature-1"
+
+    first = boi_app_module.agent_inbox_payload("100001", status="open", limit=50)
+    second = boi_app_module.agent_inbox_payload("100001", status="open", limit=50)
+
+    assert first == second
+    assert calls == ["cache-request-1"]
+
+    boi_app_module._ACTION_LOG_CACHE["signature"] = "signature-2"
+    boi_app_module.agent_inbox_payload("100001", status="open", limit=50)
+    assert calls == ["cache-request-1", "cache-request-1"]
+
+
 def test_legacy_db_demo_status_is_separate_from_minio_data_lake(boi_app_module, tmp_path, monkeypatch):
     fixture_root = tmp_path / "ontology"
     fixture_path = fixture_root / "exports"
@@ -8759,6 +10160,14 @@ def test_legacy_db_demo_status_is_separate_from_minio_data_lake(boi_app_module, 
     monkeypatch.setattr(boi_app_module, "BOI_LEGACY_DB_DEMO_POSTGRES_DSN", "postgresql://user:pass@127.0.0.1:1/db")
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_POSTGRES_DSN", "")
     monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "")
+    monkeypatch.setattr(
+        boi_app_module,
+        "data_lake_service_health",
+        lambda: {
+            "postgres": {"configured": True, "reachable": False, "status": "unavailable", "checked_at": time.time()},
+            "minio": {"configured": False, "reachable": None, "status": "not_configured", "checked_at": 0},
+        },
+    )
     client = TestClient(boi_app_module.app)
 
     status = client.get("/api/data-lake/status?employee_id=100001")
@@ -8884,7 +10293,8 @@ def test_inbox_report_uses_enabled_data_lake_as_optional_evidence(boi_app_module
     )
 
     inbox = client.get("/api/inbox?employee_id=100001&limit=20")
-    item = next(item for item in inbox.json()["items"] if item["task_id"] == "task:act-boi-inbox-datalake-item")
+    report_id = boi_app_module.inbox_report_id("item", "task:act-boi-inbox-datalake-item")
+    item = next(item for item in inbox.json()["items"] if item["report_id"] == report_id)
     refresh = client.post(f"/api/inbox/reports/{item['report_id']}/refresh?employee_id=100001")
     report = client.get(f"/api/inbox/reports/{item['report_id']}?employee_id=100001").json()
 
@@ -8934,15 +10344,17 @@ def test_pet_agent_static_scripts_parse_before_runtime_smokes(boi_app_module):
     assert "Action ${escapeHtml(trace.action_count" not in pet_script
 
 
-def test_mermaid_loader_retries_after_cdn_load_failure(boi_app_module):
+def test_mermaid_loader_uses_bundled_runtime_and_keeps_source_fallback(boi_app_module):
     script = (boi_app_module.APP_DIR / "static" / "mermaid_render.js").read_text(encoding="utf-8")
 
     assert "let loadPromise = null;" in script
     assert "let settled = false;" in script
     assert "loadPromise = null;" in script
     assert "script.remove();" in script
-    assert "script.onerror = () => fail(new Error(\"Mermaid library load failed\"));" in script
-    assert "fail(new Error(\"Mermaid library load timed out\"))" in script
+    assert '"/static/vendor/mermaid/mermaid.min.js"' in script
+    assert "cdn.jsdelivr.net" not in script
+    assert "Mermaid library load failed from ${url}" in script
+    assert "Mermaid library load timed out from ${url}" in script
     assert 'new CustomEvent("boi:mermaid-rendered"' in script
     assert 'state === "rendered" || state === "fallback"' in script
 
@@ -9022,6 +10434,20 @@ const runSummaryHtml = window.BoiAgentMarkdownDebug.renderRunSummary({
     guardrails_applied: ["acl_policy"],
   },
 });
+const businessSearchHtml = window.BoiAgentMarkdownDebug.renderArtifacts({
+  role: "assistant",
+  artifacts: [{
+    type: "business_search_results",
+    title: "검색 결과 묶음",
+    data: {
+      sections: [
+        { key: "documents", title: "문서", items: [{ title: "Trend SOP", url: "/docs/trend", description: "Trend 확인 절차" }] },
+        { key: "similar_cases", title: "유사 사례", items: [{ title: "지난 Alarm 처리", status: "완료", trace_id: "trace-1" }] },
+      ],
+      next_actions: ["업무 흐름을 Mermaid로 펼쳐 볼 수 있습니다."],
+    },
+  }],
+}, 0);
 console.log(JSON.stringify({
   html,
   tableHtml,
@@ -9052,7 +10478,11 @@ console.log(JSON.stringify({
     { html: renderedServerHtml },
     new Set([window.BoiAgentMarkdownDebug.normalizeMermaidSource?.(mermaidSource) || mermaidSource.replace(/\s+/g, " ").trim()])
   ),
-  hasRunSummary: runSummaryHtml.includes("Agent가 확인한 근거") && runSummaryHtml.includes("관련 지식 검색") && runSummaryHtml.includes("권한/보안 가드레일"),
+  hasRunSummary: runSummaryHtml.includes("확인한 근거 모음") && runSummaryHtml.includes("관련 지식 검색") && runSummaryHtml.includes("권한/보안 가드레일"),
+  hasBusinessSearchResults: businessSearchHtml.includes("boi-agent-search-results")
+    && businessSearchHtml.includes("문서")
+    && businessSearchHtml.includes("유사 사례")
+    && businessSearchHtml.includes("다음에 할 일"),
 }));
 """
     result = subprocess.run(
@@ -9087,6 +10517,7 @@ console.log(JSON.stringify({
     assert payload["rejectsDuplicateMermaidServerHtml"]
     assert payload["acceptsPlainRenderedServerHtml"]
     assert payload["hasRunSummary"]
+    assert payload["hasBusinessSearchResults"]
 
 
 def test_pet_agent_artifact_renderer_consumes_agent_response_contract(boi_app_module):
@@ -9880,7 +11311,7 @@ def test_events_page_renders_structured_result_instead_of_raw_dict(boi_app_modul
         },
     )
 
-    response = client.get("/events?employee_id=100001")
+    response = client.get("/events?employee_id=100001&view=raw")
 
     assert response.status_code == 200
     assert "structured-data" in response.text
@@ -9916,7 +11347,7 @@ def test_events_page_uses_pagination_and_lazy_raw_json(boi_app_module):
             },
         )
 
-    response = client.get(f"/events?employee_id=100001&trace_id={trace_id}")
+    response = client.get(f"/events?employee_id=100001&view=raw&trace_id={trace_id}")
 
     assert response.status_code == 200
     assert response.text.count('class="doc-row event-row"') == 50
@@ -9943,7 +11374,7 @@ def test_event_raw_api_returns_single_row_payload(boi_app_module):
         },
         result={"raw_marker": "RAW_API_MARKER", "dispatch_result": {"ok": True, "status": "handled", "results": []}},
     )
-    events = client.get(f"/events?employee_id=100001&trace_id={trace_id}").text
+    events = client.get(f"/events?employee_id=100001&view=raw&trace_id={trace_id}").text
     match = re.search(r"/api/events/raw/([^?\"&]+)\?employee_id=100001", events)
 
     assert match
@@ -10067,6 +11498,70 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert "<pre class=\"markdown-body\">" not in response.text
 
 
+def test_navigation_index_redirects_to_folder_and_is_not_agent_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    page_ref = "/docs/doc%3Apublic%2Fdictionary%2Findex.md"
+
+    page = client.get(f"{page_ref}?employee_id=100001", follow_redirects=False)
+    bootstrap = client.get(
+        "/api/v2/bootstrap",
+        params={"page_ref": f"{page_ref}?employee_id=100001"},
+    )
+
+    assert page.status_code == 307
+    assert "folder=public%2Fdictionary" in page.headers["location"]
+    assert bootstrap.status_code == 200
+    payload = bootstrap.json()
+    assert payload["page"]["context"]["resolved"] is False
+    assert payload["page"]["context"]["context_resolution"] == "ontology_only"
+    assert payload["page"]["context"]["title"] == ""
+    assert all("'index'" not in item["label"] and "'index'" not in item["prompt"] for item in payload["starters"])
+
+
+def test_manual_index_redirects_to_the_canonical_operator_guide(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get(
+        "/docs/doc%3Apublic%2Fboi-wiki-manual%2Findex.md?employee_id=100001",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"].startswith(
+        "/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?"
+    )
+
+
+def test_navigation_index_redirects_to_the_folder_overview_boi(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get(
+        "/docs/doc%3Apublic%2Factions%2Findex.md?employee_id=100001",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"].startswith(
+        "/docs/boi:public:actions:index?"
+    )
+
+
+def test_missing_document_is_not_used_as_the_agent_current_context(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    page_ref = "/docs/boi%3Apublic%3Amissing-agent-context"
+
+    bootstrap = client.get(
+        "/api/v2/bootstrap",
+        params={"page_ref": f"{page_ref}?employee_id=100001"},
+    )
+
+    assert bootstrap.status_code == 200
+    payload = bootstrap.json()
+    assert payload["page"]["context"]["resolved"] is False
+    assert payload["page"]["context"]["context_resolution"] == "ontology_only"
+    assert all("missing-agent-context" not in item["label"] for item in payload["starters"])
+
+
 def test_doc_markdown_tables_preserve_readable_columns(boi_app_module):
     style = Path("boi_api/app/static/style.css").read_text(encoding="utf-8")
 
@@ -10179,15 +11674,15 @@ def test_doc_page_renders_metadata_as_readable_key_value_grid(boi_app_module):
 
     assert response.status_code == 200
     assert fragment.status_code == 200
-    assert '<details class="metadata"' in response.text
+    assert '<details class="metadata connection-information"' in response.text
     assert '<section class="metadata">' not in response.text
-    assert response.text.index('<section class="body">') < response.text.index('<details class="metadata"')
+    assert response.text.index('<section class="body">') < response.text.index('<details class="metadata connection-information"')
     assert 'class="metadata-grid metadata-summary-grid"' in response.text
-    assert "Load Full Metadata" in response.text
-    assert response.text.count("Load Full Metadata") == 1
+    assert "세부 정보 불러오기" in response.text
+    assert response.text.count("세부 정보 불러오기") == 1
     assert "/api/docs/boi:team:platform:kafka-sop-v0.1/metadata-fragment?employee_id=100001" in response.text
     assert "/api/docs/boi:team:platform:kafka-sop-v0.1/access?employee_id=100001" in response.text
-    assert "Access Policy" in response.text
+    assert "접근 범위 확인" in response.text
     assert '<dt class="metadata-key">visibility</dt>' in response.text
     assert '<dd class="metadata-value"><span class="scalar string">team</span></dd>' in response.text
     assert '<dt class="metadata-key">acl_policy</dt>' not in response.text
@@ -10235,12 +11730,17 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         assert "/static/mermaid_render.js?v=" in response.text
         if active_nav == "advanced":
             assert "권한 관리" in response.text
-            assert "Agent Builder" in response.text
-            assert "Kafka" in response.text
-            assert "BoI Wiki API" in response.text
-            assert "BoI Wiki MCP" in response.text
+            assert "API" in response.text
+            assert "MCP" in response.text
+            assert "연결 상태" in response.text
+            assert 'data-subnav-id="agent_workspace"' not in response.text
+            assert 'data-subnav-id="agent_builder"' not in response.text
+            assert 'data-subnav-id="connections"' not in response.text
+            assert "이벤트 스트림" not in response.text
+            assert "연동 문서" not in response.text
         else:
-            assert "Agent Builder" not in response.text
+            assert 'id="boi-agent-root"' in response.text
+            assert 'data-subnav-id="agent_workspace"' not in response.text
             assert "Kafka UI" not in response.text
             assert "MCP Status" not in response.text
         assert "DEV" in response.text
@@ -10260,13 +11760,16 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
 
     guide = client.get(home.headers["location"])
     assert "BoI Wiki 종합 가이드" in guide.text
-    assert "Source Wiki 생성 이력/검증 장부" in guide.text
+    assert "업무 맥락" in guide.text
+    assert "BoI Agent" in guide.text
 
     agent_builder = client.get("/agents/builder?employee_id=100001", follow_redirects=False)
-    assert agent_builder.status_code == 200
-    assert "Agent Builder" in agent_builder.text
-    assert "GPT-5.5/Agents SDK 테스트" in agent_builder.text
-    assert "/api/agents/drafts?employee_id=100001" in agent_builder.text
+    assert agent_builder.status_code == 307
+    assert agent_builder.headers["location"].startswith("/helpers/new")
+    helper_builder = client.get(agent_builder.headers["location"])
+    assert "나만의 BoI Agent 만들기" in helper_builder.text
+    assert "설정하면서 바로 시험해보세요." in helper_builder.text
+    assert "/api/agents/drafts?employee_id=100001" not in helper_builder.text
 
 
 def test_app_shell_infers_same_host_tool_urls_for_external_host(boi_app_module, monkeypatch):
@@ -10284,10 +11787,12 @@ def test_app_shell_infers_same_host_tool_urls_for_external_host(boi_app_module, 
 
     advanced = client.get("/permissions?employee_id=100001")
     assert advanced.status_code == 200
-    assert "BoI Wiki API" in advanced.text
-    assert 'href="/docs"' in advanced.text
-    assert 'href="http://boi-wiki.example:28081"' in advanced.text
-    assert 'href="http://boi-wiki.example:28200"' in advanced.text
+    assert "연결 상태" in advanced.text
+    assert 'href="/advanced/api?employee_id=100001"' in advanced.text
+    assert 'href="/advanced/mcp?employee_id=100001"' in advanced.text
+    assert "연동 문서" not in advanced.text
+    assert 'href="http://boi-wiki.example:28081"' not in advanced.text
+    assert 'href="http://boi-wiki.example:28200"' not in advanced.text
     assert "http://localhost" not in advanced.text
 
 
@@ -10304,9 +11809,10 @@ def test_app_shell_uses_request_domain_when_external_url_is_blank_or_local(boi_a
 
     assert response.status_code == 200
     assert advanced.status_code == 200
-    assert 'href="/docs"' in advanced.text
-    assert 'href="http://wiki.example.internal:28081"' in advanced.text
-    assert 'href="http://wiki.example.internal:28200"' in advanced.text
+    assert 'href="/advanced/api?employee_id=100001"' in advanced.text
+    assert 'href="/advanced/mcp?employee_id=100001"' in advanced.text
+    assert 'href="http://wiki.example.internal:28081"' not in advanced.text
+    assert 'href="http://wiki.example.internal:28200"' not in advanced.text
     assert "http://localhost" not in advanced.text
 
 
@@ -10319,15 +11825,17 @@ def test_app_shell_uses_configured_external_tool_urls(boi_app_module, monkeypatc
 
     response = client.get("/?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
     advanced = client.get("/permissions?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
-    builder = client.get("/agents/builder?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
+    builder = client.get("/helpers/new?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
 
     assert response.status_code == 200
     assert advanced.status_code == 200
     assert builder.status_code == 200
     assert "http://langflow.example:27860" not in advanced.text
-    assert "http://langflow.example:27860" in builder.text
-    assert "http://kafka-ui.example:28081" in advanced.text
-    assert "http://boi-wiki-mcp.example:28200" in advanced.text
+    assert "http://langflow.example:27860" not in builder.text
+    assert "기존 자동화 흐름" in builder.text
+    assert "연결 상태" in advanced.text
+    assert "http://kafka-ui.example:28081" not in advanced.text
+    assert "http://boi-wiki-mcp.example:28200" not in advanced.text
     assert "http://localhost:7860" not in advanced.text
     assert "http://localhost:8081" not in advanced.text
     assert "http://localhost:8200" not in advanced.text
@@ -10436,7 +11944,7 @@ def test_dedicated_registration_new_pages_and_legacy_start_redirects(boi_app_mod
     assert "선택한 항목으로 확인" in response.text
     assert "업무 단위 폴더" in response.text
     assert "일정 설정" in response.text
-    assert "매주 월요일 09:00에 업무 이벤트 초안이 만들어집니다." in response.text
+    assert "매주 월요일 09:00에 업무 이벤트 발생 기준을 확인합니다." in response.text
     assert 'name="schedule_config"' in response.text
     assert "Cron 표현식" not in response.text
     assert "고급 설정" in response.text
@@ -10453,9 +11961,100 @@ def test_dedicated_registration_new_pages_and_legacy_start_redirects(boi_app_mod
         "/workflows/new?employee_id=100001&focus=action": "/sops/new?employee_id=100001&focus=action",
     }
     for source, target in redirects.items():
-        response = client.get(source, follow_redirects=False)
-        assert response.status_code in {302, 303, 307}
-        assert response.headers["location"] == target
+        redirect_response = client.get(source, follow_redirects=False)
+        assert redirect_response.status_code in {302, 303, 307}
+        assert redirect_response.headers["location"] == target
+
+
+def test_agent_sop_artifact_opens_the_same_tasks_in_full_builder(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    service = boi_app_module.AGENT_V2_SERVICE
+    artifact_id = "artifact_builder_roundtrip_test"
+    session_id = "ws_builder_roundtrip_test"
+    service.store.put(
+        "work_sessions",
+        session_id,
+        {
+            "session_id": session_id,
+            "employee_id": "100001",
+            "title": "Agent SOP 왕복",
+            "status": "active",
+            "conversation_id": session_id,
+            "revision": 1,
+            "pinned": False,
+        },
+    )
+    service.store.put(
+        "artifacts",
+        artifact_id,
+        {
+            "artifact_id": artifact_id,
+            "employee_id": "100001",
+            "capability_id": "sop.plan",
+            "status": "draft",
+            "title": "Agent SOP 왕복",
+            "work_session_id": session_id,
+            "revision": 4,
+            "draft": {
+                "title": "Agent SOP 왕복",
+                "goal": "근거 기반으로 업무를 끝낸다.",
+                "mermaid": 'flowchart LR\n  T1["근거 확인"]',
+                "tasks": [
+                    {
+                        "task_id": "task-evidence",
+                        "name": "근거 확인",
+                        "purpose": "필수 근거를 확보한다.",
+                        "execution_mode": "copilot",
+                        "exit_criteria": ["필수 근거가 모두 확인됨"],
+                        "required_evidence": ["Trend", "Raw Data"],
+                        "outputs": ["근거 확인 BoI"],
+                        "action_refs": ["trend.read"],
+                        "skill_refs": ["evidence.validate"],
+                    }
+                ],
+            },
+        },
+    )
+    try:
+        response = client.get(
+            f"/sops/new?employee_id=100001&work_session_id={session_id}&artifact_id={artifact_id}"
+            f"&return_to=/agent?session={session_id}"
+        )
+        assert response.status_code == 200
+        assert f'data-v2-artifact-id="{artifact_id}"' in response.text
+        assert f'data-v2-work-session-id="{session_id}"' in response.text
+        assert 'data-v2-artifact-revision="4"' in response.text
+        assert "BoI Agent로 돌아가기" in response.text
+        seed_match = re.search(r'<script id="sop-mermaid-draft-seed" type="application/json">(.*?)</script>', response.text, re.S)
+        assert seed_match
+        seed = json.loads(seed_match.group(1))
+        assert seed["workflow_tasks"][0]["stage_name"] == "근거 확인"
+        assert seed["workflow_tasks"][0]["exit_criteria"] == ["필수 근거가 모두 확인되었어요"]
+        assert seed["workflow_tasks"][0]["completion_design"]["checks"][0]["label"] == "필수 근거가 모두 확인되었어요"
+        assert "언제 이 일이 끝났다고 볼까요?" not in response.text
+        assert 'data-stage-field="exit_criteria"' not in response.text
+        assert 'data-stage-field="required_evidence"' not in response.text
+        assert "data-stage-completion-editor" in response.text
+        registration_js = (boi_app_module.APP_DIR / "static" / "registration.js").read_text(encoding="utf-8")
+        assert "pushV2ArtifactAutosave" in registration_js
+        assert '}, v2ArtifactId ? 500 : 2000);' in registration_js
+        assert "BroadcastChannel(\"boi-agent-v2-artifacts\")" in registration_js
+    finally:
+        service.store.delete("artifacts", artifact_id)
+        service.store.delete("work_sessions", session_id)
+
+
+def test_agent_task_editor_uses_plain_completion_questions(boi_app_module):
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/agent?employee_id=100001")
+
+    assert response.status_code == 200
+    assert "task_completion_editor.js" in response.text
+    assert "data-agent-v2-completion-editor" in response.text
+    assert 'name="exit_criteria"' not in response.text
+    assert 'name="required_evidence"' not in response.text
+    assert "완료 항목 제안" in response.text
 
 
 def test_action_new_page_renders_seven_connector_wizard_instead_of_free_text_kind(boi_app_module):
@@ -10739,7 +12338,7 @@ def test_sop_registration_plan_preview_draft_and_publish_guard(boi_app_module):
     assert preview_response.status_code == 200
     preview = preview_response.json()
     assert preview["preview_type"] == "sop_registration_preview"
-    assert any(card["title"] == "Event" for card in preview["cards"])
+    assert any(card["title"] == "업무 이벤트" for card in preview["cards"])
     assert "payload" in preview["internal_terms_hidden"]
     assert "schema" in preview["internal_terms_hidden"]
     assert "topic" in preview["internal_terms_hidden"]
@@ -11088,6 +12687,44 @@ def test_sop_registration_draft_preserves_workflow_stages_and_okf_materializatio
     assert draft["component_draft_payloads"]["sop"]["workflow_stages"][0]["decision_question"] == "판단 근거가 충분한가?"
 
 
+def test_autopilot_task_draft_saves_but_validation_requires_system_completion_binding(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    payload = {
+        "raw_request": "설비 조치 결과를 자동 확인하는 SOP",
+        "scope": "private",
+        "folder": "private/100001/sop-drafts",
+        "event_mode": "skip",
+        "sop_mode": "draft",
+        "action_mode": "skip",
+        "workflow_stages": [
+            {
+                "stage_name": "조치 결과 확인",
+                "stage_goal": "조치가 끝났는지 확인한다.",
+                "execution_mode": "autopilot",
+                "exit_criteria": ["담당자가 결과를 눈으로 확인했어요"],
+                "required_evidence": ["담당자 메모"],
+                "expected_outputs": ["조치 결과 BoI"],
+                "verification_policy": "evidence_required",
+                "fallback_owner": "100001",
+            }
+        ],
+    }
+
+    create = client.post("/api/sop-registration/drafts?employee_id=100001", json={"payload": payload})
+
+    assert create.status_code == 200
+    draft = create.json()["draft"]
+    assert draft["status"] == "draft"
+    assert draft["workflow_stages"][0]["completion_readiness"]["status"] == "needs_connection"
+
+    validate = client.post(f"/api/sop-registration/drafts/{draft['draft_id']}/validate?employee_id=100001")
+
+    assert validate.status_code == 200
+    validation = validate.json()["draft"]["validation"]
+    assert validation["valid"] is False
+    assert any("Copilot으로 전환" in message for message in validation["errors"])
+
+
 def test_sop_registration_accepts_minimal_workflow_task_with_copilot_source(boi_app_module):
     client = TestClient(boi_app_module.app)
 
@@ -11248,7 +12885,7 @@ def test_sop_registration_schedule_config_replaces_cron_for_general_users(boi_ap
     assert plan_response.status_code == 200
     plan = plan_response.json()
     assert plan["schedule_section"]["enabled"] is True
-    assert plan["schedule_section"]["schedule_summary"] == "매주 월요일 09:00에 Event 초안이 만들어집니다."
+    assert plan["schedule_section"]["schedule_summary"] == "매주 월요일 09:00에 업무 이벤트 발생 기준을 확인합니다."
     assert plan["schedule_section"]["cron"] == "0 9 * * MON"
 
     payload = {
@@ -11262,7 +12899,7 @@ def test_sop_registration_schedule_config_replaces_cron_for_general_users(boi_ap
     )
     assert preview_response.status_code == 200
     preview = preview_response.json()
-    assert preview["schedule_section"]["schedule_summary"] == "매주 월요일 09:00에 Event 초안이 만들어집니다."
+    assert preview["schedule_section"]["schedule_summary"] == "매주 월요일 09:00에 업무 이벤트 발생 기준을 확인합니다."
     assert preview["schedule_section"]["cron"] == "0 9 * * MON"
 
     create_response = client.post(
@@ -11271,7 +12908,7 @@ def test_sop_registration_schedule_config_replaces_cron_for_general_users(boi_ap
     )
     assert create_response.status_code == 200
     draft = create_response.json()["draft"]
-    assert draft["schedule_section"]["schedule_summary"] == "매주 월요일 09:00에 Event 초안이 만들어집니다."
+    assert draft["schedule_section"]["schedule_summary"] == "매주 월요일 09:00에 업무 이벤트 발생 기준을 확인합니다."
     assert draft["schedule_section"]["cron"] == "0 9 * * MON"
 
     validate_response = client.post(f"/api/sop-registration/drafts/{draft['draft_id']}/validate?employee_id=100001")
@@ -11336,7 +12973,7 @@ def test_event_pattern_preview_and_sop_history_are_business_oriented(boi_app_mod
     assert history_page.status_code == 200
     assert "SOP 수행 이력" in history_page.text
     assert "SOP 기준 최근 실행 현황, 남은 승인, 수동 조치를 확인합니다." in history_page.text
-    assert "TAT 성과 보기" in history_page.text
+    assert "TAT 성과" in history_page.text
     assert "/workflows/equipment-anomaly/tat?employee_id=100001&amp;trace_id=trace-sop-history-tat" in history_page.text
     assert 'href="/sops/history?employee_id=100001"' in client.get("/sops?employee_id=100001").text
 
@@ -11549,19 +13186,25 @@ def test_doc_page_rewrites_okf_markdown_links_to_accessible_doc_routes(boi_app_m
     assert 'href="/docs/boi:public:event-types:equipment.alarm.raised.v1?employee_id=100001">equipment.alarm.raised.v1</a>' in response.text
     assert 'href="/public/actions/api/request-trend-history.md"' not in response.text
     assert 'href="/public/event-types/equipment.alarm.raised.v1.md"' not in response.text
-    assert "Relationship Graph" in response.text
-    assert "Citations" in response.text
+    assert "이 지식과 함께 보기" in response.text
+    assert "근거" in response.text
 
 
-def test_doc_page_defers_relationship_graph_to_lazy_api(boi_app_module):
+def test_doc_page_defers_user_facing_knowledge_graph_to_lazy_api(boi_app_module):
     client = TestClient(boi_app_module.app)
 
     response = client.get("/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001")
 
     assert response.status_code == 200
-    assert 'id="relationship-graph-panel"' in response.text
-    assert 'data-graph-url="/api/okf/graph/doc/boi:public:sop:equipment-abnormal-response?employee_id=100001"' in response.text
-    assert "Load Relationship Graph" in response.text
+    assert 'id="knowledge-explorer"' in response.text
+    assert 'data-source-ref="boi:public:sop:equipment-abnormal-response"' in response.text
+    assert 'data-explore-url="/api/v2/knowledge-graph/explore?employee_id=100001"' in response.text
+    assert "연결 관계" in response.text
+    assert "어떻게 이어지나요" in response.text
+    assert "어디에 영향이 있나요" in response.text
+    assert "이 순서로 살펴보기" in response.text
+    assert "Outgoing OKF Links" not in response.text
+    assert "JSON API" not in response.text
     assert "public/sop/equipment-abnormal-response → public/actions/api/request-trend-history" not in response.text
 
 
@@ -11587,7 +13230,7 @@ def test_doc_page_exposes_validated_source_edit_guidance(boi_app_module):
     assert editor.status_code == 200
     assert "draft-only" not in response.text
     assert "Source 보기 / 검증 편집" in response.text
-    assert "Body 수정" in response.text
+    assert "내용 수정" in response.text
     assert "Preview / Validate" in response.text
     assert "Apply & Commit" in response.text
     assert 'data-editor-url="/api/docs/boi:public:sop:equipment-abnormal-response/body-editor?employee_id=100001"' in response.text
@@ -11894,7 +13537,8 @@ def test_action_spec_is_collapsed_by_default_and_source_citation_is_clickable(bo
     assert response.status_code == 200
     assert '<details class="executable-spec"' in response.text
     assert '<section class="executable-spec"' not in response.text
-    assert "data/action_catalog/actions.yaml" in response.text
+    assert "data/action_catalog/actions.yaml" not in response.text
+    assert "연결된 근거" in response.text
     assert "/source?employee_id=100001&amp;path=data%2Faction_catalog%2Factions.yaml" in response.text
 
 
@@ -11938,7 +13582,7 @@ def test_langflow_simulation_action_spec_uses_agent_flow_display_urls(boi_app_mo
     assert "http://langflow:7860" not in response.text
 
 
-def test_workflow_poc_and_promotion_curls_use_external_boi_url(boi_app_module, monkeypatch):
+def test_workflow_and_private_sharing_guidance_do_not_embed_direct_curls(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
     client = TestClient(boi_app_module.app)
 
@@ -11952,15 +13596,15 @@ def test_workflow_poc_and_promotion_curls_use_external_boi_url(boi_app_module, m
     )
 
     assert sop_response.status_code == 200
-    assert 'curl -X POST "http://boi-wiki.example:28000/api/workflows/equipment-anomaly/start?employee_id=100001"' in sop_response.text
-    assert '"user_confirmed":true' in sop_response.text
-    assert 'curl -X POST "http://localhost:8000/api/workflows' not in sop_response.text
+    assert "연결된 업무 흐름" in sop_response.text
+    assert "업무 흐름 보기" in sop_response.text
+    assert "curl -X POST" not in sop_response.text
     assert private_response.status_code == 200
-    assert 'curl -X POST "http://boi-wiki.example:28000/api/boi/boi:private:100001:seed-note-v0.1/promote?employee_id=100001"' in private_response.text
-    assert 'curl -X POST "http://localhost:8000/api/boi/' not in private_response.text
+    assert "팀과 공유하기" in private_response.text
+    assert "curl -X POST" not in private_response.text
 
 
-def test_doc_body_curl_examples_use_external_boi_url_for_external_host(boi_app_module, monkeypatch):
+def test_public_workflow_docs_use_agent_guidance_instead_of_host_specific_curls(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
     client = TestClient(boi_app_module.app)
 
@@ -11974,15 +13618,15 @@ def test_doc_body_curl_examples_use_external_boi_url_for_external_host(boi_app_m
     )
 
     assert direct_sop.status_code == 200
-    assert "http://boi-wiki.example:28000/api/workflows/direct-development-reporting/start?employee_id=100001" in direct_sop.text
-    assert '"user_confirmed":true' in direct_sop.text
-    assert "http://boi-wiki.example:28000/workflows/direct-development-reporting/status?employee_id=100001" in direct_sop.text
-    assert "http://localhost:8000/api/workflows/direct-development-reporting" not in direct_sop.text
-    assert "http://localhost:8000/workflows/direct-development-reporting" not in direct_sop.text
+    assert "/mcp/v2" in direct_sop.text
+    assert "boi_agent" in direct_sop.text
+    assert "api/workflows/direct-development-reporting/start?employee_id=100001" not in direct_sop.text
+    assert "curl -X POST" not in direct_sop.text
     assert event_type.status_code == 200
-    assert "http://boi-wiki.example:28000/api/workflows/demo/equipment-anomaly/start?employee_id=100001" in event_type.text
-    assert "user_confirmed" in event_type.text
-    assert "http://localhost:8000/api/workflows/demo/equipment-anomaly" not in event_type.text
+    assert "/mcp/v2" in event_type.text
+    assert "boi_agent" in event_type.text
+    assert "api/workflows/demo/equipment-anomaly/start?employee_id=100001" not in event_type.text
+    assert "curl -X POST" not in event_type.text
 
 
 def test_action_catalog_source_api_is_valid_with_manual_high_risk_approvals(boi_app_module):
@@ -12457,8 +14101,18 @@ def test_action_catalog_page_links_public_action_specs(boi_app_module):
     assert "Action 실행 요청, 승인 대기, 수동 조치" not in response.text
     assert "manual.equipment.approve_process_hold" in response.text
     assert "manual handoff" in response.text
-    assert "/docs/boi:public:actions:manual:approve-process-hold" in response.text
-    assert "/docs/boi:public:actions:api:block-process-progress" in response.text
+    assert "data-action-open" in response.text
+    assert "curl -X POST" not in response.text
+    assert "SOP 연결" not in response.text
+
+    detail = client.get(
+        "/api/actions/catalog/manual.equipment.approve_process_hold?employee_id=100001"
+    )
+    assert detail.status_code == 200
+    action = detail.json()["action"]
+    assert action["doc_url"] == "/docs/boi:public:actions:manual:approve-process-hold?employee_id=100001"
+    assert action["api_example"]["url"] == "<BOI_BASE_URL>/api/actions/invoke"
+    assert action["api_example"]["authorization"] == "Bearer <BOI_PAT>"
 
 
 def test_action_history_page_is_separated_from_catalog(boi_app_module):
@@ -12668,7 +14322,7 @@ def test_action_history_page_context_uses_filtered_action_logs_for_agent(boi_app
     assert any(item["request_id"] == "act-history-context-failed" for item in context["action_logs"])
 
 
-def test_action_catalog_page_uses_external_boi_url_for_invoke_curl(boi_app_module, monkeypatch):
+def test_action_catalog_page_does_not_embed_host_specific_invoke_curl(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_EXTERNAL_URL", "http://boi-wiki.example:28000")
     client = TestClient(boi_app_module.app)
 
@@ -12678,8 +14332,16 @@ def test_action_catalog_page_uses_external_boi_url_for_invoke_curl(boi_app_modul
     )
 
     assert response.status_code == 200
-    assert 'curl -X POST "http://boi-wiki.example:28000/api/actions/invoke?employee_id=100001"' in response.text
-    assert 'curl -X POST "http://localhost:8000/api/actions/invoke' not in response.text
+    assert "curl -X POST" not in response.text
+    assert "http://boi-wiki.example:28000/api/actions/invoke" not in response.text
+    assert "http://localhost:8000/api/actions/invoke" not in response.text
+
+    detail = client.get(
+        "/api/actions/catalog/manual.equipment.approve_process_hold?employee_id=100001",
+        headers={"host": "boi-wiki.example:28000"},
+    )
+    assert detail.status_code == 200
+    assert detail.json()["action"]["api_example"]["url"] == "<BOI_BASE_URL>/api/actions/invoke"
 
 
 def test_materialized_equipment_boi_links_sop_and_action_docs(boi_app_module):
@@ -13797,7 +15459,7 @@ def test_events_page_links_to_workflow_status_html_route(boi_app_module):
         result={"dispatch_result": {"ok": True, "status": "handled", "results": []}},
     )
 
-    response = client.get(f"/events?employee_id=100001&trace_id={trace_id}")
+    response = client.get(f"/events?employee_id=100001&view=raw&trace_id={trace_id}")
 
     assert response.status_code == 200
     assert f"/workflows/equipment-anomaly/status?employee_id=100001&trace_id={trace_id}" in response.text
@@ -13892,7 +15554,8 @@ def test_event_type_catalog_uses_detail_route_as_primary_cta(boi_app_module):
 
     assert response.status_code == 200
     assert 'href="/event-types/meeting.closed.v1?employee_id=100001"' in response.text
-    assert "Event Type 상세" in response.text
+    assert "상세 보기" in response.text
+    assert 'class="button primary"' in response.text
 
 
 def test_index_event_type_filter_has_context_bar_and_specific_empty_state(boi_app_module):
@@ -13952,7 +15615,7 @@ def test_events_page_summarizes_dispatch_results_and_keeps_raw_json_collapsed(bo
         },
     )
 
-    response = client.get(f"/events?employee_id=100001&trace_id={trace_id}")
+    response = client.get(f"/events?employee_id=100001&view=raw&trace_id={trace_id}")
 
     assert response.status_code == 200
     assert 'class="action-summary-table"' in response.text
@@ -14031,7 +15694,7 @@ def test_event_logs_filter_by_time_range_in_api_and_html(boi_app_module):
         f"/api/events/log?event_type={event_type}&from_time=2026-06-19T09:00&to_time=2026-06-19T18:00"
     )
     html_response = client.get(
-        f"/events?employee_id=100001&event_type={event_type}&from_time=2026-06-19T09:00&to_time=2026-06-19T18:00"
+        f"/events?employee_id=100001&view=raw&event_type={event_type}&from_time=2026-06-19T09:00&to_time=2026-06-19T18:00"
     )
 
     assert api_response.status_code == 200
@@ -14080,7 +15743,7 @@ def test_event_stream_time_preset_preserves_pagination_url(boi_app_module):
     )
 
     api_response = client.get(f"/api/events/log?event_type={event_type}&time_preset=24h")
-    html_response = client.get(f"/events?employee_id=100001&event_type={event_type}&time_preset=24h&limit=1")
+    html_response = client.get(f"/events?employee_id=100001&view=raw&event_type={event_type}&time_preset=24h&limit=1")
 
     assert api_response.status_code == 200
     body = api_response.json()
@@ -14098,7 +15761,7 @@ def test_event_stream_time_filter_errors_are_not_500s(boi_app_module):
 
     invalid_api = client.get("/api/events/log?from_time=not-a-time")
     reversed_api = client.get("/api/events/log?from_time=2026-06-19T18:00&to_time=2026-06-19T09:00")
-    invalid_html = client.get("/events?employee_id=100001&from_time=not-a-time")
+    invalid_html = client.get("/events?employee_id=100001&view=raw&from_time=not-a-time")
 
     assert invalid_api.status_code == 400
     assert reversed_api.status_code == 400
@@ -14273,7 +15936,7 @@ def test_events_page_links_recoverable_generated_boi_and_marks_unrecoverable_boi
     append_materialized_log(boi_app_module, trace_id="trace-event-links", boi_id=recoverable_id)
     append_materialized_log(boi_app_module, trace_id="trace-event-links", boi_id=missing_id, include_item=False)
 
-    response = client.get("/events?employee_id=100001&trace_id=trace-event-links")
+    response = client.get("/events?employee_id=100001&view=raw&trace_id=trace-event-links")
 
     assert response.status_code == 200
     assert f"/docs/{recoverable_id}?employee_id=100001" in response.text
@@ -14303,7 +15966,11 @@ def test_events_page_does_not_render_doc_links_that_return_404(boi_app_module):
         assert linked.status_code != 404, href
 
 
-def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_app_module):
+def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_app_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ENABLED", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_MINIO_ENDPOINT", "")
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ALLOW_RUNTIME_FILE", True)
+    monkeypatch.setattr(boi_app_module, "BOI_DATALAKE_ARTIFACT_ROOT", tmp_path / "artifact-store")
     client = TestClient(boi_app_module.app)
     trace_id = "trace-work-context-pack"
     request_id = "act-work-context-current"
@@ -14383,6 +16050,27 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
             "logged_at": boi_app_module.now_iso(),
         },
     )
+    artifact_upload = client.post(
+        "/api/data-lake/artifacts/upload?employee_id=100001",
+        json={
+            "filename": "trend_raw_sample.csv",
+            "content_type": "text/csv",
+            "content_base64": base64.b64encode(
+                b"equipment_id,alarm_code,trend\nEQ-1,A-1,drift\n"
+            ).decode("ascii"),
+            "source_context": {
+                "target_type": "inbox_task",
+                "target_id": request_id,
+                "relationship": "evidence",
+                "attachment_role": "raw_data",
+                "validation_state": "profiled",
+                "human_note": "Trend raw sample original is kept outside the prompt.",
+                "attached_from_surface": "task_console",
+            },
+        },
+    )
+    assert artifact_upload.status_code == 200
+    assert artifact_upload.json()["attachment"]["artifact"]["filename"] == "trend_raw_sample.csv"
 
     response = client.get(f"/api/context/work?employee_id=100001&task_id=task:{request_id}")
 
@@ -14416,6 +16104,207 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert "Trend와 Raw Data" in body["draft_completion_note"] or "Trend 확인 완료" in body["draft_completion_note"]
     assert body["work_context_narrative"]["summary_state"] == "pending"
     assert body["work_context_narrative"]["stage_history_narrative"] == []
+    assert body["task_loop_state"]["flow"] == ["observe", "plan_delta", "act_or_ask", "evaluate_exit_criteria", "reflect", "continue_or_stop"]
+    assert body["task_loop_state"]["execution_mode"] == "manual"
+    assert body["task_loop_state"]["policy"]["max_iterations"] == 5
+    assert body["task_loop_state"]["exit_criteria"]["criteria"] == body["task_exit_criteria"]
+    assert body["task_loop_state"]["progress"]["delta_required"] is True
+    assert "data_lake_artifact_profiles" in body["context_manifest"]["included_sources"]
+
+    console = client.get(f"/api/tasks/console?employee_id=100001&task_id=task:{request_id}")
+    assert console.status_code == 200
+    console_body = console.json()
+    assert console_body["surface"] == "task_console"
+    assert console_body["execution_mode"] == "manual"
+    assert [item["mode"] for item in console_body["mode_cards"]] == ["manual", "copilot", "autopilot"]
+    assert next(item for item in console_body["mode_cards"] if item["mode"] == "manual")["active"] is True
+    assert console_body["completion"]["checks"]
+    assert console_body["completion"]["evidence"]
+    assert all("boi:" not in item["label"] for item in console_body["completion"]["evidence"])
+    workflow_canvas = console_body["workflow_canvas"]
+    assert workflow_canvas["type"] == "mermaid"
+    assert workflow_canvas["source"].startswith("flowchart LR")
+    assert workflow_canvas["current_stage_id"] == "detect"
+    assert workflow_canvas["actions"] == []
+    assert console_body["context_engineering"]["manifest"]["raw_payload_policy"] == "profile_sample_checksum_url_only"
+    assert any(item["kind"] == "external_ai_note" for item in console_body["ui_actions"])
+    artifact_refs = console_body["evidence_collection"]["data_lake_artifacts"]
+    assert artifact_refs
+    assert artifact_refs[0]["display_label"] == "trend_raw_sample.csv"
+    assert artifact_refs[0]["download_url"].startswith("/api/data-lake/artifacts/")
+    assert artifact_refs[0]["checksum"]
+    assert artifact_refs[0]["profile"]["kind"] == "table"
+    completion_check = console_body["completion"]["checks"][0]
+    completion_confirm = client.post(
+        "/api/context/work/completion/confirm?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "check_id": completion_check["check_id"],
+            "label": completion_check["label"],
+            "note": "담당자가 완료된 모습을 확인했습니다.",
+            "user_confirmed": True,
+        },
+    )
+    assert completion_confirm.status_code == 200
+    assert completion_confirm.json()["confirmation"]["status"] == "confirmed"
+    assert completion_confirm.json()["completion"]["confirmed_count"] >= 1
+    assert completion_confirm.json()["evidence_ledger"]
+    console_page = client.get(f"/tasks/console?employee_id=100001&task_id=task:{request_id}")
+    assert console_page.status_code == 200
+    assert "업무 수행 화면" in console_page.text
+    assert "관련 업무 흐름" in console_page.text
+    assert "mermaid-diagram task-console-workflow-canvas" in console_page.text
+    assert "흐름 그림 다음 작업" not in console_page.text
+    assert "Task로 나누기" not in console_page.text
+    assert "부족한 실행 요청 찾기" not in console_page.text
+    assert "원본 근거 위치" in console_page.text
+    assert "trend_raw_sample.csv" in console_page.text
+    assert "원본 위치 열기" in console_page.text
+    assert "외부 AI 작업 요약" in console_page.text
+    assert "언제 이 일이 끝났다고 볼까요?" in console_page.text
+    assert "무엇을 확인하면 될까요?" in console_page.text
+    assert 'name="exit_criteria"' not in console_page.text
+    assert 'name="required_evidence"' not in console_page.text
+    assert "다음 행동 점검" in console_page.text
+    assert "진전 확인하기" in console_page.text
+    assert "Manual" in console_page.text and "Copilot" in console_page.text and "Autopilot" in console_page.text
+
+    fallback_trace_id = "trace-work-context-fallback"
+    fallback_request_id = "act-work-context-fallback"
+    append_event_log_row(
+        boi_app_module,
+        {
+            "event_id": "evt-work-context-fallback",
+            "event_type": "custom.unknown.workflow.v1",
+            "trace_id": fallback_trace_id,
+            "status": "published",
+            "logged_at": boi_app_module.now_iso(),
+            "payload_title": "정의 없는 업무 이벤트",
+        },
+    )
+    append_action_log_row(
+        boi_app_module,
+        {
+            "request_id": fallback_request_id,
+            "employee_id": "100001",
+            "trace_id": fallback_trace_id,
+            "event_id": "evt-work-context-fallback",
+            "event_type": "custom.unknown.workflow.v1",
+            "action_key": "manual.custom.unknown.check",
+            "status": "manual_required",
+            "summary": "정의 없는 업무도 현재 Task 흐름을 보여줍니다.",
+            "logged_at": boi_app_module.now_iso(),
+        },
+    )
+    fallback_console = client.get(f"/api/tasks/console?employee_id=100001&task_id=task:{fallback_request_id}")
+    assert fallback_console.status_code == 200
+    fallback_canvas = fallback_console.json()["workflow_canvas"]
+    assert fallback_canvas["mode"] == "trace"
+    assert fallback_canvas["type"] == "mermaid"
+    assert fallback_canvas["current_stage_id"] == fallback_request_id
+    assert any(stage["stage_id"] == fallback_request_id for stage in fallback_canvas["stages"])
+    assert fallback_console.json()["completion"]["checks"]
+    assert fallback_console.json()["completion"]["evidence"]
+
+    loop_form = client.post(
+        "/tasks/console/loop-evaluate?employee_id=100001",
+        data={
+            "task_id": f"task:{request_id}",
+            "execution_mode": "manual",
+            "delta_kind": "human_input",
+            "delta_summary": "담당자가 Trend와 Raw Data를 확인했고 추가 근거를 남겼습니다.",
+            "iteration_count": "1",
+            "no_progress_count": "0",
+        },
+    )
+    assert loop_form.status_code == 200
+    assert any(label in loop_form.text for label in ("계속 가능", "완료 조건 충족", "사람 확인 필요"))
+    assert "새 진전이 확인되었습니다" in loop_form.text
+
+    rejected_external_ai = client.post(
+        "/api/tasks/console/external-ai-note?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "title": "외부 AI Trend 검토",
+            "provider": "별도 AI",
+            "summary": "외부 AI에서 Trend와 Raw Data 상관성을 요약했습니다.",
+        },
+    )
+    assert rejected_external_ai.status_code == 400
+
+    external_ai = client.post(
+        "/api/tasks/console/external-ai-note?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "title": "외부 AI Trend 검토",
+            "provider": "별도 AI",
+            "summary": "외부 AI에서 Trend와 Raw Data 상관성을 요약했고 담당자 확인이 필요하다고 정리했습니다.",
+            "source_url": "https://minio.example.local/boi/external-ai/work-context.txt",
+            "checksum": "sha256:pytest-external-ai",
+            "sample": "긴 외부 AI 대화 전문은 저장하지 않고 대표 문장만 남깁니다. " * 20,
+            "note": "담당자가 별도 AI에서 확인한 내용을 업무 맥락에 연결했습니다.",
+            "user_confirmed": True,
+        },
+    )
+    assert external_ai.status_code == 200
+    external_body = external_ai.json()
+    contribution = external_body["contribution"]
+    assert contribution["context_policy"]["raw_transcript_stored"] is False
+    assert contribution["source_url"].startswith("https://minio.example.local/")
+    assert len(contribution["sample"]) <= 301
+    assert external_body["task_console"]["evidence_collection"]["external_ai_contributions"]
+
+    context_with_external_ai = client.get(f"/api/context/work?employee_id=100001&task_id=task:{request_id}").json()
+    assert context_with_external_ai["external_ai_contributions"]
+    assert "external_ai_summaries" in context_with_external_ai["context_manifest"]["included_sources"]
+
+    repeated = client.post(
+        "/api/context/work/loop/evaluate?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "proposed_tool_name": "hybrid_search",
+            "proposed_tool_args": {"query": "same SOP"},
+            "tool_history": [{"tool": "hybrid_search", "args": {"query": "same SOP"}}],
+            "no_progress_count": 1,
+        },
+    )
+    assert repeated.status_code == 200
+    repeated_state = repeated.json()["task_loop_state"]
+    assert repeated_state["decision"] == "stop"
+    assert repeated_state["stop_reason"] == "no_progress"
+    assert repeated_state["progress"]["repeated_tool"] is True
+
+    human_delta = client.post(
+        "/api/context/work/loop/evaluate?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "execution_mode": "manual",
+            "proposed_delta": {"kind": "human_input", "summary": "담당자가 Trend와 Raw Data를 확인했습니다."},
+        },
+    )
+    assert human_delta.status_code == 200
+    human_state = human_delta.json()["task_loop_state"]
+    assert human_state["progress"]["delta_detected"] is True
+    assert human_state["progress"]["no_progress_reason"] == ""
+
+    external_ai_delta = client.post(
+        "/api/context/work/loop/evaluate?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "execution_mode": "copilot",
+            "proposed_delta": {"kind": "external_ai_summary", "summary": "별도 AI 검토 요약을 근거 모음에 추가했습니다."},
+        },
+    )
+    assert external_ai_delta.status_code == 200
+    assert external_ai_delta.json()["task_loop_state"]["progress"]["delta_kind"] == "external_ai_summary"
+
+    max_iterations = client.post(
+        "/api/context/work/loop/evaluate?employee_id=100001",
+        json={"task_id": f"task:{request_id}", "iteration_count": 5, "proposed_delta": {"kind": "new_evidence", "summary": "새 근거"}},
+    )
+    assert max_iterations.status_code == 200
+    assert max_iterations.json()["task_loop_state"]["decision"] == "stop"
+    assert max_iterations.json()["task_loop_state"]["stop_reason"] == "max_iterations"
 
     inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100001&include_context=compact&limit=20")
     assert inbox.status_code == 200
@@ -14431,6 +16320,50 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert target["work_context_narrative"]["summary_state"] == "pending"
     assert compact["work_context_narrative"]["summary_state"] == "pending"
     assert not any(step.get("label") == "Trend 확인 근거 확보" for step in compact["recommended_next_steps"])
+    inbox_canvas = target["workflow_canvas"]
+    assert inbox_canvas["type"] == "mermaid"
+    assert inbox_canvas["source"].startswith("flowchart LR")
+    assert inbox_canvas["actions"] == []
+    inbox_page = client.get("/inbox?employee_id=100001&limit=20")
+    assert inbox_page.status_code == 200
+    assert "업무 수행 화면" in inbox_page.text
+    assert "관련 업무 흐름" in inbox_page.text
+    assert "data-inbox-workflow-lazy" in inbox_page.text
+    assert "data-inbox-workflow-load" in inbox_page.text
+    assert inbox_page.text.count("mermaid-diagram task-console-workflow-canvas inbox-workflow-canvas") == 1
+
+    lazy_canvas = client.get(
+        "/api/inbox/workflow-canvas",
+        params={"employee_id": "100001", "task_ref": target["task_ref"]},
+    )
+    assert lazy_canvas.status_code == 200
+    assert lazy_canvas.json()["canvas"]["source"].startswith("flowchart LR")
+
+
+def test_work_context_pack_without_task_does_not_select_arbitrary_inbox_task(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    append_action_log_row(
+        boi_app_module,
+        {
+            "employee_id": "100001",
+            "request_id": "act-no-context-should-not-attach",
+            "action_key": "sop.equipment.request_trend_history",
+            "status": "manual_required",
+            "summary": "명시되지 않은 WorkContextPack에는 붙으면 안 되는 업무",
+            "trace_id": "trace-no-context-should-not-attach",
+            "event_type": "equipment.alarm.raised.v1",
+            "logged_at": boi_app_module.now_iso(),
+        },
+    )
+
+    response = client.get("/api/context/work?employee_id=100001")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["task_id"] == ""
+    assert body["task"]["request_id"] == ""
+    assert body["trace_context"]["trace_id"] == ""
+    assert "task" not in body["context_manifest"]["included_sources"]
 
 
 def test_stage_history_summary_keeps_focused_action_and_dedupes_event_lifecycle(boi_app_module):

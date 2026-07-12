@@ -1,0 +1,148 @@
+<button type="button" class="agent-surface-launcher" data-agent-v2-open title="BoI Agent" aria-label="BoI Agent 열기" aria-expanded="false">
+  <img class="agent-surface-pet" src="{{ asset_url('assets/boi-agent-pet.png') }}" alt="" width="88" height="88" decoding="async" />
+  <span class="agent-surface-badge" data-agent-v2-badge hidden></span>
+</button>
+
+<section class="agent-surface" data-agent-v2-surface aria-label="BoI Agent" hidden>
+  <header class="agent-surface-header">
+    <div class="agent-surface-heading">
+      <span>BoI Agent</span>
+      <strong data-agent-v2-session-title>무엇을 찾거나 진행할까요?</strong>
+      <small data-agent-v2-save-state>새 작업</small>
+    </div>
+    <div class="agent-surface-header-actions">
+      <details class="agent-surface-more">
+        <summary class="icon-button" title="BoI Agent 메뉴" aria-label="BoI Agent 메뉴">⋯</summary>
+        <nav aria-label="BoI Agent 메뉴">
+          <a href="/helpers/new?employee_id={{ employee_id }}">나만의 BoI Agent 만들기</a>
+          <a href="/agent/access?employee_id={{ employee_id }}">외부에서 사용</a>
+        </nav>
+      </details>
+      <details class="agent-surface-recent">
+        <summary class="icon-button" title="최근 작업" aria-label="최근 작업">↶</summary>
+        <div data-agent-v2-recent-list><p>최근 작업을 확인하고 있습니다.</p></div>
+      </details>
+      <button type="button" class="icon-button" data-agent-v2-new title="새 작업" aria-label="새 작업">＋</button>
+      <button type="button" class="icon-button" data-agent-v2-expand title="넓게 보기" aria-label="넓게 보기">↗</button>
+      <button type="button" class="icon-button" data-agent-v2-close title="닫기" aria-label="닫기">×</button>
+    </div>
+  </header>
+
+  <div class="agent-surface-notice" data-agent-v2-notice hidden></div>
+  <div class="agent-surface-progress" data-agent-v2-progress hidden aria-live="polite"></div>
+  <button type="button" class="agent-surface-routine-status" data-agent-v2-routines-open hidden>
+    <span>자동 확인</span><strong data-agent-v2-routine-status-count>0건</strong><small>진행 상태 보기</small>
+  </button>
+
+  <nav class="agent-surface-mobile-tabs" data-agent-v2-mobile-tabs aria-label="BoI Agent 보기">
+    <button type="button" class="active" data-agent-v2-mobile-view="conversation">대화</button>
+    <button type="button" data-agent-v2-mobile-view="sources">사용한 지식</button>
+    <button type="button" data-agent-v2-mobile-view="result" disabled>결과</button>
+  </nav>
+
+  <div class="agent-surface-layout">
+    <section class="agent-surface-conversation" aria-label="BoI Agent 대화">
+      <div class="agent-surface-messages" data-agent-v2-messages aria-live="polite"></div>
+      <div class="agent-surface-related" data-agent-v2-related hidden></div>
+      <div class="agent-surface-next-actions" data-agent-v2-next-actions hidden></div>
+      <form class="agent-surface-composer" data-agent-v2-form>
+        <div class="agent-surface-context" data-agent-v2-context hidden></div>
+        <div class="agent-surface-input-row">
+          <button type="button" class="icon-button" data-agent-v2-attach title="자료 연결" aria-label="자료 연결">＋</button>
+          <label class="sr-only" for="agent-v2-question">질문 또는 업무 목표</label>
+          <textarea id="agent-v2-question" name="question" rows="2" placeholder="무엇을 찾거나 진행할까요?" required></textarea>
+          <button type="submit" class="icon-button agent-surface-send" data-agent-v2-submit title="보내기" aria-label="보내기">↑</button>
+        </div>
+        <div class="agent-surface-attachments" data-agent-v2-attachments hidden>
+          <label>파일 또는 자료<input type="file" data-agent-v2-file multiple /></label>
+          <div class="agent-surface-upload-row"><output data-agent-v2-upload-status></output><button type="button" class="secondary-button" data-agent-v2-file-upload>자료 연결</button></div>
+          <label>외부에서 작업한 내용 요약<textarea name="external_ai_summary" rows="3" placeholder="결론과 확인할 부분만 적어주세요."></textarea></label>
+          <label>원본 또는 결과 주소<textarea name="external_artifact_refs" rows="2" placeholder="MinIO, Data Lake 또는 사내 자료 URL을 줄마다 하나씩 적어주세요."></textarea></label>
+          <div><button type="button" class="secondary-button" data-agent-v2-attachments-close>닫기</button></div>
+        </div>
+      </form>
+    </section>
+
+    <aside class="agent-surface-workbench" data-agent-v2-workbench hidden aria-label="작업 결과">
+      <header>
+        <div class="agent-surface-workbench-heading">
+          <span data-agent-v2-artifact-kind>작업 결과</span>
+          <strong data-agent-v2-artifact-title>작업 결과</strong>
+          <small data-agent-v2-artifact-state></small>
+        </div>
+        <div class="agent-surface-workbench-actions">
+          <a class="secondary-button" data-agent-v2-full-editor hidden>전체 편집</a>
+          <button type="button" class="icon-button" data-agent-v2-artifact-focus title="결과 크게 보기" aria-label="결과 크게 보기" aria-pressed="false" hidden>⛶</button>
+          <button type="button" class="icon-button" data-agent-v2-workbench-close title="결과 접기" aria-label="결과 접기">×</button>
+        </div>
+      </header>
+      <div class="agent-surface-artifacts" data-agent-v2-artifact-list></div>
+    </aside>
+  </div>
+
+  <aside class="agent-surface-sources" data-agent-v2-sources hidden aria-label="사용한 지식">
+    <header><div><span>사용한 지식</span><strong data-agent-v2-source-count>0개</strong></div><button type="button" class="icon-button" data-agent-v2-sources-close title="닫기" aria-label="사용한 지식 닫기">×</button></header>
+    <div data-agent-v2-source-list></div>
+  </aside>
+
+  <aside class="agent-surface-routines" data-agent-v2-routines hidden aria-label="자동 확인">
+    <header><div><span>자동 확인</span><strong data-agent-v2-routine-count>0건</strong></div><button type="button" class="icon-button" data-agent-v2-routines-close title="닫기" aria-label="자동 확인 닫기">×</button></header>
+    <div class="agent-surface-routine-body">
+      <p class="agent-surface-routine-explanation">BoI Agent가 정해진 시간이나 업무 이벤트에 따라 다시 확인하는 업무입니다.</p>
+      <div data-agent-v2-routine-list><p>자동 확인 상태를 불러오고 있습니다.</p></div>
+    </div>
+  </aside>
+
+  <aside class="agent-surface-source-preview" data-agent-v2-source-preview hidden aria-label="원문 근거">
+    <header><button type="button" class="icon-button" data-agent-v2-source-preview-close title="뒤로" aria-label="원문 근거 닫기">←</button><strong data-agent-v2-source-preview-title>원문 근거</strong></header>
+    <div data-agent-v2-source-preview-body></div>
+  </aside>
+
+  <div class="agent-v2-task-backdrop" data-agent-v2-task-backdrop hidden></div>
+  <section class="agent-v2-task-sheet" data-agent-v2-task-sheet hidden role="dialog" aria-label="Task 다듬기" aria-modal="true">
+    <header>
+      <div><span>Task 다듬기</span><strong data-agent-v2-task-heading>Task</strong></div>
+      <button type="button" class="icon-button" data-agent-v2-task-close title="닫기" aria-label="닫기">×</button>
+    </header>
+    <div class="agent-v2-task-layout">
+      <nav data-agent-v2-task-list aria-label="SOP Task 목록"></nav>
+      <form data-agent-v2-task-form>
+        <input type="hidden" name="task_id" />
+        <label>Task 이름<input name="name" maxlength="160" required /></label>
+        <label>이 Task의 목적<textarea name="purpose" rows="3" placeholder="이 Task가 끝났을 때 무엇이 달라져야 하나요?"></textarea></label>
+        <fieldset>
+          <legend>누가 어떻게 수행하나요?</legend>
+          <div class="agent-v2-mode-choice">
+            <label><input type="radio" name="execution_mode" value="manual" /><span><strong>Manual</strong><small>사람이 직접 수행</small></span></label>
+            <label><input type="radio" name="execution_mode" value="copilot" /><span><strong>Copilot</strong><small>사람과 AI가 함께 수행</small></span></label>
+            <label><input type="radio" name="execution_mode" value="autopilot" /><span><strong>Autopilot</strong><small>허용된 범위에서 자동 수행</small></span></label>
+          </div>
+        </fieldset>
+        <div data-agent-v2-completion-editor></div>
+        <label>남길 결과물<textarea name="outputs" rows="3" placeholder="보고서, 판단 기록, 확인된 데이터 등"></textarea></label>
+        <details class="agent-v2-task-advanced">
+          <summary>실행 연결</summary>
+          <div class="agent-v2-task-columns">
+            <label>Action 연결<textarea name="action_refs" rows="3" placeholder="한 줄에 하나씩"></textarea></label>
+            <label>업무 이벤트 연결<textarea name="event_refs" rows="3" placeholder="한 줄에 하나씩"></textarea></label>
+            <label>업무 능력 연결<textarea name="skill_refs" rows="3" placeholder="한 줄에 하나씩"></textarea></label>
+            <label>목표 TAT<input name="tat" placeholder="예: 30분, 당일" /></label>
+            <label>검증 방법<textarea name="verification" rows="3"></textarea></label>
+            <label>실패 시 처리<textarea name="fallback" rows="3"></textarea></label>
+          </div>
+        </details>
+        <div class="agent-v2-task-status" data-agent-v2-task-status>변경하면 자동 저장됩니다.</div>
+        <div class="agent-v2-task-actions">
+          <button type="button" class="secondary-button" data-agent-v2-refine>완료 항목 제안</button>
+          <a class="secondary-button" data-agent-v2-task-full-editor>전체 SOP 편집</a>
+        </div>
+        <section class="agent-v2-proposal" data-agent-v2-proposal hidden>
+          <header><strong>변경 제안</strong><span>확인 후 적용됩니다.</span></header>
+          <div data-agent-v2-proposal-diff></div>
+          <div><button type="button" class="secondary-button" data-agent-v2-proposal-dismiss>닫기</button><button type="button" class="primary-button" data-agent-v2-proposal-apply>제안 적용</button></div>
+        </section>
+        <section class="agent-v2-conflict" data-agent-v2-conflict hidden></section>
+      </form>
+    </div>
+  </section>
+</section>

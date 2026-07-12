@@ -123,7 +123,7 @@ def test_public_action_specs_include_executable_contracts_without_secrets():
             assert meta.get("method"), spec_id
             assert meta.get("url"), spec_id
             assert meta.get("headers"), spec_id
-            assert meta.get("curl"), spec_id
+            assert "curl" not in meta, spec_id
             assert meta.get("action_gateway_mapping"), spec_id
             assert meta.get("health_check"), spec_id
 

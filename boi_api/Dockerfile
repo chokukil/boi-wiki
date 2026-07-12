@@ -1,14 +1,17 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp/boi-home
 
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /data /runtime /tmp/boi-home \
+    && chmod 1777 /data /runtime /tmp/boi-home
 ARG BOI_BUILD_REVISION=dev-local
 ENV BOI_BUILD_REVISION=${BOI_BUILD_REVISION}
 LABEL org.opencontainers.image.revision="${BOI_BUILD_REVISION}"

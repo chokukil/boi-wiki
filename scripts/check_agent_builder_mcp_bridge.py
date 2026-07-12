@@ -65,11 +65,22 @@ def main() -> int:
     parser.add_argument("--mcp-base-url", default="http://localhost:8200")
     parser.add_argument("--employee-id", default="100001")
     parser.add_argument("--expected-model", default="gpt-5.5")
+    parser.add_argument(
+        "--gpt55-test",
+        action="store_true",
+        help="Explicitly allow this legacy GPT-5.5 verification smoke.",
+    )
     parser.add_argument("--service-token", default="")
     parser.add_argument("--env-file", action="append", default=[".env", ".env.local-full.example"])
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--summary", action="store_true")
     args = parser.parse_args()
+
+    if not args.gpt55_test:
+        raise SystemExit(
+            "This script is GPT-5.5 verification-only. Re-run with --gpt55-test against a server started with "
+            "BOI_GPT55_TEST_MODE=true."
+        )
 
     service_token = _load_service_token(args.env_file, args.service_token)
     if not service_token:
@@ -179,7 +190,7 @@ def main() -> int:
             "employee_id": args.employee_id,
             "job_id": job_id,
             "evidence_state": "verified_evidence",
-            "validation_note": "MCP bridge smoke confirmed sandbox artifact and GPT-5.5 summary.",
+            "validation_note": "Explicit GPT-5.5 test smoke confirmed the sandbox artifact and model summary.",
             "user_confirmed": True,
         },
         args.timeout,

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>연결 상태 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('integrations.js') }}" defer></script>
+</head>
+<body>
+{% include "_app_shell.html" %}
+{% with title="연결 상태", description="업무 기능별 사용 가능 여부를 확인합니다.", eyebrow=None, primary_action=None %}
+  {% include "_section_intro.html" %}
+{% endwith %}
+<main class="page-content integrations-page" data-integrations-page data-status-url="/api/integrations/status?employee_id={{ employee_id }}" data-refresh-url="/api/integrations/refresh?employee_id={{ employee_id }}">
+  <div class="button-row integration-page-actions"><button type="button" class="button secondary" data-integrations-refresh>다시 확인</button><span data-integrations-message aria-live="polite"></span></div>
+  <section class="panel integration-list" data-integration-list>
+    {% for item in integration_status["items"] %}
+    <article class="integration-row" data-integration-id="{{ item.integration_id }}">
+      <div>
+        <span class="integration-dot {% if item.available %}ready{% elif item.configured %}warning{% endif %}" aria-hidden="true"></span>
+        <strong>{{ item.label }}</strong>
+        {% if item.required %}<span class="badge">필수</span>{% endif %}
+      </div>
+      <span class="integration-state">{{ item.user_status }}</span>
+      <small class="integration-impact">{{ item.user_impact }}</small>
+      <details class="technical-details">
+        <summary>진단 정보</summary>
+        <dl>
+          <dt>상태</dt><dd>{{ item.status }}</dd>
+          <dt>응답 시간</dt><dd>{{ item.latency_ms }}ms</dd>
+          {% if item.mode %}<dt>운영 방식</dt><dd>{{ item.mode }}</dd>{% endif %}
+          {% if item.error %}<dt>마지막 확인</dt><dd>{{ item.error }}</dd>{% endif %}
+        </dl>
+      </details>
+    </article>
+    {% endfor %}
+  </section>
+  <section class="panel knowledge-operating-status">
+    <div class="mode-panel-heading">
+      <strong>지식 동기화</strong>
+      <span>정본은 그대로 두고 검색과 연결 관계를 다시 만들 수 있는 상태인지 확인합니다.</span>
+    </div>
+    <dl class="integration-metrics">
+      <div><dt>연결된 지식 원본</dt><dd>{{ knowledge_status.ready_source_count }} / {{ knowledge_status.source_count }}</dd></div>
+      <div><dt>연결 관계</dt><dd>{{ knowledge_status.graph_nodes }}개 항목 · {{ knowledge_status.graph_edges }}개 관계</dd></div>
+      <div><dt>검토할 개선 후보</dt><dd>{{ knowledge_status.open_findings }}건</dd></div>
+    </dl>
+    <details class="technical-details">
+      <summary>진단 정보</summary>
+      <dl>
+        <dt>관계 모델</dt><dd>{{ "준비됨" if knowledge_status.graph_ready else "초기 동기화 필요" }}</dd>
+        <dt>마지막 동기화</dt><dd>{{ knowledge_status.last_compiled_at or "아직 기록 없음" }}</dd>
+      </dl>
+    </details>
+  </section>
+</main>
+</body>
+</html>

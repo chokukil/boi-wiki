@@ -57,7 +57,6 @@ example_request:
     - promotion_status
 example_response:
   tools: [boi_search, boi_get, actions_search, action_invoke, workflow_start, workflow_status, promotion_submit, promotion_status]
-curl: "python scripts/check_boi_wiki_mcp.py --base-url ${BOI_WIKI_MCP_EXTERNAL_URL} --mcp-url ${BOI_WIKI_MCP_EXTERNAL_URL}/mcp"
 action_gateway_mapping:
   invoke_url: ${ACTION_GATEWAY_EXTERNAL_URL}/api/actions/invoke
   note: Action Gateway uses /api/mcp/call bridge for mcp_tool actions.

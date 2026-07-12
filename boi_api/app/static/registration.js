@@ -13,18 +13,41 @@
   let currentStep = "context";
   let draftSessionId = "";
   let autosaveTimer = null;
+  const v2ArtifactId = form.dataset.v2ArtifactId || "";
+  const v2WorkSessionId = form.dataset.v2WorkSessionId || "";
+  let v2ArtifactRevision = Number(form.dataset.v2ArtifactRevision || 1);
+  let v2ArtifactBaseTasks = {};
+  let v2ArtifactDirty = false;
+  let stageCompletionEditor = null;
+  const v2ArtifactChannel = v2ArtifactId && "BroadcastChannel" in window ? new BroadcastChannel("boi-agent-v2-artifacts") : null;
   let workflowStages = [];
   let selectedStageId = "";
   let dataLakeArtifacts = [];
   const selectedLinkState = {};
   const draftSuggestionTimers = {};
   const draftSuggestionSnapshots = {};
-  const autosaveKey = `boi:sop-registration:${employeeId}:${window.location.pathname}`;
+  const autosaveKey = `boi:sop-registration:${employeeId}:${window.location.pathname}:${v2ArtifactId || "standalone"}`;
+  let mermaidDraftSeed = {};
+  let mermaidDraftSeedApplied = false;
+  let mermaidDraftSeedDismissed = false;
+  try {
+    const seedElement = document.getElementById("sop-mermaid-draft-seed");
+    mermaidDraftSeed = seedElement?.textContent ? JSON.parse(seedElement.textContent) : {};
+  } catch (_error) {
+    mermaidDraftSeed = {};
+  }
+  if (v2ArtifactId) {
+    const seedTasks = mermaidDraftSeed?.artifact?.draft?.tasks;
+    if (Array.isArray(seedTasks)) {
+      v2ArtifactBaseTasks = Object.fromEntries(seedTasks.map((task) => [String(task.task_id || ""), JSON.parse(JSON.stringify(task))]));
+    }
+  }
   const stageExampleSeeds = [
     {
       stage_name: "근거 확인",
       stage_goal: "Alarm과 Trend 이상 여부를 확인합니다.",
       decision_question: "업무를 시작할 근거가 충분한가?",
+      exit_criteria: ["Alarm과 Trend를 확인해 대응 필요 여부를 판단했어요"],
       required_evidence: ["Alarm 이력", "Trend", "Raw Data"],
       expected_outputs: ["근거 확인 BoI"],
       knowledge_update_policy: "확인한 근거와 부족한 데이터를 유사 사례 후보로 남긴다.",
@@ -35,6 +58,7 @@
       stage_name: "원인 판단",
       stage_goal: "확인된 근거를 바탕으로 원인 후보를 좁힙니다.",
       decision_question: "가장 가능성 높은 원인과 추가 확인 항목은 무엇인가?",
+      exit_criteria: ["가능성 높은 원인과 추가 확인 항목을 기록했어요"],
       required_evidence: ["장비 이력", "최근 조치", "Lot 영향"],
       expected_outputs: ["원인 판단 BoI"],
       knowledge_update_policy: "판단 이유와 제외한 원인 후보를 함께 남긴다.",
@@ -44,6 +68,7 @@
       stage_name: "조치 확인",
       stage_goal: "조치 결과와 재발 여부를 확인합니다.",
       decision_question: "조치 후 상태가 업무 종료 기준을 만족하는가?",
+      exit_criteria: ["조치 결과와 재발 여부를 확인했어요"],
       required_evidence: ["Action 결과", "상태 전환", "후속 Alarm 여부"],
       expected_outputs: ["조치 결과 BoI"],
       knowledge_update_policy: "조치 결과와 재발 방지 후보를 지식 업데이트 대상으로 남긴다.",
@@ -167,17 +192,17 @@
 
   function scheduleSummary(config) {
     const time = normalizeTime(config.time);
-    if (config.repeat_type === "daily") return `매일 ${time}에 Event 초안이 만들어집니다.`;
+    if (config.repeat_type === "daily") return `매일 ${time}에 업무 이벤트 발생 기준을 확인합니다.`;
     if (config.repeat_type === "weekly") {
       const weekdays = Array.isArray(config.weekdays) && config.weekdays.length ? config.weekdays : ["MON"];
-      return `매주 ${weekdays.map((day) => weekdayLabels[day] || day).join(", ")} ${time}에 Event 초안이 만들어집니다.`;
+      return `매주 ${weekdays.map((day) => weekdayLabels[day] || day).join(", ")} ${time}에 업무 이벤트 발생 기준을 확인합니다.`;
     }
     if (config.repeat_type === "monthly") {
       const day = Math.min(Math.max(Number(config.month_day || 1), 1), 31);
-      return `매월 ${day}일 ${time}에 Event 초안이 만들어집니다.`;
+      return `매월 ${day}일 ${time}에 업무 이벤트 발생 기준을 확인합니다.`;
     }
-    if (config.repeat_type === "once" && config.once_at) return `${config.once_at.replace("T", " ")}에 Event 초안이 만들어집니다.`;
-    return "직접 설정한 일정으로 Event 초안이 만들어집니다.";
+    if (config.repeat_type === "once" && config.once_at) return `${config.once_at.replace("T", " ")}에 업무 이벤트 발생 기준을 한 번 확인합니다.`;
+    return "직접 설정한 일정으로 업무 이벤트 발생 기준을 확인합니다.";
   }
 
   function currentScheduleConfig() {
@@ -552,8 +577,10 @@
 
   function taskDetailStatus(stage) {
     if (!stage || !String(stage.stage_goal || "").trim()) return "상세 미정";
+    if (stage.execution_mode === "autopilot" && stage.completion_readiness?.status !== "ready") return "연결 필요";
     if (stage.execution_mode === "autopilot" && (!stage.verification_policy || !stage.fallback_owner)) return "검증 필요";
-    if (!Array.isArray(stage.required_evidence) || !stage.required_evidence.length) return "상세 미정";
+    if (!Array.isArray(stage.exit_criteria) || !stage.exit_criteria.length) return "완료 항목 필요";
+    if (!Array.isArray(stage.required_evidence) || !stage.required_evidence.length) return "확인 자료 필요";
     return "기본 설정";
   }
 
@@ -680,12 +707,22 @@
     const index = workflowStages.length + 1;
     const name = seed.stage_name || seed.task_name || seed.name || seed.title || `Task ${index}`;
     const executionMode = normalizeExecutionMode(seed.execution_mode || (Array.isArray(seed.skills) && seed.skills.length ? "copilot" : "manual"));
+    const completionDesign = window.BoiTaskCompletion?.normalizeDesign({
+      execution_mode: executionMode,
+      completion_design: seed.completion_design,
+      exit_criteria: splitStageList(seed.exit_criteria || ""),
+      required_evidence: splitStageList(seed.required_evidence || seed.evidence_requirements || ""),
+    }) || {version: 1, checks: [], evidence: []};
+    const completionProjection = window.BoiTaskCompletion?.projection(completionDesign) || {exit_criteria: [], required_evidence: []};
     return {
       stage_id: seed.stage_id || seed.task_id || seed.id || `task-${Date.now().toString(36)}-${index}`,
       stage_name: name,
       stage_goal: seed.stage_goal || seed.goal || "",
       decision_question: seed.decision_question || "",
-      required_evidence: splitStageList(seed.required_evidence || seed.evidence_requirements || ""),
+      completion_design: completionDesign,
+      completion_readiness: window.BoiTaskCompletion?.readiness(executionMode, completionDesign) || seed.completion_readiness || {},
+      exit_criteria: completionProjection.exit_criteria,
+      required_evidence: completionProjection.required_evidence,
       actions: Array.isArray(seed.actions) ? seed.actions : [],
       skills: Array.isArray(seed.skills) ? seed.skills : [],
       expected_outputs: splitStageList(seed.expected_outputs || seed.outputs || ""),
@@ -695,14 +732,133 @@
       runner_type: seed.runner_type || (executionMode === "manual" ? "human" : executionMode === "autopilot" ? "agent" : "mixed"),
       approval_policy: seed.approval_policy || (executionMode === "autopilot" ? "policy_required" : "stage_owner_confirmed"),
       verification_policy: seed.verification_policy || "evidence_required",
-      fallback_owner: seed.fallback_owner || employeeId,
+      fallback_owner: seed.fallback_owner || (seed.source === "agent_v2_artifact" ? "" : employeeId),
       tat_target: seed.tat_target || "",
       baseline_tat: seed.baseline_tat || "",
       measurement_policy: seed.measurement_policy || "runtime_trace",
       entry_event: seed.entry_event || "",
       emits_event: seed.emits_event || "",
       next_stage: seed.next_stage || "",
+      source: seed.source || "",
+      source_node: seed.source_node || "",
+      draft_id: seed.draft_id || "",
     };
+  }
+
+  function mermaidSeedTasks() {
+    return Array.isArray(mermaidDraftSeed?.workflow_tasks) ? mermaidDraftSeed.workflow_tasks : [];
+  }
+
+  function mermaidSeedTaskLabel(task, index) {
+    return String(task?.stage_name || task?.task_name || task?.name || task?.title || `Task ${index + 1}`).trim();
+  }
+
+  function mermaidTaskStageSeed(task, index, taskByNode = {}) {
+    const label = mermaidSeedTaskLabel(task, index);
+    const exitCriteria = Array.isArray(task?.exit_criteria) ? task.exit_criteria : splitList(task?.exit_criteria || "");
+    const nextNode = String(task?.next_stage || task?.next_node || "");
+    const nextTask = nextNode ? taskByNode[nextNode] : null;
+    return {
+      ...task,
+      stage_id: task?.stage_id || task?.task_id || `mermaid-task-${index + 1}`,
+      stage_name: label,
+      stage_goal: task?.stage_goal || task?.goal || exitCriteria[0] || `${label} 결과와 근거를 확인합니다.`,
+      decision_question: task?.decision_question || `${label} 종료 기준을 만족했나요?`,
+      exit_criteria: exitCriteria,
+      required_evidence: task?.required_evidence || task?.evidence_requirements || [],
+      expected_outputs: task?.expected_outputs || exitCriteria,
+      knowledge_update_policy: task?.knowledge_update_policy || "확인한 근거와 결과를 지식 업데이트 후보로 남깁니다.",
+      execution_mode: task?.execution_mode || "manual",
+      next_stage: nextTask ? mermaidSeedTaskLabel(nextTask, index + 1) : "",
+      source: mermaidDraftSeed?.source || "mermaid_workflow_draft",
+      source_node: task?.source_node || task?.node_id || "",
+      draft_id: mermaidDraftSeed?.draft_id || "",
+    };
+  }
+
+  function mermaidStageSeeds() {
+    const tasks = mermaidSeedTasks();
+    const taskByNode = {};
+    tasks.forEach((task) => {
+      const node = String(task?.source_node || task?.node_id || "");
+      if (node) taskByNode[node] = task;
+    });
+    const edgeBySource = {};
+    (Array.isArray(mermaidDraftSeed?.workflow_edges) ? mermaidDraftSeed.workflow_edges : []).forEach((edge) => {
+      const source = String(edge?.source || "");
+      const target = String(edge?.target || "");
+      if (source && target && !edgeBySource[source]) edgeBySource[source] = target;
+    });
+    return tasks.map((task, index) => mermaidTaskStageSeed(
+      {...task, next_node: edgeBySource[String(task?.source_node || task?.node_id || "")] || task?.next_node},
+      index,
+      taskByNode,
+    ));
+  }
+
+  function mermaidDraftIsReady() {
+    return mermaidDraftSeed && mermaidDraftSeed.status === "ready" && mermaidSeedTasks().length > 0;
+  }
+
+  function updateMermaidDraftBanner() {
+    const banner = form.querySelector("[data-mermaid-draft-banner]");
+    if (!banner) return;
+    const visible = mermaidDraftIsReady() && !mermaidDraftSeedApplied && !mermaidDraftSeedDismissed;
+    banner.hidden = !visible;
+    if (!visible) return;
+    const taskCount = mermaidSeedTasks().length;
+    const title = banner.querySelector("[data-mermaid-draft-title]");
+    const summary = banner.querySelector("[data-mermaid-draft-summary]");
+    if (title) title.textContent = `${mermaidDraftSeed.title || "흐름 그림"}에서 가져온 Task 후보가 있습니다.`;
+    if (summary) {
+      summary.textContent = `${taskCount}개 Task 후보를 불러와 SOP Builder에서 이어서 다듬을 수 있습니다. 현재 입력이 있으면 적용 시 Task 맵이 후보로 교체됩니다.`;
+    }
+  }
+
+  function applyMermaidDraftSeed(options = {}) {
+    if (!mermaidDraftIsReady()) return false;
+    if (!options.force && hasUserWorkflowTask()) {
+      updateMermaidDraftBanner();
+      return false;
+    }
+    const stages = mermaidStageSeeds();
+    if (!stages.length) return false;
+    const titleField = formField("title");
+    if (titleField && !String(titleField.value || "").trim() && mermaidDraftSeed.title) {
+      titleField.value = mermaidDraftSeed.title;
+    }
+    const rawField = formField("raw_request");
+    if (rawField && !String(rawField.value || "").trim()) {
+      rawField.value = mermaidDraftSeed.raw_request || `Mermaid 흐름 '${mermaidDraftSeed.title || "업무 흐름"}'에서 가져온 SOP Task 후보입니다.`;
+    }
+    setSectionMode("sop_mode", "draft");
+    workflowStages = stages.map((stage) => makeStage(stage));
+    selectedStageId = workflowStages[0]?.stage_id || "";
+    mermaidDraftSeedApplied = true;
+    mermaidDraftSeedDismissed = true;
+    renderWorkflowStages();
+    updateRecommendationControls();
+    updateSectionRefineControls();
+    setFlowStage("stages");
+    updateMermaidDraftBanner();
+    if (options.autosave) scheduleAutosave();
+    if (options.announce !== false) {
+      setResult("ok", "흐름 그림의 Task 후보를 불러왔습니다", "각 Task를 눌러 Manual/Copilot/Autopilot 방식과 종료 기준을 다듬어주세요.");
+    }
+    return true;
+  }
+
+  function initializeMermaidDraftSeed(hasSavedAutosave) {
+    if (!mermaidDraftSeed || !mermaidDraftSeed.status) return false;
+    if (mermaidDraftSeed.status !== "ready") {
+      setResult("warning", "흐름 그림 초안을 불러오지 못했습니다", mermaidDraftSeed.message || "Mermaid 초안 기록을 찾을 수 없습니다.");
+      return false;
+    }
+    if (hasSavedAutosave || hasUserWorkflowTask()) {
+      updateMermaidDraftBanner();
+      return false;
+    }
+    return applyMermaidDraftSeed({force: true, autosave: false});
   }
 
   function ensureWorkflowStages() {
@@ -766,6 +922,12 @@
       const value = stage[key];
       field.value = Array.isArray(value) ? value.join(", ") : String(value || "");
     });
+    stageCompletionEditor?.setTask({
+      execution_mode: stage.execution_mode,
+      completion_design: stage.completion_design,
+      exit_criteria: stage.exit_criteria,
+      required_evidence: stage.required_evidence,
+    });
     renderStageActions(stage);
     renderArtifactResults();
   }
@@ -816,13 +978,14 @@
     const key = field.dataset.stageField || "";
     if (!key) return;
     const value = field.value || "";
-    if (["required_evidence", "expected_outputs"].includes(key)) stage[key] = splitList(value);
+    if (["exit_criteria", "required_evidence", "expected_outputs"].includes(key)) stage[key] = splitList(value);
     else if (key === "execution_mode") {
       stage[key] = normalizeExecutionMode(value);
       stage.copilot_source = normalizeCopilotSource(stage.copilot_source, stage[key]);
       if (!stage.runner_type || stage.runner_type === "human" || stage.runner_type === "agent" || stage.runner_type === "mixed") {
         stage.runner_type = stage[key] === "manual" ? "human" : stage[key] === "autopilot" ? "agent" : "mixed";
       }
+      stageCompletionEditor?.setMode(stage[key]);
     } else if (key === "copilot_source") stage[key] = normalizeCopilotSource(value, normalizeExecutionMode(stage.execution_mode));
     else stage[key] = value;
     renderWorkflowStages();
@@ -1900,8 +2063,40 @@
     return body;
   }
 
+  async function searchStageCompletionSources(query, kinds) {
+    const search = new URLSearchParams({q: query, limit: "8"});
+    (kinds || []).forEach((kind) => search.append("kinds", kind));
+    const response = await fetch(`/api/v2/search?${search.toString()}`, {credentials: "same-origin"});
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    return body.items || [];
+  }
+
+  stageCompletionEditor = window.BoiTaskCompletion?.createEditor(form.querySelector("[data-stage-completion-editor]"), {
+    search: searchStageCompletionSources,
+    onChange: (design, readiness) => {
+      const stage = selectedStage();
+      if (!stage) return;
+      const projected = window.BoiTaskCompletion?.projection(design) || {exit_criteria: [], required_evidence: []};
+      stage.completion_design = design;
+      stage.completion_readiness = readiness;
+      stage.exit_criteria = projected.exit_criteria;
+      stage.required_evidence = projected.required_evidence;
+      if (v2ArtifactId) v2ArtifactDirty = true;
+      scheduleAutosave();
+    },
+    onModeRequest: (mode) => {
+      const field = form.querySelector('[data-stage-field="execution_mode"]');
+      if (!field) return;
+      field.value = mode;
+      updateSelectedStageField(field);
+    },
+  });
+
   function eventAdapterPreviewTarget() {
-    return form.querySelector("[data-event-adapter-preview]");
+    return (formField("event_mode")?.value || "") === "schedule"
+      ? form.querySelector("[data-schedule-event-preview]")
+      : form.querySelector("[data-event-adapter-preview]");
   }
 
   function signalFieldPath(value) {
@@ -1966,8 +2161,16 @@
 
   function eventAdapterRequestFromPayload(payload) {
     const config = payload.event_source_config || {};
-    const occurrenceMode = payload.event_occurrence_mode || (payload.event_mode === "skip" ? "manual" : "");
-    const sourceKind = occurrenceMode === "manual" ? "manual" : payload.event_source_kind || selectedEventSourceKind();
+    const scheduled = payload.event_mode === "schedule";
+    const occurrenceMode = scheduled ? "immediate" : payload.event_occurrence_mode || (payload.event_mode === "skip" ? "manual" : "");
+    const sourceKind = scheduled ? "scheduler" : occurrenceMode === "manual" ? "manual" : payload.event_source_kind || selectedEventSourceKind();
+    const healthCheck = config.health_check && typeof config.health_check === "object" ? {...config.health_check} : {};
+    if (scheduled) {
+      healthCheck.schedule = payload.schedule_text || "";
+      healthCheck.schedule_config = payload.schedule_config && typeof payload.schedule_config === "object" ? payload.schedule_config : {};
+      healthCheck.cron = payload.cron || "";
+      healthCheck.timezone = healthCheck.schedule_config.timezone || "Asia/Seoul";
+    }
     return {
       source_kind: sourceKind,
       source_name: config.source_name || "",
@@ -1981,7 +2184,7 @@
       threshold_count: Number(payload.threshold_count || 1),
       auth_policy: config.auth_policy && typeof config.auth_policy === "object" ? config.auth_policy : {},
       sample_payload: config.sample_payload && typeof config.sample_payload === "object" ? config.sample_payload : {},
-      health_check: config.health_check && typeof config.health_check === "object" ? config.health_check : {},
+      health_check: healthCheck,
     };
   }
 
@@ -1992,14 +2195,19 @@
     const test = body?.test_status ? body : body?.draft?.test_result || {};
     const draft = body?.draft || {};
     target.hidden = false;
+    const definition = draft.business_event_definition && typeof draft.business_event_definition === "object"
+      ? draft.business_event_definition
+      : {};
     target.innerHTML = `
-      <strong>${escapeHtml(kind === "test" ? "샘플 확인 결과" : kind === "draft" ? "업무 이벤트 정의 초안" : "발생 기준 미리보기")}</strong>
+      <strong>${escapeHtml(kind === "test" ? "샘플 확인 결과" : kind === "draft" ? "업무 이벤트 정의 초안" : kind === "activate" ? "사용 상태" : "발생 기준 미리보기")}</strong>
       ${plan.source_kind ? `<p>${escapeHtml(plan.source_kind)} · ${escapeHtml(plan.source_name || "")} → ${escapeHtml(plan.target_event_type || "")}</p>` : ""}
       ${plan.business_event_definition ? `<p><span class="badge">${escapeHtml(plan.business_event_definition.occurrence_label || "업무 이벤트 정의")}</span> ${escapeHtml(plan.business_event_definition.name || "")}</p>` : ""}
       ${plan.webhook ? `<p><code>${escapeHtml(plan.webhook.endpoint_path || "")}</code></p>` : ""}
       ${plan.kafka ? `<p>${escapeHtml(plan.kafka.integration_guide || "")}</p>` : ""}
       ${test.test_status ? `<p><span class="badge">${escapeHtml(test.test_status)}</span> 실제 업무 이벤트는 발생시키지 않았습니다.</p>` : ""}
       ${draft.draft_id ? `<p><span class="badge">draft</span> ${escapeHtml(draft.draft_id)}</p>` : ""}
+      ${definition.definition_id && definition.status !== "active" ? `<button type="button" class="primary-button" data-event-definition-activate="${escapeHtml(definition.definition_id)}">검토 후 사용 시작</button>` : ""}
+      ${definition.status === "active" ? `<p><span class="badge">사용 중</span> 다음 확인: ${escapeHtml(definition.schedule_next_run_at || "연결된 신호가 들어올 때")}</p>` : ""}
       <details>
         <summary>세부정보</summary>
         <pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>
@@ -2049,6 +2257,12 @@
     }
   }
 
+  async function activateBusinessEventDefinition(definitionId) {
+    const body = await postJson(`/api/business-event-definitions/${encodeURIComponent(definitionId)}/activate?employee_id=${encodeURIComponent(employeeId)}`, {user_confirmed: true});
+    renderEventAdapterPreview("activate", {draft: {business_event_definition: body.definition}});
+    setResult("ok", "업무 이벤트를 사용하기 시작했습니다", body.definition.schedule_next_run_at ? `다음 확인 시각: ${body.definition.schedule_next_run_at}` : "연결된 신호가 들어오면 발생 기준을 확인합니다.");
+  }
+
   function autosaveState() {
     syncHiddenModels();
     return {
@@ -2067,6 +2281,84 @@
     };
   }
 
+  function v2TaskFromStage(stage) {
+    const verification = String(stage.verification_policy || "") === "evidence_required"
+      ? []
+      : splitList(stage.verification_policy || "");
+    return {
+      task_id: stage.stage_id,
+      name: stage.stage_name || "",
+      purpose: stage.stage_goal || "",
+      execution_mode: normalizeExecutionMode(stage.execution_mode),
+      completion_design: stage.completion_design || {version: 1, checks: [], evidence: []},
+      completion_readiness: stage.completion_readiness || {},
+      exit_criteria: Array.isArray(stage.exit_criteria) ? stage.exit_criteria : splitList(stage.exit_criteria || ""),
+      required_evidence: Array.isArray(stage.required_evidence) ? stage.required_evidence : splitList(stage.required_evidence || ""),
+      outputs: Array.isArray(stage.expected_outputs) ? stage.expected_outputs : splitList(stage.expected_outputs || ""),
+      action_refs: (Array.isArray(stage.actions) ? stage.actions : []).map((item) => item.action_key || item.ref || "").filter(Boolean),
+      event_refs: [stage.entry_event, stage.emits_event].filter(Boolean),
+      skill_refs: (Array.isArray(stage.skills) ? stage.skills : []).map((item) => item.skill_ref || item.ref || "").filter(Boolean),
+      tat: stage.tat_target || "",
+      verification,
+      fallback: splitList(stage.fallback_owner || ""),
+      decision_question: stage.decision_question || "",
+      knowledge_update_policy: stage.knowledge_update_policy || "",
+    };
+  }
+
+  function updateV2BuilderSaveState(message) {
+    const target = document.querySelector("[data-v2-builder-save-state]");
+    if (target) target.textContent = message;
+  }
+
+  async function pushV2ArtifactAutosave(options = {}) {
+    if (!v2ArtifactId) return;
+    if (!v2ArtifactDirty) return;
+    syncHiddenModels();
+    const tasks = workflowStages.map(v2TaskFromStage);
+    const currentIds = new Set(tasks.map((task) => task.task_id));
+    const taskUpdates = tasks
+      .filter((task) => v2ArtifactBaseTasks[task.task_id])
+      .map((task) => ({task_id: task.task_id, base_task: v2ArtifactBaseTasks[task.task_id], task}));
+    const taskAdditions = tasks.filter((task) => !v2ArtifactBaseTasks[task.task_id]);
+    const taskDeletions = Object.keys(v2ArtifactBaseTasks).filter((taskId) => !currentIds.has(taskId));
+    const payload = {
+      expected_revision: v2ArtifactRevision,
+      task_updates: taskUpdates,
+      task_additions: taskAdditions,
+      task_deletions: taskDeletions,
+      task_order: tasks.map((task) => task.task_id),
+      draft_fields: {
+        title: formField("title")?.value || "SOP 초안",
+        goal: formField("raw_request")?.value || "",
+      },
+      selected_task_id: selectedStageId || "",
+    };
+    updateV2BuilderSaveState("저장 중...");
+    if (options.keepalive) {
+      fetch(`/api/v2/artifacts/${encodeURIComponent(v2ArtifactId)}/sop`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+      return;
+    }
+    try {
+      const artifact = await postJson(`/api/v2/artifacts/${encodeURIComponent(v2ArtifactId)}/sop`, payload, "PATCH");
+      v2ArtifactRevision = Number(artifact.revision || v2ArtifactRevision + 1);
+      form.dataset.v2ArtifactRevision = String(v2ArtifactRevision);
+      v2ArtifactBaseTasks = Object.fromEntries((artifact.draft?.tasks || []).map((task) => [String(task.task_id || ""), JSON.parse(JSON.stringify(task))]));
+      v2ArtifactDirty = false;
+      updateV2BuilderSaveState(`자동 저장됨 · 버전 ${v2ArtifactRevision}`);
+      v2ArtifactChannel?.postMessage({artifactId: v2ArtifactId, revision: v2ArtifactRevision, source: "sop-builder"});
+    } catch (error) {
+      updateV2BuilderSaveState(`저장 확인 필요 · ${error.message || error}`);
+      throw error;
+    }
+  }
+
   function writeLocalAutosave() {
     try {
       localStorage.setItem(autosaveKey, JSON.stringify({...autosaveState(), saved_at: new Date().toISOString()}));
@@ -2076,6 +2368,10 @@
   }
 
   async function pushServerAutosave() {
+    if (v2ArtifactId) {
+      await pushV2ArtifactAutosave();
+      return;
+    }
     if (!form.dataset.draftSessionUrl) return;
     const state = autosaveState();
     const baseUrl = `${form.dataset.draftSessionUrl}?employee_id=${encodeURIComponent(employeeId)}`;
@@ -2094,13 +2390,14 @@
 
   function scheduleAutosave() {
     if (!isSopRegistration()) return;
+    if (v2ArtifactId) v2ArtifactDirty = true;
     writeLocalAutosave();
     if (autosaveTimer) clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
       void pushServerAutosave().catch(() => {
         // Autosave must not block editing. Readiness/diagnostics can surface failures later.
       });
-    }, 2000);
+    }, v2ArtifactId ? 500 : 2000);
   }
 
   function savedAutosaveState() {
@@ -2112,15 +2409,19 @@
     }
   }
 
+  function autosaveStateHasPayload(saved) {
+    return Boolean(saved?.payload && Object.values(saved.payload).some((value) => {
+      if (Array.isArray(value)) return value.length > 0;
+      if (value && typeof value === "object") return Object.keys(value).length > 0;
+      return Boolean(String(value || "").trim());
+    }));
+  }
+
   function showAutosaveBannerIfNeeded() {
     const banner = form.querySelector("[data-autosave-banner]");
     if (!banner) return;
     const saved = savedAutosaveState();
-    const hasPayload = saved?.payload && Object.values(saved.payload).some((value) => {
-      if (Array.isArray(value)) return value.length > 0;
-      if (value && typeof value === "object") return Object.keys(value).length > 0;
-      return Boolean(String(value || "").trim());
-    });
+    const hasPayload = autosaveStateHasPayload(saved);
     banner.hidden = !hasPayload;
     const message = banner.querySelector("[data-autosave-message]");
     if (message && saved?.saved_at) message.textContent = `${new Date(saved.saved_at).toLocaleString()} 저장 상태를 이어서 작성할 수 있습니다.`;
@@ -2299,6 +2600,14 @@
       void handleEventAdapterAction(eventAdapterButton.dataset.eventAdapterAction || "plan");
       return;
     }
+    const eventDefinitionActivate = event.target.closest("[data-event-definition-activate]");
+    if (eventDefinitionActivate) {
+      eventDefinitionActivate.disabled = true;
+      void activateBusinessEventDefinition(eventDefinitionActivate.dataset.eventDefinitionActivate || "")
+        .catch((error) => setResult("error", "사용을 시작하지 못했습니다", error.message || String(error)))
+        .finally(() => { eventDefinitionActivate.disabled = false; });
+      return;
+    }
     const artifactUploadButton = event.target.closest("[data-artifact-upload]");
     if (artifactUploadButton) {
       void uploadDataLakeArtifact(artifactUploadButton);
@@ -2324,6 +2633,16 @@
       }
       if (action === "delete") {
         void discardAutosaveState().then(() => setResult("ok", "자동저장 초안을 삭제했습니다", "현재 화면에서 새로 작성할 수 있습니다."));
+      }
+      return;
+    }
+    const mermaidDraftButton = event.target.closest("[data-mermaid-draft-action]");
+    if (mermaidDraftButton) {
+      const action = mermaidDraftButton.dataset.mermaidDraftAction || "";
+      if (action === "apply") applyMermaidDraftSeed({force: true, autosave: true});
+      if (action === "dismiss") {
+        mermaidDraftSeedDismissed = true;
+        updateMermaidDraftBanner();
       }
       return;
     }
@@ -2554,6 +2873,7 @@
 
   form.addEventListener("input", (event) => {
     if (event.target.closest("[data-schedule-field]") || event.target.closest("[data-schedule-weekday]")) {
+      clearEventAdapterPlan();
       updateScheduleBuilder();
       scheduleAutosave();
       return;
@@ -2658,6 +2978,11 @@
       scheduleAutosave();
       return;
     }
+    if ((event.target.name || "").startsWith("event_source_config.")) {
+      clearEventAdapterPlan();
+      scheduleAutosave();
+      return;
+    }
     if (event.target.name) scheduleAutosave();
   });
 
@@ -2678,6 +3003,51 @@
     });
   });
 
+  if (v2ArtifactId) {
+    window.addEventListener("pagehide", () => {
+      if (autosaveTimer) clearTimeout(autosaveTimer);
+      if (v2ArtifactDirty) void pushV2ArtifactAutosave({keepalive: true});
+    });
+    v2ArtifactChannel?.addEventListener("message", async (event) => {
+      if (event.data?.artifactId !== v2ArtifactId || event.data?.source === "sop-builder") return;
+      if (Number(event.data?.revision || 0) <= v2ArtifactRevision) return;
+      try {
+        const response = await fetch(`/api/v2/artifacts/${encodeURIComponent(v2ArtifactId)}`, {credentials: "same-origin"});
+        if (!response.ok) return;
+        const artifact = await response.json();
+        const previousSelection = selectedStageId;
+        workflowStages = (artifact.draft?.tasks || []).map((task) => makeStage({
+          stage_id: task.task_id,
+          stage_name: task.name,
+          stage_goal: task.purpose,
+          completion_design: task.completion_design,
+          completion_readiness: task.completion_readiness,
+          exit_criteria: task.exit_criteria,
+          decision_question: task.decision_question,
+          required_evidence: task.required_evidence,
+          expected_outputs: task.outputs,
+          execution_mode: task.execution_mode,
+          actions: (task.action_refs || []).map((value) => ({action_key: value, label: value})),
+          skills: (task.skill_refs || []).map((value) => ({skill_ref: value, display_label: value})),
+          tat_target: task.tat,
+          verification_policy: (task.verification || []).join(", "),
+          fallback_owner: (task.fallback || []).join(", "),
+          source: "agent_v2_artifact",
+        }));
+        selectedStageId = workflowStages.some((stage) => stage.stage_id === previousSelection) ? previousSelection : (workflowStages[0]?.stage_id || "");
+        v2ArtifactRevision = Number(artifact.revision || v2ArtifactRevision);
+        v2ArtifactBaseTasks = Object.fromEntries((artifact.draft?.tasks || []).map((task) => [String(task.task_id || ""), JSON.parse(JSON.stringify(task))]));
+        v2ArtifactDirty = false;
+        renderWorkflowStages();
+        updateV2BuilderSaveState(`다른 화면의 변경 반영됨 · 버전 ${v2ArtifactRevision}`);
+      } catch (_error) {
+        updateV2BuilderSaveState("다른 화면의 변경을 확인하려면 새로고침해주세요.");
+      }
+    });
+  }
+
+  const savedOnLoad = v2ArtifactId ? {} : savedAutosaveState();
+  const hasSavedAutosaveOnLoad = autosaveStateHasPayload(savedOnLoad);
   setFlowStage(currentStep);
   ["event_mode", "sop_mode", "action_mode"].forEach((name) => {
     const field = formField(name);
@@ -2685,6 +3055,7 @@
   });
   setConnectorKind(selectedConnectorKind() || "manual");
   renderWorkflowStages();
+  const appliedMermaidDraftOnLoad = initializeMermaidDraftSeed(hasSavedAutosaveOnLoad);
   updateScheduleBuilder();
   updateEventModePanels();
   updateRecommendationControls();
@@ -2692,4 +3063,9 @@
   renderArtifactResults();
   ["linked_sop_ref", "linked_workflow_definition_key", "linked_event_types", "linked_action_keys", "skill_ref"].forEach(updateSelectedLink);
   showAutosaveBannerIfNeeded();
+  if (appliedMermaidDraftOnLoad) {
+    const banner = form.querySelector("[data-autosave-banner]");
+    if (banner) banner.hidden = true;
+  }
+  updateMermaidDraftBanner();
 })();

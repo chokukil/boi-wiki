@@ -8,7 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 function parseArgs(argv) {
   const args = {
-    url: "http://localhost:28000/agents/builder?employee_id=100001",
+    url: "http://127.0.0.1:8765/helpers/new?employee_id=100001",
     timeoutMs: 90000,
     screenshot: "",
     strict: false,
@@ -213,55 +213,86 @@ async function main() {
     });
 
     await cdp.send("Page.navigate", { url: args.url });
-    await waitUntil(cdp, "document.readyState === 'complete' && !!document.querySelector('[data-agent-builder-form]')", args.timeoutMs);
+    await waitUntil(
+      cdp,
+      "document.readyState === 'complete' && !!document.querySelector('[data-helper-builder-v2]') && !document.querySelector('[data-helper-preview-form] button').disabled",
+      args.timeoutMs,
+    );
+    const initialDraftId = await cdp.evaluate("new URL(location.href).searchParams.get('draft') || ''");
     await cdp.evaluate(`
       (() => {
-        const form = document.querySelector('[data-agent-builder-form]');
-        form.querySelector('[name="title"]').value = 'UI Smoke Evidence Agent ' + Date.now();
-        form.querySelector('[name="prompt"]').value = 'Trend, Raw Data, Sandbox artifact를 검증하고 보고서 근거로 쓸 수 있게 정리해줘.';
-        form.querySelector('[name="mcp_servers"]').value = 'boi-wiki-local';
-        form.querySelector('[name="skills"]').value = 'data-analytics:validate-data';
+        const originalFetch = window.fetch.bind(window);
+        window.__helperPreviewResponse = null;
+        window.fetch = async (...args) => {
+          const response = await originalFetch(...args);
+          const url = String(args[0] || '');
+          if (url.includes('/preview-turns')) {
+            response.clone().json().then((payload) => { window.__helperPreviewResponse = payload; }).catch(() => {});
+          }
+          return response;
+        };
+        document.querySelector('[data-template-id="sop"]').click();
+        return true;
+      })()
+    `);
+    await waitUntil(
+      cdp,
+      `(() => {
+        const id = new URL(location.href).searchParams.get('draft') || '';
+        const name = document.querySelector('[data-helper-builder-form] [name="name"]')?.value || '';
+        return id && id !== ${JSON.stringify("__INITIAL__")} && name.includes('SOP');
+      })()`.replace(JSON.stringify("__INITIAL__"), JSON.stringify(initialDraftId)),
+      args.timeoutMs,
+    );
+    const activeDraftId = await cdp.evaluate("new URL(location.href).searchParams.get('draft') || ''");
+    await cdp.evaluate(`
+      (() => {
+        const form = document.querySelector('[data-helper-builder-form]');
+        const instructions = form.elements.instructions;
+        instructions.value = '현재 업무 맥락과 검토된 BoI 지식을 먼저 확인하고, SOP를 Task와 완료된 모습, 확인할 자료로 구체화해줘.';
+        instructions.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: instructions.value }));
+        return true;
+      })()
+    `);
+    await waitUntil(cdp, "document.querySelector('[data-helper-save-state]')?.textContent.includes('자동 저장됨')", args.timeoutMs);
+    await cdp.evaluate(`
+      (() => {
+        const form = document.querySelector('[data-helper-preview-form]');
+        form.elements.question.value = '직개발 결과 확인 및 Reporting SOP를 참고해 Task 3개짜리 private SOP 초안을 만들어줘.';
         form.requestSubmit();
         return true;
       })()
     `);
-    await waitUntil(cdp, "document.querySelector('[data-agent-builder-status]')?.textContent.includes('초안 생성 완료')", args.timeoutMs);
-    await cdp.evaluate("document.querySelector('[data-agent-builder-test]').click()");
-    await waitUntil(cdp, "document.querySelector('[data-agent-builder-status]')?.textContent.includes('테스트 완료')", args.timeoutMs);
-    await cdp.evaluate(`
-      (() => {
-        window.confirm = () => true;
-        const form = document.querySelector('[data-agent-builder-sandbox-form]');
-        form.querySelector('[name="title"]').value = 'UI Smoke Sandbox Evidence ' + Date.now();
-        form.querySelector('[name="task"]').value = 'Agent Builder UI smoke에서 CSV와 Markdown artifact를 생성해 검증한다.';
-        form.requestSubmit();
-        return true;
-      })()
-    `);
-    await waitUntil(cdp, "document.querySelector('[data-agent-sandbox-status]')?.textContent.includes('Sandbox 완료')", args.timeoutMs);
+    await waitUntil(
+      cdp,
+      "document.querySelector('[data-helper-preview-status]')?.textContent.includes('시험 완료') && !!window.__helperPreviewResponse",
+      args.timeoutMs,
+    );
 
     const snapshot = await cdp.evaluate(`
       (() => {
         const text = document.body.innerText;
+        const layout = document.querySelector('.helper-gems-layout');
+        const preview = window.__helperPreviewResponse || {};
         return {
           readyState: document.readyState,
           url: location.href,
           title: document.title,
-          hasBuilder: !!document.querySelector('[data-agent-builder]'),
-          hasForm: !!document.querySelector('[data-agent-builder-form]'),
-          hasSandboxForm: !!document.querySelector('[data-agent-builder-sandbox-form]'),
-          status: document.querySelector('[data-agent-builder-status]')?.textContent || '',
-          sandboxStatus: document.querySelector('[data-agent-sandbox-status]')?.textContent || '',
-          resultCardCount: document.querySelectorAll('.agent-builder-result-card').length,
-          resultText: document.querySelector('[data-agent-builder-result]')?.innerText || '',
-          hasDraft: text.includes('Agent 초안'),
-          hasTest: text.includes('바로 테스트 결과'),
-          hasSandbox: text.includes('Sandbox 검증 결과'),
-          hasAgentsSdk: text.includes('agents_sdk'),
-          hasGpt55: text.includes('gpt-5.5'),
-          hasSandboxArtifact: text.includes('agent_builder_summary.md') || text.includes('agent_builder_result.csv'),
-          publishEnabled: !document.querySelector('[data-agent-builder-publish]')?.disabled,
-          testEnabled: !document.querySelector('[data-agent-builder-test]')?.disabled,
+          hasBuilder: !!document.querySelector('[data-helper-builder-v2]'),
+          activeNav: document.querySelector('[data-subnav-id="agent_builder"]')?.textContent.trim() || '',
+          heading: document.querySelector('.helper-builder-v2-header h2')?.textContent.trim() || '',
+          templateCount: document.querySelectorAll('[data-template-id]').length,
+          gridColumns: getComputedStyle(layout).gridTemplateColumns,
+          saveState: document.querySelector('[data-helper-save-state]')?.textContent || '',
+          previewStatus: document.querySelector('[data-helper-preview-status]')?.textContent || '',
+          previewMessageCount: document.querySelectorAll('[data-helper-preview-messages] article').length,
+          previewCapability: preview.capability_id || '',
+          previewGrounding: preview.grounding_status || '',
+          previewArtifactType: preview.artifact_refs?.[0]?.artifact_type || '',
+          previewSessionId: preview.work_session_id || '',
+          advancedClosed: !document.querySelector('.helper-builder-advanced')?.open,
+          technicalTermsVisible: /pgvector|DeepAgents|LangGraph|raw payload|context manifest/.test(text),
+          horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
         };
       })()
     `);
@@ -269,14 +300,15 @@ async function main() {
     if (args.screenshot) await cdp.screenshot(args.screenshot);
     const checks = {
       page_loaded: snapshot.readyState === "complete" && snapshot.hasBuilder,
-      builder_form_present: snapshot.hasForm,
-      sandbox_form_present: snapshot.hasSandboxForm,
-      draft_created: snapshot.hasDraft && snapshot.resultText.includes("agent-draft-"),
-      agents_sdk_test_completed: snapshot.hasTest && /테스트 완료/.test(snapshot.status) && snapshot.hasAgentsSdk && snapshot.hasGpt55,
-      sandbox_completed: snapshot.hasSandbox && /Sandbox 완료/.test(snapshot.sandboxStatus),
-      sandbox_artifacts_visible: snapshot.hasSandboxArtifact,
-      publish_available_after_draft: snapshot.publishEnabled,
-      test_available_after_draft: snapshot.testEnabled,
+      boi_agent_branding: snapshot.title.includes("나만의 BoI Agent") && snapshot.activeNav === "BoI Agent 만들기",
+      simple_templates_present: snapshot.templateCount === 3,
+      two_column_builder: snapshot.gridColumns.trim().split(/\s+/).length === 2,
+      autosave_completed: snapshot.saveState.includes("자동 저장됨"),
+      real_preview_completed: snapshot.previewStatus.includes("시험 완료") && snapshot.previewMessageCount >= 2,
+      preview_uses_agent_contract: !!snapshot.previewCapability && snapshot.previewGrounding === "grounded",
+      preview_returns_editable_artifact: snapshot.previewArtifactType === "sop_draft" && !!snapshot.previewSessionId,
+      advanced_settings_are_progressive: snapshot.advancedClosed && !snapshot.technicalTermsVisible,
+      no_horizontal_overflow: !snapshot.horizontalOverflow,
       console_clean: relevantConsoleErrors(consoleErrors).length === 0,
     };
     const report = {
@@ -291,6 +323,15 @@ async function main() {
     };
     console.log(JSON.stringify(report, null, 2));
     if (args.strict && !report.ok) process.exitCode = 1;
+    await cdp.evaluate(`
+      (async () => {
+        const ids = ${JSON.stringify([initialDraftId, activeDraftId])};
+        const sessionId = window.__helperPreviewResponse?.work_session_id || '';
+        if (sessionId) await fetch('/api/v2/work-sessions/' + encodeURIComponent(sessionId), { method: 'DELETE' });
+        for (const id of ids) if (id) await fetch('/api/v2/helper-drafts/' + encodeURIComponent(id), { method: 'DELETE' });
+        return true;
+      })()
+    `);
   } finally {
     cdp?.close();
     await terminateChrome(child);

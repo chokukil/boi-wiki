@@ -127,8 +127,6 @@ example_response:
   result:
     message: 'SIMULATED: 실제 Map 분석 시스템 호출이 아니라 BoI Universal Action Simulator Flow가
       생성한 PoC 결과입니다.'
-curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"direct_development.map_view.simulate","employee_id":"100001","event":{"event_type":"direct_development.map_view.requested.v1","trace_id":"trace-direct-development-demo"},"payload":{"tech":"Tech-A","work_id":"1.10","owner":"100001"}}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: direct_development.map_view.simulate

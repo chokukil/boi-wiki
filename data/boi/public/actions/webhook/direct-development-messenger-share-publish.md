@@ -124,8 +124,6 @@ example_response:
   simulation_label: SIMULATED
   result:
     message: 'SIMULATED: 실제 메신저 발송은 수행하지 않고 approval_required 상태만 기록합니다.'
-curl: 'curl -X POST ''http://localhost:8100/api/actions/invoke'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"action_key":"direct_development.messenger_share.publish","employee_id":"100001","event":{"event_type":"direct_development.share.requested.v1","trace_id":"trace-direct-development-demo"},"payload":{"tech":"Tech-A","work_id":"1.10","owner":"100001"}}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: direct_development.messenger_share.publish

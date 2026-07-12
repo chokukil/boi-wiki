@@ -53,12 +53,24 @@
 {% if not shell.hide_pet_agent %}
 <div
   id="boi-agent-root"
+  class="agent-surface-host"
+  data-agent-v2-workspace
+  data-surface-kind="pet"
+  data-page-ref="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
   data-employee-id="{{ shell.employee_id }}"
   data-current-url="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
   data-page-title="{{ shell.title }}"
-></div>
+>
+  {% include "_agent_surface_v2.html" %}
+</div>
 {% endif %}
 <script src="{{ asset_url('mermaid_render.js') }}" defer></script>
+<script src="{{ asset_url('mermaid_collaboration_v2.js') }}" defer></script>
 {% if not shell.hide_pet_agent %}
+{% if shell.agent_v2_default %}
+<script src="{{ asset_url('task_completion_editor.js') }}" defer></script>
+<script src="{{ asset_url('agent_workspace_v2.js') }}" defer></script>
+{% else %}
 <script src="{{ asset_url('pet_agent.js') }}" defer></script>
+{% endif %}
 {% endif %}

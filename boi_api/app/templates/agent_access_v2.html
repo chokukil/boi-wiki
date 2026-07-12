@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>외부 도구 연결 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('agent_access_v2.js') }}" defer></script>
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main class="agent-access-v2" data-agent-access-v2>
+    <header>
+      <p class="eyebrow">외부에서 BoI Agent 사용</p>
+      <h2>내 BoI Wiki 권한으로 Codex·Claude·API를 연결합니다.</h2>
+      <p>개인 연결 키는 내 권한을 넘지 않으며 언제든 폐기할 수 있습니다.</p>
+    </header>
+
+    <nav class="agent-access-tabs" aria-label="외부 연결 방식">
+      <button type="button" class="active" data-access-tab="clients">Codex·Claude</button>
+      <button type="button" data-access-tab="mcp">MCP</button>
+      <button type="button" data-access-tab="api">REST API</button>
+    </nav>
+
+    <section class="agent-access-layout">
+      <div class="agent-access-main">
+        <form data-agent-token-form>
+          <div>
+            <h3>새 연결 키</h3>
+            <p>키는 만든 직후 한 번만 표시됩니다.</p>
+          </div>
+          <label>연결 이름<input name="name" value="내 업무 도구" maxlength="80" required /></label>
+          <label>유효 기간
+            <select name="expires_in_days">
+              <option value="30" selected>30일</option>
+              <option value="60">60일</option>
+              <option value="90">90일</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>허용 범위</legend>
+            <label><input type="checkbox" name="scopes" value="boi.read" checked disabled /> 자료 찾기와 현재 업무 보기</label>
+            <label><input type="checkbox" name="scopes" value="boi.draft" checked /> private 초안 만들기</label>
+            <label><input type="checkbox" name="scopes" value="boi.execute.low" /> 허용된 저위험 실행 요청</label>
+          </fieldset>
+          <button type="submit" class="primary-button">연결 키 만들기</button>
+        </form>
+
+        <section class="agent-token-result" data-agent-token-result hidden>
+          <header><strong>지금 안전한 곳에 등록하세요.</strong><span>다시 표시되지 않습니다</span></header>
+          <div><code data-agent-token-value></code><button type="button" data-agent-token-copy>복사</button></div>
+        </section>
+
+        <section class="agent-token-list">
+          <header><h3>내 연결</h3><button type="button" data-agent-token-refresh aria-label="새로고침" title="새로고침">↻</button></header>
+          <div data-agent-token-list></div>
+        </section>
+      </div>
+
+      <aside class="agent-access-guide" data-access-panel="clients">
+        <h3>Codex 또는 Claude에서 사용</h3>
+        <ol>
+          <li>위에서 연결 키를 만듭니다.</li>
+          <li>키를 <code>BOI_PAT</code> 환경 변수나 안전한 secret 저장소에 등록합니다.</li>
+          <li>Agent Kit를 설치하고 먼저 <code>boi_bootstrap</code>을 호출합니다.</li>
+        </ol>
+        <pre>scripts/install_boi_agent_kit.sh --client codex
+
+MCP URL: {{ mcp_url }}
+Header: Authorization: Bearer $BOI_PAT</pre>
+        <p>키를 프로젝트 파일이나 대화 내용에 직접 넣지 마세요.</p>
+      </aside>
+      <aside class="agent-access-guide" data-access-panel="mcp" hidden>
+        <h3>MCP v2 연결</h3>
+        <p>신규 client는 핵심 도구 10개를 제공하는 Streamable HTTP endpoint를 사용합니다.</p>
+        <pre>URL: {{ mcp_url }}
+Authorization: Bearer $BOI_PAT</pre>
+        <p><a class="button secondary" href="/advanced/mcp?employee_id={{ employee_id }}">MCP 상태와 도구 보기</a></p>
+      </aside>
+      <aside class="agent-access-guide" data-access-panel="api" hidden>
+        <h3>REST API 연결</h3>
+        <p>PAT identity와 ACL을 사용하는 v2 reference를 기준으로 연동합니다.</p>
+        <pre>Base URL: {{ boi_base_url }}
+Header: Authorization: Bearer $BOI_PAT
+OpenAPI: {{ boi_base_url }}/openapi-v2.json</pre>
+        <p><a class="button secondary" href="/api/reference">API Reference 열기</a></p>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

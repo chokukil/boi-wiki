@@ -12,15 +12,19 @@ function parseArgs(argv) {
     timeoutMs: 30000,
     screenshot: "",
     strict: false,
+    width: 1280,
+    height: 900,
   };
   for (let index = 2; index < argv.length; index += 1) {
     const item = argv[index];
     if (item === "--url") args.url = argv[++index] || args.url;
     else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
     else if (item === "--screenshot") args.screenshot = argv[++index] || "";
+    else if (item === "--width") args.width = Number(argv[++index] || args.width);
+    else if (item === "--height") args.height = Number(argv[++index] || args.height);
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log("Usage: node scripts/check_boi_inbox_ui.mjs [--url URL] [--timeout-ms MS] [--screenshot FILE] [--strict]");
+      console.log("Usage: node scripts/check_boi_inbox_ui.mjs [--url URL] [--timeout-ms MS] [--screenshot FILE] [--width PX] [--height PX] [--strict]");
       process.exit(0);
     }
   }
@@ -181,22 +185,60 @@ async function terminateChrome(child) {
   }
 }
 
+async function removeProfileDir(profileDir) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(profileDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!["EBUSY", "ENOTEMPTY", "EPERM"].includes(error?.code) || attempt === 9) {
+        console.error(`warning: could not remove temporary Chrome profile ${profileDir}: ${error.message}`);
+        return;
+      }
+      await sleep(250 * (attempt + 1));
+    }
+  }
+}
+
 function checkReport(snapshot, consoleErrors, apiManifest) {
   const expectedNav = ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"];
-  const expectedSubnav = ["BoI Operations Center", "받은 보고서", "승인/조치", "처리 이력"];
+  const expectedSubnav = ["받은 보고서", "승인/조치", "처리 이력"];
+  const expectedSubnavWithOps = ["BoI Operations Center", ...expectedSubnav];
   const checks = {
     page_loaded: snapshot.readyState === "complete" && snapshot.hasInboxPage,
     primary_nav_order: JSON.stringify(snapshot.primaryNavLabels) === JSON.stringify(expectedNav),
     boi_inbox_active: snapshot.activeNavLabel === "BoI Inbox" && ["inbox", "boi_inbox"].includes(snapshot.activeNavId),
-    subnav_order: JSON.stringify(snapshot.subnavLabels) === JSON.stringify(expectedSubnav),
+    subnav_order: [expectedSubnav, expectedSubnavWithOps]
+      .some((labels) => JSON.stringify(snapshot.subnavLabels) === JSON.stringify(labels)),
     section_intro_matches: snapshot.introTitle === "받은 보고서" && /검증된 보고서 BoI/.test(snapshot.introDescription || ""),
     no_header_actions: !snapshot.hasPagePrimaryActions && !snapshot.hasUtilityNav,
     summary_cards_present: snapshot.summaryCardCount >= 3,
     inbox_content_present: snapshot.inboxCardCount > 0 || snapshot.emptyStatePresent,
     report_state_visible: snapshot.reportLinkCount > 0 || snapshot.reportPendingCount > 0 || snapshot.emptyStatePresent,
+    report_cta_button_style: snapshot.reportLinkCount === 0
+      || (["flex", "inline-flex"].includes(snapshot.reportButtonStyle?.display)
+        && snapshot.reportButtonStyle?.textDecoration === "none"
+        && snapshot.reportButtonStyle?.height >= 34
+        && snapshot.reportButtonStyle?.background === "rgb(17, 24, 39)"),
     no_group_report_cta: !snapshot.groupReportCtaVisible,
+    no_generic_workflow_actions: snapshot.genericWorkflowActionCount === 0,
     no_internal_terms_visible: snapshot.forbiddenVisibleTerms.length === 0,
+    no_horizontal_overflow: snapshot.horizontalOverflowPx <= 1,
     agent_has_no_inbox_tab: snapshot.agentPanelOpen && !snapshot.agentHasInboxTab && !snapshot.agentHasLegacyInboxText,
+    primary_nav_clicks_work: snapshot.primaryNavClickProof?.sopLoaded === true
+      && snapshot.primaryNavClickProof?.inboxLoaded === true
+      && snapshot.primaryNavClickProof?.maxElapsedMs < 5000,
+    lazy_workflow_loads: snapshot.lazyWorkflowProof?.available !== true
+      || (snapshot.lazyWorkflowProof?.firstPreloaded === true
+        && snapshot.lazyWorkflowProof?.belowFoldDeferred === true
+        && snapshot.lazyWorkflowProof?.autoRendered === true
+        && snapshot.lazyWorkflowProof?.collapsePersisted === true
+        && snapshot.lazyWorkflowProof?.manualReopened === true),
+    workflow_batch_limits: snapshot.lazyWorkflowProof?.available !== true
+      || (snapshot.workflowBatchProof?.requestCount > 0
+        && snapshot.workflowBatchProof?.maxBatchSize <= 4
+        && snapshot.workflowBatchProof?.maxConcurrent <= 1
+        && snapshot.workflowBatchProof?.legacyRequestCount === 0),
     decisions_subnav_works: snapshot.decisionsTitle === "승인/조치",
     history_subnav_works: snapshot.historyTitle === "처리 이력",
     api_manifest_background: apiManifest?.ok === true && apiManifest?.canonical === true && apiManifest?.context_mode === "background",
@@ -285,6 +327,10 @@ async function main() {
 
   let cdp;
   const consoleErrors = [];
+  const activeWorkflowBatchRequests = new Set();
+  const workflowBatchSizes = [];
+  let workflowBatchMaxConcurrent = 0;
+  let legacyWorkflowRequestCount = 0;
   try {
     await waitForJson(`http://127.0.0.1:${port}/json/version`, 10000);
     const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`, 5000);
@@ -295,6 +341,15 @@ async function main() {
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
     await cdp.send("Log.enable");
+    await cdp.send("Network.enable");
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: Math.max(320, args.width),
+      height: Math.max(480, args.height),
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: Math.max(320, args.width),
+      screenHeight: Math.max(480, args.height),
+    });
     cdp.on("Runtime.exceptionThrown", (params) => {
       consoleErrors.push(params.exceptionDetails?.exception?.description || params.exceptionDetails?.text || "Runtime exception");
     });
@@ -302,20 +357,115 @@ async function main() {
       const entry = params.entry || {};
       if (entry.level === "error") consoleErrors.push(entry.text || "console error");
     });
+    cdp.on("Network.requestWillBeSent", (params) => {
+      const url = params.request?.url || "";
+      if (/\/api\/inbox\/workflow-canvases(?:\?|$)/.test(url)) {
+        let size = 0;
+        try { size = JSON.parse(params.request?.postData || "{}").task_refs?.length || 0; } catch (_error) { size = 0; }
+        workflowBatchSizes.push(size);
+        activeWorkflowBatchRequests.add(params.requestId);
+        workflowBatchMaxConcurrent = Math.max(workflowBatchMaxConcurrent, activeWorkflowBatchRequests.size);
+      } else if (/\/api\/inbox\/workflow-canvas(?:\?|$)/.test(url)) {
+        legacyWorkflowRequestCount += 1;
+      }
+    });
+    const finishWorkflowRequest = (params) => activeWorkflowBatchRequests.delete(params.requestId);
+    cdp.on("Network.loadingFinished", finishWorkflowRequest);
+    cdp.on("Network.loadingFailed", finishWorkflowRequest);
 
     const loaded = cdp.once("Page.loadEventFired");
     await cdp.send("Page.navigate", { url: args.url });
     await loaded;
     await waitUntil(cdp, `document.readyState === "complete" && !!document.querySelector(${JSON.stringify(pageSelector)})`, args.timeoutMs);
 
+    let primaryNavClickProof = { sopLoaded: false, inboxLoaded: false, maxElapsedMs: 0 };
     if (!isOps) {
-      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
-      await cdp.evaluate(`(() => {
-        const panel = document.querySelector("#boi-agent-root .boi-agent-panel.open");
-        if (!panel) document.querySelector("#boi-agent-root .boi-agent-launcher")?.click();
+      const sopStartedAt = Date.now();
+      const sopLoaded = cdp.once("Page.loadEventFired");
+      const sopClicked = await cdp.evaluate(`(() => {
+        const link = document.querySelector('.primary-nav .global-nav-link[data-nav-id="sops"]');
+        if (!link) return false;
+        link.click();
         return true;
       })()`);
-      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
+      if (sopClicked) {
+        await sopLoaded;
+        await waitUntil(cdp, `location.pathname === "/sops" && document.readyState === "complete"`, args.timeoutMs);
+        primaryNavClickProof.sopLoaded = true;
+      }
+      const sopElapsedMs = Date.now() - sopStartedAt;
+
+      const inboxStartedAt = Date.now();
+      const inboxLoaded = cdp.once("Page.loadEventFired");
+      const inboxClicked = await cdp.evaluate(`(() => {
+        const link = document.querySelector('.primary-nav .global-nav-link[data-nav-id="inbox"]');
+        if (!link) return false;
+        link.click();
+        return true;
+      })()`);
+      if (inboxClicked) {
+        await inboxLoaded;
+        await waitUntil(cdp, `location.pathname === "/inbox" && document.readyState === "complete"`, args.timeoutMs);
+        primaryNavClickProof.inboxLoaded = true;
+      }
+      const inboxElapsedMs = Date.now() - inboxStartedAt;
+      primaryNavClickProof.maxElapsedMs = Math.max(sopElapsedMs, inboxElapsedMs);
+    }
+
+    let lazyWorkflowProof = {
+      available: false,
+      firstPreloaded: false,
+      belowFoldDeferred: false,
+      autoRendered: false,
+      collapsePersisted: false,
+      manualReopened: false,
+      initialRenderedCount: 0,
+      panelCount: 0,
+    };
+    if (!isOps) {
+      lazyWorkflowProof.available = await cdp.evaluate(`!!document.querySelector("[data-inbox-workflow-load]")`);
+      if (lazyWorkflowProof.available) {
+        await waitUntil(cdp, `!!document.querySelector('[data-workflow-preloaded="true"] [data-inbox-workflow-result]:not([hidden]) .inbox-workflow-canvas')`, args.timeoutMs);
+        const progressiveInitial = await cdp.evaluate(`(() => {
+          const panels = Array.from(document.querySelectorAll("[data-inbox-workflow-lazy]"));
+          const first = panels[0];
+          const candidate = panels[panels.length - 1];
+          return {
+            firstPreloaded: first?.dataset.workflowPreloaded === "true" && first.querySelector("[data-inbox-workflow-load]")?.dataset.loaded === "true",
+            belowFoldDeferred: panels.length < 2 || candidate?.querySelector("[data-inbox-workflow-load]")?.dataset.loaded !== "true",
+            initialRenderedCount: panels.filter((panel) => panel.querySelector("[data-inbox-workflow-load]")?.dataset.loaded === "true").length,
+            panelCount: panels.length,
+          };
+        })()`);
+        Object.assign(lazyWorkflowProof, progressiveInitial || {});
+        if (lazyWorkflowProof.panelCount > 1) {
+          await cdp.evaluate(`document.querySelectorAll("[data-inbox-workflow-lazy]")[document.querySelectorAll("[data-inbox-workflow-lazy]").length - 1]?.scrollIntoView({block:"center"})`);
+          await waitUntil(cdp, `(() => { const panels=document.querySelectorAll("[data-inbox-workflow-lazy]"); const panel=panels[panels.length-1]; return panel?.querySelector("[data-inbox-workflow-load]")?.dataset.loaded === "true" && !!panel.querySelector("[data-inbox-workflow-result]:not([hidden]) .inbox-workflow-canvas"); })()`, args.timeoutMs);
+          lazyWorkflowProof.autoRendered = true;
+          await cdp.evaluate(`(() => { const panels=document.querySelectorAll("[data-inbox-workflow-lazy]"); panels[panels.length-1]?.querySelector("[data-inbox-workflow-load]")?.click(); return true; })()`);
+          await cdp.evaluate(`window.scrollTo({top:0,behavior:"instant"})`);
+          await sleep(200);
+          await cdp.evaluate(`document.querySelectorAll("[data-inbox-workflow-lazy]")[document.querySelectorAll("[data-inbox-workflow-lazy]").length - 1]?.scrollIntoView({block:"center"})`);
+          await sleep(300);
+          lazyWorkflowProof.collapsePersisted = await cdp.evaluate(`(() => { const panels=document.querySelectorAll("[data-inbox-workflow-lazy]"); const panel=panels[panels.length-1]; return panel?.dataset.userCollapsed === "true" && panel.querySelector("[data-inbox-workflow-result]")?.hidden === true; })()`);
+          await cdp.evaluate(`(() => { const panels=document.querySelectorAll("[data-inbox-workflow-lazy]"); panels[panels.length-1]?.querySelector("[data-inbox-workflow-load]")?.click(); return true; })()`);
+          lazyWorkflowProof.manualReopened = await cdp.evaluate(`(() => { const panels=document.querySelectorAll("[data-inbox-workflow-lazy]"); const panel=panels[panels.length-1]; return panel?.dataset.userCollapsed !== "true" && panel.querySelector("[data-inbox-workflow-result]")?.hidden === false; })()`);
+        } else {
+          lazyWorkflowProof.autoRendered = true;
+          lazyWorkflowProof.collapsePersisted = true;
+          lazyWorkflowProof.manualReopened = true;
+        }
+      }
+    }
+
+    if (!isOps) {
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .agent-surface-launcher, #boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
+      await cdp.evaluate(`(() => {
+        const panel = document.querySelector("#boi-agent-root [data-agent-v2-surface]:not([hidden]), #boi-agent-root .boi-agent-panel.open");
+        if (!panel) document.querySelector("#boi-agent-root .agent-surface-launcher, #boi-agent-root .boi-agent-launcher")?.click();
+        return true;
+      })()`);
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root [data-agent-v2-surface]:not([hidden]), #boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
     }
     if (isOps) {
       await waitUntil(
@@ -348,13 +498,13 @@ async function main() {
     await reportsLoaded;
     await waitUntil(cdp, `document.readyState === "complete" && !!document.querySelector(${JSON.stringify(pageSelector)})`, args.timeoutMs);
     if (!isOps) {
-      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .agent-surface-launcher, #boi-agent-root .boi-agent-launcher")`, args.timeoutMs);
       await cdp.evaluate(`(() => {
-        const panel = document.querySelector("#boi-agent-root .boi-agent-panel.open");
-        if (!panel) document.querySelector("#boi-agent-root .boi-agent-launcher")?.click();
+        const panel = document.querySelector("#boi-agent-root [data-agent-v2-surface]:not([hidden]), #boi-agent-root .boi-agent-panel.open");
+        if (!panel) document.querySelector("#boi-agent-root .agent-surface-launcher, #boi-agent-root .boi-agent-launcher")?.click();
         return true;
       })()`);
-      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
+      await waitUntil(cdp, `!!document.querySelector("#boi-agent-root [data-agent-v2-surface]:not([hidden]), #boi-agent-root .boi-agent-panel.open")`, args.timeoutMs);
     }
     let opsRunClickProof = { clicked: false, reason: isOps ? "not_checked" : "not_ops" };
     let opsDecisionTabProof = { clicked: false, reason: isOps ? "not_checked" : "not_ops" };
@@ -447,6 +597,8 @@ async function main() {
       const text = document.body.innerText || "";
       const agentText = document.querySelector("#boi-agent-root")?.innerText || "";
       const forbiddenPatterns = [/source_id/i, /WorkflowDefinition/, /schema dump/i, /trace-[a-z0-9-]+/i, /act-[0-9a-z-]{8,}/i];
+      const reportLink = Array.from(document.querySelectorAll("a[data-inbox-report-link]"))[0] || null;
+      const reportLinkStyle = reportLink ? getComputedStyle(reportLink) : null;
       return {
         readyState: document.readyState,
         url: location.href,
@@ -521,13 +673,33 @@ async function main() {
         inboxCardCount: document.querySelectorAll(".boi-inbox-list .boi-inbox-card").length,
         emptyStatePresent: !!document.querySelector(".empty-state"),
         reportLinkCount: Array.from(document.querySelectorAll("a")).filter((item) => /보고서 BoI/.test(item.textContent || "")).length,
+        reportButtonStyle: reportLinkStyle ? {
+          display: reportLinkStyle.display,
+          textDecoration: reportLinkStyle.textDecorationLine,
+          background: reportLinkStyle.backgroundColor,
+          height: reportLink.getBoundingClientRect().height,
+        } : null,
         reportPendingCount: Array.from(document.querySelectorAll(".badge")).filter((item) => /보고서/.test(item.textContent || "")).length,
+        genericWorkflowActionCount: document.querySelectorAll(".task-console-workflow-actions").length,
         groupReportCtaVisible: /묶음 보고서/.test(text),
         forbiddenVisibleTerms: forbiddenPatterns.map((pattern) => pattern.source).filter((_source, index) => forbiddenPatterns[index].test(text)),
-        agentPanelOpen: !!document.querySelector("#boi-agent-root .boi-agent-panel.open"),
+        horizontalOverflowPx: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
+        overflowElements: Array.from(document.querySelectorAll("body *")).map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {tag:element.tagName.toLowerCase(), className:String(element.className || "").slice(0,120), left:Math.round(rect.left), right:Math.round(rect.right), width:Math.round(rect.width)};
+        }).filter((item) => item.width > 0 && (item.left < -1 || item.right > window.innerWidth + 1)).sort((left,right) => right.width-left.width).slice(0,8),
+        agentPanelOpen: !!document.querySelector("#boi-agent-root [data-agent-v2-surface]:not([hidden]), #boi-agent-root .boi-agent-panel.open"),
         agentHasInboxTab: !!document.querySelector("#boi-agent-root [role='tab'], #boi-agent-root .boi-agent-tabs"),
         agentHasLegacyInboxText: Array.from(document.querySelectorAll("#boi-agent-root button, #boi-agent-root a"))
           .some((item) => ["Inbox", "BoI Inbox", "받은 보고서", "승인/조치"].includes((item.textContent || "").trim())),
+        primaryNavClickProof: ${JSON.stringify(primaryNavClickProof)},
+        lazyWorkflowProof: ${JSON.stringify(lazyWorkflowProof)},
+        workflowBatchProof: ${JSON.stringify({
+          requestCount: workflowBatchSizes.length,
+          maxBatchSize: Math.max(0, ...workflowBatchSizes),
+          maxConcurrent: workflowBatchMaxConcurrent,
+          legacyRequestCount: legacyWorkflowRequestCount,
+        })},
         decisionsTitle: ${JSON.stringify(decisionsTitle)},
         historyTitle: ${JSON.stringify(historyTitle)}
       };
@@ -539,7 +711,17 @@ async function main() {
     if (!isOps) apiUrl.searchParams.set("limit", "5");
     const apiManifest = await waitForJson(apiUrl.toString(), args.timeoutMs);
 
-    if (args.screenshot) await cdp.screenshot(args.screenshot);
+    if (args.screenshot) {
+      if (!isOps) {
+        await cdp.evaluate(`(() => {
+          document.querySelector("#boi-agent-root [data-agent-v2-close], #boi-agent-root .boi-agent-close")?.click();
+          document.querySelector('[data-workflow-preloaded="true"]')?.scrollIntoView({block:"center"});
+          return true;
+        })()`);
+        await sleep(250);
+      }
+      await cdp.screenshot(args.screenshot);
+    }
     const report = {
       ...(isOps ? checkOpsReport(snapshot, consoleErrors, apiManifest) : checkReport(snapshot, consoleErrors, apiManifest)),
       url: args.url,
@@ -574,7 +756,7 @@ async function main() {
   } finally {
     cdp?.close();
     await terminateChrome(child);
-    rmSync(profileDir, { recursive: true, force: true });
+    await removeProfileDir(profileDir);
   }
 }
 

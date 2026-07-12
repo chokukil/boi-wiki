@@ -242,7 +242,7 @@ def test_runtime_change_updates_env_revision_and_verifies_running_revision(tmp_p
         fake_bin / "curl",
         "#!/usr/bin/env bash\n"
         "rev=$(awk -F= '/^BOI_BUILD_REVISION=/{print $2}' .env | tail -n1)\n"
-        "printf '{\"build\":{\"revision\":\"%s\"}}\\n' \"$rev\"\n",
+        "printf '{\"build\":{\"revision\":\"%s\"},\"content\":{\"markdown_documents\":673,\"expected_guide_exists\":true}}\\n' \"$rev\"\n",
     )
     for script in ["sudo", "docker-compose", "curl"]:
         (fake_bin / script).chmod(0o755)
@@ -263,7 +263,7 @@ def test_runtime_change_updates_env_revision_and_verifies_running_revision(tmp_p
     assert result.returncode == 0, result.stderr + result.stdout
     assert f"BOI_BUILD_REVISION={expected_revision}" in (app / ".env").read_text(encoding="utf-8")
     assert "oldrev" not in (app / ".env").read_text(encoding="utf-8")
-    assert f"runtime revision verified: {expected_revision}" in result.stdout
+    assert f"runtime revision/content verified: revision={expected_revision} markdown_documents=673" in result.stdout
     assert f"env_revision={expected_revision}" in compose_calls.read_text(encoding="utf-8")
     assert "DEPLOY_STATUS=success" in result.stdout.splitlines()[-1]
 
@@ -291,7 +291,7 @@ def test_force_recreate_rebuilds_even_when_git_is_already_current(tmp_path: Path
         fake_bin / "curl",
         "#!/usr/bin/env bash\n"
         "rev=$(awk -F= '/^BOI_BUILD_REVISION=/{print $2}' .env | tail -n1)\n"
-        "printf '{\"build\":{\"revision\":\"%s\"}}\\n' \"$rev\"\n",
+        "printf '{\"build\":{\"revision\":\"%s\"},\"content\":{\"markdown_documents\":673,\"expected_guide_exists\":true}}\\n' \"$rev\"\n",
     )
     for script in ["sudo", "docker-compose", "curl"]:
         (fake_bin / script).chmod(0o755)
@@ -355,7 +355,7 @@ def test_compose_failure_starts_created_boi_api_container(tmp_path: Path):
         fake_bin / "curl",
         "#!/usr/bin/env bash\n"
         "rev=$(awk -F= '/^BOI_BUILD_REVISION=/{print $2}' .env | tail -n1)\n"
-        "printf '{\"build\":{\"revision\":\"%s\"}}\\n' \"$rev\"\n",
+        "printf '{\"build\":{\"revision\":\"%s\"},\"content\":{\"markdown_documents\":673,\"expected_guide_exists\":true}}\\n' \"$rev\"\n",
     )
     for script in ["sudo", "docker-compose", "docker", "curl"]:
         (fake_bin / script).chmod(0o755)

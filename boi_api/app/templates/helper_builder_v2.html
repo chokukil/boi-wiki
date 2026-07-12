@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>나만의 BoI Agent 만들기 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('helper_builder_v2.js') }}" defer></script>
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main class="helper-builder-v2 helper-builder-gems" data-helper-builder-v2>
+    <header class="helper-builder-v2-header">
+      <div>
+        <p class="eyebrow">나만의 BoI Agent 만들기</p>
+        <h2>설정하면서 바로 시험해보세요.</h2>
+        <p>BoI Agent가 참고할 지식과 일하는 방식을 정하고, 같은 화면에서 실제 결과를 확인합니다.</p>
+      </div>
+      <div><span data-helper-save-state>새 초안</span><button type="button" class="primary-button" data-helper-activate disabled>사용 시작</button></div>
+    </header>
+
+    <section class="helper-template-strip" data-helper-templates aria-label="예시로 시작">
+      <button type="button" data-template-id="search"><strong>자료 찾기</strong><span>검토된 지식과 유사 사례 검색</span></button>
+      <button type="button" data-template-id="sop"><strong>SOP 설계</strong><span>Task와 종료 기준 구체화</span></button>
+      <button type="button" data-template-id="evidence"><strong>근거 검증</strong><span>판단 근거와 누락 항목 확인</span></button>
+    </section>
+
+    <section class="helper-gems-layout">
+      <form class="helper-gems-config" data-helper-builder-form>
+        <label>BoI Agent 이름<input name="name" maxlength="120" placeholder="예: 설비 대응 Agent" required /></label>
+        <label>어떻게 도와야 하나요?<textarea name="instructions" rows="7" maxlength="8000" placeholder="예: 질문과 관련된 검토 문서를 먼저 찾고, 부족한 근거와 다음 조치를 구분해서 답해줘." required></textarea><small>말투보다 업무 범위, 확인할 근거, 원하는 결과를 한 문단으로 적는 편이 좋습니다.</small></label>
+
+        <fieldset>
+          <legend>무엇을 참고할까요?</legend>
+          <div class="helper-chip-grid">
+            <label><input type="checkbox" name="source_scopes" value="boi" /><span>BoI 문서</span></label>
+            <label><input type="checkbox" name="source_scopes" value="sop" /><span>SOP와 Task</span></label>
+            <label><input type="checkbox" name="source_scopes" value="event" /><span>업무 이벤트</span></label>
+            <label><input type="checkbox" name="source_scopes" value="action" /><span>Action</span></label>
+            <label><input type="checkbox" name="source_scopes" value="history" /><span>유사 사례</span></label>
+          </div>
+        </fieldset>
+
+        <section class="helper-skill-picker">
+          <header><div><strong>연결할 업무 능력</strong><span>검토된 Skill을 골라 이 BoI Agent가 사용하게 합니다.</span></div><button type="button" class="secondary-button" data-helper-new-skill>새 Skill 만들기</button></header>
+          <input type="search" data-helper-skill-search placeholder="업무 능력 찾기" />
+          <div class="helper-skill-list" data-helper-skill-list><p>사용할 수 있는 업무 능력을 확인하고 있습니다.</p></div>
+        </section>
+
+        <details class="helper-builder-advanced">
+          <summary>상세 설정</summary>
+          <p>필요할 때만 BoI Agent가 할 수 있는 일과 연결 위치를 제한합니다.</p>
+          <fieldset>
+            <legend>할 수 있는 일</legend>
+            <div class="helper-chip-grid compact" data-helper-capabilities></div>
+          </fieldset>
+          <fieldset>
+            <legend>사용할 위치</legend>
+            <div class="helper-chip-grid compact">
+              <label><input type="checkbox" name="surfaces" value="agent" /><span>전체 작업공간</span></label>
+              <label><input type="checkbox" name="surfaces" value="pet" /><span>빠른 검색</span></label>
+              <label><input type="checkbox" name="surfaces" value="task" /><span>Task 수행</span></label>
+              <label><input type="checkbox" name="surfaces" value="inbox" /><span>Inbox 검토</span></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>연결할 시스템</legend>
+            <div class="helper-chip-grid compact">
+              <label><input type="checkbox" name="connector_refs" value="boi" /><span>BoI Wiki</span></label>
+              <label><input type="checkbox" name="connector_refs" value="action" /><span>업무 실행 연결</span></label>
+              <label><input type="checkbox" name="connector_refs" value="mcp" /><span>외부 도구</span></label>
+              <label><input type="checkbox" name="connector_refs" value="langflow" /><span>기존 자동화 흐름</span></label>
+            </div>
+          </fieldset>
+        </details>
+      </form>
+
+      <aside class="helper-live-preview" aria-label="BoI Agent 시험">
+        <header><div><strong data-helper-preview-title>나만의 BoI Agent</strong><span>시험 중에는 조회와 private 초안만 허용됩니다.</span></div><span data-helper-preview-status>시험 준비됨</span></header>
+        <div class="helper-preview-messages" data-helper-preview-messages>
+          <div class="helper-preview-empty"><strong>실제 질문으로 확인하세요.</strong><p>설정을 바꾸고 바로 물어보면 답변, 근거와 초안이 이 자리에 표시됩니다.</p></div>
+        </div>
+        <form data-helper-preview-form>
+          <textarea name="question" rows="3" placeholder="예: 설비 이상 대응 SOP를 Task와 종료 기준으로 만들어줘" required></textarea>
+          <button type="submit" class="primary-button" disabled>시험하기</button>
+        </form>
+      </aside>
+    </section>
+
+    <div class="helper-skill-backdrop" data-helper-skill-backdrop hidden></div>
+    <section class="helper-skill-drawer" data-helper-skill-drawer hidden aria-label="새 Skill 만들기">
+      <header><div><span>Skill Creator</span><strong>새 업무 능력 만들기</strong></div><button type="button" class="icon-button" data-helper-skill-close aria-label="닫기">×</button></header>
+      <form data-helper-skill-form>
+        <label>업무 능력 이름<input name="title" required placeholder="예: 검사 데이터 근거 검증" /></label>
+        <label>무엇을 해야 하나요?<textarea name="description" rows="6" required placeholder="입력, 확인할 기준과 남길 결과를 적어주세요."></textarea></label>
+        <label>어떤 상황으로 시험할까요?<textarea name="scenario" rows="3" required placeholder="예: 설비 Alarm 원인 판단에 필요한 근거를 찾아줘"></textarea></label>
+        <label>결과에서 무엇이 보여야 하나요?<textarea name="expected" rows="3" required placeholder="예: 관련 SOP&#10;확인한 근거&#10;부족한 자료"></textarea><small>한 줄에 하나씩 적어주세요.</small></label>
+        <output data-helper-skill-status>후보를 만든 뒤 같은 자리에서 실제 결과를 시험합니다.</output>
+        <div class="helper-skill-test-results" data-helper-skill-test-results hidden></div>
+        <button type="submit" class="primary-button">만들고 시험하기</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

@@ -130,12 +130,12 @@
         <small>BoI: {{ e.default_boi_type }} · Flow: {{ e.default_flow_key }} · Topic: {{ e.topic }} · Owner: {{ e.owner }}</small>
         <p><strong>Wiki 활용:</strong> {{ e.wiki_usage }}</p>
         {% if e.recommended_actions %}<p><strong>Recommended Actions:</strong> {{ e.recommended_actions | join(', ') }}</p>{% endif %}
-        <p class="event-card-actions">
-          <a class="primary-link" href="/event-types/{{ e.event_type }}?employee_id={{ employee_id }}">Event Type 상세</a>
-          · <a href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}">BoI 필터 보기</a>
-          · <a href="/events?employee_id={{ employee_id }}&event_type={{ e.event_type }}">이 Event Type의 Stream 보기</a>
-          · <a href="/actions?employee_id={{ employee_id }}&event_type={{ e.event_type }}">연결 Action 보기</a>
-        </p>
+        <div class="event-card-actions button-row">
+          <a class="button primary" href="/event-types/{{ e.event_type }}?employee_id={{ employee_id }}">상세 보기</a>
+          {% if e.related_boi_count %}<a class="button secondary" href="/?employee_id={{ employee_id }}&event_type={{ e.event_type }}">관련 BoI {{ e.related_boi_count }}건</a>{% endif %}
+          <a class="button secondary" href="/events?employee_id={{ employee_id }}&event_type={{ e.event_type }}">발생 이력</a>
+          {% if e.connected_action_count %}<a class="button secondary" href="/actions?employee_id={{ employee_id }}&event_type={{ e.event_type }}">연결 Action {{ e.connected_action_count }}개</a>{% endif %}
+        </div>
       </article>
       {% else %}
       <section class="empty-state">

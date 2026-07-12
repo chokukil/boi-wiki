@@ -219,21 +219,9 @@ flowchart TD
 
 # Public Interfaces
 
-```bash
-curl -X POST "http://localhost:8000/api/workflows/direct-development-reporting/start?employee_id=100001" \
-  -H "x-service-token: $SERVICE_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"user_confirmed":true}'
-```
+BoI Wiki에서는 연결된 업무 이벤트나 SOP 수행 화면에서 이 Workflow를 시작한다. 외부의 Codex·Claude는 `/mcp/v2`의 `boi_agent`에 자연어로 요청하고, 반환된 plan과 확인 절차를 이어간다. 사번 query나 Action Gateway service token을 문서에서 복사해 직접 실행하지 않는다.
 
-```bash
-curl "http://localhost:8000/workflows/direct-development-reporting/status?employee_id=100001&trace_id=$TRACE_ID"
-```
-
-```bash
-curl "http://localhost:8000/api/workflows/direct-development-reporting/status/raw?employee_id=100001&trace_id=$TRACE_ID" \
-  -H "x-service-token: $SERVICE_TOKEN"
-```
+결정적인 API 자동화는 `<BOI_BASE_URL>`과 Web에서 발급한 `BOI_PAT`를 사용하며, 현재 입력 schema와 권한은 `boi_bootstrap`과 `boi_plan`으로 먼저 확인한다.
 
 # Citations
 

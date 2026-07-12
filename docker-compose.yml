@@ -18,6 +18,25 @@ services:
       retries: 20
     networks: [boi-net]
 
+  boi-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: boi-agent-postgres
+    profiles: ["core", "local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
+    ports:
+      - "${BOI_AGENT_POSTGRES_PORT:-15433}:5432"
+    environment:
+      POSTGRES_USER: ${BOI_AGENT_POSTGRES_USER:-boi_agent}
+      POSTGRES_PASSWORD: ${BOI_AGENT_POSTGRES_PASSWORD:-boi_agent_dev_change_me}
+      POSTGRES_DB: ${BOI_AGENT_POSTGRES_DB:-boi_agent}
+    volumes:
+      - boi-agent-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOI_AGENT_POSTGRES_USER:-boi_agent} -d ${BOI_AGENT_POSTGRES_DB:-boi_agent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [boi-net]
+
   langflow:
     image: ${LANGFLOW_IMAGE:-langflowai/langflow@sha256:3ec67ddf344b3f2393b4961aa4f87e8928798f33772fdfdc6d348bfd54f58bf0}
     container_name: boi-langflow
@@ -141,7 +160,7 @@ services:
   data-lake-minio:
     image: minio/minio:latest
     container_name: boi-data-lake-minio
-    profiles: ["local-full-datalake", "local-full-legacy-db-demo"]
+    profiles: ["data-lake-bundled", "local-full-datalake", "local-full-legacy-db-demo"]
     command: server /data --console-address ":9001"
     ports:
       - "${BOI_DATALAKE_MINIO_PORT:-19000}:9000"
@@ -151,6 +170,11 @@ services:
       MINIO_ROOT_PASSWORD: ${BOI_DATALAKE_MINIO_ROOT_PASSWORD:-boi_datalake_password}
     volumes:
       - boi-data-lake-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks: [boi-net]
 
   boi-api:
@@ -159,7 +183,11 @@ services:
       args:
         BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
     container_name: boi-api
+    user: "${BOI_API_RUN_AS:-0:0}"
     profiles: ["core", "local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
+    depends_on:
+      boi-postgres:
+        condition: service_healthy
     command: >
       sh -c 'if [ -n "${BOI_CONTENT_SAFE_DIRECTORY:-}" ]; then
         git config --global --add safe.directory "${BOI_CONTENT_SAFE_DIRECTORY}" || true;
@@ -176,6 +204,45 @@ services:
       BOI_CONTENT_ROOT: ${BOI_CONTENT_ROOT:-/data/boi}
       BOI_CONTENT_SAFE_DIRECTORY: ${BOI_CONTENT_SAFE_DIRECTORY:-}
       BOI_RUNTIME_ROOT: ${BOI_RUNTIME_ROOT:-/data}
+      BOI_RUNTIME_HISTORY_SEED_ROOT: ${BOI_RUNTIME_HISTORY_SEED_ROOT:-}
+      BOI_INBOX_REPORT_AUTO_GENERATE: ${BOI_INBOX_REPORT_AUTO_GENERATE:-true}
+      BOI_INBOX_REPORT_BACKFILL_SCOPE: ${BOI_INBOX_REPORT_BACKFILL_SCOPE:-all}
+      BOI_INBOX_REPORT_SCAN_INTERVAL_SECONDS: ${BOI_INBOX_REPORT_SCAN_INTERVAL_SECONDS:-30}
+      BOI_INBOX_REPORT_BATCH_SIZE: ${BOI_INBOX_REPORT_BATCH_SIZE:-8}
+      BOI_SEARCH_AUTO_SYNC: ${BOI_SEARCH_AUTO_SYNC:-true}
+      BOI_SEARCH_SYNC_DEBOUNCE_SECONDS: ${BOI_SEARCH_SYNC_DEBOUNCE_SECONDS:-2}
+      BOI_SEARCH_SYNC_RECONCILE_SECONDS: ${BOI_SEARCH_SYNC_RECONCILE_SECONDS:-300}
+      BOI_SEARCH_SYNC_BATCH_SIZE: ${BOI_SEARCH_SYNC_BATCH_SIZE:-16}
+      BOI_KNOWLEDGE_HEALTH_ENABLED: ${BOI_KNOWLEDGE_HEALTH_ENABLED:-true}
+      BOI_KNOWLEDGE_HEALTH_HOUR: ${BOI_KNOWLEDGE_HEALTH_HOUR:-2}
+      BOI_RUNTIME_HISTORY_SEED_ACTION_FULL_SCAN_MAX_BYTES: ${BOI_RUNTIME_HISTORY_SEED_ACTION_FULL_SCAN_MAX_BYTES:-67108864}
+      BOI_RUNTIME_HISTORY_SEED_ACTION_RAW_READ_MAX_BYTES: ${BOI_RUNTIME_HISTORY_SEED_ACTION_RAW_READ_MAX_BYTES:-16777216}
+      BOI_AGENT_V2_ENABLED: ${BOI_AGENT_V2_ENABLED:-true}
+      BOI_AGENT_V2_DEFAULT: ${BOI_AGENT_V2_DEFAULT:-true}
+      BOI_AGENT_V2_REQUIRE_POSTGRES: ${BOI_AGENT_V2_REQUIRE_POSTGRES:-true}
+      BOI_AGENT_V2_DATABASE_URL: postgresql://${BOI_AGENT_POSTGRES_USER:-boi_agent}:${BOI_AGENT_POSTGRES_PASSWORD:-boi_agent_dev_change_me}@boi-postgres:5432/${BOI_AGENT_POSTGRES_DB:-boi_agent}
+      BOI_PAT_HASH_SECRET: ${BOI_PAT_HASH_SECRET:-dev-pat-hash-secret-change-me}
+      BOI_V2_MODEL_PROVIDER: ${BOI_V2_MODEL_PROVIDER:-openai_compatible}
+      BOI_V2_MODEL_BASE_URL: ${BOI_V2_MODEL_BASE_URL:-${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}}
+      BOI_V2_MODEL_API_KEY: ${BOI_V2_MODEL_API_KEY:-${BOI_LLM_API_KEY:-not-needed}}
+      BOI_V2_MODEL: ${BOI_V2_MODEL:-${BOI_AGENT_LLM_MODEL:-${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}}}
+      BOI_V2_REASONING_EFFORT: ${BOI_V2_REASONING_EFFORT:-}
+      BOI_V2_MAX_OUTPUT_TOKENS: ${BOI_V2_MAX_OUTPUT_TOKENS:-4096}
+      BOI_DEEPAGENTS_MAX_INPUT_TOKENS: ${BOI_DEEPAGENTS_MAX_INPUT_TOKENS:-40000}
+      BOI_AGENT_V2_RUN_TOKEN_BUDGET: ${BOI_AGENT_V2_RUN_TOKEN_BUDGET:-32000}
+      BOI_AGENT_V2_DEEP_TOKEN_BUDGET: ${BOI_AGENT_V2_DEEP_TOKEN_BUDGET:-160000}
+      BOI_GPT55_TEST_MODE: ${BOI_GPT55_TEST_MODE:-false}
+      BOI_EMBEDDING_PROVIDER: ${BOI_EMBEDDING_PROVIDER:-openai_compatible}
+      BOI_EMBEDDING_BASE_URL: ${BOI_EMBEDDING_BASE_URL:-${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}}
+      BOI_EMBEDDING_API_KEY: ${BOI_EMBEDDING_API_KEY:-${BOI_LLM_API_KEY:-not-needed}}
+      BOI_EMBEDDING_MODEL: ${BOI_EMBEDDING_MODEL:-text-embedding-bge-m3}
+      BOI_EMBEDDING_DIMENSIONS: ${BOI_EMBEDDING_DIMENSIONS:-1024}
+      BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS: ${BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS:-false}
+      BOI_LMSTUDIO_NATIVE_BASE_URL: ${BOI_LMSTUDIO_NATIVE_BASE_URL:-}
+      BOI_LMSTUDIO_STARTUP_TIMEOUT_SECONDS: ${BOI_LMSTUDIO_STARTUP_TIMEOUT_SECONDS:-120}
+      BOI_API_URL: http://boi-api:8000
+      BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+      BOI_EXPECT_MIN_MARKDOWN_DOCUMENTS: ${BOI_EXPECT_MIN_MARKDOWN_DOCUMENTS:-1}
       PRIVATE_MEMORY_TRASH_ROOT: ${PRIVATE_MEMORY_TRASH_ROOT:-/data/private-trash}
       BOI_AUTO_COMMIT: ${BOI_AUTO_COMMIT:-true}
       BOI_AUTO_PUSH: ${BOI_AUTO_PUSH:-false}
@@ -229,9 +296,10 @@ services:
       BOI_AUDIT_TOPIC: ${BOI_AUDIT_TOPIC:-boi.audit}
       BOI_DLQ_TOPIC: ${BOI_DLQ_TOPIC:-boi.dead-letter}
       DEMO_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
-      OPENAI_API_URL: ${OPENAI_API_URL:-https://api.openai.com/v1}
-      OPENAI_API_MODEL: ${OPENAI_API_MODEL:-gpt-5.5}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_URL: ${BOI_GPT55_TEST_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_MODEL: ${BOI_GPT55_TEST_MODEL:-}
+      OPENAI_API_KEY: ${BOI_GPT55_TEST_API_KEY:-}
+      BOI_AGENT_USE_OPENAI_RUNTIME: ${BOI_AGENT_USE_OPENAI_RUNTIME:-false}
       BOI_AGENT_RUNTIME: ${BOI_AGENT_RUNTIME:-agents_sdk}
       BOI_AGENT_RUNTIME_TIMEOUT_SECONDS: ${BOI_AGENT_RUNTIME_TIMEOUT_SECONDS:-30}
       BOI_AGENT_SANDBOX_ENABLED: ${BOI_AGENT_SANDBOX_ENABLED:-true}
@@ -277,6 +345,11 @@ services:
       BOI_AGENT_COMPOSER_MAX_ATTEMPTS: ${BOI_AGENT_COMPOSER_MAX_ATTEMPTS:-2}
       BOI_AGENT_LLM_MAX_CONCURRENCY: ${BOI_AGENT_LLM_MAX_CONCURRENCY:-1}
       BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS: ${BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS:-120}
+      BOI_DEEPAGENTS_ENABLED: ${BOI_DEEPAGENTS_ENABLED:-}
+      BOI_DEEPAGENTS_MODEL: ${BOI_DEEPAGENTS_MODEL:-}
+      BOI_DEEPAGENTS_TIMEOUT_SECONDS: ${BOI_DEEPAGENTS_TIMEOUT_SECONDS:-45}
+      BOI_PGVECTOR_DSN: ${BOI_PGVECTOR_DSN:-}
+      BOI_PET_AGENT_ENABLED: ${BOI_PET_AGENT_ENABLED:-true}
       BOI_AGENT_BACKEND: ${BOI_AGENT_BACKEND:-native}
       BOI_AGENT_LANGGRAPH_REQUIRED: ${BOI_AGENT_LANGGRAPH_REQUIRED:-1}
       BOI_AGENT_NATIVE_MAX_TOOL_LOOPS: ${BOI_AGENT_NATIVE_MAX_TOOL_LOOPS:-5}
@@ -284,12 +357,16 @@ services:
       BOI_AGENT_CHAT_TIMEOUT_SECONDS: ${BOI_AGENT_CHAT_TIMEOUT_SECONDS:-90}
       BOI_AGENT_CACHE_WARMUP_ON_STARTUP: ${BOI_AGENT_CACHE_WARMUP_ON_STARTUP:-1}
       BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
-      BOI_DATALAKE_ENABLED: ${BOI_DATALAKE_ENABLED:-false}
-      BOI_DATALAKE_PROFILE: ${BOI_DATALAKE_PROFILE:-disabled}
+      BOI_DATALAKE_MODE: ${BOI_DATALAKE_MODE:-bundled}
+      BOI_DATALAKE_ENABLED: ${BOI_DATALAKE_ENABLED:-true}
+      BOI_DATALAKE_PROFILE: ${BOI_DATALAKE_PROFILE:-bundled}
+      BOI_DATALAKE_REQUIRED: ${BOI_DATALAKE_REQUIRED:-true}
       BOI_LEGACY_DB_DEMO_ENABLED: ${BOI_LEGACY_DB_DEMO_ENABLED:-false}
       BOI_LEGACY_DB_DEMO_POSTGRES_DSN: ${BOI_LEGACY_DB_DEMO_POSTGRES_DSN:-}
       BOI_DATALAKE_POSTGRES_DSN: ${BOI_DATALAKE_POSTGRES_DSN:-}
-      BOI_DATALAKE_MINIO_ENDPOINT: ${BOI_DATALAKE_MINIO_ENDPOINT:-}
+      BOI_DATALAKE_MINIO_ENDPOINT: ${BOI_DATALAKE_MINIO_ENDPOINT:-http://data-lake-minio:9000}
+      KAFKA_UI_HEALTH_URL: ${KAFKA_UI_HEALTH_URL:-http://kafka-ui:8080}
+      BOI_WIKI_MCP_HEALTH_URL: ${BOI_WIKI_MCP_HEALTH_URL:-http://boi-wiki-mcp:8200/status}
       BOI_DATALAKE_BUCKET: ${BOI_DATALAKE_BUCKET:-boi-datalake}
       BOI_DATALAKE_FIXTURE_ROOT: ${BOI_DATALAKE_FIXTURE_ROOT:-/fixtures/ontology}
       LANGFLOW_MODE: ${LANGFLOW_MODE:-local}
@@ -310,6 +387,68 @@ services:
       - ./data/agent_catalog:/data/agent_catalog:ro
       - ${ACTIONS_HOST_PATH:-./data/actions}:${ACTION_LOG_ROOT:-/data/actions}
       - ${BOI_DATALAKE_FIXTURE_HOST_PATH:-./data/data_lake_fixtures}:${BOI_DATALAKE_FIXTURE_ROOT:-/fixtures/ontology}:ro
+    networks: [boi-net]
+
+  boi-agent-worker:
+    build:
+      context: ./boi_api
+      args:
+        BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
+    container_name: boi-agent-worker
+    profiles: ["core", "local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
+    command: ["python", "-m", "app.v2.worker"]
+    restart: unless-stopped
+    depends_on:
+      boi-postgres:
+        condition: service_healthy
+    environment:
+      BOI_CONTENT_ROOT: ${BOI_CONTENT_ROOT:-/data/boi}
+      BOI_RUNTIME_ROOT: ${BOI_RUNTIME_ROOT:-/data}
+      BOI_RUNTIME_HISTORY_SEED_ROOT: ${BOI_RUNTIME_HISTORY_SEED_ROOT:-}
+      BOI_RUNTIME_HISTORY_SEED_ACTION_FULL_SCAN_MAX_BYTES: ${BOI_RUNTIME_HISTORY_SEED_ACTION_FULL_SCAN_MAX_BYTES:-67108864}
+      BOI_RUNTIME_HISTORY_SEED_ACTION_RAW_READ_MAX_BYTES: ${BOI_RUNTIME_HISTORY_SEED_ACTION_RAW_READ_MAX_BYTES:-16777216}
+      EVENT_CATALOG_ROOT: /data/event_catalog
+      ACTION_CATALOG_ROOT: /data/action_catalog
+      WORKFLOW_CATALOG_ROOT: ${WORKFLOW_CATALOG_ROOT:-/data/workflow_catalog}
+      ACTION_SKILL_CATALOG_ROOT: ${ACTION_SKILL_CATALOG_ROOT:-/data/action_skill_catalog}
+      AGENT_CATALOG_ROOT: ${AGENT_CATALOG_ROOT:-/data/agent_catalog}
+      BOI_AGENT_V2_DATABASE_URL: postgresql://${BOI_AGENT_POSTGRES_USER:-boi_agent}:${BOI_AGENT_POSTGRES_PASSWORD:-boi_agent_dev_change_me}@boi-postgres:5432/${BOI_AGENT_POSTGRES_DB:-boi_agent}
+      BOI_AGENT_V2_REQUIRE_POSTGRES: "true"
+      BOI_PAT_HASH_SECRET: ${BOI_PAT_HASH_SECRET:-dev-pat-hash-secret-change-me}
+      BOI_V2_MODEL_PROVIDER: ${BOI_V2_MODEL_PROVIDER:-openai_compatible}
+      BOI_V2_MODEL_BASE_URL: ${BOI_V2_MODEL_BASE_URL:-${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}}
+      BOI_V2_MODEL_API_KEY: ${BOI_V2_MODEL_API_KEY:-${BOI_LLM_API_KEY:-not-needed}}
+      BOI_V2_MODEL: ${BOI_V2_MODEL:-${BOI_AGENT_LLM_MODEL:-${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}}}
+      BOI_V2_REASONING_EFFORT: ${BOI_V2_REASONING_EFFORT:-}
+      BOI_V2_MAX_OUTPUT_TOKENS: ${BOI_V2_MAX_OUTPUT_TOKENS:-4096}
+      BOI_DEEPAGENTS_MAX_INPUT_TOKENS: ${BOI_DEEPAGENTS_MAX_INPUT_TOKENS:-40000}
+      BOI_AGENT_V2_RUN_TOKEN_BUDGET: ${BOI_AGENT_V2_RUN_TOKEN_BUDGET:-32000}
+      BOI_AGENT_V2_DEEP_TOKEN_BUDGET: ${BOI_AGENT_V2_DEEP_TOKEN_BUDGET:-160000}
+      BOI_DEEPAGENTS_MODEL: ${BOI_DEEPAGENTS_MODEL:-${BOI_V2_MODEL:-${BOI_AGENT_LLM_MODEL:-${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}}}}
+      BOI_GPT55_TEST_MODE: ${BOI_GPT55_TEST_MODE:-false}
+      OPENAI_API_KEY: ${BOI_V2_MODEL_API_KEY:-${BOI_LLM_API_KEY:-not-needed}}
+      OPENAI_BASE_URL: ${BOI_V2_MODEL_BASE_URL:-${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}}
+      ANTHROPIC_API_KEY: ${BOI_V2_MODEL_API_KEY:-${ANTHROPIC_API_KEY:-}}
+      ANTHROPIC_BASE_URL: ${BOI_V2_MODEL_BASE_URL:-${ANTHROPIC_BASE_URL:-https://api.anthropic.com}}
+      BOI_EMBEDDING_PROVIDER: ${BOI_EMBEDDING_PROVIDER:-openai_compatible}
+      BOI_EMBEDDING_BASE_URL: ${BOI_EMBEDDING_BASE_URL:-${BOI_LLM_BASE_URL:-http://llm-gateway.example:1236/v1}}
+      BOI_EMBEDDING_API_KEY: ${BOI_EMBEDDING_API_KEY:-${BOI_LLM_API_KEY:-not-needed}}
+      BOI_EMBEDDING_MODEL: ${BOI_EMBEDDING_MODEL:-text-embedding-bge-m3}
+      BOI_EMBEDDING_DIMENSIONS: ${BOI_EMBEDDING_DIMENSIONS:-1024}
+      BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS: ${BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS:-false}
+      BOI_LMSTUDIO_NATIVE_BASE_URL: ${BOI_LMSTUDIO_NATIVE_BASE_URL:-}
+      BOI_LMSTUDIO_STARTUP_TIMEOUT_SECONDS: ${BOI_LMSTUDIO_STARTUP_TIMEOUT_SECONDS:-120}
+      BOI_API_URL: http://boi-api:8000
+      BOI_API_SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
+    volumes:
+      - ${BOI_CONTENT_HOST_PATH:-./data/boi}:${BOI_CONTENT_MOUNT_PATH:-/data/boi}:ro
+      - ${EVENTS_HOST_PATH:-./data/events}:${EVENTS_ROOT:-/data/events}:ro
+      - ${ACTIONS_HOST_PATH:-./data/actions}:${ACTION_LOG_ROOT:-/data/actions}:ro
+      - ./data/event_catalog:/data/event_catalog:ro
+      - ./data/action_catalog:/data/action_catalog:ro
+      - ./data/workflow_catalog:/data/workflow_catalog:ro
+      - ./data/action_skill_catalog:/data/action_skill_catalog:ro
+      - ./data/agent_catalog:/data/agent_catalog:ro
     networks: [boi-net]
 
 
@@ -362,6 +501,8 @@ services:
       MCP_BACKEND_TIMEOUT_SECONDS: ${MCP_BACKEND_TIMEOUT_SECONDS:-120}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token-change-me}
       MCP_REQUIRE_SERVICE_TOKEN: ${MCP_REQUIRE_SERVICE_TOKEN:-false}
+      MCP_V2_REQUIRE_PAT: ${MCP_V2_REQUIRE_PAT:-true}
+      BOI_API_PAT: ${BOI_API_PAT:-}
       DEFAULT_EMPLOYEE_ID: ${DEMO_EMPLOYEE_ID:-100001}
       BOI_WIKI_MCP_EXTERNAL_URL: ${BOI_WIKI_MCP_EXTERNAL_URL:-}
     networks: [boi-net]
@@ -410,6 +551,7 @@ services:
 
 volumes:
   langflow-postgres-data:
+  boi-agent-postgres-data:
   boi-legacy-db-demo-postgres-data:
   boi-data-lake-minio-data:
 

@@ -104,8 +104,6 @@ example_response:
   count: 1
   results:
   - title: Platform Team Kafka Event Broker SOP
-curl: 'curl -X POST ''http://boi-wiki-mcp:8200/api/mcp/call'' -H ''x-service-token:
-  $SERVICE_TOKEN'' -H ''Content-Type: application/json'' -d ''{"server":{"name":"boi-wiki-mcp"},"tool":"boi.search","arguments":{"query":"Kafka","employee_id":"100001"},"request_id":"act-mcp-search"}'''
 action_gateway_mapping:
   invoke_url: http://localhost:8100/api/actions/invoke
   action_key: mcp.boi_search.sample
