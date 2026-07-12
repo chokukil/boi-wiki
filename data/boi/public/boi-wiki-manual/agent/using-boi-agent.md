@@ -24,10 +24,17 @@ agent_entrypoint_prompts:
     label: 다시 확인할 업무를 안전하게 맡기는 방법 보기
     prompt: 정해진 시간이나 업무 이벤트에 따라 BoI Agent가 다시 확인하도록 맡기는 방법과 확인 절차를 알려줘.
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:guide:final-operator-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-learning-system
+  - type: boi
+    ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+implementation_refs:
   - type: repo
     ref: boi_api/app/templates/_agent_surface_v2.html
   - type: repo
-    ref: boi_api/app/static/pet_agent_v2.js
+    ref: boi_api/app/static/agent_workspace_v2.js
   - type: repo
     ref: boi_api/app/v2/service.py
 review:
@@ -88,6 +95,30 @@ Compact에는 현재 맥락에서 가장 관련 높은 제안 네 개만 표시�
 6. 자동 확인·업무 개선
 
 각 영역은 대표 질문 하나를 먼저 보이고 최대 세 개까지 펼칠 수 있다. `index.md`, `log.md`, deprecated, smoke, history seed와 raw ID 제목은 추천과 현재 맥락에 사용하지 않는다. 제안을 누르면 별도의 보내기 조작 없이 한 번만 전송된다.
+
+추천은 답변만 반복하지 않는다. 실제 관계가 있을 때 `역할과 현재 업무 표`, `업무 변화 Timeline`, `짧은 관계 그림`, `확장 가능한 관계 탐색`, `업무 기록 입력`, `실행 전 확인`처럼 서로 다른 결과 경험으로 이어진다. 화면에는 기술 component 이름을 표시하지 않는다.
+
+# 역할과 현재 업무 묻기
+
+“내가 하는 일이 뭐지?”처럼 넓은 질문은 다음 두 부분을 섞지 않고 보여준다.
+
+1. **역할과 업무 관계**: directory의 공식 역할·팀, 현재 배정, 검증된 수행·완료 기록
+2. **지금 처리할 업무**: 현재 Inbox와 다음에 확인할 내용
+
+“지금 처리할 업무만 보여줘”라고 하면 두 번째만 보여준다. 한 번 배정된 Task는 전문성이나 반복 수행으로 표시하지 않으며, AI가 추론한 관계는 권한·자동 배정·완료 판정에 쓰지 않는다.
+
+```mermaid
+flowchart LR
+  Q["업무 질문"] --> PLAN["질문 의미와 대상 해석"]
+  PLAN --> ENTITY["사람·팀·Task 식별"]
+  ENTITY --> GRAPH["검증된 업무 관계 조회"]
+  GRAPH --> ROLE["역할·관계"]
+  GRAPH --> CURRENT["현재 Inbox"]
+  ROLE --> RESULT["표·시간 흐름·관계 그림·탐색"]
+  CURRENT --> RESULT
+```
+
+관계 탐색과 결과 화면의 자세한 사용법은 [업무 관계와 동적 결과 활용 가이드](/docs/boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results)를 따른다.
 
 # 질문하는 방법
 

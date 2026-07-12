@@ -24,10 +24,15 @@ agent_entrypoint_prompts:
     label: BoI Wiki의 핵심 지식과 연결 관계 살펴보기
     prompt: BoI Wiki에서 접근 가능한 검토된 지식을 바탕으로 현재 질문과 직접 연결된 내용을 설명해줘.
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:overview
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:using-boi-agent
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-learning-system
+implementation_refs:
   - type: repo
     ref: README.md
-  - type: repo
-    ref: boi_api/app/templates/_agent_surface_v2.html
   - type: repo
     ref: boi_api/app/v2/work_learning.py
   - type: repo
@@ -92,6 +97,8 @@ BoI Agent는 별도 챗봇이 아니라 BoI Wiki의 공통 작업 표면이다. 
 Expanded 또는 Fullpage의 `⋯` 메뉴에서 `나만의 BoI Agent 만들기`와 `외부에서 사용`으로 이동한다. Agent 자체는 Advanced 메뉴에 두지 않는다.
 
 자세한 사용법은 [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)를 따른다.
+
+역할·팀·배정·검증된 수행 기록을 묻는 경우에는 관계 read model을 사용한다. 현재 Inbox와 공식 역할을 구분하고, 결과 규모에 따라 표, 시간 흐름, Mermaid 또는 관계 탐색 화면을 고른다. [업무 관계와 동적 결과 활용 가이드](/docs/boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results)에서 예시를 확인한다.
 
 # BoI Inbox와 Task
 

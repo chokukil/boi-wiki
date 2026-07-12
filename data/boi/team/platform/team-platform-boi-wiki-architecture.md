@@ -208,6 +208,8 @@ Knowledge Health는 stale claim, contradiction, duplicate, orphan, broken link�
 
 Ontology 갱신은 전체 table truncate가 아니라 source revision별 node·edge upsert와 tombstone 삭제로 수행한다. Person, Team과 Task 배정 관계도 같은 graph 계약을 쓰지만, inferred 관계는 검토 전 권한·자동 배정·완료 판정에 사용할 수 없다. 범용 `GraphQueryPlan`은 neighbors, path, workflow, impact, lineage, responsibility, timeline, compare, tour를 parameterized query로 실행하며 LLM이 SQL이나 Cypher를 직접 만들지 않는다.
 
+자연어 관계 질문은 `GraphQueryDraft → EntityResolver → GraphQueryPlan → parameterized graph query` 순서로 실행한다. Planner는 사람·팀·자산 표현과 원하는 결과만 제안하며 SQL·Cypher를 만들지 않는다. `current`, `responsibility`, `combined` 업무 관점은 현재 Inbox와 공식 역할·검증 수행 이력을 분리한다.
+
 Task 실행은 `TaskExecutionSnapshot`을 Inbox와 Task Console의 공통 read model로 사용한다. `TaskWorkRecord`는 확인 내용, 조치, 판단, 결과와 근거를 보존하고 복수 담당자는 하나의 Task 상태를 공유한다.
 
 Agent와 Task의 동적 표현은 A2UI `0.9.1` 호환 `boi-a2ui/v1` catalog로 컴파일한다. A2UI는 정본이나 업무 규칙이 아니며, 허용된 component와 event만 렌더링한다. 지원하지 않는 client 또는 검증 실패 시 기존 typed response renderer를 사용한다.
@@ -221,6 +223,8 @@ flowchart LR
   GUARD -->|실패·미지원| FALLBACK["typed response fallback"]
   SURFACE --> MUTATION["preview·confirmation·Harness"]
 ```
+
+Web client는 저장된 surface를 다시 조회하고 허용된 component registry로 실제 DOM을 만든다. 표, Timeline, Mermaid, Ontology Explorer, WorkRecordForm과 EvidencePicker가 1차 catalog다. 관리자 `동적 화면 진단`에서는 surface와 validation/fallback 상태만 확인하며 일반 사용자에게 protocol 이름을 노출하지 않는다.
 
 응답 크기 제한은 표현 중복을 먼저 줄이고 WorkIntent와 최소 citation을 보존한다. citation이 제거된 응답을 `grounded`로 표시해서는 안 된다. 이 경계는 [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)의 결정적 테스트와 실모델 시나리오로 검증한다.
 

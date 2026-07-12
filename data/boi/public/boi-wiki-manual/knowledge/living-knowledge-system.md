@@ -16,12 +16,10 @@ author:
 acl_policy: acl:public
 status: reviewed
 source_refs:
-  - type: repo
-    ref: boi_api/app/v2/knowledge_system.py
-  - type: repo
-    ref: boi_api/app/v2/search.py
-  - type: repo
-    ref: boi_api/app/v2/repository.py
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-learning-system
+  - type: boi
+    ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
   - type: external
     ref: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
   - type: external
@@ -38,6 +36,13 @@ source_refs:
     ref: https://github.com/VectifyAI/OpenKB
   - type: external
     ref: https://github.com/eugeniughelbur/obsidian-second-brain
+implementation_refs:
+  - type: repo
+    ref: boi_api/app/v2/knowledge_system.py
+  - type: repo
+    ref: boi_api/app/v2/search.py
+  - type: repo
+    ref: boi_api/app/v2/repository.py
 review:
   reviewer: harness-curator
   review_status: reviewed
@@ -114,6 +119,23 @@ embedding model이나 index schema가 바뀔 때만 전체 reindex를 수행한�
 | ambiguous | 충돌하거나 추가 확인이 필요한 관계 |
 
 모든 관계는 confidence, source refs, extractor version과 source revision을 가진다. inferred 관계는 Team/Public 정본을 자동 수정하지 않는다.
+
+# 업무 관계의 누적
+
+업무 관계에는 directory의 공식 역할·팀, Task 배정과 재배정, WorkRecord, 검증된 CompletionRecord, Task가 사용한 SOP·Event·Action·Evidence와 결과 BoI가 증분 반영된다.
+
+```mermaid
+flowchart LR
+  ID["공식 역할·팀"] --> REL["업무 관계 read model"]
+  ASSIGN["Task 배정"] --> REL
+  RECORD["수행·완료 기록"] --> REL
+  ASSET["SOP·Event·Action·근거"] --> REL
+  REL --> CONTEXT["다음 질문·Task Context"]
+  CONTEXT --> RESULT["새 업무 결과"]
+  RESULT --> REL
+```
+
+관계 조회 결과는 다음 질문의 Context와 hybrid rerank에 재사용하지만 한 번의 배정을 전문성으로 승격하지 않는다. 반복 수행은 기간, 서로 다른 실행 수와 검증 상태를 가진 별도 read model에서 판단한다.
 
 # Hybrid Retrieval
 

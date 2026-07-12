@@ -31,6 +31,7 @@ flowchart LR
 - [BoI Wiki MCP 등록과 사용](/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp)
 - [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)
 - [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)
+- [업무 관계와 동적 결과 활용 가이드](/docs/boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results)
 - [권한과 승인 경계](/docs/boi:public:boi-wiki-manual:agent:agent-guardrail-and-acl)
 
 # 운영자와 플랫폼 담당자

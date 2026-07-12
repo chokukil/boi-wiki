@@ -189,6 +189,20 @@ python scripts/evaluate_agent_v2_work_scenarios.py --output .tmp/agent-v2-work-s
 
 첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질을 검증한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
 
+업무 관계와 동적 화면 진단:
+
+```bash
+curl -sS -X POST "$BOI_BASE_URL/api/v2/knowledge-graph/query" \
+  -H "Authorization: Bearer $BOI_PAT" \
+  -H "Content-Type: application/json" \
+  -d '{"focal_entities":["person:<employee>"],"query_kind":"responsibility","depth":2,"presentation":"table"}'
+```
+
+- Graph manifest의 compiler version, source signature와 runtime relation signature가 현재 값과 일치해야 한다.
+- 일반 화면에서 동적 결과가 보이지 않으면 Advanced `동적 화면 진단`에서 catalog, component와 fallback 상태를 확인한다.
+- 이동되지 않는 repo/code ref는 업무 근거가 아니라 `implementation_refs`로 분리한다. 관리자만 읽기 전용 기술 근거 화면을 연다.
+- 관계 조회·색인·일반 탐색은 LM Studio model load/unload API를 호출하지 않는다.
+
 - [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)
 
 # 장애별 확인

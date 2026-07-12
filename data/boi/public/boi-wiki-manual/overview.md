@@ -25,6 +25,8 @@ review:
   review_status: reviewed
 ---
 
+> 사람·팀·Task·SOP·Event·Action 관계를 질문하고 표, 시간 흐름, Mermaid와 관계 탐색으로 확인하는 방법은 [업무 관계와 동적 결과 활용 가이드](/docs/boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results)를 참고한다.
+
 # BoI Wiki란
 
 BoI Wiki는 문서 검색 서비스와 업무 실행 시스템을 분리하지 않는다. 접근 가능한 Wiki 전체에서 관련 지식과 과거 사례를 찾고, SOP와 Task를 수행하며, 판단 근거와 결과를 다음 업무에서 재사용할 수 있는 BoI 자산으로 남긴다.

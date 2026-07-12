@@ -16,6 +16,11 @@ author:
 acl_policy: acl:public
 status: reviewed
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-learning-system
+implementation_refs:
   - type: code
     ref: boi_api/app/task_execution.py
   - type: code
@@ -99,6 +104,8 @@ BoI Wiki는 Person, Team, BoI, SOP, Workflow, Task, Event, Action, Skill, Eviden
 | human_verified | 담당자가 검토함 |
 | ambiguous | 둘 이상의 해석이 가능함 |
 
+현재 배정, 공식 역할, 반복 수행과 관련 업무는 서로 다른 관계다. 반복 수행은 최근 180일의 서로 다른 업무에서 검증 완료가 세 번 이상일 때만 후보로 표시한다. 완료 기록이 없는 배정이나 inferred 관계만으로 “이 일을 잘하는 사람”이라고 결론 내리지 않는다.
+
 # 질문에 맞는 표현을 고른다
 
 BoI Agent는 모든 질문을 그래프로 만들지 않는다.
@@ -135,3 +142,4 @@ BoI Agent와 Task 수행 화면은 결과에 맞는 입력과 결과물을 동�
 - [SOP 만들기와 연결하기](/docs/boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop)
 - [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)
 - [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)
+- [업무 관계와 동적 결과 활용 가이드](/docs/boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results)

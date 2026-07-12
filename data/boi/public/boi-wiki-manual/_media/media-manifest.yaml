@@ -503,3 +503,27 @@ media:
     scenario: "mcp-status"
     source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
     selector: "main.advanced-interface-page"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-boi-agent-ontology-1440x1000.png
+    sha256: f402a6cbbd1f55e81669789629d2832b76485693a27f3295d432fba7b64cb850
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent?session={work_session_id}&artifact={artifact_id}"
+    captured_at: "2026-07-12T23:04:00+09:00"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    created_by: codex
+    route_template: "/agent?session={work_session_id}&artifact={artifact_id}"
+    scenario: "role-and-current-work-ontology"
+    source_revision: 71948d031d5490688542c3a20b881ccb895fdb40
+    selector: "[data-a2ui-component='OntologyExplorer']"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-boi-agent-ontology-390x844.png
+    sha256: 801d1c2af0fa24043d48a479bfa02d2329177fc38b3543b2bca085077978ef1e
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent?session={work_session_id}&artifact={artifact_id}"
+    captured_at: "2026-07-12T23:04:00+09:00"
+    viewport: "390x844"
+    related_doc: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    created_by: codex
+    route_template: "/agent?session={work_session_id}&artifact={artifact_id}"
+    scenario: "role-and-current-work-ontology-mobile"
+    source_revision: 71948d031d5490688542c3a20b881ccb895fdb40
+    selector: "[data-a2ui-component='OntologyExplorer']"
