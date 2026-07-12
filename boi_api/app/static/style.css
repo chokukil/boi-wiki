@@ -2149,6 +2149,60 @@ main.data-library-page {
 .integration-dot.warning { background: #b56b00; }
 .integration-state { font-weight: 700; }
 
+.task-console-work-record .task-console-note-form {
+  display: grid;
+  gap: 12px;
+}
+
+.task-work-record-checks {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border, #d9e0ea);
+  border-radius: 6px;
+}
+
+.task-work-record-checks label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-weight: 500;
+}
+
+.task-work-record-history {
+  margin-top: 16px;
+  border-top: 1px solid var(--border, #d9e0ea);
+}
+
+.task-work-record-history article {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border, #d9e0ea);
+}
+
+.task-work-record-history p { margin: 6px 0; }
+.task-work-record-history small { color: var(--muted, #607089); }
+
+.knowledge-graph-shell {
+  position: relative;
+  min-height: 520px;
+  border: 1px solid var(--border, #d9e0ea);
+}
+
+.knowledge-graph-canvas {
+  width: 100%;
+  height: 520px;
+  background: #fff;
+}
+
+.knowledge-graph-shell > .secondary-button {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  background: #fff;
+}
+
 @media (max-width: 720px) {
   main.data-library-page { margin: 12px; }
   .data-library-page > .panel { padding: 14px; }
@@ -2156,4 +2210,6 @@ main.data-library-page {
   .data-library-file-picker { width: 100%; }
   .data-library-store-status { white-space: normal; }
   .integration-row { grid-template-columns: 1fr; }
+  .knowledge-graph-shell,
+  .knowledge-graph-canvas { min-height: 420px; height: 420px; }
 }

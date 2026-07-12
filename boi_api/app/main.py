@@ -64,6 +64,7 @@ from .workflow_materializer import (
 )
 from .simulation_agent import build_simulation_agent_result
 from .task_completion import friendly_label, normalise_task_completion
+from .task_execution import TaskExecutionStore
 from .inbox_report_coordinator import InboxReportCoordinator, PENDING_STATES as INBOX_REPORT_PENDING_STATES
 from .integration_health import IntegrationHealthRegistry, IntegrationTarget
 from .native_agent import (
@@ -208,6 +209,7 @@ DATA_ROOT = Path(os.getenv("DATA_ROOT") or str(BOI_CONTENT_ROOT))
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT") or str(BOI_RUNTIME_ROOT / "events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT") or str(default_repo_data_root("event_catalog", "/data/event_catalog")))
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT") or str(default_repo_data_root("action_catalog", "/data/action_catalog")))
+TASK_EXECUTION_STORE = TaskExecutionStore(BOI_RUNTIME_ROOT / "task-execution")
 WORKFLOW_CATALOG_ROOT = Path(
     os.getenv("WORKFLOW_CATALOG_ROOT")
     or os.getenv("CAPABILITY_CATALOG_ROOT")
@@ -3941,10 +3943,6 @@ def action_log_visible_to_employee(row: dict[str, Any], employee_id: str) -> boo
     employee_id = str(employee_id or "").strip()
     if not employee_id:
         return False
-    row_employee_id = str(row.get("employee_id") or "").strip()
-    if row_employee_id:
-        return row_employee_id == employee_id
-
     assigned_employee_ids = action_log_assignment_values(
         row,
         "assigned_employee_id",
@@ -3953,8 +3951,14 @@ def action_log_visible_to_employee(row: dict[str, Any], employee_id: str) -> boo
         "assignee_employee_ids",
         "employee_ids",
     )
+    runtime_assignment = TASK_EXECUTION_STORE.assignment(row)
+    assigned_employee_ids.update(str(item) for item in runtime_assignment.get("assignee_employee_ids") or [])
     if assigned_employee_ids:
         return employee_id in assigned_employee_ids
+
+    row_employee_id = str(row.get("employee_id") or "").strip()
+    if row_employee_id:
+        return row_employee_id == employee_id
 
     assigned_teams = action_log_assignment_values(row, "assigned_team", "assigned_teams", "team_id", "team_ids", "teams")
     if assigned_teams and assigned_teams.intersection(teams_for(employee_id)):
@@ -8015,6 +8019,15 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
                 "external": True,
             }
         )
+    if INTEGRATION_HEALTH.available("langflow"):
+        items_by_nav["advanced"].append(
+            {
+                "id": "langflow_console",
+                "label": "Langflow",
+                "href": langflow_public_base_url(request),
+                "external": True,
+            }
+        )
 
     def active_section_id() -> str:
         if active_nav == "library":
@@ -8227,8 +8240,24 @@ def citation_rows_for_doc(
                     label = doc_display_title(target_doc)
                 else:
                     url = source_url_for_ref(ref, employee_id)
+        if not label and ref:
+            repo_candidate = (REPO_ROOT / ref).resolve()
+            try:
+                repo_candidate.relative_to(REPO_ROOT.resolve())
+            except ValueError:
+                repo_candidate = Path("/__invalid_source_ref__")
+            if repo_candidate.is_file():
+                try:
+                    raw_text = repo_candidate.read_text(encoding="utf-8", errors="replace") if repo_candidate.suffix.lower() == ".md" else ""
+                    metadata, body = split_frontmatter(raw_text) if raw_text else ({}, "")
+                    heading = next((line.removeprefix("# ").strip() for line in body.splitlines() if line.startswith("# ")), "")
+                    label = str(metadata.get("title") or heading or repo_candidate.stem.replace("_", " ").replace("-", " ")).strip()
+                except OSError:
+                    label = ""
         if not label:
-            label = str(item.get("title") or item.get("label") or "연결된 근거")
+            label = str(item.get("title") or item.get("label") or "").strip()
+        if not label or not ref:
+            continue
         rows.append({"type": str(item.get("type") or "source"), "ref": ref, "url": url, "label": label})
     return rows
 
@@ -11475,6 +11504,35 @@ class TaskCompletionConfirmRequest(BaseModel):
     label: str = ""
     note: str = ""
     evidence_refs: list[str] = Field(default_factory=list)
+    user_confirmed: bool = False
+
+
+class TaskAssignmentPatchRequest(BaseModel):
+    assignee_employee_ids: list[str] = Field(default_factory=list, max_length=50)
+    reviewer_employee_ids: list[str] = Field(default_factory=list, max_length=50)
+    related_team_ids: list[str] = Field(default_factory=list, max_length=50)
+    completion_policy: Literal["any_assignee"] = "any_assignee"
+    expected_revision: int | None = Field(default=None, ge=0)
+    user_confirmed: bool = False
+
+
+class TaskWorkRecordRequest(BaseModel):
+    task_id: str = ""
+    trace_id: str = ""
+    event_id: str = ""
+    action_key: str = ""
+    sop_ref: str = ""
+    sop_stage_id: str = ""
+    workflow_definition_key: str = ""
+    outcome: Literal["progress", "completed", "blocked", "needs_review"] = "progress"
+    observation: str = Field(min_length=3, max_length=4000)
+    action_taken: str = Field(default="", max_length=4000)
+    decision: str = Field(default="", max_length=4000)
+    result: str = Field(default="", max_length=4000)
+    blocker: str = Field(default="", max_length=2000)
+    next_work: str = Field(default="", max_length=2000)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+    completed_check_ids: list[str] = Field(default_factory=list, max_length=50)
     user_confirmed: bool = False
 
 
@@ -16370,6 +16428,51 @@ async def task_console_completion_confirm_form(
         ),
         status_code=303,
     )
+
+
+@app.post("/tasks/console/work-record", response_class=HTMLResponse)
+async def task_console_work_record_form(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+) -> Response:
+    form = await request.form()
+    req = TaskWorkRecordRequest(
+        task_id=str(form.get("task_id") or ""),
+        trace_id=str(form.get("trace_id") or ""),
+        event_id=str(form.get("event_id") or ""),
+        action_key=str(form.get("action_key") or ""),
+        sop_ref=str(form.get("sop_ref") or ""),
+        sop_stage_id=str(form.get("sop_stage_id") or ""),
+        workflow_definition_key=str(form.get("workflow_definition_key") or ""),
+        outcome=str(form.get("outcome") or "progress"),
+        observation=str(form.get("observation") or ""),
+        action_taken=str(form.get("action_taken") or ""),
+        decision=str(form.get("decision") or ""),
+        result=str(form.get("result") or ""),
+        blocker=str(form.get("blocker") or ""),
+        next_work=str(form.get("next_work") or ""),
+        evidence_refs=split_list_like(form.get("evidence_refs")),
+        completed_check_ids=[str(item) for item in form.getlist("completed_check_ids")],
+        user_confirmed=str(form.get("user_confirmed") or "").lower() in {"1", "true", "yes", "on"},
+    )
+    try:
+        write_task_work_record(req, employee_id)
+    except HTTPException as exc:
+        payload = task_console_payload(employee_id, task_id=req.task_id)
+        return templates.TemplateResponse(
+            "task_console.html",
+            {
+                "request": request,
+                "employee_id": employee_id,
+                "shell": app_shell_context(request, employee_id, active_nav="inbox", title="업무 수행 화면"),
+                "payload": payload,
+                "error": str(exc.detail),
+            },
+            status_code=exc.status_code,
+        )
+    if req.outcome == "completed":
+        return RedirectResponse(app_url("/inbox", employee_id), status_code=303)
+    return RedirectResponse(app_url("/tasks/console", employee_id, task_id=req.task_id), status_code=303)
 
 
 @app.post("/tasks/console/loop-evaluate", response_class=HTMLResponse)
@@ -29465,14 +29568,22 @@ def task_completion_model(context: dict[str, Any], employee_id: str) -> dict[str
         for item in ledger
         if str(item.get("status") or "") == "confirmed"
     }
+    for record in context.get("work_records") or []:
+        if not isinstance(record, dict):
+            continue
+        confirmed_ids.update(str(item) for item in record.get("completed_check_ids") or [] if str(item))
     loop_state = context.get("task_loop_state") if isinstance(context.get("task_loop_state"), dict) else {}
     loop_complete = str(loop_state.get("decision") or "") == "complete"
     evidence_summary = context.get("evidence_summary") if isinstance(context.get("evidence_summary"), dict) else {}
     label_lookup = task_completion_catalog_label_lookup()
-    missing_labels = {
-        friendly_label(str(item), label_lookup)
-        for item in [*(evidence_summary.get("missing") or []), *(evidence_summary.get("missing_raw") or [])]
+    acquired_refs = {
+        str(item.get("source_id") or item.get("ref") or "")
+        for item in evidence_summary.get("acquired") or []
+        if isinstance(item, dict)
     }
+    for record in context.get("work_records") or []:
+        if isinstance(record, dict):
+            acquired_refs.update(str(item) for item in record.get("evidence_refs") or [] if str(item))
 
     checks: list[dict[str, Any]] = []
     for item in task_model.get("completion_design", {}).get("checks") or []:
@@ -29485,7 +29596,8 @@ def task_completion_model(context: dict[str, Any], employee_id: str) -> dict[str
     evidence: list[dict[str, Any]] = []
     for item in task_model.get("completion_design", {}).get("evidence") or []:
         evidence_item = dict(item)
-        evidence_item["available"] = str(evidence_item.get("label") or "") not in missing_labels
+        evidence_ref = str(evidence_item.get("ref") or "")
+        evidence_item["available"] = bool(evidence_ref and evidence_ref in acquired_refs)
         evidence_item["status_label"] = "확보됨" if evidence_item["available"] else "확인 필요"
         evidence.append(evidence_item)
     return {
@@ -29497,6 +29609,74 @@ def task_completion_model(context: dict[str, Any], employee_id: str) -> dict[str
         "execution_mode": execution_mode,
         "ledger_count": len(ledger),
     }
+
+
+def task_assignment_actor_allowed(row: dict[str, Any], employee_id: str) -> bool:
+    if "boi.admin" in roles_for(employee_id):
+        return True
+    assignment = TASK_EXECUTION_STORE.assignment(row)
+    allowed = {
+        *[str(item) for item in assignment.get("assignee_employee_ids") or []],
+        *[str(item) for item in assignment.get("reviewer_employee_ids") or []],
+        str(row.get("employee_id") or ""),
+    }
+    return employee_id in allowed
+
+
+def write_task_work_record(req: TaskWorkRecordRequest, employee_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="기록할 내용을 확인해주세요.")
+    context, row = task_execution_context_fast(employee_id, req.task_id)
+    completion = task_completion_model(context, employee_id)
+    mode = str(completion.get("execution_mode") or "manual")
+    if mode == "autopilot":
+        raise HTTPException(status_code=409, detail="자동 실행 Task는 연결된 시스템 결과로만 기록됩니다.")
+    if req.outcome == "completed" and (not req.action_taken.strip() or not req.decision.strip()):
+        raise HTTPException(status_code=400, detail="완료하려면 수행한 조치와 판단·결과를 남겨주세요.")
+    valid_check_ids = {str(item.get("check_id") or "") for item in completion.get("checks") or []}
+    completed_check_ids = [item for item in req.completed_check_ids if item in valid_check_ids]
+    if req.outcome == "completed" and valid_check_ids and set(completed_check_ids) != valid_check_ids:
+        raise HTTPException(status_code=400, detail="완료된 모습을 모두 확인한 뒤 완료할 수 있습니다.")
+    if req.outcome == "completed" and completion.get("evidence") and not req.evidence_refs:
+        raise HTTPException(status_code=400, detail="확인한 자료를 하나 이상 연결해주세요.")
+    record = TASK_EXECUTION_STORE.append_record(
+        row,
+        {
+            "outcome": req.outcome,
+            "execution_mode": mode,
+            "observation": clean_user_visible_text(req.observation, 4000),
+            "action_taken": clean_user_visible_text(req.action_taken, 4000),
+            "decision": clean_user_visible_text(req.decision, 4000),
+            "result": clean_user_visible_text(req.result, 4000),
+            "blocker": clean_user_visible_text(req.blocker, 2000),
+            "next_work": clean_user_visible_text(req.next_work, 2000),
+            "evidence_refs": [clean_user_visible_text(item, 500) for item in req.evidence_refs],
+            "completed_check_ids": completed_check_ids,
+            "trace_id": str(row.get("trace_id") or req.trace_id),
+            "event_id": str(row.get("event_id") or req.event_id),
+            "action_key": str(row.get("action_key") or req.action_key),
+        },
+        employee_id,
+    )
+    if req.outcome == "completed":
+        append_action_log_row(
+            {
+                "employee_id": employee_id,
+                "assignment": TASK_EXECUTION_STORE.assignment(row),
+                "action_key": "task.work_record.completed",
+                "request_id": f"work-record-completion-{uuid.uuid4().hex}",
+                "completion_for_request_id": str(row.get("request_id") or row.get("_log_ref") or ""),
+                "trace_id": str(row.get("trace_id") or ""),
+                "event_id": str(row.get("event_id") or ""),
+                "event_type": str(row.get("event_type") or ""),
+                "status": "completed",
+                "summary": record.get("result") or record.get("decision") or "Task 완료",
+                "work_record_id": record.get("record_id"),
+                "evidence_refs": record.get("evidence_refs") or [],
+            }
+        )
+    refreshed, _ = task_execution_context_fast(employee_id, req.task_id) if req.outcome != "completed" else (context, row)
+    return record, refreshed
 
 
 def write_task_completion_confirmation(
@@ -29983,6 +30163,150 @@ def attach_inbox_workflow_canvases(
     return payload
 
 
+def task_execution_context_fast(employee_id: str, task_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build the deterministic Task snapshot without Agent/search enrichment."""
+    row = visible_agent_inbox_task_row(
+        task_id,
+        employee_id,
+        allowed_statuses={"manual_required", "approval_required", "manual_blocked", "needs_followup"},
+    )
+    item = agent_inbox_item_from_row(row, employee_id)
+    trace_id = str(row.get("trace_id") or "")
+    event_type = str(row.get("event_type") or "")
+    action_key = str(row.get("action_key") or "")
+    definition = workflow_definition_for_event_type(event_type) if event_type else None
+    if not definition and action_key:
+        definition = workflow_definition_for_action_key(action_key)
+    contract = workflow_definition_event_contract(definition, event_type) if definition and event_type else {}
+    workflow_key = str((definition or {}).get("workflow_definition_key") or "")
+    sop_stage_id = str(contract.get("sop_stage_id") or row.get("sop_stage_id") or "")
+    sop_ref = str((normalize_registry_list((definition or {}).get("sop_refs")) or [""])[0] or "")
+
+    action_rows = [
+        candidate
+        for candidate in cached_action_log_rows()
+        if trace_id and str(candidate.get("trace_id") or "") == trace_id and action_log_visible_to_employee(candidate, employee_id)
+    ][:40]
+    event_rows = [
+        candidate
+        for candidate in cached_event_log_rows()
+        if trace_id and str(candidate.get("trace_id") or "") == trace_id and event_log_visible_to_employee(candidate, employee_id)
+    ][:30]
+    trace_context = {
+        "trace_id": trace_id,
+        "events": [
+            {
+                "event_id": candidate.get("event_id"),
+                "event_type": candidate.get("event_type"),
+                "status": candidate.get("status"),
+                "logged_at": candidate.get("logged_at") or candidate.get("timestamp") or "",
+                "url": events_url(employee_id, trace_id=trace_id, event_id=str(candidate.get("event_id") or "")),
+            }
+            for candidate in event_rows
+        ],
+        "actions": [
+            {
+                "request_id": candidate.get("request_id"),
+                "action_key": candidate.get("action_key"),
+                "status": candidate.get("status") or ((candidate.get("result") or {}).get("status") if isinstance(candidate.get("result"), dict) else ""),
+                "summary": candidate.get("summary") or candidate.get("message") or "",
+                "result_summary": work_context_action_result_summary(candidate),
+                "logged_at": candidate.get("logged_at") or "",
+                "raw_url": "",
+            }
+            for candidate in action_rows
+        ],
+        "generated_bois": [],
+    }
+    stage_history = work_context_stage_history_summary(
+        trace_context,
+        limit=10,
+        focus_event_type=event_type,
+        focus_action_key=action_key,
+        focus_request_id=str(row.get("request_id") or ""),
+    )
+    required_evidence = normalize_registry_list((definition or {}).get("required_evidence"))
+    if not required_evidence:
+        required_evidence = ["current_event", "review_note"]
+    evidence_summary = work_context_evidence_summary(required_evidence, stage_history, sop_stage_id=sop_stage_id)
+    assignment_design = TASK_EXECUTION_STORE.assignment(row)
+    records = TASK_EXECUTION_STORE.records(row)
+    task_ref_values = {
+        str(task_id or ""),
+        str(row.get("request_id") or ""),
+        f"task:{row.get('request_id') or row.get('_log_ref')}",
+        trace_id,
+        str(row.get("event_id") or ""),
+    }
+    task_ref_values.discard("")
+    data_lake_artifacts = [
+        attachment
+        for attachment in list_runtime_records("data-lake-artifact-attachments", limit=200)
+        if str(attachment.get("employee_id") or employee_id) == employee_id
+        and (
+            str(attachment.get("target_id") or "") in task_ref_values
+            or str(attachment.get("target_ref") or "") in task_ref_values
+        )
+    ][:12]
+    external_ai = external_ai_contributions_for_context(
+        employee_id,
+        target_refs=task_ref_values,
+        trace_id=trace_id,
+        event_id=str(row.get("event_id") or ""),
+        action_key=action_key,
+        limit=12,
+    )
+    task_exit_criteria = normalize_registry_list((definition or {}).get("completion_conditions"))
+    if not task_exit_criteria:
+        task_exit_criteria = [
+            f"{clean_user_visible_text(str(work_context_action_title(action_key) or (item.get('display') or {}).get('title') or '현재 업무'), 120)} 업무를 마치고 결과를 기록했어요"
+        ]
+    context = {
+        "ok": True,
+        "employee_id": employee_id,
+        "context_id": f"task-execution:{TASK_EXECUTION_STORE.assignment(row).get('task_key')}",
+        "task": {
+            **item,
+            "task_id": item.get("task_id"),
+            "request_id": row.get("request_id") or "",
+            "trace_id": trace_id,
+            "event_id": row.get("event_id") or "",
+            "event_type": event_type,
+            "action_key": action_key,
+            "display": item.get("display") or {},
+            "assignment_design": assignment_design,
+        },
+        "sop_stage": {
+            "sop_ref": sop_ref,
+            "sop_stage_id": sop_stage_id,
+            "event_type": event_type,
+            "workflow_definition_key": workflow_key,
+        },
+        "trace_context": trace_context,
+        "stage_history_summary": stage_history,
+        "required_evidence": required_evidence,
+        "evidence_summary": evidence_summary,
+        "completion_design": (definition or {}).get("completion_design") or {},
+        "task_exit_criteria": task_exit_criteria,
+        "task_loop_state": {"execution_mode": str((definition or {}).get("execution_mode") or "manual"), "decision": "continue"},
+        "data_lake_artifacts": data_lake_artifacts,
+        "external_ai_contributions": external_ai,
+        "similar_case_summaries": [],
+        "historical_patterns": [],
+        "recommended_next_steps": [],
+        "context_manifest": {
+            "strategy": ["write", "select", "compress", "isolate"],
+            "included_sources": ["task", "workflow", "trace", *(["data_lake_artifact_profiles"] if data_lake_artifacts else [])],
+            "excluded_sources": ["raw_file_body", "long_transcript", "large_csv"],
+            "raw_payload_policy": "profile_sample_checksum_url_only",
+        },
+        "work_records": records,
+        "assignment_design": assignment_design,
+    }
+    context["task_loop_state"] = task_loop_state_for_context(context)
+    return context, row
+
+
 def task_console_payload(
     employee_id: str,
     *,
@@ -29995,18 +30319,7 @@ def task_console_payload(
     workflow_definition_key: str = "",
     current_url: str = "",
 ) -> dict[str, Any]:
-    context = work_context_pack(
-        employee_id,
-        task_id=task_id,
-        trace_id=trace_id,
-        event_id=event_id,
-        action_key=action_key,
-        sop_ref=sop_ref,
-        sop_stage_id=sop_stage_id,
-        workflow_definition_key=workflow_definition_key,
-        current_url=current_url,
-        narrative_async_generate=False,
-    )
+    context, task_row = task_execution_context_fast(employee_id, task_id)
     compact = compact_work_context_summary(context)
     task = context.get("task") if isinstance(context.get("task"), dict) else {}
     display = task.get("display") if isinstance(task.get("display"), dict) else {}
@@ -30051,6 +30364,14 @@ def task_console_payload(
         "execution_mode": execution_mode,
         "mode_cards": task_console_mode_cards(execution_mode),
         "completion": completion,
+        "assignment_design": TASK_EXECUTION_STORE.assignment(task_row),
+        "work_records": TASK_EXECUTION_STORE.records(task_row, limit=20),
+        "work_form": {
+            "requires_observation": True,
+            "requires_action": execution_mode in {"manual", "copilot"},
+            "requires_decision": execution_mode in {"manual", "copilot"},
+            "requires_system_result": execution_mode == "autopilot",
+        },
         "workflow_canvas": workflow_canvas,
         "work_context_summary": compact,
         "work_context_pack": context,
@@ -31474,6 +31795,7 @@ def agent_inbox_item_from_row(
         raw_url=raw_url,
     )
     row_business_context = business_context_fingerprint(row)
+    assignment_design = TASK_EXECUTION_STORE.assignment(row)
     item = {
         "task_id": task_id,
         "task_ref": inbox_task_public_ref(employee_id, task_id),
@@ -31504,6 +31826,7 @@ def agent_inbox_item_from_row(
         "display": display,
         "business_context": row_business_context,
         "business_context_quality": business_context_quality(row_business_context),
+        "assignment_design": assignment_design,
     }
     item["source_id"] = inbox_item_source_id(item)
     item["comparison_candidates"] = inbox_item_comparison_candidates(item)
@@ -35387,6 +35710,106 @@ async def api_task_console(
         workflow_definition_key=workflow_definition_key,
         current_url=current_url,
     )
+
+
+@app.get("/api/tasks/{task_ref}/execution-snapshot")
+async def api_task_execution_snapshot(
+    task_ref: str,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    return task_console_payload(employee_id, task_id=task_ref)
+
+
+@app.patch("/api/tasks/{task_ref}/assignment")
+async def api_task_assignment_patch(
+    task_ref: str,
+    req: TaskAssignmentPatchRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="배정 변경을 확인해주세요.")
+    row = visible_agent_inbox_task_row(task_ref, employee_id)
+    if not task_assignment_actor_allowed(row, employee_id):
+        raise HTTPException(status_code=403, detail="이 Task의 배정을 변경할 권한이 없습니다.")
+    known_people = set(USER_NAMES) | set(USER_TEAMS)
+    unknown = [item for item in [*req.assignee_employee_ids, *req.reviewer_employee_ids] if item not in known_people]
+    if unknown:
+        raise HTTPException(status_code=400, detail="확인할 수 없는 담당자가 포함되어 있습니다.")
+    try:
+        assignment = TASK_EXECUTION_STORE.update_assignment(
+            row,
+            actor_employee_id=employee_id,
+            assignee_employee_ids=req.assignee_employee_ids,
+            reviewer_employee_ids=req.reviewer_employee_ids,
+            related_team_ids=req.related_team_ids,
+            expected_revision=req.expected_revision,
+        )
+    except ValueError as exc:
+        if str(exc) == "assignment_revision_conflict":
+            raise HTTPException(status_code=409, detail="다른 사용자가 배정을 변경했습니다. 최신 내용을 확인해주세요.") from exc
+        raise
+    invalidate_action_log_caches()
+    return {"ok": True, "task_ref": task_ref, "assignment_design": assignment}
+
+
+@app.post("/api/tasks/{task_ref}/work-records/preview")
+async def api_task_work_record_preview(
+    task_ref: str,
+    req: TaskWorkRecordRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    context, _row = task_execution_context_fast(employee_id, task_ref)
+    completion = task_completion_model(context, employee_id)
+    blockers: list[str] = []
+    if req.outcome == "completed" and not req.action_taken.strip():
+        blockers.append("수행한 조치가 필요합니다.")
+    if req.outcome == "completed" and not req.decision.strip():
+        blockers.append("판단·결과가 필요합니다.")
+    if req.outcome == "completed" and completion.get("evidence") and not req.evidence_refs:
+        blockers.append("확인한 자료를 연결해야 합니다.")
+    return {"ok": True, "ready": not blockers, "blockers": blockers, "completion": completion}
+
+
+@app.post("/api/tasks/{task_ref}/work-records")
+async def api_task_work_record(
+    task_ref: str,
+    req: TaskWorkRecordRequest,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    req.task_id = task_ref
+    record, context = write_task_work_record(req, employee_id)
+    return {"ok": True, "record": record, "completion": task_completion_model(context, employee_id)}
+
+
+@app.get("/api/v2/directory/people")
+async def api_directory_people(
+    q: str = "",
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    query = q.strip().lower()
+    people = []
+    for candidate in sorted(set(USER_NAMES) | set(USER_TEAMS)):
+        name = user_name_for(candidate)
+        teams = teams_for(candidate)
+        searchable = " ".join([candidate, name, *teams]).lower()
+        if query and query not in searchable:
+            continue
+        people.append({"employee_id": candidate, "name": name, "teams": teams})
+        if len(people) >= 50:
+            break
+    return {"ok": True, "items": people}
+
+
+@app.get("/api/v2/directory/teams")
+async def api_directory_teams(
+    q: str = "",
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.viewer")
+    query = q.strip().lower()
+    team_ids = sorted({team for candidate in set(USER_NAMES) | set(USER_TEAMS) for team in teams_for(candidate)})
+    return {"ok": True, "items": [{"team_id": team, "name": team} for team in team_ids if not query or query in team.lower()]}
 
 
 @app.post("/api/tasks/console/external-ai-note")

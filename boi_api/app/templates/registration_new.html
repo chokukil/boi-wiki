@@ -640,6 +640,19 @@
                         </select>
                       </label>
                       <label>
+                        담당자
+                        <input data-stage-field="assignee_employee_ids" placeholder="사번을 여러 개 지정할 수 있습니다. 예: 100001, 100002" />
+                        <small>지정된 담당자 모두의 Inbox에 같은 Task가 표시됩니다.</small>
+                      </label>
+                      <label>
+                        검토 담당자
+                        <input data-stage-field="reviewer_employee_ids" placeholder="예: 100003" />
+                      </label>
+                      <label>
+                        유관 팀
+                        <input data-stage-field="related_team_ids" placeholder="예: equipment, quality" />
+                      </label>
+                      <label>
                         판단 질문
                         <textarea data-stage-field="decision_question" placeholder="예: 판단 근거가 충분한가?"></textarea>
                       </label>

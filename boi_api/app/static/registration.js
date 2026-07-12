@@ -606,6 +606,12 @@
         runner_type: stage.runner_type || (executionMode === "manual" ? "human" : executionMode === "autopilot" ? "agent" : "mixed"),
         detail_status: taskDetailStatus(stage),
         tat_badge: taskTatBadge(stage),
+        assignment_design: {
+          assignee_employee_ids: stage.assignee_employee_ids || [],
+          reviewer_employee_ids: stage.reviewer_employee_ids || [],
+          related_team_ids: stage.related_team_ids || [],
+          completion_policy: "any_assignee",
+        },
       };
     });
   }
@@ -714,6 +720,7 @@
       required_evidence: splitStageList(seed.required_evidence || seed.evidence_requirements || ""),
     }) || {version: 1, checks: [], evidence: []};
     const completionProjection = window.BoiTaskCompletion?.projection(completionDesign) || {exit_criteria: [], required_evidence: []};
+    const assignmentSeed = seed.assignment_design && typeof seed.assignment_design === "object" ? seed.assignment_design : {};
     return {
       stage_id: seed.stage_id || seed.task_id || seed.id || `task-${Date.now().toString(36)}-${index}`,
       stage_name: name,
@@ -733,6 +740,15 @@
       approval_policy: seed.approval_policy || (executionMode === "autopilot" ? "policy_required" : "stage_owner_confirmed"),
       verification_policy: seed.verification_policy || "evidence_required",
       fallback_owner: seed.fallback_owner || (seed.source === "agent_v2_artifact" ? "" : employeeId),
+      assignment_design: {
+        assignee_employee_ids: splitStageList(assignmentSeed.assignee_employee_ids || seed.assignee_employee_ids || employeeId),
+        reviewer_employee_ids: splitStageList(assignmentSeed.reviewer_employee_ids || seed.reviewer_employee_ids || ""),
+        related_team_ids: splitStageList(assignmentSeed.related_team_ids || seed.related_team_ids || ""),
+        completion_policy: "any_assignee",
+      },
+      assignee_employee_ids: splitStageList(assignmentSeed.assignee_employee_ids || seed.assignee_employee_ids || employeeId),
+      reviewer_employee_ids: splitStageList(assignmentSeed.reviewer_employee_ids || seed.reviewer_employee_ids || ""),
+      related_team_ids: splitStageList(assignmentSeed.related_team_ids || seed.related_team_ids || ""),
       tat_target: seed.tat_target || "",
       baseline_tat: seed.baseline_tat || "",
       measurement_policy: seed.measurement_policy || "runtime_trace",
@@ -978,7 +994,18 @@
     const key = field.dataset.stageField || "";
     if (!key) return;
     const value = field.value || "";
-    if (["exit_criteria", "required_evidence", "expected_outputs"].includes(key)) stage[key] = splitList(value);
+    if (["exit_criteria", "required_evidence", "expected_outputs", "assignee_employee_ids", "reviewer_employee_ids", "related_team_ids"].includes(key)) {
+      stage[key] = splitList(value);
+      if (["assignee_employee_ids", "reviewer_employee_ids", "related_team_ids"].includes(key)) {
+        stage.assignment_design = {
+          ...(stage.assignment_design || {}),
+          assignee_employee_ids: stage.assignee_employee_ids || [],
+          reviewer_employee_ids: stage.reviewer_employee_ids || [],
+          related_team_ids: stage.related_team_ids || [],
+          completion_policy: "any_assignee",
+        };
+      }
+    }
     else if (key === "execution_mode") {
       stage[key] = normalizeExecutionMode(value);
       stage.copilot_source = normalizeCopilotSource(stage.copilot_source, stage[key]);

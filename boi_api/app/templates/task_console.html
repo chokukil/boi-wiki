@@ -84,27 +84,93 @@
             <article class="{% if check.confirmed %}confirmed{% endif %}">
               <span aria-hidden="true">{% if check.confirmed %}✓{% else %}{{ loop.index }}{% endif %}</span>
               <div><strong>{{ check.label }}</strong><small>{{ check.status_label }}</small></div>
-              {% if not check.confirmed and payload.execution_mode != "autopilot" %}
-              <form method="post" action="/tasks/console/completion-confirm?employee_id={{ employee_id }}">
-                <input type="hidden" name="task_id" value="{{ task.ui_task_id or task.task_id }}" />
-                <input type="hidden" name="trace_id" value="{{ task.trace_id }}" />
-                <input type="hidden" name="event_id" value="{{ task.event_id }}" />
-                <input type="hidden" name="action_key" value="{{ task.action_key }}" />
-                <input type="hidden" name="sop_ref" value="{{ stage.sop_ref }}" />
-                <input type="hidden" name="sop_stage_id" value="{{ stage.sop_stage_id }}" />
-                <input type="hidden" name="workflow_definition_key" value="{{ stage.workflow_definition_key }}" />
-                <input type="hidden" name="check_id" value="{{ check.check_id }}" />
-                <input type="hidden" name="label" value="{{ check.label }}" />
-                <input type="hidden" name="user_confirmed" value="true" />
-                <button type="submit" class="secondary-button">확인 완료</button>
-              </form>
-              {% endif %}
             </article>
             {% else %}
             <p class="muted">아직 완료된 모습이 정해지지 않았습니다.</p>
             {% endfor %}
           </div>
         </div>
+
+        {% if payload.execution_mode != "autopilot" %}
+        <div class="task-console-section task-console-work-record" data-a2ui-component="WorkRecordForm" data-a2ui-catalog="boi-a2ui/v1">
+          <div class="mode-panel-heading">
+            <strong>이번 업무에서 확인하고 수행한 내용</strong>
+            <span>체크만 남기지 않고 실제로 본 내용, 조치와 판단을 함께 기록합니다.</span>
+          </div>
+          <form class="task-console-note-form" method="post" action="/tasks/console/work-record?employee_id={{ employee_id }}">
+            <input type="hidden" name="task_id" value="{{ task.ui_task_id or task.task_id }}" />
+            <input type="hidden" name="trace_id" value="{{ task.trace_id }}" />
+            <input type="hidden" name="event_id" value="{{ task.event_id }}" />
+            <input type="hidden" name="action_key" value="{{ task.action_key }}" />
+            <input type="hidden" name="sop_ref" value="{{ stage.sop_ref }}" />
+            <input type="hidden" name="sop_stage_id" value="{{ stage.sop_stage_id }}" />
+            <input type="hidden" name="workflow_definition_key" value="{{ stage.workflow_definition_key }}" />
+            <label>
+              확인한 내용
+              <textarea name="observation" rows="3" required placeholder="예: Alarm 발생 시각과 Trend 변화, Raw Data 상태를 확인했습니다."></textarea>
+            </label>
+            <label>
+              수행한 조치
+              <textarea name="action_taken" rows="3" placeholder="예: 보전 가이드에 따라 설비 상태를 점검하고 담당자에게 추가 확인을 요청했습니다."></textarea>
+            </label>
+            <label>
+              판단과 결과
+              <textarea name="decision" rows="3" placeholder="예: 재발 가능성이 있어 즉시 완료하지 않고 후속 점검이 필요하다고 판단했습니다."></textarea>
+            </label>
+            <div class="task-console-form-grid">
+              <label>
+                현재 결과
+                <select name="outcome">
+                  <option value="progress">진행 내용을 남깁니다</option>
+                  <option value="needs_review">담당자 검토가 더 필요합니다</option>
+                  <option value="blocked">막힌 점이 있습니다</option>
+                  <option value="completed">업무를 완료합니다</option>
+                </select>
+              </label>
+              <label>
+                확인한 자료
+                <input name="evidence_refs" type="text" placeholder="문서, 파일 또는 결과 링크를 쉼표로 구분" />
+              </label>
+            </div>
+            <label>
+              막힌 점 또는 다음 업무
+              <textarea name="blocker" rows="2" placeholder="현재 진행을 막는 점이 있다면 적어주세요."></textarea>
+            </label>
+            <label>
+              다음에 이어서 할 일
+              <input name="next_work" type="text" placeholder="예: 30분 뒤 Trend 안정 여부 재확인" />
+            </label>
+            {% if completion.checks %}
+            <fieldset class="task-work-record-checks">
+              <legend>기록으로 확인되는 완료된 모습</legend>
+              {% for check in completion.checks %}
+              <label>
+                <input type="checkbox" name="completed_check_ids" value="{{ check.check_id }}" {% if check.confirmed %}checked{% endif %} />
+                {{ check.label }}
+              </label>
+              {% endfor %}
+            </fieldset>
+            {% endif %}
+            <label class="task-console-confirm">
+              <input type="checkbox" name="user_confirmed" value="true" required />
+              위 내용이 실제로 확인하고 수행한 기록과 일치합니다.
+            </label>
+            <button class="button primary" type="submit">업무 기록 남기기</button>
+          </form>
+          {% if payload.work_records %}
+          <div class="task-work-record-history">
+            <h3>최근 업무 기록</h3>
+            {% for record in payload.work_records|reverse %}
+            <article>
+              <strong>{{ record.observation }}</strong>
+              {% if record.action_taken %}<p>{{ record.action_taken }}</p>{% endif %}
+              <small>{{ record.actor_employee_id }} · {{ record.recorded_at }}</small>
+            </article>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
 
         {% if workflow.source %}
         <div class="task-console-section">
@@ -119,10 +185,6 @@
             </div>
             <div class="mermaid">{{ workflow.source }}</div>
             <p class="mermaid-status" aria-live="polite">업무 흐름 그림을 준비하고 있습니다.</p>
-            <details class="mermaid-source-fallback">
-              <summary>흐름 원본 보기</summary>
-              <pre><code>{{ workflow.source }}</code></pre>
-            </details>
           </div>
           <div class="task-console-workflow-stage-list">
             {% for stage in workflow.stages %}
