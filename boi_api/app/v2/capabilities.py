@@ -143,3 +143,12 @@ class CapabilityRegistry:
         if definition.operation == OperationClass.read:
             return True
         return mode in {TaskMode.copilot, TaskMode.autopilot}
+
+    @staticmethod
+    def handler_supported(definition: CapabilityDefinition) -> bool:
+        """Return whether the turn service has an executable handler class.
+
+        Mutating work is represented as a guarded plan and confirmed through the
+        domain APIs. A catalog entry must not fall through to a runtime 501.
+        """
+        return definition.operation in {OperationClass.read, OperationClass.draft}

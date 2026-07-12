@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from boi_api.app.v2.config import AgentV2Settings
+from boi_api.app.v2.capabilities import CapabilityRegistry
 from boi_api.app.v2.domain import DomainServiceGateway
 from boi_api.app.v2.entity_resolver import AmbiguousEntityError, EntityResolver
 from boi_api.app.v2.evaluation import IndependentArtifactEvaluator
@@ -55,6 +56,7 @@ from boi_api.app.v2.models import (
     LegacyHelperImportRequest,
     LoopDelta,
     NoteFromTurnRequest,
+    OperationClass,
     OfferRequest,
     Principal,
     RiskLevel,
@@ -86,6 +88,14 @@ from boi_api.app.task_completion import normalise_task_completion
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_capability_registry_rejects_unimplemented_mutation_handlers_before_turn_execution():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    read_definition = registry.get("knowledge.search")
+
+    assert registry.handler_supported(read_definition) is True
+    assert registry.handler_supported(read_definition.model_copy(update={"operation": OperationClass.mutate})) is False
 
 
 def test_postgres_store_registers_every_helper_builder_collection():

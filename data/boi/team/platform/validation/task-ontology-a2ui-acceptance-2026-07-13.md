@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:team:platform
-status: reviewed
+status: draft
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
@@ -37,10 +37,12 @@ implementation_refs:
 review:
   reviewer: platform-lead
   reviewed_at: 2026-07-13T12:00:00+09:00
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 실행 기준
+
+> 이 문서는 통합 acceptance 진행 중인 중간 기록이다. 아래 수치는 당시 범위의 부분 검증 결과이며, 전체 clean regression, 12개 browser journey, 실제 Adapter 실행과 최신 화면 근거를 모두 통과하기 전에는 최종 acceptance로 사용하지 않는다.
 
 - 검증 기준: `665918a` acceptance, `8bc2c00` backend, `c3526af` Web renderer와 Explorer, `8ffe42a` Harness 개선 경계
 - fixture version: `1.0`

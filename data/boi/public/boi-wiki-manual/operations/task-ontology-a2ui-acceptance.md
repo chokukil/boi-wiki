@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: draft
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
@@ -34,10 +34,12 @@ implementation_refs:
 review:
   reviewer: platform-lead
   reviewed_at: 2026-07-13T03:10:00+09:00
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 무엇을 검증하나
+
+> 현재 상태: 통합 acceptance 확장 중. 기존 38개 결과는 부분 기준선이며, 총 50개 결정적 시나리오와 12개 browser journey, 전체 clean regression이 끝나기 전에는 최종 합격으로 보지 않는다.
 
 Task 수행 화면, 업무 관계 그래프와 동적 결과 화면은 각각 따로 보이는 기능이 아니다. 같은 업무 맥락과 근거를 유지하면서 사람이 실제 일을 수행하고, 관계를 이해하며, 안전하게 결과를 남길 수 있어야 한다.
 
@@ -83,7 +85,7 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 
 # 현재 검증 상태
 
-2026-07-13 기본 검증에서는 fixture의 32개 항목 각각이 실제 pytest handler를 실행해 통과했다. Harness 개선 계약을 더한 후에는 38개 handler가 모두 통과했다. 별도 브라우저 실행기는 `1440×1000`, `1180×850`, `390×844`에서 Task 기록 양식, 근거 선택, 관계 탐색 canvas, fallback, overflow와 console 오류를 조작·검사한다.
+2026-07-13 기준으로 38개 handler와 4개 browser journey의 부분 검증을 마쳤다. 이는 통합 목표의 기준선이며, Harness review, 실제 Adapter, 전체 Work Learning loop와 확장 browser journey를 포함한 최종 검증은 진행 중이다.
 
 | 검증 | 결과 |
 |---|---:|

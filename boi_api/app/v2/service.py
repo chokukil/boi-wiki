@@ -4723,6 +4723,16 @@ class AgentV2Service:
             task_mode=task_mode,
             supplied_input=supplied,
         )
+        if not self.registry.handler_supported(definition):
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "capability_unavailable",
+                    "capability_id": capability_id,
+                    "message": "이 기능의 안전한 실행 경로가 아직 준비되지 않았습니다.",
+                    "retryable": False,
+                },
+            )
         if state == CapabilityState.unavailable:
             raise HTTPException(
                 status_code=503 if any(not dependencies.get(name, False) for name in definition.readiness) else 403,
@@ -5412,7 +5422,7 @@ class AgentV2Service:
                     detail=failure,
                 ) from exc
         else:
-            raise HTTPException(status_code=501, detail="mutation capability handler is not implemented")
+            raise RuntimeError(f"capability handler contract violated: {capability_id}")
 
         if citations and capability_id not in {"knowledge.search", "cases.similar"}:
             markers = " ".join(
