@@ -179,6 +179,18 @@ BOI_BASE_URL="$BOI_BASE_URL" node scripts/check_manual_guides_ui.mjs
 
 일반 탐색과 검증 중 LM Studio load/unload request는 0건이어야 한다.
 
+Task·Ontology·동적 화면 acceptance:
+
+```bash
+pytest -q tests/test_task_ontology_a2ui.py tests/test_agent_v2.py
+python scripts/check_task_ontology_a2ui_acceptance.py --output .tmp/task-ontology-a2ui-acceptance.json
+python scripts/evaluate_agent_v2_work_scenarios.py --output .tmp/agent-v2-work-scenarios.json
+```
+
+첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질을 검증한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
+
+- [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)
+
 # 장애별 확인
 
 | 증상 | 먼저 볼 곳 |

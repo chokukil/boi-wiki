@@ -212,6 +212,18 @@ Task 실행은 `TaskExecutionSnapshot`을 Inbox와 Task Console의 공통 read m
 
 Agent와 Task의 동적 표현은 A2UI `0.9.1` 호환 `boi-a2ui/v1` catalog로 컴파일한다. A2UI는 정본이나 업무 규칙이 아니며, 허용된 component와 event만 렌더링한다. 지원하지 않는 client 또는 검증 실패 시 기존 typed response renderer를 사용한다.
 
+```mermaid
+flowchart LR
+  DOMAIN["검증된 Domain Result"] --> PLAN["Presentation Plan"]
+  PLAN --> A2UI["boi-a2ui/v1 compiler"]
+  A2UI --> GUARD{"component·URL·event 검증"}
+  GUARD -->|통과| SURFACE["동적 화면"]
+  GUARD -->|실패·미지원| FALLBACK["typed response fallback"]
+  SURFACE --> MUTATION["preview·confirmation·Harness"]
+```
+
+응답 크기 제한은 표현 중복을 먼저 줄이고 WorkIntent와 최소 citation을 보존한다. citation이 제거된 응답을 `grounded`로 표시해서는 안 된다. 이 경계는 [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)의 결정적 테스트와 실모델 시나리오로 검증한다.
+
 # Business Runtime
 
 ```mermaid

@@ -67,6 +67,8 @@ Task에는 담당자, 검토 담당자와 유관 팀을 여러 개 지정할 수
 
 배정은 자료 접근 권한을 자동으로 늘리지 않는다. 담당자에게 필요한 근거의 권한이 없다면 수행 준비 상태에 `접근 권한 필요`가 표시되어야 한다.
 
+예를 들어 담당자 A가 올린 private 원본을 담당자 B에게 Task만 배정해도 원본 권한은 생기지 않는다. B는 접근 가능한 BoI, 현재 Event·Action 결과, 본인이 남긴 담당자 메모 또는 명시적으로 공유된 자료를 연결해야 완료할 수 있다.
+
 ```mermaid
 flowchart TD
   TASK["공통 Task"] --> P1["담당자 A Inbox"]
@@ -117,9 +119,19 @@ BoI Agent와 Task 수행 화면은 결과에 맞는 입력과 결과물을 동�
 - Action 실행과 변경은 기존 preview, Harness와 확인 절차를 그대로 거친다.
 - 동적 화면을 지원하지 않는 환경에서는 기존 답변과 결과 화면으로 돌아간다.
 
+# 검증된 사용 예
+
+- Manual: 확인 내용과 조치를 기록하고, 접근 가능한 근거와 완료된 모습을 모두 확인해야 완료된다.
+- Copilot: 내부·외부 AI 요약은 자료 준비이며 담당자 판단이 없으면 완료되지 않는다.
+- Autopilot: 사람이 WorkRecord로 완료를 선언할 수 없고 system binding과 Action 결과가 필요하다.
+- 복수 담당자: 각 Inbox에서 같은 흐름과 기록을 보며 한 명이 완료하면 공통 Task가 한 번만 완료된다.
+
+상세 시나리오와 성능 기준은 [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)을 따른다.
+
 # 함께 보기
 
 - [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)
 - [Inbox와 Task 수행 가이드](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)
 - [SOP 만들기와 연결하기](/docs/boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop)
 - [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)
+- [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)
