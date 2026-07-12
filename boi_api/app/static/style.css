@@ -150,6 +150,9 @@ pre { white-space:pre-wrap; word-break:break-word; background:#0b1020; color:#d1
 .mermaid-source-fallback { margin-top:10px; }
 .mermaid-source-fallback summary { cursor:pointer; color:#1d4ed8; font-weight:700; }
 .mermaid-source-fallback pre { max-height:180px; overflow:auto; }
+.a2ui-decision-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:6px 12px; align-items:baseline; }
+.a2ui-decision-row span { overflow-wrap:anywhere; }
+.a2ui-decision-row small { grid-column:1 / -1; color:var(--muted, #64748b); }
 .mermaid-diagram[data-mermaid-state="fallback"] { border-color:#f59e0b; background:#fffbeb; }
 .boi-agent-answer p { margin:0 0 8px; }
 .boi-agent-answer ul { margin:8px 0 8px 18px; padding:0; }

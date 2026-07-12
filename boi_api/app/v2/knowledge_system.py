@@ -153,6 +153,19 @@ class LivingKnowledgeService:
             digest.update(
                 json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
             )
+        for collection in (
+            "context_playbook_items",
+            "harness_failure_patterns",
+            "harness_candidates",
+            "harness_shadow_runs",
+            "harness_eval_runs",
+            "harness_versions",
+        ):
+            for record in self.store.list(collection, limit=10_000):
+                digest.update(
+                    f"{collection}:".encode("utf-8")
+                    + json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+                )
         return digest.hexdigest()
 
     def _ensure_defaults(self) -> None:
@@ -1166,6 +1179,90 @@ class LivingKnowledgeService:
                     metadata={"source_ref": person_id},
                 )
 
+        # Operational learning relations are administrator-only. They make the
+        # runtime Harness inspectable without turning diagnostics into public knowledge.
+        operational_revision = self.runtime_relation_signature()
+        if operational_revision:
+            admin_employee_ids = [
+                item.employee_id
+                for item in self.directory_principals(compiler_principal)
+                if item.is_admin
+            ]
+
+            def append_operational_node(node_id: str, node_type: str, title: str, row: dict[str, Any]) -> None:
+                nodes.append(
+                    {
+                        "node_id": node_id,
+                        "node_type": node_type,
+                        "payload": {
+                            "title": title,
+                            "visibility": "private",
+                            "owner": "",
+                            "allowed_employee_ids": admin_employee_ids,
+                            "status": str(row.get("status") or ""),
+                            "source_revision": str(row.get("updated_at") or row.get("created_at") or operational_revision),
+                            "observed_at": str(row.get("updated_at") or row.get("created_at") or ""),
+                        },
+                    }
+                )
+
+            harness_nodes: set[str] = set()
+            for run in self.store.list("work_runs", limit=10_000):
+                run_id = str(run.get("work_run_id") or "")
+                if not run_id:
+                    continue
+                run_node_id = f"work-run:{run_id}"
+                append_operational_node(run_node_id, "work_run", str((run.get("intent") or {}).get("resolved_goal") or "업무 실행"), run)
+                for binding in run.get("harness_bindings") or []:
+                    if not isinstance(binding, dict) or not binding.get("harness_id"):
+                        continue
+                    harness_node_id = f"harness:{binding['harness_id']}:{binding.get('version') or 'current'}:{binding.get('model_profile') or 'default'}"
+                    if harness_node_id not in harness_nodes:
+                        append_operational_node(harness_node_id, "harness_version", str(binding.get("harness_id")), binding)
+                        harness_nodes.add(harness_node_id)
+                    append_edge(run_node_id, harness_node_id, "used_harness", "extracted", operational_revision, metadata={"source_ref": run_id})
+
+            for pattern in self.store.list("harness_failure_patterns", limit=10_000):
+                pattern_id = str(pattern.get("failure_pattern_id") or "")
+                if not pattern_id:
+                    continue
+                append_operational_node(pattern_id, "failure_pattern", str(pattern.get("summary") or "반복 실패"), pattern)
+                for run_id in pattern.get("work_run_ids") or []:
+                    append_edge(pattern_id, f"work-run:{run_id}", "observed_in", "extracted", operational_revision, metadata={"source_ref": pattern_id})
+
+            for candidate in self.store.list("harness_candidates", limit=10_000):
+                candidate_id = str(candidate.get("candidate_id") or "")
+                if not candidate_id:
+                    continue
+                append_operational_node(candidate_id, "harness_candidate", str(candidate.get("rationale") or "Harness 개선 후보"), candidate)
+                for pattern_id in candidate.get("failure_pattern_ids") or []:
+                    append_edge(candidate_id, str(pattern_id), "addresses_failure", "declared", operational_revision, metadata={"source_ref": candidate_id})
+                eval_id = str(candidate.get("latest_eval_id") or "")
+                if eval_id:
+                    append_edge(candidate_id, eval_id, "evaluated_by", "extracted", operational_revision, metadata={"source_ref": candidate_id})
+
+            for evaluation in self.store.list("harness_eval_runs", limit=10_000):
+                eval_id = str(evaluation.get("eval_id") or "")
+                if eval_id:
+                    append_operational_node(eval_id, "evaluation_run", "Harness 회귀·안전 평가", evaluation)
+
+            for version in self.store.list("harness_versions", limit=10_000):
+                version_id = str(version.get("harness_version_id") or "")
+                if not version_id:
+                    continue
+                append_operational_node(version_id, "harness_version", str(version.get("harness_id") or "Harness 버전"), version)
+                candidate_id = str(version.get("candidate_id") or "")
+                if candidate_id:
+                    append_edge(version_id, candidate_id, "approved_from", "human_verified", operational_revision, metadata={"source_ref": version_id})
+
+            for playbook in self.store.list("context_playbook_items", limit=10_000):
+                item_id = str(playbook.get("item_id") or "")
+                if not item_id:
+                    continue
+                append_operational_node(item_id, "context_playbook_item", str(playbook.get("description") or "업무 맥락 Playbook"), playbook)
+                for run_id in playbook.get("supporting_work_run_ids") or []:
+                    append_edge(item_id, f"work-run:{run_id}", "supported_by", "declared", operational_revision, metadata={"source_ref": item_id})
+
         unique_nodes = {str(item["node_id"]): item for item in nodes}
         unique_edges = {str(item["edge_id"]): item for item in edges}
         previous = self.store.get("manifests", "knowledge_graph") or {}
@@ -1285,6 +1382,7 @@ class LivingKnowledgeService:
         if (
             graph_manifest.get("compiler_version") != EXTRACTOR_VERSION
             or graph_manifest.get("source_signature") != self.repository.source_signature()
+            or graph_manifest.get("directory_signature") != self.directory_signature(principal)
         ):
             self.compile_graph(principal)
         offset = int(cursor) if str(cursor).isdigit() else 0

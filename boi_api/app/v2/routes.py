@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from .auth import V2IdentityResolver, require_scope
+from .a2ui import compile_harness_review_surface
 from .models import (
     AgentTurnRequest,
     CapabilityPlanRequest,
@@ -20,6 +21,10 @@ from .models import (
     HarnessValidateRequest,
     HarnessCandidateCreateRequest,
     HarnessCandidateEvaluateRequest,
+    HarnessCandidateReviewRequest,
+    HarnessCandidateShadowRequest,
+    ContextPlaybookCreateRequest,
+    ContextPlaybookPatchRequest,
     KnowledgeCandidatePatchRequest,
     KnowledgeCandidatePromoteRequest,
     GraphQueryPlan,
@@ -562,6 +567,22 @@ def build_agent_v2_router(
         require_scope(identity, "boi.read")
         return service.learning.list_harness_failures(identity, status=status)
 
+    @router.get("/api/v2/harness-failure-patterns")
+    async def harness_failure_patterns(
+        status: str = "open",
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return service.learning.list_harness_failure_patterns(identity, status=status)
+
+    @router.get("/api/v2/negative-results")
+    async def negative_results(
+        status: str = "active",
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return service.learning.list_negative_results(identity, status=status)
+
     @router.get("/api/v2/context-playbook")
     async def context_playbook(
         status: str = "",
@@ -569,6 +590,23 @@ def build_agent_v2_router(
     ) -> dict[str, Any]:
         require_scope(identity, "boi.read")
         return service.learning.list_context_playbook(identity, status=status)
+
+    @router.post("/api/v2/context-playbook")
+    async def create_context_playbook_item(
+        request: ContextPlaybookCreateRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        return service.learning.create_context_playbook_item(identity, request)
+
+    @router.patch("/api/v2/context-playbook/{item_id}")
+    async def patch_context_playbook_item(
+        item_id: str,
+        request: ContextPlaybookPatchRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        return service.learning.patch_context_playbook_item(identity, item_id, request)
 
     @router.post("/api/v2/harness-candidates")
     async def create_harness_candidate(
@@ -580,6 +618,17 @@ def build_agent_v2_router(
             raise HTTPException(status_code=403, detail="boi.admin is required")
         return service.learning.create_harness_candidate(identity, request)
 
+    @router.post("/api/v2/harness-candidates/{candidate_id}/shadow")
+    async def shadow_harness_candidate(
+        candidate_id: str,
+        request: HarnessCandidateShadowRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        if not identity.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        return service.learning.shadow_harness_candidate(identity, candidate_id, request)
+
     @router.post("/api/v2/harness-candidates/{candidate_id}/evaluate")
     async def evaluate_harness_candidate(
         candidate_id: str,
@@ -590,6 +639,45 @@ def build_agent_v2_router(
         if not identity.is_admin:
             raise HTTPException(status_code=403, detail="boi.admin is required")
         return service.learning.evaluate_harness_candidate(identity, candidate_id, request)
+
+    @router.post("/api/v2/harness-candidates/{candidate_id}/review")
+    async def review_harness_candidate(
+        candidate_id: str,
+        request: HarnessCandidateReviewRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        if not identity.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        return service.learning.review_harness_candidate(identity, candidate_id, request)
+
+    @router.get("/api/v2/harness-candidates/{candidate_id}/surface")
+    async def harness_candidate_surface(
+        candidate_id: str,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        if not identity.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        candidate = service.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        pattern_ids = set(candidate.get("failure_pattern_ids") or [])
+        patterns = [
+            item for item in service.store.list("harness_failure_patterns", limit=1000)
+            if item.get("failure_pattern_id") in pattern_ids
+        ]
+        shadow = service.store.get("harness_shadow_runs", str(candidate.get("latest_shadow_run_id") or ""))
+        evaluation = service.store.get("harness_eval_runs", str(candidate.get("latest_eval_id") or ""))
+        surface = compile_harness_review_surface(
+            candidate,
+            failure_patterns=patterns,
+            shadow_run=shadow,
+            evaluation=evaluation,
+        )
+        surface.update({"employee_id": identity.employee_id, "created_at": candidate.get("updated_at") or candidate.get("created_at")})
+        service.store.put("a2ui_surfaces", surface["surface_id"], surface)
+        return surface
 
     @router.get("/api/v2/knowledge-proposals")
     async def knowledge_proposals(

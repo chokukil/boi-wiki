@@ -66,6 +66,21 @@
     </dl>
   </details>
   {% endif %}
+  {% if harness_improvement_status %}
+  <details class="panel technical-details">
+    <summary>업무 실행 품질 개선</summary>
+    <p>반복해서 막힌 이유를 모으고 제한된 변경을 별도 시험한 뒤, 사람이 승인한 후보만 배포 검토 대상으로 남깁니다. 이 화면에서 운영 설정이 자동 변경되지는 않습니다.</p>
+    <dl>
+      <dt>반복 실패 유형</dt><dd>{{ harness_improvement_status.open_patterns }}건</dd>
+      <dt>검토할 시험 결과</dt><dd>{{ harness_improvement_status.review_candidates }}건</dd>
+      <dt>활성 업무 맥락 항목</dt><dd>{{ harness_improvement_status.active_playbook }}건</dd>
+      <dt>보존된 실패 결과</dt><dd>{{ harness_improvement_status.negative_results }}건</dd>
+    </dl>
+    {% if harness_improvement_status.latest_candidate_id %}
+    <p><a class="button secondary" href="/api/v2/harness-candidates/{{ harness_improvement_status.latest_candidate_id }}/surface" target="_blank" rel="noopener">최근 개선 시험 계약 보기</a></p>
+    {% endif %}
+  </details>
+  {% endif %}
 </main>
 </body>
 </html>

@@ -2554,6 +2554,7 @@ class AgentV2Service:
             source_set=source_set,
             external_ai_summary=request.external_ai_summary,
             external_refs=request.external_artifact_refs,
+            model_profile=self.learning.model_profile,
         )
         context.manifest.update(
             {

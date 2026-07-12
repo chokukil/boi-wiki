@@ -386,12 +386,47 @@ class HarnessCandidateCreateRequest(BaseModel):
     rationale: str = Field(min_length=12, max_length=4000)
 
 
+class HarnessCandidateShadowRequest(BaseModel):
+    fixture_revision: str = Field(min_length=1, max_length=160)
+    held_out_limit: int = Field(default=20, ge=1, le=100)
+
+
 class HarnessCandidateEvaluateRequest(BaseModel):
+    shadow_run_id: str = Field(min_length=1, max_length=160)
     held_in: dict[str, Any]
     held_out: dict[str, Any]
     adversarial: dict[str, Any] = Field(default_factory=dict)
     long_term: dict[str, Any] = Field(default_factory=dict)
     fixture_revision: str = Field(min_length=1, max_length=160)
+
+
+class HarnessCandidateReviewRequest(BaseModel):
+    decision: Literal["approve_for_release", "hold", "reject"]
+    expected_eval_id: str = Field(min_length=1, max_length=160)
+    note: str = Field(min_length=4, max_length=4000)
+
+
+class ContextPlaybookCreateRequest(BaseModel):
+    description: str = Field(min_length=12, max_length=4000)
+    conditions: list[str] = Field(default_factory=list, max_length=30)
+    capability_ids: list[str] = Field(default_factory=list, max_length=30)
+    asset_kinds: list[str] = Field(default_factory=list, max_length=30)
+    task_refs: list[str] = Field(default_factory=list, max_length=30)
+    team_ids: list[str] = Field(default_factory=list, max_length=30)
+    model_profiles: list[str] = Field(default_factory=lambda: ["default"], max_length=20)
+    source_refs: list[str] = Field(min_length=1, max_length=50)
+    supporting_work_run_ids: list[str] = Field(default_factory=list, max_length=50)
+    valid_until: str = Field(default="", max_length=80)
+    visibility: Literal["private", "team"] = "private"
+
+
+class ContextPlaybookPatchRequest(BaseModel):
+    expected_revision: int = Field(ge=1)
+    description: str | None = Field(default=None, min_length=12, max_length=4000)
+    status: Literal["provisional", "active", "deprecated", "rejected"] | None = None
+    valid_until: str | None = Field(default=None, max_length=80)
+    deprecates_item_ids: list[str] | None = Field(default=None, max_length=30)
+    review_note: str = Field(default="", max_length=4000)
 
 
 class KnowledgeCandidateRef(BaseModel):

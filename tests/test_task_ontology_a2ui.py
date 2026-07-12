@@ -6,7 +6,13 @@ import pytest
 import yaml
 
 from boi_api.app.task_execution import TaskExecutionStore
-from boi_api.app.v2.a2ui import ALLOWED_COMPONENTS, BOI_CATALOG_ID, compile_surface, validate_surface
+from boi_api.app.v2.a2ui import (
+    ALLOWED_COMPONENTS,
+    BOI_CATALOG_ID,
+    compile_harness_review_surface,
+    compile_surface,
+    validate_surface,
+)
 from boi_api.app.v2.models import AgentTurnResponse, AnswerBlock, ArtifactRef
 from boi_api.app.v2.store import MemoryAgentV2Store
 from fastapi.testclient import TestClient
@@ -35,12 +41,18 @@ def _create_task(boi_app_module, request_id: str, *, employee_id: str = "100001"
     )
 
 
-def test_acceptance_fixture_has_decision_complete_32_scenario_matrix():
+def test_acceptance_fixture_has_decision_complete_38_scenario_matrix():
     payload = yaml.safe_load((ROOT / "tests/fixtures/task_ontology_a2ui_acceptance.yaml").read_text(encoding="utf-8"))
     groups = payload["groups"]
-    assert {key: len(value) for key, value in groups.items()} == {"task": 10, "graph": 10, "a2ui": 6, "learning": 6}
+    assert {key: len(value) for key, value in groups.items()} == {
+        "task": 10,
+        "graph": 10,
+        "a2ui": 6,
+        "learning": 6,
+        "harness_improvement": 6,
+    }
     scenario_ids = [item["id"] for items in groups.values() for item in items]
-    assert len(scenario_ids) == len(set(scenario_ids)) == 32
+    assert len(scenario_ids) == len(set(scenario_ids)) == 38
     assert all(item.get("handler", "").startswith("tests/") for items in groups.values() for item in items)
     assert len(payload["multiturn"]) >= 6
     assert all(len(item["turns"]) >= 2 for item in payload["multiturn"])
@@ -136,6 +148,28 @@ def test_a2ui_compiler_only_emits_trusted_catalog_components_and_keeps_fallback(
     assert {item["component"] for item in surface["components"]} <= ALLOWED_COMPONENTS
     assert "createSurface" in surface["jsonl"]
     assert "updateComponents" in surface["jsonl"]
+
+
+def test_harness_review_surface_explains_failures_trial_and_non_deployment():
+    surface = compile_harness_review_surface(
+        {
+            "candidate_id": "hcandidate-1",
+            "rationale": "반복되는 근거 누락을 줄이기 위한 제한된 검색 정책 시험입니다.",
+            "changes": {"retrieval_policy": {"authority_weight": 1.1}},
+            "status": "review_required",
+            "created_at": "2026-07-13T00:00:00+00:00",
+        },
+        failure_patterns=[{"summary": "검증된 근거 누락", "occurrence_count": 3, "status": "open"}],
+        shadow_run={"status": "preflight_passed"},
+        evaluation={"qualified": True},
+    )
+
+    validate_surface(surface)
+    summaries = [item["props"].get("summary") for item in surface["components"]]
+    assert "반복해서 막힌 이유" in summaries
+    assert "시험과 운영 경계" in summaries
+    assert surface["fallback"]["production_changed"] is False
+    assert all(item["component"] in {"Answer", "DecisionSummary"} for item in surface["components"])
 
 
 @pytest.mark.parametrize(

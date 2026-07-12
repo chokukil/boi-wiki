@@ -175,3 +175,80 @@ def compile_surface(response: AgentTurnResponse) -> dict[str, Any]:
         ]
     )
     return surface
+
+
+def compile_harness_review_surface(
+    candidate: dict[str, Any],
+    *,
+    failure_patterns: list[dict[str, Any]],
+    shadow_run: dict[str, Any] | None = None,
+    evaluation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compile an inspectable, non-mutating review surface for a Harness candidate."""
+    candidate_id = str(candidate.get("candidate_id") or "")
+    pattern_items = [
+        {
+            "label": str(item.get("summary") or "반복 실패"),
+            "value": f"{int(item.get('occurrence_count') or 0)}회",
+            "status": str(item.get("status") or "open"),
+        }
+        for item in failure_patterns[:10]
+    ]
+    changes = candidate.get("changes") if isinstance(candidate.get("changes"), dict) else {}
+    trial_items = [
+        {"label": "서버 사전 점검", "value": str((shadow_run or {}).get("status") or "아직 실행하지 않음")},
+        {"label": "회귀·안전 평가", "value": "통과" if (evaluation or {}).get("qualified") else "미통과 또는 대기"},
+        {"label": "운영 반영", "value": "반영되지 않음"},
+    ]
+    components = [
+        {
+            "id": "candidate-summary",
+            "component": "Answer",
+            "props": {
+                "summary": "업무 실행 품질 개선 후보",
+                "markdown": str(candidate.get("rationale") or "반복 실패를 줄이기 위한 제한된 개선 후보입니다."),
+            },
+        },
+        {
+            "id": "failure-patterns",
+            "component": "DecisionSummary",
+            "props": {"summary": "반복해서 막힌 이유", "items": pattern_items},
+        },
+        {
+            "id": "bounded-change",
+            "component": "DecisionSummary",
+            "props": {
+                "summary": "다음 실행에서 시험할 변경",
+                "items": [{"label": key, "value": value} for key, value in sorted(changes.items())],
+            },
+        },
+        {
+            "id": "trial-result",
+            "component": "DecisionSummary",
+            "props": {"summary": "시험과 운영 경계", "items": trial_items},
+        },
+    ]
+    surface_id = "surface-harness-" + hashlib.sha256(
+        f"{candidate_id}:{candidate.get('updated_at') or candidate.get('created_at')}".encode("utf-8")
+    ).hexdigest()[:20]
+    surface = {
+        "surface_id": surface_id,
+        "protocol_version": A2UI_PROTOCOL_VERSION,
+        "catalog_id": BOI_CATALOG_ID,
+        "components": components,
+        "events": [],
+        "fallback": {
+            "candidate_id": candidate_id,
+            "status": candidate.get("status"),
+            "production_changed": False,
+        },
+    }
+    validate_surface(surface)
+    surface["jsonl"] = "\n".join(
+        json.dumps(item, ensure_ascii=False)
+        for item in [
+            {"createSurface": {"surfaceId": surface_id, "catalogId": BOI_CATALOG_ID}},
+            {"updateComponents": {"surfaceId": surface_id, "components": components}},
+        ]
+    )
+    return surface

@@ -43,6 +43,13 @@ groups:
     - {id: learning_contradiction_proposal, contract: contradiction_requires_review, handler: "tests/test_agent_v2.py::test_living_knowledge_sources_data_artifacts_graph_and_review_boundary"}
     - {id: parity_web_rest_mcp, contract: interfaces_share_semantic_ids, handler: "tests/test_agent_v2.py::test_identical_cross_interface_turns_reuse_the_same_semantic_route_and_evidence"}
     - {id: context_navigation_exclusion, contract: navigation_deprecated_smoke_seed_are_excluded, handler: "tests/test_boi_api_routes.py::test_navigation_index_redirects_to_folder_and_is_not_agent_context"}
+  harness_improvement:
+    - {id: harness_causal_failure_pattern, contract: same_cause_is_grouped_without_rewriting_history, handler: "tests/test_agent_v2.py::test_same_causal_harness_failure_is_grouped_as_a_recurrent_pattern"}
+    - {id: harness_context_playbook_scope, contract: playbook_is_deduplicated_versioned_and_model_scoped, handler: "tests/test_agent_v2.py::test_context_playbook_is_deduplicated_versioned_and_model_scoped"}
+    - {id: harness_shadow_required, contract: evaluation_requires_server_shadow_preflight, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: harness_immutable_boundary, contract: permissions_and_safety_are_not_editable_surfaces, handler: "tests/test_agent_v2.py::test_harness_candidate_cannot_change_immutable_safety_boundaries"}
+    - {id: harness_negative_result, contract: no_progress_and_rejected_candidates_are_preserved, handler: "tests/test_agent_v2.py::test_no_progress_is_preserved_as_a_negative_result"}
+    - {id: harness_operational_ontology, contract: failure_candidate_eval_and_playbook_relations_are_admin_only, handler: "tests/test_agent_v2.py::test_harness_improvement_relations_are_compiled_into_admin_ontology"}
 multiturn:
   - id: followup_graph
     turns: ["업무 이벤트와 SOP 관계를 설명해줘", "그 관계만 흐름 그림으로 보여줘"]

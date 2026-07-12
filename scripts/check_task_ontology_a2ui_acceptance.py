@@ -167,8 +167,8 @@ def main() -> int:
     if not args.skip_runtime:
         before_residency = residency(before)
         after_residency = residency(after)
-    if scenario_count != 32:
-        failures.append(f"acceptance scenario count must be 32, got {scenario_count}")
+    if scenario_count != 38:
+        failures.append(f"acceptance scenario count must be 38, got {scenario_count}")
     if snapshot_latencies and snapshot_p95 > 500:
         failures.append(f"warm Task snapshot p95 must be <=500ms, got {snapshot_p95}ms")
     if graph_latencies and graph_p95 > 200:

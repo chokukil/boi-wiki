@@ -198,7 +198,20 @@
     const article = element("article", "a2ui-decision-summary");
     article.appendChild(element("h3", "", props.summary || "판단 결과"));
     const list = element("ul");
-    (props.items || []).forEach((item) => list.appendChild(element("li", "", item.label || item.summary || item)));
+    (props.items || []).forEach((item) => {
+      if (!item || typeof item !== "object") {
+        list.appendChild(element("li", "", item));
+        return;
+      }
+      const row = element("li", "a2ui-decision-row");
+      row.appendChild(element("strong", "", item.label || item.summary || "확인 항목"));
+      if (item.value !== undefined && item.value !== null && item.value !== "") {
+        const renderedValue = typeof item.value === "string" ? item.value : JSON.stringify(item.value);
+        row.appendChild(element("span", "", renderedValue));
+      }
+      if (item.status) row.appendChild(element("small", "", item.status));
+      list.appendChild(row);
+    });
     article.appendChild(list);
     mount.appendChild(article);
     return true;

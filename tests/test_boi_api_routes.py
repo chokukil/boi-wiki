@@ -406,6 +406,9 @@ def test_data_library_and_integration_status_are_first_class_routes(boi_app_modu
     assert "기존 BoI와 업무 이력은 계속 사용할 수 있습니다" in library.text
     assert integrations.status_code == 200
     assert "연결 상태" in integrations.text
+    assert "업무 실행 품질 개선" in integrations.text
+    assert "동적 결과 화면 진단" in integrations.text
+    assert 'data-subnav-id="langflow_console"' in integrations.text
     assert status.status_code == 200
     assert {item["integration_id"] for item in status.json()["items"]} >= {
         "event_broker",
@@ -11493,7 +11496,7 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert '<div class="mermaid-diagram" data-mermaid-state="pending">' in response.text
     assert '<div class="mermaid">' in response.text
     assert "flowchart TD" in response.text
-    assert "Mermaid source" in response.text
+    assert "Mermaid source" not in response.text
     assert "print(&#x27;plain code&#x27;)" in response.text
     assert "<pre class=\"markdown-body\">" not in response.text
 

@@ -286,6 +286,7 @@ class ContextCompiler:
         source_set: dict[str, Any],
         external_ai_summary: str,
         external_refs: list[str],
+        model_profile: str = "default",
     ) -> WorkContextPack:
         page_anchor = self.page_anchor(principal, page_ref)
         goal_anchor = self.goal_anchor(principal, session, task_ref)
@@ -313,14 +314,47 @@ class ContextCompiler:
                 for key in ("workflow", "event_type", "action_key", "source_refs", "owner", "status", "tags"):
                     if record.metadata.get(key) not in (None, "", [], {}):
                         metadata[key] = record.metadata.get(key)
-        playbook_items = [
-            item for item in self.store.list("context_playbook_items", employee_id=principal.employee_id, limit=500)
-            if str(item.get("status") or "") in {"provisional", "active"}
-            and (
-                not (item.get("applies_to") or {}).get("capability_ids")
-                or definition.capability_id in (item.get("applies_to") or {}).get("capability_ids", [])
-            )
-        ][:6]
+        now = datetime.now(timezone.utc)
+        playbook_items: list[dict[str, Any]] = []
+        for item in self.store.list("context_playbook_items", limit=1000):
+            visibility = str(item.get("visibility") or "private")
+            owner_visible = str(item.get("employee_id") or "") == principal.employee_id
+            team_visible = visibility == "team" and bool(set(item.get("team_ids") or []) & set(principal.teams))
+            if not (owner_visible or team_visible):
+                continue
+            item_status = str(item.get("status") or "")
+            if item_status not in {"provisional", "active"}:
+                continue
+            if item_status == "provisional" and not owner_visible:
+                continue
+            valid_until = str((item.get("freshness") or {}).get("valid_until") or "")
+            if valid_until:
+                try:
+                    expires = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    if expires.tzinfo is None:
+                        expires = expires.replace(tzinfo=timezone.utc)
+                    if expires <= now:
+                        continue
+                except ValueError:
+                    continue
+            profiles = [str(value) for value in item.get("model_profiles") or ["default"]]
+            if "default" not in profiles and model_profile not in profiles:
+                continue
+            applies_to = item.get("applies_to") if isinstance(item.get("applies_to"), dict) else {}
+            if applies_to.get("capability_ids") and definition.capability_id not in applies_to["capability_ids"]:
+                continue
+            if applies_to.get("task_refs") and task_ref not in applies_to["task_refs"]:
+                continue
+            playbook_items.append(item)
+        playbook_items.sort(
+            key=lambda item: (
+                str(item.get("status") or "") == "active",
+                len(item.get("successful_run_ids") or []) - len(item.get("failed_run_ids") or []),
+                str(item.get("updated_at") or item.get("created_at") or ""),
+            ),
+            reverse=True,
+        )
+        playbook_items = playbook_items[:6]
         if playbook_items:
             metadata["context_playbook"] = [
                 {
@@ -329,6 +363,8 @@ class ContextCompiler:
                     "conditions": item.get("conditions") or [],
                     "source_refs": item.get("source_refs") or [],
                     "status": item.get("status"),
+                    "revision": item.get("revision") or 1,
+                    "model_profiles": item.get("model_profiles") or ["default"],
                 }
                 for item in playbook_items
             ]
@@ -408,6 +444,10 @@ class WorkLearningService:
         self.knowledge_change_notifier = knowledge_change_notifier
         self.model_profile = model_profile or "default"
 
+    def _notify_operational_change(self, record_id: str, employee_id: str) -> None:
+        if self.knowledge_change_notifier is not None and record_id:
+            self.knowledge_change_notifier(record_id, employee_id, "upsert")
+
     def _record_harness_failures(
         self,
         *,
@@ -447,12 +487,59 @@ class WorkLearningService:
                 ),
                 "evidence_refs": [item.evidence_id for item in context.evidence_refs],
                 "artifact_refs": list(work_run.get("artifact_refs") or []),
+                "loop_deltas": list((work_run.get("loop") or {}).get("deltas") or [])[-10:],
+                "runtime_events": list(work_run.get("events") or [])[-10:],
+                "tool_action_results": [
+                    item
+                    for item in (work_run.get("loop") or {}).get("deltas") or []
+                    if isinstance(item, dict) and item.get("kind") in {"action_result", "state_transition", "blocker"}
+                ][-10:],
+                "user_corrections": [
+                    item
+                    for item in (work_run.get("loop") or {}).get("deltas") or []
+                    if isinstance(item, dict) and item.get("kind") == "human_input"
+                ][-10:],
                 "reproducibility": "fixture_required",
                 "scope": "recurrent_candidate" if len(blocked_checks) == 1 else "run_specific",
                 "status": "open",
                 "created_at": now_iso(),
             }
+            pattern_seed = {
+                "harness_id": result.harness_id,
+                "phase": phase,
+                "causal_stage": causal_stage,
+                "mechanisms": sorted(record["exposed_mechanism"]),
+                "cause": _compact(record["terminal_verifier_cause"], 300).casefold(),
+            }
+            pattern_id = _id(
+                "hpattern",
+                json.dumps(pattern_seed, ensure_ascii=False, sort_keys=True),
+            )
+            record["failure_pattern_id"] = pattern_id
             self.store.put("harness_failure_records", record_id, record)
+            pattern = self.store.get("harness_failure_patterns", pattern_id) or {
+                "failure_pattern_id": pattern_id,
+                "harness_id": result.harness_id,
+                "phase": phase,
+                "causal_agent_stage": causal_stage,
+                "exposed_mechanism": record["exposed_mechanism"],
+                "summary": record["terminal_verifier_cause"],
+                "failure_record_ids": [],
+                "work_run_ids": [],
+                "model_profiles": [],
+                "first_seen_at": now_iso(),
+                "status": "open",
+            }
+            pattern.update(
+                {
+                    "failure_record_ids": list(dict.fromkeys([*pattern.get("failure_record_ids", []), record_id]))[-200:],
+                    "work_run_ids": list(dict.fromkeys([*pattern.get("work_run_ids", []), work_run["work_run_id"]]))[-200:],
+                    "model_profiles": list(dict.fromkeys([*pattern.get("model_profiles", []), self.model_profile])),
+                    "occurrence_count": int(pattern.get("occurrence_count") or 0) + 1,
+                    "last_seen_at": now_iso(),
+                }
+            )
+            self.store.put("harness_failure_patterns", pattern_id, pattern)
             negative_id = _id("negative", record_id)
             self.store.put(
                 "negative_results",
@@ -463,14 +550,48 @@ class WorkLearningService:
                     "kind": "harness_blocker",
                     "work_run_id": work_run["work_run_id"],
                     "failure_record_id": record_id,
+                    "failure_pattern_id": pattern_id,
                     "summary": record["terminal_verifier_cause"],
                     "source_refs": record["evidence_refs"],
                     "status": "active",
                     "created_at": now_iso(),
                 },
             )
+            self._notify_operational_change(pattern_id, principal.employee_id)
             record_ids.append(record_id)
         return record_ids
+
+    def _record_negative_result(
+        self,
+        *,
+        principal: Principal,
+        kind: str,
+        summary: str,
+        work_run_id: str = "",
+        source_refs: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        payload = {
+            "kind": kind,
+            "summary": _compact(summary, 2000),
+            "work_run_id": work_run_id,
+            "source_refs": list(dict.fromkeys(source_refs or []))[:50],
+            "metadata": metadata or {},
+        }
+        negative_id = _id(
+            "negative",
+            f"{principal.employee_id}:{json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)}",
+        )
+        row = {
+            "negative_result_id": negative_id,
+            "employee_id": principal.employee_id,
+            **payload,
+            "status": "active",
+            "created_at": now_iso(),
+        }
+        self.store.put("negative_results", negative_id, row)
+        self._notify_operational_change(negative_id, principal.employee_id)
+        return negative_id
 
     def list_harness_failures(self, principal: Principal, *, status: str = "open") -> dict[str, Any]:
         items = [
@@ -480,13 +601,168 @@ class WorkLearningService:
         ]
         return {"count": len(items), "items": items}
 
-    def list_context_playbook(self, principal: Principal, *, status: str = "") -> dict[str, Any]:
+    def list_harness_failure_patterns(self, principal: Principal, *, status: str = "open") -> dict[str, Any]:
+        visible_failure_ids = {
+            str(item.get("failure_record_id") or "")
+            for item in self.list_harness_failures(principal, status="")["items"]
+        }
         items = [
-            item for item in self.store.list("context_playbook_items", limit=1000)
+            item for item in self.store.list("harness_failure_patterns", limit=1000)
+            if (not status or str(item.get("status") or "") == status)
+            and bool(set(item.get("failure_record_ids") or []) & visible_failure_ids)
+        ]
+        return {"count": len(items), "items": items}
+
+    def list_negative_results(self, principal: Principal, *, status: str = "active") -> dict[str, Any]:
+        items = [
+            item for item in self.store.list("negative_results", limit=1000)
             if (principal.is_admin or str(item.get("employee_id") or "") == principal.employee_id)
             and (not status or str(item.get("status") or "") == status)
         ]
         return {"count": len(items), "items": items}
+
+    def list_context_playbook(self, principal: Principal, *, status: str = "") -> dict[str, Any]:
+        items = [
+            item for item in self.store.list("context_playbook_items", limit=1000)
+            if (
+                principal.is_admin
+                or str(item.get("employee_id") or "") == principal.employee_id
+                or (
+                    str(item.get("visibility") or "") == "team"
+                    and bool(set(item.get("team_ids") or []) & set(principal.teams))
+                )
+            )
+            and (not status or str(item.get("status") or "") == status)
+        ]
+        return {"count": len(items), "items": items}
+
+    @staticmethod
+    def _playbook_fingerprint(description: str, applies_to: dict[str, Any], model_profiles: list[str]) -> str:
+        payload = {
+            "description": _compact(description, 4000).casefold(),
+            "applies_to": applies_to,
+            "model_profiles": sorted(set(model_profiles or ["default"])),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+
+    def create_context_playbook_item(self, principal: Principal, request: Any) -> dict[str, Any]:
+        if request.visibility == "team" and not principal.teams and not principal.is_admin:
+            raise HTTPException(status_code=403, detail="팀 Playbook 항목을 만들 권한이 없습니다.")
+        if request.visibility == "team" and not principal.is_admin and not set(request.team_ids or principal.teams).issubset(set(principal.teams)):
+            raise HTTPException(status_code=403, detail="소속되지 않은 팀의 Playbook 항목을 만들 수 없습니다.")
+        for run_id in request.supporting_work_run_ids:
+            run = self.store.get("work_runs", run_id)
+            if not run or (not principal.is_admin and str(run.get("employee_id") or "") != principal.employee_id):
+                raise HTTPException(status_code=404, detail="근거 WorkRun을 찾을 수 없습니다.")
+        applies_to = {
+            "capability_ids": list(dict.fromkeys(request.capability_ids)),
+            "asset_kinds": list(dict.fromkeys(request.asset_kinds)),
+            "task_refs": list(dict.fromkeys(request.task_refs)),
+        }
+        profiles = list(dict.fromkeys(request.model_profiles or ["default"]))
+        fingerprint = self._playbook_fingerprint(request.description, applies_to, profiles)
+        duplicate = next(
+            (
+                item for item in self.store.list("context_playbook_items", limit=1000)
+                if item.get("fingerprint") == fingerprint
+                and str(item.get("status") or "") not in {"deprecated", "rejected"}
+                and (principal.is_admin or str(item.get("employee_id") or "") == principal.employee_id)
+            ),
+            None,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "context_playbook_duplicate", "existing_item_id": duplicate.get("item_id")},
+            )
+        item_id = _id("playbook", f"{principal.employee_id}:{fingerprint}")
+        item = {
+            "item_id": item_id,
+            "employee_id": principal.employee_id,
+            "description": _compact(request.description, 4000),
+            "conditions": list(dict.fromkeys(_compact(item, 240) for item in request.conditions if _compact(item, 240))),
+            "applies_to": applies_to,
+            "team_ids": list(dict.fromkeys(request.team_ids or (principal.teams if request.visibility == "team" else []))),
+            "model_profiles": profiles,
+            "source_refs": list(dict.fromkeys(request.source_refs)),
+            "supporting_work_run_ids": list(dict.fromkeys(request.supporting_work_run_ids)),
+            "successful_run_ids": [],
+            "failed_run_ids": [],
+            "freshness": {"created_at": now_iso(), "valid_until": request.valid_until},
+            "status": "provisional",
+            "visibility": request.visibility,
+            "fingerprint": fingerprint,
+            "revision": 1,
+            "deprecates_item_ids": [],
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        }
+        stored = self.store.put("context_playbook_items", item_id, item)
+        self._notify_operational_change(item_id, principal.employee_id)
+        return stored
+
+    def patch_context_playbook_item(self, principal: Principal, item_id: str, request: Any) -> dict[str, Any]:
+        item = self.store.get("context_playbook_items", item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Context Playbook 항목을 찾을 수 없습니다.")
+        if not principal.is_admin and str(item.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=403, detail="이 Context Playbook 항목을 수정할 수 없습니다.")
+        revision = int(item.get("revision") or 1)
+        if request.expected_revision != revision:
+            raise HTTPException(status_code=409, detail={"code": "revision_conflict", "current_revision": revision})
+        if request.status == "active" and not item.get("source_refs"):
+            raise HTTPException(status_code=422, detail="출처 없는 Playbook 항목은 활성화할 수 없습니다.")
+        if request.status == "active" and item.get("visibility") == "team" and not principal.is_admin:
+            raise HTTPException(status_code=403, detail="팀 Playbook 활성화는 검토 권한이 필요합니다.")
+        if request.description is not None:
+            item["description"] = _compact(request.description, 4000)
+        if request.valid_until is not None:
+            item.setdefault("freshness", {})["valid_until"] = request.valid_until
+        if request.status is not None:
+            item["status"] = request.status
+        if request.deprecates_item_ids is not None:
+            for old_id in request.deprecates_item_ids:
+                old = self.store.get("context_playbook_items", old_id)
+                if not old:
+                    raise HTTPException(status_code=404, detail=f"대체할 Playbook 항목을 찾을 수 없습니다: {old_id}")
+                if not principal.is_admin and str(old.get("employee_id") or "") != principal.employee_id:
+                    raise HTTPException(status_code=403, detail="다른 사용자의 Playbook 항목을 대체할 수 없습니다.")
+                old.update({"status": "deprecated", "superseded_by": item_id, "updated_at": now_iso()})
+                self.store.put("context_playbook_items", old_id, old)
+            item["deprecates_item_ids"] = list(dict.fromkeys(request.deprecates_item_ids))
+        item.update(
+            {
+                "review_note": _compact(request.review_note, 4000),
+                "reviewed_by": principal.employee_id if request.status in {"active", "rejected"} else item.get("reviewed_by") or "",
+                "revision": revision + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        item["fingerprint"] = self._playbook_fingerprint(
+            str(item.get("description") or ""),
+            item.get("applies_to") or {},
+            item.get("model_profiles") or ["default"],
+        )
+        duplicate = next(
+            (
+                row for row in self.store.list("context_playbook_items", limit=1000)
+                if row.get("item_id") != item_id
+                and row.get("fingerprint") == item["fingerprint"]
+                and str(row.get("status") or "") not in {"deprecated", "rejected"}
+                and (principal.is_admin or str(row.get("employee_id") or "") == principal.employee_id)
+            ),
+            None,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "context_playbook_duplicate", "existing_item_id": duplicate.get("item_id")},
+            )
+        stored = self.store.put("context_playbook_items", item_id, item)
+        self._notify_operational_change(item_id, principal.employee_id)
+        return stored
 
     def create_harness_candidate(self, principal: Principal, request: Any) -> dict[str, Any]:
         definition = self.harnesses.definition(request.harness_id)
@@ -504,6 +780,29 @@ class WorkLearningService:
         failures = [self.store.get("harness_failure_records", item) for item in request.failure_record_ids]
         if any(not item for item in failures):
             raise HTTPException(status_code=404, detail="실패 기록을 찾을 수 없습니다.")
+        if not principal.is_admin and any(str(item.get("employee_id") or "") != principal.employee_id for item in failures if item):
+            raise HTTPException(status_code=403, detail="다른 사용자의 실패 기록으로 후보를 만들 수 없습니다.")
+        pattern_ids = list(
+            dict.fromkeys(str(item.get("failure_pattern_id") or "") for item in failures if item and item.get("failure_pattern_id"))
+        )
+        recurrent = any(
+            int((self.store.get("harness_failure_patterns", pattern_id) or {}).get("occurrence_count") or 0) >= 2
+            for pattern_id in pattern_ids
+        )
+        candidate_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "harness_id": request.harness_id,
+                    "base_version": definition.version,
+                    "model_profile": request.model_profile,
+                    "changes": request.changes,
+                    "failure_pattern_ids": pattern_ids,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
         candidate_id = _id("hcandidate", f"{request.harness_id}:{request.model_profile}:{now_iso()}")
         candidate = {
             "candidate_id": candidate_id,
@@ -512,13 +811,110 @@ class WorkLearningService:
             "base_version": definition.version,
             "model_profile": request.model_profile,
             "failure_record_ids": request.failure_record_ids,
+            "failure_pattern_ids": pattern_ids,
+            "recurrent_pattern": recurrent,
             "changes": request.changes,
             "rationale": request.rationale,
             "status": "shadow_pending",
             "production_changed": False,
+            "candidate_fingerprint": candidate_fingerprint,
             "created_at": now_iso(),
         }
-        return self.store.put("harness_candidates", candidate_id, candidate)
+        stored = self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(candidate_id, principal.employee_id)
+        return stored
+
+    @staticmethod
+    def _candidate_addressable_stages(changes: dict[str, Any]) -> set[str]:
+        prefixes: set[str] = set()
+        if set(changes) & {"context_recipe", "retrieval_policy"}:
+            prefixes.update({"context", "knowledge", "task.evidence"})
+        if set(changes) & {"planner_instruction", "presentation_policy"}:
+            prefixes.update({"context", "sop", "event", "skill", "knowledge"})
+        if set(changes) & {"tool_order", "fallback_order"}:
+            prefixes.update({"action", "task", "event", "skill"})
+        if "loop_budget" in changes:
+            prefixes.update({"loop", "task"})
+        return prefixes
+
+    def shadow_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        if not principal.is_admin and str(candidate.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=403, detail="이 Harness 후보를 시험할 수 없습니다.")
+        definition = self.harnesses.definition(str(candidate.get("harness_id") or ""))
+        forbidden = sorted(set(candidate.get("changes") or {}) & set(definition.immutable_boundaries))
+        addressable = self._candidate_addressable_stages(candidate.get("changes") or {})
+        failure_rows = [
+            self.store.get("harness_failure_records", item) or {}
+            for item in candidate.get("failure_record_ids") or []
+        ]
+        unresolved = [
+            str(row.get("failure_record_id") or "")
+            for row in failure_rows
+            if str(row.get("causal_agent_stage") or "").split(".", 1)[0] not in addressable
+        ]
+        successful_runs = []
+        for run in self.store.list("work_runs", limit=2000):
+            if str(run.get("status") or "") != "completed":
+                continue
+            bindings = [item for item in run.get("harness_bindings") or [] if isinstance(item, dict)]
+            if not any(
+                item.get("harness_id") == candidate.get("harness_id")
+                and item.get("model_profile") == candidate.get("model_profile")
+                for item in bindings
+            ):
+                continue
+            successful_runs.append(
+                {
+                    "work_run_id": run.get("work_run_id"),
+                    "intent": run.get("intent"),
+                    "harness_bindings": bindings,
+                    "stop_reason": run.get("stop_reason") or "completed",
+                }
+            )
+            if len(successful_runs) >= request.held_out_limit:
+                break
+        loop_change = (candidate.get("changes") or {}).get("loop_budget")
+        bounded_loop = True
+        if isinstance(loop_change, dict):
+            bounded_loop = (
+                1 <= int(loop_change.get("max_iterations") or 5) <= 5
+                and 0 <= int(loop_change.get("max_no_progress") or 1) <= 1
+                and 1 <= int(loop_change.get("max_tool_loops") or 5) <= 5
+            )
+        preflight_passed = not forbidden and not unresolved and bounded_loop and bool(failure_rows)
+        shadow_run_id = _id("hshadow", f"{candidate_id}:{request.fixture_revision}:{now_iso()}")
+        shadow = {
+            "shadow_run_id": shadow_run_id,
+            "candidate_id": candidate_id,
+            "employee_id": principal.employee_id,
+            "candidate_fingerprint": candidate.get("candidate_fingerprint"),
+            "fixture_revision": request.fixture_revision,
+            "status": "preflight_passed" if preflight_passed else "preflight_failed",
+            "held_in_failure_record_ids": [str(item.get("failure_record_id") or "") for item in failure_rows],
+            "unaddressed_failure_record_ids": unresolved,
+            "held_out_preservation_runs": successful_runs,
+            "adversarial": {
+                "immutable_changes": forbidden,
+                "bounded_loop": bounded_loop,
+                "permission_layer_outside_candidate": True,
+            },
+            "production_changed": False,
+            "created_at": now_iso(),
+        }
+        self.store.put("harness_shadow_runs", shadow_run_id, shadow)
+        candidate.update(
+            {
+                "status": "shadow_ready" if preflight_passed else "shadow_preflight_failed",
+                "latest_shadow_run_id": shadow_run_id,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(candidate_id, principal.employee_id)
+        return {"candidate": candidate, "shadow_run": shadow}
 
     def evaluate_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
         candidate = self.store.get("harness_candidates", candidate_id)
@@ -526,20 +922,41 @@ class WorkLearningService:
             raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
         if not principal.is_admin and str(candidate.get("employee_id") or "") != principal.employee_id:
             raise HTTPException(status_code=403, detail="이 Harness 후보를 평가할 수 없습니다.")
+        shadow = self.store.get("harness_shadow_runs", request.shadow_run_id)
+        if not shadow or shadow.get("candidate_id") != candidate_id:
+            raise HTTPException(status_code=409, detail="이 후보의 서버 shadow preflight가 필요합니다.")
+        if shadow.get("status") != "preflight_passed":
+            raise HTTPException(status_code=409, detail="서버 shadow preflight를 통과하지 못했습니다.")
+        if shadow.get("candidate_fingerprint") != candidate.get("candidate_fingerprint"):
+            raise HTTPException(status_code=409, detail="후보가 shadow preflight 이후 변경되었습니다.")
+        if request.fixture_revision != shadow.get("fixture_revision"):
+            raise HTTPException(status_code=409, detail="shadow와 평가 fixture revision이 다릅니다.")
         held_in_ok = request.held_in.get("passed") is True
         held_out_ok = request.held_out.get("passed") is True and int(request.held_out.get("regressions") or 0) == 0
         adversarial_ok = request.adversarial.get("passed", True) is True and int(request.adversarial.get("unauthorized_mutations") or 0) == 0
+        long_term_ok = request.long_term.get("passed") is True and int(request.long_term.get("regressions") or 0) == 0
+        metric_deltas = request.held_out.get("metric_deltas") if isinstance(request.held_out.get("metric_deltas"), dict) else {}
+        regressed_metrics = sorted(
+            key for key, value in metric_deltas.items() if isinstance(value, (int, float)) and float(value) < 0
+        )
         eval_id = _id("heval", f"{candidate_id}:{request.fixture_revision}:{now_iso()}")
         evaluation = {
             "eval_id": eval_id,
             "candidate_id": candidate_id,
+            "shadow_run_id": request.shadow_run_id,
             "employee_id": principal.employee_id,
             "fixture_revision": request.fixture_revision,
             "held_in": request.held_in,
             "held_out": request.held_out,
             "adversarial": request.adversarial,
             "long_term": request.long_term,
-            "qualified": held_in_ok and held_out_ok and adversarial_ok,
+            "pareto": {
+                "metric_deltas": metric_deltas,
+                "regressed_metrics": regressed_metrics,
+                "no_regression": not regressed_metrics,
+            },
+            "qualified": held_in_ok and held_out_ok and adversarial_ok and long_term_ok and not regressed_metrics,
+            "production_changed": False,
             "created_at": now_iso(),
         }
         self.store.put("harness_eval_runs", eval_id, evaluation)
@@ -552,7 +969,76 @@ class WorkLearningService:
             }
         )
         self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(candidate_id, principal.employee_id)
+        if not evaluation["qualified"]:
+            self._record_negative_result(
+                principal=principal,
+                kind="rejected_harness_candidate",
+                summary="Harness 후보가 held-in·held-out·adversarial·장기 기준 중 하나를 통과하지 못했습니다.",
+                source_refs=[candidate_id, eval_id],
+                metadata={"candidate_id": candidate_id, "eval_id": eval_id, "pareto": evaluation["pareto"]},
+            )
         return {"candidate": candidate, "evaluation": evaluation}
+
+    def review_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        evaluation = self.store.get("harness_eval_runs", request.expected_eval_id)
+        if not evaluation or evaluation.get("candidate_id") != candidate_id:
+            raise HTTPException(status_code=409, detail="검토할 평가 결과가 현재 후보와 일치하지 않습니다.")
+        if request.decision == "approve_for_release" and not evaluation.get("qualified"):
+            raise HTTPException(status_code=409, detail="합격하지 않은 후보는 release 검토 승인할 수 없습니다.")
+        status = {
+            "approve_for_release": "approved_for_manual_release",
+            "hold": "held",
+            "reject": "rejected",
+        }[request.decision]
+        candidate.update(
+            {
+                "status": status,
+                "review": {
+                    "decision": request.decision,
+                    "note": _compact(request.note, 4000),
+                    "reviewed_by": principal.employee_id,
+                    "reviewed_at": now_iso(),
+                    "eval_id": request.expected_eval_id,
+                },
+                "production_changed": False,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("harness_candidates", candidate_id, candidate)
+        version_id = ""
+        if request.decision == "approve_for_release":
+            version_id = _id("hversion", f"{candidate_id}:{request.expected_eval_id}")
+            self.store.put(
+                "harness_versions",
+                version_id,
+                {
+                    "harness_version_id": version_id,
+                    "harness_id": candidate.get("harness_id"),
+                    "base_version": candidate.get("base_version"),
+                    "model_profile": candidate.get("model_profile"),
+                    "changes": candidate.get("changes"),
+                    "candidate_id": candidate_id,
+                    "eval_id": request.expected_eval_id,
+                    "status": "approved_not_deployed",
+                    "production_changed": False,
+                    "rollback_version": candidate.get("base_version"),
+                    "created_at": now_iso(),
+                },
+            )
+        elif request.decision == "reject":
+            self._record_negative_result(
+                principal=principal,
+                kind="review_rejected_harness_candidate",
+                summary=request.note,
+                source_refs=[candidate_id, request.expected_eval_id],
+                metadata={"candidate_id": candidate_id, "eval_id": request.expected_eval_id},
+            )
+        self._notify_operational_change(version_id or candidate_id, principal.employee_id)
+        return {"candidate": candidate, "harness_version_id": version_id, "production_changed": False}
 
     @staticmethod
     def resolve_loop_policy(
@@ -846,6 +1332,11 @@ class WorkLearningService:
                 candidates.append(candidate)
                 work_run["knowledge_candidate_ids"] = [candidate.candidate_id]
                 playbook_id = _id("playbook", f"{principal.employee_id}:{candidate.candidate_id}")
+                playbook_applies_to = {
+                    "capability_ids": [context.capability_id],
+                    "asset_kinds": [intent.asset_kind.value],
+                    "task_refs": [context.task_ref] if context.task_ref else [],
+                }
                 self.store.put(
                     "context_playbook_items",
                     playbook_id,
@@ -855,9 +1346,10 @@ class WorkLearningService:
                         "description": answer_summary,
                         "conditions": [intent.asset_kind.value, intent.operation.value],
                         "applies_to": {
-                            "capability_ids": [context.capability_id],
-                            "asset_kinds": [intent.asset_kind.value],
+                            **playbook_applies_to,
                         },
+                        "team_ids": [],
+                        "model_profiles": [self.model_profile],
                         "source_refs": evidence_refs,
                         "supporting_work_run_ids": [work_run["work_run_id"]],
                         "successful_run_ids": [work_run["work_run_id"]],
@@ -865,7 +1357,15 @@ class WorkLearningService:
                         "freshness": {"created_at": now_iso(), "valid_until": ""},
                         "status": "provisional",
                         "visibility": "private",
+                        "fingerprint": self._playbook_fingerprint(
+                            answer_summary,
+                            playbook_applies_to,
+                            [self.model_profile],
+                        ),
+                        "revision": 1,
+                        "deprecates_item_ids": [],
                         "created_at": now_iso(),
+                        "updated_at": now_iso(),
                     },
                 )
         stored = self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
@@ -942,6 +1442,18 @@ class WorkLearningService:
                 },
             ]
         )
+        if not successful:
+            negative_id = self._record_negative_result(
+                principal=principal,
+                kind="failed_system_operation",
+                summary=summary,
+                work_run_id=str(work_run["work_run_id"]),
+                source_refs=[result_ref] if result_ref else [],
+                metadata={"result_status": result_status, **(metadata or {})},
+            )
+            work_run["negative_result_ids"] = list(
+                dict.fromkeys([*work_run.get("negative_result_ids", []), negative_id])
+            )
         return self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
 
     def fail_run(self, principal: Principal, work_run_id: str, message: str) -> dict[str, Any]:
@@ -964,6 +1476,15 @@ class WorkLearningService:
         run.setdefault("events", []).append(
             {"event": "work.blocked", "delta": delta.model_dump(mode="json"), "at": now_iso()}
         )
+        negative_id = self._record_negative_result(
+            principal=principal,
+            kind="failed_work_run",
+            summary=message,
+            work_run_id=work_run_id,
+            source_refs=list(run.get("evidence_refs") or []),
+            metadata={"stop_reason": "operation_failed"},
+        )
+        run["negative_result_ids"] = list(dict.fromkeys([*run.get("negative_result_ids", []), negative_id]))
         return self.store.put("work_runs", work_run_id, run)
 
     def finish_deep_job(
@@ -1212,6 +1733,43 @@ class WorkLearningService:
                         "at": now_iso(),
                     }
                 )
+        if stop_reason in {"no_progress", "max_iterations"}:
+            negative_id = self._record_negative_result(
+                principal=principal,
+                kind=stop_reason,
+                summary=delta.summary or (
+                    "새 근거나 상태 변화 없이 같은 시도가 반복되어 작업을 중단했습니다."
+                    if stop_reason == "no_progress"
+                    else "허용된 반복 횟수 안에 완료 조건을 충족하지 못했습니다."
+                ),
+                work_run_id=work_run_id,
+                source_refs=[delta.ref] if delta.ref else [],
+                metadata={
+                    "iteration_count": iteration,
+                    "no_progress_count": no_progress_count,
+                    "delta_fingerprint": delta.fingerprint,
+                    "harness_bindings": run.get("harness_bindings") or [],
+                },
+            )
+            run["negative_result_ids"] = list(
+                dict.fromkeys([*run.get("negative_result_ids", []), negative_id])
+            )
+        elif delta.kind == "blocker":
+            negative_id = self._record_negative_result(
+                principal=principal,
+                kind="work_blocker",
+                summary=delta.summary or "업무 진행을 막는 조건이 기록되었습니다.",
+                work_run_id=work_run_id,
+                source_refs=[delta.ref] if delta.ref else [],
+                metadata={
+                    "iteration_count": iteration,
+                    "blocker_metadata": delta.metadata,
+                    "harness_bindings": run.get("harness_bindings") or [],
+                },
+            )
+            run["negative_result_ids"] = list(
+                dict.fromkeys([*run.get("negative_result_ids", []), negative_id])
+            )
         stored = self.store.put("work_runs", work_run_id, run)
         return stored, candidates
 

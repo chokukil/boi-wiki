@@ -34,11 +34,15 @@ from boi_api.app.v2.models import (
     AgentTurnResponse,
     AnswerBlock,
     CitationRef,
+    ContextPlaybookCreateRequest,
+    ContextPlaybookPatchRequest,
     DeepJobRequest,
     GraphQueryDraft,
     GraphQueryPlan,
     HarnessCandidateCreateRequest,
     HarnessCandidateEvaluateRequest,
+    HarnessCandidateReviewRequest,
+    HarnessCandidateShadowRequest,
     HarnessCheck,
     HarnessResult,
     HelperActivateRequest,
@@ -5091,6 +5095,16 @@ def test_harness_never_reports_full_acceptance_when_dependencies_are_missing(v2_
     assert result["full_checks"]["deep_worker_ready"] is False
 
 
+def test_postgres_registry_includes_all_harness_improvement_collections():
+    from boi_api.app.v2.store import PostgresAgentV2Store
+
+    assert {
+        "harness_failure_patterns",
+        "harness_shadow_runs",
+        "harness_versions",
+    } <= set(PostgresAgentV2Store.COLLECTION_TABLES)
+
+
 def test_harness_candidate_cannot_change_immutable_safety_boundaries(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -5103,6 +5117,7 @@ def test_harness_candidate_cannot_change_immutable_safety_boundaries(
             "failure_record_id": failure_id,
             "employee_id": principal.employee_id,
             "harness_id": "context.work",
+            "causal_agent_stage": "context.evidence",
             "status": "open",
         },
     )
@@ -5134,6 +5149,7 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
             "failure_record_id": failure_id,
             "employee_id": principal.employee_id,
             "harness_id": "context.work",
+            "causal_agent_stage": "context.evidence",
             "status": "open",
         },
     )
@@ -5148,10 +5164,16 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
         ),
     )
 
+    rejected_shadow = v2_service.learning.shadow_harness_candidate(
+        principal,
+        candidate["candidate_id"],
+        HarnessCandidateShadowRequest(fixture_revision="fixture-held-out-v1"),
+    )
     rejected = v2_service.learning.evaluate_harness_candidate(
         principal,
         candidate["candidate_id"],
         HarnessCandidateEvaluateRequest(
+            shadow_run_id=rejected_shadow["shadow_run"]["shadow_run_id"],
             held_in={"passed": True},
             held_out={"passed": False, "regressions": 1},
             adversarial={"passed": True, "unauthorized_mutations": 0},
@@ -5171,19 +5193,38 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
             rationale="같은 실패군을 대상으로 held-out 회귀 없이 개선되는지 다시 검증하는 후보입니다.",
         ),
     )
+    qualified_shadow = v2_service.learning.shadow_harness_candidate(
+        principal,
+        candidate["candidate_id"],
+        HarnessCandidateShadowRequest(fixture_revision="fixture-held-out-v2"),
+    )
     qualified = v2_service.learning.evaluate_harness_candidate(
         principal,
         candidate["candidate_id"],
         HarnessCandidateEvaluateRequest(
+            shadow_run_id=qualified_shadow["shadow_run"]["shadow_run_id"],
             held_in={"passed": True},
             held_out={"passed": True, "regressions": 0},
             adversarial={"passed": True, "unauthorized_mutations": 0},
-            long_term={"status": "pending"},
+            long_term={"passed": True, "regressions": 0, "knowledge_health": "stable"},
             fixture_revision="fixture-held-out-v2",
         ),
     )
     assert qualified["candidate"]["status"] == "review_required"
     assert qualified["candidate"]["production_changed"] is False
+    reviewed = v2_service.learning.review_harness_candidate(
+        principal,
+        candidate["candidate_id"],
+        HarnessCandidateReviewRequest(
+            decision="approve_for_release",
+            expected_eval_id=qualified["evaluation"]["eval_id"],
+            note="회귀와 안전 기준을 통과했으므로 수동 배포 검토 대상으로 승인합니다.",
+        ),
+    )
+    version = v2_service.store.get("harness_versions", reviewed["harness_version_id"])
+    assert reviewed["production_changed"] is False
+    assert version["status"] == "approved_not_deployed"
+    assert version["production_changed"] is False
 
 
 def test_blocked_harness_creates_causal_failure_and_negative_result(
@@ -5230,6 +5271,214 @@ def test_blocked_harness_creates_causal_failure_and_negative_result(
     assert failure["model_profile"]
     negatives = v2_service.store.list("negative_results", limit=10)
     assert any(item["failure_record_id"] == failure_ids[0] for item in negatives)
+
+
+def test_same_causal_harness_failure_is_grouped_as_a_recurrent_pattern(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    context = WorkContextPack(
+        context_id="ctx-recurrent-failure",
+        employee_id=principal.employee_id,
+        capability_id="knowledge.search",
+        goal="검증된 업무 근거를 찾는다",
+    )
+    result = HarnessResult(
+        harness_id="context.work",
+        version="1.1",
+        status="blocked",
+        checks=[HarnessCheck(check_id="context.evidence", label="근거", status="blocked", message="근거 없음")],
+        blockers=["검증된 근거가 없습니다."],
+    )
+    for suffix in ("one", "two"):
+        v2_service.learning._record_harness_failures(
+            principal=principal,
+            work_run={"work_run_id": f"work-run-{suffix}", "artifact_refs": []},
+            context=context,
+            results=[result],
+            phase="preflight",
+        )
+    patterns = v2_service.learning.list_harness_failure_patterns(principal)["items"]
+    assert len(patterns) == 1
+    assert patterns[0]["occurrence_count"] == 2
+    assert set(patterns[0]["work_run_ids"]) == {"work-run-one", "work-run-two"}
+
+
+def test_context_playbook_is_deduplicated_versioned_and_model_scoped(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    request = ContextPlaybookCreateRequest(
+        description="공식 운영 가이드를 먼저 확인하고 현재 Task의 근거와 충돌 여부를 비교합니다.",
+        capability_ids=["knowledge.search"],
+        model_profiles=["gemma-local"],
+        source_refs=["boi:public:boi-wiki-manual:guide:final-operator-guide"],
+    )
+    item = v2_service.learning.create_context_playbook_item(principal, request)
+    with pytest.raises(Exception) as caught:
+        v2_service.learning.create_context_playbook_item(principal, request)
+    assert getattr(caught.value, "status_code", None) == 409
+    active = v2_service.learning.patch_context_playbook_item(
+        principal,
+        item["item_id"],
+        ContextPlaybookPatchRequest(
+            expected_revision=1,
+            status="active",
+            review_note="개인 실행에서 검증된 맥락 항목으로 활성화합니다.",
+        ),
+    )
+    assert active["revision"] == 2
+    definition = v2_service.registry.get("knowledge.search")
+    included = v2_service.learning.contexts.compile(
+        principal=principal,
+        definition=definition,
+        goal="운영 기준 확인",
+        page_ref="",
+        task_ref="",
+        task_mode=TaskMode.copilot,
+        task={},
+        evidence=[],
+        session={},
+        source_set={},
+        external_ai_summary="",
+        external_refs=[],
+        model_profile="gemma-local",
+    )
+    excluded = v2_service.learning.contexts.compile(
+        principal=principal,
+        definition=definition,
+        goal="운영 기준 확인",
+        page_ref="",
+        task_ref="",
+        task_mode=TaskMode.copilot,
+        task={},
+        evidence=[],
+        session={},
+        source_set={},
+        external_ai_summary="",
+        external_refs=[],
+        model_profile="another-model",
+    )
+    assert included.manifest["context_playbook_item_ids"] == [item["item_id"]]
+    assert excluded.manifest["context_playbook_item_ids"] == []
+
+
+def test_team_playbook_is_not_injected_before_review(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    teammate = principal.model_copy(update={"employee_id": "100002", "display_name": "Teammate"})
+    item = v2_service.learning.create_context_playbook_item(
+        principal,
+        ContextPlaybookCreateRequest(
+            description="팀 운영 판단에서는 검토된 공식 절차와 최근 완료 기록을 함께 비교합니다.",
+            capability_ids=["knowledge.search"],
+            team_ids=["aix-tf"],
+            source_refs=["boi:public:boi-wiki-manual:guide:final-operator-guide"],
+            visibility="team",
+        ),
+    )
+    definition = v2_service.registry.get("knowledge.search")
+
+    def compile_for(identity: Principal) -> WorkContextPack:
+        return v2_service.learning.contexts.compile(
+            principal=identity,
+            definition=definition,
+            goal="팀 운영 기준 확인",
+            page_ref="",
+            task_ref="",
+            task_mode=TaskMode.copilot,
+            task={},
+            evidence=[],
+            session={},
+            source_set={},
+            external_ai_summary="",
+            external_refs=[],
+            model_profile="default",
+        )
+
+    assert compile_for(teammate).manifest["context_playbook_item_ids"] == []
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    v2_service.learning.patch_context_playbook_item(
+        admin,
+        item["item_id"],
+        ContextPlaybookPatchRequest(
+            expected_revision=1,
+            status="active",
+            review_note="팀 공유에 사용할 근거와 범위를 검토했습니다.",
+        ),
+    )
+    assert compile_for(teammate).manifest["context_playbook_item_ids"] == [item["item_id"]]
+
+
+def test_no_progress_is_preserved_as_a_negative_result(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="사람 검토 Task를 진행해줘", task_ref="negative-loop-task"),
+    )
+    run = v2_service.learning.get_run(principal, response.work_run_id)
+    run.update({"status": "in_progress", "decision": "continue", "stop_reason": "progress_recorded"})
+    v2_service.store.put("work_runs", response.work_run_id, run)
+    continuation = v2_service.continue_work_run(
+        principal,
+        response.work_run_id,
+        WorkRunContinueRequest(
+            expected_revision=run["revision"],
+            delta=LoopDelta(kind="no_progress", summary="새 근거나 상태 변화가 없습니다."),
+        ),
+    )["work_run"]
+    assert continuation["status"] == "stopped"
+    negatives = [v2_service.store.get("negative_results", item) for item in continuation["negative_result_ids"]]
+    assert any(item and item["kind"] == "no_progress" for item in negatives)
+
+
+def test_harness_improvement_relations_are_compiled_into_admin_ontology(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    pattern_id = "hpattern-ontology"
+    failure_id = "hfailure-ontology"
+    v2_service.store.put(
+        "harness_failure_patterns",
+        pattern_id,
+        {"failure_pattern_id": pattern_id, "summary": "근거 누락 반복", "status": "open", "occurrence_count": 2},
+    )
+    v2_service.store.put(
+        "harness_failure_records",
+        failure_id,
+        {
+            "failure_record_id": failure_id,
+            "failure_pattern_id": pattern_id,
+            "employee_id": admin.employee_id,
+            "harness_id": "context.work",
+            "causal_agent_stage": "context.evidence",
+            "status": "open",
+        },
+    )
+    candidate = v2_service.learning.create_harness_candidate(
+        admin,
+        HarnessCandidateCreateRequest(
+            harness_id="context.work",
+            failure_record_ids=[failure_id],
+            changes={"retrieval_policy": {"authority_weight": 1.1}},
+            rationale="반복되는 근거 누락을 줄이기 위한 제한된 검색 정책 시험입니다.",
+        ),
+    )
+    v2_service.knowledge.compile_graph(admin)
+    graph = v2_service.store.ontology_neighbors(
+        [candidate["candidate_id"]],
+        depth=1,
+        limit=20,
+        employee_id=admin.employee_id,
+        team_ids=admin.teams,
+        include_all=True,
+    )
+    assert any(item["node_id"] == pattern_id for item in graph["nodes"])
+    assert any(item["relation"] == "addresses_failure" for item in graph["edges"])
 
 
 def test_mcp_v2_exposes_exactly_ten_progressive_tools(monkeypatch: pytest.MonkeyPatch):

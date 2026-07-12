@@ -12184,6 +12184,7 @@ async def integrations_page(
     employee_id: str = Depends(current_employee),
 ) -> HTMLResponse:
     surface_status: dict[str, Any] | None = None
+    harness_improvement_status: dict[str, Any] | None = None
     if "boi.admin" in roles_for(employee_id):
         service = request.app.state.agent_v2_service
         surfaces = service.store.list("a2ui_surfaces", employee_id=employee_id, limit=200)
@@ -12196,6 +12197,18 @@ async def integrations_page(
             "invalid_count": len(invalid),
             "fallback_count": sum(1 for item in surfaces if item.get("fallback")),
             "latest_surface_id": str((surfaces[0] if surfaces else {}).get("surface_id") or ""),
+        }
+        patterns = service.store.list("harness_failure_patterns", limit=1000)
+        candidates = service.store.list("harness_candidates", limit=1000)
+        playbook = service.store.list("context_playbook_items", limit=1000)
+        negatives = service.store.list("negative_results", limit=1000)
+        review_candidates = [item for item in candidates if item.get("status") == "review_required"]
+        harness_improvement_status = {
+            "open_patterns": sum(1 for item in patterns if item.get("status") == "open"),
+            "review_candidates": len(review_candidates),
+            "active_playbook": sum(1 for item in playbook if item.get("status") == "active"),
+            "negative_results": sum(1 for item in negatives if item.get("status") == "active"),
+            "latest_candidate_id": str((review_candidates[0] if review_candidates else {}).get("candidate_id") or ""),
         }
     return templates.TemplateResponse(
         "integrations.html",
@@ -12213,6 +12226,7 @@ async def integrations_page(
             "data_lake": data_lake_status_payload(),
             "knowledge_status": knowledge_operating_status_payload(employee_id),
             "surface_status": surface_status,
+            "harness_improvement_status": harness_improvement_status,
         },
     )
 
