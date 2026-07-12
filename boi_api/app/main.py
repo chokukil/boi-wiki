@@ -30249,7 +30249,14 @@ def inbox_workflow_items_for_refs(employee_id: str, task_refs: list[str]) -> dic
             row_status=row_status,
             is_completed=request_id in completed,
         )
-        item["_workflow_context"] = inbox_report_workflow_context(item)
+        # Inbox and Task Console must project the same workflow snapshot. This
+        # deterministic path reads cached runtime logs only and never invokes a
+        # model or semantic search.
+        try:
+            snapshot_context, _snapshot_row = task_execution_context_fast(employee_id, task_ref)
+            item["_workflow_context"] = snapshot_context
+        except HTTPException:
+            item["_workflow_context"] = inbox_report_workflow_context(item)
         found[task_ref] = item
         if len(found) >= len(requested):
             break
@@ -30297,7 +30304,15 @@ def inbox_report_workflow_canvas_for_item(
     if cached:
         return copy.deepcopy(cached), source_signature
 
-    canvas, source_signature = inbox_workflow_canvas_for_item_fast(employee_id, item)
+    report_item = copy.deepcopy(item)
+    task_ref = str(report_item.get("task_ref") or "")
+    if task_ref:
+        try:
+            snapshot_context, _snapshot_row = task_execution_context_fast(employee_id, task_ref)
+            report_item["_workflow_context"] = snapshot_context
+        except HTTPException:
+            pass
+    canvas, source_signature = inbox_workflow_canvas_for_item_fast(employee_id, report_item)
     if not canvas:
         return {}, source_signature
     canvas = copy.deepcopy(canvas)
@@ -30506,6 +30521,8 @@ def task_console_payload(
     external_ai = context.get("external_ai_contributions") or []
     data_lake = compact.get("data_lake_artifacts") or []
     workflow_canvas = task_console_workflow_canvas(context, employee_id)
+    assignment_design = context.get("assignment_design") if isinstance(context.get("assignment_design"), dict) else {}
+    records = context.get("work_records") if isinstance(context.get("work_records"), list) else []
     next_actions = [
         {
             "label": str(item.get("label") or ""),
@@ -30524,6 +30541,17 @@ def task_console_payload(
     payload = {
         "ok": True,
         "surface": "task_console",
+        "source_signature": hashlib.sha256(
+            json.dumps(
+                {
+                    "workflow": inbox_report_workflow_source_signature(),
+                    "task": task_completion_context_key(context),
+                    "assignment_revision": assignment_design.get("revision") or 0,
+                    "work_record_count": len(records),
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:24],
         "employee_id": employee_id,
         "title": task_console_title(context),
         "task": {

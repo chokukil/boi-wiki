@@ -321,6 +321,27 @@ def test_multi_assignee_task_is_projected_to_each_inbox_and_completes_once(boi_a
     assert not any(item["request_id"] == request_id for item in boi_app_module.agent_inbox_payload("100002", limit=100)["items"])
 
 
+def test_inbox_batch_and_task_console_share_the_same_trace_workflow_snapshot(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    item = _create_task(boi_app_module, "snapshot-workflow-parity")
+
+    snapshot = client.get(
+        f"/api/tasks/{item['task_ref']}/execution-snapshot?employee_id=100001"
+    )
+    batch = client.post(
+        "/api/inbox/workflow-canvases?employee_id=100001",
+        json={"task_refs": [item["task_ref"]]},
+    )
+
+    assert snapshot.status_code == batch.status_code == 200
+    snapshot_payload = snapshot.json()
+    batch_item = batch.json()["items"][0]
+    assert snapshot_payload["source_signature"]
+    assert batch_item["state"] == "ready"
+    assert batch_item["canvas"]["source"] == snapshot_payload["workflow_canvas"]["source"]
+    assert batch_item["canvas"]["current_stage_id"] == snapshot_payload["workflow_canvas"]["current_stage_id"]
+
+
 def test_task_work_record_progress_blocker_and_completion_contract(boi_app_module):
     client = TestClient(boi_app_module.app)
     item = _create_task(boi_app_module, "task-record-contract")
