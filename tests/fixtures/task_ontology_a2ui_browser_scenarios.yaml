@@ -1,0 +1,39 @@
+version: "1.0"
+viewports:
+  - {name: desktop, width: 1440, height: 1000}
+  - {name: compact_desktop, width: 1180, height: 850}
+  - {name: mobile, width: 390, height: 844}
+journeys:
+  - id: inbox_to_task_work_record
+    start: "/inbox?employee_id=100001"
+    actions: [open_first_task, inspect_workflow, open_task_console]
+    assertions:
+      - task_console_visible
+      - observation_action_decision_fields_visible
+      - evidence_picker_visible
+      - raw_mermaid_source_hidden
+      - no_horizontal_overflow
+  - id: task_assignment_and_revision
+    start: "/tasks/console?employee_id=100001&task_id={fixture_task_ref}"
+    actions: [open_assignment, select_multiple_people, save_assignment]
+    assertions:
+      - assignee_chips_visible
+      - reviewer_visible
+      - save_status_announced
+      - keyboard_focus_visible
+  - id: ontology_one_hop_expand
+    start: "/docs/boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide?employee_id=100001"
+    actions: [open_graph_explorer, select_first_neighbor]
+    assertions:
+      - sigma_canvas_nonblank
+      - node_count_below_500
+      - selected_node_details_visible
+      - no_console_error
+  - id: agent_a2ui_and_fallback
+    start: "/agent?employee_id=100001"
+    actions: [submit_grounded_question, open_result, simulate_unsupported_surface]
+    assertions:
+      - progress_visible_before_final
+      - citation_visible
+      - typed_fallback_visible
+      - composer_keeps_focus

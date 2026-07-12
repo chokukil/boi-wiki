@@ -1,0 +1,58 @@
+version: "1.0"
+thresholds:
+  deterministic_pass_rate: 1.0
+  live_scenario_pass_rate: 0.90
+  citation_integrity: 1.0
+  intent_preservation: 0.90
+  context_utilization: 0.90
+  unauthorized_mutations: 0
+groups:
+  task:
+    - {id: task_manual_progress, contract: progress_record_is_shared}
+    - {id: task_manual_blocked, contract: blocker_and_next_work_are_preserved}
+    - {id: task_manual_missing_evidence, contract: completion_requires_evidence}
+    - {id: task_manual_complete, contract: complete_requires_action_decision_and_checks}
+    - {id: task_copilot_human_decision, contract: ai_output_alone_cannot_complete}
+    - {id: task_autopilot_system_only, contract: human_work_record_is_rejected}
+    - {id: task_multi_assignee, contract: any_assignee_completes_shared_task}
+    - {id: task_reviewer_assignment, contract: reviewer_can_update_assignment}
+    - {id: task_assignment_conflict, contract: stale_revision_returns_409}
+    - {id: task_evidence_acl, contract: inaccessible_evidence_blocks_completion}
+  graph:
+    - {id: graph_neighbors, query_kind: neighbors, expected_presentation: list}
+    - {id: graph_path, query_kind: path, expected_presentation: mermaid}
+    - {id: graph_workflow, query_kind: workflow, expected_presentation: mermaid}
+    - {id: graph_impact, query_kind: impact, expected_presentation: list}
+    - {id: graph_lineage, query_kind: lineage, expected_presentation: mermaid}
+    - {id: graph_responsibility, query_kind: responsibility, expected_presentation: list}
+    - {id: graph_timeline, query_kind: timeline, expected_presentation: timeline}
+    - {id: graph_compare, query_kind: compare, expected_presentation: list}
+    - {id: graph_tour, query_kind: tour, expected_presentation: list}
+    - {id: graph_acl_temporal_incremental, query_kind: neighbors, expected_presentation: list}
+  a2ui:
+    - {id: a2ui_catalog_allowlist, contract: only_trusted_components}
+    - {id: a2ui_script_rejected, contract: script_and_event_handlers_are_rejected}
+    - {id: a2ui_external_url_rejected, contract: external_urls_are_rejected}
+    - {id: a2ui_event_rejected, contract: unregistered_events_are_rejected}
+    - {id: a2ui_surface_restore_acl, contract: surfaces_are_owner_scoped}
+    - {id: a2ui_typed_fallback, contract: invalid_surface_keeps_typed_response}
+  learning:
+    - {id: learning_completion_candidate, contract: completion_creates_candidate}
+    - {id: learning_private_reuse, contract: accepted_private_knowledge_is_retrievable}
+    - {id: learning_duplicate_proposal, contract: duplicate_does_not_overwrite_canonical}
+    - {id: learning_contradiction_proposal, contract: contradiction_requires_review}
+    - {id: parity_web_rest_mcp, contract: interfaces_share_semantic_ids}
+    - {id: context_navigation_exclusion, contract: navigation_deprecated_smoke_seed_are_excluded}
+multiturn:
+  - id: followup_graph
+    turns: ["업무 이벤트와 SOP 관계를 설명해줘", "그 관계만 흐름 그림으로 보여줘"]
+  - id: followup_task_transform
+    turns: ["설비 이상 대응 흐름을 설명해줘", "이 흐름을 Task로 나눠줘"]
+  - id: followup_evidence
+    turns: ["Task 완료 기준을 알려줘", "방금 근거 중 실제 확인 자료만 보여줘"]
+  - id: followup_person_responsibility
+    turns: ["플랫폼 팀이 맡은 업무를 보여줘", "그중 최근 완료된 일과 담당자를 연결해줘"]
+  - id: followup_learning
+    turns: ["이번 업무 결과를 private 지식 후보로 남겨줘", "새 작업에서 그 내용을 다시 찾아줘"]
+  - id: followup_new_topic
+    turns: ["업무 이벤트 정의를 설명해줘", "새 주제로 Action dry-run 기준을 알려줘"]

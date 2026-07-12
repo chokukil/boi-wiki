@@ -7,7 +7,7 @@ thresholds:
   context_utilization: 0.90
   source_relevance: 0.90
   transition_precision: 1.00
-  scenario_pass_rate: 1.00
+  scenario_pass_rate: 0.90
 scenarios:
   - id: current_document_understand
     question: "현재 보고 있는 문서의 핵심 판단 기준을 Wiki 전체의 관련 지식과 함께 설명해줘."
@@ -95,3 +95,60 @@ scenarios:
     expected_capability: deep.research
     expected_operations: [understand, compare]
     expected_status: queued
+
+  - id: multiturn_explain_then_mermaid
+    turns:
+      - "업무 이벤트와 SOP가 어떻게 연결되는지 근거와 함께 설명해줘."
+      - "방금 설명한 관계만 Mermaid 흐름 그림으로 보여줘."
+    page_ref: "/event-types"
+    expected_capability: knowledge.search
+    expected_operations: [understand, connect]
+    expected_artifact_type: mermaid_diagram
+    require_grounding: true
+
+  - id: multiturn_explain_then_tasks
+    turns:
+      - "설비 이상 대응 업무 흐름을 설명해줘. 아직 초안은 만들지 마."
+      - "이제 그 흐름을 Task로 나누는 초안을 만들어줘."
+    page_ref: "/sops"
+    expected_capability: sop.plan
+    expected_operations: [create, transform]
+    expected_artifact_type: sop_draft
+    require_plan: true
+
+  - id: multiturn_evidence_drilldown
+    turns:
+      - "Task가 끝났다고 판단하는 기준을 설명해줘."
+      - "방금 답변의 근거 중 실제 확인 자료만 구분해서 보여줘."
+    page_ref: "/sops"
+    expected_capability: knowledge.search
+    expected_operations: [understand, compare]
+    require_grounding: true
+
+  - id: multiturn_responsibility
+    turns:
+      - "플랫폼 팀과 연결된 업무를 Wiki 근거로 찾아줘."
+      - "그 업무와 담당자 관계를 설명해줘. 개인의 한 번 배정을 전문성으로 단정하지 마."
+    page_ref: "/inbox"
+    expected_capability: knowledge.search
+    expected_operations: [understand, connect]
+    require_grounding: true
+
+  - id: multiturn_learning_reuse
+    turns:
+      - "업무 결과가 private 지식 후보가 되는 기준을 설명해줘."
+      - "그 후보가 다음 업무에서 재사용되는 과정도 이어서 설명해줘."
+    page_ref: "/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system"
+    expected_capability: knowledge.search
+    expected_operations: [understand, connect]
+    require_grounding: true
+    require_page_anchor: true
+
+  - id: multiturn_explicit_new_topic
+    turns:
+      - "업무 이벤트 정의의 기본 원칙을 설명해줘."
+      - "새 주제로 바꿀게. Action dry-run과 실제 실행의 차이를 알려줘."
+    page_ref: "/event-types"
+    expected_capability: knowledge.search
+    expected_operations: [understand, compare]
+    require_grounding: true

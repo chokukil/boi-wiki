@@ -28,6 +28,8 @@ from boi_api.app.v2.model_gateway import (
 )
 from boi_api.app.v2.models import (
     AgentTurnRequest,
+    AgentTurnResponse,
+    AnswerBlock,
     CitationRef,
     DeepJobRequest,
     GraphQueryPlan,
@@ -51,6 +53,9 @@ from boi_api.app.v2.models import (
     TokenCreateRequest,
     WorkSessionPatchRequest,
     WorkRunContinueRequest,
+    WorkIntent,
+    WorkAssetKind,
+    WorkOperation,
     WorkRoutineCreateRequest,
     WorkRoutineTriggerRequest,
 )
@@ -76,6 +81,58 @@ def test_postgres_store_registers_every_helper_builder_collection():
     assert PostgresAgentV2Store.COLLECTION_TABLES["semantic_routes"] == "agent_semantic_routes"
     assert PostgresAgentV2Store.COLLECTION_TABLES["starter_suggestion_sets"] == "agent_starter_suggestion_sets"
     assert PostgresAgentV2Store.COLLECTION_TABLES["user_work_profiles"] == "agent_user_work_profiles"
+    assert PostgresAgentV2Store.COLLECTION_TABLES["a2ui_surfaces"] == "agent_a2ui_surfaces"
+
+
+def test_response_budget_preserves_minimal_intent_citation_and_truthful_grounding(v2_service: AgentV2Service):
+    response = AgentTurnResponse(
+        run_id="run-budget",
+        turn_id="turn-budget",
+        status="completed",
+        capability_id="knowledge.search",
+        answer=AnswerBlock(summary="업무 맥락 설명", markdown=("업무 맥락과 판단 근거를 설명합니다. " * 500) + "\n\n[1](/api/v2/citations/cite_budget)"),
+        citations=[
+            CitationRef(
+                citation_id="cite_budget",
+                source_ref="boi:public:guide",
+                title="운영 가이드",
+                excerpt="근거 " * 500,
+            )
+        ],
+        work_intent=WorkIntent(
+            goal="현재 문서의 판단 기준 설명",
+            resolved_goal="현재 운영 가이드의 업무 맥락 판단 기준을 설명한다",
+        ),
+        grounding_status="grounded",
+        context_usage={"page_anchor": {"ref": "boi:public:guide", "resolved": True}, "selected_source_count": 12},
+    )
+    compact = v2_service._enforce_response_budget(response)
+    assert compact.work_intent is not None
+    assert compact.work_intent.operation.value == "understand"
+    assert compact.citations and compact.citations[0].source_ref == "boi:public:guide"
+    assert compact.grounding_status == "grounded"
+    assert len(json.dumps(compact.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")) <= v2_service.settings.response_budget_bytes
+
+
+def test_explanatory_intent_cannot_execute_a_draft_capability(v2_service: AgentV2Service):
+    explanatory = WorkIntent(
+        goal="Action dry-run과 실제 실행의 차이를 알려줘",
+        resolved_goal="Action dry-run과 실제 실행의 차이를 설명한다",
+        operation=WorkOperation.compare,
+        operation_plan=[WorkOperation.understand, WorkOperation.compare],
+        asset_kind=WorkAssetKind.action,
+        result_purpose="compare",
+    )
+    assert v2_service._guard_explanatory_capability("action.plan", explanatory) == "knowledge.search"
+    assert v2_service._guard_explanatory_capability("deep.research", explanatory) == "deep.research"
+    executable = explanatory.model_copy(
+        update={
+            "operation": WorkOperation.run,
+            "operation_plan": [WorkOperation.run],
+            "result_purpose": "execute",
+        }
+    )
+    assert v2_service._guard_explanatory_capability("action.plan", executable) == "action.plan"
 
 
 class FakeModel:
@@ -4328,6 +4385,88 @@ def test_living_knowledge_compiles_all_acl_nodes_but_never_exposes_another_users
     assert query["query_plan"]["query_kind"] == "workflow"
     assert query["presentation"] in {"mermaid", "list", "explorer"}
     assert all((edge.get("payload") or {}).get("provenance") for edge in query["edges"])
+
+
+@pytest.mark.parametrize(
+    ("query_kind", "expected_presentation"),
+    [
+        ("neighbors", {"list", "explorer"}),
+        ("workflow", {"mermaid", "explorer"}),
+        ("impact", {"list", "explorer"}),
+        ("lineage", {"mermaid", "explorer"}),
+        ("responsibility", {"list", "explorer"}),
+        ("timeline", {"timeline"}),
+        ("compare", {"list", "explorer"}),
+        ("tour", {"list", "explorer"}),
+    ],
+)
+def test_universal_graph_query_kinds_keep_acl_provenance_and_auto_presentation(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    query_kind: str,
+    expected_presentation: set[str],
+):
+    v2_service.knowledge.compile_graph(principal)
+    result = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=["boi:public:sop:manual"],
+            query_kind=query_kind,
+            depth=2,
+            presentation="auto",
+        ),
+    )
+    assert result["ok"] is True
+    assert result["query_plan"]["query_kind"] == query_kind
+    assert result["presentation"] in expected_presentation
+    assert all((edge.get("payload") or {}).get("provenance") for edge in result["edges"])
+    assert all("boi:private:100002" not in str(node.get("node_id")) for node in result["nodes"])
+
+
+def test_graph_path_and_temporal_filter_are_parameterized_and_deterministic(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.knowledge.compile_graph(principal)
+    neighbors = v2_service.knowledge.explore(
+        principal,
+        view="neighbors",
+        source_ref="boi:public:sop:manual",
+        depth=2,
+        limit=50,
+    )
+    target = next(edge["target_id"] for edge in neighbors["edges"] if edge["relation"] == "has_task")
+    path = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=["boi:public:sop:manual"],
+            target_entities=[target],
+            query_kind="path",
+            depth=3,
+            presentation="auto",
+        ),
+    )
+    assert path["path_refs"] == ["boi:public:sop:manual", target]
+
+    v2_service.store.upsert_ontology(
+        [
+            {"node_id": "runtime:old", "node_type": "runtime", "payload": {"title": "이전 실행", "visibility": "public", "observed_at": "2025-01-01T00:00:00+00:00"}},
+            {"node_id": "runtime:new", "node_type": "runtime", "payload": {"title": "최근 실행", "visibility": "public", "observed_at": "2026-07-12T00:00:00+00:00"}},
+        ],
+        [{"edge_id": "edge:runtime-time", "source_id": "runtime:old", "target_id": "runtime:new", "relation": "next", "payload": {"provenance": "extracted", "visibility": "public"}}],
+    )
+    timeline = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=["runtime:old", "runtime:new"],
+            query_kind="timeline",
+            depth=1,
+            time_from="2026-01-01T00:00:00+00:00",
+            time_to="2026-12-31T23:59:59+00:00",
+        ),
+    )
+    assert [node["node_id"] for node in timeline["nodes"]] == ["runtime:new"]
+    assert timeline["presentation"] == "timeline"
 
 
 def test_harness_never_reports_full_acceptance_when_dependencies_are_missing(v2_service: AgentV2Service, principal: Principal):

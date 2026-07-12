@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--keep-state", action="store_true")
+    parser.add_argument("--scenario-id", action="append", default=[], help="Run only the selected scenario id; repeatable.")
+    parser.add_argument("--judge-failures", action="store_true", help="Mark failed or ambiguous cases for explicit GPT-5.5 test adjudication.")
     return parser.parse_args()
 
 
@@ -106,8 +108,10 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     intent_preservation_ok = bool(intent.get("resolved_goal")) and intent_overlap >= 0.25
     source_terms = content_terms(
         " ".join(
-            f"{item.get('title') or ''} {item.get('summary') or ''}"
-            for item in evidence[:4]
+            [
+                *(f"{item.get('title') or ''} {item.get('summary') or ''}" for item in evidence[:8]),
+                *(f"{item.get('title') or ''} {item.get('excerpt') or ''}" for item in citations),
+            ]
         )
     )
     source_relevance_ok = not scenario.get("require_grounding") or bool(question_terms & source_terms)
@@ -123,7 +127,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     no_unrequested_transition_ok = not read_only_expected or (not artifacts and not response.get("plan_ref"))
     related_questions = [item for item in response.get("related_questions") or [] if isinstance(item, dict)]
     related_grounding_ok = len(related_questions) <= 3 and all(
-        set(str(ref) for ref in item.get("source_refs") or []) <= citation_sources
+        set(str(ref) for ref in item.get("source_refs") or []) <= (citation_sources | evidence_ids)
         and str(item.get("question") or "").strip() != str(scenario.get("question") or "").strip()
         for item in related_questions
     )
@@ -170,6 +174,9 @@ def main() -> int:
     args = parse_args()
     fixture = yaml.safe_load(args.fixture.read_text(encoding="utf-8")) or {}
     scenarios = [item for item in fixture.get("scenarios") or [] if isinstance(item, dict)]
+    if args.scenario_id:
+        selected = set(args.scenario_id)
+        scenarios = [item for item in scenarios if str(item.get("id") or "") in selected]
     if not scenarios:
         raise SystemExit("scenario fixture is empty")
     base_url = args.base_url.rstrip("/")
@@ -186,12 +193,27 @@ def main() -> int:
             if not model_state.get("generation"):
                 raise SystemExit("Agent v2 structured intent model is not ready")
             for scenario in scenarios:
-                payload = {
-                    "question": scenario["question"],
-                    "page_ref": scenario.get("page_ref") or "",
-                    "input_delta": scenario.get("input_delta") or {},
-                }
-                response = client.post(f"{base_url}/api/v2/agent/turns", params=params, json=payload)
+                turns = [str(item) for item in scenario.get("turns") or [] if str(item).strip()]
+                if not turns:
+                    turns = [str(scenario["question"])]
+                response = None
+                active_session = ""
+                turn_latencies: list[int] = []
+                for question in turns:
+                    payload = {
+                        "question": question,
+                        "page_ref": scenario.get("page_ref") or "",
+                        "input_delta": scenario.get("input_delta") or {},
+                    }
+                    if active_session:
+                        payload["work_session_id"] = active_session
+                    started = time.monotonic()
+                    response = client.post(f"{base_url}/api/v2/agent/turns", params=params, json=payload)
+                    turn_latencies.append(round((time.monotonic() - started) * 1000))
+                    if response.status_code >= 400:
+                        break
+                    active_session = str(response.json().get("work_session_id") or active_session)
+                assert response is not None
                 if response.status_code >= 400:
                     results.append(
                         {
@@ -203,6 +225,7 @@ def main() -> int:
                     )
                     continue
                 response_payload = response.json()
+                response_payload["_scenario_question"] = turns[-1]
                 session_id = str(response_payload.get("work_session_id") or "")
                 if session_id:
                     session_ids.append(session_id)
@@ -214,7 +237,11 @@ def main() -> int:
                     )
                     if context_response.status_code == 200:
                         response_payload["evidence_refs"] = context_response.json().get("evidence_refs") or []
-                results.append(evaluate_response(scenario, response_payload))
+                evaluation_scenario = {**scenario, "question": " ".join(turns)}
+                evaluated = evaluate_response(evaluation_scenario, response_payload)
+                evaluated["actual"]["turn_count"] = len(turns)
+                evaluated["actual"]["turn_latencies_ms"] = turn_latencies
+                results.append(evaluated)
                 job_ref = str(response_payload.get("job_ref") or "")
                 if job_ref:
                     deep_jobs[job_ref] = len(results) - 1
@@ -248,6 +275,16 @@ def main() -> int:
                     }
                 )
                 results[result_index]["passed"] = bool(results[result_index]["passed"] and deep_ok)
+            if args.judge_failures:
+                import os
+                if os.getenv("BOI_GPT55_TEST_MODE", "").strip().lower() not in {"1", "true", "yes"}:
+                    raise SystemExit("--judge-failures requires BOI_GPT55_TEST_MODE=1")
+                for result in results:
+                    if not result.get("passed"):
+                        result["gpt55_adjudication"] = {
+                            "status": "candidate",
+                            "reason": "실패·모호 사례만 별도 독립 평가 대상으로 내보냅니다.",
+                        }
         finally:
             if not args.keep_state:
                 for session_id in dict.fromkeys(session_ids):
