@@ -12194,6 +12194,7 @@ def _public_api_tag(path: str) -> str:
         return "Knowledge"
     if path.startswith((
         "/api/inbox",
+        "/api/tasks",
         "/api/v2/work-",
         "/api/v2/context",
         "/api/v2/goal-plans",
@@ -12218,6 +12219,7 @@ def public_v2_openapi_schema() -> dict[str, Any]:
         "/api/v2/",
         "/api/boi",
         "/api/inbox",
+        "/api/tasks",
         "/api/sops",
         "/api/event-types",
         "/api/events/occurrences",

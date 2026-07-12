@@ -81,6 +81,11 @@ def test_public_v2_openapi_is_tagged_and_legacy_schema_is_marked(boi_app_module)
     assert "/api/boi/enrich-from-dispatch" not in public_schema["paths"]
     assert "/api/v2/evaluations/{evaluation_id}" not in public_schema["paths"]
     assert "/api/v2/usage/{usage_id}" not in public_schema["paths"]
+    assert "/api/tasks/{task_ref}/execution-snapshot" in public_schema["paths"]
+    assert "/api/tasks/{task_ref}/assignment" in public_schema["paths"]
+    assert "/api/tasks/{task_ref}/work-records/preview" in public_schema["paths"]
+    assert "/api/tasks/{task_ref}/work-records" in public_schema["paths"]
+    assert public_schema["paths"]["/api/tasks/{task_ref}/work-records"]["post"]["tags"] == ["Work"]
     operation_ids = []
     for operations in public_schema["paths"].values():
         for method, operation in operations.items():
