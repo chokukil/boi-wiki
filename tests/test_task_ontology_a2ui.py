@@ -33,6 +33,8 @@ def test_task_execution_store_shares_assignment_and_records_between_assignees(tm
     assert assignment["completion_policy"] == "any_assignee"
     assert assignment["assignee_employee_ids"] == ["100001", "100002"]
     assert store.assignment(row)["revision"] == 1
+    assert store.assignment_history(row)[0]["before"]["revision"] == 0
+    assert store.assignment_history(row)[0]["after"]["revision"] == 1
     assert store.records(row)[0]["record_id"] == record["record_id"]
     assert store.records(row)[0]["actor_employee_id"] == "100002"
 

@@ -49,6 +49,7 @@ class TaskExecutionStore:
     def __init__(self, root: Path):
         self.root = Path(root)
         self.assignments_root = self.root / "assignments"
+        self.assignment_history_root = self.root / "assignment-history"
         self.records_root = self.root / "work-records"
 
     def _atomic_json(self, path: Path, payload: dict[str, Any]) -> None:
@@ -120,7 +121,40 @@ class TaskExecutionStore:
                 "updated_by": actor_employee_id,
             }
             self._atomic_json(self.assignments_root / f"{payload['task_key']}.json", payload)
+            history_path = self.assignment_history_root / f"{payload['task_key']}.jsonl"
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            with history_path.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    json.dumps(
+                        {
+                            "change_id": f"assignment-change-{uuid.uuid4().hex}",
+                            "task_key": payload["task_key"],
+                            "revision": payload["revision"],
+                            "changed_at": payload["updated_at"],
+                            "changed_by": actor_employee_id,
+                            "before": current,
+                            "after": payload,
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    + "\n"
+                )
             return payload
+
+    def assignment_history(self, row: dict[str, Any], limit: int = 100) -> list[dict[str, Any]]:
+        path = self.assignment_history_root / f"{task_storage_key(row)}.jsonl"
+        if not path.exists():
+            return []
+        result: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                result.append(item)
+        return result[-max(1, min(limit, 500)) :]
 
     def records(self, row: dict[str, Any], limit: int = 100) -> list[dict[str, Any]]:
         path = self.records_root / f"{task_storage_key(row)}.jsonl"

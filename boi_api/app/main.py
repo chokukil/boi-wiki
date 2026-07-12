@@ -30349,7 +30349,7 @@ def task_console_payload(
                 "reason": "별도 AI에서 검토한 내용은 전문 대신 요약, URL, 체크섬만 업무 맥락에 연결합니다.",
             }
         )
-    return {
+    payload = {
         "ok": True,
         "surface": "task_console",
         "employee_id": employee_id,
@@ -30365,6 +30365,7 @@ def task_console_payload(
         "mode_cards": task_console_mode_cards(execution_mode),
         "completion": completion,
         "assignment_design": TASK_EXECUTION_STORE.assignment(task_row),
+        "assignment_history": TASK_EXECUTION_STORE.assignment_history(task_row, limit=20),
         "work_records": TASK_EXECUTION_STORE.records(task_row, limit=20),
         "work_form": {
             "requires_observation": True,
@@ -30410,6 +30411,37 @@ def task_console_payload(
             },
         ],
     }
+    surface_id = "task-surface-" + hashlib.sha256(
+        f"{task_completion_context_key(context)}:{len(payload['work_records'])}".encode("utf-8")
+    ).hexdigest()[:20]
+    payload["a2ui_surface"] = {
+        "surface_id": surface_id,
+        "protocol_version": "0.9.1",
+        "catalog_id": "boi-a2ui/v1",
+        "components": [
+            {
+                "id": "task-status",
+                "component": "TaskStatus",
+                "props": {
+                    "title": payload["title"],
+                    "executionMode": execution_mode,
+                    "completion": completion,
+                },
+            },
+            {
+                "id": "work-record-form",
+                "component": "WorkRecordForm",
+                "props": payload["work_form"],
+            },
+            {
+                "id": "evidence-picker",
+                "component": "EvidencePicker",
+                "props": {"items": completion.get("evidence") or []},
+            },
+        ],
+        "fallback": "task_console_html",
+    }
+    return payload
 
 
 def work_context_narrative_cache_root() -> Path:
