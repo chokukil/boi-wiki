@@ -1065,6 +1065,13 @@
   }
 
   async function applyResponse(payload) {
+    if (payload.a2ui_surface_ref) {
+      root.dataset.a2uiSurfaceRef = payload.a2ui_surface_ref;
+      root.dataset.a2uiCatalog = payload.presentation_plan?.catalog_id || "boi-a2ui/v1";
+    } else {
+      delete root.dataset.a2uiSurfaceRef;
+      delete root.dataset.a2uiCatalog;
+    }
     state.sessionId = payload.work_session_id || state.sessionId;
     state.nextActions = payload.next_actions || [];
     state.evidence = payload.evidence_refs || [];

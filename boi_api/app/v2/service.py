@@ -17,6 +17,7 @@ from fastapi import HTTPException
 
 from ..task_completion import normalise_task_completion
 from .auth import PatService
+from .a2ui import compile_surface, presentation_plan
 from .capabilities import CapabilityRegistry
 from .config import AgentV2Settings, deep_subagent_budget_limit
 from .domain import DomainServiceGateway
@@ -5130,6 +5131,15 @@ class AgentV2Service:
                 "raw_content_in_prompt": False,
             },
         )
+        response.presentation_plan = presentation_plan(response)
+        try:
+            a2ui_surface = compile_surface(response)
+        except (TypeError, ValueError):
+            a2ui_surface = {}
+        if a2ui_surface:
+            response.a2ui_surface_ref = str(a2ui_surface["surface_id"])
+            a2ui_surface["employee_id"] = principal.employee_id
+            self.store.put("a2ui_surfaces", response.a2ui_surface_ref, a2ui_surface)
         response = self._enforce_response_budget(response)
         run_payload = {
             "run_id": run_id,
@@ -5170,6 +5180,11 @@ class AgentV2Service:
                 *(
                     [{"event": "artifact.created", "artifact_ids": [item.artifact_id for item in artifacts]}]
                     if artifacts
+                    else []
+                ),
+                *(
+                    [{"event": "a2ui.surface", "surface_ref": response.a2ui_surface_ref}]
+                    if response.a2ui_surface_ref
                     else []
                 ),
                 {"event": "final", "status": status},
