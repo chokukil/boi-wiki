@@ -69,6 +69,7 @@
 {% if not shell.hide_pet_agent %}
 {% if shell.agent_v2_default %}
 <script src="{{ asset_url('task_completion_editor.js') }}" defer></script>
+<script src="{{ asset_url('a2ui_renderer.js') }}" defer></script>
 <script src="{{ asset_url('agent_workspace_v2.js') }}" defer></script>
 {% else %}
 <script src="{{ asset_url('pet_agent.js') }}" defer></script>

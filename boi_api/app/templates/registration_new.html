@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title }} · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('directory_picker.js') }}" defer></script>
   <script src="{{ asset_url('task_completion_editor.js') }}" defer></script>
   <script src="{{ asset_url('registration.js') }}" defer></script>
 </head>
@@ -203,10 +204,6 @@
             </div>
             <div class="mermaid">{{ mermaid_seed_artifact.source }}</div>
             <p class="mermaid-status" aria-live="polite">업무 흐름 그림을 준비하고 있습니다.</p>
-            <details class="mermaid-source-fallback">
-              <summary>흐름 원본 보기</summary>
-              <pre><code>{{ mermaid_seed_artifact.source }}</code></pre>
-            </details>
           </div>
           {% endif %}
           <div class="autosave-actions">
@@ -641,16 +638,31 @@
                       </label>
                       <label>
                         담당자
-                        <input data-stage-field="assignee_employee_ids" placeholder="사번을 여러 개 지정할 수 있습니다. 예: 100001, 100002" />
+                        <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                          <input type="search" data-directory-query placeholder="사번, 이름 또는 부서로 찾기" autocomplete="off" />
+                          <input type="hidden" data-directory-value data-stage-field="assignee_employee_ids" />
+                          <div class="directory-picker-options" data-directory-options hidden></div>
+                          <div class="directory-picker-chips" data-directory-chips></div>
+                        </div>
                         <small>지정된 담당자 모두의 Inbox에 같은 Task가 표시됩니다.</small>
                       </label>
                       <label>
                         검토 담당자
-                        <input data-stage-field="reviewer_employee_ids" placeholder="예: 100003" />
+                        <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                          <input type="search" data-directory-query placeholder="사번, 이름 또는 부서로 찾기" autocomplete="off" />
+                          <input type="hidden" data-directory-value data-stage-field="reviewer_employee_ids" />
+                          <div class="directory-picker-options" data-directory-options hidden></div>
+                          <div class="directory-picker-chips" data-directory-chips></div>
+                        </div>
                       </label>
                       <label>
                         유관 팀
-                        <input data-stage-field="related_team_ids" placeholder="예: equipment, quality" />
+                        <div class="directory-picker" data-directory-picker data-directory-kind="teams">
+                          <input type="search" data-directory-query placeholder="팀 이름으로 찾기" autocomplete="off" />
+                          <input type="hidden" data-directory-value data-stage-field="related_team_ids" />
+                          <div class="directory-picker-options" data-directory-options hidden></div>
+                          <div class="directory-picker-chips" data-directory-chips></div>
+                        </div>
                       </label>
                       <label>
                         판단 질문

@@ -54,6 +54,18 @@
       </dl>
     </details>
   </section>
+  {% if surface_status %}
+  <details class="panel technical-details">
+    <summary>동적 결과 화면 진단</summary>
+    <p>BoI Agent와 Task 수행 화면이 결과 종류에 맞는 표·그림·업무 양식을 복원할 수 있는지 확인합니다.</p>
+    <dl>
+      <dt>저장된 화면</dt><dd>{{ surface_status.count }}건</dd>
+      <dt>검증 실패</dt><dd>{{ surface_status.invalid_count }}건</dd>
+      <dt>기본 화면 복구 가능</dt><dd>{{ surface_status.fallback_count }}건</dd>
+      <dt>최근 화면</dt><dd>{{ surface_status.latest_surface_id or "아직 기록 없음" }}</dd>
+    </dl>
+  </details>
+  {% endif %}
 </main>
 </body>
 </html>

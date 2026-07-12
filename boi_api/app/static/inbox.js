@@ -74,10 +74,6 @@
         </div>
         <div class="mermaid">${escapeHtml(canvas.source)}</div>
         <p class="mermaid-status" aria-live="polite">업무 흐름 그림을 준비하고 있습니다.</p>
-        <details class="mermaid-source-fallback">
-          <summary>흐름 원본 보기</summary>
-          <pre><code>${escapeHtml(canvas.source)}</code></pre>
-        </details>
       </div>`;
     target.hidden = false;
     panel.classList.remove("is-loading", "has-error");

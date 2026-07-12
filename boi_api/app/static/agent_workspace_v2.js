@@ -89,6 +89,7 @@
     starterSetPolls: 0,
     mobileView: "conversation",
     a2uiSurface: null,
+    usedSourceRefs: [],
   };
   const pageRef = root.dataset.pageRef || `${location.pathname}${location.search}`;
   const channel = "BroadcastChannel" in window ? new BroadcastChannel("boi-agent-v2-artifacts") : null;
@@ -346,7 +347,7 @@
     } else if (artifactId) {
       actions = `<div class="mermaid-v2-actions"><button type="button" data-agent-v2-result-action="tasks">Task 다듬기</button><button type="button" data-agent-v2-result-action="full">전체 SOP 편집</button></div>`;
     }
-    return `<div class="mermaid-diagram" data-v2-mermaid data-mermaid-state="pending" data-mermaid-title="${escapeHtml(title)}" data-mermaid-source="${safe}" data-mermaid-view-key="${escapeHtml(viewKey)}" data-agent-artifact-id="${escapeHtml(artifactId || "")}"><div class="mermaid-v2-toolbar"><span class="mermaid-status sr-only">흐름 그림 준비 중</span><div class="mermaid-v2-view-modes" role="group" aria-label="흐름 그림 보기 방식"><button type="button" data-mermaid-view="read" aria-pressed="true">읽기 크기</button><button type="button" data-mermaid-view="fit" aria-pressed="false">전체 보기</button></div><div class="mermaid-v2-zoom-controls" role="group" aria-label="흐름 그림 확대 축소"><button type="button" data-mermaid-view="out" title="축소" aria-label="흐름 그림 축소">−</button><output data-mermaid-zoom aria-live="polite">100%</output><button type="button" data-mermaid-view="in" title="확대" aria-label="흐름 그림 확대">＋</button></div></div><div class="mermaid-v2-canvas" tabindex="0" aria-label="${escapeHtml(title)} 흐름 그림. 방향키로 이동할 수 있습니다."><div class="mermaid">${safe}</div></div>${actions}<details class="mermaid-source-fallback"><summary>원문 보기</summary><pre>${safe}</pre></details></div>`;
+    return `<div class="mermaid-diagram" data-v2-mermaid data-mermaid-state="pending" data-mermaid-title="${escapeHtml(title)}" data-mermaid-source="${safe}" data-mermaid-view-key="${escapeHtml(viewKey)}" data-agent-artifact-id="${escapeHtml(artifactId || "")}"><div class="mermaid-v2-toolbar"><span class="mermaid-status sr-only">흐름 그림 준비 중</span><div class="mermaid-v2-view-modes" role="group" aria-label="흐름 그림 보기 방식"><button type="button" data-mermaid-view="read" aria-pressed="true">읽기 크기</button><button type="button" data-mermaid-view="fit" aria-pressed="false">전체 보기</button></div><div class="mermaid-v2-zoom-controls" role="group" aria-label="흐름 그림 확대 축소"><button type="button" data-mermaid-view="out" title="축소" aria-label="흐름 그림 축소">−</button><output data-mermaid-zoom aria-live="polite">100%</output><button type="button" data-mermaid-view="in" title="확대" aria-label="흐름 그림 확대">＋</button></div></div><div class="mermaid-v2-canvas" tabindex="0" aria-label="${escapeHtml(title)} 흐름 그림. 방향키로 이동할 수 있습니다."><div class="mermaid">${safe}</div></div>${actions}</div>`;
   }
 
   const MERMAID_MIN_ZOOM = .6;
@@ -945,9 +946,7 @@
       const button = document.createElement("button");
       button.type = "button";
       if (action.action_kind === "show_sources") {
-        const sourceRefs = new Set(
-          Object.values(state.sourceSet?.groups || {}).flatMap((items) => (items || []).map((item) => item.source_ref))
-        );
+        const sourceRefs = new Set(state.usedSourceRefs || []);
         button.textContent = `사용한 지식 ${sourceRefs.size}개`;
       } else button.textContent = action.label;
       button.addEventListener("click", (event) => {
@@ -996,6 +995,7 @@
   ]);
 
   function trustedA2UISurface(surface) {
+    if (window.BoiA2UI) return window.BoiA2UI.validate(surface);
     if (!surface || surface.protocol_version !== "0.9.1" || surface.catalog_id !== "boi-a2ui/v1") return null;
     if (!Array.isArray(surface.components) || (surface.events || []).length) return null;
     const ids = new Set();
@@ -1040,10 +1040,8 @@
 
   function ontologyViewer(draft) {
     const { nodes, edges, lookup, title, relationLabel, provenanceLabel } = ontologyContext(draft);
-    const nodeMarkup = nodes.map((node) => `<button type="button" class="ontology-result-node" data-ontology-node="${escapeHtml(node.node_id || "")}"><span>${escapeHtml(node.node_type || "항목")}</span><strong>${escapeHtml(title(node))}</strong></button>`).join("");
-    const edgeMarkup = edges.map((edge) => `<li data-ontology-edge data-source="${escapeHtml(edge.source_id || "")}" data-target="${escapeHtml(edge.target_id || "")}"><button type="button" data-ontology-focus="${escapeHtml(edge.source_id || "")}">${escapeHtml(title(lookup.get(edge.source_id)))}</button><span>${escapeHtml(relationLabel(edge.relation))}<small>${escapeHtml(provenanceLabel(edge))}</small></span><button type="button" data-ontology-focus="${escapeHtml(edge.target_id || "")}">${escapeHtml(title(lookup.get(edge.target_id)))}</button></li>`).join("");
     const mode = draft.presentation === "timeline" ? "시간 흐름" : draft.presentation === "explorer" ? "관계 탐색" : draft.presentation === "table" ? "관계표" : "연결 관계";
-    return `<article class="ontology-result" data-a2ui-component="OntologyExplorer" data-a2ui-catalog="boi-a2ui/v1"><header><div><span>${escapeHtml(mode)}</span><strong>${nodes.length}개 항목 · ${edges.length}개 관계</strong></div><button type="button" class="secondary-button" data-ontology-reset>전체 보기</button></header><div class="ontology-result-layout"><div class="ontology-result-nodes" aria-label="업무 관계 항목">${nodeMarkup}</div><ol class="ontology-result-edges" aria-label="업무 관계 목록">${edgeMarkup || "<li>표시할 관계가 없습니다.</li>"}</ol></div></article>`;
+    return `<article class="ontology-result knowledge-explorer knowledge-graph-hub" data-agent-ontology-explorer data-a2ui-mount="OntologyExplorer" data-source-ref="${escapeHtml(nodes[0]?.node_id || "")}" data-a2ui-component="OntologyExplorer" data-a2ui-catalog="boi-a2ui/v1"><header><div><span>${escapeHtml(mode)}</span><strong>${nodes.length}개 항목 · ${edges.length}개 관계</strong></div></header><p class="knowledge-explorer-status muted" aria-live="polite">관계 그림을 준비하고 있습니다.</p><div class="knowledge-graph-hub-layout"><div class="knowledge-graph-shell"><div class="knowledge-graph-canvas" role="img" aria-label="업무 맥락 관계 그래프"></div></div><aside class="knowledge-node-details" data-knowledge-node-details><span class="eyebrow">선택한 항목</span><h3 data-knowledge-node-title>업무 관계</h3><p data-knowledge-node-summary>항목을 선택하면 관계 이유와 원문을 확인할 수 있습니다.</p><dl><div><dt>종류</dt><dd data-knowledge-node-kind>업무 지식</dd></div><div><dt>연결</dt><dd data-knowledge-node-degree>확인 중</dd></div><div><dt>검증 상태</dt><dd data-knowledge-node-provenance>근거가 확인된 관계</dd></div></dl><a class="button secondary" data-knowledge-open-node hidden>원문 열기</a></aside></div></article>`;
   }
 
   function ontologyTable(draft) {
@@ -1136,6 +1134,24 @@
       const body = draft.body || artifact.preview || JSON.stringify(draft, null, 2);
       elements.artifacts.innerHTML = `<article class="agent-v2-generic-result"><span>${escapeHtml(artifact.status || "draft")}</span><h3>${escapeHtml(artifact.title)}</h3><div>${renderMarkdown(body)}</div></article>`;
     }
+    if (isOntology && a2uiArtifactComponent(artifact.artifact_id) === "OntologyExplorer") {
+      const panel = elements.artifacts.querySelector("[data-agent-ontology-explorer]");
+      if (panel) {
+        const hydrated = state.a2uiSurface && window.BoiA2UI?.hydrate
+          ? window.BoiA2UI.hydrate(state.a2uiSurface, elements.artifacts)
+          : false;
+        if (hydrated) {
+          syncArtifactFocusUi();
+          saveSurfaceState();
+          return;
+        }
+        const payload = { nodes: draft.nodes || [], edges: draft.edges || [] };
+        if (window.BoiKnowledgeGraph?.renderPayload) window.BoiKnowledgeGraph.renderPayload(panel, payload);
+        else import("/static/dist/knowledge-graph.js")
+          .then(() => window.BoiKnowledgeGraph?.renderPayload?.(panel, payload))
+          .catch(() => { panel.querySelector(".knowledge-explorer-status").textContent = "관계 그림을 표시하지 못했습니다."; });
+      }
+    }
     elements.artifactFocus.hidden = !hasDiagram;
     elements.artifacts.querySelectorAll("[data-ontology-node], [data-ontology-focus]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1190,6 +1206,7 @@
   }
 
   async function applyResponse(payload) {
+    state.usedSourceRefs = payload.used_source_refs || (payload.citations || []).map((item) => item.source_ref).filter(Boolean);
     if (payload.a2ui_surface_ref) {
       root.dataset.a2uiSurfaceRef = payload.a2ui_surface_ref;
       root.dataset.a2uiCatalog = payload.presentation_plan?.catalog_id || "boi-a2ui/v1";

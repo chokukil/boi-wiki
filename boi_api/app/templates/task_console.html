@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>업무 수행 화면 · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('directory_picker.js') }}" defer></script>
+  <script src="{{ asset_url('a2ui_renderer.js') }}" defer></script>
 </head>
 <body>
   {% include "_app_shell.html" %}
@@ -31,7 +33,7 @@
     </section>
     {% endif %}
 
-    <section class="panel task-console-summary" data-a2ui-component="TaskStatus" data-a2ui-catalog="{{ payload.a2ui_surface.catalog_id }}">
+    <section class="panel task-console-summary" data-a2ui-component="TaskStatus" data-a2ui-mount="TaskStatus" data-a2ui-catalog="{{ payload.a2ui_surface.catalog_id }}">
       <div>
         <span class="eyebrow">현재 방식</span>
         <strong>{{ payload.execution_mode|capitalize }}</strong>
@@ -52,6 +54,48 @@
 
     <section class="task-console-layout">
       <article class="panel task-console-main-panel">
+        <div
+          class="task-console-section task-assignment-editor"
+          data-task-assignment
+          data-task-ref="{{ task.task_ref or task.ui_task_id or task.task_id }}"
+          data-revision="{{ payload.assignment_design.revision or 0 }}"
+        >
+          <div class="mode-panel-heading">
+            <strong>누가 이 업무를 맡나요?</strong>
+            <span>담당자 한 명이 유효하게 완료하면 같은 Task를 보는 모든 담당자에게 반영됩니다.</span>
+          </div>
+          <div class="task-assignment-grid">
+            <label>담당자
+              <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                <input type="search" data-directory-query placeholder="사번, 이름 또는 부서로 찾기" autocomplete="off" />
+                <input type="hidden" data-directory-value data-assignment-field="assignee_employee_ids" value="{{ payload.assignment_design.assignee_employee_ids|join(', ') }}" />
+                <div class="directory-picker-options" data-directory-options hidden></div>
+                <div class="directory-picker-chips" data-directory-chips></div>
+              </div>
+            </label>
+            <label>검토 담당자
+              <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                <input type="search" data-directory-query placeholder="검토할 사람 찾기" autocomplete="off" />
+                <input type="hidden" data-directory-value data-assignment-field="reviewer_employee_ids" value="{{ payload.assignment_design.reviewer_employee_ids|join(', ') }}" />
+                <div class="directory-picker-options" data-directory-options hidden></div>
+                <div class="directory-picker-chips" data-directory-chips></div>
+              </div>
+            </label>
+            <label>유관 팀
+              <div class="directory-picker" data-directory-picker data-directory-kind="teams">
+                <input type="search" data-directory-query placeholder="팀 이름으로 찾기" autocomplete="off" />
+                <input type="hidden" data-directory-value data-assignment-field="related_team_ids" value="{{ payload.assignment_design.related_team_ids|join(', ') }}" />
+                <div class="directory-picker-options" data-directory-options hidden></div>
+                <div class="directory-picker-chips" data-directory-chips></div>
+              </div>
+            </label>
+          </div>
+          <div class="task-assignment-actions">
+            <p data-task-assignment-status aria-live="polite"></p>
+            <button class="button secondary" type="button" data-task-assignment-save>배정 저장</button>
+          </div>
+        </div>
+
         <div class="mode-panel-heading">
           <strong>어떻게 수행하나요?</strong>
           <span>Task마다 사람이 직접 하거나, AI와 함께 하거나, 자동 실행 후 확인할 수 있습니다.</span>
@@ -95,7 +139,7 @@
         </div>
 
         {% if payload.execution_mode != "autopilot" %}
-        <div class="task-console-section task-console-work-record" data-a2ui-component="WorkRecordForm" data-a2ui-catalog="boi-a2ui/v1">
+        <div class="task-console-section task-console-work-record" data-a2ui-component="WorkRecordForm" data-a2ui-mount="WorkRecordForm" data-a2ui-catalog="boi-a2ui/v1">
           <div class="mode-panel-heading">
             <strong>이번 업무에서 확인하고 수행한 내용</strong>
             <span>체크만 남기지 않고 실제로 본 내용, 조치와 판단을 함께 기록합니다.</span>
@@ -187,7 +231,7 @@
             <strong>무엇을 확인하면 될까요?</strong>
             <span>이 Task를 마치기 전에 확인할 자료와 현재 확보 상태입니다.</span>
           </div>
-          <div class="task-console-evidence-grid task-console-required-evidence" data-a2ui-component="EvidencePicker" data-a2ui-catalog="boi-a2ui/v1">
+          <div class="task-console-evidence-grid task-console-required-evidence" data-a2ui-component="EvidencePicker" data-a2ui-mount="EvidencePicker" data-a2ui-catalog="boi-a2ui/v1">
             {% for item in evidence_picker["items"] or completion.evidence %}
             <section class="{% if item.available %}available{% endif %}">
               <span>{{ item.status_label }}</span>

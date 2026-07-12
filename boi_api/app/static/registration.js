@@ -938,6 +938,7 @@
       const value = stage[key];
       field.value = Array.isArray(value) ? value.join(", ") : String(value || "");
     });
+    window.BoiDirectoryPicker?.sync(detail);
     stageCompletionEditor?.setTask({
       execution_mode: stage.execution_mode,
       completion_design: stage.completion_design,
