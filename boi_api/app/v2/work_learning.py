@@ -1040,6 +1040,108 @@ class WorkLearningService:
         self._notify_operational_change(version_id or candidate_id, principal.employee_id)
         return {"candidate": candidate, "harness_version_id": version_id, "production_changed": False}
 
+    def release_harness_version(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        if not principal.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        candidate = self.store.get("harness_candidates", candidate_id)
+        version = self.store.get("harness_versions", request.expected_version_id)
+        if not candidate or not version or version.get("candidate_id") != candidate_id:
+            raise HTTPException(status_code=404, detail="배포할 Harness 버전을 찾을 수 없습니다.")
+        if candidate.get("status") != "approved_for_manual_release" or version.get("status") != "approved_not_deployed":
+            raise HTTPException(status_code=409, detail="사람 검토를 통과한 대기 버전만 배포할 수 있습니다.")
+        if not request.user_confirmed:
+            raise HTTPException(status_code=400, detail="Harness 버전 배포를 확인해주세요.")
+        active_key = f"{version.get('harness_id')}:{version.get('model_profile') or 'default'}"
+        previous = self.store.get("harness_active_versions", active_key) or {}
+        audit_id = _id("haudit", f"release:{candidate_id}:{now_iso()}")
+        result = {
+            "operation": "release",
+            "candidate_id": candidate_id,
+            "harness_version_id": request.expected_version_id,
+            "previous_version": previous.get("harness_version_id") or version.get("rollback_version"),
+            "rehearsal": bool(request.rehearsal),
+            "production_changed": not request.rehearsal,
+            "note": _compact(request.note, 4000),
+            "actor_employee_id": principal.employee_id,
+            "created_at": now_iso(),
+        }
+        self.store.put("harness_release_audits", audit_id, {"audit_id": audit_id, **result})
+        if request.rehearsal:
+            return result
+        self.store.put(
+            "harness_active_versions",
+            active_key,
+            {
+                "active_key": active_key,
+                "harness_id": version.get("harness_id"),
+                "model_profile": version.get("model_profile") or "default",
+                "harness_version_id": request.expected_version_id,
+                "changes": version.get("changes") or {},
+                "previous_version": result["previous_version"],
+                "activated_by": principal.employee_id,
+                "activated_at": now_iso(),
+            },
+        )
+        version.update({"status": "active", "production_changed": True, "activated_at": now_iso()})
+        candidate.update({"status": "released", "production_changed": True, "updated_at": now_iso()})
+        self.store.put("harness_versions", request.expected_version_id, version)
+        self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(request.expected_version_id, principal.employee_id)
+        return result
+
+    def rollback_harness_version(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        if not principal.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        version = next(
+            (item for item in self.store.list("harness_versions", limit=1000) if item.get("candidate_id") == candidate_id and item.get("status") == "active"),
+            None,
+        )
+        if not version:
+            raise HTTPException(status_code=409, detail="현재 활성화된 Harness 후보 버전이 없습니다.")
+        if not request.user_confirmed:
+            raise HTTPException(status_code=400, detail="Harness 버전 되돌리기를 확인해주세요.")
+        active_key = f"{version.get('harness_id')}:{version.get('model_profile') or 'default'}"
+        audit_id = _id("haudit", f"rollback:{candidate_id}:{now_iso()}")
+        result = {
+            "operation": "rollback",
+            "candidate_id": candidate_id,
+            "harness_version_id": version.get("harness_version_id"),
+            "rollback_version": version.get("rollback_version"),
+            "rehearsal": bool(request.rehearsal),
+            "production_changed": not request.rehearsal,
+            "note": _compact(request.note, 4000),
+            "actor_employee_id": principal.employee_id,
+            "created_at": now_iso(),
+        }
+        self.store.put("harness_release_audits", audit_id, {"audit_id": audit_id, **result})
+        if request.rehearsal:
+            return result
+        self.store.delete("harness_active_versions", active_key)
+        version.update({"status": "rolled_back", "production_changed": False, "rolled_back_at": now_iso()})
+        candidate.update({"status": "rolled_back", "production_changed": False, "updated_at": now_iso()})
+        self.store.put("harness_versions", str(version["harness_version_id"]), version)
+        self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(str(version["harness_version_id"]), principal.employee_id)
+        return result
+
+    def effective_harness_bindings(self, harness_ids: list[str]) -> list[dict[str, Any]]:
+        bindings = self.harnesses.bindings(harness_ids, self.model_profile)
+        for binding in bindings:
+            active_key = f"{binding.get('harness_id')}:{self.model_profile}"
+            active = self.store.get("harness_active_versions", active_key)
+            if active:
+                binding.update(
+                    {
+                        "version": active.get("harness_version_id"),
+                        "active_changes": active.get("changes") or {},
+                        "release_state": "active_reviewed_version",
+                    }
+                )
+        return bindings
+
     @staticmethod
     def resolve_loop_policy(
         intent: WorkIntent,
@@ -1126,7 +1228,7 @@ class WorkLearningService:
                 "deltas": [],
             },
             "harness_results": [item.model_dump(mode="json") for item in preflights],
-            "harness_bindings": self.harnesses.bindings(preflight_ids, self.model_profile),
+            "harness_bindings": self.effective_harness_bindings(preflight_ids),
             "events": [
                 {"event": "work.observed", "at": now_iso()},
                 {"event": "context.compiled", "context_id": context.context_id, "at": now_iso()},

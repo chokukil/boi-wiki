@@ -44,6 +44,8 @@ from boi_api.app.v2.models import (
     HarnessCandidateEvaluateRequest,
     HarnessCandidateReviewRequest,
     HarnessCandidateShadowRequest,
+    HarnessVersionReleaseRequest,
+    HarnessVersionRollbackRequest,
     HarnessCheck,
     HarnessResult,
     HelperActivateRequest,
@@ -5112,6 +5114,8 @@ def test_postgres_registry_includes_all_harness_improvement_collections():
         "harness_failure_patterns",
         "harness_shadow_runs",
         "harness_versions",
+        "harness_active_versions",
+        "harness_release_audits",
     } <= set(PostgresAgentV2Store.COLLECTION_TABLES)
 
 
@@ -5168,7 +5172,7 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
         HarnessCandidateCreateRequest(
             harness_id="context.work",
             failure_record_ids=[failure_id],
-            model_profile="gemma-local",
+            model_profile=v2_service.learning.model_profile,
             changes={"retrieval_policy": {"authority_weight": 1.2}},
             rationale="권위 있는 업무 근거가 반복적으로 누락되는 실패를 줄이기 위한 제한된 후보입니다.",
         ),
@@ -5198,7 +5202,7 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
         HarnessCandidateCreateRequest(
             harness_id="context.work",
             failure_record_ids=[failure_id],
-            model_profile="gemma-local",
+            model_profile=v2_service.learning.model_profile,
             changes={"retrieval_policy": {"authority_weight": 1.1}},
             rationale="같은 실패군을 대상으로 held-out 회귀 없이 개선되는지 다시 검증하는 후보입니다.",
         ),
@@ -5235,6 +5239,45 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
     assert reviewed["production_changed"] is False
     assert version["status"] == "approved_not_deployed"
     assert version["production_changed"] is False
+
+    release_principal = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    rehearsal = v2_service.learning.release_harness_version(
+        release_principal,
+        candidate["candidate_id"],
+        HarnessVersionReleaseRequest(
+            expected_version_id=reviewed["harness_version_id"],
+            note="운영 반영 전 rollback 대상과 활성 binding을 연습합니다.",
+            user_confirmed=True,
+            rehearsal=True,
+        ),
+    )
+    assert rehearsal["production_changed"] is False
+    assert v2_service.store.list("harness_active_versions", limit=10) == []
+
+    released = v2_service.learning.release_harness_version(
+        release_principal,
+        candidate["candidate_id"],
+        HarnessVersionReleaseRequest(
+            expected_version_id=reviewed["harness_version_id"],
+            note="검증된 후보를 운영 binding에 반영합니다.",
+            user_confirmed=True,
+        ),
+    )
+    assert released["production_changed"] is True
+    binding = v2_service.learning.effective_harness_bindings(["context.work"])[0]
+    assert binding["version"] == reviewed["harness_version_id"]
+    assert binding["release_state"] == "active_reviewed_version"
+
+    rolled_back = v2_service.learning.rollback_harness_version(
+        release_principal,
+        candidate["candidate_id"],
+        HarnessVersionRollbackRequest(
+            note="운영 rehearsal를 마치고 내장 기준 버전으로 되돌립니다.",
+            user_confirmed=True,
+        ),
+    )
+    assert rolled_back["production_changed"] is True
+    assert v2_service.store.list("harness_active_versions", limit=10) == []
 
 
 def test_blocked_harness_creates_causal_failure_and_negative_result(

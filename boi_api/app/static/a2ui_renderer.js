@@ -254,7 +254,9 @@
     if (!trusted) return false;
     let rendered = 0;
     trusted.components.forEach((item) => {
-      root.querySelectorAll?.(`[data-a2ui-mount="${item.component}"]`).forEach((mount) => {
+      const exactMounts = root.querySelectorAll?.(`[data-a2ui-component-id="${item.id}"]`) || [];
+      const mounts = exactMounts.length ? exactMounts : (root.querySelectorAll?.(`[data-a2ui-mount="${item.component}"]`) || []);
+      mounts.forEach((mount) => {
         const ok = item.component === "WorkRecordForm"
           ? renderWorkRecordForm(mount, item.props || {})
           : item.component === "EvidencePicker"

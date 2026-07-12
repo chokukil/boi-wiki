@@ -23,6 +23,8 @@ from .models import (
     HarnessCandidateEvaluateRequest,
     HarnessCandidateReviewRequest,
     HarnessCandidateShadowRequest,
+    HarnessVersionReleaseRequest,
+    HarnessVersionRollbackRequest,
     ContextPlaybookCreateRequest,
     ContextPlaybookPatchRequest,
     KnowledgeCandidatePatchRequest,
@@ -679,6 +681,24 @@ def build_agent_v2_router(
         service.store.put("a2ui_surfaces", surface["surface_id"], surface)
         return surface
 
+    @router.post("/api/v2/harness-candidates/{candidate_id}/release")
+    async def release_harness_candidate(
+        candidate_id: str,
+        request: HarnessVersionReleaseRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        return service.learning.release_harness_version(identity, candidate_id, request)
+
+    @router.post("/api/v2/harness-candidates/{candidate_id}/rollback")
+    async def rollback_harness_candidate(
+        candidate_id: str,
+        request: HarnessVersionRollbackRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        return service.learning.rollback_harness_version(identity, candidate_id, request)
+
     @router.get("/api/v2/knowledge-proposals")
     async def knowledge_proposals(
         status: str = "",
@@ -1026,6 +1046,55 @@ def build_agent_v2_router(
                         title="외부 도구 연결",
                         description="내 권한 범위에서 Codex, Claude, API와 BoI Wiki를 연결합니다.",
                         hide_pet_agent=True,
+                    ),
+                },
+            )
+
+        @router.get("/harness-candidates/{candidate_id}", response_class=HTMLResponse)
+        async def harness_candidate_review_page(
+            candidate_id: str,
+            request: Request,
+            identity: Principal = Depends(principal),
+        ) -> HTMLResponse:
+            if not identity.is_admin:
+                raise HTTPException(status_code=403, detail="boi.admin is required")
+            candidate = service.store.get("harness_candidates", candidate_id)
+            if not candidate:
+                raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+            pattern_ids = set(candidate.get("failure_pattern_ids") or [])
+            patterns = [
+                item for item in service.store.list("harness_failure_patterns", limit=1000)
+                if item.get("failure_pattern_id") in pattern_ids
+            ]
+            shadow = service.store.get("harness_shadow_runs", str(candidate.get("latest_shadow_run_id") or ""))
+            evaluation = service.store.get("harness_eval_runs", str(candidate.get("latest_eval_id") or ""))
+            version = next(
+                (item for item in service.store.list("harness_versions", limit=1000) if item.get("candidate_id") == candidate_id),
+                {},
+            )
+            surface = compile_harness_review_surface(
+                candidate,
+                failure_patterns=patterns,
+                shadow_run=shadow,
+                evaluation=evaluation,
+            )
+            surface.update({"employee_id": identity.employee_id, "created_at": candidate.get("updated_at") or candidate.get("created_at")})
+            service.store.put("a2ui_surfaces", surface["surface_id"], surface)
+            return templates.TemplateResponse(
+                "harness_candidate_review.html",
+                {
+                    "request": request,
+                    "employee_id": identity.employee_id,
+                    "candidate": candidate,
+                    "evaluation": evaluation or {},
+                    "version": version,
+                    "surface": surface,
+                    "shell": shell_context_factory(
+                        request,
+                        identity.employee_id,
+                        active_nav="advanced",
+                        title="업무 실행 품질 개선 검토",
+                        description="반복 실패 근거와 시험 결과를 확인하고 운영 반영 여부를 결정합니다.",
                     ),
                 },
             )

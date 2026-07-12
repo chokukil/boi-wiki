@@ -172,6 +172,41 @@ def test_harness_review_surface_explains_failures_trial_and_non_deployment():
     assert all(item["component"] in {"Answer", "DecisionSummary"} for item in surface["components"])
 
 
+def test_harness_candidate_opens_rendered_review_page_instead_of_raw_surface(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    service = boi_app_module.AGENT_V2_SERVICE
+    candidate_id = "hcandidate-browser-review"
+    service.store.put(
+        "harness_candidates",
+        candidate_id,
+        {
+            "candidate_id": candidate_id,
+            "employee_id": "100001",
+            "harness_id": "context.work",
+            "base_version": "1.1",
+            "model_profile": service.learning.model_profile,
+            "rationale": "반복되는 근거 누락을 제한된 retrieval 변경으로 시험합니다.",
+            "changes": {"retrieval_policy": {"authority_weight": 1.1}},
+            "status": "review_required",
+            "latest_eval_id": "heval-browser-review",
+            "created_at": "2026-07-13T00:00:00+00:00",
+        },
+    )
+    service.store.put(
+        "harness_eval_runs",
+        "heval-browser-review",
+        {"eval_id": "heval-browser-review", "candidate_id": candidate_id, "qualified": True},
+    )
+
+    response = client.get(f"/harness-candidates/{candidate_id}?employee_id=100001")
+
+    assert response.status_code == 200
+    assert "업무 실행 품질 개선 검토" in response.text
+    assert 'data-a2ui-component-id="candidate-summary"' in response.text
+    assert "배포 검토 승인" in response.text
+    assert "/api/v2/harness-candidates/" not in response.url.path
+
+
 @pytest.mark.parametrize(
     ("presentation", "component"),
     [("table", "DataTable"), ("timeline", "Timeline"), ("mermaid", "MermaidArtifact"), ("explorer", "OntologyExplorer")],

@@ -302,6 +302,8 @@ class PostgresAgentV2Store(AgentV2Store):
         "harness_shadow_runs": "agent_harness_shadow_runs",
         "harness_eval_runs": "agent_harness_eval_runs",
         "harness_versions": "agent_harness_versions",
+        "harness_active_versions": "agent_harness_active_versions",
+        "harness_release_audits": "agent_harness_release_audits",
         "knowledge_candidates": "agent_knowledge_candidates",
         "completion_records": "agent_completion_records",
         "work_role_profiles": "agent_work_role_profiles",

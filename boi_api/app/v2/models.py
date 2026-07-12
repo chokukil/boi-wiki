@@ -406,6 +406,19 @@ class HarnessCandidateReviewRequest(BaseModel):
     note: str = Field(min_length=4, max_length=4000)
 
 
+class HarnessVersionReleaseRequest(BaseModel):
+    expected_version_id: str = Field(min_length=1, max_length=160)
+    note: str = Field(min_length=4, max_length=4000)
+    user_confirmed: bool = False
+    rehearsal: bool = False
+
+
+class HarnessVersionRollbackRequest(BaseModel):
+    note: str = Field(min_length=4, max_length=4000)
+    user_confirmed: bool = False
+    rehearsal: bool = False
+
+
 class ContextPlaybookCreateRequest(BaseModel):
     description: str = Field(min_length=12, max_length=4000)
     conditions: list[str] = Field(default_factory=list, max_length=30)
