@@ -8252,6 +8252,15 @@ def citation_rows_for_doc(
                     metadata, body = split_frontmatter(raw_text) if raw_text else ({}, "")
                     heading = next((line.removeprefix("# ").strip() for line in body.splitlines() if line.startswith("# ")), "")
                     label = str(metadata.get("title") or heading or repo_candidate.stem.replace("_", " ").replace("-", " ")).strip()
+                    friendly_repo_labels = {
+                        "README": "BoI Wiki 프로젝트 안내",
+                        "_agent_surface_v2": "BoI Agent 화면",
+                        "work_learning": "업무 학습 흐름",
+                        "knowledge_system": "지식 연결과 갱신",
+                        "task_execution": "Task 수행과 배정",
+                        "a2ui": "동적 업무 화면 계약",
+                    }
+                    label = friendly_repo_labels.get(repo_candidate.stem, label)
                 except OSError:
                     label = ""
         if not label:
