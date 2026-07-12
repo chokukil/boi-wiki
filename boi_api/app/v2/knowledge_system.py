@@ -100,9 +100,12 @@ class LivingKnowledgeService:
         self.search = search
         self.directory_provider = directory_provider
         self._adapter_lock = threading.Lock()
-        self._adapter_threads: dict[str, threading.Thread] = {}
+        self._adapter_worker_event = threading.Event()
+        self._adapter_worker_stop = threading.Event()
+        self._adapter_worker_thread: threading.Thread | None = None
         self._ensure_defaults()
         self._resume_adapter_jobs()
+        self._ensure_adapter_worker()
 
     def directory_principals(self, current: Principal) -> list[Principal]:
         rows: list[Principal] = []
@@ -329,6 +332,100 @@ class LivingKnowledgeService:
             raise ValueError("adapter_input_missing")
         return input_path
 
+    def _adapter_workspace(self, source: dict[str, Any], job_id: str) -> Path:
+        root = (self.settings.runtime_root / "knowledge-adapters" / str(source["source_id"]) / job_id).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _adapter_source_path(self, source: dict[str, Any]) -> Path:
+        config = source.get("adapter_config") if isinstance(source.get("adapter_config"), dict) else {}
+        raw = str(config.get("input_path") or source.get("location") or "").strip()
+        path = Path(raw).expanduser().resolve()
+        repo_root = self.settings.content_root.parents[1] if len(self.settings.content_root.parents) > 1 else self.settings.content_root
+        allowed = [repo_root.resolve(), self.settings.runtime_root.resolve()]
+        if not any(path == root or root in path.parents for root in allowed):
+            raise ValueError("adapter_source_outside_allowed_roots")
+        if not path.exists():
+            raise ValueError("adapter_source_missing")
+        return path
+
+    def _checkpoint_adapter_job(self, job_id: str, stage: str, progress: int, **extra: Any) -> dict[str, Any]:
+        job = self.store.get("knowledge_source_jobs", job_id) or {}
+        checkpoint = {"stage": stage, "progress": progress, "updated_at": now_iso(), **extra}
+        job.update({"stage": stage, "progress": progress, "checkpoint": checkpoint, "updated_at": now_iso()})
+        return self.store.put("knowledge_source_jobs", job_id, job)
+
+    def _run_adapter_command(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        timeout_seconds: float,
+    ) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["BOI_ADAPTER_NO_MODEL_MANAGEMENT"] = "1"
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+
+    def _prepare_graphify_export(self, source: dict[str, Any], job_id: str, timeout_seconds: float) -> Path:
+        location = Path(str(source.get("location") or "")).expanduser()
+        if location.is_dir() or location.name == "graph.json":
+            try:
+                return self._adapter_input(source, "graph.json")
+            except ValueError:
+                pass
+        state = self._optional_adapter_state(source)
+        if not state["ready"]:
+            raise ValueError("graphify_adapter_not_ready")
+        executable = shutil.which("graphify")
+        if not executable:
+            raise ValueError("graphify_executable_missing")
+        workspace = self._adapter_workspace(source, job_id)
+        input_path = self._adapter_source_path(source)
+        self._checkpoint_adapter_job(job_id, "extract", 20, executable=executable)
+        self._run_adapter_command([executable, str(input_path)], cwd=workspace, timeout_seconds=timeout_seconds)
+        output = workspace / "graphify-out" / "graph.json"
+        if not output.is_file():
+            raise ValueError("graphify_export_missing")
+        return output
+
+    def _prepare_openkb_export(self, source: dict[str, Any], job_id: str, timeout_seconds: float) -> Path:
+        location = Path(str(source.get("location") or "")).expanduser()
+        if location.is_dir() or location.name == "manifest.json":
+            try:
+                return self._adapter_input(source, "manifest.json")
+            except ValueError:
+                pass
+        enabled = os.getenv("BOI_KNOWLEDGE_EXTERNAL_ADAPTERS_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
+        executable = shutil.which("openkb")
+        if not enabled or not executable:
+            raise ValueError("openkb_adapter_not_ready")
+        workspace = self._adapter_workspace(source, job_id)
+        input_path = self._adapter_source_path(source)
+        self._checkpoint_adapter_job(job_id, "extract", 20, executable=executable)
+        self._run_adapter_command([executable, "init"], cwd=workspace, timeout_seconds=min(timeout_seconds, 60.0))
+        self._run_adapter_command([executable, "add", str(input_path)], cwd=workspace, timeout_seconds=timeout_seconds)
+        pages: list[dict[str, Any]] = []
+        wiki_root = workspace / "wiki"
+        for path in sorted(wiki_root.rglob("*.md")) if wiki_root.exists() else []:
+            if path.name.lower() in {"index.md", "log.md", "agents.md"}:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            title_match = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
+            summary = re.sub(r"^---.*?---\s*", "", text, count=1, flags=re.DOTALL).strip()[:4000]
+            if summary:
+                pages.append({"id": str(path.relative_to(wiki_root)), "title": title_match.group(1).strip() if title_match else path.stem, "summary": summary, "deterministic": False})
+        manifest = workspace / "manifest.json"
+        manifest.write_text(json.dumps({"pages": pages}, ensure_ascii=False, indent=2), encoding="utf-8")
+        return manifest
+
     def _assert_adapter_job_active(self, job_id: str, started: float, timeout_seconds: float) -> None:
         job = self.store.get("knowledge_source_jobs", job_id) or {}
         if job.get("cancel_requested"):
@@ -345,7 +442,9 @@ class LivingKnowledgeService:
         started: float = 0.0,
         timeout_seconds: float = 300.0,
     ) -> dict[str, Any]:
-        input_path = self._adapter_input(source, "graph.json")
+        input_path = self._prepare_graphify_export(source, job_id, timeout_seconds) if job_id else self._adapter_input(source, "graph.json")
+        if job_id:
+            self._checkpoint_adapter_job(job_id, "normalize", 45, raw_artifact_url=str(input_path))
         raw = json.loads(input_path.read_text(encoding="utf-8"))
         raw_nodes = raw.get("nodes") if isinstance(raw, dict) else []
         raw_edges = raw.get("edges") if isinstance(raw, dict) else []
@@ -425,6 +524,8 @@ class LivingKnowledgeService:
             sorted(set(previous.get("edge_ids") or []) - {item["edge_id"] for item in edges}),
         )
         self.store.upsert_ontology(nodes, edges)
+        if job_id:
+            self._checkpoint_adapter_job(job_id, "validate", 75, node_count=len(nodes), edge_count=len(edges))
         manifest = {
             "source_id": source_id,
             "adapter": "graphify",
@@ -452,7 +553,9 @@ class LivingKnowledgeService:
         started: float = 0.0,
         timeout_seconds: float = 300.0,
     ) -> dict[str, Any]:
-        input_path = self._adapter_input(source, "manifest.json")
+        input_path = self._prepare_openkb_export(source, job_id, timeout_seconds) if job_id else self._adapter_input(source, "manifest.json")
+        if job_id:
+            self._checkpoint_adapter_job(job_id, "normalize", 45, raw_artifact_url=str(input_path))
         raw = json.loads(input_path.read_text(encoding="utf-8"))
         pages = raw.get("pages") if isinstance(raw, dict) else []
         if not isinstance(pages, list):
@@ -504,6 +607,8 @@ class LivingKnowledgeService:
             "imported_at": now_iso(),
         }
         self.store.put("knowledge_source_manifests", source_id, manifest)
+        if job_id:
+            self._checkpoint_adapter_job(job_id, "validate", 75, candidate_count=len(candidate_ids))
         return manifest
 
     def _run_adapter_job(self, principal: Principal, source: dict[str, Any], job_id: str) -> None:
@@ -515,7 +620,7 @@ class LivingKnowledgeService:
             return
         started = time.monotonic()
         timeout_seconds = max(1.0, min(float((source.get("adapter_config") or {}).get("timeout_seconds") or 300), 3600.0))
-        job.update({"status": "running", "started_at": now_iso(), "timeout_seconds": timeout_seconds})
+        job.update({"status": "running", "stage": "inventory", "progress": 5, "started_at": now_iso(), "timeout_seconds": timeout_seconds})
         self.store.put("knowledge_source_jobs", job_id, job)
         try:
             if str(source.get("source_kind") or "") == "graphify":
@@ -529,19 +634,57 @@ class LivingKnowledgeService:
             else:
                 raise ValueError("adapter_import_not_supported")
             self._assert_adapter_job_active(job_id, started, timeout_seconds)
-            job.update({"status": "completed", "completed_at": now_iso(), "manifest": manifest})
+            job.update({"status": "completed", "stage": "import", "progress": 100, "completed_at": now_iso(), "manifest": manifest})
             source.update({"status": "ready", "checksum": manifest["source_revision"], "last_sync_at": now_iso(), "last_error": ""})
         except InterruptedError as exc:
             job.update({"status": "cancelled", "completed_at": now_iso(), "error": str(exc)})
             source.update({"status": "pending", "last_error": "", "last_sync_at": now_iso()})
         except (OSError, ValueError, TimeoutError, json.JSONDecodeError) as exc:
-            job.update({"status": "failed", "completed_at": now_iso(), "error": str(exc), "retryable": True})
+            job.update({"status": "failed", "stage": "failed", "completed_at": now_iso(), "error": str(exc), "retryable": True})
             source.update({"status": "failed", "last_error": str(exc), "last_sync_at": now_iso()})
+        latest_job = self.store.get("knowledge_source_jobs", job_id) or {}
+        latest_job.update(job)
+        job = latest_job
         source["revision"] = int(source.get("revision") or 1) + 1
         self.store.put("knowledge_sources", source_id, source)
         self.store.put("knowledge_source_jobs", job_id, job)
+
+    def _ensure_adapter_worker(self) -> None:
         with self._adapter_lock:
-            self._adapter_threads.pop(job_id, None)
+            if self._adapter_worker_thread and self._adapter_worker_thread.is_alive():
+                self._adapter_worker_event.set()
+                return
+            self._adapter_worker_thread = threading.Thread(
+                target=self._adapter_worker_loop,
+                name="boi-knowledge-source-worker",
+                daemon=True,
+            )
+            self._adapter_worker_thread.start()
+
+    def _adapter_worker_loop(self) -> None:
+        while not self._adapter_worker_stop.is_set():
+            queued = [
+                item for item in self.store.list("knowledge_source_jobs", limit=500)
+                if str(item.get("status") or "") == "queued" and not item.get("cancel_requested")
+            ]
+            queued.sort(key=lambda item: str(item.get("queued_at") or item.get("created_at") or ""))
+            if not queued:
+                self._adapter_worker_event.wait(0.5)
+                self._adapter_worker_event.clear()
+                continue
+            job = queued[0]
+            source = self.store.get("knowledge_sources", str(job.get("source_id") or "")) or {}
+            if str(source.get("source_kind") or "") not in {"graphify", "openkb"}:
+                job.update({"status": "failed", "stage": "failed", "error": "adapter_import_not_supported", "completed_at": now_iso()})
+                self.store.put("knowledge_source_jobs", str(job.get("job_id") or ""), job)
+                continue
+            principal = Principal(
+                employee_id=str(job.get("employee_id") or source.get("owner") or "system"),
+                display_name="Knowledge Source Worker",
+                roles=["boi.admin"],
+                auth_source="service",
+            )
+            self._run_adapter_job(principal, source, str(job["job_id"]))
 
     def _queue_adapter_job(
         self,
@@ -558,20 +701,10 @@ class LivingKnowledgeService:
             "employee_id": principal.employee_id,
             "created_at": now_iso(),
         }
-        job.update({"status": "queued", "cancel_requested": False, "queued_at": now_iso()})
+        job.update({"status": "queued", "stage": "queued", "progress": 0, "cancel_requested": False, "queued_at": now_iso(), "attempt": int(job.get("attempt") or 0) + 1})
         self.store.put("knowledge_source_jobs", job_id, job)
-        with self._adapter_lock:
-            running = self._adapter_threads.get(job_id)
-            if running and running.is_alive():
-                return job
-            thread = threading.Thread(
-                target=self._run_adapter_job,
-                args=(principal, dict(source), job_id),
-                name=f"boi-knowledge-source-{job_id}",
-                daemon=True,
-            )
-            self._adapter_threads[job_id] = thread
-            thread.start()
+        self._ensure_adapter_worker()
+        self._adapter_worker_event.set()
         return job
 
     def _resume_adapter_jobs(self) -> None:
@@ -581,13 +714,8 @@ class LivingKnowledgeService:
             source = self.store.get("knowledge_sources", str(job.get("source_id") or "")) or {}
             if str(source.get("source_kind") or "") not in {"graphify", "openkb"}:
                 continue
-            principal = Principal(
-                employee_id=str(job.get("employee_id") or source.get("owner") or "system"),
-                display_name="Knowledge Source Worker",
-                roles=["boi.admin"],
-                auth_source="service",
-            )
-            self._queue_adapter_job(principal, source, existing_job_id=str(job["job_id"]))
+            job.update({"status": "queued", "stage": "queued", "recovered_after_restart": True, "queued_at": now_iso()})
+            self.store.put("knowledge_source_jobs", str(job["job_id"]), job)
 
     def cancel_source_job(self, principal: Principal, job_id: str) -> dict[str, Any]:
         job = self.source_job(principal, job_id)
@@ -597,6 +725,39 @@ class LivingKnowledgeService:
         if job.get("status") == "queued":
             job.update({"status": "cancelled", "completed_at": now_iso()})
         return self.store.put("knowledge_source_jobs", job_id, job)
+
+    def retry_source_job(self, principal: Principal, job_id: str) -> dict[str, Any]:
+        job = self.source_job(principal, job_id)
+        if str(job.get("status") or "") not in {"failed", "cancelled"} or not job.get("retryable", True):
+            raise HTTPException(status_code=409, detail="다시 실행할 수 있는 실패 작업이 아닙니다.")
+        source = self._require_source(principal, str(job.get("source_id") or ""))
+        return self._queue_adapter_job(principal, source, existing_job_id=job_id)
+
+    def rollback_source_import(self, principal: Principal, source_id: str, request: Any) -> dict[str, Any]:
+        source = self._require_source(principal, source_id)
+        if not principal.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        if not request.user_confirmed:
+            raise HTTPException(status_code=400, detail="외부 Source 가져오기 되돌리기를 확인해주세요.")
+        manifest = self.store.get("knowledge_source_manifests", source_id)
+        if not manifest:
+            raise HTTPException(status_code=404, detail="되돌릴 가져오기 기록이 없습니다.")
+        node_ids = list(manifest.get("node_ids") or [])
+        edge_ids = list(manifest.get("edge_ids") or [])
+        candidate_ids = list(manifest.get("candidate_ids") or [])
+        self.store.remove_ontology_entries(node_ids, edge_ids)
+        for candidate_id in candidate_ids:
+            candidate = self.store.get("knowledge_candidates", str(candidate_id)) or {}
+            if candidate:
+                candidate.update({"status": "archived", "review_state": "rolled_back", "updated_at": now_iso()})
+                self.store.put("knowledge_candidates", str(candidate_id), candidate)
+        rollback_id = _stable_id("source-rollback", source_id, now_iso())
+        result = {"rollback_id": rollback_id, "source_id": source_id, "removed_nodes": len(node_ids), "removed_edges": len(edge_ids), "archived_candidates": len(candidate_ids), "reason": request.reason, "created_at": now_iso()}
+        self.store.put("knowledge_source_rollbacks", rollback_id, result)
+        self.store.delete("knowledge_source_manifests", source_id)
+        source.update({"status": "pending", "checksum": "", "last_error": "", "revision": int(source.get("revision") or 1) + 1})
+        self.store.put("knowledge_sources", source_id, source)
+        return result
 
     def source_job(self, principal: Principal, job_id: str) -> dict[str, Any]:
         job = self.store.get("knowledge_source_jobs", job_id)

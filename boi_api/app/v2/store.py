@@ -316,6 +316,7 @@ class PostgresAgentV2Store(AgentV2Store):
         "knowledge_sources": "knowledge_sources",
         "knowledge_source_manifests": "knowledge_source_manifests",
         "knowledge_source_jobs": "knowledge_source_jobs",
+        "knowledge_source_rollbacks": "knowledge_source_rollbacks",
         "knowledge_health_findings": "knowledge_health_findings",
         "knowledge_patch_proposals": "knowledge_patch_proposals",
     }

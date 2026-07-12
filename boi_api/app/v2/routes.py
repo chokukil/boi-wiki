@@ -32,6 +32,7 @@ from .models import (
     GraphQueryPlan,
     KnowledgeProposalApplyRequest,
     KnowledgeSourceCreateRequest,
+    KnowledgeSourceRollbackRequest,
     LegacyHelperImportRequest,
     NoteFromTurnRequest,
     OfferExecuteRequest,
@@ -501,6 +502,23 @@ def build_agent_v2_router(
     ) -> dict[str, Any]:
         require_scope(identity, "boi.draft")
         return service.knowledge.cancel_source_job(identity, job_id)
+
+    @router.post("/api/v2/knowledge-source-jobs/{job_id}/retry")
+    async def retry_knowledge_source_job(
+        job_id: str,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        return service.knowledge.retry_source_job(identity, job_id)
+
+    @router.post("/api/v2/knowledge-sources/{source_id:path}/rollback")
+    async def rollback_knowledge_source(
+        source_id: str,
+        request: KnowledgeSourceRollbackRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        return service.knowledge.rollback_source_import(identity, source_id, request)
 
     @router.get("/api/v2/knowledge-graph/explore")
     async def explore_knowledge_graph(

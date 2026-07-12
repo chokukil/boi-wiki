@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import shutil
+import subprocess
 import threading
 import time
 from dataclasses import replace
@@ -55,6 +56,7 @@ from boi_api.app.v2.models import (
     KnowledgeCandidatePromoteRequest,
     KnowledgeProposalApplyRequest,
     KnowledgeSourceCreateRequest,
+    KnowledgeSourceRollbackRequest,
     LegacyHelperImportRequest,
     LoopDelta,
     NoteFromTurnRequest,
@@ -4868,6 +4870,8 @@ def test_graphify_adapter_imports_provenance_graph_without_changing_canonical_fi
         job = v2_service.knowledge.source_job(admin, job["job_id"])
 
     assert job["status"] == "completed"
+    assert job["stage"] == "import" and job["progress"] == 100
+    assert job["attempt"] == 1
     assert job["manifest"]["validation_report"] == {
         "valid": True,
         "node_count": 2,
@@ -4885,6 +4889,13 @@ def test_graphify_adapter_imports_provenance_graph_without_changing_canonical_fi
     assert graph["edges"][0]["payload"]["provenance"] == "extracted"
     assert canonical.read_text(encoding="utf-8") == before
     assert v2_service.knowledge.source_job(admin, job["job_id"])["status"] == "completed"
+    rolled_back = v2_service.knowledge.rollback_source_import(
+        admin,
+        source["source_id"],
+        KnowledgeSourceRollbackRequest(user_confirmed=True, reason="격리 import rollback 검증"),
+    )
+    assert rolled_back["removed_nodes"] == 2
+    assert v2_service.store.get("knowledge_source_manifests", source["source_id"]) is None
 
 
 def test_openkb_adapter_creates_private_review_candidates_without_writing_okf(
@@ -4936,6 +4947,80 @@ def test_openkb_adapter_creates_private_review_candidates_without_writing_okf(
     assert candidate["provenance"] == "inferred"
 
 
+def test_graphify_adapter_executes_cli_when_export_is_not_prebuilt(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    monkeypatch.setenv("BOI_KNOWLEDGE_EXTERNAL_ADAPTERS_ENABLED", "1")
+    monkeypatch.setattr("boi_api.app.v2.knowledge_system.shutil.which", lambda name: f"/tools/{name}")
+
+    def fake_run(command, *, cwd, timeout_seconds):
+        output = cwd / "graphify-out"
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "graph.json").write_text(
+            json.dumps({"nodes": [{"id": "service", "name": "BoI Service"}], "edges": []}),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(v2_service.knowledge, "_run_adapter_command", fake_run)
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(
+            name="Graphify live CLI",
+            source_kind="graphify",
+            location=str(v2_service.settings.content_root),
+        ),
+    )
+    job = v2_service.knowledge.sync_source(admin, source["source_id"])["job"]
+    deadline = time.monotonic() + 3
+    while job["status"] not in {"completed", "failed"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        job = v2_service.knowledge.source_job(admin, job["job_id"])
+    assert job["status"] == "completed"
+    assert job["manifest"]["validation_report"]["node_count"] == 1
+    assert job["checkpoint"]["stage"] == "validate"
+
+
+def test_openkb_adapter_executes_cli_and_excludes_navigation_pages(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    monkeypatch.setenv("BOI_KNOWLEDGE_EXTERNAL_ADAPTERS_ENABLED", "1")
+    monkeypatch.setattr("boi_api.app.v2.knowledge_system.shutil.which", lambda name: f"/tools/{name}")
+    source_file = v2_service.settings.runtime_root / "knowledge-adapters" / "input.pdf"
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_bytes(b"fixture")
+
+    def fake_run(command, *, cwd, timeout_seconds):
+        if "add" in command:
+            wiki = cwd / "wiki"
+            (wiki / "concepts").mkdir(parents=True, exist_ok=True)
+            (wiki / "index.md").write_text("# Navigation", encoding="utf-8")
+            (wiki / "log.md").write_text("# Log", encoding="utf-8")
+            (wiki / "concepts" / "alarm.md").write_text("# Alarm 판단\n\nTrend 범위를 먼저 맞춥니다.", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(v2_service.knowledge, "_run_adapter_command", fake_run)
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(name="OpenKB live CLI", source_kind="openkb", location=str(source_file)),
+    )
+    job = v2_service.knowledge.sync_source(admin, source["source_id"])["job"]
+    deadline = time.monotonic() + 3
+    while job["status"] not in {"completed", "failed"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        job = v2_service.knowledge.source_job(admin, job["job_id"])
+    assert job["status"] == "completed"
+    candidates = [v2_service.store.get("knowledge_candidates", item) for item in job["manifest"]["candidate_ids"]]
+    assert [item["title"] for item in candidates] == ["Alarm 판단"]
+    assert all(item["review_state"] == "review_required" for item in candidates)
+
+
 def test_knowledge_source_job_is_async_and_can_be_cancelled(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -4972,6 +5057,42 @@ def test_knowledge_source_job_is_async_and_can_be_cancelled(
         job = v2_service.knowledge.source_job(admin, queued["job_id"])
 
     assert job["status"] == "cancelled"
+
+
+def test_failed_adapter_job_retries_from_the_durable_queue(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    staging = v2_service.settings.runtime_root / "knowledge-adapters" / "retry-test"
+    staging.mkdir(parents=True, exist_ok=True)
+    (staging / "graph.json").write_text('{"nodes":[{"id":"retry","name":"Retry node"}],"edges":[]}', encoding="utf-8")
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(name="Retry adapter", source_kind="graphify", location=str(staging)),
+    )
+    job_id = "source-job-retry"
+    v2_service.store.put(
+        "knowledge_source_jobs",
+        job_id,
+        {
+            "job_id": job_id,
+            "source_id": source["source_id"],
+            "employee_id": admin.employee_id,
+            "status": "failed",
+            "stage": "failed",
+            "attempt": 1,
+            "retryable": True,
+            "created_at": now_iso(),
+        },
+    )
+    retried = v2_service.knowledge.retry_source_job(admin, job_id)
+    deadline = time.monotonic() + 3
+    while retried["status"] not in {"completed", "failed"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        retried = v2_service.knowledge.source_job(admin, job_id)
+    assert retried["status"] == "completed"
+    assert retried["attempt"] == 2
 
 
 def test_responsibility_graph_does_not_expand_through_a_shared_team_to_other_people(

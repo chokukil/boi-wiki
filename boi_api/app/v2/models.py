@@ -649,6 +649,11 @@ class KnowledgeSourceCreateRequest(BaseModel):
     adapter_config: dict[str, Any] = Field(default_factory=dict)
 
 
+class KnowledgeSourceRollbackRequest(BaseModel):
+    user_confirmed: bool = False
+    reason: str = Field(min_length=4, max_length=2000)
+
+
 class KnowledgeEdge(BaseModel):
     edge_id: str
     source_id: str
