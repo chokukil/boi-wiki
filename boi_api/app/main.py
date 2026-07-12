@@ -1903,10 +1903,6 @@ def render_markdown(
                     f"{html_escape(code)}"
                     "</div>"
                     '<p class="mermaid-status" aria-live="polite">Mermaid diagram pending render.</p>'
-                    '<details class="mermaid-source-fallback">'
-                    "<summary>Mermaid source</summary>"
-                    f'<pre class="code-block"><code>{html_escape(code)}</code></pre>'
-                    "</details>"
                     "</div>"
                 )
             elif language == "json":
@@ -7974,6 +7970,7 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
         "library": [
             {"id": "guide", "label": "종합 가이드", "href": final_operator_guide_url(employee_id)},
             {"id": "explorer", "label": "Explorer", "href": app_url("/", employee_id, view="explorer")},
+            {"id": "knowledge_graph", "label": "연결 관계", "href": app_url("/knowledge-graph", employee_id)},
             {"id": "data_library", "label": "자료 보관함", "href": app_url("/data-library", employee_id)},
             {"id": "dictionary", "label": "업무 용어", "href": app_url("/", employee_id, boi_type="boi/dictionary-term")},
             {"id": "my_work", "label": "내 업무", "href": app_url("/", employee_id, visibility="private")},
@@ -8003,14 +8000,19 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
             {"id": "api_docs", "label": "API", "href": app_url("/advanced/api", employee_id)},
             {"id": "mcp_docs", "label": "MCP", "href": app_url("/advanced/mcp", employee_id)},
             {"id": "integrations", "label": "연결 상태", "href": app_url("/integrations", employee_id)},
-            {"id": "dynamic_ui", "label": "동적 화면 진단", "href": app_url("/advanced/dynamic-ui", employee_id)},
             {"id": "event_raw", "label": "Event 기술 로그", "href": app_url("/events", employee_id, view="raw")},
+            {
+                "id": "langflow_console",
+                "label": "Langflow",
+                "href": langflow_public_base_url(request),
+                "external": True,
+            },
         ],
     }
     if not BOI_OPS_CENTER_ENABLED:
         items_by_nav["inbox"] = [item for item in items_by_nav["inbox"] if item.get("id") != "ops"]
     if "boi.admin" not in roles_for(employee_id):
-        items_by_nav["advanced"] = [item for item in items_by_nav["advanced"] if item.get("id") not in {"event_raw", "dynamic_ui"}]
+        items_by_nav["advanced"] = [item for item in items_by_nav["advanced"] if item.get("id") != "event_raw"]
     if INTEGRATION_HEALTH.available("kafka_ui"):
         items_by_nav["advanced"].append(
             {
@@ -8020,18 +8022,10 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
                 "external": True,
             }
         )
-    if INTEGRATION_HEALTH.available("langflow"):
-        items_by_nav["advanced"].append(
-            {
-                "id": "langflow_console",
-                "label": "Langflow",
-                "href": langflow_public_base_url(request),
-                "external": True,
-            }
-        )
-
     def active_section_id() -> str:
         if active_nav == "library":
+            if path.startswith("/knowledge-graph"):
+                return "knowledge_graph"
             if path.startswith("/data-library"):
                 return "data_library"
             if path == f"/docs/{FINAL_OPERATOR_GUIDE_REF}":
@@ -12189,6 +12183,20 @@ async def integrations_page(
     request: Request,
     employee_id: str = Depends(current_employee),
 ) -> HTMLResponse:
+    surface_status: dict[str, Any] | None = None
+    if "boi.admin" in roles_for(employee_id):
+        service = request.app.state.agent_v2_service
+        surfaces = service.store.list("a2ui_surfaces", employee_id=employee_id, limit=200)
+        invalid = [
+            item for item in surfaces
+            if str(item.get("catalog_id") or "") != "boi-a2ui/v1" or not item.get("components")
+        ]
+        surface_status = {
+            "count": len(surfaces),
+            "invalid_count": len(invalid),
+            "fallback_count": sum(1 for item in surfaces if item.get("fallback")),
+            "latest_surface_id": str((surfaces[0] if surfaces else {}).get("surface_id") or ""),
+        }
     return templates.TemplateResponse(
         "integrations.html",
         {
@@ -12204,6 +12212,7 @@ async def integrations_page(
             "integration_status": integration_status_payload(),
             "data_lake": data_lake_status_payload(),
             "knowledge_status": knowledge_operating_status_payload(employee_id),
+            "surface_status": surface_status,
         },
     )
 
@@ -12371,36 +12380,7 @@ async def advanced_mcp_page(request: Request, employee_id: str = Depends(current
 
 @app.get("/advanced/dynamic-ui", response_class=HTMLResponse)
 async def advanced_dynamic_ui_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
-    require_employee_role(employee_id, "boi.admin")
-    service = request.app.state.agent_v2_service
-    surfaces = service.store.list("a2ui_surfaces", employee_id=employee_id, limit=50)
-    rows = []
-    for surface in surfaces:
-        components = [str(item.get("component") or "") for item in surface.get("components") or [] if isinstance(item, dict)]
-        rows.append(
-            {
-                "surface_id": str(surface.get("surface_id") or ""),
-                "catalog_id": str(surface.get("catalog_id") or ""),
-                "components": components,
-                "valid": str(surface.get("catalog_id") or "") == "boi-a2ui/v1" and bool(components),
-                "fallback": str(surface.get("fallback") or "")[:120],
-            }
-        )
-    return templates.TemplateResponse(
-        "advanced_dynamic_ui.html",
-        {
-            "request": request,
-            "employee_id": employee_id,
-            "surfaces": rows,
-            "shell": app_shell_context(
-                request,
-                employee_id,
-                active_nav="advanced",
-                title="동적 화면 진단",
-                description="BoI Agent와 Task 수행 화면의 표현 계약과 복구 상태를 확인합니다.",
-            ),
-        },
-    )
+    return RedirectResponse(app_url("/integrations", employee_id), status_code=307)
 
 
 @app.get("/okf-media/{media_path:path}")
@@ -30206,7 +30186,11 @@ def inbox_workflow_canvas_for_item_fast(
     if cached:
         return copy.deepcopy(cached), source_signature
 
-    context = inbox_report_workflow_context(item)
+    context = (
+        copy.deepcopy(item.get("_workflow_context"))
+        if isinstance(item.get("_workflow_context"), dict)
+        else inbox_report_workflow_context(item)
+    )
     canvas = inbox_workflow_canvas_for_item(employee_id, item, context=context)
     if not canvas:
         return {}, source_signature
@@ -30245,12 +30229,14 @@ def inbox_workflow_items_for_refs(employee_id: str, task_refs: list[str]) -> dic
         task_ref = inbox_task_public_ref(employee_id, task_id)
         if task_ref not in requested or task_ref in found:
             continue
-        found[task_ref] = agent_inbox_item_from_row(
+        item = agent_inbox_item_from_row(
             row,
             employee_id,
             row_status=row_status,
             is_completed=request_id in completed,
         )
+        item["_workflow_context"] = inbox_report_workflow_context(item)
+        found[task_ref] = item
         if len(found) >= len(requested):
             break
     return found
@@ -30565,11 +30551,19 @@ def task_console_payload(
                         },
                         {
                             "name": "decision",
-                            "label": "판단과 결과",
+                            "label": "판단",
                             "control": "textarea",
                             "rows": 3,
                             "required": True,
                             "placeholder": "예: 추가 확인이 필요해 다음 점검 전까지 진행 상태로 남깁니다.",
+                        },
+                        {
+                            "name": "result",
+                            "label": "남긴 결과",
+                            "control": "textarea",
+                            "rows": 2,
+                            "required": False,
+                            "placeholder": "예: 검토 메모를 기록하고 후속 확인 요청을 남겼습니다.",
                         },
                     ]
                     if execution_mode in {"manual", "copilot"}
@@ -35526,6 +35520,47 @@ async def api_data_lake_sources(employee_id: str = Depends(current_employee)) ->
     payload = data_lake_sources_payload(employee_id)
     payload["employee_id"] = employee_id
     return payload
+
+
+@app.get("/knowledge-graph", response_class=HTMLResponse)
+async def knowledge_graph_page(
+    request: Request,
+    source_ref: str = FINAL_OPERATOR_GUIDE_REF,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    focus_ref = str(source_ref or FINAL_OPERATOR_GUIDE_REF).strip() or FINAL_OPERATOR_GUIDE_REF
+    source_title = "선택한 업무 맥락"
+    if focus_ref.startswith("person:"):
+        source_title = user_name_for(focus_ref.removeprefix("person:"))
+    elif focus_ref.startswith("team:"):
+        source_title = focus_ref.removeprefix("team:")
+    else:
+        focus_doc = next(
+            (
+                item for item in accessible_docs(employee_id)
+                if str((item.get("metadata") or {}).get("boi_id") or "") == focus_ref
+            ),
+            None,
+        )
+        if focus_doc:
+            source_title = str((focus_doc.get("metadata") or {}).get("title") or source_title)
+    return templates.TemplateResponse(
+        "knowledge_graph.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "source_ref": focus_ref,
+            "source_title": source_title,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="library",
+                title="연결 관계",
+                description="사람, 업무, 지식과 실행 결과가 실제로 어떻게 이어지는지 필요한 만큼 탐색합니다.",
+            ),
+            "knowledge_graph_explore_url": "/api/v2/knowledge-graph/explore?" + urlencode({"employee_id": employee_id}),
+        },
+    )
 
 
 @app.get("/data-library", response_class=HTMLResponse)

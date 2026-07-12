@@ -25,6 +25,21 @@ ALLOWED_COMPONENTS = {
     "Confirmation",
     "RelatedQuestions",
 }
+COMPONENT_PROP_SCHEMAS: dict[str, dict[str, type]] = {
+    "Answer": {"summary": str, "markdown": str},
+    "CitationList": {"items": list},
+    "EvidencePicker": {"items": list},
+    "WorkRecordForm": {"fields": list},
+    "DecisionSummary": {"summary": str, "items": list},
+    "TaskStatus": {"title": str, "completion": dict},
+    "RelatedQuestions": {"items": list},
+    "DataTable": {"artifact_id": str},
+    "Timeline": {"artifact_id": str},
+    "MermaidArtifact": {"artifact_id": str},
+    "OntologyExplorer": {"artifact_id": str},
+    "ActionPreview": {"artifact_id": str},
+    "Confirmation": {"title": str, "message": str, "plan_ref": str},
+}
 
 _UNSAFE_HTML = re.compile(r"<(?:script|iframe|object|embed)\b|\son[a-z]+\s*=", re.IGNORECASE)
 
@@ -61,7 +76,12 @@ def validate_surface(surface: dict[str, Any]) -> dict[str, Any]:
         if not component_id or component_id in component_ids:
             raise ValueError("invalid_a2ui_component_id")
         component_ids.add(component_id)
-        _validate_props(item.get("props") or {})
+        props = item.get("props") or {}
+        schema = COMPONENT_PROP_SCHEMAS.get(str(item.get("component") or ""), {})
+        for prop_name, expected_type in schema.items():
+            if prop_name not in props or not isinstance(props[prop_name], expected_type):
+                raise ValueError("invalid_a2ui_component_props")
+        _validate_props(props)
     return surface
 
 

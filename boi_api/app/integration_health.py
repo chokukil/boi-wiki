@@ -99,6 +99,18 @@ class IntegrationHealthRegistry:
 
     @staticmethod
     def _probe_kafka(target: IntegrationTarget) -> tuple[bool, str, dict[str, Any]]:
+        # aiokafka creates internal futures before its first DNS failure is
+        # reported. A cheap socket preflight keeps an invalid Docker-only host
+        # from leaving unobserved future exceptions in the API process.
+        try:
+            host, port = IntegrationHealthRegistry._tcp_target(target.target)
+            if not host or not port:
+                return False, "invalid Kafka target", {}
+            with socket.create_connection((host, port), timeout=0.6):
+                pass
+        except OSError as exc:
+            return False, type(exc).__name__, {}
+
         async def inspect_topics() -> tuple[set[str], set[str]]:
             from aiokafka.admin import AIOKafkaAdminClient
 

@@ -26,6 +26,18 @@ class HarnessDefinition:
     test_contracts: tuple[str, ...]
     completion_policy: str
     fallback_policy: str
+    status: str = "active"
+    model_profiles: tuple[str, ...] = ("default",)
+    fixture_revision: str = ""
+    rollback_version: str = ""
+    editable_surfaces: tuple[str, ...] = (
+        "context_recipe", "retrieval_policy", "tool_order", "loop_budget",
+        "planner_instruction", "presentation_policy", "fallback_order",
+    )
+    immutable_boundaries: tuple[str, ...] = (
+        "acl", "rbac", "risk_policy", "confirmation_policy", "autopilot_allowlist",
+        "required_completion_evidence", "canonical_write_policy", "evaluator_thresholds",
+    )
 
     def public_payload(self) -> dict[str, Any]:
         return {
@@ -43,6 +55,22 @@ class HarnessDefinition:
             "test_contracts": list(self.test_contracts),
             "completion_policy": self.completion_policy,
             "fallback_policy": self.fallback_policy,
+            "status": self.status,
+            "model_profiles": list(self.model_profiles),
+            "fixture_revision": self.fixture_revision,
+            "rollback_version": self.rollback_version,
+            "editable_surfaces": list(self.editable_surfaces),
+            "immutable_boundaries": list(self.immutable_boundaries),
+        }
+
+    def binding(self, model_profile: str) -> dict[str, Any]:
+        return {
+            "harness_id": self.harness_id,
+            "version": self.version,
+            "status": self.status,
+            "model_profile": model_profile or "default",
+            "fixture_revision": self.fixture_revision,
+            "rollback_version": self.rollback_version,
         }
 
 
@@ -444,6 +472,12 @@ class HarnessRegistry:
 
     def definitions(self) -> list[dict[str, Any]]:
         return [item.public_payload() for item in self._definitions.values()]
+
+    def bindings(self, harness_ids: list[str], model_profile: str) -> list[dict[str, Any]]:
+        return [self._definitions[item].binding(model_profile) for item in harness_ids if item in self._definitions]
+
+    def definition(self, harness_id: str) -> HarnessDefinition:
+        return self._definitions[harness_id]
 
     def evaluate(
         self,

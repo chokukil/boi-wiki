@@ -313,6 +313,25 @@ class ContextCompiler:
                 for key in ("workflow", "event_type", "action_key", "source_refs", "owner", "status", "tags"):
                     if record.metadata.get(key) not in (None, "", [], {}):
                         metadata[key] = record.metadata.get(key)
+        playbook_items = [
+            item for item in self.store.list("context_playbook_items", employee_id=principal.employee_id, limit=500)
+            if str(item.get("status") or "") in {"provisional", "active"}
+            and (
+                not (item.get("applies_to") or {}).get("capability_ids")
+                or definition.capability_id in (item.get("applies_to") or {}).get("capability_ids", [])
+            )
+        ][:6]
+        if playbook_items:
+            metadata["context_playbook"] = [
+                {
+                    "item_id": item.get("item_id"),
+                    "description": item.get("description"),
+                    "conditions": item.get("conditions") or [],
+                    "source_refs": item.get("source_refs") or [],
+                    "status": item.get("status"),
+                }
+                for item in playbook_items
+            ]
         manifest = ContextManifest(
             selected_refs=[item.evidence_id for item in selected],
             excluded_refs=[str(item) for item in source_set.get("excluded") or []],
@@ -362,6 +381,7 @@ class ContextCompiler:
                 "work_session_id": session.get("session_id") or "",
                 "large_object_policy": "reference_only",
                 "raw_content_in_prompt": False,
+                "context_playbook_item_ids": [str(item.get("item_id") or "") for item in playbook_items],
             },
         )
 
@@ -378,6 +398,7 @@ class WorkLearningService:
         harnesses: HarnessRegistry,
         page_context_provider: Callable[[str, str], dict[str, Any]] | None = None,
         knowledge_change_notifier: Callable[[str, str, str], None] | None = None,
+        model_profile: str = "default",
     ):
         self.store = store
         self.repository = repository
@@ -385,6 +406,153 @@ class WorkLearningService:
         self.harnesses = harnesses
         self.contexts = ContextCompiler(repository, store, page_context_provider)
         self.knowledge_change_notifier = knowledge_change_notifier
+        self.model_profile = model_profile or "default"
+
+    def _record_harness_failures(
+        self,
+        *,
+        principal: Principal,
+        work_run: dict[str, Any],
+        context: WorkContextPack,
+        results: list[HarnessResult],
+        phase: str,
+        terminal_cause: str = "",
+    ) -> list[str]:
+        record_ids: list[str] = []
+        for result in results:
+            if result.status != "blocked":
+                continue
+            blocked_checks = [item for item in result.checks if item.status == "blocked"]
+            causal_stage = next((item.check_id for item in blocked_checks), "verifier.blocked")
+            record_id = _id(
+                "hfailure",
+                f"{work_run['work_run_id']}:{result.harness_id}:{result.version}:{phase}:{causal_stage}",
+            )
+            record = {
+                "failure_record_id": record_id,
+                "employee_id": principal.employee_id,
+                "work_run_id": work_run["work_run_id"],
+                "harness_id": result.harness_id,
+                "harness_version": result.version,
+                "model_profile": self.model_profile,
+                "phase": phase,
+                "terminal_verifier_cause": terminal_cause or "; ".join(result.blockers),
+                "causal_agent_stage": causal_stage,
+                "exposed_mechanism": [item.check_id for item in blocked_checks],
+                "context_id": context.context_id,
+                "context_manifest": (
+                    context.context_manifest.model_dump(mode="json")
+                    if context.context_manifest is not None
+                    else {}
+                ),
+                "evidence_refs": [item.evidence_id for item in context.evidence_refs],
+                "artifact_refs": list(work_run.get("artifact_refs") or []),
+                "reproducibility": "fixture_required",
+                "scope": "recurrent_candidate" if len(blocked_checks) == 1 else "run_specific",
+                "status": "open",
+                "created_at": now_iso(),
+            }
+            self.store.put("harness_failure_records", record_id, record)
+            negative_id = _id("negative", record_id)
+            self.store.put(
+                "negative_results",
+                negative_id,
+                {
+                    "negative_result_id": negative_id,
+                    "employee_id": principal.employee_id,
+                    "kind": "harness_blocker",
+                    "work_run_id": work_run["work_run_id"],
+                    "failure_record_id": record_id,
+                    "summary": record["terminal_verifier_cause"],
+                    "source_refs": record["evidence_refs"],
+                    "status": "active",
+                    "created_at": now_iso(),
+                },
+            )
+            record_ids.append(record_id)
+        return record_ids
+
+    def list_harness_failures(self, principal: Principal, *, status: str = "open") -> dict[str, Any]:
+        items = [
+            item for item in self.store.list("harness_failure_records", limit=1000)
+            if (principal.is_admin or str(item.get("employee_id") or "") == principal.employee_id)
+            and (not status or str(item.get("status") or "") == status)
+        ]
+        return {"count": len(items), "items": items}
+
+    def list_context_playbook(self, principal: Principal, *, status: str = "") -> dict[str, Any]:
+        items = [
+            item for item in self.store.list("context_playbook_items", limit=1000)
+            if (principal.is_admin or str(item.get("employee_id") or "") == principal.employee_id)
+            and (not status or str(item.get("status") or "") == status)
+        ]
+        return {"count": len(items), "items": items}
+
+    def create_harness_candidate(self, principal: Principal, request: Any) -> dict[str, Any]:
+        definition = self.harnesses.definition(request.harness_id)
+        forbidden = sorted(set(request.changes) & set(definition.immutable_boundaries))
+        unsupported = sorted(set(request.changes) - set(definition.editable_surfaces) - set(definition.immutable_boundaries))
+        if forbidden or unsupported:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "harness_candidate_surface_not_editable",
+                    "immutable": forbidden,
+                    "unsupported": unsupported,
+                },
+            )
+        failures = [self.store.get("harness_failure_records", item) for item in request.failure_record_ids]
+        if any(not item for item in failures):
+            raise HTTPException(status_code=404, detail="실패 기록을 찾을 수 없습니다.")
+        candidate_id = _id("hcandidate", f"{request.harness_id}:{request.model_profile}:{now_iso()}")
+        candidate = {
+            "candidate_id": candidate_id,
+            "employee_id": principal.employee_id,
+            "harness_id": request.harness_id,
+            "base_version": definition.version,
+            "model_profile": request.model_profile,
+            "failure_record_ids": request.failure_record_ids,
+            "changes": request.changes,
+            "rationale": request.rationale,
+            "status": "shadow_pending",
+            "production_changed": False,
+            "created_at": now_iso(),
+        }
+        return self.store.put("harness_candidates", candidate_id, candidate)
+
+    def evaluate_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        if not principal.is_admin and str(candidate.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=403, detail="이 Harness 후보를 평가할 수 없습니다.")
+        held_in_ok = request.held_in.get("passed") is True
+        held_out_ok = request.held_out.get("passed") is True and int(request.held_out.get("regressions") or 0) == 0
+        adversarial_ok = request.adversarial.get("passed", True) is True and int(request.adversarial.get("unauthorized_mutations") or 0) == 0
+        eval_id = _id("heval", f"{candidate_id}:{request.fixture_revision}:{now_iso()}")
+        evaluation = {
+            "eval_id": eval_id,
+            "candidate_id": candidate_id,
+            "employee_id": principal.employee_id,
+            "fixture_revision": request.fixture_revision,
+            "held_in": request.held_in,
+            "held_out": request.held_out,
+            "adversarial": request.adversarial,
+            "long_term": request.long_term,
+            "qualified": held_in_ok and held_out_ok and adversarial_ok,
+            "created_at": now_iso(),
+        }
+        self.store.put("harness_eval_runs", eval_id, evaluation)
+        candidate.update(
+            {
+                "status": "review_required" if evaluation["qualified"] else "rejected",
+                "latest_eval_id": eval_id,
+                "production_changed": False,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("harness_candidates", candidate_id, candidate)
+        return {"candidate": candidate, "evaluation": evaluation}
 
     @staticmethod
     def resolve_loop_policy(
@@ -472,6 +640,7 @@ class WorkLearningService:
                 "deltas": [],
             },
             "harness_results": [item.model_dump(mode="json") for item in preflights],
+            "harness_bindings": self.harnesses.bindings(preflight_ids, self.model_profile),
             "events": [
                 {"event": "work.observed", "at": now_iso()},
                 {"event": "context.compiled", "context_id": context.context_id, "at": now_iso()},
@@ -499,6 +668,14 @@ class WorkLearningService:
                     **preflight.model_dump(mode="json"),
                 },
             )
+        failure_ids = self._record_harness_failures(
+            principal=principal,
+            work_run=run,
+            context=context,
+            results=preflights,
+            phase="preflight",
+        )
+        run["harness_failure_record_ids"] = failure_ids
         return self.store.put("work_runs", work_run_id, run)
 
     def _record_evidence(
@@ -619,6 +796,17 @@ class WorkLearningService:
                 "updated_at": now_iso(),
             }
         )
+        failure_ids = self._record_harness_failures(
+            principal=principal,
+            work_run=work_run,
+            context=context,
+            results=results,
+            phase="post_verify",
+            terminal_cause="response_failed" if response_status == "failed" else "",
+        )
+        work_run["harness_failure_record_ids"] = list(
+            dict.fromkeys([*work_run.get("harness_failure_record_ids", []), *failure_ids])
+        )
         added_ledger_ids = [
             self._record_evidence(
                 principal=principal,
@@ -657,6 +845,29 @@ class WorkLearningService:
             if candidate:
                 candidates.append(candidate)
                 work_run["knowledge_candidate_ids"] = [candidate.candidate_id]
+                playbook_id = _id("playbook", f"{principal.employee_id}:{candidate.candidate_id}")
+                self.store.put(
+                    "context_playbook_items",
+                    playbook_id,
+                    {
+                        "item_id": playbook_id,
+                        "employee_id": principal.employee_id,
+                        "description": answer_summary,
+                        "conditions": [intent.asset_kind.value, intent.operation.value],
+                        "applies_to": {
+                            "capability_ids": [context.capability_id],
+                            "asset_kinds": [intent.asset_kind.value],
+                        },
+                        "source_refs": evidence_refs,
+                        "supporting_work_run_ids": [work_run["work_run_id"]],
+                        "successful_run_ids": [work_run["work_run_id"]],
+                        "failed_run_ids": [],
+                        "freshness": {"created_at": now_iso(), "valid_until": ""},
+                        "status": "provisional",
+                        "visibility": "private",
+                        "created_at": now_iso(),
+                    },
+                )
         stored = self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
         if job_id:
             job = self.store.get("jobs", job_id)

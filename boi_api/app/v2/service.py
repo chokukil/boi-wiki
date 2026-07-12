@@ -421,6 +421,7 @@ class AgentV2Service:
             search=self.search,
             harnesses=self.harnesses,
             page_context_provider=page_context_provider,
+            model_profile=settings.model_name or "deterministic",
         )
         self.knowledge = LivingKnowledgeService(
             settings=self.settings,
@@ -1670,11 +1671,24 @@ class AgentV2Service:
                 {
                     "role": item.get("role"),
                     "text": compact_text(str(item.get("display_text") or ""), 1000),
-                    "source_refs": [
-                        str(evidence.get("evidence_id") or "")
-                        for evidence in item.get("evidence_refs") or []
-                        if isinstance(evidence, dict) and evidence.get("evidence_id")
-                    ][:8],
+                    # Citations are the sources that actually supported the answer. Keep
+                    # broader retrieval candidates out of follow-up subject resolution.
+                    "source_refs": list(
+                        dict.fromkeys(
+                            [
+                                *[
+                                    str(citation.get("source_ref") or "")
+                                    for citation in item.get("citations") or []
+                                    if isinstance(citation, dict) and citation.get("source_ref")
+                                ],
+                                *[
+                                    str(evidence.get("evidence_id") or "")
+                                    for evidence in item.get("evidence_refs") or []
+                                    if isinstance(evidence, dict) and evidence.get("evidence_id")
+                                ],
+                            ]
+                        )
+                    )[:8],
                     "artifact_refs": [
                         str(artifact.get("artifact_id") or "")
                         for artifact in item.get("artifact_refs") or []
@@ -4635,6 +4649,37 @@ class AgentV2Service:
                     "work_view": "combined" if graph_query_kind == "responsibility" else preliminary_intent.work_view,
                 }
             )
+        session_context = request.input_delta.get("_work_session_context")
+        recent_messages = (
+            session_context.get("recent_messages")
+            if isinstance(session_context, dict) and isinstance(session_context.get("recent_messages"), list)
+            else []
+        )
+        prior_answer_refs: list[str] = []
+        for message in reversed(recent_messages):
+            if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            prior_answer_refs = [str(item) for item in message.get("source_refs") or [] if str(item).strip()]
+            if prior_answer_refs:
+                break
+        if (
+            preliminary_intent.presentation_mode == "mermaid"
+            and preliminary_intent.result_purpose == "explain"
+            and not preliminary_intent.artifact_actions
+            and prior_answer_refs
+        ):
+            # A read-only visual follow-up is a presentation change over the last
+            # grounded answer. Reuse that answer's citation boundary instead of
+            # resolving broad business nouns as a new graph query.
+            preliminary_intent = preliminary_intent.model_copy(
+                update={
+                    "context_refs": list(
+                        dict.fromkeys([*prior_answer_refs, *preliminary_intent.context_refs])
+                    )[:20],
+                    "graph_query_draft": None,
+                    "needs_clarification": False,
+                }
+            )
         resolved_goal = compact_text(preliminary_intent.resolved_goal or request.question, 12000)
         retrieval_goal = compact_text(preliminary_intent.retrieval_query or resolved_goal, 12000)
         retrieval_subjects: list[str] = []
@@ -5393,13 +5438,7 @@ class AgentV2Service:
         context.manifest.update({"plan_id": plan_ref, "job_id": job_ref})
         self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
 
-        source_set = self._update_auto_sources(
-            principal,
-            str(session["session_id"]),
-            evidence,
-            request.external_artifact_refs,
-            used_refs=[item.source_ref for item in citations],
-        )
+        source_set = self._ensure_source_set(principal, str(session["session_id"]))
         related_questions = generated_related_questions
         artifact_payloads = [
             value
@@ -5490,6 +5529,15 @@ class AgentV2Service:
                 "raw_content_in_prompt": False,
             },
         )
+        response = self._enforce_response_budget(response)
+        source_set = self._update_auto_sources(
+            principal,
+            str(session["session_id"]),
+            evidence,
+            request.external_artifact_refs,
+            used_refs=response.used_source_refs,
+        )
+        response.source_set_ref = str(source_set["source_set_id"])
         response.presentation_plan = presentation_plan(response)
         try:
             a2ui_surface = compile_surface(response)
@@ -5506,7 +5554,6 @@ class AgentV2Service:
                 stored_artifact["a2ui_surface_ref"] = response.a2ui_surface_ref
                 self.store.put("artifacts", artifact.artifact_id, stored_artifact)
                 artifact.metadata["a2ui_surface_ref"] = response.a2ui_surface_ref
-        response = self._enforce_response_budget(response)
         run_payload = {
             "run_id": run_id,
             "employee_id": principal.employee_id,
@@ -5589,6 +5636,17 @@ class AgentV2Service:
             r"\s*\[\d+\]\(/api/v2/citations/(cite_[A-Za-z0-9]+)\)"
         )
 
+        response.answer.markdown = re.sub(
+            r"\n+###\s*사용한 지식\s*(?:\n[\s\S]*)?$",
+            "",
+            response.answer.markdown,
+        ).rstrip()
+        response.answer.markdown = re.sub(
+            r"\n+사용한 지식(?:\s+\[\d+\]\(/api/v2/citations/[^)]+\))+\s*$",
+            "",
+            response.answer.markdown,
+        ).rstrip()
+
         def keep_rendered_citations() -> None:
             rendered_ids = list(
                 dict.fromkeys(
@@ -5651,6 +5709,9 @@ class AgentV2Service:
             for key in ("iteration_count", "decision", "status", "revision")
             if key in response.loop_state
         }
+        response.used_source_refs = list(
+            dict.fromkeys(item.source_ref for item in response.citations if item.source_ref)
+        )[:12]
         payload = response.model_dump(mode="json")
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= self.settings.response_budget_bytes:
             return response
@@ -5821,6 +5882,9 @@ class AgentV2Service:
             refresh_display_html()
         if response_size() > budget:
             response.answer.display_html = ""
+        response.used_source_refs = list(
+            dict.fromkeys(item.source_ref for item in response.citations if item.source_ref)
+        )[:12]
         response.grounding_status = "grounded" if response.citations or response.graph_result_ref else "no_evidence"
         return response
 

@@ -241,7 +241,7 @@ class MemoryAgentV2Store(AgentV2Store):
         frontier = {item for item in seed_ids if item}
         visited = set(frontier)
         selected_edges: list[dict[str, Any]] = []
-        for _ in range(max(1, min(depth, 3))):
+        for _ in range(max(1, min(depth, 6))):
             next_frontier: set[str] = set()
             for edge in edges:
                 source = str(edge.get("source_id") or "")
@@ -294,6 +294,11 @@ class PostgresAgentV2Store(AgentV2Store):
         "citations": "agent_citations",
         "work_runs": "agent_work_runs",
         "harness_results": "agent_harness_results",
+        "harness_failure_records": "agent_harness_failure_records",
+        "negative_results": "agent_negative_results",
+        "context_playbook_items": "agent_context_playbook_items",
+        "harness_candidates": "agent_harness_candidates",
+        "harness_eval_runs": "agent_harness_eval_runs",
         "knowledge_candidates": "agent_knowledge_candidates",
         "completion_records": "agent_completion_records",
         "work_role_profiles": "agent_work_role_profiles",
@@ -305,6 +310,7 @@ class PostgresAgentV2Store(AgentV2Store):
         "a2ui_surfaces": "agent_a2ui_surfaces",
         "knowledge_sources": "knowledge_sources",
         "knowledge_source_manifests": "knowledge_source_manifests",
+        "knowledge_source_jobs": "knowledge_source_jobs",
         "knowledge_health_findings": "knowledge_health_findings",
         "knowledge_patch_proposals": "knowledge_patch_proposals",
     }
@@ -819,7 +825,7 @@ class PostgresAgentV2Store(AgentV2Store):
         if not clean_seeds:
             return {"nodes": [], "edges": []}
         allowed_teams = [str(item) for item in (team_ids or []) if str(item).strip()]
-        max_depth = max(1, min(int(depth), 3))
+        max_depth = max(1, min(int(depth), 6))
         row_limit = max(1, min(int(limit), 500))
         with self._connect() as connection:
             with connection.cursor() as cursor:

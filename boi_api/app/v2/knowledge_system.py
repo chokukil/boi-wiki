@@ -6,6 +6,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -97,7 +99,10 @@ class LivingKnowledgeService:
         self.store = store
         self.search = search
         self.directory_provider = directory_provider
+        self._adapter_lock = threading.Lock()
+        self._adapter_threads: dict[str, threading.Thread] = {}
         self._ensure_defaults()
+        self._resume_adapter_jobs()
 
     def directory_principals(self, current: Principal) -> list[Principal]:
         rows: list[Principal] = []
@@ -211,12 +216,13 @@ class LivingKnowledgeService:
             raise HTTPException(status_code=403, detail="공용 지식 Source는 관리자만 등록할 수 있습니다.")
         if request.visibility == "team" and request.team_id not in principal.teams and not principal.is_admin:
             raise HTTPException(status_code=403, detail="현재 팀의 Source만 등록할 수 있습니다.")
-        if request.source_kind in {"graphify", "codegraph", "external_cli"} and not principal.is_admin:
+        if request.source_kind in {"graphify", "openkb", "codegraph", "external_cli"} and not principal.is_admin:
             raise HTTPException(status_code=403, detail="외부 Source adapter는 관리자만 등록할 수 있습니다.")
         source_id = _stable_id("source", principal.employee_id, request.name, request.location)
         adapter = {
             "data_lake": "builtin.data_lake",
             "graphify": "optional.graphify",
+            "openkb": "optional.openkb",
             "codegraph": "optional.codegraph",
             "external_cli": "optional.cli",
         }[request.source_kind]
@@ -296,6 +302,296 @@ class LivingKnowledgeService:
                 else "선택형 adapter는 기본 운영 경로에서 비활성화되어 있습니다."
             ),
         }
+
+    def _adapter_input(self, source: dict[str, Any], filename: str) -> Path:
+        location = Path(str(source.get("location") or "")).expanduser().resolve()
+        input_path = location / filename if location.is_dir() else location
+        allowed_roots = [
+            (self.settings.runtime_root / "knowledge-adapters").resolve(),
+            self.settings.runtime_root.resolve(),
+        ]
+        if not any(input_path == root or root in input_path.parents for root in allowed_roots):
+            raise ValueError("adapter_input_outside_staging_root")
+        if not input_path.is_file():
+            raise ValueError("adapter_input_missing")
+        return input_path
+
+    def _assert_adapter_job_active(self, job_id: str, started: float, timeout_seconds: float) -> None:
+        job = self.store.get("knowledge_source_jobs", job_id) or {}
+        if job.get("cancel_requested"):
+            raise InterruptedError("adapter_job_cancelled")
+        if time.monotonic() - started > timeout_seconds:
+            raise TimeoutError("adapter_job_timeout")
+
+    def _import_graphify(
+        self,
+        principal: Principal,
+        source: dict[str, Any],
+        *,
+        job_id: str = "",
+        started: float = 0.0,
+        timeout_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+        input_path = self._adapter_input(source, "graph.json")
+        raw = json.loads(input_path.read_text(encoding="utf-8"))
+        raw_nodes = raw.get("nodes") if isinstance(raw, dict) else []
+        raw_edges = raw.get("edges") if isinstance(raw, dict) else []
+        if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
+            raise ValueError("invalid_graphify_export")
+        source_id = str(source["source_id"])
+        visibility = str(source.get("visibility") or "private")
+        owner = str(source.get("owner") or principal.employee_id)
+        revision = hashlib.sha256(input_path.read_bytes()).hexdigest()
+        node_ids: dict[str, str] = {}
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
+        for index, item in enumerate(raw_nodes[:50_000]):
+            if job_id and index % 500 == 0:
+                self._assert_adapter_job_active(job_id, started, timeout_seconds)
+            if not isinstance(item, dict):
+                continue
+            raw_id = str(item.get("id") or item.get("node_id") or item.get("key") or index)
+            node_id = _stable_id("adapter-node", source_id, raw_id)
+            node_ids[raw_id] = node_id
+            nodes.append(
+                {
+                    "node_id": node_id,
+                    "node_type": str(item.get("type") or item.get("kind") or "code_entity"),
+                    "payload": {
+                        "title": str(item.get("name") or item.get("title") or raw_id),
+                        "summary": str(item.get("summary") or ""),
+                        "source_location": str(item.get("path") or item.get("location") or ""),
+                        "community": item.get("community"),
+                        "centrality": item.get("centrality"),
+                        "visibility": visibility,
+                        "owner": owner,
+                        "allowed_employee_ids": [owner] if visibility == "private" else [],
+                        "source_id": source_id,
+                        "source_revision": revision,
+                    },
+                }
+            )
+        for index, item in enumerate(raw_edges[:100_000]):
+            if job_id and index % 500 == 0:
+                self._assert_adapter_job_active(job_id, started, timeout_seconds)
+            if not isinstance(item, dict):
+                continue
+            raw_source = str(item.get("source") or item.get("source_id") or "")
+            raw_target = str(item.get("target") or item.get("target_id") or "")
+            source_node = node_ids.get(raw_source)
+            target_node = node_ids.get(raw_target)
+            if not source_node or not target_node:
+                continue
+            raw_provenance = str(item.get("provenance") or "extracted").lower()
+            provenance = raw_provenance if raw_provenance in {"extracted", "inferred", "ambiguous"} else "extracted"
+            relation = str(item.get("relation") or item.get("type") or "depends_on")
+            edge_id = _stable_id("adapter-edge", source_id, raw_source, relation, raw_target, str(index))
+            edges.append(
+                {
+                    "edge_id": edge_id,
+                    "source_id": source_node,
+                    "target_id": target_node,
+                    "relation": relation,
+                    "payload": {
+                        "edge_id": edge_id,
+                        "source_id": source_node,
+                        "target_id": target_node,
+                        "relation": relation,
+                        "provenance": provenance,
+                        "confidence": float(item.get("confidence") or (1.0 if provenance == "extracted" else 0.6)),
+                        "source_refs": [source_id],
+                        "extractor_version": "graphify-adapter/1",
+                        "source_revision": revision,
+                        "metadata": {"raw_artifact": str(input_path)},
+                    },
+                }
+            )
+        previous = self.store.get("knowledge_source_manifests", source_id) or {}
+        self.store.remove_ontology_entries(
+            sorted(set(previous.get("node_ids") or []) - {item["node_id"] for item in nodes}),
+            sorted(set(previous.get("edge_ids") or []) - {item["edge_id"] for item in edges}),
+        )
+        self.store.upsert_ontology(nodes, edges)
+        manifest = {
+            "source_id": source_id,
+            "adapter": "graphify",
+            "source_revision": revision,
+            "node_ids": [item["node_id"] for item in nodes],
+            "edge_ids": [item["edge_id"] for item in edges],
+            "raw_artifact_url": str(input_path),
+            "validation_report": {
+                "valid": bool(nodes),
+                "node_count": len(nodes),
+                "edge_count": len(edges),
+                "canonical_changed": False,
+            },
+            "imported_at": now_iso(),
+        }
+        self.store.put("knowledge_source_manifests", source_id, manifest)
+        return manifest
+
+    def _import_openkb(
+        self,
+        principal: Principal,
+        source: dict[str, Any],
+        *,
+        job_id: str = "",
+        started: float = 0.0,
+        timeout_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+        input_path = self._adapter_input(source, "manifest.json")
+        raw = json.loads(input_path.read_text(encoding="utf-8"))
+        pages = raw.get("pages") if isinstance(raw, dict) else []
+        if not isinstance(pages, list):
+            raise ValueError("invalid_openkb_manifest")
+        source_id = str(source["source_id"])
+        revision = hashlib.sha256(input_path.read_bytes()).hexdigest()
+        candidate_ids: list[str] = []
+        for index, item in enumerate(pages[:10_000]):
+            if job_id and index % 250 == 0:
+                self._assert_adapter_job_active(job_id, started, timeout_seconds)
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or item.get("name") or f"자료 후보 {index + 1}").strip()
+            summary = str(item.get("summary") or item.get("content_summary") or "").strip()
+            if not title or not summary:
+                continue
+            candidate_id = _stable_id("candidate", source_id, str(item.get("id") or title))
+            candidate = {
+                "candidate_id": candidate_id,
+                "employee_id": principal.employee_id,
+                "source_id": source_id,
+                "source_revision": revision,
+                "title": title,
+                "summary": summary,
+                "reusable_claim": str(item.get("claim") or summary),
+                "source_refs": [source_id],
+                "target_asset_ref": str(item.get("target_ref") or ""),
+                "visibility": "private",
+                "status": "proposed",
+                "review_state": "review_required",
+                "provenance": "extracted" if item.get("deterministic") else "inferred",
+                "raw_artifact_url": str(input_path),
+                "created_at": now_iso(),
+            }
+            self.store.put("knowledge_candidates", candidate_id, candidate)
+            candidate_ids.append(candidate_id)
+        manifest = {
+            "source_id": source_id,
+            "adapter": "openkb",
+            "source_revision": revision,
+            "candidate_ids": candidate_ids,
+            "raw_artifact_url": str(input_path),
+            "validation_report": {
+                "valid": bool(candidate_ids),
+                "candidate_count": len(candidate_ids),
+                "canonical_changed": False,
+                "review_required": True,
+            },
+            "imported_at": now_iso(),
+        }
+        self.store.put("knowledge_source_manifests", source_id, manifest)
+        return manifest
+
+    def _run_adapter_job(self, principal: Principal, source: dict[str, Any], job_id: str) -> None:
+        source_id = str(source["source_id"])
+        job = self.store.get("knowledge_source_jobs", job_id) or {}
+        if job.get("cancel_requested"):
+            job.update({"status": "cancelled", "completed_at": now_iso()})
+            self.store.put("knowledge_source_jobs", job_id, job)
+            return
+        started = time.monotonic()
+        timeout_seconds = max(1.0, min(float((source.get("adapter_config") or {}).get("timeout_seconds") or 300), 3600.0))
+        job.update({"status": "running", "started_at": now_iso(), "timeout_seconds": timeout_seconds})
+        self.store.put("knowledge_source_jobs", job_id, job)
+        try:
+            if str(source.get("source_kind") or "") == "graphify":
+                manifest = self._import_graphify(
+                    principal, source, job_id=job_id, started=started, timeout_seconds=timeout_seconds
+                )
+            elif str(source.get("source_kind") or "") == "openkb":
+                manifest = self._import_openkb(
+                    principal, source, job_id=job_id, started=started, timeout_seconds=timeout_seconds
+                )
+            else:
+                raise ValueError("adapter_import_not_supported")
+            self._assert_adapter_job_active(job_id, started, timeout_seconds)
+            job.update({"status": "completed", "completed_at": now_iso(), "manifest": manifest})
+            source.update({"status": "ready", "checksum": manifest["source_revision"], "last_sync_at": now_iso(), "last_error": ""})
+        except InterruptedError as exc:
+            job.update({"status": "cancelled", "completed_at": now_iso(), "error": str(exc)})
+            source.update({"status": "pending", "last_error": "", "last_sync_at": now_iso()})
+        except (OSError, ValueError, TimeoutError, json.JSONDecodeError) as exc:
+            job.update({"status": "failed", "completed_at": now_iso(), "error": str(exc), "retryable": True})
+            source.update({"status": "failed", "last_error": str(exc), "last_sync_at": now_iso()})
+        source["revision"] = int(source.get("revision") or 1) + 1
+        self.store.put("knowledge_sources", source_id, source)
+        self.store.put("knowledge_source_jobs", job_id, job)
+        with self._adapter_lock:
+            self._adapter_threads.pop(job_id, None)
+
+    def _queue_adapter_job(
+        self,
+        principal: Principal,
+        source: dict[str, Any],
+        *,
+        existing_job_id: str = "",
+    ) -> dict[str, Any]:
+        source_id = str(source["source_id"])
+        job_id = existing_job_id or _stable_id("source-job", source_id, now_iso())
+        job = self.store.get("knowledge_source_jobs", job_id) or {
+            "job_id": job_id,
+            "source_id": source_id,
+            "employee_id": principal.employee_id,
+            "created_at": now_iso(),
+        }
+        job.update({"status": "queued", "cancel_requested": False, "queued_at": now_iso()})
+        self.store.put("knowledge_source_jobs", job_id, job)
+        with self._adapter_lock:
+            running = self._adapter_threads.get(job_id)
+            if running and running.is_alive():
+                return job
+            thread = threading.Thread(
+                target=self._run_adapter_job,
+                args=(principal, dict(source), job_id),
+                name=f"boi-knowledge-source-{job_id}",
+                daemon=True,
+            )
+            self._adapter_threads[job_id] = thread
+            thread.start()
+        return job
+
+    def _resume_adapter_jobs(self) -> None:
+        for job in self.store.list("knowledge_source_jobs", limit=500):
+            if str(job.get("status") or "") not in {"queued", "running"}:
+                continue
+            source = self.store.get("knowledge_sources", str(job.get("source_id") or "")) or {}
+            if str(source.get("source_kind") or "") not in {"graphify", "openkb"}:
+                continue
+            principal = Principal(
+                employee_id=str(job.get("employee_id") or source.get("owner") or "system"),
+                display_name="Knowledge Source Worker",
+                roles=["boi.admin"],
+                auth_source="service",
+            )
+            self._queue_adapter_job(principal, source, existing_job_id=str(job["job_id"]))
+
+    def cancel_source_job(self, principal: Principal, job_id: str) -> dict[str, Any]:
+        job = self.source_job(principal, job_id)
+        if str(job.get("status") or "") in {"completed", "failed", "cancelled"}:
+            return job
+        job.update({"cancel_requested": True, "cancel_requested_at": now_iso()})
+        if job.get("status") == "queued":
+            job.update({"status": "cancelled", "completed_at": now_iso()})
+        return self.store.put("knowledge_source_jobs", job_id, job)
+
+    def source_job(self, principal: Principal, job_id: str) -> dict[str, Any]:
+        job = self.store.get("knowledge_source_jobs", job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="지식 Source 작업을 찾을 수 없습니다.")
+        if not principal.is_admin and str(job.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=403, detail="이 지식 Source 작업을 볼 수 없습니다.")
+        return job
 
     def _resolve_target(
         self,
@@ -904,7 +1200,9 @@ class LivingKnowledgeService:
         source["last_error"] = ""
         self.store.put("knowledge_sources", source_id, source)
         kind = str(source.get("source_kind") or "")
-        if kind in {"graphify", "codegraph", "external_cli"}:
+        if kind in {"graphify", "openkb"}:
+            return {"source": source, "job": self._queue_adapter_job(principal, source)}
+        if kind in {"codegraph", "external_cli"}:
             adapter_state = self._optional_adapter_state(source)
             source.update(
                 {
@@ -968,8 +1266,16 @@ class LivingKnowledgeService:
         q: str = "",
         depth: int = 2,
         limit: int = 80,
+        cursor: str = "",
+        node_kinds: list[str] | None = None,
+        relation_kinds: list[str] | None = None,
+        provenance: list[str] | None = None,
+        direction: str = "both",
+        time_from: str = "",
+        time_to: str = "",
     ) -> dict[str, Any]:
-        mode = view if view in {"ranked", "neighbors", "path", "impact", "tour"} else "neighbors"
+        supported = {"ranked", "neighbors", "path", "workflow", "impact", "lineage", "responsibility", "timeline", "compare", "tour"}
+        mode = view if view in supported else "neighbors"
         if mode == "ranked":
             result = self.search.search(q or source_ref, principal, limit=min(limit, 20))
             return {"view": mode, **result.model_dump(mode="json")}
@@ -981,18 +1287,88 @@ class LivingKnowledgeService:
             or graph_manifest.get("source_signature") != self.repository.source_signature()
         ):
             self.compile_graph(principal)
+        offset = int(cursor) if str(cursor).isdigit() else 0
         graph = self.store.ontology_neighbors(
             [source_ref],
             depth=max(1, min(depth if mode != "path" else 6, 6)),
-            limit=max(1, min(limit, 300)),
+            limit=max(1, min(offset + limit + 1, 500)),
             employee_id=principal.employee_id,
             team_ids=principal.teams,
             include_all=principal.is_admin,
         )
         nodes = graph.get("nodes") or []
         edges = _dedupe_semantic_edges(graph.get("edges") or [])
+        node_kind_set = {str(item) for item in (node_kinds or []) if str(item)}
+        relation_set = {str(item) for item in (relation_kinds or []) if str(item)}
+        provenance_set = {str(item) for item in (provenance or []) if str(item)}
+        lower_time = _parse_time(time_from)
+        upper_time = _parse_time(time_to)
+
+        def edge_time(edge: dict[str, Any]) -> Any:
+            payload = edge.get("payload") or {}
+            return _parse_time(str(payload.get("observed_at") or payload.get("valid_from") or payload.get("recorded_at") or ""))
+
+        def temporal_match(edge: dict[str, Any]) -> bool:
+            observed = edge_time(edge)
+            if not observed:
+                return not lower_time and not upper_time
+            return (not lower_time or observed >= lower_time) and (not upper_time or observed <= upper_time)
+
+        if relation_set:
+            edges = [item for item in edges if str(item.get("relation") or "") in relation_set]
+        if provenance_set:
+            edges = [item for item in edges if str((item.get("payload") or {}).get("provenance") or "") in provenance_set]
+        if lower_time or upper_time:
+            edges = [item for item in edges if temporal_match(item)]
+        if direction == "outgoing":
+            edges = [item for item in edges if str(item.get("source_id") or "") == source_ref]
+        elif direction == "incoming":
+            edges = [item for item in edges if str(item.get("target_id") or "") == source_ref]
+        visible_refs = {source_ref}
+        for edge in edges:
+            visible_refs.update({str(edge.get("source_id") or ""), str(edge.get("target_id") or "")})
+        nodes = [
+            item for item in nodes
+            if str(item.get("node_id") or "") in visible_refs
+            and (not node_kind_set or str(item.get("node_type") or "") in node_kind_set or str(item.get("node_id") or "") == source_ref)
+        ]
+        allowed_node_refs = {str(item.get("node_id") or "") for item in nodes}
+        edges = [item for item in edges if str(item.get("source_id") or "") in allowed_node_refs and str(item.get("target_id") or "") in allowed_node_refs]
+        has_more = len(edges) > offset + limit
+        page_edges = edges[offset:offset + limit]
+        page_refs = {source_ref}
+        for edge in page_edges:
+            page_refs.update({str(edge.get("source_id") or ""), str(edge.get("target_id") or "")})
+        nodes = [item for item in nodes if str(item.get("node_id") or "") in page_refs]
+        edges = page_edges
         if mode == "neighbors":
-            return {"view": mode, "source_ref": source_ref, "nodes": nodes, "edges": edges}
+            return {
+                "view": mode,
+                "source_ref": source_ref,
+                "nodes": nodes,
+                "edges": edges,
+                "cursor": str(offset),
+                "next_cursor": str(offset + limit) if has_more else "",
+            }
+
+        if mode in {"workflow", "lineage", "responsibility", "timeline", "compare"}:
+            result = self.query(
+                principal,
+                GraphQueryPlan(
+                    focal_entities=[source_ref],
+                    target_entities=[target_ref] if target_ref else [],
+                    query_kind=mode,
+                    node_kinds=list(node_kind_set),
+                    relation_kinds=list(relation_set),
+                    direction=direction,
+                    depth=depth,
+                    time_from=time_from,
+                    time_to=time_to,
+                    limit=limit,
+                    presentation="auto",
+                ),
+            )
+            return {"view": mode, "source_ref": source_ref, **result}
 
         adjacency: dict[str, list[tuple[str, dict[str, Any]]]] = {}
         for edge in edges:
@@ -1079,6 +1455,24 @@ class LivingKnowledgeService:
             ],
         }
 
+    def node(self, principal: Principal, node_id: str) -> dict[str, Any]:
+        graph = self.store.ontology_neighbors(
+            [node_id],
+            depth=1,
+            limit=80,
+            employee_id=principal.employee_id,
+            team_ids=principal.teams,
+            include_all=principal.is_admin,
+        )
+        node = next((item for item in graph.get("nodes") or [] if str(item.get("node_id") or "") == node_id), None)
+        if not node:
+            raise HTTPException(status_code=404, detail="이 관계 항목을 찾을 수 없거나 접근할 수 없습니다.")
+        edges = [
+            item for item in _dedupe_semantic_edges(graph.get("edges") or [])
+            if node_id in {str(item.get("source_id") or ""), str(item.get("target_id") or "")}
+        ]
+        return {"node": node, "edges": edges, "relation_count": len(edges)}
+
     def query(self, principal: Principal, plan: GraphQueryPlan) -> dict[str, Any]:
         manifest = self.store.get("manifests", "knowledge_graph") or {}
         if (
@@ -1131,53 +1525,205 @@ class LivingKnowledgeService:
             allowed_relations = set(plan.relation_kinds)
             edges = [item for item in edges if str(item.get("relation") or "") in allowed_relations]
         focal = set(plan.focal_entities)
-        if plan.direction == "outgoing":
-            edges = [item for item in edges if str(item.get("source_id") or "") in focal or int(item.get("depth") or 1) > 1]
-        elif plan.direction == "incoming":
-            edges = [item for item in edges if str(item.get("target_id") or "") in focal or int(item.get("depth") or 1) > 1]
+        node_lookup = {str(item.get("node_id") or ""): item for item in nodes}
+        responsibility_relations = {
+            "assigned_to", "reviewed_by", "related_team", "member_of", "has_role",
+            "performed_by", "completed_by", "repeated_performer", "owns",
+        }
+        workflow_relations = {
+            "has_task", "part_of_workflow", "uses_sop", "uses_event", "uses_action",
+            "uses_skill", "requires_evidence", "produces", "results_in", "triggered_by",
+            "next_task", "precedes",
+        }
+        impact_relations = {
+            *workflow_relations, "links_to", "related", "narrower", "supersedes",
+            "consumed_by", "depends_on",
+        }
+        lineage_relations = {
+            "evidence", "requires_evidence", "derived_from", "produces", "results_in",
+            "generated_from", "completed_by", "performed_by", "supersedes", "links_to",
+        }
 
-        if plan.query_kind == "responsibility":
-            edges = [
-                item
-                for item in edges
-                if str(item.get("source_id") or "") in focal
-                or str(item.get("target_id") or "") in focal
-            ]
-            visible_ids = set(focal)
-            for item in edges:
-                visible_ids.add(str(item.get("source_id") or ""))
-                visible_ids.add(str(item.get("target_id") or ""))
-            nodes = [item for item in nodes if str(item.get("node_id") or "") in visible_ids]
+        relation_scope = {
+            "responsibility": responsibility_relations,
+            "workflow": workflow_relations,
+            "impact": impact_relations,
+            "lineage": lineage_relations,
+        }.get(plan.query_kind)
+        if relation_scope is not None:
+            edges = [item for item in edges if str(item.get("relation") or "") in relation_scope]
 
-        if plan.query_kind == "path" and plan.target_entities:
-            return self.explore(
-                principal,
-                view="path",
-                source_ref=plan.focal_entities[0],
-                target_ref=plan.target_entities[0],
-                depth=plan.depth,
-                limit=plan.limit,
-            ) | {"query_plan": plan.model_dump(mode="json"), "presentation": plan.presentation}
+        def adjacent(edge: dict[str, Any], current: str, direction: str) -> str:
+            source = str(edge.get("source_id") or "")
+            target = str(edge.get("target_id") or "")
+            if direction in {"outgoing", "both"} and source == current:
+                return target
+            if direction in {"incoming", "both"} and target == current:
+                return source
+            return ""
 
-        if plan.query_kind == "compare":
-            groups = {
-                entity: {
-                    "nodes": [item for item in nodes if str(item.get("node_id") or "") == entity],
-                    "edges": [item for item in edges if entity in {str(item.get("source_id") or ""), str(item.get("target_id") or "")}],
-                }
-                for entity in plan.focal_entities
+        def traverse(
+            seeds: set[str],
+            candidate_edges: list[dict[str, Any]],
+            *,
+            direction: str,
+            max_depth: int,
+        ) -> tuple[set[str], list[dict[str, Any]], dict[str, int]]:
+            reached = set(seeds)
+            selected: list[dict[str, Any]] = []
+            depth_by_ref = {item: 0 for item in seeds}
+            queue = deque(seeds)
+            while queue and len(reached) < plan.limit:
+                current = queue.popleft()
+                current_depth = depth_by_ref[current]
+                if current_depth >= max_depth:
+                    continue
+                for edge in candidate_edges:
+                    neighbor = adjacent(edge, current, direction)
+                    if not neighbor or neighbor in reached:
+                        continue
+                    reached.add(neighbor)
+                    depth_by_ref[neighbor] = current_depth + 1
+                    selected.append(edge)
+                    queue.append(neighbor)
+                    if len(reached) >= plan.limit:
+                        break
+            return reached, selected, depth_by_ref
+
+        traversal_direction = plan.direction
+        if plan.query_kind in {"workflow", "impact"} and traversal_direction == "both":
+            traversal_direction = "outgoing"
+        if plan.query_kind == "lineage" and traversal_direction == "both":
+            traversal_direction = "incoming"
+
+        if plan.query_kind == "path":
+            if not plan.target_entities:
+                raise HTTPException(status_code=422, detail="연결 경로의 도착 지식을 선택해주세요.")
+            target = plan.target_entities[0]
+            queue = deque([(plan.focal_entities[0], [plan.focal_entities[0]], [])])
+            visited = {plan.focal_entities[0]}
+            found_nodes: list[str] = []
+            found_edges: list[dict[str, Any]] = []
+            while queue:
+                current, path_nodes, path_edges = queue.popleft()
+                if current == target:
+                    found_nodes, found_edges = path_nodes, path_edges
+                    break
+                if len(path_edges) >= plan.depth:
+                    continue
+                for edge in edges:
+                    neighbor = adjacent(edge, current, plan.direction)
+                    if not neighbor or neighbor in visited:
+                        continue
+                    visited.add(neighbor)
+                    queue.append((neighbor, [*path_nodes, neighbor], [*path_edges, edge]))
+            return {
+                "ok": True,
+                "query_plan": plan.model_dump(mode="json"),
+                "presentation": "mermaid" if plan.presentation == "auto" else plan.presentation,
+                "status": "connected" if found_nodes else "not_connected",
+                "path_refs": found_nodes,
+                "nodes": [node_lookup[item] for item in found_nodes if item in node_lookup],
+                "edges": found_edges,
+                "provenance_required": True,
             }
-        else:
-            groups = {}
-        if plan.query_kind == "timeline":
-            nodes.sort(
-                key=lambda item: str(
-                    next(
-                        ((item.get("payload") or {}).get(key) for key in ("observed_at", "logged_at", "timestamp", "recorded_at") if (item.get("payload") or {}).get(key)),
-                        "",
-                    )
-                )
+
+        depth_by_ref: dict[str, int] = {item: 0 for item in focal}
+        semantic_refs: list[str] = []
+        if plan.query_kind in {"workflow", "impact", "lineage", "responsibility", "neighbors"}:
+            query_edges = edges
+            if plan.query_kind == "responsibility":
+                query_edges = [item for item in edges if str(item.get("relation") or "") in responsibility_relations]
+            visible_ids, edges, depth_by_ref = traverse(
+                focal,
+                query_edges,
+                direction=traversal_direction,
+                max_depth=1 if plan.query_kind == "responsibility" else plan.depth,
             )
+            nodes = [item for item in nodes if str(item.get("node_id") or "") in visible_ids]
+            semantic_refs = sorted(visible_ids - focal)
+
+        groups: dict[str, Any] = {}
+        comparison: dict[str, Any] = {}
+        if plan.query_kind == "compare":
+            groups = {}
+            relation_sets: dict[str, set[str]] = {}
+            neighbor_sets: dict[str, set[str]] = {}
+            for entity in plan.focal_entities:
+                entity_edges = [
+                    item for item in edges
+                    if adjacent(item, entity, plan.direction)
+                ]
+                neighbor_refs = {adjacent(item, entity, plan.direction) for item in entity_edges}
+                neighbor_refs.discard("")
+                relation_sets[entity] = {str(item.get("relation") or "") for item in entity_edges}
+                neighbor_sets[entity] = neighbor_refs
+                groups[entity] = {
+                    "nodes": [node_lookup[item] for item in {entity, *neighbor_refs} if item in node_lookup],
+                    "edges": entity_edges,
+                }
+            common_relations = set.intersection(*relation_sets.values()) if relation_sets else set()
+            common_neighbors = set.intersection(*neighbor_sets.values()) if neighbor_sets else set()
+            comparison = {
+                "common_relations": sorted(common_relations),
+                "common_node_refs": sorted(common_neighbors),
+                "unique_relations": {
+                    entity: sorted(values - common_relations) for entity, values in relation_sets.items()
+                },
+                "unique_node_refs": {
+                    entity: sorted(values - common_neighbors) for entity, values in neighbor_sets.items()
+                },
+            }
+
+        timeline: list[dict[str, Any]] = []
+        if plan.query_kind == "timeline":
+            for item in nodes:
+                payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+                occurred_at = next(
+                    (str(payload.get(key) or "") for key in ("observed_at", "logged_at", "timestamp", "recorded_at", "valid_from") if payload.get(key)),
+                    "",
+                )
+                if occurred_at:
+                    timeline.append(
+                        {
+                            "occurred_at": occurred_at,
+                            "node_ref": str(item.get("node_id") or ""),
+                            "node_type": str(item.get("node_type") or ""),
+                            "title": str(payload.get("title") or "연결된 업무 기록"),
+                        }
+                    )
+            timeline.sort(key=lambda item: item["occurred_at"])
+
+        tour_steps: list[dict[str, Any]] = []
+        if plan.query_kind == "tour":
+            tour_relations = workflow_relations | {"broader", "narrower", "links_to", "evidence"}
+            tour_edges = [item for item in edges if str(item.get("relation") or "") in tour_relations]
+            visible_ids, selected_edges, depth_by_ref = traverse(
+                focal,
+                tour_edges,
+                direction=plan.direction,
+                max_depth=plan.depth,
+            )
+            priority = {"sop": 1, "workflow": 2, "task": 3, "event": 4, "action": 5, "evidence": 6, "boi": 7}
+            ordered_refs = sorted(
+                visible_ids,
+                key=lambda ref: (
+                    depth_by_ref.get(ref, 99),
+                    priority.get(str((node_lookup.get(ref) or {}).get("node_type") or ""), 50),
+                    str(((node_lookup.get(ref) or {}).get("payload") or {}).get("title") or ref),
+                ),
+            )
+            nodes = [node_lookup[item] for item in ordered_refs if item in node_lookup]
+            edges = selected_edges
+            tour_steps = [
+                {
+                    "order": index + 1,
+                    "node_ref": ref,
+                    "title": str(((node_lookup.get(ref) or {}).get("payload") or {}).get("title") or "살펴볼 항목"),
+                    "reason": "먼저 이해해야 할 관계" if depth_by_ref.get(ref, 0) == 0 else "앞 단계와 직접 연결된 항목",
+                }
+                for index, ref in enumerate(ordered_refs)
+            ]
         presentation = plan.presentation
         if presentation == "auto":
             if plan.query_kind == "timeline":
@@ -1195,6 +1741,13 @@ class LivingKnowledgeService:
             "nodes": nodes,
             "edges": edges,
             "groups": groups,
+            "comparison": comparison,
+            "timeline": timeline,
+            "tour_steps": tour_steps,
+            "depth_by_ref": depth_by_ref,
+            "downstream_refs": semantic_refs if plan.query_kind == "impact" else [],
+            "lineage_refs": semantic_refs if plan.query_kind == "lineage" else [],
+            "responsibility_refs": semantic_refs if plan.query_kind == "responsibility" else [],
             "provenance_required": True,
         }
 

@@ -18,6 +18,8 @@ from .models import (
     HelperDraftPatchRequest,
     HelperPreviewTurnRequest,
     HarnessValidateRequest,
+    HarnessCandidateCreateRequest,
+    HarnessCandidateEvaluateRequest,
     KnowledgeCandidatePatchRequest,
     KnowledgeCandidatePromoteRequest,
     GraphQueryPlan,
@@ -477,14 +479,37 @@ def build_agent_v2_router(
         require_scope(identity, "boi.draft")
         return service.knowledge.sync_source(identity, source_id)
 
+    @router.get("/api/v2/knowledge-source-jobs/{job_id}")
+    async def knowledge_source_job(
+        job_id: str,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return service.knowledge.source_job(identity, job_id)
+
+    @router.post("/api/v2/knowledge-source-jobs/{job_id}/cancel")
+    async def cancel_knowledge_source_job(
+        job_id: str,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        return service.knowledge.cancel_source_job(identity, job_id)
+
     @router.get("/api/v2/knowledge-graph/explore")
     async def explore_knowledge_graph(
-        view: str = Query(default="neighbors", pattern="^(ranked|neighbors|path|impact|tour)$"),
+        view: str = Query(default="neighbors", pattern="^(ranked|neighbors|path|workflow|impact|lineage|responsibility|timeline|compare|tour)$"),
         source_ref: str = "",
         target_ref: str = "",
         q: str = "",
         depth: int = Query(default=2, ge=1, le=6),
-        limit: int = Query(default=80, ge=1, le=300),
+        limit: int = Query(default=80, ge=1, le=500),
+        cursor: str = "",
+        node_kinds: str = "",
+        relation_kinds: str = "",
+        provenance: str = "",
+        direction: str = Query(default="both", pattern="^(outgoing|incoming|both)$"),
+        time_from: str = "",
+        time_to: str = "",
         identity: Principal = Depends(principal),
     ) -> dict[str, Any]:
         require_scope(identity, "boi.read")
@@ -496,7 +521,22 @@ def build_agent_v2_router(
             q=q,
             depth=depth,
             limit=limit,
+            cursor=cursor,
+            node_kinds=[item.strip() for item in node_kinds.split(",") if item.strip()],
+            relation_kinds=[item.strip() for item in relation_kinds.split(",") if item.strip()],
+            provenance=[item.strip() for item in provenance.split(",") if item.strip()],
+            direction=direction,
+            time_from=time_from,
+            time_to=time_to,
         )
+
+    @router.get("/api/v2/knowledge-graph/nodes/{node_id:path}")
+    async def knowledge_graph_node(
+        node_id: str,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return service.knowledge.node(identity, node_id)
 
     @router.post("/api/v2/knowledge-graph/query")
     async def query_knowledge_graph(
@@ -513,6 +553,43 @@ def build_agent_v2_router(
     ) -> dict[str, Any]:
         require_scope(identity, "boi.read")
         return service.knowledge.health(identity, refresh=refresh)
+
+    @router.get("/api/v2/harness-failures")
+    async def harness_failures(
+        status: str = "open",
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return service.learning.list_harness_failures(identity, status=status)
+
+    @router.get("/api/v2/context-playbook")
+    async def context_playbook(
+        status: str = "",
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return service.learning.list_context_playbook(identity, status=status)
+
+    @router.post("/api/v2/harness-candidates")
+    async def create_harness_candidate(
+        request: HarnessCandidateCreateRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        if not identity.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        return service.learning.create_harness_candidate(identity, request)
+
+    @router.post("/api/v2/harness-candidates/{candidate_id}/evaluate")
+    async def evaluate_harness_candidate(
+        candidate_id: str,
+        request: HarnessCandidateEvaluateRequest,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.draft")
+        if not identity.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        return service.learning.evaluate_harness_candidate(identity, candidate_id, request)
 
     @router.get("/api/v2/knowledge-proposals")
     async def knowledge_proposals(

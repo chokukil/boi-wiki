@@ -378,6 +378,22 @@ class HarnessResult(BaseModel):
     blockers: list[str] = Field(default_factory=list)
 
 
+class HarnessCandidateCreateRequest(BaseModel):
+    harness_id: str = Field(min_length=1, max_length=120)
+    failure_record_ids: list[str] = Field(min_length=1, max_length=50)
+    model_profile: str = Field(default="default", max_length=160)
+    changes: dict[str, Any] = Field(default_factory=dict)
+    rationale: str = Field(min_length=12, max_length=4000)
+
+
+class HarnessCandidateEvaluateRequest(BaseModel):
+    held_in: dict[str, Any]
+    held_out: dict[str, Any]
+    adversarial: dict[str, Any] = Field(default_factory=dict)
+    long_term: dict[str, Any] = Field(default_factory=dict)
+    fixture_revision: str = Field(min_length=1, max_length=160)
+
+
 class KnowledgeCandidateRef(BaseModel):
     candidate_id: str
     title: str
@@ -519,6 +535,7 @@ class AgentTurnResponse(BaseModel):
     goal_plan_ref: str = ""
     source_set_ref: str = ""
     citations: list[CitationRef] = Field(default_factory=list)
+    used_source_refs: list[str] = Field(default_factory=list, max_length=12)
     related_questions: list[RelatedQuestion] = Field(default_factory=list, max_length=3)
     grounding_status: Literal["grounded", "partial", "no_evidence"] = "no_evidence"
     progress: list[dict[str, Any]] = Field(default_factory=list)
@@ -558,7 +575,7 @@ class WorkRunContinueRequest(BaseModel):
 class KnowledgeSourceDefinition(BaseModel):
     source_id: str
     name: str
-    source_kind: Literal["okf_markdown", "git", "data_lake", "graphify", "codegraph", "external_cli"]
+    source_kind: Literal["okf_markdown", "git", "data_lake", "graphify", "openkb", "codegraph", "external_cli"]
     location: str
     visibility: Literal["private", "team", "public"] = "private"
     owner: str = ""
@@ -576,7 +593,7 @@ class KnowledgeSourceDefinition(BaseModel):
 
 class KnowledgeSourceCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
-    source_kind: Literal["data_lake", "graphify", "codegraph", "external_cli"]
+    source_kind: Literal["data_lake", "graphify", "openkb", "codegraph", "external_cli"]
     location: str = Field(default="", max_length=2000)
     visibility: Literal["private", "team", "public"] = "private"
     team_id: str = Field(default="", max_length=120)
