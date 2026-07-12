@@ -37,3 +37,35 @@ journeys:
       - citation_visible
       - typed_fallback_visible
       - composer_keeps_focus
+  - id: inbox_task_snapshot_parity
+    start: "/inbox?employee_id=100001"
+    actions: [load_visible_workflow, compare_execution_snapshot]
+    assertions: [same_mermaid_source, same_current_stage, no_model_request]
+  - id: ontology_path
+    start: "/knowledge-graph?employee_id=100001"
+    actions: [select_path_view, search_target, select_target]
+    assertions: [path_result_visible, grounded_edges_only]
+  - id: ontology_impact
+    start: "/knowledge-graph?employee_id=100001"
+    actions: [select_impact_view]
+    assertions: [impact_result_visible, downstream_only]
+  - id: ontology_tour
+    start: "/knowledge-graph?employee_id=100001"
+    actions: [select_tour_view]
+    assertions: [ordered_steps_visible]
+  - id: agent_table_timeline_mermaid
+    start: "/agent?employee_id=100001"
+    actions: [submit_grounded_result_variants]
+    assertions: [trusted_a2ui_components_render, artifact_nonblank]
+  - id: harness_review_release_rehearsal
+    start: "/integrations?employee_id=100001"
+    actions: [open_latest_harness_candidate, run_release_rehearsal]
+    assertions: [review_surface_rendered, production_unchanged]
+  - id: adapter_job_status_and_retry
+    start: "/integrations?employee_id=100001"
+    actions: [inspect_optional_adapter_status]
+    assertions: [core_features_remain_available, technical_state_is_scoped]
+  - id: mobile_focus_and_fallback
+    start: "/agent?employee_id=100001"
+    actions: [open_compact_agent, trigger_typed_fallback]
+    assertions: [focus_visible, no_horizontal_overflow, single_fallback]

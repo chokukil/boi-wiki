@@ -104,6 +104,7 @@ def main() -> int:
     args = parse_args()
     fixture = yaml.safe_load(args.fixture.read_text(encoding="utf-8")) or {}
     scenario_count = sum(len(items) for items in (fixture.get("groups") or {}).values())
+    expected_scenario_count = int(fixture.get("expected_scenarios") or scenario_count)
     base = args.base_url.rstrip("/")
     params = {"employee_id": args.employee_id}
     failures: list[str] = []
@@ -167,8 +168,10 @@ def main() -> int:
     if not args.skip_runtime:
         before_residency = residency(before)
         after_residency = residency(after)
-    if scenario_count != 38:
-        failures.append(f"acceptance scenario count must be 38, got {scenario_count}")
+    if scenario_count != expected_scenario_count:
+        failures.append(
+            f"acceptance scenario count must be {expected_scenario_count}, got {scenario_count}"
+        )
     if snapshot_latencies and snapshot_p95 > 500:
         failures.append(f"warm Task snapshot p95 must be <=500ms, got {snapshot_p95}ms")
     if graph_latencies and graph_p95 > 200:
@@ -181,6 +184,7 @@ def main() -> int:
     report = {
         "ok": not failures,
         "scenario_count": scenario_count,
+        "expected_scenario_count": expected_scenario_count,
         "deterministic": {
             "executed": not args.skip_deterministic,
             "passed": sum(1 for item in scenario_results if item["passed"]),

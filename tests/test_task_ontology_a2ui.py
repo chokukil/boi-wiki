@@ -41,7 +41,7 @@ def _create_task(boi_app_module, request_id: str, *, employee_id: str = "100001"
     )
 
 
-def test_acceptance_fixture_has_decision_complete_38_scenario_matrix():
+def test_acceptance_fixture_has_decision_complete_50_scenario_matrix():
     payload = yaml.safe_load((ROOT / "tests/fixtures/task_ontology_a2ui_acceptance.yaml").read_text(encoding="utf-8"))
     groups = payload["groups"]
     assert {key: len(value) for key, value in groups.items()} == {
@@ -50,9 +50,10 @@ def test_acceptance_fixture_has_decision_complete_38_scenario_matrix():
         "a2ui": 6,
         "learning": 6,
         "harness_improvement": 6,
+        "integration_completion": 12,
     }
     scenario_ids = [item["id"] for items in groups.values() for item in items]
-    assert len(scenario_ids) == len(set(scenario_ids)) == 38
+    assert len(scenario_ids) == len(set(scenario_ids)) == 50
     assert all(item.get("handler", "").startswith("tests/") for items in groups.values() for item in items)
     assert len(payload["multiturn"]) >= 6
     assert all(len(item["turns"]) >= 2 for item in payload["multiturn"])
@@ -60,7 +61,7 @@ def test_acceptance_fixture_has_decision_complete_38_scenario_matrix():
     assert payload["thresholds"]["unauthorized_mutations"] == 0
 
 
-def test_browser_acceptance_manifest_covers_three_viewports_and_core_journeys():
+def test_browser_acceptance_manifest_covers_three_viewports_and_twelve_journeys():
     payload = yaml.safe_load((ROOT / "tests/fixtures/task_ontology_a2ui_browser_scenarios.yaml").read_text(encoding="utf-8"))
     assert {(item["width"], item["height"]) for item in payload["viewports"]} == {
         (1440, 1000),
@@ -73,6 +74,14 @@ def test_browser_acceptance_manifest_covers_three_viewports_and_core_journeys():
         "task_assignment_and_revision",
         "ontology_one_hop_expand",
         "agent_a2ui_and_fallback",
+        "inbox_task_snapshot_parity",
+        "ontology_path",
+        "ontology_impact",
+        "ontology_tour",
+        "agent_table_timeline_mermaid",
+        "harness_review_release_rehearsal",
+        "adapter_job_status_and_retry",
+        "mobile_focus_and_fallback",
     }
     assert all(item["actions"] and item["assertions"] for item in payload["journeys"])
 

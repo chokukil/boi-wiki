@@ -1,4 +1,5 @@
 version: "1.0"
+expected_scenarios: 50
 thresholds:
   deterministic_pass_rate: 1.0
   live_scenario_pass_rate: 0.90
@@ -50,6 +51,19 @@ groups:
     - {id: harness_immutable_boundary, contract: permissions_and_safety_are_not_editable_surfaces, handler: "tests/test_agent_v2.py::test_harness_candidate_cannot_change_immutable_safety_boundaries"}
     - {id: harness_negative_result, contract: no_progress_and_rejected_candidates_are_preserved, handler: "tests/test_agent_v2.py::test_no_progress_is_preserved_as_a_negative_result"}
     - {id: harness_operational_ontology, contract: failure_candidate_eval_and_playbook_relations_are_admin_only, handler: "tests/test_agent_v2.py::test_harness_improvement_relations_are_compiled_into_admin_ontology"}
+  integration_completion:
+    - {id: harness_review_page, contract: candidate_opens_rendered_review_surface, handler: "tests/test_task_ontology_a2ui.py::test_harness_candidate_opens_rendered_review_page_instead_of_raw_surface"}
+    - {id: harness_release_rehearsal, contract: rehearsal_never_changes_active_binding, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: harness_manual_release, contract: approved_version_becomes_active_only_after_confirmation, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: harness_rollback, contract: active_version_can_return_to_builtin_version, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: adapter_graphify_cli, contract: graphify_cli_export_is_normalized_with_provenance, handler: "tests/test_agent_v2.py::test_graphify_adapter_executes_cli_when_export_is_not_prebuilt"}
+    - {id: adapter_openkb_cli, contract: openkb_pages_become_private_review_candidates, handler: "tests/test_agent_v2.py::test_openkb_adapter_executes_cli_and_excludes_navigation_pages"}
+    - {id: adapter_cancel, contract: running_adapter_job_can_be_cancelled, handler: "tests/test_agent_v2.py::test_knowledge_source_job_is_async_and_can_be_cancelled"}
+    - {id: adapter_retry, contract: failed_adapter_job_retries_from_durable_queue, handler: "tests/test_agent_v2.py::test_failed_adapter_job_retries_from_the_durable_queue"}
+    - {id: adapter_restart_resume, contract: running_job_is_requeued_after_restart, handler: "tests/test_agent_v2.py::test_adapter_running_job_is_requeued_after_restart"}
+    - {id: adapter_rollback, contract: imported_graph_or_candidates_can_be_removed_without_canonical_change, handler: "tests/test_agent_v2.py::test_graphify_adapter_imports_provenance_graph_without_changing_canonical_files"}
+    - {id: work_learning_full_cycle, contract: task_completion_candidate_reindex_and_new_session_reuse, handler: "tests/test_agent_v2.py::test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowledge_in_new_session"}
+    - {id: interface_parity_full_cycle, contract: web_rest_mcp_share_work_run_and_learning_ids, handler: "tests/test_agent_v2.py::test_identical_cross_interface_turns_reuse_the_same_semantic_route_and_evidence"}
 multiturn:
   - id: followup_graph
     turns: ["업무 이벤트와 SOP 관계를 설명해줘", "그 관계만 흐름 그림으로 보여줘"]

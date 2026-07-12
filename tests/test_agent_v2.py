@@ -5095,6 +5095,44 @@ def test_failed_adapter_job_retries_from_the_durable_queue(
     assert retried["attempt"] == 2
 
 
+def test_adapter_running_job_is_requeued_after_restart(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    staging = v2_service.settings.runtime_root / "knowledge-adapters" / "restart-test"
+    staging.mkdir(parents=True, exist_ok=True)
+    (staging / "graph.json").write_text('{"nodes":[{"id":"restart","name":"Restart node"}],"edges":[]}', encoding="utf-8")
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(name="Restart adapter", source_kind="graphify", location=str(staging)),
+    )
+    job_id = "source-job-restart"
+    v2_service.store.put(
+        "knowledge_source_jobs",
+        job_id,
+        {
+            "job_id": job_id,
+            "source_id": source["source_id"],
+            "employee_id": admin.employee_id,
+            "status": "running",
+            "stage": "extract",
+            "attempt": 1,
+            "created_at": now_iso(),
+        },
+    )
+    v2_service.knowledge._resume_adapter_jobs()
+    recovered = v2_service.knowledge.source_job(admin, job_id)
+    assert recovered["status"] == "queued"
+    assert recovered["recovered_after_restart"] is True
+    v2_service.knowledge._adapter_worker_event.set()
+    deadline = time.monotonic() + 3
+    while recovered["status"] not in {"completed", "failed"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        recovered = v2_service.knowledge.source_job(admin, job_id)
+    assert recovered["status"] == "completed"
+
+
 def test_responsibility_graph_does_not_expand_through_a_shared_team_to_other_people(
     v2_service: AgentV2Service,
     principal: Principal,
