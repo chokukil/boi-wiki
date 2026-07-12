@@ -206,7 +206,7 @@ Knowledge Compiler는 OKF Markdown, Git과 자료 보관함 source를 checksum�
 
 Knowledge Health는 stale claim, contradiction, duplicate, orphan, broken link와 coverage gap을 찾고 `KnowledgePatchProposal`을 만든다. checksum, backlink, index 같은 결정적 복구만 자동 적용할 수 있다. Team/Public 의미 변경은 review 전 정본을 수정하지 않는다.
 
-Ontology 갱신은 전체 table truncate가 아니라 source revision별 node·edge upsert와 tombstone 삭제로 수행한다. Person, Team과 Task 배정 관계도 같은 graph 계약을 쓰지만, inferred 관계는 검토 전 권한·자동 배정·완료 판정에 사용할 수 없다. 범용 `GraphQueryPlan`은 neighbors, path, workflow, impact, lineage, responsibility, timeline, compare, tour를 parameterized query로 실행하며 LLM이 SQL이나 Cypher를 직접 만들지 않는다.
+Ontology 갱신은 전체 table truncate가 아니라 source revision별 node·edge upsert와 tombstone 삭제로 수행한다. Person, Team과 Task 배정 관계도 같은 graph 계약을 쓰지만, inferred 관계는 검토 전 권한·자동 배정·완료 판정에 사용할 수 없다. `WorkRoleProfile`은 최근 180일의 서로 다른 검증 완료 실행이 세 건 이상일 때만 반복 수행 관계를 만든다. 범용 `GraphQueryPlan`은 neighbors, path, workflow, impact, lineage, responsibility, timeline, compare, tour를 parameterized query로 실행하며 LLM이 SQL이나 Cypher를 직접 만들지 않는다.
 
 자연어 관계 질문은 `GraphQueryDraft → EntityResolver → GraphQueryPlan → parameterized graph query` 순서로 실행한다. Planner는 사람·팀·자산 표현과 원하는 결과만 제안하며 SQL·Cypher를 만들지 않는다. `current`, `responsibility`, `combined` 업무 관점은 현재 Inbox와 공식 역할·검증 수행 이력을 분리한다.
 

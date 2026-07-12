@@ -21,6 +21,13 @@ agent_entrypoint_prompts:
     label: 어떤 업무가 발생했고 어디까지 처리됐는지 보기
     prompt: Event 카탈로그와 업무 발생 이력의 차이, 한 업무 건에서 SOP와 Action과 결과 BoI를 확인하는 방법을 알려줘.
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:workflows:business-event-definition-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:use-cases:event-to-action-workflow-planning
+  - type: boi
+    ref: boi:public:boi-wiki-manual:actions:multi-action-connector-guide
+implementation_refs:
   - type: repo
     ref: boi_api/app/templates/event_occurrences.html
   - type: repo

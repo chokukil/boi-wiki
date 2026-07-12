@@ -5,7 +5,7 @@ type: boi/manual
 title: 업무 관계와 동적 결과 활용 가이드
 description: 사람·팀·Task·SOP·Event·Action의 검증된 관계를 질문하고 결과에 맞는 표, Timeline, Mermaid와 관계 탐색 화면을 사용하는 방법
 tags: [BoIWiki, BoIAgent, Ontology, WorkRelation, DynamicResult, Evidence]
-timestamp: 2026-07-12T23:40:00+09:00
+timestamp: 2026-07-13T00:10:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
 visibility: public
 classification: internal
@@ -69,6 +69,8 @@ flowchart LR
 
 관계마다 정본에 명시됐는지, 구조에서 추출됐는지, 사람이 검증했는지와 근거 revision을 함께 저장한다. AI가 추론한 관계는 검토 전에는 권한, 자동 배정, 완료 판단에 쓰지 않는다.
 
+`반복 수행`은 단순 배정 횟수가 아니다. 최근 180일 안에 서로 다른 업무 실행에서 검증 완료가 세 번 이상 확인될 때만 `WorkRoleProfile`로 계산한다. 오래된 완료, 같은 실행의 중복 기록과 한 번의 배정은 반복 수행에 포함하지 않는다.
+
 # 결과 화면은 질문에 따라 달라진다
 
 - 항목이 적고 비교가 중요하면 **관계표**를 사용한다.
@@ -80,15 +82,25 @@ flowchart LR
 
 관계 탐색은 처음에 한 단계 이웃만 연다. 항목을 선택할 때 필요한 주변 관계만 추가하므로 큰 Wiki 전체를 한 번에 브라우저로 보내지 않는다.
 
-![역할과 현재 업무를 구분하고 검증된 관계를 탐색하는 BoI Agent 화면](../_media/browser/current-guide/20260712-boi-agent-ontology-1440x1000.png)
+동적 결과는 저장만 하는 JSON이 아니다. BoI Agent가 검증된 surface를 다시 읽어 관계표, 시간 흐름, 흐름 그림 또는 관계 탐색 DOM을 만든다. Task 수행 화면도 같은 계약의 `업무 기록 입력`과 `근거 선택`을 사용한다. surface가 손상됐거나 client가 지원하지 않으면 같은 의미의 기존 typed 화면으로 복구한다.
+
+![공식 역할과 검증된 수행 관계를 표로 구분한 BoI Agent 화면](../_media/browser/current-guide/20260713-boi-agent-role-table-1440x1000.png)
+
+관계를 더 넓게 살펴볼 때만 탐색 화면을 연다. 처음부터 전체 Wiki를 그리지 않고 현재 대상을 중심으로 한 단계씩 확장한다.
+
+![검증된 업무 관계를 한 단계씩 확장하는 BoI Agent 관계 탐색 화면](../_media/browser/current-guide/20260713-boi-agent-ontology-explorer-1440x1000.png)
 
 모바일에서는 대화와 결과를 탭으로 나누고, 같은 관계와 근거를 유지한다.
 
-![모바일에서 관계 결과를 확인하는 BoI Agent 화면](../_media/browser/current-guide/20260712-boi-agent-ontology-390x844.png)
+![모바일에서 역할 관계표를 확인하는 BoI Agent 화면](../_media/browser/current-guide/20260713-boi-agent-role-table-390x844.png)
+
+![모바일에서 필요한 관계만 확장하는 BoI Agent 관계 탐색 화면](../_media/browser/current-guide/20260713-boi-agent-ontology-explorer-390x844.png)
 
 # 근거를 확인하는 방법
 
 일반 사용자는 이동 가능한 BoI, Task, Event, Action과 자료 근거만 본다. 권한이 없으면 명시적으로 제한 상태를 표시한다. 코드 파일은 업무 근거가 아니며 관리자에게만 접힌 `기술 검증 근거`와 읽기 전용 화면으로 제공한다.
+
+관계 결과의 citation은 실제 문서·업무 화면으로 이동한다. 같은 source·relation·target이 여러 추출기에서 발견돼도 화면에서는 provenance가 더 강한 하나의 관계로 합쳐 보여준다. 관계 근거가 없어 빈 탐색 화면이 될 추천은 만들지 않고, 검토된 문서 답변으로 안전하게 전환하거나 추천 자체를 생략한다.
 
 표시된 관계가 한 번의 배정인지, 공식 역할인지, 반복 수행인지 확인한다. 한 번의 배정은 전문성의 증거가 아니다.
 

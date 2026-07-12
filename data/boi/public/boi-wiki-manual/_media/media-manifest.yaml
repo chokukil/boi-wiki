@@ -527,3 +527,75 @@ media:
     scenario: "role-and-current-work-ontology-mobile"
     source_revision: 71948d031d5490688542c3a20b881ccb895fdb40
     selector: "[data-a2ui-component='OntologyExplorer']"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260713-boi-agent-role-table-1440x1000.png
+    sha256: 4a27b85eae4d395f130b77834f8900511502644537a7cc0cc61c155532b59050
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent?session={work_session_id}&artifact={artifact_id}"
+    captured_at: "2026-07-13T00:19:02+09:00"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    created_by: codex
+    route_template: "/agent?session={work_session_id}&artifact={artifact_id}"
+    scenario: "role-and-current-work-table"
+    source_revision: df3a41ea80a70f947fe891c8f6a0065f03cad79b
+    selector: "[data-a2ui-component='DataTable']"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260713-boi-agent-role-table-390x844.png
+    sha256: 5dfcd82379bd490224e33d17f95c4c049fefc70c2104b3dc9dcc4125985b2de0
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent?session={work_session_id}&artifact={artifact_id}"
+    captured_at: "2026-07-13T00:19:02+09:00"
+    viewport: "390x844"
+    related_doc: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    created_by: codex
+    route_template: "/agent?session={work_session_id}&artifact={artifact_id}"
+    scenario: "role-and-current-work-table-mobile"
+    source_revision: df3a41ea80a70f947fe891c8f6a0065f03cad79b
+    selector: "[data-a2ui-component='DataTable']"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260713-boi-agent-ontology-explorer-1440x1000.png
+    sha256: ccf80a1cde92108588c33f31e773fa2b9ae85d3f82404b6547bc89c15d021ae1
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent?session={work_session_id}&artifact={artifact_id}"
+    captured_at: "2026-07-13T00:19:02+09:00"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    created_by: codex
+    route_template: "/agent?session={work_session_id}&artifact={artifact_id}"
+    scenario: "ontology-explorer"
+    source_revision: df3a41ea80a70f947fe891c8f6a0065f03cad79b
+    selector: "[data-a2ui-component='OntologyExplorer']"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260713-boi-agent-ontology-explorer-390x844.png
+    sha256: 88c794220b646db55c5afc730860b9f1f9b8bd386939bf0e5069d7afd3059067
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent?session={work_session_id}&artifact={artifact_id}"
+    captured_at: "2026-07-13T00:19:02+09:00"
+    viewport: "390x844"
+    related_doc: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    created_by: codex
+    route_template: "/agent?session={work_session_id}&artifact={artifact_id}"
+    scenario: "ontology-explorer-mobile"
+    source_revision: df3a41ea80a70f947fe891c8f6a0065f03cad79b
+    selector: "[data-a2ui-component='OntologyExplorer']"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260713-task-work-record-1440x1000.png
+    sha256: aa806f61b49de018b68279ff90dc11c9b9ac4e8876f65bb819e4cbbe38aaf723
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/tasks/console?task_id={task_ref}"
+    captured_at: "2026-07-13T00:19:02+09:00"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+    created_by: codex
+    route_template: "/tasks/console?task_id={task_ref}"
+    scenario: "task-work-record-form"
+    source_revision: df3a41ea80a70f947fe891c8f6a0065f03cad79b
+    selector: "[data-a2ui-component='WorkRecordForm']"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260713-task-work-record-390x844.png
+    sha256: 75b5bd9d9382c77c3bbbfc2f0e39036cafd19facb4d621bec79face73a06193e
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/tasks/console?task_id={task_ref}"
+    captured_at: "2026-07-13T00:19:02+09:00"
+    viewport: "390x844"
+    related_doc: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+    created_by: codex
+    route_template: "/tasks/console?task_id={task_ref}"
+    scenario: "task-work-record-form-mobile"
+    source_revision: df3a41ea80a70f947fe891c8f6a0065f03cad79b
+    selector: "[data-a2ui-component='WorkRecordForm']"

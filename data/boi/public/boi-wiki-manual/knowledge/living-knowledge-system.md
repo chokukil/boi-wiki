@@ -135,7 +135,7 @@ flowchart LR
   RESULT --> REL
 ```
 
-관계 조회 결과는 다음 질문의 Context와 hybrid rerank에 재사용하지만 한 번의 배정을 전문성으로 승격하지 않는다. 반복 수행은 기간, 서로 다른 실행 수와 검증 상태를 가진 별도 read model에서 판단한다.
+관계 조회 결과는 다음 질문의 Context와 hybrid rerank에 재사용하지만 한 번의 배정을 전문성으로 승격하지 않는다. 반복 수행은 최근 180일, 서로 다른 검증 완료 실행 3건 이상과 마지막 수행 시점을 가진 `WorkRoleProfile` read model에서 판단한다.
 
 # Hybrid Retrieval
 

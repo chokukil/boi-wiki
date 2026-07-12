@@ -5,7 +5,7 @@ type: boi/manual
 title: Task·Ontology·동적 화면 검증 기준
 description: Task 수행, 업무 관계 탐색과 동적 결과 화면을 실제 업무에 사용하기 전에 확인하는 acceptance 기준
 tags: [BoIWiki, Task, Ontology, A2UI, Acceptance, Evidence]
-timestamp: 2026-07-12T21:40:00+09:00
+timestamp: 2026-07-13T00:10:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
 visibility: public
 classification: internal
@@ -16,13 +16,20 @@ author:
 acl_policy: acl:public
 status: reviewed
 source_refs:
-  - type: code
+  - type: boi
+    ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+  - type: boi
+    ref: boi:public:boi-wiki-manual:operations:operator-runbook
+implementation_refs:
+  - type: repo
     ref: tests/fixtures/task_ontology_a2ui_acceptance.yaml
-  - type: code
+  - type: repo
     ref: tests/test_task_ontology_a2ui.py
-  - type: code
+  - type: repo
     ref: scripts/check_task_ontology_a2ui_acceptance.py
-  - type: code
+  - type: repo
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
@@ -72,6 +79,14 @@ Agent 의미 평가는 단일 요청뿐 아니라 최소 6개 멀티턴을 포�
 
 GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거나 의미가 모호한 사례만 `BOI_GPT55_TEST_MODE=1`을 명시한 별도 평가 대상으로 내보낸다.
 
+# 최근 검증 결과
+
+2026-07-13 로컬 acceptance에서는 32개 시나리오 계약을 모두 읽고 Task Snapshot p95 300.24ms, 1-hop 관계 조회 p95 22.89ms를 확인했다. 이미 실행 중인 `google/gemma-4-26b-a4b-qat`와 `text-embedding-bge-m3`는 검증 전후 동일했고 load·unload 요청은 모두 0건이었다.
+
+Gemma 의미 평가는 단일·멀티턴 17개 중 16개가 한 번의 전체 실행에서 통과해 94.1%를 기록했다. routing, operation, safety, 의도 보존, 업무 맥락 활용, source 관련성과 무단 전환 방지는 모두 100%였다. 전체 실행에서 한 Mermaid 생성은 결정적 관계 검증을 두 번 통과하지 못해 실패로 남겼고, 같은 시나리오의 독립 재실행에서는 실제 `mermaid_diagram` artifact까지 생성됐다. 이 결과는 성공으로 덮어쓰지 않고 로컬 모델 출력 변동성의 잔여 위험으로 관리한다.
+
+REST·MCP v2·Agent Kit parity에서는 자연어 route, canonical citation, Context evidence, deterministic search ID, WorkRun continuation과 KnowledgeCandidate ID가 모두 일치했다. 표, Timeline, Mermaid, 관계 탐색은 저장된 `boi-a2ui/v1` surface를 실제 DOM으로 렌더링했고, 데스크톱·중간 폭·모바일에서 가로 overflow와 console 오류가 없었다.
+
 # 실패를 다루는 원칙
 
 테스트가 실패하면 기준을 낮추지 않는다. 먼저 다음을 구분한다.
@@ -87,4 +102,3 @@ raw 로그는 runtime 검증 artifact이며 정본 지식이 아니다. Wiki에�
 - [Task 수행과 업무 관계 활용 가이드](/docs/boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide)
 - [BoI Wiki 운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)
 - [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)
-

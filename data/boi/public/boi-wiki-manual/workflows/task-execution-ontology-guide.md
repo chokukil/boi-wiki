@@ -44,6 +44,12 @@ Task 수행 화면은 완료 체크만 누르는 곳이 아니다. 담당자는 
 
 이 기록을 `TaskWorkRecord`라고 한다. 완료된 모습은 별도 버튼으로 완료시키지 않고, 업무 기록과 Evidence Ledger가 실제 완료 조건을 충족하는지로 판정한다.
 
+![확인한 내용, 수행 조치, 판단과 근거를 한 번에 남기는 Task 수행 화면](../_media/browser/current-guide/20260713-task-work-record-1440x1000.png)
+
+모바일에서는 같은 항목을 한 열로 배치하고, 입력 중인 업무 기록과 선택한 근거를 그대로 유지한다.
+
+![모바일 Task 수행 화면의 업무 기록과 근거 선택](../_media/browser/current-guide/20260713-task-work-record-390x844.png)
+
 ```mermaid
 flowchart LR
   INBOX["Inbox 업무"] --> SNAPSHOT["같은 Task 실행 정보"]

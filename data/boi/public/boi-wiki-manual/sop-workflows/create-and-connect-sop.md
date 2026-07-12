@@ -21,6 +21,13 @@ agent_entrypoint_prompts:
     label: 업무 흐름을 SOP와 Task로 구체화하기
     prompt: 업무 맥락을 Workflow와 Task로 나누고 완료된 모습과 확인할 자료를 정하는 방법을 알려줘.
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:workflows:business-event-definition-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
+implementation_refs:
   - type: repo
     ref: harness/sop-authoring-harness.md
 review:

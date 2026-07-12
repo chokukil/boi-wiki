@@ -12,9 +12,11 @@ const EMPLOYEE_ID = process.env.BOI_CAPTURE_EMPLOYEE_ID || "100001";
 const DOCUMENTS = [
   ["종합 가이드", "boi:public:boi-wiki-manual:guide:final-operator-guide"],
   ["BoI Agent", "boi:public:boi-wiki-manual:agent:using-boi-agent"],
+  ["업무 관계와 동적 결과", "boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results"],
   ["Work Learning", "boi:public:boi-wiki-manual:agent:work-learning-system"],
   ["Living Knowledge", "boi:public:boi-wiki-manual:knowledge:living-knowledge-system"],
   ["Inbox와 Task", "boi:public:boi-wiki-manual:inbox:inbox-and-task-guide"],
+  ["Task 수행과 업무 관계", "boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide"],
   ["업무 이벤트", "boi:public:boi-wiki-manual:workflows:business-event-definition-guide"],
   ["SOP Builder", "boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step"],
   ["자료 보관함", "boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle"],
@@ -28,7 +30,9 @@ const DOCUMENTS = [
 const MOBILE_DOCUMENTS = new Set([
   "boi:public:boi-wiki-manual:guide:final-operator-guide",
   "boi:public:boi-wiki-manual:agent:using-boi-agent",
+  "boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results",
   "boi:public:boi-wiki-manual:inbox:inbox-and-task-guide",
+  "boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide",
   "boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step",
   "boi:public:boi-wiki-manual:workflows:business-event-definition-guide",
 ]);
