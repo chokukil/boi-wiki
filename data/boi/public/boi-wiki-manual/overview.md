@@ -16,10 +16,13 @@ author:
 acl_policy: acl:public
 status: reviewed
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:guide:final-operator-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-learning-system
+implementation_refs:
   - type: repo
     ref: README.md
-  - type: manual
-    ref: boi:public:boi-wiki-manual:guide:final-operator-guide
 review:
   reviewer: harness-curator
   review_status: reviewed
@@ -76,3 +79,4 @@ flowchart LR
 - 실제 Event 처리 건을 확인한다면 [Event 카탈로그와 업무 발생 이력](/docs/boi:public:boi-wiki-manual:events:event-catalog-and-work-history)
 - 문서·사람·팀·SOP·Event·Action 관계를 탐색한다면 [Ontology 탐색과 외부 지식 Source 활용 가이드](/docs/boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters)
 - REST API로 연동한다면 [BoI Wiki API v2](/docs/boi:public:boi-wiki-manual:api:boi-wiki-api-v2)
+- 반복 실패와 업무 맥락 개선을 운영한다면 [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)

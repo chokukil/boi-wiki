@@ -221,6 +221,21 @@ Task 실행은 `TaskExecutionSnapshot`을 Inbox와 Task Console의 공통 read m
 
 Agent와 Task의 동적 표현은 A2UI `0.9.1` 호환 `boi-a2ui/v1` catalog로 컴파일한다. A2UI는 정본이나 업무 규칙이 아니며, 허용된 component와 event만 렌더링한다. 지원하지 않는 client 또는 검증 실패 시 기존 typed response renderer를 사용한다.
 
+Harness 개선도 같은 표현 계층을 사용하지만 production mutation 경계와 분리한다. WorkRun의 verifier 실패는 인과적 FailurePattern과 NegativeResult로 누적되고, ContextPlaybook은 개인·팀·model profile·freshness 조건이 맞는 항목만 선택한다. Candidate는 editable surface allowlist와 반복 상한을 통과한 뒤 shadow, held-in/out, adversarial, long-term 평가와 사람 검토를 거친다.
+
+```mermaid
+flowchart LR
+  RUN["WorkRun + HarnessVersion"] --> FAILURE["FailurePattern"]
+  FAILURE --> CANDIDATE["HarnessCandidate"]
+  CANDIDATE --> SHADOW["Server Shadow Preflight"]
+  SHADOW --> EVAL["Held-in · Held-out · Safety"]
+  EVAL --> REVIEW["Human Review"]
+  REVIEW --> VERSION["approved_not_deployed"]
+  VERSION -. "별도 수동 배포" .-> RUNTIME["Production Harness"]
+```
+
+HarnessVersion, EvaluationRun, FailurePattern, Candidate와 ContextPlaybookItem은 관리자 ACL의 운영 Ontology node다. 일반 지식 그래프와 같은 저장·질의 계약을 쓰되 공용 source, 자동 권한, 완료 판정과 전문성 근거로 사용하지 않는다.
+
 ```mermaid
 flowchart LR
   DOMAIN["검증된 Domain Result"] --> PLAN["Presentation Plan"]

@@ -37,6 +37,7 @@ flowchart LR
 # 운영자와 플랫폼 담당자
 
 - [운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)
+- [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)
 - [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)
 - [배포와 검증](/docs/boi:public:boi-wiki-manual:agent:deployment-and-verification)
 - [SSO와 권한](/docs/boi:public:boi-wiki-manual:security:sso-and-permissions)

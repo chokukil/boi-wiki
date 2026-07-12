@@ -56,7 +56,7 @@ flowchart LR
 
 # 시나리오 구성
 
-목표 acceptance matrix는 32개다. 각 항목은 fixture에 이름만 존재해서는 통과로 계산하지 않으며, 대응 handler가 실제 API·domain service·browser journey를 실행하고 assertion 결과를 남겨야 한다.
+목표 acceptance matrix는 기존 Task·Graph·A2UI·지식 순환 32개와 Harness 개선 6개를 합친 38개다. 각 항목은 fixture에 이름만 존재해서는 통과로 계산하지 않으며, 대응 handler가 실제 API·domain service·browser journey를 실행하고 assertion 결과를 남겨야 한다.
 
 | 영역 | 수 | 확인 내용 |
 |---|---:|---|
@@ -64,6 +64,7 @@ flowchart LR
 | Ontology·시각화 | 10 | 9개 GraphQueryPlan, 시간·방향·종류 필터, provenance, 증분 갱신 |
 | 동적 화면 안전성 | 6 | 허용 component, script·외부 URL·event 차단, owner scope와 fallback |
 | 지식 순환·parity | 6 | 완료 기록, 후보, 중복·모순, Web·REST·MCP와 탐색 파일 제외 |
+| Harness 개선 | 6 | 인과 실패 유형, model별 Playbook, shadow 필수, immutable 경계, 부정 결과, 운영 Ontology |
 
 Agent 의미 평가는 단일 요청뿐 아니라 최소 6개 멀티턴을 포함한다. `그 관계`, `방금 근거`, `이 흐름`을 이어받되 사용자가 새 주제를 명시하면 이전 대상을 강제하지 않아야 한다.
 
@@ -82,16 +83,16 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 
 # 현재 검증 상태
 
-2026-07-13 검증에서는 fixture의 32개 항목 각각이 고유한 pytest handler를 실제 실행했고 모두 통과했다. 별도 브라우저 실행기는 `1440×1000`, `1180×850`, `390×844`에서 Task 기록 양식, 근거 선택, 관계 탐색 canvas, fallback, overflow와 console 오류를 조작·검사했다.
+2026-07-13 기본 검증에서는 fixture의 32개 항목 각각이 실제 pytest handler를 실행해 통과했다. Harness 개선 계약을 더한 후에는 38개 handler가 모두 통과했다. 별도 브라우저 실행기는 `1440×1000`, `1180×850`, `390×844`에서 Task 기록 양식, 근거 선택, 관계 탐색 canvas, fallback, overflow와 console 오류를 조작·검사한다.
 
 | 검증 | 결과 |
 |---|---:|
-| 결정적 시나리오 | 32/32 |
+| 결정적 시나리오 | 38/38 |
 | 관련 Task·Ontology·동적 화면 회귀 | 57 passed |
 | 브라우저 viewport | 3/3 |
 | Gemma 단일·멀티턴 의미 평가 | 100% |
-| Snapshot 5회 p95 | 326.62ms |
-| 1-hop 관계 5회 p95 | 27.92ms |
+| Snapshot 5회 p95 | 439.92ms |
+| 1-hop 관계 5회 p95 | 27.36ms |
 | LM Studio load/unload | 0건 |
 
 실모델 평가는 사용자가 띄운 Gemma만 사용한다. `업무 이벤트와 SOP 관계 설명 → 방금 관계만 Mermaid` 멀티턴에서 직전 citation보다 넓은 검색 후보를 다시 해석해 되묻는 결함을 발견했고, 실제 citation 집합을 후속 표현 변환의 경계로 사용하도록 수정한 뒤 해당 시나리오가 통과했다. 실패와 수정 이력은 날짜별 Team validation 문서에 남기며, 이전의 형식 검사 결과는 역사적 draft로 유지한다.
@@ -114,3 +115,4 @@ raw 로그는 runtime 검증 artifact이며 정본 지식이 아니다. Wiki에�
 - [BoI Wiki 운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)
 - [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)
 - [Ontology 탐색과 외부 지식 Source 활용 가이드](/docs/boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters)
+- [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)

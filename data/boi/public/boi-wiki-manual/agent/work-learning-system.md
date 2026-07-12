@@ -126,6 +126,10 @@ Harness 개선 후보는 production 계약을 직접 고치지 않는다. `Harne
 
 ACL·RBAC, 위험도, confirmation, Autopilot system binding, 완료 근거와 evaluator 합격선은 immutable boundary다. 후보가 이 경계를 낮추는 변경을 제안하면 평가 전에 차단한다. 모델별 context 길이와 표현 차이는 versioned model profile로 분리하고, 같은 HarnessDefinition의 안전 경계를 바꾸지 않는다.
 
+서버 shadow preflight는 후보 fingerprint와 fixture revision을 고정하고, 변경이 실제 실패 단계와 관련 있는지와 반복 예산이 기존 상한 안인지 확인한다. 평가 결과를 요청자가 임의로 제출하는 것만으로는 후보를 승인할 수 없다. held-in, held-out, adversarial과 장기 지표가 모두 통과해도 새 버전은 `approved_not_deployed`이며 별도 수동 배포 전까지 production은 바뀌지 않는다.
+
+실패한 Action, no-progress, blocker와 반려 후보도 `NegativeResult`로 보존한다. 일반 지식으로 검색하지 않고 같은 실패 경로를 피하는 Planner 보조와 운영 개선 분석에만 사용한다. 자세한 운영 기준은 [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)를 따른다.
+
 # Loop Engineering
 
 표준 Task loop는 `Observe → Context → Plan Delta → Act/Ask → Verify → Reflect → Continue/Stop`이다. 반복 횟수가 아니라 진전 여부가 핵심이다.
@@ -199,3 +203,4 @@ DeepAgents subagent도 같은 Context, Harness, progress delta와 stop 조건을
 - [Work Context Pack](/docs/boi:public:boi-wiki-manual:agent:work-context-pack)
 - [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)
 - [BoI Agent Guardrail과 ACL](/docs/boi:public:boi-wiki-manual:agent:agent-guardrail-and-acl)
+- [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)

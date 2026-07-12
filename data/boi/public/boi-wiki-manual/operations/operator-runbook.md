@@ -16,6 +16,13 @@ author:
 acl_policy: acl:public
 status: reviewed
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:guide:final-operator-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:operations:integration-status
+  - type: boi
+    ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
+implementation_refs:
   - type: repo
     ref: README.md
   - type: repo
@@ -222,6 +229,17 @@ curl -sS -X POST "$BOI_BASE_URL/api/v2/knowledge-graph/query" \
 | Agent draft가 unavailable | model, worker, RBAC와 Harness blocker |
 | MCP tool이 너무 많음 | 구형 `/mcp` 대신 `/mcp/v2` 연결 여부 |
 
+# Harness 개선 운영
+
+연결 상태의 관리자용 `업무 실행 품질 개선`은 반복 failure pattern, 검토할 candidate, 활성 Context Playbook과 NegativeResult 수를 보여준다. 일반 사용자의 업무 화면이나 검색 citation에는 이 운영 node를 노출하지 않는다.
+
+```bash
+curl -sS "$BOI_BASE_URL/api/v2/harness-failure-patterns" -H "Authorization: Bearer $BOI_PAT"
+curl -sS "$BOI_BASE_URL/api/v2/negative-results" -H "Authorization: Bearer $BOI_PAT"
+```
+
+Harness 후보는 반드시 `shadow → evaluate → review` 순서로 처리한다. shadow run ID와 fixture revision이 일치하지 않으면 평가가 거부된다. review 승인은 자동 배포가 아니며 생성된 버전의 상태가 `approved_not_deployed`, `production_changed=false`인지 확인한다. 세부 기준은 [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)를 따른다.
+
 # 관련 문서
 
 - [BoI Wiki 종합 가이드](/docs/boi:public:boi-wiki-manual:guide:final-operator-guide)
@@ -229,3 +247,4 @@ curl -sS -X POST "$BOI_BASE_URL/api/v2/knowledge-graph/query" \
 - [BoI Wiki MCP 등록과 사용](/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp)
 - [자료 보관함과 업무 근거](/docs/boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle)
 - [배포와 검증](/docs/boi:public:boi-wiki-manual:agent:deployment-and-verification)
+- [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)
