@@ -11696,6 +11696,7 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
     client = TestClient(boi_app_module.app)
     cases = {
         "/?employee_id=100001&view=explorer": ("library", "explorer"),
+        "/knowledge-graph?employee_id=100001": ("library", "knowledge_graph"),
         "/docs/boi:public:boi-wiki-manual:guide:final-operator-guide?employee_id=100001": ("library", "guide"),
         "/events?employee_id=100001": ("events", "event_history"),
         "/event-types?employee_id=100001": ("events", "event_catalog"),
@@ -11733,6 +11734,8 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
             assert "API" in response.text
             assert "MCP" in response.text
             assert "연결 상태" in response.text
+            assert "Langflow" in response.text
+            assert "동적 화면 진단" not in response.text
             assert 'data-subnav-id="agent_workspace"' not in response.text
             assert 'data-subnav-id="agent_builder"' not in response.text
             assert 'data-subnav-id="connections"' not in response.text
@@ -11763,6 +11766,13 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
     assert "업무 맥락" in guide.text
     assert "BoI Agent" in guide.text
 
+    graph_page = client.get("/knowledge-graph?employee_id=100001&source_ref=boi:public:sop:equipment-abnormal-response")
+    assert graph_page.status_code == 200
+    assert 'data-auto-open="true"' in graph_page.text
+    assert 'class="knowledge-graph-canvas"' in graph_page.text
+    assert "영향 범위" in graph_page.text and "이해 순서" in graph_page.text
+    assert "동적 화면 진단" not in graph_page.text
+
     agent_builder = client.get("/agents/builder?employee_id=100001", follow_redirects=False)
     assert agent_builder.status_code == 307
     assert agent_builder.headers["location"].startswith("/helpers/new")
@@ -11770,6 +11780,11 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
     assert "나만의 BoI Agent 만들기" in helper_builder.text
     assert "설정하면서 바로 시험해보세요." in helper_builder.text
     assert "/api/agents/drafts?employee_id=100001" not in helper_builder.text
+
+    sop_builder = client.get("/sops/new?employee_id=100001")
+    assert sop_builder.status_code == 200
+    assert sop_builder.text.count("data-directory-picker") >= 3
+    assert "사번을 여러 개 지정할 수 있습니다" not in sop_builder.text
 
 
 def test_app_shell_infers_same_host_tool_urls_for_external_host(boi_app_module, monkeypatch):
@@ -11830,7 +11845,7 @@ def test_app_shell_uses_configured_external_tool_urls(boi_app_module, monkeypatc
     assert response.status_code == 200
     assert advanced.status_code == 200
     assert builder.status_code == 200
-    assert "http://langflow.example:27860" not in advanced.text
+    assert 'href="http://langflow.example:27860"' in advanced.text
     assert "http://langflow.example:27860" not in builder.text
     assert "기존 자동화 흐름" in builder.text
     assert "연결 상태" in advanced.text
@@ -16324,6 +16339,7 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert inbox_canvas["type"] == "mermaid"
     assert inbox_canvas["source"].startswith("flowchart LR")
     assert inbox_canvas["actions"] == []
+    assert inbox_canvas["source"] == workflow_canvas["source"]
     inbox_page = client.get("/inbox?employee_id=100001&limit=20")
     assert inbox_page.status_code == 200
     assert "업무 수행 화면" in inbox_page.text
@@ -16331,6 +16347,8 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert "data-inbox-workflow-lazy" in inbox_page.text
     assert "data-inbox-workflow-load" in inbox_page.text
     assert inbox_page.text.count("mermaid-diagram task-console-workflow-canvas inbox-workflow-canvas") == 1
+    assert "흐름 원본 보기" not in inbox_page.text
+    assert "mermaid-source-fallback" not in inbox_page.text
 
     lazy_canvas = client.get(
         "/api/inbox/workflow-canvas",

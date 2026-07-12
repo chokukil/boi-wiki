@@ -41,6 +41,7 @@ def test_acceptance_fixture_has_decision_complete_32_scenario_matrix():
     assert {key: len(value) for key, value in groups.items()} == {"task": 10, "graph": 10, "a2ui": 6, "learning": 6}
     scenario_ids = [item["id"] for items in groups.values() for item in items]
     assert len(scenario_ids) == len(set(scenario_ids)) == 32
+    assert all(item.get("handler", "").startswith("tests/") for items in groups.values() for item in items)
     assert len(payload["multiturn"]) >= 6
     assert all(len(item["turns"]) >= 2 for item in payload["multiturn"])
     assert payload["thresholds"]["citation_integrity"] == 1.0
@@ -185,6 +186,21 @@ def test_a2ui_validator_rejects_untrusted_components_html_urls_and_events(mutati
         validate_surface(surface)
 
 
+def test_a2ui_validator_rejects_component_props_that_do_not_match_catalog_schema():
+    response = AgentTurnResponse(
+        run_id="run-props",
+        turn_id="turn-props",
+        status="completed",
+        capability_id="knowledge.search",
+        answer=AnswerBlock(summary="요약", markdown="근거 기반 답변"),
+    )
+    surface = compile_surface(response)
+    surface["components"][0]["props"]["summary"] = ["문자열이 아님"]
+
+    with pytest.raises(ValueError, match="invalid_a2ui_component_props"):
+        validate_surface(surface)
+
+
 def test_task_console_is_rendered_from_a_valid_stored_a2ui_work_form(boi_app_module):
     client = TestClient(boi_app_module.app)
     item = _create_task(boi_app_module, "task-a2ui-work-form")
@@ -210,6 +226,10 @@ def test_task_console_is_rendered_from_a_valid_stored_a2ui_work_form(boi_app_mod
     assert 'data-a2ui-component="WorkRecordForm"' in page.text
     assert 'data-a2ui-component="EvidencePicker"' in page.text
     assert 'name="observation"' in page.text and 'name="decision"' in page.text
+    assert "누가 이 업무를 맡나요?" in page.text
+    assert page.text.count("data-directory-picker") >= 3
+    assert "사번, 이름 또는 부서로 찾기" in page.text
+    assert "data-task-assignment-save" in page.text
 
 
 def test_multi_assignee_task_is_projected_to_each_inbox_and_completes_once(boi_app_module):

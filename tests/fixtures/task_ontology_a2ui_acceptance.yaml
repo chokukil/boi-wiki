@@ -8,41 +8,41 @@ thresholds:
   unauthorized_mutations: 0
 groups:
   task:
-    - {id: task_manual_progress, contract: progress_record_is_shared}
-    - {id: task_manual_blocked, contract: blocker_and_next_work_are_preserved}
-    - {id: task_manual_missing_evidence, contract: completion_requires_evidence}
-    - {id: task_manual_complete, contract: complete_requires_action_decision_and_checks}
-    - {id: task_copilot_human_decision, contract: ai_output_alone_cannot_complete}
-    - {id: task_autopilot_system_only, contract: human_work_record_is_rejected}
-    - {id: task_multi_assignee, contract: any_assignee_completes_shared_task}
-    - {id: task_reviewer_assignment, contract: reviewer_can_update_assignment}
-    - {id: task_assignment_conflict, contract: stale_revision_returns_409}
-    - {id: task_evidence_acl, contract: inaccessible_evidence_blocks_completion}
+    - {id: task_manual_progress, contract: progress_record_is_shared, handler: "tests/test_task_ontology_a2ui.py::test_task_work_record_progress_blocker_and_completion_contract"}
+    - {id: task_manual_blocked, contract: blocker_and_next_work_are_preserved, handler: "tests/test_task_ontology_a2ui.py::test_task_work_record_progress_blocker_and_completion_contract"}
+    - {id: task_manual_missing_evidence, contract: completion_requires_evidence, handler: "tests/test_task_ontology_a2ui.py::test_task_work_record_progress_blocker_and_completion_contract"}
+    - {id: task_manual_complete, contract: complete_requires_action_decision_and_checks, handler: "tests/test_task_ontology_a2ui.py::test_multi_assignee_task_is_projected_to_each_inbox_and_completes_once"}
+    - {id: task_copilot_human_decision, contract: ai_output_alone_cannot_complete, handler: "tests/test_task_ontology_a2ui.py::test_copilot_requires_human_decision_and_autopilot_rejects_human_record"}
+    - {id: task_autopilot_system_only, contract: human_work_record_is_rejected, handler: "tests/test_task_ontology_a2ui.py::test_copilot_requires_human_decision_and_autopilot_rejects_human_record"}
+    - {id: task_multi_assignee, contract: any_assignee_completes_shared_task, handler: "tests/test_task_ontology_a2ui.py::test_multi_assignee_task_is_projected_to_each_inbox_and_completes_once"}
+    - {id: task_reviewer_assignment, contract: reviewer_can_update_assignment, handler: "tests/test_task_ontology_a2ui.py::test_assignment_revision_reviewer_and_unassigned_access"}
+    - {id: task_assignment_conflict, contract: stale_revision_returns_409, handler: "tests/test_task_ontology_a2ui.py::test_assignment_revision_reviewer_and_unassigned_access"}
+    - {id: task_evidence_acl, contract: inaccessible_evidence_blocks_completion, handler: "tests/test_task_ontology_a2ui.py::test_task_work_record_progress_blocker_and_completion_contract"}
   graph:
-    - {id: graph_neighbors, query_kind: neighbors, expected_presentation: list}
-    - {id: graph_path, query_kind: path, expected_presentation: mermaid}
-    - {id: graph_workflow, query_kind: workflow, expected_presentation: mermaid}
-    - {id: graph_impact, query_kind: impact, expected_presentation: list}
-    - {id: graph_lineage, query_kind: lineage, expected_presentation: mermaid}
-    - {id: graph_responsibility, query_kind: responsibility, expected_presentation: list}
-    - {id: graph_timeline, query_kind: timeline, expected_presentation: timeline}
-    - {id: graph_compare, query_kind: compare, expected_presentation: list}
-    - {id: graph_tour, query_kind: tour, expected_presentation: list}
-    - {id: graph_acl_temporal_incremental, query_kind: neighbors, expected_presentation: list}
+    - {id: graph_neighbors, query_kind: neighbors, expected_presentation: list, handler: "tests/test_agent_v2.py::test_universal_graph_query_kinds_keep_acl_provenance_and_auto_presentation"}
+    - {id: graph_path, query_kind: path, expected_presentation: mermaid, handler: "tests/test_agent_v2.py::test_graph_path_and_temporal_filter_are_parameterized_and_deterministic"}
+    - {id: graph_workflow, query_kind: workflow, expected_presentation: mermaid, handler: "tests/test_agent_v2.py::test_universal_graph_query_kinds_keep_acl_provenance_and_auto_presentation"}
+    - {id: graph_impact, query_kind: impact, expected_presentation: list, handler: "tests/test_agent_v2.py::test_graph_query_kinds_have_distinct_semantic_contracts"}
+    - {id: graph_lineage, query_kind: lineage, expected_presentation: mermaid, handler: "tests/test_agent_v2.py::test_graph_query_kinds_have_distinct_semantic_contracts"}
+    - {id: graph_responsibility, query_kind: responsibility, expected_presentation: list, handler: "tests/test_agent_v2.py::test_responsibility_graph_does_not_expand_through_a_shared_team_to_other_people"}
+    - {id: graph_timeline, query_kind: timeline, expected_presentation: timeline, handler: "tests/test_agent_v2.py::test_graph_path_and_temporal_filter_are_parameterized_and_deterministic"}
+    - {id: graph_compare, query_kind: compare, expected_presentation: list, handler: "tests/test_agent_v2.py::test_graph_query_kinds_have_distinct_semantic_contracts"}
+    - {id: graph_tour, query_kind: tour, expected_presentation: list, handler: "tests/test_agent_v2.py::test_graph_query_kinds_have_distinct_semantic_contracts"}
+    - {id: graph_acl_temporal_incremental, query_kind: neighbors, expected_presentation: list, handler: "tests/test_task_ontology_a2ui.py::test_memory_ontology_incremental_upsert_preserves_unaffected_nodes_and_removes_tombstones"}
   a2ui:
-    - {id: a2ui_catalog_allowlist, contract: only_trusted_components}
-    - {id: a2ui_script_rejected, contract: script_and_event_handlers_are_rejected}
-    - {id: a2ui_external_url_rejected, contract: external_urls_are_rejected}
-    - {id: a2ui_event_rejected, contract: unregistered_events_are_rejected}
-    - {id: a2ui_surface_restore_acl, contract: surfaces_are_owner_scoped}
-    - {id: a2ui_typed_fallback, contract: invalid_surface_keeps_typed_response}
+    - {id: a2ui_catalog_allowlist, contract: only_trusted_components, handler: "tests/test_task_ontology_a2ui.py::test_a2ui_compiler_only_emits_trusted_catalog_components_and_keeps_fallback"}
+    - {id: a2ui_script_rejected, contract: script_and_event_handlers_are_rejected, handler: "tests/test_task_ontology_a2ui.py::test_a2ui_validator_rejects_untrusted_components_html_urls_and_events"}
+    - {id: a2ui_external_url_rejected, contract: external_urls_are_rejected, handler: "tests/test_task_ontology_a2ui.py::test_a2ui_validator_rejects_untrusted_components_html_urls_and_events"}
+    - {id: a2ui_event_rejected, contract: unregistered_events_are_rejected, handler: "tests/test_task_ontology_a2ui.py::test_a2ui_validator_rejects_untrusted_components_html_urls_and_events"}
+    - {id: a2ui_surface_restore_acl, contract: surfaces_are_owner_scoped, handler: "tests/test_task_ontology_a2ui.py::test_task_console_is_rendered_from_a_valid_stored_a2ui_work_form"}
+    - {id: a2ui_typed_fallback, contract: invalid_surface_keeps_typed_response, handler: "tests/test_task_ontology_a2ui.py::test_a2ui_compiler_only_emits_trusted_catalog_components_and_keeps_fallback"}
   learning:
-    - {id: learning_completion_candidate, contract: completion_creates_candidate}
-    - {id: learning_private_reuse, contract: accepted_private_knowledge_is_retrievable}
-    - {id: learning_duplicate_proposal, contract: duplicate_does_not_overwrite_canonical}
-    - {id: learning_contradiction_proposal, contract: contradiction_requires_review}
-    - {id: parity_web_rest_mcp, contract: interfaces_share_semantic_ids}
-    - {id: context_navigation_exclusion, contract: navigation_deprecated_smoke_seed_are_excluded}
+    - {id: learning_completion_candidate, contract: completion_creates_candidate, handler: "tests/test_agent_v2.py::test_work_run_requires_human_completion_and_reuses_the_result_as_private_knowledge"}
+    - {id: learning_private_reuse, contract: accepted_private_knowledge_is_retrievable, handler: "tests/test_agent_v2.py::test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowledge_in_new_session"}
+    - {id: learning_duplicate_proposal, contract: duplicate_does_not_overwrite_canonical, handler: "tests/test_agent_v2.py::test_living_knowledge_sources_data_artifacts_graph_and_review_boundary"}
+    - {id: learning_contradiction_proposal, contract: contradiction_requires_review, handler: "tests/test_agent_v2.py::test_living_knowledge_sources_data_artifacts_graph_and_review_boundary"}
+    - {id: parity_web_rest_mcp, contract: interfaces_share_semantic_ids, handler: "tests/test_agent_v2.py::test_identical_cross_interface_turns_reuse_the_same_semantic_route_and_evidence"}
+    - {id: context_navigation_exclusion, contract: navigation_deprecated_smoke_seed_are_excluded, handler: "tests/test_boi_api_routes.py::test_navigation_index_redirects_to_folder_and_is_not_agent_context"}
 multiturn:
   - id: followup_graph
     turns: ["업무 이벤트와 SOP 관계를 설명해줘", "그 관계만 흐름 그림으로 보여줘"]

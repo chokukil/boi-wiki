@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import time
 
 from boi_api.app.integration_health import IntegrationHealthRegistry, IntegrationTarget
@@ -132,6 +133,15 @@ def test_json_contract_probe_rejects_an_incompatible_mcp_surface(monkeypatch):
 
 
 def test_kafka_probe_requires_expected_topic_metadata(monkeypatch):
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("boi_api.app.integration_health.socket.create_connection", lambda *_args, **_kwargs: Connection())
+
     class FakeAdmin:
         def __init__(self, **kwargs):
             assert kwargs["bootstrap_servers"] == "kafka.example:9092"
@@ -163,6 +173,15 @@ def test_kafka_probe_requires_expected_topic_metadata(monkeypatch):
 
 
 def test_kafka_probe_rejects_open_port_without_expected_topic(monkeypatch):
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("boi_api.app.integration_health.socket.create_connection", lambda *_args, **_kwargs: Connection())
+
     class FakeAdmin:
         def __init__(self, **_kwargs):
             pass
@@ -190,3 +209,23 @@ def test_kafka_probe_rejects_open_port_without_expected_topic(monkeypatch):
     assert available is False
     assert error == "missing Kafka topic metadata"
     assert metadata["missing_topics"] == ["boi.events"]
+
+
+def test_kafka_probe_stops_before_aiokafka_when_tcp_preflight_fails(monkeypatch):
+    monkeypatch.setattr(
+        "boi_api.app.integration_health.socket.create_connection",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(socket.gaierror(-3, "temporary failure")),
+    )
+
+    class UnexpectedAdmin:
+        def __init__(self, **_kwargs):
+            raise AssertionError("aiokafka must not start after a DNS preflight failure")
+
+    monkeypatch.setattr("aiokafka.admin.AIOKafkaAdminClient", UnexpectedAdmin)
+    target = IntegrationTarget("event_broker", "Event Broker", "docker-only-kafka:9092", probe="kafka")
+
+    available, error, metadata = IntegrationHealthRegistry._probe(target)
+
+    assert available is False
+    assert error == "gaierror"
+    assert metadata == {}

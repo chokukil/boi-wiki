@@ -4,6 +4,8 @@ import asyncio
 import json
 import re
 import shutil
+import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterator
@@ -35,12 +37,17 @@ from boi_api.app.v2.models import (
     DeepJobRequest,
     GraphQueryDraft,
     GraphQueryPlan,
+    HarnessCandidateCreateRequest,
+    HarnessCandidateEvaluateRequest,
+    HarnessCheck,
+    HarnessResult,
     HelperActivateRequest,
     HelperDraftCreateRequest,
     HelperDraftPatchRequest,
     HelperPreviewTurnRequest,
     KnowledgeCandidatePromoteRequest,
     KnowledgeProposalApplyRequest,
+    KnowledgeSourceCreateRequest,
     LegacyHelperImportRequest,
     LoopDelta,
     NoteFromTurnRequest,
@@ -60,6 +67,7 @@ from boi_api.app.v2.models import (
     WorkOperation,
     WorkRoutineCreateRequest,
     WorkRoutineTriggerRequest,
+    WorkContextPack,
 )
 from boi_api.app.v2.policy import TaskPolicy
 from boi_api.app.v2.repository import KnowledgeRecord, KnowledgeRepository
@@ -84,6 +92,7 @@ def test_postgres_store_registers_every_helper_builder_collection():
     assert PostgresAgentV2Store.COLLECTION_TABLES["starter_suggestion_sets"] == "agent_starter_suggestion_sets"
     assert PostgresAgentV2Store.COLLECTION_TABLES["user_work_profiles"] == "agent_user_work_profiles"
     assert PostgresAgentV2Store.COLLECTION_TABLES["a2ui_surfaces"] == "agent_a2ui_surfaces"
+    assert PostgresAgentV2Store.COLLECTION_TABLES["knowledge_source_jobs"] == "knowledge_source_jobs"
 
 
 def test_response_budget_preserves_minimal_intent_citation_and_truthful_grounding(v2_service: AgentV2Service):
@@ -3122,6 +3131,12 @@ def test_search_is_acl_aware_excludes_drafts_and_stays_compact(v2_service: Agent
     )
     returned_citation_ids = {item.citation_id for item in response.citations}
     assert rendered_citation_ids == returned_citation_ids
+    assert response.used_source_refs == list(
+        dict.fromkeys(item.source_ref for item in response.citations if item.source_ref)
+    )
+    source_set = v2_service.get_source_set(principal, response.work_session_id)
+    used = [item["source_ref"] for item in source_set["groups"]["used"]]
+    assert used == response.used_source_refs
 
 
 def test_markdown_budget_truncation_never_leaves_a_partial_link_or_code_fence():
@@ -4742,6 +4757,207 @@ def test_universal_graph_query_kinds_keep_acl_provenance_and_auto_presentation(
     assert all("boi:private:100002" not in str(node.get("node_id")) for node in result["nodes"])
 
 
+def test_graph_query_kinds_have_distinct_semantic_contracts(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.knowledge.compile_graph(principal)
+    focal = "boi:public:sop:manual"
+
+    workflow = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(focal_entities=[focal], query_kind="workflow", depth=3),
+    )
+    assert {edge["relation"] for edge in workflow["edges"]} <= {
+        "has_task", "part_of_workflow", "uses_sop", "uses_event", "uses_action",
+        "uses_skill", "requires_evidence", "produces", "results_in", "triggered_by",
+        "next_task", "precedes",
+    }
+
+    impact = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(focal_entities=[focal], query_kind="impact", depth=3),
+    )
+    assert impact["downstream_refs"] == sorted(impact["downstream_refs"])
+    assert all(impact["depth_by_ref"].get(ref, 0) > 0 for ref in impact["downstream_refs"])
+
+    lineage = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(focal_entities=[focal], query_kind="lineage", direction="both", depth=3),
+    )
+    assert {edge["relation"] for edge in lineage["edges"]} <= {
+        "evidence", "requires_evidence", "derived_from", "produces", "results_in",
+        "generated_from", "completed_by", "performed_by", "supersedes", "links_to",
+    }
+    assert lineage["lineage_refs"] == sorted(lineage["lineage_refs"])
+
+    compared = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=[focal, "boi:public:guide"],
+            query_kind="compare",
+            depth=1,
+        ),
+    )
+    assert set(compared["groups"]) == {focal, "boi:public:guide"}
+    assert set(compared["comparison"]) == {
+        "common_relations", "common_node_refs", "unique_relations", "unique_node_refs",
+    }
+
+    tour = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(focal_entities=[focal], query_kind="tour", depth=3),
+    )
+    assert [item["order"] for item in tour["tour_steps"]] == list(range(1, len(tour["tour_steps"]) + 1))
+
+
+def test_graphify_adapter_imports_provenance_graph_without_changing_canonical_files(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    staging = v2_service.settings.runtime_root / "knowledge-adapters" / "graphify-test"
+    staging.mkdir(parents=True, exist_ok=True)
+    (staging / "graph.json").write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {"id": "api", "type": "service", "name": "BoI API", "path": "boi_api/app/main.py"},
+                    {"id": "store", "type": "class", "name": "Agent Store", "path": "boi_api/app/v2/store.py"},
+                ],
+                "edges": [
+                    {"source": "api", "target": "store", "relation": "depends_on", "provenance": "extracted"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    canonical = v2_service.settings.content_root / "public" / "guide.md"
+    before = canonical.read_text(encoding="utf-8")
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(
+            name="Graphify test export",
+            source_kind="graphify",
+            location=str(staging),
+        ),
+    )
+
+    result = v2_service.knowledge.sync_source(admin, source["source_id"])
+    job = result["job"]
+    deadline = time.monotonic() + 3
+    while job["status"] not in {"completed", "failed", "cancelled"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        job = v2_service.knowledge.source_job(admin, job["job_id"])
+
+    assert job["status"] == "completed"
+    assert job["manifest"]["validation_report"] == {
+        "valid": True,
+        "node_count": 2,
+        "edge_count": 1,
+        "canonical_changed": False,
+    }
+    graph = v2_service.store.ontology_neighbors(
+        job["manifest"]["node_ids"][:1],
+        depth=1,
+        limit=10,
+        employee_id=principal.employee_id,
+        team_ids=principal.teams,
+        include_all=True,
+    )
+    assert graph["edges"][0]["payload"]["provenance"] == "extracted"
+    assert canonical.read_text(encoding="utf-8") == before
+    assert v2_service.knowledge.source_job(admin, job["job_id"])["status"] == "completed"
+
+
+def test_openkb_adapter_creates_private_review_candidates_without_writing_okf(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    staging = v2_service.settings.runtime_root / "knowledge-adapters" / "openkb-test"
+    staging.mkdir(parents=True, exist_ok=True)
+    (staging / "manifest.json").write_text(
+        json.dumps(
+            {
+                "pages": [
+                    {
+                        "id": "alarm-check",
+                        "title": "Alarm 확인 순서 후보",
+                        "summary": "Trend와 Raw Data의 시간 범위를 먼저 맞춥니다.",
+                        "deterministic": False,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(
+            name="OpenKB test manifest",
+            source_kind="openkb",
+            location=str(staging),
+        ),
+    )
+
+    result = v2_service.knowledge.sync_source(admin, source["source_id"])
+    job = result["job"]
+    deadline = time.monotonic() + 3
+    while job["status"] not in {"completed", "failed", "cancelled"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        job = v2_service.knowledge.source_job(admin, job["job_id"])
+    manifest = job["manifest"]
+    candidate = v2_service.store.get("knowledge_candidates", manifest["candidate_ids"][0])
+
+    assert job["status"] == "completed"
+    assert manifest["validation_report"]["canonical_changed"] is False
+    assert manifest["validation_report"]["review_required"] is True
+    assert candidate["visibility"] == "private"
+    assert candidate["status"] == "proposed"
+    assert candidate["provenance"] == "inferred"
+
+
+def test_knowledge_source_job_is_async_and_can_be_cancelled(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    staging = v2_service.settings.runtime_root / "knowledge-adapters" / "cancel-test"
+    staging.mkdir(parents=True, exist_ok=True)
+    (staging / "graph.json").write_text('{"nodes":[],"edges":[]}', encoding="utf-8")
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(name="Cancelable adapter", source_kind="graphify", location=str(staging)),
+    )
+    entered = threading.Event()
+
+    def slow_import(_principal, _source, *, job_id, started, timeout_seconds):
+        entered.set()
+        while True:
+            v2_service.knowledge._assert_adapter_job_active(job_id, started, timeout_seconds)
+            time.sleep(0.01)
+
+    monkeypatch.setattr(v2_service.knowledge, "_import_graphify", slow_import)
+    started = time.perf_counter()
+    queued = v2_service.knowledge.sync_source(admin, source["source_id"])["job"]
+
+    assert time.perf_counter() - started < 0.2
+    assert queued["status"] in {"queued", "running"}
+    assert entered.wait(1)
+    v2_service.knowledge.cancel_source_job(admin, queued["job_id"])
+    deadline = time.monotonic() + 2
+    job = v2_service.knowledge.source_job(admin, queued["job_id"])
+    while job["status"] != "cancelled" and time.monotonic() < deadline:
+        time.sleep(0.01)
+        job = v2_service.knowledge.source_job(admin, queued["job_id"])
+
+    assert job["status"] == "cancelled"
+
+
 def test_responsibility_graph_does_not_expand_through_a_shared_team_to_other_people(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -4813,6 +5029,59 @@ def test_graph_path_and_temporal_filter_are_parameterized_and_deterministic(
     assert timeline["presentation"] == "timeline"
 
 
+def test_graph_explorer_node_and_filters_are_acl_checked_and_parameterized(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.knowledge.compile_graph(principal)
+    base = v2_service.knowledge.explore(
+        principal,
+        view="neighbors",
+        source_ref="boi:public:sop:manual",
+        depth=2,
+        limit=80,
+    )
+    assert base["nodes"] and base["edges"]
+    relation = str(base["edges"][0]["relation"])
+    provenance = str((base["edges"][0].get("payload") or {}).get("provenance") or "")
+    filtered = v2_service.knowledge.explore(
+        principal,
+        view="neighbors",
+        source_ref="boi:public:sop:manual",
+        depth=4,
+        limit=80,
+        relation_kinds=[relation],
+        provenance=[provenance],
+    )
+    assert filtered["edges"]
+    assert {item["relation"] for item in filtered["edges"]} == {relation}
+    assert {
+        str((item.get("payload") or {}).get("provenance") or "")
+        for item in filtered["edges"]
+    } == {provenance}
+    node = v2_service.knowledge.node(principal, "boi:public:sop:manual")
+    assert node["node"]["node_id"] == "boi:public:sop:manual"
+    assert node["relation_count"] == len(node["edges"])
+
+
+def test_graph_node_api_returns_the_same_acl_visible_node(v2_service: AgentV2Service):
+    app = FastAPI()
+    app.include_router(build_agent_v2_router(v2_service))
+    v2_service.knowledge.compile_graph(
+        Principal(
+            employee_id="100001",
+            display_name="Test User",
+            teams=["aix-tf"],
+            roles=["boi.viewer"],
+            auth_source="test",
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/api/v2/knowledge-graph/nodes/boi:public:sop:manual")
+    assert response.status_code == 200
+    assert response.json()["node"]["node_id"] == "boi:public:sop:manual"
+
+
 def test_harness_never_reports_full_acceptance_when_dependencies_are_missing(v2_service: AgentV2Service, principal: Principal):
     result = v2_service.harness_acceptance(principal)
     assert result["core_accepted"] is True
@@ -4820,6 +5089,147 @@ def test_harness_never_reports_full_acceptance_when_dependencies_are_missing(v2_
     assert result["full_checks"]["postgres_pgvector_ready"] is False
     assert result["full_checks"]["real_embedding_ready"] is False
     assert result["full_checks"]["deep_worker_ready"] is False
+
+
+def test_harness_candidate_cannot_change_immutable_safety_boundaries(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    failure_id = "hfailure-immutable"
+    v2_service.store.put(
+        "harness_failure_records",
+        failure_id,
+        {
+            "failure_record_id": failure_id,
+            "employee_id": principal.employee_id,
+            "harness_id": "context.work",
+            "status": "open",
+        },
+    )
+
+    with pytest.raises(Exception) as caught:
+        v2_service.learning.create_harness_candidate(
+            principal,
+            HarnessCandidateCreateRequest(
+                harness_id="context.work",
+                failure_record_ids=[failure_id],
+                changes={"acl": {"allow_all": True}},
+                rationale="반복 실패를 해결하려는 후보지만 권한 경계는 바꿀 수 없습니다.",
+            ),
+        )
+
+    assert getattr(caught.value, "status_code", None) == 400
+    assert "acl" in caught.value.detail["immutable"]
+
+
+def test_harness_candidate_requires_held_out_and_human_review_before_any_production_change(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    failure_id = "hfailure-retrieval"
+    v2_service.store.put(
+        "harness_failure_records",
+        failure_id,
+        {
+            "failure_record_id": failure_id,
+            "employee_id": principal.employee_id,
+            "harness_id": "context.work",
+            "status": "open",
+        },
+    )
+    candidate = v2_service.learning.create_harness_candidate(
+        principal,
+        HarnessCandidateCreateRequest(
+            harness_id="context.work",
+            failure_record_ids=[failure_id],
+            model_profile="gemma-local",
+            changes={"retrieval_policy": {"authority_weight": 1.2}},
+            rationale="권위 있는 업무 근거가 반복적으로 누락되는 실패를 줄이기 위한 제한된 후보입니다.",
+        ),
+    )
+
+    rejected = v2_service.learning.evaluate_harness_candidate(
+        principal,
+        candidate["candidate_id"],
+        HarnessCandidateEvaluateRequest(
+            held_in={"passed": True},
+            held_out={"passed": False, "regressions": 1},
+            adversarial={"passed": True, "unauthorized_mutations": 0},
+            fixture_revision="fixture-held-out-v1",
+        ),
+    )
+    assert rejected["candidate"]["status"] == "rejected"
+    assert rejected["candidate"]["production_changed"] is False
+
+    candidate = v2_service.learning.create_harness_candidate(
+        principal,
+        HarnessCandidateCreateRequest(
+            harness_id="context.work",
+            failure_record_ids=[failure_id],
+            model_profile="gemma-local",
+            changes={"retrieval_policy": {"authority_weight": 1.1}},
+            rationale="같은 실패군을 대상으로 held-out 회귀 없이 개선되는지 다시 검증하는 후보입니다.",
+        ),
+    )
+    qualified = v2_service.learning.evaluate_harness_candidate(
+        principal,
+        candidate["candidate_id"],
+        HarnessCandidateEvaluateRequest(
+            held_in={"passed": True},
+            held_out={"passed": True, "regressions": 0},
+            adversarial={"passed": True, "unauthorized_mutations": 0},
+            long_term={"status": "pending"},
+            fixture_revision="fixture-held-out-v2",
+        ),
+    )
+    assert qualified["candidate"]["status"] == "review_required"
+    assert qualified["candidate"]["production_changed"] is False
+
+
+def test_blocked_harness_creates_causal_failure_and_negative_result(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    context = WorkContextPack(
+        context_id="ctx-causal-failure",
+        employee_id=principal.employee_id,
+        capability_id="knowledge.search",
+        goal="현재 문서의 근거를 확인한다",
+    )
+    run = {
+        "work_run_id": "work-run-causal-failure",
+        "artifact_refs": [],
+    }
+    result = HarnessResult(
+        harness_id="context.work",
+        version="1.1",
+        status="blocked",
+        checks=[
+            HarnessCheck(
+                check_id="context.evidence",
+                label="사용할 근거",
+                status="blocked",
+                message="검증된 근거가 없습니다.",
+            )
+        ],
+        blockers=["검증된 근거가 없습니다."],
+    )
+
+    failure_ids = v2_service.learning._record_harness_failures(
+        principal=principal,
+        work_run=run,
+        context=context,
+        results=[result],
+        phase="preflight",
+    )
+
+    assert len(failure_ids) == 1
+    failure = v2_service.store.get("harness_failure_records", failure_ids[0])
+    assert failure["terminal_verifier_cause"] == "검증된 근거가 없습니다."
+    assert failure["causal_agent_stage"] == "context.evidence"
+    assert failure["model_profile"]
+    negatives = v2_service.store.list("negative_results", limit=10)
+    assert any(item["failure_record_id"] == failure_ids[0] for item in negatives)
 
 
 def test_mcp_v2_exposes_exactly_ten_progressive_tools(monkeypatch: pytest.MonkeyPatch):

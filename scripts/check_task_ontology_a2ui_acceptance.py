@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import statistics
 import time
 from pathlib import Path
@@ -23,6 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=15.0)
+    parser.add_argument("--skip-runtime", action="store_true")
+    parser.add_argument("--skip-deterministic", action="store_true")
+    parser.add_argument("--deterministic-timeout", type=float, default=180.0)
     return parser.parse_args()
 
 
@@ -49,6 +53,53 @@ def residency(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def execute_handlers(fixture: dict[str, Any], timeout: float) -> tuple[list[dict[str, Any]], list[str]]:
+    scenarios = [item for items in (fixture.get("groups") or {}).values() for item in items]
+    handlers = sorted({str(item.get("handler") or "") for item in scenarios if item.get("handler")})
+    results_by_handler: dict[str, dict[str, Any]] = {}
+    failures: list[str] = []
+    for handler in handlers:
+        started = time.monotonic()
+        try:
+            completed = subprocess.run(
+                ["pytest", "-s", "-q", handler],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
+            passed = completed.returncode == 0
+            output = (completed.stdout + "\n" + completed.stderr).strip()[-4000:]
+        except subprocess.TimeoutExpired as exc:
+            passed = False
+            output = f"timeout after {timeout}s: {(exc.stdout or '')} {(exc.stderr or '')}"[-4000:]
+        results_by_handler[handler] = {
+            "handler": handler,
+            "passed": passed,
+            "duration_ms": round((time.monotonic() - started) * 1000, 2),
+            "output": output,
+        }
+    scenario_results: list[dict[str, Any]] = []
+    for scenario in scenarios:
+        handler = str(scenario.get("handler") or "")
+        handler_result = results_by_handler.get(handler)
+        passed = bool(handler_result and handler_result["passed"])
+        if not handler:
+            failures.append(f"{scenario.get('id')}: executable handler is missing")
+        elif not passed:
+            failures.append(f"{scenario.get('id')}: handler failed: {handler}")
+        scenario_results.append(
+            {
+                "scenario_id": scenario.get("id"),
+                "handler": handler,
+                "passed": passed,
+                "duration_ms": handler_result.get("duration_ms", 0) if handler_result else 0,
+            }
+        )
+    return scenario_results, failures
+
+
 def main() -> int:
     args = parse_args()
     fixture = yaml.safe_load(args.fixture.read_text(encoding="utf-8")) or {}
@@ -56,70 +107,86 @@ def main() -> int:
     base = args.base_url.rstrip("/")
     params = {"employee_id": args.employee_id}
     failures: list[str] = []
-    with httpx.Client(timeout=args.timeout) as client:
-        before_response = client.get(f"{base}/api/v2/system/readiness", params=params)
-        before_response.raise_for_status()
-        before = before_response.json()
+    scenario_results: list[dict[str, Any]] = []
+    if not args.skip_deterministic:
+        scenario_results, handler_failures = execute_handlers(fixture, args.deterministic_timeout)
+        failures.extend(handler_failures)
 
-        inbox = client.get(f"{base}/api/inbox", params={**params, "limit": 20})
-        inbox.raise_for_status()
-        items = [item for item in inbox.json().get("items") or [] if item.get("task_ref")]
-        snapshot_latencies: list[float] = []
-        snapshot_status = "not_available"
-        if items:
-            task_ref = str(items[0]["task_ref"])
+    snapshot_latencies: list[float] = []
+    graph_latencies: list[float] = []
+    snapshot_status = "skipped"
+    before_residency: dict[str, Any] = {}
+    after_residency: dict[str, Any] = {}
+    if not args.skip_runtime:
+        with httpx.Client(timeout=args.timeout) as client:
+            before_response = client.get(f"{base}/api/v2/system/readiness", params=params)
+            before_response.raise_for_status()
+            before = before_response.json()
+
+            inbox = client.get(f"{base}/api/inbox", params={**params, "limit": 20})
+            inbox.raise_for_status()
+            items = [item for item in inbox.json().get("items") or [] if item.get("task_ref")]
+            snapshot_status = "not_available"
+            if items:
+                task_ref = str(items[0]["task_ref"])
+                for _ in range(5):
+                    response, latency = timed(
+                        client,
+                        "GET",
+                        f"{base}/api/tasks/{task_ref}/execution-snapshot",
+                        params=params,
+                    )
+                    response.raise_for_status()
+                    snapshot_latencies.append(latency)
+                snapshot_status = "ready"
+
+            graph_payload = {
+                "focal_entities": ["boi:public:sop:equipment-abnormal-response"],
+                "query_kind": "neighbors",
+                "depth": 1,
+                "limit": 80,
+                "presentation": "auto",
+            }
             for _ in range(5):
                 response, latency = timed(
                     client,
-                    "GET",
-                    f"{base}/api/tasks/{task_ref}/execution-snapshot",
+                    "POST",
+                    f"{base}/api/v2/knowledge-graph/query",
                     params=params,
+                    json=graph_payload,
                 )
                 response.raise_for_status()
-                snapshot_latencies.append(latency)
-            snapshot_status = "ready"
+                graph_latencies.append(latency)
 
-        graph_latencies: list[float] = []
-        graph_payload = {
-            "focal_entities": ["boi:public:sop:equipment-abnormal-response"],
-            "query_kind": "neighbors",
-            "depth": 1,
-            "limit": 80,
-            "presentation": "auto",
-        }
-        for _ in range(5):
-            response, latency = timed(
-                client,
-                "POST",
-                f"{base}/api/v2/knowledge-graph/query",
-                params=params,
-                json=graph_payload,
-            )
-            response.raise_for_status()
-            graph_latencies.append(latency)
-
-        after_response = client.get(f"{base}/api/v2/system/readiness", params=params)
-        after_response.raise_for_status()
-        after = after_response.json()
+            after_response = client.get(f"{base}/api/v2/system/readiness", params=params)
+            after_response.raise_for_status()
+            after = after_response.json()
 
     snapshot_p95 = percentile(snapshot_latencies, 0.95)
     graph_p95 = percentile(graph_latencies, 0.95)
-    before_residency = residency(before)
-    after_residency = residency(after)
+    if not args.skip_runtime:
+        before_residency = residency(before)
+        after_residency = residency(after)
     if scenario_count != 32:
         failures.append(f"acceptance scenario count must be 32, got {scenario_count}")
     if snapshot_latencies and snapshot_p95 > 500:
         failures.append(f"warm Task snapshot p95 must be <=500ms, got {snapshot_p95}ms")
-    if graph_p95 > 200:
+    if graph_latencies and graph_p95 > 200:
         failures.append(f"1-hop graph p95 must be <=200ms, got {graph_p95}ms")
-    if after_residency["load_requests"] != before_residency["load_requests"]:
+    if before_residency and after_residency["load_requests"] != before_residency["load_requests"]:
         failures.append("LM Studio load requests changed during acceptance navigation")
-    if after_residency["unload_requests"] != before_residency["unload_requests"]:
+    if before_residency and after_residency["unload_requests"] != before_residency["unload_requests"]:
         failures.append("LM Studio unload requests changed during acceptance navigation")
 
     report = {
         "ok": not failures,
         "scenario_count": scenario_count,
+        "deterministic": {
+            "executed": not args.skip_deterministic,
+            "passed": sum(1 for item in scenario_results if item["passed"]),
+            "total": len(scenario_results),
+            "scenarios": scenario_results,
+        },
         "task_snapshot": {
             "status": snapshot_status,
             "samples": len(snapshot_latencies),
@@ -128,7 +195,7 @@ def main() -> int:
         },
         "graph_1hop": {
             "samples": len(graph_latencies),
-            "p50_ms": round(statistics.median(graph_latencies), 2),
+            "p50_ms": round(statistics.median(graph_latencies), 2) if graph_latencies else 0,
             "p95_ms": graph_p95,
         },
         "model_residency": {"before": before_residency, "after": after_residency},
