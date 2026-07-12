@@ -487,6 +487,8 @@ class QuickAgentRuntime:
             if not retrieval_query:
                 retrieval_query = resolved_goal
             original_question = str(state.get("question") or "").strip()
+            if original_question and original_question not in resolved_goal:
+                resolved_goal = f"{resolved_goal}\n사용자 요청: {original_question}".strip()
             if re.search(r"[가-힣]", original_question) and not re.search(r"[가-힣]", resolved_goal):
                 resolved_goal = f"{original_question}\n{resolved_goal}".strip()
             if re.search(r"[가-힣]", original_question) and not re.search(r"[가-힣]", retrieval_query):
@@ -497,7 +499,7 @@ class QuickAgentRuntime:
             work_view = str(planned.get("work_view") or ("current" if capability_id == "work.inbox" else "none"))
             if work_view not in {"none", "current", "responsibility", "combined"}:
                 work_view = "none"
-            if work_view == "current" and capability_id == "work.inbox" and operation in {"understand", "observe"}:
+            if work_view in {"current", "responsibility", "combined"} or capability_id == "work.inbox":
                 review_schema = {
                     "type": "object",
                     "properties": {
@@ -532,7 +534,18 @@ class QuickAgentRuntime:
                         work_view = "combined" if reviewed_view == "current" and not explicit_current_only else reviewed_view
                 except Exception:
                     pass
+            if work_view == "current":
+                capability_id = "work.inbox"
+                definition = self.registry.get(capability_id)
+                asset_kind = "runtime"
+                if operation not in {"understand", "observe"}:
+                    operation = "observe"
+            elif work_view in {"responsibility", "combined"}:
+                capability_id = "knowledge.search"
+                definition = self.registry.get(capability_id)
             raw_graph = planned.get("graph_query_draft") if isinstance(planned.get("graph_query_draft"), dict) else None
+            if work_view == "current":
+                raw_graph = None
             graph_query_draft = None
             if raw_graph and bool(raw_graph.get("enabled")):
                 query_kind = str(raw_graph.get("query_kind") or "neighbors")

@@ -51,6 +51,32 @@ def test_boi_wiki_mcp_health_v2(mcp_module):
     assert body["mcp_auth"]["required"] is True
 
 
+def test_mcp_v2_boi_agent_preserves_rest_graph_and_surface_identifiers(monkeypatch):
+    sys.modules.pop("boi_wiki_mcp.app.v2", None)
+    module = importlib.import_module("boi_wiki_mcp.app.v2")
+    expected = {
+        "run_id": "run-parity",
+        "work_session_id": "ws-parity",
+        "work_run_id": "workrun-parity",
+        "graph_result_ref": "artifact-graph-parity",
+        "a2ui_surface_ref": "surface-parity",
+        "artifact_refs": [{"artifact_id": "artifact-graph-parity"}],
+        "citations": [{"citation_id": "cite-parity", "source_ref": "boi:public:guide"}],
+    }
+    calls = []
+
+    async def fake_post(path, payload=None):
+        calls.append((path, payload))
+        return expected
+
+    monkeypatch.setattr(module, "v2_api_post", fake_post)
+    result = asyncio.run(module.boi_agent(question="내 역할과 현재 업무를 보여줘"))
+
+    assert result == expected
+    assert calls[0][0] == "/api/v2/agent/turns"
+    assert calls[0][1]["question"] == "내 역할과 현재 업무를 보여줘"
+
+
 def _legacy_boi_wiki_mcp_health_contract(mcp_module):
     client = TestClient(mcp_module.app)
 

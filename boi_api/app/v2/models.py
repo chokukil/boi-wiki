@@ -155,6 +155,14 @@ class EvidenceRef(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ResolvedSourceRef(BaseModel):
+    source_ref: str
+    title: str
+    canonical_url: str = ""
+    source_kind: str = "document"
+    navigation_state: Literal["navigable", "restricted", "unresolved"] = "unresolved"
+
+
 class CitationRef(BaseModel):
     citation_id: str
     source_ref: str
@@ -166,6 +174,7 @@ class CitationRef(BaseModel):
     start_line: int = Field(default=0, ge=0)
     end_line: int = Field(default=0, ge=0)
     kind: str = "document"
+    resolved_source: ResolvedSourceRef | None = None
 
 
 class RelatedQuestion(BaseModel):

@@ -254,7 +254,7 @@ async function main() {
     if (args.artifactId) {
       const artifactUrl = `${args.baseUrl}/agent?employee_id=${args.employeeId}&session=${encodeURIComponent(args.sessionId)}&artifact=${encodeURIComponent(args.artifactId)}`;
       await navigate(cdp, artifactUrl);
-      await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg, [data-agent-v2-artifact-list] .ontology-result[data-a2ui-component="OntologyExplorer"]')`, 30000);
+      await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg, [data-agent-v2-artifact-list] .ontology-result[data-a2ui-component]')`, 30000);
       await sleep(600);
       const ontologyMode = await cdp.eval(`!!document.querySelector('[data-agent-v2-artifact-list] .ontology-result')`);
       if (ontologyMode) {
@@ -267,6 +267,8 @@ async function main() {
             a2uiRendered: document.querySelector("[data-agent-v2-workspace]")?.dataset.a2uiRendered || "",
             nodes: root?.querySelectorAll("[data-ontology-node]").length || 0,
             edges: root?.querySelectorAll("[data-ontology-edge]").length || 0,
+            tableRows: root?.querySelectorAll("tbody tr").length || 0,
+            timelineRows: root?.querySelectorAll(":scope > ol > li").length || 0,
             visibleEdges: [...(root?.querySelectorAll("[data-ontology-edge]") || [])].filter((item) => !item.hidden).length,
             width: Math.round(root?.getBoundingClientRect().width || 0),
             height: Math.round(root?.getBoundingClientRect().height || 0),
@@ -275,7 +277,7 @@ async function main() {
           };
         })()`);
         const before = await inspectOntology();
-        await cdp.eval(`document.querySelector("[data-ontology-node]")?.click()`);
+        if (before.a2uiComponent === "OntologyExplorer") await cdp.eval(`document.querySelector("[data-ontology-node]")?.click()`);
         await sleep(150);
         const filtered = await inspectOntology();
         await screenshot(cdp, args.screenshot);
@@ -284,7 +286,12 @@ async function main() {
         await waitUntil(cdp, `!!document.querySelector('.ontology-result')`, 10000);
         const mobile = await inspectOntology();
         await screenshot(cdp, args.mobileScreenshot);
-        const ok = before.rendered && before.a2uiComponent === "OntologyExplorer" && before.a2uiRendered === "true" && before.nodes > 0 && before.edges > 0 && filtered.visibleEdges <= before.visibleEdges && !before.overflow && !mobile.overflow && consoleErrors.length === 0;
+        const contentReady = before.a2uiComponent === "OntologyExplorer"
+          ? before.nodes > 0 && before.edges > 0 && filtered.visibleEdges <= before.visibleEdges
+          : before.a2uiComponent === "DataTable"
+            ? before.tableRows > 0
+            : before.a2uiComponent === "Timeline" && before.timelineRows > 0;
+        const ok = before.rendered && before.a2uiRendered === "true" && contentReady && !before.overflow && !mobile.overflow && consoleErrors.length === 0;
         console.log(JSON.stringify({ ok, ontology: { before, filtered, mobile }, consoleErrors, failedRequests, screenshots: [args.screenshot, args.mobileScreenshot] }, null, 2));
         if (args.strict && !ok) process.exitCode = 1;
         return;

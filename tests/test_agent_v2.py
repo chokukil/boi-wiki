@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from boi_api.app.v2.config import AgentV2Settings
 from boi_api.app.v2.domain import DomainServiceGateway
+from boi_api.app.v2.entity_resolver import AmbiguousEntityError, EntityResolver
 from boi_api.app.v2.evaluation import IndependentArtifactEvaluator
 from boi_api.app.v2.model_gateway import (
     OpenAICompatibleGateway,
@@ -32,6 +33,7 @@ from boi_api.app.v2.models import (
     AnswerBlock,
     CitationRef,
     DeepJobRequest,
+    GraphQueryDraft,
     GraphQueryPlan,
     HelperActivateRequest,
     HelperDraftCreateRequest,
@@ -65,7 +67,7 @@ from boi_api.app.v2.rendering import render_agent_markdown
 from boi_api.app.v2.routes import build_agent_v2_router
 from boi_api.app.v2.search import chunks_for_record, diversify_ranked, graph_score, identity_score
 from boi_api.app.v2.service import AgentV2Service, truncate_markdown
-from boi_api.app.v2.store import PostgresAgentV2Store
+from boi_api.app.v2.store import PostgresAgentV2Store, now_iso
 from boi_api.app.v2.worker import DeepWorkRunner, ensure_exact_evidence_ledger, latest_assistant_text
 from boi_api.app.v2.work_learning import WorkIntentEngine
 from boi_api.app.task_completion import normalise_task_completion
@@ -270,6 +272,32 @@ class BroadWorkQuestionReviewModel(FakeModel):
                     "work_view": "current",
                     "resolved_goal": "현재 업무를 확인한다",
                     "result_purpose": "explain",
+                }
+            )
+            return planned
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class MisroutedCurrentWorkReviewModel(FakeModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if required == {"work_view", "explicit_current_only", "reason"}:
+            return {"work_view": "current", "explicit_current_only": True, "reason": "현재 업무만 요청함"}
+        if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
+            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            planned.update(
+                {
+                    "capability_id": "knowledge.search",
+                    "asset_kind": "knowledge",
+                    "operation": "understand",
+                    "operation_plan": ["understand"],
+                    "work_view": "combined",
+                    "graph_query_draft": {
+                        "enabled": True,
+                        "query_kind": "responsibility",
+                        "focal_mentions": ["현재 사용자"],
+                        "presentation": "table",
+                    },
                 }
             )
             return planned
@@ -1679,6 +1707,27 @@ def test_empty_current_work_is_a_valid_result_instead_of_a_context_failure(
     assert [item.status for item in response.harness_results] == ["passed"]
 
 
+def test_current_work_scope_review_corrects_an_initial_relationship_overreach(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = MisroutedCurrentWorkReviewModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    monkeypatch.setattr(v2_service.repository, "current_work", lambda _principal, limit=50: [])
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="내가 지금 처리해야 할 업무와 먼저 확인할 근거를 보여줘.", page_ref="/inbox"),
+    )
+
+    assert response.capability_id == "work.inbox"
+    assert response.work_intent and response.work_intent.work_view == "current"
+    assert response.graph_result_ref == ""
+    assert response.artifact_refs == []
+
+
 def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -1767,6 +1816,7 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     assert second.work_intent is not None
     assert second.work_intent.presentation_mode == "mermaid"
     assert "직전 답변" in second.work_intent.resolved_goal
+    assert "머메이드 차트로 그려줘" in second.work_intent.resolved_goal
     assert "boi:public:guide" in second.work_intent.context_refs
     assert second.context_usage["resolved_goal"] == second.work_intent.resolved_goal
     assert second.context_usage["presentation_mode"] == "mermaid"
@@ -2046,12 +2096,15 @@ def test_contextual_starters_are_grounded_in_real_accessible_subjects(
         limit=8,
     )
 
-    assert 4 <= len(starters) <= 8
+    assert 1 <= len(starters) <= 8
     assert starters[0].category == "current_work"
     assert starters[0].label == "내 역할과 지금 맡은 일을 한눈에 보기"
     assert starters[0].result_kind == "table"
     assert starters[0].graph_query_kind == "responsibility"
-    assert any(item.category == "knowledge_relation" and "BoI Wiki 운영 가이드" in item.label for item in starters)
+    assert all(
+        item.result_kind in {"answer", "work_form", "confirmation"} or item.graph_query_kind
+        for item in starters
+    )
     assert all(item.subject_ref and item.source_refs for item in starters)
     assert all(item.subject_ref in item.source_refs for item in starters)
     assert all(item.suggestion_id.startswith("suggestion_") for item in starters)
@@ -2076,6 +2129,110 @@ def test_runtime_work_is_compiled_into_person_responsibility_graph(
     assert any(item["node_id"] == "person:100001" for item in result["nodes"])
     assert any(item["relation"] == "assigned_to" for item in result["edges"])
     assert any((item.get("payload") or {}).get("title") == "현재 근거 검토" for item in result["nodes"])
+
+
+def test_entity_resolver_handles_people_teams_assets_and_only_asks_for_real_ambiguity(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    colleague_a = Principal(
+        employee_id="100002", display_name="동일 이름", teams=["aix-tf"],
+        roles=["boi.viewer"], auth_source="test",
+    )
+    colleague_b = Principal(
+        employee_id="100003", display_name="동일 이름", teams=["aix-tf"],
+        roles=["boi.viewer"], auth_source="test",
+    )
+    outsider = Principal(
+        employee_id="200001", display_name="다른 조직 사용자", teams=["other-team"],
+        roles=["boi.viewer"], auth_source="test",
+    )
+    resolver = EntityResolver(lambda: [principal, colleague_a, colleague_b, outsider])
+    records = v2_service.repository.authoritative_records(principal)
+
+    assert resolver.resolve_one("100002", principal=principal, records=records) == "person:100002"
+    assert resolver.resolve_one("aix-tf", principal=principal, records=records) == "team:aix-tf"
+    assert resolver.resolve_one("다른 조직 사용자", principal=principal, records=records) == ""
+    assert resolver.resolve_one("BoI Wiki 운영 가이드", principal=principal, records=records) == "boi:public:guide"
+    with pytest.raises(AmbiguousEntityError) as exc:
+        resolver.resolve_one("동일 이름", principal=principal, records=records)
+    assert {item.entity_id for item in exc.value.candidates} == {"person:100002", "person:100003"}
+
+
+def test_directory_graph_keeps_shared_team_people_and_hides_other_teams(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    colleague = Principal(
+        employee_id="100002", display_name="같은 팀 구성원", teams=["aix-tf"],
+        roles=["boi.viewer"], auth_source="test",
+    )
+    outsider = Principal(
+        employee_id="200001", display_name="다른 팀 구성원", teams=["other-team"],
+        roles=["boi.viewer"], auth_source="test",
+    )
+    v2_service.knowledge.directory_provider = lambda: [principal, colleague, outsider]
+
+    manifest = v2_service.knowledge.compile_graph(principal)
+    shared = v2_service.store.ontology_neighbors(
+        ["person:100002"], depth=1, limit=20,
+        employee_id=principal.employee_id, team_ids=principal.teams,
+    )
+    hidden = v2_service.store.ontology_neighbors(
+        ["person:200001"], depth=1, limit=20,
+        employee_id=principal.employee_id, team_ids=principal.teams,
+    )
+
+    assert manifest["directory_signature"]
+    assert any(item["node_id"] == "person:100002" for item in shared["nodes"])
+    assert not any(item["node_id"] == "person:200001" for item in hidden["nodes"])
+
+
+def test_agent_returns_one_clarification_when_graph_entity_name_is_ambiguous(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    people = [
+        Principal(
+            employee_id=employee_id, display_name="동일 이름", teams=["aix-tf"],
+            roles=["boi.viewer"], auth_source="test",
+        )
+        for employee_id in ("100002", "100003")
+    ]
+    v2_service.entity_resolver = EntityResolver(lambda: [principal, *people])
+    route = {
+        "capability_id": "knowledge.search",
+        "source": "llm_structured",
+        "reason": "업무 관계 조회",
+        "work_intent": WorkIntent(
+            goal="동일 이름의 업무 관계를 보여줘",
+            resolved_goal="동일 이름의 검증된 업무 관계를 조회한다",
+            asset_kind=WorkAssetKind.runtime,
+            operation=WorkOperation.understand,
+            operation_plan=[WorkOperation.understand],
+            result_purpose="explain",
+            work_view="responsibility",
+            graph_query_draft=GraphQueryDraft(
+                enabled=True,
+                query_kind="responsibility",
+                focal_mentions=["동일 이름"],
+                presentation="table",
+            ),
+            confidence=0.95,
+        ).model_dump(mode="json"),
+    }
+    monkeypatch.setattr(v2_service, "_semantic_route", lambda *_args, **_kwargs: route)
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="동일 이름의 업무 관계를 보여줘"),
+    )
+
+    assert response.status == "needs_input"
+    assert response.work_intent and response.work_intent.needs_clarification is True
+    assert response.answer.markdown.count("어느 대상을 볼까요?") == 1
+    assert "100002" in response.answer.markdown and "100003" in response.answer.markdown
 
 
 def test_contextual_starters_offer_asset_kinds_only_for_direct_ontology_neighbors(
@@ -3023,10 +3180,14 @@ def test_turn_returns_verified_citations_goal_plan_and_source_set(
     assert response.citations
     assert response.related_questions
     assert all(f"/api/v2/citations/{item.citation_id}" in response.answer.markdown for item in response.citations[:1])
+    assert all(item.resolved_source is not None for item in response.citations)
+    assert all(item.resolved_source.navigation_state == "navigable" for item in response.citations if item.resolved_source)
+    assert all(item.resolved_source.canonical_url for item in response.citations if item.resolved_source)
 
     citation = v2_service.get_citation(principal, response.citations[0].citation_id)
     assert citation["source_ref"] in {item.evidence_id for item in response.evidence_refs}
     assert citation["excerpt"]
+    assert citation["resolved_source"]["navigation_state"] == "navigable"
     assert citation["start_line"] <= citation["end_line"]
 
     goal = v2_service.get_goal_plan(principal, response.goal_plan_ref)
@@ -4465,6 +4626,84 @@ def test_living_knowledge_compiles_all_acl_nodes_but_never_exposes_another_users
     assert query["query_plan"]["query_kind"] == "workflow"
     assert query["presentation"] in {"mermaid", "list", "explorer"}
     assert all((edge.get("payload") or {}).get("provenance") for edge in query["edges"])
+    semantic_edges = {
+        (edge["source_id"], edge["relation"], edge["target_id"])
+        for edge in query["edges"]
+    }
+    assert len(semantic_edges) == len(query["edges"])
+
+
+def test_repeated_work_relation_requires_three_distinct_verified_completions_within_180_days(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    recent = now_iso()
+    task_ref = "quality-review"
+    for index in range(2):
+        completion_id = f"completion-repeat-{index}"
+        v2_service.store.put(
+            "completion_records",
+            completion_id,
+            {
+                "completion_id": completion_id,
+                "employee_id": principal.employee_id,
+                "work_run_id": f"work-run-repeat-{index}",
+                "task_ref": task_ref,
+                "decision": "complete",
+                "created_at": recent,
+            },
+        )
+    v2_service.store.put(
+        "completion_records",
+        "completion-repeat-old",
+        {
+            "completion_id": "completion-repeat-old",
+            "employee_id": principal.employee_id,
+            "work_run_id": "work-run-repeat-old",
+            "task_ref": task_ref,
+            "decision": "complete",
+            "created_at": "2025-01-01T00:00:00+00:00",
+        },
+    )
+
+    v2_service.knowledge.compile_graph(principal)
+    before = v2_service.knowledge.explore(
+        principal,
+        view="neighbors",
+        source_ref=f"task:{task_ref}",
+        depth=1,
+        limit=20,
+    )
+    assert not any(edge["relation"] == "repeated_performer" for edge in before["edges"])
+    assert v2_service.store.list("work_role_profiles", employee_id=principal.employee_id, limit=20) == []
+
+    completion_id = "completion-repeat-2"
+    v2_service.store.put(
+        "completion_records",
+        completion_id,
+        {
+            "completion_id": completion_id,
+            "employee_id": principal.employee_id,
+            "work_run_id": "work-run-repeat-2",
+            "task_ref": task_ref,
+            "decision": "complete",
+            "created_at": recent,
+        },
+    )
+    v2_service.knowledge.compile_graph(principal)
+    after = v2_service.knowledge.explore(
+        principal,
+        view="neighbors",
+        source_ref=f"task:{task_ref}",
+        depth=1,
+        limit=20,
+    )
+    repeated = next(edge for edge in after["edges"] if edge["relation"] == "repeated_performer")
+    assert repeated["payload"]["provenance"] == "human_verified"
+    assert repeated["payload"]["metadata"]["completion_count"] == 3
+    profile = v2_service.store.list("work_role_profiles", employee_id=principal.employee_id, limit=20)[0]
+    assert profile["completion_count"] == 3
+    assert profile["window_days"] == 180
 
 
 @pytest.mark.parametrize(
@@ -4501,6 +4740,31 @@ def test_universal_graph_query_kinds_keep_acl_provenance_and_auto_presentation(
     assert result["presentation"] in expected_presentation
     assert all((edge.get("payload") or {}).get("provenance") for edge in result["edges"])
     assert all("boi:private:100002" not in str(node.get("node_id")) for node in result["nodes"])
+
+
+def test_responsibility_graph_does_not_expand_through_a_shared_team_to_other_people(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.knowledge.compile_graph(principal)
+    result = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=[f"person:{principal.employee_id}"],
+            query_kind="responsibility",
+            depth=2,
+            presentation="table",
+        ),
+    )
+    assert result["edges"]
+    assert all(
+        f"person:{principal.employee_id}" in {edge["source_id"], edge["target_id"]}
+        for edge in result["edges"]
+    )
+    assert not any(
+        node["node_type"] == "person" and node["node_id"] != f"person:{principal.employee_id}"
+        for node in result["nodes"]
+    )
 
 
 def test_graph_path_and_temporal_filter_are_parameterized_and_deterministic(

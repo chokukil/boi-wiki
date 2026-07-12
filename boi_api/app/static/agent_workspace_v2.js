@@ -989,7 +989,35 @@
     return `<article class="agent-v2-task-candidate"><span>${index + 1}</span><div><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(task.execution_mode || "copilot")} · 완료 항목 ${count}개</small></div></article>`;
   }
 
-  function ontologyViewer(draft) {
+  const trustedA2UIComponents = new Set([
+    "Answer", "CitationList", "EvidencePicker", "WorkRecordForm", "DecisionSummary",
+    "TaskStatus", "Timeline", "DataTable", "MermaidArtifact", "OntologyExplorer",
+    "ActionPreview", "Confirmation", "RelatedQuestions",
+  ]);
+
+  function trustedA2UISurface(surface) {
+    if (!surface || surface.protocol_version !== "0.9.1" || surface.catalog_id !== "boi-a2ui/v1") return null;
+    if (!Array.isArray(surface.components) || (surface.events || []).length) return null;
+    const ids = new Set();
+    for (const item of surface.components) {
+      if (!item?.id || ids.has(item.id) || !trustedA2UIComponents.has(item.component)) return null;
+      ids.add(item.id);
+    }
+    return surface;
+  }
+
+  async function fetchA2UISurface(surfaceRef) {
+    if (!surfaceRef) return null;
+    const surface = await api(`/api/v2/a2ui-surfaces/${encodeURIComponent(surfaceRef)}`).catch(() => null);
+    return trustedA2UISurface(surface);
+  }
+
+  function a2uiArtifactComponent(artifactId) {
+    const item = state.a2uiSurface?.components?.find((component) => component.props?.artifact_id === artifactId);
+    return item?.component || "";
+  }
+
+  function ontologyContext(draft) {
     const nodes = Array.isArray(draft.nodes) ? draft.nodes : [];
     const edges = Array.isArray(draft.edges) ? draft.edges : [];
     const lookup = new Map(nodes.map((node) => [String(node.node_id || ""), node]));
@@ -997,14 +1025,53 @@
     const relationLabel = (value) => ({
       assigned_to: "현재 담당", reviewed_by: "검토 담당", performed_by: "수행 기록",
       completed_by: "검증 완료", related_team: "관련 조직", has_task: "포함 Task",
+      repeated_performer: "반복 수행",
       uses_sop: "관련 SOP", uses_event: "관련 업무 이벤트", uses_action: "관련 Action",
       requires_evidence: "확인할 근거", links_to: "연결 지식",
+      evidence: "근거 연결",
       member_of: "소속 조직", has_role: "공식 역할",
     }[value] || value || "연결");
+    const provenanceLabel = (edge) => ({
+      declared: "정본에 명시", extracted: "구조에서 확인", human_verified: "사람이 검증",
+      inferred: "AI 추론·검토 전", ambiguous: "추가 확인 필요",
+    }[edge?.payload?.provenance] || "근거 연결");
+    return { nodes, edges, lookup, title, relationLabel, provenanceLabel };
+  }
+
+  function ontologyViewer(draft) {
+    const { nodes, edges, lookup, title, relationLabel, provenanceLabel } = ontologyContext(draft);
     const nodeMarkup = nodes.map((node) => `<button type="button" class="ontology-result-node" data-ontology-node="${escapeHtml(node.node_id || "")}"><span>${escapeHtml(node.node_type || "항목")}</span><strong>${escapeHtml(title(node))}</strong></button>`).join("");
-    const edgeMarkup = edges.map((edge) => `<li data-ontology-edge data-source="${escapeHtml(edge.source_id || "")}" data-target="${escapeHtml(edge.target_id || "")}"><button type="button" data-ontology-focus="${escapeHtml(edge.source_id || "")}">${escapeHtml(title(lookup.get(edge.source_id)))}</button><span>${escapeHtml(relationLabel(edge.relation))}</span><button type="button" data-ontology-focus="${escapeHtml(edge.target_id || "")}">${escapeHtml(title(lookup.get(edge.target_id)))}</button></li>`).join("");
+    const edgeMarkup = edges.map((edge) => `<li data-ontology-edge data-source="${escapeHtml(edge.source_id || "")}" data-target="${escapeHtml(edge.target_id || "")}"><button type="button" data-ontology-focus="${escapeHtml(edge.source_id || "")}">${escapeHtml(title(lookup.get(edge.source_id)))}</button><span>${escapeHtml(relationLabel(edge.relation))}<small>${escapeHtml(provenanceLabel(edge))}</small></span><button type="button" data-ontology-focus="${escapeHtml(edge.target_id || "")}">${escapeHtml(title(lookup.get(edge.target_id)))}</button></li>`).join("");
     const mode = draft.presentation === "timeline" ? "시간 흐름" : draft.presentation === "explorer" ? "관계 탐색" : draft.presentation === "table" ? "관계표" : "연결 관계";
     return `<article class="ontology-result" data-a2ui-component="OntologyExplorer" data-a2ui-catalog="boi-a2ui/v1"><header><div><span>${escapeHtml(mode)}</span><strong>${nodes.length}개 항목 · ${edges.length}개 관계</strong></div><button type="button" class="secondary-button" data-ontology-reset>전체 보기</button></header><div class="ontology-result-layout"><div class="ontology-result-nodes" aria-label="업무 관계 항목">${nodeMarkup}</div><ol class="ontology-result-edges" aria-label="업무 관계 목록">${edgeMarkup || "<li>표시할 관계가 없습니다.</li>"}</ol></div></article>`;
+  }
+
+  function ontologyTable(draft) {
+    const { edges, lookup, title, relationLabel, provenanceLabel } = ontologyContext(draft);
+    const rows = edges.map((edge) => `<tr><td>${escapeHtml(title(lookup.get(edge.source_id)))}</td><td>${escapeHtml(relationLabel(edge.relation))}</td><td>${escapeHtml(title(lookup.get(edge.target_id)))}</td><td>${escapeHtml(provenanceLabel(edge))}</td></tr>`).join("");
+    return `<article class="ontology-result ontology-result-table" data-a2ui-component="DataTable" data-a2ui-catalog="boi-a2ui/v1"><header><div><span>관계표</span><strong>${edges.length}개 관계</strong></div></header><div class="table-scroll"><table><thead><tr><th>항목</th><th>관계</th><th>연결 항목</th><th>확인 상태</th></tr></thead><tbody>${rows || '<tr><td colspan="4">표시할 관계가 없습니다.</td></tr>'}</tbody></table></div></article>`;
+  }
+
+  function ontologyTimeline(draft) {
+    const { edges, lookup, title, relationLabel, provenanceLabel } = ontologyContext(draft);
+    const timestamp = (edge) => edge?.payload?.metadata?.recorded_at || edge?.payload?.observed_at || edge?.payload?.recorded_at || "";
+    const ordered = [...edges].sort((left, right) => String(timestamp(right)).localeCompare(String(timestamp(left))));
+    const rows = ordered.map((edge) => `<li><time>${escapeHtml(timestamp(edge) || "시점 정보 없음")}</time><div><strong>${escapeHtml(title(lookup.get(edge.source_id)))}</strong><span>${escapeHtml(relationLabel(edge.relation))}</span><strong>${escapeHtml(title(lookup.get(edge.target_id)))}</strong><small>${escapeHtml(provenanceLabel(edge))}</small></div></li>`).join("");
+    return `<article class="ontology-result ontology-result-timeline" data-a2ui-component="Timeline" data-a2ui-catalog="boi-a2ui/v1"><header><div><span>시간 흐름</span><strong>${edges.length}개 변화</strong></div></header><ol>${rows || "<li>표시할 시간 기록이 없습니다.</li>"}</ol></article>`;
+  }
+
+  function ontologyMermaid(draft, artifact) {
+    const { nodes, edges, lookup, title, relationLabel } = ontologyContext(draft);
+    const ids = new Map(nodes.slice(0, 14).map((node, index) => [String(node.node_id || ""), `N${index + 1}`]));
+    const cleanLabel = (value) => String(value || "").replace(/["\n\r|<>]/g, " ").slice(0, 80);
+    const lines = ["flowchart LR"];
+    ids.forEach((id, nodeId) => lines.push(`  ${id}["${cleanLabel(title(lookup.get(nodeId)))}"]`));
+    edges.slice(0, 20).forEach((edge) => {
+      const source = ids.get(String(edge.source_id || ""));
+      const target = ids.get(String(edge.target_id || ""));
+      if (source && target) lines.push(`  ${source} -->|${cleanLabel(relationLabel(edge.relation))}| ${target}`);
+    });
+    return `<article class="agent-v2-diagram-result" data-a2ui-component="MermaidArtifact" data-a2ui-catalog="boi-a2ui/v1">${mermaidViewer(lines.join("\n"), artifact.title, artifact.artifact_id, "ontology_graph", [])}</article>`;
   }
 
   function renderArtifact(reveal = false) {
@@ -1057,7 +1124,11 @@
       elements.artifacts.innerHTML = `<article class="agent-v2-diagram-result">${mermaidViewer(draft.mermaid || "", artifact.title, artifact.artifact_id, "mermaid_diagram", artifact.actions || [])}</article>`;
     } else if (isOntology) {
       elements.artifactState.textContent = `근거 ${draft.source_refs?.length || 0}개 · 버전 ${artifact.revision || 1}`;
-      elements.artifacts.innerHTML = ontologyViewer(draft);
+      const component = a2uiArtifactComponent(artifact.artifact_id);
+      if (component === "DataTable") elements.artifacts.innerHTML = ontologyTable(draft);
+      else if (component === "Timeline") elements.artifacts.innerHTML = ontologyTimeline(draft);
+      else if (component === "MermaidArtifact") elements.artifacts.innerHTML = ontologyMermaid(draft, artifact);
+      else elements.artifacts.innerHTML = ontologyViewer(draft);
     } else if (isRoutine) {
       const trigger = draft.schedule_description || (draft.trigger === "event" ? "연결된 업무 이벤트가 발생할 때" : "정해진 간격으로");
       elements.artifacts.innerHTML = `<article class="agent-v2-routine-result"><header><span>확인 전 계획</span><h3>${escapeHtml(artifact.title)}</h3></header><dl><div><dt>목적</dt><dd>${escapeHtml(draft.goal || "")}</dd></div><div><dt>다시 확인</dt><dd>${escapeHtml(trigger)}</dd></div><div><dt>끝내는 기준</dt><dd>${escapeHtml(draft.completion_condition || "직접 멈출 때까지")}</dd></div></dl><p>아직 자동 확인을 만들지 않았습니다.</p></article>`;
@@ -1091,7 +1162,7 @@
     state.artifact = await api(`/api/v2/artifacts/${encodeURIComponent(artifactId)}`);
     const surfaceRef = state.artifact.a2ui_surface_ref || state.artifact.metadata?.a2ui_surface_ref || "";
     if (surfaceRef) {
-      state.a2uiSurface = await api(`/api/v2/a2ui-surfaces/${encodeURIComponent(surfaceRef)}`).catch(() => null);
+      state.a2uiSurface = await fetchA2UISurface(surfaceRef);
       root.dataset.a2uiSurfaceRef = surfaceRef;
       root.dataset.a2uiCatalog = state.a2uiSurface?.catalog_id || "boi-a2ui/v1";
       root.dataset.a2uiRendered = state.a2uiSurface ? "true" : "fallback";
@@ -1122,7 +1193,7 @@
     if (payload.a2ui_surface_ref) {
       root.dataset.a2uiSurfaceRef = payload.a2ui_surface_ref;
       root.dataset.a2uiCatalog = payload.presentation_plan?.catalog_id || "boi-a2ui/v1";
-      state.a2uiSurface = await api(`/api/v2/a2ui-surfaces/${encodeURIComponent(payload.a2ui_surface_ref)}`).catch(() => null);
+      state.a2uiSurface = await fetchA2UISurface(payload.a2ui_surface_ref);
       root.dataset.a2uiRendered = state.a2uiSurface ? "true" : "fallback";
     } else {
       delete root.dataset.a2uiSurfaceRef;
@@ -1440,7 +1511,7 @@
       state.artifact = bundle.active_artifact;
       const surfaceRef = state.artifact.a2ui_surface_ref || state.artifact.metadata?.a2ui_surface_ref || "";
       if (surfaceRef) {
-        state.a2uiSurface = await api(`/api/v2/a2ui-surfaces/${encodeURIComponent(surfaceRef)}`).catch(() => null);
+        state.a2uiSurface = await fetchA2UISurface(surfaceRef);
         root.dataset.a2uiSurfaceRef = surfaceRef;
         root.dataset.a2uiCatalog = state.a2uiSurface?.catalog_id || "boi-a2ui/v1";
         root.dataset.a2uiRendered = state.a2uiSurface ? "true" : "fallback";

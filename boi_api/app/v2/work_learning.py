@@ -377,12 +377,14 @@ class WorkLearningService:
         search: HybridSearchService,
         harnesses: HarnessRegistry,
         page_context_provider: Callable[[str, str], dict[str, Any]] | None = None,
+        knowledge_change_notifier: Callable[[str, str, str], None] | None = None,
     ):
         self.store = store
         self.repository = repository
         self.search = search
         self.harnesses = harnesses
         self.contexts = ContextCompiler(repository, store, page_context_provider)
+        self.knowledge_change_notifier = knowledge_change_notifier
 
     @staticmethod
     def resolve_loop_policy(
@@ -940,6 +942,8 @@ class WorkLearningService:
                 "created_at": now_iso(),
             }
             self.store.put("completion_records", completion_id, completion)
+            if self.knowledge_change_notifier is not None:
+                self.knowledge_change_notifier(completion_id, principal.employee_id, "upsert")
             run["completion_record_id"] = completion_id
             should_capture = intent.operation in {WorkOperation.complete, WorkOperation.capture} or bool(
                 delta.metadata.get("capture")

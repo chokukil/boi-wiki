@@ -6,10 +6,10 @@ import os
 import re
 import shutil
 import subprocess
-from collections import deque
-from datetime import datetime, timezone
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import unquote, urlsplit
 
 from fastapi import HTTPException
@@ -48,6 +48,39 @@ def _parse_time(value: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _dedupe_semantic_edges(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    provenance_rank = {
+        "human_verified": 5,
+        "declared": 4,
+        "extracted": 3,
+        "ambiguous": 2,
+        "inferred": 1,
+    }
+    selected: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for item in rows:
+        key = (
+            str(item.get("source_id") or ""),
+            str(item.get("relation") or ""),
+            str(item.get("target_id") or ""),
+        )
+        if not all(key):
+            continue
+        current = selected.get(key)
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        current_payload = current.get("payload") if current and isinstance(current.get("payload"), dict) else {}
+        score = (
+            provenance_rank.get(str(payload.get("provenance") or ""), 0),
+            -int(item.get("depth") or 1),
+        )
+        current_score = (
+            provenance_rank.get(str(current_payload.get("provenance") or ""), 0),
+            -int(current.get("depth") or 1),
+        ) if current else (-1, -99)
+        if current is None or score > current_score:
+            selected[key] = item
+    return list(selected.values())
+
+
 class LivingKnowledgeService:
     """Deterministic source, graph, and health layer over the BoI source of truth."""
 
@@ -57,12 +90,38 @@ class LivingKnowledgeService:
         repository: KnowledgeRepository,
         store: AgentV2Store,
         search: HybridSearchService,
+        directory_provider: Callable[[], list[Principal]] | None = None,
     ):
         self.settings = settings
         self.repository = repository
         self.store = store
         self.search = search
+        self.directory_provider = directory_provider
         self._ensure_defaults()
+
+    def directory_principals(self, current: Principal) -> list[Principal]:
+        rows: list[Principal] = []
+        if self.directory_provider is not None:
+            try:
+                rows = list(self.directory_provider() or [])
+            except Exception:
+                rows = []
+        rows.append(current)
+        return list({item.employee_id: item for item in rows if item.employee_id}.values())
+
+    def directory_signature(self, current: Principal) -> str:
+        payload = [
+            {
+                "employee_id": item.employee_id,
+                "display_name": item.display_name,
+                "teams": sorted(item.teams),
+                "roles": sorted(item.roles),
+            }
+            for item in sorted(self.directory_principals(current), key=lambda row: row.employee_id)
+        ]
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
 
     def _runtime_relation_files(self) -> list[Path]:
         root = self.settings.runtime_root / "task-execution"
@@ -608,7 +667,10 @@ class LivingKnowledgeService:
                         },
                     )
 
-        for completion in self.store.list("completion_records", limit=10_000):
+        completion_rows = self.store.list("completion_records", limit=10_000)
+        repeated_work: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+        for completion in completion_rows:
             task_ref = str(completion.get("task_ref") or "")
             employee_id = str(completion.get("employee_id") or "")
             if not task_ref or not employee_id:
@@ -654,34 +716,57 @@ class LivingKnowledgeService:
                 revision,
                 metadata={"source_ref": str(completion.get("completion_id") or ""), "recorded_at": str(completion.get("created_at") or "")},
             )
+            completed_at = _parse_time(str(completion.get("created_at") or ""))
+            execution_id = str(completion.get("work_run_id") or completion.get("completion_id") or "")
+            if completed_at and completed_at >= recent_cutoff and execution_id:
+                repeated_work[(employee_id, task_id)].append(
+                    {
+                        "completion_id": str(completion.get("completion_id") or ""),
+                        "execution_id": execution_id,
+                        "completed_at": completed_at,
+                    }
+                )
 
-        identity_revision = hashlib.sha256(
-            json.dumps(
-                {
-                    "employee_id": principal.employee_id,
-                    "display_name": principal.display_name,
-                    "teams": sorted(principal.teams),
-                    "roles": sorted(principal.roles),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ).encode("utf-8")
-        ).hexdigest()
-        person_id = f"person:{principal.employee_id}"
-        nodes.append(
-            {
-                "node_id": person_id,
-                "node_type": "person",
-                "payload": {
-                    "title": principal.display_name or principal.employee_id,
-                    "employee_id": principal.employee_id,
-                    "visibility": "private",
-                    "owner": principal.employee_id,
-                    "allowed_employee_ids": [principal.employee_id],
-                    "source_revision": identity_revision,
-                },
+        active_profile_ids: set[str] = set()
+        for (employee_id, task_id), rows in repeated_work.items():
+            distinct_rows = list({item["execution_id"]: item for item in rows}.values())
+            if len(distinct_rows) < 3:
+                continue
+            distinct_rows.sort(key=lambda item: item["completed_at"])
+            profile_id = _stable_id("workrole", employee_id, task_id)
+            active_profile_ids.add(profile_id)
+            source_refs = [item["completion_id"] for item in distinct_rows if item["completion_id"]]
+            profile = {
+                "profile_id": profile_id,
+                "employee_id": employee_id,
+                "task_ref": task_id,
+                "completion_count": len(distinct_rows),
+                "window_days": 180,
+                "first_completed_at": distinct_rows[0]["completed_at"].isoformat(),
+                "last_completed_at": distinct_rows[-1]["completed_at"].isoformat(),
+                "source_refs": source_refs,
+                "verification": "human_verified",
+                "updated_at": now_iso(),
             }
-        )
+            self.store.put("work_role_profiles", profile_id, profile)
+            append_edge(
+                task_id,
+                f"person:{employee_id}",
+                "repeated_performer",
+                "human_verified",
+                profile_id,
+                metadata={
+                    "source_refs": source_refs,
+                    "completion_count": len(distinct_rows),
+                    "window_days": 180,
+                    "last_completed_at": profile["last_completed_at"],
+                },
+            )
+        for profile in self.store.list("work_role_profiles", limit=10_000):
+            profile_id = str(profile.get("profile_id") or "")
+            if profile_id and profile_id not in active_profile_ids:
+                self.store.delete("work_role_profiles", profile_id)
+
         role_titles = {
             "boi.viewer": "BoI 지식 사용자",
             "boi.editor": "BoI 지식 편집자",
@@ -691,39 +776,99 @@ class LivingKnowledgeService:
             "boi.promoter": "공유 지식 검토 요청자",
             "boi.admin": "BoI 운영 관리자",
         }
-        for team_id in principal.teams:
-            team_node_id = f"team:{team_id}"
+        for identity in self.directory_principals(principal):
+            identity_revision = hashlib.sha256(
+                json.dumps(
+                    {
+                        "employee_id": identity.employee_id,
+                        "display_name": identity.display_name,
+                        "teams": sorted(identity.teams),
+                        "roles": sorted(identity.roles),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+            person_id = f"person:{identity.employee_id}"
+            existing_person = next(
+                (item for item in reversed(nodes) if str(item.get("node_id") or "") == person_id),
+                {},
+            )
+            existing_payload = (
+                existing_person.get("payload")
+                if isinstance(existing_person.get("payload"), dict)
+                else {}
+            )
+            allowed_employees = list(
+                dict.fromkeys(
+                    [
+                        identity.employee_id,
+                        *[
+                            str(item)
+                            for item in existing_payload.get("allowed_employee_ids") or []
+                            if str(item)
+                        ],
+                    ]
+                )
+            )
             nodes.append(
                 {
-                    "node_id": team_node_id,
-                    "node_type": "team",
+                    "node_id": person_id,
+                    "node_type": "person",
                     "payload": {
-                        "title": team_id,
-                        "visibility": "private",
-                        "owner": principal.employee_id,
-                        "allowed_employee_ids": [principal.employee_id],
-                        "team_id": team_id,
+                        "title": identity.display_name or identity.employee_id,
+                        "employee_id": identity.employee_id,
+                        "visibility": "directory",
+                        "owner": identity.employee_id,
+                        "allowed_employee_ids": allowed_employees,
+                        "allowed_team_ids": sorted(identity.teams),
                         "source_revision": identity_revision,
                     },
                 }
             )
-            append_edge(person_id, team_node_id, "member_of", "declared", identity_revision, metadata={"source_ref": person_id})
-        for role_id in principal.roles:
-            role_node_id = f"role:{role_id}"
-            nodes.append(
-                {
-                    "node_id": role_node_id,
-                    "node_type": "role",
-                    "payload": {
-                        "title": role_titles.get(role_id, role_id),
-                        "visibility": "private",
-                        "owner": principal.employee_id,
-                        "allowed_employee_ids": [principal.employee_id],
-                        "source_revision": identity_revision,
-                    },
-                }
-            )
-            append_edge(person_id, role_node_id, "has_role", "declared", identity_revision, metadata={"source_ref": person_id})
+            for team_id in identity.teams:
+                team_node_id = f"team:{team_id}"
+                nodes.append(
+                    {
+                        "node_id": team_node_id,
+                        "node_type": "team",
+                        "payload": {
+                            "title": team_id,
+                            "visibility": "public",
+                            "team_id": team_id,
+                            "source_revision": identity_revision,
+                        },
+                    }
+                )
+                append_edge(
+                    person_id,
+                    team_node_id,
+                    "member_of",
+                    "declared",
+                    identity_revision,
+                    metadata={"source_ref": person_id},
+                )
+            for role_id in identity.roles:
+                role_node_id = f"role:{role_id}"
+                nodes.append(
+                    {
+                        "node_id": role_node_id,
+                        "node_type": "role",
+                        "payload": {
+                            "title": role_titles.get(role_id, role_id),
+                            "visibility": "public",
+                            "source_revision": identity_revision,
+                        },
+                    }
+                )
+                append_edge(
+                    person_id,
+                    role_node_id,
+                    "has_role",
+                    "declared",
+                    identity_revision,
+                    metadata={"source_ref": person_id},
+                )
 
         unique_nodes = {str(item["node_id"]): item for item in nodes}
         unique_edges = {str(item["edge_id"]): item for item in edges}
@@ -740,6 +885,7 @@ class LivingKnowledgeService:
             "compiler_version": EXTRACTOR_VERSION,
             "source_signature": self.repository.source_signature(),
             "runtime_relation_signature": self.runtime_relation_signature(),
+            "directory_signature": self.directory_signature(principal),
             "nodes": len(unique_nodes),
             "edges": len(unique_edges),
             "node_ids": sorted(current_nodes),
@@ -833,7 +979,6 @@ class LivingKnowledgeService:
         if (
             graph_manifest.get("compiler_version") != EXTRACTOR_VERSION
             or graph_manifest.get("source_signature") != self.repository.source_signature()
-            or graph_manifest.get("runtime_relation_signature") != self.runtime_relation_signature()
         ):
             self.compile_graph(principal)
         graph = self.store.ontology_neighbors(
@@ -845,7 +990,7 @@ class LivingKnowledgeService:
             include_all=principal.is_admin,
         )
         nodes = graph.get("nodes") or []
-        edges = graph.get("edges") or []
+        edges = _dedupe_semantic_edges(graph.get("edges") or [])
         if mode == "neighbors":
             return {"view": mode, "source_ref": source_ref, "nodes": nodes, "edges": edges}
 
@@ -939,7 +1084,7 @@ class LivingKnowledgeService:
         if (
             manifest.get("compiler_version") != EXTRACTOR_VERSION
             or manifest.get("source_signature") != self.repository.source_signature()
-            or manifest.get("runtime_relation_signature") != self.runtime_relation_signature()
+            or manifest.get("directory_signature") != self.directory_signature(principal)
         ):
             self.compile_graph(principal)
         graph = self.store.ontology_neighbors(
@@ -951,15 +1096,7 @@ class LivingKnowledgeService:
             include_all=principal.is_admin,
         )
         nodes = list({str(item.get("node_id") or ""): item for item in graph.get("nodes") or [] if str(item.get("node_id") or "")}.values())
-        edge_by_id: dict[str, dict[str, Any]] = {}
-        for item in graph.get("edges") or []:
-            edge_id = str(item.get("edge_id") or "")
-            if not edge_id:
-                continue
-            current = edge_by_id.get(edge_id)
-            if current is None or int(item.get("depth") or 1) < int(current.get("depth") or 1):
-                edge_by_id[edge_id] = item
-        edges = list(edge_by_id.values())
+        edges = _dedupe_semantic_edges(graph.get("edges") or [])
         time_from = _parse_time(plan.time_from)
         time_to = _parse_time(plan.time_to)
         if time_from or time_to:
@@ -998,6 +1135,19 @@ class LivingKnowledgeService:
             edges = [item for item in edges if str(item.get("source_id") or "") in focal or int(item.get("depth") or 1) > 1]
         elif plan.direction == "incoming":
             edges = [item for item in edges if str(item.get("target_id") or "") in focal or int(item.get("depth") or 1) > 1]
+
+        if plan.query_kind == "responsibility":
+            edges = [
+                item
+                for item in edges
+                if str(item.get("source_id") or "") in focal
+                or str(item.get("target_id") or "") in focal
+            ]
+            visible_ids = set(focal)
+            for item in edges:
+                visible_ids.add(str(item.get("source_id") or ""))
+                visible_ids.add(str(item.get("target_id") or ""))
+            nodes = [item for item in nodes if str(item.get("node_id") or "") in visible_ids]
 
         if plan.query_kind == "path" and plan.target_entities:
             return self.explore(

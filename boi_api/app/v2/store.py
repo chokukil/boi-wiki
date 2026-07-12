@@ -221,12 +221,21 @@ class MemoryAgentV2Store(AgentV2Store):
             payload = node.get("payload") or {}
             visibility = str(payload.get("visibility") or "public")
             allowed_employees = {str(item) for item in payload.get("allowed_employee_ids") or []}
+            allowed_node_teams = {str(item) for item in payload.get("allowed_team_ids") or []}
             return bool(
                 include_all
                 or visibility == "public"
                 or (visibility == "private" and payload.get("owner") == employee_id)
                 or (visibility == "private" and employee_id in allowed_employees)
                 or (visibility == "team" and payload.get("team_id") in allowed_teams)
+                or (
+                    visibility == "directory"
+                    and (
+                        payload.get("owner") == employee_id
+                        or employee_id in allowed_employees
+                        or bool(allowed_node_teams & allowed_teams)
+                    )
+                )
             )
 
         frontier = {item for item in seed_ids if item}
@@ -287,6 +296,7 @@ class PostgresAgentV2Store(AgentV2Store):
         "harness_results": "agent_harness_results",
         "knowledge_candidates": "agent_knowledge_candidates",
         "completion_records": "agent_completion_records",
+        "work_role_profiles": "agent_work_role_profiles",
         "evidence_ledger": "agent_evidence_ledger",
         "usage_ledgers": "agent_usage_ledgers",
         "work_routines": "agent_work_routines",
@@ -854,9 +864,17 @@ class PostgresAgentV2Store(AgentV2Store):
                         OR (payload->>'visibility' = 'private' AND payload->>'owner' = %s)
                         OR (payload->>'visibility' = 'private' AND COALESCE(payload->'allowed_employee_ids','[]'::jsonb) ? %s)
                         OR (payload->>'visibility' = 'team' AND payload->>'team_id' = ANY(%s))
+                        OR (
+                          payload->>'visibility' = 'directory'
+                          AND (
+                            payload->>'owner' = %s
+                            OR COALESCE(payload->'allowed_employee_ids','[]'::jsonb) ? %s
+                            OR COALESCE(payload->'allowed_team_ids','[]'::jsonb) ?| %s
+                          )
+                        )
                       )
                     """,
-                    (node_ids, include_all, employee_id, employee_id, allowed_teams),
+                    (node_ids, include_all, employee_id, employee_id, allowed_teams, employee_id, employee_id, allowed_teams),
                 )
                 raw_nodes = cursor.fetchall()
         nodes = [

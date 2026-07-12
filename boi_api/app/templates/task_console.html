@@ -15,6 +15,9 @@
   {% set loop = payload.task_loop or {} %}
   {% set workflow = payload.workflow_canvas or {} %}
   {% set stage = payload.work_context_pack.sop_stage or {} %}
+  {% set dynamic = payload.a2ui_component_props or {} %}
+  {% set work_form = dynamic.WorkRecordForm or payload.work_form or {} %}
+  {% set evidence_picker = dynamic.EvidencePicker or {} %}
 
   <main class="page-content task-console-page" data-a2ui-surface-ref="{{ payload.a2ui_surface.surface_id }}" data-a2ui-catalog="{{ payload.a2ui_surface.catalog_id }}">
     {% with title=payload.title or "업무 수행 화면", description="사람과 AI가 같은 업무 맥락에서 완료된 모습과 확인할 자료를 보며 Task를 처리합니다.", eyebrow="업무 수행", primary_action=None %}
@@ -28,7 +31,7 @@
     </section>
     {% endif %}
 
-    <section class="panel task-console-summary">
+    <section class="panel task-console-summary" data-a2ui-component="TaskStatus" data-a2ui-catalog="{{ payload.a2ui_surface.catalog_id }}">
       <div>
         <span class="eyebrow">현재 방식</span>
         <strong>{{ payload.execution_mode|capitalize }}</strong>
@@ -105,45 +108,26 @@
             <input type="hidden" name="sop_ref" value="{{ stage.sop_ref }}" />
             <input type="hidden" name="sop_stage_id" value="{{ stage.sop_stage_id }}" />
             <input type="hidden" name="workflow_definition_key" value="{{ stage.workflow_definition_key }}" />
-            <label>
-              확인한 내용
-              <textarea name="observation" rows="3" required placeholder="예: Alarm 발생 시각과 Trend 변화, Raw Data 상태를 확인했습니다."></textarea>
-            </label>
-            <label>
-              수행한 조치
-              <textarea name="action_taken" rows="3" placeholder="예: 보전 가이드에 따라 설비 상태를 점검하고 담당자에게 추가 확인을 요청했습니다."></textarea>
-            </label>
-            <label>
-              판단과 결과
-              <textarea name="decision" rows="3" placeholder="예: 재발 가능성이 있어 즉시 완료하지 않고 후속 점검이 필요하다고 판단했습니다."></textarea>
-            </label>
-            <div class="task-console-form-grid">
+            <div class="task-console-dynamic-fields">
+              {% for field in work_form.fields or [] %}
               <label>
-                현재 결과
-                <select name="outcome">
-                  <option value="progress">진행 내용을 남깁니다</option>
-                  <option value="needs_review">담당자 검토가 더 필요합니다</option>
-                  <option value="blocked">막힌 점이 있습니다</option>
-                  <option value="completed">업무를 완료합니다</option>
+                {{ field.label }}
+                {% if field.control == "textarea" %}
+                <textarea name="{{ field.name }}" rows="{{ field.rows or 3 }}" {% if field.required %}required{% endif %} placeholder="{{ field.placeholder or '' }}"></textarea>
+                {% elif field.control == "select" %}
+                <select name="{{ field.name }}" {% if field.required %}required{% endif %}>
+                  {% for option in field.options or [] %}<option value="{{ option.value }}">{{ option.label }}</option>{% endfor %}
                 </select>
+                {% else %}
+                <input name="{{ field.name }}" type="text" {% if field.required %}required{% endif %} placeholder="{{ field.placeholder or '' }}" />
+                {% endif %}
               </label>
-              <label>
-                확인한 자료
-                <input name="evidence_refs" type="text" placeholder="문서, 파일 또는 결과 링크를 쉼표로 구분" />
-              </label>
+              {% endfor %}
             </div>
-            <label>
-              막힌 점 또는 다음 업무
-              <textarea name="blocker" rows="2" placeholder="현재 진행을 막는 점이 있다면 적어주세요."></textarea>
-            </label>
-            <label>
-              다음에 이어서 할 일
-              <input name="next_work" type="text" placeholder="예: 30분 뒤 Trend 안정 여부 재확인" />
-            </label>
-            {% if completion.checks %}
+            {% if work_form.completion_checks %}
             <fieldset class="task-work-record-checks">
               <legend>기록으로 확인되는 완료된 모습</legend>
-              {% for check in completion.checks %}
+              {% for check in work_form.completion_checks %}
               <label>
                 <input type="checkbox" name="completed_check_ids" value="{{ check.check_id }}" {% if check.confirmed %}checked{% endif %} />
                 {{ check.label }}
@@ -204,7 +188,7 @@
             <span>이 Task를 마치기 전에 확인할 자료와 현재 확보 상태입니다.</span>
           </div>
           <div class="task-console-evidence-grid task-console-required-evidence" data-a2ui-component="EvidencePicker" data-a2ui-catalog="boi-a2ui/v1">
-            {% for item in completion.evidence %}
+            {% for item in evidence_picker["items"] or completion.evidence %}
             <section class="{% if item.available %}available{% endif %}">
               <span>{{ item.status_label }}</span>
               <h3>{{ item.label }}</h3>

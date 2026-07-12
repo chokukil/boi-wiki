@@ -30544,6 +30544,73 @@ def task_console_payload(
             "requires_action": execution_mode in {"manual", "copilot"},
             "requires_decision": execution_mode in {"manual", "copilot"},
             "requires_system_result": execution_mode == "autopilot",
+            "fields": [
+                {
+                    "name": "observation",
+                    "label": "확인한 내용",
+                    "control": "textarea",
+                    "rows": 3,
+                    "required": True,
+                    "placeholder": "예: 발생 시각, 변화와 현재 상태를 확인했습니다.",
+                },
+                *(
+                    [
+                        {
+                            "name": "action_taken",
+                            "label": "수행한 조치",
+                            "control": "textarea",
+                            "rows": 3,
+                            "required": execution_mode == "manual",
+                            "placeholder": "예: 가이드에 따라 상태를 점검하고 담당자에게 확인을 요청했습니다.",
+                        },
+                        {
+                            "name": "decision",
+                            "label": "판단과 결과",
+                            "control": "textarea",
+                            "rows": 3,
+                            "required": True,
+                            "placeholder": "예: 추가 확인이 필요해 다음 점검 전까지 진행 상태로 남깁니다.",
+                        },
+                    ]
+                    if execution_mode in {"manual", "copilot"}
+                    else []
+                ),
+                {
+                    "name": "outcome",
+                    "label": "현재 결과",
+                    "control": "select",
+                    "required": True,
+                    "options": [
+                        {"value": "progress", "label": "진행 내용을 남깁니다"},
+                        {"value": "needs_review", "label": "담당자 검토가 더 필요합니다"},
+                        {"value": "blocked", "label": "막힌 점이 있습니다"},
+                        {"value": "completed", "label": "업무를 완료합니다"},
+                    ],
+                },
+                {
+                    "name": "evidence_refs",
+                    "label": "확인한 자료",
+                    "control": "text",
+                    "required": bool(completion.get("evidence")),
+                    "placeholder": "문서, 파일 또는 결과 링크를 쉼표로 구분",
+                },
+                {
+                    "name": "blocker",
+                    "label": "막힌 점",
+                    "control": "textarea",
+                    "rows": 2,
+                    "required": False,
+                    "placeholder": "현재 진행을 막는 점이 있다면 적어주세요.",
+                },
+                {
+                    "name": "next_work",
+                    "label": "다음에 이어서 할 일",
+                    "control": "text",
+                    "required": False,
+                    "placeholder": "예: 30분 뒤 상태 안정 여부 재확인",
+                },
+            ],
+            "completion_checks": completion.get("checks") or [],
         },
         "workflow_canvas": workflow_canvas,
         "work_context_summary": compact,
@@ -30586,7 +30653,7 @@ def task_console_payload(
     surface_id = "task-surface-" + hashlib.sha256(
         f"{task_completion_context_key(context)}:{len(payload['work_records'])}".encode("utf-8")
     ).hexdigest()[:20]
-    payload["a2ui_surface"] = {
+    task_surface = {
         "surface_id": surface_id,
         "protocol_version": "0.9.1",
         "catalog_id": "boi-a2ui/v1",
@@ -30611,8 +30678,21 @@ def task_console_payload(
                 "props": {"items": completion.get("evidence") or []},
             },
         ],
+        "events": [],
         "fallback": "task_console_html",
     }
+    payload["a2ui_surface"] = validate_a2ui_surface(task_surface)
+    payload["a2ui_component_props"] = {
+        str(item["component"]): item.get("props") or {}
+        for item in payload["a2ui_surface"]["components"]
+    }
+    service = globals().get("AGENT_V2_SERVICE")
+    if service is not None:
+        service.store.put(
+            "a2ui_surfaces",
+            surface_id,
+            {**payload["a2ui_surface"], "employee_id": employee_id, "created_at": now_iso()},
+        )
     return payload
 
 
@@ -35953,6 +36033,7 @@ async def api_task_assignment_patch(
             raise HTTPException(status_code=409, detail="다른 사용자가 배정을 변경했습니다. 최신 내용을 확인해주세요.") from exc
         raise
     invalidate_action_log_caches()
+    notify_knowledge_changed(f"runtime-task:{task_ref}", employee_id)
     return {"ok": True, "task_ref": task_ref, "assignment_design": assignment}
 
 
@@ -35983,6 +36064,7 @@ async def api_task_work_record(
 ) -> dict[str, Any]:
     req.task_id = task_ref
     record, context = write_task_work_record(req, employee_id)
+    notify_knowledge_changed(f"runtime-task:{task_ref}", employee_id)
     return {"ok": True, "record": record, "completion": task_completion_model(context, employee_id)}
 
 
@@ -39699,6 +39781,7 @@ async def users() -> dict[str, Any]:
 # v2 behavior lives in app.v2; this module only supplies existing roots,
 # identity enrichment, and the shared page shell.
 from .v2 import DomainServiceGateway, build_agent_v2_router, build_agent_v2_service  # noqa: E402
+from .v2.a2ui import validate_surface as validate_a2ui_surface  # noqa: E402
 from .v2.config import AgentV2Settings  # noqa: E402
 from .v2.models import Principal as AgentV2Principal  # noqa: E402
 
@@ -39713,6 +39796,13 @@ def agent_v2_identity_for_employee(employee_id: str) -> AgentV2Principal:
         roles=roles_for(employee_id),
         auth_source=identity.auth_source,
     )
+
+
+def agent_v2_directory_principals() -> list[AgentV2Principal]:
+    return [
+        agent_v2_identity_for_employee(employee_id)
+        for employee_id in sorted(set(USER_NAMES) | set(USER_TEAMS))
+    ]
 
 
 def agent_v2_domain_sop_draft_create(principal: AgentV2Principal, payload: dict[str, Any]) -> dict[str, Any]:
@@ -40094,6 +40184,7 @@ AGENT_V2_SERVICE = build_agent_v2_service(
     identity_provider=agent_v2_identity_for_employee,
     domain_services=AGENT_V2_DOMAIN_SERVICES,
     page_context_provider=resolve_agent_page_context,
+    directory_provider=agent_v2_directory_principals,
 )
 app.state.agent_v2_service = AGENT_V2_SERVICE
 
@@ -40110,6 +40201,9 @@ def notify_knowledge_changed(record_id: str, employee_id: str = "", operation: s
         }
         _KNOWLEDGE_INDEX_SYNC_STATE["status"] = "syncing"
     _KNOWLEDGE_INDEX_SYNC_WAKE.set()
+
+
+AGENT_V2_SERVICE.learning.knowledge_change_notifier = notify_knowledge_changed
 
 
 def knowledge_index_sync_diagnostics() -> dict[str, Any]:

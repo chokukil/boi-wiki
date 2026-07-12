@@ -21,6 +21,7 @@ from .a2ui import compile_surface, presentation_plan
 from .capabilities import CapabilityRegistry
 from .config import AgentV2Settings, deep_subagent_budget_limit
 from .domain import DomainServiceGateway
+from .entity_resolver import AmbiguousEntityError, EntityResolver
 from .evaluation import IndependentArtifactEvaluator
 from .harness import HarnessRegistry
 from .knowledge_system import LivingKnowledgeService
@@ -70,6 +71,7 @@ from .models import (
     Principal,
     ProposalApplyRequest,
     RelatedQuestion,
+    ResolvedSourceRef,
     RiskLevel,
     SourceSetPatchRequest,
     StarterSuggestion,
@@ -382,6 +384,7 @@ DRAFT_SCHEMAS: dict[str, dict[str, Any]] = {
 class AgentV2Service:
     SEMANTIC_ROUTE_CACHE_VERSION = "5"
     SEMANTIC_ROUTE_CACHE_TTL_SECONDS = 900
+    STARTER_SUGGESTION_VERSION = "2"
 
     def __init__(
         self,
@@ -391,6 +394,7 @@ class AgentV2Service:
         domain_services: DomainServiceGateway | None = None,
         routine_target_executor: Callable[[dict[str, Any], WorkRoutineTriggerRequest, Principal], dict[str, Any]] | None = None,
         page_context_provider: Callable[[str, str], dict[str, Any]] | None = None,
+        directory_provider: Callable[[], list[Principal]] | None = None,
     ):
         self.settings = settings
         self.store: AgentV2Store = build_store(settings)
@@ -401,6 +405,7 @@ class AgentV2Service:
         self.search = HybridSearchService(self.repository, self.store, self.model)
         self.policy = TaskPolicy(self.repository, self.store)
         self.quick_agent = QuickAgentRuntime(self.registry)
+        self.entity_resolver = EntityResolver(directory_provider)
         self.pats = PatService(self.store, settings.pat_hash_secret, identity_provider=identity_provider)
         self.harnesses = HarnessRegistry()
         self.evaluator = IndependentArtifactEvaluator(
@@ -422,6 +427,7 @@ class AgentV2Service:
             repository=self.repository,
             store=self.store,
             search=self.search,
+            directory_provider=directory_provider,
         )
 
     def ensure_model_residency(self) -> dict[str, Any]:
@@ -620,11 +626,33 @@ class AgentV2Service:
             context_basis: str = "",
             result_kind: str = "answer",
             graph_query_kind: str = "",
+            fallback_to_answer: bool = False,
         ) -> None:
             refs = list(dict.fromkeys(str(item).strip() for item in source_refs if str(item).strip()))[:4]
             subject = str(subject_ref or "").strip()
             if not subject or not refs:
                 return
+            if graph_query_kind and result_kind in {"table", "timeline", "mermaid", "explorer"}:
+                graph_subject = f"person:{principal.employee_id}" if graph_query_kind == "responsibility" else subject
+                try:
+                    graph_result = self.knowledge.query(
+                        principal,
+                        GraphQueryPlan(
+                            focal_entities=[graph_subject],
+                            query_kind=graph_query_kind,  # type: ignore[arg-type]
+                            direction="both",
+                            depth=2,
+                            limit=24,
+                            presentation=result_kind,  # type: ignore[arg-type]
+                        ),
+                    )
+                except Exception:
+                    graph_result = {}
+                if not graph_result.get("edges"):
+                    if not fallback_to_answer:
+                        return
+                    result_kind = "answer"
+                    graph_query_kind = ""
             digest = hashlib.sha256(f"{category}:{subject}:{prompt}".encode("utf-8")).hexdigest()[:16]
             if digest in seen_suggestions:
                 return
@@ -730,6 +758,7 @@ class AgentV2Service:
                 priority=30,
                 result_kind="table",
                 graph_query_kind="compare",
+                fallback_to_answer=True,
             )
 
         page_anchor = self.learning.contexts.page_anchor(principal, page_ref)
@@ -754,6 +783,7 @@ class AgentV2Service:
                 priority=20,
                 result_kind="mermaid",
                 graph_query_kind="neighbors",
+                fallback_to_answer=True,
             )
             if not current:
                 add(
@@ -766,6 +796,7 @@ class AgentV2Service:
                     priority=35,
                     result_kind="table",
                     graph_query_kind="compare",
+                    fallback_to_answer=True,
                 )
 
         recent_artifact: dict[str, Any] | None = None
@@ -824,6 +855,7 @@ class AgentV2Service:
                     priority=40,
                     result_kind="explorer",
                     graph_query_kind="neighbors",
+                    fallback_to_answer=True,
                 )
 
         connected_records = directly_connected_records([suggestion_anchor.record_id]) if suggestion_anchor else []
@@ -957,6 +989,7 @@ class AgentV2Service:
                 context_basis="canonical_entrypoint",
                 result_kind=entrypoint_results[area][0],
                 graph_query_kind=entrypoint_results[area][1],
+                fallback_to_answer=True,
             )
 
         suggestions.sort(key=lambda item: (item.priority, item.label))
@@ -972,6 +1005,7 @@ class AgentV2Service:
         starters = self.starter_suggestions(principal, page_ref=request.page_ref, limit=18)
         source = [item.model_dump(mode="json") for item in starters]
         fingerprint_payload = {
+            "version": self.STARTER_SUGGESTION_VERSION,
             "employee_id": principal.employee_id,
             "teams": principal.teams,
             "page_ref": request.page_ref,
@@ -1813,6 +1847,13 @@ class AgentV2Service:
                 start_line=start_line,
                 end_line=end_line,
                 kind=kind,
+                resolved_source=ResolvedSourceRef(
+                    source_ref=item.evidence_id,
+                    title=title,
+                    canonical_url=target,
+                    source_kind=kind,
+                    navigation_state="navigable" if target else "unresolved",
+                ),
             )
             self.store.put(
                 "citations",
@@ -2973,10 +3014,6 @@ class AgentV2Service:
             item
             for item in evidence
             if item.evidence_id in citation_by_source
-            and (
-                item.evidence_id in focal_refs
-                or self._evidence_asset_kind(item.kind) in allowed_asset_kinds
-            )
         ]
         top_score = max((float(item.score or 0.0) for item in candidates), default=0.0)
         grounded = [
@@ -3440,37 +3477,13 @@ class AgentV2Service:
         draft = intent.graph_query_draft
         if not draft or not draft.enabled:
             return None
-        focal_entities: list[str] = []
-        for mention in draft.focal_mentions:
-            clean = str(mention or "").strip()
-            if not clean:
-                continue
-            if clean in {"나", "내", "본인", "현재 사용자", "current user", "me"}:
-                focal_entities.append(f"person:{principal.employee_id}")
-                continue
-            if clean.startswith(("person:", "team:", "task:", "runtime-task:", "boi:", "action:", "event:", "workflow:")):
-                focal_entities.append(clean)
-                continue
-            if re.fullmatch(r"\d{4,12}", clean):
-                focal_entities.append(f"person:{clean}")
-                continue
-            if clean in principal.teams:
-                focal_entities.append(f"team:{clean}")
-                continue
-            record = self._record_for_ref(principal, clean)
-            if record:
-                focal_entities.append(str(record.record_id))
-                continue
-            exact = next(
-                (
-                    item.record_id
-                    for item in self.repository.authoritative_records(principal)
-                    if item.title.casefold() == clean.casefold()
-                ),
-                "",
-            )
-            if exact:
-                focal_entities.append(exact)
+        records = self.repository.authoritative_records(principal, include_drafts=True)
+        records.extend(self.repository.history_records(principal, include_seed=False))
+        focal_entities = self.entity_resolver.resolve_many(
+            draft.focal_mentions,
+            principal=principal,
+            records=records,
+        )
         if not focal_entities and intent.work_view in {"responsibility", "combined"}:
             focal_entities.append(f"person:{principal.employee_id}")
         if not focal_entities and intent.target_ref:
@@ -3478,17 +3491,11 @@ class AgentV2Service:
         if not focal_entities:
             return None
 
-        target_entities: list[str] = []
-        for mention in draft.target_mentions:
-            clean = str(mention or "").strip()
-            if clean.startswith(("person:", "team:", "task:", "runtime-task:", "boi:", "action:", "event:", "workflow:")):
-                target_entities.append(clean)
-            elif re.fullmatch(r"\d{4,12}", clean):
-                target_entities.append(f"person:{clean}")
-            else:
-                record = self._record_for_ref(principal, clean)
-                if record:
-                    target_entities.append(str(record.record_id))
+        target_entities = self.entity_resolver.resolve_many(
+            draft.target_mentions,
+            principal=principal,
+            records=records,
+        )
         return GraphQueryPlan(
             focal_entities=list(dict.fromkeys(focal_entities))[:20],
             target_entities=list(dict.fromkeys(target_entities))[:20],
@@ -3511,7 +3518,7 @@ class AgentV2Service:
         intent: WorkIntent,
         current_work: list[EvidenceRef],
         work_run_id: str,
-    ) -> tuple[AnswerBlock, ArtifactRef] | None:
+    ) -> tuple[AnswerBlock, ArtifactRef, list[EvidenceRef]] | None:
         plan = self._graph_plan_for_intent(principal, intent)
         if not plan:
             return None
@@ -3526,6 +3533,7 @@ class AgentV2Service:
             "reviewed_by": "검토 담당",
             "performed_by": "수행 기록",
             "completed_by": "검증 완료",
+            "repeated_performer": "반복 수행",
             "related_team": "관련 조직",
             "has_task": "포함 Task",
             "uses_sop": "관련 SOP",
@@ -3534,6 +3542,8 @@ class AgentV2Service:
             "requires_evidence": "확인할 근거",
             "member_of": "소속 조직",
             "has_role": "공식 역할",
+            "evidence": "근거 연결",
+            "links_to": "지식 연결",
         }
         relation_lines: list[str] = []
         source_refs: list[str] = []
@@ -3614,7 +3624,16 @@ class AgentV2Service:
                 "source_refs": source_refs,
             },
         )
-        return AnswerBlock(summary=summary, markdown="\n".join([summary, "", *lines])), artifact
+        graph_evidence: list[EvidenceRef] = []
+        for source_ref in source_refs:
+            record = self._record_for_ref(principal, source_ref)
+            if record:
+                graph_evidence.append(self._evidence_from_record(record, score=1.0))
+        return (
+            AnswerBlock(summary=summary, markdown="\n".join([summary, "", *lines])),
+            artifact,
+            list({item.evidence_id: item for item in graph_evidence}.values())[:8],
+        )
 
     def _draft_prompt(
         self,
@@ -4600,7 +4619,11 @@ class AgentV2Service:
                 graph_draft = GraphQueryDraft(
                     enabled=True,
                     query_kind=graph_query_kind,  # type: ignore[arg-type]
-                    focal_mentions=[str(request.input_delta.get("_starter_subject_ref") or starter_refs[0])],
+                    focal_mentions=(
+                        ["현재 사용자"]
+                        if graph_query_kind == "responsibility"
+                        else [str(request.input_delta.get("_starter_subject_ref") or starter_refs[0])]
+                    ),
                     presentation=presentation if presentation in {"auto", "list", "table", "timeline", "mermaid", "explorer"} else "auto",  # type: ignore[arg-type]
                 )
             preliminary_intent = preliminary_intent.model_copy(
@@ -4810,19 +4833,36 @@ class AgentV2Service:
             candidate_artifact = self.store.get("artifacts", active_artifact_id)
             if candidate_artifact and self._owns(principal, candidate_artifact):
                 active_artifact_row = candidate_artifact
-        graph_result_bundle = (
-            self._graph_result_artifact(
-                principal,
-                session=session,
-                intent=intent,
-                current_work=current_work_evidence,
-                work_run_id=str(work_run["work_run_id"]),
+        graph_clarification = ""
+        graph_result_bundle = None
+        try:
+            graph_result_bundle = (
+                self._graph_result_artifact(
+                    principal,
+                    session=session,
+                    intent=intent,
+                    current_work=current_work_evidence,
+                    work_run_id=str(work_run["work_run_id"]),
+                )
+                if intent.graph_query_draft and intent.graph_query_draft.enabled
+                else None
             )
-            if intent.graph_query_draft and intent.graph_query_draft.enabled
-            else None
-        )
+        except AmbiguousEntityError as exc:
+            candidate_labels = ", ".join(item.label for item in exc.candidates[:5])
+            graph_clarification = f"'{exc.mention}'에 해당하는 대상이 여러 개입니다: {candidate_labels}. 어느 대상을 볼까요?"
+            intent = intent.model_copy(update={"needs_clarification": True})
+            work_run["intent"] = intent.model_dump(mode="json")
+            work_run["status"] = "waiting_input"
+            self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
 
-        if work_run.get("status") == "blocked":
+        if graph_clarification:
+            status = "needs_input"
+            citations = []
+            answer = AnswerBlock(
+                summary="확인할 대상이 여러 개입니다.",
+                markdown=graph_clarification,
+            )
+        elif work_run.get("status") == "blocked":
             status = "needs_input"
             citations = []
             answer = AnswerBlock(
@@ -5049,9 +5089,21 @@ class AgentV2Service:
                     markdown="대상, 입력값, 예상 결과와 위험도를 확인한 뒤 승인해야 기존 업무 API의 실행 단계로 이어집니다. 아직 실행하거나 게시하지 않았습니다.",
                 )
         elif graph_result_bundle is not None:
-            answer, graph_artifact = graph_result_bundle
+            answer, graph_artifact, graph_evidence = graph_result_bundle
             artifacts.append(graph_artifact)
-            citations = []
+            evidence = graph_evidence or evidence
+            citations = self._citations_for_evidence(
+                principal,
+                str(session["session_id"]),
+                resolved_goal,
+                graph_evidence,
+            )
+            if citations:
+                markers = " ".join(
+                    f"[{index}](/api/v2/citations/{item.citation_id})"
+                    for index, item in enumerate(citations[:4], start=1)
+                )
+                answer.markdown = f"{answer.markdown}\n\n관계 근거 {markers}"
         elif intent.presentation_mode == "mermaid" and capability_id in {"knowledge.search", "cases.similar"}:
             try:
                 answer, diagram_artifact, generated_related_questions = self._mermaid_artifact(
@@ -7744,6 +7796,7 @@ def build_agent_v2_service(
     domain_services: DomainServiceGateway | None = None,
     routine_target_executor: Callable[[dict[str, Any], WorkRoutineTriggerRequest, Principal], dict[str, Any]] | None = None,
     page_context_provider: Callable[[str, str], dict[str, Any]] | None = None,
+    directory_provider: Callable[[], list[Principal]] | None = None,
 ) -> AgentV2Service:
     return AgentV2Service(
         settings,
@@ -7751,4 +7804,5 @@ def build_agent_v2_service(
         domain_services=domain_services,
         routine_target_executor=routine_target_executor,
         page_context_provider=page_context_provider,
+        directory_provider=directory_provider,
     )

@@ -185,6 +185,33 @@ def test_a2ui_validator_rejects_untrusted_components_html_urls_and_events(mutati
         validate_surface(surface)
 
 
+def test_task_console_is_rendered_from_a_valid_stored_a2ui_work_form(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    item = _create_task(boi_app_module, "task-a2ui-work-form")
+
+    snapshot = client.get(f"/api/tasks/{item['task_ref']}/execution-snapshot?employee_id=100001")
+    assert snapshot.status_code == 200
+    payload = snapshot.json()
+    surface = validate_surface(payload["a2ui_surface"])
+    components = {item["component"]: item for item in surface["components"]}
+    assert {"TaskStatus", "WorkRecordForm", "EvidencePicker"} <= set(components)
+    field_names = {item["name"] for item in components["WorkRecordForm"]["props"]["fields"]}
+    assert {
+        "observation", "action_taken", "decision", "outcome",
+        "evidence_refs", "blocker", "next_work",
+    } <= field_names
+
+    stored = client.get(f"/api/v2/a2ui-surfaces/{surface['surface_id']}?employee_id=100001")
+    assert stored.status_code == 200
+    assert stored.json()["catalog_id"] == BOI_CATALOG_ID
+
+    page = client.get(f"/tasks/console?employee_id=100001&task_id={item['task_ref']}")
+    assert page.status_code == 200
+    assert 'data-a2ui-component="WorkRecordForm"' in page.text
+    assert 'data-a2ui-component="EvidencePicker"' in page.text
+    assert 'name="observation"' in page.text and 'name="decision"' in page.text
+
+
 def test_multi_assignee_task_is_projected_to_each_inbox_and_completes_once(boi_app_module):
     client = TestClient(boi_app_module.app)
     request_id = "multi-assignee-task-1"

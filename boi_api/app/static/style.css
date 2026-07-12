@@ -1986,7 +1986,18 @@ body.agent-v2-task-open { overflow:hidden; }
 .ontology-result-edges { display:grid; align-content:start; gap:8px; margin:0; list-style:none; }
 .ontology-result-edges li { display:grid; grid-template-columns:minmax(90px,1fr) auto minmax(90px,1fr); align-items:center; gap:8px; padding:9px; border-bottom:1px solid #e2e8f0; }
 .ontology-result-edges li > span { color:#475569; font-size:10px; font-weight:800; }
+.ontology-result-edges li > span small { display:block; margin-top:2px; color:#64748b; font-size:9px; font-weight:600; }
 .ontology-result-edges button { min-width:0; border:0; background:transparent; color:#1d4ed8; font:inherit; font-size:11px; font-weight:800; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.ontology-result-table .table-scroll { min-height:0; overflow:auto; }
+.ontology-result-table table { width:100%; border-collapse:collapse; font-size:12px; }
+.ontology-result-table th,.ontology-result-table td { padding:10px 12px; border-bottom:1px solid #dbe3ef; text-align:left; vertical-align:top; }
+.ontology-result-table th { position:sticky; top:0; z-index:1; background:#f8fafc; color:#475569; font-size:10px; }
+.ontology-result-timeline > ol { min-height:0; margin:0; padding:12px 16px 18px; overflow:auto; list-style:none; }
+.ontology-result-timeline > ol > li { display:grid; grid-template-columns:minmax(120px,.28fr) 1fr; gap:14px; padding:12px 0; border-bottom:1px solid #dbe3ef; }
+.ontology-result-timeline time { color:#64748b; font-size:11px; }
+.ontology-result-timeline li div { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:baseline; }
+.ontology-result-timeline li span { color:#475569; font-size:10px; font-weight:800; }
+.ontology-result-timeline li small { color:#64748b; font-size:10px; }
 .agent-surface-messages,.agent-surface-artifacts,.agent-surface-sources > div,.agent-surface-source-preview > div,.agent-surface-routines > div,.agent-surface-recent > div,.mermaid-v2-canvas { scrollbar-width:auto; scrollbar-color:#64748b #e2e8f0; }
 .agent-surface-messages::-webkit-scrollbar,.agent-surface-artifacts::-webkit-scrollbar,.agent-surface-sources > div::-webkit-scrollbar,.agent-surface-source-preview > div::-webkit-scrollbar,.agent-surface-routines > div::-webkit-scrollbar,.agent-surface-recent > div::-webkit-scrollbar,.mermaid-v2-canvas::-webkit-scrollbar { width:10px; height:10px; }
 .agent-surface-messages::-webkit-scrollbar-thumb,.agent-surface-artifacts::-webkit-scrollbar-thumb,.agent-surface-sources > div::-webkit-scrollbar-thumb,.agent-surface-source-preview > div::-webkit-scrollbar-thumb,.agent-surface-routines > div::-webkit-scrollbar-thumb,.agent-surface-recent > div::-webkit-scrollbar-thumb,.mermaid-v2-canvas::-webkit-scrollbar-thumb { border:2px solid #e2e8f0; border-radius:5px; background:#64748b; }
@@ -2016,6 +2027,7 @@ body.agent-surface-overlay-open { overflow:hidden; }
   .ontology-result-layout { grid-template-columns:1fr; overflow:auto; }
   .ontology-result-nodes { grid-template-columns:repeat(2,minmax(0,1fr)); overflow:visible; border-right:0; border-bottom:1px solid #dbe3ef; }
   .ontology-result-edges { overflow:visible; }
+  .ontology-result-timeline > ol > li { grid-template-columns:1fr; gap:5px; }
 }
 .data-library-page,
 .integrations-page {
