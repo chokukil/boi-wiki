@@ -201,7 +201,8 @@ curl -sS -X POST "$BOI_BASE_URL/api/v2/knowledge-graph/query" \
 - Graph manifest의 compiler version, source signature와 runtime relation signature가 현재 값과 일치해야 한다.
 - Task 배정·업무 기록·CompletionRecord 저장은 background knowledge sync를 깨운다. 관계 조회 요청은 마지막으로 검증된 graph를 즉시 사용하고 요청 안에서 runtime 전체를 다시 컴파일하지 않는다.
 - `repeated_performer`는 `work_role_profiles`에서 최근 180일·서로 다른 검증 완료 3건 이상인지 확인한다.
-- 일반 화면에서 동적 결과가 보이지 않으면 Advanced `동적 화면 진단`에서 catalog, component와 fallback 상태를 확인한다.
+- 일반 화면에서 동적 결과가 보이지 않으면 Advanced `연결 상태`의 `동적 결과 화면 진단`을 펼쳐 catalog, component와 fallback 상태를 확인한다. 별도 사용자 메뉴는 두지 않는다.
+- Langflow는 Advanced의 고정 `Langflow` 링크로 새 탭에서 연다. 연결 실패는 링크를 숨기지 않고 `연결 상태`에서 해당 기능의 영향 범위로 진단한다.
 - 이동되지 않는 repo/code ref는 업무 근거가 아니라 `implementation_refs`로 분리한다. 관리자만 읽기 전용 기술 근거 화면을 연다.
 - 관계 조회·색인·일반 탐색은 LM Studio model load/unload API를 호출하지 않는다.
 

@@ -38,13 +38,14 @@ Task 수행 화면은 완료 체크만 누르는 곳이 아니다. 담당자는 
 
 - 무엇을 확인했는가
 - 어떤 조치를 수행했는가
-- 어떤 판단과 결과를 내렸는가
+- 어떤 판단을 내렸는가
+- 실제 결과가 무엇인가
 - 어떤 문서, 데이터, Event 또는 Action 결과를 근거로 사용했는가
 - 무엇이 막혔고 다음에는 무엇을 해야 하는가
 
 이 기록을 `TaskWorkRecord`라고 한다. 완료된 모습은 별도 버튼으로 완료시키지 않고, 업무 기록과 Evidence Ledger가 실제 완료 조건을 충족하는지로 판정한다.
 
-![확인한 내용, 수행 조치, 판단과 근거를 한 번에 남기는 Task 수행 화면](../_media/browser/current-guide/20260713-task-work-record-1440x1000.png)
+![확인한 내용, 수행 조치, 판단·결과와 근거를 한 번에 남기는 Task 수행 화면](../_media/browser/current-guide/20260713-task-work-record-1440x1000.png)
 
 모바일에서는 같은 항목을 한 열로 배치하고, 입력 중인 업무 기록과 선택한 근거를 그대로 유지한다.
 
@@ -55,8 +56,9 @@ flowchart LR
   INBOX["Inbox 업무"] --> SNAPSHOT["같은 Task 실행 정보"]
   SNAPSHOT --> OBSERVE["확인한 내용"]
   OBSERVE --> ACT["수행한 조치"]
-  ACT --> DECIDE["판단과 결과"]
-  DECIDE --> EVIDENCE["확인한 자료"]
+  ACT --> DECIDE["판단"]
+  DECIDE --> RESULT["결과"]
+  RESULT --> EVIDENCE["확인한 자료"]
   EVIDENCE --> VERIFY{"완료된 모습 충족?"}
   VERIFY -->|아니오| NEXT["막힌 점·다음 업무"]
   VERIFY -->|예| RECORD["완료 기록과 결과 BoI"]

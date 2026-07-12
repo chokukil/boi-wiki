@@ -74,4 +74,5 @@ flowchart LR
 - 원본 자료를 업무 근거로 연결한다면 [자료 보관함과 업무 근거](/docs/boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle)
 - 외부 Agent를 연결한다면 [BoI Wiki MCP 등록과 사용](/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp)
 - 실제 Event 처리 건을 확인한다면 [Event 카탈로그와 업무 발생 이력](/docs/boi:public:boi-wiki-manual:events:event-catalog-and-work-history)
+- 문서·사람·팀·SOP·Event·Action 관계를 탐색한다면 [Ontology 탐색과 외부 지식 Source 활용 가이드](/docs/boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters)
 - REST API로 연동한다면 [BoI Wiki API v2](/docs/boi:public:boi-wiki-manual:api:boi-wiki-api-v2)

@@ -222,3 +222,4 @@ SOP 초안은 결과 영역에서 Workflow와 Task 목록으로 보인다. `Task
 - [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)
 - [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)
 - [BoI Agent Guardrail과 ACL](/docs/boi:public:boi-wiki-manual:agent:agent-guardrail-and-acl)
+- [Ontology 탐색과 외부 지식 Source 활용 가이드](/docs/boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters)

@@ -21,6 +21,13 @@ agent_entrypoint_prompts:
     label: 이번 업무의 결과를 다음 업무에 재사용하기
     prompt: 업무 수행 중 확인한 근거와 결과가 어떻게 검증된 지식 개선 후보로 남고 다음 업무에 재사용되는지 설명해줘.
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:guide:final-operator-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:knowledge:living-knowledge-system
+implementation_refs:
   - type: repo
     ref: boi_api/app/v2/work_learning.py
   - type: repo
@@ -103,6 +110,21 @@ flowchart LR
 | Learning | source 없는 요약, 일회성 잡음, 중복 지식과 미검증 답변 승격 차단 |
 
 Web, REST, MCP와 DeepAgents는 같은 Harness 결과와 blocker를 반환한다.
+
+## Harness 관측과 개선 경계
+
+실행 실패는 단순 오류 문자열이 아니라 `operation → context → validator → blocker → fallback`의 인과 경로로 남긴다. 실패한 시도와 부정 결과도 보존해야 같은 도구 호출과 같은 질문을 반복하지 않고 다음 Plan Delta가 달라질 수 있다.
+
+`ContextPlaybook`은 특정 업무에서 효과가 확인된 context 선택·압축 방식을 private provisional 항목으로 보존한다. 다음 실행은 ACL과 model profile이 맞는 항목만 선택하며, 원본 전문이나 권한 밖 자료를 복제하지 않는다.
+
+Harness 개선 후보는 production 계약을 직접 고치지 않는다. `HarnessCandidate`는 다음 순서를 모두 통과해야 사람 검토 대상으로 올라간다.
+
+1. 기존 사례로 held-in 회귀를 확인한다.
+2. 후보 생성에 쓰지 않은 held-out 사례를 통과한다.
+3. 권한 우회, 근거 없는 완료, prompt injection 같은 adversarial 사례를 통과한다.
+4. 담당자가 diff와 실패·부정 결과를 검토한다.
+
+ACL·RBAC, 위험도, confirmation, Autopilot system binding, 완료 근거와 evaluator 합격선은 immutable boundary다. 후보가 이 경계를 낮추는 변경을 제안하면 평가 전에 차단한다. 모델별 context 길이와 표현 차이는 versioned model profile로 분리하고, 같은 HarnessDefinition의 안전 경계를 바꾸지 않는다.
 
 # Loop Engineering
 

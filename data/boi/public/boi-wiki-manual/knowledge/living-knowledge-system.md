@@ -80,7 +80,7 @@ flowchart LR
 
 `KnowledgeSourceDefinition`은 source 종류, 위치, visibility, revision/checksum, adapter와 sync 정책을 정의한다. 기본 source는 OKF Markdown, Git 변경 이력과 자료 보관함이다.
 
-Graphify, codegraph 같은 외부 도구는 production 기본 의존성이 아니다. `KnowledgeSourceAdapter` 뒤에서 동일 corpus의 관계 정확도, 증분 속도, token/tool call 감소, 보안과 라이선스를 비교한 뒤 source별로 선택한다.
+Graphify, OpenKB와 codegraph 같은 외부 도구는 production 기본 의존성이 아니다. `KnowledgeSourceAdapter` 뒤에서 동일 corpus의 관계 정확도, 증분 속도, token/tool call 감소, 보안과 라이선스를 비교한 뒤 source별로 선택한다. 현재 Graphify `graph.json`과 OpenKB `manifest.json`을 격리된 staging 영역에서 가져오는 adapter가 있으며, 각각 Ontology read model과 private KnowledgeCandidate만 갱신한다. OKF 정본은 검토 전 변경하지 않는다.
 
 # 외부 패턴을 반영한 기준
 
@@ -88,10 +88,10 @@ Graphify, codegraph 같은 외부 도구는 production 기본 의존성이 아�
 |---|---|---|
 | Karpathy LLM Wiki | 원본을 보존하고 누적 Markdown을 서로 연결하며 schema와 lint로 품질을 지킨다. | Agent가 작성한 문장을 검증 없이 정본으로 승격하지 않는다. |
 | Google OKF | Markdown frontmatter, 링크 그래프와 정본의 이식성을 호환 profile로 유지한다. | 아직 draft인 표준만으로 사내 ACL, Task, Event와 Action 관계를 제한하지 않는다. |
-| Graphify·codegraph | 파서 기반 관계 추출, 증분 graph 갱신과 Agent의 graph-first 탐색을 adapter 후보로 둔다. | 외부 graph DB나 특정 CLI를 production 필수 의존성으로 고정하지 않는다. |
+| Graphify·codegraph | Graphify export의 구조 관계를 source-owned 증분 graph로 가져오고 graph-first 탐색 패턴을 적용한다. | 외부 graph DB나 특정 CLI를 production 필수 의존성으로 고정하지 않는다. |
 | Understand Anything | `어떻게 이어지나요`, `어디에 영향이 있나요`, `이 순서로 살펴보기` 탐색을 제공한다. | 코드 구조만을 전체 업무 온톨로지로 간주하지 않는다. |
 | OpenWiki | source 변경을 감지하고 영향을 받은 문서와 관계의 갱신 후보를 만든다. | 공유 문서를 자동으로 다시 쓰거나 바로 게시하지 않는다. |
-| OpenKB | PDF·Office 원본을 목차와 개념 후보로 구조화한 뒤 lexical·semantic 검색을 적용한다. | 원본 전문을 prompt나 embedding index에 그대로 복제하지 않는다. |
+| OpenKB | PDF·Office export의 목차·요약·claim을 private 검토 후보로 가져온다. | 원본 전문을 prompt·embedding에 복제하거나 후보를 공유 정본으로 자동 승격하지 않는다. |
 | Obsidian Second Brain | 야간 health 작업으로 stale claim, 모순, 중복과 고립 지식을 찾는다. | 오류까지 누적되지 않도록 의미 변경은 diff와 검토를 반드시 거친다. |
 
 # 증분 Knowledge Compiler

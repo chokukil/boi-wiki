@@ -183,6 +183,7 @@ Codex, Claude와 다른 MCP client도 Web BoI Agent와 같은 Context, Harness, 
 # 역할별 다음 문서
 
 - 일반 구성원: [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)
+- 관계 탐색: [Ontology 탐색과 외부 지식 Source 활용 가이드](/docs/boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters)
 - 업무 설계자: [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
 - 외부 Agent 사용자: [BoI Wiki MCP 등록과 사용](/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp)
 - 운영자: [BoI Wiki 운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)

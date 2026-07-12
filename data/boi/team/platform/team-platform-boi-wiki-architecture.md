@@ -17,6 +17,13 @@ author:
 acl_policy: acl:team:platform
 status: reviewed
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-learning-system
+  - type: boi
+    ref: boi:public:boi-wiki-manual:knowledge:living-knowledge-system
+  - type: boi
+    ref: boi:public:boi-wiki-manual:operations:operator-runbook
+implementation_refs:
   - type: repo
     ref: README.md
   - type: compose
@@ -224,7 +231,7 @@ flowchart LR
   SURFACE --> MUTATION["preview·confirmation·Harness"]
 ```
 
-Web client는 저장된 surface를 다시 조회하고 허용된 component registry로 실제 DOM을 만든다. 표, Timeline, Mermaid, Ontology Explorer, WorkRecordForm과 EvidencePicker가 1차 catalog다. 관리자 `동적 화면 진단`에서는 surface와 validation/fallback 상태만 확인하며 일반 사용자에게 protocol 이름을 노출하지 않는다.
+Web client는 저장된 surface를 다시 조회하고 허용된 component registry로 실제 DOM을 만든다. 표, Timeline, Mermaid, Ontology Explorer, WorkRecordForm과 EvidencePicker가 1차 catalog다. surface validation과 fallback 상태는 Advanced `연결 상태`의 관리자용 접힌 진단에서만 확인하며 일반 사용자에게 protocol 이름을 노출하지 않는다.
 
 응답 크기 제한은 표현 중복을 먼저 줄이고 WorkIntent와 최소 citation을 보존한다. citation이 제거된 응답을 `grounded`로 표시해서는 안 된다. 이 경계는 [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)의 결정적 테스트와 실모델 시나리오로 검증한다.
 
