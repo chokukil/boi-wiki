@@ -493,6 +493,8 @@ class AgentTurnResponse(BaseModel):
     harness_results: list[HarnessResult] = Field(default_factory=list)
     knowledge_candidates: list[KnowledgeCandidateRef] = Field(default_factory=list)
     context_usage: dict[str, Any] = Field(default_factory=dict)
+    presentation_plan: dict[str, Any] = Field(default_factory=dict)
+    a2ui_surface_ref: str = ""
 
 
 class WorkSessionCreateRequest(BaseModel):
@@ -557,6 +559,23 @@ class KnowledgeEdge(BaseModel):
     extractor_version: str
     source_revision: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphQueryPlan(BaseModel):
+    focal_entities: list[str] = Field(min_length=1, max_length=20)
+    query_kind: Literal[
+        "neighbors", "path", "workflow", "impact", "lineage",
+        "responsibility", "timeline", "compare", "tour",
+    ] = "neighbors"
+    target_entities: list[str] = Field(default_factory=list, max_length=20)
+    node_kinds: list[str] = Field(default_factory=list, max_length=30)
+    relation_kinds: list[str] = Field(default_factory=list, max_length=30)
+    direction: Literal["outgoing", "incoming", "both"] = "both"
+    depth: int = Field(default=2, ge=1, le=6)
+    limit: int = Field(default=80, ge=1, le=500)
+    time_from: str = ""
+    time_to: str = ""
+    presentation: Literal["auto", "list", "table", "timeline", "mermaid", "explorer"] = "auto"
 
 
 class KnowledgePatchProposal(BaseModel):

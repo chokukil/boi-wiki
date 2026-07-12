@@ -72,6 +72,9 @@ class AgentV2Store:
     def remove_ontology_records(self, record_ids: list[str]) -> None:
         return None
 
+    def remove_ontology_entries(self, node_ids: list[str], edge_ids: list[str]) -> None:
+        self.remove_ontology_records(node_ids)
+
     def ontology_neighbors(
         self,
         seed_ids: list[str],
@@ -157,6 +160,30 @@ class MemoryAgentV2Store(AgentV2Store):
             }
             self._collections["_ontology_edges"] = {
                 str(item["edge_id"]): copy.deepcopy(item) for item in edges
+            }
+
+    def upsert_ontology(self, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
+        with self._lock:
+            node_store = self._collections.setdefault("_ontology_nodes", {})
+            edge_store = self._collections.setdefault("_ontology_edges", {})
+            node_store.update({str(item["node_id"]): copy.deepcopy(item) for item in nodes})
+            edge_store.update({str(item["edge_id"]): copy.deepcopy(item) for item in edges})
+
+    def remove_ontology_entries(self, node_ids: list[str], edge_ids: list[str]) -> None:
+        with self._lock:
+            node_store = self._collections.setdefault("_ontology_nodes", {})
+            edge_store = self._collections.setdefault("_ontology_edges", {})
+            node_targets = {str(item) for item in node_ids if str(item)}
+            edge_targets = {str(item) for item in edge_ids if str(item)}
+            for node_id in node_targets:
+                node_store.pop(node_id, None)
+            for edge_id in edge_targets:
+                edge_store.pop(edge_id, None)
+            self._collections["_ontology_edges"] = {
+                key: edge
+                for key, edge in edge_store.items()
+                if str(edge.get("source_id") or "") not in node_targets
+                and str(edge.get("target_id") or "") not in node_targets
             }
 
     def remove_ontology_records(self, record_ids: list[str]) -> None:
@@ -400,6 +427,9 @@ class PostgresAgentV2Store(AgentV2Store):
                     )
                     """
                 )
+                cursor.execute("CREATE INDEX IF NOT EXISTS ontology_edges_source_idx ON ontology_edges(source_id, relation)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS ontology_edges_target_idx ON ontology_edges(target_id, relation)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS ontology_edges_relation_idx ON ontology_edges(relation)")
 
     def health(self) -> dict[str, Any]:
         try:
@@ -701,6 +731,22 @@ class PostgresAgentV2Store(AgentV2Store):
                     (targets, targets),
                 )
                 cursor.execute("DELETE FROM ontology_nodes WHERE node_id = ANY(%s)", (targets,))
+
+    def remove_ontology_entries(self, node_ids: list[str], edge_ids: list[str]) -> None:
+        node_targets = [str(item) for item in node_ids if str(item)]
+        edge_targets = [str(item) for item in edge_ids if str(item)]
+        if not node_targets and not edge_targets:
+            return
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                if edge_targets:
+                    cursor.execute("DELETE FROM ontology_edges WHERE edge_id = ANY(%s)", (edge_targets,))
+                if node_targets:
+                    cursor.execute(
+                        "DELETE FROM ontology_edges WHERE source_id = ANY(%s) OR target_id = ANY(%s)",
+                        (node_targets, node_targets),
+                    )
+                    cursor.execute("DELETE FROM ontology_nodes WHERE node_id = ANY(%s)", (node_targets,))
 
     def replace_search_chunks(self, rows: list[dict[str, Any]]) -> None:
         with self._connect() as connection:

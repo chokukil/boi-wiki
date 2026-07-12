@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from .config import AgentV2Settings
 from .models import (
+    GraphQueryPlan,
     KnowledgeEdge,
     KnowledgePatchProposal,
     KnowledgeProposalApplyRequest,
@@ -350,6 +351,58 @@ class LivingKnowledgeService:
                     }
                 )
                 append_edge(record.record_id, task_id, "has_task", "extracted", revision, metadata={"order": index})
+                assignment = stage.get("assignment_design") if isinstance(stage.get("assignment_design"), dict) else {}
+                for employee_id in assignment.get("assignee_employee_ids") or []:
+                    person_id = f"person:{str(employee_id).strip()}"
+                    if person_id == "person:":
+                        continue
+                    nodes.append(
+                        {
+                            "node_id": person_id,
+                            "node_type": "person",
+                            "payload": {
+                                "title": str(employee_id),
+                                "visibility": record.visibility,
+                                "owner": record.owner,
+                                "team_id": record.team_id,
+                                "source_revision": revision,
+                            },
+                        }
+                    )
+                    append_edge(task_id, person_id, "assigned_to", "declared", revision, metadata={"source_ref": record.record_id})
+                for employee_id in assignment.get("reviewer_employee_ids") or []:
+                    person_id = f"person:{str(employee_id).strip()}"
+                    if person_id != "person:":
+                        nodes.append(
+                            {
+                                "node_id": person_id,
+                                "node_type": "person",
+                                "payload": {
+                                    "title": str(employee_id),
+                                    "visibility": record.visibility,
+                                    "owner": record.owner,
+                                    "team_id": record.team_id,
+                                    "source_revision": revision,
+                                },
+                            }
+                        )
+                        append_edge(task_id, person_id, "reviewed_by", "declared", revision, metadata={"source_ref": record.record_id})
+                for team_id in assignment.get("related_team_ids") or []:
+                    team_node_id = f"team:{str(team_id).strip()}"
+                    if team_node_id != "team:":
+                        nodes.append(
+                            {
+                                "node_id": team_node_id,
+                                "node_type": "team",
+                                "payload": {
+                                    "title": str(team_id),
+                                    "visibility": record.visibility,
+                                    "team_id": str(team_id),
+                                    "source_revision": revision,
+                                },
+                            }
+                        )
+                        append_edge(task_id, team_node_id, "related_team", "declared", revision, metadata={"source_ref": record.record_id})
                 for field, relation in {
                     "event_types": "uses_event",
                     "entry_event": "uses_event",
@@ -369,12 +422,25 @@ class LivingKnowledgeService:
 
         unique_nodes = {str(item["node_id"]): item for item in nodes}
         unique_edges = {str(item["edge_id"]): item for item in edges}
-        self.store.replace_ontology(list(unique_nodes.values()), list(unique_edges.values()))
+        previous = self.store.get("manifests", "knowledge_graph") or {}
+        previous_nodes = {str(item) for item in previous.get("node_ids") or []}
+        previous_edges = {str(item) for item in previous.get("edge_ids") or []}
+        current_nodes = set(unique_nodes)
+        current_edges = set(unique_edges)
+        removed_nodes = sorted(previous_nodes - current_nodes)
+        removed_edges = sorted(previous_edges - current_edges)
+        self.store.remove_ontology_entries(removed_nodes, removed_edges)
+        self.store.upsert_ontology(list(unique_nodes.values()), list(unique_edges.values()))
         manifest = {
             "compiler_version": EXTRACTOR_VERSION,
             "source_signature": self.repository.source_signature(),
             "nodes": len(unique_nodes),
             "edges": len(unique_edges),
+            "node_ids": sorted(current_nodes),
+            "edge_ids": sorted(current_edges),
+            "removed_nodes": len(removed_nodes),
+            "removed_edges": len(removed_edges),
+            "sync_mode": "incremental_upsert",
             "compiled_at": now_iso(),
         }
         self.store.put("manifests", "knowledge_graph", manifest)
@@ -556,6 +622,74 @@ class LivingKnowledgeService:
                 }
                 for index, ref in enumerate(order)
             ],
+        }
+
+    def query(self, principal: Principal, plan: GraphQueryPlan) -> dict[str, Any]:
+        manifest = self.store.get("manifests", "knowledge_graph") or {}
+        if manifest.get("source_signature") != self.repository.source_signature():
+            self.compile_graph(principal)
+        graph = self.store.ontology_neighbors(
+            plan.focal_entities,
+            depth=plan.depth,
+            limit=plan.limit,
+            employee_id=principal.employee_id,
+            team_ids=principal.teams,
+            include_all=principal.is_admin,
+        )
+        nodes = list(graph.get("nodes") or [])
+        edges = list(graph.get("edges") or [])
+        if plan.node_kinds:
+            allowed_node_kinds = set(plan.node_kinds)
+            nodes = [item for item in nodes if str(item.get("node_type") or "") in allowed_node_kinds]
+            visible_ids = {str(item.get("node_id") or "") for item in nodes} | set(plan.focal_entities)
+            edges = [item for item in edges if str(item.get("source_id") or "") in visible_ids and str(item.get("target_id") or "") in visible_ids]
+        if plan.relation_kinds:
+            allowed_relations = set(plan.relation_kinds)
+            edges = [item for item in edges if str(item.get("relation") or "") in allowed_relations]
+        focal = set(plan.focal_entities)
+        if plan.direction == "outgoing":
+            edges = [item for item in edges if str(item.get("source_id") or "") in focal or int(item.get("depth") or 1) > 1]
+        elif plan.direction == "incoming":
+            edges = [item for item in edges if str(item.get("target_id") or "") in focal or int(item.get("depth") or 1) > 1]
+
+        if plan.query_kind == "path" and plan.target_entities:
+            return self.explore(
+                principal,
+                view="path",
+                source_ref=plan.focal_entities[0],
+                target_ref=plan.target_entities[0],
+                depth=plan.depth,
+                limit=plan.limit,
+            ) | {"query_plan": plan.model_dump(mode="json"), "presentation": plan.presentation}
+
+        if plan.query_kind == "compare":
+            groups = {
+                entity: {
+                    "nodes": [item for item in nodes if str(item.get("node_id") or "") == entity],
+                    "edges": [item for item in edges if entity in {str(item.get("source_id") or ""), str(item.get("target_id") or "")}],
+                }
+                for entity in plan.focal_entities
+            }
+        else:
+            groups = {}
+        presentation = plan.presentation
+        if presentation == "auto":
+            if plan.query_kind == "timeline":
+                presentation = "timeline"
+            elif plan.query_kind in {"workflow", "path", "lineage"} and len(nodes) <= 14 and len(edges) <= 20:
+                presentation = "mermaid"
+            elif len(nodes) > 20:
+                presentation = "explorer"
+            else:
+                presentation = "list"
+        return {
+            "ok": True,
+            "query_plan": plan.model_dump(mode="json"),
+            "presentation": presentation,
+            "nodes": nodes,
+            "edges": edges,
+            "groups": groups,
+            "provenance_required": True,
         }
 
     def health(self, principal: Principal, *, refresh: bool = False) -> dict[str, Any]:

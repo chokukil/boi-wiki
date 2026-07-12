@@ -6,6 +6,7 @@
   <title>{{ shell.title }} · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('doc_graph.js') }}" defer></script>
+  <script type="module" src="{{ asset_url('dist/knowledge-graph.js') }}"></script>
   <script src="{{ asset_url('doc_metadata.js') }}" defer></script>
   <script src="{{ asset_url('doc_edit.js') }}" defer></script>
   <script src="{{ asset_url('evidence_tray.js') }}" defer></script>
@@ -290,6 +291,7 @@
         <button type="button" role="tab" aria-selected="false" data-knowledge-view="path">어떻게 이어지나요</button>
         <button type="button" role="tab" aria-selected="false" data-knowledge-view="impact">어디에 영향이 있나요</button>
         <button type="button" role="tab" aria-selected="false" data-knowledge-view="tour">이 순서로 살펴보기</button>
+        <button type="button" role="tab" aria-selected="false" data-knowledge-view="explorer">그래프로 탐색</button>
       </div>
       <div class="knowledge-path-search" hidden>
         <label for="knowledge-path-query">이어지는 항목 찾기</label>
@@ -301,6 +303,10 @@
       </div>
       <p class="knowledge-explorer-status muted" aria-live="polite">보고 싶은 방식을 선택하세요.</p>
       <div class="knowledge-explorer-content" hidden></div>
+      <div class="knowledge-graph-shell" hidden>
+        <div class="knowledge-graph-canvas" role="img" aria-label="선택한 지식을 중심으로 한 관계 그래프"></div>
+        <button type="button" class="secondary-button" data-knowledge-open-node>중심 문서 열기</button>
+      </div>
     </section>
     <details class="metadata connection-information" data-metadata-url="{{ metadata_fragment_url }}">
       <summary class="section-heading">

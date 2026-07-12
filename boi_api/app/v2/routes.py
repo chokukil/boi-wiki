@@ -20,6 +20,7 @@ from .models import (
     HarnessValidateRequest,
     KnowledgeCandidatePatchRequest,
     KnowledgeCandidatePromoteRequest,
+    GraphQueryPlan,
     KnowledgeProposalApplyRequest,
     KnowledgeSourceCreateRequest,
     LegacyHelperImportRequest,
@@ -497,6 +498,14 @@ def build_agent_v2_router(
             limit=limit,
         )
 
+    @router.post("/api/v2/knowledge-graph/query")
+    async def query_knowledge_graph(
+        request: GraphQueryPlan,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return service.knowledge.query(identity, request)
+
     @router.get("/api/v2/knowledge-health")
     async def knowledge_health(
         refresh: bool = False,
@@ -540,6 +549,16 @@ def build_agent_v2_router(
     async def evaluation(evaluation_id: str, identity: Principal = Depends(principal)) -> dict[str, Any]:
         require_scope(identity, "boi.read")
         return service.get_evaluation(identity, evaluation_id)
+
+    @router.get("/api/v2/a2ui-surfaces/{surface_id}")
+    async def a2ui_surface(surface_id: str, identity: Principal = Depends(principal)) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        surface = service.store.get("a2ui_surfaces", surface_id)
+        if not surface:
+            raise HTTPException(status_code=404, detail="표시할 결과를 찾지 못했습니다.")
+        if str(surface.get("employee_id") or "") != identity.employee_id and not identity.is_admin:
+            raise HTTPException(status_code=403, detail="이 결과를 볼 권한이 없습니다.")
+        return surface
 
     @router.get("/api/v2/usage/{usage_id}")
     async def usage(usage_id: str, identity: Principal = Depends(principal)) -> dict[str, Any]:

@@ -30,6 +30,7 @@ from boi_api.app.v2.models import (
     AgentTurnRequest,
     CitationRef,
     DeepJobRequest,
+    GraphQueryPlan,
     HelperActivateRequest,
     HelperDraftCreateRequest,
     HelperDraftPatchRequest,
@@ -4296,6 +4297,7 @@ def test_living_knowledge_compiles_all_acl_nodes_but_never_exposes_another_users
 ):
     compiled = v2_service.knowledge.compile_graph(principal)
     assert compiled["nodes"] >= 6
+    assert compiled["sync_mode"] == "incremental_upsert"
     own = v2_service.knowledge.explore(
         principal,
         view="neighbors",
@@ -4313,6 +4315,19 @@ def test_living_knowledge_compiles_all_acl_nodes_but_never_exposes_another_users
     assert any(item["node_id"] == "boi:private:100001:alarm-note" for item in own["nodes"])
     assert not hidden["nodes"]
     assert not hidden["edges"]
+    query = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=["boi:public:sop:manual"],
+            query_kind="workflow",
+            depth=2,
+            presentation="auto",
+        ),
+    )
+    assert query["ok"] is True
+    assert query["query_plan"]["query_kind"] == "workflow"
+    assert query["presentation"] in {"mermaid", "list", "explorer"}
+    assert all((edge.get("payload") or {}).get("provenance") for edge in query["edges"])
 
 
 def test_harness_never_reports_full_acceptance_when_dependencies_are_missing(v2_service: AgentV2Service, principal: Principal):

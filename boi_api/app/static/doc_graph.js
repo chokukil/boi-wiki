@@ -300,7 +300,12 @@
     });
     const pathSearch = panel.querySelector(".knowledge-path-search");
     pathSearch.hidden = view !== "path";
-    if (view === "path") preparePath(panel);
+    const graphCanvas = panel.querySelector(".knowledge-graph-shell");
+    if (graphCanvas) graphCanvas.hidden = view !== "explorer";
+    const content = panel.querySelector(".knowledge-explorer-content");
+    if (content) content.hidden = view === "explorer";
+    if (view === "explorer") document.dispatchEvent(new CustomEvent("boi:knowledge-graph-open", { detail: { panel } }));
+    else if (view === "path") preparePath(panel);
     else loadView(panel, view);
   }
 

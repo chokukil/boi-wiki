@@ -8,11 +8,14 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {
-      input: "frontend/ops-center/src/main.tsx",
+      input: {
+        "ops-center": "frontend/ops-center/src/main.tsx",
+        "knowledge-graph": "frontend/knowledge-graph/src/main.ts"
+      },
       output: {
-        entryFileNames: "ops-center.js",
-        chunkFileNames: "ops-center-[name].js",
-        assetFileNames: "ops-center.[ext]"
+        entryFileNames: "[name].js",
+        chunkFileNames: "[name]-[hash].js",
+        assetFileNames: "[name].[ext]"
       }
     }
   }
