@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: boi_api/app/native_agent.py
@@ -22,6 +22,8 @@ review:
   reviewer: harness-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 Native Agent v1 tool loop 기록이다. 현재 진전 기반 Task loop와 Harness 계약은 [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)을 따른다.
 
 # Summary
 

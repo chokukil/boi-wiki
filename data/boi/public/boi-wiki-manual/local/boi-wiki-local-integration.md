@@ -5,7 +5,7 @@ type: boi/manual
 title: BoI Wiki Local 연계 가이드
 description: Local Private 업무 BoI를 shared BoI Wiki의 WorkflowDefinition, MCP, Local Second Brain, promotion 흐름과 연결하는 기준
 tags: [BoIWiki, LocalPrivate, WorkBoI, WorkflowDefinition, MCP, LocalSecondBrain]
-timestamp: 2026-07-05T22:00:00+09:00
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:local:boi-wiki-local-integration
 visibility: public
 classification: internal
@@ -102,19 +102,18 @@ repo 문서화는 외부 hosted 서비스가 아니라 로컬/사내 runner 경�
 
 # MCP 사용 기준
 
-MCP가 있으면 agent는 shared BoI Wiki에서 다음을 조회한다.
+MCP가 있으면 Agent는 `/mcp/v2`의 공개 도구 10개를 사용한다. 일상적인 요청은 기능을 먼저 고르지 않고 `boi_agent`에 자연어로 전달한다.
 
 | Tool | 목적 |
 |---|---|
-| `ontology_search` | SOP, Event, Action, Dictionary, runtime evidence를 함께 검색 |
-| `workflow_definitions_search` | 내부 WorkflowDefinition 기준 기존 연결 중복 확인 |
-| `workflow_definition_get` | 내부 WorkflowDefinition 상세 확인 |
-| `workflow_definition_deduplicate` | 신규 등록 전 재사용/확장/신규 판단 |
-| `boi_agent_chat` | shared BoI Agent에게 현재 업무 질문 |
-| `boi_search` | 문서 목록만 필요한 경우 |
-| `agent_memory_review` | Web Private Second Brain 후보와 cleanup 후보를 확인 |
-| `promotion_preview` | Team/Public 공유 전 remote validation preview |
-| `source_wiki_plan` | repo/source wiki 생성 전 inventory와 citation 계획 확인 |
+| `boi_agent` | 질문, 조사, 초안, 현재 업무를 하나의 WorkSession에서 이어서 처리 |
+| `boi_search` | 정본과 관계를 `ranked`, `neighbors`, `path`, `impact`, `tour` 방식으로 조회 |
+| `boi_get` | 선택한 문서, 근거, artifact의 정확한 내용을 조회 |
+| `boi_my_work` | 현재 Inbox, Workflow, Task를 조회하며 과거 seed 이력은 제외 |
+| `boi_context` | 현재 목표와 Task에 필요한 범위의 WorkContextPack 조회 |
+| `boi_plan` / `boi_confirm` | 초안을 미리 검토하고 명시적 확인 뒤 다음 단계 진행 |
+| `boi_job_status` | 긴 조사와 심층 작업의 진행 상태 확인 |
+| `boi_bootstrap` / `boi_tools_search` | 연결 상태와 추가 기능을 점진적으로 발견 |
 
 # 사용 예시
 

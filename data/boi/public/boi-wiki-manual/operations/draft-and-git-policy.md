@@ -5,7 +5,7 @@ type: boi/manual
 title: Source Edit and Git Commit Policy
 description: Source/body 직접 수정은 preview, validation, apply, auto-commit을 사용하고 Team/Public promotion은 별도 publish 경로를 사용하는 정책
 tags: [Manual, Edit, Git, Validation]
-timestamp: 2026-06-18T15:30:00+09:00
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:draft-and-git-policy
 visibility: public
 classification: internal
@@ -39,7 +39,7 @@ Web UI와 MCP의 source/body 직접 수정은 사용자 승인 후 preview, vali
 
 # Promotion Exception
 
-`promotion_submit`은 source/body edit apply tool이 아니다. 사용자가 preview를 보고 명시 승인한 Team/Public promotion candidate는 원격 자동 검증을 통과하면 즉시 게시된다. 검증 실패 시 파일 생성과 게시 없이 validation report만 반환한다.
+승격 plan의 `boi_confirm`은 source/body edit apply가 아니다. 사용자가 preview를 보고 명시 승인한 Team/Public promotion candidate는 원격 자동 검증을 통과해야 게시된다. 검증 실패 시 파일 생성과 게시 없이 validation report만 반환한다.
 
 # Citations
 

@@ -5,7 +5,7 @@ type: boi/manual
 title: SSO and Permission Model
 description: SK hynix Keycloak/HCP SSO, local development auth, BoI Wiki ACL, Inbox 사번 권한, MCP, Langflow 권한 운영 기준
 tags: [Manual, SSO, Keycloak, HCP, Authorization, Inbox, Langflow, MCP]
-timestamp: 2026-07-05T22:00:00+09:00
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:security:sso-and-permissions
 visibility: public
 classification: internal
@@ -83,7 +83,7 @@ BoI Inbox는 인증된 사번을 authoritative identity로 사용한다. `/api/i
 | `employee_id`가 없고 shared assignment도 없는 task | 기본 숨김 |
 | raw `task_id` | Web UI visible text와 일반 DOM data attribute에 노출하지 않음 |
 
-Web Inbox는 opaque `task_ref`를 사용한다. MCP/API는 전환기 compatibility 때문에 raw `task_id` resolve를 유지할 수 있지만, 새 client 문서와 예제는 `task_ref` 또는 canonical `boi_inbox*` tool만 안내한다. `agent_inbox*`는 deprecated alias다.
+Web Inbox는 opaque `task_ref`를 사용한다. MCP/API는 전환기 compatibility 때문에 raw `task_id` resolve를 유지할 수 있지만, 새 client 문서와 예제는 `boi_my_work`가 반환한 `task_ref`와 `boi_get`만 안내한다. 구형 Inbox 전용 도구명은 역사적 호환 경로이며 v2 공개 도구가 아니다.
 
 개발 모드의 query `employee_id`는 PoC 편의 기능이다. `keycloak`과 `trusted_header` 모드에서는 로그인/헤더 사번과 query 사번이 다르면 403으로 실패해야 한다.
 

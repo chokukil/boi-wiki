@@ -2,10 +2,10 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
-title: BoI Wiki Manual Overview
-description: BoI Wiki, Workflow/Task Builder, MCP, Harness acceptance, Source Wiki, Local Second Brain, Data Lake artifact, validated editing, OKF media 운영 가이드 진입점
-tags: [Manual, BoIWiki, Workflow, Task, MCP, Harness, SourceWiki, LocalSecondBrain, DataLake, OKF]
-timestamp: 2026-07-05T22:00:00+09:00
+title: BoI Wiki 한눈에 보기
+description: BoI Wiki가 지식, 업무 흐름, 실행 결과를 연결해 다음 업무에 재사용하는 전체 운영 모델
+tags: [Manual, BoIWiki, BoIAgent, Workflow, WorkLearning, LivingKnowledge]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:overview
 visibility: public
 classification: internal
@@ -17,70 +17,59 @@ acl_policy: acl:public
 status: reviewed
 source_refs:
   - type: repo
-    ref: harness/README.md
+    ref: README.md
+  - type: manual
+    ref: boi:public:boi-wiki-manual:guide:final-operator-guide
 review:
-  reviewer: tf-lead
+  reviewer: harness-curator
   review_status: reviewed
 ---
 
-# Summary
+# BoI Wiki란
 
-BoI Wiki는 OKF 기반 LLM Wiki와 실행 가능한 workflow runtime을 함께 제공한다. 현재 사용자-facing 작성 모델은 `Workflow / Task`다. 사용자는 `/sops/new`에서 Workflow 전체와 Task 맵을 먼저 잡고, 필요한 Task만 상세화한다. Agent와 외부 client는 [BoI Wiki MCP](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)를 통해 같은 지식을 검색하고 workflow/action/edit 작업을 수행한다.
+BoI Wiki는 문서 검색 서비스와 업무 실행 시스템을 분리하지 않는다. 접근 가능한 Wiki 전체에서 관련 지식과 과거 사례를 찾고, SOP와 Task를 수행하며, 판단 근거와 결과를 다음 업무에서 재사용할 수 있는 BoI 자산으로 남긴다.
 
-# Core Manuals
+정본은 OKF Markdown, JSONL, catalog와 Git이다. Postgres/pgvector, ontology graph와 검색 index는 정본에서 다시 만들 수 있는 조회 모델이다. 긴 원본 파일은 `자료 보관함`에 보존하고 Wiki에는 요약, 표본, checksum과 권한이 적용된 연결만 남긴다.
 
-- [BoI Wiki 종합 가이드](/public/boi-wiki-manual/guide/final-operator-guide.md)
-- [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)
-- [Multi-action connector guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md)
-- [Langflow connected flow guide](/public/boi-wiki-manual/langflow/connected-flow-guide.md)
-- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
-- [SOP workflow 작성과 runtime 연결](/public/boi-wiki-manual/sop-workflows/create-and-connect-sop.md)
-- [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md)
-- [BoI Wiki 활용 사례](/public/boi-wiki-manual/use-cases/sop-flow-visualization.md)
-- [Local Private 시작하기](/public/boi-wiki-manual/local-private/overview.md)
-- [OKF media와 Browser screenshot 규칙](/public/boi-wiki-manual/media/okf-media-and-screenshots.md)
-- [Visibility and Promotion Policy](/public/boi-wiki-manual/operations/visibility-and-promotion-policy.md)
-- [Web edit와 Git commit 정책](/public/boi-wiki-manual/operations/draft-and-git-policy.md)
-- [NAS SERVICE_TOKEN 운영 절차](/public/boi-wiki-manual/operations/nas-service-token-rotation.md)
-- [SSO와 권한 체계](/public/boi-wiki-manual/security/sso-and-permissions.md)
-- [BoI Profile ACL 정책](/public/boi-wiki-manual/security/boi-profile-acl-policy.md)
-- [팀 RBAC 관리](/public/boi-wiki-manual/security/team-rbac-management.md)
-- [Agent Guardrail and ACL](/public/boi-wiki-manual/agent/agent-guardrail-and-acl.md)
-- [Pet Agent UX and Artifacts](/public/boi-wiki-manual/agent/pet-agent-ux-and-artifacts.md)
-- [Agent Execution and Event Authoring](/public/boi-wiki-manual/agent/agent-execution-and-event-authoring.md)
+```mermaid
+flowchart LR
+  ASK["질문·업무·이벤트"] --> CONTEXT["업무 맥락 구성"]
+  CONTEXT --> RECALL["지식·관계·사례 찾기"]
+  RECALL --> WORK["사람·AI·Action 수행"]
+  WORK --> VERIFY["근거와 완료 항목 검증"]
+  VERIFY --> RESULT["결과 BoI"]
+  RESULT --> LEARN["지식·SOP·Skill 개선 후보"]
+  LEARN --> RECALL
+```
 
-# Operating Model
+# 주요 화면
 
-1. OKF Markdown 문서와 action/skill catalog가 source of truth다.
-2. Source/body 직접 수정은 Web/MCP preview, validation, apply, auto-commit 경로를 사용한다.
-3. Team/Public promotion은 사용자 승인과 자동 검증 통과 후 즉시 게시하고 HOTL로 사후 개입한다.
-4. Langflow는 실행 채널 중 하나이며 API, Webhook, MCP, Manual, Event Broker action과 같은 수준으로 관리한다.
-5. Workflow는 전체 Process, Task는 판단/근거/실행/결과/TAT를 가진 작은 업무 단위다.
-6. BoI Agent, MCP, Search, Inbox, Action 실행은 모두 BoI Profile ACL과 팀 RBAC guardrail을 통과한다.
-7. Data Lake는 MinIO artifact store이며 OKF에는 원본 파일 대신 URL, profile, sample, checksum, validation metadata만 남긴다.
-8. Harness acceptance는 Observation, Context, Control, Action, State, Verification을 API/MCP/test에서 함께 확인한다.
-9. Source Wiki와 Local Second Brain은 선택형 overlay다. repo/source wiki refresh, capture inbox, memory review, promotion preflight는 core를 무겁게 만들지 않고 agent가 반복 운영을 돕는 경량 흐름으로 둔다.
+| 화면 | 하는 일 |
+|---|---|
+| BoI Wiki | 문서, 업무 용어, 관계와 검토된 지식을 찾는다. |
+| BoI Agent | 현재 화면을 출발점으로 Wiki 전체를 활용해 질문, 비교, 초안과 업무 수행을 이어간다. |
+| BoI Inbox | 자동 생성된 검증 보고서와 업무 흐름을 보고 승인, 반려, 보류, 근거 보완을 기록한다. |
+| SOP | Workflow와 Task, 완료된 모습, 확인할 자료, 실행 방식을 설계하고 수행 이력을 본다. |
+| Event Broker | 업무가 발생하는 기준을 Event 카탈로그에서 보고, 하위 업무 발생 이력에서 실제 처리 건을 확인한다. |
+| Action | 등록된 실행 요청, 입력, 위험도, dry-run과 실제 사용처를 확인한다. |
+| 자료 보관함 | 긴 원본 파일을 보존하고 BoI, Task, 보고서의 근거로 연결한다. |
+| Advanced | 권한, API·MCP contract와 외부 연결 상태를 진단한다. BoI Agent의 일상 사용 화면은 아니다. |
 
-# Local Private
+# 사람과 AI의 협업 방식
 
-Local Private은 개인 PC의 `boi-wiki-local` workspace에만 저장되는 개인 BoI 영역이다. 일반 사용자는 MCP나 Git을 몰라도 agent 하네스가 OKF 구조, lifecycle metadata, self-check, promotion draft/preflight/submit 절차를 수행한다.
+| 방식 | 역할 |
+|---|---|
+| Manual | 사람이 수행하고 판단한다. BoI Agent는 필요한 지식과 기록을 돕는다. |
+| Copilot | 내부 또는 외부 AI가 자료와 초안을 준비하고 사람이 최종 확인한다. |
+| Autopilot | 허용된 저위험 Action과 시스템에서 확인 가능한 완료 항목만 자동 처리한다. |
 
-- [Codex로 BoI Wiki Local 사용하기](/public/boi-wiki-manual/local-private/codex-setup.md)
-- [MCP 없이도 쓰는 BoI Wiki Local](/public/boi-wiki-manual/local-private/mcp-optional.md)
-- [Local Private 승격과 공유 절차](/public/boi-wiki-manual/local-private/promotion-flow.md)
-- [Private BoI 보관 정책](/public/boi-wiki-manual/local-private/private-lifecycle.md)
+# 어디서 시작할까
 
-# Use Cases
-
-- [SOP Flow Visualization](/public/boi-wiki-manual/use-cases/sop-flow-visualization.md)
-- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
-- [Event-to-Action Workflow Planning](/public/boi-wiki-manual/use-cases/event-to-action-workflow-planning.md)
-- [API Doc to Action Spec](/public/boi-wiki-manual/use-cases/api-doc-to-action-spec.md)
-- [Agent Context Pack](/public/boi-wiki-manual/use-cases/agent-context-pack.md)
-- [Workflow Simulation](/public/boi-wiki-manual/use-cases/workflow-simulation.md)
-- [Langflow Workflow Planning](/public/boi-wiki-manual/use-cases/langflow-workflow-planning.md)
-
-# Citations
-
-- [BoI Agent Harness Overview](/public/harness/overview.md)
-- [Public Action Library](/public/actions/overview.md)
+- 처음 사용한다면 [BoI Wiki 종합 가이드](/docs/boi:public:boi-wiki-manual:guide:final-operator-guide)
+- 질문과 검색부터 시작한다면 [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)
+- 업무 수행과 판단을 처리한다면 [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)
+- SOP를 설계한다면 [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
+- 원본 자료를 업무 근거로 연결한다면 [자료 보관함과 업무 근거](/docs/boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle)
+- 외부 Agent를 연결한다면 [BoI Wiki MCP 등록과 사용](/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp)
+- 실제 Event 처리 건을 확인한다면 [Event 카탈로그와 업무 발생 이력](/docs/boi:public:boi-wiki-manual:events:event-catalog-and-work-history)
+- REST API로 연동한다면 [BoI Wiki API v2](/docs/boi:public:boi-wiki-manual:api:boi-wiki-api-v2)

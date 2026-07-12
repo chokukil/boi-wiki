@@ -27,6 +27,8 @@ review:
 
 Langflow flow는 canvas에 노드가 존재하는 것만으로 완료가 아니다. 입력, BoI context, harness/wiki reader, LLM, output 또는 writer/action invoker가 실제 edge로 연결되어 실행 결과가 action log에 남아야 한다.
 
+> **PoC 화면 기록**: 이 문서의 2026년 6월 Langflow 캡처는 선택형 connector를 검증했던 역사적 화면 증거다. 현재 사용자 진입점은 BoI Agent와 Action 카탈로그이며, 운영 연결 여부는 `Advanced → 연결 상태`에서 확인한다.
+
 # Required Patterns
 
 | Flow type | Required connected path |
@@ -38,7 +40,7 @@ Langflow flow는 canvas에 노드가 존재하는 것만으로 완료가 아니�
 
 # BoI Agent vs Pipeline Flow
 
-`BoI Agent Flow`는 Web Pet Agent와 MCP `boi_agent_chat`의 visual workflow/debug 예제다. Production path는 BoI API 내부 [Native BoI Agent](/public/boi-wiki-manual/agent/native-boi-agent-architecture.md)이며, 사용자와 외부 agent는 Langflow URL을 직접 호출하지 않고 BoI API 또는 `boi-wiki-mcp`를 호출한다. Langflow canvas 안의 Agent 예제는 Gemma model을 reasoning engine으로 쓰고, `BoI Agent Tools` custom component의 `ontology_search`, `boi_get`, `action_spec_lookup`, `workflow_status`, `boi_inbox`, `manual_handoff_complete`, `memory_recall` tool을 반복 호출해야 한다. `boi_answer`는 fallback compact-answer tool이며 정상 reasoning의 첫 tool로 고정하지 않는다. recursion 방지를 위해 `boi_agent_chat` tool은 Agent toolset에 넣지 않는다.
+`BoI Agent Flow`는 시각적 workflow와 connector를 시험하는 선택형 예제다. 운영 경로와 확장 경계는 [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)를 기준으로 하며, 사용자와 외부 Agent는 Langflow URL을 직접 호출하지 않고 BoI API 또는 `boi-wiki-mcp`를 호출한다. Langflow는 BoI Agent의 Context, Harness, 권한과 실행 계약을 대체하지 않는다.
 
 # Pipeline vs Agentic Simulator
 

@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: scripts/check_boi_agent_scenarios.py
@@ -26,6 +26,8 @@ review:
   reviewer: harness-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 Agent v1 시나리오 검증 기록이다. 현재 검증 기준은 [운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)과 [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)을 따른다.
 
 # Summary
 

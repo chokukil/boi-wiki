@@ -5,6 +5,7 @@ type: boi/manual
 title: Event-to-Action Workflow Planning
 description: 업무 이벤트가 발생했을 때 SOP stage, action, manual handoff, generated BoI 흐름을 계획하는 사례
 tags: [Manual, UseCase, EventBroker, Workflow, ActionGateway]
+aliases: [업무 이벤트 정의, 업무 이벤트 만들기, Event Type 설계]
 timestamp: 2026-06-20T00:11:00+09:00
 boi_id: boi:public:boi-wiki-manual:use-cases:event-to-action-workflow-planning
 visibility: public

@@ -3,9 +3,9 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: BoI Wiki 종합 가이드
-description: BoI Wiki 최종 운영 기준, Harness acceptance, Inbox 권한, MCP/API, Source Wiki, Local Second Brain, promotion, 배포 이관 흐름의 허브 문서
-tags: [Manual, Guide, Harness, MCP, API, Inbox, SourceWiki, LocalSecondBrain, Promotion]
-timestamp: 2026-07-05T22:00:00+09:00
+description: BoI Wiki에서 지식을 찾고 이해하며 업무를 수행하고 결과를 다시 지식으로 남기는 사용자 중심 가이드
+tags: [Manual, Guide, BoIAgent, Inbox, SOP, Event, Action, WorkLearning]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:guide:final-operator-guide
 visibility: public
 classification: internal
@@ -15,252 +15,166 @@ author:
   agent_id: codex
 acl_policy: acl:public
 status: reviewed
+agent_entrypoint_areas: [current_work, knowledge]
+agent_entrypoint_prompts:
+  current_work:
+    label: 지금 맡은 업무를 시작할 때 필요한 맥락 보기
+    prompt: 현재 Inbox와 진행 중인 업무를 기준으로 먼저 확인할 근거와 다음 단계를 알려줘.
+  knowledge:
+    label: BoI Wiki의 핵심 지식과 연결 관계 살펴보기
+    prompt: BoI Wiki에서 접근 가능한 검토된 지식을 바탕으로 현재 질문과 직접 연결된 내용을 설명해줘.
 source_refs:
-  - type: external
-    ref: https://revfactory.github.io/harness-paper/
-  - type: external
-    ref: https://github.com/langchain-ai/openwiki
-  - type: external
-    ref: https://github.com/kdsz001/OpenWiki
   - type: repo
-    ref: boi_api/app/main.py
+    ref: README.md
   - type: repo
-    ref: boi_wiki_mcp/app/main.py
-  - type: local-template
-    ref: boi-wiki-local/scripts/local_capture.py
-  - type: local-template
-    ref: boi-wiki-local/scripts/local_review.py
-  - type: local-template
-    ref: boi-wiki-local/scripts/promotion_preflight.py
-  - type: generated-source-wiki
-    ref: /public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md
-  - type: generated-source-wiki
-    ref: /public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md
-  - type: source-wiki-manifest
-    ref: data/source-wikis/boi-wiki-platform-source/latest.json
-  - type: source-wiki-manifest
-    ref: data/source-wikis/boi-wiki-local-source/latest.json
+    ref: boi_api/app/templates/_agent_surface_v2.html
+  - type: repo
+    ref: boi_api/app/v2/work_learning.py
+  - type: repo
+    ref: boi_api/app/v2/knowledge_system.py
 review:
   reviewer: harness-curator
   review_status: reviewed
 ---
 
-# Summary
+# BoI Wiki로 하는 일
 
-이 문서는 BoI Wiki의 최종 운영 허브다. 일반 구성원은 Inbox, Workflow/Task, Local Private, promotion만 이해하면 되고, DT Platform 담당자와 Legacy System 담당자는 API/MCP/Action Gateway/Source Wiki 계약을 보면 된다.
-
-BoI Wiki core는 계속 가볍게 유지한다. source of truth는 OKF Markdown/JSONL, Git, BoI API/MCP, Action Gateway다. Data Lake, Legacy DB, local memory, local Source Wiki runner는 선택형 overlay이며, core runtime이 이 overlay 없이는 실패하지 않아야 한다.
-
-# Quick Links
-
-| 필요 | 문서 |
-|---|---|
-| 전체 개요 | [BoI Wiki Manual Overview](/public/boi-wiki-manual/overview.md) |
-| 권한과 사번 기준 identity | [SSO and Permission Model](/public/boi-wiki-manual/security/sso-and-permissions.md) |
-| Team/Public 공유와 promotion | [Visibility and Promotion Policy](/public/boi-wiki-manual/operations/visibility-and-promotion-policy.md) |
-| MCP 등록과 tool catalog | [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md) |
-| Workflow/Task 작성 | [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md) |
-| Action/API/MCP connector | [Multi-action connector guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md) |
-| Local Private 시작 | [Local Private 시작하기](/public/boi-wiki-manual/local-private/overview.md) |
-| boi-wiki-local 연계 | [BoI Wiki Local 연계 가이드](/public/boi-wiki-manual/local/boi-wiki-local-integration.md) |
-| Data Lake artifact | [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md) |
-| 화면 캡처 규칙 | [OKF Media and Browser Screenshot Guide](/public/boi-wiki-manual/media/okf-media-and-screenshots.md) |
-
-# 운영 확인
-
-종합 가이드는 운영 허브이므로 자체 화면 캡처를 본문에 넣지 않는다. 화면 증거는 Workflow, MCP, Langflow, use case 같은 기능별 문서에 둔다.
-
-| 확인 | 방법 |
-|---|---|
-| Harness acceptance | `GET /api/harness/acceptance` |
-| OKF/media 정합성 | `python scripts/okf_lint.py --root data --strict-media` |
-| Data Lake 포함 로컬 smoke | `python scripts/check_local_full_datalake.py --base-url http://localhost:28000 --allow-disabled` |
-| Source Wiki 생성 이력/검증 장부 | `data/source-wikis/boi-wiki-platform-source/latest.json`, `data/source-wikis/boi-wiki-local-source/latest.json` |
-
-# Final Architecture
+BoI Wiki의 중심은 `업무 맥락`이다. 현재 보고 있는 문서, 진행 중인 Task, 필요한 근거, 과거 사례와 팀 지식을 함께 보고 이번 업무에서 필요한 판단과 결과를 만든다. 문서를 읽는 것과 업무를 수행하는 것, 결과를 지식으로 남기는 것이 하나의 흐름으로 이어진다.
 
 ```mermaid
 flowchart LR
-  USER["일반 구성원"] --> UI["BoI Wiki UI<br/>Inbox / Workflow / Search"]
-  LOCAL["boi-wiki-local<br/>Local Private Second Brain"] -->|preview only| API["BoI API"]
-  AGENT["Codex / Claude / Cursor / Native Agent"] --> MCP["BoI Wiki MCP"]
-  UI --> API
-  MCP --> API
-  API --> OKF["OKF Markdown / JSONL / Git"]
-  API --> GATE["Action Gateway"]
-  GATE -->|"API / MCP / Webhook / Manual / Event / BoI Writer / Langflow"| SYS["Legacy & Platform Systems"]
-  API -->|"optional"| DL["Data Lake Artifact Store"]
-  API -->|"optional"| SRC["Source Wiki 생성 이력/검증 장부"]
-  OKF --> HOTL["HOTL Review / Git Audit"]
+  FIND["찾기<br/>지식·사례"] --> UNDERSTAND["이해하기<br/>관계·근거"]
+  UNDERSTAND --> DO["수행하기<br/>Task·Action"]
+  DO --> RECORD["결과 남기기<br/>판단·근거·결과"]
+  RECORD --> REUSE["재사용하기<br/>지식·SOP·Skill 개선"]
+  REUSE --> FIND
 ```
 
-운영 기본 경로는 `UI -> API`, `MCP -> API`, `API -> Action Gateway`, `API -> OKF/Git`이다. Langflow는 시각화, debug, demo, 일부 agent flow용 보조 connector이며 production Agent의 기본 엔진이 아니다.
+# 5분 시작
 
-# Harness Acceptance
+1. 우측 하단의 BoI Agent를 연다.
+2. 현재 문서에서 궁금한 점이나 실제 처리할 업무를 자연어로 적는다.
+3. 답변의 citation을 눌러 원문과 연결 관계를 확인한다.
+4. 필요한 경우 관계 그림, SOP 초안, Task 다듬기 또는 근거 보완으로 이어간다.
+5. 업무를 마치면 판단과 결과에서 다음에도 쓸 내용만 private 지식 후보로 남긴다.
 
-Harness paper의 6개 책임은 BoI Wiki에서 runtime acceptance matrix로 고정한다.
+BoI Agent는 현재 화면을 중요한 출발점으로 사용하지만 검색 범위를 그 문서로 제한하지 않는다. 접근 가능한 Wiki 전체에서 Dictionary, 문서, SOP, Event, Action, 업무 이력과 유사 사례를 hybrid 방식으로 찾는다.
 
-| 책임 | BoI 기준 | API/MCP |
+![BoI Wiki Explorer에서 접근 가능한 지식 자산을 탐색하는 화면](../_media/browser/current-guide/20260712-explorer-1440x1000.png)
+
+Explorer는 전체 구조를 훑을 때 사용하고, 실제 질문이나 업무는 같은 화면의 BoI Agent에서 이어간다.
+
+# 현재 목적에 맞는 시작점
+
+| 하고 싶은 일 | 시작 화면 | 다음 흐름 |
 |---|---|---|
-| Observation | 문서, Inbox, runtime evidence, action catalog, source inventory를 권한 안에서 관찰 | `boi_search`, `ontology_search`, `boi_inbox`, `source_wiki_plan` |
-| Context | 현재 업무, 사번, 팀/RBAC, citations, WorkContextPack을 bounded context로 구성 | `boi_agent_chat`, `boi_inbox_report_get`, `agent_memory_review` |
-| Control | `user_confirmed`, `approved_by`, high-risk approval, host allowlist, spoofing 방지 | `rbac_check`, `doc_access_check`, `harness_acceptance` |
-| Action | Action Gateway가 API/MCP/Webhook/Manual/Event/BoI Writer/Langflow를 동등 connector로 실행 | `action_invoke`, `workflow_start`, `manual_handoff_complete` |
-| State | OKF Markdown/JSONL, Git commit, trace id, evidence ledger, last-good source wiki manifest | `promotion_status`, `source_wiki_job_get` |
-| Verification | OKF lint, source refs, duplicate check, dry-run, validation report, compose smoke, tests | `promotion_preview`, `source_wiki_refresh_preview`, `/api/harness/acceptance` |
+| 업무 지식이나 관계를 찾기 | BoI Wiki 또는 BoI Agent | citation 확인 → 관련 질문 → 노트 또는 업무 적용 |
+| 받은 업무를 검토하기 | BoI Inbox | 자동 보고서 → 업무 흐름 → 근거 → 판단 기록 |
+| 절차를 만들거나 고치기 | SOP 추가 | Workflow 개요 → Task 맵 → 실행 연결 → 업무 이벤트 |
+| 업무 발생 시점을 정하기 | SOP 추가의 업무 이벤트 정의 | 외부 신호 → 발생 방식 → 샘플 확인 → Workflow 연결 |
+| 실행 요청을 찾거나 시험하기 | Action | 사용처 확인 → 입력 → preview/dry-run → 확인 후 실행 |
+| 긴 원본을 근거로 쓰기 | 자료 보관함 | 업로드 → profile → 업무·BoI에 연결 |
+| 실제 업무 발생과 처리 상태 보기 | Event Broker → 업무 발생 이력 | 업무 건 선택 → SOP·Action·남은 확인·결과 BoI 확인 |
+| Codex·Claude에서 활용하기 | BoI Agent `⋯` → 외부에서 사용 | PAT 발급 → MCP v2 또는 REST API 연결 |
 
-운영자는 `GET /api/harness/acceptance` 또는 MCP `harness_acceptance`로 이 matrix가 깨졌는지 먼저 본다. 실패 항목은 사용자-facing 장애보다 먼저 고쳐야 하는 release blocker다.
+# BoI Agent
 
-# Inbox Permission
+BoI Agent는 별도 챗봇이 아니라 BoI Wiki의 공통 작업 표면이다. 작은 Pet과 `/agent` 전체 화면은 같은 WorkSession, source, citation, artifact와 진행 상태를 사용한다.
 
-Inbox identity는 인증된 7자리 사번이 authoritative source다. 개발 모드에서만 query `employee_id`를 편의로 허용하고, SSO/trusted header 모드에서는 query spoofing을 403으로 막는다.
+- 짧은 질문과 현재 문서 설명은 Compact에서 처리한다.
+- Mermaid, SOP, Task, 비교표 같은 결과가 생기면 Expanded 결과 영역에서 확인한다.
+- 긴 조사와 다수 자료 분석은 Deep Work로 넘기되 결과는 항상 검토 가능한 초안으로 남긴다.
+- 후속 질문은 같은 session의 대상, 근거와 artifact를 이어받는다.
+- 실제 게시, 고위험 Action과 공유 정본 변경은 preview와 확인을 다시 거친다.
 
-| 동작 | 정책 |
-|---|---|
-| 목록 조회 | 같은 사번 task 또는 명시 팀/역할/shared queue assignment만 노출 |
-| `employee_id` 없는 task | 기본 숨김. 공용 queue로 쓰려면 assignment metadata가 필요 |
-| Web UI | opaque `task_ref`만 사용. raw `task_id`는 visible text와 일반 DOM data attribute에 노출하지 않음 |
-| MCP/API compatibility | raw `task_id`는 전환기 호환으로 허용하지만 새 client는 `task_ref`와 `boi_inbox*`를 사용 |
-| decision/preview/snooze/dismiss/manual complete | 모두 같은 visibility helper를 통과 |
+처음 열면 현재 Inbox, 현재 문서, 최근 작업과 검토된 팀 지식을 근거로 가장 관련 높은 질문 네 개를 먼저 보여준다. `다른 제안 보기`에서는 지금 할 일, 지식·관계, SOP·Task, 업무 이벤트·Action, 결과 자산화, 자동 확인의 여섯 영역을 살펴볼 수 있다. 제안을 누르면 해당 근거와 함께 바로 질문한다.
 
-`agent_inbox*`는 deprecated compatibility alias다. 신규 문서, skill, client 예제는 `boi_inbox`, `boi_inbox_report_get`, `boi_inbox_decision_preview`, `boi_inbox_decision_submit`을 canonical로 쓴다.
+Expanded 또는 Fullpage의 `⋯` 메뉴에서 `나만의 BoI Agent 만들기`와 `외부에서 사용`으로 이동한다. Agent 자체는 Advanced 메뉴에 두지 않는다.
 
-# API Surface
+자세한 사용법은 [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)를 따른다.
 
-| Endpoint | 성격 |
-|---|---|
-| `GET /api/harness/acceptance` | release acceptance matrix 조회 |
-| `POST /api/source-wikis/plan` | repo/source wiki 생성 계획, source inventory, skip reason 산출 |
-| `POST /api/source-wikis/jobs` | 사용자 확인 후 source wiki page와 manifest 생성 |
-| `GET /api/source-wikis/jobs/{job_id}` | source wiki job manifest 조회 |
-| `POST /api/source-wikis/{wiki_id}/refresh-preview` | last-good를 보존한 refresh 검증 |
-| `GET /api/source-wikis/{wiki_id}/markdown` | generated source wiki Markdown export |
-| `POST /api/promotions/preview` | Team/Public promotion 비파괴 preview |
-| `GET /api/agents/boi-wiki/memory/review` | Private Second Brain 후보, cleanup 후보, promotion 후보 조회 |
+# BoI Inbox와 Task
 
-`preview`, `plan`, `review`는 비파괴다. `jobs`, `submit`, `apply`, real action execution은 `user_confirmed=true`와 권한 검증을 요구한다.
+Inbox 업무는 보고서가 완성될 때까지 숨지 않는다. 업무 카드는 먼저 표시되고, 보고서는 백그라운드에서 자동 생성된다. 준비가 끝나면 `검증된 보고서 BoI`를 열어 결론, 근거, 유사 사례와 전체 업무 흐름을 확인한다.
 
-# MCP Surface
+판단이 필요한 업무는 승인, 반려, 보류 또는 추가 근거 요청과 사유를 남긴다. Task 수행 화면에서는 완료된 모습과 확인할 자료를 기준으로 Manual, Copilot, Autopilot 방식에 맞게 완료를 판단한다. LLM의 자기 선언만으로 Task를 완료하지 않는다.
 
-| Tool | 사용 |
-|---|---|
-| `harness_acceptance` | 운영 release blocker 확인 |
-| `source_wiki_plan` | source inventory와 문서화 계획 |
-| `source_wiki_job_start` | 사용자 확인된 source wiki 생성 |
-| `source_wiki_job_get` | job manifest 조회 |
-| `source_wiki_refresh_preview` | last-good 보존 refresh 검증 |
-| `source_wiki_markdown_export` | generated source wiki export |
-| `promotion_preview` | 비파괴 promotion preflight |
-| `agent_memory_review` | 개인 Second Brain 검토 |
+자세한 흐름은 [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)을 따른다.
 
-MCP transport는 `MCP_ALLOWED_HOSTS`와 service token으로 보호한다. 외부 노출 시 `MCP_REQUIRE_SERVICE_TOKEN=true`가 기본이어야 한다.
+# SOP와 업무 이벤트
 
-# Source-Grounded Wiki
-
-Source Wiki는 외부 hosted OpenWiki 서비스가 아니라 BoI API/MCP가 로컬 checkout 또는 사내 allowlist mirror를 읽어 만드는 internal documentation overlay다. 사내 코드와 문서 원문은 외부 hosted OpenWiki, 외부 public GitHub repo, 외부 LLM provider로 보내지 않는다.
-
-| 항목 | 운영 기준 |
-|---|---|
-| 생성 기본 경로 | BoI API `/api/source-wikis/*`와 MCP `source_wiki_*` |
-| 입력 | 로컬 `source_path` 또는 `SOURCE_WIKI_ALLOWED_REPOS`에 등록된 사내 repo mirror |
-| 출력 | OKF Source Wiki 문서와 `data/source-wikis/*/latest.json` |
-| 금지 | 외부 hosted OpenWiki에 사내 repo URL, source path, 코드, 문서 원문 전송 |
-| 참고 패턴 | `langchain-ai/openwiki` local CLI, `kdsz001/OpenWiki` local desktop UX |
-
-BoI Source Wiki는 source inventory, selected/skipped file, commit SHA, generated page, citation, validation report, last-good revision manifest를 남긴다. refresh 실패 시 기존 last-good 문서는 유지한다. 사내 저장소가 GitHub Enterprise, GitLab, Gitea로 바뀌어도 allowlist와 env만 바꾸면 같은 API/MCP 계약을 유지한다.
-
-## Generated BoI Source Wiki
-
-2026-07-05 기준 BoI Source Wiki overlay로 실제 repository 내용을 생성했다. 이 문서 묶음은 외부 hosted 서비스가 아니라 BoI API의 `source_wiki_job_start` 흐름으로 만든 source-grounded OKF 문서다.
-
-BoI Wiki Platform Source는 `source-wiki-20260706003025-aa8e71f8`, 로컬 checkout `boi-wiki@4ce6413` 기준이다.
-
-- [Overview](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-36db14.md)
-- [Runtime Surfaces](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-064b5f.md)
-- [Knowledge, Harness, and Catalogs](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-237fbe.md)
-- [Automation and Verification](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-06e792.md)
-- [Source Map and Citations](/public/source-wikis/boi-wiki-platform-source/boi-public-100001-20260706003025-8d7e3d.md)
-
-BoI Wiki Local Source는 `source-wiki-20260706003025-05706f63`, 로컬 checkout `boi-wiki-local@93978a9` 기준이다.
-
-- [Overview](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-da81ff.md)
-- [Local Second Brain Lifecycle](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-2d3900.md)
-- [Automation and Verification](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-ee43d6.md)
-- [Source Map and Citations](/public/source-wikis/boi-wiki-local-source/boi-public-100001-20260706003025-e200c9.md)
-
-Source Wiki 생성 이력/검증 장부는 `data/source-wikis/boi-wiki-platform-source/latest.json`과 `data/source-wikis/boi-wiki-local-source/latest.json`에 남는다. 여기에는 selected/skipped inventory, source SHA, page SHA, validation report, last-good 상태가 들어가므로 로컬/사내 runner가 생성한 repository 문서화를 재생성하거나 비교할 때 기준점으로 쓴다.
-
-# Local Second Brain
-
-`boi-wiki-local` 사용자는 문서를 읽지 않아도 agent가 다음 흐름을 자동 보조해야 한다.
+Workflow는 Task의 집합이다. 각 Task는 목적, 수행 방식, 완료된 모습, 확인할 자료와 남길 결과를 가진다. Action은 기본적으로 Task에 연결하고, 업무 이벤트는 Workflow를 시작하거나 상태를 전환한다.
 
 ```mermaid
 flowchart LR
-  CAP["capture inbox"] --> CLS["classify"]
-  CLS --> OKF["OKF 문서화"]
-  OKF --> MEM["memory 후보"]
-  OKF --> CLEAN["cleanup preview"]
-  OKF --> PROMO["promotion draft"]
-  PROMO --> PRE["promotion preflight"]
-  PRE -->|"사용자 승인"| REMOTE["remote validation / publish"]
-  PRE -->|"미승인"| LOCAL["local-only 유지"]
+  SIGNAL["외부 신호·일정·사람"] --> EVENT["업무 이벤트"]
+  EVENT --> WF["Workflow"]
+  WF --> TASK["Task"]
+  TASK --> ACTION["사람·AI·Action 수행"]
+  ACTION --> BOI["결과 BoI"]
+  BOI --> LEARN["지식·SOP 개선 후보"]
 ```
 
-local helper는 서버, DB, Docker 없이 표준 Python만 사용한다.
+업무 이벤트는 모든 raw 신호를 그대로 발행하지 않는다. 바로 발생, 조건, 반복·지속, 상태 변화, 복합 신호, 담당자 확인, 직접 실행 중 업무에 맞는 방식을 선택한다. 자세한 내용은 [업무 이벤트 정의 가이드](/docs/boi:public:boi-wiki-manual:workflows:business-event-definition-guide)를 따른다.
 
-```bash
-python3 scripts/local_capture.py --check
-python3 scripts/local_review.py --check
-python3 scripts/promotion_preflight.py --check
-```
+# 자료 보관함
 
-원칙은 단순하다. raw Local Private 원문은 승인 없이 원격 전송하지 않는다. agent는 후보 생성, 분류, preview, preflight까지 적극 수행하지만 Team/Public publish와 high-risk action은 사용자의 확인과 RBAC/approval guard를 통과해야 한다.
+자료 보관함은 모든 표준 설치에서 기본으로 제공된다. CSV, PDF, PPT, Excel, 로그, 캡처 같은 긴 원본은 MinIO에 보존하고, Agent와 문서에는 summary, profile, sample, checksum과 권한이 적용된 URL만 전달한다.
 
-# Promotion And Action Approval
+파일을 prompt나 Markdown 본문에 통째로 복사하지 않는다. 실제 업무의 Task, Inbox 판단, 보고서 또는 Agent 작업에 연결해 출처와 사용 목적을 남긴다. 자세한 내용은 [자료 보관함과 업무 근거](/docs/boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle)을 따른다.
 
-`user_confirmed`와 `approved_by`는 다르다.
+# Event와 Action
 
-| 값 | 의미 |
+| 개념 | 의미 |
 |---|---|
-| `user_confirmed=true` | 사용자가 실행 의도를 확인했다는 MCP/API guard |
-| `approved_by` | high-risk action의 승인자 또는 승인 시스템 |
+| 외부 신호 | Webhook, API 조회, MCP, Data Lake, Kafka, Scheduler에서 온 원본 입력 |
+| 업무 이벤트 정의 | 어떤 신호와 상태를 실제 업무 발생으로 볼지 정한 기준 |
+| Event Type | Broker와 Workflow가 공유하는 업무 이벤트 계약 |
+| 업무 발생 이력 | 같은 trace의 Event·SOP·Action·사람 확인·결과 BoI를 묶은 실제 업무 건 |
+| Event 기술 로그 | producer, connector, dispatch와 raw JSON을 보는 운영 진단 화면 |
+| Action | Task에서 호출할 수 있는 API, MCP, Webhook, Manual, Event, BoI Writer 또는 Langflow 실행 단위 |
 
-`promotion_preview`는 공개 범위, redaction, source refs, duplicate/source citation, OKF validation을 먼저 보여준다. `promotion_submit`, public/team publish, high-risk real action은 preview가 가능해도 confirmation과 권한 검증 전에는 실행하지 않는다.
+Action은 카탈로그에서 실제 사용 Workflow, 입력 schema, 위험도와 연결 상태를 먼저 확인한다. 외부 부작용은 preview 또는 dry-run 이후 확인을 거쳐 실행한다.
 
-Action 결과에는 trace id, dry-run 여부, simulation 여부, approval 상태, evidence artifact 경로를 일관되게 남긴다.
+상단 `Event Broker`는 Event 카탈로그를 연다. 실제 발생 건은 하위 `업무 발생 이력`에서 확인하고, raw 로그는 권한 있는 운영자만 Advanced의 `Event 기술 로그`에서 본다. 자세한 내용은 [Event 카탈로그와 업무 발생 이력](/docs/boi:public:boi-wiki-manual:events:event-catalog-and-work-history)을 따른다.
 
-# Deployment And Repository Move
+# 지식이 쌓이는 방식
 
-외부 GitHub repo는 PoC 기준이며, 사내에서는 별도 사내 저장소로 이전할 수 있다.
+모든 대화와 로그가 지식이 되는 것은 아니다. 새 판단, 검증된 근거, Task 결과, 반복되는 업무 패턴처럼 재사용 가치가 있을 때만 KnowledgeCandidate를 만든다. Private 후보는 되돌릴 수 있고, Team/Public 정본 변경은 Harness 검증과 검토를 통과한다.
 
-| 바뀔 수 있는 값 | 운영 방식 |
-|---|---|
-| Git provider | GitHub Enterprise, GitLab, Gitea 모두 env/allowlist로 문서화 |
-| MCP/API URL | user client 설정과 `.env`만 변경 |
-| Source Wiki 입력 | 로컬 `source_path` 또는 사내 mirror repo URL을 allowlist에 추가 |
-| Data Lake/Legacy overlay | core 배포와 분리한 profile/feature flag |
-| OpenWiki류 도구 | 외부 hosted 금지. 필요한 경우 사내 PC/서버에서 local CLI 또는 내부 runner로만 실행 |
-
-core image와 local workspace는 특정 provider SDK에 묶지 않는다. Git push/merge와 Source Wiki refresh는 delivery 절차이며 runtime dependency가 아니다.
-
-# Operator Acceptance
-
-최종 배포 전 최소 확인:
-
-```bash
-python -m pytest -s tests -q
-python scripts/okf_lint.py --root data --strict-media
-python scripts/check_runtime_git_guardrails.py
-docker compose --profile local-full config --quiet
-docker compose --profile local-full-datalake config --quiet
-docker compose --profile local-full-legacy-db-demo config --quiet
-/home/chokukil/boi-wiki-local/check.sh /home/chokukil/boi-wiki-local
+```mermaid
+flowchart TD
+  SOURCE["검토된 지식·업무 결과"] --> SEARCH["다음 업무에서 검색"]
+  SEARCH --> RUN["Task 수행"]
+  RUN --> EVIDENCE["근거·판단·결과"]
+  EVIDENCE --> CANDIDATE["지식 개선 후보"]
+  CANDIDATE --> REVIEW{"공유 범위"}
+  REVIEW -->|Private| PRIVATE["개인 지식으로 축적"]
+  REVIEW -->|Team/Public| PROMOTE["검토 후 정본 반영"]
+  PRIVATE --> SEARCH
+  PROMOTE --> SEARCH
 ```
 
-시나리오 smoke는 `search -> plan -> preview -> inbox decision -> action dry-run -> approved execution -> evidence ledger` 순서로 검증한다. 실패 시 화면보다 acceptance matrix, 권한 guard, evidence ledger를 먼저 본다.
+자세한 구조는 [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)과 [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)을 참고한다.
 
-# 참고한 오픈소스 패턴
+# 외부 Agent 연결
 
-- [Harness Engineering 2026](https://revfactory.github.io/harness-paper/)
-- [langchain-ai/openwiki local CLI](https://github.com/langchain-ai/openwiki)
-- [kdsz001/OpenWiki local desktop](https://github.com/kdsz001/OpenWiki)
+Codex, Claude와 다른 MCP client도 Web BoI Agent와 같은 Context, Harness, WorkRun과 권한 정책을 사용한다. Web SSO 로그인 후 BoI Agent의 `⋯` 메뉴에서 `외부에서 사용`을 열어 PAT를 발급하고 MCP v2의 10개 기본 도구 또는 REST API를 사용한다. prompt나 query의 사번은 권한 근거로 사용하지 않는다.
+
+연결 방법은 [BoI Wiki MCP 등록과 사용](/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp)과 [BoI Wiki API v2](/docs/boi:public:boi-wiki-manual:api:boi-wiki-api-v2)에 정리되어 있다.
+
+# 안전한 사용 원칙
+
+- citation이 없는 답변을 Team/Public 정본으로 옮기지 않는다.
+- 공유 전에는 출처, 공개 범위, 중복과 민감정보를 확인한다.
+- Autopilot은 시스템에서 검증할 수 있는 완료 항목과 허용된 저위험 Action만 사용한다.
+- 원본 파일과 긴 외부 AI 대화는 자료 보관함에 두고 요약과 checksum만 Context에 넣는다.
+- 연결 상태와 운영 진단은 일반 업무 화면이 아니라 Advanced의 `연결 상태`에서 확인한다.
+
+# 역할별 다음 문서
+
+- 일반 구성원: [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)
+- 업무 설계자: [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
+- 외부 Agent 사용자: [BoI Wiki MCP 등록과 사용](/docs/boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp)
+- 운영자: [BoI Wiki 운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)
+- 플랫폼 담당자: [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)

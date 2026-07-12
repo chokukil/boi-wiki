@@ -94,7 +94,7 @@ WorkflowDefinition publish는 draft, dedupe, schema validation, Event Broker smo
 
 # Related Documents
 
-- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
+- [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
 - [업무 BoI-first 개념 모델](/public/boi-wiki-manual/concepts/work-boi-first-model.md)
 - [Event Contract Guide](/public/boi-wiki-manual/workflows/event-contract-guide.md)
 - [Event-Native Workflow Guide](/public/boi-wiki-manual/workflows/event-native-workflow-guide.md)

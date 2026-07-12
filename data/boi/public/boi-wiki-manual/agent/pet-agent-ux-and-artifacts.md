@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: boi_api/app/static/pet_agent.js
@@ -24,6 +24,8 @@ review:
   reviewer: ux-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 Pet Agent v1 UX 기록이다. 현재 Compact, Expanded, Fullpage가 하나의 작업공간을 공유하는 경험은 [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)를 따른다.
 
 # Summary
 

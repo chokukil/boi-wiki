@@ -5,7 +5,7 @@ type: boi/manual
 title: BoI Profile ACL Policy
 description: BoI Profile visibility, classification, owner, team_id, acl_policy를 하나의 접근 결정으로 평가하는 기준
 tags: [Manual, Security, ACL, BoIProfile, Agent]
-timestamp: 2026-06-24T09:00:00+09:00
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:security:boi-profile-acl-policy
 visibility: public
 classification: internal
@@ -29,7 +29,7 @@ review:
 
 BoI Wiki의 접근 제어는 단순 visibility 필터가 아니다. `visibility`, `classification`, `owner`, `team_id`, `acl_policy`, 저장 경로, 요청 사번, 팀 멤버십, 역할을 함께 평가해 `AccessPolicyDecision`을 만든다.
 
-이 decision은 Web UI, BoI API, MCP, Native BoI Agent, Ontology Search, Action Inbox에서 같은 방식으로 사용한다.
+이 decision은 Web UI, BoI API, MCP, BoI Agent, hybrid search, BoI Inbox에서 같은 방식으로 사용한다.
 
 # Access Decision Flow
 

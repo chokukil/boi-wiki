@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: boi_api/app/main.py
@@ -24,6 +24,8 @@ review:
   reviewer: workflow-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 2026년 6월 Agent v1의 실행 카드와 Event 작성 구조를 기록한 감사 자료다. 현재 사용 흐름은 [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)와 [업무 이벤트 정의 가이드](/docs/boi:public:boi-wiki-manual:workflows:business-event-definition-guide)를 따른다.
 
 # Summary
 

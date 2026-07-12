@@ -5,7 +5,7 @@ type: boi/manual
 title: Agent Context Pack
 description: 특정 업무를 수행하기 위해 필요한 SOP, Event, Action, BoI 링크를 agent-ready context pack으로 묶는 사례
 tags: [Manual, UseCase, ContextPack, Agent, OKF]
-timestamp: 2026-06-20T00:13:00+09:00
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:use-cases:agent-context-pack
 visibility: public
 classification: internal
@@ -37,7 +37,7 @@ Agent Context Pack은 회의, 장애 대응, 보고서, SOP 작성 같은 특정
 
 1. Local workspace에서는 `boi-context-pack-builder` skill을 사용한다.
 2. Local docs를 먼저 읽고, 모르는 현장 용어는 dictionary로 정규화한다.
-3. MCP가 있으면 `dictionary_resolve`와 `ontology_search`로 shared SOP/Event/Action/Workflow Status를 조회한다.
+3. MCP가 있으면 `boi_search(view="ranked")`로 관련 정본을 찾고, 관계가 필요하면 `neighbors` 또는 `path`로 shared SOP, Event, Action, Workflow 상태를 함께 조회한다.
 4. 전문 덤프 대신 링크, 짧은 요약, open gap, 다음 agent action을 기록한다.
 5. Local Private 원본은 원격으로 보내지 않는다.
 

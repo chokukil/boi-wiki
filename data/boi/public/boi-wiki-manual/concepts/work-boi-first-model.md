@@ -3,9 +3,9 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: 업무 BoI-first 개념 모델
-description: Workflow와 Task를 업무 맥락, 판단, 근거, 결과, 지식 업데이트로 연결하는 기준
-tags: [BoIWiki, WorkBoI, Workflow, Task, TAT, DataLake]
-timestamp: 2026-07-04T12:00:00+09:00
+description: Workflow와 Task를 업무 맥락, 완료된 모습, 확인할 자료, 결과와 재사용 가능한 지식으로 연결하는 기준
+tags: [BoIWiki, WorkBoI, Workflow, Task, Completion, WorkLearning]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:concepts:work-boi-first-model
 visibility: public
 classification: internal
@@ -37,11 +37,11 @@ BoI Wiki의 중심은 `업무 BoI`다. 업무 BoI는 단순 로그가 아니라 
 flowchart TD
   C["업무 맥락"] --> W["Workflow 전체 Process"]
   W --> T["Task 맵"]
-  T --> D["Task별 판단 질문"]
-  D --> E["필요 근거와 실행 방식"]
-  E --> R["결과 BoI와 결정 기록"]
-  R --> K["지식 업데이트 후보"]
-  K --> M["개인 memory / 팀 지식 / public SOP 개선"]
+  T --> D["완료된 모습과 확인할 자료"]
+  D --> E["Manual · Copilot · Autopilot 수행"]
+  E --> R["Evidence Ledger와 결과 BoI"]
+  R --> K["지식·SOP·Skill 개선 후보"]
+  K --> M["Private 축적 또는 Team/Public 검토"]
 ```
 
 # Workflow / Task
@@ -64,21 +64,32 @@ flowchart TD
 
 Copilot은 BoI Wiki 내부 Agent만 의미하지 않는다. 사용자가 ChatGPT, Claude, Excel, 사내 도구, 별도 스크립트를 활용해 처리하고 결과만 BoI Wiki에 남기는 경우도 Copilot이다.
 
+# Task 완료 모델
+
+일반 사용자는 raw `exit_criteria`와 `required_evidence`를 직접 작성하지 않는다. 다음 두 질문으로 Task의 완료를 설계한다.
+
+| 사용자 질문 | 내부 계약 |
+|---|---|
+| 언제 이 일이 끝났다고 볼까요? | 완료 항목과 사람·시스템 확인 방식 |
+| 무엇을 확인하면 될까요? | 필수 근거, source 종류와 연결 |
+
+Manual은 담당자가 완료 항목을 확인하고, Copilot은 AI가 자료를 준비한 뒤 사람이 최종 확인한다. Autopilot은 모든 필수 완료 항목에 검증 가능한 system binding이 있을 때만 실행할 수 있다. LLM의 자기 선언만으로 Task를 완료하지 않는다.
+
 # SOP Builder 기준
 
 `/sops/new`의 현재 Wizard는 다음 순서다.
 
 1. `Workflow 개요`: 업무 대상, 상황, 판단 질문, 필요한 근거, 남길 결과를 적는다.
 2. `Task 맵`: 전체 Workflow를 작은 Task로 나눈다.
-3. `Task 상세`: 필요한 Task만 실행 방식, 판단 질문, 근거, Action/Skill, TAT 기준을 구체화한다.
-4. `시작/연결`: 기존 Event, Webhook, Legacy/API Poll, MCP/Data Lake adapter, Kafka 가이드, 수동 시작 중 시작 신호를 정한다.
+3. `Task 상세`: 필요한 Task만 실행 방식, 완료된 모습, 확인할 자료, Action/Skill, TAT 기준을 구체화한다.
+4. `시작/연결`: 기존 업무 이벤트, Webhook, API 조회, MCP, 자료 보관함 query, Kafka, 일정과 수동 시작 중 시작 신호를 정한다.
 5. `검토·저장`: Workflow 틀, Task, 자동 자산화 계획, 게시 전 차단 조건을 확인한다.
 
-SOP Builder는 SOP 정의와 근거 요구사항을 설계하는 화면이다. Raw Data, PDF, PPT, Excel, 로그, 캡처 같은 실제 업무 파일은 실행 중 SOP Run, Inbox 판단, Report BoI 검토, Agent 대화에서 Data Lake artifact로 첨부한다.
+SOP Builder는 SOP 정의와 근거 요구사항을 설계하는 화면이다. Raw Data, PDF, PPT, Excel, 로그, 캡처 같은 실제 업무 파일은 실행 중 SOP Run, Inbox 판단, Report BoI 검토, Agent 대화에서 자료 보관함 artifact로 첨부한다.
 
-# Data Lake Artifact
+# 자료 보관함
 
-Data Lake는 사용자-facing 명칭이며 MinIO 기반 artifact store다. OKF 본문에는 원본 파일을 넣지 않는다. BoI 문서에는 stable download URL, profile, sample, checksum, validation metadata, 첨부 사유만 남긴다.
+자료 보관함은 MinIO 기반 artifact store의 사용자-facing 명칭이다. OKF 본문에는 원본 파일을 넣지 않는다. BoI 문서에는 stable download URL, profile, sample, checksum, validation metadata, 첨부 사유만 남긴다.
 
 PostgreSQL은 Data Lake 필수 구성요소가 아니다. PostgreSQL은 Legacy DB Demo 또는 structured query adapter 예시로만 사용한다.
 
@@ -106,16 +117,18 @@ Workflow와 Task는 TAT 측정 단위이기도 하다.
 | 오늘 회의 내용을 BoI로 정리해줘 | 비정형 업무 | Local Private 업무 BoI로 저장하고 공유 필요 시 promotion draft 생성 |
 | 신규 품질 API를 등록하고 싶어 | Task 실행 연결 | 어떤 Task에서 API가 필요한지 정하고 Action 또는 Skill 초안으로 연결한다 |
 
-# Agent 판단 기준
+# BoI Agent 판단 기준
 
-BoI Agent는 질문을 받으면 먼저 SOP 여부를 묻지 않는다. 대신 업무 맥락, Workflow/Task, 필요한 근거, 다음 행동을 확인한다. SOP가 있으면 Task와 현재 실행 맥락으로 정렬하고, SOP가 없으면 업무 패턴이나 비정형 업무 BoI로 답한다.
+BoI Agent는 질문을 받으면 먼저 SOP 여부를 묻거나 모든 설명을 SOP로 전환하지 않는다. 요청의 목적을 이해하고 현재 화면을 anchor로 Wiki 전체에서 관련 지식과 업무 관계를 찾는다. SOP가 실제로 관련되거나 사용자가 설계·변환을 요청한 경우에만 Workflow/Task 초안을 만든다.
+
+Task가 완료되면 판단, 근거, 결과와 예외를 Completion Record로 남긴다. 재사용 가치가 검증된 내용만 KnowledgeCandidate가 되며, 기존 자산 보강을 새 문서 생성보다 우선한다.
 
 Agent가 WorkflowDefinition을 사용할 수는 있지만, 사용자 답변에는 내부 URL이나 raw id를 직접 노출하지 않는다. 사용자-facing 링크는 `관련 SOP 보기`, `BoI Wiki에서 보기`, `Event 보기`, `Action 보기`, `업무 상태 보기`처럼 메뉴와 업무 의미 중심으로 제공한다.
 
 # Related Documents
 
-- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
-- [WorkflowDefinition Registration Guide](/public/boi-wiki-manual/workflows/workflow-definition-registration-guide.md)
-- [Work Context Pack](/public/boi-wiki-manual/agent/work-context-pack.md)
-- [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md)
-- [BoI Wiki Local Integration](/public/boi-wiki-manual/local/boi-wiki-local-integration.md)
+- [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
+- [업무 이벤트 정의 가이드](/docs/boi:public:boi-wiki-manual:workflows:business-event-definition-guide)
+- [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)
+- [자료 보관함과 업무 근거](/docs/boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle)
+- [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)

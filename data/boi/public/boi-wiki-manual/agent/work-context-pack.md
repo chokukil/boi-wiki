@@ -2,10 +2,10 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
-title: Work Context Pack
-description: BoI Agent, Inbox, MCP, skills가 공유하는 Workflow/Task 업무 맥락 계약
-tags: [BoIWiki, Agent, WorkContext, Workflow, Task, Inbox, MCP]
-timestamp: 2026-06-28T11:30:00+09:00
+title: WorkContextPack 업무 맥락 계약
+description: Web·MCP·외부 Agent와 Task Loop가 같은 업무 목표·근거·완료 조건을 이해하기 위한 공통 context 계약
+tags: [BoIWiki, Agent, WorkContext, Workflow, Task, Evidence, MCP]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:work-context-pack
 visibility: public
 classification: internal
@@ -17,97 +17,82 @@ acl_policy: acl:public
 status: reviewed
 source_refs:
   - type: repo
-    ref: boi_api/app/main.py
+    ref: boi_api/app/v2/models.py
   - type: repo
-    ref: boi_wiki_mcp/app/main.py
+    ref: boi_api/app/v2/work_learning.py
+  - type: repo
+    ref: boi_api/app/task_completion.py
+  - type: repo
+    ref: boi_wiki_mcp/app/v2.py
 review:
   reviewer: harness-curator
   review_status: reviewed
 ---
 
-# Summary
+# 목적
 
-`WorkContextPack`은 BoI Agent가 단순 검색 결과를 나열하지 않고 실제 업무 답변을 만들기 위해 사용하는 공통 context 계약이다. REST API, MCP, Inbox, skills/harness는 모두 같은 pack을 기준으로 “지금 어떤 Workflow/Task를 처리 중인지”, “앞 Task에서 무엇이 처리됐는지”, “비슷한 과거 사례에서 어떻게 했는지”, “다음에 무엇을 해야 하는지”를 이해한다.
-
-# Contract
+`WorkContextPack`은 Agent에게 많은 문서를 한꺼번에 넣는 묶음이 아니다. 이번 질문이나 Task를 이해하고 다음 한 단계를 수행하는 데 필요한 업무 맥락만 선택한 공통 계약이다. Pet, REST, MCP, Codex·Claude Agent Kit, Inbox와 Deep Work가 같은 pack을 사용한다.
 
 ```mermaid
 flowchart TD
-  INPUT["task_id / trace_id / current_url / action_key"] --> PAGE["Page Context"]
-  INPUT --> TASK["Inbox Task"]
-  INPUT --> WT["Workflow Task"]
-  TASK --> TRACE["Trace Context<br/>events + actions + generated BoI"]
-  WT --> TAT["TAT Summary"]
-  TASK --> HIST["Similar Cases<br/>personal + team history"]
-  TRACE --> EVIDENCE["Required Evidence"]
-  TRACE --> ART["Data Lake Artifacts"]
-  HIST --> PATTERN["Historical Patterns"]
-  PAGE --> CAP["Event / WorkflowDefinition Context"]
-  CAP --> NEXT["Recommended Next Steps"]
-  EVIDENCE --> PACK["WorkContextPack"]
-  ART --> PACK
-  TAT --> PACK
-  PATTERN --> PACK
-  NEXT --> PACK
+  GOAL["업무 목표"] --> PACK["WorkContextPack"]
+  PAGE["현재 화면"] --> PACK
+  TASK["Workflow·현재 Task"] --> PACK
+  DONE["완료된 모습"] --> PACK
+  NEED["확인할 자료"] --> PACK
+  FOUND["확보한 근거·유사 사례"] --> PACK
+  PACK --> PLAN["이번 단계의 Plan Delta"]
+  PLAN --> RESULT["사람·AI·Action 결과"]
+  RESULT --> LEDGER["Evidence Ledger"]
 ```
 
-주요 필드:
+# 포함하는 정보
 
-| Field | Meaning |
+- 사용자가 이루려는 업무 결과와 `WorkIntent`
+- 현재 화면의 읽을 수 있는 자산과 활성 artifact
+- Workflow, 현재 Task, Manual/Copilot/Autopilot 모드
+- 사용자가 읽는 `완료된 모습`과 `확인할 자료`
+- 확보된 근거, 관련 BoI/SOP/Event/Action/Skill
+- 현재 판단에 유용한 유사 사례와 최근 loop delta
+- 외부 AI 작업의 summary, checksum, ACL URL
+- 사용·제외한 source와 revision을 담은 `ContextManifest`
+
+# 완료 모델
+
+일반 화면은 `exit_criteria`, `required_evidence` 같은 내부 이름을 보여주지 않는다.
+
+| 사용자 표현 | 구조화된 의미 |
 |---|---|
-| `task` | 현재 사용자가 처리해야 할 Inbox task. 없으면 현재 페이지와 trace 기준으로 유추한다. |
-| `workflow_task` | 현재 Workflow 안에서 사용자가 보고 있는 Task. `task_name`, `decision_question`, `execution_mode`, `copilot_source`, `runner_type`을 포함한다. |
-| `trace_context` | 같은 trace의 이전 Event, Action, generated BoI 요약 |
-| `required_evidence` | 현재 단계에서 확인해야 하는 근거 항목 |
-| `data_lake_artifacts` | 현재 Task, Inbox task, report, action result, conversation에 연결된 artifact URL/profile/sample/validation 요약 |
-| `tat_summary` | Workflow/Task TAT의 최근 실행, 평균, 중앙값, baseline 대비 변화 |
-| `similar_cases` | action/event/stage/workflow definition 기준으로 찾은 유사 처리 사례 |
-| `historical_patterns` | 유사 사례를 익명 집계한 처리 패턴 |
-| `recommended_next_steps` | 사용자가 지금 취할 수 있는 업무 조치 후보 |
-| `draft_completion_note` | manual handoff에 붙일 수 있는 조치 내용 초안 |
-| `work_context_narrative` | LLM이 source id가 있는 근거만 사용해 쓴 사용자-facing 업무 요약 상태 |
-| `business_context` | 장비, LOT, Wafer, Alarm, 공정, Trend/Raw 상태처럼 업무 차이를 판단하는 fingerprint |
-| `business_context_quality` | business context가 충분한지와 빠진 핵심 필드 |
-| `guardrails` | ACL/RBAC/classification 필터링 결과 |
+| 언제 이 일이 끝났다고 볼까요? | `completion_design.checks` |
+| 무엇을 확인하면 될까요? | `completion_design.evidence` |
+| 시스템에서 자동 확인 | check의 system binding |
+| 담당자가 확인 | human confirmation과 Evidence Ledger |
 
-`WorkContextPack` 자체는 source of truth다. 사용자 화면에 보이는 자연어 요약은 `work_context_narrative`가 `ready`일 때만 사용한다. LLM 요약이 아직 없거나 실패했을 때 deterministic count/status 문구를 답변처럼 대체하지 않고, Inbox는 “업무 맥락 요약 준비 중” 상태와 원본 근거 details만 제공한다.
+기존 배열 필드는 외부 연동 호환을 위해 함께 유지하지만 Task Loop는 구조화된 완료 모델과 실제 근거를 우선한다. Autopilot은 모든 필수 완료 항목에 검증 가능한 system binding이 있을 때만 실행 준비 상태가 된다.
 
-# API and MCP
+# Context 관리 원칙
 
-| Interface | Use |
-|---|---|
-| `GET /api/context/work` | task, trace, action, SOP, current URL 기준 Work Context 조회 |
-| `GET /api/inbox` | WorkContext 기반으로 검증된 Inbox 보고서 BoI 목록 조회 |
-| `GET /api/inbox/reports/{report_id}` | 하나의 검증된 Inbox 보고서와 materialized BoI 조회 |
-| `GET /api/agents/boi-wiki/inbox/{task_id}/context` | Inbox task 하나에 대한 업무 context 조회 |
-| `GET /api/agents/boi-wiki/inbox/{task_id}/history` | 비슷한 처리 사례와 익명 패턴 조회 |
-| MCP `work_context_get` | API와 같은 Work Context Pack 반환 |
-| MCP `boi_inbox` / `boi_inbox_report_get` | Inbox 보고서 목록과 검증된 보고서 BoI 반환 |
-| MCP `agent_inbox_context` | Compatibility task context 반환 |
-| MCP `similar_cases_search` | 유사 사례와 처리 패턴 반환 |
+- `write`: 작업 메모, artifact와 loop delta를 WorkSession에 저장한다.
+- `select`: 현재 목표와 완료 조건에 직접 필요한 자료만 고른다.
+- `compress`: 오래된 대화와 긴 이력은 짧은 요약·profile로 바꾼다.
+- `isolate`: 파일, CSV, 로그와 민감 원본은 MinIO/Data Lake에 두고 prompt 밖에 둔다.
 
-API/MCP 응답의 `work_context_narrative`는 `summary_state`, `overall_summary`, `difference_summary`, `recommended_action_note`, `similar_case_insights`, `stage_history_narrative`, `source_ids`, `component_errors`를 포함한다. 모든 narrative 문장은 WorkContextPack의 `event:*`, `action:*`, `boi:*`, `case:*` source id를 필드로만 참조해야 하며, 사용자 문장에는 `source_id`, raw id, 내부 상태어를 쓰지 않는다.
+일반 turn은 source 12개, chunk 24개 이내를 기본으로 하며 token budget을 넘기기 전에 관련성이 낮은 항목부터 제외한다. 제외 이유도 manifest에 남긴다.
 
-Inbox group 응답에는 `group_context_summary`, `group_narrative`, `comparison_candidates`, `preview_items[].brief`가 포함된다. `group_context_summary`와 `comparison_candidates`는 근거 원장이고, 사용자 기본 화면에는 QA를 통과한 `group_narrative.summary`와 `preview_items[].brief`만 표시한다. 같은 Action이 여러 건 묶이면 그룹 카드는 하나의 업무 요약을 보여주고, 개별 preview는 시간, 대상/상황, 다음 확인 포인트가 서로 구별되어야 한다. 단순히 “서로 다른 trace”, “같은 Action”이라고 말하거나 deterministic 차이 필드를 그대로 노출하는 것은 금지한다. 업무 필드가 없으면 가짜 차이를 만들지 않고 narrative QA 실패로 diagnostics에 남긴다.
+# 사람과 AI의 협업
 
-Inbox group narrative QA는 다음을 차단한다.
+- Manual: 사람이 수행·확인하고 Agent는 자료와 기록을 돕는다.
+- Copilot: 내부 또는 외부 AI가 자료·초안을 준비하고 사람이 마지막 판단을 남긴다.
+- Autopilot: allowlist Action과 system binding으로 확인할 수 있는 저위험 단계만 자동 수행한다.
 
-- `source_id`, raw id, `trace`, `라우팅`, `처리 중`, `WorkflowDefinition`
-- 같은 문장의 반복 또는 그룹 요약을 preview item마다 반복하는 출력
-- 근거 없는 완료/승인/실행 완료 주장
+client가 mode를 높여 권한을 확대할 수 없다. 최종 가능 범위는 identity, RBAC, Task mode, Harness와 confirmation의 교집합이다.
 
-Inbox와 Agent 응답은 내부 WorkflowDefinition URL을 사용자 링크로 직접 노출하지 않는다. API 응답의 `workflow_definition_context`나 `workflow_definition_url`은 내부 진단과 MCP/API 호환 필드이고, 사람이 클릭하는 링크는 `user_links`의 `관련 SOP 보기`, `BoI Wiki에서 보기`, `Event 보기`, `Action 보기`, `업무 상태 보기`, `원본 기록` 중 하나로 제공한다.
+# 외부 Agent 사용
 
-Task 실행 방식은 사용자에게 `Manual`, `Copilot`, `Autopilot`만 표시한다. 내부 필드인 `execution_mode`, `copilot_source`, `runner_type`은 MCP/API와 진단용으로 유지하되 기본 narrative에는 노출하지 않는다. 외부 Copilot으로 처리한 업무는 세부 tool trace가 없더라도 결과 메모, 판단 근거, Data Lake artifact 또는 BoI 링크가 있으면 context로 인정한다.
+MCP `boi_context`와 Agent Kit은 같은 context reference를 반환한다. 기본 응답은 원본 context 전문 대신 요약과 evidence/artifact reference만 포함하며, 권한 있는 진단에서만 manifest와 tool trace를 볼 수 있다.
 
-# Agent Use
+# 관련 문서
 
-Native BoI Agent는 답변 생성 전에 Work Context Pack을 읽고 `evidence_ledger`, `affordances`, `followup_context`에 반영한다. 따라서 “Trend 확인에 어떤 데이터가 필요해?” 같은 질문은 단순 문서 검색이 아니라 현재 SOP stage, 이전 action 결과, 필요한 evidence, 유사 처리 패턴까지 함께 보고 답해야 한다.
-
-# Related Documents
-
-- [업무 BoI-first 개념 모델](/public/boi-wiki-manual/concepts/work-boi-first-model.md)
-- [Inbox Work Context and Historical Patterns](/public/boi-wiki-manual/agent/inbox-work-context-and-history.md)
-- [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md)
-- [Native BoI Agent Tool Loop](/public/boi-wiki-manual/agent/native-boi-agent-tool-loop.md)
-- [Agent Guardrail and ACL](/public/boi-wiki-manual/agent/agent-guardrail-and-acl.md)
+- [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)
+- [Inbox와 Task 수행 가이드](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)
+- [자료 보관함과 업무 근거](/docs/boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle)

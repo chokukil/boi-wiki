@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: boi_api/app/main.py
@@ -24,6 +24,8 @@ review:
   reviewer: harness-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 초기 개인 업무 패턴 실험 기록이다. 현재 private provisional 지식과 개선 후보 흐름은 [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)을 따른다.
 
 # Summary
 

@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: boi_api/app/main.py
@@ -30,6 +30,8 @@ review:
   reviewer: harness-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 BoI Agent v1 구현의 감사 자료다. 현재 구조는 [플랫폼 아키텍처](/docs/boi:team:platform:boi-wiki-architecture-v0.1)와 [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)을 기준으로 한다.
 
 # Summary
 

@@ -263,3 +263,243 @@ media:
     viewport: 1440x1100
     related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
     created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-explorer-1440x1000.png
+    sha256: cae51b60cc09fdee7fc020a7661b0a4c8245224a44ac08db61c1b70fb8360439
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/?view=explorer"
+    captured_at: "2026-07-12T00:28:02.568Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:guide:final-operator-guide
+    created_by: codex
+    route_template: "/?view=explorer"
+    scenario: "explorer"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-boi-agent-compact-1440x1000.png
+    sha256: d5405b5a769c12bbb76455030a2839ac83518a03239e981b5af76dad463a3f03
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/docs/{boi_id}"
+    captured_at: "2026-07-12T00:28:04.338Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:agent:using-boi-agent
+    created_by: codex
+    route_template: "/docs/{boi_id}"
+    scenario: "boi-agent-compact"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-boi-agent-expanded-1440x1000.png
+    sha256: 2dccbd381e94e638e96488d33883fa7ddd1d701c5b31c78016e595d737ac7ea5
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/docs/{boi_id}"
+    captured_at: "2026-07-12T07:58:44.814Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:agent:using-boi-agent
+    created_by: codex
+    route_template: "/docs/{boi_id}"
+    scenario: "boi-agent-expanded"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-boi-agent-mermaid-1440x1000.png
+    sha256: fef7bbe2e208b589d54b684c7a19a316e9e91a76c9c6c07aaca4c62474904c5d
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent?session={work_session_id}&artifact={artifact_id}"
+    captured_at: "2026-07-12T00:28:05.536Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:agent:using-boi-agent
+    created_by: codex
+    route_template: "/agent?session={work_session_id}&artifact={artifact_id}"
+    scenario: "boi-agent-mermaid"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "[data-agent-v2-workspace]"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-boi-agent-mobile-390x844.png
+    sha256: 29972ef6f9c20a8a4a4ca8a808ec467c3c756ca13d54c9361a623149bf484dd0
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/docs/{boi_id}"
+    captured_at: "2026-07-12T00:28:06.855Z"
+    viewport: "390x844"
+    related_doc: boi:public:boi-wiki-manual:agent:using-boi-agent
+    created_by: codex
+    route_template: "/docs/{boi_id}"
+    scenario: "boi-agent-mobile"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-inbox-1440x1000.png
+    sha256: e9036217fb67d30ecfbb82308b761eb13b087f577f5d65c6d391d81bbe6815c3
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/inbox"
+    captured_at: "2026-07-12T00:28:11.097Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
+    created_by: codex
+    route_template: "/inbox"
+    scenario: "inbox"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.boi-inbox-page"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-inbox-report-1440x1000.png
+    sha256: 436f36cd08086ac2dbf39355183dcb3a06b5929bc80d01c63d64da2dc7e48a33
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/docs/{private_report_boi_id}"
+    captured_at: "2026-07-12T00:28:12.354Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
+    created_by: codex
+    route_template: "/docs/{private_report_boi_id}"
+    scenario: "inbox-report"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.doc-page"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-task-console-1440x1000.png
+    sha256: 6dea6a3db1625cc10decec40037e5fb64a29adfe9d05dee6fd65b90b8b5e3322
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/tasks/console?task_id={task_ref}"
+    captured_at: "2026-07-12T00:28:18.885Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
+    created_by: codex
+    route_template: "/tasks/console?task_id={task_ref}"
+    scenario: "task-console"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.task-console-page"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-sop-task-map-1440x1000.png
+    sha256: 98ebcc4a5ac0bfed267a0e6e5d4018c55cc57fda7cdf78f12dc636e31bb27ed7
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/sops/new"
+    captured_at: "2026-07-12T00:28:20.855Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    created_by: codex
+    route_template: "/sops/new"
+    scenario: "sop-task-map"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-business-event-definition-1440x1000.png
+    sha256: aa8bbde0d6c7370a13e0e4516e75d7a2b6765197f7fea105217f899e30c0aeba
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/sops/new#business-event-definition"
+    captured_at: "2026-07-12T00:28:22.808Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:workflows:business-event-definition-guide
+    created_by: codex
+    route_template: "/sops/new#business-event-definition"
+    scenario: "business-event-definition"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-data-library-1440x1000.png
+    sha256: 27bf432d581ba67c3ec7730fe1d3ba22b8f6d92c56176737851517c6b29505dc
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/data-library"
+    captured_at: "2026-07-12T00:28:24.014Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle
+    created_by: codex
+    route_template: "/data-library"
+    scenario: "data-library"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-event-catalog-1440x1000.png
+    sha256: e745d1ba965f8765c09a044fa9b4c827e4b140a8fd5ed2e2abf91df8ab9cf5b1
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/event-types"
+    captured_at: "2026-07-12T00:28:25.251Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:workflows:event-contract-guide
+    created_by: codex
+    route_template: "/event-types"
+    scenario: "event-catalog"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-action-catalog-1440x1000.png
+    sha256: 3b64da3889db48093c542cc10ea73541c73a3a1500928b6bfb548573006876a6
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/actions"
+    captured_at: "2026-07-12T00:28:26.499Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:actions:multi-action-connector-guide
+    created_by: codex
+    route_template: "/actions"
+    scenario: "action-catalog"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-external-agent-access-1440x1000.png
+    sha256: cb219b96f8ed64fb7a220ed0707ff0518a9acd0ce161b4799a1a17e3fdecc5d0
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/agent/access"
+    captured_at: "2026-07-12T00:28:27.695Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
+    created_by: codex
+    route_template: "/agent/access"
+    scenario: "external-agent-access"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.agent-access-v2"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-integration-status-1440x1000.png
+    sha256: fcd5f1d90972300f091aba57deb9e55a6bc63ee335a3a293566aefe741dd484c
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/integrations"
+    captured_at: "2026-07-12T00:28:28.948Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:operations:operator-runbook
+    created_by: codex
+    route_template: "/integrations"
+    scenario: "integration-status"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.integrations-page"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-custom-boi-agent-1440x1000.png
+    sha256: 3012672faf2141ba0e1c2e955014947004eaba0e2f71200e17efdf60cdbd6534
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/helpers/new"
+    captured_at: "2026-07-12T00:28:30.150Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:agent:using-boi-agent
+    created_by: codex
+    route_template: "/helpers/new"
+    scenario: "custom-boi-agent"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.helper-builder-v2"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-event-occurrences-1440x1000.png
+    sha256: 08cd69c2c7cd5e63bdc8fc9a3315fe42353ee113807f90712ce4bca2c9d3864b
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/events"
+    captured_at: "2026-07-12T07:17:31.910Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:events:event-catalog-and-work-history
+    created_by: codex
+    route_template: "/events"
+    scenario: "event-occurrences"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.event-occurrence-page"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-sop-history-1440x1000.png
+    sha256: 3428bf574af780ba633ed2aaf04cfffc27ba3a7557697e13312032e16652fd36
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/sops/history"
+    captured_at: "2026-07-12T07:17:33.944Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop
+    created_by: codex
+    route_template: "/sops/history"
+    scenario: "sop-history"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-api-v2-reference-1440x1000.png
+    sha256: c41acdadfbf4b079f7935f1c71bab803b61c45232536aff42ef5d99f68281652
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/api/reference"
+    captured_at: "2026-07-12T07:17:39.544Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:api:boi-wiki-api-v2
+    created_by: codex
+    route_template: "/api/reference"
+    scenario: "api-v2-reference"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "#swagger-ui"
+  - path: public/boi-wiki-manual/_media/browser/current-guide/20260712-mcp-status-1440x1000.png
+    sha256: fafd67f822184a8e729377957af73b849044b89e1a0883af7d471df967ae16f8
+    source_kind: browser-screenshot
+    captured_url: "http://127.0.0.1:8765/advanced/mcp"
+    captured_at: "2026-07-12T07:17:40.744Z"
+    viewport: "1440x1000"
+    related_doc: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
+    created_by: codex
+    route_template: "/advanced/mcp"
+    scenario: "mcp-status"
+    source_revision: 53912644c443b0a2af0e5c367901575a111b18ae
+    selector: "main.advanced-interface-page"

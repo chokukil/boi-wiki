@@ -15,6 +15,11 @@ author:
   agent_id: codex
 acl_policy: acl:public
 status: reviewed
+agent_entrypoint_areas: [workflow]
+agent_entrypoint_prompts:
+  workflow:
+    label: 업무 흐름을 SOP와 Task로 구체화하기
+    prompt: 업무 맥락을 Workflow와 Task로 나누고 완료된 모습과 확인할 자료를 정하는 방법을 알려줘.
 source_refs:
   - type: repo
     ref: harness/sop-authoring-harness.md
@@ -29,7 +34,7 @@ review:
 
 원본 SOP 이미지나 업무 화면 캡처는 해석 결과와 분리한다. 원본 asset은 `_media/source/{source-slug}/...`에 보존하고, agent가 임의로 다시 그리거나 파일명을 덮어쓰지 않는다.
 
-일반 사용자가 Web UI에서 직접 따라할 때는 [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)을 기준으로 한다. 이 문서는 `직개발 결과 확인 및 Reporting` 예시를 사용해 Workflow 개요, Task 맵, Task 상세, 시작/연결, 검증·저장, 실행 smoke, TAT 확인을 순서대로 보여준다.
+일반 사용자가 Web UI에서 직접 따라할 때는 [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)를 기준으로 한다. 이 문서는 Workflow 개요, 예시 Task 선택, 완료된 모습·확인할 자료, 시작/연결과 검증·저장을 현재 화면 기준으로 보여준다.
 
 # Package Output
 
@@ -67,9 +72,22 @@ SERVICE_TOKEN="$SERVICE_TOKEN" python scripts/run_equipment_sop_poc.py
 
 반도체 업무 차이를 검증할 때는 단일 고정 payload를 seed하지 않는다. `semiconductor-varied` profile은 ETCH pressure spike, CVD temperature drift, Metrology ring pattern, Furnace recipe mismatch를 Event Broker publish와 Action Gateway 실행 경로로 생성한다. Inbox와 Agent는 이 경로에서 생성된 장비, LOT, Wafer, Alarm, Trend/Raw 상태, 승인 위험도를 기준으로 업무 차이를 비교해야 한다.
 
+# 수행 이력 확인
+
+SOP 수행 이력은 로그 링크의 나열이 아니라 업무 실행 관점으로 본다.
+
+![실행 흐름과 TAT 관련 Event를 구분해 확인하는 SOP 수행 이력](../_media/browser/current-guide/20260712-sop-history-1440x1000.png)
+
+- `실행 흐름 보기`: Event에서 Task와 Action, 사람 확인, 결과까지 이어진 현재 상태를 연다.
+- `TAT 성과`: 기준 시간과 실제 처리 시간을 비교한다.
+- `관련 Event`: 이 실행을 시작하거나 상태를 바꾼 업무 발생 건을 본다.
+- `반복 패턴 검토`: 같은 Event가 실제로 반복 탐지된 이력에만 나타나며 업무 이벤트 정의 개선 후보를 검토한다.
+
+`실행 흐름 보기`는 주 작업 버튼이고 나머지는 보조 버튼이다. trace ID와 raw Event row는 기본 화면에 표시하지 않는다.
+
 # Citations
 
 - [SOP Authoring Harness](/public/harness/sop-authoring-harness.md)
-- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
+- [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
 - [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md)
 - [설비 이상 감지·원인 분석·이상 조치 SOP](/public/sop/equipment-abnormal-response.md)

@@ -2,10 +2,10 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
-title: Event Contract Guide
-description: Event Broker 기반 BoI workflow에서 Event Type을 1급 계약으로 정의하는 기준
-tags: [BoIWiki, EventBroker, EventType, Contract]
-timestamp: 2026-06-27T11:05:00+09:00
+title: 업무 이벤트와 Event Contract
+description: 외부 신호, 업무 이벤트 정의, Event Type과 Event Stream을 구분하고 Workflow·Action과 연결하는 계약
+tags: [BoIWiki, BusinessEvent, EventType, EventBroker, Contract]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:workflows:event-contract-guide
 visibility: public
 classification: internal
@@ -17,35 +17,57 @@ acl_policy: acl:public
 status: reviewed
 source_refs:
   - type: repo
-    ref: data/event_catalog/events.yaml
+    ref: data/event_catalog/event_types.yaml
   - type: repo
     ref: data/workflow_catalog/workflows.yaml
+  - type: repo
+    ref: boi_api/app/business_event_detector.py
 review:
   reviewer: harness-curator
   review_status: reviewed
 ---
 
-# Summary
+# 네 가지를 구분한다
 
-Event Type은 BoI runtime의 시작점이자 전이 계약이다. Pilot에서는 Event Type metadata가 단순 이름이 아니라 payload, actor, trace, visibility, workflow, SOP, recommended action을 포함해야 한다.
+| 개념 | 역할 |
+|---|---|
+| 외부 신호 | Webhook, API, MCP, Data Lake, Kafka, 일정에서 받은 원본 입력 |
+| 업무 이벤트 정의 | 신호를 업무 발생으로 볼 조건, dedupe, 상태와 확인 방식 |
+| Event Type | Broker, Workflow와 Action이 공유하는 검토된 업무 계약 |
+| Event Stream | 실제 발생, 처리, 전이된 Event 이력 |
+
+![Event Type의 역할과 실제 연결 항목을 찾는 Event 카탈로그](../_media/browser/current-guide/20260712-event-catalog-1440x1000.png)
+
+raw 신호를 모두 `boi.events`로 보내지 않는다. Business Event Detector가 의미 있는 순간을 판단한 뒤 Event Type contract에 맞는 이벤트만 발행한다.
+
+```mermaid
+flowchart LR
+  SIGNAL["외부 신호"] --> DETECTOR["업무 이벤트 판단"]
+  DETECTOR --> CONTRACT["Event Type Contract"]
+  CONTRACT --> BROKER["boi.events"]
+  BROKER --> WF["Workflow 전이"]
+  BROKER --> ACTION["Action dispatch"]
+  WF --> BOI["결과 BoI"]
+  ACTION --> BOI
+```
 
 # Event Metadata
 
-| Field | Meaning |
+| Field | 의미 |
 |---|---|
-| `payload_schema` | 이벤트 payload JSON schema |
+| `event_type` | 업무 의미를 가진 안정적인 계약 ID |
+| `payload_schema` | 업무 Event payload schema |
 | `required_payload_fields` | routing과 materialization에 필요한 최소 필드 |
-| `trace_policy` | trace 생성/상속/필수 여부 |
+| `trace_policy` | trace 생성, 상속과 필수 여부 |
 | `idempotency_key_fields` | 중복 발행 방지 기준 |
-| `actor_policy` | 발행자 사번/팀/role 정책 |
-| `visibility_policy` | public/team/private BoI 생성 범위 |
-| `workflow_key` | 연결 workflow |
-| `sop_ref` | 연결 SOP 문서 |
-| `sop_stage_id` | 시작 또는 전이 stage |
-| `recommended_actions` | 자동 또는 권장 Action |
-| `recommended_manual_actions` | 담당자 수동 조치 |
-| `emits_event_types` | 후속 Event Type |
-| `workflow_definition_refs` | 지원 WorkflowDefinition |
+| `actor_policy` | 발행자 identity와 role 정책 |
+| `visibility_policy` | 생성 BoI의 공개 범위 |
+| `workflow_key` / `sop_ref` | 연결 Workflow와 SOP |
+| `sop_stage_id` | 시작 또는 상태 전이 Task/stage |
+| `recommended_actions` | 연결된 실행 요청 후보 |
+| `emits_event_types` | 검증된 후속 Event Type |
+
+Kafka topic은 transport이고 Event Type은 업무 의미다. topic 이름을 업무 계약으로 사용하지 않는다.
 
 # Lifecycle
 
@@ -54,15 +76,29 @@ stateDiagram-v2
   [*] --> Draft
   Draft --> Dedupe
   Dedupe --> SchemaValidation
-  SchemaValidation --> BrokerSmoke
+  SchemaValidation --> SampleDecision
+  SampleDecision --> BrokerSmoke
   BrokerSmoke --> Review
   Review --> Applied
   Review --> Rejected
   Applied --> RuntimeObserved
+  RuntimeObserved --> ImprovementCandidate
 ```
 
-신규 Event Type은 draft로 시작한다. 즉시 runtime catalog에 반영하지 않고 dedupe와 schema validation을 통과해야 한다.
+신규 Event Type은 draft로 시작한다. 기존 계약과 중복을 확인하고 schema, sample decision, Broker와 연결 Workflow smoke를 통과한 뒤 적용한다.
 
-# Agent Use
+# 업무 이벤트 정의와의 경계
 
-BoI Agent는 “이 이벤트가 발생하면?” 질문을 Event Type에서 시작해 WorkflowDefinition, SOP Stage, Action, Manual Handoff, Next Event 순서로 해석한다. 연결된 WorkflowDefinition이 없으면 임의 답변 대신 업무 흐름 연결 후보를 제안한다.
+하나의 Event Type에 여러 source와 detector 정의가 연결될 수 있다. 예를 들어 `equipment.alarm.raised.v1`은 Webhook, Kafka raw topic 또는 API Poll에서 올 수 있지만 같은 업무 의미와 payload contract를 사용한다.
+
+detector의 fingerprint, dedupe window, threshold와 상태 전환은 source별 판단 상태다. Event Type은 detector 내부 상태를 payload 전체로 노출하지 않는다.
+
+# Agent 활용
+
+BoI Agent는 Event Type을 질문했다고 모든 답변을 SOP 생성으로 전환하지 않는다. 설명 요청은 Event 의미, 실제 발생 이력과 직접 연결 관계를 보여준다. 사용자가 명시적으로 Workflow 연결, Event 초안 또는 Action 연결을 요청한 경우에만 private draft를 만든다.
+
+# 관련 문서
+
+- [업무 이벤트 정의 가이드](/docs/boi:public:boi-wiki-manual:workflows:business-event-definition-guide)
+- [Event-Native Workflow](/docs/boi:public:boi-wiki-manual:workflows:event-native-workflow-guide)
+- [Action 카탈로그와 실행 연결](/docs/boi:public:boi-wiki-manual:actions:multi-action-connector-guide)

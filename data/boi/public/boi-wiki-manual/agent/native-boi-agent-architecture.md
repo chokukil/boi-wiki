@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: boi_api/app/native_agent.py
@@ -24,6 +24,8 @@ review:
   reviewer: harness-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 Native Agent v1 아키텍처 기록이다. 현재 Agent v2, WorkRun, Hybrid Retrieval과 Living Knowledge 구조는 [플랫폼 아키텍처](/docs/boi:team:platform:boi-wiki-architecture-v0.1)를 기준으로 한다.
 
 # Summary
 

@@ -2,10 +2,10 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
-title: Ontology Retrieval and Search
-description: BoI Agent가 Dictionary, OKF graph, SOP/Event/Action catalog, runtime evidence를 검색하는 방식
-tags: [BoIWiki, OntologySearch, Dictionary, OKF]
-timestamp: 2026-06-23T10:10:00+09:00
+title: Hybrid Retrieval과 지식 그래프
+description: BoI Agent가 현재 업무 맥락을 출발점으로 Wiki 전체의 지식·관계·유사 사례를 찾고 근거를 검증하는 방식
+tags: [BoIWiki, Agent, HybridRetrieval, Ontology, pgvector, Citation]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:ontology-retrieval-and-search
 visibility: public
 classification: internal
@@ -17,92 +17,84 @@ acl_policy: acl:public
 status: reviewed
 source_refs:
   - type: repo
-    ref: boi_api/app/main.py
+    ref: boi_api/app/v2/search.py
+  - type: repo
+    ref: boi_api/app/v2/repository.py
+  - type: repo
+    ref: boi_api/app/v2/knowledge_system.py
+  - type: api
+    ref: /api/v2/search
 review:
   reviewer: harness-curator
   review_status: reviewed
 ---
 
-# Summary
+# 한눈에 보기
 
-`/api/boi?q=...`는 document-only search로 남긴다. 복합 업무 탐색은 `/api/search/ontology`와 MCP `ontology_search`가 담당한다.
-
-Native BoI Agent는 `view=compact` 결과를 먼저 사용하고, 추가 본문이 필요할 때만 `boi_get`으로 좁혀 읽는다.
-
-# Retrieval Flow
+BoI Agent는 문서 제목만 찾지 않는다. 현재 화면과 진행 중 Task를 업무 해석의 출발점으로 삼고, 접근 가능한 Wiki 전체에서 용어·본문·관계·과거 결과를 함께 탐색한다. 현재 화면은 검색 범위를 가두는 필터가 아니다.
 
 ```mermaid
-flowchart TD
-  Q["User query"] --> D["Dictionary resolve<br/>private -> team -> public"]
-  D --> EXP["Bounded query expansion<br/>aliases + mapped event/action/sop"]
-  EXP --> IDX["Document/catalog index<br/>dictionary docs excluded"]
-  IDX --> G["OKF Markdown graph<br/>outgoing + backlinks"]
-  IDX --> CAT["SOP workflow + Event catalog + Action catalog"]
-  IDX --> RT["Runtime evidence<br/>trace/action/generated BoI"]
-  G --> RANK["Rank by lexical match, graph distance, page context, recency"]
-  CAT --> RANK
-  RT --> RANK
-  RANK --> OUT["Groups + knowledge panel + citations"]
+flowchart LR
+  Q["질문과 현재 업무"] --> D["업무 용어 해석"]
+  D --> L["본문·제목 검색"]
+  D --> V["의미 검색"]
+  D --> G["관계 그래프"]
+  D --> R["실행 이력·유사 사례"]
+  L --> RR["권위·최신성·업무 맥락 재정렬"]
+  V --> RR
+  G --> RR
+  R --> RR
+  RR --> C["원문 인용이 있는 답변"]
 ```
 
-# Result Contract
+# 검색 순서
 
-| Field | Meaning |
+1. Dictionary의 별칭과 관련 용어로 사용자의 표현을 업무 개념에 맞춘다.
+2. Markdown, SOP, Event, Action과 검증된 보고서의 제목·본문을 lexical 방식으로 찾는다.
+3. pgvector에서 의미가 가까운 section chunk를 찾는다.
+4. 문서 링크, Workflow/Task, Event/Action, Evidence 관계를 온톨로지에서 확장한다.
+5. 현재 Task, ACL, 문서 상태, 최신성, 실제 사용 결과로 후보를 다시 정렬한다.
+
+검색 read model이 지연되면 lexical·온톨로지 검색은 계속 제공한다. semantic 검색을 수행하지 못한 상태를 정상처럼 꾸미지 않고 요청 단위로만 `새 지식을 반영 중입니다`라고 알린다.
+
+# Source Set과 현재 화면
+
+- `auto_selected`: Agent가 이번 질문에 맞춰 선택한 자료
+- `pinned`: 사용자가 이 작업에 계속 참고하도록 고정한 자료
+- `attached`: 파일·URL·외부 AI 요약처럼 사용자가 연결한 자료
+- `excluded`: 사용자가 이번 작업에서 제외한 자료
+
+현재 문서나 Task가 실제로 열리고 권한이 있을 때만 context anchor로 사용한다. 404, raw 파일명, `index`, 기술 ID는 사용자용 제목으로 노출하지 않는다.
+
+# Chunk와 citation
+
+문서는 heading과 원문 line 범위를 가진 section chunk로 나뉜다. 일반 turn은 최대 12개 source와 24개 chunk를 사용한다. 서버는 답변 citation이 실제 회수된 chunk인지 다시 확인하며, 접근할 수 없는 문서나 회수되지 않은 문단을 근거로 만들 수 없다.
+
+Data Lake와 MinIO의 긴 원본은 색인이나 prompt에 전문을 넣지 않는다. summary, profile, sample, checksum과 ACL URL만 사용하고 원본은 자료 보관함에서 연다.
+
+# 그래프 탐색
+
+사용자 화면은 기술적인 edge 목록 대신 다음 질문으로 그래프를 활용한다.
+
+| 사용자 질문 | 그래프 보기 |
 |---|---|
-| `best_matches` | 상위 관련 항목 |
-| `groups` | SOP, Event Types, Actions, BoI Documents, Dictionary, runtime evidence |
-| `knowledge_panel` | query가 어떤 업무 개념으로 해석됐는지 |
-| `query_expansion` | dictionary alias와 mapping 기반 확장어 |
-| `graph_paths` | OKF link/backlink 기반 관계 경로 |
-| `citations` | 답변 근거 링크 |
+| 이 문서와 무엇이 연결돼 있나요? | 연결 관계 |
+| 이 Event가 어떤 Task와 Action으로 이어지나요? | 두 항목 연결 경로 |
+| 이 SOP를 바꾸면 어디에 영향이 있나요? | 변경 영향 |
+| 이 업무를 어떤 순서로 이해하면 되나요? | 업무 이해 순서 |
 
-# Compact Mode And Context Budget
+# 검색에서 제외되는 내용
 
-Agent는 `view=compact`를 사용한다. Compact mode는 metadata/body 전체를 넣지 않고 label, title, doc ref, event type, action key, URL, 짧은 description과 짧은 dictionary definition만 보낸다. 이렇게 해야 NAS 단일 worker에서도 Agent 응답이 문서 상세 렌더링과 경쟁하지 않는다.
+- `draft`, `candidate`, `deprecated`, smoke·fixture 문서
+- 검증되지 않은 Agent 대화와 테스트 로그
+- 다른 사용자의 Private 자산
+- Data Lake 원본 전문과 secret
+- 현재 Inbox로 오인될 수 있는 history seed
 
-Dictionary는 대량 확장을 전제로 하므로 다음 budget을 기본으로 둔다.
+관리자 진단에서는 필요한 경우 폐기·초안 문서를 별도로 조회할 수 있지만 일반 답변 근거에는 사용하지 않는다.
 
-| Item | Default |
-|---|---|
-| `dictionary_resolve.matches` | 8건 |
-| `dictionary_resolve` max limit | 25건 |
-| term `definition` | 240자 excerpt |
-| term `aliases` | 8개 |
-| term `related_terms` | 8개 |
-| `query_expansion` | 24개 |
+# 관련 문서
 
-더 많은 match가 있으면 `overflow.total_matches`, `overflow.omitted_count`, `overflow.refine_hint`를 반환한다. Agent는 overflow가 있을 때 전체 용어를 읽지 않고 질문을 좁히거나 domain/scope filter를 사용한다.
-
-# Search Boundary
-
-- `boi_search`: BoI 문서 목록만 반환한다.
-- `ontology_search`: Dictionary, SOP, Event, Action, runtime evidence를 함께 반환한다.
-- 앱 route 링크와 raw log 링크는 OKF concept graph edge가 아니라 runtime evidence로 분리한다.
-
-# Dictionary Authoring Boundary
-
-Dictionary는 Agent가 사용자 언어를 업무 개념으로 해석하는 기준이므로 scope별 작성 권한을 분리한다.
-
-| Scope | Authoring rule | Reason |
-|---|---|---|
-| `private` | 본인 사번의 private dictionary에 바로 추가할 수 있다. | 개인 표현, 선호 용어, 임시 업무 맥락을 빠르게 보존한다. |
-| `team` | `boi.editor` 역할과 해당 팀 멤버십이 모두 필요하다. | 팀 dictionary는 팀원 전체의 ontology search와 Agent 답변에 영향을 준다. |
-| `public` | `boi.editor` 이상 권한이 필요하다. | Public dictionary는 전체 사용자의 seed vocabulary이므로 curated knowledge로 취급한다. |
-
-MCP와 Web API 모두 같은 경계를 사용한다. `dictionary_terms` 조회는 private -> team -> public 우선순위로 해석하지만, cursor pagination을 사용하며 shared scope 생성은 권한 검사를 통과해야 한다.
-
-# Dictionary Index Boundary
-
-OKF Markdown term 문서는 source of truth다. 런타임 검색은 generated ontology index를 사용하며, 일반 document search index에는 dictionary 문서 본문을 넣지 않는다. 따라서 용어가 많이 추가되어도 Agent context는 compact term result만 받는다.
-
-관계 의미는 다음처럼 구분한다.
-
-- `aliases`, `same_as`: 강한 동의어
-- `broader`, `narrower`: 계층 관계
-- `related_terms`: 약한 참고 관계
-- `maps_to_event_type`, `maps_to_action_key`, `maps_to_sop`: 실제 catalog/BoI로 resolve되는 강한 업무 연결
-
-# Related Documents
-
-- [Dictionary Authoring Harness](/public/harness/dictionary-authoring-harness.md)
-- [BoI Agent API, MCP, Ontology Search Harness](/public/harness/agent-api-mcp-search-harness.md)
+- [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)
+- [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)
+- [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)

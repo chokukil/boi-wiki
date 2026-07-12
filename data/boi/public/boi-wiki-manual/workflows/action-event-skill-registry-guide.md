@@ -69,5 +69,5 @@ action_skills:
 
 # Related Documents
 
-- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
+- [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
 - [SOP Workflow 작성과 Runtime 연결](/public/boi-wiki-manual/sop-workflows/create-and-connect-sop.md)

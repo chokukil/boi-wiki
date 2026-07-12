@@ -17,7 +17,7 @@ acl_policy: acl:public
 status: reviewed
 source_refs:
   - type: boi
-    ref: boi:public:boi-wiki-manual:agent:inbox-work-context-and-history
+    ref: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
   - type: boi
     ref: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
 review:
@@ -36,7 +36,7 @@ BoI Operations Center는 BoI Agent 채팅창이 아니라 사번 기준 업무 �
 | Feature flag | Default | User-facing behavior |
 |---|---:|---|
 | `BOI_OPS_CENTER_ENABLED` | `false` | `/ops` 직접 접근은 `/inbox`로 redirect하고 nav/subnav CTA를 숨긴다 |
-| `BOI_PET_AGENT_ENABLED` | `false` | Pet Agent floating panel을 app shell에 mount하지 않는다 |
+| `BOI_PET_AGENT_ENABLED` | `true` | 모든 주요 화면에서 같은 WorkSession을 사용하는 BoI Agent Pet surface를 제공한다 |
 
 문서는 target architecture와 API contract를 설명한다. 현재 사용자-facing 공개 범위는 feature flag 상태와 `/api/runtime/config`의 `features` 값을 따른다.
 
@@ -60,7 +60,7 @@ Operations Center는 Event/Action JSONL을 매번 전체 스캔하지 않는다.
 
 Operations Center의 첫 렌더, Inbox 목록, SOP/Event/Action catalog는 LLM이나 sandbox를 기다리지 않는다. 이 경로는 runtime manifest/index만 사용한다.
 
-고급 실행 경로는 `gpt-5.5`와 OpenAI Agents SDK를 사용한다.
+고급 실행 경로도 기본적으로 배포 환경에 설정된 LM Studio/OpenAI-compatible 모델을 사용한다. Pet, Quick Agent, DeepAgents, Sandbox 요약이 같은 로컬 model route를 사용하며, 사외·상시 운영에서는 GPT-5.5를 호출하지 않는다.
 
 - Agent Builder draft test
 - Evidence Sandbox 실행 결과 요약
@@ -68,7 +68,7 @@ Operations Center의 첫 렌더, Inbox 목록, SOP/Event/Action catalog는 LLM�
 - Inbox 검증 보고서 BoI 생성
 - 복잡한 SOP/Event/Action 연결 제안
 
-BoI API는 Agents SDK를 optional runtime adapter로 사용한다. SDK가 없거나 OpenAI 상태가 degraded여도 core UI는 200을 반환하고, `/api/runtime/config`와 `/api/runtime/openai-health`에 degraded 상태만 남긴다.
+GPT-5.5와 OpenAI Agents SDK 경로는 비용·품질 비교를 위한 명시적 일회성 검증 전용이다. `BOI_GPT55_TEST_MODE=true`와 별도 test credential을 함께 설정한 서버에서만 열리며, SDK가 없거나 test mode가 꺼져 있어도 core UI와 로컬 Agent는 영향을 받지 않는다. `/api/runtime/config`와 `/api/v2/system/readiness`에서 현재 model route와 test mode를 확인한다.
 
 Evidence Sandbox는 업무 판단 근거를 만들 수 있는 계산 workspace다. 단, 근거로 채택하려면 다음 조건을 만족해야 한다.
 
@@ -127,17 +127,21 @@ MCP client는 같은 기능을 `boi_ops_overview`, `boi_ops_canvas`, `boi_ops_re
 
 Operations Center와 Agent Builder는 API contract만으로 완료 판단하지 않는다. local-full 검증은 최소한 다음 흐름을 포함한다.
 
-- `python scripts/check_agent_sandbox.py --base-url http://localhost:28000 --employee-id 100001 --strict-openai --summary`
-- `python scripts/check_agent_builder_mcp_bridge.py --mcp-base-url http://localhost:8200 --employee-id 100001 --summary`
-- `node scripts/check_agent_builder_ui.mjs --url http://localhost:28000/agents/builder?employee_id=100001 --strict`
+- `python scripts/check_agent_sandbox.py --base-url http://localhost:28000 --employee-id 100001 --summary`
 - `python scripts/check_boi_operations_center.py --base-url http://localhost:28000 --employee-id 100001 --summary`
 - `node scripts/check_boi_inbox_ui.mjs --url http://localhost:28000/ops?employee_id=100001 --strict`
 
-`check_agent_builder_ui.mjs`는 실제 브라우저에서 Agent Builder를 열고 `초안 만들기`, `바로 테스트`, `Sandbox 테스트`를 클릭한다. 통과 조건은 `gpt-5.5` Agents SDK 테스트 결과, Sandbox artifact, console health, publish/test button state가 모두 확인되는 것이다. 이 검증은 Builder API가 살아 있어도 사용자 화면에서 버튼 흐름이 끊기는 경우를 잡기 위한 필수 UI smoke다.
+GPT-5.5 비교 검증이 필요할 때만 test mode 서버를 별도로 띄우고 다음 smoke를 수동 실행한다. 이 검증은 상시 readiness나 배포 통과 조건이 아니다.
 
-`check_agent_sandbox.py`는 단일 smoke가 아니라 압력 raw data, LOT yield, 부족 raw gate 같은 복수 시나리오를 실행한다. 각 시나리오는 code/script, JSON/CSV 결과, 보고서 Markdown, 필요한 경우 HTML chart/table artifact를 생성하고, `gpt-5.5` summary가 ready 상태인지 확인한 뒤 `verified_evidence`로 채택한다. 이 검증이 통과해야 Sandbox가 단순 mock이 아니라 실제 업무 판단에 채택 가능한 계산 근거를 만들 수 있다고 본다.
+- `python scripts/check_agent_sandbox.py --base-url http://localhost:28000 --employee-id 100001 --gpt55-test --summary`
+- `python scripts/check_agent_builder_mcp_bridge.py --mcp-base-url http://localhost:8200 --employee-id 100001 --gpt55-test --summary`
+- `node scripts/check_agent_builder_ui.mjs --url http://localhost:28000/agents/builder?employee_id=100001 --strict`
+
+`check_agent_builder_ui.mjs`는 test mode에서만 기존 Agent Builder의 GPT-5.5/Agents SDK 비교 경로와 Sandbox artifact를 확인하는 legacy UI smoke다.
+
+`check_agent_sandbox.py`의 기본 모드는 로컬 모델 정책과 Sandbox evidence 계약을 검증한다. `--gpt55-test`를 명시한 경우에만 같은 시나리오를 GPT-5.5 비교 검증까지 확장한다.
 
 # Citations
 
-- [Inbox Work Context and Historical Patterns](/public/boi-wiki-manual/agent/inbox-work-context-and-history.md)
+- [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)
 - [Register and Use BoI Wiki MCP](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)

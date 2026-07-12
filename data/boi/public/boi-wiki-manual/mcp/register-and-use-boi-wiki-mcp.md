@@ -3,9 +3,9 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: BoI Wiki MCP 등록과 사용
-description: agent가 BoI Wiki를 MCP server 하나로 검색, workflow 실행, action 탐색, source wiki 생성, memory review, promotion preview/게시하도록 등록하는 방법
-tags: [Manual, MCP, Agent, BoIWiki, SourceWiki, Harness]
-timestamp: 2026-07-05T22:00:00+09:00
+description: Codex와 Claude가 BoI Wiki의 지식, 현재 업무, SOP, Event, Action을 동일한 Context·Harness·WorkRun 계약으로 활용하는 방법
+tags: [Manual, MCP, Agent, BoIWiki, Harness, KnowledgeGraph]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:mcp:register-and-use-boi-wiki-mcp
 visibility: public
 classification: internal
@@ -25,236 +25,156 @@ review:
 
 # Summary
 
-BoI Wiki MCP는 agent-facing 표준 인터페이스다. API를 직접 외우는 대신 MCP server를 등록하면 BoI 문서, OKF graph, workflow status, action catalog, source draft 저장, Source Wiki 생성, memory review, Team/Public promotion preview/submit을 같은 방식으로 사용할 수 있다. Web UI의 일반 사용자는 `BoI Wiki / SOP / Event Broker / Action / Advanced` 메뉴로 접근하고, MCP client는 같은 기능을 tool로 호출한다.
+BoI Wiki MCP v2는 Web의 BoI Agent와 같은 업무 맥락, 검색 결과, 권한, Harness, WorkRun을 외부 Agent에 제공한다. Codex나 Claude는 많은 개별 API를 외울 필요 없이 10개 도구만 사용하며, 나머지 기능은 `boi_tools_search`로 찾는다.
+
+일반 요청은 `boi_agent`에 자연어로 보낸다. 검색, 관계 탐색, 현재 업무, SOP·Event·Action 초안, 심층 작업 경로는 BoI Wiki가 자동으로 결정한다. 결정적인 외부 자동화에서만 `boi_plan`에 capability를 명시한다.
 
 # Endpoint
 
-| Purpose | URL |
+| 용도 | 주소 표기 |
 |---|---|
-| Human status page | `http://localhost:8200/` |
-| MCP Streamable HTTP | `http://localhost:8200/mcp` |
-| Action Gateway bridge 호환 | `http://localhost:8200/api/mcp/call` |
-| Health check | `http://localhost:8200/health` |
+| BoI Wiki | `<BOI_BASE_URL>` |
+| PAT 발급과 외부 사용 | BoI Agent `⋯` → `외부에서 사용` |
+| 사용자 연결 화면 | `<BOI_BASE_URL>/agent/access` |
+| 운영 MCP 상태 | Advanced → MCP |
+| MCP v2 | `<BOI_MCP_URL>/mcp/v2` |
+| 상태 확인 | `<BOI_MCP_URL>/health` |
 
-`/mcp`는 UI가 아니라 MCP Streamable HTTP endpoint다. 브라우저 주소창이나 일반 `curl`로 열면 MCP `Accept` header가 없어서 `406 Not Acceptable`이 나올 수 있다. 이 상태는 서버 장애가 아니다. 사람이 확인할 때는 `http://localhost:8200/` 상태 페이지와 아래 검증 스크립트를 사용한다.
+| 환경 | `<BOI_BASE_URL>` 예시 | `<BOI_MCP_URL>` 예시 |
+|---|---|---|
+| Local dev | `http://127.0.0.1:8765` | `http://127.0.0.1:8200` |
+| Docker local-full | `http://localhost:28000` | `http://localhost:8200` |
+| 사내 pilot | 배포 담당자가 제공한 BoI Wiki URL | 배포 담당자가 제공한 MCP URL |
+
+`/mcp/v2`는 브라우저 페이지가 아니라 Streamable HTTP MCP endpoint다. 브라우저에서 직접 열 때 `406`이 나와도 MCP client에서 정상 연결되면 장애가 아니다. `/mcp`는 동결된 구형 호환 경로이며 신규 등록에 사용하지 않는다.
 
 # Authentication
 
-BoI Wiki MCP에는 두 호출 경로가 있다.
+1. Web SSO로 BoI Wiki에 로그인한다.
+2. BoI Agent를 펼쳐 `⋯` 메뉴의 `외부에서 사용`에서 개인 연결 키를 만든다.
+3. 키는 한 번만 표시되므로 OS keychain, secret manager 또는 저장소 밖의 환경 변수 `BOI_PAT`에 보관한다.
+4. MCP 요청에 `Authorization: Bearer <BOI_PAT>`를 보낸다.
 
-| Path | Purpose | Auth |
-|---|---|---|
-| `/mcp` | 표준 Streamable HTTP MCP endpoint | `MCP_REQUIRE_SERVICE_TOKEN=true`이면 `x-service-token` 또는 `Authorization: Bearer <token>` 필요 |
-| `/api/mcp/call` | 테스트/호환용 bridge endpoint | 항상 `x-service-token` 필요 |
+기본 scope는 `boi.read`, `boi.draft`다. `boi.execute.low`는 RBAC가 허용한 사용자만 선택할 수 있다. PAT identity가 사번과 권한을 결정하므로 query나 prompt에 `employee_id`를 넣지 않는다. PAT를 Wiki 문서, Git, Skill, prompt, 채팅에 기록하지 않는다.
 
-로컬 개발처럼 신뢰된 장비에서만 열 때는 `MCP_REQUIRE_SERVICE_TOKEN=false`로 둘 수 있다. NAS나 사내 네트워크처럼 다른 사용자가 접근 가능한 endpoint로 열 때는 `.env`에 `MCP_REQUIRE_SERVICE_TOKEN=true`를 설정하고 `boi-wiki-mcp` 컨테이너를 재생성한다. 이 값이 켜진 상태에서 token 없이 `/mcp`를 호출하면 `401 MCP service token is required`가 정상이다.
+![Codex Claude API용 개인 연결 키를 만드는 외부 Agent 연결 화면](../_media/browser/current-guide/20260712-external-agent-access-1440x1000.png)
 
-MCP client가 custom header를 지원하면 다음 둘 중 하나를 보낸다.
+# Codex와 Claude Desktop 등록
 
-- `x-service-token: <SERVICE_TOKEN>`
-- `Authorization: Bearer <SERVICE_TOKEN>`
-
-token 값은 Git, README, Wiki 문서, chat log에 남기지 않는다. 상태 페이지 `/health`와 `/status`의 `mcp_auth.required`가 현재 설정을 보여준다.
-
-Streamable HTTP transport는 DNS rebinding protection을 켠다. 기본 allowlist는 `localhost`, `127.0.0.1`, `[::1]`, Docker service host, 테스트 host, `BOI_WIKI_MCP_EXTERNAL_URL`에서 파생된 host다. NAS, reverse proxy, 사내 도메인으로 노출할 때는 `.env`에 `MCP_ALLOWED_HOSTS=boi-wiki-mcp.example:28200,boi-wiki-mcp.example:*`처럼 실제 host를 추가한다. 필요하면 `MCP_ALLOWED_ORIGINS`도 같은 방식으로 제한한다.
-
-# Codex 등록
-
-Codex에서 BoI Wiki MCP를 사용할 때 이름은 `boi-wiki-mcp`, transport는 Streamable HTTP, URL은 `http://localhost:8200/mcp`로 둔다. 등록 후 `boi_search`, `boi_get`, `workflow_status`, `action_invoke`, `boi_inbox`, `boi_inbox_report_get`, `boi_inbox_decision_preview`, `boi_inbox_decision_submit`, `agent_memory_review`, `harness_acceptance`, `private_memory_cleanup_preview`, `private_memory_cleanup_run`, `private_memory_restore`, `private_memory_mark_memory`, `boi_ops_overview`, `boi_ops_recent_events`, `agent_draft_create`, `agent_draft_test`, `agent_draft_publish`, `agent_sandbox_job_create`, `agent_sandbox_job_get`, `agent_sandbox_job_events`, `agent_sandbox_adopt_evidence`, `source_wiki_plan`, `source_wiki_job_start`, `source_wiki_job_get`, `source_wiki_refresh_preview`, `source_wiki_markdown_export`, `promotion_preview`, `sop_catalog_search`, `sop_run_get`, `sop_run_graph`, `sop_run_context`, `sop_registration_plan`, `sop_registration_preview`, `event_publish_plan`, `event_ingestion_adapter_plan`, `event_ingestion_adapter_test`, `event_ingestion_adapter_draft_create`, `event_pattern_preview`, `sop_run_history`, `sop_registration_draft_create`, `sop_registration_validate`, `sop_registration_publish`, `event_type_draft_create`, `workflow_definitions_search` 같은 tool이 보이면 정상이다.
-
-BoI Agent 관련 tool은 BoI API와 같은 guardrail을 사용한다. `boi_search`는 document-only search이고, 복합 업무 탐색은 `ontology_search`, 현재 페이지 기반 질의응답은 `boi_agent_chat`, 담당 업무 보고서는 `boi_inbox`를 사용한다. Private Second Brain 관리는 `private_memory_cleanup_preview`, `private_memory_cleanup_run`, `private_memory_restore`, `private_memory_mark_memory`를 사용하며, 기본 검색은 generated/background 문서를 숨긴다. Cleanup run/restore/mark-memory는 `user_confirmed=true` 없이는 실행되지 않는다. `boi_ops_overview`와 `boi_ops_recent_events`는 feature flag가 켜진 Operations Center와 같은 사번 기준 workstream manifest를 반환한다. `sop_catalog_search`는 `catalog_all`, `catalog_search`, `current_page_related` scope를 명시해 Agent와 Operations Center가 SOP 선택 범위를 혼동하지 않게 한다. `sop_run_get`, `sop_run_graph`, `sop_run_context`는 선택한 SOP 실행 인스턴스의 상태, 그래프, 판단 맥락을 반환한다. `boi_inbox`는 검증된 보고서 BoI 링크와 우선순위, 사용자 링크를 반환하고, 승인이나 반려가 필요한 업무는 `boi_inbox_report_get`으로 결론, 개별 비교, 판단 근거, 유사 사례, 조치 후보를 먼저 확인한다. `boi_inbox_decision_preview`는 confirmation 전에 group 판단 가능 여부와 고위험 bulk approve 차단 여부를 확인한다. 실제 기록은 `boi_inbox_decision_submit`으로 개별 task에 대해 `note`와 `user_confirmed=true`를 넘길 때만 가능하다. 기존 `agent_inbox*` tool은 한 릴리즈 동안 compatibility alias로 남긴다. 이 narrative는 LLM이 실제 WorkContextPack source id만 사용해 쓴 업무 요약이며, 준비되지 않았을 때는 상태 단어 목록을 fallback처럼 보여주지 않는다. `workflow_definitions_search`, `workflow_definition_get`, `workflow_definition_deduplicate`는 내부 실행 정의인 WorkflowDefinition을 다루는 Advanced/API 도구다. Web UI에서는 이를 독립 메뉴처럼 노출하지 않고 SOP 추가, BoI Wiki 탐색, Event/Action 카탈로그에서 재사용 후보로만 보여준다. 신규 등록은 기본적으로 `sop_registration_plan`과 `sop_registration_preview`로 자연어 요청을 Workflow 개요, Task 맵, Task 상세, 시작 신호, Skill/Action 후보, 권한, 과거 이력으로 바꾼다. 이 흐름은 Web UI의 `/sops/new`와 같다. `sop_registration_draft_create`와 draft-session API는 `workflow_model`, `workflow_tasks[]`, `execution_mode`, `copilot_source`, `tat_target`, `baseline_tat`, `okf_materialization_plan`을 유지한다. 외부 시스템이 직접 Kafka에 넣지 못하는 업무 신호는 `event_ingestion_adapter_plan`, `event_ingestion_adapter_test`, `event_ingestion_adapter_draft_create`로 Webhook/API Poll/MCP/Data Lake/Kafka 가이드/수동 시작 adapter 초안을 만들고, draft만 남긴다. 업무 Event를 실제로 발생시키려는 요청은 `event_publish_plan`과 `event_publish_preview`로 기존 Event 후보와 연결 SOP를 확인한다. 기존 Event Stream 조건을 새 Event 정의로 승격하려면 `event_pattern_preview`로 샘플과 공통 조건을 확인하고, 사용자 확인 후에만 `event_pattern_promote_to_draft`를 호출한다. `sop_run_history`는 raw Event Stream이 아니라 SOP 기준 실행 카드와 Timeline 요약을 반환한다. `registration_plan`, `registration_verification_preview`, `registration_draft_create`, `sop_draft_create`, `action_draft_create`는 컴포넌트 단위 호환 도구로 유지한다. Action draft는 7종 connector(`api`, `mcp`, `webhook`, `manual`, `event_broker`, `boi_writer`, `langflow`) 중 하나를 `connector_kind`로 지정하고, API endpoint나 MCP tool 같은 종류별 설정은 `connector_config`로 전달한다. 이 도구들은 draft만 만들고 catalog를 즉시 바꾸지 않으며, MCP에서는 `user_confirmed=true` 없이는 생성도 차단된다. `registration_draft_validate`와 `sop_registration_validate`는 필수값을 검증하고, publish 도구들은 별도 사용자 확인 후 게시 요청만 수행한다. `boi_agent_chat`은 Web Pet Agent와 같은 입력 필드와 같은 `boi-agent.response.v1` 응답 계약을 반환한다. 응답에는 `answer_markdown`, `display_markdown`, `links`, `citations`, `artifacts`, `execution_cards`, `status_updates`, `status_events`, `tool_trace`, `evidence_ledger`, `affordances`, `answer_quality`, `access_summary`, `guardrails_applied`, `suggested_questions`, `event_context`, `workflow_definition_context`가 포함된다. 단, 사용자-facing 링크는 `user_links` 또는 `links`의 표시 라벨을 기준으로 BoI Wiki, BoI Inbox, SOP, Event Broker, Action 화면 중 하나로 연결해야 하며 WorkflowDefinition URL은 diagnostics나 내부 필드로만 다룬다. `boi_agent_approve`, `boi_inbox_decision_submit`, `manual_handoff_complete`, `sop_registration_draft_create`, `sop_registration_publish`, `registration_draft_create`, `sop_draft_create`, `action_draft_create`, `registration_draft_publish`, `event_ingestion_adapter_draft_create`, `event_pattern_promote_to_draft`, `event_type_draft_create`, `event_type_draft_apply`, apply, promotion, action 실행 계열은 사용자 확인과 RBAC/ACL 검증 없이는 실행되지 않는다.
-
-Agent Builder와 Evidence Sandbox tool은 Web의 Advanced Agent Builder와 같은 모델을 사용한다. `agent_draft_create`는 프롬프트, optional files, URL, Git repo, MCP server, Skill을 data layer로 넘긴다. `agent_draft_test`는 `gpt-5.5`/Agents SDK runtime이 가능하면 실제 draft test를 실행하고, runtime이 degraded면 contract-only 결과를 반환한다. `agent_draft_publish`와 `agent_sandbox_adopt_evidence`는 `user_confirmed=true` 없이는 실패해야 한다. `agent_sandbox_job_create`는 confirmed job이면 sandbox backend에서 code/data analysis를 실행하고, 결과 artifact는 job metadata와 artifact URL로 확인한다. Sandbox 결과는 검증 조건을 만족하고 사용자가 채택한 경우에만 보고서/판단 근거로 연결한다.
-
-Harness/Source Wiki/Promotion preview tool은 고도화 운영용이다. `harness_acceptance`는 Observation, Context, Control, Action, State, Verification matrix를 반환한다. `source_wiki_plan`과 `source_wiki_refresh_preview`는 비파괴이고, `source_wiki_job_start`만 `user_confirmed=true`를 요구한다. `promotion_preview`는 Team/Public 공유 전 redaction, source refs, target visibility, OKF validation을 확인하지만 문서를 게시하지 않는다. `agent_memory_review`는 private memory, cleanup 후보, promotion 후보를 보여주며 memory/protected/promotion draft는 삭제 후보에서 제외해야 한다.
+Codex와 Claude Desktop의 MCP 설정에는 다음처럼 등록한다. Cursor처럼 Streamable HTTP MCP를 지원하는 client도 같은 endpoint와 PAT 방식을 사용한다.
 
 ```json
 {
   "mcpServers": {
-    "boi-wiki-mcp": {
+    "boi-wiki": {
       "type": "http",
-      "url": "http://localhost:8200/mcp"
+      "url": "<BOI_MCP_URL>/mcp/v2",
+      "headers": {
+        "Authorization": "Bearer ${BOI_PAT}"
+      }
     }
   }
 }
 ```
 
-# Claude Desktop 등록
+client가 환경 변수 치환을 지원하지 않으면 client의 secret 설정을 사용한다. 토큰 문자열을 설정 파일에 직접 저장하지 않는다.
 
-Claude Desktop에서 remote/HTTP MCP server를 추가할 때 이름은 `boi-wiki-mcp`, transport는 Streamable HTTP, URL은 `http://localhost:8200/mcp`로 둔다.
+Agent Kit을 설치하면 같은 원칙의 Codex·Claude Skill과 Python·TypeScript client를 사용할 수 있다.
 
-```json
-{
-  "mcpServers": {
-    "boi-wiki-mcp": {
-      "type": "http",
-      "url": "http://localhost:8200/mcp"
-    }
-  }
-}
+```bash
+export BOI_BASE_URL='<BOI_BASE_URL>'
+export BOI_MCP_URL='<BOI_MCP_URL>'
+export BOI_PAT='<issued-token>'
+scripts/install_boi_agent_kit.sh --client codex
 ```
 
-등록 후 tool 목록에 `boi_search`, `boi_get`, `workflow_status`, `action_invoke`, `boi_agent_chat`, `ontology_search`, `boi_inbox`가 보이면 정상이다. 클라이언트 버전에 따라 설정 파일 위치나 transport key 이름은 다를 수 있지만, endpoint는 항상 `http://localhost:8200/mcp`다.
+# MCP Tools
 
-# Cursor 등록
-
-Cursor에서도 같은 MCP server를 등록한다. workspace 또는 user MCP 설정에 아래 값을 넣고 MCP 목록을 refresh한다.
-
-```json
-{
-  "mcpServers": {
-    "boi-wiki-mcp": {
-      "type": "http",
-      "url": "http://localhost:8200/mcp"
-    }
-  }
-}
-```
-
-Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정적 resource 대신 resource template과 tools를 중심으로 노출한다.
-
-# Tools
-
-| Tool | Use |
+| Tool | 역할 |
 |---|---|
-| `boi_search` | 권한 내 BoI 검색 |
-| `boi_get` | 단일 BoI 문서 조회 |
-| `okf_graph_doc` | 특정 문서 outgoing/backlink 조회 |
-| `actions_search` / `action_get` | multi-action catalog 탐색 |
-| `action_invoke` | Action Gateway 경유 실행. 실제 실행(`dry_run=false`)은 `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
-| `workflow_start` / `workflow_status` | SOP 기반 workflow 실행/상태 확인. `workflow_start`는 entry event를 발행하므로 API/MCP 모두 `user_confirmed=true`가 없으면 차단 |
-| `boi_agent_chat` / `boi_agent_suggestions` / `boi_agent_capabilities` / `boi_agent_approve` | Native BoI Agent의 page-aware 질의응답, 현재 화면 기반 추천 질문, Agent backend/contract discovery, execution card 승인 |
-| `workflow_definitions_search` / `workflow_definition_get` / `workflow_definition_deduplicate` | 내부 WorkflowDefinition 조회, 상세 확인, 신규 등록 전 중복 후보 산출. Web UI에서는 SOP 추가나 BoI Wiki 탐색 후보로만 노출 |
-| `event_skills_list` / `action_skills_list` | Event Skill과 Action Skill registry 조회 |
-| `ontology_search` | Dictionary, SOP workflow, Event Type, Action Spec, BoI 문서, runtime evidence를 함께 보는 업무 지식 그래프 검색 |
-| `dictionary_resolve` / `dictionary_terms` | private → team → public 우선순위로 업무 용어와 alias 해석. 기본은 compact/bounded 응답이며 `dictionary_terms`는 cursor/domain/scope 기반으로 탐색 |
-| `agent_memory_search` | 사번별 private Agent Memory BoI 검색 |
-| `agent_memory_review` | 사번별 Private Second Brain 후보, stale/duplicate/generated cleanup 후보, promotion 후보를 비파괴로 조회 |
-| `private_memory_cleanup_preview` / `private_memory_cleanup_run` / `private_memory_restore` / `private_memory_mark_memory` | generated/background private BoI 정리 preview, 7일 quarantine 이동, 복구, Second Brain memory 보호 표시 |
-| `boi_inbox` / `boi_inbox_report_get` / `boi_inbox_decision_preview` / `boi_inbox_decision_submit` | BoI Inbox 보고서 목록, 검증된 보고서 BoI 조회, 승인/반려/보류/추가 근거 요청 검토와 기록. preview는 confirmation 전에도 blocker를 확인할 수 있고, 고위험 group bulk approve는 차단한다. 실제 기록은 개별 task 사유와 `user_confirmed=true`가 있어야 한다. |
-| `boi_ops_overview` / `boi_ops_recent_events` | BoI Operations Center의 사번 기준 SOP workstream map, 우선순위 큐, 최근 task/report/stage 변경 이벤트 조회 |
-| `agent_draft_create` / `agent_draft_test` / `agent_draft_publish` | Gems형 Agent Builder draft 작성, GPT-5.5/Agents SDK 기반 테스트, private/team/public 배포. publish는 `user_confirmed=true` 없이는 MCP 단계에서 차단 |
-| `agent_sandbox_job_create` / `agent_sandbox_job_get` / `agent_sandbox_job_events` / `agent_sandbox_adopt_evidence` | Evidence Sandbox job 생성, 조회, 실행 event 확인, 검증 근거 채택. evidence 채택은 source/code/artifact/validation 확인 후 `user_confirmed=true`가 있어야 한다 |
-| `sop_catalog_search` / `sop_run_get` / `sop_run_graph` / `sop_run_context` | SOP 전체 목록, 조건 검색, 현재 페이지 관련 SOP 범위를 명시적으로 구분하고 선택한 SOP 실행 인스턴스의 그래프와 판단 맥락 조회 |
-| `data_lake_status` / `data_lake_sources` / `data_lake_query_plan` / `data_lake_query_preview` / `data_lake_query_execute` / `data_lake_artifact_get` / `data_lake_import_sources` | Optional Data Lake 도구. Data Lake는 MinIO artifact store이며, PostgreSQL은 별도 Legacy DB Demo adapter다. 기본 profile에서는 disabled contract를 반환하며 BoI Wiki core를 실패시키지 않는다. 실행은 plan/preview 이후 `user_confirmed=true`가 필요하다. `data_lake_import_sources`는 선택한 source profile을 private OKF Data Context BoI로 materialize할 때만 사용한다. |
-| `harness_acceptance` | Observation, Context, Control, Action, State, Verification release acceptance matrix 조회 |
-| `source_wiki_plan` / `source_wiki_job_start` / `source_wiki_job_get` / `source_wiki_refresh_preview` / `source_wiki_markdown_export` | repo/source inventory 기반 source-grounded wiki 계획, 사용자 확인된 생성, manifest 조회, last-good 보존 refresh preview, Markdown export |
-| `agent_inbox*` | Deprecated compatibility aliases. 새 client는 `boi_inbox*`를 사용한다. |
-| `manual_handoff_complete` | 사용자 확인된 manual handoff 완료 기록. 완료 대상 task는 같은 사번의 Inbox에 보이는 항목이어야 한다. |
-| `rbac_me` / `rbac_check` / `doc_access_check` / `rbac_audit` | 현재 사번의 팀·역할, 역할 binding, BoI Profile ACL/classification 접근 가능성, 권한 audit 확인 |
-| `sop_registration_plan` / `sop_registration_preview` / `sop_registration_draft_create` / `sop_registration_validate` / `sop_registration_publish` | 자연어 SOP 추가 요청을 Workflow/Task Builder 흐름으로 계획, 확인, draft 생성, 검증, 게시 요청. 생성과 publish는 `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
-| `registration_draft_create` / `registration_drafts` / `registration_draft_validate` / `registration_draft_publish` | SOP/Event/Action 공통 registration draft 생성, 조회, 검증, 게시 요청. 생성과 publish는 `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
-| `registration_plan` / `registration_verification_preview` | 자연어 등록 요청을 기존 후보, 추천 필드, 권한, 과거 이력 기반 실행 전 확인으로 전환 |
-| `sop_draft_create` / `action_draft_create` | 공통 registration draft 엔진으로 들어가는 SOP/Action 전용 shortcut. Action은 `connector_kind`와 connector별 `connector_config`를 함께 전달 |
-| `event_publish_plan` / `event_publish_preview` / `event_pattern_preview` / `event_pattern_promote_to_draft` | 업무 Event 발생 요청과 기존 이력 패턴 승격을 계획, 확인, draft화 |
-| `sop_run_history` | SOP 기준 실행 현황과 Timeline 요약 조회 |
-| `event_type_draft_create` / `event_type_drafts` / `event_type_draft_validate` / `event_type_draft_apply` | 신규 Event Type draft 작성, 조회, 검증, 사용자 승인된 catalog 반영 |
-| `source_preview` / `doc_body_preview` | source/body 수정 전 preview와 validation feedback |
-| `source_apply` / `doc_body_apply` | 사용자 승인된 source/body 수정 apply와 자동 commit |
-| `promotion_preview` | Team/Public promotion candidate의 redaction, source_refs, target visibility, OKF validation, duplicate/citation 상태를 비파괴로 확인 |
-| `promotion_submit` | 사용자 승인된 Team/Public promotion candidate 원격 검증/즉시 게시. `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
-| `promotion_status` | promotion validation, publish, HOTL, commit 상태 조회 |
+| `boi_bootstrap` | 현재 연결, 권한과 사용 가능한 기능 확인 |
+| `boi_agent` | 자연어 질문과 업무를 같은 WorkSession에서 계속 수행 |
+| `boi_search` | 지식 검색과 관계·경로·영향·이해 순서 탐색 |
+| `boi_get` | 선택한 문서, 근거 또는 artifact의 정확한 내용 확인 |
+| `boi_my_work` | 현재 Inbox와 진행 중 Task 확인 |
+| `boi_context` | WorkContextPack의 선별된 업무 맥락 확인 |
+| `boi_plan` | 결정적인 private 초안 또는 guarded 작업 계획 생성 |
+| `boi_confirm` | 사용자가 검토한 plan을 명시적으로 확인 |
+| `boi_job_status` | 심층 작업의 진행, 결과와 blocker 확인 |
+| `boi_tools_search` | progressive discovery로 세부 기능 찾기 |
 
-# Resources and Prompts
+도구 수가 10개보다 많다면 구형 `/mcp`에 연결됐을 가능성이 높다. v2 기본 도구 수를 늘리지 않고 세부 기능은 discovery로 제공한다.
 
-- Resource 예: `boi://docs/boi:public:sop:equipment-abnormal-response`
-- Resource 예: `boi://actions/mcp.boi_search.sample`
-- Employee-scoped Resource 예: `boi://employees/100001/docs/boi:private:100001:20260618070858:d1f2eb`
-- Employee-scoped Resource 예: `boi://employees/100001/search/ontology/설비%20이상`
-- Prompt 예: `create_sop_from_source`, `author_action_spec`, `build_langflow_boi_flow`
+# Knowledge And Graph Search
 
-현재 프로토콜 기준 기대값은 `tools: 124`, `resources: 0`, `resource_templates: 11`, `prompts: 5`다. `resources: 0`은 오류가 아니다. 정적 resource를 미리 노출하지 않고 resource template으로 필요한 문서, 검색 결과, Agent 응답 스키마를 읽는다. 늘어난 tool은 BoI Inbox, Private Memory cleanup, BoI Operations Center, SOP runtime, Event Producer Adapter, Optional Data Lake, Harness acceptance, Source Wiki, Promotion preview처럼 사용자-facing IA와 선택형 운영 기능을 명확히 분리하기 위한 것이다.
+일반 근거 검색은 `boi_search(view="ranked")`를 사용한다. 관계가 중요한 질문은 같은 도구의 보기를 바꾼다.
 
-Unscoped resource template인 `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`는 public 문서와 public action 확인용이다. Workflow status와 ontology search처럼 사번별 ACL/RBAC 판단이 필요한 resource는 `boi://employees/{employee_id}/workflows/{workflow_key}/status/{trace_id}`, `boi://employees/{employee_id}/search/ontology/{query}`처럼 employee-scoped URI를 사용한다. Unscoped URI로 private/team 문서, trace, ontology search를 읽으려 하면 MCP server는 기본 사번으로 대신 조회하지 않고 `employee_scoped_resource_required` 오류와 올바른 employee-scoped URI를 반환한다. 일반 tool 호출에서는 기존처럼 `employee_id` argument를 명시한다.
+| 보기 | 사용자 질문 예시 |
+|---|---|
+| `neighbors` | “이 지식과 직접 연결된 내용은?” |
+| `path` | “이 SOP와 이 Action은 어떻게 이어지나?” |
+| `impact` | “이 기준을 바꾸면 어디에 영향이 있나?” |
+| `tour` | “이 업무를 이해하려면 어떤 순서로 봐야 하나?” |
 
-검색 tool은 목적별로 나눠 쓴다. 단순 BoI 문서 목록이 필요하면 `boi_search`를 사용한다. SOP, Event, Action, Dictionary, runtime evidence를 관계까지 포함해 탐색하려면 `ontology_search`를 사용한다. 현재 페이지를 바탕으로 답변이나 산출물이 필요하면 `boi_agent_chat`을 사용한다. MCP client도 REST API와 같이 `intent` 힌트, 최근 `conversation`, `save_memory=false` 같은 제어 값을 넘길 수 있다. 세 경로는 모두 BoI API의 ACL/RBAC guardrail을 통과하므로 MCP client가 Web UI보다 더 넓은 문서를 볼 수 없다.
+현재 페이지는 중요한 해석 기준이지만 검색 범위를 강제로 제한하지 않는다. BoI Wiki는 ACL 안의 OKF Markdown, Dictionary, ontology, pgvector, SOP, Event, Action과 실행 이력을 함께 탐색한다. source ID, citation ID와 graph path는 Web·REST·MCP에서 동일해야 한다.
 
-# Validation
+긴 파일과 로그는 자료 보관함에 두고 summary, profile, sample, checksum, ACL URL만 업무 맥락에 넣는다. 원본 전문을 prompt로 복사하지 않는다.
 
-```bash
-python scripts/check_boi_wiki_mcp.py --base-url http://localhost:8200 --mcp-url http://localhost:8200/mcp --summary
-```
+# WorkRun And Safety
 
-상세 확인과 client 등록 전 점검은 다음 명령을 사용한다.
+- 후속 요청에서는 `work_session_id`와 `work_run_id`를 유지한다.
+- 새 근거, Action 결과, 사람 입력, artifact, 상태 전환 또는 blocker가 있을 때만 WorkRun을 계속한다.
+- 같은 검색이나 tool call을 결과 변화 없이 반복하면 중단하고 blocker를 알린다.
+- Task 완료는 모델 문장이 아니라 완료 항목, Evidence Ledger, Action 결과와 사람 확인으로 판단한다.
+- 초안은 private provisional 결과이며 게시나 실행이 아니다.
+- 실제 Action, 공유 정본 변경과 외부 부작용은 Harness, RBAC, Task mode, preview와 confirmation을 다시 통과한다.
+- `boi_confirm`은 다른 권한 검사를 우회하지 않는다.
 
-```bash
-python scripts/check_boi_wiki_mcp.py \
-  --base-url http://localhost:8200 \
-  --mcp-url http://localhost:8200/mcp \
-  --boi-api-url http://localhost:28000 \
-  --agent-contract \
-  --agent-artifact-smoke \
-  --details \
-  --client-checklist
-```
+Manual은 사람이 수행하고 Agent가 근거와 기록을 돕는다. Copilot은 Agent 또는 외부 AI가 자료와 초안을 준비하고 사람이 최종 확인한다. Autopilot은 allowlist의 저위험 Action과 system binding으로 검증 가능한 완료 항목만 자동 처리한다.
 
-`--agent-contract`는 BoI API의 `/api/agents/boi-wiki/response-schema`를 읽고 MCP `/health`의 `agent_response_schema`가 같은 canonical schema인지 비교한 뒤, REST `/api/agents/boi-wiki/chat` 응답이 같은 `boi-agent.response.v1` JSON Schema를 만족하는지 확인한다. `--agent-artifact-smoke`를 더하면 schema뿐 아니라 실제 업무 산출물도 확인한다. smoke 질문은 설비 SOP 페이지 기준 workflow 설명 요청이고, REST API와 MCP bridge 양쪽에서 `workflow_summary` artifact와 row가 반환되어야 한다. service token이 없으면 MCP bridge의 `boi_agent_chat` contract와 artifact 검증은 `skipped`로 남지만, REST API contract, REST artifact, MCP status schema contract는 확인된다. `MCP_REQUIRE_SERVICE_TOKEN=false`인 로컬 개발 endpoint에서는 token 없이 실행해도 protocol count를 확인하고 authenticated bridge는 `skipped`로 표시된다. 이 상태는 등록 전 tool 목록 확인에는 충분하지만, write/action/promotion bridge까지 검증한 것은 아니다.
+# Living Knowledge
 
-`MCP_REQUIRE_SERVICE_TOKEN=true`인 protected endpoint에서는 token 없이 protocol check 자체가 `auth_required`로 실패하는 것이 정상이다. 이 경우 아래처럼 환경변수나 NAS `.env`에서 token을 읽게 한다.
+업무 결과는 자동으로 공유 문서가 되지 않는다. 재사용 가치와 출처가 확인된 결과만 `KnowledgeCandidate`가 될 수 있다. Private 후보는 수정하거나 되돌릴 수 있고, Team/Public 반영은 별도 검토를 거친다.
 
-protected MCP와 bridge를 함께 검증할 때는 token을 환경 변수로만 넘긴다.
+외부 Agent는 다음 원칙을 지킨다.
+
+1. 기존 지식을 먼저 검색한다.
+2. 답변과 초안에 실제 citation을 남긴다.
+3. Task 수행 결과와 사람 정정을 Evidence Ledger에 기록한다.
+4. 중복 여부를 확인한 뒤 새 문서보다 기존 지식 보강을 우선한다.
+5. 검증되지 않은 Agent 답변이나 채팅 전문을 공유 정본으로 승격하지 않는다.
+
+# Verification
+
+사용자 연결 화면의 MCP 탭은 endpoint, PAT 방식과 핵심 도구 10개를 안내한다. Advanced의 MCP 화면은 contract version, 실제 tool count와 최근 확인 시각을 진단한다. 둘의 값이 다르면 사용 안내를 맞추는 대신 runtime contract부터 복구한다.
+
+![MCP v2 contract와 핵심 도구 수를 확인하는 운영 상태 화면](../_media/browser/current-guide/20260712-mcp-status-1440x1000.png)
+
+인터페이스 정합성은 다음 스크립트로 확인한다.
 
 ```bash
-python scripts/check_boi_wiki_mcp.py \
-  --base-url http://localhost:8200 \
-  --mcp-url http://localhost:8200/mcp \
-  --boi-api-url http://localhost:28000 \
-  --service-token-env SERVICE_TOKEN \
-  --require-bridge \
-  --agent-contract \
-  --agent-artifact-smoke \
-  --summary
+export BOI_BASE_URL='<BOI_BASE_URL>'
+python scripts/check_agent_v2_interface_parity.py \
+  --base-url "$BOI_BASE_URL"
 ```
 
-정상 결과는 protocol count, MCP `/health` AgentResponse schema 일치, authenticated bridge 호출, REST AgentResponse contract, MCP bridge `boi_agent_chat` contract, REST/MCP bridge `workflow_summary` artifact smoke가 모두 성공이어야 한다. `boi_search`로 `employee_id=100001`, query `SOP`를 검색했을 때 BoI Wiki 문서가 반환되고, `ontology_search`와 `boi_agent_chat` smoke가 같은 권한 범위에서 응답하면 agent가 실제 Wiki와 Native BoI Agent에 접근 가능한 상태다.
-
-Agent Builder와 Evidence Sandbox까지 MCP client 경로로 검증하려면 bridge smoke를 추가로 실행한다. 이 smoke는 `agent_draft_create`, `agent_draft_test`, `agent_sandbox_job_create`, `agent_sandbox_job_events`, `agent_sandbox_adopt_evidence`를 실제 호출하고, draft test와 sandbox summary가 `gpt-5.5`/Agents SDK runtime을 사용했는지 확인한다.
-
-```bash
-python scripts/check_agent_builder_mcp_bridge.py \
-  --mcp-base-url http://localhost:8200 \
-  --employee-id 100001 \
-  --summary
-```
-
-NAS host처럼 `httpx`나 MCP client library가 없는 Python 환경에서는 `--agent-contract-only`로 BoI API schema, MCP `/health` schema, REST/MCP bridge AgentResponse contract만 확인할 수 있다. 이 모드는 stdlib HTTP client와 경량 schema 검증을 사용한다. NAS app directory에서 실행할 때는 token이 process argument에 남지 않도록 `.env`에서 직접 읽는다.
-
-```bash
-python3 scripts/check_boi_wiki_mcp.py \
-  --base-url http://127.0.0.1:28200 \
-  --boi-api-url http://127.0.0.1:28000 \
-  --service-token-dotenv .env \
-  --agent-contract-only \
-  --agent-artifact-smoke \
-  --require-bridge
-```
-
-`/health`와 `/status`의 `agent_response_contract.version`은 `boi-agent.response.v1`이어야 한다. Web Pet Agent, REST API, MCP `boi_agent_chat`, 외부 자동화는 모두 이 계약을 기준으로 `answer_markdown`, `display_markdown`, `links`, `citations`, `artifacts`, `execution_cards`, `status_updates`, `status_events`, `tool_trace`, `evidence_ledger`, `affordances`, `answer_quality`, `access_summary`, `guardrails_applied`, `suggested_questions`를 해석한다. REST client는 `agent_response_contract.schema_endpoint`, MCP client는 `agent_response_contract.mcp_resource_template`로 JSON Schema를 확인한다. MCP의 `boi://agent/response-schema/latest`는 BoI API의 `/api/agents/boi-wiki/response-schema`를 canonical source로 사용하므로, 두 endpoint의 required field와 artifact type이 달라지면 배포가 잘못된 상태로 본다. MCP client에서 `boi_agent_chat`이 다른 형태의 임의 문자열만 반환하면 구버전 MCP image나 잘못된 bridge endpoint를 보고 있는 상태로 판단한다.
-
-`status_updates`는 UI 장식이 아니라 Agent 실행 설명 contract다. Web Pet은 `/chat/stream`의 `status` event를 먼저 보여주고 `final.status_updates`로 확정한다. MCP와 일반 REST client는 streaming을 쓰지 않더라도 `boi_agent_chat` 결과의 `status_updates`를 그대로 표시할 수 있다. `status_events`는 같은 배열을 담는 alias이므로 event 기반 UI framework를 쓰는 client가 이름을 맞춰 쓰기 쉽다. 새 client는 `status_updates`를 canonical로 저장하고, `status_events`는 호환 alias로만 다룬다. Mermaid와 표도 같은 원칙이다. Web Pet은 artifact viewer로 크게 보여주지만, MCP/API 소비자는 `artifacts[].type`과 `artifacts[].source` 또는 `artifacts[].data`를 기준으로 자기 환경에서 렌더링한다.
+정상 상태에서는 Web·REST·MCP가 같은 source, citation, WorkRun, graph path와 artifact를 반환한다. 일반 탐색과 검증 중 LM Studio model load/unload 요청은 없어야 한다.
 
 # Troubleshooting
 
-| Symptom | Meaning | Action |
-|---|---|---|
-| `http://localhost:8200/`가 열리지 않음 | MCP container 또는 port publish 문제 | `docker compose ps boi-wiki-mcp`, `curl http://localhost:8200/health` 확인 |
-| `/mcp`가 `406` 반환 | 일반 브라우저/curl이 MCP Accept header를 보내지 않음 | 정상일 수 있음. MCP client나 검증 스크립트로 확인 |
-| `/mcp`가 `401` 반환 | `MCP_REQUIRE_SERVICE_TOKEN=true`인데 token header가 없음 | MCP client에 `x-service-token` 또는 `Authorization: Bearer` 설정 |
-| root가 `404` | 구버전 image가 떠 있거나 rebuild 전 상태 | `docker compose up -d --build boi-wiki-mcp` |
-| `ClosedResourceError` 로그 | MCP stream client가 연결을 닫을 때 생기는 benign disconnect 로그일 수 있음 | protocol check가 성공하면 장애로 보지 않음. 반복 실패와 함께 발생하면 client 설정 확인 |
-| port 충돌 | 다른 process가 8200 사용 | `.env`의 `BOI_WIKI_MCP_PORT`를 바꾸고 client URL도 같이 변경 |
-| bridge `401` | service token 불일치 | `.env`와 호출 header `x-service-token` 확인 |
-
-# Runtime Evidence
-
-상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록과 MCP auth 상태를 보여준다. `tools=124`, `resource_templates=11`, `prompts=5`, `resources=0`이 현재 기준이며, 요약 표기에서는 `tools: 124`, `resource_templates: 11`, `resources: 0`처럼 보인다. `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 tool 목록은 `BoI Wiki`, `BoI Inbox`, `SOP`, `Event Broker`, `Action`, `Advanced`, `Optional Data Lake`, `Deprecated / Compatibility` 그룹으로 먼저 보이고, 전체 tool 목록은 호환 확인용으로 함께 남는다. WorkflowDefinition, Source Wiki, Promotion preview tool은 Advanced 내부 도구로 분류하고, Data Lake tool은 선택형 MinIO artifact store가 켜진 경우에 artifact를 반환한다. SQL-style demo query는 별도 Legacy DB Demo adapter가 켜진 경우에만 사용한다. legacy `agent_inbox*`와 `capabilities_*` tool은 Deprecated / Compatibility 그룹에만 둔다. 외부에 공개된 endpoint에서는 `mcp_auth.required=true`가 권장된다.
-
-![BoI Wiki MCP Status capabilities](/public/boi-wiki-manual/_media/browser/mcp-status/20260619-151048-boi-wiki-mcp-status-capabilities-current-1440x1000-89caadae3b92.png)
+| 증상 | 확인할 내용 |
+|---|---|
+| 상태 화면이 열리지 않음 | MCP service와 port publish 확인 |
+| `/mcp/v2`가 `401` | PAT 누락, 만료 또는 scope 확인 |
+| `/mcp/v2`가 `406` | 일반 브라우저 호출인지 확인하고 MCP client로 재검증 |
+| 도구가 10개보다 많음 | 구형 `/mcp` 대신 `/mcp/v2` 사용 |
+| 현재 업무가 비어 있음 | `boi_my_work` 권한과 실제 active runtime을 확인; seed 이력은 현재 업무가 아님 |
+| semantic 검색이 느림 | `/api/v2/system/readiness`의 검색 동기화와 embedding 상태 확인; lexical·ontology는 계속 사용 가능 |
+| 초안이나 실행이 unavailable | 모델, worker, RBAC, Task mode와 Harness blocker 확인; 성공처럼 우회하지 않음 |
 
 # Citations
 
-- [MCP BoI Search Action Spec](/public/actions/mcp/boi-search-sample.md)
-- [BoI Wiki 종합 가이드](/public/boi-wiki-manual/guide/final-operator-guide.md)
-- [Agent Guardrail and ACL](/public/boi-wiki-manual/agent/agent-guardrail-and-acl.md)
-- [BoI Agent API, MCP, Ontology Search Harness](/public/harness/agent-api-mcp-search-harness.md)
-- [Multi-action connector guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md)
+- [MCP BoI Search Action Spec](/docs/boi:public:actions:mcp:boi-search-sample)
+- [BoI Wiki 종합 가이드](/docs/boi:public:boi-wiki-manual:guide:final-operator-guide)
+- [BoI Agent Guardrail과 ACL](/docs/boi:public:boi-wiki-manual:agent:agent-guardrail-and-acl)
+- [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)

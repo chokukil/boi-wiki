@@ -5,7 +5,7 @@ type: boi/reference
 title: Langflow Flow Gallery
 description: BoI Wiki PoC에서 사용하는 Reference, Equipment Stage Analysis, Universal Action Simulator Langflow canvas 증거와 실행 의미
 tags: [Langflow, BoIComponent, Workflow, Screenshot]
-timestamp: 2026-06-23T00:10:00+09:00
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:langflow:flow-gallery
 visibility: public
 classification: internal
@@ -59,7 +59,7 @@ local-full acceptance는 flow 존재 여부만 보지 않는다. Universal Simul
 
 # BoI Agent Flow
 
-`BoI Agent Flow`는 우측 하단 Web Pet Agent와 MCP `boi_agent_chat`의 visual workflow/debug 예제다. endpoint는 `boi-agent`이며, 공식 외부 인터페이스는 BoI API와 `boi-wiki-mcp`다. BoI API의 production path는 Native BoI Agent이고, Langflow flow는 같은 tool-loop 개념을 화면에서 확인하는 용도다. Canvas completion 기준은 `Chat Input -> native Agent -> BoI Agent Tools -> BoI Agent Result Composer -> Chat Output` 경로가 연결되어 있고, standalone LLM -> Output 경로가 없어야 한다. Agent toolset은 read/action tool 중심이며 `boi_agent_chat` 자체는 recursion 방지를 위해 연결하지 않는다.
+`BoI Agent Flow`는 현재 BoI Agent의 실행 엔진이 아니라, `boi_agent`가 사용하는 Context, Harness, Task Loop 개념을 시각적으로 점검하는 선택형 debug 예제다. 공식 외부 인터페이스는 BoI API v2와 `/mcp/v2`이며 Langflow endpoint `boi-agent`는 운영 계약이 아니다. Canvas completion 기준은 `Chat Input -> Context 입력 -> 검증된 도구 -> Result Composer -> Chat Output` 경로가 연결되고 standalone LLM -> Output 우회 경로가 없는 것이다. 같은 Agent를 다시 호출하는 도구는 recursion 방지를 위해 canvas에 연결하지 않는다.
 
 # Runtime Checks
 

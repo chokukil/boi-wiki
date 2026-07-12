@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: deprecated
 source_refs:
   - type: repo
     ref: boi_api/app/main.py
@@ -24,6 +24,8 @@ review:
   reviewer: ux-curator
   review_status: reviewed
 ---
+
+> **이전 버전 안내**: 이 문서는 초기 signal bubble 실험 기록이다. 현재 맥락형 시작 제안과 자동 확인은 [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)를 따른다.
 
 # Summary
 

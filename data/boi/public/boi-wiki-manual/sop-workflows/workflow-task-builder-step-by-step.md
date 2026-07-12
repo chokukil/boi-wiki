@@ -2,10 +2,10 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
-title: Workflow/Task Builder Step-by-step
-description: 직개발 결과 확인 및 Reporting 시나리오로 /sops/new Workflow/Task Builder를 작성하고 실행 smoke와 TAT로 검증하는 절차
-tags: [Manual, SOP, Workflow, Task, TAT, DirectDevelopment]
-timestamp: 2026-07-04T14:05:00+09:00
+title: Workflow/Task Builder 따라하기
+description: 업무 맥락, Task 맵, 완료된 모습, 확인할 자료, 업무 이벤트와 Action을 현재 SOP Builder에서 설계하는 절차
+tags: [Manual, SOP, Workflow, Task, Completion, BusinessEvent]
+timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
 visibility: public
 classification: internal
@@ -18,172 +18,161 @@ status: reviewed
 source_refs:
   - type: sop
     ref: boi:public:sop:direct-development-reporting
-  - type: source-image
-    ref: /public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png
+  - type: repo
+    ref: boi_api/app/templates/registration_new.html
+  - type: repo
+    ref: boi_api/app/static/registration.js
   - type: script
     ref: scripts/check_workflow_task_builder_tutorial.mjs
-  - type: script
-    ref: scripts/run_direct_development_sop_poc.py
-  - type: capture-manifest
-    ref: data/boi/public/boi-wiki-manual/sop-workflows/workflow-task-builder-capture-manifest.json
 review:
-  reviewer: tf-lead
+  reviewer: harness-curator
   review_status: reviewed
 ---
 
-# Summary
+# 무엇을 만드는 화면인가
 
-이 문서는 `직개발 결과 확인 및 Reporting` 업무를 예시로, `/sops/new`에서 Workflow 전체와 Task 단위를 먼저 잡고 필요한 Task만 상세화하는 절차를 보여준다.
+SOP Builder는 Workflow 전체와 Task를 설계하고, 업무가 언제 시작되며 각 Task에서 누가 무엇을 확인하고 어떤 결과를 남길지 정하는 화면이다. 내부 ID나 connector부터 입력하지 않는다.
 
-핵심은 내부 ID를 먼저 맞추는 것이 아니라 `어떤 맥락에서 어떤 판단을 하고, 어떤 근거와 결과를 BoI로 남길지`를 정하는 것이다. 실행 중 Raw Data, PDF, PPT, Excel, 로그, 캡처 같은 원본 파일은 SOP Builder가 아니라 SOP Run, Inbox 판단, Report BoI 검토에서 Data Lake artifact로 첨부한다.
-
-# 준비사항
-
-- BoI API: `http://localhost:28000`
-- 작성 화면: `/sops/new?employee_id=100001`
-- 기준 SOP: [직개발 결과 확인 및 Reporting SOP](/public/sop/direct-development-reporting.md)
-- 원본 이미지: `/public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png`
-
-![원본 SOP 이미지](/public/boi-wiki-manual/_media/source/natural-language-poc/sop_sample_image.png)
-
-# 1. Workflow 개요 입력
-
-`Workflow 개요`에서는 전체 업무 맥락을 먼저 적는다. 여기서 입력한 업무 대상, 업무 상황, 판단 질문, 필요한 근거, 남길 결과가 이후 Task, Event, Action, Skill 추천의 기준이 된다.
-
-예시 입력:
-
-| 항목 | 값 |
-|---|---|
-| 제목 | 직개발 결과 확인 및 Reporting |
-| 업무 목적 | 직개발 결과 확인, 단면검사 판단, 보고서 작성, 협의체 공유 전 승인 기록을 하나의 Workflow로 남긴다. |
-| 업무 대상 | Product-A / Tech-A / Work ID 1.10 |
-| 판단 질문 | 단면검사가 필요한가? 협의체 공유 전에 근거와 승인 상태가 충분한가? |
-| 필요한 근거 | Response Trend, Map View Image, 단면검사 결과, 연구소-양산 FAB 비교 Trend, Reporting 초안 |
-| 남길 결과 | 검증 보고서 BoI, 결정 기록, 협의체 공유 승인 기록 |
-
-![Workflow 개요 입력](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-01-workflow-overview.png)
-
-# 2. Task 맵 작성
-
-`Task 맵`에서는 Workflow 전체를 작은 업무 단위로 나눈다. Task 상세가 전부 정리되지 않아도 Workflow 제목 또는 설명과 Task 1개 이상이면 틀을 저장할 수 있다.
-
-예시 Task:
-
-| Task | 실행 방식 | 목표 TAT | 기준 TAT |
-|---|---|---:|---:|
-| Response Trend 확인 | Autopilot | 30분 | 평균 2h |
-| Map View 확인 | Autopilot | 30분 | 평균 1h |
-| 단면검사 판단 | Manual | 15분 | 최근 3건 40분 |
-| 단면검사 의뢰/결과 확인 | Copilot | 1일 | 평균 2일 |
-| 연구소-양산 FAB 비교 | Autopilot | 1h | 평균 4h |
-| Reporting | Copilot | 1h | 평균 4h |
-| 협의체 공유 | Copilot | 30분 | 평균 2h |
-
-실행 방식은 사용자에게 `Manual`, `Copilot`, `Autopilot` 세 가지만 보여준다.
-
-- `Manual`: 사람이 직접 판단하거나 작업하고 결과를 남긴다.
-- `Copilot`: BoI Wiki Agent/Skill/API 또는 외부 AI/도구의 도움을 받아 사람이 최종 판단과 결과를 남긴다.
-- `Autopilot`: Agent/System이 정책 범위 안에서 자동 실행하고 검증 기록을 남긴다.
-
-![Task 맵 작성](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-02-task-map.png)
-
-# 3. Task 상세 설정
-
-필요한 Task를 선택해 판단 질문, 필요한 근거, 결과 BoI, 지식 업데이트 정책, TAT 기준을 보강한다.
-
-예를 들어 `단면검사 판단` Task는 `Manual`이다. 이 Task는 사람이 Response Trend와 Map View 근거를 보고 단면검사 필요 여부를 결정한다.
-
-![Task 상세 설정](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-03-task-detail.png)
-
-Copilot Task는 두 경우를 모두 허용한다.
-
-- BoI Wiki 내부 Agent, Skill, API, MCP를 사용한 경우
-- ChatGPT, Claude, Excel, 사내 도구, 별도 스크립트처럼 BoI Wiki가 세부 과정을 추적하지 못하는 외부 도움을 받은 경우
-
-외부 Copilot은 세부 실행 로그를 요구하지 않는다. 대신 결과 파일, 요약, 판단 근거, 사람이 남긴 메모를 Data Lake artifact나 BoI 링크로 남긴다.
-
-# 4. 시작/연결 설정
-
-`시작/연결`에서는 이 Workflow가 어떤 신호로 시작되는지 정한다. 기존 Event를 재사용할 수 있고, Webhook, Legacy/API Poll, MCP/Data Lake adapter, 외부 Kafka 직접 발행, 수동 시작을 선택할 수 있다.
-
-외부 Kafka 직접 발행은 먼저 BoI Event 발행 가이드 BoI 초안을 만들고, topic, schema, required fields, sample payload, idempotency key, trace policy, 테스트 URL을 외부 시스템 담당자에게 제공하는 흐름으로 다룬다.
-
-![시작/연결 설정](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-04-start-signal.png)
-
-# 5. 검증·저장
-
-최종 단계에서는 SOP 실행 흐름 draft를 저장한다. 이 시점에는 운영 catalog, Event Broker runtime, Action Gateway에 바로 반영하지 않는다.
-
-중요한 경계:
-
-- SOP Builder는 실제 Raw Data 파일을 올리는 화면이 아니다.
-- 이 화면에서는 필요한 근거 종류와 어느 Task에서 판단에 쓰일지만 설계한다.
-- 실제 원본 파일은 Workflow 실행 중 SOP Run, Inbox 판단, Report BoI 검토에서 Data Lake artifact로 첨부한다.
-- OKF 문서에는 원본 파일이 아니라 artifact URL, profile, sample, checksum, validation metadata를 남긴다.
-
-![검증 저장](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-05-review-save.png)
-
-# 6. 저장된 SOP 확인
-
-기준 문서는 [직개발 결과 확인 및 Reporting SOP](/public/sop/direct-development-reporting.md)이다. 문서에는 원본 이미지, Workflow stage, Event Type, 주요 Action, simulation boundary가 남아 있다.
-
-![저장된 SOP 문서](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-06-saved-sop.png)
-
-# 7. 실행 테스트
-
-다음 smoke는 `direct-development-reporting` workflow를 시작하고, 수동 판단 단계와 simulated Langflow Action, approval-required 단계를 검증한다.
-
-```bash
-python scripts/run_direct_development_sop_poc.py
+```mermaid
+flowchart LR
+  CONTEXT["1. Workflow 개요"] --> MAP["2. Task 맵"]
+  MAP --> DETAIL["3. Task 상세"]
+  DETAIL --> START["4. 업무 이벤트·연결"]
+  START --> REVIEW["5. 검토·저장"]
 ```
 
-캡처까지 함께 검증하려면 다음 명령을 사용한다.
+위 단계는 선행 입력과 관계없이 탐색할 수 있다. 추천, 초안 생성, 검증이나 게시처럼 의존 정보가 필요한 작업을 누를 때만 부족한 입력을 안내한다.
+
+# 1. Workflow 개요
+
+먼저 어떤 상황에서 어떤 판단과 결과를 남길지 적는다.
+
+| 질문 | 예시 |
+|---|---|
+| 어떤 업무인가 | 설비 Alarm 발생 시 이상 원인을 확인하고 조치한다. |
+| 어떤 상황인가 | 동일 Alarm이 반복되거나 Trend 이상이 함께 발생했다. |
+| 무엇을 판단하나 | 즉시 조치, 보전 요청 또는 추가 분석이 필요한가? |
+| 무엇을 확인하나 | Alarm 내용, Trend, Raw Data, 이전 조치 이력 |
+| 무엇을 남기나 | 판단 기록, 조치 결과, 보고서 BoI |
+
+이 정보는 Task, 업무 이벤트, Action과 Skill 추천의 기준이 된다.
+
+# 2. Task 맵
+
+처음 진입할 때 `첫 Task` 같은 가짜 입력을 저장하지 않는다. Task가 없으면 `근거 확인`, `원인 판단`, `조치 확인` 같은 예시 카드만 보인다. 예시를 선택한 순간 새 Task가 생기고 편집할 수 있다.
+
+`Task 추가`는 목적과 판단 문장을 임의로 채우지 않은 빈 Task를 만든다. 실행 방식처럼 select 기본값이 필요한 항목만 초기값을 가진다.
+
+좋은 Task는 한 사람이 한 번의 판단과 결과를 남길 수 있는 크기다.
+
+- Alarm 맥락 확인
+- Trend와 Raw Data 확인
+- 원인 후보 판단
+- 보전 가이드와 Handoff 검토
+- 조치 결과 확인
+
+![저장되지 않는 예시 카드에서 Task 설계를 시작하는 화면](../_media/browser/current-guide/20260712-sop-task-map-1440x1000.png)
+
+# 3. Task 상세
+
+Task 기본 편집에는 다음만 먼저 보인다.
+
+- Task 이름과 목적
+- Manual, Copilot, Autopilot
+- 언제 이 일이 끝났다고 볼지
+- 무엇을 확인할지
+- 남길 결과
+
+Action, Event, Skill, TAT, fallback과 raw binding은 `실행 연결` 상세 영역에 둔다.
+
+## 수행 방식
+
+| 방식 | 작성 기준 |
+|---|---|
+| Manual | 담당자가 직접 확인하고 체크할 완료된 모습을 작성한다. |
+| Copilot | AI가 준비할 자료와 사람이 마지막으로 확인할 모습을 작성한다. |
+| Autopilot | 시스템에서 확인 가능한 상태 변화나 Action 결과를 선택한다. |
+
+Copilot은 BoI Wiki Agent뿐 아니라 ChatGPT, Claude, Excel, 사내 도구와 별도 스크립트의 도움도 포함한다. 외부 결과는 요약, checksum, 원본 URL과 사람 확인을 남긴다.
+
+## 완료된 모습
+
+기술 조건 대신 일상 문장으로 적는다.
+
+- “Alarm 접수가 확인되었어요.”
+- “이상 원인 후보가 근거와 함께 기록되었어요.”
+- “조치 결과와 담당자 확인이 남았어요.”
+
+## 확인할 자료
+
+직접 ID를 입력하지 않고 BoI 문서, 업무 이벤트, Action 결과, 데이터, 파일, 담당자 메모와 외부 AI 요약에서 고른다. raw ID와 판정 방법은 `연결 정보`에서만 확인한다.
+
+Autopilot에 system binding이 없으면 저장은 가능하지만 `연결 필요`로 표시하고 자동 실행을 막는다.
+
+# 4. 업무 이벤트 정의
+
+이 Workflow가 언제 시작되는지 선택한다.
+
+| 시작 방식 | 설명 |
+|---|---|
+| 기존 업무 이벤트 | 검토된 Event를 재사용한다. |
+| 새 업무 이벤트 정의 | 외부 신호에서 업무 발생 기준을 만든다. |
+| 정해진 시간 | 일정에 따라 업무 후보를 만든다. |
+| 사람이 직접 실행 | 담당자가 필요할 때 시작한다. |
+
+새 정의에서는 선택한 발생 방식과 source에 필요한 필드만 보인다. API 조회를 고르면 endpoint, method와 주기가, MCP를 고르면 tool과 입력 예시가, Data Lake를 고르면 query와 결과 샘플이 표시된다.
+
+발생 방식과 sample decision은 [업무 이벤트 정의 가이드](/docs/boi:public:boi-wiki-manual:workflows:business-event-definition-guide)를 따른다.
+
+# 5. Action과 실행 연결
+
+Action은 Task에 연결한다. 기존 Action을 먼저 찾아 재사용하고 부족한 경우에만 private 초안을 만든다. Task의 목적, 필요한 입력, 결과 계약과 위험도를 확인한다.
+
+외부 부작용이 있는 Action은 preview 또는 dry-run과 confirmation을 거친다. SOP 초안을 저장했다는 이유로 Action이 운영 catalog에 자동 반영되지 않는다.
+
+# 6. 검토와 저장
+
+검토 화면에서는 다음을 확인한다.
+
+- Workflow 목적과 Task 순서가 이해되는가
+- 각 Task의 수행자와 완료된 모습이 명확한가
+- 필수 자료가 실제로 확보 가능한가
+- Autopilot 항목에 system binding이 있는가
+- 업무 이벤트가 너무 넓거나 중복되지 않는가
+- Action 결과와 최종 BoI가 정의됐는가
+
+초안 저장과 게시 요청은 다르다. validation과 권한 검증 전에는 Event Broker와 Action Gateway runtime을 변경하지 않는다.
+
+# BoI Agent에서 시작한 SOP
+
+BoI Agent가 만든 SOP artifact를 전체 편집기로 열면 같은 `work_session_id`, `artifact_id`와 revision을 유지한다. 편집 후 `BoI Agent로 돌아가기`를 누르면 수정된 Task와 선택 위치를 같은 작업공간에서 이어간다.
+
+Task의 `완료 항목 제안`은 변경 전·후 preview를 보여주고 사용자가 적용할 때만 저장한다.
+
+# 원본 자료 연결
+
+SOP Builder에서는 미래 Task가 요구하는 자료 종류만 설계한다. 실제 CSV, PDF, PPT, 로그와 캡처는 Task 수행, Inbox 판단, 보고서 또는 BoI Agent 작업에서 자료 보관함에 올린다.
+
+# 실행과 TAT 확인
+
+게시된 SOP가 업무 이벤트나 수동 실행으로 시작되면 SOP 수행 이력과 Task Console에서 현재 상태를 확인한다. Workflow TAT와 Task TAT는 실제 Event/Action timestamp에서 계산하고 표본이 부족하면 `실측 전`으로 표시한다.
 
 ```bash
+export BOI_BASE_URL='<BOI_BASE_URL>'
+export DEV_EMPLOYEE_ID='<DEV_EMPLOYEE_ID>'
 node scripts/check_workflow_task_builder_tutorial.mjs \
-  --base-url http://localhost:28000 \
-  --employee-id 100001 \
+  --base-url "$BOI_BASE_URL" \
+  --employee-id "$DEV_EMPLOYEE_ID" \
   --run-smoke \
   --strict
 ```
 
-이 스크립트는 `/sops/new`에 예시 값을 실제로 입력하고, `workflow_tasks` hidden payload에 7개 Task와 `Manual/Copilot/Autopilot`이 모두 포함되는지 확인한다.
+`employee_id`는 local dev 호환 인자이며 운영 인증을 대신하지 않는다.
 
-![실행 status](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-07-runtime-status.png)
+# 관련 문서
 
-# 8. TAT 성과 화면 확인
-
-Workflow와 Task TAT는 runtime event/action timestamp에서 계산하되, 사람은 JSON 로그가 아니라 TAT 성과 화면에서 확인한다.
-
-화면: `/workflows/direct-development-reporting/tat?employee_id=100001`
-
-표시 기준:
-
-- Workflow TAT: 시작 신호부터 완료까지
-- Task TAT: Task 시작부터 완료 또는 다음 Task 전환까지
-- 기준 TAT 대비 최근/평균 실측 TAT
-- 병목 Task와 최대 개선 Task
-- Manual, Copilot, Autopilot 실행 방식 mix
-- 실패율, 반려율, 근거 부족률 같은 품질 guardrail
-- 표본이 부족하면 `실측 전` 또는 관찰 대상으로 표시
-
-![TAT summary](/public/boi-wiki-manual/_media/browser/workflow-task-builder/workflow-task-08-tat-summary.png)
-
-# 결과 해석
-
-이 튜토리얼에서 남아야 하는 근거는 다음과 같다.
-
-- Workflow/Task 구조가 사람 기준으로 이해된다.
-- Task마다 Manual, Copilot, Autopilot이 명확히 구분된다.
-- Copilot은 내부 BoI Wiki 도구와 외부 AI/도구 사용을 모두 포괄한다.
-- TAT 성과 화면에서 기준 대비 개선 시간, 병목 Task, 표본 수, guardrail을 확인할 수 있다.
-- 실행 중 원본 파일은 Data Lake artifact로 연결되고, OKF에는 bounded reference만 남는다.
-
-# Citations
-
-- [직개발 결과 확인 및 Reporting SOP](/public/sop/direct-development-reporting.md)
-- [SOP Workflow 작성과 Runtime 연결](/public/boi-wiki-manual/sop-workflows/create-and-connect-sop.md)
-- [SOP Authoring Harness](/public/harness/sop-authoring-harness.md)
-- [Data Lake Artifact Harness](/public/harness/data-lake-artifact-harness.md)
-- `scripts/check_workflow_task_builder_tutorial.mjs`
-- `scripts/run_direct_development_sop_poc.py`
+- [업무 BoI-first 개념 모델](/docs/boi:public:boi-wiki-manual:concepts:work-boi-first-model)
+- [업무 이벤트 정의 가이드](/docs/boi:public:boi-wiki-manual:workflows:business-event-definition-guide)
+- [Action 카탈로그와 실행 연결](/docs/boi:public:boi-wiki-manual:actions:multi-action-connector-guide)
+- [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)
+- [SOP Authoring Harness](/docs/boi:public:harness:sop-authoring-harness)
