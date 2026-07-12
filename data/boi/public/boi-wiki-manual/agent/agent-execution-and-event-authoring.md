@@ -19,7 +19,7 @@ source_refs:
   - type: repo
     ref: boi_api/app/main.py
   - type: repo
-    ref: data/event_catalog/events.yaml
+    ref: data/event_catalog/event_types.yaml
 review:
   reviewer: workflow-curator
   review_status: reviewed

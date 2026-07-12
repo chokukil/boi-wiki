@@ -21,7 +21,7 @@ source_refs:
   - type: repo
     ref: data/workflow_catalog/workflows.yaml
   - type: repo
-    ref: boi_api/app/business_event_detector.py
+    ref: boi_api/app/main.py
 review:
   reviewer: harness-curator
   review_status: reviewed

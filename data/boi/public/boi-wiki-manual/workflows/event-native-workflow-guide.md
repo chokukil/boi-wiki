@@ -19,7 +19,7 @@ source_refs:
   - type: repo
     ref: data/workflow_catalog/workflows.yaml
   - type: repo
-    ref: event_router
+    ref: event_adapter/app/main.py
 review:
   reviewer: harness-curator
   review_status: reviewed

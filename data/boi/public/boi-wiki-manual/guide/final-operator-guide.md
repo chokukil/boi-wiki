@@ -97,9 +97,11 @@ Expanded 또는 Fullpage의 `⋯` 메뉴에서 `나만의 BoI Agent 만들기`�
 
 Inbox 업무는 보고서가 완성될 때까지 숨지 않는다. 업무 카드는 먼저 표시되고, 보고서는 백그라운드에서 자동 생성된다. 준비가 끝나면 `검증된 보고서 BoI`를 열어 결론, 근거, 유사 사례와 전체 업무 흐름을 확인한다.
 
-판단이 필요한 업무는 승인, 반려, 보류 또는 추가 근거 요청과 사유를 남긴다. Task 수행 화면에서는 완료된 모습과 확인할 자료를 기준으로 Manual, Copilot, Autopilot 방식에 맞게 완료를 판단한다. LLM의 자기 선언만으로 Task를 완료하지 않는다.
+판단이 필요한 업무는 승인, 반려, 보류 또는 추가 근거 요청과 사유를 남긴다. Task 수행 화면에서는 확인한 내용, 수행한 조치, 판단·결과와 사용 근거를 먼저 기록한다. 완료된 모습은 이 업무 기록과 Evidence Ledger를 기준으로 판정하며 LLM의 자기 선언이나 빈 확인 버튼만으로 완료하지 않는다. 여러 담당자를 지정한 Task는 각 담당자의 Inbox에 같은 업무로 표시된다.
 
 자세한 흐름은 [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)을 따른다.
+
+복수 담당자와 업무 관계 탐색은 [Task 수행과 업무 관계 활용 가이드](/docs/boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide)에서 확인한다.
 
 # SOP와 업무 이벤트
 

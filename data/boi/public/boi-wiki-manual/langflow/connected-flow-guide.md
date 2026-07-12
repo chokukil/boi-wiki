@@ -17,7 +17,7 @@ acl_policy: acl:public
 status: reviewed
 source_refs:
   - type: repo
-    ref: langflow/custom_components/boi
+    ref: langflow/custom_components/boi/__init__.py
 review:
   reviewer: tf-lead
   review_status: reviewed

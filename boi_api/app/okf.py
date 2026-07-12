@@ -408,6 +408,7 @@ def lint_data_root(
     root = Path(root)
     result = OkfLintResult()
     boi_root = root / "boi"
+    markdown_metadata: dict[Path, dict[str, Any]] = {}
     for path in sorted(boi_root.rglob("*.md")):
         result.checked_markdown_count += 1
         errors, edges = lint_markdown_file(path, boi_root=boi_root, strict_links=strict_links, strict_media=strict_media)
@@ -416,9 +417,51 @@ def lint_data_root(
         result.markdown_link_count += len(edges)
         try:
             _metadata, body = split_frontmatter(path.read_text(encoding="utf-8"))
+            markdown_metadata[path.resolve()] = _metadata
             result.media_link_count += len(extract_markdown_images(body))
         except Exception:
             pass
+    if strict_links:
+        known_boi_ids = {
+            str(metadata.get("boi_id") or "")
+            for metadata in markdown_metadata.values()
+            if metadata.get("boi_id")
+        }
+        repo_root = root.parent if (root.parent / "README.md").exists() else Path.cwd()
+        for path, metadata in markdown_metadata.items():
+            if path.name in RESERVED_FILENAMES:
+                continue
+            for source_ref in metadata.get("source_refs") or []:
+                if not isinstance(source_ref, dict):
+                    continue
+                source_type = str(source_ref.get("type") or "").strip().lower()
+                ref = str(source_ref.get("ref") or source_ref.get("uri") or "").strip()
+                if not ref:
+                    continue
+                if ref.startswith(("http://", "https://")) or ref in known_boi_ids:
+                    continue
+                # Runtime Event/Action IDs and generated source-wiki inventory
+                # entries are resolved by their own catalogs. Strict filesystem
+                # validation is reserved for references that claim to be files.
+                if source_type not in {"repo", "code", "compose", "document", "boi"}:
+                    continue
+                ref_path = ref.split("#", 1)[0].split("?", 1)[0]
+                if ref_path.startswith("data/boi/"):
+                    candidate = repo_root / ref_path
+                elif ref_path.startswith(("public/", "team/", "private/")):
+                    candidate = boi_root / ref_path
+                else:
+                    candidate = repo_root / ref_path
+                try:
+                    candidate = candidate.resolve()
+                    candidate.relative_to(repo_root.resolve())
+                except ValueError:
+                    result.errors.append(f"{path}: source_ref escapes repository: {ref}")
+                    continue
+                if not candidate.is_file():
+                    result.errors.append(f"{path}: unresolved source_ref: {ref}")
+                elif candidate.name in RESERVED_FILENAMES:
+                    result.errors.append(f"{path}: navigation file cannot be a source_ref: {ref}")
     result.errors.extend(lint_media_assets(boi_root, strict_media=strict_media))
     if include_logs:
         for log_root_name in ("events", "actions"):
