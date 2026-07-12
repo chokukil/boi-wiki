@@ -290,6 +290,7 @@ class PostgresAgentV2Store(AgentV2Store):
         "work_routines": "agent_work_routines",
         "routine_triggers": "agent_routine_triggers",
         "user_work_profiles": "agent_user_work_profiles",
+        "a2ui_surfaces": "agent_a2ui_surfaces",
         "knowledge_sources": "knowledge_sources",
         "knowledge_source_manifests": "knowledge_source_manifests",
         "knowledge_health_findings": "knowledge_health_findings",

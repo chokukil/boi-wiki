@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from .models import AgentTurnResponse
@@ -24,6 +25,44 @@ ALLOWED_COMPONENTS = {
     "Confirmation",
     "RelatedQuestions",
 }
+
+_UNSAFE_HTML = re.compile(r"<(?:script|iframe|object|embed)\b|\son[a-z]+\s*=", re.IGNORECASE)
+
+
+def _validate_props(value: Any, *, key: str = "") -> None:
+    if isinstance(value, dict):
+        for child_key, child_value in value.items():
+            _validate_props(child_value, key=str(child_key))
+        return
+    if isinstance(value, list):
+        for child in value:
+            _validate_props(child, key=key)
+        return
+    if not isinstance(value, str):
+        return
+    if key in {"displayHtml", "html"} and _UNSAFE_HTML.search(value):
+        raise ValueError("unsafe_a2ui_html")
+    if key.lower() in {"url", "href", "downloadurl"} and value and not value.startswith(("/", "#")):
+        raise ValueError("external_a2ui_url")
+
+
+def validate_surface(surface: dict[str, Any]) -> dict[str, Any]:
+    if surface.get("protocol_version") != A2UI_PROTOCOL_VERSION or surface.get("catalog_id") != BOI_CATALOG_ID:
+        raise ValueError("unsupported_a2ui_contract")
+    events = surface.get("events") or []
+    if events:
+        raise ValueError("unsupported_a2ui_event")
+    components = surface.get("components") or []
+    component_ids: set[str] = set()
+    for item in components:
+        if not isinstance(item, dict) or item.get("component") not in ALLOWED_COMPONENTS:
+            raise ValueError("unsupported_a2ui_component")
+        component_id = str(item.get("id") or "")
+        if not component_id or component_id in component_ids:
+            raise ValueError("invalid_a2ui_component_id")
+        component_ids.add(component_id)
+        _validate_props(item.get("props") or {})
+    return surface
 
 
 def presentation_plan(response: AgentTurnResponse) -> dict[str, Any]:
@@ -97,9 +136,6 @@ def compile_surface(response: AgentTurnResponse) -> dict[str, Any]:
                 "props": {"items": [item.model_dump(mode="json") for item in response.related_questions]},
             }
         )
-    invalid = [item for item in components if item.get("component") not in ALLOWED_COMPONENTS]
-    if invalid:
-        raise ValueError("unsupported_a2ui_component")
     surface = {
         "surface_id": surface_id,
         "protocol_version": A2UI_PROTOCOL_VERSION,
@@ -108,6 +144,7 @@ def compile_surface(response: AgentTurnResponse) -> dict[str, Any]:
         "events": [],
         "fallback": response.model_dump(mode="json", exclude={"presentation_plan", "a2ui_surface_ref"}),
     }
+    validate_surface(surface)
     surface["jsonl"] = "\n".join(
         json.dumps(item, ensure_ascii=False)
         for item in [

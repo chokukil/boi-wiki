@@ -3900,6 +3900,15 @@ class AgentV2Service:
             "last_progress": compact_text(str((last_delta[-1] if last_delta else {}).get("summary") or ""), 500),
         }
 
+    @staticmethod
+    def _guard_explanatory_capability(capability_id: str, intent: WorkIntent) -> str:
+        read_operations = {WorkOperation.understand, WorkOperation.compare, WorkOperation.connect, WorkOperation.observe}
+        draft_capabilities = {"business_event.plan", "sop.plan", "action.plan", "skill.plan", "knowledge.draft"}
+        if intent.result_purpose in {"explain", "compare"} and intent.operation in read_operations:
+            if capability_id in draft_capabilities:
+                return "knowledge.search"
+        return capability_id
+
     def _continue_active_work_from_turn(
         self,
         *,
@@ -4340,6 +4349,15 @@ class AgentV2Service:
             )
         source_set = self._ensure_source_set(principal, str(session["session_id"]))
         preliminary_intent = WorkIntent.model_validate(route.get("work_intent") or {})
+        guarded_capability = self._guard_explanatory_capability(capability_id, preliminary_intent)
+        if guarded_capability != capability_id:
+            capability_id = guarded_capability
+            definition = self.registry.get(capability_id)
+            route = {
+                **route,
+                "capability_id": capability_id,
+                "source": f"{route.get('source') or 'semantic'}:explanatory_guard",
+            }
         starter_refs = [str(item) for item in request.input_delta.get("_starter_source_refs") or [] if str(item)]
         if starter_refs:
             preliminary_intent = preliminary_intent.model_copy(
@@ -5233,13 +5251,30 @@ class AgentV2Service:
                 )
             )
             if not rendered_ids:
-                response.citations = []
-                return
+                if not response.citations:
+                    return
+                primary = response.citations[0]
+                response.answer.markdown = (
+                    response.answer.markdown.rstrip()
+                    + f"\n\n[근거](/api/v2/citations/{primary.citation_id})"
+                )
+                rendered_ids = [primary.citation_id]
             by_id = {item.citation_id: item for item in response.citations}
             response.citations = [by_id[item_id] for item_id in rendered_ids if item_id in by_id]
 
+        include_display_html = True
+
         def refresh_display_html() -> None:
-            response.answer.display_html = render_agent_markdown(response.answer.markdown)
+            response.answer.display_html = render_agent_markdown(response.answer.markdown) if include_display_html else ""
+
+        def ensure_primary_citation() -> None:
+            if not response.citations or "/api/v2/citations/" in response.answer.markdown:
+                return
+            citation = response.citations[0]
+            response.answer.markdown = (
+                response.answer.markdown.rstrip()
+                + f"\n\n[근거](/api/v2/citations/{citation.citation_id})"
+            )
 
         def response_size() -> int:
             return len(
@@ -5271,6 +5306,8 @@ class AgentV2Service:
         payload = response.model_dump(mode="json")
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= self.settings.response_budget_bytes:
             return response
+        include_display_html = False
+        refresh_display_html()
         response.evidence_refs = [
             item.model_copy(update={"summary": compact_text(item.summary, 120), "metadata": {}})
             for item in response.evidence_refs[:4]
@@ -5375,17 +5412,26 @@ class AgentV2Service:
                 }
         payload = response.model_dump(mode="json")
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > self.settings.response_budget_bytes:
-            response.answer.markdown = citation_link_pattern.sub(
-                "",
-                truncate_markdown(response.answer.markdown, 700),
-            )
-            response.citations = []
-            response.evidence_refs = []
+            response.answer.markdown = truncate_markdown(response.answer.markdown, 700)
+            response.citations = [item.model_copy(update={"excerpt": ""}) for item in response.citations[:1]]
+            response.evidence_refs = [
+                item.model_copy(update={"summary": "", "metadata": {}})
+                for item in response.evidence_refs[:1]
+            ]
             response.harness_results = []
-            response.work_intent = None
-            response.context_usage = {}
+            response.presentation_plan = {}
+            response.progress = []
+            response.context_usage = {
+                "page_anchor": response.context_usage.get("page_anchor")
+                if isinstance(response.context_usage, dict)
+                else None,
+                "selected_source_count": response.context_usage.get("selected_source_count", 0)
+                if isinstance(response.context_usage, dict)
+                else 0,
+            }
             for artifact in response.artifact_refs:
                 artifact.metadata = {}
+            ensure_primary_citation()
         keep_rendered_citations()
         refresh_display_html()
         budget = self.settings.response_budget_bytes
@@ -5403,6 +5449,7 @@ class AgentV2Service:
             excess = response_size() - budget
             target = max(240, len(response.answer.markdown) - max(80, excess // 2 + 32))
             response.answer.markdown = truncate_markdown(response.answer.markdown, target)
+            ensure_primary_citation()
             keep_rendered_citations()
             refresh_display_html()
         if response_size() > budget:
@@ -5412,6 +5459,7 @@ class AgentV2Service:
             response.plan_ref = ""
             response.job_ref = ""
             refresh_display_html()
+        response.grounding_status = "grounded" if response.citations else "no_evidence"
         if response_size() > budget:
             response.related_questions = []
             response.artifact_refs = [
@@ -5420,10 +5468,12 @@ class AgentV2Service:
             ]
             response.answer.summary = compact_text(response.answer.summary, 120)
             response.answer.markdown = truncate_markdown(response.answer.markdown, 240)
+            ensure_primary_citation()
             keep_rendered_citations()
             refresh_display_html()
         if response_size() > budget:
             response.answer.display_html = ""
+        response.grounding_status = "grounded" if response.citations else "no_evidence"
         return response
 
     def get_run(self, principal: Principal, run_id: str) -> dict[str, Any]:

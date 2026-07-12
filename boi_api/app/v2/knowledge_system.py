@@ -638,6 +638,31 @@ class LivingKnowledgeService:
         )
         nodes = list(graph.get("nodes") or [])
         edges = list(graph.get("edges") or [])
+        time_from = _parse_time(plan.time_from)
+        time_to = _parse_time(plan.time_to)
+        if time_from or time_to:
+            def item_time(item: dict[str, Any]) -> datetime | None:
+                payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+                raw = next(
+                    (payload.get(key) for key in ("observed_at", "logged_at", "timestamp", "valid_from", "recorded_at") if payload.get(key)),
+                    "",
+                )
+                return _parse_time(str(raw or ""))
+
+            def in_time_range(item: dict[str, Any]) -> bool:
+                timestamp = item_time(item)
+                if not timestamp:
+                    return False
+                return (not time_from or timestamp >= time_from) and (not time_to or timestamp <= time_to)
+
+            nodes = [item for item in nodes if in_time_range(item)]
+            visible_ids = {str(item.get("node_id") or "") for item in nodes}
+            edges = [
+                item for item in edges
+                if str(item.get("source_id") or "") in visible_ids
+                and str(item.get("target_id") or "") in visible_ids
+                and (not item_time(item) or in_time_range(item))
+            ]
         if plan.node_kinds:
             allowed_node_kinds = set(plan.node_kinds)
             nodes = [item for item in nodes if str(item.get("node_type") or "") in allowed_node_kinds]
@@ -672,6 +697,15 @@ class LivingKnowledgeService:
             }
         else:
             groups = {}
+        if plan.query_kind == "timeline":
+            nodes.sort(
+                key=lambda item: str(
+                    next(
+                        ((item.get("payload") or {}).get(key) for key in ("observed_at", "logged_at", "timestamp", "recorded_at") if (item.get("payload") or {}).get(key)),
+                        "",
+                    )
+                )
+            )
         presentation = plan.presentation
         if presentation == "auto":
             if plan.query_kind == "timeline":

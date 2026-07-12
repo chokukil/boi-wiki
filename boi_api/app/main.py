@@ -29634,6 +29634,68 @@ def task_assignment_actor_allowed(row: dict[str, Any], employee_id: str) -> bool
     return employee_id in allowed
 
 
+def task_assignment_row_for_actor(task_ref: str, employee_id: str) -> dict[str, Any]:
+    try:
+        return visible_agent_inbox_task_row(task_ref, employee_id)
+    except HTTPException as exc:
+        if not str(task_ref or "").startswith("inbox-ref-") or exc.status_code not in {403, 404}:
+            raise
+    completed = completion_request_ids()
+    for row in cached_action_log_rows():
+        identity = str(row.get("request_id") or row.get("_log_ref") or "")
+        if not identity or identity in completed or not task_assignment_actor_allowed(row, employee_id):
+            continue
+        assignment = TASK_EXECUTION_STORE.assignment(row)
+        principals = {
+            str(row.get("employee_id") or ""),
+            *[str(item) for item in assignment.get("assignee_employee_ids") or []],
+            *[str(item) for item in assignment.get("reviewer_employee_ids") or []],
+        }
+        if any(inbox_task_public_ref(principal, f"task:{identity}") == task_ref for principal in principals if principal):
+            return row
+    raise HTTPException(status_code=404, detail="inbox task reference not found")
+
+
+def task_evidence_ref_visible(ref: str, employee_id: str, context: dict[str, Any]) -> bool:
+    value = str(ref or "").strip()
+    if not value:
+        return False
+    if value.startswith("human-note:"):
+        return bool(value.removeprefix("human-note:").strip())
+    if value.startswith("boi:"):
+        return find_doc_by_id(value, employee_id) is not None
+
+    artifact_id = value.removeprefix("artifact:")
+    if value.startswith("artifact:") or value.startswith("data-artifact:"):
+        artifact_id = value.split(":", 1)[1]
+        try:
+            return read_data_lake_artifact_record(artifact_id, employee_id) is not None
+        except HTTPException:
+            return False
+
+    allowed: set[str] = set()
+    for item in (context.get("evidence_summary") or {}).get("acquired") or []:
+        if isinstance(item, dict):
+            allowed.update(str(item.get(key) or "") for key in ("source_id", "ref", "url"))
+    for section in ("events", "actions"):
+        for item in (context.get("trace_context") or {}).get(section) or []:
+            if isinstance(item, dict):
+                allowed.update(str(item.get(key) or "") for key in ("event_id", "request_id", "url"))
+    for item in context.get("data_lake_artifacts") or []:
+        if isinstance(item, dict) and data_lake_artifact_acl_visible(item, employee_id):
+            allowed.update(str(item.get(key) or "") for key in ("artifact_id", "url", "download_url"))
+    for item in context.get("external_ai_contributions") or []:
+        if isinstance(item, dict):
+            allowed.update(str(item.get(key) or "") for key in ("contribution_id", "url", "source_url"))
+    allowed.discard("")
+    return value in allowed
+
+
+def task_evidence_blockers(refs: list[str], employee_id: str, context: dict[str, Any]) -> list[str]:
+    unavailable = [ref for ref in refs if not task_evidence_ref_visible(ref, employee_id, context)]
+    return ["접근할 수 있거나 현재 업무에 연결된 확인 자료만 사용할 수 있습니다."] if unavailable else []
+
+
 def write_task_work_record(req: TaskWorkRecordRequest, employee_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
     if not req.user_confirmed:
         raise HTTPException(status_code=400, detail="기록할 내용을 확인해주세요.")
@@ -29650,6 +29712,9 @@ def write_task_work_record(req: TaskWorkRecordRequest, employee_id: str) -> tupl
         raise HTTPException(status_code=400, detail="완료된 모습을 모두 확인한 뒤 완료할 수 있습니다.")
     if req.outcome == "completed" and completion.get("evidence") and not req.evidence_refs:
         raise HTTPException(status_code=400, detail="확인한 자료를 하나 이상 연결해주세요.")
+    evidence_blockers = task_evidence_blockers(req.evidence_refs, employee_id, context)
+    if evidence_blockers:
+        raise HTTPException(status_code=400, detail=evidence_blockers[0])
     record = TASK_EXECUTION_STORE.append_record(
         row,
         {
@@ -35771,7 +35836,7 @@ async def api_task_assignment_patch(
 ) -> dict[str, Any]:
     if not req.user_confirmed:
         raise HTTPException(status_code=400, detail="배정 변경을 확인해주세요.")
-    row = visible_agent_inbox_task_row(task_ref, employee_id)
+    row = task_assignment_row_for_actor(task_ref, employee_id)
     if not task_assignment_actor_allowed(row, employee_id):
         raise HTTPException(status_code=403, detail="이 Task의 배정을 변경할 권한이 없습니다.")
     known_people = set(USER_NAMES) | set(USER_TEAMS)
@@ -35810,6 +35875,7 @@ async def api_task_work_record_preview(
         blockers.append("판단·결과가 필요합니다.")
     if req.outcome == "completed" and completion.get("evidence") and not req.evidence_refs:
         blockers.append("확인한 자료를 연결해야 합니다.")
+    blockers.extend(task_evidence_blockers(req.evidence_refs, employee_id, context))
     return {"ok": True, "ready": not blockers, "blockers": blockers, "completion": completion}
 
 
