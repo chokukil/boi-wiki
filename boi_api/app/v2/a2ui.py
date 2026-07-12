@@ -73,7 +73,8 @@ def presentation_plan(response: AgentTurnResponse) -> dict[str, Any]:
         if artifact.artifact_type == "mermaid_diagram":
             components.append("MermaidArtifact")
         elif artifact.artifact_type in {"ontology_graph", "knowledge_graph"}:
-            components.append("OntologyExplorer")
+            presentation = str((artifact.metadata or {}).get("presentation") or "explorer")
+            components.append({"table": "DataTable", "timeline": "Timeline", "mermaid": "MermaidArtifact"}.get(presentation, "OntologyExplorer"))
         elif artifact.artifact_type in {"action_plan", "action_preview"}:
             components.append("ActionPreview")
     if response.related_questions:
@@ -115,11 +116,12 @@ def compile_surface(response: AgentTurnResponse) -> dict[str, Any]:
     for index, artifact in enumerate(response.artifact_refs[:3]):
         component = {
             "mermaid_diagram": "MermaidArtifact",
-            "ontology_graph": "OntologyExplorer",
-            "knowledge_graph": "OntologyExplorer",
             "action_plan": "ActionPreview",
             "action_preview": "ActionPreview",
         }.get(artifact.artifact_type)
+        if artifact.artifact_type in {"ontology_graph", "knowledge_graph"}:
+            presentation = str((artifact.metadata or {}).get("presentation") or "explorer")
+            component = {"table": "DataTable", "timeline": "Timeline", "mermaid": "MermaidArtifact"}.get(presentation, "OntologyExplorer")
         if component:
             components.append(
                 {

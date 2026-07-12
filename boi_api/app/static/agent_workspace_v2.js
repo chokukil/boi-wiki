@@ -88,6 +88,7 @@
     starterSetLoading: false,
     starterSetPolls: 0,
     mobileView: "conversation",
+    a2uiSurface: null,
   };
   const pageRef = root.dataset.pageRef || `${location.pathname}${location.search}`;
   const channel = "BroadcastChannel" in window ? new BroadcastChannel("boi-agent-v2-artifacts") : null;
@@ -522,6 +523,10 @@
     clearEmpty();
     const article = document.createElement("article");
     article.className = `agent-v2-message ${role}`;
+    if (metadata?.a2uiComponent) {
+      article.dataset.a2uiComponent = metadata.a2uiComponent;
+      article.dataset.a2uiCatalog = state.a2uiSurface?.catalog_id || "boi-a2ui/v1";
+    }
     if (role === "assistant") article.innerHTML = metadata?.displayHtml || renderMarkdown(content, metadata?.artifactId || "");
     else article.textContent = content;
     if (metadata?.label) {
@@ -984,6 +989,24 @@
     return `<article class="agent-v2-task-candidate"><span>${index + 1}</span><div><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(task.execution_mode || "copilot")} · 완료 항목 ${count}개</small></div></article>`;
   }
 
+  function ontologyViewer(draft) {
+    const nodes = Array.isArray(draft.nodes) ? draft.nodes : [];
+    const edges = Array.isArray(draft.edges) ? draft.edges : [];
+    const lookup = new Map(nodes.map((node) => [String(node.node_id || ""), node]));
+    const title = (node) => node?.payload?.title || node?.node_id || "업무 항목";
+    const relationLabel = (value) => ({
+      assigned_to: "현재 담당", reviewed_by: "검토 담당", performed_by: "수행 기록",
+      completed_by: "검증 완료", related_team: "관련 조직", has_task: "포함 Task",
+      uses_sop: "관련 SOP", uses_event: "관련 업무 이벤트", uses_action: "관련 Action",
+      requires_evidence: "확인할 근거", links_to: "연결 지식",
+      member_of: "소속 조직", has_role: "공식 역할",
+    }[value] || value || "연결");
+    const nodeMarkup = nodes.map((node) => `<button type="button" class="ontology-result-node" data-ontology-node="${escapeHtml(node.node_id || "")}"><span>${escapeHtml(node.node_type || "항목")}</span><strong>${escapeHtml(title(node))}</strong></button>`).join("");
+    const edgeMarkup = edges.map((edge) => `<li data-ontology-edge data-source="${escapeHtml(edge.source_id || "")}" data-target="${escapeHtml(edge.target_id || "")}"><button type="button" data-ontology-focus="${escapeHtml(edge.source_id || "")}">${escapeHtml(title(lookup.get(edge.source_id)))}</button><span>${escapeHtml(relationLabel(edge.relation))}</span><button type="button" data-ontology-focus="${escapeHtml(edge.target_id || "")}">${escapeHtml(title(lookup.get(edge.target_id)))}</button></li>`).join("");
+    const mode = draft.presentation === "timeline" ? "시간 흐름" : draft.presentation === "explorer" ? "관계 탐색" : draft.presentation === "table" ? "관계표" : "연결 관계";
+    return `<article class="ontology-result" data-a2ui-component="OntologyExplorer" data-a2ui-catalog="boi-a2ui/v1"><header><div><span>${escapeHtml(mode)}</span><strong>${nodes.length}개 항목 · ${edges.length}개 관계</strong></div><button type="button" class="secondary-button" data-ontology-reset>전체 보기</button></header><div class="ontology-result-layout"><div class="ontology-result-nodes" aria-label="업무 관계 항목">${nodeMarkup}</div><ol class="ontology-result-edges" aria-label="업무 관계 목록">${edgeMarkup || "<li>표시할 관계가 없습니다.</li>"}</ol></div></article>`;
+  }
+
   function renderArtifact(reveal = false) {
     const artifact = state.artifact;
     if (!artifact) {
@@ -1013,11 +1036,12 @@
     const draft = artifact.draft || {};
     const isSop = artifact.capability_id === "sop.plan";
     const isDiagram = artifact.artifact_type === "mermaid_diagram";
+    const isOntology = artifact.artifact_type === "ontology_graph";
     const isWorkflowDraft = artifact.artifact_type === "workflow_draft";
     const isRoutine = artifact.artifact_type === "work_routine_draft";
     const hasDiagram = Boolean(isDiagram || draft.mermaid);
-    root.classList.toggle("diagram-artifact-active", isDiagram);
-    elements.artifactKind.textContent = isDiagram ? "흐름 그림" : isSop ? "SOP 초안" : isWorkflowDraft ? "Task 후보" : isRoutine ? "자동 확인 계획" : "작업 결과";
+    root.classList.toggle("diagram-artifact-active", isDiagram || isOntology);
+    elements.artifactKind.textContent = isDiagram ? "흐름 그림" : isOntology ? "업무 관계" : isSop ? "SOP 초안" : isWorkflowDraft ? "Task 후보" : isRoutine ? "자동 확인 계획" : "작업 결과";
     elements.artifactTitle.textContent = artifact.title || "작업 결과";
     elements.artifactState.textContent = `자동 저장됨 · 버전 ${artifact.revision || 1}`;
     elements.fullEditor.hidden = !isSop;
@@ -1031,6 +1055,9 @@
     } else if (isDiagram) {
       elements.artifactState.textContent = `근거 ${draft.source_refs?.length || 0}개 · 버전 ${artifact.revision || 1}`;
       elements.artifacts.innerHTML = `<article class="agent-v2-diagram-result">${mermaidViewer(draft.mermaid || "", artifact.title, artifact.artifact_id, "mermaid_diagram", artifact.actions || [])}</article>`;
+    } else if (isOntology) {
+      elements.artifactState.textContent = `근거 ${draft.source_refs?.length || 0}개 · 버전 ${artifact.revision || 1}`;
+      elements.artifacts.innerHTML = ontologyViewer(draft);
     } else if (isRoutine) {
       const trigger = draft.schedule_description || (draft.trigger === "event" ? "연결된 업무 이벤트가 발생할 때" : "정해진 간격으로");
       elements.artifacts.innerHTML = `<article class="agent-v2-routine-result"><header><span>확인 전 계획</span><h3>${escapeHtml(artifact.title)}</h3></header><dl><div><dt>목적</dt><dd>${escapeHtml(draft.goal || "")}</dd></div><div><dt>다시 확인</dt><dd>${escapeHtml(trigger)}</dd></div><div><dt>끝내는 기준</dt><dd>${escapeHtml(draft.completion_condition || "직접 멈출 때까지")}</dd></div></dl><p>아직 자동 확인을 만들지 않았습니다.</p></article>`;
@@ -1039,6 +1066,21 @@
       elements.artifacts.innerHTML = `<article class="agent-v2-generic-result"><span>${escapeHtml(artifact.status || "draft")}</span><h3>${escapeHtml(artifact.title)}</h3><div>${renderMarkdown(body)}</div></article>`;
     }
     elements.artifactFocus.hidden = !hasDiagram;
+    elements.artifacts.querySelectorAll("[data-ontology-node], [data-ontology-focus]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const selected = button.dataset.ontologyNode || button.dataset.ontologyFocus || "";
+        elements.artifacts.querySelectorAll("[data-ontology-edge]").forEach((edge) => {
+          edge.hidden = Boolean(selected && edge.dataset.source !== selected && edge.dataset.target !== selected);
+        });
+        elements.artifacts.querySelectorAll("[data-ontology-node]").forEach((node) => {
+          node.classList.toggle("active", node.dataset.ontologyNode === selected);
+        });
+      });
+    });
+    elements.artifacts.querySelector("[data-ontology-reset]")?.addEventListener("click", () => {
+      elements.artifacts.querySelectorAll("[data-ontology-edge]").forEach((edge) => { edge.hidden = false; });
+      elements.artifacts.querySelectorAll("[data-ontology-node]").forEach((node) => node.classList.remove("active"));
+    });
     syncArtifactFocusUi();
     document.dispatchEvent(new CustomEvent("boi:markdown-rendered", { bubbles: true }));
     saveSurfaceState();
@@ -1047,6 +1089,18 @@
   async function loadArtifact(artifactId, reveal = true) {
     if (!artifactId) return;
     state.artifact = await api(`/api/v2/artifacts/${encodeURIComponent(artifactId)}`);
+    const surfaceRef = state.artifact.a2ui_surface_ref || state.artifact.metadata?.a2ui_surface_ref || "";
+    if (surfaceRef) {
+      state.a2uiSurface = await api(`/api/v2/a2ui-surfaces/${encodeURIComponent(surfaceRef)}`).catch(() => null);
+      root.dataset.a2uiSurfaceRef = surfaceRef;
+      root.dataset.a2uiCatalog = state.a2uiSurface?.catalog_id || "boi-a2ui/v1";
+      root.dataset.a2uiRendered = state.a2uiSurface ? "true" : "fallback";
+    } else {
+      state.a2uiSurface = null;
+      delete root.dataset.a2uiSurfaceRef;
+      delete root.dataset.a2uiCatalog;
+      delete root.dataset.a2uiRendered;
+    }
     if (!state.sessionId && state.artifact.work_session_id) state.sessionId = state.artifact.work_session_id;
     updateUrl(artifactId);
     renderArtifact(reveal);
@@ -1068,9 +1122,13 @@
     if (payload.a2ui_surface_ref) {
       root.dataset.a2uiSurfaceRef = payload.a2ui_surface_ref;
       root.dataset.a2uiCatalog = payload.presentation_plan?.catalog_id || "boi-a2ui/v1";
+      state.a2uiSurface = await api(`/api/v2/a2ui-surfaces/${encodeURIComponent(payload.a2ui_surface_ref)}`).catch(() => null);
+      root.dataset.a2uiRendered = state.a2uiSurface ? "true" : "fallback";
     } else {
       delete root.dataset.a2uiSurfaceRef;
       delete root.dataset.a2uiCatalog;
+      delete root.dataset.a2uiRendered;
+      state.a2uiSurface = null;
     }
     state.sessionId = payload.work_session_id || state.sessionId;
     state.nextActions = payload.next_actions || [];
@@ -1086,6 +1144,7 @@
       artifactId: artifactRef?.artifact_id,
       displayHtml: payload.answer?.display_html || "",
       label: "BoI Agent",
+      a2uiComponent: state.a2uiSurface?.components?.some((item) => item.component === "Answer") ? "Answer" : "",
     });
     appendLearningSummary(payload.knowledge_candidates || []);
     updateUrl(artifactRef?.artifact_id || state.artifact?.artifact_id || "");
@@ -1096,7 +1155,7 @@
     renderContext();
     await loadSources().catch(() => {});
     if (artifactRef) {
-      const reveal = ["mermaid_diagram", "sop_draft"].includes(artifactRef.artifact_type);
+      const reveal = ["mermaid_diagram", "ontology_graph", "sop_draft"].includes(artifactRef.artifact_type);
       await loadArtifact(artifactRef.artifact_id, reveal);
       if (artifactRef.metadata?.proposal_id) {
         state.selectedTaskId = artifactRef.metadata.task_id || "";
@@ -1379,6 +1438,13 @@
     restoreSurfaceState();
     if (bundle.active_artifact) {
       state.artifact = bundle.active_artifact;
+      const surfaceRef = state.artifact.a2ui_surface_ref || state.artifact.metadata?.a2ui_surface_ref || "";
+      if (surfaceRef) {
+        state.a2uiSurface = await api(`/api/v2/a2ui-surfaces/${encodeURIComponent(surfaceRef)}`).catch(() => null);
+        root.dataset.a2uiSurfaceRef = surfaceRef;
+        root.dataset.a2uiCatalog = state.a2uiSurface?.catalog_id || "boi-a2ui/v1";
+        root.dataset.a2uiRendered = state.a2uiSurface ? "true" : "fallback";
+      }
       renderArtifact();
     } else renderArtifact();
     renderSources();

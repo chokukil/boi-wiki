@@ -135,6 +135,22 @@ def test_explanatory_intent_cannot_execute_a_draft_capability(v2_service: AgentV
     assert v2_service._guard_explanatory_capability("action.plan", executable) == "action.plan"
 
 
+def test_work_view_cannot_be_misrouted_to_an_automation_capability(v2_service: AgentV2Service):
+    combined = WorkIntent(
+        goal="내가 하는 일이 뭐지?",
+        resolved_goal="공식 역할과 현재 업무를 구분해 확인한다",
+        operation=WorkOperation.understand,
+        operation_plan=[WorkOperation.understand],
+        asset_kind=WorkAssetKind.runtime,
+        result_purpose="explain",
+        work_view="combined",
+    )
+    current = combined.model_copy(update={"work_view": "current"})
+
+    assert v2_service._guard_explanatory_capability("work_routine.plan", combined) == "knowledge.search"
+    assert v2_service._guard_explanatory_capability("knowledge.search", current) == "work.inbox"
+
+
 class FakeModel:
     provider = "test"
 
@@ -235,6 +251,28 @@ class CountingSemanticRouteModel(FakeModel):
         required = set(schema.get("required") or [])
         if {"capability_id", "resolved_goal", "presentation_mode", "context_refs"} <= required:
             self.planner_calls += 1
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class BroadWorkQuestionReviewModel(FakeModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if required == {"work_view", "explicit_current_only", "reason"}:
+            return {"work_view": "combined", "explicit_current_only": False, "reason": "포괄적인 역할 질문"}
+        if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
+            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            planned.update(
+                {
+                    "capability_id": "work.inbox",
+                    "asset_kind": "runtime",
+                    "operation": "understand",
+                    "operation_plan": ["understand"],
+                    "work_view": "current",
+                    "resolved_goal": "현재 업무를 확인한다",
+                    "result_purpose": "explain",
+                }
+            )
+            return planned
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
@@ -1641,6 +1679,26 @@ def test_empty_current_work_is_a_valid_result_instead_of_a_context_failure(
     assert [item.status for item in response.harness_results] == ["passed"]
 
 
+def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = BroadWorkQuestionReviewModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="내가 하는 일이 뭐지?", page_ref="/"),
+    )
+
+    assert response.capability_id == "knowledge.search"
+    assert response.work_intent and response.work_intent.work_view == "combined"
+    assert response.graph_result_ref
+    assert any(item.artifact_type == "ontology_graph" for item in response.artifact_refs)
+    assert "지금 처리할 업무" in response.answer.markdown
+
+
 def test_completion_design_wording_does_not_become_a_task_completion_operation(
     v2_service: AgentV2Service,
 ):
@@ -1990,12 +2048,34 @@ def test_contextual_starters_are_grounded_in_real_accessible_subjects(
 
     assert 4 <= len(starters) <= 8
     assert starters[0].category == "current_work"
-    assert "현재 근거 검토" in starters[0].label
+    assert starters[0].label == "내 역할과 지금 맡은 일을 한눈에 보기"
+    assert starters[0].result_kind == "table"
+    assert starters[0].graph_query_kind == "responsibility"
     assert any(item.category == "knowledge_relation" and "BoI Wiki 운영 가이드" in item.label for item in starters)
     assert all(item.subject_ref and item.source_refs for item in starters)
     assert all(item.subject_ref in item.source_refs for item in starters)
     assert all(item.suggestion_id.startswith("suggestion_") for item in starters)
     assert not {item.category for item in starters}.intersection({"sop_task", "business_event", "action"})
+
+
+def test_runtime_work_is_compiled_into_person_responsibility_graph(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.knowledge.compile_graph(principal)
+    result = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=["person:100001"],
+            query_kind="responsibility",
+            depth=2,
+            presentation="table",
+        ),
+    )
+
+    assert any(item["node_id"] == "person:100001" for item in result["nodes"])
+    assert any(item["relation"] == "assigned_to" for item in result["edges"])
+    assert any((item.get("payload") or {}).get("title") == "현재 근거 검토" for item in result["nodes"])
 
 
 def test_contextual_starters_offer_asset_kinds_only_for_direct_ontology_neighbors(

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>동적 화면 진단 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main class="page-content">
+    <section class="panel">
+      <div class="section-heading"><div><span class="eyebrow">관리자 진단</span><h2>최근 동적 화면</h2></div></div>
+      <p>일반 사용자는 기술 계약을 보지 않고 질문에 맞는 표, 시간 흐름, 관계 탐색과 입력 화면으로 경험합니다.</p>
+    </section>
+    <section class="doc-list">
+      {% for surface in surfaces %}
+      <article class="doc-row">
+        <div><span class="badge {{ 'status' if surface.valid else 'risk' }}">{{ '정상' if surface.valid else '복구 필요' }}</span> <strong>{{ surface.surface_id }}</strong></div>
+        <p>{{ surface.components | join(' · ') }}</p>
+        <details><summary>연결 정보</summary><code>{{ surface.catalog_id }}</code>{% if surface.fallback %}<p>{{ surface.fallback }}</p>{% endif %}</details>
+      </article>
+      {% else %}
+      <p class="muted">아직 생성된 동적 화면이 없습니다.</p>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

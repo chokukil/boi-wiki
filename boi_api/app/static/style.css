@@ -1971,6 +1971,22 @@ body.agent-v2-task-open { overflow:hidden; }
 .agent-v2-routine-result dt { color:#64748b; font-size:11px; font-weight:800; }
 .agent-v2-routine-result dd { margin:0; color:#172033; font-size:12px; }
 .agent-v2-diagram-result .mermaid-v2-canvas { min-height:360px; }
+.ontology-result { display:grid; min-height:0; height:100%; border:1px solid #cbd5e1; border-radius:8px; background:#fff; overflow:hidden; }
+.ontology-result > header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid #dbe3ef; background:#f8fafc; }
+.ontology-result > header > div { display:grid; gap:3px; }
+.ontology-result > header span { color:#64748b; font-size:11px; font-weight:800; }
+.ontology-result > header strong { color:#172033; font-size:14px; }
+.ontology-result-layout { display:grid; grid-template-columns:minmax(180px, .7fr) minmax(280px, 1.3fr); min-height:0; overflow:hidden; }
+.ontology-result-nodes,.ontology-result-edges { min-height:0; overflow:auto; padding:12px; scrollbar-width:auto; scrollbar-color:#64748b #e2e8f0; }
+.ontology-result-nodes { display:grid; align-content:start; gap:7px; border-right:1px solid #dbe3ef; }
+.ontology-result-node { display:grid; gap:3px; width:100%; padding:10px; border:1px solid #dbe3ef; border-radius:7px; background:#fff; color:#172033; text-align:left; cursor:pointer; }
+.ontology-result-node span { color:#64748b; font-size:10px; font-weight:800; }
+.ontology-result-node strong { font-size:12px; }
+.ontology-result-node:hover,.ontology-result-node.active { border-color:#2563eb; background:#eff6ff; }
+.ontology-result-edges { display:grid; align-content:start; gap:8px; margin:0; list-style:none; }
+.ontology-result-edges li { display:grid; grid-template-columns:minmax(90px,1fr) auto minmax(90px,1fr); align-items:center; gap:8px; padding:9px; border-bottom:1px solid #e2e8f0; }
+.ontology-result-edges li > span { color:#475569; font-size:10px; font-weight:800; }
+.ontology-result-edges button { min-width:0; border:0; background:transparent; color:#1d4ed8; font:inherit; font-size:11px; font-weight:800; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
 .agent-surface-messages,.agent-surface-artifacts,.agent-surface-sources > div,.agent-surface-source-preview > div,.agent-surface-routines > div,.agent-surface-recent > div,.mermaid-v2-canvas { scrollbar-width:auto; scrollbar-color:#64748b #e2e8f0; }
 .agent-surface-messages::-webkit-scrollbar,.agent-surface-artifacts::-webkit-scrollbar,.agent-surface-sources > div::-webkit-scrollbar,.agent-surface-source-preview > div::-webkit-scrollbar,.agent-surface-routines > div::-webkit-scrollbar,.agent-surface-recent > div::-webkit-scrollbar,.mermaid-v2-canvas::-webkit-scrollbar { width:10px; height:10px; }
 .agent-surface-messages::-webkit-scrollbar-thumb,.agent-surface-artifacts::-webkit-scrollbar-thumb,.agent-surface-sources > div::-webkit-scrollbar-thumb,.agent-surface-source-preview > div::-webkit-scrollbar-thumb,.agent-surface-routines > div::-webkit-scrollbar-thumb,.agent-surface-recent > div::-webkit-scrollbar-thumb,.mermaid-v2-canvas::-webkit-scrollbar-thumb { border:2px solid #e2e8f0; border-radius:5px; background:#64748b; }
@@ -1997,6 +2013,9 @@ body.agent-surface-overlay-open { overflow:hidden; }
   .agent-surface-composer { padding-bottom:max(12px, env(safe-area-inset-bottom)); }
   .agent-surface-recent > div { position:fixed; top:66px; right:10px; left:10px; width:auto; }
   .agent-surface .agent-v2-task-sheet { width:100vw; height:100dvh; }
+  .ontology-result-layout { grid-template-columns:1fr; overflow:auto; }
+  .ontology-result-nodes { grid-template-columns:repeat(2,minmax(0,1fr)); overflow:visible; border-right:0; border-bottom:1px solid #dbe3ef; }
+  .ontology-result-edges { overflow:visible; }
 }
 .data-library-page,
 .integrations-page {

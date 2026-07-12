@@ -126,3 +126,18 @@ def test_starter_suggestion_set_is_grounded_and_covers_business_areas(
     )
     assert all(item["subject_ref"] and item["source_refs"] for item in payload["items"])
     assert all("index.md" not in item["subject_ref"] and "log.md" not in item["subject_ref"] for item in payload["items"])
+    assert all(item["result_kind"] in {"answer", "table", "timeline", "mermaid", "explorer", "work_form", "confirmation"} for item in payload["items"])
+    assert any(item["result_kind"] in {"table", "timeline", "mermaid", "explorer"} for item in payload["items"])
+
+
+def test_code_evidence_is_an_admin_only_read_only_viewer(boi_app_module):
+    client = TestClient(boi_app_module.app)
+    path = "boi_api/app/v2/service.py"
+
+    admin = client.get("/source/code", params={"employee_id": "100001", "path": path})
+    viewer = client.get("/source/code", params={"employee_id": "100002", "path": path})
+
+    assert admin.status_code == 200
+    assert "읽기 전용" in admin.text
+    assert "/api/source/apply" not in admin.text
+    assert viewer.status_code == 403

@@ -8003,13 +8003,14 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
             {"id": "api_docs", "label": "API", "href": app_url("/advanced/api", employee_id)},
             {"id": "mcp_docs", "label": "MCP", "href": app_url("/advanced/mcp", employee_id)},
             {"id": "integrations", "label": "연결 상태", "href": app_url("/integrations", employee_id)},
+            {"id": "dynamic_ui", "label": "동적 화면 진단", "href": app_url("/advanced/dynamic-ui", employee_id)},
             {"id": "event_raw", "label": "Event 기술 로그", "href": app_url("/events", employee_id, view="raw")},
         ],
     }
     if not BOI_OPS_CENTER_ENABLED:
         items_by_nav["inbox"] = [item for item in items_by_nav["inbox"] if item.get("id") != "ops"]
     if "boi.admin" not in roles_for(employee_id):
-        items_by_nav["advanced"] = [item for item in items_by_nav["advanced"] if item.get("id") != "event_raw"]
+        items_by_nav["advanced"] = [item for item in items_by_nav["advanced"] if item.get("id") not in {"event_raw", "dynamic_ui"}]
     if INTEGRATION_HEALTH.available("kafka_ui"):
         items_by_nav["advanced"].append(
             {
@@ -8215,7 +8216,10 @@ def citation_rows_for_doc(
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     is_inbox_report = (doc.get("metadata") or {}).get("type") == "boi/inbox-review-report"
-    for item in doc["metadata"].get("source_refs") or []:
+    metadata = doc.get("metadata") or {}
+    source_items = list(metadata.get("source_refs") or []) + list(metadata.get("implementation_refs") or [])
+    is_admin = "boi.admin" in roles_for(employee_id)
+    for item in source_items:
         if not isinstance(item, dict):
             continue
         ref = str(item.get("uri") or item.get("ref") or "")
@@ -8240,6 +8244,7 @@ def citation_rows_for_doc(
                     label = doc_display_title(target_doc)
                 else:
                     url = source_url_for_ref(ref, employee_id)
+        repo_source = False
         if not label and ref:
             repo_candidate = (REPO_ROOT / ref).resolve()
             try:
@@ -8247,6 +8252,7 @@ def citation_rows_for_doc(
             except ValueError:
                 repo_candidate = Path("/__invalid_source_ref__")
             if repo_candidate.is_file():
+                repo_source = True
                 try:
                     raw_text = repo_candidate.read_text(encoding="utf-8", errors="replace") if repo_candidate.suffix.lower() == ".md" else ""
                     metadata, body = split_frontmatter(raw_text) if raw_text else ({}, "")
@@ -8263,6 +8269,17 @@ def citation_rows_for_doc(
                     label = friendly_repo_labels.get(repo_candidate.stem, label)
                 except OSError:
                     label = ""
+        if ref and not repo_source:
+            candidate = (REPO_ROOT / ref).resolve()
+            try:
+                candidate.relative_to(REPO_ROOT.resolve())
+                repo_source = candidate.is_file() and not ref.startswith("data/")
+            except ValueError:
+                repo_source = False
+        if repo_source:
+            if not is_admin:
+                continue
+            url = "/source/code?" + urlencode({"employee_id": employee_id, "path": ref})
         if not label:
             label = str(item.get("title") or item.get("label") or "").strip()
         if not label or not ref:
@@ -8303,6 +8320,25 @@ def source_url_for_doc(doc: dict[str, Any], employee_id: str) -> str:
         return ""
     ref = source_ref_for_path(Path(path_value))
     return source_url_for_ref(ref, employee_id)
+
+
+def resolve_code_source_path(ref: str) -> Path:
+    raw = str(ref or "").strip().replace("\\", "/")
+    if not raw or raw.startswith(("/", ".")):
+        raise HTTPException(status_code=400, detail="code source path is invalid")
+    resolved = (REPO_ROOT / raw).resolve()
+    try:
+        resolved.relative_to(REPO_ROOT.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="code source path escapes repository") from exc
+    allowed_roots = [REPO_ROOT / "boi_api", REPO_ROOT / "scripts", REPO_ROOT / "tests"]
+    if resolved != REPO_ROOT / "README.md" and not any(root.resolve() in resolved.parents for root in allowed_roots):
+        raise HTTPException(status_code=404, detail="code source is not available")
+    if resolved.suffix.lower() not in {".py", ".js", ".html", ".css", ".md", ".yaml", ".yml", ".json"}:
+        raise HTTPException(status_code=404, detail="code source type is not available")
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="code source not found")
+    return resolved
 
 
 def resolve_source_path(ref: str) -> Path:
@@ -12328,6 +12364,40 @@ async def advanced_mcp_page(request: Request, employee_id: str = Depends(current
                 active_nav="advanced",
                 title="MCP",
                 description="BoI Wiki MCP v2의 연결 상태와 외부 계약을 확인합니다.",
+            ),
+        },
+    )
+
+
+@app.get("/advanced/dynamic-ui", response_class=HTMLResponse)
+async def advanced_dynamic_ui_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+    require_employee_role(employee_id, "boi.admin")
+    service = request.app.state.agent_v2_service
+    surfaces = service.store.list("a2ui_surfaces", employee_id=employee_id, limit=50)
+    rows = []
+    for surface in surfaces:
+        components = [str(item.get("component") or "") for item in surface.get("components") or [] if isinstance(item, dict)]
+        rows.append(
+            {
+                "surface_id": str(surface.get("surface_id") or ""),
+                "catalog_id": str(surface.get("catalog_id") or ""),
+                "components": components,
+                "valid": str(surface.get("catalog_id") or "") == "boi-a2ui/v1" and bool(components),
+                "fallback": str(surface.get("fallback") or "")[:120],
+            }
+        )
+    return templates.TemplateResponse(
+        "advanced_dynamic_ui.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "surfaces": rows,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="advanced",
+                title="동적 화면 진단",
+                description="BoI Agent와 Task 수행 화면의 표현 계약과 복구 상태를 확인합니다.",
             ),
         },
     )
@@ -21324,6 +21394,32 @@ async def source_page(
                 page_actions=[{"label": "Validated edit guide", "href": source["guide_url"], "kind": "secondary"}],
             ),
             "source": source,
+        },
+    )
+
+
+@app.get("/source/code", response_class=HTMLResponse)
+async def code_source_page(
+    request: Request,
+    path: str,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    require_employee_role(employee_id, "boi.admin")
+    source_path = resolve_code_source_path(path)
+    return templates.TemplateResponse(
+        "source_code.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "path": str(source_path.relative_to(REPO_ROOT)),
+            "content": source_path.read_text(encoding="utf-8", errors="replace"),
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="advanced",
+                title="기술 검증 근거",
+                description="관리자용 읽기 전용 구현 근거입니다.",
+            ),
         },
     )
 

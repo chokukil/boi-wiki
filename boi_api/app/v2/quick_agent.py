@@ -191,7 +191,30 @@ class QuickAgentRuntime:
                 },
                 "presentation_mode": {
                     "type": "string",
-                    "enum": ["prose", "mermaid", "table", "artifact"],
+                    "enum": ["prose", "mermaid", "table", "timeline", "explorer", "artifact"],
+                },
+                "work_view": {
+                    "type": "string",
+                    "enum": ["none", "current", "responsibility", "combined"],
+                },
+                "graph_query_draft": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "query_kind": {"type": "string", "enum": [
+                            "neighbors", "path", "workflow", "impact", "lineage",
+                            "responsibility", "timeline", "compare", "tour"
+                        ]},
+                        "focal_mentions": {"type": "array", "maxItems": 20, "items": {"type": "string"}},
+                        "target_mentions": {"type": "array", "maxItems": 20, "items": {"type": "string"}},
+                        "node_kinds": {"type": "array", "maxItems": 30, "items": {"type": "string"}},
+                        "relation_kinds": {"type": "array", "maxItems": 30, "items": {"type": "string"}},
+                        "direction": {"type": "string", "enum": ["outgoing", "incoming", "both"]},
+                        "depth": {"type": "integer", "minimum": 1, "maximum": 6},
+                        "time_from": {"type": "string"},
+                        "time_to": {"type": "string"},
+                        "presentation": {"type": "string", "enum": ["auto", "list", "table", "timeline", "mermaid", "explorer"]},
+                    },
                 },
                 "context_refs": {
                     "type": "array",
@@ -250,6 +273,8 @@ class QuickAgentRuntime:
                 "scope": "auto",
                 "desired_outcome": "draft" if operation == "create" else "run_result" if operation == "run" else "answer",
                 "presentation_mode": "prose",
+                "work_view": "current" if capability_id == "work.inbox" else "none",
+                "graph_query_draft": None,
                 "context_refs": [],
                 "result_purpose": "design" if operation in {"create", "refine"} else "execute" if operation == "run" else "explain",
                 "requested_asset_kinds": [asset_kind],
@@ -282,6 +307,8 @@ class QuickAgentRuntime:
                 "scope": "auto",
                 "desired_outcome": "answer",
                 "presentation_mode": "prose",
+                "work_view": "none",
+                "graph_query_draft": None,
                 "context_refs": [],
                 "result_purpose": "explain",
                 "requested_asset_kinds": ["knowledge"],
@@ -361,6 +388,12 @@ class QuickAgentRuntime:
             "only to list the user's currently assigned work; never use it to perform or complete a Task. A question that "
             "finds or explains knowledge about Tasks without a concrete task_ref or active WorkRun is knowledge.search, not "
             "task.work. For a Manual or "
+            "Classify workplace responsibility questions separately with work_view. Use current only for a request limited "
+            "to the user's active Inbox. Use responsibility for stable roles, assigned relationships, or who does what. Use "
+            "combined for broad questions about what a person does when both verified responsibilities and current assigned "
+            "work are useful. A broad question such as what work I do is combined, not merely an Inbox listing. When work_view "
+            "is responsibility or combined, enable graph_query_draft with query_kind=responsibility and use the person or team "
+            "mentioned by the user as focal_mentions. Use the current authenticated person for first-person questions. "
             "Copilot WorkRun, a message that explicitly reports personal review of the listed completion items and records "
             "the result is human_input with user_confirmation=true, even when it also contains new evidence. "
             "Choose the primary operation from the requested deliverable, not from incidental supporting words. Use "
@@ -376,7 +409,8 @@ class QuickAgentRuntime:
             "requests such as 'draw that flow', 'split it into Tasks', or 'use the evidence just shown'. Do not carry the "
             "previous subject when the user clearly starts another goal. If two prior subjects are equally plausible, set "
             "needs_clarification instead of guessing. Set presentation_mode=mermaid when the requested deliverable is an "
-            "actual flow or Mermaid diagram, including a visual follow-up to the previous answer. Mermaid means a rendered "
+            "actual flow or Mermaid diagram, including a visual follow-up to the previous answer. Use timeline for temporal "
+            "history and explorer for a relationship set too large for a compact diagram. Mermaid means a rendered "
             "diagram artifact, not a prose description of a flow. A request to explain or summarize a flow remains prose "
             "unless the user semantically asks to draw, visualize, diagram, chart, or render it. Use table only when a table "
             "itself is requested. Set result_purpose=explain for answers and read-only diagrams, compare for comparisons, "
@@ -413,6 +447,8 @@ class QuickAgentRuntime:
                 "trusted_context_refs": trusted_context_refs,
                 "wiki_hybrid_hints": list(state.get("knowledge_hints") or [])[:8],
                 "trusted_targets": dict(state.get("trusted_targets") or {}),
+                "requested_result_kind": str(state.get("requested_result_kind") or ""),
+                "requested_graph_query_kind": str(state.get("requested_graph_query_kind") or ""),
                 "operation_contracts": {
                     "understand": "explain the meaning, criteria, or summary of one focal item; related sources may support the answer without changing this into connect",
                     "compare": "compare sources, alternatives, or cases when comparison itself is the requested outcome",
@@ -456,8 +492,79 @@ class QuickAgentRuntime:
             if re.search(r"[가-힣]", original_question) and not re.search(r"[가-힣]", retrieval_query):
                 retrieval_query = f"{original_question}\n{retrieval_query}".strip()
             presentation_mode = str(planned.get("presentation_mode") or "prose")
-            if presentation_mode not in {"prose", "mermaid", "table", "artifact"}:
+            if presentation_mode not in {"prose", "mermaid", "table", "timeline", "explorer", "artifact"}:
                 presentation_mode = "prose"
+            work_view = str(planned.get("work_view") or ("current" if capability_id == "work.inbox" else "none"))
+            if work_view not in {"none", "current", "responsibility", "combined"}:
+                work_view = "none"
+            if work_view == "current" and capability_id == "work.inbox" and operation in {"understand", "observe"}:
+                review_schema = {
+                    "type": "object",
+                    "properties": {
+                        "work_view": {"type": "string", "enum": ["current", "responsibility", "combined"]},
+                        "explicit_current_only": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["work_view", "explicit_current_only", "reason"],
+                    "additionalProperties": False,
+                }
+                try:
+                    reviewed = model.generate_structured(
+                        system=(
+                            "Review only the scope of a workplace question. Use current only when the user explicitly asks "
+                            "for Inbox, now/current items, or otherwise excludes role and responsibility. Use responsibility "
+                            "for stable role/relationship only. Use combined for broad questions about what a person does. "
+                            "Do not infer scope from Korean keywords mechanically; judge the full meaning."
+                        ),
+                        prompt=json.dumps(
+                            {
+                                "request": original_question,
+                                "resolved_goal": resolved_goal,
+                                "desired_outcome": planned.get("desired_outcome") or "",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        schema=review_schema,
+                    )
+                    reviewed_view = str(reviewed.get("work_view") or "")
+                    explicit_current_only = bool(reviewed.get("explicit_current_only"))
+                    if reviewed_view in {"current", "responsibility", "combined"}:
+                        work_view = "combined" if reviewed_view == "current" and not explicit_current_only else reviewed_view
+                except Exception:
+                    pass
+            raw_graph = planned.get("graph_query_draft") if isinstance(planned.get("graph_query_draft"), dict) else None
+            graph_query_draft = None
+            if raw_graph and bool(raw_graph.get("enabled")):
+                query_kind = str(raw_graph.get("query_kind") or "neighbors")
+                if query_kind not in {"neighbors", "path", "workflow", "impact", "lineage", "responsibility", "timeline", "compare", "tour"}:
+                    query_kind = "neighbors"
+                graph_query_draft = {
+                    "enabled": True,
+                    "query_kind": query_kind,
+                    "focal_mentions": [str(item)[:200] for item in raw_graph.get("focal_mentions") or [] if str(item).strip()][:20],
+                    "target_mentions": [str(item)[:200] for item in raw_graph.get("target_mentions") or [] if str(item).strip()][:20],
+                    "node_kinds": [str(item)[:80] for item in raw_graph.get("node_kinds") or [] if str(item).strip()][:30],
+                    "relation_kinds": [str(item)[:80] for item in raw_graph.get("relation_kinds") or [] if str(item).strip()][:30],
+                    "direction": str(raw_graph.get("direction") or "both") if str(raw_graph.get("direction") or "both") in {"outgoing", "incoming", "both"} else "both",
+                    "depth": max(1, min(int(raw_graph.get("depth") or 2), 6)),
+                    "time_from": str(raw_graph.get("time_from") or "")[:80],
+                    "time_to": str(raw_graph.get("time_to") or "")[:80],
+                    "presentation": str(raw_graph.get("presentation") or "auto") if str(raw_graph.get("presentation") or "auto") in {"auto", "list", "table", "timeline", "mermaid", "explorer"} else "auto",
+                }
+            if work_view in {"responsibility", "combined"} and graph_query_draft is None:
+                graph_query_draft = {
+                    "enabled": True,
+                    "query_kind": "responsibility",
+                    "focal_mentions": ["현재 사용자"],
+                    "target_mentions": [],
+                    "node_kinds": [],
+                    "relation_kinds": [],
+                    "direction": "both",
+                    "depth": 2,
+                    "time_from": "",
+                    "time_to": "",
+                    "presentation": "auto",
+                }
             result_purpose = str(planned.get("result_purpose") or "explain")
             if result_purpose not in self._result_purposes:
                 result_purpose = "explain"
@@ -498,6 +605,8 @@ class QuickAgentRuntime:
                 "scope": str(planned.get("scope") or "auto"),
                 "desired_outcome": str(planned.get("desired_outcome") or "answer"),
                 "presentation_mode": presentation_mode,
+                "work_view": work_view,
+                "graph_query_draft": graph_query_draft,
                 "context_refs": context_refs,
                 "result_purpose": result_purpose,
                 "requested_asset_kinds": requested_asset_kinds,
@@ -597,6 +706,8 @@ class QuickAgentRuntime:
         knowledge_hints: list[dict[str, Any]] | None = None,
         trusted_targets: dict[str, str] | None = None,
         requested_operation: str = "",
+        requested_result_kind: str = "",
+        requested_graph_query_kind: str = "",
         model: Any = None,
     ) -> dict[str, Any]:
         result = self._graph.invoke(
@@ -616,6 +727,8 @@ class QuickAgentRuntime:
                 "knowledge_hints": list(knowledge_hints or [])[:8],
                 "trusted_targets": dict(trusted_targets or {}),
                 "requested_operation": requested_operation,
+                "requested_result_kind": requested_result_kind,
+                "requested_graph_query_kind": requested_graph_query_kind,
                 "model": model,
             }
         )

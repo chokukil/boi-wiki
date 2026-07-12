@@ -207,7 +207,7 @@ async function screenshot(cdp, path) {
   const result = await cdp.send("Page.captureScreenshot", {
     format: "png",
     captureBeyondViewport: false,
-    fromSurface: false,
+    fromSurface: true,
   });
   writeFileSync(path, Buffer.from(result.data, "base64"));
 }
@@ -254,8 +254,41 @@ async function main() {
     if (args.artifactId) {
       const artifactUrl = `${args.baseUrl}/agent?employee_id=${args.employeeId}&session=${encodeURIComponent(args.sessionId)}&artifact=${encodeURIComponent(args.artifactId)}`;
       await navigate(cdp, artifactUrl);
-      await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg')`, 30000);
+      await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg, [data-agent-v2-artifact-list] .ontology-result[data-a2ui-component="OntologyExplorer"]')`, 30000);
       await sleep(600);
+      const ontologyMode = await cdp.eval(`!!document.querySelector('[data-agent-v2-artifact-list] .ontology-result')`);
+      if (ontologyMode) {
+        const inspectOntology = async () => cdp.eval(`(() => {
+          const root = document.querySelector(".ontology-result");
+          const layout = root?.querySelector(".ontology-result-layout");
+          return {
+            rendered: !!root,
+            a2uiComponent: root?.dataset.a2uiComponent || "",
+            a2uiRendered: document.querySelector("[data-agent-v2-workspace]")?.dataset.a2uiRendered || "",
+            nodes: root?.querySelectorAll("[data-ontology-node]").length || 0,
+            edges: root?.querySelectorAll("[data-ontology-edge]").length || 0,
+            visibleEdges: [...(root?.querySelectorAll("[data-ontology-edge]") || [])].filter((item) => !item.hidden).length,
+            width: Math.round(root?.getBoundingClientRect().width || 0),
+            height: Math.round(root?.getBoundingClientRect().height || 0),
+            overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+            layoutColumns: layout ? getComputedStyle(layout).gridTemplateColumns : "",
+          };
+        })()`);
+        const before = await inspectOntology();
+        await cdp.eval(`document.querySelector("[data-ontology-node]")?.click()`);
+        await sleep(150);
+        const filtered = await inspectOntology();
+        await screenshot(cdp, args.screenshot);
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+        await navigate(cdp, artifactUrl);
+        await waitUntil(cdp, `!!document.querySelector('.ontology-result')`, 10000);
+        const mobile = await inspectOntology();
+        await screenshot(cdp, args.mobileScreenshot);
+        const ok = before.rendered && before.a2uiComponent === "OntologyExplorer" && before.a2uiRendered === "true" && before.nodes > 0 && before.edges > 0 && filtered.visibleEdges <= before.visibleEdges && !before.overflow && !mobile.overflow && consoleErrors.length === 0;
+        console.log(JSON.stringify({ ok, ontology: { before, filtered, mobile }, consoleErrors, failedRequests, screenshots: [args.screenshot, args.mobileScreenshot] }, null, 2));
+        if (args.strict && !ok) process.exitCode = 1;
+        return;
+      }
       const desktop = await cdp.eval(`(() => {
         const diagram = document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid]');
         const svg = diagram?.querySelector("svg");

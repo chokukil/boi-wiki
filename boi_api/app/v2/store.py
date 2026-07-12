@@ -220,10 +220,12 @@ class MemoryAgentV2Store(AgentV2Store):
         def visible(node: dict[str, Any]) -> bool:
             payload = node.get("payload") or {}
             visibility = str(payload.get("visibility") or "public")
+            allowed_employees = {str(item) for item in payload.get("allowed_employee_ids") or []}
             return bool(
                 include_all
                 or visibility == "public"
                 or (visibility == "private" and payload.get("owner") == employee_id)
+                or (visibility == "private" and employee_id in allowed_employees)
                 or (visibility == "team" and payload.get("team_id") in allowed_teams)
             )
 
@@ -850,10 +852,11 @@ class PostgresAgentV2Store(AgentV2Store):
                         %s
                         OR COALESCE(payload->>'visibility','public') = 'public'
                         OR (payload->>'visibility' = 'private' AND payload->>'owner' = %s)
+                        OR (payload->>'visibility' = 'private' AND COALESCE(payload->'allowed_employee_ids','[]'::jsonb) ? %s)
                         OR (payload->>'visibility' = 'team' AND payload->>'team_id' = ANY(%s))
                       )
                     """,
-                    (node_ids, include_all, employee_id, allowed_teams),
+                    (node_ids, include_all, employee_id, employee_id, allowed_teams),
                 )
                 raw_nodes = cursor.fetchall()
         nodes = [

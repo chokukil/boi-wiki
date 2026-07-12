@@ -29,7 +29,7 @@ from .search import HybridSearchService, record_content_checksum
 from .store import AgentV2Store, now_iso
 
 
-EXTRACTOR_VERSION = "boi-knowledge-compiler/1"
+EXTRACTOR_VERSION = "boi-knowledge-compiler/3"
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)\s]+)\)")
 
 
@@ -63,6 +63,33 @@ class LivingKnowledgeService:
         self.store = store
         self.search = search
         self._ensure_defaults()
+
+    def _runtime_relation_files(self) -> list[Path]:
+        root = self.settings.runtime_root / "task-execution"
+        files: list[Path] = []
+        for name in ("assignments", "assignment-history", "work-records"):
+            folder = root / name
+            if folder.exists():
+                files.extend(path for path in folder.rglob("*") if path.is_file())
+        action_root = self.settings.runtime_root / "actions"
+        if action_root.exists():
+            files.extend(path for path in action_root.rglob("*.jsonl") if path.is_file())
+        return sorted(files)
+
+    def runtime_relation_signature(self) -> str:
+        digest = hashlib.sha256()
+        for path in self._runtime_relation_files():
+            try:
+                stat = path.stat()
+                relative = path.relative_to(self.settings.runtime_root)
+            except OSError:
+                continue
+            digest.update(f"{relative}:{stat.st_size}:{stat.st_mtime_ns}".encode("utf-8"))
+        for record in self.store.list("completion_records", limit=10_000):
+            digest.update(
+                json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+            )
+        return digest.hexdigest()
 
     def _ensure_defaults(self) -> None:
         repo_root = self.settings.content_root.parents[1] if len(self.settings.content_root.parents) > 1 else self.settings.content_root
@@ -244,6 +271,7 @@ class LivingKnowledgeService:
         aliases: dict[str, str] = {}
         nodes: list[dict[str, Any]] = []
         edges: list[dict[str, Any]] = []
+        task_titles: dict[str, str] = {}
 
         for record in records:
             revision = record_content_checksum(record)
@@ -335,13 +363,15 @@ class LivingKnowledgeService:
             stages.extend(item for item in record.metadata.get("tasks") or [] if isinstance(item, dict))
             for index, stage in enumerate(stages):
                 task_key = str(stage.get("task_id") or stage.get("id") or f"task-{index + 1}")
+                task_title = str(stage.get("name") or stage.get("title") or task_key)
+                task_titles.setdefault(task_key, task_title)
                 task_id = _stable_id("task", record.record_id, task_key)
                 nodes.append(
                     {
                         "node_id": task_id,
                         "node_type": "task",
                         "payload": {
-                            "title": str(stage.get("name") or stage.get("title") or task_key),
+                            "title": task_title,
                             "parent_ref": record.record_id,
                             "visibility": record.visibility,
                             "owner": record.owner,
@@ -420,6 +450,281 @@ class LivingKnowledgeService:
                         if target:
                             append_edge(task_id, target, relation, "extracted", revision, metadata={"field": field})
 
+        runtime_records = self.repository.history_records(compiler_principal, include_seed=False)
+        runtime_by_identity: dict[str, KnowledgeRecord] = {}
+        for record in runtime_records:
+            identity = str(record.metadata.get("request_id") or record.metadata.get("task_id") or "").removeprefix("task:")
+            if identity:
+                runtime_by_identity[identity] = record
+            if record.source != "runtime" or "action" not in record.record_id or not record.owner:
+                continue
+            task_id = _stable_id("runtime-task", record.record_id)
+            revision = hashlib.sha256(record.text.encode("utf-8")).hexdigest()
+            nodes.extend(
+                [
+                    {
+                        "node_id": task_id,
+                        "node_type": "task",
+                        "payload": {
+                            "title": record.title,
+                            "url": record.url,
+                            "visibility": "private",
+                            "owner": record.owner,
+                            "allowed_employee_ids": [record.owner],
+                            "status": record.status,
+                            "observed_at": record.timestamp,
+                            "source_ref": record.record_id,
+                            "source_revision": revision,
+                        },
+                    },
+                    {
+                        "node_id": f"person:{record.owner}",
+                        "node_type": "person",
+                        "payload": {
+                            "title": record.owner,
+                            "visibility": "private",
+                            "owner": record.owner,
+                            "allowed_employee_ids": [record.owner],
+                            "source_revision": revision,
+                        },
+                    },
+                ]
+            )
+            append_edge(
+                task_id,
+                f"person:{record.owner}",
+                "assigned_to",
+                "extracted",
+                revision,
+                metadata={"source_ref": record.record_id, "observed_at": record.timestamp},
+            )
+            for field, relation in {
+                "sop_ref": "uses_sop",
+                "workflow_definition_key": "part_of_workflow",
+                "action_key": "uses_action",
+                "event_type": "uses_event",
+            }.items():
+                value = str(record.metadata.get(field) or "")
+                target = self._resolve_target(value, records_by_id, records_by_url, aliases)
+                if target:
+                    append_edge(task_id, target, relation, "extracted", revision, metadata={"source_ref": record.record_id})
+
+        assignment_root = self.settings.runtime_root / "task-execution" / "assignments"
+        for path in sorted(assignment_root.glob("*.json")) if assignment_root.exists() else []:
+            try:
+                assignment = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(assignment, dict):
+                continue
+            task_key = str(assignment.get("task_key") or path.stem)
+            task_identity = str(assignment.get("task_identity") or "")
+            record = runtime_by_identity.get(task_identity)
+            assignees = list(dict.fromkeys(str(item) for item in assignment.get("assignee_employee_ids") or [] if str(item)))
+            reviewers = list(dict.fromkeys(str(item) for item in assignment.get("reviewer_employee_ids") or [] if str(item)))
+            allowed_employees = list(dict.fromkeys([*assignees, *reviewers]))
+            if not allowed_employees:
+                continue
+            revision = hashlib.sha256(json.dumps(assignment, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+            task_id = f"runtime-task:{task_key}"
+            title = str((record.title if record else "") or assignment.get("title") or task_identity or "현재 Task")
+            nodes.append(
+                {
+                    "node_id": task_id,
+                    "node_type": "task",
+                    "payload": {
+                        "title": title,
+                        "url": record.url if record else "",
+                        "visibility": "private",
+                        "owner": assignees[0] if assignees else reviewers[0],
+                        "allowed_employee_ids": allowed_employees,
+                        "status": record.status if record else "assigned",
+                        "task_identity": task_identity,
+                        "source_revision": revision,
+                        "observed_at": str(assignment.get("updated_at") or (record.timestamp if record else "")),
+                    },
+                }
+            )
+            for employee_id in allowed_employees:
+                person_id = f"person:{employee_id}"
+                nodes.append(
+                    {
+                        "node_id": person_id,
+                        "node_type": "person",
+                        "payload": {
+                            "title": employee_id,
+                            "visibility": "private",
+                            "owner": employee_id,
+                            "allowed_employee_ids": allowed_employees,
+                            "source_revision": revision,
+                        },
+                    }
+                )
+            for employee_id in assignees:
+                append_edge(task_id, f"person:{employee_id}", "assigned_to", "declared", revision, metadata={"source_ref": task_id})
+            for employee_id in reviewers:
+                append_edge(task_id, f"person:{employee_id}", "reviewed_by", "declared", revision, metadata={"source_ref": task_id})
+            for team_id in assignment.get("related_team_ids") or []:
+                team_ref = str(team_id).strip()
+                if not team_ref:
+                    continue
+                team_node_id = f"team:{team_ref}"
+                nodes.append(
+                    {
+                        "node_id": team_node_id,
+                        "node_type": "team",
+                        "payload": {
+                            "title": team_ref,
+                            "visibility": "private",
+                            "owner": assignees[0] if assignees else reviewers[0],
+                            "allowed_employee_ids": allowed_employees,
+                            "team_id": team_ref,
+                            "source_revision": revision,
+                        },
+                    }
+                )
+                append_edge(task_id, team_node_id, "related_team", "declared", revision, metadata={"source_ref": task_id})
+
+            records_path = self.settings.runtime_root / "task-execution" / "work-records" / f"{task_key}.jsonl"
+            if records_path.exists():
+                for line in records_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    try:
+                        work_record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    actor = str(work_record.get("actor_employee_id") or "")
+                    if not actor:
+                        continue
+                    append_edge(
+                        task_id,
+                        f"person:{actor}",
+                        "performed_by",
+                        "human_verified",
+                        str(work_record.get("record_id") or revision),
+                        metadata={
+                            "source_ref": task_id,
+                            "recorded_at": str(work_record.get("recorded_at") or ""),
+                            "record_id": str(work_record.get("record_id") or ""),
+                        },
+                    )
+
+        for completion in self.store.list("completion_records", limit=10_000):
+            task_ref = str(completion.get("task_ref") or "")
+            employee_id = str(completion.get("employee_id") or "")
+            if not task_ref or not employee_id:
+                continue
+            task_id = task_ref if task_ref.startswith(("task:", "runtime-task:")) else f"task:{task_ref}"
+            revision = str(completion.get("completion_id") or completion.get("created_at") or "")
+            clean_task_ref = task_ref.removeprefix("task:").removeprefix("runtime-task:")
+            completion_title = str(completion.get("task_title") or completion.get("title") or "").strip()
+            if not completion_title or len(completion_title) > 120 or "완료된 모습" in completion_title:
+                completion_title = task_titles.get(clean_task_ref) or re.sub(r"[_\-.]+", " ", clean_task_ref).strip()
+            nodes.append(
+                {
+                    "node_id": task_id,
+                    "node_type": "task",
+                    "payload": {
+                        "title": completion_title or "완료한 Task",
+                        "visibility": "private",
+                        "owner": employee_id,
+                        "allowed_employee_ids": [employee_id],
+                        "recorded_at": str(completion.get("created_at") or ""),
+                        "source_revision": revision,
+                    },
+                }
+            )
+            nodes.append(
+                {
+                    "node_id": f"person:{employee_id}",
+                    "node_type": "person",
+                    "payload": {
+                        "title": employee_id,
+                        "visibility": "private",
+                        "owner": employee_id,
+                        "allowed_employee_ids": [employee_id],
+                        "source_revision": revision,
+                    },
+                }
+            )
+            append_edge(
+                task_id,
+                f"person:{employee_id}",
+                "completed_by",
+                "human_verified",
+                revision,
+                metadata={"source_ref": str(completion.get("completion_id") or ""), "recorded_at": str(completion.get("created_at") or "")},
+            )
+
+        identity_revision = hashlib.sha256(
+            json.dumps(
+                {
+                    "employee_id": principal.employee_id,
+                    "display_name": principal.display_name,
+                    "teams": sorted(principal.teams),
+                    "roles": sorted(principal.roles),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        person_id = f"person:{principal.employee_id}"
+        nodes.append(
+            {
+                "node_id": person_id,
+                "node_type": "person",
+                "payload": {
+                    "title": principal.display_name or principal.employee_id,
+                    "employee_id": principal.employee_id,
+                    "visibility": "private",
+                    "owner": principal.employee_id,
+                    "allowed_employee_ids": [principal.employee_id],
+                    "source_revision": identity_revision,
+                },
+            }
+        )
+        role_titles = {
+            "boi.viewer": "BoI 지식 사용자",
+            "boi.editor": "BoI 지식 편집자",
+            "boi.workflow_runner": "업무 흐름 수행자",
+            "boi.action_invoker": "Action 요청자",
+            "boi.reviewer": "지식 검토자",
+            "boi.promoter": "공유 지식 검토 요청자",
+            "boi.admin": "BoI 운영 관리자",
+        }
+        for team_id in principal.teams:
+            team_node_id = f"team:{team_id}"
+            nodes.append(
+                {
+                    "node_id": team_node_id,
+                    "node_type": "team",
+                    "payload": {
+                        "title": team_id,
+                        "visibility": "private",
+                        "owner": principal.employee_id,
+                        "allowed_employee_ids": [principal.employee_id],
+                        "team_id": team_id,
+                        "source_revision": identity_revision,
+                    },
+                }
+            )
+            append_edge(person_id, team_node_id, "member_of", "declared", identity_revision, metadata={"source_ref": person_id})
+        for role_id in principal.roles:
+            role_node_id = f"role:{role_id}"
+            nodes.append(
+                {
+                    "node_id": role_node_id,
+                    "node_type": "role",
+                    "payload": {
+                        "title": role_titles.get(role_id, role_id),
+                        "visibility": "private",
+                        "owner": principal.employee_id,
+                        "allowed_employee_ids": [principal.employee_id],
+                        "source_revision": identity_revision,
+                    },
+                }
+            )
+            append_edge(person_id, role_node_id, "has_role", "declared", identity_revision, metadata={"source_ref": person_id})
+
         unique_nodes = {str(item["node_id"]): item for item in nodes}
         unique_edges = {str(item["edge_id"]): item for item in edges}
         previous = self.store.get("manifests", "knowledge_graph") or {}
@@ -434,6 +739,7 @@ class LivingKnowledgeService:
         manifest = {
             "compiler_version": EXTRACTOR_VERSION,
             "source_signature": self.repository.source_signature(),
+            "runtime_relation_signature": self.runtime_relation_signature(),
             "nodes": len(unique_nodes),
             "edges": len(unique_edges),
             "node_ids": sorted(current_nodes),
@@ -524,7 +830,11 @@ class LivingKnowledgeService:
         if not source_ref:
             raise HTTPException(status_code=422, detail="관계를 살펴볼 지식을 선택해주세요.")
         graph_manifest = self.store.get("manifests", "knowledge_graph") or {}
-        if graph_manifest.get("source_signature") != self.repository.source_signature():
+        if (
+            graph_manifest.get("compiler_version") != EXTRACTOR_VERSION
+            or graph_manifest.get("source_signature") != self.repository.source_signature()
+            or graph_manifest.get("runtime_relation_signature") != self.runtime_relation_signature()
+        ):
             self.compile_graph(principal)
         graph = self.store.ontology_neighbors(
             [source_ref],
@@ -626,7 +936,11 @@ class LivingKnowledgeService:
 
     def query(self, principal: Principal, plan: GraphQueryPlan) -> dict[str, Any]:
         manifest = self.store.get("manifests", "knowledge_graph") or {}
-        if manifest.get("source_signature") != self.repository.source_signature():
+        if (
+            manifest.get("compiler_version") != EXTRACTOR_VERSION
+            or manifest.get("source_signature") != self.repository.source_signature()
+            or manifest.get("runtime_relation_signature") != self.runtime_relation_signature()
+        ):
             self.compile_graph(principal)
         graph = self.store.ontology_neighbors(
             plan.focal_entities,
@@ -636,8 +950,16 @@ class LivingKnowledgeService:
             team_ids=principal.teams,
             include_all=principal.is_admin,
         )
-        nodes = list(graph.get("nodes") or [])
-        edges = list(graph.get("edges") or [])
+        nodes = list({str(item.get("node_id") or ""): item for item in graph.get("nodes") or [] if str(item.get("node_id") or "")}.values())
+        edge_by_id: dict[str, dict[str, Any]] = {}
+        for item in graph.get("edges") or []:
+            edge_id = str(item.get("edge_id") or "")
+            if not edge_id:
+                continue
+            current = edge_by_id.get(edge_id)
+            if current is None or int(item.get("depth") or 1) < int(current.get("depth") or 1):
+                edge_by_id[edge_id] = item
+        edges = list(edge_by_id.values())
         time_from = _parse_time(plan.time_from)
         time_to = _parse_time(plan.time_to)
         if time_from or time_to:

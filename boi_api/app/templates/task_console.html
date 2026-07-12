@@ -203,7 +203,7 @@
             <strong>무엇을 확인하면 될까요?</strong>
             <span>이 Task를 마치기 전에 확인할 자료와 현재 확보 상태입니다.</span>
           </div>
-          <div class="task-console-evidence-grid task-console-required-evidence">
+          <div class="task-console-evidence-grid task-console-required-evidence" data-a2ui-component="EvidencePicker" data-a2ui-catalog="boi-a2ui/v1">
             {% for item in completion.evidence %}
             <section class="{% if item.available %}available{% endif %}">
               <span>{{ item.status_label }}</span>

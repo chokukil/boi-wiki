@@ -7,7 +7,7 @@ import yaml
 
 from boi_api.app.task_execution import TaskExecutionStore
 from boi_api.app.v2.a2ui import ALLOWED_COMPONENTS, BOI_CATALOG_ID, compile_surface, validate_surface
-from boi_api.app.v2.models import AgentTurnResponse, AnswerBlock
+from boi_api.app.v2.models import AgentTurnResponse, AnswerBlock, ArtifactRef
 from boi_api.app.v2.store import MemoryAgentV2Store
 from fastapi.testclient import TestClient
 
@@ -135,6 +135,31 @@ def test_a2ui_compiler_only_emits_trusted_catalog_components_and_keeps_fallback(
     assert {item["component"] for item in surface["components"]} <= ALLOWED_COMPONENTS
     assert "createSurface" in surface["jsonl"]
     assert "updateComponents" in surface["jsonl"]
+
+
+@pytest.mark.parametrize(
+    ("presentation", "component"),
+    [("table", "DataTable"), ("timeline", "Timeline"), ("mermaid", "MermaidArtifact"), ("explorer", "OntologyExplorer")],
+)
+def test_ontology_result_uses_the_requested_dynamic_presentation(presentation, component):
+    response = AgentTurnResponse(
+        run_id=f"run-{presentation}",
+        turn_id=f"turn-{presentation}",
+        status="completed",
+        capability_id="knowledge.search",
+        answer=AnswerBlock(summary="업무 관계", markdown="검증된 업무 관계"),
+        artifact_refs=[
+            ArtifactRef(
+                artifact_id="artifact-graph",
+                artifact_type="ontology_graph",
+                title="업무 관계",
+                metadata={"presentation": presentation},
+            )
+        ],
+    )
+
+    surface = compile_surface(response)
+    assert component in {item["component"] for item in surface["components"]}
 
 
 @pytest.mark.parametrize(

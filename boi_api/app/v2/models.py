@@ -198,6 +198,13 @@ class StarterSuggestion(BaseModel):
     featured: bool = False
     context_basis: str = Field(default="knowledge", max_length=80)
     subject_title: str = Field(default="", max_length=160)
+    result_kind: Literal[
+        "answer", "table", "timeline", "mermaid", "explorer", "work_form", "confirmation"
+    ] = "answer"
+    graph_query_kind: Literal[
+        "", "neighbors", "path", "workflow", "impact", "lineage",
+        "responsibility", "timeline", "compare", "tour",
+    ] = ""
 
 
 class StarterSuggestionSetRequest(BaseModel):
@@ -291,6 +298,23 @@ class ContextManifest(BaseModel):
     provenance: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
+class GraphQueryDraft(BaseModel):
+    enabled: bool = False
+    query_kind: Literal[
+        "neighbors", "path", "workflow", "impact", "lineage",
+        "responsibility", "timeline", "compare", "tour",
+    ] = "neighbors"
+    focal_mentions: list[str] = Field(default_factory=list, max_length=20)
+    target_mentions: list[str] = Field(default_factory=list, max_length=20)
+    node_kinds: list[str] = Field(default_factory=list, max_length=30)
+    relation_kinds: list[str] = Field(default_factory=list, max_length=30)
+    direction: Literal["outgoing", "incoming", "both"] = "both"
+    depth: int = Field(default=2, ge=1, le=6)
+    time_from: str = ""
+    time_to: str = ""
+    presentation: Literal["auto", "list", "table", "timeline", "mermaid", "explorer"] = "auto"
+
+
 class WorkIntent(BaseModel):
     goal: str
     resolved_goal: str = ""
@@ -301,7 +325,9 @@ class WorkIntent(BaseModel):
     target_ref: str = ""
     scope: Literal["auto", "current", "wiki", "selected"] = "auto"
     desired_outcome: str = "answer"
-    presentation_mode: Literal["prose", "mermaid", "table", "artifact"] = "prose"
+    presentation_mode: Literal["prose", "mermaid", "table", "timeline", "explorer", "artifact"] = "prose"
+    work_view: Literal["none", "current", "responsibility", "combined"] = "none"
+    graph_query_draft: GraphQueryDraft | None = None
     context_refs: list[str] = Field(default_factory=list, max_length=20)
     result_purpose: Literal["explain", "compare", "design", "transform", "execute"] = "explain"
     requested_asset_kinds: list[WorkAssetKind] = Field(default_factory=list, max_length=9)
@@ -495,6 +521,7 @@ class AgentTurnResponse(BaseModel):
     context_usage: dict[str, Any] = Field(default_factory=dict)
     presentation_plan: dict[str, Any] = Field(default_factory=dict)
     a2ui_surface_ref: str = ""
+    graph_result_ref: str = ""
 
 
 class WorkSessionCreateRequest(BaseModel):
