@@ -246,7 +246,7 @@ flowchart LR
   SURFACE --> MUTATION["preview·confirmation·Harness"]
 ```
 
-Web client는 저장된 surface를 다시 조회하고 허용된 component registry로 실제 DOM을 만든다. 표, Timeline, Mermaid, Ontology Explorer, WorkRecordForm과 EvidencePicker가 1차 catalog다. surface validation과 fallback 상태는 Advanced `연결 상태`의 관리자용 접힌 진단에서만 확인하며 일반 사용자에게 protocol 이름을 노출하지 않는다.
+Web client는 저장된 surface를 다시 조회하고 허용된 component registry로 실제 DOM을 만든다. 표, Timeline, Mermaid, Ontology Explorer, WorkRecordForm, EvidencePicker와 Confirmation이 1차 catalog다. Confirmation은 기존 plan·Harness·confirmation API만 호출하며 relation presentation hint가 work routine handler를 가로채지 못한다. surface validation과 fallback 상태는 Advanced `연결 상태`의 관리자용 접힌 진단에서만 확인하며 일반 사용자에게 protocol 이름을 노출하지 않는다.
 
 Ontology Explorer는 Agent와 `/knowledge-graph`가 같은 Graphology·Sigma renderer를 사용한다. Agent Expanded에서는 관계 artifact에 34:66 분할을 적용하고, 680px보다 좁은 첫 canvas는 결과 집중 보기로 전환한다. 선택 상세는 canvas 옆 열을 만들지 않고 아래쪽 inspector로 열어 그래프 폭을 보존한다. `PetSurfaceState`는 artifact별 선택 node, inspector, camera와 focus mode를 저장한다. Compact에서는 Sigma instance를 만들지 않으며 배경으로 내려간 renderer도 camera를 저장한 뒤 해제한다.
 

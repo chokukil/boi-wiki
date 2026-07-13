@@ -200,7 +200,7 @@ python scripts/check_openkb_release_gate.py \
   --output .tmp/openkb-release-gate.json
 ```
 
-첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질, 네 번째는 15개 실제 브라우저 journey와 네 viewport를 검증한다. 마지막 명령은 실제 PDF·Office 원본에서 OpenKB private 후보가 생성되는지 확인한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
+첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질, 네 번째는 17개 실제 브라우저 journey와 네 viewport를 검증한다. 브라우저 여정은 9개 관계 보기, guarded Confirmation, Harness release·rollback, Task 배정 충돌과 WorkRecord 저장을 실제로 조작한다. 마지막 명령은 실제 PDF·Office 원본에서 OpenKB private 후보가 생성되는지 확인한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
 
 외부 Adapter release gate는 core acceptance와 분리한다. 운영자가 승인한 격리 tool 버전과 실제 export를 사용하고 mock CLI 통과를 release 통과로 계산하지 않는다.
 

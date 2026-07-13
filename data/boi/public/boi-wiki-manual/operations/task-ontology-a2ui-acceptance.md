@@ -5,7 +5,7 @@ type: boi/manual
 title: Task·Ontology·동적 화면 검증 기준
 description: Task 수행, 업무 관계 탐색과 동적 결과 화면을 실제 업무에 사용하기 전에 확인하는 acceptance 기준
 tags: [BoIWiki, Task, Ontology, A2UI, Acceptance, Evidence]
-timestamp: 2026-07-13T20:10:00+09:00
+timestamp: 2026-07-13T21:31:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
 visibility: public
 classification: internal
@@ -33,7 +33,7 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-13T20:10:00+09:00
+  reviewed_at: 2026-07-13T21:31:00+09:00
   review_status: reviewed
 ---
 
@@ -88,19 +88,19 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 
 # 현재 검증 상태
 
-2026-07-13 기준으로 50개 handler, 15개 실제 browser journey와 production-like Gemma 의미 평가를 실행했다. 브라우저 검증은 숨겨진 fixture나 HTML 문자열 존재를 성공으로 세지 않고 실제 클릭, 입력, canvas pixel, 원문 이동과 상태 복원을 확인한다.
+2026-07-13 기준으로 50개 handler, 17개 실제 browser journey와 production-like Gemma 의미 평가를 실행했다. 브라우저 검증은 숨겨진 fixture나 HTML 문자열 존재를 성공으로 세지 않고 실제 클릭, 입력, canvas pixel, 원문 이동과 상태 복원을 확인한다.
 
 | 검증 | 결과 |
 |---|---:|
 | 결정적 시나리오 | 50/50 |
-| clean 전체 회귀 | 814 passed · 22분 57초 · 격리 TMP runtime |
-| 브라우저 journey | 15/15 · 4 viewport · 예상된 409 외 console 오류 0 |
+| clean 전체 회귀 | 815 passed · 23분 26초 · 격리 TMP runtime |
+| 브라우저 journey | 17/17 · 4 viewport · 예상된 409 외 console 오류 0 |
 | Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 평가 지표 100% · GPT-5.5 미사용 |
-| Snapshot cold p95 / warm p50 | 289.74ms / 17.27ms |
-| 1-hop 관계 p95 | 15.16ms |
-| 4-hop path p95 | 12.05ms |
-| 첫 동적 surface compile p95 | 0.45ms |
-| 생성 graph artifact final p95 | 440.61ms |
+| Snapshot cold p95 / warm p50 | 260.32ms / 14.70ms |
+| 1-hop 관계 p95 | 17.20ms |
+| 4-hop path p95 | 11.37ms |
+| 첫 동적 surface compile p95 | 0.56ms |
+| 생성 graph artifact final p95 | 464.27ms |
 | Graphify 0.9.13 실제 CLI | 90 node·177 edge 수입 후 rollback 통과 |
 | OpenKB 0.4.4 실제 CLI | 실제 PDF에서 private 후보 4개 생성 · navigation 0 · 정본 변경 0 |
 | Graph UX | 1440×1000·1180×850·949×1151·390×844, canvas 폭 100%, 하단 inspector·Compact 복원 통과 |
@@ -110,9 +110,11 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 
 실모델 평가는 사용자가 띄운 Gemma만 사용한다. `업무 이벤트와 SOP 관계 설명 → 방금 관계만 Mermaid` 멀티턴에서 직전 citation보다 넓은 검색 후보를 다시 해석해 되묻는 결함을 발견했고, 실제 citation 집합을 후속 표현 변환의 경계로 사용하도록 수정한 뒤 해당 시나리오가 통과했다. 실패와 수정 이력은 날짜별 Team validation 문서에 남기며, 이전의 형식 검사 결과는 역사적 draft로 유지한다.
 
-초기 실행에서는 OpenKB의 `response_format: json_object`가 LM Studio endpoint와 맞지 않았고 생성 artifact p95도 18.71초였다. compatibility gateway가 요청을 일반 JSON 호출로 변환한 뒤 schema를 검증하고, GraphQuery 결과를 추가 모델 호출 없이 deterministic compiler로 artifact화하도록 수정했다. 최종 실행에서는 OpenKB와 440.61ms artifact gate가 모두 통과했다.
+초기 실행에서는 OpenKB의 `response_format: json_object`가 LM Studio endpoint와 맞지 않았고 생성 artifact p95도 18.71초였다. compatibility gateway가 요청을 일반 JSON 호출로 변환한 뒤 schema를 검증하고, GraphQuery 결과를 추가 모델 호출 없이 deterministic compiler로 artifact화하도록 수정했다. 최종 실행에서는 OpenKB와 464.27ms artifact gate가 모두 통과했다.
 
-일반 장문 답변의 모델 처리 시간은 이번 artifact gate와 분리해 기록한다. 최종 Gemma 의미 평가에서는 답변 종류에 따라 20~45초가 걸렸으므로 운영 성능 개선 대상이다. 이 지연을 숨기거나 440.61ms artifact 수치로 대체하지 않는다.
+브라우저에서는 9개 관계 질의를 각각 화면에서 전환하고, Timeline이 실제 시간 payload를 표시하는지 확인했다. 자동 확인 starter는 graph artifact가 아니라 guarded Confirmation을 열며, 확인 전에는 routine을 만들지 않는다. Harness는 rehearsal뿐 아니라 사람 release와 rollback까지 실제 API와 감사 이력으로 검증했다.
+
+일반 장문 답변의 모델 처리 시간은 이번 artifact gate와 분리해 기록한다. 최종 Gemma 의미 평가에서는 답변 종류에 따라 20~45초가 걸렸으므로 운영 성능 개선 대상이다. 이 지연을 숨기거나 464.27ms artifact 수치로 대체하지 않는다.
 
 새 component, relation, Task mode 또는 Adapter 계약을 추가하면 해당 handler와 browser journey를 함께 추가하고 이 문서를 다시 검증 상태로 전환한다.
 
