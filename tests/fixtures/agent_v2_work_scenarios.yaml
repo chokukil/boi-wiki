@@ -102,7 +102,7 @@ scenarios:
     page_ref: "/event-types"
     expected_capability: knowledge.search
     expected_operations: [understand, connect]
-    expected_artifact_type: ontology_graph
+    expected_artifact_type: mermaid_diagram
     expected_presentation: mermaid
     require_grounding: true
 

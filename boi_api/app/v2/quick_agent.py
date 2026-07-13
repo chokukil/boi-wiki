@@ -156,7 +156,14 @@ class QuickAgentRuntime:
             "properties": {
                 "capability_id": {"type": "string", "enum": capability_ids},
                 "asset_kind": {"type": "string", "enum": list(self._asset_kinds)},
-                "operation": {"type": "string", "enum": list(self._operations)},
+                "operation": {
+                    "type": "string",
+                    "enum": list(self._operations),
+                    "description": (
+                        "Semantic work operation. Use connect for relationships, dependencies, paths, or flow between "
+                        "multiple assets even when the user asks to explain them; understand is for one focal item."
+                    ),
+                },
                 "operation_plan": {
                     "type": "array",
                     "minItems": 1,
@@ -431,8 +438,10 @@ class QuickAgentRuntime:
             "You are the BoI Wiki work-intent planner. Interpret the complete workplace goal semantically, never by isolated "
             "keywords, and return the schema exactly. The current page and active artifact are anchors, not search boundaries; "
             "use the accessible Wiki as a whole. Choose only a registered capability.\n"
-            "Operations: understand explains one focal item; compare contrasts items or cases; connect explains relationships "
-            "or flow and is read-only; create makes a new private draft; refine changes an existing artifact through a proposal; "
+            "Operations: understand explains one focal item; compare contrasts items or cases; connect explains relationships, "
+            "dependencies, paths, or flow between two or more assets and is read-only. When the requested result is how assets "
+            "connect, choose connect even when the user also says explain. create makes a new private draft; refine changes an "
+            "existing artifact through a proposal; "
             "validate checks an artifact; test checks or dry-runs without production mutation; run invokes a registered Action; "
             "observe inspects runtime work; complete evaluates a specific Task; capture makes an evidence-backed private candidate; "
             "promote requests reviewed sharing. Choose run, complete, or promote only when explicitly requested. A how-to question "
@@ -467,7 +476,11 @@ class QuickAgentRuntime:
             "values into every source_refs field. Keep the conclusion short, use one section with no more than three outcome "
             "items, and suggest no more than one related question. Omit "
             "the content by returning grounded_answer={} for drafts, mutations, current/combined work views, diagrams, or when "
-            "the hints are insufficient. The empty object is valid and must not be filled with placeholder fields."
+            "the hints are insufficient. The empty object is valid and must not be filled with placeholder fields.\n"
+            "Semantic examples: explaining the core of one guide is knowledge.search + understand; explaining how SOP, Event, "
+            "Action, people, evidence, or outcomes connect is knowledge.search + connect; comparing a few known cases is "
+            "cases.similar + compare; an explicit deep, durable investigation across multiple SOPs or sources is deep.research "
+            "+ compare. These examples clarify meaning only; still resolve the actual request and available context."
         )
         prompt = json.dumps(
             {

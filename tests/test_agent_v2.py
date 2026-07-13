@@ -777,6 +777,33 @@ class SplitOnlyFollowupModel(MultiTurnMermaidModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
+class InboxBiasedMermaidModel(MultiTurnMermaidModel):
+    """Models a planner that over-weights an Inbox page on a visual follow-up."""
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+            payload = json.loads(prompt)
+            request = str(payload.get("request") or "")
+            if "머메이드" in request:
+                return {
+                    "capability_id": "work.inbox",
+                    "asset_kind": "runtime",
+                    "operation": "connect",
+                    "scope": "current",
+                    "resolved_goal": "직전 답변의 관계를 Mermaid로 표시",
+                    "retrieval_query": "직전 답변의 관계",
+                    "presentation_mode": "mermaid",
+                    "work_view": "current",
+                    "result_purpose": "explain",
+                    "requested_asset_kinds": ["runtime"],
+                    "artifact_actions": [],
+                    "needs_clarification": False,
+                    "confidence": 0.94,
+                }
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
 class RepairingScopedMermaidModel(MultiTurnMermaidModel):
     def __init__(self):
         super().__init__()
@@ -2143,6 +2170,39 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     assert timeline[-2]["display_text"] == "머메이드 차트로 그려줘"
     assert timeline[-1]["artifact_refs"][0]["artifact_id"] == artifact["artifact_id"]
     assert model.planner_payloads[-1]["conversation_context"]["recent_messages"]
+
+
+def test_multiturn_visual_followup_uses_prior_citations_even_when_planner_prefers_inbox(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = InboxBiasedMermaidModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    first = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="BoI Wiki의 RAG 검색 방식과 근거 연결 흐름을 설명해줘",
+            page_ref="/docs/boi%3Apublic%3Aguide",
+        ),
+    )
+
+    second = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="방금 설명한 관계만 머메이드로 보여줘",
+            page_ref="/inbox",
+            work_session_id=first.work_session_id,
+        ),
+    )
+
+    assert second.capability_id == "knowledge.search"
+    assert second.work_intent is not None
+    assert second.work_intent.operation == WorkOperation.connect
+    assert second.work_intent.work_view == "none"
+    assert second.work_intent.context_refs
+    assert second.grounding_status == "grounded"
+    assert second.artifact_refs[0].artifact_type == "ontology_graph"
 
 
 def test_mermaid_conversion_actions_require_explicit_transform_intent(

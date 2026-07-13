@@ -81,12 +81,15 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     artifact_type = str(scenario.get("expected_artifact_type") or "")
     artifact_ok = not artifact_type or artifact_type in actual_artifact_types
     expected_presentation = str(scenario.get("expected_presentation") or "")
+    presentation_by_artifact_type = {
+        "mermaid_diagram": "mermaid",
+    }
     actual_presentations = {
         str(
             (item.get("metadata") or {}).get("presentation")
             or (item.get("payload") or {}).get("presentation")
             or item.get("presentation")
-            or ""
+            or presentation_by_artifact_type.get(str(item.get("artifact_type") or ""), "")
         )
         for item in artifacts
     }

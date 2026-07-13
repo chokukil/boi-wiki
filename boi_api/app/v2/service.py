@@ -385,7 +385,7 @@ DRAFT_SCHEMAS: dict[str, dict[str, Any]] = {
 
 
 class AgentV2Service:
-    SEMANTIC_ROUTE_CACHE_VERSION = "14"
+    SEMANTIC_ROUTE_CACHE_VERSION = "15"
     SEMANTIC_ROUTE_CACHE_TTL_SECONDS = 900
     STARTER_SUGGESTION_VERSION = "2"
 
@@ -5057,8 +5057,9 @@ class AgentV2Service:
                 break
         if (
             preliminary_intent.presentation_mode == "mermaid"
-            and preliminary_intent.result_purpose == "explain"
             and not preliminary_intent.artifact_actions
+            and preliminary_intent.operation
+            in {WorkOperation.understand, WorkOperation.compare, WorkOperation.connect}
             and prior_answer_refs
         ):
             # A read-only visual follow-up is a presentation change over the last
@@ -5066,6 +5067,10 @@ class AgentV2Service:
             # resolving broad business nouns as a new graph query.
             preliminary_intent = preliminary_intent.model_copy(
                 update={
+                    "asset_kind": WorkAssetKind.knowledge,
+                    "operation": WorkOperation.connect,
+                    "operation_plan": [WorkOperation.understand, WorkOperation.connect],
+                    "work_view": "none",
                     "context_refs": list(dict.fromkeys(prior_answer_refs))[:20],
                     "graph_query_draft": GraphQueryDraft(
                         enabled=True,
@@ -5076,6 +5081,17 @@ class AgentV2Service:
                     "needs_clarification": False,
                 }
             )
+            # A visual follow-up over the preceding grounded answer is a
+            # knowledge presentation, even when the planner over-weighted the
+            # current Inbox page. Keep the correction tied to the typed
+            # presentation contract and verified citation boundary.
+            capability_id = "knowledge.search"
+            definition = self.registry.get(capability_id)
+            route = {
+                **route,
+                "capability_id": capability_id,
+                "source": f"{route.get('source') or 'semantic'}:grounded_visual_followup",
+            }
         if (
             bool(request.input_delta.get("dry_run"))
             and preliminary_intent.asset_kind.value == "action"
