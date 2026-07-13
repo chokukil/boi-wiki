@@ -87,7 +87,7 @@ Explorer는 전체 구조를 훑을 때 사용하고, 실제 질문이나 업무
 BoI Agent는 별도 챗봇이 아니라 BoI Wiki의 공통 작업 표면이다. 작은 Pet과 `/agent` 전체 화면은 같은 WorkSession, source, citation, artifact와 진행 상태를 사용한다.
 
 - 짧은 질문과 현재 문서 설명은 Compact에서 처리한다.
-- Mermaid, SOP, Task, 비교표 같은 결과가 생기면 Expanded 결과 영역에서 확인한다.
+- Mermaid, 관계 탐색, SOP, Task, 비교표 같은 결과가 생기면 Expanded 결과 영역에서 확인한다.
 - 긴 조사와 다수 자료 분석은 Deep Work로 넘기되 결과는 항상 검토 가능한 초안으로 남긴다.
 - 후속 질문은 같은 session의 대상, 근거와 artifact를 이어받는다.
 - 실제 게시, 고위험 Action과 공유 정본 변경은 preview와 확인을 다시 거친다.
@@ -99,6 +99,8 @@ Expanded 또는 Fullpage의 `⋯` 메뉴에서 `나만의 BoI Agent 만들기`�
 자세한 사용법은 [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)를 따른다.
 
 역할·팀·배정·검증된 수행 기록을 묻는 경우에는 관계 read model을 사용한다. 현재 Inbox와 공식 역할을 구분하고, 결과 규모에 따라 표, 시간 흐름, Mermaid 또는 관계 탐색 화면을 고른다. [업무 관계와 동적 결과 활용 가이드](/docs/boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results)에서 예시를 확인한다.
+
+관계 탐색에서는 그래프가 결과 영역의 전체 폭을 사용한다. 노드를 선택하면 설명과 관계 근거가 아래쪽에 열리고, `Esc`로 선택 정보와 결과 집중 보기를 순서대로 닫는다. 같은 작업을 다시 열면 선택 노드와 보던 위치가 복원된다.
 
 # BoI Inbox와 Task
 

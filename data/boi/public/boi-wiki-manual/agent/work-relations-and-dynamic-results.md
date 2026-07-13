@@ -80,7 +80,7 @@ flowchart LR
 - 판단·조치·근거를 남겨야 하면 **업무 기록 입력**을 연다.
 - 외부 부작용이 있는 Action은 **실행 전 확인**을 거친다.
 
-관계 탐색은 처음에 한 단계 이웃만 연다. 항목을 선택할 때 필요한 주변 관계만 추가하므로 큰 Wiki 전체를 한 번에 브라우저로 보내지 않는다.
+관계 탐색은 처음에 한 단계 이웃만 연다. 항목을 선택할 때 필요한 주변 관계만 추가하므로 큰 Wiki 전체를 한 번에 브라우저로 보내지 않는다. 그래프는 결과 폭을 모두 사용하고, 선택 항목의 설명과 근거는 오른쪽 고정 열이 아니라 아래쪽 정보 영역에 연다. 정보 영역을 닫으면 그래프가 전체 높이를 다시 사용한다.
 
 동적 결과는 저장만 하는 JSON이 아니다. BoI Agent가 검증된 surface를 다시 읽어 관계표, 시간 흐름, 흐름 그림 또는 관계 탐색 DOM을 만든다. Task 수행 화면도 같은 계약의 `업무 기록 입력`과 `근거 선택`을 사용한다. surface가 손상됐거나 client가 지원하지 않으면 같은 의미의 기존 typed 화면으로 복구한다.
 
@@ -88,13 +88,13 @@ flowchart LR
 
 관계를 더 넓게 살펴볼 때만 탐색 화면을 연다. 처음부터 전체 Wiki를 그리지 않고 현재 대상을 중심으로 한 단계씩 확장한다.
 
-![검증된 업무 관계를 한 단계씩 확장하는 BoI Agent 관계 탐색 화면](../_media/browser/current-guide/20260713-boi-agent-ontology-explorer-1440x1000.png)
+![검증된 업무 관계를 한 단계씩 확장하는 관계 탐색 화면](../_media/browser/current-guide/20260713-ontology-explorer-1440x1000.png)
 
 모바일에서는 대화와 결과를 탭으로 나누고, 같은 관계와 근거를 유지한다.
 
 ![모바일에서 역할 관계표를 확인하는 BoI Agent 화면](../_media/browser/current-guide/20260713-boi-agent-role-table-390x844.png)
 
-![모바일에서 필요한 관계만 확장하는 BoI Agent 관계 탐색 화면](../_media/browser/current-guide/20260713-boi-agent-ontology-explorer-390x844.png)
+![모바일에서 필요한 관계만 확장하는 관계 탐색 화면](../_media/browser/current-guide/20260713-ontology-explorer-390x844.png)
 
 # 근거를 확인하는 방법
 

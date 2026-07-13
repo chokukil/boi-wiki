@@ -66,9 +66,9 @@ flowchart LR
 
 BoI Wiki의 `연결 관계`에서 문서, 사람, 팀, SOP, Workflow, Task, Event, Action, Skill, 근거와 결과를 검색한다. 처음에는 선택한 항목의 한 단계 이웃만 연다. 항목을 선택하면 필요한 주변 관계만 더 불러오므로 전체 Wiki를 한 번에 브라우저로 보내지 않는다.
 
-![현재 항목의 검증된 한 단계 관계를 탐색하는 화면](../_media/browser/current-guide/20260713-boi-agent-ontology-explorer-1440x1000.png)
+![현재 항목의 검증된 한 단계 관계를 전체 폭으로 탐색하는 화면](../_media/browser/current-guide/20260713-ontology-explorer-1440x1000.png)
 
-오른쪽 정보 영역에서는 다음을 확인한다.
+그래프는 결과 영역 전체 폭을 사용한다. 노드를 선택한 경우에만 아래쪽 정보 영역이 열리며 다음을 확인한다.
 
 - 사용자용 이름과 자산 종류
 - 왜 연결됐는지 보여주는 관계 이름
@@ -76,6 +76,10 @@ BoI Wiki의 `연결 관계`에서 문서, 사람, 팀, SOP, Workflow, Task, Even
 - 관찰 시점과 유효 기간
 - 관계를 뒷받침하는 이동 가능한 근거
 - 해당 문서나 업무 화면으로 이동하는 명령
+
+아래쪽 정보 영역은 데스크톱에서 최대 220px, 모바일에서 화면 높이의 45%까지만 사용한다. 열고 닫아도 그래프 폭은 바뀌지 않으며 ResizeObserver가 남은 높이에 맞춰 canvas를 조정한다. `Esc`는 선택 정보부터 닫고, Agent 안에서는 이어서 결과 크게 보기와 Expanded를 순서대로 닫는다. 선택 노드와 확대 위치는 작업별로 복원한다.
+
+![949px 폭에서도 그래프 폭을 유지하는 관계 탐색 화면](../_media/browser/current-guide/20260713-ontology-explorer-949x1151.png)
 
 AI가 추론한 관계는 검토 전 권한, 자동 배정, 전문성, 완료 판단과 Autopilot에 사용하지 않는다.
 
@@ -131,7 +135,9 @@ Graphify CLI는 선택 설치다. 2026-07-13 release gate에서는 MIT 라이선
 
 PDF·Word·PPT·Excel 원본은 자료 보관함에 유지한다. staging `manifest.json`의 page·summary·claim을 private `KnowledgeCandidate`로 가져오며 `review_required` 상태로 시작한다. 원본 위치와 revision을 보존하고, 중복·모순·ACL 검토 전에는 Team/Public 문서에 쓰지 않는다.
 
-현재 Adapter는 검증된 export를 가져오는 경계다. Apache-2.0의 `OpenKB 0.4.4`는 격리 설치와 durable job 복구를 검증했지만, 현재 LM Studio endpoint가 OpenKB의 `json_object` 응답 형식을 지원하지 않아 실제 add release gate는 보류 상태다. 빈 page나 CLI 내부 오류는 성공으로 기록하지 않는다. 앱은 외부 CLI를 자동 설치하거나 모델을 load/unload하지 않으며 공유 정본을 자동 재작성하지 않는다.
+Apache-2.0의 `OpenKB 0.4.4`는 격리된 durable job으로 실행한다. OpenKB가 요청하는 `json_object` 형식은 loopback compatibility gateway가 이미 로드된 Gemma의 일반 JSON 요청으로 바꾸고, 결과를 schema로 검증한다. 한 번의 복구 시도 뒤에도 유효하지 않으면 job을 실패 처리한다.
+
+2026-07-13 release gate에서는 실제 PDF 한 건에서 private KnowledgeCandidate 4개를 만들었고 `index.md`, `log.md`는 제외했다. compatibility 요청 5건 중 4건을 변환했으며 모델 load/unload 요청은 0건이었다. 후보는 중복·모순·ACL 검토 전 Team/Public 정본에 쓰지 않는다.
 
 # 성능과 복구
 
@@ -139,9 +145,12 @@ PDF·Word·PPT·Excel 원본은 자료 보관함에 유지한다. staging `manif
 - source revision별 증분 upsert와 삭제 tombstone을 사용한다.
 - 복구·migration 명령이 아닌 일반 동기화에서 전체 truncate를 하지 않는다.
 - Explorer는 최초 40~80개, 브라우저 최대 500개 node로 제한한다.
+- 관계 canvas는 workbench 폭의 90% 이상을 사용하고 선택 정보가 canvas 폭을 줄이지 않아야 한다.
 - Adapter 실패는 source job과 validation report에 남고 다른 Source를 막지 않는다.
 - Adapter 동기화는 queued job을 즉시 반환하고 running·completed·failed·cancelled 상태를 보존한다. timeout과 사용자 cancel을 확인하며, 재시작 시 queued/running 작업을 다시 대기열에 넣는다.
 - Gemma와 BGE-M3는 이미 로드된 모델만 사용하며 load/unload API를 호출하지 않는다.
+
+![모바일 결과 탭에서 필요한 관계만 탐색하는 화면](../_media/browser/current-guide/20260713-ontology-explorer-390x844.png)
 
 # 함께 보기
 

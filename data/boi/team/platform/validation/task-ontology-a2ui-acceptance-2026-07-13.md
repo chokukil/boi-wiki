@@ -5,7 +5,7 @@ type: boi/validation-report
 title: Task·Ontology·동적 결과 Acceptance 2026-07-13
 description: 실제 handler, 브라우저와 로컬 Gemma로 Task·Ontology·동적 결과 계약을 재검증한 결과
 tags: [Validation, Task, Ontology, A2UI, Harness, Browser, Gemma]
-timestamp: 2026-07-13T12:00:00+09:00
+timestamp: 2026-07-13T20:10:00+09:00
 boi_id: boi:team:platform:validation:task-ontology-a2ui-2026-07-13
 visibility: team
 team_id: platform
@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:team:platform
-status: draft
+status: reviewed
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
@@ -36,15 +36,15 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-13T12:00:00+09:00
-  review_status: needs_revision
+  reviewed_at: 2026-07-13T20:10:00+09:00
+  review_status: reviewed
 ---
 
 # 실행 기준
 
-> 이 문서는 통합 acceptance의 실제 실행 기록이다. core gate, Graphify와 cold Mermaid 직접 진입은 통과했지만 OpenKB와 생성 artifact p95가 미달이므로 최종 acceptance로 사용하지 않는다.
+> 이 문서는 통합 acceptance의 실제 최종 실행 기록이다. core와 선택 Adapter gate를 구분해 실행했으며 둘 다 통과했다. 형식 검사나 숨겨진 fixture는 브라우저 성공으로 계산하지 않았다.
 
-- 검증 기준: `8d1cf1d` 의미·근거 경계, `82b6f63` 실제 Adapter 계약, `adcb2d7` Mermaid 전체 보기 계약
+- 검증 기준: `32edc02` graph artifact·OpenKB 경계, `6d1e4d4` Pet graph lifecycle, `7f8e95b` 실제 browser journey
 - fixture version: `1.0`
 - generation model: `google/gemma-4-26b-a4b-qat`
 - embedding model: `text-embedding-bge-m3`
@@ -56,32 +56,38 @@ review:
 | 영역 | 결과 |
 |---|---:|
 | 실제 scenario handler | 50/50 |
-| clean 전체 pytest | 810 passed · 21분 48초 · repo 외부 격리 TMP runtime |
+| clean 전체 pytest | 814 passed · 22분 57초 · 격리 TMP runtime |
 | Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 지표 100% · GPT-5.5 미사용 |
-| Browser journey | 12/12 · 세 viewport · console 오류 0 |
+| Browser journey | 15/15 · 실제 조작 · console 오류 0 |
 | Browser 1440×1000 | 통과 |
 | Browser 1180×850 | 통과 |
+| Browser 949×1151 | 통과 |
 | Browser 390×844 | 통과 |
-| Sigma canvas nonblank | 통과 |
+| Sigma canvas·하단 inspector | workbench 폭 100% · nonblank · inspector가 폭을 줄이지 않음 |
+| Compact graph lifecycle | canvas 미생성 · 한 줄 결과 버튼 · Expanded 복원 통과 |
 | invalid surface fallback | 통과 |
 | Harness shadow·held-out·사람 검토 | 통과 · production 변경 0건 |
 | Context Playbook model·team scope | 통과 |
 | 반복 실패·NegativeResult·운영 Ontology | 통과 |
-| Task Snapshot 5회 p95 | 26.24ms |
-| Ontology 1-hop 5회 p95 | 14.05ms |
-| grounded prose 최대 | 9.81초 |
-| 생성 artifact turn p95 | 18.71초 · 목표 10초 미달 |
+| Task Snapshot cold p95 / warm p50 | 289.74ms / 17.27ms |
+| Ontology 1-hop p95 | 15.16ms |
+| Ontology 4-hop path p95 | 12.05ms |
+| A2UI compile p95 | 0.45ms |
+| 생성 graph artifact final p95 | 440.61ms |
 | Graphify 0.9.13 | 실제 CLI 90 node·177 edge, import·rollback 통과 |
-| OpenKB 0.4.4 | 실제 add 실패 · LM Studio `json_object` 비호환 |
+| OpenKB 0.4.4 | 실제 PDF → private 후보 4개 · index/log 제외 · canonical 변경 0 |
 | Mermaid 직접 링크 cold browser | cold URL·desktop reload·mobile reload 통과 · SVG nonblank·console 오류 0 |
 | 검색 품질 | Recall@8 1.00 · authoritative Top-3 1.00 |
 | Web·REST·MCP parity | 10/10 |
+| LM Studio load/unload | 0건 |
 
-브라우저에서는 Task의 `확인한 내용·수행한 조치·판단·결과·근거·막힌 점·다음 업무`, 복수 담당자 picker, Ontology 1-hop 지연 확장, raw ref 비노출, 동적 component와 fallback을 실제 DOM과 canvas로 확인했다.
+브라우저에서는 Task의 `확인한 내용·수행한 조치·판단·결과·근거·막힌 점·다음 업무`, 복수 담당자 picker, revision 409, Ontology 1-hop 지연 확장, node 선택과 canonical 이동, split·집중 보기, Compact 중지·복원, 동적 표·Timeline·Mermaid·form과 fallback을 실제 DOM과 canvas로 확인했다.
 
 실제 Graphify export가 mock과 달리 `links`, `confidence: EXTRACTED`, `confidence_score`를 사용한다는 결함을 release gate에서 발견했다. importer를 실제 `0.9.13` 계약에 맞춘 뒤 90개 node와 177개 edge를 수입하고 같은 manifest로 모두 rollback했다. 정본 변경은 없었다.
 
-OpenKB는 `0.4.4`를 격리 tool로 설치했다. interactive init, timeout 예외로 worker가 종료되는 문제와 빈 candidate를 성공으로 기록하는 문제를 수정했다. 실제 `openkb add`는 현재 LM Studio endpoint가 OpenKB의 `response_format: json_object`를 거부해 release gate를 통과하지 못했다. 이 실패는 `failed/retryable` job으로 기록하며 core 검색·Ontology·Agent에는 영향을 주지 않는다.
+OpenKB는 `0.4.4`를 격리 tool로 실행했다. compatibility gateway가 `response_format: json_object` 요청을 이미 로드된 Gemma의 일반 JSON 요청으로 바꾸고 반환 schema를 검증한다. 실제 PDF에서 private 후보 4개가 생성됐고 `index.md`, `log.md` 후보는 0건이었다. gateway 요청 5회 중 변환은 4회, 복구 재시도는 0회였고 canonical 파일은 바뀌지 않았다.
+
+생성 graph artifact는 GraphQuery 결과를 deterministic compiler로 바로 저장하고 A2UI를 위해 별도 모델 호출을 하지 않도록 바꿨다. 최종 p95는 440.61ms다. 한편 일반 장문 Gemma 답변은 시나리오별 20~45초가 걸렸으므로 별도 운영 성능 개선 항목으로 남긴다.
 
 # 발견한 결함과 수정
 
@@ -97,12 +103,15 @@ Context Playbook은 관리자 진단 권한과 실제 Context 주입 권한을 �
 
 검증 raw artifact는 정본 지식이 아니라 runtime evidence다.
 
-- `.tmp/task-ontology-a2ui-acceptance-final.json`
-- `.tmp/browser-acceptance-12-current2.json`
-- `.tmp/gemma-work-scenarios-verified.json`
-- `.tmp/full-pytest-final-current3.log`
-- `.tmp/search-quality-final.json`
-- `.tmp/interface-parity-final.json`
+- `.tmp/task-ontology-acceptance-report-final4.json`
+- `.tmp/task-ontology-browser-report-final5.json`
+- `.tmp/task-ontology-browser-shots-final5/`
+- `.tmp/agent-v2-semantic-report-final5-core.json`
+- `.tmp/agent-v2-semantic-report-final5-deep.json`
+- `.tmp/full-pytest-final5.log`
+- `.tmp/search-quality-final5.json`
+- `.tmp/interface-parity-final5.json`
+- `.tmp/openkb-release-report-final5.json`
 - `.tmp/current-manual-capture-manifest.json`
 - `.tmp/graphify-job.json`
 - `.tmp/graphify-rollback.json`
@@ -117,6 +126,6 @@ Context Playbook은 관리자 진단 권한과 실제 Context 주입 권한을 �
 - `.tmp/acceptance-browser/ontology-1180x850.png`
 - `.tmp/acceptance-browser/ontology-390x844.png`
 
-# 남은 운영 원칙
+# 다음 실행 원칙
 
-새 relation, component, Task mode, Adapter와 Harness editable surface 계약은 기존 50개에 이름만 추가해서는 안 된다. 실제 handler와 browser journey를 함께 추가한다. OpenKB와 생성 artifact 성능 미달을 해결하기 전에는 이 문서의 `needs_revision`을 유지한다.
+새 relation, component, Task mode, Adapter와 Harness editable surface 계약은 기존 50개에 이름만 추가해서는 안 된다. 실제 handler와 browser journey를 함께 추가한다. 계약이 바뀌면 이 문서를 다시 `draft`로 내리고 전체 gate를 재실행한다.

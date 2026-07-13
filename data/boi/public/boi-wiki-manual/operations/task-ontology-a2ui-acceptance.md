@@ -5,7 +5,7 @@ type: boi/manual
 title: Task·Ontology·동적 화면 검증 기준
 description: Task 수행, 업무 관계 탐색과 동적 결과 화면을 실제 업무에 사용하기 전에 확인하는 acceptance 기준
 tags: [BoIWiki, Task, Ontology, A2UI, Acceptance, Evidence]
-timestamp: 2026-07-13T00:10:00+09:00
+timestamp: 2026-07-13T20:10:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
 visibility: public
 classification: internal
@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: draft
+status: reviewed
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
@@ -33,13 +33,13 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-13T03:10:00+09:00
-  review_status: needs_revision
+  reviewed_at: 2026-07-13T20:10:00+09:00
+  review_status: reviewed
 ---
 
 # 무엇을 검증하나
 
-> 현재 상태: core acceptance와 Mermaid artifact 직접 진입은 통과했지만 외부 OpenKB release gate와 생성 artifact 최종 응답 p95가 기준을 충족하지 못했다. 이 문서는 해당 항목이 해결될 때까지 `draft`로 유지한다.
+> 현재 상태: core, 실제 브라우저 여정, 로컬 Gemma, Graphify와 OpenKB release gate를 모두 통과했다. 아래 수치는 2026-07-13 최종 통합 실행 결과이며, 부분 실행 결과를 합산하지 않았다.
 
 Task 수행 화면, 업무 관계 그래프와 동적 결과 화면은 각각 따로 보이는 기능이 아니다. 같은 업무 맥락과 근거를 유지하면서 사람이 실제 일을 수행하고, 관계를 이해하며, 안전하게 결과를 남길 수 있어야 한다.
 
@@ -88,28 +88,33 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 
 # 현재 검증 상태
 
-2026-07-13 기준으로 50개 handler와 12개 browser journey, production-like Gemma 의미 평가를 실행했다. core 기능과 Graphify release gate는 통과했지만 OpenKB 실제 add와 생성 artifact 응답 시간은 미통과다.
+2026-07-13 기준으로 50개 handler, 15개 실제 browser journey와 production-like Gemma 의미 평가를 실행했다. 브라우저 검증은 숨겨진 fixture나 HTML 문자열 존재를 성공으로 세지 않고 실제 클릭, 입력, canvas pixel, 원문 이동과 상태 복원을 확인한다.
 
 | 검증 | 결과 |
 |---|---:|
 | 결정적 시나리오 | 50/50 |
-| clean 전체 회귀 | 810 passed · 21분 48초 · repo 외부 격리 TMP runtime |
-| 브라우저 journey | 12/12 · 3 viewport · console 오류 0 |
-| Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 평가 지표 100% |
-| Snapshot 5회 p95 | 26.24ms |
-| 1-hop 관계 5회 p95 | 14.05ms |
-| grounded prose 최대 | 9.81초 |
-| 생성 artifact turn p95 | 18.71초 · 기준 미달 |
+| clean 전체 회귀 | 814 passed · 22분 57초 · 격리 TMP runtime |
+| 브라우저 journey | 15/15 · 4 viewport · 예상된 409 외 console 오류 0 |
+| Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 평가 지표 100% · GPT-5.5 미사용 |
+| Snapshot cold p95 / warm p50 | 289.74ms / 17.27ms |
+| 1-hop 관계 p95 | 15.16ms |
+| 4-hop path p95 | 12.05ms |
+| 첫 동적 surface compile p95 | 0.45ms |
+| 생성 graph artifact final p95 | 440.61ms |
 | Graphify 0.9.13 실제 CLI | 90 node·177 edge 수입 후 rollback 통과 |
-| OpenKB 0.4.4 실제 CLI | LM Studio `json_object` 호환 실패 · release 보류 |
-| Mermaid artifact 직접 진입 | cold URL·desktop reload·mobile reload 통과 · SVG nonblank·console 오류 0 |
-| 검색 품질 | Recall@8 1.00 · authoritative Top-3 1.00 |
+| OpenKB 0.4.4 실제 CLI | 실제 PDF에서 private 후보 4개 생성 · navigation 0 · 정본 변경 0 |
+| Graph UX | 1440×1000·1180×850·949×1151·390×844, canvas 폭 100%, 하단 inspector·Compact 복원 통과 |
+| 검색 품질 | Recall@8 1.00 · authoritative Top-3 1.00 · canonical Agent 가이드 Top-1 |
 | Web·REST·MCP parity | 10/10 |
 | LM Studio load/unload | 0건 |
 
 실모델 평가는 사용자가 띄운 Gemma만 사용한다. `업무 이벤트와 SOP 관계 설명 → 방금 관계만 Mermaid` 멀티턴에서 직전 citation보다 넓은 검색 후보를 다시 해석해 되묻는 결함을 발견했고, 실제 citation 집합을 후속 표현 변환의 경계로 사용하도록 수정한 뒤 해당 시나리오가 통과했다. 실패와 수정 이력은 날짜별 Team validation 문서에 남기며, 이전의 형식 검사 결과는 역사적 draft로 유지한다.
 
-이 결과는 core 구현의 acceptance이며 전체 플랫폼 완료 선언은 아니다. OpenKB 호환 경계와 생성 artifact p95를 해결하고 최종 clean 전체 회귀를 다시 통과한 뒤에만 이 문서를 `reviewed`로 전환한다. 새 component, relation, Task mode 또는 Adapter 계약을 추가하면 해당 handler와 browser journey를 함께 추가한다.
+초기 실행에서는 OpenKB의 `response_format: json_object`가 LM Studio endpoint와 맞지 않았고 생성 artifact p95도 18.71초였다. compatibility gateway가 요청을 일반 JSON 호출로 변환한 뒤 schema를 검증하고, GraphQuery 결과를 추가 모델 호출 없이 deterministic compiler로 artifact화하도록 수정했다. 최종 실행에서는 OpenKB와 440.61ms artifact gate가 모두 통과했다.
+
+일반 장문 답변의 모델 처리 시간은 이번 artifact gate와 분리해 기록한다. 최종 Gemma 의미 평가에서는 답변 종류에 따라 20~45초가 걸렸으므로 운영 성능 개선 대상이다. 이 지연을 숨기거나 440.61ms artifact 수치로 대체하지 않는다.
+
+새 component, relation, Task mode 또는 Adapter 계약을 추가하면 해당 handler와 browser journey를 함께 추가하고 이 문서를 다시 검증 상태로 전환한다.
 
 # 실패를 다루는 원칙
 

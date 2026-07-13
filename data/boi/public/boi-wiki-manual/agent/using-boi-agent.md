@@ -5,6 +5,7 @@ type: boi/manual
 title: BoI Agent 사용 가이드
 description: 현재 화면과 Wiki 전체 지식을 바탕으로 질문, 근거 확인, Mermaid, SOP·Task 초안과 업무 수행을 이어가는 방법
 tags: [Manual, BoIAgent, Search, Citation, Mermaid, WorkSession]
+aliases: [BoI Agent로 무엇을 할 수 있나, BoI Agent 사용법, BoI Agent 도움말]
 timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:using-boi-agent
 visibility: public
@@ -42,7 +43,7 @@ review:
   review_status: reviewed
 ---
 
-# 무엇을 도와주나
+# BoI Agent로 무엇을 할 수 있나
 
 BoI Agent는 BoI Wiki의 기본 Agent UI다. 검색, 관계 설명, 유사 사례, SOP·Task 초안, 업무 이벤트·Action 초안, 근거 검증과 지식 후보 생성을 자연어 요청 하나로 시작한다. 사용자가 기능 모드를 먼저 고를 필요는 없다.
 
@@ -64,10 +65,12 @@ stateDiagram-v2
 | 형태 | 알맞은 작업 |
 |---|---|
 | Compact | 짧은 질문, 현재 문서 설명, citation 확인, 후속 질문 |
-| Expanded | Mermaid, 비교표, SOP 초안, Task 다듬기, 사용한 지식 확인 |
+| Expanded | Mermaid, 관계 탐색, 비교표, SOP 초안, Task 다듬기, 사용한 지식 확인 |
 | Fullpage | 긴 대화, 다수 결과, 전체 SOP와 Deep Work 이어가기 |
 
 세 형태는 같은 WorkSession을 사용한다. 페이지 이동, 새로고침과 SOP 편집 화면 왕복 뒤에도 대화, source, artifact와 선택 Task를 복원한다.
+
+관계 탐색 결과가 있으면 일반 분할 화면은 대화 34%, 결과 66%를 사용한다. 실제 그래프 폭이 680px보다 좁은 첫 진입에서는 결과를 크게 열어 노드 이름을 읽을 공간을 먼저 확보한다. 사용자가 `대화와 함께 보기`로 돌아오면 같은 작업에서 그 선택을 기억한다. Compact에서는 그래프를 실행하지 않고 결과 버튼만 보여주며, Expanded·Fullpage와 모바일 `결과` 탭에서만 관계 탐색을 렌더링한다.
 
 BoI Agent는 Advanced에 별도 메뉴로 존재하지 않는다. Pet을 펼치거나 `/agent` 전체 화면을 사용한다. Expanded와 Fullpage의 `⋯` 메뉴에서만 `나만의 BoI Agent 만들기`와 `외부에서 사용`을 연다.
 
@@ -187,6 +190,14 @@ Mermaid 결과는 raw code가 아니라 실제 SVG로 렌더링한다. `읽기 �
 각 node와 edge는 ACL 안의 citation을 가져야 한다. 질문 대상과 직접 관련이 없거나 근거가 없는 SOP, Task, Event, Action은 그림에 임의로 추가하지 않는다.
 
 ![BoI Agent 결과 영역에서 근거 기반 Mermaid를 읽기 크기로 확인하는 화면](../_media/browser/current-guide/20260713-boi-agent-mermaid-1440x1000.png)
+
+# 관계 탐색과 하단 정보
+
+관계가 많은 결과에서는 그래프가 결과 영역 전체 폭을 사용한다. 노드를 선택했을 때만 그래프 아래에 정보 영역이 열리고, 제목, 업무 설명, 종류, 관계 수, 연결 이유, 검증 상태, 유효 시점과 이동 가능한 원문을 보여준다. 정보 영역이 열려도 그래프 폭은 줄지 않는다.
+
+`Esc`는 선택 항목 정보, 결과 크게 보기, Expanded 순서로 가장 안쪽 상태부터 닫는다. 노드 선택, 정보 영역의 열림 상태, 확대 위치와 중심은 작업별로 저장되어 새로고침 후에도 이어진다. 방향키로 노드를 옮기고 `Enter`로 정보를 열 수 있다.
+
+![결과 전체 폭의 그래프와 아래쪽 선택 항목 정보](../_media/browser/current-guide/20260713-ontology-explorer-1440x1000.png)
 
 # SOP와 Task 이어가기
 

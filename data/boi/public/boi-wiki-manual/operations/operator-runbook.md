@@ -194,17 +194,22 @@ python scripts/check_task_ontology_a2ui_acceptance.py --output .tmp/task-ontolog
 python scripts/evaluate_agent_v2_work_scenarios.py --output .tmp/agent-v2-work-scenarios.json
 node scripts/check_task_ontology_a2ui_browser.mjs \
   --base-url="$BOI_BASE_URL" \
-  --output=.tmp/task-ontology-a2ui-browser.json
+  --output=.tmp/task-ontology-a2ui-browser.json \
+  --screenshot-dir=.tmp/task-ontology-a2ui-browser-shots
+python scripts/check_openkb_release_gate.py \
+  --output .tmp/openkb-release-gate.json
 ```
 
-첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질, 마지막은 12개 실제 브라우저 journey를 검증한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
+첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질, 네 번째는 15개 실제 브라우저 journey와 네 viewport를 검증한다. 마지막 명령은 실제 PDF·Office 원본에서 OpenKB private 후보가 생성되는지 확인한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
 
 외부 Adapter release gate는 core acceptance와 분리한다. 운영자가 승인한 격리 tool 버전과 실제 export를 사용하고 mock CLI 통과를 release 통과로 계산하지 않는다.
 
 - Graphify: 실제 `graph.json`의 `links`, confidence tag, source location을 확인하고 import manifest의 node·edge 수와 rollback 제거 수가 일치해야 한다.
 - OpenKB: 실제 `openkb add`가 하나 이상의 private candidate를 만들고 `index.md`, `log.md`, `AGENTS.md`를 제외해야 한다.
 - CLI 종료 코드가 0이어도 validation result가 비어 있으면 job은 `failed/retryable`이어야 한다.
-- 2026-07-13 기준 Graphify `0.9.13`은 통과했고 OpenKB `0.4.4`는 LM Studio의 `json_object` 비호환으로 release 보류다.
+- 2026-07-13 기준 Graphify `0.9.13`은 실제 import·rollback을 통과했다. OpenKB `0.4.4`는 loopback compatibility gateway를 통해 실제 PDF에서 private 후보를 생성하고 `index.md`·`log.md` 제외를 통과했다. gateway는 `json_object` 요청을 이미 로드된 Gemma의 일반 JSON 요청으로만 변환하며 schema 실패 시 한 번만 복구한다.
+
+브라우저 acceptance는 canvas 존재만 세지 않는다. Agent 질문 전송, 진행 상태, 자연어 Graph plan, node 선택, canonical 원문 이동, split·집중 보기, `Esc`, 새로고침 복원과 A2UI 표·Timeline·Mermaid·업무 양식을 실제로 조작한다. 기준 viewport는 `1440×1000`, `1180×850`, `949×1151`, `390×844`다.
 
 업무 관계와 동적 화면 진단:
 
