@@ -10353,6 +10353,12 @@ def test_mermaid_loader_uses_bundled_runtime_and_keeps_source_fallback(boi_app_m
     script = (boi_app_module.APP_DIR / "static" / "mermaid_render.js").read_text(encoding="utf-8")
 
     assert "let loadPromise = null;" in script
+    assert "let renderQueue = Promise.resolve();" in script
+    assert "RENDER_TIMEOUT_MS = 20000" in script
+    assert "function withTimeout(" in script
+    assert "renderQueue = renderQueue" in script
+    assert "mermaid.render(renderId, source)" in script
+    assert "mermaid.run({ nodes: [node] })" not in script
     assert "let settled = false;" in script
     assert "loadPromise = null;" in script
     assert "script.remove();" in script
@@ -12068,9 +12074,16 @@ def test_agent_task_editor_uses_plain_completion_questions(boi_app_module):
     client = TestClient(boi_app_module.app)
 
     response = client.get("/agent?employee_id=100001")
+    artifact_response = client.get("/agent?employee_id=100001&artifact=artifact-cold-render")
 
     assert response.status_code == 200
     assert "task_completion_editor.js" in response.text
+    assert "/static/vendor/mermaid/mermaid.min.js" not in response.text
+    assert response.text.count("/static/mermaid_render.js?v=") == 1
+    assert response.text.index("/static/mermaid_render.js?v=") < response.text.index("agent_workspace_v2.js")
+    assert artifact_response.status_code == 200
+    assert artifact_response.text.count("/static/vendor/mermaid/mermaid.min.js") == 1
+    assert artifact_response.text.index("/static/vendor/mermaid/mermaid.min.js") < artifact_response.text.index("agent_workspace_v2.js")
     assert "data-agent-v2-completion-editor" in response.text
     assert 'name="exit_criteria"' not in response.text
     assert 'name="required_evidence"' not in response.text

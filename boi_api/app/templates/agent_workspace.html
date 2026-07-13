@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BoI Agent · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  {% if request.query_params.get('artifact') %}<script src="{{ asset_url('vendor/mermaid/mermaid.min.js') }}" defer></script>{% endif %}
+  <script src="{{ asset_url('mermaid_render.js') }}" defer></script>
+  <script src="{{ asset_url('mermaid_collaboration_v2.js') }}" defer></script>
   <script src="{{ asset_url('task_completion_editor.js') }}" defer></script>
   <script src="{{ asset_url('a2ui_renderer.js') }}" defer></script>
   <script src="{{ asset_url('agent_workspace_v2.js') }}" defer></script>

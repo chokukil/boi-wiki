@@ -400,8 +400,19 @@ async function main() {
         const canvas = document.querySelector(".mermaid-v2-canvas");
         return { mode:document.querySelector("[data-v2-mermaid]")?.dataset.viewMode || "", left:Math.round(canvas?.scrollLeft || 0), top:Math.round(canvas?.scrollTop || 0) };
       })()`);
+      const desktopReloaded = cdp.once("Page.loadEventFired");
       await cdp.send("Page.reload", { ignoreCache: true });
-      await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg')`, 30000);
+      await desktopReloaded;
+      try {
+        await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg')`, 30000);
+      } catch (error) {
+        const diagnostic = await cdp.eval(`(() => {
+          const diagram=document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid]');
+          const workbench=document.querySelector('[data-agent-v2-workbench]');
+          return { phase:'desktop-reload', readyState:document.readyState, state:diagram?.dataset.mermaidState||'', status:diagram?.querySelector('.mermaid-status')?.textContent||'', sourceLength:(diagram?.dataset.mermaidSource||'').length, workbenchHidden:workbench?.hidden, workbenchDisplay:workbench?getComputedStyle(workbench).display:'', scripts:[...document.scripts].map(item=>item.src).filter(Boolean) };
+        })()`);
+        throw new Error(`${error.message}; diagnostic=${JSON.stringify(diagnostic)}`);
+      }
       await sleep(350);
       const restored = await cdp.eval(`(() => {
         const diagram = document.querySelector("[data-v2-mermaid]");
@@ -410,8 +421,19 @@ async function main() {
       })()`);
       await screenshot(cdp, args.screenshot);
       await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      const mobileReloaded = cdp.once("Page.loadEventFired");
       await cdp.send("Page.reload", { ignoreCache: true });
-      await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg')`, 30000);
+      await mobileReloaded;
+      try {
+        await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg')`, 30000);
+      } catch (error) {
+        const diagnostic = await cdp.eval(`(() => {
+          const diagram=document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid]');
+          const workbench=document.querySelector('[data-agent-v2-workbench]');
+          return { phase:'mobile-reload', readyState:document.readyState, state:diagram?.dataset.mermaidState||'', status:diagram?.querySelector('.mermaid-status')?.textContent||'', sourceLength:(diagram?.dataset.mermaidSource||'').length, workbenchHidden:workbench?.hidden, workbenchDisplay:workbench?getComputedStyle(workbench).display:'', surfaceMode:document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode||'', scripts:[...document.scripts].map(item=>item.src).filter(Boolean) };
+        })()`);
+        throw new Error(`${error.message}; diagnostic=${JSON.stringify(diagnostic)}`);
+      }
       await sleep(800);
       const mobile = await cdp.eval(`(() => {
         const diagram = document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid]');

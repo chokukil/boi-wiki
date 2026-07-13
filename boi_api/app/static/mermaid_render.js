@@ -3,6 +3,9 @@
     "/static/vendor/mermaid/mermaid.min.js",
   ];
   let loadPromise = null;
+  let renderQueue = Promise.resolve();
+  let renderSequence = 0;
+  const RENDER_TIMEOUT_MS = 20000;
 
   function diagrams(root) {
     return Array.from((root || document).querySelectorAll(".mermaid-diagram"));
@@ -10,6 +13,8 @@
 
   function setStatus(diagram, message, state) {
     diagram.dataset.mermaidState = state;
+    if (state === "rendering") diagram.dataset.mermaidStartedAt = String(Date.now());
+    else delete diagram.dataset.mermaidStartedAt;
     const status = diagram.querySelector(".mermaid-status");
     if (status) status.textContent = message;
     if (state === "rendered" || state === "fallback") {
@@ -73,10 +78,21 @@
     return loadPromise;
   }
 
-  async function render(root) {
+  function withTimeout(factory, timeoutMs, message) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    const operation = Promise.resolve().then(factory);
+    return Promise.race([operation, timeout]).finally(() => window.clearTimeout(timer));
+  }
+
+  async function renderNow(root) {
     const pending = diagrams(root).filter((diagram) => {
       const state = diagram.dataset.mermaidState || "pending";
-      return state !== "rendered" && state !== "rendering";
+      const startedAt = Number(diagram.dataset.mermaidStartedAt || 0);
+      const stale = state === "rendering" && startedAt > 0 && Date.now() - startedAt > RENDER_TIMEOUT_MS;
+      return diagram.isConnected && state !== "rendered" && (state !== "rendering" || stale);
     });
     if (!pending.length) return;
     pending.forEach((diagram) => setStatus(diagram, "Rendering Mermaid diagram...", "rendering"));
@@ -99,12 +115,27 @@
       const node = diagram.querySelector(".mermaid");
       if (!node) continue;
       try {
-        await mermaid.run({ nodes: [node] });
+        const source = diagram.dataset.mermaidSource || node.textContent || "";
+        const renderId = `boi-mermaid-${Date.now()}-${renderSequence += 1}`;
+        const result = await withTimeout(
+          () => mermaid.render(renderId, source),
+          RENDER_TIMEOUT_MS,
+          "Mermaid render timed out."
+        );
+        node.innerHTML = typeof result === "string" ? result : result.svg;
+        if (typeof result?.bindFunctions === "function") result.bindFunctions(node);
         setStatus(diagram, "Mermaid diagram rendered.", "rendered");
       } catch (error) {
         openFallback(diagram, "Mermaid render failed. Showing source.");
       }
     }
+  }
+
+  function render(root) {
+    renderQueue = renderQueue
+      .catch(() => {})
+      .then(() => renderNow(root || document));
+    return renderQueue;
   }
 
   document.addEventListener("DOMContentLoaded", () => render(document));

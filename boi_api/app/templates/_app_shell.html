@@ -64,8 +64,10 @@
   {% include "_agent_surface_v2.html" %}
 </div>
 {% endif %}
+{% if not shell.mermaid_renderer_in_head %}
 <script src="{{ asset_url('mermaid_render.js') }}" defer></script>
 <script src="{{ asset_url('mermaid_collaboration_v2.js') }}" defer></script>
+{% endif %}
 {% if not shell.hide_pet_agent %}
 {% if shell.agent_v2_default %}
 <script src="{{ asset_url('task_completion_editor.js') }}" defer></script>

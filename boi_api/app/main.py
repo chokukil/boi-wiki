@@ -8089,6 +8089,7 @@ def app_shell_context(
     description: str = "",
     page_actions: list[dict[str, str]] | None = None,
     hide_pet_agent: bool | None = None,
+    mermaid_renderer_in_head: bool = False,
 ) -> dict[str, Any]:
     identity = identity_for_employee(employee_id)
     mode = auth_mode()
@@ -8109,6 +8110,7 @@ def app_shell_context(
         "section_subnav": section_subnav_for(active_nav, request, employee_id),
         "page_actions": page_actions or [],
         "hide_pet_agent": (not BOI_PET_AGENT_ENABLED) if hide_pet_agent is None else hide_pet_agent,
+        "mermaid_renderer_in_head": mermaid_renderer_in_head,
         "agent_v2_default": env_flag("BOI_AGENT_V2_DEFAULT", "true"),
         "auth_mode": mode,
         "dev_mode": mode == "dev",

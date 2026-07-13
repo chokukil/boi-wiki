@@ -1051,6 +1051,7 @@ def build_agent_v2_router(
                         title="BoI Agent",
                         description="BoI Wiki 지식과 업무 흐름을 찾고, 근거가 있는 초안과 심층 작업을 이어갑니다.",
                         hide_pet_agent=True,
+                        mermaid_renderer_in_head=True,
                     ),
                 },
             )
