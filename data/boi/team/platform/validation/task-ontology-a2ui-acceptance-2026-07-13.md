@@ -42,7 +42,7 @@ review:
 
 # 실행 기준
 
-> 이 문서는 통합 acceptance의 실제 실행 기록이다. core gate와 Graphify는 통과했지만 OpenKB, 생성 artifact p95와 cold Mermaid 직접 진입이 미달이므로 최종 acceptance로 사용하지 않는다.
+> 이 문서는 통합 acceptance의 실제 실행 기록이다. core gate, Graphify와 cold Mermaid 직접 진입은 통과했지만 OpenKB와 생성 artifact p95가 미달이므로 최종 acceptance로 사용하지 않는다.
 
 - 검증 기준: `8d1cf1d` 의미·근거 경계, `82b6f63` 실제 Adapter 계약, `adcb2d7` Mermaid 전체 보기 계약
 - fixture version: `1.0`
@@ -56,7 +56,7 @@ review:
 | 영역 | 결과 |
 |---|---:|
 | 실제 scenario handler | 50/50 |
-| clean 전체 pytest | 810 passed · 22분 27초 · repo 외부 격리 TMP runtime |
+| clean 전체 pytest | 810 passed · 21분 48초 · repo 외부 격리 TMP runtime |
 | Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 지표 100% · GPT-5.5 미사용 |
 | Browser journey | 12/12 · 세 viewport · console 오류 0 |
 | Browser 1440×1000 | 통과 |
@@ -73,7 +73,7 @@ review:
 | 생성 artifact turn p95 | 18.71초 · 목표 10초 미달 |
 | Graphify 0.9.13 | 실제 CLI 90 node·177 edge, import·rollback 통과 |
 | OpenKB 0.4.4 | 실제 add 실패 · LM Studio `json_object` 비호환 |
-| Mermaid 직접 링크 cold browser | 기존 session·artifact 복원 후 `rendering` 정체 · 일반 순회 캡처는 통과 |
+| Mermaid 직접 링크 cold browser | cold URL·desktop reload·mobile reload 통과 · SVG nonblank·console 오류 0 |
 | 검색 품질 | Recall@8 1.00 · authoritative Top-3 1.00 |
 | Web·REST·MCP parity | 10/10 |
 
@@ -98,9 +98,9 @@ Context Playbook은 관리자 진단 권한과 실제 Context 주입 권한을 �
 검증 raw artifact는 정본 지식이 아니라 runtime evidence다.
 
 - `.tmp/task-ontology-a2ui-acceptance-final.json`
-- `.tmp/browser-acceptance-12-current.json`
+- `.tmp/browser-acceptance-12-current2.json`
 - `.tmp/gemma-work-scenarios-verified.json`
-- `.tmp/full-pytest-final-current2.log`
+- `.tmp/full-pytest-final-current3.log`
 - `.tmp/search-quality-final.json`
 - `.tmp/interface-parity-final.json`
 - `.tmp/current-manual-capture-manifest.json`
@@ -119,4 +119,4 @@ Context Playbook은 관리자 진단 권한과 실제 Context 주입 권한을 �
 
 # 남은 운영 원칙
 
-새 relation, component, Task mode, Adapter와 Harness editable surface 계약은 기존 50개에 이름만 추가해서는 안 된다. 실제 handler와 browser journey를 함께 추가한다. OpenKB, 성능 미달과 cold Mermaid 직접 진입을 해결하기 전에는 이 문서의 `needs_revision`을 유지한다.
+새 relation, component, Task mode, Adapter와 Harness editable surface 계약은 기존 50개에 이름만 추가해서는 안 된다. 실제 handler와 browser journey를 함께 추가한다. OpenKB와 생성 artifact 성능 미달을 해결하기 전에는 이 문서의 `needs_revision`을 유지한다.
