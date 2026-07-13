@@ -351,7 +351,7 @@
   }
 
   const MERMAID_MIN_ZOOM = .6;
-  const MERMAID_FIT_MIN_ZOOM = .25;
+  const MERMAID_FIT_MIN_ZOOM = .05;
   const MERMAID_MAX_ZOOM = 5;
 
   function clampMermaidZoom(value) {
@@ -404,8 +404,11 @@
     svg.style.maxWidth = "100%";
     const bounds = svg.getBoundingClientRect();
     if (!bounds.width || !bounds.height || !canvas.clientWidth || !canvas.clientHeight) return 1;
-    const widthScale = canvas.clientWidth / bounds.width;
-    const heightScale = canvas.clientHeight / bounds.height;
+    const style = getComputedStyle(canvas);
+    const contentWidth = canvas.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0) - 12;
+    const contentHeight = canvas.clientHeight - parseFloat(style.paddingTop || 0) - parseFloat(style.paddingBottom || 0) - 12;
+    const widthScale = contentWidth / bounds.width;
+    const heightScale = contentHeight / bounds.height;
     return Math.max(MERMAID_FIT_MIN_ZOOM, Math.min(1, widthScale, heightScale));
   }
 

@@ -356,11 +356,17 @@ async function main() {
         await waitUntil(browser, `!!document.querySelector(".mermaid svg") || !!document.querySelector("[data-agent-v2-artifact-list] article")`, 30000);
         await browser.eval(`document.querySelector('[data-mermaid-view="fit"]')?.click()`);
         await waitUntil(browser, `document.querySelector('[data-v2-mermaid]')?.dataset.viewMode === 'fit'`, 5000);
-        const fits = await browser.eval(`(() => {
+        const fitState = await browser.eval(`(() => {
           const canvas = document.querySelector('[data-v2-mermaid] .mermaid-v2-canvas');
-          return !!canvas && canvas.scrollWidth <= canvas.clientWidth + 3 && canvas.scrollHeight <= canvas.clientHeight + 3;
+          return canvas ? {
+            fits: canvas.scrollWidth <= canvas.clientWidth + 3 && canvas.scrollHeight <= canvas.clientHeight + 3,
+            clientWidth: canvas.clientWidth,
+            clientHeight: canvas.clientHeight,
+            scrollWidth: canvas.scrollWidth,
+            scrollHeight: canvas.scrollHeight,
+          } : { fits: false };
         })()`);
-        if (!fits) throw new Error('Mermaid full view does not fit inside its canvas');
+        if (!fitState.fits) throw new Error(`Mermaid full view does not fit inside its canvas: ${JSON.stringify(fitState)}`);
       },
     });
     await shot({
