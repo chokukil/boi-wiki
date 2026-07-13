@@ -1,9 +1,7 @@
 import { Catalog, MessageProcessor, type SurfaceModel } from "@a2ui/web_core/v0_9";
 import { A2uiController, A2uiLitElement, A2uiSurface, basicCatalog, type LitComponentApi } from "@a2ui/lit/v0_9";
-import { renderMarkdown } from "@a2ui/markdown-it";
 import { css, html, nothing, type PropertyValues } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { until } from "lit/directives/until.js";
 import { z } from "zod";
 
 const protocolVersion = "0.9.1";
@@ -104,8 +102,8 @@ class BoiResultElement extends A2uiLitElement<any> {
     const name = (this.constructor as typeof BoiResultElement).componentName;
     const props = this.controller.props || {};
     if (name === "Answer") {
-      const rendered = renderMarkdown(text(props.markdown)).then((value) => unsafeHTML(value));
-      return html`<article class="a2ui-answer"><h3>${text(props.summary)}</h3><div class="a2ui-answer-body">${until(rendered, text(props.summary))}</div></article>`;
+      const displayHtml = text(props.displayHtml);
+      return html`<article class="a2ui-answer"><h3>${text(props.summary)}</h3><div class="a2ui-answer-body">${displayHtml ? unsafeHTML(displayHtml) : html`<p>${text(props.markdown) || text(props.summary)}</p>`}</div></article>`;
     }
     if (name === "CitationList") return html`<ol class="a2ui-citations">${(props.items || []).map((item: any, index: number) => {
       const href = safeInternalUrl(item.target_url || item.resolved_source?.canonical_url);

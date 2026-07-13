@@ -58,6 +58,14 @@ if [ "${BOI_GPT55_TEST_MODE:-false}" != "true" ]; then
   export OPENAI_API_KEY OPENAI_API_MODEL
 fi
 
+# Local structured planning favors fast, deterministic JSON. An explicit
+# caller value still wins, while an empty dotenv value uses LM Studio's
+# supported no-reasoning mode instead of the slower provider default.
+if [ -z "${BOI_V2_REASONING_EFFORT:-}" ]; then
+  BOI_V2_REASONING_EFFORT="none"
+fi
+export BOI_V2_REASONING_EFFORT
+
 PORT="${BOI_DEV_API_PORT:-8765}"
 HOST="${BOI_DEV_API_HOST:-127.0.0.1}"
 if [ "$CALLER_CONTENT_ROOT_SET" = "x" ]; then

@@ -479,7 +479,7 @@ async function runViewport(cdp, viewport) {
     })()`);
     agentSurface = {checked:true,naturalGraph,...beforeReload,expectedRestoredTitle,restored,invalidRejected,compactLifecyclePassed,officialLifecycle};
     const agentPassed = naturalGraph && beforeReload.progressSeen && beforeReload.canvas && beforeReload.painted
-      && beforeReload.nodeCount > 0 && beforeReload.minimumNodeDistance > 0 && beforeReload.canvasHeight >= 300
+      && beforeReload.nodeCount > 0 && beforeReload.minimumNodeDistance >= 48 && beforeReload.canvasHeight >= 300
       && beforeReload.duplicateConversationComponents === 0 && beforeReload.inspector && beforeReload.focused
       && Boolean(beforeReload.selectedTitle) && Boolean(beforeReload.sourceHref) && beforeReload.assistantMessages > 0
       && restored.sessionId === beforeReload.sessionId && restored.focused && restored.inspector

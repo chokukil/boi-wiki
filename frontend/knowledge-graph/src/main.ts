@@ -334,22 +334,28 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
         const level = distance.get(node) || 0;
         levels.set(level, [...(levels.get(level) || []), node]);
       });
-      const widestLevel = Math.max(...[...levels.values()].map((items) => items.length));
-      const levelGap = widestLevel > 8 ? 22 : 18;
-      const rowGap = widestLevel > 10 ? 8 : 11;
-      levels.forEach((nodesAtLevel, level) => {
+      graph.mergeNodeAttributes(focal, { x: 0, y: 0 });
+      let ringIndex = 0;
+      [...levels.entries()].sort(([left], [right]) => left - right).forEach(([level, nodesAtLevel]) => {
+        if (level === 0) return;
         const sorted = [...nodesAtLevel].sort((left, right) => {
           const leftLabel = String(graph.getNodeAttribute(left, "fullLabel") || left);
           const rightLabel = String(graph.getNodeAttribute(right, "fullLabel") || right);
           return leftLabel.localeCompare(rightLabel, "ko");
         });
-        sorted.forEach((node, index) => {
-          const y = (index - (sorted.length - 1) / 2) * rowGap;
-          graph.mergeNodeAttributes(node, {
-            x: (level - maxDistance / 2) * levelGap,
-            y,
+        for (let offset = 0; offset < sorted.length; offset += 12) {
+          const ring = sorted.slice(offset, offset + 12);
+          ringIndex += 1;
+          const radius = 34 + (ringIndex - 1) * 30;
+          const angleOffset = ringIndex % 2 ? -Math.PI / 2 : -Math.PI / 2 + Math.PI / Math.max(3, ring.length);
+          ring.forEach((node, index) => {
+            const angle = angleOffset + (Math.PI * 2 * index) / Math.max(1, ring.length);
+            graph.mergeNodeAttributes(node, {
+              x: Math.cos(angle) * radius,
+              y: Math.sin(angle) * radius,
+            });
           });
-        });
+        }
       });
       container.dataset.layoutState = "ready";
       renderer?.refresh();

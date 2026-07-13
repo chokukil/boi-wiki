@@ -682,10 +682,7 @@ class OpenAICompatibleGateway:
             "model": self.settings.model_name,
             "messages": [
                 {"role": "system", "content": system},
-                {
-                    "role": "user",
-                    "content": f"{prompt}\nReturn one JSON object matching: {json.dumps(schema, ensure_ascii=False)}",
-                },
+                {"role": "user", "content": prompt},
             ],
             "response_format": {
                 "type": "json_schema",
@@ -695,6 +692,7 @@ class OpenAICompatibleGateway:
                     "schema": schema,
                 },
             },
+            "temperature": 0,
             "max_tokens": self.settings.model_max_output_tokens,
         }
         if self.settings.model_reasoning_effort:

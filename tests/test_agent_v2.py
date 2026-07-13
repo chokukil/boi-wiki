@@ -253,6 +253,7 @@ class FakeModel:
                 "needs_clarification": False,
                 "confidence": 0.96,
                 "reason": "test semantic planner",
+                "current_scope_explicit": capability_id == "work.inbox",
                 "result_purpose": "design" if operation in {"create", "refine"} else "execute" if operation == "run" else "explain",
                 "requested_asset_kinds": [asset_kind],
                 "artifact_actions": [],
@@ -297,8 +298,6 @@ class CountingSemanticRouteModel(FakeModel):
 class BroadWorkQuestionReviewModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if required == {"work_view", "explicit_current_only", "reason"}:
-            return {"work_view": "combined", "explicit_current_only": False, "reason": "포괄적인 역할 질문"}
         if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
@@ -308,6 +307,7 @@ class BroadWorkQuestionReviewModel(FakeModel):
                     "operation": "understand",
                     "operation_plan": ["understand"],
                     "work_view": "current",
+                    "current_scope_explicit": True,
                     "resolved_goal": "현재 업무를 확인한다",
                     "result_purpose": "explain",
                     "requested_asset_kinds": ["person", "role", "task"],
@@ -320,8 +320,6 @@ class BroadWorkQuestionReviewModel(FakeModel):
 class MisroutedCurrentWorkReviewModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if required == {"work_view", "explicit_current_only", "reason"}:
-            return {"work_view": "current", "explicit_current_only": True, "reason": "현재 업무만 요청함"}
         if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
@@ -330,7 +328,8 @@ class MisroutedCurrentWorkReviewModel(FakeModel):
                     "asset_kind": "knowledge",
                     "operation": "understand",
                     "operation_plan": ["understand"],
-                    "work_view": "combined",
+                    "work_view": "current",
+                    "current_scope_explicit": True,
                     "graph_query_draft": {
                         "enabled": True,
                         "query_kind": "responsibility",
@@ -346,8 +345,6 @@ class MisroutedCurrentWorkReviewModel(FakeModel):
 class RuntimeOnlyWrongScopeReviewModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if required == {"work_view", "explicit_current_only", "reason"}:
-            return {"work_view": "combined", "explicit_current_only": False, "reason": "범위를 과도하게 확장함"}
         if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
@@ -358,6 +355,7 @@ class RuntimeOnlyWrongScopeReviewModel(FakeModel):
                     "operation_plan": ["understand"],
                     "scope": "current",
                     "work_view": "combined",
+                    "current_scope_explicit": False,
                     "requested_asset_kinds": ["task", "evidence"],
                     "graph_query_draft": {
                         "enabled": True,
@@ -369,6 +367,26 @@ class RuntimeOnlyWrongScopeReviewModel(FakeModel):
             )
             return planned
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class KnowledgeCurrentScopeContradictionModel(FakeModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+        required = set(schema.get("required") or [])
+        if {"capability_id", "asset_kind", "operation", "scope"} <= required:
+            planned.update(
+                {
+                    "capability_id": "knowledge.search",
+                    "asset_kind": "knowledge",
+                    "operation": "understand",
+                    "scope": "current",
+                    "work_view": "current",
+                    "current_scope_explicit": True,
+                    "requested_asset_kinds": ["knowledge"],
+                    "presentation_mode": "mermaid",
+                }
+            )
+        return planned
 
 
 class GenericRetrievalQueryModel(FakeModel):
@@ -1199,6 +1217,8 @@ def test_openai_compatible_generation_uses_lmstudio_json_schema_contract(monkeyp
         "type": "json_schema",
         "json_schema": {"name": "boi_v2_response", "strict": False, "schema": schema},
     }
+    assert captured["json"]["messages"][1]["content"] == "Confirm readiness."
+    assert captured["json"]["temperature"] == 0
     assert captured["json"]["max_tokens"] == settings.model_max_output_tokens
 
 
@@ -1839,6 +1859,18 @@ def test_current_runtime_contract_prevents_a_scope_reviewer_from_adding_role_gra
     assert response.artifact_refs == []
 
 
+def test_current_work_view_rejects_a_knowledge_only_result_contract(v2_service: AgentV2Service):
+    route = v2_service.quick_agent.route(
+        "업무 학습 순환을 그림으로 보여줘",
+        page_kind="document",
+        model=KnowledgeCurrentScopeContradictionModel(),
+    )
+
+    assert route["capability_id"] == "knowledge.search"
+    assert route["work_intent"]["work_view"] == "none"
+    assert route["work_intent"]["presentation_mode"] == "mermaid"
+
+
 def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -1897,6 +1929,75 @@ def test_explorer_presentation_builds_graph_without_explicit_draft(
     assert response.work_intent.graph_query_draft.presentation == "explorer"
     assert response.graph_result_ref
     assert any(item.artifact_type == "ontology_graph" for item in response.artifact_refs)
+
+
+def test_read_only_mermaid_uses_grounded_graph_before_a_second_model_call(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    source_ref = "boi:public:boi-wiki-manual:guide:final-operator-guide"
+    route = {
+        "capability_id": "knowledge.search",
+        "source": "llm_structured",
+        "reason": "근거 관계를 흐름 그림으로 설명",
+        "work_intent": WorkIntent(
+            goal="종합 가이드와 연결된 업무 관계를 그림으로 설명한다",
+            resolved_goal="종합 가이드의 검증된 관계를 Mermaid로 보여준다",
+            asset_kind=WorkAssetKind.knowledge,
+            operation=WorkOperation.understand,
+            operation_plan=[WorkOperation.understand],
+            context_refs=[source_ref],
+            presentation_mode="mermaid",
+            result_purpose="explain",
+            confidence=1.0,
+        ).model_dump(mode="json"),
+    }
+    monkeypatch.setattr(v2_service, "_semantic_route", lambda *_args, **_kwargs: route)
+    monkeypatch.setattr(
+        v2_service,
+        "_mermaid_artifact",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("second model diagram call")),
+    )
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="종합 가이드와 연결된 업무 관계를 흐름 그림으로 보여줘"),
+    )
+
+    assert response.work_intent and response.work_intent.graph_query_draft
+    assert response.work_intent.graph_query_draft.presentation == "mermaid"
+    assert response.graph_result_ref
+    assert response.artifact_refs[0].artifact_type == "ontology_graph"
+    artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
+    assert artifact["draft"]["presentation"] == "mermaid"
+    assert artifact["draft"]["edges"]
+
+
+def test_bounded_mermaid_expands_from_one_focal_when_retrieval_has_many_sources():
+    plan = GraphQueryPlan(
+        focal_entities=["doc:a", "doc:unrelated"],
+        query_kind="neighbors",
+        presentation="mermaid",
+    )
+    nodes = [
+        {"node_id": "doc:a", "payload": {"source_refs": ["doc:a"]}},
+        {"node_id": "doc:b", "payload": {"source_refs": ["doc:b"]}},
+        {"node_id": "doc:unrelated", "payload": {"source_refs": ["doc:unrelated"]}},
+    ]
+    edges = [
+        {
+            "edge_id": "edge:a-b",
+            "source_id": "doc:a",
+            "target_id": "doc:b",
+            "payload": {"source_refs": ["doc:a", "doc:b"]},
+        }
+    ]
+
+    selected_nodes, selected_edges = AgentV2Service._bounded_mermaid_graph(plan, nodes, edges)
+
+    assert {item["node_id"] for item in selected_nodes} == {"doc:a", "doc:b"}
+    assert [item["edge_id"] for item in selected_edges] == ["edge:a-b"]
 
 
 def test_completion_design_wording_does_not_become_a_task_completion_operation(
@@ -2487,6 +2588,43 @@ def test_automatic_check_is_previewed_then_created_only_after_confirmation(
     assert visible["items"][0]["cron"] == "0 9 * * *"
     assert visible["items"][0]["origin"] == "user"
     assert visible["items"][0]["surface_visibility"] == "normal"
+
+
+def test_grounded_confirmation_starter_routes_to_a_preview_without_mutation(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = AutomaticCheckModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    starter = next(
+        item
+        for item in v2_service.starter_suggestions(
+            principal,
+            page_ref="/docs/boi%3Apublic%3Aguide",
+            limit=8,
+        )
+        if item.result_kind == "confirmation"
+    )
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="클라이언트가 바꾼 문장",
+            suggestion_id=starter.suggestion_id,
+            page_ref="/docs/boi%3Apublic%3Aguide",
+        ),
+    )
+
+    assert response.capability_id == "work_routine.plan"
+    assert response.plan_ref.startswith("plan_")
+    assert response.work_intent is not None
+    assert starter.subject_ref in response.work_intent.context_refs
+    assert response.artifact_refs[0].artifact_type == "work_routine_draft"
+    surface = v2_service.store.get("a2ui_surfaces", response.a2ui_surface_ref)
+    assert surface is not None
+    assert any(item["component"] == "Confirmation" for item in surface["components"])
+    assert v2_service.list_work_routines(principal, surface="pet", status="actionable")["count"] == 0
 
 
 def test_work_routine_calendar_is_compiled_without_trusting_model_cron():

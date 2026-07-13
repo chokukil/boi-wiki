@@ -191,7 +191,7 @@ MERMAID_GRAPH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["title", "nodes", "edges"],
     "properties": {
-        "title": {"type": "string"},
+        "title": {"type": "string", "maxLength": 120},
         "nodes": {
             "type": "array",
             "minItems": 2,
@@ -200,9 +200,9 @@ MERMAID_GRAPH_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "required": ["node_id", "label", "kind", "asset_kind", "source_numbers"],
                 "properties": {
-                    "node_id": {"type": "string"},
-                    "label": {"type": "string"},
-                    "kind": {"type": "string"},
+                    "node_id": {"type": "string", "maxLength": 20},
+                    "label": {"type": "string", "maxLength": 80},
+                    "kind": {"type": "string", "maxLength": 32},
                     "asset_kind": {
                         "type": "string",
                         "enum": [item.value for item in WorkAssetKind],
@@ -210,6 +210,7 @@ MERMAID_GRAPH_SCHEMA: dict[str, Any] = {
                     "source_numbers": {
                         "type": "array",
                         "minItems": 1,
+                        "maxItems": 3,
                         "items": {"type": "integer"},
                     },
                 },
@@ -223,12 +224,13 @@ MERMAID_GRAPH_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "required": ["from", "to", "label", "source_numbers"],
                 "properties": {
-                    "from": {"type": "string"},
-                    "to": {"type": "string"},
-                    "label": {"type": "string"},
+                    "from": {"type": "string", "maxLength": 20},
+                    "to": {"type": "string", "maxLength": 20},
+                    "label": {"type": "string", "maxLength": 48},
                     "source_numbers": {
                         "type": "array",
                         "minItems": 1,
+                        "maxItems": 3,
                         "items": {"type": "integer"},
                     },
                 },
@@ -236,15 +238,15 @@ MERMAID_GRAPH_SCHEMA: dict[str, Any] = {
         },
         "related_questions": {
             "type": "array",
-            "maxItems": 3,
+            "maxItems": 2,
             "items": {
                 "type": "object",
                 "required": ["kind", "label", "question", "source_numbers"],
                 "properties": {
                     "kind": {"type": "string", "enum": ["understand", "connect", "apply"]},
-                    "label": {"type": "string"},
-                    "question": {"type": "string"},
-                    "source_numbers": {"type": "array", "items": {"type": "integer"}},
+                    "label": {"type": "string", "maxLength": 60},
+                    "question": {"type": "string", "maxLength": 180},
+                    "source_numbers": {"type": "array", "maxItems": 2, "items": {"type": "integer"}},
                 },
             },
         },
@@ -383,7 +385,7 @@ DRAFT_SCHEMAS: dict[str, dict[str, Any]] = {
 
 
 class AgentV2Service:
-    SEMANTIC_ROUTE_CACHE_VERSION = "5"
+    SEMANTIC_ROUTE_CACHE_VERSION = "11"
     SEMANTIC_ROUTE_CACHE_TTL_SECONDS = 900
     STARTER_SUGGESTION_VERSION = "2"
 
@@ -3042,7 +3044,7 @@ class AgentV2Service:
             if not top_score
             or float(item.score or 0.0) >= top_score * 0.55
             or item.evidence_id in focal_refs
-        ][:6]
+        ][:4]
         diagram_citations = [citation_by_source[item.evidence_id] for item in grounded]
         if not diagram_citations:
             raise RuntimeError("흐름 그림을 만들 확인 가능한 Wiki 근거가 없습니다.")
@@ -3053,7 +3055,7 @@ class AgentV2Service:
                 "title": item.title,
                 "kind": item.kind,
                 "heading": citation.heading,
-                "excerpt": compact_text(citation.excerpt or item.summary, 900),
+                "excerpt": compact_text(citation.excerpt or item.summary, 620),
             }
             for index, (item, citation) in enumerate(zip(grounded, diagram_citations))
         ]
@@ -3077,7 +3079,7 @@ class AgentV2Service:
             f"Focal source refs: {json.dumps(focal_refs, ensure_ascii=False)}\n"
             f"Recent work context: {json.dumps(request.input_delta.get('_work_session_context') or {}, ensure_ascii=False)}\n"
             f"Sources: {json.dumps(source_payload, ensure_ascii=False)}\n"
-            "Create a readable flow with at most 14 nodes and 20 edges."
+            "Create the smallest readable flow that answers the request, normally 4-8 nodes and no more than 12 edges."
         )
         validation_error = ""
         graph: dict[str, Any] = {}
@@ -3622,6 +3624,8 @@ class AgentV2Service:
             return None
         if str(result.get("presentation") or "") == "mermaid":
             nodes, edges = self._bounded_mermaid_graph(plan, nodes, edges)
+            if not edges:
+                return None
         node_lookup = {str(item.get("node_id") or ""): item for item in nodes}
         relation_labels = {
             "assigned_to": "현재 담당",
@@ -3759,7 +3763,7 @@ class AgentV2Service:
             and str(edge.get("target_id") or "") in node_lookup
             and source_refs(edge)
         ]
-        seeds = [item for item in plan.focal_entities if item in node_lookup]
+        seeds = [item for item in plan.focal_entities if item in node_lookup][:1]
         if not seeds:
             seeds = list(node_lookup)[:1]
 
@@ -4697,11 +4701,17 @@ class AgentV2Service:
         starter_refs = [str(item) for item in request.input_delta.get("_starter_source_refs") or [] if str(item)]
         starter_result_kind = str(request.input_delta.get("_starter_result_kind") or "")
         starter_graph_query_kind = str(request.input_delta.get("_starter_graph_query_kind") or "")
-        verified_graph_starter = bool(
+        verified_starter = bool(
             request.input_delta.get("_starter_suggestion_status") == "resolved"
             and starter_refs
+        )
+        verified_graph_starter = bool(
+            verified_starter
             and starter_graph_query_kind
             and starter_result_kind in {"table", "timeline", "mermaid", "explorer"}
+        )
+        verified_confirmation_starter = bool(
+            verified_starter and starter_result_kind == "confirmation"
         )
         planner_search = None
         self._emit_turn_progress(
@@ -4795,6 +4805,36 @@ class AgentV2Service:
                     "capability_id": "knowledge.search",
                     "source": "verified_starter",
                     "reason": "사용자가 검증된 맥락 제안을 선택함",
+                    "work_intent": starter_intent.model_dump(mode="json"),
+                    "continuation": {},
+                }
+            elif verified_confirmation_starter:
+                subject_ref = str(request.input_delta.get("_starter_subject_ref") or starter_refs[0])
+                starter_intent = WorkIntent(
+                    goal=request.question,
+                    resolved_goal=request.question,
+                    retrieval_query=request.question,
+                    asset_kind=WorkAssetKind.runtime,
+                    operation=WorkOperation.create,
+                    operation_plan=[
+                        WorkOperation.understand,
+                        WorkOperation.create,
+                        WorkOperation.validate,
+                    ],
+                    target_ref=subject_ref,
+                    scope="selected",
+                    desired_outcome="자동 확인 계획을 검토한 뒤 활성화 여부 결정",
+                    presentation_mode="artifact",
+                    work_view="none",
+                    context_refs=starter_refs,
+                    result_purpose="design",
+                    requested_asset_kinds=[WorkAssetKind.runtime, WorkAssetKind.knowledge],
+                    confidence=1.0,
+                )
+                route = {
+                    "capability_id": "work_routine.plan",
+                    "source": "verified_starter",
+                    "reason": "사용자가 검증된 자동 확인 제안을 선택함",
                     "work_intent": starter_intent.model_dump(mode="json"),
                     "continuation": {},
                 }
@@ -5036,6 +5076,32 @@ class AgentV2Service:
             )
             retrieval_query = f"{resolved_goal}\n활성 결과: {active_artifact.get('title')} {task_names}".strip()
         include_history = capability_id == "cases.similar" or bool(request.input_delta.get("include_history", False))
+        planner_evidence_ids = {
+            item.evidence_id
+            for item in (planner_search.items if planner_search is not None else [])
+            if item.evidence_id
+        }
+        required_planner_refs = {
+            item
+            for item in [
+                *preliminary_intent.context_refs,
+                preliminary_intent.target_ref,
+            ]
+            if item and self._record_for_ref(principal, item)
+        }
+        planner_search_covers_intent = bool(
+            planner_search is not None
+            and not include_history
+            and capability_id != "cases.similar"
+            and (
+                retrieval_query == request.question
+                or (
+                    required_planner_refs
+                    and required_planner_refs.issubset(planner_evidence_ids)
+                )
+            )
+        )
+        context_started = time.perf_counter()
         if capability_id == "work.inbox":
             work = self.repository.current_work(principal)
             evidence = [
@@ -5053,7 +5119,7 @@ class AgentV2Service:
             ]
             current_work_evidence = list(evidence)
         else:
-            if planner_search is not None and retrieval_query == request.question and not include_history:
+            if planner_search_covers_intent:
                 search_result = planner_search
             else:
                 search_result = self.search.search(
@@ -5115,6 +5181,7 @@ class AgentV2Service:
         )
         context.business_context["user_work_profile"] = self.user_work_profile(principal)
         self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
+        stage_timings_ms["context"] = round((time.perf_counter() - context_started) * 1000, 2)
         resolved_target = (
             request.task_ref
             or (context.goal_anchor.ref if context.goal_anchor and context.goal_anchor.resolved else "")
@@ -5127,12 +5194,18 @@ class AgentV2Service:
             and (
                 intent.operation == WorkOperation.connect
                 or intent.presentation_mode == "explorer"
+                or (
+                    intent.presentation_mode == "mermaid"
+                    and intent.result_purpose == "explain"
+                    and not intent.artifact_actions
+                )
             )
             and intent.presentation_mode in {"table", "timeline", "mermaid", "artifact", "explorer"}
         ):
             focal_refs = list(
                 dict.fromkeys(
                     [
+                        intent.target_ref,
                         *intent.context_refs,
                         *(item.evidence_id for item in evidence if item.evidence_id),
                     ]
@@ -5162,6 +5235,7 @@ class AgentV2Service:
             if intent.asset_kind.value == "action":
                 intent.target_ref = f"action:{requested_action_key}"
             self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
+        presentation_started = time.perf_counter()
         work_run = self.learning.create_run(
             principal=principal,
             agent_run_id=run_id,
@@ -5736,6 +5810,11 @@ class AgentV2Service:
         else:
             raise RuntimeError(f"capability handler contract violated: {capability_id}")
 
+        stage_timings_ms["presentation"] = round(
+            (time.perf_counter() - presentation_started) * 1000,
+            2,
+        )
+
         if citations and capability_id not in {"knowledge.search", "cases.similar"}:
             markers = " ".join(
                 f"[{index}](/api/v2/citations/{item.citation_id})"
@@ -5751,6 +5830,7 @@ class AgentV2Service:
             artifact_count=len(artifacts),
         )
 
+        finalize_started = time.perf_counter()
         context.artifact_refs = artifacts
         context.loop_delta = {
             "kind": "job_queued" if job_ref else "artifact_created" if artifacts else "evidence_selected",
@@ -5879,6 +5959,7 @@ class AgentV2Service:
                 self.store.put("artifacts", artifact.artifact_id, stored_artifact)
                 artifact.metadata["a2ui_surface_ref"] = response.a2ui_surface_ref
         stage_timings_ms["a2ui"] = round((time.perf_counter() - a2ui_started) * 1000, 2)
+        stage_timings_ms["finalize"] = round((time.perf_counter() - finalize_started) * 1000, 2)
         stage_timings_ms["total"] = round((time.perf_counter() - turn_started) * 1000, 2)
         response.context_usage["timings_ms"] = stage_timings_ms
         run_payload = {

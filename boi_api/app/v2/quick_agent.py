@@ -134,12 +134,9 @@ class QuickAgentRuntime:
         return [
             {
                 "capability_id": item.capability_id,
-                "title": item.title,
                 "description": item.description,
                 "primary_asset": item.primary_asset.value,
-                "supported_assets": [asset.value for asset in item.supported_assets],
                 "operation_class": item.operation.value,
-                "risk": item.risk.value,
                 "deep": item.deep,
             }
             for item in self.registry.all()
@@ -159,6 +156,8 @@ class QuickAgentRuntime:
                 "resolved_goal",
                 "retrieval_query",
                 "presentation_mode",
+                "work_view",
+                "current_scope_explicit",
                 "context_refs",
                 "result_purpose",
                 "requested_asset_kinds",
@@ -180,13 +179,15 @@ class QuickAgentRuntime:
                     "items": {"type": "string", "enum": list(self._operations)},
                 },
                 "scope": {"type": "string", "enum": ["auto", "current", "wiki", "selected"]},
-                "desired_outcome": {"type": "string"},
+                "desired_outcome": {"type": "string", "maxLength": 240},
                 "resolved_goal": {
                     "type": "string",
+                    "maxLength": 500,
                     "description": "A standalone workplace request that resolves pronouns and short follow-ups from trusted conversation context.",
                 },
                 "retrieval_query": {
                     "type": "string",
+                    "maxLength": 500,
                     "description": "The semantic subject to retrieve, excluding output format instructions, transformation commands, and negative constraints.",
                 },
                 "presentation_mode": {
@@ -196,6 +197,12 @@ class QuickAgentRuntime:
                 "work_view": {
                     "type": "string",
                     "enum": ["none", "current", "responsibility", "combined"],
+                },
+                "current_scope_explicit": {
+                    "type": "boolean",
+                    "description": (
+                        "True only when the user explicitly limits the requested result to active Inbox or current work."
+                    ),
                 },
                 "graph_query_draft": {
                     "type": "object",
@@ -236,7 +243,7 @@ class QuickAgentRuntime:
                 "target_ref": {"type": "string"},
                 "needs_clarification": {"type": "boolean"},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                "reason": {"type": "string"},
+                "reason": {"type": "string", "maxLength": 120},
                 "continue_active_run": {
                     "type": "boolean",
                     "description": "True only when this message advances the active non-terminal WorkRun rather than starting another goal.",
@@ -364,73 +371,41 @@ class QuickAgentRuntime:
             )
         )[:24]
         system = (
-            "You are the BoI Wiki work-intent planner. Understand the user's workplace goal semantically; "
-            "do not classify by isolated keywords. Decide which registered capability should handle the turn and "
-            "produce a typed WorkIntent. The current page and active artifact are important anchors, never hard search "
-            "boundaries. Use the accessible Wiki as a whole when related knowledge is needed. A request may combine "
-            "understand, compare, create, refine, connect, validate, test, run, observe, complete, capture, and promote. "
-            "Only choose run, complete, or promote when the user actually asks for that operation. Questions about how "
-            "to create something are understand, not create. Existing drafts should be refined, validated, or tested in "
-            "place when the user refers to them. Prefer a quick capability for ordinary answers, current-page explanation, "
-            "relationship explanation, and focused past-case comparison. Choose a deep capability only when the requested "
-            "deliverable genuinely needs a durable multi-source research draft, delegated investigation, or long-running work; "
-            "the presence of several related Wiki sources alone does not make work deep. Use the dedicated similar-case "
-            "capability for focused historical comparison. Operation describes the user's requested business action, not the "
-            "safety mechanism around it: invoking a registered Action is run even when dry-run is requested, while test only "
-            "checks an artifact, definition, sample, or configuration without invoking that Action. If one missing target "
-            "prevents correct work, set needs_clarification. When an active WorkRun is waiting, decide semantically whether "
-            "the new message continues that same work. Set continue_active_run only when the message actually supplies new "
-            "evidence, reports a blocker, reports a state change, or clearly answers the pending completion request. Set "
-            "user_confirmation only when the user explicitly says that a person reviewed the required evidence or completion "
-            "items; a vague acknowledgement or request to keep going is not confirmation. Never infer a system confirmation "
-            "from natural language. If the message starts a different goal, do not continue the active run. "
-            "Use task.work for observing, performing, completing, or capturing the result of a specific Task. Use work.inbox "
-            "only to list the user's currently assigned work; never use it to perform or complete a Task. A question that "
-            "finds or explains knowledge about Tasks without a concrete task_ref or active WorkRun is knowledge.search, not "
-            "task.work. For a Manual or "
-            "Classify workplace responsibility questions separately with work_view. Use current only for a request limited "
-            "to the user's active Inbox. Use responsibility for stable roles, assigned relationships, or who does what. Use "
-            "combined for broad questions about what a person does when both verified responsibilities and current assigned "
-            "work are useful. A broad question such as what work I do is combined, not merely an Inbox listing. When work_view "
-            "is responsibility or combined, enable graph_query_draft with query_kind=responsibility and use the person or team "
-            "mentioned by the user as focal_mentions. Use the current authenticated person for first-person questions. "
-            "Copilot WorkRun, a message that explicitly reports personal review of the listed completion items and records "
-            "the result is human_input with user_confirmation=true, even when it also contains new evidence. "
-            "Choose the primary operation from the requested deliverable, not from incidental supporting words. Use "
-            "understand when the user wants the meaning, criteria, or summary of one focal document or item, even when the "
-            "answer should use related Wiki knowledge. Use connect only when the relationships, dependencies, or flow among "
-            "multiple assets are themselves the requested deliverable. For example, explaining one document's decision "
-            "criteria with related knowledge is understand; explaining how an SOP, business event, Action, and result BoI "
-            "link together is connect. Connect is read-only relationship understanding; changing an asset or adding a real "
-            "connection must be create or refine. A trusted action_key identifies a registered Action target: invoking it, including a "
-            "dry-run, belongs to action.plan with operation run, never task.work. "
-            "Resolve short follow-ups into a standalone resolved_goal using only the supplied recent messages, active "
-            "artifact, current page, and trusted source refs. Preserve the user's intended subject across turns for "
-            "requests such as 'draw that flow', 'split it into Tasks', or 'use the evidence just shown'. Do not carry the "
-            "previous subject when the user clearly starts another goal. If two prior subjects are equally plausible, set "
-            "needs_clarification instead of guessing. Set presentation_mode=mermaid when the requested deliverable is an "
-            "actual flow or Mermaid diagram, including a visual follow-up to the previous answer. Use timeline for temporal "
-            "history and explorer for a relationship set too large for a compact diagram. Mermaid means a rendered "
-            "diagram artifact, not a prose description of a flow. A request to explain or summarize a flow remains prose "
-            "unless the user semantically asks to draw, visualize, diagram, chart, or render it. Use table only when a table "
-            "is the useful result. Whenever presentation_mode is explorer, graph_query_draft must be enabled and must name "
-            "the focal subject or trusted source ref; an explorer without a graph query is invalid. A request to interactively "
-            "explore the relationships directly connected to even one focal item is connect because the relationships are "
-            "the deliverable, not an ordinary explanation of that item. Set result_purpose=explain for answers and read-only "
-            "diagrams, compare for comparisons, "
-            "design for a new draft, transform when converting an existing result into another asset, and execute for guarded "
-            "execution. Choose requested_asset_kinds semantically from the actual requested result; never add SOP, Task, Event, "
-            "or Action merely because they exist in the Wiki. artifact_actions must be empty for explain or compare. Include "
-            "split_tasks only when the user explicitly asks to turn a grounded flow into Tasks, and create_sop_draft only when "
-            "the user explicitly asks to turn it into an SOP draft. "
-            "Return retrieval_query as the standalone semantic subject to search for. Keep the subject, named assets, and "
-            "requested relationships, but exclude presentation instructions such as drawing or table formatting, exclude "
-            "transformation commands, and exclude negative constraints about what not to create. resolved_goal still keeps "
-            "the full requested outcome; retrieval_query is only for finding the right evidence. Put only "
-            "Write resolved_goal and retrieval_query in the same language as the user's request, preserving the user's "
-            "business terms and named assets rather than translating them into generic English. "
-            "refs that appear in trusted_context_refs into context_refs; never invent a source or artifact ref. "
-            "Return JSON matching the schema and never invent a capability ID."
+            "You are the BoI Wiki work-intent planner. Interpret the complete workplace goal semantically, never by isolated "
+            "keywords, and return the schema exactly. The current page and active artifact are anchors, not search boundaries; "
+            "use the accessible Wiki as a whole. Choose only a registered capability.\n"
+            "Operations: understand explains one focal item; compare contrasts items or cases; connect explains relationships "
+            "or flow and is read-only; create makes a new private draft; refine changes an existing artifact through a proposal; "
+            "validate checks an artifact; test checks or dry-runs without production mutation; run invokes a registered Action; "
+            "observe inspects runtime work; complete evaluates a specific Task; capture makes an evidence-backed private candidate; "
+            "promote requests reviewed sharing. Choose run, complete, or promote only when explicitly requested. A how-to question "
+            "is understand. Existing artifacts should be refined, validated, or tested in place.\n"
+            "Use quick capabilities for ordinary answers and focused relationships or cases. Use cases.similar for focused case "
+            "comparison. Use deep.research only for a durable multi-source investigation or long-running draft. Use task.work only "
+            "for a concrete task_ref or active WorkRun; work.inbox only lists current assignments; Task knowledge lookup is "
+            "knowledge.search. A trusted action_key invoked even as dry-run is action.plan/run.\n"
+            "For work_view, current means only active Inbox, responsibility means stable roles or who-does-what, and combined "
+            "separates verified responsibility from current assignments. Broad questions about what a person does are combined. "
+            "Set current_scope_explicit=true only when the user explicitly limits the result to current/active Inbox and does not "
+            "ask for roles or responsibility. For responsibility or combined, enable a responsibility graph focused on the named "
+            "person/team and include person, team, or role in requested_asset_kinds. combined must also include runtime or task. "
+            "First-person means the authenticated person.\n"
+            "Continue an active WorkRun only for new evidence, human input, blocker, or state transition that advances the same "
+            "goal. A new goal does not continue it. user_confirmation is true only after explicit human review of required evidence "
+            "or completion items; acknowledgement is not confirmation. Ask one clarification only when a missing or ambiguous "
+            "target blocks correct work.\n"
+            "Resolve short follow-ups into standalone resolved_goal using only recent messages, active artifact/page, and trusted "
+            "refs. Preserve the prior subject for follow-ups, but drop it for a clearly new topic. retrieval_query keeps the named "
+            "subject and relationship while removing display, transform, and negative-constraint instructions. Keep both fields in "
+            "the user's language. desired_outcome must also be short, natural user-facing Korean without API names, code, field "
+            "names, or implementation modes. context_refs may contain only trusted_context_refs.\n"
+            "Choose presentation_mode by requested result: prose for explanation, table for comparison or compact structured data, "
+            "timeline for temporal history, mermaid for an actual requested diagram, explorer for a larger relationship set, and "
+            "artifact for an editable deliverable. Explorer requires an enabled graph query with a focal subject. A flow mentioned "
+            "in prose is not automatically a diagram. result_purpose is explain, compare, design, transform, or execute. Never add "
+            "SOP, Task, Event, or Action incidentally. artifact_actions is empty for explain/compare; split_tasks and "
+            "create_sop_draft require an explicit conversion request. Never invent refs, targets, capability IDs, confirmation, or "
+            "permissions."
         )
         prompt = json.dumps(
             {
@@ -449,24 +424,10 @@ class QuickAgentRuntime:
                 "conversation_summary": str(state.get("conversation_summary") or "")[:2000],
                 "conversation_context": conversation_context,
                 "trusted_context_refs": trusted_context_refs,
-                "wiki_hybrid_hints": list(state.get("knowledge_hints") or [])[:8],
+                "wiki_hybrid_hints": list(state.get("knowledge_hints") or [])[:6],
                 "trusted_targets": dict(state.get("trusted_targets") or {}),
                 "requested_result_kind": str(state.get("requested_result_kind") or ""),
                 "requested_graph_query_kind": str(state.get("requested_graph_query_kind") or ""),
-                "operation_contracts": {
-                    "understand": "explain the meaning, criteria, or summary of one focal item; related sources may support the answer without changing this into connect",
-                    "compare": "compare sources, alternatives, or cases when comparison itself is the requested outcome",
-                    "create": "create a new private draft",
-                    "refine": "improve an existing artifact in place through a proposal",
-                    "connect": "make the relationships, dependencies, or flow among multiple named assets the primary result; use desired_outcome=answer for read-only explanation",
-                    "validate": "evaluate an existing artifact against its Harness",
-                    "test": "validate or dry-run an artifact, definition, sample, configuration, or registered Action without production mutation",
-                    "run": "invoke a registered Action with production effects through the applicable confirmation policy",
-                    "observe": "inspect current runtime work or a running Task without completing it",
-                    "complete": "evaluate and record Task completion",
-                    "capture": "create an evidence-backed private knowledge candidate",
-                    "promote": "request Team/Public promotion through confirmation",
-                },
                 "capabilities": self._capability_catalog(),
             },
             ensure_ascii=False,
@@ -494,56 +455,49 @@ class QuickAgentRuntime:
             if original_question and original_question not in resolved_goal:
                 resolved_goal = f"{resolved_goal}\n사용자 요청: {original_question}".strip()
             if re.search(r"[가-힣]", original_question) and not re.search(r"[가-힣]", resolved_goal):
-                resolved_goal = f"{original_question}\n{resolved_goal}".strip()
+                resolved_goal = original_question
             if re.search(r"[가-힣]", original_question) and not re.search(r"[가-힣]", retrieval_query):
-                retrieval_query = f"{original_question}\n{retrieval_query}".strip()
+                retrieval_query = original_question
             presentation_mode = str(planned.get("presentation_mode") or "prose")
             if presentation_mode not in {"prose", "mermaid", "table", "timeline", "explorer", "artifact"}:
                 presentation_mode = "prose"
             work_view = str(planned.get("work_view") or ("current" if capability_id == "work.inbox" else "none"))
             if work_view not in {"none", "current", "responsibility", "combined"}:
                 work_view = "none"
-            if work_view in {"current", "responsibility", "combined"} or capability_id == "work.inbox":
-                review_schema = {
-                    "type": "object",
-                    "properties": {
-                        "work_view": {"type": "string", "enum": ["current", "responsibility", "combined"]},
-                        "explicit_current_only": {"type": "boolean"},
-                        "reason": {"type": "string"},
-                    },
-                    "required": ["work_view", "explicit_current_only", "reason"],
-                    "additionalProperties": False,
-                }
-                try:
-                    reviewed = model.generate_structured(
-                        system=(
-                            "Review only the scope of a workplace question. Use current only when the user explicitly asks "
-                            "for Inbox, now/current items, or otherwise excludes role and responsibility. Use responsibility "
-                            "for stable role/relationship only. Use combined for broad questions about what a person does. "
-                            "Do not infer scope from Korean keywords mechanically; judge the full meaning."
-                        ),
-                        prompt=json.dumps(
-                            {
-                                "request": original_question,
-                                "resolved_goal": resolved_goal,
-                                "desired_outcome": planned.get("desired_outcome") or "",
-                            },
-                            ensure_ascii=False,
-                        ),
-                        schema=review_schema,
-                    )
-                    reviewed_view = str(reviewed.get("work_view") or "")
-                    explicit_current_only = bool(reviewed.get("explicit_current_only"))
-                    if reviewed_view in {"current", "responsibility", "combined"}:
-                        work_view = "combined" if reviewed_view == "current" and not explicit_current_only else reviewed_view
-                except Exception:
-                    pass
+            current_scope_explicit = bool(planned.get("current_scope_explicit", False))
+            if work_view == "current" and not current_scope_explicit:
+                work_view = "combined"
             planned_asset_kinds = {
                 str(item).strip()
                 for item in planned.get("requested_asset_kinds") or []
                 if str(item).strip()
             }
             responsibility_asset_kinds = {"person", "team", "role"}
+            current_work_asset_kinds = {"runtime", "task", "evidence"}
+            planned_graph = planned.get("graph_query_draft")
+            has_responsibility_graph = (
+                isinstance(planned_graph, dict)
+                and bool(planned_graph.get("enabled"))
+                and str(planned_graph.get("query_kind") or "") == "responsibility"
+            )
+            if current_scope_explicit and planned_asset_kinds.intersection(responsibility_asset_kinds):
+                # The planner cannot simultaneously limit the result to Inbox
+                # work and request stable Person/Team/Role relationships.
+                # Resolve that typed contract contradiction without inspecting
+                # the user's wording a second time.
+                work_view = "combined"
+            if work_view == "current" and not planned_asset_kinds.intersection(current_work_asset_kinds):
+                # A current Inbox view cannot satisfy a request whose typed
+                # result contains no runtime, Task, or evidence asset.
+                work_view = "none"
+            if (
+                work_view in {"responsibility", "combined"}
+                and not planned_asset_kinds.intersection(responsibility_asset_kinds)
+                and not has_responsibility_graph
+            ):
+                # Responsibility views require a typed person/organization
+                # result or an explicit responsibility traversal.
+                work_view = "none"
             if (
                 asset_kind == "runtime"
                 and str(planned.get("scope") or "") == "current"
