@@ -361,9 +361,16 @@ class LivingKnowledgeService:
         *,
         cwd: Path,
         timeout_seconds: float,
+        input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["BOI_ADAPTER_NO_MODEL_MANAGEMENT"] = "1"
+        if self.settings.model_base_url:
+            env.setdefault("OPENAI_API_BASE", self.settings.model_base_url)
+            env.setdefault("OPENAI_BASE_URL", self.settings.model_base_url)
+        if self.settings.model_api_key:
+            env.setdefault("OPENAI_API_KEY", self.settings.model_api_key)
+            env.setdefault("LLM_API_KEY", self.settings.model_api_key)
         return subprocess.run(
             command,
             cwd=cwd,
@@ -371,6 +378,8 @@ class LivingKnowledgeService:
             check=True,
             capture_output=True,
             text=True,
+            input=input_text,
+            start_new_session=True,
             timeout=timeout_seconds,
         )
 
@@ -392,6 +401,8 @@ class LivingKnowledgeService:
         self._checkpoint_adapter_job(job_id, "extract", 20, executable=executable)
         self._run_adapter_command([executable, str(input_path)], cwd=workspace, timeout_seconds=timeout_seconds)
         output = workspace / "graphify-out" / "graph.json"
+        if not output.is_file() and input_path.is_dir():
+            output = input_path / "graphify-out" / "graph.json"
         if not output.is_file():
             raise ValueError("graphify_export_missing")
         return output
@@ -409,8 +420,20 @@ class LivingKnowledgeService:
             raise ValueError("openkb_adapter_not_ready")
         workspace = self._adapter_workspace(source, job_id)
         input_path = self._adapter_source_path(source)
+        config = source.get("adapter_config") if isinstance(source.get("adapter_config"), dict) else {}
+        model_name = str(config.get("model") or self.settings.model_name or "").strip()
+        if model_name and not model_name.startswith(("openai/", "anthropic/", "gemini/", "ollama/")):
+            model_name = f"openai/{model_name}"
+        language = str(config.get("language") or "ko").strip() or "ko"
+        if not model_name:
+            raise ValueError("openkb_model_missing")
         self._checkpoint_adapter_job(job_id, "extract", 20, executable=executable)
-        self._run_adapter_command([executable, "init"], cwd=workspace, timeout_seconds=min(timeout_seconds, 60.0))
+        self._run_adapter_command(
+            [executable, "init", "--model", model_name, "--language", language],
+            cwd=workspace,
+            timeout_seconds=min(timeout_seconds, 60.0),
+            input_text="\n",
+        )
         self._run_adapter_command([executable, "add", str(input_path)], cwd=workspace, timeout_seconds=timeout_seconds)
         pages: list[dict[str, Any]] = []
         wiki_root = workspace / "wiki"
@@ -447,7 +470,9 @@ class LivingKnowledgeService:
             self._checkpoint_adapter_job(job_id, "normalize", 45, raw_artifact_url=str(input_path))
         raw = json.loads(input_path.read_text(encoding="utf-8"))
         raw_nodes = raw.get("nodes") if isinstance(raw, dict) else []
-        raw_edges = raw.get("edges") if isinstance(raw, dict) else []
+        raw_edges = (
+            raw.get("edges") if "edges" in raw else raw.get("links")
+        ) if isinstance(raw, dict) else []
         if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
             raise ValueError("invalid_graphify_export")
         source_id = str(source["source_id"])
@@ -494,8 +519,12 @@ class LivingKnowledgeService:
             target_node = node_ids.get(raw_target)
             if not source_node or not target_node:
                 continue
-            raw_provenance = str(item.get("provenance") or "extracted").lower()
+            confidence_tag = item.get("confidence") if isinstance(item.get("confidence"), str) else ""
+            raw_provenance = str(item.get("provenance") or confidence_tag or "extracted").lower()
             provenance = raw_provenance if raw_provenance in {"extracted", "inferred", "ambiguous"} else "extracted"
+            raw_confidence = item.get("confidence_score")
+            if not isinstance(raw_confidence, (int, float)):
+                raw_confidence = item.get("confidence") if isinstance(item.get("confidence"), (int, float)) else None
             relation = str(item.get("relation") or item.get("type") or "depends_on")
             edge_id = _stable_id("adapter-edge", source_id, raw_source, relation, raw_target, str(index))
             edges.append(
@@ -510,7 +539,7 @@ class LivingKnowledgeService:
                         "target_id": target_node,
                         "relation": relation,
                         "provenance": provenance,
-                        "confidence": float(item.get("confidence") or (1.0 if provenance == "extracted" else 0.6)),
+                        "confidence": float(raw_confidence if raw_confidence is not None else (1.0 if provenance == "extracted" else 0.6)),
                         "source_refs": [source_id],
                         "extractor_version": "graphify-adapter/1",
                         "source_revision": revision,
@@ -633,15 +662,39 @@ class LivingKnowledgeService:
                 )
             else:
                 raise ValueError("adapter_import_not_supported")
+            validation = manifest.get("validation_report") if isinstance(manifest, dict) else {}
+            if not isinstance(validation, dict) or validation.get("valid") is not True:
+                raise ValueError("adapter_validation_failed")
             self._assert_adapter_job_active(job_id, started, timeout_seconds)
-            job.update({"status": "completed", "stage": "import", "progress": 100, "completed_at": now_iso(), "manifest": manifest})
+            job.update(
+                {
+                    "status": "completed",
+                    "stage": "import",
+                    "progress": 100,
+                    "completed_at": now_iso(),
+                    "manifest": manifest,
+                    "error": "",
+                    "retryable": False,
+                }
+            )
             source.update({"status": "ready", "checksum": manifest["source_revision"], "last_sync_at": now_iso(), "last_error": ""})
         except InterruptedError as exc:
             job.update({"status": "cancelled", "completed_at": now_iso(), "error": str(exc)})
             source.update({"status": "pending", "last_error": "", "last_sync_at": now_iso()})
-        except (OSError, ValueError, TimeoutError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, TimeoutError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
             job.update({"status": "failed", "stage": "failed", "completed_at": now_iso(), "error": str(exc), "retryable": True})
             source.update({"status": "failed", "last_error": str(exc), "last_sync_at": now_iso()})
+        except Exception as exc:
+            job.update(
+                {
+                    "status": "failed",
+                    "stage": "failed",
+                    "completed_at": now_iso(),
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "retryable": True,
+                }
+            )
+            source.update({"status": "failed", "last_error": job["error"], "last_sync_at": now_iso()})
         latest_job = self.store.get("knowledge_source_jobs", job_id) or {}
         latest_job.update(job)
         job = latest_job
@@ -701,7 +754,18 @@ class LivingKnowledgeService:
             "employee_id": principal.employee_id,
             "created_at": now_iso(),
         }
-        job.update({"status": "queued", "stage": "queued", "progress": 0, "cancel_requested": False, "queued_at": now_iso(), "attempt": int(job.get("attempt") or 0) + 1})
+        job.update(
+            {
+                "status": "queued",
+                "stage": "queued",
+                "progress": 0,
+                "cancel_requested": False,
+                "queued_at": now_iso(),
+                "attempt": int(job.get("attempt") or 0) + 1,
+                "error": "",
+                "retryable": False,
+            }
+        )
         self.store.put("knowledge_source_jobs", job_id, job)
         self._ensure_adapter_worker()
         self._adapter_worker_event.set()

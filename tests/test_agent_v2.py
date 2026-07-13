@@ -5012,7 +5012,25 @@ def test_graphify_adapter_executes_cli_when_export_is_not_prebuilt(
         output = cwd / "graphify-out"
         output.mkdir(parents=True, exist_ok=True)
         (output / "graph.json").write_text(
-            json.dumps({"nodes": [{"id": "service", "name": "BoI Service"}], "edges": []}),
+            json.dumps(
+                {
+                    "nodes": [
+                        {"id": "service", "name": "BoI Service"},
+                        {"id": "gateway", "name": "Gateway"},
+                    ],
+                    "links": [
+                        {
+                            "source": "service",
+                            "target": "gateway",
+                            "relation": "calls",
+                            "confidence": "EXTRACTED",
+                            "confidence_score": 1.0,
+                            "source_file": "service.py",
+                            "source_location": "L10",
+                        }
+                    ],
+                }
+            ),
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(command, 0, "ok", "")
@@ -5032,7 +5050,19 @@ def test_graphify_adapter_executes_cli_when_export_is_not_prebuilt(
         time.sleep(0.01)
         job = v2_service.knowledge.source_job(admin, job["job_id"])
     assert job["status"] == "completed"
-    assert job["manifest"]["validation_report"]["node_count"] == 1
+    assert job["manifest"]["validation_report"]["node_count"] == 2
+    assert job["manifest"]["validation_report"]["edge_count"] == 1
+    imported = v2_service.store.ontology_neighbors(
+        [job["manifest"]["node_ids"][0]],
+        depth=1,
+        limit=10,
+        employee_id=admin.employee_id,
+        team_ids=admin.teams,
+        include_all=True,
+    )
+    imported_edge = imported["edges"][0]
+    assert imported_edge["payload"]["provenance"] == "extracted"
+    assert imported_edge["payload"]["confidence"] == 1.0
     assert job["checkpoint"]["stage"] == "validate"
 
 
@@ -5048,7 +5078,11 @@ def test_openkb_adapter_executes_cli_and_excludes_navigation_pages(
     source_file.parent.mkdir(parents=True, exist_ok=True)
     source_file.write_bytes(b"fixture")
 
-    def fake_run(command, *, cwd, timeout_seconds):
+    def fake_run(command, *, cwd, timeout_seconds, input_text=None):
+        if "init" in command:
+            assert "--model" in command
+            assert "--language" in command
+            assert input_text == "\n"
         if "add" in command:
             wiki = cwd / "wiki"
             (wiki / "concepts").mkdir(parents=True, exist_ok=True)
@@ -5060,7 +5094,12 @@ def test_openkb_adapter_executes_cli_and_excludes_navigation_pages(
     monkeypatch.setattr(v2_service.knowledge, "_run_adapter_command", fake_run)
     source = v2_service.knowledge.create_source(
         admin,
-        KnowledgeSourceCreateRequest(name="OpenKB live CLI", source_kind="openkb", location=str(source_file)),
+        KnowledgeSourceCreateRequest(
+            name="OpenKB live CLI",
+            source_kind="openkb",
+            location=str(source_file),
+            adapter_config={"model": "openai/local-fixture", "language": "ko"},
+        ),
     )
     job = v2_service.knowledge.sync_source(admin, source["source_id"])["job"]
     deadline = time.monotonic() + 3
@@ -5143,8 +5182,94 @@ def test_failed_adapter_job_retries_from_the_durable_queue(
     while retried["status"] not in {"completed", "failed"} and time.monotonic() < deadline:
         time.sleep(0.01)
         retried = v2_service.knowledge.source_job(admin, job_id)
-    assert retried["status"] == "completed"
+    assert retried["status"] == "completed", retried.get("error")
     assert retried["attempt"] == 2
+
+
+def test_adapter_subprocess_timeout_is_recorded_without_escaping_the_worker(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(
+            name="Timeout adapter",
+            source_kind="openkb",
+            location=str(v2_service.settings.runtime_root / "knowledge-adapters" / "timeout.txt"),
+            adapter_config={"model": "openai/local-fixture"},
+        ),
+    )
+    job_id = "source-job-timeout"
+    v2_service.store.put(
+        "knowledge_source_jobs",
+        job_id,
+        {
+            "job_id": job_id,
+            "source_id": source["source_id"],
+            "employee_id": admin.employee_id,
+            "status": "queued",
+            "attempt": 1,
+        },
+    )
+    monkeypatch.setattr(
+        v2_service.knowledge,
+        "_import_openkb",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(["openkb", "init"], 60)
+        ),
+    )
+
+    v2_service.knowledge._run_adapter_job(admin, source, job_id)
+
+    failed = v2_service.knowledge.source_job(admin, job_id)
+    assert failed["status"] == "failed"
+    assert failed["retryable"] is True
+    assert "timed out" in failed["error"]
+
+
+def test_adapter_validation_failure_cannot_be_reported_as_completed(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch,
+):
+    admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
+    source = v2_service.knowledge.create_source(
+        admin,
+        KnowledgeSourceCreateRequest(
+            name="Empty adapter result",
+            source_kind="openkb",
+            location=str(v2_service.settings.runtime_root / "knowledge-adapters" / "empty.txt"),
+            adapter_config={"model": "openai/local-fixture"},
+        ),
+    )
+    job_id = "source-job-empty-result"
+    v2_service.store.put(
+        "knowledge_source_jobs",
+        job_id,
+        {
+            "job_id": job_id,
+            "source_id": source["source_id"],
+            "employee_id": admin.employee_id,
+            "status": "queued",
+            "attempt": 1,
+        },
+    )
+    monkeypatch.setattr(
+        v2_service.knowledge,
+        "_import_openkb",
+        lambda *_args, **_kwargs: {
+            "source_revision": "empty",
+            "validation_report": {"valid": False, "candidate_count": 0},
+        },
+    )
+
+    v2_service.knowledge._run_adapter_job(admin, source, job_id)
+
+    failed = v2_service.knowledge.source_job(admin, job_id)
+    assert failed["status"] == "failed"
+    assert failed["error"] == "adapter_validation_failed"
 
 
 def test_adapter_running_job_is_requeued_after_restart(
