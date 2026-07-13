@@ -14,7 +14,17 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: draft
+relationships:
+  - relation: part_of
+    target: boi:public:boi-wiki-manual:overview
+    label: BoI Wiki 전체 운영 모델의 관계 탐색
+  - relation: uses
+    target: boi:public:boi-wiki-manual:knowledge:living-knowledge-system
+    label: 검증된 관계와 개선 후보의 재사용
+  - relation: guides
+    target: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
+    label: 업무 발생과 Task 관계를 따라가는 방법
 agent_entrypoint_areas: [knowledge]
 agent_entrypoint_prompts:
   knowledge:
@@ -44,7 +54,7 @@ reference_refs:
 review:
   reviewer: knowledge-curator
   reviewed_at: 2026-07-13T03:10:00+09:00
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 왜 관계를 탐색하나
@@ -97,9 +107,9 @@ AI가 추론한 관계는 검토 전 권한, 자동 배정, 전문성, 완료 �
 | 두 관계 비교 | compare | 두 SOP가 공유하거나 다르게 쓰는 Action |
 | 이해 순서 | tour | 처음 보는 업무를 살펴볼 권장 순서 |
 
-각 질의는 같은 이웃 목록에 이름만 바꾼 것이 아니다. 방향, 시간, relation 종류와 traversal 계약이 다르다. 짧은 순서는 흐름 그림, 시간 변화는 Timeline, 항목이 많은 결과는 관계 탐색 화면으로 자동 선택한다.
+각 질의는 같은 이웃 목록에 이름만 바꾼 것이 아니다. 방향, 시간, relation 종류와 traversal 계약이 다르다. 짧은 순서는 흐름 그림, 시간 변화는 Timeline, 두 항목 비교는 표, 항목이 많은 결과는 관계 탐색 화면으로 자동 선택한다.
 
-2026-07-13 브라우저 acceptance에서는 표의 아홉 보기를 모두 실제 화면 버튼으로 전환했다. Timeline은 시간순 event payload를, tour는 권장 순서를, path는 두 항목 사이의 경로를 각각 사용한다. 빈 보조 배열 때문에 실제 결과가 가려지지 않도록 첫 번째 non-empty 의미 payload만 렌더링한다.
+2026-07-13 브라우저 acceptance에서는 표의 아홉 보기를 모두 실제 화면 버튼으로 전환했다. Timeline은 시간순 event payload를, tour는 권장 순서를, path는 두 항목 사이의 경로를, compare는 두 부분 그래프의 공통점과 차이를 표로 각각 사용한다. 빈 보조 배열 때문에 실제 결과가 가려지지 않도록 첫 번째 non-empty 의미 payload만 렌더링한다.
 
 # 사람과 팀 관계를 해석할 때
 
@@ -131,7 +141,7 @@ flowchart LR
 
 관리자가 staging 영역의 `graph.json`을 Source로 등록하면 구조 node·edge, source 위치, community와 centrality를 읽는다. 기존 import manifest와 비교해 사라진 관계만 tombstone 처리하고 변경된 source 소유 항목을 upsert한다. EXTRACTED, INFERRED, AMBIGUOUS provenance를 보존하며 정본 Markdown은 바꾸지 않는다.
 
-Graphify CLI는 선택 설치다. 2026-07-13 release gate에서는 MIT 라이선스의 `graphifyy 0.9.13`을 격리 설치해 실제 export의 `links`, source location, `EXTRACTED/INFERRED/AMBIGUOUS`와 confidence를 검증했다. CLI가 없거나 export 검증이 실패해도 기본 BoI 검색, Ontology와 Agent는 계속 동작한다.
+Graphify CLI는 선택 설치다. 2026-07-13 release gate에서는 격리된 실제 CLI에 `extract <source> --code-only --no-cluster` 계약으로 작은 Python corpus를 전달해 7개 node와 7개 edge를 만들고 import와 rollback을 검증했다. CLI가 없거나 export 검증이 실패해도 기본 BoI 검색, Ontology와 Agent는 계속 동작한다.
 
 ## OpenKB export
 

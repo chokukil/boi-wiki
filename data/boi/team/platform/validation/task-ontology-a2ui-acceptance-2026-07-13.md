@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:team:platform
-status: reviewed
+status: draft
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
@@ -37,14 +37,14 @@ implementation_refs:
 review:
   reviewer: platform-lead
   reviewed_at: 2026-07-13T21:31:00+09:00
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 실행 기준
 
-> 이 문서는 통합 acceptance의 실제 최종 실행 기록이다. core와 선택 Adapter gate를 구분해 실행했으며 둘 다 통과했다. 형식 검사나 숨겨진 fixture는 브라우저 성공으로 계산하지 않았다.
+> 이 문서는 재검증 감사 문서다. 빈 Ontology 그래프, Mermaid 초기 로드 실패와 자체 renderer 결함을 고친 뒤 결정적·clean 회귀·브라우저·Gemma·검색·parity·Adapter gate를 통과했다. 장문 grounded 답변 p95가 10초 기준을 넘고 fresh runtime Planner 실패가 한 차례 재현됐으므로 검증 상태는 `needs_revision`이다.
 
-- 검증 기준: `32edc02` graph artifact·OpenKB 경계, `6d1e4d4` Pet graph lifecycle, `7f8e95b` 실제 browser journey, `41385e3` graph view·guarded confirmation, `52aedf7` 의미별 browser acceptance
+- 검증 기준: `f58b254` 공식 A2UI·Mermaid·typed Ontology·실제 browser journey
 - fixture version: `1.0`
 - generation model: `google/gemma-4-26b-a4b-qat`
 - embedding model: `text-embedding-bge-m3`
@@ -56,9 +56,9 @@ review:
 | 영역 | 결과 |
 |---|---:|
 | 실제 scenario handler | 50/50 |
-| clean 전체 pytest | 815 passed · 23분 26초 · 격리 TMP runtime |
-| Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 지표 100% · GPT-5.5 미사용 |
-| Browser journey | 17/17 · 실제 조작 · console 오류 0 |
+| clean 전체 pytest | 816 passed · 단일 격리 실행 · 24분 5초 |
+| Gemma 단일·멀티턴 의미 평가 | 94.12% · 의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
+| Browser journey | 21/21 · fresh runtime 실제 조작 · 예상된 revision 409 외 console 오류 0 |
 | Browser 1440×1000 | 통과 |
 | Browser 1180×850 | 통과 |
 | Browser 949×1151 | 통과 |
@@ -69,25 +69,26 @@ review:
 | Harness shadow·held-out·사람 검토 | 통과 · 실제 release·rollback 감사 이력 확인 |
 | Context Playbook model·team scope | 통과 |
 | 반복 실패·NegativeResult·운영 Ontology | 통과 |
-| Task Snapshot cold p95 / warm p50 | 260.32ms / 14.70ms |
-| Ontology 1-hop p95 | 17.20ms |
-| Ontology 4-hop path p95 | 11.37ms |
-| A2UI compile p95 | 0.56ms |
-| 생성 graph artifact final p95 | 464.27ms |
-| Graphify 0.9.13 | 실제 CLI 90 node·177 edge, import·rollback 통과 |
+| Task Snapshot p95 | 19.99ms |
+| Ontology 1-hop p95 | 31.04ms |
+| Ontology 4-hop path p95 | 29.34ms |
+| 동적 surface compile p95 | 0.44ms |
+| 생성 graph artifact final p95 | 620.38ms |
+| 장문 grounded 답변 p95 | 47.47초 · 최대 55.14초 · 10초 기준 미달 |
+| Graphify | 실제 CLI 7 node·7 edge, import·rollback 통과 |
 | OpenKB 0.4.4 | 실제 PDF → private 후보 4개 · index/log 제외 · canonical 변경 0 |
 | Mermaid 직접 링크 cold browser | cold URL·desktop reload·mobile reload 통과 · SVG nonblank·console 오류 0 |
-| 검색 품질 | Recall@8 1.00 · authoritative Top-3 1.00 |
-| Web·REST·MCP parity | 10/10 |
+| 검색 품질 | Recall@8 100% · authoritative Top-3 100% · 검토 완료 canonical alias 기준 |
+| Web·REST·MCP parity | 자연어 route·근거·Task mutation·후보 ID 일치 |
 | LM Studio load/unload | 0건 |
 
 브라우저에서는 Task의 `확인한 내용·수행한 조치·판단·결과·근거·막힌 점·다음 업무`, 복수 담당자 picker, revision 409, Ontology 1-hop 지연 확장, node 선택과 canonical 이동, split·집중 보기, Compact 중지·복원, 9개 관계 보기, 동적 표·Timeline·Mermaid·form·Confirmation과 fallback을 실제 DOM과 canvas로 확인했다. 자동 확인은 관계 그림으로 우회하지 않고 기존 preview·confirmation 계약을 통해서만 생성된다.
 
-실제 Graphify export가 mock과 달리 `links`, `confidence: EXTRACTED`, `confidence_score`를 사용한다는 결함을 release gate에서 발견했다. importer를 실제 `0.9.13` 계약에 맞춘 뒤 90개 node와 177개 edge를 수입하고 같은 manifest로 모두 rollback했다. 정본 변경은 없었다.
+실제 Graphify CLI가 `graphify <path>`가 아니라 `graphify extract <path>`를 요구한다는 결함을 release gate에서 발견했다. Adapter를 `extract --code-only --no-cluster` 계약에 맞춘 뒤 격리 corpus의 7개 node와 7개 edge를 수입하고 같은 manifest로 모두 rollback했다. 정본 변경은 없었다.
 
 OpenKB는 `0.4.4`를 격리 tool로 실행했다. compatibility gateway가 `response_format: json_object` 요청을 이미 로드된 Gemma의 일반 JSON 요청으로 바꾸고 반환 schema를 검증한다. 실제 PDF에서 private 후보 4개가 생성됐고 `index.md`, `log.md` 후보는 0건이었다. gateway 요청 5회 중 변환은 4회, 복구 재시도는 0회였고 canonical 파일은 바뀌지 않았다.
 
-생성 graph artifact는 GraphQuery 결과를 deterministic compiler로 바로 저장하고 A2UI를 위해 별도 모델 호출을 하지 않도록 바꿨다. 최종 p95는 464.27ms다. 한편 일반 장문 Gemma 답변은 시나리오별 20~45초가 걸렸으므로 별도 운영 성능 개선 항목으로 남긴다.
+생성 graph artifact는 GraphQuery 결과를 deterministic compiler로 바로 저장하고 동적 화면을 위해 별도 모델 호출을 하지 않도록 바꿨다. 현재 p95는 620.38ms다. 반면 Planner와 grounded answer를 순차 실행하는 일반 장문 Gemma 답변은 p95 47.47초로 10초 기준을 충족하지 못했다. fresh runtime 한 건에서는 66초 뒤 구조화 intent 검증에 실패해 artifact가 생성되지 않았고 다음 완전 격리 실행에서는 같은 여정이 통과했다. 기능 acceptance와 최종 응답 성능·Planner 안정성을 별도 gate로 유지한다.
 
 # 발견한 결함과 수정
 
@@ -107,15 +108,16 @@ Timeline API는 16개 행을 반환했지만 응답에 함께 있던 빈 `tour_s
 
 검증 raw artifact는 정본 지식이 아니라 runtime evidence다.
 
-- `.tmp/task-ontology-acceptance-report-final6.json`
-- `.tmp/task-ontology-browser-report-final6d.json`
-- `.tmp/task-ontology-browser-shots-final6d/`
-- `.tmp/agent-v2-semantic-report-final5-core.json`
-- `.tmp/agent-v2-semantic-report-final5-deep.json`
-- `.tmp/full-pytest-final6.log`
-- `.tmp/search-quality-final5.json`
-- `.tmp/interface-parity-final5.json`
-- `.tmp/openkb-release-report-final6.json`
+- `.tmp/task-ontology-a2ui-acceptance-final5.json`
+- `.tmp/task-ontology-a2ui-browser-final22.json`
+- `.tmp/task-ontology-a2ui-browser-final22-screens/`
+- `.tmp/agent-v2-semantic-final.json`
+- `.tmp/agent-v2-search-quality-final8.log`
+- `.tmp/pytest-full-final3.log`
+- `.tmp/agent-v2-search-quality-final.json`
+- `.tmp/agent-v2-interface-parity-final4.json`
+- `.tmp/openkb-release-gate-current.json`
+- `.tmp/graphify-release-gate-current.json`
 - `.tmp/current-manual-capture-manifest.json`
 - `.tmp/graphify-job.json`
 - `.tmp/graphify-rollback.json`

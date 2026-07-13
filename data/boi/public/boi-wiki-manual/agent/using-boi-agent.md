@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: draft
 agent_entrypoint_areas: [knowledge, automation]
 agent_entrypoint_prompts:
   knowledge:
@@ -38,9 +38,19 @@ implementation_refs:
     ref: boi_api/app/static/agent_workspace_v2.js
   - type: repo
     ref: boi_api/app/v2/service.py
+relationships:
+  - relation: part_of
+    target: boi:public:boi-wiki-manual:guide:final-operator-guide
+    label: 종합 가이드의 Agent 사용 여정
+  - relation: guides
+    target: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    label: 업무 관계와 동적 결과 사용
+  - relation: uses
+    target: boi:public:boi-wiki-manual:agent:work-learning-system
+    label: 업무 맥락과 학습 순환
 review:
   reviewer: harness-curator
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # BoI Agent로 무엇을 할 수 있나
@@ -199,7 +209,7 @@ Mermaid 결과는 raw code가 아니라 실제 SVG로 렌더링한다. `읽기 �
 
 `Esc`는 선택 항목 정보, 결과 크게 보기, Expanded 순서로 가장 안쪽 상태부터 닫는다. 노드 선택, 정보 영역의 열림 상태, 확대 위치와 중심은 작업별로 저장되어 새로고침 후에도 이어진다. 방향키로 노드를 옮기고 `Enter`로 정보를 열 수 있다.
 
-![결과 전체 폭의 그래프와 아래쪽 선택 항목 정보](../_media/browser/current-guide/20260713-ontology-explorer-1440x1000.png)
+![BoI Agent 결과 영역 전체 폭의 그래프와 아래쪽 선택 항목 정보](../_media/browser/current-guide/20260713-boi-agent-ontology-1440x1000.png)
 
 # SOP와 Task 이어가기
 

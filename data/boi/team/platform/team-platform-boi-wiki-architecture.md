@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:team:platform
-status: reviewed
+status: draft
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:agent:work-learning-system
@@ -47,7 +47,7 @@ implementation_refs:
 review:
   reviewer: platform-lead
   reviewed_at: 2026-07-12T15:00:00+09:00
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 한 문장 정의
@@ -219,7 +219,7 @@ Ontology 갱신은 전체 table truncate가 아니라 source revision별 node·e
 
 Task 실행은 `TaskExecutionSnapshot`을 Inbox와 Task Console의 공통 read model로 사용한다. `TaskWorkRecord`는 확인 내용, 조치, 판단, 결과와 근거를 보존하고 복수 담당자는 하나의 Task 상태를 공유한다.
 
-Agent와 Task의 동적 표현은 A2UI `0.9.1` 호환 `boi-a2ui/v1` catalog로 컴파일한다. A2UI는 정본이나 업무 규칙이 아니며, 허용된 component와 event만 렌더링한다. 지원하지 않는 client 또는 검증 실패 시 기존 typed response renderer를 사용한다.
+Agent와 Task의 동적 표현은 A2UI protocol `0.9.1`과 `@a2ui/web_core/v0_9`, `@a2ui/lit/v0_9` runtime을 사용하는 `boi-a2ui/v1` catalog로 컴파일한다. 서버는 `createSurface → updateComponents → updateDataModel` 메시지와 persisted data model을 저장하고 Web은 공식 processor 위에 업무 component를 등록한다. A2UI는 정본이나 업무 규칙이 아니며, 허용된 component와 event만 렌더링한다. 지원하지 않는 client 또는 검증 실패 시 기존 typed response renderer 하나만 사용한다.
 
 Harness 개선도 같은 표현 계층을 사용하지만 production mutation 경계와 분리한다. WorkRun의 verifier 실패는 인과적 FailurePattern과 NegativeResult로 누적되고, ContextPlaybook은 개인·팀·model profile·freshness 조건이 맞는 항목만 선택한다. Candidate는 editable surface allowlist와 반복 상한을 통과한 뒤 shadow, held-in/out, adversarial, long-term 평가와 사람 검토를 거친다.
 

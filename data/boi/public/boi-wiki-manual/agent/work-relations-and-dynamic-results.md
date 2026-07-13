@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: draft
 agent_entrypoint_areas: [current_work, knowledge]
 agent_entrypoint_prompts:
   current_work:
@@ -26,6 +26,16 @@ agent_entrypoint_prompts:
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:agent:using-boi-agent
+relationships:
+  - relation: part_of
+    target: boi:public:boi-wiki-manual:guide:final-operator-guide
+    label: 종합 가이드의 관계 탐색 여정
+  - relation: guides
+    target: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+    label: Task 배정과 수행 관계 활용
+  - relation: uses
+    target: boi:public:boi-wiki-manual:agent:using-boi-agent
+    label: BoI Agent의 동적 결과 화면
   - type: boi
     ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
   - type: boi
@@ -39,7 +49,7 @@ implementation_refs:
     ref: boi_api/app/static/agent_workspace_v2.js
 review:
   reviewer: harness-curator
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 무엇을 구분해서 보나

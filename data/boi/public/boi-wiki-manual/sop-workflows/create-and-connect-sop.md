@@ -20,6 +20,13 @@ agent_entrypoint_prompts:
   workflow:
     label: 업무 흐름을 SOP와 Task로 구체화하기
     prompt: 업무 맥락을 Workflow와 Task로 나누고 완료된 모습과 확인할 자료를 정하는 방법을 알려줘.
+relationships:
+  - relation: uses_sop
+    target: boi:public:sop:equipment-abnormal-response
+    label: 실제 Workflow와 Task 설계 예시로 활용
+  - relation: guides
+    target: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
+    label: 화면에서 Workflow와 Task를 작성하는 절차
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide

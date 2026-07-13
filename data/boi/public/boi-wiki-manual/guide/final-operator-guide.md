@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: draft
 agent_entrypoint_areas: [current_work, knowledge]
 agent_entrypoint_prompts:
   current_work:
@@ -28,6 +28,16 @@ source_refs:
     ref: boi:public:boi-wiki-manual:overview
   - type: boi
     ref: boi:public:boi-wiki-manual:agent:using-boi-agent
+relationships:
+  - relation: guides
+    target: boi:public:boi-wiki-manual:agent:using-boi-agent
+    label: BoI Agent로 질문하고 결과를 활용하는 방법
+  - relation: guides
+    target: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+    label: Task를 수행하고 업무 관계를 남기는 방법
+  - relation: guides
+    target: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
+    label: 관계와 동적 결과를 탐색하는 방법
   - type: boi
     ref: boi:public:boi-wiki-manual:agent:work-learning-system
 implementation_refs:
@@ -39,7 +49,7 @@ implementation_refs:
     ref: boi_api/app/v2/knowledge_system.py
 review:
   reviewer: harness-curator
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # BoI Wiki로 하는 일

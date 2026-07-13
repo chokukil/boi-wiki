@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: reviewed
+status: draft
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
@@ -34,12 +34,12 @@ implementation_refs:
 review:
   reviewer: platform-lead
   reviewed_at: 2026-07-13T21:31:00+09:00
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 무엇을 검증하나
 
-> 현재 상태: core, 실제 브라우저 여정, 로컬 Gemma, Graphify와 OpenKB release gate를 모두 통과했다. 아래 수치는 2026-07-13 최종 통합 실행 결과이며, 부분 실행 결과를 합산하지 않았다.
+> 현재 상태: 기능 acceptance 통과, 응답 성능과 Planner 안정성 개선 필요. 결정적 계약, clean 전체 회귀, 실제 브라우저 여정, Gemma 의미 평가, 검색 품질, interface parity, Graphify와 OpenKB release gate는 새 코드로 통과했다. 다만 장문 grounded 답변 p95가 10초 기준을 넘고 fresh runtime에서 구조화 intent 생성 실패가 한 차례 재현됐으므로 이 문서는 `reviewed`로 승격하지 않는다.
 
 Task 수행 화면, 업무 관계 그래프와 동적 결과 화면은 각각 따로 보이는 기능이 아니다. 같은 업무 맥락과 근거를 유지하면서 사람이 실제 일을 수행하고, 관계를 이해하며, 안전하게 결과를 남길 수 있어야 한다.
 
@@ -88,33 +88,34 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 
 # 현재 검증 상태
 
-2026-07-13 기준으로 50개 handler, 17개 실제 browser journey와 production-like Gemma 의미 평가를 실행했다. 브라우저 검증은 숨겨진 fixture나 HTML 문자열 존재를 성공으로 세지 않고 실제 클릭, 입력, canvas pixel, 원문 이동과 상태 복원을 확인한다.
+2026-07-13 기준으로 50개 handler와 21개 실제 browser journey를 새 코드에서 실행했다. 브라우저 검증은 숨겨진 fixture나 HTML 문자열 존재를 성공으로 세지 않고 실제 클릭, 입력, canvas pixel, 원문 이동과 상태 복원을 확인한다.
 
 | 검증 | 결과 |
 |---|---:|
 | 결정적 시나리오 | 50/50 |
-| clean 전체 회귀 | 815 passed · 23분 26초 · 격리 TMP runtime |
-| 브라우저 journey | 17/17 · 4 viewport · 예상된 409 외 console 오류 0 |
-| Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 평가 지표 100% · GPT-5.5 미사용 |
-| Snapshot cold p95 / warm p50 | 260.32ms / 14.70ms |
-| 1-hop 관계 p95 | 17.20ms |
-| 4-hop path p95 | 11.37ms |
-| 첫 동적 surface compile p95 | 0.56ms |
-| 생성 graph artifact final p95 | 464.27ms |
-| Graphify 0.9.13 실제 CLI | 90 node·177 edge 수입 후 rollback 통과 |
+| clean 전체 회귀 | 816 passed · 단일 격리 실행 · 24분 5초 |
+| 브라우저 journey | 21/21 · fresh runtime · 4 viewport · 예상된 revision 409 외 console 오류 0 |
+| Gemma 단일·멀티턴 의미 평가 | 94.12% · 의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
+| Task Snapshot p95 | 19.99ms |
+| 1-hop 관계 p95 | 31.04ms |
+| 4-hop path p95 | 29.34ms |
+| 동적 surface compile p95 | 0.44ms |
+| 생성 graph artifact final p95 | 620.38ms |
+| 장문 grounded 답변 p95 | 47.47초 · 10초 기준 미달 |
+| Graphify 실제 CLI | 7 node·7 edge 수입 후 rollback 통과 |
 | OpenKB 0.4.4 실제 CLI | 실제 PDF에서 private 후보 4개 생성 · navigation 0 · 정본 변경 0 |
-| Graph UX | 1440×1000·1180×850·949×1151·390×844, canvas 폭 100%, 하단 inspector·Compact 복원 통과 |
-| 검색 품질 | Recall@8 1.00 · authoritative Top-3 1.00 · canonical Agent 가이드 Top-1 |
-| Web·REST·MCP parity | 10/10 |
+| Graph UX | 1440×1000·1180×850·949×1151·390×844, canvas 폭 100%, 하단 inspector·Compact 복원 통과 · 최소 node 간격 desktop 49px/mobile 69px |
+| 검색 품질 | Recall@8 100% · authoritative Top-3 100% · 검토 완료 canonical alias 기준 |
+| Web·REST·MCP parity | 자연어 route·근거·Task mutation·후보 ID 일치 |
 | LM Studio load/unload | 0건 |
 
 실모델 평가는 사용자가 띄운 Gemma만 사용한다. `업무 이벤트와 SOP 관계 설명 → 방금 관계만 Mermaid` 멀티턴에서 직전 citation보다 넓은 검색 후보를 다시 해석해 되묻는 결함을 발견했고, 실제 citation 집합을 후속 표현 변환의 경계로 사용하도록 수정한 뒤 해당 시나리오가 통과했다. 실패와 수정 이력은 날짜별 Team validation 문서에 남기며, 이전의 형식 검사 결과는 역사적 draft로 유지한다.
 
-초기 실행에서는 OpenKB의 `response_format: json_object`가 LM Studio endpoint와 맞지 않았고 생성 artifact p95도 18.71초였다. compatibility gateway가 요청을 일반 JSON 호출로 변환한 뒤 schema를 검증하고, GraphQuery 결과를 추가 모델 호출 없이 deterministic compiler로 artifact화하도록 수정했다. 최종 실행에서는 OpenKB와 464.27ms artifact gate가 모두 통과했다.
+초기 실행에서는 OpenKB의 `response_format: json_object`가 LM Studio endpoint와 맞지 않았고 생성 artifact p95도 18.71초였다. compatibility gateway가 요청을 일반 JSON 호출로 변환한 뒤 schema를 검증하고, GraphQuery 결과를 추가 모델 호출 없이 deterministic compiler로 artifact화하도록 수정했다. 현재 실행에서는 OpenKB와 503.52ms artifact gate가 통과했다.
 
 브라우저에서는 9개 관계 질의를 각각 화면에서 전환하고, Timeline이 실제 시간 payload를 표시하는지 확인했다. 자동 확인 starter는 graph artifact가 아니라 guarded Confirmation을 열며, 확인 전에는 routine을 만들지 않는다. Harness는 rehearsal뿐 아니라 사람 release와 rollback까지 실제 API와 감사 이력으로 검증했다.
 
-일반 장문 답변의 모델 처리 시간은 이번 artifact gate와 분리해 기록한다. 최종 Gemma 의미 평가에서는 답변 종류에 따라 20~45초가 걸렸으므로 운영 성능 개선 대상이다. 이 지연을 숨기거나 464.27ms artifact 수치로 대체하지 않는다.
+일반 장문 답변의 모델 처리 시간은 artifact gate와 분리해 기록한다. 22개 실제 turn의 p95는 47.47초, 최대는 55.14초였다. Planner와 grounded answer를 이미 로드된 로컬 Gemma로 순차 실행하는 시간이 지배적이며, 첫 진행 상태와 동적 결과 compile이 빠르다는 이유로 최종 답변 10초 기준을 통과했다고 간주하지 않는다. fresh browser 재검증 중 한 번은 Planner가 66초 뒤 유효한 구조화 intent를 만들지 못해 artifact가 생성되지 않았고, 다음 완전 격리 실행에서는 같은 여정이 통과했다. 따라서 이 문제는 일시적 성공으로 닫지 않고 안정성 gate로 유지한다.
 
 새 component, relation, Task mode 또는 Adapter 계약을 추가하면 해당 handler와 browser journey를 함께 추가하고 이 문서를 다시 검증 상태로 전환한다.
 
@@ -127,6 +128,8 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 3. 모델 품질: route·근거·의도가 실제로 틀린 경우 시나리오를 유지한 채 planner와 context를 개선한다.
 
 raw 로그는 runtime 검증 artifact이며 정본 지식이 아니다. Wiki에는 기준, 요약 결과, 발견한 결함과 수정 근거만 남긴다.
+
+최종 검색 품질 원본은 `.tmp/agent-v2-search-quality-final8.log`에 남겼다.
 
 # 함께 보기
 
