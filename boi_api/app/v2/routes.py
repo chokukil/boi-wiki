@@ -185,7 +185,8 @@ def build_agent_v2_router(
     ) -> Any:
         require_scope(identity, "boi.read")
         if "text/event-stream" not in str(http_request.headers.get("accept") or "").lower():
-            return service.run_turn(identity, payload).model_dump(mode="json")
+            response = await asyncio.to_thread(service.run_turn, identity, payload)
+            return response.model_dump(mode="json")
 
         async def stream():
             queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()

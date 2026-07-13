@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import threading
+import time
 import uuid
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -2068,7 +2069,11 @@ class AgentV2Service:
                     step_status = "failed"
                 elif response_status == "needs_input":
                     step_status = "waiting_input"
-                elif plan_ref and intent.operation in {WorkOperation.run, WorkOperation.promote}:
+                elif plan_ref and intent.operation in {
+                    WorkOperation.test,
+                    WorkOperation.run,
+                    WorkOperation.promote,
+                }:
                     step_status = "waiting_confirmation"
                 elif work_status == "waiting_review" and intent.operation in {WorkOperation.refine, WorkOperation.connect}:
                     step_status = "waiting_review"
@@ -2124,8 +2129,9 @@ class AgentV2Service:
         if not goal_plan_id:
             return {}
         goal_plan = self.get_goal_plan(principal, goal_plan_id)
+        action_step = str((run.get("intent") or {}).get("operation") or "run")
         completed_steps = {
-            "action.invoke": {"run", "observe"},
+            "action.invoke": {action_step, "observe"},
             "knowledge.promotion.submit": {"promote"},
             "sop.draft.publish_request": {"create", "validate"},
             "action.draft.publish_request": {"create", "validate"},
@@ -3179,6 +3185,12 @@ class AgentV2Service:
             raise RuntimeError("Task 후보 변환 서비스가 준비되지 않았습니다.")
         source_draft = source_artifact.get("draft") if isinstance(source_artifact.get("draft"), dict) else {}
         mermaid_source = str(source_draft.get("mermaid") or "").strip()
+        if (
+            not mermaid_source
+            and source_artifact.get("artifact_type") == "ontology_graph"
+            and source_draft.get("presentation") == "mermaid"
+        ):
+            mermaid_source = self._mermaid_source_from_ontology_draft(source_draft)
         if not mermaid_source:
             raise RuntimeError("Task로 나눌 흐름 그림 원문이 없습니다.")
         source_title = str(source_artifact.get("title") or "업무 흐름").strip()
@@ -3270,6 +3282,51 @@ class AgentV2Service:
             ),
         )
         return answer, artifact
+
+    @staticmethod
+    def _mermaid_source_from_ontology_draft(draft: dict[str, Any]) -> str:
+        relation_labels = {
+            "assigned_to": "현재 담당",
+            "reviewed_by": "검토 담당",
+            "performed_by": "수행 기록",
+            "completed_by": "검증 완료",
+            "repeated_performer": "반복 수행",
+            "related_team": "관련 조직",
+            "has_task": "포함 Task",
+            "uses_sop": "관련 SOP",
+            "uses_event": "관련 업무 이벤트",
+            "uses_action": "관련 Action",
+            "requires_evidence": "확인할 근거",
+            "member_of": "소속 조직",
+            "has_role": "공식 역할",
+            "evidence": "근거 연결",
+            "links_to": "지식 연결",
+        }
+
+        def clean(value: Any, limit: int = 80) -> str:
+            return re.sub(r'["\n\r|<>]', " ", str(value or "")).strip()[:limit]
+
+        nodes = [item for item in draft.get("nodes") or [] if isinstance(item, dict)][:14]
+        node_ids = {
+            str(item.get("node_id") or ""): f"N{index}"
+            for index, item in enumerate(nodes, start=1)
+            if str(item.get("node_id") or "")
+        }
+        lines = ["flowchart LR"]
+        for item in nodes:
+            node_id = str(item.get("node_id") or "")
+            payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+            title = payload.get("title") or payload.get("label") or node_id
+            if node_id in node_ids:
+                lines.append(f'  {node_ids[node_id]}["{clean(title)}"]')
+        for edge in [item for item in draft.get("edges") or [] if isinstance(item, dict)][:20]:
+            source = node_ids.get(str(edge.get("source_id") or ""))
+            target = node_ids.get(str(edge.get("target_id") or ""))
+            if not source or not target:
+                continue
+            relation = str(edge.get("relation") or "related")
+            lines.append(f"  {source} -->|{clean(relation_labels.get(relation, relation))}| {target}")
+        return "\n".join(lines) if len(lines) > 1 else ""
 
     def _work_routine_plan(
         self,
@@ -3490,6 +3547,25 @@ class AgentV2Service:
 
     def _graph_plan_for_intent(self, principal: Principal, intent: WorkIntent) -> GraphQueryPlan | None:
         draft = intent.graph_query_draft
+        if (
+            (not draft or not draft.enabled)
+            and intent.operation == WorkOperation.connect
+            and intent.context_refs
+            and intent.presentation_mode in {"table", "timeline", "mermaid", "artifact", "explorer"}
+        ):
+            presentation = {
+                "table": "table",
+                "timeline": "timeline",
+                "mermaid": "mermaid",
+                "artifact": "explorer",
+                "explorer": "explorer",
+            }[intent.presentation_mode]
+            draft = GraphQueryDraft(
+                enabled=True,
+                query_kind="timeline" if presentation == "timeline" else "neighbors",
+                focal_mentions=list(intent.context_refs[:20]),
+                presentation=presentation,  # type: ignore[arg-type]
+            )
         if not draft or not draft.enabled:
             return None
         records = self.repository.authoritative_records(principal, include_drafts=True)
@@ -3542,6 +3618,8 @@ class AgentV2Service:
         edges = [item for item in result.get("edges") or [] if isinstance(item, dict)]
         if not nodes:
             return None
+        if str(result.get("presentation") or "") == "mermaid":
+            nodes, edges = self._bounded_mermaid_graph(plan, nodes, edges)
         node_lookup = {str(item.get("node_id") or ""): item for item in nodes}
         relation_labels = {
             "assigned_to": "현재 담당",
@@ -3649,6 +3727,106 @@ class AgentV2Service:
             artifact,
             list({item.evidence_id: item for item in graph_evidence}.values())[:8],
         )
+
+    @staticmethod
+    def _bounded_mermaid_graph(
+        plan: GraphQueryPlan,
+        nodes: list[dict[str, Any]],
+        edges: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Keep Mermaid artifacts small, connected, and grounded around the focal entity."""
+
+        node_lookup = {
+            str(item.get("node_id") or ""): item
+            for item in nodes
+            if str(item.get("node_id") or "")
+        }
+
+        def source_refs(edge: dict[str, Any]) -> list[str]:
+            payload = edge.get("payload") if isinstance(edge.get("payload"), dict) else {}
+            refs = [str(item) for item in payload.get("source_refs") or [] if str(item)]
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            if metadata.get("source_ref"):
+                refs.append(str(metadata["source_ref"]))
+            return list(dict.fromkeys(refs))
+
+        grounded_edges = [
+            edge
+            for edge in edges
+            if str(edge.get("source_id") or "") in node_lookup
+            and str(edge.get("target_id") or "") in node_lookup
+            and source_refs(edge)
+        ]
+        seeds = [item for item in plan.focal_entities if item in node_lookup]
+        if not seeds:
+            seeds = list(node_lookup)[:1]
+
+        node_limit = 10
+        edge_limit = 14
+        selected_ids = set(seeds[:node_limit])
+        selected_edges: list[dict[str, Any]] = []
+        queued = list(seeds[:node_limit])
+        cursor = 0
+        while cursor < len(queued) and len(selected_ids) < node_limit and len(selected_edges) < edge_limit:
+            current = queued[cursor]
+            cursor += 1
+            for edge in grounded_edges:
+                source_id = str(edge.get("source_id") or "")
+                target_id = str(edge.get("target_id") or "")
+                if current not in {source_id, target_id}:
+                    continue
+                neighbor = target_id if source_id == current else source_id
+                if neighbor in selected_ids:
+                    continue
+                selected_ids.add(neighbor)
+                selected_edges.append(edge)
+                queued.append(neighbor)
+                if len(selected_ids) >= node_limit or len(selected_edges) >= edge_limit:
+                    break
+
+        selected_edge_ids = {str(item.get("edge_id") or id(item)) for item in selected_edges}
+        for edge in grounded_edges:
+            if len(selected_edges) >= edge_limit:
+                break
+            edge_key = str(edge.get("edge_id") or id(edge))
+            if edge_key in selected_edge_ids:
+                continue
+            if {
+                str(edge.get("source_id") or ""),
+                str(edge.get("target_id") or ""),
+            } <= selected_ids:
+                selected_edges.append(edge)
+                selected_edge_ids.add(edge_key)
+
+        incident_refs: dict[str, list[str]] = {}
+        for edge in selected_edges:
+            refs = source_refs(edge)
+            for node_id in (str(edge.get("source_id") or ""), str(edge.get("target_id") or "")):
+                incident_refs.setdefault(node_id, []).extend(refs)
+        selected_nodes = []
+        for item in nodes:
+            node_id = str(item.get("node_id") or "")
+            if node_id not in selected_ids:
+                continue
+            node = dict(item)
+            payload = dict(node.get("payload") or {})
+            refs = [str(value) for value in payload.get("source_refs") or [] if str(value)]
+            if payload.get("source_ref"):
+                refs.append(str(payload["source_ref"]))
+            refs.extend(incident_refs.get(node_id, []))
+            payload["source_refs"] = list(dict.fromkeys(refs))
+            if not payload["source_refs"]:
+                continue
+            node["payload"] = payload
+            selected_nodes.append(node)
+        grounded_node_ids = {str(item.get("node_id") or "") for item in selected_nodes}
+        selected_edges = [
+            item
+            for item in selected_edges
+            if str(item.get("source_id") or "") in grounded_node_ids
+            and str(item.get("target_id") or "") in grounded_node_ids
+        ]
+        return selected_nodes[:node_limit], selected_edges[:edge_limit]
 
     def _draft_prompt(
         self,
@@ -4480,6 +4658,16 @@ class AgentV2Service:
         *,
         progress_sink: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> AgentTurnResponse:
+        turn_started = time.perf_counter()
+        last_stage = turn_started
+        stage_timings_ms: dict[str, float] = {}
+
+        def mark_stage(name: str) -> None:
+            nonlocal last_stage
+            current = time.perf_counter()
+            stage_timings_ms[name] = round((current - last_stage) * 1000, 2)
+            last_stage = current
+
         run_id = new_id("run")
         turn_id = new_id("turn")
         self._apply_starter_suggestion(principal, request)
@@ -4504,34 +4692,47 @@ class AgentV2Service:
         )
         active_work_run = self._active_session_work_run(principal, session)
         page_anchor_for_route = self.learning.contexts.page_anchor(principal, request.page_ref)
+        starter_refs = [str(item) for item in request.input_delta.get("_starter_source_refs") or [] if str(item)]
+        starter_result_kind = str(request.input_delta.get("_starter_result_kind") or "")
+        starter_graph_query_kind = str(request.input_delta.get("_starter_graph_query_kind") or "")
+        verified_graph_starter = bool(
+            request.input_delta.get("_starter_suggestion_status") == "resolved"
+            and starter_refs
+            and starter_graph_query_kind
+            and starter_result_kind in {"table", "timeline", "mermaid", "explorer"}
+        )
         planner_search = None
         self._emit_turn_progress(
             progress_sink,
             "retrieval",
             "Wiki 전체에서 관련 지식과 업무 이력을 찾고 있습니다.",
         )
-        try:
-            planner_search = self.search.search(
-                request.question,
-                principal,
-                limit=12,
-                include_history=False,
-                page_ref=request.page_ref,
-                task_ref=request.task_ref,
-            )
-            planner_hints = [
-                {
-                    "ref": item.evidence_id,
-                    "title": item.title,
-                    "kind": item.kind,
-                    "summary": compact_text(item.summary, 180),
-                    "authority": item.authority,
-                    "source": item.source,
-                }
-                for item in planner_search.items[:6]
-            ]
-        except Exception:
+        if verified_graph_starter:
             planner_hints = []
+        else:
+            try:
+                planner_search = self.search.search(
+                    request.question,
+                    principal,
+                    limit=12,
+                    include_history=False,
+                    page_ref=request.page_ref,
+                    task_ref=request.task_ref,
+                )
+                planner_hints = [
+                    {
+                        "ref": item.evidence_id,
+                        "title": item.title,
+                        "kind": item.kind,
+                        "summary": compact_text(item.summary, 180),
+                        "authority": item.authority,
+                        "source": item.source,
+                    }
+                    for item in planner_search.items[:6]
+                ]
+            except Exception:
+                planner_hints = []
+        mark_stage("retrieval")
         try:
             route_input = {
                 "question": request.question,
@@ -4562,11 +4763,46 @@ class AgentV2Service:
                 "requested_result_kind": str(request.input_delta.get("_starter_result_kind") or ""),
                 "requested_graph_query_kind": str(request.input_delta.get("_starter_graph_query_kind") or ""),
             }
-            route = self._semantic_route(principal, route_input)
+            if verified_graph_starter:
+                subject_ref = str(request.input_delta.get("_starter_subject_ref") or starter_refs[0])
+                graph_subject = "현재 사용자" if starter_graph_query_kind == "responsibility" else subject_ref
+                starter_intent = WorkIntent(
+                    goal=request.question,
+                    resolved_goal=request.question,
+                    retrieval_query=request.question,
+                    asset_kind=WorkAssetKind.runtime if starter_graph_query_kind == "responsibility" else WorkAssetKind.knowledge,
+                    operation=WorkOperation.connect,
+                    operation_plan=[WorkOperation.understand, WorkOperation.connect],
+                    target_ref=subject_ref,
+                    scope="selected",
+                    desired_outcome=request.question,
+                    presentation_mode=starter_result_kind,  # type: ignore[arg-type]
+                    work_view="combined" if starter_graph_query_kind == "responsibility" else "none",
+                    graph_query_draft=GraphQueryDraft(
+                        enabled=True,
+                        query_kind=starter_graph_query_kind,  # type: ignore[arg-type]
+                        focal_mentions=[graph_subject],
+                        presentation=starter_result_kind,  # type: ignore[arg-type]
+                    ),
+                    context_refs=starter_refs,
+                    result_purpose="explain",
+                    requested_asset_kinds=[WorkAssetKind.knowledge],
+                    confidence=1.0,
+                )
+                route = {
+                    "capability_id": "knowledge.search",
+                    "source": "verified_starter",
+                    "reason": "사용자가 검증된 맥락 제안을 선택함",
+                    "work_intent": starter_intent.model_dump(mode="json"),
+                    "continuation": {},
+                }
+            else:
+                route = self._semantic_route(principal, route_input)
             capability_id = str(route["capability_id"])
             definition = self.registry.get(capability_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        mark_stage("planning")
         if request.helper_id:
             helper = self.get_helper(principal, request.helper_id)
             allowed = list(helper.get("capability_ids") or ["knowledge.search"])
@@ -4619,7 +4855,6 @@ class AgentV2Service:
                 "capability_id": capability_id,
                 "source": f"{route.get('source') or 'semantic'}:explanatory_guard",
             }
-        starter_refs = [str(item) for item in request.input_delta.get("_starter_source_refs") or [] if str(item)]
         if starter_refs:
             result_kind = str(request.input_delta.get("_starter_result_kind") or "")
             graph_query_kind = str(request.input_delta.get("_starter_graph_query_kind") or "")
@@ -4674,11 +4909,28 @@ class AgentV2Service:
             # resolving broad business nouns as a new graph query.
             preliminary_intent = preliminary_intent.model_copy(
                 update={
-                    "context_refs": list(
-                        dict.fromkeys([*prior_answer_refs, *preliminary_intent.context_refs])
-                    )[:20],
-                    "graph_query_draft": None,
+                    "context_refs": list(dict.fromkeys(prior_answer_refs))[:20],
+                    "graph_query_draft": GraphQueryDraft(
+                        enabled=True,
+                        query_kind="neighbors",
+                        focal_mentions=list(dict.fromkeys(prior_answer_refs))[:20],
+                        presentation="mermaid",
+                    ),
                     "needs_clarification": False,
+                }
+            )
+        if (
+            bool(request.input_delta.get("dry_run"))
+            and preliminary_intent.asset_kind.value == "action"
+            and preliminary_intent.operation == WorkOperation.run
+        ):
+            preliminary_intent = preliminary_intent.model_copy(
+                update={
+                    "operation": WorkOperation.test,
+                    "operation_plan": [
+                        WorkOperation.test if item == WorkOperation.run else item
+                        for item in preliminary_intent.operation_plan
+                    ],
                 }
             )
         resolved_goal = compact_text(preliminary_intent.resolved_goal or request.question, 12000)
@@ -4859,6 +5111,37 @@ class AgentV2Service:
             or preliminary_intent.target_ref
         )
         intent = preliminary_intent.model_copy(update={"target_ref": resolved_target})
+        if (
+            (not intent.graph_query_draft or not intent.graph_query_draft.enabled)
+            and intent.operation == WorkOperation.connect
+            and intent.presentation_mode in {"table", "timeline", "mermaid", "artifact", "explorer"}
+        ):
+            focal_refs = list(
+                dict.fromkeys(
+                    [
+                        *intent.context_refs,
+                        *(item.evidence_id for item in evidence if item.evidence_id),
+                    ]
+                )
+            )
+            if focal_refs:
+                presentation = {
+                    "table": "table",
+                    "timeline": "timeline",
+                    "mermaid": "mermaid",
+                    "artifact": "explorer",
+                    "explorer": "explorer",
+                }[intent.presentation_mode]
+                intent = intent.model_copy(
+                    update={
+                        "graph_query_draft": GraphQueryDraft(
+                            enabled=True,
+                            query_kind="timeline" if presentation == "timeline" else "neighbors",
+                            focal_mentions=focal_refs[:20],
+                            presentation=presentation,  # type: ignore[arg-type]
+                        )
+                    }
+                )
         requested_action_key = str(request.input_delta.get("action_key") or "").strip()
         if requested_action_key:
             context.business_context["action_key"] = requested_action_key
@@ -4891,6 +5174,7 @@ class AgentV2Service:
                 active_artifact_row = candidate_artifact
         graph_clarification = ""
         graph_result_bundle = None
+        graph_started = time.perf_counter()
         try:
             graph_result_bundle = (
                 self._graph_result_artifact(
@@ -4910,6 +5194,8 @@ class AgentV2Service:
             work_run["intent"] = intent.model_dump(mode="json")
             work_run["status"] = "waiting_input"
             self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
+        finally:
+            stage_timings_ms["graph"] = round((time.perf_counter() - graph_started) * 1000, 2)
 
         if graph_clarification:
             status = "needs_input"
@@ -4930,7 +5216,14 @@ class AgentV2Service:
             )
         elif (
             active_artifact_row
-            and active_artifact_row.get("artifact_type") == "mermaid_diagram"
+            and (
+                active_artifact_row.get("artifact_type") == "mermaid_diagram"
+                or (
+                    active_artifact_row.get("artifact_type") == "ontology_graph"
+                    and isinstance(active_artifact_row.get("draft"), dict)
+                    and active_artifact_row["draft"].get("presentation") == "mermaid"
+                )
+            )
             and intent.result_purpose == "transform"
             and "split_tasks" in intent.artifact_actions
             and "create_sop_draft" not in intent.artifact_actions
@@ -5091,7 +5384,7 @@ class AgentV2Service:
                         summary=f"'{task.get('name') or 'Task'}'의 변경 제안을 준비했습니다.",
                         markdown="기존 업무 목적은 유지했습니다. 변경 전·후를 확인하고 적용할 내용만 선택하세요.",
                     )
-        elif intent.operation in {WorkOperation.run, WorkOperation.promote}:
+        elif intent.operation in {WorkOperation.run, WorkOperation.test, WorkOperation.promote}:
             target_ref = intent.target_ref or active_artifact_id or (context.page_anchor.ref if context.page_anchor else "")
             action_key = str(
                 request.input_delta.get("action_key")
@@ -5100,7 +5393,7 @@ class AgentV2Service:
             ).strip()
             domain_operation = ""
             domain_payload: dict[str, Any] = {}
-            if intent.operation == WorkOperation.run and action_key:
+            if intent.operation in {WorkOperation.run, WorkOperation.test} and action_key:
                 domain_operation = "action.invoke"
                 domain_payload = {
                     "action_key": action_key,
@@ -5111,10 +5404,10 @@ class AgentV2Service:
                     if isinstance(request.input_delta.get("event"), dict)
                     else {},
                     "boi_id": str(request.input_delta.get("boi_id") or ""),
-                    "dry_run": bool(request.input_delta.get("dry_run", True)),
+                    "dry_run": True if intent.operation == WorkOperation.test else bool(request.input_delta.get("dry_run", True)),
                     "idempotency_key": str(request.input_delta.get("idempotency_key") or new_id("agent-plan")),
                 }
-            if intent.operation == WorkOperation.run and not domain_operation:
+            if intent.operation in {WorkOperation.run, WorkOperation.test} and not domain_operation:
                 status = "needs_input"
                 answer = AnswerBlock(
                     summary="실행할 Action을 먼저 확인해야 합니다.",
@@ -5551,6 +5844,7 @@ class AgentV2Service:
         )
         response.source_set_ref = str(source_set["source_set_id"])
         response.presentation_plan = presentation_plan(response)
+        a2ui_started = time.perf_counter()
         try:
             a2ui_surface = compile_surface(response)
         except (TypeError, ValueError):
@@ -5566,6 +5860,9 @@ class AgentV2Service:
                 stored_artifact["a2ui_surface_ref"] = response.a2ui_surface_ref
                 self.store.put("artifacts", artifact.artifact_id, stored_artifact)
                 artifact.metadata["a2ui_surface_ref"] = response.a2ui_surface_ref
+        stage_timings_ms["a2ui"] = round((time.perf_counter() - a2ui_started) * 1000, 2)
+        stage_timings_ms["total"] = round((time.perf_counter() - turn_started) * 1000, 2)
+        response.context_usage["timings_ms"] = stage_timings_ms
         run_payload = {
             "run_id": run_id,
             "employee_id": principal.employee_id,
@@ -5619,6 +5916,7 @@ class AgentV2Service:
             "resolved_goal": intent.resolved_goal,
             "presentation_mode": intent.presentation_mode,
             "context_refs": list(intent.context_refs),
+            "timings_ms": stage_timings_ms,
             "created_at": now_iso(),
         }
         self.store.put("runs", run_id, run_payload)
@@ -5701,6 +5999,16 @@ class AgentV2Service:
                     ensure_ascii=False,
                 ).encode("utf-8")
             )
+
+        def compact_artifact_metadata(artifact: ArtifactRef) -> dict[str, Any]:
+            # Presentation is part of the typed artifact contract, not optional
+            # preview decoration. The deterministic A2UI compiler needs it even
+            # after the response has been reduced to the transport budget.
+            return {
+                key: artifact.metadata[key]
+                for key in ("revision", "task_count", "presentation")
+                if key in artifact.metadata
+            }
 
         refresh_display_html()
         keep_rendered_citations()
@@ -5826,11 +6134,7 @@ class AgentV2Service:
                 )
             for artifact in response.artifact_refs:
                 artifact.preview = ""
-                artifact.metadata = {
-                    key: artifact.metadata[key]
-                    for key in ("revision", "task_count")
-                    if key in artifact.metadata
-                }
+                artifact.metadata = compact_artifact_metadata(artifact)
         payload = response.model_dump(mode="json")
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > self.settings.response_budget_bytes:
             response.answer.markdown = truncate_markdown(response.answer.markdown, 700)
@@ -5851,7 +6155,7 @@ class AgentV2Service:
                 else 0,
             }
             for artifact in response.artifact_refs:
-                artifact.metadata = {}
+                artifact.metadata = compact_artifact_metadata(artifact)
             ensure_primary_citation()
         keep_rendered_citations()
         refresh_display_html()
@@ -5884,7 +6188,7 @@ class AgentV2Service:
         if response_size() > budget:
             response.related_questions = []
             response.artifact_refs = [
-                item.model_copy(update={"preview": "", "metadata": {}})
+                item.model_copy(update={"preview": "", "metadata": compact_artifact_metadata(item)})
                 for item in response.artifact_refs[:1]
             ]
             response.answer.summary = compact_text(response.answer.summary, 120)

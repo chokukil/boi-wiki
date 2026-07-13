@@ -26,6 +26,7 @@ from .models import (
     KnowledgeSourceDefinition,
     Principal,
 )
+from .openkb_compat import OpenKBCompatibilityGateway
 from .repository import KnowledgeRecord, KnowledgeRepository
 from .search import HybridSearchService, record_content_checksum
 from .store import AgentV2Store, now_iso
@@ -353,6 +354,8 @@ class LivingKnowledgeService:
         job = self.store.get("knowledge_source_jobs", job_id) or {}
         checkpoint = {"stage": stage, "progress": progress, "updated_at": now_iso(), **extra}
         job.update({"stage": stage, "progress": progress, "checkpoint": checkpoint, "updated_at": now_iso()})
+        if "compatibility_gateway" in extra:
+            job["compatibility_gateway"] = extra["compatibility_gateway"]
         return self.store.put("knowledge_source_jobs", job_id, job)
 
     def _run_adapter_command(
@@ -362,6 +365,7 @@ class LivingKnowledgeService:
         cwd: Path,
         timeout_seconds: float,
         input_text: str | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["BOI_ADAPTER_NO_MODEL_MANAGEMENT"] = "1"
@@ -371,6 +375,7 @@ class LivingKnowledgeService:
         if self.settings.model_api_key:
             env.setdefault("OPENAI_API_KEY", self.settings.model_api_key)
             env.setdefault("LLM_API_KEY", self.settings.model_api_key)
+        env.update(extra_env or {})
         return subprocess.run(
             command,
             cwd=cwd,
@@ -434,7 +439,18 @@ class LivingKnowledgeService:
             timeout_seconds=min(timeout_seconds, 60.0),
             input_text="\n",
         )
-        self._run_adapter_command([executable, "add", str(input_path)], cwd=workspace, timeout_seconds=timeout_seconds)
+        with OpenKBCompatibilityGateway(self.settings.model_base_url, self.settings.model_api_key) as gateway:
+            self._run_adapter_command(
+                [executable, "add", str(input_path)],
+                cwd=workspace,
+                timeout_seconds=timeout_seconds,
+                extra_env={
+                    "OPENAI_API_BASE": gateway.base_url,
+                    "OPENAI_BASE_URL": gateway.base_url,
+                    "BOI_OPENKB_COMPAT_GATEWAY": "1",
+                },
+            )
+            self._checkpoint_adapter_job(job_id, "extract", 35, compatibility_gateway=gateway.metrics)
         pages: list[dict[str, Any]] = []
         wiki_root = workspace / "wiki"
         for path in sorted(wiki_root.rglob("*.md")) if wiki_root.exists() else []:
@@ -882,6 +898,7 @@ class LivingKnowledgeService:
                         "owner": record.owner,
                         "team_id": record.team_id,
                         "authority": record.authority,
+                        "observed_at": record.timestamp,
                         "source_revision": revision,
                     },
                 }
@@ -1807,6 +1824,40 @@ class LivingKnowledgeService:
             or manifest.get("directory_signature") != self.directory_signature(principal)
         ):
             self.compile_graph(principal)
+        manifest = self.store.get("manifests", "knowledge_graph") or {}
+        cache_payload = {
+            "employee_id": principal.employee_id,
+            "teams": sorted(principal.teams),
+            "is_admin": principal.is_admin,
+            "source_signature": manifest.get("source_signature") or "",
+            "directory_signature": manifest.get("directory_signature") or "",
+            "compiler_version": manifest.get("compiler_version") or "",
+            "plan": plan.model_dump(mode="json"),
+        }
+        cache_id = _stable_id(
+            "graph-query",
+            json.dumps(cache_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        )
+        cached = self.store.get("knowledge_graph_queries", cache_id) or {}
+        if isinstance(cached.get("result"), dict):
+            return json.loads(json.dumps(cached["result"], ensure_ascii=False))
+
+        def cache_result(result: dict[str, Any]) -> dict[str, Any]:
+            self.store.put(
+                "knowledge_graph_queries",
+                cache_id,
+                {
+                    "cache_id": cache_id,
+                    "employee_id": principal.employee_id,
+                    "context_fingerprint": hashlib.sha256(
+                        json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                    ).hexdigest(),
+                    "result": result,
+                    "created_at": now_iso(),
+                },
+            )
+            return result
+
         graph = self.store.ontology_neighbors(
             plan.focal_entities,
             depth=plan.depth,
@@ -1943,7 +1994,7 @@ class LivingKnowledgeService:
                         continue
                     visited.add(neighbor)
                     queue.append((neighbor, [*path_nodes, neighbor], [*path_edges, edge]))
-            return {
+            return cache_result({
                 "ok": True,
                 "query_plan": plan.model_dump(mode="json"),
                 "presentation": "mermaid" if plan.presentation == "auto" else plan.presentation,
@@ -1952,7 +2003,7 @@ class LivingKnowledgeService:
                 "nodes": [node_lookup[item] for item in found_nodes if item in node_lookup],
                 "edges": found_edges,
                 "provenance_required": True,
-            }
+            })
 
         depth_by_ref: dict[str, int] = {item: 0 for item in focal}
         semantic_refs: list[str] = []
@@ -2060,7 +2111,7 @@ class LivingKnowledgeService:
                 presentation = "explorer"
             else:
                 presentation = "list"
-        return {
+        return cache_result({
             "ok": True,
             "query_plan": plan.model_dump(mode="json"),
             "presentation": presentation,
@@ -2075,7 +2126,7 @@ class LivingKnowledgeService:
             "lineage_refs": semantic_refs if plan.query_kind == "lineage" else [],
             "responsibility_refs": semantic_refs if plan.query_kind == "responsibility" else [],
             "provenance_required": True,
-        }
+        })
 
     def health(self, principal: Principal, *, refresh: bool = False) -> dict[str, Any]:
         existing = self.store.list("knowledge_health_findings", employee_id=principal.employee_id, limit=1000)

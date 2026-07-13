@@ -387,7 +387,7 @@ class HarnessRegistry:
                     version="1.1",
                     title="Action 실행 Harness",
                     phases=("preflight", "validate", "post_verify"),
-                    operations=("run",),
+                    operations=("test", "run"),
                     validator=_action_execution_checks,
                     document_ref="boi:public:harness:action-authoring-harness",
                     required_context=("action_target", "business_context", "evidence"),
@@ -531,12 +531,19 @@ class HarnessRegistry:
     def harnesses_for(intent: WorkIntent, artifact_kind: str = "") -> list[str]:
         result = ["context.work"]
         kind = artifact_kind or intent.asset_kind.value
+        action_invocation = (
+            kind in {"action", "action_draft", "action.plan"}
+            and intent.operation in {WorkOperation.test, WorkOperation.run}
+            and bool(intent.target_ref)
+            and intent.desired_outcome == "run_result"
+        )
         authoring = intent.operation in {
             WorkOperation.create,
             WorkOperation.refine,
             WorkOperation.validate,
-            WorkOperation.test,
-        } or (intent.operation == WorkOperation.connect and intent.desired_outcome != "answer")
+        } or (intent.operation == WorkOperation.test and not action_invocation) or (
+            intent.operation == WorkOperation.connect and intent.desired_outcome != "answer"
+        )
         if authoring and kind in {"sop", "workflow", "sop_draft", "sop.plan"}:
             result.append("sop.authoring")
         if authoring and kind in {"action", "action_draft", "action.plan"}:
@@ -547,7 +554,7 @@ class HarnessRegistry:
             result.append("business-event.definition")
         if authoring and kind in {"skill", "skill_draft", "skill.plan"}:
             result.append("skill.authoring")
-        if intent.operation == WorkOperation.run and intent.asset_kind.value == "action":
+        if action_invocation:
             result.append("action.execution")
         elif (
             intent.operation in {WorkOperation.run, WorkOperation.complete}

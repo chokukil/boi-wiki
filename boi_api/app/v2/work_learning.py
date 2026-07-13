@@ -1364,7 +1364,12 @@ class WorkLearningService:
             status, decision = "completed", "complete"
         elif artifacts:
             status, decision = "waiting_review", "needs_human"
-        elif intent.operation in {WorkOperation.complete, WorkOperation.run, WorkOperation.promote}:
+        elif intent.operation in {
+            WorkOperation.complete,
+            WorkOperation.test,
+            WorkOperation.run,
+            WorkOperation.promote,
+        }:
             status, decision = "waiting_human", "needs_human"
         else:
             status, decision = "completed", "complete"
@@ -1710,7 +1715,7 @@ class WorkLearningService:
             and delta.kind in {"action_result", "state_transition"}
         )
         standalone_action_complete = (
-            intent.operation == WorkOperation.run
+            intent.operation in {WorkOperation.test, WorkOperation.run}
             and intent.asset_kind.value == "action"
             and not context.task_ref
             and delta.kind == "action_result"

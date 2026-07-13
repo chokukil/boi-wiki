@@ -45,6 +45,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.gzip import GZipMiddleware
 
 from .okf import (
     ALLOWED_MEDIA_EXTENSIONS,
@@ -913,6 +914,7 @@ BUILTIN_EVENT_TYPES: list[dict[str, Any]] = [
 ]
 
 app = FastAPI(title="BoI Wiki", version="0.1.0")
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 
 
@@ -29840,7 +29842,10 @@ def write_task_work_record(req: TaskWorkRecordRequest, employee_id: str) -> tupl
             "result": clean_user_visible_text(req.result, 4000),
             "blocker": clean_user_visible_text(req.blocker, 2000),
             "next_work": clean_user_visible_text(req.next_work, 2000),
-            "evidence_refs": [clean_user_visible_text(item, 500) for item in req.evidence_refs],
+            # Evidence references are validated identifiers, not display text.  Applying
+            # the user-visible text scrubber here erased canonical `boi:` references
+            # before they reached the Evidence Ledger.
+            "evidence_refs": list(dict.fromkeys(item.strip() for item in req.evidence_refs if item.strip())),
             "completed_check_ids": completed_check_ids,
             "trace_id": str(row.get("trace_id") or req.trace_id),
             "event_id": str(row.get("event_id") or req.event_id),
