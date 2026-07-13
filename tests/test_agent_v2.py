@@ -84,7 +84,7 @@ from boi_api.app.v2.policy import TaskPolicy
 from boi_api.app.v2.repository import KnowledgeRecord, KnowledgeRepository
 from boi_api.app.v2.rendering import render_agent_markdown
 from boi_api.app.v2.routes import build_agent_v2_router
-from boi_api.app.v2.search import chunks_for_record, diversify_ranked, graph_score, identity_score
+from boi_api.app.v2.search import chunks_for_record, diversify_ranked, graph_score, identity_score, lexical_score
 from boi_api.app.v2.service import AgentV2Service, truncate_markdown
 from boi_api.app.v2.store import PostgresAgentV2Store, now_iso
 from boi_api.app.v2.worker import DeepWorkRunner, ensure_exact_evidence_ledger, latest_assistant_text
@@ -3271,6 +3271,35 @@ def test_search_identity_prefers_an_exact_dictionary_term_over_a_loose_title_mat
 
     assert identity_score(dictionary, query_tokens) == 1.0
     assert identity_score(dictionary, query_tokens) > identity_score(case, query_tokens)
+
+
+def test_search_lexical_score_treats_a_canonical_alias_as_user_facing_identity():
+    canonical = KnowledgeRecord(
+        record_id="boi:public:manual:overview",
+        kind="manual",
+        title="BoI Wiki 한눈에 보기",
+        description="검토된 사용자 안내",
+        text="업무 맥락과 실행 결과를 연결합니다.",
+        url="/docs/boi:public:manual:overview",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+        metadata={"aliases": ["BoI Agent로 무엇을 할 수 있나"]},
+    )
+    loose = KnowledgeRecord(
+        record_id="boi:public:manual:deployment",
+        kind="manual",
+        title="BoI Agent 배포 안내",
+        description="검토된 사용자 안내",
+        text="업무 맥락과 실행 결과를 연결합니다.",
+        url="/docs/boi:public:manual:deployment",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+    )
+    query_tokens = {"boi", "agent", "무엇", "수"}
+
+    assert lexical_score(query_tokens, canonical, query_tokens) > lexical_score(query_tokens, loose, query_tokens)
 
 
 def test_search_is_acl_aware_excludes_drafts_and_stays_compact(v2_service: AgentV2Service, principal: Principal):

@@ -5,6 +5,10 @@ type: boi/manual
 title: BoI Wiki 한눈에 보기
 description: BoI Wiki가 지식, 업무 흐름, 실행 결과를 연결해 다음 업무에 재사용하는 전체 운영 모델
 tags: [Manual, BoIWiki, BoIAgent, Workflow, WorkLearning, LivingKnowledge]
+aliases:
+  - BoI Agent로 무엇을 할 수 있나
+  - BoI Agent 사용법
+  - BoI Agent 기능
 timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:overview
 visibility: public
@@ -15,6 +19,26 @@ author:
   agent_id: codex
 acl_policy: acl:public
 status: reviewed
+agent_entrypoint_areas: [current_work, automation]
+agent_entrypoint_prompts:
+  current_work:
+    label: 내 역할과 지금 맡은 일을 구분해서 보기
+    prompt: 공식 역할과 검증된 업무 관계, 현재 처리할 Inbox 업무를 서로 섞지 말고 표로 정리해줘.
+    reason: 역할과 현재 업무를 한눈에 구분해 봅니다.
+  automation:
+    label: 놓치지 말아야 할 업무를 다시 확인하도록 계획하기
+    prompt: 현재 업무 맥락에서 다시 확인할 가치가 있는 대상과 조건을 찾아 계획을 먼저 보여줘. 만들기 전에는 내 확인을 받아줘.
+    reason: 반복 확인이 필요한 업무를 실행 전에 검토합니다.
+relationships:
+  - relation: guides
+    target: boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters
+    label: 업무 관계를 탐색하고 외부 지식 Source를 검토하는 방법
+  - relation: uses
+    target: boi:public:boi-wiki-manual:knowledge:living-knowledge-system
+    label: 검증된 업무 결과를 다음 업무에 재사용
+  - relation: guides
+    target: boi:public:boi-wiki-manual:inbox:inbox-and-task-guide
+    label: Inbox에서 근거를 검토하고 Task를 수행하는 방법
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:guide:final-operator-guide
@@ -33,6 +57,8 @@ review:
 # BoI Wiki란
 
 BoI Wiki는 문서 검색 서비스와 업무 실행 시스템을 분리하지 않는다. 접근 가능한 Wiki 전체에서 관련 지식과 과거 사례를 찾고, SOP와 Task를 수행하며, 판단 근거와 결과를 다음 업무에서 재사용할 수 있는 BoI 자산으로 남긴다.
+
+BoI Agent에서는 근거가 있는 답변과 관계를 확인하고, 업무 흐름은 Mermaid로, 시간에 따른 변화는 Timeline으로, 넓은 관계는 연결 관계 화면으로 살펴볼 수 있다. Task를 수행할 때는 확인한 내용, 조치, 판단, 결과와 사용 근거를 같은 업무 기록에 남긴다. 상세 동적 결과와 입력 화면은 현재 검증 중이며, 지원되지 않거나 검증에 실패한 결과는 하나의 기본 화면으로 복구한다.
 
 정본은 OKF Markdown, JSONL, catalog와 Git이다. Postgres/pgvector, ontology graph와 검색 index는 정본에서 다시 만들 수 있는 조회 모델이다. 긴 원본 파일은 `자료 보관함`에 보존하고 Wiki에는 요약, 표본, checksum과 권한이 적용된 연결만 남긴다.
 

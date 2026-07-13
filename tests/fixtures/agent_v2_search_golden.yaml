@@ -33,8 +33,8 @@ cases:
     expected_any: [boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop]
     authoritative_any: [boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop]
   - query: BoI Agent로 무엇을 할 수 있나?
-    expected_any: [boi:public:boi-wiki-manual:agent:using-boi-agent]
-    authoritative_any: [boi:public:boi-wiki-manual:agent:using-boi-agent]
+    expected_any: [boi:public:boi-wiki-manual:overview]
+    authoritative_any: [boi:public:boi-wiki-manual:overview]
   - query: SOP·Task·업무 이벤트·Action·BoI는 어떻게 연결되나?
     expected_any: [boi:public:boi-wiki-manual:workflows:business-event-definition-guide, boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step]
     authoritative_any: [boi:public:boi-wiki-manual:workflows:business-event-definition-guide, boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step]

@@ -156,8 +156,12 @@ def lexical_score(query_tokens: set[str], record: KnowledgeRecord, expanded_toke
         return 0.0
     title_tokens = normalize_tokens(record.title)
     description_tokens = normalize_tokens(record.description)
+    raw_aliases = record.metadata.get("aliases") or []
+    aliases = raw_aliases if isinstance(raw_aliases, list) else [raw_aliases]
+    alias_tokens = normalize_tokens(" ".join(str(item) for item in aliases if str(item).strip()))
     body_tokens = normalize_tokens(record.search_blob)
     exact = len(query_tokens & title_tokens) * 1.0
+    exact += len(query_tokens & alias_tokens) * 0.85
     exact += len(query_tokens & description_tokens) * 0.65
     exact += len(query_tokens & body_tokens) * 0.25
     expanded = len((expanded_tokens - query_tokens) & body_tokens) * 0.15
