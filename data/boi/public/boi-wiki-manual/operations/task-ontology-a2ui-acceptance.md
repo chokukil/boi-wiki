@@ -93,7 +93,7 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 | 검증 | 결과 |
 |---|---:|
 | 결정적 시나리오 | 50/50 |
-| clean 전체 회귀 | 816 passed · 단일 격리 실행 · 24분 5초 |
+| clean 전체 회귀 | 817 passed · 현재 HEAD 단일 실행 · 26분 19초 · deprecation warning 1,904건 |
 | 브라우저 journey | 21/21 · fresh runtime · 4 viewport · 예상된 revision 409 외 console 오류 0 |
 | Gemma 단일·멀티턴 의미 평가 | 94.12% · 의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
 | Task Snapshot p95 | 19.99ms |

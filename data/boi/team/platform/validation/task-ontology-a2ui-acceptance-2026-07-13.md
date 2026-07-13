@@ -56,7 +56,7 @@ review:
 | 영역 | 결과 |
 |---|---:|
 | 실제 scenario handler | 50/50 |
-| clean 전체 pytest | 816 passed · 단일 격리 실행 · 24분 5초 |
+| clean 전체 pytest | 817 passed · 현재 HEAD 단일 실행 · 26분 19초 · deprecation warning 1,904건 |
 | Gemma 단일·멀티턴 의미 평가 | 94.12% · 의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
 | Browser journey | 21/21 · fresh runtime 실제 조작 · 예상된 revision 409 외 console 오류 0 |
 | Browser 1440×1000 | 통과 |
@@ -113,7 +113,7 @@ Timeline API는 16개 행을 반환했지만 응답에 함께 있던 빈 `tour_s
 - `.tmp/task-ontology-a2ui-browser-final22-screens/`
 - `.tmp/agent-v2-semantic-final.json`
 - `.tmp/agent-v2-search-quality-final8.log`
-- `.tmp/pytest-full-final3.log`
+- `.tmp/pytest-full-final4.log`
 - `.tmp/agent-v2-search-quality-final.json`
 - `.tmp/agent-v2-interface-parity-final4.json`
 - `.tmp/openkb-release-gate-current.json`
