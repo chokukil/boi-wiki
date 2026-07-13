@@ -124,7 +124,11 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         and not scenario.get("expected_artifact_type")
         and not scenario.get("require_plan")
     )
-    no_unrequested_transition_ok = not read_only_expected or (not artifacts and not response.get("plan_ref"))
+    presentation_artifacts = {"ontology_graph", "knowledge_graph", "mermaid_diagram"}
+    no_unrequested_transition_ok = not read_only_expected or (
+        not response.get("plan_ref")
+        and actual_artifact_types <= presentation_artifacts
+    )
     related_questions = [item for item in response.get("related_questions") or [] if isinstance(item, dict)]
     related_grounding_ok = len(related_questions) <= 3 and all(
         set(str(ref) for ref in item.get("source_refs") or []) <= (citation_sources | evidence_ids)

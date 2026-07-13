@@ -14,6 +14,7 @@ const OUTPUT_ROOT = join(
 );
 const BASE_URL = process.env.BOI_BASE_URL || "http://127.0.0.1:8765";
 const EMPLOYEE_ID = process.env.BOI_CAPTURE_EMPLOYEE_ID || "100001";
+const CAPTURE_DATE = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 const SOURCE_REVISION = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: ROOT,
   encoding: "utf8",
@@ -208,7 +209,7 @@ async function capture(cdp, scenario, metadata) {
 }
 
 function output(name) {
-  return join(OUTPUT_ROOT, `20260712-${name}.png`);
+  return join(OUTPUT_ROOT, `${CAPTURE_DATE}-${name}.png`);
 }
 
 async function main() {
@@ -328,9 +329,26 @@ async function main() {
         await waitUntil(browser, `document.querySelectorAll(".agent-v2-starter-area").length === 6`, 20000);
       },
     });
+    await viewport(cdp, 1440, 1000);
+    await navigate(cdp, `/agent?employee_id=${EMPLOYEE_ID}`, "[data-agent-v2-workspace]");
+    const mermaidWork = await cdp.eval(`(async () => {
+      const response = await fetch('/api/v2/agent/turns?employee_id=${EMPLOYEE_ID}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          question: '업무 이벤트에서 Task 수행과 결과 지식까지 이어지는 관계를 근거 기반 Mermaid로 보여줘.',
+          page_ref: '/events'
+        })
+      });
+      if (!response.ok) throw new Error('Agent Mermaid turn failed: ' + response.status);
+      const payload = await response.json();
+      const artifact = (payload.artifact_refs || []).find((item) => item.artifact_type === 'mermaid_diagram');
+      if (!artifact) throw new Error('Agent Mermaid artifact was not returned');
+      return {sessionId: payload.work_session_id, artifactId: artifact.artifact_id};
+    })()`, 60000);
     await shot({
       name: "boi-agent-mermaid",
-      path: `/agent?employee_id=${EMPLOYEE_ID}&session=ws_f2a00b3bfce94f85b265b440cc46450c&artifact=artifact_1b4bfa1b1c174eb089d5ab1dbe157c81`,
+      path: `/agent?employee_id=${EMPLOYEE_ID}&session=${encodeURIComponent(mermaidWork.sessionId)}&artifact=${encodeURIComponent(mermaidWork.artifactId)}`,
       routeTemplate: "/agent?session={work_session_id}&artifact={artifact_id}",
       relatedDoc: "boi:public:boi-wiki-manual:agent:using-boi-agent",
       selector: "[data-agent-v2-workspace]",

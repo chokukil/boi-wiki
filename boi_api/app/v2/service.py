@@ -5148,11 +5148,12 @@ class AgentV2Service:
             answer, graph_artifact, graph_evidence = graph_result_bundle
             artifacts.append(graph_artifact)
             evidence = graph_evidence or evidence
+            citation_evidence = graph_evidence or evidence
             citations = self._citations_for_evidence(
                 principal,
                 str(session["session_id"]),
                 resolved_goal,
-                graph_evidence,
+                citation_evidence,
             )
             if citations:
                 markers = " ".join(

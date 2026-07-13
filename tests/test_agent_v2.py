@@ -1822,6 +1822,8 @@ def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work
     assert response.work_intent and response.work_intent.work_view == "combined"
     assert response.graph_result_ref
     assert any(item.artifact_type == "ontology_graph" for item in response.artifact_refs)
+    assert response.citations
+    assert response.used_source_refs == [item.source_ref for item in response.citations]
     assert "지금 처리할 업무" in response.answer.markdown
 
 

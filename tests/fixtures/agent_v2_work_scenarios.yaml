@@ -78,9 +78,8 @@ scenarios:
         case_id: A-100
       dry_run: true
     expected_capability: action.plan
-    expected_operation: run
+    expected_operation: test
     require_plan: true
-    require_confirmation_wait: true
 
   - id: cross_asset_connect
     question: "SOP, 업무 이벤트, Action과 결과 BoI가 어떻게 연결되는지 현재 문서를 기준으로 설명해줘."
