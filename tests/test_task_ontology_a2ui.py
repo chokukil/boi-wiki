@@ -7,6 +7,8 @@ import yaml
 
 from boi_api.app.task_execution import TaskExecutionStore
 from boi_api.app.v2.a2ui import (
+    A2UI_MESSAGE_VERSION,
+    BOI_CATALOG_URL,
     ALLOWED_COMPONENTS,
     BOI_CATALOG_ID,
     compile_harness_review_surface,
@@ -163,6 +165,14 @@ def test_a2ui_compiler_only_emits_trusted_catalog_components_and_keeps_fallback(
     assert {item["component"] for item in surface["components"]} <= ALLOWED_COMPONENTS
     assert "createSurface" in surface["jsonl"]
     assert "updateComponents" in surface["jsonl"]
+    assert [next(key for key in item if key != "version") for item in surface["messages"]] == [
+        "createSurface", "updateComponents", "updateDataModel",
+    ]
+    assert all(item["version"] == A2UI_MESSAGE_VERSION for item in surface["messages"])
+    assert surface["messages"][0]["createSurface"]["catalogId"] == BOI_CATALOG_URL
+    official_components = surface["messages"][1]["updateComponents"]["components"]
+    assert official_components[0] == {"id": "root", "component": "BoiSurface", "children": ["answer"]}
+    assert surface["messages"][2]["updateDataModel"]["path"] == "/"
 
 
 def test_harness_review_surface_explains_failures_trial_and_non_deployment():
@@ -365,6 +375,8 @@ def test_task_console_is_rendered_from_a_valid_stored_a2ui_work_form(boi_app_mod
         "observation", "action_taken", "decision", "outcome",
         "evidence_refs", "blocker", "next_work",
     } <= field_names
+    assert components["WorkRecordForm"]["props"]["submit"]["action"].startswith("/tasks/console/work-record")
+    assert components["WorkRecordForm"]["props"]["submit"]["hidden"]["task_id"]
 
     stored = client.get(f"/api/v2/a2ui-surfaces/{surface['surface_id']}?employee_id=100001")
     assert stored.status_code == 200
@@ -374,6 +386,7 @@ def test_task_console_is_rendered_from_a_valid_stored_a2ui_work_form(boi_app_mod
     assert page.status_code == 200
     assert 'data-a2ui-component="WorkRecordForm"' in page.text
     assert 'data-a2ui-component="EvidencePicker"' in page.text
+    assert 'dist/a2ui-runtime.js' in page.text
     assert 'name="observation"' in page.text and 'name="decision"' in page.text
     assert "누가 이 업무를 맡나요?" in page.text
     assert page.text.count("data-directory-picker") >= 3

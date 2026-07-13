@@ -3,8 +3,14 @@
     "build:ops-center": "vite build"
   },
   "dependencies": {
+    "@a2ui/lit": "0.10.1",
+    "@a2ui/markdown-it": "0.1.0",
+    "@a2ui/web_core": "0.10.4",
     "@xyflow/react": "^12.8.6",
     "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "0.10.1",
+    "graphology-layout-noverlap": "0.4.2",
+    "mermaid": "11.16.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "sigma": "^3.0.3"

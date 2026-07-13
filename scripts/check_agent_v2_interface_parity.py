@@ -177,8 +177,10 @@ def main() -> int:
                     "/api/v2/agent/turns",
                     json={
                         "question": "단면검사 Task를 완료 처리하고 판단 결과를 지식으로 남겨줘. 담당자 확인을 기다려줘.",
+                        "capability_id": "task.work",
                         "page_ref": "/docs/boi:public:sop:direct-development-reporting",
                         "task_ref": "cross_section_decision",
+                        "input_delta": {"operation": "complete"},
                     },
                 )
                 task_started_response.raise_for_status()

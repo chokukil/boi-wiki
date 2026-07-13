@@ -14,6 +14,11 @@ const allowMutations = process.argv.includes("--allow-mutations");
 const debugSession = (process.argv.find((item) => item.startsWith("--debug-session=")) || "--debug-session=").split("=")[1];
 const debugArtifact = (process.argv.find((item) => item.startsWith("--debug-artifact=")) || "--debug-artifact=").split("=")[1];
 const debugPage = (process.argv.find((item) => item.startsWith("--debug-page=")) || "--debug-page=").slice("--debug-page=".length);
+const debugGraph = process.argv.includes("--debug-graph");
+const debugFocus = process.argv.includes("--debug-focus");
+const debugHideAgent = process.argv.includes("--debug-hide-agent");
+const debugWidth = Number((process.argv.find((item) => item.startsWith("--debug-width=")) || "--debug-width=1440").split("=")[1]);
+const debugHeight = Number((process.argv.find((item) => item.startsWith("--debug-height=")) || "--debug-height=1000").split("=")[1]);
 const viewports = [
   { name: "desktop", width: 1440, height: 1000 },
   { name: "compact", width: 1180, height: 850 },
@@ -50,6 +55,17 @@ async function fetchJson(url, timeout = 5000, attempts = 3) {
     }
   }
   throw lastError;
+}
+
+async function fetchStatus(url, timeout = 5000) {
+  return new Promise((resolve) => {
+    const request = get(url, (response) => {
+      response.resume();
+      resolve(response.statusCode || 0);
+    });
+    request.on("error", () => resolve(0));
+    request.setTimeout(timeout, () => request.destroy());
+  });
 }
 
 async function postJson(url, payload, timeout = 5000, attempts = 3) {
@@ -127,7 +143,14 @@ class Cdp {
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
     return result.result?.value;
   }
-  async screenshot(path) { const result = await this.send("Page.captureScreenshot", { format: "png", fromSurface: true }); if (path) writeFileSync(path, Buffer.from(result.data, "base64")); }
+  async screenshot(path) {
+    const result = await this.send("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    if (path) writeFileSync(path, Buffer.from(result.data, "base64"));
+  }
   close() { this.ws?.close(); }
 }
 
@@ -145,8 +168,10 @@ async function navigate(cdp, url, selector) {
 }
 
 async function pressKey(cdp, key, code = key) {
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key, code });
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key, code });
+  const virtualKeys = { Enter: 13, Escape: 27, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
+  const windowsVirtualKeyCode = virtualKeys[key] || 0;
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode });
 }
 
 async function submitAgentQuestion(cdp, question, timeout = 90000) {
@@ -180,6 +205,7 @@ async function runViewport(cdp, viewport) {
   const journeys = [];
   await navigate(cdp, `${baseUrl}/knowledge-graph?employee_id=100001`, "#knowledge-explorer .knowledge-graph-canvas");
   await wait(cdp, `document.querySelector('#knowledge-explorer .knowledge-graph-canvas canvas')?.width > 20`);
+  await wait(cdp, `Number(document.querySelector('#knowledge-explorer .knowledge-graph-canvas')?.dataset.minimumNodeDistance || 0) > 0`, 10000);
   await cdp.eval(`document.querySelector('#knowledge-explorer .knowledge-graph-canvas')?.focus()`);
   await pressKey(cdp, "ArrowRight");
   await wait(cdp, `document.querySelector('#knowledge-explorer [data-knowledge-node-details]')?.hidden === false`);
@@ -209,6 +235,8 @@ async function runViewport(cdp, viewport) {
       inspectorWidthRatio: canvas && hub ? canvas.getBoundingClientRect().width / hub.getBoundingClientRect().width : 0,
       rawRef: document.querySelector('#graph-source-ref')?.value?.startsWith('boi:'),
       overflow: Math.max(0, document.documentElement.scrollWidth-innerWidth),
+      nodeCount: Number(canvas?.dataset.nodeCount || 0),
+      minimumNodeDistance: Number(canvas?.dataset.minimumNodeDistance || 0),
       consoleTitle: document.title,
     };
   })()`);
@@ -219,6 +247,9 @@ async function runViewport(cdp, viewport) {
   if (graph.rawRef) failures.push("raw ontology ref is visible");
   if (graph.overflow > 1) failures.push(`ontology overflow ${graph.overflow}px`);
   journeys.push(journey("ontology_one_hop_expand", graph.canvas && graph.details && Boolean(graph.title) && Boolean(graph.reason) && Boolean(graph.href) && [200, 303, 307].includes(graph.sourceStatus) && graph.widthRatio >= .9 && graph.inspectorWidthRatio >= .9 && !graph.rawRef && graph.overflow <= 1, graph));
+  const readableLayout = graph.nodeCount > 1 && graph.minimumNodeDistance >= 48;
+  if (!readableLayout) failures.push(`ontology nodes are only ${graph.minimumNodeDistance}px apart`);
+  journeys.push(journey("ontology_readable_layout", readableLayout, {nodeCount:graph.nodeCount,minimumNodeDistance:graph.minimumNodeDistance}));
   await cdp.eval(`document.querySelector('#knowledge-explorer [data-knowledge-node-close]')?.click()`);
   await wait(cdp, `document.querySelector('#knowledge-explorer [data-knowledge-node-details]')?.hidden === true`);
 
@@ -226,11 +257,11 @@ async function runViewport(cdp, viewport) {
     progress(viewport, "semantic graph queries");
     await cdp.eval(`document.querySelector('#knowledge-explorer [data-knowledge-view="impact"]')?.click()`);
     await wait(cdp, `document.querySelector('#knowledge-explorer [data-knowledge-view="impact"]')?.getAttribute('aria-selected') === 'true'`);
-    await sleep(300);
+    await wait(cdp, `!document.querySelector('#knowledge-explorer .knowledge-explorer-status')?.textContent.includes('확인하고 있습니다')`, 10000);
     const impact = await cdp.eval(`({selected:document.querySelector('#knowledge-explorer [data-knowledge-view="impact"]')?.getAttribute('aria-selected') === 'true',canvas:!!document.querySelector('#knowledge-explorer .knowledge-graph-canvas canvas'),status:document.querySelector('#knowledge-explorer .knowledge-explorer-status')?.textContent || ''})`);
     await cdp.eval(`document.querySelector('#knowledge-explorer [data-knowledge-view="tour"]')?.click()`);
     await wait(cdp, `document.querySelector('#knowledge-explorer [data-knowledge-view="tour"]')?.getAttribute('aria-selected') === 'true'`);
-    await sleep(300);
+    await wait(cdp, `!document.querySelector('#knowledge-explorer .knowledge-explorer-status')?.textContent.includes('확인하고 있습니다')`, 10000);
     const tour = await cdp.eval(`({selected:document.querySelector('#knowledge-explorer [data-knowledge-view="tour"]')?.getAttribute('aria-selected') === 'true',rows:document.querySelectorAll('#knowledge-explorer .knowledge-explorer-content li').length})`);
     await cdp.eval(`document.querySelector('#knowledge-explorer [data-knowledge-view="path"]')?.click()`);
     await wait(cdp, `document.querySelector('#knowledge-explorer [data-knowledge-view="path"]')?.getAttribute('aria-selected') === 'true'`);
@@ -248,24 +279,41 @@ async function runViewport(cdp, viewport) {
     journeys.push(journey("ontology_tour", graphModes.tour.selected && graphModes.tour.rows > 0, graphModes.tour));
 
     const semanticQueries = [];
-    for (const kind of ["neighbors", "path", "workflow", "impact", "lineage", "responsibility", "timeline", "compare", "tour"]) {
+    const semanticPlans = {
+      neighbors: {focal:[focal], targets:[]},
+      path: {focal:[focal], targets:target ? [target.node_id] : []},
+      workflow: {focal:["boi:public:boi-wiki-manual:sop-workflows:create-and-connect-sop"], targets:[]},
+      impact: {focal:[focal], targets:[]},
+      lineage: {focal:[focal], targets:[]},
+      responsibility: {focal:["person:100001"], targets:[]},
+      timeline: {focal:[focal], targets:[]},
+      compare: {focal:target ? [focal, target.node_id] : [focal], targets:[]},
+      tour: {focal:[focal], targets:[]},
+    };
+    for (const kind of Object.keys(semanticPlans)) {
+      const semanticPlan = semanticPlans[kind];
       const requested = await postJson(`${baseUrl}/api/v2/knowledge-graph/query?employee_id=100001`, {
-        focal_entities: [focal],
+        focal_entities: semanticPlan.focal,
         query_kind: kind,
-        target_entities: ["path", "compare"].includes(kind) && target ? [target.node_id] : [],
+        target_entities: semanticPlan.targets,
         depth: 4,
         limit: 80,
         presentation: "auto",
       }, 10000);
       const result = requested.result;
-      semanticQueries.push({ kind, status: requested.status, reported: result.query_plan?.query_kind || "", presentation: result.presentation || "", nodes: (result.nodes || []).length, edges: (result.edges || []).length, path: (result.path_refs || []).length, timeline: (result.timeline || []).length, tour: (result.tour_steps || []).length, comparison: Boolean(result.comparison) });
+      semanticQueries.push({ kind, status: requested.status, ok:result.ok === true, meaningful:result.meaningful === true, reported: result.query_plan?.query_kind || "", presentation: result.presentation || "", nodes: (result.nodes || []).length, edges: (result.edges || []).length, path: (result.path_refs || []).length, timeline: (result.timeline || []).length, tour: (result.tour_steps || []).length, comparison: Boolean(result.comparison && Object.keys(result.comparison).length) });
     }
     const semanticKinds = new Set((semanticQueries || []).map((item) => item.reported));
-    const semanticSpecials = (semanticQueries || []).every((item) => item.status === 200 && item.reported === item.kind)
+    const semanticSpecials = (semanticQueries || []).every((item) => item.status === 200 && item.ok && item.meaningful && item.reported === item.kind)
       && (semanticQueries || []).find((item) => item.kind === 'path')?.path > 1
+      && (semanticQueries || []).find((item) => item.kind === 'workflow')?.edges > 0
+      && (semanticQueries || []).find((item) => item.kind === 'impact')?.edges > 0
+      && (semanticQueries || []).find((item) => item.kind === 'lineage')?.edges > 0
+      && (semanticQueries || []).find((item) => item.kind === 'responsibility')?.edges > 0
       && (semanticQueries || []).find((item) => item.kind === 'timeline')?.timeline > 0
       && (semanticQueries || []).find((item) => item.kind === 'tour')?.tour > 0
-      && (semanticQueries || []).find((item) => item.kind === 'compare')?.comparison;
+      && (semanticQueries || []).find((item) => item.kind === 'compare')?.comparison
+      && (semanticQueries || []).find((item) => item.kind === 'compare')?.presentation === 'table';
     journeys.push(journey("ontology_semantic_queries", semanticKinds.size === 9 && Boolean(semanticSpecials), {queries:semanticQueries}));
 
     const visibleModes = [];
@@ -320,10 +368,16 @@ async function runViewport(cdp, viewport) {
       if (!clicked) throw new Error("grounded ontology starter is missing");
       await wait(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-agent-ontology-explorer]')`, 30000);
     }
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')?.width > 20`);
-    await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas')?.focus()`);
-    await pressKey(cdp, "ArrowRight");
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-details]')?.hidden === false`);
+    await wait(cdp, `(() => { const node=document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas'); return node?.dataset.graphPainted === 'true' && node?.dataset.keyboardReady === 'true' && Number(node?.dataset.nodeCount || 0) > 0 && node.querySelector('canvas')?.width > 20; })()`, 10000);
+    await cdp.eval(`(() => { const node=document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas'); if (node) node.dataset.acceptanceIdentity = crypto.randomUUID(); return node?.dataset.acceptanceIdentity || ''; })()`);
+    await sleep(800);
+    await wait(cdp, `(() => { const nodes=document.querySelectorAll('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas'); const node=nodes[0]; return nodes.length === 1 && node?.dataset.graphPainted === 'true' && node?.dataset.keyboardReady === 'true'; })()`, 10000);
+    await cdp.eval(`(() => { const node=document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas'); node?.focus(); return document.activeElement === node; })()`);
+    await sleep(100);
+    await pressKey(cdp, "Enter");
+    await sleep(500);
+    const keyboardSelection = await cdp.eval(`(() => { const node=document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas'); const details=document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]'); return {focused:document.activeElement===node,keyEvents:Number(node?.dataset.keyEventCount||0),lastKey:node?.dataset.lastKey||'',detailsOpenCount:Number(node?.dataset.detailsOpenCount||0),detailsOpen:details?.hidden===false,officialCount:document.querySelectorAll('[data-agent-v2-artifact-list] [data-boi-a2ui-official]').length}; })()`);
+    if (!keyboardSelection.detailsOpen) throw new Error(`Agent graph keyboard selection failed: ${JSON.stringify(keyboardSelection)}`);
     await cdp.eval(`document.querySelector('[data-agent-v2-artifact-focus]')?.click()`);
     await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open')`);
     const beforeReload = await cdp.eval(`(() => ({
@@ -331,10 +385,15 @@ async function runViewport(cdp, viewport) {
       progressSeen: window.__boiAcceptanceProgressSeen === true,
       surfaceRef: document.querySelector('[data-agent-v2-workspace]')?.dataset.a2uiSurfaceRef || '',
       component: document.querySelector('[data-agent-v2-artifact-list] [data-a2ui-component]')?.dataset.a2uiComponent || '',
-      canvas: document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')?.width > 20,
-      inspector: document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-details]')?.hidden === false,
-      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-title]')?.textContent.trim() || '',
-      sourceHref: document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-open-node]')?.getAttribute('href') || '',
+      canvas: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas canvas')?.width > 20,
+      painted: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.graphPainted === 'true',
+      nodeCount: Number(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.nodeCount || 0),
+      minimumNodeDistance: Number(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.minimumNodeDistance || 0),
+      canvasHeight: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.getBoundingClientRect().height || 0,
+      duplicateConversationComponents: document.querySelectorAll('[data-agent-v2-artifact-list] [data-a2ui-component="Answer"], [data-agent-v2-artifact-list] [data-a2ui-component="CitationList"], [data-agent-v2-artifact-list] [data-a2ui-component="RelatedQuestions"]').length,
+      inspector: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]')?.hidden === false,
+      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-title]')?.textContent.trim() || '',
+      sourceHref: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-open-node]')?.getAttribute('href') || '',
       focused: document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open') || false,
       assistantMessages: document.querySelectorAll('.agent-v2-message.assistant').length,
     }))()`);
@@ -342,26 +401,28 @@ async function runViewport(cdp, viewport) {
       await cdp.screenshot(join(screenshotDir, `agent-ontology-${viewport.width}x${viewport.height}.png`));
     }
     await pressKey(cdp, "Escape");
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-details]')?.hidden === true && document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open')`);
+    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]')?.hidden === true && document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open')`);
     await pressKey(cdp, "Escape");
     await wait(cdp, `!document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open')`);
     await cdp.eval(`document.querySelector('[data-agent-v2-artifact-focus]')?.click()`);
     await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open')`);
-    await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas')?.focus()`);
-    await pressKey(cdp, "ArrowRight");
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-details]')?.hidden === false`);
+    await wait(cdp, `(() => { const node=document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas'); return node?.dataset.graphPainted === 'true' && node?.dataset.keyboardReady === 'true'; })()`, 10000);
+    await sleep(300);
+    await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.focus()`);
+    await pressKey(cdp, "Enter");
+    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]')?.hidden === false`).catch(() => { throw new Error("Agent graph inspector did not reopen after focus mode transition"); });
     await sleep(200);
-    const expectedRestoredTitle = await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-title]')?.textContent.trim() || ''`);
+    const expectedRestoredTitle = await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-title]')?.textContent.trim() || ''`);
     const reloaded = cdp.once("Page.loadEventFired");
     await cdp.send("Page.reload", {ignoreCache:false});
     await reloaded;
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')?.width > 20`, 30000);
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-details]')?.hidden === false`, 10000);
+    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.graphPainted === 'true'`, 30000);
+    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]')?.hidden === false`, 10000).catch(() => { throw new Error("Agent graph inspector state was not restored after reload"); });
     const restored = await cdp.eval(`(() => ({
       sessionId: sessionStorage.getItem('boiAgentV2WorkSession') || '',
       focused: document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open') || false,
-      inspector: document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-details]')?.hidden === false,
-      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-title]')?.textContent.trim() || '',
+      inspector: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]')?.hidden === false,
+      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-title]')?.textContent.trim() || '',
     }))()`);
     progress(viewport, "compact graph lifecycle");
     await navigate(
@@ -371,30 +432,30 @@ async function runViewport(cdp, viewport) {
     );
     await wait(cdp, `document.querySelectorAll('[data-message-artifact]').length > 0`, 10000);
     await cdp.eval(`(() => { const buttons=[...document.querySelectorAll('[data-message-artifact]')]; buttons.at(-1)?.click(); })()`);
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')?.width > 20`, 30000);
+    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.graphPainted === 'true'`, 30000);
     const expandedBeforeCompact = await cdp.eval(`(() => ({
       mode: document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode || '',
-      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-title]')?.textContent.trim() || '',
+      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-title]')?.textContent.trim() || '',
       artifactButton: Boolean(document.querySelector('[data-message-artifact]')),
-      canvas: Boolean(document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')),
+      canvas: Boolean(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas canvas')),
     }))()`);
     await cdp.eval(`document.querySelector('[data-agent-v2-expand]')?.click()`);
     await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode === 'compact'`);
-    await wait(cdp, `!document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')`, 10000);
+    await wait(cdp, `!document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas canvas')`, 10000);
     const compactState = await cdp.eval(`(() => ({
       mode: document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode || '',
       workbenchHidden: document.querySelector('[data-agent-v2-workbench]')?.hidden === true,
-      canvas: Boolean(document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')),
+      canvas: Boolean(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas canvas')),
       artifactButton: Boolean(document.querySelector('[data-message-artifact]')),
     }))()`);
     await cdp.eval(`document.querySelector('[data-agent-v2-expand]')?.click()`);
     await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode === 'expanded'`);
     await cdp.eval(`(() => { const buttons=[...document.querySelectorAll('[data-message-artifact]')]; buttons.at(-1)?.click(); })()`);
-    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')?.width > 20`, 10000);
+    await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.graphPainted === 'true'`, 10000);
     const expandedAfterCompact = await cdp.eval(`(() => ({
       mode: document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode || '',
-      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-knowledge-node-title]')?.textContent.trim() || '',
-      canvas: Boolean(document.querySelector('[data-agent-v2-artifact-list] .knowledge-graph-canvas canvas')),
+      selectedTitle: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-title]')?.textContent.trim() || '',
+      canvas: Boolean(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas canvas')),
     }))()`);
     const compactLifecyclePassed = expandedBeforeCompact.mode === "expanded" && expandedBeforeCompact.canvas
       && expandedBeforeCompact.artifactButton && compactState.mode === "compact" && compactState.workbenchHidden
@@ -410,13 +471,27 @@ async function runViewport(cdp, viewport) {
       const payload={protocol_version:'0.9.1',catalog_id:'boi-a2ui/v1',surface_id:'invalid-browser-surface',components:[{id:'bad',component:'RawHtml',props:{html:'<script>x</script>'}}],events:[],fallback:{}};
       return window.BoiA2UI?.validate(payload) === null;
     })()`);
-    agentSurface = {checked:true,naturalGraph,...beforeReload,expectedRestoredTitle,restored,invalidRejected,compactLifecyclePassed};
-    const agentPassed = naturalGraph && beforeReload.progressSeen && beforeReload.canvas && beforeReload.inspector && beforeReload.focused
+    const officialLifecycle = await cdp.eval(`(async () => {
+      const ref=document.querySelector('[data-agent-v2-workspace]')?.dataset.a2uiSurfaceRef || ${JSON.stringify("")};
+      const payload=ref ? await fetch('/api/v2/a2ui-surfaces/'+encodeURIComponent(ref)).then(response=>response.json()) : {};
+      const sequence=(payload.messages||[]).map(item=>Object.keys(item).find(key=>key!=='version'));
+      return {ref,sequence,dataModel:Boolean(payload.data_model?.surface?.id),official:Boolean(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official]'))};
+    })()`);
+    agentSurface = {checked:true,naturalGraph,...beforeReload,expectedRestoredTitle,restored,invalidRejected,compactLifecyclePassed,officialLifecycle};
+    const agentPassed = naturalGraph && beforeReload.progressSeen && beforeReload.canvas && beforeReload.painted
+      && beforeReload.nodeCount > 0 && beforeReload.minimumNodeDistance > 0 && beforeReload.canvasHeight >= 300
+      && beforeReload.duplicateConversationComponents === 0 && beforeReload.inspector && beforeReload.focused
       && Boolean(beforeReload.selectedTitle) && Boolean(beforeReload.sourceHref) && beforeReload.assistantMessages > 0
       && restored.sessionId === beforeReload.sessionId && restored.focused && restored.inspector
       && restored.selectedTitle === expectedRestoredTitle && invalidRejected;
     if (!agentPassed) failures.push("Agent ontology journey or A2UI fallback failed");
     journeys.push(journey("agent_a2ui_and_fallback", agentPassed, agentSurface));
+    const lifecyclePassed = officialLifecycle.official && officialLifecycle.dataModel
+      && officialLifecycle.sequence.join(",") === "createSurface,updateComponents,updateDataModel";
+    if (!lifecyclePassed) failures.push("official A2UI lifecycle or persisted data model is incomplete");
+    journeys.push(journey("a2ui_official_lifecycle", lifecyclePassed, officialLifecycle));
+    const citationPassed = Boolean(beforeReload.sourceHref) && [200,303,307].includes(await fetchStatus(`${baseUrl}${beforeReload.sourceHref}`));
+    journeys.push(journey("citation_canonical_navigation", citationPassed, {href:beforeReload.sourceHref}));
 
     const variantChecks = [];
     progress(viewport, "Agent table/timeline/Mermaid surfaces");
@@ -467,6 +542,15 @@ async function runViewport(cdp, viewport) {
       renderError:await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] .mermaid-diagram')?.dataset.mermaidError || ''`),
       source:await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] .mermaid-diagram')?.dataset.mermaidSource || ''`),
     });
+    await navigate(cdp, `${baseUrl}/docs/boi%3Apublic%3Aboi-wiki-manual%3Aguide%3Afinal-operator-guide?employee_id=100001`, ".markdown-body");
+    let canonicalMermaid = {rendered:false,raw:false,error:""};
+    try {
+      await wait(cdp, `document.querySelector('.markdown-body .mermaid-diagram')?.dataset.mermaidState === 'rendered' && !!document.querySelector('.markdown-body .mermaid-diagram svg')`, 30000);
+      canonicalMermaid = await cdp.eval(`({rendered:!!document.querySelector('.markdown-body .mermaid-diagram svg'),raw:/flowchart\\s+(LR|TD)/.test(document.querySelector('.markdown-body .mermaid-diagram')?.textContent||''),error:document.querySelector('.markdown-body .mermaid-diagram')?.dataset.mermaidError||''})`);
+    } catch (caught) { canonicalMermaid.error=String(caught?.message||caught); }
+    const canonicalMermaidPassed = canonicalMermaid.rendered && !canonicalMermaid.raw && !canonicalMermaid.error;
+    if (!canonicalMermaidPassed) failures.push("canonical Mermaid did not render as SVG without raw source");
+    journeys.push(journey("mermaid_document_rendering", canonicalMermaidPassed, canonicalMermaid));
     const variantsPassed = variantChecks.every((item) => item.visible && item.active === item.component);
     if (!variantsPassed) failures.push("Agent table, timeline, and Mermaid surfaces were not rendered through the visible workbench");
     journeys.push(journey("agent_table_timeline_mermaid", variantsPassed, {variants:variantChecks}));
@@ -480,11 +564,12 @@ async function runViewport(cdp, viewport) {
       await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
       const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='confirmation' && /다시 확인|자동 확인/.test(item.textContent)); button?.click(); return Boolean(button); })()`);
       if (!clicked) throw new Error("grounded Confirmation starter is missing");
-      await wait(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-a2ui-component="Confirmation"] button')`, 90000);
+      const confirmationLookup = `(() => { const roots=[document]; let fallback=null; for(let i=0;i<roots.length;i+=1){ const root=roots[i]; for(const item of root.querySelectorAll('*')) if(item.shadowRoot) roots.push(item.shadowRoot); for(const match of root.querySelectorAll('boi-a2ui-confirmation, [data-a2ui-component="Confirmation"]')){ fallback ||= match; if(match.querySelector('button')) return match; } } return fallback; })()`;
+      await wait(cdp, `!!(${confirmationLookup})?.querySelector('button')`, 90000);
       confirmationState = await cdp.eval(`(() => {
-        const mount=document.querySelector('[data-agent-v2-artifact-list] [data-a2ui-component="Confirmation"]');
+        const mount=${confirmationLookup};
         let emitted=false;
-        mount.addEventListener('boi:a2ui-confirm-request',()=>{ emitted=true; window.__boiConfirmationEmitted=true; },{once:true});
+        document.addEventListener('boi:a2ui-confirm-request',()=>{ emitted=true; window.__boiConfirmationEmitted=true; },{once:true});
         const original=window.confirm;
         window.confirm=()=>false;
         mount.querySelector('button')?.click();
@@ -660,17 +745,35 @@ async function main() {
     cdp.on("Runtime.exceptionThrown", (item) => consoleErrors.push(item.exceptionDetails?.exception?.description || item.exceptionDetails?.text || "exception"));
     cdp.on("Log.entryAdded", (item) => { if (item.entry?.level === "error") consoleErrors.push(item.entry.text); });
     if (debugSession) {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: debugWidth,
+        height: debugHeight,
+        deviceScaleFactor: 1,
+        mobile: debugWidth < 600,
+      });
       const artifactQuery = debugArtifact ? `&artifact=${encodeURIComponent(debugArtifact)}` : "";
       const target = debugPage
         ? `${baseUrl}${debugPage}${debugPage.includes("?") ? "&" : "?"}pet_session=${encodeURIComponent(debugSession)}`
         : `${baseUrl}/agent?employee_id=100001&session=${encodeURIComponent(debugSession)}${artifactQuery}`;
       await navigate(cdp, target, "[data-agent-v2-workspace]");
       if (debugPage) {
-        await cdp.eval(`document.querySelector('[data-agent-v2-expand]')?.click()`);
+        if (debugHideAgent) await cdp.eval(`document.querySelector('[data-agent-v2-close]')?.click()`);
+        else await cdp.eval(`document.querySelector('[data-agent-v2-expand]')?.click()`);
         await sleep(300);
       }
+      if (debugFocus) {
+        await cdp.eval(`document.querySelector('[data-agent-v2-artifact-focus]')?.click()`);
+        await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open')`);
+      }
       const debugStarted = Date.now();
-      try { await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] .mermaid-diagram')?.dataset.mermaidState === 'rendered'`, 30000); } catch (_error) {}
+      if (!debugGraph) {
+        try { await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] .mermaid-diagram')?.dataset.mermaidState === 'rendered'`, 30000); } catch (_error) {}
+      } else {
+        await wait(cdp, `document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.graphPainted === 'true'`, 10000);
+        await cdp.eval(`document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.focus()`);
+        await pressKey(cdp, "Enter");
+      }
+      await sleep(1000);
       const debug = await cdp.eval(`(() => ({
         mermaidLoaded: Boolean(window.mermaid),
         diagrams: [...document.querySelectorAll('.mermaid-diagram')].map(item => ({state:item.dataset.mermaidState||'',error:item.dataset.mermaidError||'',lastFailure:item.dataset.mermaidLastFailure||'',attempts:Number(item.dataset.mermaidAttempts||0),libraryMs:Number(item.dataset.mermaidLibraryMs||0),queueMs:Number(item.dataset.mermaidQueueMs||0),renderMs:Number(item.dataset.mermaidRenderMs||0),startedAt:item.dataset.mermaidStartedAt||'',connected:item.isConnected,source:(item.dataset.mermaidSource||'').slice(0,120)})),
@@ -678,8 +781,18 @@ async function main() {
         svgCount: document.querySelectorAll('[data-agent-v2-artifact-list] svg').length,
         mermaidScripts: [...document.scripts].filter(item=>item.src.includes('mermaid')).map(item=>({src:item.src,async:item.async,connected:item.isConnected})),
         mermaidResources: performance.getEntriesByType('resource').filter(item=>item.name.includes('mermaid')).map(item=>({name:item.name,duration:Math.round(item.duration),transferSize:item.transferSize,encodedBodySize:item.encodedBodySize,decodedBodySize:item.decodedBodySize})),
+        graphPanels: [...document.querySelectorAll('[data-agent-v2-artifact-list] .knowledge-graph-hub')].map(panel => { const canvas=panel.querySelector('.knowledge-graph-canvas'); const rect=canvas?.getBoundingClientRect(); return {official:Boolean(panel.closest('[data-boi-a2ui-official]')),connected:panel.isConnected,hidden:panel.hidden,ready:canvas?.dataset.ready||'',painted:canvas?.dataset.graphPainted||'',nodeCount:Number(canvas?.dataset.nodeCount||0),minimumNodeDistance:Number(canvas?.dataset.minimumNodeDistance||0),width:Math.round(rect?.width||0),height:Math.round(rect?.height||0),computedMinHeight:getComputedStyle(canvas).minHeight,hostClass:panel.closest('[data-agent-v2-workspace]')?.className||'',surfaceClass:panel.closest('.agent-surface')?.className||'',canvases:canvas?.querySelectorAll('canvas').length||0,canvasSizes:[...(canvas?.querySelectorAll('canvas')||[])].map(item=>({width:item.width,height:item.height,clientWidth:item.clientWidth,clientHeight:item.clientHeight}))}; }),
+        artifactClass: document.querySelector('[data-agent-v2-workspace]')?.className || '',
+        surfaceMode: document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode || '',
+        workbenchHidden: document.querySelector('[data-agent-v2-workbench]')?.hidden,
+        runtimeResources: performance.getEntriesByType('resource').filter(item=>/a2ui-runtime|knowledge-graph/.test(item.name)).map(item=>({name:item.name,duration:Math.round(item.duration)})),
+        a2uiRuntime: document.querySelector('[data-agent-v2-artifact-list]')?.dataset.a2uiRuntime || '',
+        officialCount: document.querySelectorAll('[data-agent-v2-artifact-list] [data-boi-a2ui-official]').length,
+        activeElement: document.activeElement?.className || document.activeElement?.tagName || '',
+        inspectorOpen: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]')?.hidden === false,
       }))()`);
       debug.elapsedMs = Date.now() - debugStarted;
+      if (screenshotDir) await cdp.screenshot(join(screenshotDir, `debug-agent-graph.png`));
       if (outputPath) writeFileSync(outputPath, JSON.stringify(debug, null, 2) + "\n");
       console.log(JSON.stringify(debug, null, 2));
       return;
@@ -695,7 +808,7 @@ async function main() {
     }
     const journeyMap = new Map();
     results.flatMap((item) => item.journeys || []).forEach((item) => journeyMap.set(item.id, item));
-    const requiredJourneys = ["inbox_to_task_work_record","task_assignment_and_revision","task_work_record_persistence","ontology_one_hop_expand","ontology_path","ontology_impact","ontology_tour","ontology_semantic_queries","ontology_visible_semantic_views","agent_a2ui_and_fallback","agent_compact_suspends_graph","agent_table_timeline_mermaid","agent_confirmation_surface","inbox_task_snapshot_parity","harness_review_release_rehearsal","adapter_job_status_and_retry","mobile_focus_and_fallback"];
+    const requiredJourneys = ["inbox_to_task_work_record","task_assignment_and_revision","task_work_record_persistence","ontology_one_hop_expand","ontology_readable_layout","ontology_path","ontology_impact","ontology_tour","ontology_semantic_queries","ontology_visible_semantic_views","agent_a2ui_and_fallback","a2ui_official_lifecycle","citation_canonical_navigation","agent_compact_suspends_graph","agent_table_timeline_mermaid","mermaid_document_rendering","agent_confirmation_surface","inbox_task_snapshot_parity","harness_review_release_rehearsal","adapter_job_status_and_retry","mobile_focus_and_fallback"];
     const missingJourneys = requiredJourneys.filter((id) => !journeyMap.has(id));
     const failedJourneys = [...journeyMap.values()].filter((item) => !item.passed).map((item) => item.id);
     const unexpectedConsoleErrors = consoleErrors.filter((message) => !message.includes("409 (Conflict)"));

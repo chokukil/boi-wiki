@@ -9,7 +9,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from .auth import V2IdentityResolver, require_scope
-from .a2ui import compile_harness_review_surface
+from .a2ui import (
+    A2UI_MESSAGE_VERSION,
+    A2UI_PROTOCOL_VERSION,
+    ALLOWED_COMPONENTS,
+    BOI_CATALOG_ID,
+    BOI_CATALOG_URL,
+    COMPONENT_PROP_SCHEMAS,
+    compile_harness_review_surface,
+)
 from .models import (
     AgentTurnRequest,
     CapabilityPlanRequest,
@@ -778,6 +786,27 @@ def build_agent_v2_router(
     async def evaluation(evaluation_id: str, identity: Principal = Depends(principal)) -> dict[str, Any]:
         require_scope(identity, "boi.read")
         return service.get_evaluation(identity, evaluation_id)
+
+    @router.get("/api/v2/a2ui/catalogs/boi/v1")
+    async def a2ui_boi_catalog(identity: Principal = Depends(principal)) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        return {
+            "catalog_id": BOI_CATALOG_URL,
+            "compatibility_id": BOI_CATALOG_ID,
+            "protocol_version": A2UI_PROTOCOL_VERSION,
+            "message_version": A2UI_MESSAGE_VERSION,
+            "components": [
+                {
+                    "name": name,
+                    "props": {
+                        key: expected.__name__
+                        for key, expected in COMPONENT_PROP_SCHEMAS.get(name, {}).items()
+                    },
+                }
+                for name in sorted(ALLOWED_COMPONENTS)
+            ],
+            "mutation_policy": "preview_harness_confirmation",
+        }
 
     @router.get("/api/v2/a2ui-surfaces/{surface_id}")
     async def a2ui_surface(surface_id: str, identity: Principal = Depends(principal)) -> dict[str, Any]:

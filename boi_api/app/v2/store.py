@@ -319,6 +319,7 @@ class PostgresAgentV2Store(AgentV2Store):
         "knowledge_source_rollbacks": "knowledge_source_rollbacks",
         "knowledge_health_findings": "knowledge_health_findings",
         "knowledge_patch_proposals": "knowledge_patch_proposals",
+        "knowledge_graph_queries": "knowledge_graph_queries",
     }
 
     def __init__(self, dsn: str, dimensions: int):
@@ -835,31 +836,35 @@ class PostgresAgentV2Store(AgentV2Store):
         row_limit = max(1, min(int(limit), 500))
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    WITH RECURSIVE walk(edge_id, source_id, target_id, relation, payload, depth, path) AS (
-                        SELECT e.edge_id, e.source_id, e.target_id, e.relation, e.payload, 1,
-                               ARRAY[e.source_id, e.target_id]::TEXT[]
-                        FROM ontology_edges e
-                        WHERE e.source_id = ANY(%s) OR e.target_id = ANY(%s)
-                        UNION ALL
-                        SELECT e.edge_id, e.source_id, e.target_id, e.relation, e.payload, w.depth + 1,
-                               w.path || CASE WHEN e.source_id = ANY(w.path) THEN e.target_id ELSE e.source_id END
-                        FROM walk w
-                        JOIN ontology_edges e
-                          ON (e.source_id = w.target_id OR e.target_id = w.target_id
-                              OR e.source_id = w.source_id OR e.target_id = w.source_id)
-                        WHERE w.depth < %s
-                          AND NOT (e.source_id = ANY(w.path) AND e.target_id = ANY(w.path))
+                raw_edges: list[tuple[Any, ...]] = []
+                seen_edge_ids: set[str] = set()
+                seen_node_ids = set(clean_seeds)
+                frontier = list(clean_seeds)
+                for hop in range(1, max_depth + 1):
+                    if not frontier or len(raw_edges) >= row_limit:
+                        break
+                    cursor.execute(
+                        """
+                        SELECT edge_id, source_id, target_id, relation, payload
+                        FROM ontology_edges
+                        WHERE source_id = ANY(%s) OR target_id = ANY(%s)
+                        ORDER BY edge_id
+                        LIMIT %s
+                        """,
+                        (frontier, frontier, row_limit - len(raw_edges)),
                     )
-                    SELECT DISTINCT edge_id, source_id, target_id, relation, payload, depth
-                    FROM walk
-                    ORDER BY depth, edge_id
-                    LIMIT %s
-                    """,
-                    (clean_seeds, clean_seeds, max_depth, row_limit),
-                )
-                raw_edges = cursor.fetchall()
+                    next_frontier: list[str] = []
+                    for row in cursor.fetchall():
+                        edge_id = str(row[0])
+                        if edge_id in seen_edge_ids:
+                            continue
+                        seen_edge_ids.add(edge_id)
+                        raw_edges.append((*row, hop))
+                        for node_id in (str(row[1]), str(row[2])):
+                            if node_id not in seen_node_ids:
+                                seen_node_ids.add(node_id)
+                                next_frontier.append(node_id)
+                    frontier = list(dict.fromkeys(next_frontier))
                 node_ids = list(
                     dict.fromkeys(
                         [*clean_seeds, *[str(row[1]) for row in raw_edges], *[str(row[2]) for row in raw_edges]]

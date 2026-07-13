@@ -1777,9 +1777,8 @@ class AgentV2Service:
             (item for item in records if page_anchor and page_anchor.resolved and item.record_id == page_anchor.ref),
             None,
         )
-        ordered_refs = [str(item) for item in (context_refs or []) if str(item).strip()]
-        if page_record:
-            ordered_refs.append(page_record.record_id)
+        ordered_refs = [page_record.record_id] if page_record else []
+        ordered_refs.extend(str(item) for item in (context_refs or []) if str(item).strip())
         ordered_refs.extend(str(item) for item in source_set.get("pinned") or [])
         ordered_refs = list(dict.fromkeys(ordered_refs))
         priority: list[EvidenceRef] = []
@@ -3549,8 +3548,11 @@ class AgentV2Service:
         draft = intent.graph_query_draft
         if (
             (not draft or not draft.enabled)
-            and intent.operation == WorkOperation.connect
             and intent.context_refs
+            and (
+                intent.operation == WorkOperation.connect
+                or intent.presentation_mode == "explorer"
+            )
             and intent.presentation_mode in {"table", "timeline", "mermaid", "artifact", "explorer"}
         ):
             presentation = {
@@ -4885,6 +4887,15 @@ class AgentV2Service:
                     "work_view": "combined" if graph_query_kind == "responsibility" else preliminary_intent.work_view,
                 }
             )
+        explicit_target_ref = str(preliminary_intent.target_ref or "").strip()
+        if explicit_target_ref and self._record_for_ref(principal, explicit_target_ref):
+            preliminary_intent = preliminary_intent.model_copy(
+                update={
+                    "context_refs": list(
+                        dict.fromkeys([explicit_target_ref, *preliminary_intent.context_refs])
+                    )[:20]
+                }
+            )
         session_context = request.input_delta.get("_work_session_context")
         recent_messages = (
             session_context.get("recent_messages")
@@ -5113,7 +5124,10 @@ class AgentV2Service:
         intent = preliminary_intent.model_copy(update={"target_ref": resolved_target})
         if (
             (not intent.graph_query_draft or not intent.graph_query_draft.enabled)
-            and intent.operation == WorkOperation.connect
+            and (
+                intent.operation == WorkOperation.connect
+                or intent.presentation_mode == "explorer"
+            )
             and intent.presentation_mode in {"table", "timeline", "mermaid", "artifact", "explorer"}
         ):
             focal_refs = list(

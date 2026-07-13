@@ -995,6 +995,24 @@ def v2_service(tmp_path: Path) -> AgentV2Service:
         "이 문서는 기본 검색 결과에 나오면 안 됩니다.",
     )
     _write_markdown(
+        content / "public" / "related-draft.md",
+        {
+            "type": "boi/manual",
+            "title": "검증 중 관계 가이드",
+            "boi_id": "boi:public:guide:related-draft",
+            "visibility": "public",
+            "status": "draft",
+            "relationships": [
+                {
+                    "relation": "guides",
+                    "target": "boi:public:guide",
+                    "label": "검증 중인 안내 관계",
+                }
+            ],
+        },
+        "검증이 끝나기 전에는 검색 정본으로 사용하지 않습니다.",
+    )
+    _write_markdown(
         content / "private" / "100001" / "note.md",
         {
             "type": "boi/reference",
@@ -1843,7 +1861,7 @@ def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work
     assert "지금 처리할 업무" in response.answer.markdown
 
 
-def test_connect_intent_with_explorer_presentation_builds_graph_without_explicit_draft(
+def test_explorer_presentation_builds_graph_without_explicit_draft(
     v2_service: AgentV2Service,
     principal: Principal,
     monkeypatch: pytest.MonkeyPatch,
@@ -1857,8 +1875,11 @@ def test_connect_intent_with_explorer_presentation_builds_graph_without_explicit
             goal="종합 가이드와 직접 연결된 업무 관계를 탐색한다",
             resolved_goal="종합 가이드 중심 관계 탐색 화면을 제공한다",
             asset_kind=WorkAssetKind.knowledge,
-            operation=WorkOperation.connect,
-            operation_plan=[WorkOperation.understand, WorkOperation.connect],
+            # The planner may classify a one-document request as understand
+            # while still correctly choosing an interactive relationship view.
+            # Explorer is only valid when the server can ground a graph plan.
+            operation=WorkOperation.understand,
+            operation_plan=[WorkOperation.understand],
             context_refs=[source_ref],
             presentation_mode="explorer",
             result_purpose="explain",
@@ -4861,29 +4882,28 @@ def test_repeated_work_relation_requires_three_distinct_verified_completions_wit
 
 
 @pytest.mark.parametrize(
-    ("query_kind", "expected_presentation"),
+    ("query_kind", "focal_entities", "expected_presentation"),
     [
-        ("neighbors", {"list", "explorer"}),
-        ("workflow", {"mermaid", "explorer"}),
-        ("impact", {"list", "explorer"}),
-        ("lineage", {"mermaid", "explorer"}),
-        ("responsibility", {"list", "explorer"}),
-        ("timeline", {"timeline"}),
-        ("compare", {"list", "explorer"}),
-        ("tour", {"list", "explorer"}),
+        ("neighbors", ["boi:public:sop:manual"], {"list", "explorer"}),
+        ("workflow", ["boi:public:sop:manual"], {"mermaid", "explorer"}),
+        ("impact", ["boi:public:sop:manual"], {"list", "explorer"}),
+        ("responsibility", ["person:100001"], {"list", "explorer"}),
+        ("compare", ["boi:public:sop:manual", "boi:public:guide"], {"table"}),
+        ("tour", ["boi:public:sop:manual"], {"list", "explorer"}),
     ],
 )
 def test_universal_graph_query_kinds_keep_acl_provenance_and_auto_presentation(
     v2_service: AgentV2Service,
     principal: Principal,
     query_kind: str,
+    focal_entities: list[str],
     expected_presentation: set[str],
 ):
     v2_service.knowledge.compile_graph(principal)
     result = v2_service.knowledge.query(
         principal,
         GraphQueryPlan(
-            focal_entities=["boi:public:sop:manual"],
+            focal_entities=focal_entities,
             query_kind=query_kind,
             depth=2,
             presentation="auto",
@@ -4894,6 +4914,51 @@ def test_universal_graph_query_kinds_keep_acl_provenance_and_auto_presentation(
     assert result["presentation"] in expected_presentation
     assert all((edge.get("payload") or {}).get("provenance") for edge in result["edges"])
     assert all("boi:private:100002" not in str(node.get("node_id")) for node in result["nodes"])
+
+
+def test_graph_compiler_includes_only_explicit_relation_bearing_drafts(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.knowledge.compile_graph(principal)
+    graph = v2_service.store.ontology_neighbors(
+        ["boi:public:guide:related-draft"],
+        depth=1,
+        limit=20,
+        employee_id=principal.employee_id,
+        team_ids=principal.teams,
+        include_all=principal.is_admin,
+    )
+    node_by_id = {item["node_id"]: item for item in graph["nodes"]}
+
+    assert node_by_id["boi:public:guide:related-draft"]["payload"]["status"] == "draft"
+    assert node_by_id["boi:public:guide:related-draft"]["payload"]["reviewed"] is False
+    assert any(edge["relation"] == "guides" for edge in graph["edges"])
+    assert "boi:public:skill:smoke" not in node_by_id
+    searchable = {
+        item.record_id for item in v2_service.repository.authoritative_records(principal)
+    }
+    assert "boi:public:guide:related-draft" not in searchable
+
+
+def test_relation_required_graph_query_does_not_report_empty_success(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.knowledge.compile_graph(principal)
+    result = v2_service.knowledge.query(
+        principal,
+        GraphQueryPlan(
+            focal_entities=["boi:public:dictionary:cross-section-inspection"],
+            query_kind="responsibility",
+            depth=2,
+        ),
+    )
+
+    assert result["ok"] is False
+    assert result["meaningful"] is False
+    assert result["edges"] == []
+    assert result["empty_reason"]
 
 
 def test_graph_query_kinds_have_distinct_semantic_contracts(
@@ -4920,6 +4985,33 @@ def test_graph_query_kinds_have_distinct_semantic_contracts(
     assert impact["downstream_refs"] == sorted(impact["downstream_refs"])
     assert all(impact["depth_by_ref"].get(ref, 0) > 0 for ref in impact["downstream_refs"])
 
+    v2_service.store.upsert_ontology(
+        [
+            {
+                "node_id": "completion:manual-review",
+                "node_type": "completion_record",
+                "payload": {
+                    "title": "사람 검토 완료 기록",
+                    "visibility": "public",
+                    "observed_at": "2026-07-12T00:00:00+00:00",
+                },
+            }
+        ],
+        [
+            {
+                "edge_id": "edge:manual-lineage",
+                "source_id": "completion:manual-review",
+                "target_id": focal,
+                "relation": "derived_from",
+                "payload": {
+                    "provenance": "human_verified",
+                    "source_refs": [focal],
+                    "visibility": "public",
+                },
+            }
+        ],
+    )
+
     lineage = v2_service.knowledge.query(
         principal,
         GraphQueryPlan(focal_entities=[focal], query_kind="lineage", direction="both", depth=3),
@@ -4929,6 +5021,7 @@ def test_graph_query_kinds_have_distinct_semantic_contracts(
         "generated_from", "completed_by", "performed_by", "supersedes", "links_to",
     }
     assert lineage["lineage_refs"] == sorted(lineage["lineage_refs"])
+    assert lineage["meaningful"] is True
 
     compared = v2_service.knowledge.query(
         principal,
@@ -4942,6 +5035,7 @@ def test_graph_query_kinds_have_distinct_semantic_contracts(
     assert set(compared["comparison"]) == {
         "common_relations", "common_node_refs", "unique_relations", "unique_node_refs",
     }
+    assert compared["presentation"] == "table"
 
     tour = v2_service.knowledge.query(
         principal,
@@ -5102,6 +5196,9 @@ def test_graphify_adapter_executes_cli_when_export_is_not_prebuilt(
     monkeypatch.setattr("boi_api.app.v2.knowledge_system.shutil.which", lambda name: f"/tools/{name}")
 
     def fake_run(command, *, cwd, timeout_seconds):
+        assert command[1:3] == ["extract", str(v2_service.settings.content_root)]
+        assert "--code-only" in command and "--no-cluster" in command
+        assert command[command.index("--out") + 1] == str(cwd)
         output = cwd / "graphify-out"
         output.mkdir(parents=True, exist_ok=True)
         (output / "graph.json").write_text(
@@ -5550,6 +5647,12 @@ def test_postgres_registry_includes_all_harness_improvement_collections():
         "harness_active_versions",
         "harness_release_audits",
     } <= set(PostgresAgentV2Store.COLLECTION_TABLES)
+
+
+def test_postgres_registry_includes_graph_query_cache_collection():
+    from boi_api.app.v2.store import PostgresAgentV2Store
+
+    assert PostgresAgentV2Store.COLLECTION_TABLES["knowledge_graph_queries"] == "knowledge_graph_queries"
 
 
 def test_harness_candidate_cannot_change_immutable_safety_boundaries(

@@ -9,7 +9,9 @@ from .models import AgentTurnResponse
 
 
 A2UI_PROTOCOL_VERSION = "0.9.1"
+A2UI_MESSAGE_VERSION = "v0.9"
 BOI_CATALOG_ID = "boi-a2ui/v1"
+BOI_CATALOG_URL = "/api/v2/a2ui/catalogs/boi/v1"
 ALLOWED_COMPONENTS = {
     "Answer",
     "CitationList",
@@ -44,6 +46,75 @@ COMPONENT_PROP_SCHEMAS: dict[str, dict[str, type]] = {
 _UNSAFE_HTML = re.compile(r"<(?:script|iframe|object|embed)\b|\son[a-z]+\s*=", re.IGNORECASE)
 
 
+def _official_data_model(surface: dict[str, Any]) -> dict[str, Any]:
+    surface_id = str(surface["surface_id"])
+    components = list(surface.get("components") or [])
+    initial_work_record: dict[str, Any] = {}
+    for item in components:
+        if item.get("component") != "WorkRecordForm":
+            continue
+        for field in (item.get("props") or {}).get("fields") or []:
+            if isinstance(field, dict) and field.get("name"):
+                initial_work_record[str(field["name"])] = field.get("value") or ""
+    return {
+        "surface": {"id": surface_id, "catalog": BOI_CATALOG_ID},
+        "workRecord": initial_work_record,
+    }
+
+
+def _official_messages(surface: dict[str, Any]) -> list[dict[str, Any]]:
+    surface_id = str(surface["surface_id"])
+    components = list(surface.get("components") or [])
+    root = {
+        "id": "root",
+        "component": "BoiSurface",
+        "children": [str(item["id"]) for item in components],
+    }
+    official_components = [root]
+    for item in components:
+        official_components.append(
+            {
+                "id": str(item["id"]),
+                "component": str(item["component"]),
+                **dict(item.get("props") or {}),
+            }
+        )
+    data_model = _official_data_model(surface)
+    return [
+        {
+            "version": A2UI_MESSAGE_VERSION,
+            "createSurface": {
+                "surfaceId": surface_id,
+                "catalogId": BOI_CATALOG_URL,
+                "sendDataModel": True,
+            },
+        },
+        {
+            "version": A2UI_MESSAGE_VERSION,
+            "updateComponents": {"surfaceId": surface_id, "components": official_components},
+        },
+        {
+            "version": A2UI_MESSAGE_VERSION,
+            "updateDataModel": {"surfaceId": surface_id, "path": "/", "value": data_model},
+        },
+    ]
+
+
+def finalize_surface(surface: dict[str, Any]) -> dict[str, Any]:
+    validate_surface(surface)
+    messages = _official_messages(surface)
+    surface.update(
+        {
+            "data_model": _official_data_model(surface),
+            "canonical_catalog_id": BOI_CATALOG_URL,
+            "message_version": A2UI_MESSAGE_VERSION,
+            "messages": messages,
+            "jsonl": "\n".join(json.dumps(item, ensure_ascii=False) for item in messages),
+        }
+    )
+    return surface
+
+
 def _validate_props(value: Any, *, key: str = "") -> None:
     if isinstance(value, dict):
         for child_key, child_value in value.items():
@@ -57,7 +128,7 @@ def _validate_props(value: Any, *, key: str = "") -> None:
         return
     if key in {"displayHtml", "html"} and _UNSAFE_HTML.search(value):
         raise ValueError("unsafe_a2ui_html")
-    if key.lower() in {"url", "href", "downloadurl"} and value and not value.startswith(("/", "#")):
+    if key.lower() in {"url", "href", "downloadurl", "action", "endpoint"} and value and not value.startswith(("/", "#")):
         raise ValueError("external_a2ui_url")
 
 
@@ -184,15 +255,7 @@ def compile_surface(response: AgentTurnResponse) -> dict[str, Any]:
         "events": [],
         "fallback": response.model_dump(mode="json", exclude={"presentation_plan", "a2ui_surface_ref"}),
     }
-    validate_surface(surface)
-    surface["jsonl"] = "\n".join(
-        json.dumps(item, ensure_ascii=False)
-        for item in [
-            {"createSurface": {"surfaceId": surface_id, "catalogId": BOI_CATALOG_ID}},
-            {"updateComponents": {"surfaceId": surface_id, "components": components}},
-        ]
-    )
-    return surface
+    return finalize_surface(surface)
 
 
 def compile_harness_review_surface(
@@ -261,12 +324,4 @@ def compile_harness_review_surface(
             "production_changed": False,
         },
     }
-    validate_surface(surface)
-    surface["jsonl"] = "\n".join(
-        json.dumps(item, ensure_ascii=False)
-        for item in [
-            {"createSurface": {"surfaceId": surface_id, "catalogId": BOI_CATALOG_ID}},
-            {"updateComponents": {"surfaceId": surface_id, "components": components}},
-        ]
-    )
-    return surface
+    return finalize_surface(surface)

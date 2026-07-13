@@ -1,8 +1,21 @@
 import Graph from "graphology";
+import forceAtlas2 from "graphology-layout-forceatlas2";
+import FA2Layout from "graphology-layout-forceatlas2/worker";
+import noverlap from "graphology-layout-noverlap";
 import Sigma from "sigma";
+import { EdgeArrowProgram } from "sigma/rendering";
 
 type GraphNode = { node_id: string; node_type?: string; payload?: Record<string, unknown> };
-type GraphEdge = { edge_id: string; source_id: string; target_id: string; relation?: string; payload?: Record<string, unknown> };
+type GraphEdge = {
+  edge_id: string;
+  source_id: string;
+  target_id: string;
+  relation?: string;
+  relation_family?: string;
+  user_label?: string;
+  display_priority?: number;
+  payload?: Record<string, unknown>;
+};
 type GraphPayload = {
   view?: string;
   nodes?: GraphNode[];
@@ -13,6 +26,10 @@ type GraphPayload = {
   affected_refs?: string[];
   comparison?: Record<string, unknown>;
   status?: string;
+  empty_reason?: string;
+  primary_path?: string[];
+  legend?: Array<{ relation_family?: string; labels?: string[] }>;
+  layout_hint?: string;
 };
 
 type ExplorerViewState = {
@@ -27,14 +44,21 @@ const colors: Record<string, string> = {
   workflow: "#b45309", sop: "#b45309", event: "#be123c", action: "#0369a1",
   evidence: "#15803d", data_artifact: "#047857", completion_record: "#166534",
 };
+const relationColors: Record<string, string> = {
+  structure: "#7c3aed", sequence: "#2563eb", work: "#0369a1", event: "#be123c",
+  result: "#15803d", responsibility: "#c2410c", organization: "#0f766e",
+  lineage: "#4d7c0f", concept: "#64748b", reference: "#94a3b8", change: "#b45309", other: "#64748b",
+};
 
 const nodeTitle = (node: GraphNode): string => String(node.payload?.title || "연결된 항목");
-const graphLabel = (value: string): string => value.length > 34 ? `${value.slice(0, 33)}…` : value;
+const graphLabel = (value: string): string => value.length > 24 ? `${value.slice(0, 23)}…` : value;
 
-function position(index: number, total: number): { x: number; y: number } {
-  if (index === 0) return { x: 0, y: 0 };
-  const angle = (Math.PI * 2 * (index - 1)) / Math.max(1, total - 1);
-  const radius = 2 + Math.floor(index / 18) * 1.5;
+function seededPosition(value: string, focal: boolean): { x: number; y: number } {
+  if (focal) return { x: 0, y: 0 };
+  let seed = 2166136261;
+  for (const character of value) seed = Math.imul(seed ^ character.charCodeAt(0), 16777619);
+  const angle = ((seed >>> 0) / 0xffffffff) * Math.PI * 2;
+  const radius = 1.2 + (((seed >>> 8) & 255) / 255) * 2.8;
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
 }
 
@@ -59,7 +83,7 @@ async function load(panel: HTMLElement, view: string, sourceRef: string, targetR
 
 function renderTextResult(panel: HTMLElement, payload: GraphPayload, view: string): void {
   const content = panel.querySelector<HTMLElement>(".knowledge-explorer-content");
-  const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
+  const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout, .knowledge-graph-shell");
   if (!content || !graphLayout) return;
   const graphVisible = ["explorer", "path", "workflow", "impact", "lineage", "responsibility"].includes(view);
   content.hidden = graphVisible;
@@ -74,7 +98,8 @@ function renderTextResult(panel: HTMLElement, payload: GraphPayload, view: strin
       .map((node) => ({ title: nodeTitle(node), reason: view === "compare" ? "두 항목의 공통점과 차이를 비교한 관계" : "직접 연결된 업무 맥락" }));
   }
   if (!rows.length) {
-    content.innerHTML = '<p class="muted">조건에 맞는 관계를 찾지 못했습니다.</p>';
+    const message = String(payload.empty_reason || "조건에 맞는 관계를 찾지 못했습니다.").replace(/[<>&]/g, "");
+    content.innerHTML = `<p class="muted">${message}</p>`;
     return;
   }
   const heading = view === "tour" ? "이 순서로 살펴보기" : view === "timeline" ? "시간에 따른 변화" : view === "compare" ? "두 항목 비교" : "직접 연결된 항목";
@@ -95,8 +120,15 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   let activeView = "explorer";
   let targetRef = "";
   let renderer: Sigma | null = null;
+  let layoutSupervisor: FA2Layout | null = null;
+  let layoutSettleTimer = 0;
+  let visibilityRetryTimer = 0;
+  let visibilityRetryCount = 0;
   let resizeObserver: ResizeObserver | null = null;
   let backgroundSuspended = false;
+  let hoveredRef = "";
+  let primaryPath = new Set<string>();
+  let activeRelationFamilies = new Set<string>();
   let restoredState: ExplorerViewState = {};
   try { restoredState = JSON.parse(panel.dataset.graphState || "{}"); } catch (_error) { restoredState = {}; }
   if (restoredState.selectedNodeId) selectedRef = restoredState.selectedNodeId;
@@ -116,6 +148,14 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     }));
   };
   const destroyRenderer = (preserveCamera = true) => {
+    if (layoutSettleTimer) window.clearTimeout(layoutSettleTimer);
+    layoutSettleTimer = 0;
+    layoutSupervisor?.kill();
+    layoutSupervisor = null;
+    if (visibilityRetryTimer) window.clearTimeout(visibilityRetryTimer);
+    visibilityRetryTimer = 0;
+    visibilityRetryCount = 0;
+    container.dataset.graphPainted = "false";
     if (!renderer) return;
     if (preserveCamera) {
       const camera = renderer.getCamera().getState();
@@ -165,6 +205,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     destroyRenderer(false);
     document.removeEventListener("boi:background-visuals", handleBackgroundVisuals);
     document.removeEventListener("boi:agent-visuals", handleAgentVisuals);
+    panel.removeEventListener("boi:knowledge-graph-restore-state", handleRestoreState as EventListener);
     lifecycleObserver.disconnect();
   });
   lifecycleObserver.observe(document.documentElement, { childList: true, subtree: true });
@@ -172,6 +213,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     destroyRenderer(false);
     document.removeEventListener("boi:background-visuals", handleBackgroundVisuals);
     document.removeEventListener("boi:agent-visuals", handleAgentVisuals);
+    panel.removeEventListener("boi:knowledge-graph-restore-state", handleRestoreState as EventListener);
     lifecycleObserver.disconnect();
   }, { once: true });
   const details = panel.querySelector<HTMLElement>("[data-knowledge-node-details]");
@@ -180,6 +222,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
 
   const showDetails = (nodeRef: string) => {
     if (!graph.hasNode(nodeRef) || !details) return;
+    container.dataset.detailsOpenCount = String(Number(container.dataset.detailsOpenCount || "0") + 1);
     selectedRef = nodeRef;
     const attributes = graph.getNodeAttributes(nodeRef);
     const incidentEdges = graph.edges(nodeRef).map((edgeId) => graph.getEdgeAttributes(edgeId));
@@ -200,6 +243,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
       if (url) openElement.href = url;
     }
     container.setAttribute("aria-label", `${String(attributes.fullLabel || attributes.label || "연결된 항목")} 선택됨. 방향키로 다른 항목을 이동하고 Enter로 상세를 확인합니다.`);
+    renderer?.refresh();
     emitState({ selectedNodeId: nodeRef, inspectorOpen: true });
   };
 
@@ -207,15 +251,140 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     if (!details) return;
     details.hidden = true;
     panel.classList.remove("knowledge-node-inspector-open");
+    renderer?.refresh();
     emitState({ inspectorOpen: false });
     window.requestAnimationFrame(() => renderer?.resize());
+  };
+
+  function handleRestoreState(event: Event): void {
+    const nextState = ((event as CustomEvent).detail || {}) as ExplorerViewState;
+    if (nextState.selectedNodeId && graph.hasNode(nextState.selectedNodeId)) selectedRef = nextState.selectedNodeId;
+    if (nextState.camera && renderer) renderer.getCamera().setState(nextState.camera);
+    if (nextState.inspectorOpen && graph.hasNode(selectedRef)) showDetails(selectedRef);
+    else if (!nextState.inspectorOpen && details && !details.hidden) closeDetails();
+  }
+  panel.addEventListener("boi:knowledge-graph-restore-state", handleRestoreState as EventListener);
+
+  const renderLegend = (payload: GraphPayload) => {
+    const shell = container.closest<HTMLElement>(".knowledge-graph-shell");
+    if (!shell) return;
+    let legend = shell.querySelector<HTMLElement>(".knowledge-graph-legend");
+    if (!legend) {
+      legend = document.createElement("div");
+      legend.className = "knowledge-graph-legend";
+      legend.setAttribute("aria-label", "관계 종류 필터");
+      shell.insertBefore(legend, container);
+    }
+    const families = (payload.legend || []).filter((item) => item.relation_family);
+    activeRelationFamilies = new Set(families.map((item) => String(item.relation_family)));
+    legend.replaceChildren(...families.map((item) => {
+      const family = String(item.relation_family || "other");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "knowledge-graph-legend-item active";
+      button.dataset.relationFamily = family;
+      button.setAttribute("aria-pressed", "true");
+      const swatch = document.createElement("span");
+      swatch.className = "knowledge-graph-legend-swatch";
+      swatch.style.backgroundColor = relationColors[family] || relationColors.other;
+      const label = document.createElement("span");
+      label.textContent = (item.labels || [family]).join(" · ");
+      button.append(swatch, label);
+      button.addEventListener("click", () => {
+        if (activeRelationFamilies.has(family)) activeRelationFamilies.delete(family);
+        else activeRelationFamilies.add(family);
+        const active = activeRelationFamilies.has(family);
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+        renderer?.refresh();
+      });
+      return button;
+    }));
+    legend.hidden = families.length === 0;
+  };
+
+  const runLayout = () => {
+    if (layoutSettleTimer) window.clearTimeout(layoutSettleTimer);
+    layoutSupervisor?.kill();
+    layoutSupervisor = null;
+    if (graph.order <= 1) {
+      container.dataset.layoutState = "ready";
+      return;
+    }
+    container.dataset.layoutState = "running";
+    if (graph.order <= 25) {
+      const focal = graph.hasNode(rootRef) ? rootRef : graph.nodes()[0];
+      const distance = new Map<string, number>([[focal, 0]]);
+      const queue = [focal];
+      while (queue.length) {
+        const current = queue.shift()!;
+        const nextDistance = (distance.get(current) || 0) + 1;
+        graph.neighbors(current).forEach((neighbor) => {
+          if (distance.has(neighbor)) return;
+          distance.set(neighbor, nextDistance);
+          queue.push(neighbor);
+        });
+      }
+      const maxDistance = Math.max(1, ...distance.values());
+      graph.nodes().forEach((node) => {
+        if (!distance.has(node)) distance.set(node, maxDistance + 1);
+      });
+      const levels = new Map<number, string[]>();
+      graph.nodes().forEach((node) => {
+        const level = distance.get(node) || 0;
+        levels.set(level, [...(levels.get(level) || []), node]);
+      });
+      const widestLevel = Math.max(...[...levels.values()].map((items) => items.length));
+      const levelGap = widestLevel > 8 ? 22 : 18;
+      const rowGap = widestLevel > 10 ? 8 : 11;
+      levels.forEach((nodesAtLevel, level) => {
+        const sorted = [...nodesAtLevel].sort((left, right) => {
+          const leftLabel = String(graph.getNodeAttribute(left, "fullLabel") || left);
+          const rightLabel = String(graph.getNodeAttribute(right, "fullLabel") || right);
+          return leftLabel.localeCompare(rightLabel, "ko");
+        });
+        sorted.forEach((node, index) => {
+          const y = (index - (sorted.length - 1) / 2) * rowGap;
+          graph.mergeNodeAttributes(node, {
+            x: (level - maxDistance / 2) * levelGap,
+            y,
+          });
+        });
+      });
+      container.dataset.layoutState = "ready";
+      renderer?.refresh();
+      return;
+    }
+    layoutSupervisor = new FA2Layout(graph, {
+      settings: {
+        ...forceAtlas2.inferSettings(graph),
+        adjustSizes: true,
+        barnesHutOptimize: graph.order > 80,
+        gravity: 1.2,
+        scalingRatio: graph.order > 30 ? 8 : 5,
+        slowDown: 3,
+      },
+    });
+    layoutSupervisor.start();
+    layoutSettleTimer = window.setTimeout(() => {
+      layoutSupervisor?.stop();
+      layoutSupervisor?.kill();
+      layoutSupervisor = null;
+      noverlap.assign(graph, {
+        maxIterations: 120,
+        settings: { margin: 8, ratio: 1.15, speed: 2 },
+      });
+      container.dataset.layoutState = "ready";
+      renderer?.refresh();
+    }, graph.order > 100 ? 1600 : 900);
   };
 
   const replaceGraph = (payload: GraphPayload) => {
     graph.clear();
     const nodes = (payload.nodes || []).slice(0, MAX_NODES);
-    nodes.forEach((node, index) => {
-      const point = position(index, nodes.length);
+    primaryPath = new Set(payload.primary_path || []);
+    nodes.forEach((node) => {
+      const point = seededPosition(node.node_id, node.node_id === rootRef);
       const fullLabel = nodeTitle(node);
       graph.addNode(node.node_id, {
         label: graphLabel(fullLabel), fullLabel, size: node.node_id === rootRef ? 12 : 8,
@@ -227,26 +396,82 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     });
     (payload.edges || []).forEach((edge) => {
       if (!graph.hasNode(edge.source_id) || !graph.hasNode(edge.target_id) || graph.hasEdge(edge.edge_id)) return;
+      const family = String(edge.relation_family || edge.payload?.relation_family || "other");
+      const priority = Number(edge.display_priority || edge.payload?.display_priority || 45);
+      const sourceIndex = (payload.primary_path || []).indexOf(edge.source_id);
+      const targetIndex = (payload.primary_path || []).indexOf(edge.target_id);
+      const isPrimary = sourceIndex >= 0 && targetIndex === sourceIndex + 1;
       graph.addDirectedEdgeWithKey(edge.edge_id, edge.source_id, edge.target_id, {
-        label: edge.relation || "related", color: "#94a3b8", size: 1.5,
-        reason: String(edge.payload?.reason || edge.payload?.description || edge.relation || ""),
+        label: edge.user_label || String(edge.payload?.user_label || edge.relation || "관계"),
+        relation: edge.relation || "related", relationFamily: family, displayPriority: priority,
+        color: relationColors[family] || relationColors.other, size: isPrimary ? 3 : 1.5,
+        type: "arrow", primary: isPrimary,
+        reason: String(edge.payload?.reason || edge.payload?.description || edge.user_label || edge.relation || ""),
         provenance: String(edge.payload?.provenance || "근거가 확인된 관계"),
         observedAt: String(edge.payload?.observed_at || edge.payload?.valid_from || edge.payload?.recorded_at || ""),
       });
     });
+    renderLegend(payload);
+    runLayout();
     renderer?.refresh();
     if (selectedRef && graph.hasNode(selectedRef) && !details?.hidden) showDetails(selectedRef);
   };
 
+  const hasRenderableSize = () => {
+    const bounds = container.getBoundingClientRect();
+    return container.isConnected && !container.hidden && bounds.width >= 80 && bounds.height >= 80;
+  };
+  const scheduleRenderer = () => {
+    if (renderer || backgroundSuspended || visibilityRetryTimer) return;
+    visibilityRetryTimer = window.setTimeout(() => {
+      visibilityRetryTimer = 0;
+      ensureRenderer();
+      if (!renderer && visibilityRetryCount < 120) {
+        visibilityRetryCount += 1;
+        scheduleRenderer();
+      }
+    }, visibilityRetryCount ? 50 : 0);
+  };
   const ensureRenderer = () => {
-    if (!renderer && !backgroundSuspended && !container.hidden && container.clientWidth > 0) {
+    if (!renderer && !backgroundSuspended && hasRenderableSize()) {
+      visibilityRetryCount = 0;
+      container.dataset.graphPainted = "false";
       renderer = new Sigma(graph, container, {
-        renderEdgeLabels: false,
-        labelDensity: 0.06,
-        labelGridCellSize: 150,
-        labelRenderedSizeThreshold: 8.5,
-        stagePadding: 46,
+        edgeProgramClasses: { arrow: EdgeArrowProgram },
+        defaultEdgeType: "arrow",
+        renderEdgeLabels: true,
+        labelDensity: 0.12,
+        labelGridCellSize: 120,
+        labelRenderedSizeThreshold: 7.5,
+        stagePadding: container.clientWidth < 600 ? 36 : graph.order <= 25 ? 120 : 46,
         allowInvalidContainer: true,
+        nodeReducer: (node, data) => {
+          const neighbors = selectedRef && graph.hasNode(selectedRef) ? new Set(graph.neighbors(selectedRef)) : new Set<string>();
+          const emphasized = !selectedRef || node === selectedRef || node === hoveredRef || neighbors.has(node) || primaryPath.has(node);
+          return {
+            ...data,
+            color: emphasized ? data.color : "#cbd5e1",
+            forceLabel: graph.order <= 25 || node === rootRef || node === selectedRef || node === hoveredRef || neighbors.has(node) || primaryPath.has(node),
+            highlighted: node === selectedRef || node === hoveredRef,
+            zIndex: emphasized ? 2 : 0,
+          };
+        },
+        edgeReducer: (edge, data) => {
+          const family = String(graph.getEdgeAttribute(edge, "relationFamily") || "other");
+          if (activeRelationFamilies.size && !activeRelationFamilies.has(family)) return { ...data, hidden: true };
+          const source = graph.source(edge);
+          const target = graph.target(edge);
+          const incident = !selectedRef || source === selectedRef || target === selectedRef;
+          const primary = Boolean(graph.getEdgeAttribute(edge, "primary"));
+          const highlighted = primary || incident || source === hoveredRef || target === hoveredRef;
+          return {
+            ...data,
+            color: highlighted ? String(graph.getEdgeAttribute(edge, "color") || data.color) : "#d7dee8",
+            size: primary ? 3.2 : highlighted ? 2 : 1,
+            forceLabel: primary || (incident && graph.order <= 25),
+            zIndex: highlighted ? 2 : 0,
+          };
+        },
       });
       const restoredCamera = restoredState.camera;
       if (restoredCamera && [restoredCamera.x, restoredCamera.y, restoredCamera.ratio].every((value) => Number.isFinite(Number(value)))) {
@@ -254,27 +479,80 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
           x: Number(restoredCamera.x), y: Number(restoredCamera.y), ratio: Number(restoredCamera.ratio),
           angle: Number.isFinite(Number(restoredCamera.angle)) ? Number(restoredCamera.angle) : 0,
         });
+      } else if (container.clientWidth < 600 && graph.order <= 25) {
+        renderer.getCamera().setState({ ratio: 0.68 });
       }
       renderer.getCamera().on("updated", () => emitState());
+      const updateLayoutMetrics = () => {
+        if (!renderer) return;
+        const points = graph.nodes().map((node) => renderer!.graphToViewport(graph.getNodeAttributes(node)));
+        let minimum = Number.POSITIVE_INFINITY;
+        points.forEach((point, index) => points.slice(index + 1).forEach((other) => {
+          minimum = Math.min(minimum, Math.hypot(point.x - other.x, point.y - other.y));
+        }));
+        container.dataset.nodeCount = String(points.length);
+        container.dataset.minimumNodeDistance = Number.isFinite(minimum) ? String(Math.round(minimum)) : "0";
+        if (points.length > 0 && hasRenderableSize()) {
+          const firstPaint = container.dataset.graphPainted !== "true";
+          container.dataset.graphPainted = "true";
+          if (firstPaint) {
+            container.dispatchEvent(new CustomEvent("boi:knowledge-graph-painted", {
+              bubbles: true,
+              detail: { nodeCount: points.length },
+            }));
+          }
+        }
+      };
+      renderer.on("afterRender", updateLayoutMetrics);
+      renderer.on("enterNode", ({ node }) => { hoveredRef = node; renderer?.refresh(); });
+      renderer.on("leaveNode", () => { hoveredRef = ""; renderer?.refresh(); });
       renderer.on("clickNode", async ({ node }) => {
         showDetails(node);
         if (activeView !== "explorer" || graph.order >= MAX_NODES) return;
         const payload = await load(panel, "explorer", node);
         const existing = new Set(graph.nodes());
-        const combined = { nodes: [...graph.nodes().map((id) => ({ node_id: id, node_type: String(graph.getNodeAttribute(id, "kind") || ""), payload: { title: graph.getNodeAttribute(id, "fullLabel") || graph.getNodeAttribute(id, "label"), url: graph.getNodeAttribute(id, "url"), summary: graph.getNodeAttribute(id, "summary") } })), ...(payload.nodes || []).filter((item) => !existing.has(item.node_id))], edges: [...graph.edges().map((id) => ({ edge_id: id, source_id: graph.source(id), target_id: graph.target(id), relation: String(graph.getEdgeAttribute(id, "label") || "related"), payload: { reason: graph.getEdgeAttribute(id, "reason"), provenance: graph.getEdgeAttribute(id, "provenance"), observed_at: graph.getEdgeAttribute(id, "observedAt") } })), ...(payload.edges || [])] };
+        const combined = {
+          nodes: [...graph.nodes().map((id) => ({ node_id: id, node_type: String(graph.getNodeAttribute(id, "kind") || ""), payload: { title: graph.getNodeAttribute(id, "fullLabel") || graph.getNodeAttribute(id, "label"), url: graph.getNodeAttribute(id, "url"), summary: graph.getNodeAttribute(id, "summary") } })), ...(payload.nodes || []).filter((item) => !existing.has(item.node_id))],
+          edges: [...graph.edges().map((id) => ({
+            edge_id: id, source_id: graph.source(id), target_id: graph.target(id),
+            relation: String(graph.getEdgeAttribute(id, "relation") || "related"),
+            relation_family: String(graph.getEdgeAttribute(id, "relationFamily") || "other"),
+            user_label: String(graph.getEdgeAttribute(id, "label") || "관계"),
+            display_priority: Number(graph.getEdgeAttribute(id, "displayPriority") || 45),
+            payload: { reason: graph.getEdgeAttribute(id, "reason"), provenance: graph.getEdgeAttribute(id, "provenance"), observed_at: graph.getEdgeAttribute(id, "observedAt") },
+          })), ...(payload.edges || [])],
+          legend: payload.legend,
+          primary_path: payload.primary_path,
+        };
         replaceGraph(combined);
         showDetails(node);
       });
-      resizeObserver = new ResizeObserver(() => renderer?.resize());
+      resizeObserver = new ResizeObserver(() => {
+        if (!hasRenderableSize()) return;
+        if (!renderer) {
+          scheduleRenderer();
+          return;
+        }
+        renderer.resize();
+        renderer.refresh();
+      });
       resizeObserver.observe(container);
+      renderer.scheduleRefresh();
+      window.requestAnimationFrame(() => {
+        if (!renderer || !hasRenderableSize()) return;
+        renderer.resize();
+        renderer.refresh();
+      });
+      return;
     }
+    if (!renderer && !backgroundSuspended) scheduleRenderer();
   };
 
   const switchView = async (view: string) => {
     activeView = view;
     panel.dataset.activeView = view;
     const graphVisible = ["explorer", "path", "workflow", "impact", "lineage", "responsibility"].includes(view);
-    const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
+    const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout, .knowledge-graph-shell");
     if (!graphVisible && renderer) {
       destroyRenderer(true);
     }
@@ -306,23 +584,43 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     ensureRenderer();
     details?.querySelectorAll<HTMLElement>("[data-knowledge-node-close]").forEach((button) => button.addEventListener("click", closeDetails));
     container.addEventListener("keydown", (event) => {
+      container.dataset.keyEventCount = String(Number(container.dataset.keyEventCount || "0") + 1);
+      container.dataset.lastKey = event.key;
       const nodes = graph.nodes();
       if (!nodes.length) return;
-      const currentIndex = Math.max(0, nodes.indexOf(selectedRef));
       if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) {
         event.preventDefault();
-        const direction = ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1;
-        const next = nodes[(currentIndex + direction + nodes.length) % nodes.length];
+        event.stopPropagation();
+        const current = graph.hasNode(selectedRef) ? graph.getNodeAttributes(selectedRef) : graph.getNodeAttributes(nodes[0]);
+        const vectors: Record<string, [number, number]> = {
+          ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1],
+        };
+        const [dx, dy] = vectors[event.key];
+        const candidates = nodes
+          .filter((node) => node !== selectedRef)
+          .map((node) => {
+            const point = graph.getNodeAttributes(node);
+            const vx = Number(point.x) - Number(current.x);
+            const vy = Number(point.y) - Number(current.y);
+            const distance = Math.hypot(vx, vy) || 0.001;
+            const alignment = (vx * dx + vy * dy) / distance;
+            return { node, alignment, score: distance * (2.1 - Math.max(-1, alignment)) };
+          })
+          .filter((item) => item.alignment > 0.15)
+          .sort((left, right) => left.score - right.score);
+        const next = candidates[0]?.node || nodes.find((node) => node !== selectedRef) || nodes[0];
         showDetails(next);
       } else if (event.key === "Enter") {
         event.preventDefault();
-        showDetails(nodes[currentIndex] || nodes[0]);
+        event.stopPropagation();
+        showDetails(graph.hasNode(selectedRef) ? selectedRef : nodes[0]);
       } else if (event.key === "Escape" && details && !details.hidden) {
         event.preventDefault();
         event.stopPropagation();
         closeDetails();
       }
     });
+    container.dataset.keyboardReady = "true";
     panel.querySelectorAll<HTMLButtonElement>("[data-knowledge-view]").forEach((button) => button.addEventListener("click", () => void switchView(button.dataset.knowledgeView || "explorer")));
     panel.querySelector<HTMLButtonElement>("[data-knowledge-search]")?.addEventListener("click", async () => {
       const query = panel.querySelector<HTMLInputElement>("#knowledge-path-query")?.value.trim() || "";

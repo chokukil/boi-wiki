@@ -7552,7 +7552,7 @@ def test_pet_agent_mount_uses_v2_by_default_after_work_learning_acceptance(boi_a
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' in response.text
-    assert "/static/mermaid_render.js?v=" in response.text
+    assert "/static/dist/mermaid-render.js?v=" in response.text
     assert "/static/pet_agent.js?v=" not in response.text
     assert "/static/agent_workspace_v2.js?v=" in response.text
     assert 'data-surface-kind="pet"' in response.text
@@ -7579,7 +7579,7 @@ def test_pet_agent_mount_can_be_hidden_when_feature_disabled(boi_app_module, mon
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' not in response.text
-    assert "/static/mermaid_render.js?v=" in response.text
+    assert "/static/dist/mermaid-render.js?v=" in response.text
     assert "/static/pet_agent.js?v=" not in response.text
     assert "/static/agent_workspace_v2.js?v=" not in response.text
 
@@ -7595,7 +7595,7 @@ def test_pet_agent_mount_exposes_search_helper_contract(boi_app_module, monkeypa
 
     assert response.status_code == 200
     assert 'id="boi-agent-root"' in response.text
-    assert "/static/mermaid_render.js?v=" in response.text
+    assert "/static/dist/mermaid-render.js?v=" in response.text
     assert "/static/agent_workspace_v2.js?v=" in response.text
     assert 'data-agent-v2-open' in response.text
     assert 'data-agent-v2-related' in response.text
@@ -8495,7 +8495,7 @@ def test_hybrid_search_deep_work_and_mermaid_workflow_contracts(boi_app_module, 
     builder = client.get(mermaid_draft["sop_builder_url"])
     assert builder.status_code == 200
     assert "sop-mermaid-draft-seed" in builder.text
-    assert "mermaid_render.js" in builder.text
+    assert "dist/mermaid-render.js" in builder.text
     assert "흐름 그림에서 가져온 Task 후보가 있습니다." in builder.text
     assert "mermaid-diagram task-console-workflow-canvas sop-builder-mermaid-draft-canvas" in builder.text
     seed_match = re.search(r'<script id="sop-mermaid-draft-seed" type="application/json">(.*?)</script>', builder.text, flags=re.S)
@@ -9206,7 +9206,7 @@ def test_boi_inbox_report_get_is_non_mutating_and_refresh_materializes_item_repo
     report_page = client.get(web_refresh.headers["location"])
     assert report_page.status_code == 200
     default_visible_html = report_page.text
-    assert "mermaid_render.js" in default_visible_html
+    assert "dist/mermaid-render.js" in default_visible_html
     assert "관련 업무 흐름" in default_visible_html
     assert "mermaid-diagram task-console-workflow-canvas inbox-workflow-canvas report-workflow-canvas" in default_visible_html
     assert "흐름 그림 다음 작업" not in default_visible_html
@@ -11504,8 +11504,8 @@ def test_doc_page_renders_markdown_body(boi_app_module):
     assert "A|B" in response.text
     assert "<code>a|b</code>" in response.text
     assert "/events?employee_id=100001&amp;trace_id=trace-a|b" in response.text
-    assert '/static/mermaid_render.js?v=' in response.text
-    assert response.text.count('/static/mermaid_render.js?v=') == 1
+    assert '/static/dist/mermaid-render.js?v=' in response.text
+    assert response.text.count('/static/dist/mermaid-render.js?v=') == 1
     assert '<div class="mermaid-diagram" data-mermaid-state="pending">' in response.text
     assert '<div class="mermaid">' in response.text
     assert "flowchart TD" in response.text
@@ -11744,7 +11744,7 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         assert "Action" in response.text
         assert "Advanced" in response.text
         assert 'data-nav-id="connections"' not in response.text
-        assert "/static/mermaid_render.js?v=" in response.text
+        assert "/static/dist/mermaid-render.js?v=" in response.text
         if active_nav == "advanced":
             assert "권한 관리" in response.text
             assert "API" in response.text
@@ -12086,11 +12086,12 @@ def test_agent_task_editor_uses_plain_completion_questions(boi_app_module):
     assert response.status_code == 200
     assert "task_completion_editor.js" in response.text
     assert "/static/vendor/mermaid/mermaid.min.js" not in response.text
-    assert response.text.count("/static/mermaid_render.js?v=") == 1
-    assert response.text.index("/static/mermaid_render.js?v=") < response.text.index("agent_workspace_v2.js")
+    assert response.text.count("/static/dist/mermaid-render.js?v=") == 1
+    assert response.text.index("/static/dist/mermaid-render.js?v=") < response.text.index("agent_workspace_v2.js")
     assert artifact_response.status_code == 200
-    assert artifact_response.text.count("/static/vendor/mermaid/mermaid.min.js") == 1
-    assert artifact_response.text.index("/static/vendor/mermaid/mermaid.min.js") < artifact_response.text.index("agent_workspace_v2.js")
+    assert "/static/vendor/mermaid/mermaid.min.js" not in artifact_response.text
+    assert artifact_response.text.count("/static/dist/mermaid-render.js?v=") == 1
+    assert artifact_response.text.index("/static/dist/mermaid-render.js?v=") < artifact_response.text.index("agent_workspace_v2.js")
     assert "data-agent-v2-completion-editor" in response.text
     assert 'name="exit_criteria"' not in response.text
     assert 'name="required_evidence"' not in response.text

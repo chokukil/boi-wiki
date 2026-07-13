@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  base: "/static/dist/",
   plugins: [react()],
   build: {
     outDir: "boi_api/app/static/dist",
@@ -10,7 +11,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         "ops-center": "frontend/ops-center/src/main.tsx",
-        "knowledge-graph": "frontend/knowledge-graph/src/main.ts"
+        "knowledge-graph": "frontend/knowledge-graph/src/main.ts",
+        "mermaid-render": "frontend/mermaid/src/main.ts",
+        "a2ui-runtime": "frontend/a2ui/src/main.ts"
       },
       output: {
         entryFileNames: "[name].js",

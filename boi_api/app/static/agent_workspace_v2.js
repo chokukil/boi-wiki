@@ -1073,6 +1073,21 @@
     return item?.component || "";
   }
 
+  function a2uiArtifactSurface(artifactId) {
+    if (!state.a2uiSurface) return null;
+    const components = state.a2uiSurface.components?.filter((component) => (
+      component.props?.artifact_id === artifactId || component.component === "Confirmation"
+    )) || [];
+    if (!components.length) return null;
+    return {
+      ...state.a2uiSurface,
+      surface_id: `${state.a2uiSurface.surface_id}-artifact-${artifactId}`,
+      components,
+      messages: [],
+      jsonl: "",
+    };
+  }
+
   function ontologyContext(draft) {
     const nodes = Array.isArray(draft.nodes) ? draft.nodes : [];
     const edges = Array.isArray(draft.edges) ? draft.edges : [];
@@ -1104,7 +1119,9 @@
     if (!panel || !artifact) return;
     const key = artifact.artifact_id;
     panel.dataset.graphViewKey = key;
-    panel.dataset.graphState = JSON.stringify(state.graphViews[key] || {});
+    const graphState = state.graphViews[key] || {};
+    panel.dataset.graphState = JSON.stringify(graphState);
+    panel.dispatchEvent(new CustomEvent("boi:knowledge-graph-restore-state", { detail: graphState }));
     if (!canShowPanel) return;
     let attempts = 0;
     const maybeAutoFocus = () => {
@@ -1223,9 +1240,20 @@
       mount.dataset.a2uiComponentId = confirmationComponent.id;
       elements.artifacts.appendChild(mount);
     }
-    if (state.a2uiSurface && window.BoiA2UI?.hydrate) {
-      window.BoiA2UI.hydrate(state.a2uiSurface, elements.artifacts);
+    const artifactSurface = a2uiArtifactSurface(artifact.artifact_id);
+    const fallbackOntologyPanel = isOntology && a2uiArtifactComponent(artifact.artifact_id) === "OntologyExplorer"
+      ? elements.artifacts.querySelector("[data-agent-ontology-explorer]")
+      : null;
+    if (fallbackOntologyPanel && canShowPanel) {
+      const payload = { nodes: draft.nodes || [], edges: draft.edges || [] };
+      if (window.BoiKnowledgeGraph?.renderPayload) window.BoiKnowledgeGraph.renderPayload(fallbackOntologyPanel, payload);
+      else import("/static/dist/knowledge-graph.js")
+        .then(() => window.BoiKnowledgeGraph?.renderPayload?.(fallbackOntologyPanel, payload))
+        .catch(() => { fallbackOntologyPanel.querySelector(".knowledge-explorer-status").textContent = "관계 그림을 표시하지 못했습니다."; });
     }
+    const artifactHydrated = Boolean(
+      artifactSurface && window.BoiA2UI?.hydrate && window.BoiA2UI.hydrate(artifactSurface, elements.artifacts)
+    );
     if (isOntology && a2uiArtifactComponent(artifact.artifact_id) === "OntologyExplorer") {
       const panel = elements.artifacts.querySelector("[data-agent-ontology-explorer]");
       if (panel) {
@@ -1235,23 +1263,42 @@
           saveSurfaceState();
           return;
         }
-        const hydrated = state.a2uiSurface && window.BoiA2UI?.hydrate
-          ? window.BoiA2UI.hydrate(state.a2uiSurface, elements.artifacts)
-          : false;
-        if (hydrated) {
-          window.setTimeout(() => {
-            const hydratedPanel = elements.artifacts.querySelector(".knowledge-graph-hub");
+        if (artifactHydrated) {
+          let settled = false;
+          let attempts = 0;
+          const finishOfficialGraph = () => {
+            if (settled) return;
+            const hydratedPanel = elements.artifacts.querySelector("[data-boi-a2ui-official] .knowledge-graph-hub");
+            const graphContainer = hydratedPanel?.querySelector(".knowledge-graph-canvas");
+            const canvas = graphContainer?.querySelector("canvas");
+            const bounds = graphContainer?.getBoundingClientRect();
+            const painted = graphContainer?.dataset.graphPainted === "true"
+              && Number(graphContainer?.dataset.nodeCount || 0) > 0;
+            if (!hydratedPanel || !canvas || !painted || !bounds || bounds.width < 80 || bounds.height < 80) {
+              attempts += 1;
+              if (attempts < 120) window.setTimeout(finishOfficialGraph, 50);
+              return;
+            }
+            settled = true;
+            if (panel !== hydratedPanel) panel.remove();
             prepareOntologyPanel(hydratedPanel, artifact, canShowPanel);
-          }, 0);
+            syncArtifactFocusUi();
+            saveSurfaceState();
+          };
+          elements.artifacts.addEventListener("boi:a2ui-domain-rendered", finishOfficialGraph);
+          elements.artifacts.addEventListener("boi:knowledge-graph-painted", finishOfficialGraph);
+          window.requestAnimationFrame(finishOfficialGraph);
           syncArtifactFocusUi();
           saveSurfaceState();
           return;
         }
-        const payload = { nodes: draft.nodes || [], edges: draft.edges || [] };
-        if (window.BoiKnowledgeGraph?.renderPayload) window.BoiKnowledgeGraph.renderPayload(panel, payload);
-        else import("/static/dist/knowledge-graph.js")
-          .then(() => window.BoiKnowledgeGraph?.renderPayload?.(panel, payload))
-          .catch(() => { panel.querySelector(".knowledge-explorer-status").textContent = "관계 그림을 표시하지 못했습니다."; });
+        if (panel.querySelector(".knowledge-graph-canvas")?.dataset.graphPainted !== "true") {
+          const payload = { nodes: draft.nodes || [], edges: draft.edges || [] };
+          if (window.BoiKnowledgeGraph?.renderPayload) window.BoiKnowledgeGraph.renderPayload(panel, payload);
+          else import("/static/dist/knowledge-graph.js")
+            .then(() => window.BoiKnowledgeGraph?.renderPayload?.(panel, payload))
+            .catch(() => { panel.querySelector(".knowledge-explorer-status").textContent = "관계 그림을 표시하지 못했습니다."; });
+        }
       }
     }
     elements.artifactFocus.hidden = !(hasDiagram || isOntology);
@@ -1727,11 +1774,12 @@
   elements.artifactFocus.addEventListener("click", () => setArtifactFocus(!state.artifactFocusOpen, { userInitiated: true }));
   elements.artifacts.addEventListener("boi:knowledge-graph-state", (event) => {
     const detail = event.detail || {};
-    if (!detail.key) return;
-    state.graphViews[detail.key] = {
+    const key = state.artifact?.artifact_id || detail.key;
+    if (!key) return;
+    state.graphViews[key] = {
       selectedNodeId: detail.selectedNodeId || "",
       inspectorOpen: Boolean(detail.inspectorOpen),
-      camera: detail.camera || state.graphViews[detail.key]?.camera || null,
+      camera: detail.camera || state.graphViews[key]?.camera || null,
     };
     window.clearTimeout(graphStateSaveTimer);
     graphStateSaveTimer = window.setTimeout(saveSurfaceState, 120);

@@ -1942,8 +1942,23 @@ body.agent-v2-task-open { overflow:hidden; }
 .ontology-artifact-active .agent-surface-artifacts { display:grid; overflow:hidden; padding:10px; }
 .ontology-artifact-active .agent-surface-artifacts > .ontology-result { grid-template-rows:minmax(0, 1fr); min-height:0; height:100%; }
 .agent-surface .knowledge-graph-hub { min-height:0; height:100%; margin:0; }
-.agent-surface .knowledge-graph-hub-layout { min-height:0; height:100%; }
-.agent-surface .knowledge-graph-shell,.agent-surface .knowledge-graph-canvas { min-height:0; height:100%; }
+.agent-surface .knowledge-graph-hub-layout {
+  grid-template-rows:minmax(300px, 1fr) auto;
+  min-height:0;
+  height:100%;
+}
+.agent-surface .knowledge-graph-shell {
+  min-height:300px;
+  height:auto;
+}
+.agent-surface .knowledge-graph-canvas { min-height:300px; height:100%; }
+.artifact-focus-open .agent-surface .knowledge-graph-shell,
+.artifact-focus-open .agent-surface .knowledge-graph-canvas {
+  min-height:min(58dvh, 640px);
+}
+.agent-surface .knowledge-node-details {
+  max-height:min(190px, 32dvh);
+}
 .agent-surface-sources,.agent-surface-source-preview,.agent-surface-routines { position:absolute; top:62px; right:0; bottom:0; z-index:11; display:grid; grid-template-rows:auto minmax(0, 1fr); width:min(430px, 100%); border-left:1px solid #94a3b8; background:#fff; box-shadow:-12px 0 28px rgba(15,23,42,.15); }
 .agent-surface-sources > header,.agent-surface-source-preview > header,.agent-surface-routines > header { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:50px; padding:9px 12px; border-bottom:1px solid #cbd5e1; background:#f8fafc; }
 .agent-surface-sources > header > div { display:grid; gap:2px; }
@@ -2225,6 +2240,15 @@ main.data-library-page {
 .task-work-record-history p { margin: 6px 0; }
 .task-work-record-history small { color: var(--muted, #607089); }
 
+.mermaid-source-fallback { display: none !important; }
+.mermaid-retry { margin: 8px 12px 12px; }
+.mermaid-diagram[data-mermaid-state="failed"] .mermaid { display: none; }
+.mermaid-diagram[data-mermaid-state="failed"] .mermaid-status {
+  margin: 16px;
+  color: #9f1239;
+  font-weight: 700;
+}
+
 .knowledge-graph-shell {
   position: relative;
   min-height: 520px;
@@ -2236,6 +2260,40 @@ main.data-library-page {
   height: 520px;
   background: #fff;
 }
+
+.knowledge-graph-legend {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.knowledge-graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid #d9e0ea;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 94%);
+  color: #64748b;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+}
+
+.knowledge-graph-legend-item.active { color: #172033; border-color: #9fb2ca; }
+.knowledge-graph-legend-item:not(.active) { opacity: .55; }
+.knowledge-graph-legend-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.knowledge-graph-canvas[data-layout-state="running"] { cursor: progress; }
 
 .knowledge-graph-shell > .secondary-button {
   position: absolute;
@@ -2289,11 +2347,69 @@ main.data-library-page {
 .knowledge-node-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .knowledge-graph-canvas:focus-visible { outline: 3px solid #60a5fa; outline-offset: -3px; }
 .agent-surface .knowledge-graph-hub { grid-template-rows:auto minmax(0, 1fr); gap:8px; margin:0; }
-.agent-surface .knowledge-graph-hub-layout { min-height:0; height:100%; }
-.agent-surface .knowledge-graph-hub .knowledge-graph-shell { min-height:0; height:100%; }
-.agent-surface .knowledge-graph-hub .knowledge-graph-canvas { min-height:0; height:100%; }
+.agent-surface .knowledge-graph-hub-layout {
+  grid-template-rows:minmax(300px, 1fr) auto;
+  min-height:0;
+  height:100%;
+}
+.agent-surface .knowledge-graph-hub .knowledge-graph-shell { min-height:300px; height:auto; }
+.agent-surface .knowledge-graph-hub .knowledge-graph-canvas { min-height:300px; height:100%; }
+.artifact-focus-open .agent-surface .knowledge-graph-hub .knowledge-graph-shell,
+.artifact-focus-open .agent-surface .knowledge-graph-hub .knowledge-graph-canvas {
+  min-height:min(58dvh, 640px);
+}
+.agent-surface .knowledge-node-details { max-height:min(190px, 32dvh); }
 
 .directory-picker { position: relative; display: grid; gap: 7px; }
+
+.boi-a2ui-official-surface,
+.boi-a2ui-official-surface > a2ui-surface,
+.boi-a2ui-official-surface > boi-a2ui-runtime-surface,
+boi-a2ui-answer,
+boi-a2ui-citation-list,
+boi-a2ui-evidence-picker,
+boi-a2ui-work-record-form,
+boi-a2ui-decision-summary,
+boi-a2ui-task-status,
+boi-a2ui-timeline,
+boi-a2ui-data-table,
+boi-a2ui-mermaid-artifact,
+boi-a2ui-ontology-explorer,
+boi-a2ui-action-preview,
+boi-a2ui-confirmation,
+boi-a2ui-related-questions { display: block; min-width: 0; }
+boi-a2ui-surface { display:grid; gap:12px; min-width:0; }
+.ontology-artifact-active .boi-a2ui-official-surface,
+.ontology-artifact-active .boi-a2ui-official-surface > a2ui-surface,
+.ontology-artifact-active .boi-a2ui-official-surface > boi-a2ui-runtime-surface,
+.ontology-artifact-active boi-a2ui-surface,
+.ontology-artifact-active boi-a2ui-ontology-explorer { min-height:0; height:100%; }
+.a2ui-answer h3,
+.a2ui-decision-summary h3,
+.a2ui-task-status h3,
+.a2ui-confirmation h3 { margin: 0 0 7px; font-size: 15px; }
+.a2ui-answer-body,
+.a2ui-confirmation p { margin: 0; line-height: 1.45; white-space: pre-wrap; }
+.a2ui-citations { margin: 0; padding-left: 22px; line-height: 1.45; }
+.a2ui-related-questions { display: grid; gap: 7px; }
+.a2ui-related-questions .button { justify-content: flex-start; text-align: left; }
+.a2ui-decision-summary ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.a2ui-decision-summary li { display: grid; grid-template-columns: minmax(140px, .7fr) minmax(0, 1.3fr); gap: 12px; padding: 8px 0; border-top: 1px solid var(--border, #d9e0ea); }
+.a2ui-decision-summary li span { overflow-wrap: anywhere; }
+.a2ui-evidence-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.a2ui-evidence-picker section { padding: 10px; border: 1px solid var(--border, #d9e0ea); border-radius: 6px; }
+.a2ui-evidence-picker section.available { border-color: #86c99a; background: #f0fdf4; }
+.a2ui-evidence-picker h3 { margin: 5px 0 0; font-size: 14px; }
+.a2ui-work-record-form { display: grid; gap: 10px; }
+.a2ui-work-record-form label { display: grid; gap: 6px; font-weight: 700; }
+.a2ui-work-record-form textarea,
+.a2ui-work-record-form input { width: 100%; min-width: 0; font: inherit; font-weight: 400; }
+.a2ui-work-record-form > .button { justify-self: end; }
+.task-console-dynamic-work { display: block; }
+.task-console-dynamic-work boi-a2ui-surface { gap: 14px; }
+[data-a2ui-fallback-hidden="true"] { display: none !important; }
+.a2ui-confirmation { padding: 12px; border: 1px solid #f1c46b; border-radius: 6px; background: #fffbeb; }
+.a2ui-confirmation .button { margin-top: 10px; }
 .directory-picker-options {
   position: absolute;
   z-index: 20;

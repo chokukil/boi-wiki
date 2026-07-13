@@ -306,7 +306,14 @@
                       : item.component === "Confirmation"
                         ? renderConfirmation(mount, item.props || {})
                     : ["DataTable", "Timeline", "MermaidArtifact", "OntologyExplorer", "ActionPreview"].includes(item.component)
-                      ? (renderArtifactComponent(mount, item.component, item.props || {}), true)
+                      ? (renderArtifactComponent(mount, item.component, item.props || {}).then((ready) => {
+                          if (!ready) return;
+                          mount.dispatchEvent(new CustomEvent("boi:a2ui-domain-rendered", {
+                            bubbles: true,
+                            composed: true,
+                            detail: { component: item.component, componentId: item.id },
+                          }));
+                        }), true)
                       : false;
         if (ok) rendered += 1;
       });

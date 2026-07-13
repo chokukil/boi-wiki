@@ -30744,7 +30744,23 @@ def task_console_payload(
             {
                 "id": "work-record-form",
                 "component": "WorkRecordForm",
-                "props": payload["work_form"],
+                "props": {
+                    **payload["work_form"],
+                    "submit": {
+                        "method": "POST",
+                        "action": f"/tasks/console/work-record?employee_id={employee_id}",
+                        "label": "업무 기록 저장",
+                        "hidden": {
+                            "task_id": task.get("ui_task_id") or task.get("task_id") or "",
+                            "trace_id": task.get("trace_id") or "",
+                            "event_id": task.get("event_id") or "",
+                            "action_key": task.get("action_key") or "",
+                            "sop_ref": (context.get("sop_stage") or {}).get("sop_ref") or "",
+                            "sop_stage_id": (context.get("sop_stage") or {}).get("sop_stage_id") or "",
+                            "workflow_definition_key": (context.get("sop_stage") or {}).get("workflow_definition_key") or "",
+                        },
+                    },
+                },
             },
             {
                 "id": "evidence-picker",
@@ -30755,7 +30771,7 @@ def task_console_payload(
         "events": [],
         "fallback": "task_console_html",
     }
-    payload["a2ui_surface"] = validate_a2ui_surface(task_surface)
+    payload["a2ui_surface"] = finalize_a2ui_surface(task_surface)
     payload["a2ui_component_props"] = {
         str(item["component"]): item.get("props") or {}
         for item in payload["a2ui_surface"]["components"]
@@ -35605,10 +35621,11 @@ async def api_data_lake_sources(employee_id: str = Depends(current_employee)) ->
 @app.get("/knowledge-graph", response_class=HTMLResponse)
 async def knowledge_graph_page(
     request: Request,
-    source_ref: str = FINAL_OPERATOR_GUIDE_REF,
+    source_ref: str = "boi:public:boi-wiki-manual:overview",
     employee_id: str = Depends(current_employee),
 ) -> HTMLResponse:
-    focus_ref = str(source_ref or FINAL_OPERATOR_GUIDE_REF).strip() or FINAL_OPERATOR_GUIDE_REF
+    default_ref = "boi:public:boi-wiki-manual:overview"
+    focus_ref = str(source_ref or default_ref).strip() or default_ref
     source_title = "선택한 업무 맥락"
     if focus_ref.startswith("person:"):
         source_title = user_name_for(focus_ref.removeprefix("person:"))
@@ -39896,7 +39913,7 @@ async def users() -> dict[str, Any]:
 # v2 behavior lives in app.v2; this module only supplies existing roots,
 # identity enrichment, and the shared page shell.
 from .v2 import DomainServiceGateway, build_agent_v2_router, build_agent_v2_service  # noqa: E402
-from .v2.a2ui import validate_surface as validate_a2ui_surface  # noqa: E402
+from .v2.a2ui import finalize_surface as finalize_a2ui_surface  # noqa: E402
 from .v2.config import AgentV2Settings  # noqa: E402
 from .v2.models import Principal as AgentV2Principal  # noqa: E402
 

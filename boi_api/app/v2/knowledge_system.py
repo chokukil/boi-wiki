@@ -32,8 +32,141 @@ from .search import HybridSearchService, record_content_checksum
 from .store import AgentV2Store, now_iso
 
 
-EXTRACTOR_VERSION = "boi-knowledge-compiler/3"
+EXTRACTOR_VERSION = "boi-knowledge-compiler/7"
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)\s]+)\)")
+
+
+RELATION_PRESENTATION: dict[str, tuple[str, str, int]] = {
+    "part_of": ("structure", "구성 요소", 96),
+    "guides": ("guidance", "업무 기준을 안내", 94),
+    "uses": ("work", "업무에 활용", 90),
+    "triggers": ("event", "업무를 시작", 94),
+    "executes": ("work", "업무에서 실행", 94),
+    "part_of_workflow": ("structure", "업무 흐름에 포함", 95),
+    "has_task": ("structure", "Task로 구성", 95),
+    "next_task": ("sequence", "다음 단계", 100),
+    "precedes": ("sequence", "먼저 수행", 100),
+    "uses_sop": ("work", "SOP를 활용", 90),
+    "uses_event": ("work", "업무 이벤트를 사용", 88),
+    "uses_action": ("work", "Action을 실행", 88),
+    "uses_skill": ("work", "Skill을 활용", 82),
+    "triggered_by": ("event", "이 이벤트로 시작", 92),
+    "results_in": ("result", "이 결과로 이어짐", 92),
+    "produces": ("result", "결과를 생성", 92),
+    "assigned_to": ("responsibility", "현재 담당", 100),
+    "reviewed_by": ("responsibility", "검토 담당", 94),
+    "related_team": ("responsibility", "유관 팀", 88),
+    "member_of": ("organization", "소속 팀", 96),
+    "has_role": ("organization", "공식 역할", 96),
+    "performed_by": ("responsibility", "수행 기록", 90),
+    "completed_by": ("responsibility", "완료 기록", 94),
+    "repeated_performer": ("responsibility", "반복 수행", 98),
+    "requires_evidence": ("lineage", "확인 근거가 필요", 92),
+    "derived_from": ("lineage", "이 근거에서 도출", 94),
+    "evidence": ("lineage", "근거로 연결", 35),
+    "broader": ("concept", "상위 개념", 80),
+    "narrower": ("concept", "하위 개념", 80),
+    "related": ("concept", "관련 개념", 65),
+    "links_to": ("reference", "함께 참고", 50),
+    "supersedes": ("change", "이전 내용을 대체", 86),
+}
+
+DECLARED_RELATIONS = frozenset(RELATION_PRESENTATION)
+
+SYMMETRIC_RELATIONS = {"related", "links_to", "evidence"}
+
+
+def _relation_display(relation: str) -> tuple[str, str, int]:
+    return RELATION_PRESENTATION.get(relation, ("other", relation.replace("_", " "), 45))
+
+
+def _decorate_edge(item: dict[str, Any]) -> dict[str, Any]:
+    relation = str(item.get("relation") or "related")
+    family, user_label, priority = _relation_display(relation)
+    decorated = dict(item)
+    decorated.update(
+        {
+            "relation_family": family,
+            "user_label": user_label,
+            "display_priority": priority,
+        }
+    )
+    payload = dict(item.get("payload") or {}) if isinstance(item.get("payload"), dict) else {}
+    payload.update(
+        {
+            "relation_family": family,
+            "user_label": user_label,
+            "display_priority": priority,
+        }
+    )
+    decorated["payload"] = payload
+    return decorated
+
+
+def _decorate_graph_result(result: dict[str, Any], *, query_kind: str) -> dict[str, Any]:
+    nodes = list(result.get("nodes") or [])
+    edges = [_decorate_edge(item) for item in result.get("edges") or []]
+    families = sorted({str(item.get("relation_family") or "other") for item in edges})
+    presentation = str(result.get("presentation") or "")
+    layout_hint = (
+        "timeline" if query_kind == "timeline"
+        else "hierarchical" if query_kind in {"path", "workflow", "lineage"}
+        else "comparison" if query_kind == "compare"
+        else "force"
+    )
+    empty_reason = ""
+    if len(nodes) <= 1 and not edges:
+        empty_reason = {
+            "workflow": "이 항목과 직접 연결된 Workflow·Task·Event·Action 관계가 아직 없습니다.",
+            "impact": "이 항목에서 이어지는 검증된 영향 관계가 아직 없습니다.",
+            "responsibility": "공식 역할·현재 배정·검증된 수행 관계가 아직 없습니다.",
+            "lineage": "이 항목의 근거와 결과 계보를 확인할 관계가 아직 없습니다.",
+        }.get(query_kind, "조건에 맞는 검증된 관계가 아직 없습니다.")
+    relation_required = query_kind in {
+        "path",
+        "workflow",
+        "impact",
+        "lineage",
+        "responsibility",
+        "tour",
+    }
+    meaningful = bool(edges) if relation_required else bool(nodes)
+    if query_kind == "timeline":
+        meaningful = bool(result.get("timeline"))
+    elif query_kind == "compare":
+        meaningful = bool(edges) and len(result.get("groups") or {}) >= 2
+    result.update(
+        {
+            "nodes": nodes,
+            "edges": edges,
+            "layout_hint": layout_hint,
+            "primary_path": list(result.get("path_refs") or []),
+            "clusters": [
+                {
+                    "cluster_id": family,
+                    "label": next(
+                        (str(item.get("user_label") or family) for item in edges if item.get("relation_family") == family),
+                        family,
+                    ),
+                }
+                for family in families
+            ],
+            "legend": [
+                {
+                    "relation_family": family,
+                    "labels": sorted(
+                        {str(item.get("user_label") or "관계") for item in edges if item.get("relation_family") == family}
+                    ),
+                }
+                for family in families
+            ],
+            "empty_reason": empty_reason,
+            "meaningful": meaningful,
+            "ok": bool(result.get("ok", True)) and meaningful,
+            "presentation": presentation,
+        }
+    )
+    return result
 
 
 def _stable_id(prefix: str, *parts: str) -> str:
@@ -61,11 +194,12 @@ def _dedupe_semantic_edges(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     }
     selected: dict[tuple[str, str, str], dict[str, Any]] = {}
     for item in rows:
-        key = (
-            str(item.get("source_id") or ""),
-            str(item.get("relation") or ""),
-            str(item.get("target_id") or ""),
-        )
+        source_id = str(item.get("source_id") or "")
+        target_id = str(item.get("target_id") or "")
+        relation = str(item.get("relation") or "")
+        if relation in SYMMETRIC_RELATIONS and source_id > target_id:
+            source_id, target_id = target_id, source_id
+        key = (source_id, relation, target_id)
         if not all(key):
             continue
         current = selected.get(key)
@@ -404,7 +538,19 @@ class LivingKnowledgeService:
         workspace = self._adapter_workspace(source, job_id)
         input_path = self._adapter_source_path(source)
         self._checkpoint_adapter_job(job_id, "extract", 20, executable=executable)
-        self._run_adapter_command([executable, str(input_path)], cwd=workspace, timeout_seconds=timeout_seconds)
+        self._run_adapter_command(
+            [
+                executable,
+                "extract",
+                str(input_path),
+                "--code-only",
+                "--no-cluster",
+                "--out",
+                str(workspace),
+            ],
+            cwd=workspace,
+            timeout_seconds=timeout_seconds,
+        )
         output = workspace / "graphify-out" / "graph.json"
         if not output.is_file() and input_path.is_dir():
             output = input_path / "graphify-out" / "graph.json"
@@ -877,7 +1023,17 @@ class LivingKnowledgeService:
             if principal.is_admin
             else principal.model_copy(update={"roles": list(dict.fromkeys([*principal.roles, "boi.admin"]))})
         )
-        records = self.repository.authoritative_records(compiler_principal, include_drafts=False)
+        candidate_records = self.repository.authoritative_records(compiler_principal, include_drafts=True)
+        records = []
+        for record in candidate_records:
+            state = record.status.casefold()
+            marker = f"{record.title} {record.description} {record.metadata.get('tags', [])}".casefold()
+            if state in {"deprecated", "candidate", "test", "smoke"} or "smoke" in marker or "fixture" in marker:
+                continue
+            declared_relationships = record.metadata.get("relationships") or record.metadata.get("relations")
+            if state == "draft" and not declared_relationships:
+                continue
+            records.append(record)
         records_by_id = {item.record_id: item for item in records}
         records_by_url = {item.url.split("?", 1)[0].rstrip("/"): item.record_id for item in records if item.url}
         aliases: dict[str, str] = {}
@@ -898,6 +1054,8 @@ class LivingKnowledgeService:
                         "owner": record.owner,
                         "team_id": record.team_id,
                         "authority": record.authority,
+                        "status": record.status,
+                        "reviewed": record.status.casefold() in {"published", "reviewed", "active"},
                         "observed_at": record.timestamp,
                         "source_revision": revision,
                     },
@@ -958,6 +1116,26 @@ class LivingKnowledgeService:
         }
         for record in records:
             revision = record_content_checksum(record)
+            declared_relationships = record.metadata.get("relationships") or record.metadata.get("relations") or []
+            if isinstance(declared_relationships, dict):
+                declared_relationships = [declared_relationships]
+            for item in declared_relationships if isinstance(declared_relationships, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                relation = str(item.get("relation") or item.get("type") or "").strip()
+                value = str(item.get("target") or item.get("ref") or item.get("boi_id") or "").strip()
+                if relation not in DECLARED_RELATIONS or relation == "evidence":
+                    continue
+                target = self._resolve_target(value, records_by_id, records_by_url, aliases)
+                if target and target != record.record_id:
+                    append_edge(
+                        record.record_id,
+                        target,
+                        relation,
+                        "declared",
+                        revision,
+                        metadata={"field": "relationships", "label": str(item.get("label") or "")},
+                    )
             for field, relation in relation_fields.items():
                 raw_values = record.metadata.get(field)
                 values = raw_values if isinstance(raw_values, list) else [raw_values] if raw_values else []
@@ -1659,6 +1837,8 @@ class LivingKnowledgeService:
 
         if relation_set:
             edges = [item for item in edges if str(item.get("relation") or "") in relation_set]
+        elif mode != "lineage":
+            edges = [item for item in edges if str(item.get("relation") or "") != "evidence"]
         if provenance_set:
             edges = [item for item in edges if str((item.get("payload") or {}).get("provenance") or "") in provenance_set]
         if lower_time or upper_time:
@@ -1685,14 +1865,15 @@ class LivingKnowledgeService:
         nodes = [item for item in nodes if str(item.get("node_id") or "") in page_refs]
         edges = page_edges
         if mode == "neighbors":
-            return {
+            return _decorate_graph_result({
                 "view": mode,
                 "source_ref": source_ref,
+                "presentation": "explorer",
                 "nodes": nodes,
                 "edges": edges,
                 "cursor": str(offset),
                 "next_cursor": str(offset + limit) if has_more else "",
-            }
+            }, query_kind=mode)
 
         if mode in {"workflow", "lineage", "responsibility", "timeline", "compare"}:
             result = self.query(
@@ -1730,28 +1911,30 @@ class LivingKnowledgeService:
             while queue:
                 current, path_nodes, path_edges = queue.popleft()
                 if current == target_ref:
-                    return {
+                    return _decorate_graph_result({
                         "view": mode,
                         "source_ref": source_ref,
                         "target_ref": target_ref,
+                        "presentation": "mermaid",
                         "path_refs": path_nodes,
                         "nodes": [node_lookup[item] for item in path_nodes if item in node_lookup],
                         "edges": path_edges,
-                    }
+                    }, query_kind=mode)
                 for neighbor, edge in adjacency.get(current, []):
                     if neighbor in visited:
                         continue
                     visited.add(neighbor)
                     queue.append((neighbor, [*path_nodes, neighbor], [*path_edges, edge]))
-            return {
+            return _decorate_graph_result({
                 "view": mode,
                 "source_ref": source_ref,
                 "target_ref": target_ref,
+                "presentation": "mermaid",
                 "path_refs": [],
                 "nodes": [],
                 "edges": [],
                 "status": "not_connected",
-            }
+            }, query_kind=mode)
 
         if mode == "impact":
             affected = {source_ref}
@@ -1765,13 +1948,14 @@ class LivingKnowledgeService:
                     affected.add(neighbor)
                     selected_edges.append(edge)
                     queue.append(neighbor)
-            return {
+            return _decorate_graph_result({
                 "view": mode,
                 "source_ref": source_ref,
+                "presentation": "explorer" if len(affected) > 20 else "list",
                 "affected_refs": list(affected - {source_ref}),
                 "nodes": [item for item in nodes if str(item.get("node_id") or "") in affected],
                 "edges": selected_edges,
-            }
+            }, query_kind=mode)
 
         order: list[str] = []
         visited = {source_ref}
@@ -1784,9 +1968,12 @@ class LivingKnowledgeService:
                     visited.add(neighbor)
                     queue.append(neighbor)
         node_lookup = {str(item.get("node_id") or ""): item for item in nodes}
-        return {
+        return _decorate_graph_result({
             "view": "tour",
             "source_ref": source_ref,
+            "presentation": "list",
+            "nodes": [node_lookup[item] for item in order if item in node_lookup],
+            "edges": [edge for ref in order for _neighbor, edge in adjacency.get(ref, [])],
             "steps": [
                 {
                     "order": index + 1,
@@ -1796,7 +1983,7 @@ class LivingKnowledgeService:
                 }
                 for index, ref in enumerate(order)
             ],
-        }
+        }, query_kind="tour")
 
     def node(self, principal: Principal, node_id: str) -> dict[str, Any]:
         graph = self.store.ontology_neighbors(
@@ -1901,6 +2088,9 @@ class LivingKnowledgeService:
         if plan.relation_kinds:
             allowed_relations = set(plan.relation_kinds)
             edges = [item for item in edges if str(item.get("relation") or "") in allowed_relations]
+        elif plan.query_kind != "lineage":
+            # source_refs are citation lineage, not a useful default business relationship.
+            edges = [item for item in edges if str(item.get("relation") or "") != "evidence"]
         focal = set(plan.focal_entities)
         node_lookup = {str(item.get("node_id") or ""): item for item in nodes}
         responsibility_relations = {
@@ -1910,11 +2100,11 @@ class LivingKnowledgeService:
         workflow_relations = {
             "has_task", "part_of_workflow", "uses_sop", "uses_event", "uses_action",
             "uses_skill", "requires_evidence", "produces", "results_in", "triggered_by",
-            "next_task", "precedes",
+            "next_task", "precedes", "part_of", "triggers", "executes",
         }
         impact_relations = {
             *workflow_relations, "links_to", "related", "narrower", "supersedes",
-            "consumed_by", "depends_on",
+            "consumed_by", "depends_on", "guides", "uses",
         }
         lineage_relations = {
             "evidence", "requires_evidence", "derived_from", "produces", "results_in",
@@ -1970,8 +2160,6 @@ class LivingKnowledgeService:
         traversal_direction = plan.direction
         if plan.query_kind in {"workflow", "impact"} and traversal_direction == "both":
             traversal_direction = "outgoing"
-        if plan.query_kind == "lineage" and traversal_direction == "both":
-            traversal_direction = "incoming"
 
         if plan.query_kind == "path":
             if not plan.target_entities:
@@ -1994,7 +2182,7 @@ class LivingKnowledgeService:
                         continue
                     visited.add(neighbor)
                     queue.append((neighbor, [*path_nodes, neighbor], [*path_edges, edge]))
-            return cache_result({
+            return cache_result(_decorate_graph_result({
                 "ok": True,
                 "query_plan": plan.model_dump(mode="json"),
                 "presentation": "mermaid" if plan.presentation == "auto" else plan.presentation,
@@ -2003,7 +2191,7 @@ class LivingKnowledgeService:
                 "nodes": [node_lookup[item] for item in found_nodes if item in node_lookup],
                 "edges": found_edges,
                 "provenance_required": True,
-            })
+            }, query_kind=plan.query_kind))
 
         depth_by_ref: dict[str, int] = {item: 0 for item in focal}
         semantic_refs: list[str] = []
@@ -2073,7 +2261,9 @@ class LivingKnowledgeService:
 
         tour_steps: list[dict[str, Any]] = []
         if plan.query_kind == "tour":
-            tour_relations = workflow_relations | {"broader", "narrower", "links_to", "evidence"}
+            tour_relations = workflow_relations | {
+                "broader", "narrower", "links_to", "guides", "uses", "part_of",
+            }
             tour_edges = [item for item in edges if str(item.get("relation") or "") in tour_relations]
             visible_ids, selected_edges, depth_by_ref = traverse(
                 focal,
@@ -2105,13 +2295,15 @@ class LivingKnowledgeService:
         if presentation == "auto":
             if plan.query_kind == "timeline":
                 presentation = "timeline"
+            elif plan.query_kind == "compare":
+                presentation = "table"
             elif plan.query_kind in {"workflow", "path", "lineage"} and len(nodes) <= 14 and len(edges) <= 20:
                 presentation = "mermaid"
             elif len(nodes) > 20:
                 presentation = "explorer"
             else:
                 presentation = "list"
-        return cache_result({
+        return cache_result(_decorate_graph_result({
             "ok": True,
             "query_plan": plan.model_dump(mode="json"),
             "presentation": presentation,
@@ -2126,7 +2318,7 @@ class LivingKnowledgeService:
             "lineage_refs": semantic_refs if plan.query_kind == "lineage" else [],
             "responsibility_refs": semantic_refs if plan.query_kind == "responsibility" else [],
             "provenance_required": True,
-        })
+        }, query_kind=plan.query_kind))
 
     def health(self, principal: Principal, *, refresh: bool = False) -> dict[str, Any]:
         existing = self.store.list("knowledge_health_findings", employee_id=principal.employee_id, limit=1000)
