@@ -83,6 +83,8 @@
     artifactPanelOpen: false,
     artifactFocusOpen: false,
     diagramViews: {},
+    graphViews: {},
+    artifactFocusChoices: {},
     suggestionsExpanded: false,
     starterSet: null,
     starterSetLoading: false,
@@ -94,6 +96,7 @@
   const pageRef = root.dataset.pageRef || `${location.pathname}${location.search}`;
   const channel = "BroadcastChannel" in window ? new BroadcastChannel("boi-agent-v2-artifacts") : null;
   let completionEditor = null;
+  let graphStateSaveTimer = null;
 
   function surfaceStateKey() {
     return `boiAgentV2Surface:${state.sessionId || "new"}`;
@@ -106,6 +109,8 @@
       resultScroll: Math.round(elements.artifacts?.scrollTop || 0),
       artifactFocusOpen: state.artifactFocusOpen,
       diagramViews: state.diagramViews,
+      graphViews: state.graphViews,
+      artifactFocusChoices: state.artifactFocusChoices,
     }));
   }
 
@@ -115,6 +120,8 @@
     state.suggestionsExpanded = Boolean(stored.suggestionsExpanded);
     state.artifactFocusOpen = Boolean(stored.artifactFocusOpen);
     state.diagramViews = stored.diagramViews && typeof stored.diagramViews === "object" ? stored.diagramViews : {};
+    state.graphViews = stored.graphViews && typeof stored.graphViews === "object" ? stored.graphViews : {};
+    state.artifactFocusChoices = stored.artifactFocusChoices && typeof stored.artifactFocusChoices === "object" ? stored.artifactFocusChoices : {};
     window.setTimeout(() => {
       if (Number.isFinite(Number(stored.conversationScroll))) elements.messages.scrollTop = Number(stored.conversationScroll);
       if (Number.isFinite(Number(stored.resultScroll))) elements.artifacts.scrollTop = Number(stored.resultScroll);
@@ -277,7 +284,11 @@
 
   function artifactHasDiagram() {
     const draft = state.artifact?.draft || {};
-    return Boolean(state.artifact && (state.artifact.artifact_type === "mermaid_diagram" || draft.mermaid));
+    return Boolean(state.artifact && (
+      state.artifact.artifact_type === "mermaid_diagram"
+      || state.artifact.artifact_type === "ontology_graph"
+      || draft.mermaid
+    ));
   }
 
   function syncArtifactFocusUi() {
@@ -296,17 +307,21 @@
     elements.artifactFocus.setAttribute("aria-pressed", String(focusActive));
   }
 
-  function setArtifactFocus(open) {
+  function setArtifactFocus(open, { userInitiated = true } = {}) {
     const centers = new Map(
       [...elements.artifacts.querySelectorAll("[data-v2-mermaid]")]
         .map((diagram) => [diagram.dataset.mermaidViewKey, mermaidCanvasCenter(diagram)])
     );
     state.artifactFocusOpen = Boolean(open && !isMobileSurface());
+    if (userInitiated && state.artifact?.artifact_id) {
+      state.artifactFocusChoices[state.artifact.artifact_id] = state.artifactFocusOpen ? "focus" : "split";
+    }
     syncArtifactFocusUi();
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       elements.artifacts.querySelectorAll("[data-v2-mermaid]").forEach((diagram) => {
         syncMermaidView(diagram, { center: centers.get(diagram.dataset.mermaidViewKey) });
       });
+      window.dispatchEvent(new Event("resize"));
     }));
     saveSurfaceState();
   }
@@ -1057,9 +1072,32 @@
   }
 
   function ontologyViewer(draft) {
-    const { nodes, edges, lookup, title, relationLabel, provenanceLabel } = ontologyContext(draft);
-    const mode = draft.presentation === "timeline" ? "시간 흐름" : draft.presentation === "explorer" ? "관계 탐색" : draft.presentation === "table" ? "관계표" : "연결 관계";
-    return `<article class="ontology-result knowledge-explorer knowledge-graph-hub" data-agent-ontology-explorer data-a2ui-mount="OntologyExplorer" data-source-ref="${escapeHtml(nodes[0]?.node_id || "")}" data-a2ui-component="OntologyExplorer" data-a2ui-catalog="boi-a2ui/v1"><header><div><span>${escapeHtml(mode)}</span><strong>${nodes.length}개 항목 · ${edges.length}개 관계</strong></div></header><p class="knowledge-explorer-status muted" aria-live="polite">관계 그림을 준비하고 있습니다.</p><div class="knowledge-graph-hub-layout"><div class="knowledge-graph-shell"><div class="knowledge-graph-canvas" role="img" aria-label="업무 맥락 관계 그래프"></div></div><aside class="knowledge-node-details" data-knowledge-node-details><span class="eyebrow">선택한 항목</span><h3 data-knowledge-node-title>업무 관계</h3><p data-knowledge-node-summary>항목을 선택하면 관계 이유와 원문을 확인할 수 있습니다.</p><dl><div><dt>종류</dt><dd data-knowledge-node-kind>업무 지식</dd></div><div><dt>연결</dt><dd data-knowledge-node-degree>확인 중</dd></div><div><dt>검증 상태</dt><dd data-knowledge-node-provenance>근거가 확인된 관계</dd></div></dl><a class="button secondary" data-knowledge-open-node hidden>원문 열기</a></aside></div></article>`;
+    const { nodes, edges } = ontologyContext(draft);
+    const explorer = window.BoiA2UI?.ontologyExplorerMarkup?.() || "";
+    return `<article class="ontology-result" data-agent-ontology-explorer data-a2ui-mount="OntologyExplorer" data-source-ref="${escapeHtml(nodes[0]?.node_id || "")}" data-node-count="${nodes.length}" data-edge-count="${edges.length}" data-a2ui-component="OntologyExplorer" data-a2ui-catalog="boi-a2ui/v1">${explorer}</article>`;
+  }
+
+  function prepareOntologyPanel(panel, artifact, canShowPanel) {
+    if (!panel || !artifact) return;
+    const key = artifact.artifact_id;
+    panel.dataset.graphViewKey = key;
+    panel.dataset.graphState = JSON.stringify(state.graphViews[key] || {});
+    if (!canShowPanel) return;
+    let attempts = 0;
+    const maybeAutoFocus = () => {
+      if (isMobileSurface() || state.artifactFocusChoices[key] || state.artifactFocusOpen) return;
+      const canvas = elements.artifacts.querySelector(".knowledge-graph-canvas");
+      if ((!canvas || canvas.getBoundingClientRect().width === 0) && attempts < 8) {
+        attempts += 1;
+        window.setTimeout(maybeAutoFocus, 50);
+        return;
+      }
+      if (canvas && canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().width < 680) {
+        state.artifactFocusChoices[key] = "auto-focus";
+        setArtifactFocus(true, { userInitiated: false });
+      }
+    };
+    window.requestAnimationFrame(() => window.requestAnimationFrame(maybeAutoFocus));
   }
 
   function ontologyTable(draft) {
@@ -1098,6 +1136,7 @@
       state.artifactPanelOpen = false;
       root.classList.remove("artifact-panel-open");
       root.classList.remove("diagram-artifact-active");
+      root.classList.remove("ontology-artifact-active");
       updateMobileView("conversation");
       elements.fullEditor.hidden = true;
       elements.artifactKind.textContent = "작업 결과";
@@ -1124,6 +1163,7 @@
     const isRoutine = artifact.artifact_type === "work_routine_draft";
     const hasDiagram = Boolean(isDiagram || draft.mermaid);
     root.classList.toggle("diagram-artifact-active", isDiagram || isOntology);
+    root.classList.toggle("ontology-artifact-active", isOntology && a2uiArtifactComponent(artifact.artifact_id) === "OntologyExplorer");
     elements.artifactKind.textContent = isDiagram ? "흐름 그림" : isOntology ? "업무 관계" : isSop ? "SOP 초안" : isWorkflowDraft ? "Task 후보" : isRoutine ? "자동 확인 계획" : "작업 결과";
     elements.artifactTitle.textContent = artifact.title || "작업 결과";
     elements.artifactState.textContent = `자동 저장됨 · 버전 ${artifact.revision || 1}`;
@@ -1155,10 +1195,20 @@
     if (isOntology && a2uiArtifactComponent(artifact.artifact_id) === "OntologyExplorer") {
       const panel = elements.artifacts.querySelector("[data-agent-ontology-explorer]");
       if (panel) {
+        prepareOntologyPanel(panel, artifact, canShowPanel);
+        if (!canShowPanel) {
+          syncArtifactFocusUi();
+          saveSurfaceState();
+          return;
+        }
         const hydrated = state.a2uiSurface && window.BoiA2UI?.hydrate
           ? window.BoiA2UI.hydrate(state.a2uiSurface, elements.artifacts)
           : false;
         if (hydrated) {
+          window.setTimeout(() => {
+            const hydratedPanel = elements.artifacts.querySelector(".knowledge-graph-hub");
+            prepareOntologyPanel(hydratedPanel, artifact, canShowPanel);
+          }, 0);
           syncArtifactFocusUi();
           saveSurfaceState();
           return;
@@ -1170,7 +1220,7 @@
           .catch(() => { panel.querySelector(".knowledge-explorer-status").textContent = "관계 그림을 표시하지 못했습니다."; });
       }
     }
-    elements.artifactFocus.hidden = !hasDiagram;
+    elements.artifactFocus.hidden = !(hasDiagram || isOntology);
     elements.artifacts.querySelectorAll("[data-ontology-node], [data-ontology-focus]").forEach((button) => {
       button.addEventListener("click", () => {
         const selected = button.dataset.ontologyNode || button.dataset.ontologyFocus || "";
@@ -1581,6 +1631,8 @@
     state.artifactPanelOpen = false;
     state.artifactFocusOpen = false;
     state.diagramViews = {};
+    state.graphViews = {};
+    state.artifactFocusChoices = {};
     state.suggestionsExpanded = false;
     updateUrl("");
     await loadSession();
@@ -1633,7 +1685,18 @@
   elements.launcher.addEventListener("click", () => setSurfaceMode("compact"));
   $("[data-agent-v2-close]").addEventListener("click", () => setSurfaceMode("closed"));
   $("[data-agent-v2-expand]").addEventListener("click", () => setSurfaceMode(state.mode === "expanded" ? "compact" : "expanded"));
-  elements.artifactFocus.addEventListener("click", () => setArtifactFocus(!state.artifactFocusOpen));
+  elements.artifactFocus.addEventListener("click", () => setArtifactFocus(!state.artifactFocusOpen, { userInitiated: true }));
+  elements.artifacts.addEventListener("boi:knowledge-graph-state", (event) => {
+    const detail = event.detail || {};
+    if (!detail.key) return;
+    state.graphViews[detail.key] = {
+      selectedNodeId: detail.selectedNodeId || "",
+      inspectorOpen: Boolean(detail.inspectorOpen),
+      camera: detail.camera || state.graphViews[detail.key]?.camera || null,
+    };
+    window.clearTimeout(graphStateSaveTimer);
+    graphStateSaveTimer = window.setTimeout(saveSurfaceState, 120);
+  });
   $("[data-agent-v2-attach]").addEventListener("click", () => { elements.attachments.hidden = !elements.attachments.hidden; });
   $("[data-agent-v2-file-upload]").addEventListener("click", () => uploadContextFiles());
   $("[data-agent-v2-attachments-close]").addEventListener("click", () => { elements.attachments.hidden = true; });
@@ -1806,7 +1869,9 @@
       return;
     }
     if (event.key !== "Escape") return;
-    if (!elements.taskSheet.hidden) closeTaskSheet();
+    const openInspectorClose = elements.artifacts.querySelector("[data-knowledge-node-details]:not([hidden]) [data-knowledge-node-close]");
+    if (openInspectorClose) openInspectorClose.click();
+    else if (!elements.taskSheet.hidden) closeTaskSheet();
     else if (!elements.sourcePreview.hidden) closeSourcePreview();
     else if (!elements.routines.hidden) elements.routines.hidden = true;
     else if (!elements.sources.hidden) elements.sources.hidden = true;

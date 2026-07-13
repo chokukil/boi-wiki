@@ -56,18 +56,21 @@
     <div class="knowledge-explorer-content" hidden></div>
     <div class="knowledge-graph-hub-layout">
       <div class="knowledge-graph-shell">
-        <div class="knowledge-graph-canvas" role="img" aria-label="선택한 업무 맥락을 중심으로 한 관계 그래프"></div>
+        <div class="knowledge-graph-canvas" role="application" tabindex="0" aria-label="선택한 업무 맥락을 중심으로 한 관계 그래프. 방향키로 항목을 이동하고 Enter로 상세를 확인합니다."></div>
       </div>
-      <aside class="knowledge-node-details" data-knowledge-node-details aria-live="polite">
-        <span class="eyebrow">선택한 항목</span>
-        <h2 data-knowledge-node-title>중심 항목</h2>
-        <p data-knowledge-node-summary>그래프에서 항목을 선택하면 관계 이유와 원문 위치를 확인할 수 있습니다.</p>
-        <dl>
-          <div><dt>종류</dt><dd data-knowledge-node-kind>확인 중</dd></div>
-          <div><dt>연결</dt><dd data-knowledge-node-degree>확인 중</dd></div>
-          <div><dt>검증 상태</dt><dd data-knowledge-node-provenance>근거가 있는 관계만 표시</dd></div>
-        </dl>
-        <a class="button secondary" data-knowledge-open-node hidden>원문 열기</a>
+      <aside class="knowledge-node-details" data-knowledge-node-details aria-live="polite" hidden>
+        <header><span class="eyebrow">선택한 항목</span><button type="button" class="icon-button" data-knowledge-node-close title="선택한 항목 닫기" aria-label="선택한 항목 닫기">×</button></header>
+        <div class="knowledge-node-details-body">
+          <div><h2 data-knowledge-node-title>중심 항목</h2><p data-knowledge-node-summary></p></div>
+          <dl>
+            <div><dt>종류</dt><dd data-knowledge-node-kind>확인 중</dd></div>
+            <div><dt>연결</dt><dd data-knowledge-node-degree>확인 중</dd></div>
+            <div><dt>관계 이유</dt><dd data-knowledge-node-reason>직접 연결된 업무 맥락</dd></div>
+            <div><dt>검증 상태</dt><dd data-knowledge-node-provenance>근거가 있는 관계만 표시</dd></div>
+            <div><dt>확인 시점</dt><dd data-knowledge-node-observed>기록된 시점 없음</dd></div>
+          </dl>
+          <div class="knowledge-node-actions"><a class="button secondary" data-knowledge-open-node hidden>원문 열기</a><button type="button" class="button secondary" data-knowledge-node-close>닫기</button></div>
+        </div>
       </aside>
     </div>
   </section>

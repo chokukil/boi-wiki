@@ -8,6 +8,31 @@
   ]);
   const unsafeHtml = /<(?:script|iframe|object|embed)\b|\son[a-z]+\s*=/i;
 
+  function ontologyExplorerMarkup() {
+    return `<article class="knowledge-explorer knowledge-graph-hub" data-source-ref="">
+      <p class="knowledge-explorer-status muted" aria-live="polite">관계 그림을 준비하고 있습니다.</p>
+      <div class="knowledge-graph-hub-layout">
+        <div class="knowledge-graph-shell">
+          <div class="knowledge-graph-canvas" role="application" tabindex="0" aria-label="업무 맥락 관계 그래프. 방향키로 항목을 이동하고 Enter로 상세를 확인합니다."></div>
+        </div>
+        <aside class="knowledge-node-details" data-knowledge-node-details aria-live="polite" hidden>
+          <header><span class="eyebrow">선택한 항목</span><button type="button" class="icon-button" data-knowledge-node-close title="선택한 항목 닫기" aria-label="선택한 항목 닫기">×</button></header>
+          <div class="knowledge-node-details-body">
+            <div><h3 data-knowledge-node-title>업무 관계</h3><p data-knowledge-node-summary></p></div>
+            <dl>
+              <div><dt>종류</dt><dd data-knowledge-node-kind>업무 지식</dd></div>
+              <div><dt>연결</dt><dd data-knowledge-node-degree>확인 중</dd></div>
+              <div><dt>관계 이유</dt><dd data-knowledge-node-reason>직접 연결된 업무 맥락</dd></div>
+              <div><dt>검증 상태</dt><dd data-knowledge-node-provenance>근거가 확인된 관계</dd></div>
+              <div><dt>확인 시점</dt><dd data-knowledge-node-observed>기록된 시점 없음</dd></div>
+            </dl>
+            <div class="knowledge-node-actions"><a class="button secondary" data-knowledge-open-node hidden>원문 열기</a><button type="button" class="button secondary" data-knowledge-node-close>닫기</button></div>
+          </div>
+        </aside>
+      </div>
+    </article>`;
+  }
+
   function safeValue(value, key = "") {
     if (Array.isArray(value)) return value.every((item) => safeValue(item, key));
     if (value && typeof value === "object") return Object.entries(value).every(([childKey, child]) => safeValue(child, childKey));
@@ -160,10 +185,13 @@
   }
 
   function ontologyPanel(mount, draft) {
-    mount.innerHTML = `<article class="knowledge-explorer knowledge-graph-hub" data-source-ref=""><p class="knowledge-explorer-status muted" aria-live="polite">관계 그림을 준비하고 있습니다.</p><div class="knowledge-graph-hub-layout"><div class="knowledge-graph-shell"><div class="knowledge-graph-canvas" role="img" aria-label="업무 맥락 관계 그래프"></div></div><aside class="knowledge-node-details" data-knowledge-node-details><span class="eyebrow">선택한 항목</span><h3 data-knowledge-node-title>업무 관계</h3><p data-knowledge-node-summary>항목을 선택하면 관계 이유와 원문을 확인할 수 있습니다.</p><dl><div><dt>종류</dt><dd data-knowledge-node-kind>업무 지식</dd></div><div><dt>연결</dt><dd data-knowledge-node-degree>확인 중</dd></div><div><dt>검증 상태</dt><dd data-knowledge-node-provenance>근거가 확인된 관계</dd></div></dl><a class="button secondary" data-knowledge-open-node hidden>원문 열기</a></aside></div></article>`;
+    mount.innerHTML = ontologyExplorerMarkup();
     const panel = mount.firstElementChild;
     const nodes = Array.isArray(draft.nodes) ? draft.nodes : [];
+    panel.dataset.agentOntologyExplorer = "true";
     panel.dataset.sourceRef = nodes[0]?.node_id || "";
+    panel.dataset.graphViewKey = mount.dataset.graphViewKey || "";
+    panel.dataset.graphState = mount.dataset.graphState || "{}";
     const payload = { nodes, edges: Array.isArray(draft.edges) ? draft.edges : [] };
     if (window.BoiKnowledgeGraph?.renderPayload) window.BoiKnowledgeGraph.renderPayload(panel, payload);
     else import("/static/dist/knowledge-graph.js")
@@ -302,5 +330,5 @@
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-a2ui-surface-ref]").forEach((root) => hydrateStored(root));
   });
-  window.BoiA2UI = { validate, hydrate, hydrateStored, catalogId, protocolVersion };
+  window.BoiA2UI = { validate, hydrate, hydrateStored, ontologyExplorerMarkup, catalogId, protocolVersion };
 })();

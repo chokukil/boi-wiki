@@ -14,6 +14,12 @@ type GraphPayload = {
   status?: string;
 };
 
+type ExplorerViewState = {
+  selectedNodeId?: string;
+  inspectorOpen?: boolean;
+  camera?: { x?: number; y?: number; ratio?: number; angle?: number };
+};
+
 const MAX_NODES = 500;
 const colors: Record<string, string> = {
   person: "#2563eb", team: "#0f766e", role: "#475569", task: "#7c3aed",
@@ -22,6 +28,7 @@ const colors: Record<string, string> = {
 };
 
 const nodeTitle = (node: GraphNode): string => String(node.payload?.title || "연결된 항목");
+const graphLabel = (value: string): string => value.length > 34 ? `${value.slice(0, 33)}…` : value;
 
 function position(index: number, total: number): { x: number; y: number } {
   if (index === 0) return { x: 0, y: 0 };
@@ -79,14 +86,34 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   let activeView = "explorer";
   let targetRef = "";
   let renderer: Sigma | null = null;
+  let resizeObserver: ResizeObserver | null = null;
+  let restoredState: ExplorerViewState = {};
+  try { restoredState = JSON.parse(panel.dataset.graphState || "{}"); } catch (_error) { restoredState = {}; }
+  const stateKey = panel.dataset.graphViewKey || rootRef;
+
+  const emitState = (patch: ExplorerViewState = {}) => {
+    const camera = renderer?.getCamera().getState();
+    panel.dispatchEvent(new CustomEvent("boi:knowledge-graph-state", {
+      bubbles: true,
+      detail: {
+        key: stateKey,
+        selectedNodeId: selectedRef,
+        inspectorOpen: Boolean(details && !details.hidden),
+        camera: camera ? { x: camera.x, y: camera.y, ratio: camera.ratio, angle: camera.angle } : restoredState.camera,
+        ...patch,
+      },
+    }));
+  };
   const lifecycleObserver = new MutationObserver(() => {
     if (panel.isConnected) return;
+    resizeObserver?.disconnect();
     renderer?.kill();
     renderer = null;
     lifecycleObserver.disconnect();
   });
   lifecycleObserver.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("pagehide", () => {
+    resizeObserver?.disconnect();
     renderer?.kill();
     renderer = null;
     lifecycleObserver.disconnect();
@@ -98,18 +125,34 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   const showDetails = (nodeRef: string) => {
     if (!graph.hasNode(nodeRef) || !details) return;
     selectedRef = nodeRef;
-    const attributes = graph.getNodeAttributes(nodeRef);
-    details.querySelector<HTMLElement>("[data-knowledge-node-title]")!.textContent = String(attributes.label || "연결된 항목");
+      const attributes = graph.getNodeAttributes(nodeRef);
+    const incidentEdges = graph.edges(nodeRef).map((edgeId) => graph.getEdgeAttributes(edgeId));
+    const relation = incidentEdges.find((item) => item.reason || item.label) || {};
+    details.hidden = false;
+    panel.classList.add("knowledge-node-inspector-open");
+    details.querySelector<HTMLElement>("[data-knowledge-node-title]")!.textContent = String(attributes.fullLabel || attributes.label || "연결된 항목");
     details.querySelector<HTMLElement>("[data-knowledge-node-summary]")!.textContent = String(attributes.summary || "이 항목과 직접 연결된 업무 맥락입니다.");
     details.querySelector<HTMLElement>("[data-knowledge-node-kind]")!.textContent = String(attributes.kind || "업무 지식");
     details.querySelector<HTMLElement>("[data-knowledge-node-degree]")!.textContent = `${graph.degree(nodeRef)}개 관계`;
-    details.querySelector<HTMLElement>("[data-knowledge-node-provenance]")!.textContent = String(attributes.provenance || "근거가 확인된 관계");
+    details.querySelector<HTMLElement>("[data-knowledge-node-reason]")!.textContent = String(relation.reason || relation.label || "직접 연결된 업무 맥락");
+    details.querySelector<HTMLElement>("[data-knowledge-node-provenance]")!.textContent = String(relation.provenance || attributes.provenance || "근거가 확인된 관계");
+    details.querySelector<HTMLElement>("[data-knowledge-node-observed]")!.textContent = String(relation.observedAt || attributes.observedAt || "기록된 시점 없음");
     const openElement = details.querySelector<HTMLAnchorElement>("[data-knowledge-open-node]");
     if (openElement) {
       const url = String(attributes.url || "");
       openElement.hidden = !url;
       if (url) openElement.href = url;
     }
+    container.setAttribute("aria-label", `${String(attributes.fullLabel || attributes.label || "연결된 항목")} 선택됨. 방향키로 다른 항목을 이동하고 Enter로 상세를 확인합니다.`);
+    emitState({ selectedNodeId: nodeRef, inspectorOpen: true });
+  };
+
+  const closeDetails = () => {
+    if (!details) return;
+    details.hidden = true;
+    panel.classList.remove("knowledge-node-inspector-open");
+    emitState({ inspectorOpen: false });
+    window.requestAnimationFrame(() => renderer?.resize());
   };
 
   const replaceGraph = (payload: GraphPayload) => {
@@ -117,19 +160,26 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     const nodes = (payload.nodes || []).slice(0, MAX_NODES);
     nodes.forEach((node, index) => {
       const point = position(index, nodes.length);
+      const fullLabel = nodeTitle(node);
       graph.addNode(node.node_id, {
-        label: nodeTitle(node), size: node.node_id === rootRef ? 12 : 8,
+        label: graphLabel(fullLabel), fullLabel, size: node.node_id === rootRef ? 12 : 8,
         color: colors[node.node_type || ""] || "#64748b", x: point.x, y: point.y,
         url: String(node.payload?.url || ""), summary: String(node.payload?.summary || node.payload?.description || ""),
         kind: String(node.node_type || "업무 지식"), provenance: String(node.payload?.provenance || "근거가 확인된 관계"),
+        observedAt: String(node.payload?.observed_at || node.payload?.valid_from || node.payload?.recorded_at || ""),
       });
     });
     (payload.edges || []).forEach((edge) => {
       if (!graph.hasNode(edge.source_id) || !graph.hasNode(edge.target_id) || graph.hasEdge(edge.edge_id)) return;
-      graph.addDirectedEdgeWithKey(edge.edge_id, edge.source_id, edge.target_id, { label: edge.relation || "related", color: "#94a3b8", size: 1.5 });
+      graph.addDirectedEdgeWithKey(edge.edge_id, edge.source_id, edge.target_id, {
+        label: edge.relation || "related", color: "#94a3b8", size: 1.5,
+        reason: String(edge.payload?.reason || edge.payload?.description || edge.relation || ""),
+        provenance: String(edge.payload?.provenance || "근거가 확인된 관계"),
+        observedAt: String(edge.payload?.observed_at || edge.payload?.valid_from || edge.payload?.recorded_at || ""),
+      });
     });
     renderer?.refresh();
-    if (graph.hasNode(rootRef)) showDetails(rootRef);
+    if (selectedRef && graph.hasNode(selectedRef) && !details?.hidden) showDetails(selectedRef);
   };
 
   const ensureRenderer = () => {
@@ -138,17 +188,28 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
         renderEdgeLabels: false,
         labelDensity: 0.1,
         labelGridCellSize: 120,
+        stagePadding: 46,
         allowInvalidContainer: true,
       });
+      const restoredCamera = restoredState.camera;
+      if (restoredCamera && [restoredCamera.x, restoredCamera.y, restoredCamera.ratio].every((value) => Number.isFinite(Number(value)))) {
+        renderer.getCamera().setState({
+          x: Number(restoredCamera.x), y: Number(restoredCamera.y), ratio: Number(restoredCamera.ratio),
+          angle: Number.isFinite(Number(restoredCamera.angle)) ? Number(restoredCamera.angle) : 0,
+        });
+      }
+      renderer.getCamera().on("updated", () => emitState());
       renderer.on("clickNode", async ({ node }) => {
         showDetails(node);
         if (activeView !== "explorer" || graph.order >= MAX_NODES) return;
         const payload = await load(panel, "explorer", node);
         const existing = new Set(graph.nodes());
-        const combined = { nodes: [...graph.nodes().map((id) => ({ node_id: id, node_type: String(graph.getNodeAttribute(id, "kind") || ""), payload: { title: graph.getNodeAttribute(id, "label"), url: graph.getNodeAttribute(id, "url"), summary: graph.getNodeAttribute(id, "summary") } })), ...(payload.nodes || []).filter((item) => !existing.has(item.node_id))], edges: [...graph.edges().map((id) => ({ edge_id: id, source_id: graph.source(id), target_id: graph.target(id), relation: String(graph.getEdgeAttribute(id, "label") || "related") })), ...(payload.edges || [])] };
+        const combined = { nodes: [...graph.nodes().map((id) => ({ node_id: id, node_type: String(graph.getNodeAttribute(id, "kind") || ""), payload: { title: graph.getNodeAttribute(id, "fullLabel") || graph.getNodeAttribute(id, "label"), url: graph.getNodeAttribute(id, "url"), summary: graph.getNodeAttribute(id, "summary") } })), ...(payload.nodes || []).filter((item) => !existing.has(item.node_id))], edges: [...graph.edges().map((id) => ({ edge_id: id, source_id: graph.source(id), target_id: graph.target(id), relation: String(graph.getEdgeAttribute(id, "label") || "related"), payload: { reason: graph.getEdgeAttribute(id, "reason"), provenance: graph.getEdgeAttribute(id, "provenance"), observed_at: graph.getEdgeAttribute(id, "observedAt") } })), ...(payload.edges || [])] };
         replaceGraph(combined);
         showDetails(node);
       });
+      resizeObserver = new ResizeObserver(() => renderer?.resize());
+      resizeObserver.observe(container);
     }
   };
 
@@ -157,6 +218,8 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     const graphVisible = view === "explorer" || view === "path" || view === "impact";
     const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
     if (!graphVisible && renderer) {
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       renderer.kill();
       renderer = null;
     }
@@ -185,6 +248,25 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   try {
     replaceGraph(initialPayload || await load(panel, "explorer", rootRef));
     ensureRenderer();
+    details?.querySelectorAll<HTMLElement>("[data-knowledge-node-close]").forEach((button) => button.addEventListener("click", closeDetails));
+    container.addEventListener("keydown", (event) => {
+      const nodes = graph.nodes();
+      if (!nodes.length) return;
+      const currentIndex = Math.max(0, nodes.indexOf(selectedRef));
+      if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) {
+        event.preventDefault();
+        const direction = ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1;
+        const next = nodes[(currentIndex + direction + nodes.length) % nodes.length];
+        showDetails(next);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        showDetails(nodes[currentIndex] || nodes[0]);
+      } else if (event.key === "Escape" && details && !details.hidden) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeDetails();
+      }
+    });
     panel.querySelectorAll<HTMLButtonElement>("[data-knowledge-view]").forEach((button) => button.addEventListener("click", () => void switchView(button.dataset.knowledgeView || "explorer")));
     panel.querySelector<HTMLButtonElement>("[data-knowledge-search]")?.addEventListener("click", async () => {
       const query = panel.querySelector<HTMLInputElement>("#knowledge-path-query")?.value.trim() || "";
@@ -199,7 +281,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
       candidates.querySelectorAll<HTMLButtonElement>("[data-target-ref]").forEach((button) => button.addEventListener("click", () => { targetRef = button.dataset.targetRef || ""; void switchView("path"); }));
     });
     if (status) status.textContent = "노드를 선택하면 주변 관계를 이어서 봅니다.";
-    if (graph.hasNode(rootRef)) showDetails(rootRef);
+    if (restoredState.inspectorOpen && restoredState.selectedNodeId && graph.hasNode(restoredState.selectedNodeId)) showDetails(restoredState.selectedNodeId);
   } catch (error) {
     container.dataset.ready = "false";
     container.textContent = error instanceof Error ? error.message : "그래프를 표시하지 못했습니다.";

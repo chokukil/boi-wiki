@@ -7620,7 +7620,12 @@ def test_pet_agent_mount_exposes_search_helper_contract(boi_app_module, monkeypa
     assert "fittedMermaidZoom" in script
     assert "contentHeight / bounds.height" in script
     assert "artifactFocusOpen" in script
+    assert "graphViews" in script
+    assert "boi:knowledge-graph-state" in script
+    assert 'artifact_type === "ontology_graph"' in script
     assert ".artifact-focus-open" in style
+    assert ".knowledge-node-details[hidden]" in style
+    assert "grid-template-rows: minmax(0, 1fr) auto" in style
     assert "Task 다듬기" in script
     assert "openTaskSheet" in script
     assert "saveCurrentNote" in script
@@ -11781,6 +11786,8 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
     assert graph_page.status_code == 200
     assert 'data-auto-open="true"' in graph_page.text
     assert 'class="knowledge-graph-canvas"' in graph_page.text
+    assert 'data-knowledge-node-details aria-live="polite" hidden' in graph_page.text
+    assert graph_page.text.count("data-knowledge-node-close") >= 2
     assert "영향 범위" in graph_page.text and "이해 순서" in graph_page.text
     assert "동적 화면 진단" not in graph_page.text
 
