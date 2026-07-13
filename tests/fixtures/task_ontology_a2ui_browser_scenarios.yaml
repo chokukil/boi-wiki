@@ -71,14 +71,22 @@ journeys:
     start: "/knowledge-graph?employee_id=100001"
     actions: [run_all_nine_graph_queries]
     assertions: [query_plans_are_distinct, path_timeline_compare_and_tour_use_semantic_results]
+  - id: ontology_visible_semantic_views
+    start: "/knowledge-graph?employee_id=100001"
+    actions: [select_each_of_nine_semantic_views, choose_path_and_compare_targets]
+    assertions: [selected_view_is_announced, visible_result_is_nonblank, no_hidden_fixture]
   - id: agent_table_timeline_mermaid
     start: "/agent?employee_id=100001"
     actions: [submit_grounded_result_variants]
     assertions: [trusted_a2ui_components_render, artifact_nonblank]
+  - id: agent_confirmation_surface
+    start: "/agent?employee_id=100001"
+    actions: [select_grounded_confirmation_starter, open_preview, activate_confirmation_control]
+    assertions: [confirmation_component_visible, guarded_event_emitted, production_unchanged_without_browser_confirmation]
   - id: harness_review_release_rehearsal
     start: "/integrations?employee_id=100001"
-    actions: [open_latest_harness_candidate, run_release_rehearsal]
-    assertions: [review_surface_rendered, production_unchanged]
+    actions: [open_latest_harness_candidate, run_release_rehearsal, release_approved_version, rollback_active_version]
+    assertions: [review_surface_rendered, rehearsal_keeps_production_unchanged, release_becomes_active, rollback_restores_previous_binding]
   - id: adapter_job_status_and_retry
     start: "/integrations?employee_id=100001"
     actions: [inspect_optional_adapter_status]

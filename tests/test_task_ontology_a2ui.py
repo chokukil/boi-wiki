@@ -13,7 +13,7 @@ from boi_api.app.v2.a2ui import (
     compile_surface,
     validate_surface,
 )
-from boi_api.app.v2.models import AgentTurnResponse, AnswerBlock, ArtifactRef, GraphQueryPlan
+from boi_api.app.v2.models import AgentTurnResponse, AnswerBlock, ArtifactRef, GraphQueryPlan, NextAction
 from boi_api.app.v2.service import AgentV2Service
 from boi_api.app.v2.store import MemoryAgentV2Store
 from fastapi.testclient import TestClient
@@ -62,7 +62,7 @@ def test_acceptance_fixture_has_decision_complete_50_scenario_matrix():
     assert payload["thresholds"]["unauthorized_mutations"] == 0
 
 
-def test_browser_acceptance_manifest_covers_four_viewports_and_fifteen_real_journeys():
+def test_browser_acceptance_manifest_covers_four_viewports_and_seventeen_real_journeys():
     payload = yaml.safe_load((ROOT / "tests/fixtures/task_ontology_a2ui_browser_scenarios.yaml").read_text(encoding="utf-8"))
     assert {(item["width"], item["height"]) for item in payload["viewports"]} == {
         (1440, 1000),
@@ -82,7 +82,9 @@ def test_browser_acceptance_manifest_covers_four_viewports_and_fifteen_real_jour
         "ontology_impact",
         "ontology_tour",
         "ontology_semantic_queries",
+        "ontology_visible_semantic_views",
         "agent_table_timeline_mermaid",
+        "agent_confirmation_surface",
         "harness_review_release_rehearsal",
         "adapter_job_status_and_retry",
         "mobile_focus_and_fallback",
@@ -321,6 +323,31 @@ def test_a2ui_validator_rejects_component_props_that_do_not_match_catalog_schema
 
     with pytest.raises(ValueError, match="invalid_a2ui_component_props"):
         validate_surface(surface)
+
+
+def test_a2ui_compiles_guarded_plan_as_visible_confirmation_surface():
+    response = AgentTurnResponse(
+        run_id="run-confirmation",
+        turn_id="turn-confirmation",
+        status="completed",
+        capability_id="work_routine.plan",
+        answer=AnswerBlock(summary="자동 확인 계획", markdown="확인 전에는 실행되지 않습니다."),
+        plan_ref="plan-confirmation",
+        next_actions=[
+            NextAction(
+                action_id="confirm-plan",
+                label="자동 확인 시작",
+                action_kind="confirm_plan",
+                plan_id="plan-confirmation",
+            )
+        ],
+    )
+
+    surface = validate_surface(compile_surface(response))
+    confirmation = next(item for item in surface["components"] if item["component"] == "Confirmation")
+
+    assert confirmation["props"]["title"] == "자동 확인 시작"
+    assert confirmation["props"]["plan_ref"] == "plan-confirmation"
 
 
 def test_task_console_is_rendered_from_a_valid_stored_a2ui_work_form(boi_app_module):

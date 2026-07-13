@@ -267,6 +267,43 @@ async function runViewport(cdp, viewport) {
       && (semanticQueries || []).find((item) => item.kind === 'tour')?.tour > 0
       && (semanticQueries || []).find((item) => item.kind === 'compare')?.comparison;
     journeys.push(journey("ontology_semantic_queries", semanticKinds.size === 9 && Boolean(semanticSpecials), {queries:semanticQueries}));
+
+    const visibleModes = [];
+    const targetTitle = String(target?.payload?.title || target?.title || "BoI Agent");
+    for (const kind of ["neighbors", "workflow", "impact", "lineage", "responsibility", "timeline", "tour"]) {
+      await cdp.eval(`document.querySelector('#knowledge-explorer [data-knowledge-view=${JSON.stringify(kind)}]')?.click()`);
+      await wait(cdp, `document.querySelector('#knowledge-explorer')?.dataset.activeView === ${JSON.stringify(kind)}`, 10000);
+      await wait(cdp, `!document.querySelector('#knowledge-explorer .knowledge-explorer-status')?.textContent.includes('확인하고 있습니다')`, 10000);
+      visibleModes.push(await cdp.eval(`(() => ({
+        kind:${JSON.stringify(kind)},
+        selected:document.querySelector('#knowledge-explorer [data-knowledge-view=${JSON.stringify(kind)}]')?.getAttribute('aria-selected') === 'true',
+        canvas:!!document.querySelector('#knowledge-explorer .knowledge-graph-canvas canvas'),
+        rows:document.querySelectorAll('#knowledge-explorer .knowledge-explorer-content li').length,
+        status:document.querySelector('#knowledge-explorer .knowledge-explorer-status')?.textContent.trim() || ''
+      }))()`));
+    }
+    for (const kind of ["path", "compare"]) {
+      await cdp.eval(`document.querySelector('#knowledge-explorer [data-knowledge-view=${JSON.stringify(kind)}]')?.click()`);
+      await wait(cdp, `document.querySelector('#knowledge-explorer')?.dataset.activeView === ${JSON.stringify(kind)}`, 10000);
+      await cdp.eval(`(() => {
+        const input=document.querySelector('#knowledge-path-query');
+        input.value=${JSON.stringify(targetTitle)};
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+        document.querySelector('#knowledge-explorer [data-knowledge-search]')?.click();
+      })()`);
+      await wait(cdp, `document.querySelector('#knowledge-explorer .knowledge-path-candidates [data-target-ref]')`, 10000);
+      await cdp.eval(`document.querySelector('#knowledge-explorer .knowledge-path-candidates [data-target-ref]')?.click()`);
+      await wait(cdp, `!document.querySelector('#knowledge-explorer .knowledge-explorer-status')?.textContent.includes('확인하고 있습니다')`, 10000);
+      visibleModes.push(await cdp.eval(`(() => ({
+        kind:${JSON.stringify(kind)},
+        selected:document.querySelector('#knowledge-explorer [data-knowledge-view=${JSON.stringify(kind)}]')?.getAttribute('aria-selected') === 'true',
+        canvas:!!document.querySelector('#knowledge-explorer .knowledge-graph-canvas canvas'),
+        rows:document.querySelectorAll('#knowledge-explorer .knowledge-explorer-content li').length,
+        status:document.querySelector('#knowledge-explorer .knowledge-explorer-status')?.textContent.trim() || ''
+      }))()`));
+    }
+    const visibleModesPassed = visibleModes.length === 9 && visibleModes.every((item) => item.selected && Boolean(item.status) && (item.canvas || item.rows > 0));
+    journeys.push(journey("ontology_visible_semantic_views", visibleModesPassed, {modes:visibleModes}));
   }
 
   let agentSurface = { checked: false };
@@ -433,6 +470,33 @@ async function runViewport(cdp, viewport) {
     const variantsPassed = variantChecks.every((item) => item.visible && item.active === item.component);
     if (!variantsPassed) failures.push("Agent table, timeline, and Mermaid surfaces were not rendered through the visible workbench");
     journeys.push(journey("agent_table_timeline_mermaid", variantsPassed, {variants:variantChecks}));
+
+    let confirmationState = { visible:false, emitted:false, planRef:"", error:"" };
+    try {
+      await navigate(cdp, `${baseUrl}/docs/boi%3Apublic%3Aboi-wiki-manual%3Aguide%3Afinal-operator-guide?employee_id=100001`, "[data-agent-v2-workspace]");
+      await cdp.eval(`document.querySelector('[data-agent-v2-open]')?.click()`);
+      await cdp.eval(`document.querySelector('[data-agent-v2-new]')?.click()`);
+      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button').length > 0`, 15000);
+      await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
+      const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='confirmation' && /다시 확인|자동 확인/.test(item.textContent)); button?.click(); return Boolean(button); })()`);
+      if (!clicked) throw new Error("grounded Confirmation starter is missing");
+      await wait(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-a2ui-component="Confirmation"] button')`, 90000);
+      confirmationState = await cdp.eval(`(() => {
+        const mount=document.querySelector('[data-agent-v2-artifact-list] [data-a2ui-component="Confirmation"]');
+        let emitted=false;
+        mount.addEventListener('boi:a2ui-confirm-request',()=>{ emitted=true; window.__boiConfirmationEmitted=true; },{once:true});
+        const original=window.confirm;
+        window.confirm=()=>false;
+        mount.querySelector('button')?.click();
+        window.confirm=original;
+        return {visible:!mount.hidden,emitted:window.__boiConfirmationEmitted===true,planRef:mount.querySelector('button')?${JSON.stringify("stored-on-surface")}:"",title:mount.querySelector('h3')?.textContent.trim()||""};
+      })()`);
+    } catch (caught) {
+      confirmationState.error = String(caught?.message || caught);
+    }
+    const confirmationPassed = confirmationState.visible && confirmationState.emitted && Boolean(confirmationState.title) && !confirmationState.error;
+    if (!confirmationPassed) failures.push("Agent Confirmation surface was not rendered and guarded through the visible workbench");
+    journeys.push(journey("agent_confirmation_surface", confirmationPassed, confirmationState));
   }
 
   const inbox = await fetchJson(`${baseUrl}/api/inbox?employee_id=100001&limit=5`);
@@ -546,8 +610,22 @@ async function runViewport(cdp, viewport) {
         harnessState.beforeStatus = beforeStatus;
         harnessState.afterStatus = after?.status || '';
         harnessState.productionUnchanged = harnessState.beforeStatus === harnessState.afterStatus;
+        const releaseLoaded = cdp.once("Page.loadEventFired");
+        await cdp.eval(`document.querySelector('[data-harness-release]:not([data-rehearsal="true"])')?.click()`);
+        await releaseLoaded;
+        await wait(cdp, `document.querySelector('[data-harness-rollback]')`, 10000);
+        const released = await cdp.eval(`fetch('/api/v2/harness-candidates?employee_id=100001').then(r=>r.json()).then(payload=>(payload.items||[]).find(item=>item.candidate_id===${JSON.stringify(candidate.candidate_id)})||null)`);
+        await cdp.eval(`(() => { const root=document.querySelector('[data-harness-review]'); root.querySelector('[data-harness-note]').value='실제 브라우저 rollback 검증'; root.querySelector('[data-harness-confirm]').checked=true; })()`);
+        const rollbackLoaded = cdp.once("Page.loadEventFired");
+        await cdp.eval(`document.querySelector('[data-harness-rollback]')?.click()`);
+        await rollbackLoaded;
+        await wait(cdp, `!!document.querySelector('[data-harness-review]')`, 10000);
+        const rolledBack = await cdp.eval(`fetch('/api/v2/harness-candidates?employee_id=100001').then(r=>r.json()).then(payload=>(payload.items||[]).find(item=>item.candidate_id===${JSON.stringify(candidate.candidate_id)})||null)`);
+        harnessState.releasedStatus = released?.status || '';
+        harnessState.rolledBackStatus = rolledBack?.status || '';
+        harnessState.releaseAndRollback = harnessState.releasedStatus === 'released' && harnessState.rolledBackStatus === 'rolled_back';
       }
-      const harnessPassed = harnessState.available && harnessState.rendered > 0 && harnessState.productionUnchanged && harnessState.message?.includes('운영 변경 없이');
+      const harnessPassed = harnessState.available && harnessState.rendered > 0 && harnessState.productionUnchanged && harnessState.message?.includes('운영 변경 없이') && harnessState.releaseAndRollback;
       journeys.push(journey("harness_review_release_rehearsal", Boolean(harnessPassed), harnessState));
     }
   }
@@ -617,7 +695,7 @@ async function main() {
     }
     const journeyMap = new Map();
     results.flatMap((item) => item.journeys || []).forEach((item) => journeyMap.set(item.id, item));
-    const requiredJourneys = ["inbox_to_task_work_record","task_assignment_and_revision","task_work_record_persistence","ontology_one_hop_expand","ontology_path","ontology_impact","ontology_tour","ontology_semantic_queries","agent_a2ui_and_fallback","agent_compact_suspends_graph","agent_table_timeline_mermaid","inbox_task_snapshot_parity","harness_review_release_rehearsal","adapter_job_status_and_retry","mobile_focus_and_fallback"];
+    const requiredJourneys = ["inbox_to_task_work_record","task_assignment_and_revision","task_work_record_persistence","ontology_one_hop_expand","ontology_path","ontology_impact","ontology_tour","ontology_semantic_queries","ontology_visible_semantic_views","agent_a2ui_and_fallback","agent_compact_suspends_graph","agent_table_timeline_mermaid","agent_confirmation_surface","inbox_task_snapshot_parity","harness_review_release_rehearsal","adapter_job_status_and_retry","mobile_focus_and_fallback"];
     const missingJourneys = requiredJourneys.filter((id) => !journeyMap.has(id));
     const failedJourneys = [...journeyMap.values()].filter((item) => !item.passed).map((item) => item.id);
     const unexpectedConsoleErrors = consoleErrors.filter((message) => !message.includes("409 (Conflict)"));

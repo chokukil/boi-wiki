@@ -2450,6 +2450,10 @@ def test_automatic_check_is_previewed_then_created_only_after_confirmation(
     assert response.capability_id == "work_routine.plan"
     assert response.plan_ref.startswith("plan_")
     assert response.artifact_refs[0].artifact_type == "work_routine_draft"
+    surface = v2_service.store.get("a2ui_surfaces", response.a2ui_surface_ref)
+    assert surface is not None
+    assert any(item["component"] == "Confirmation" for item in surface["components"])
+    assert not any(item.artifact_type == "ontology_graph" for item in response.artifact_refs)
     assert v2_service.list_work_routines(principal, surface="pet", status="actionable")["count"] == 0
     assert response.next_actions[0].action_kind == "confirm_plan"
 
