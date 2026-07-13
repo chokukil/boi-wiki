@@ -57,7 +57,7 @@ flowchart LR
 
 # 자료 보관함 사용하기
 
-![원본 자료를 추가하고 연결된 업무를 확인하는 자료 보관함](../_media/browser/current-guide/20260712-data-library-1440x1000.png)
+![원본 자료를 추가하고 연결된 업무를 확인하는 자료 보관함](../_media/browser/current-guide/20260713-data-library-1440x1000.png)
 
 `BoI Wiki → 자료 보관함`에서 다음 흐름으로 사용한다.
 

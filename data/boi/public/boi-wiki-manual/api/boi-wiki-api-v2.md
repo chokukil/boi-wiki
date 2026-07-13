@@ -51,7 +51,7 @@ flowchart LR
 
 `/openapi.json`은 기존 연동을 위해 유지되며 deprecated operation을 포함할 수 있다. 신규 연동은 `/openapi-v2.json`의 `2.0` contract를 기준으로 한다.
 
-![외부 사용자를 위한 공개 API v2 reference](../_media/browser/current-guide/20260712-api-v2-reference-1440x1000.png)
+![외부 사용자를 위한 공개 API v2 reference](../_media/browser/current-guide/20260713-api-v2-reference-1440x1000.png)
 
 # 인증과 권한
 

@@ -71,7 +71,7 @@ flowchart LR
 - 보전 가이드와 Handoff 검토
 - 조치 결과 확인
 
-![저장되지 않는 예시 카드에서 Task 설계를 시작하는 화면](../_media/browser/current-guide/20260712-sop-task-map-1440x1000.png)
+![저장되지 않는 예시 카드에서 Task 설계를 시작하는 화면](../_media/browser/current-guide/20260713-sop-task-map-1440x1000.png)
 
 # 3. Task 상세
 

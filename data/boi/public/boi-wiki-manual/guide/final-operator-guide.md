@@ -65,7 +65,7 @@ flowchart LR
 
 BoI Agent는 현재 화면을 중요한 출발점으로 사용하지만 검색 범위를 그 문서로 제한하지 않는다. 접근 가능한 Wiki 전체에서 Dictionary, 문서, SOP, Event, Action, 업무 이력과 유사 사례를 hybrid 방식으로 찾는다.
 
-![BoI Wiki Explorer에서 접근 가능한 지식 자산을 탐색하는 화면](../_media/browser/current-guide/20260712-explorer-1440x1000.png)
+![BoI Wiki Explorer에서 접근 가능한 지식 자산을 탐색하는 화면](../_media/browser/current-guide/20260713-explorer-1440x1000.png)
 
 Explorer는 전체 구조를 훑을 때 사용하고, 실제 질문이나 업무는 같은 화면의 BoI Agent에서 이어간다.
 

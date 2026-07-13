@@ -36,7 +36,7 @@ review:
 | Event Type | Broker, Workflow와 Action이 공유하는 검토된 업무 계약 |
 | Event Stream | 실제 발생, 처리, 전이된 Event 이력 |
 
-![Event Type의 역할과 실제 연결 항목을 찾는 Event 카탈로그](../_media/browser/current-guide/20260712-event-catalog-1440x1000.png)
+![Event Type의 역할과 실제 연결 항목을 찾는 Event 카탈로그](../_media/browser/current-guide/20260713-event-catalog-1440x1000.png)
 
 raw 신호를 모두 `boi.events`로 보내지 않는다. Business Event Detector가 의미 있는 순간을 판단한 뒤 Event Type contract에 맞는 이벤트만 발행한다.
 

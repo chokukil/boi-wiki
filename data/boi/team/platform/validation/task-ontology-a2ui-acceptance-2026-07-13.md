@@ -42,9 +42,9 @@ review:
 
 # 실행 기준
 
-> 이 문서는 통합 acceptance 진행 중인 중간 기록이다. 아래 수치는 당시 범위의 부분 검증 결과이며, 전체 clean regression, 12개 browser journey, 실제 Adapter 실행과 최신 화면 근거를 모두 통과하기 전에는 최종 acceptance로 사용하지 않는다.
+> 이 문서는 통합 acceptance의 실제 실행 기록이다. core gate와 Graphify는 통과했지만 OpenKB, 생성 artifact p95와 cold Mermaid 직접 진입이 미달이므로 최종 acceptance로 사용하지 않는다.
 
-- 검증 기준: `665918a` acceptance, `8bc2c00` backend, `c3526af` Web renderer와 Explorer, `8ffe42a` Harness 개선 경계
+- 검증 기준: `8d1cf1d` 의미·근거 경계, `82b6f63` 실제 Adapter 계약, `adcb2d7` Mermaid 전체 보기 계약
 - fixture version: `1.0`
 - generation model: `google/gemma-4-26b-a4b-qat`
 - embedding model: `text-embedding-bge-m3`
@@ -55,10 +55,10 @@ review:
 
 | 영역 | 결과 |
 |---|---:|
-| 실제 scenario handler | 38/38 |
-| Task·Ontology·A2UI·Harness 집중 회귀 | 170 passed |
-| API route 장기 회귀 | 448 passed 후 Mermaid source 기대값 1건 발견·수정, 관련 5건 재검증 통과 |
-| Gemma 단일·멀티턴 의미 평가 | 100% · 실패 0건 |
+| 실제 scenario handler | 50/50 |
+| clean 전체 pytest | 810 passed · 22분 27초 · repo 외부 격리 TMP runtime |
+| Gemma 단일·멀티턴 의미 평가 | 17/17 · 모든 지표 100% · GPT-5.5 미사용 |
+| Browser journey | 12/12 · 세 viewport · console 오류 0 |
 | Browser 1440×1000 | 통과 |
 | Browser 1180×850 | 통과 |
 | Browser 390×844 | 통과 |
@@ -67,10 +67,21 @@ review:
 | Harness shadow·held-out·사람 검토 | 통과 · production 변경 0건 |
 | Context Playbook model·team scope | 통과 |
 | 반복 실패·NegativeResult·운영 Ontology | 통과 |
-| Task Snapshot 5회 p95 | 439.92ms |
-| Ontology 1-hop 5회 p95 | 27.36ms |
+| Task Snapshot 5회 p95 | 26.24ms |
+| Ontology 1-hop 5회 p95 | 14.05ms |
+| grounded prose 최대 | 9.81초 |
+| 생성 artifact turn p95 | 18.71초 · 목표 10초 미달 |
+| Graphify 0.9.13 | 실제 CLI 90 node·177 edge, import·rollback 통과 |
+| OpenKB 0.4.4 | 실제 add 실패 · LM Studio `json_object` 비호환 |
+| Mermaid 직접 링크 cold browser | 기존 session·artifact 복원 후 `rendering` 정체 · 일반 순회 캡처는 통과 |
+| 검색 품질 | Recall@8 1.00 · authoritative Top-3 1.00 |
+| Web·REST·MCP parity | 10/10 |
 
 브라우저에서는 Task의 `확인한 내용·수행한 조치·판단·결과·근거·막힌 점·다음 업무`, 복수 담당자 picker, Ontology 1-hop 지연 확장, raw ref 비노출, 동적 component와 fallback을 실제 DOM과 canvas로 확인했다.
+
+실제 Graphify export가 mock과 달리 `links`, `confidence: EXTRACTED`, `confidence_score`를 사용한다는 결함을 release gate에서 발견했다. importer를 실제 `0.9.13` 계약에 맞춘 뒤 90개 node와 177개 edge를 수입하고 같은 manifest로 모두 rollback했다. 정본 변경은 없었다.
+
+OpenKB는 `0.4.4`를 격리 tool로 설치했다. interactive init, timeout 예외로 worker가 종료되는 문제와 빈 candidate를 성공으로 기록하는 문제를 수정했다. 실제 `openkb add`는 현재 LM Studio endpoint가 OpenKB의 `response_format: json_object`를 거부해 release gate를 통과하지 못했다. 이 실패는 `failed/retryable` job으로 기록하며 core 검색·Ontology·Agent에는 영향을 주지 않는다.
 
 # 발견한 결함과 수정
 
@@ -87,6 +98,15 @@ Context Playbook은 관리자 진단 권한과 실제 Context 주입 권한을 �
 검증 raw artifact는 정본 지식이 아니라 runtime evidence다.
 
 - `.tmp/task-ontology-a2ui-acceptance-final.json`
+- `.tmp/browser-acceptance-12-current.json`
+- `.tmp/gemma-work-scenarios-verified.json`
+- `.tmp/full-pytest-final-current2.log`
+- `.tmp/search-quality-final.json`
+- `.tmp/interface-parity-final.json`
+- `.tmp/current-manual-capture-manifest.json`
+- `.tmp/graphify-job.json`
+- `.tmp/graphify-rollback.json`
+- `.tmp/openkb-job-final.json`
 - `.tmp/task-ontology-a2ui-harness-acceptance-final.json`
 - `.tmp/task-ontology-a2ui-harness-runtime-final.json`
 - `.tmp/task-ontology-a2ui-harness-browser-final.json`
@@ -99,4 +119,4 @@ Context Playbook은 관리자 진단 권한과 실제 Context 주입 권한을 �
 
 # 남은 운영 원칙
 
-새 relation, component, Task mode, Adapter와 Harness editable surface 계약은 기존 38개에 이름만 추가해서는 안 된다. 실제 handler와 browser journey를 함께 추가한다. 실패 결과를 합격 수치에 포함하지 않으며, immutable Harness 경계를 낮추는 후보는 shadow 전에 차단한다.
+새 relation, component, Task mode, Adapter와 Harness editable surface 계약은 기존 50개에 이름만 추가해서는 안 된다. 실제 handler와 browser journey를 함께 추가한다. OpenKB, 성능 미달과 cold Mermaid 직접 진입을 해결하기 전에는 이 문서의 `needs_revision`을 유지한다.

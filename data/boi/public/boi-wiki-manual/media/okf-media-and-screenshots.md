@@ -61,7 +61,7 @@ data/boi/public/boi-wiki-manual/_media/browser/{guide-set}/{yyyyMMdd}-{scenario}
 이미지는 설명하는 단계 바로 아래에 둔다. 종합 허브에는 기능 전체를 반복하는 캡처 대신 Explorer처럼 시작 위치를 확인하는 대표 화면 한 장만 사용한다.
 
 ```markdown
-![Task 수행 화면](../_media/browser/current-guide/20260712-task-console-1440x1000.png)
+![Task 수행 화면](../_media/browser/current-guide/20260713-task-console-1440x1000.png)
 ```
 
 # Dedupe Rule

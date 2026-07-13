@@ -44,7 +44,7 @@ flowchart LR
 
 # 카탈로그 사용하기
 
-![목적과 위험도를 보고 상세 입력을 여는 Action 카탈로그](../_media/browser/current-guide/20260712-action-catalog-1440x1000.png)
+![목적과 위험도를 보고 상세 입력을 여는 Action 카탈로그](../_media/browser/current-guide/20260713-action-catalog-1440x1000.png)
 
 Action 화면은 목록과 상세 panel로 구성한다.
 

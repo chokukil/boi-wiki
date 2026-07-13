@@ -54,7 +54,7 @@ flowchart LR
 
 상단 `Event Broker`를 누르면 Event 카탈로그가 열린다. 각 Event Type에서 다음을 확인한다.
 
-![업무 이벤트 정의와 연결 자산을 찾는 Event 카탈로그](../_media/browser/current-guide/20260712-event-catalog-1440x1000.png)
+![업무 이벤트 정의와 연결 자산을 찾는 Event 카탈로그](../_media/browser/current-guide/20260713-event-catalog-1440x1000.png)
 
 - 사람이 이해할 수 있는 업무 이름과 발생 의미
 - 어떤 BoI와 Workflow에서 사용하는지
@@ -67,7 +67,7 @@ flowchart LR
 
 업무 발생 이력은 같은 trace에 속한 Event, SOP, Action, 수동 확인과 결과 BoI를 하나의 `BusinessEventOccurrence`로 묶는다.
 
-![동일 trace의 Event와 실행 결과를 업무 건으로 묶은 업무 발생 이력](../_media/browser/current-guide/20260712-event-occurrences-1440x1000.png)
+![동일 trace의 Event와 실행 결과를 업무 건으로 묶은 업무 발생 이력](../_media/browser/current-guide/20260713-event-occurrences-1440x1000.png)
 
 ```mermaid
 flowchart LR

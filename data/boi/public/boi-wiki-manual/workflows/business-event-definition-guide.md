@@ -78,7 +78,7 @@ SOP 추가 화면의 업무 이벤트 정의에서 상황에 맞는 방식 하�
 | 정해진 시간 | 매일, 매주, 특정 시각에 업무 후보를 만든다. |
 | 사람이 직접 실행 | 외부 신호 없이 담당자가 필요할 때 시작한다. |
 
-![발생 방식과 입력 채널에 맞는 설정만 보여주는 업무 이벤트 정의 화면](../_media/browser/current-guide/20260712-business-event-definition-1440x1000.png)
+![발생 방식과 입력 채널에 맞는 설정만 보여주는 업무 이벤트 정의 화면](../_media/browser/current-guide/20260713-business-event-definition-1440x1000.png)
 
 # 새 업무 이벤트의 발생 방식
 

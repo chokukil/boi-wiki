@@ -112,7 +112,7 @@ Kafka UI와 broker 상태는 구분한다. Kafka 관리 화면은 UI health가 �
 
 업무 흐름과 관계 그림에 사용하는 Mermaid runtime은 BoI Wiki 정적 자산으로 함께 배포한다. 사내망이나 외부 CDN이 막힌 환경에서도 같은 SVG가 렌더링되어야 하며, 운영 smoke는 외부 Mermaid 요청이 0건인지 함께 확인한다.
 
-![Data Lake Kafka Action Gateway MCP와 지식 동기화를 확인하는 연결 상태 화면](../_media/browser/current-guide/20260712-integration-status-1440x1000.png)
+![Data Lake Kafka Action Gateway MCP와 지식 동기화를 확인하는 연결 상태 화면](../_media/browser/current-guide/20260713-integration-status-1440x1000.png)
 
 # Agent v2 Readiness
 
@@ -192,9 +192,19 @@ Task·Ontology·동적 화면 acceptance:
 pytest -q tests/test_task_ontology_a2ui.py tests/test_agent_v2.py
 python scripts/check_task_ontology_a2ui_acceptance.py --output .tmp/task-ontology-a2ui-acceptance.json
 python scripts/evaluate_agent_v2_work_scenarios.py --output .tmp/agent-v2-work-scenarios.json
+node scripts/check_task_ontology_a2ui_browser.mjs \
+  --base-url="$BOI_BASE_URL" \
+  --output=.tmp/task-ontology-a2ui-browser.json
 ```
 
-첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질을 검증한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
+첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질, 마지막은 12개 실제 브라우저 journey를 검증한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
+
+외부 Adapter release gate는 core acceptance와 분리한다. 운영자가 승인한 격리 tool 버전과 실제 export를 사용하고 mock CLI 통과를 release 통과로 계산하지 않는다.
+
+- Graphify: 실제 `graph.json`의 `links`, confidence tag, source location을 확인하고 import manifest의 node·edge 수와 rollback 제거 수가 일치해야 한다.
+- OpenKB: 실제 `openkb add`가 하나 이상의 private candidate를 만들고 `index.md`, `log.md`, `AGENTS.md`를 제외해야 한다.
+- CLI 종료 코드가 0이어도 validation result가 비어 있으면 job은 `failed/retryable`이어야 한다.
+- 2026-07-13 기준 Graphify `0.9.13`은 통과했고 OpenKB `0.4.4`는 LM Studio의 `json_object` 비호환으로 release 보류다.
 
 업무 관계와 동적 화면 진단:
 

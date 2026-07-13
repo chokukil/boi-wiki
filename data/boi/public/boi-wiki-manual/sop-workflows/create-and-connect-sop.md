@@ -83,7 +83,7 @@ SERVICE_TOKEN="$SERVICE_TOKEN" python scripts/run_equipment_sop_poc.py
 
 SOP 수행 이력은 로그 링크의 나열이 아니라 업무 실행 관점으로 본다.
 
-![실행 흐름과 TAT 관련 Event를 구분해 확인하는 SOP 수행 이력](../_media/browser/current-guide/20260712-sop-history-1440x1000.png)
+![실행 흐름과 TAT 관련 Event를 구분해 확인하는 SOP 수행 이력](../_media/browser/current-guide/20260713-sop-history-1440x1000.png)
 
 - `실행 흐름 보기`: Event에서 Task와 Action, 사람 확인, 결과까지 이어진 현재 상태를 연다.
 - `TAT 성과`: 기준 시간과 실제 처리 시간을 비교한다.

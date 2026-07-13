@@ -125,13 +125,13 @@ flowchart LR
 
 관리자가 staging 영역의 `graph.json`을 Source로 등록하면 구조 node·edge, source 위치, community와 centrality를 읽는다. 기존 import manifest와 비교해 사라진 관계만 tombstone 처리하고 변경된 source 소유 항목을 upsert한다. EXTRACTED, INFERRED, AMBIGUOUS provenance를 보존하며 정본 Markdown은 바꾸지 않는다.
 
-Graphify CLI는 선택 설치다. CLI가 없거나 export 검증이 실패해도 기본 BoI 검색, Ontology와 Agent는 계속 동작한다. 라이선스와 export 계약이 확인된 source에만 활성화한다.
+Graphify CLI는 선택 설치다. 2026-07-13 release gate에서는 MIT 라이선스의 `graphifyy 0.9.13`을 격리 설치해 실제 export의 `links`, source location, `EXTRACTED/INFERRED/AMBIGUOUS`와 confidence를 검증했다. CLI가 없거나 export 검증이 실패해도 기본 BoI 검색, Ontology와 Agent는 계속 동작한다.
 
 ## OpenKB export
 
 PDF·Word·PPT·Excel 원본은 자료 보관함에 유지한다. staging `manifest.json`의 page·summary·claim을 private `KnowledgeCandidate`로 가져오며 `review_required` 상태로 시작한다. 원본 위치와 revision을 보존하고, 중복·모순·ACL 검토 전에는 Team/Public 문서에 쓰지 않는다.
 
-현재 Adapter는 검증된 export를 가져오는 경계다. 외부 CLI 다운로드, 모델 자동 load/unload와 공유 정본 자동 재작성은 하지 않는다.
+현재 Adapter는 검증된 export를 가져오는 경계다. Apache-2.0의 `OpenKB 0.4.4`는 격리 설치와 durable job 복구를 검증했지만, 현재 LM Studio endpoint가 OpenKB의 `json_object` 응답 형식을 지원하지 않아 실제 add release gate는 보류 상태다. 빈 page나 CLI 내부 오류는 성공으로 기록하지 않는다. 앱은 외부 CLI를 자동 설치하거나 모델을 load/unload하지 않으며 공유 정본을 자동 재작성하지 않는다.
 
 # 성능과 복구
 

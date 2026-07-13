@@ -42,7 +42,7 @@ flowchart LR
   T --> K["결과 BoI·지식 후보"]
 ```
 
-![업무와 첫 번째 관련 흐름을 함께 보여주는 BoI Inbox](../_media/browser/current-guide/20260712-inbox-1440x1000.png)
+![업무와 첫 번째 관련 흐름을 함께 보여주는 BoI Inbox](../_media/browser/current-guide/20260713-inbox-1440x1000.png)
 
 # 보고서는 자동으로 준비된다
 
@@ -75,7 +75,7 @@ flowchart LR
 
 완료된 과거 업무의 보고서와 흐름은 계속 읽을 수 있지만 조치 입력은 읽기 전용이다.
 
-![검증된 보고서 BoI에서 결론과 관련 업무 흐름을 확인하는 화면](../_media/browser/current-guide/20260712-inbox-report-1440x1000.png)
+![검증된 보고서 BoI에서 결론과 관련 업무 흐름을 확인하는 화면](../_media/browser/current-guide/20260713-inbox-report-1440x1000.png)
 
 # 판단 기록
 
@@ -98,7 +98,7 @@ flowchart LR
 
 Task 화면의 기본 질문은 `언제 이 일이 끝났다고 볼까요?`와 `무엇을 확인하면 될까요?`다. raw `exit_criteria`, `required_evidence`, Event/Workflow ID는 연결 정보에만 둔다.
 
-![Manual Copilot Autopilot과 완료 항목을 함께 보여주는 Task 수행 화면](../_media/browser/current-guide/20260712-task-console-1440x1000.png)
+![Manual Copilot Autopilot과 완료 항목을 함께 보여주는 Task 수행 화면](../_media/browser/current-guide/20260713-task-console-1440x1000.png)
 
 # 완료된 모습과 확인할 자료
 

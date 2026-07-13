@@ -2,9 +2,9 @@
 okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/reference
-title: Living Knowledge System
-description: OKF 정본, hybrid retrieval, Knowledge Graph, 증분 동기화와 검토 가능한 지식 개선 순환
-tags: [Knowledge, OKF, Ontology, Pgvector, KnowledgeHealth, SecondBrain]
+title: 업무 결과를 지식으로 축적·재사용하는 Living Knowledge System
+description: 검증된 업무 결과와 근거를 지식으로 축적하고 다음 질문·SOP·Task에서 재사용하는 OKF 기반 지식 순환
+tags: [Knowledge, 업무결과, 지식축적, 재사용, OKF, Ontology, Pgvector, KnowledgeHealth, SecondBrain]
 timestamp: 2026-07-12T10:45:00+09:00
 boi_id: boi:public:boi-wiki-manual:knowledge:living-knowledge-system
 visibility: public

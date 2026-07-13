@@ -57,7 +57,7 @@ BoI Wiki MCP v2는 Web의 BoI Agent와 같은 업무 맥락, 검색 결과, 권�
 
 기본 scope는 `boi.read`, `boi.draft`다. `boi.execute.low`는 RBAC가 허용한 사용자만 선택할 수 있다. PAT identity가 사번과 권한을 결정하므로 query나 prompt에 `employee_id`를 넣지 않는다. PAT를 Wiki 문서, Git, Skill, prompt, 채팅에 기록하지 않는다.
 
-![Codex Claude API용 개인 연결 키를 만드는 외부 Agent 연결 화면](../_media/browser/current-guide/20260712-external-agent-access-1440x1000.png)
+![Codex Claude API용 개인 연결 키를 만드는 외부 Agent 연결 화면](../_media/browser/current-guide/20260713-external-agent-access-1440x1000.png)
 
 # Codex와 Claude Desktop 등록
 
@@ -148,7 +148,7 @@ Manual은 사람이 수행하고 Agent가 근거와 기록을 돕는다. Copilot
 
 사용자 연결 화면의 MCP 탭은 endpoint, PAT 방식과 핵심 도구 10개를 안내한다. Advanced의 MCP 화면은 contract version, 실제 tool count와 최근 확인 시각을 진단한다. 둘의 값이 다르면 사용 안내를 맞추는 대신 runtime contract부터 복구한다.
 
-![MCP v2 contract와 핵심 도구 수를 확인하는 운영 상태 화면](../_media/browser/current-guide/20260712-mcp-status-1440x1000.png)
+![MCP v2 contract와 핵심 도구 수를 확인하는 운영 상태 화면](../_media/browser/current-guide/20260713-mcp-status-1440x1000.png)
 
 인터페이스 정합성은 다음 스크립트로 확인한다.
 

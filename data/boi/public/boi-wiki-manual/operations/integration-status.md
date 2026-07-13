@@ -49,7 +49,7 @@ flowchart LR
 
 # 연결별 확인 내용
 
-![외부 기능별 사용 가능 여부와 영향을 확인하는 연결 상태 화면](../_media/browser/current-guide/20260712-integration-status-1440x1000.png)
+![외부 기능별 사용 가능 여부와 영향을 확인하는 연결 상태 화면](../_media/browser/current-guide/20260713-integration-status-1440x1000.png)
 
 | 연결 | 확인하는 것 | 장애 시 범위 |
 |---|---|---|

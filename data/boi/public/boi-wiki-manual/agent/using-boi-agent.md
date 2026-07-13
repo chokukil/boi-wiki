@@ -71,15 +71,15 @@ stateDiagram-v2
 
 BoI Agent는 Advanced에 별도 메뉴로 존재하지 않는다. Pet을 펼치거나 `/agent` 전체 화면을 사용한다. Expanded와 Fullpage의 `⋯` 메뉴에서만 `나만의 BoI Agent 만들기`와 `외부에서 사용`을 연다.
 
-![현재 문서를 맥락으로 연 BoI Agent Compact 화면](../_media/browser/current-guide/20260712-boi-agent-compact-1440x1000.png)
+![현재 문서를 맥락으로 연 BoI Agent Compact 화면](../_media/browser/current-guide/20260713-boi-agent-compact-1440x1000.png)
 
 `다른 제안 보기`를 열면 지금 할 일, 지식과 관계, SOP와 Task, 업무 이벤트와 Action, 결과 기록, 자동 확인의 여섯 업무 영역을 한 화면에서 살펴볼 수 있다. 각 제안은 실제로 접근 가능한 Wiki 자산을 근거로 하며, 선택하면 별도의 기능 모드 선택 없이 바로 질문을 시작한다.
 
-![여섯 업무 영역의 맥락형 제안을 펼친 BoI Agent 화면](../_media/browser/current-guide/20260712-boi-agent-expanded-1440x1000.png)
+![여섯 업무 영역의 맥락형 제안을 펼친 BoI Agent 화면](../_media/browser/current-guide/20260713-boi-agent-expanded-1440x1000.png)
 
 Compact는 현재 문서를 가리지 않는 범위에서 질문과 관련 제안을 보여준다.
 
-![모바일에서 전체 화면으로 열린 BoI Agent](../_media/browser/current-guide/20260712-boi-agent-mobile-390x844.png)
+![모바일에서 전체 화면으로 열린 BoI Agent](../_media/browser/current-guide/20260713-boi-agent-mobile-390x844.png)
 
 # 처음 보이는 제안
 
@@ -186,7 +186,7 @@ Mermaid 결과는 raw code가 아니라 실제 SVG로 렌더링한다. `읽기 �
 
 각 node와 edge는 ACL 안의 citation을 가져야 한다. 질문 대상과 직접 관련이 없거나 근거가 없는 SOP, Task, Event, Action은 그림에 임의로 추가하지 않는다.
 
-![BoI Agent 결과 영역에서 근거 기반 Mermaid를 읽기 크기로 확인하는 화면](../_media/browser/current-guide/20260712-boi-agent-mermaid-1440x1000.png)
+![BoI Agent 결과 영역에서 근거 기반 Mermaid를 읽기 크기로 확인하는 화면](../_media/browser/current-guide/20260713-boi-agent-mermaid-1440x1000.png)
 
 # SOP와 Task 이어가기
 
@@ -202,7 +202,7 @@ SOP 초안은 결과 영역에서 Workflow와 Task 목록으로 보인다. `Task
 
 나만의 BoI Agent는 지침, 참고 자료와 기존 Skill을 선택하고 같은 화면의 preview에서 먼저 시험한다.
 
-![설정과 실제 시험 대화를 함께 보는 나만의 BoI Agent 만들기 화면](../_media/browser/current-guide/20260712-custom-boi-agent-1440x1000.png)
+![설정과 실제 시험 대화를 함께 보는 나만의 BoI Agent 만들기 화면](../_media/browser/current-guide/20260713-custom-boi-agent-1440x1000.png)
 
 # 지식으로 남기기
 
