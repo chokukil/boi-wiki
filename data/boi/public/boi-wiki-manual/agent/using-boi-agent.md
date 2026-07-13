@@ -6,7 +6,7 @@ title: BoI Agent 사용 가이드
 description: 현재 화면과 Wiki 전체 지식을 바탕으로 질문, 근거 확인, Mermaid, SOP·Task 초안과 업무 수행을 이어가는 방법
 tags: [Manual, BoIAgent, Search, Citation, Mermaid, WorkSession]
 aliases: [BoI Agent로 무엇을 할 수 있나, BoI Agent 사용법, BoI Agent 도움말]
-timestamp: 2026-07-12T10:45:00+09:00
+timestamp: 2026-07-14T23:20:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:using-boi-agent
 visibility: public
 classification: internal
@@ -200,6 +200,8 @@ flowchart LR
 Mermaid 결과는 raw code가 아니라 실제 SVG로 렌더링한다. `읽기 크기`는 노드와 연결 설명을 읽을 수 있는 배율로 열고, `전체 보기`는 전체 구조를 화면에 맞춘다. 확대된 그림은 드래그와 명확한 스크롤바로 탐색한다.
 
 각 node와 edge는 ACL 안의 citation을 가져야 한다. 질문 대상과 직접 관련이 없거나 근거가 없는 SOP, Task, Event, Action은 그림에 임의로 추가하지 않는다.
+
+설명용 흐름 그림은 Planner가 해석한 질문 대상과 검증된 Ontology 관계를 먼저 사용한다. 직접 관계가 없을 때만 실제 citation의 node·edge를 한 번 구성해 복구하며, 화면 생성이나 관련 질문을 위해 모델을 다시 호출하지 않는다. library를 처음 불러오지 못하면 자동 재시도하고, 문법 오류가 남으면 raw source 대신 읽을 수 있는 관계 목록과 `다시 그리기`를 보여준다.
 
 ![BoI Agent 결과 영역에서 근거 기반 Mermaid를 읽기 크기로 확인하는 화면](../_media/browser/current-guide/20260713-boi-agent-mermaid-1440x1000.png)
 

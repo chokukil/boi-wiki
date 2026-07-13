@@ -5,7 +5,7 @@ type: boi/validation-report
 title: Task·Ontology·동적 결과 Acceptance 2026-07-13
 description: 실제 handler, 브라우저와 로컬 Gemma로 Task·Ontology·동적 결과 계약을 재검증한 결과
 tags: [Validation, Task, Ontology, A2UI, Harness, Browser, Gemma]
-timestamp: 2026-07-13T21:31:00+09:00
+timestamp: 2026-07-14T23:20:00+09:00
 boi_id: boi:team:platform:validation:task-ontology-a2ui-2026-07-13
 visibility: team
 team_id: platform
@@ -36,7 +36,7 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-13T21:31:00+09:00
+  reviewed_at: 2026-07-14T23:20:00+09:00
   review_status: needs_revision
 ---
 
@@ -44,7 +44,7 @@ review:
 
 > 이 문서는 재검증 감사 문서다. 빈 Ontology 그래프, Mermaid 초기 로드 실패와 자체 renderer 결함을 고친 뒤 결정적·clean 회귀·브라우저·Gemma·검색·parity·Adapter gate를 통과했다. 장문 grounded 답변 p95가 10초 기준을 넘고 fresh runtime Planner 실패가 한 차례 재현됐으므로 검증 상태는 `needs_revision`이다.
 
-- 검증 기준: `f58b254` 공식 A2UI·Mermaid·typed Ontology·실제 browser journey
+- 검증 기준: `4a3613d` 공식 A2UI·Mermaid·typed Ontology·실제 browser journey
 - fixture version: `1.0`
 - generation model: `google/gemma-4-26b-a4b-qat`
 - embedding model: `text-embedding-bge-m3`
@@ -56,24 +56,25 @@ review:
 | 영역 | 결과 |
 |---|---:|
 | 실제 scenario handler | 50/50 |
-| clean 전체 pytest | 817 passed · 현재 HEAD 단일 실행 · 26분 19초 · deprecation warning 1,904건 |
+| clean 전체 pytest | 821 passed · 현재 HEAD 단일 실행 · 25분 32초 · deprecation warning 1,904건 |
 | Gemma 단일·멀티턴 의미 평가 | 94.12% · 의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
 | Browser journey | 21/21 · fresh runtime 실제 조작 · 예상된 revision 409 외 console 오류 0 |
 | Browser 1440×1000 | 통과 |
 | Browser 1180×850 | 통과 |
 | Browser 949×1151 | 통과 |
 | Browser 390×844 | 통과 |
-| Sigma canvas·하단 inspector | workbench 폭 100% · nonblank · inspector가 폭을 줄이지 않음 |
+| Sigma canvas·하단 inspector | workbench 폭 100% · nonblank · inspector가 폭을 줄이지 않음 · hub/Agent/mobile 최소 간격 88/49/81px |
 | Compact graph lifecycle | canvas 미생성 · 한 줄 결과 버튼 · Expanded 복원 통과 |
 | invalid surface fallback | 통과 |
 | Harness shadow·held-out·사람 검토 | 통과 · 실제 release·rollback 감사 이력 확인 |
 | Context Playbook model·team scope | 통과 |
 | 반복 실패·NegativeResult·운영 Ontology | 통과 |
-| Task Snapshot p95 | 19.99ms |
-| Ontology 1-hop p95 | 31.04ms |
-| Ontology 4-hop path p95 | 29.34ms |
-| 동적 surface compile p95 | 0.44ms |
-| 생성 graph artifact final p95 | 620.38ms |
+| Task Snapshot p95 | 24.48ms |
+| Ontology 1-hop p95 | 31.20ms |
+| Ontology 4-hop path p95 | 29.81ms |
+| 동적 surface compile p95 | 0.49ms |
+| 생성 graph artifact final p95 | 592.66ms |
+| cold 자연어 Mermaid | 6.78초 · deterministic Ontology graph artifact · 10초 기준 통과 |
 | 장문 grounded 답변 p95 | 47.47초 · 최대 55.14초 · 10초 기준 미달 |
 | Graphify | 실제 CLI 7 node·7 edge, import·rollback 통과 |
 | OpenKB 0.4.4 | 실제 PDF → private 후보 4개 · index/log 제외 · canonical 변경 0 |
@@ -88,7 +89,22 @@ review:
 
 OpenKB는 `0.4.4`를 격리 tool로 실행했다. compatibility gateway가 `response_format: json_object` 요청을 이미 로드된 Gemma의 일반 JSON 요청으로 바꾸고 반환 schema를 검증한다. 실제 PDF에서 private 후보 4개가 생성됐고 `index.md`, `log.md` 후보는 0건이었다. gateway 요청 5회 중 변환은 4회, 복구 재시도는 0회였고 canonical 파일은 바뀌지 않았다.
 
-생성 graph artifact는 GraphQuery 결과를 deterministic compiler로 바로 저장하고 동적 화면을 위해 별도 모델 호출을 하지 않도록 바꿨다. 현재 p95는 620.38ms다. 반면 Planner와 grounded answer를 순차 실행하는 일반 장문 Gemma 답변은 p95 47.47초로 10초 기준을 충족하지 못했다. fresh runtime 한 건에서는 66초 뒤 구조화 intent 검증에 실패해 artifact가 생성되지 않았고 다음 완전 격리 실행에서는 같은 여정이 통과했다. 기능 acceptance와 최종 응답 성능·Planner 안정성을 별도 gate로 유지한다.
+생성 graph artifact는 GraphQuery 결과를 deterministic compiler로 바로 저장하고 동적 화면을 위해 별도 모델 호출을 하지 않도록 바꿨다. 현재 p95는 592.66ms다. cold runtime에서 “현재 가이드의 업무 흐름을 Mermaid로 보여줘”를 실제 전송한 결과는 6.78초였고, 질문 대상을 중심으로 한 `ontology_graph`가 생성됐다. 반면 이전 22개 장문 grounded 답변 실행의 p95 47.47초는 이번 재검증에서 다시 측정하지 않았으며 10초 기준을 충족한 것으로 간주하지 않는다. 기능 acceptance와 일반 장문 최종 응답 성능·Planner 안정성을 별도 gate로 유지한다.
+
+# 2026-07-14 재검증
+
+`4a3613d`에서 Mermaid 요청의 대상을 현재 문서와 검증된 관계로 먼저 고정하고, 관계가 없을 때만 citation 기반 node·edge 생성으로 복구하도록 변경했다. 같은 Planner 결과를 graph compiler와 동적 결과가 함께 사용하므로 관련 질문이나 화면 생성을 위한 추가 모델 호출은 없다. 로컬 기본 reasoning effort는 `none`이며 사용자가 명시한 값은 보존한다.
+
+공식 `@a2ui/web_core`와 `@a2ui/lit`는 `0.9.1` exact version으로 lock했다. 실제 브라우저는 네 viewport에서 공식 lifecycle, 표·Timeline·Mermaid·관계 탐색·업무 기록·근거 선택·실행 전 확인을 조작했고 21/21을 통과했다. 25개 이하 그래프는 중심 항목을 기준으로 여러 원에 배치하고 그보다 큰 그래프는 ForceAtlas2와 겹침 방지를 사용한다. Agent 23-node 그래프의 최소 간격은 49px로 측정됐다.
+
+이번 실행 증거는 다음 runtime artifact에 남겼다.
+
+- `.tmp/task-ontology-a2ui-acceptance-final.json`
+- `.tmp/task-ontology-a2ui-browser-final.json`
+- `.tmp/task-ontology-a2ui-browser-final/`
+- `.tmp/cold-natural-mermaid-2.json`
+
+이번 실행은 전체 pytest 821건과 실제 사용자 여정, cold Mermaid를 재검증했다. 이전 장문 22-turn 의미·응답 성능 묶음과 선택형 Graphify/OpenKB CLI release gate는 재실행하지 않았다. 따라서 이전 성공 근거는 보존하되 현재 문서 상태는 계속 `draft / needs_revision`이다.
 
 # 발견한 결함과 수정
 

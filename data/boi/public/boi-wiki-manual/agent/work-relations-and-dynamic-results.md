@@ -5,7 +5,7 @@ type: boi/manual
 title: 업무 관계와 동적 결과 활용 가이드
 description: 사람·팀·Task·SOP·Event·Action의 검증된 관계를 질문하고 결과에 맞는 표, Timeline, Mermaid와 관계 탐색 화면을 사용하는 방법
 tags: [BoIWiki, BoIAgent, Ontology, WorkRelation, DynamicResult, Evidence]
-timestamp: 2026-07-13T00:10:00+09:00
+timestamp: 2026-07-14T23:20:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
 visibility: public
 classification: internal
@@ -90,7 +90,9 @@ flowchart LR
 - 판단·조치·근거를 남겨야 하면 **업무 기록 입력**을 연다.
 - 외부 부작용이 있는 Action은 **실행 전 확인**을 거친다.
 
-관계 탐색은 처음에 한 단계 이웃만 연다. 항목을 선택할 때 필요한 주변 관계만 추가하므로 큰 Wiki 전체를 한 번에 브라우저로 보내지 않는다. 그래프는 결과 폭을 모두 사용하고, 선택 항목의 설명과 근거는 오른쪽 고정 열이 아니라 아래쪽 정보 영역에 연다. 정보 영역을 닫으면 그래프가 전체 높이를 다시 사용한다.
+관계 탐색은 처음에 한 단계 이웃만 연다. 항목을 선택할 때 필요한 주변 관계만 추가하므로 큰 Wiki 전체를 한 번에 브라우저로 보내지 않는다. 25개 이하에서는 중심 항목을 기준으로 여러 원에 배치해 모든 이름을 읽을 수 있게 하고, 그보다 큰 관계는 ForceAtlas2와 겹침 방지 배치를 사용한다. 중심·선택·직접 이웃의 이름은 항상 표시하고 선택 경로 밖의 관계는 흐리게 구분한다.
+
+그래프는 결과 폭을 모두 사용하고, 선택 항목의 설명과 근거는 오른쪽 고정 열이 아니라 아래쪽 정보 영역에 연다. 정보 영역을 닫으면 그래프가 전체 높이를 다시 사용한다. 방향 화살표, 항목 종류 범례, 관계 필터와 검색 자동완성을 이용해 단순한 점 무리가 아니라 실제 업무 관계를 따라간다.
 
 동적 결과는 저장만 하는 JSON이 아니다. BoI Agent가 검증된 surface를 다시 읽어 관계표, 시간 흐름, 흐름 그림 또는 관계 탐색 DOM을 만든다. Task 수행 화면도 같은 계약의 `업무 기록 입력`과 `근거 선택`을 사용한다. surface가 손상됐거나 client가 지원하지 않으면 같은 의미의 기존 typed 화면으로 복구한다.
 

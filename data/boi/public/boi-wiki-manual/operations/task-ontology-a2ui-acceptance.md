@@ -5,7 +5,7 @@ type: boi/manual
 title: Task·Ontology·동적 화면 검증 기준
 description: Task 수행, 업무 관계 탐색과 동적 결과 화면을 실제 업무에 사용하기 전에 확인하는 acceptance 기준
 tags: [BoIWiki, Task, Ontology, A2UI, Acceptance, Evidence]
-timestamp: 2026-07-13T21:31:00+09:00
+timestamp: 2026-07-14T23:20:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
 visibility: public
 classification: internal
@@ -33,7 +33,7 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-13T21:31:00+09:00
+  reviewed_at: 2026-07-14T23:20:00+09:00
   review_status: needs_revision
 ---
 
@@ -88,34 +88,37 @@ GPT-5.5는 기본 acceptance에 사용하지 않는다. Gemma에서 실패하거
 
 # 현재 검증 상태
 
-2026-07-13 기준으로 50개 handler와 21개 실제 browser journey를 새 코드에서 실행했다. 브라우저 검증은 숨겨진 fixture나 HTML 문자열 존재를 성공으로 세지 않고 실제 클릭, 입력, canvas pixel, 원문 이동과 상태 복원을 확인한다.
+2026-07-14 기준으로 50개 handler와 21개 실제 browser journey를 `4a3613d`에서 다시 실행했다. 브라우저 검증은 숨겨진 fixture나 HTML 문자열 존재를 성공으로 세지 않고 실제 클릭, 입력, canvas pixel, 원문 이동과 상태 복원을 확인한다.
 
 | 검증 | 결과 |
 |---|---:|
 | 결정적 시나리오 | 50/50 |
-| clean 전체 회귀 | 817 passed · 현재 HEAD 단일 실행 · 26분 19초 · deprecation warning 1,904건 |
+| clean 전체 회귀 | 821 passed · 현재 HEAD 단일 실행 · 25분 32초 · deprecation warning 1,904건 |
 | 브라우저 journey | 21/21 · fresh runtime · 4 viewport · 예상된 revision 409 외 console 오류 0 |
 | Gemma 단일·멀티턴 의미 평가 | 94.12% · 의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
-| Task Snapshot p95 | 19.99ms |
-| 1-hop 관계 p95 | 31.04ms |
-| 4-hop path p95 | 29.34ms |
-| 동적 surface compile p95 | 0.44ms |
-| 생성 graph artifact final p95 | 620.38ms |
+| Task Snapshot p95 | 24.48ms |
+| 1-hop 관계 p95 | 31.20ms |
+| 4-hop path p95 | 29.81ms |
+| 동적 surface compile p95 | 0.49ms |
+| 생성 graph artifact final p95 | 592.66ms |
+| cold 자연어 Mermaid | 6.78초 · `ontology_graph` 생성 · 10초 기준 통과 |
 | 장문 grounded 답변 p95 | 47.47초 · 10초 기준 미달 |
 | Graphify 실제 CLI | 7 node·7 edge 수입 후 rollback 통과 |
 | OpenKB 0.4.4 실제 CLI | 실제 PDF에서 private 후보 4개 생성 · navigation 0 · 정본 변경 0 |
-| Graph UX | 1440×1000·1180×850·949×1151·390×844, canvas 폭 100%, 하단 inspector·Compact 복원 통과 · 최소 node 간격 desktop 49px/mobile 69px |
+| Graph UX | 1440×1000·1180×850·949×1151·390×844, canvas 폭 100%, 하단 inspector·Compact 복원 통과 · hub/Agent/mobile 최소 node 간격 88/49/81px |
 | 검색 품질 | Recall@8 100% · authoritative Top-3 100% · 검토 완료 canonical alias 기준 |
 | Web·REST·MCP parity | 자연어 route·근거·Task mutation·후보 ID 일치 |
 | LM Studio load/unload | 0건 |
 
 실모델 평가는 사용자가 띄운 Gemma만 사용한다. `업무 이벤트와 SOP 관계 설명 → 방금 관계만 Mermaid` 멀티턴에서 직전 citation보다 넓은 검색 후보를 다시 해석해 되묻는 결함을 발견했고, 실제 citation 집합을 후속 표현 변환의 경계로 사용하도록 수정한 뒤 해당 시나리오가 통과했다. 실패와 수정 이력은 날짜별 Team validation 문서에 남기며, 이전의 형식 검사 결과는 역사적 draft로 유지한다.
 
-초기 실행에서는 OpenKB의 `response_format: json_object`가 LM Studio endpoint와 맞지 않았고 생성 artifact p95도 18.71초였다. compatibility gateway가 요청을 일반 JSON 호출로 변환한 뒤 schema를 검증하고, GraphQuery 결과를 추가 모델 호출 없이 deterministic compiler로 artifact화하도록 수정했다. 현재 실행에서는 OpenKB와 503.52ms artifact gate가 통과했다.
+초기 실행에서는 OpenKB의 `response_format: json_object`가 LM Studio endpoint와 맞지 않았고 생성 artifact p95도 18.71초였다. compatibility gateway가 요청을 일반 JSON 호출로 변환한 뒤 schema를 검증하고, GraphQuery 결과를 추가 모델 호출 없이 deterministic compiler로 artifact화하도록 수정했다. 현재 실행의 graph artifact p95는 592.66ms이며, 이번에는 선택형 OpenKB CLI gate를 다시 실행하지 않았다.
 
 브라우저에서는 9개 관계 질의를 각각 화면에서 전환하고, Timeline이 실제 시간 payload를 표시하는지 확인했다. 자동 확인 starter는 graph artifact가 아니라 guarded Confirmation을 열며, 확인 전에는 routine을 만들지 않는다. Harness는 rehearsal뿐 아니라 사람 release와 rollback까지 실제 API와 감사 이력으로 검증했다.
 
 일반 장문 답변의 모델 처리 시간은 artifact gate와 분리해 기록한다. 22개 실제 turn의 p95는 47.47초, 최대는 55.14초였다. Planner와 grounded answer를 이미 로드된 로컬 Gemma로 순차 실행하는 시간이 지배적이며, 첫 진행 상태와 동적 결과 compile이 빠르다는 이유로 최종 답변 10초 기준을 통과했다고 간주하지 않는다. fresh browser 재검증 중 한 번은 Planner가 66초 뒤 유효한 구조화 intent를 만들지 못해 artifact가 생성되지 않았고, 다음 완전 격리 실행에서는 같은 여정이 통과했다. 따라서 이 문제는 일시적 성공으로 닫지 않고 안정성 gate로 유지한다.
+
+이번 재검증의 cold 자연어 Mermaid는 6.78초로 통과했다. 이는 관계 그림 경로의 개선 결과이며, 이전 22-turn 장문 응답 p95를 대체하지 않는다. 공식 동적 화면 runtime은 `@a2ui/web_core`와 `@a2ui/lit` `0.9.1` exact version을 사용한다. 실제 브라우저에서 lifecycle, data model binding, guarded event와 typed fallback을 확인했으며 모델 load/unload 요청은 0건이었다.
 
 새 component, relation, Task mode 또는 Adapter 계약을 추가하면 해당 handler와 browser journey를 함께 추가하고 이 문서를 다시 검증 상태로 전환한다.
 

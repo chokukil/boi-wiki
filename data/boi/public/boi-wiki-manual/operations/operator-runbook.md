@@ -112,6 +112,8 @@ Kafka UI와 broker 상태는 구분한다. Kafka 관리 화면은 UI health가 �
 
 업무 흐름과 관계 그림에 사용하는 Mermaid runtime은 BoI Wiki 정적 자산으로 함께 배포한다. 사내망이나 외부 CDN이 막힌 환경에서도 같은 SVG가 렌더링되어야 하며, 운영 smoke는 외부 Mermaid 요청이 0건인지 함께 확인한다.
 
+runtime은 versioned module chunk로 배포한다. cold cache, 느린 chunk, 최초 load 실패, 문법 오류와 새로고침 복원을 각각 확인하며, 일반 사용자 화면에 raw Mermaid source가 남으면 실패로 판정한다. transient load는 두 번까지 자동 재시도하고 문법 오류는 읽을 수 있는 관계 목록으로 복구한다.
+
 ![Data Lake Kafka Action Gateway MCP와 지식 동기화를 확인하는 연결 상태 화면](../_media/browser/current-guide/20260713-integration-status-1440x1000.png)
 
 # Agent v2 Readiness
