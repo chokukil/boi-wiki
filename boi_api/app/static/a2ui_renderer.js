@@ -176,10 +176,14 @@
     const source = draft.mermaid || draft.source || "";
     if (!source) return false;
     mount.innerHTML = "";
+    const wrapper = element("div", "mermaid-diagram");
+    wrapper.dataset.mermaidState = "pending";
+    wrapper.appendChild(element("p", "mermaid-status", "흐름 그림을 준비하고 있습니다."));
     const diagram = element("div", "mermaid");
     diagram.textContent = source;
-    mount.appendChild(diagram);
-    document.dispatchEvent(new CustomEvent("boi:markdown-rendered", { bubbles: true }));
+    wrapper.appendChild(diagram);
+    mount.appendChild(wrapper);
+    mount.dispatchEvent(new CustomEvent("boi:markdown-rendered", { bubbles: true }));
     return true;
   }
 

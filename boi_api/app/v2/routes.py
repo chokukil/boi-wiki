@@ -638,6 +638,31 @@ def build_agent_v2_router(
             raise HTTPException(status_code=403, detail="boi.admin is required")
         return service.learning.create_harness_candidate(identity, request)
 
+    @router.get("/api/v2/harness-candidates")
+    async def list_harness_candidates(
+        status: str = "",
+        limit: int = 50,
+        identity: Principal = Depends(principal),
+    ) -> dict[str, Any]:
+        require_scope(identity, "boi.read")
+        if not identity.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        bounded_limit = max(1, min(int(limit), 200))
+        items = service.store.list("harness_candidates", limit=1000)
+        if status:
+            items = [item for item in items if str(item.get("status") or "") == status]
+        visible = []
+        for item in items[:bounded_limit]:
+            candidate_id = str(item.get("candidate_id") or "")
+            visible.append(
+                {
+                    **item,
+                    "review_url": f"/harness-candidates/{candidate_id}",
+                    "surface_url": f"/api/v2/harness-candidates/{candidate_id}/surface",
+                }
+            )
+        return {"ok": True, "items": visible, "count": len(visible)}
+
     @router.post("/api/v2/harness-candidates/{candidate_id}/shadow")
     async def shadow_harness_candidate(
         candidate_id: str,

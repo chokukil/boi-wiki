@@ -53,9 +53,9 @@ function renderTextResult(panel: HTMLElement, payload: GraphPayload, view: strin
   const content = panel.querySelector<HTMLElement>(".knowledge-explorer-content");
   const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
   if (!content || !graphLayout) return;
-  graphLayout.hidden = view !== "explorer" && view !== "path" && view !== "impact";
-  content.hidden = !graphLayout.hidden;
-  if (!graphLayout.hidden) return;
+  const graphVisible = view === "explorer" || view === "path" || view === "impact";
+  content.hidden = graphVisible;
+  if (graphVisible) return;
   const rows = payload.tour_steps || payload.steps || payload.timeline || [];
   if (!rows.length) {
     content.innerHTML = '<p class="muted">조건에 맞는 관계를 찾지 못했습니다.</p>';
@@ -79,6 +79,18 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   let activeView = "explorer";
   let targetRef = "";
   let renderer: Sigma | null = null;
+  const lifecycleObserver = new MutationObserver(() => {
+    if (panel.isConnected) return;
+    renderer?.kill();
+    renderer = null;
+    lifecycleObserver.disconnect();
+  });
+  lifecycleObserver.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("pagehide", () => {
+    renderer?.kill();
+    renderer = null;
+    lifecycleObserver.disconnect();
+  }, { once: true });
   const details = panel.querySelector<HTMLElement>("[data-knowledge-node-details]");
   const status = panel.querySelector<HTMLElement>(".knowledge-explorer-status");
   const pathSearch = panel.querySelector<HTMLElement>(".knowledge-path-search");
@@ -120,8 +132,35 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     if (graph.hasNode(rootRef)) showDetails(rootRef);
   };
 
+  const ensureRenderer = () => {
+    if (!renderer && !container.hidden && container.clientWidth > 0) {
+      renderer = new Sigma(graph, container, {
+        renderEdgeLabels: false,
+        labelDensity: 0.1,
+        labelGridCellSize: 120,
+        allowInvalidContainer: true,
+      });
+      renderer.on("clickNode", async ({ node }) => {
+        showDetails(node);
+        if (activeView !== "explorer" || graph.order >= MAX_NODES) return;
+        const payload = await load(panel, "explorer", node);
+        const existing = new Set(graph.nodes());
+        const combined = { nodes: [...graph.nodes().map((id) => ({ node_id: id, node_type: String(graph.getNodeAttribute(id, "kind") || ""), payload: { title: graph.getNodeAttribute(id, "label"), url: graph.getNodeAttribute(id, "url"), summary: graph.getNodeAttribute(id, "summary") } })), ...(payload.nodes || []).filter((item) => !existing.has(item.node_id))], edges: [...graph.edges().map((id) => ({ edge_id: id, source_id: graph.source(id), target_id: graph.target(id), relation: String(graph.getEdgeAttribute(id, "label") || "related") })), ...(payload.edges || [])] };
+        replaceGraph(combined);
+        showDetails(node);
+      });
+    }
+  };
+
   const switchView = async (view: string) => {
     activeView = view;
+    const graphVisible = view === "explorer" || view === "path" || view === "impact";
+    const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
+    if (!graphVisible && renderer) {
+      renderer.kill();
+      renderer = null;
+    }
+    if (graphLayout) graphLayout.hidden = !graphVisible;
     panel.querySelectorAll<HTMLButtonElement>("[data-knowledge-view]").forEach((button) => {
       const active = button.dataset.knowledgeView === view;
       button.classList.toggle("active", active);
@@ -136,22 +175,16 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     if (status) status.textContent = "관계 근거를 확인하고 있습니다.";
     const payload = await load(panel, view, rootRef, targetRef);
     renderTextResult(panel, payload, view);
-    if (["explorer", "path", "impact"].includes(view)) replaceGraph(payload);
+    if (graphVisible) {
+      replaceGraph(payload);
+      ensureRenderer();
+    }
     if (status) status.textContent = payload.status === "not_connected" ? "두 항목 사이에서 확인된 경로가 없습니다." : "근거가 확인된 관계만 표시합니다.";
   };
 
   try {
     replaceGraph(initialPayload || await load(panel, "explorer", rootRef));
-    renderer = new Sigma(graph, container, { renderEdgeLabels: false, labelDensity: 0.1, labelGridCellSize: 120 });
-    renderer.on("clickNode", async ({ node }) => {
-      showDetails(node);
-      if (activeView !== "explorer" || graph.order >= MAX_NODES) return;
-      const payload = await load(panel, "explorer", node);
-      const existing = new Set(graph.nodes());
-      const combined = { nodes: [...graph.nodes().map((id) => ({ node_id: id, node_type: String(graph.getNodeAttribute(id, "kind") || ""), payload: { title: graph.getNodeAttribute(id, "label"), url: graph.getNodeAttribute(id, "url"), summary: graph.getNodeAttribute(id, "summary") } })), ...(payload.nodes || []).filter((item) => !existing.has(item.node_id))], edges: [...graph.edges().map((id) => ({ edge_id: id, source_id: graph.source(id), target_id: graph.target(id), relation: String(graph.getEdgeAttribute(id, "label") || "related") })), ...(payload.edges || [])] };
-      replaceGraph(combined);
-      showDetails(node);
-    });
+    ensureRenderer();
     panel.querySelectorAll<HTMLButtonElement>("[data-knowledge-view]").forEach((button) => button.addEventListener("click", () => void switchView(button.dataset.knowledgeView || "explorer")));
     panel.querySelector<HTMLButtonElement>("[data-knowledge-search]")?.addEventListener("click", async () => {
       const query = panel.querySelector<HTMLInputElement>("#knowledge-path-query")?.value.trim() || "";
