@@ -11,6 +11,7 @@ type GraphPayload = {
   tour_steps?: Array<{ order?: number; node_ref?: string; title?: string; reason?: string }>;
   timeline?: Array<{ occurred_at?: string; title?: string }>;
   affected_refs?: string[];
+  comparison?: Record<string, unknown>;
   status?: string;
 };
 
@@ -60,15 +61,23 @@ function renderTextResult(panel: HTMLElement, payload: GraphPayload, view: strin
   const content = panel.querySelector<HTMLElement>(".knowledge-explorer-content");
   const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
   if (!content || !graphLayout) return;
-  const graphVisible = view === "explorer" || view === "path" || view === "impact";
+  const graphVisible = ["explorer", "path", "workflow", "impact", "lineage", "responsibility"].includes(view);
   content.hidden = graphVisible;
   if (graphVisible) return;
-  const rows = payload.tour_steps || payload.steps || payload.timeline || [];
+  const resultRows = [payload.tour_steps, payload.steps, payload.timeline].find(
+    (items) => Array.isArray(items) && items.length > 0,
+  );
+  let rows: Array<{ occurred_at?: string; title?: string; reason?: string }> = resultRows || [];
+  if (!rows.length && ["neighbors", "compare"].includes(view)) {
+    rows = (payload.nodes || [])
+      .filter((node) => node.node_id !== panel.dataset.sourceRef)
+      .map((node) => ({ title: nodeTitle(node), reason: view === "compare" ? "두 항목의 공통점과 차이를 비교한 관계" : "직접 연결된 업무 맥락" }));
+  }
   if (!rows.length) {
     content.innerHTML = '<p class="muted">조건에 맞는 관계를 찾지 못했습니다.</p>';
     return;
   }
-  const heading = view === "tour" ? "이 순서로 살펴보기" : view === "timeline" ? "시간에 따른 변화" : "관계 결과";
+  const heading = view === "tour" ? "이 순서로 살펴보기" : view === "timeline" ? "시간에 따른 변화" : view === "compare" ? "두 항목 비교" : "직접 연결된 항목";
   content.innerHTML = `<h2>${heading}</h2><ol>${rows.map((row) => {
     const title = String(row.title || "연결된 항목");
     const detail = "occurred_at" in row ? String(row.occurred_at || "") : String(row.reason || "");
@@ -263,7 +272,8 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
 
   const switchView = async (view: string) => {
     activeView = view;
-    const graphVisible = view === "explorer" || view === "path" || view === "impact";
+    panel.dataset.activeView = view;
+    const graphVisible = ["explorer", "path", "workflow", "impact", "lineage", "responsibility"].includes(view);
     const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
     if (!graphVisible && renderer) {
       destroyRenderer(true);
@@ -274,10 +284,11 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", String(active));
     });
-    if (pathSearch) pathSearch.hidden = view !== "path";
-    if (view === "path" && !targetRef) {
-      renderTextResult(panel, {}, "path");
-      if (status) status.textContent = "도착 항목을 검색해 선택하면 실제 연결 경로를 계산합니다.";
+    const needsTarget = view === "path" || view === "compare";
+    if (pathSearch) pathSearch.hidden = !needsTarget;
+    if (needsTarget && !targetRef) {
+      renderTextResult(panel, {}, view);
+      if (status) status.textContent = view === "compare" ? "비교할 항목을 검색해 선택해주세요." : "도착 항목을 검색해 선택하면 실제 연결 경로를 계산합니다.";
       return;
     }
     if (status) status.textContent = "관계 근거를 확인하고 있습니다.";
@@ -323,7 +334,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
       const payload = await response.json();
       const items = (payload.items || []).slice(0, 5);
       candidates.innerHTML = items.map((item: Record<string, unknown>) => `<button type="button" class="button secondary" data-target-ref="${String(item.evidence_id || "").replace(/[\"<>]/g, "")}">${String(item.title || "연결된 항목").replace(/[<>&]/g, "")}</button>`).join("");
-      candidates.querySelectorAll<HTMLButtonElement>("[data-target-ref]").forEach((button) => button.addEventListener("click", () => { targetRef = button.dataset.targetRef || ""; void switchView("path"); }));
+      candidates.querySelectorAll<HTMLButtonElement>("[data-target-ref]").forEach((button) => button.addEventListener("click", () => { targetRef = button.dataset.targetRef || ""; void switchView(activeView === "compare" ? "compare" : "path"); }));
     });
     if (status) status.textContent = "노드를 선택하면 주변 관계를 이어서 봅니다.";
     if (restoredState.inspectorOpen && restoredState.selectedNodeId && graph.hasNode(restoredState.selectedNodeId)) showDetails(restoredState.selectedNodeId);

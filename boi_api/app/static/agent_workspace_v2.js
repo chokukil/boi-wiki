@@ -1028,6 +1028,12 @@
     await loadRoutines();
   }
 
+  elements.artifacts.addEventListener("boi:a2ui-confirm-request", (event) => {
+    const planId = event.detail?.plan_ref || "";
+    if (!planId) return;
+    confirmAutomaticCheck({ plan_id: planId }).catch(showError);
+  });
+
   function taskSummary(task, index) {
     const count = task.completion_design?.checks?.length ?? (task.exit_criteria || []).length;
     return `<button type="button" data-task-id="${escapeHtml(task.task_id)}"><span>${index + 1}</span><div><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(task.execution_mode || "copilot")} · 완료 항목 ${count}개</small></div></button>`;
@@ -1208,6 +1214,17 @@
     } else {
       const body = draft.body || artifact.preview || JSON.stringify(draft, null, 2);
       elements.artifacts.innerHTML = `<article class="agent-v2-generic-result"><span>${escapeHtml(artifact.status || "draft")}</span><h3>${escapeHtml(artifact.title)}</h3><div>${renderMarkdown(body)}</div></article>`;
+    }
+    const confirmationComponent = state.a2uiSurface?.components?.find((item) => item.component === "Confirmation");
+    if (confirmationComponent && !elements.artifacts.querySelector('[data-a2ui-mount="Confirmation"]')) {
+      const mount = document.createElement("div");
+      mount.dataset.a2uiMount = "Confirmation";
+      mount.dataset.a2uiComponent = "Confirmation";
+      mount.dataset.a2uiComponentId = confirmationComponent.id;
+      elements.artifacts.appendChild(mount);
+    }
+    if (state.a2uiSurface && window.BoiA2UI?.hydrate) {
+      window.BoiA2UI.hydrate(state.a2uiSurface, elements.artifacts);
     }
     if (isOntology && a2uiArtifactComponent(artifact.artifact_id) === "OntologyExplorer") {
       const panel = elements.artifacts.querySelector("[data-agent-ontology-explorer]");

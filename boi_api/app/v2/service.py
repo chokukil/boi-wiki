@@ -5184,7 +5184,11 @@ class AgentV2Service:
                     current_work=current_work_evidence,
                     work_run_id=str(work_run["work_run_id"]),
                 )
-                if intent.graph_query_draft and intent.graph_query_draft.enabled
+                if (
+                    capability_id in {"knowledge.search", "cases.similar"}
+                    and intent.graph_query_draft
+                    and intent.graph_query_draft.enabled
+                )
                 else None
             )
         except AmbiguousEntityError as exc:

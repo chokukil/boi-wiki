@@ -97,6 +97,8 @@ def presentation_plan(response: AgentTurnResponse) -> dict[str, Any]:
             components.append({"table": "DataTable", "timeline": "Timeline", "mermaid": "MermaidArtifact"}.get(presentation, "OntologyExplorer"))
         elif artifact.artifact_type in {"action_plan", "action_preview"}:
             components.append("ActionPreview")
+    if response.plan_ref:
+        components.append("Confirmation")
     if response.related_questions:
         components.append("RelatedQuestions")
     components = list(dict.fromkeys(item for item in components if item in ALLOWED_COMPONENTS))
@@ -150,6 +152,22 @@ def compile_surface(response: AgentTurnResponse) -> dict[str, Any]:
                     "props": artifact.model_dump(mode="json"),
                 }
             )
+    if response.plan_ref:
+        action = next(
+            (item for item in response.next_actions if item.action_kind == "confirm_plan"),
+            None,
+        )
+        components.append(
+            {
+                "id": "confirmation",
+                "component": "Confirmation",
+                "props": {
+                    "title": action.label if action else "실행 전 확인",
+                    "message": "표시된 대상, 조건과 근거를 확인한 뒤에만 실제 업무에 반영합니다.",
+                    "plan_ref": response.plan_ref,
+                },
+            }
+        )
     if response.related_questions:
         components.append(
             {

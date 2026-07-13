@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>연결 관계 · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
-  <script src="{{ asset_url('doc_graph.js') }}" defer></script>
   <script type="module" src="{{ asset_url('dist/knowledge-graph.js') }}"></script>
 </head>
 <body>
@@ -40,7 +39,12 @@
     <div class="knowledge-explorer-tabs" role="tablist" aria-label="업무 관계 보기 방식">
       <button type="button" role="tab" aria-selected="false" data-knowledge-view="neighbors">직접 연결</button>
       <button type="button" role="tab" aria-selected="false" data-knowledge-view="path">연결 경로</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="workflow">업무 흐름</button>
       <button type="button" role="tab" aria-selected="false" data-knowledge-view="impact">영향 범위</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="lineage">근거 계보</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="responsibility">담당 관계</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="timeline">시간 흐름</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="compare">두 항목 비교</button>
       <button type="button" role="tab" aria-selected="false" data-knowledge-view="tour">이해 순서</button>
       <button type="button" role="tab" aria-selected="true" class="active" data-knowledge-view="explorer">그래프로 탐색</button>
     </div>
