@@ -228,6 +228,12 @@
     elements.launcher.hidden = isFullpage || open;
     elements.launcher.setAttribute("aria-expanded", String(open));
     document.body.classList.toggle("agent-surface-overlay-open", mode === "expanded");
+    document.dispatchEvent(new CustomEvent("boi:background-visuals", {
+      detail: { paused: !isFullpage && mode === "expanded", source: "boi-agent" },
+    }));
+    document.dispatchEvent(new CustomEvent("boi:agent-visuals", {
+      detail: { paused: !isFullpage && (mode === "compact" || mode === "closed"), source: "boi-agent" },
+    }));
     if (mode === "compact" || mode === "closed") {
       state.artifactPanelOpen = false;
       elements.workbench.hidden = true;
@@ -253,6 +259,14 @@
     }
     syncArtifactFocusUi();
     if (persist) saveSurfaceState();
+  }
+
+  function resumeAgentVisuals() {
+    window.requestAnimationFrame(() => {
+      document.dispatchEvent(new CustomEvent("boi:agent-visuals", {
+        detail: { paused: false, source: "boi-agent-result" },
+      }));
+    });
   }
 
   function updateUrl(artifactId) {
@@ -359,7 +373,7 @@
       if (allowed.length) {
         actions = `<div class="mermaid-v2-actions">${allowed.map((item) => `<button type="button" data-v2-mermaid-action="${escapeHtml(item.action_id)}">${escapeHtml(item.label)}</button>`).join("")}</div>`;
       }
-    } else if (artifactId) {
+    } else if (artifactId && artifactType === "sop_draft") {
       actions = `<div class="mermaid-v2-actions"><button type="button" data-agent-v2-result-action="tasks">Task 다듬기</button><button type="button" data-agent-v2-result-action="full">전체 SOP 편집</button></div>`;
     }
     return `<div class="mermaid-diagram" data-v2-mermaid data-mermaid-state="pending" data-mermaid-title="${escapeHtml(title)}" data-mermaid-source="${safe}" data-mermaid-view-key="${escapeHtml(viewKey)}" data-agent-artifact-id="${escapeHtml(artifactId || "")}"><div class="mermaid-v2-toolbar"><span class="mermaid-status sr-only">흐름 그림 준비 중</span><div class="mermaid-v2-view-modes" role="group" aria-label="흐름 그림 보기 방식"><button type="button" data-mermaid-view="read" aria-pressed="true">읽기 크기</button><button type="button" data-mermaid-view="fit" aria-pressed="false">전체 보기</button></div><div class="mermaid-v2-zoom-controls" role="group" aria-label="흐름 그림 확대 축소"><button type="button" data-mermaid-view="out" title="축소" aria-label="흐름 그림 축소">−</button><output data-mermaid-zoom aria-live="polite">100%</output><button type="button" data-mermaid-view="in" title="확대" aria-label="흐름 그림 확대">＋</button></div></div><div class="mermaid-v2-canvas" tabindex="0" aria-label="${escapeHtml(title)} 흐름 그림. 방향키로 이동할 수 있습니다."><div class="mermaid">${safe}</div></div>${actions}</div>`;
@@ -624,6 +638,9 @@
     const makeButton = (starter) => {
       const button = document.createElement("button");
       button.type = "button";
+      button.dataset.suggestionId = starter.suggestion_id || "";
+      button.dataset.resultKind = starter.result_kind || "answer";
+      button.dataset.graphQueryKind = starter.graph_query_kind || "";
       button.innerHTML = `<strong>${escapeHtml(starter.label || starter.prompt)}</strong>${starter.reason ? `<span>${escapeHtml(starter.reason)}</span>` : ""}`;
       button.setAttribute("aria-label", starter.label || starter.prompt);
       button.addEventListener("click", () => {
@@ -1238,6 +1255,7 @@
     });
     syncArtifactFocusUi();
     document.dispatchEvent(new CustomEvent("boi:markdown-rendered", { bubbles: true }));
+    window.BoiMermaidRender?.(elements.artifacts);
     saveSurfaceState();
   }
 
@@ -1620,6 +1638,7 @@
     state.sessionId = sessionId;
     state.session = null;
     state.artifact = null;
+    state.a2uiSurface = null;
     state.sourceSet = null;
     state.evidence = [];
     state.citations = [];
@@ -1634,6 +1653,9 @@
     state.graphViews = {};
     state.artifactFocusChoices = {};
     state.suggestionsExpanded = false;
+    delete root.dataset.a2uiSurfaceRef;
+    delete root.dataset.a2uiCatalog;
+    delete root.dataset.a2uiRendered;
     updateUrl("");
     await loadSession();
     elements.recent.closest("details")?.removeAttribute("open");
@@ -1736,6 +1758,7 @@
       state.artifactPanelOpen = true;
       elements.workbench.hidden = false;
       root.classList.add("artifact-panel-open");
+      resumeAgentVisuals();
     } else {
       state.artifactPanelOpen = false;
       elements.workbench.hidden = true;
@@ -1751,7 +1774,10 @@
     if (artifactId) {
       event.preventDefault();
       if (artifactId !== state.artifact?.artifact_id) loadArtifact(artifactId, true).catch(showError);
-      else renderArtifact(true);
+      else {
+        renderArtifact(true);
+        resumeAgentVisuals();
+      }
       return;
     }
     const link = event.target.closest('a[href^="/api/v2/citations/"]');

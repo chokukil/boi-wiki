@@ -87,8 +87,10 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   let targetRef = "";
   let renderer: Sigma | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let backgroundSuspended = false;
   let restoredState: ExplorerViewState = {};
   try { restoredState = JSON.parse(panel.dataset.graphState || "{}"); } catch (_error) { restoredState = {}; }
+  if (restoredState.selectedNodeId) selectedRef = restoredState.selectedNodeId;
   const stateKey = panel.dataset.graphViewKey || rootRef;
 
   const emitState = (patch: ExplorerViewState = {}) => {
@@ -104,18 +106,63 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
       },
     }));
   };
+  const destroyRenderer = (preserveCamera = true) => {
+    if (!renderer) return;
+    if (preserveCamera) {
+      const camera = renderer.getCamera().getState();
+      restoredState.camera = { x: camera.x, y: camera.y, ratio: camera.ratio, angle: camera.angle };
+    }
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    renderer.kill();
+    renderer = null;
+  };
+  const handleBackgroundVisuals = (event: Event) => {
+    if (panel.closest(".agent-surface")) return;
+    const paused = Boolean((event as CustomEvent).detail?.paused);
+    if (paused === backgroundSuspended) {
+      if (!paused) window.requestAnimationFrame(() => ensureRenderer());
+      return;
+    }
+    backgroundSuspended = paused;
+    if (paused) {
+      destroyRenderer(true);
+      panel.dataset.graphSuspended = "true";
+      return;
+    }
+    panel.dataset.graphSuspended = "false";
+    window.requestAnimationFrame(() => ensureRenderer());
+  };
+  const handleAgentVisuals = (event: Event) => {
+    if (!panel.closest(".agent-surface")) return;
+    const paused = Boolean((event as CustomEvent).detail?.paused);
+    if (paused === backgroundSuspended) {
+      if (!paused) window.requestAnimationFrame(() => ensureRenderer());
+      return;
+    }
+    backgroundSuspended = paused;
+    if (paused) {
+      destroyRenderer(true);
+      panel.dataset.graphSuspended = "true";
+      return;
+    }
+    panel.dataset.graphSuspended = "false";
+    window.requestAnimationFrame(() => ensureRenderer());
+  };
+  document.addEventListener("boi:background-visuals", handleBackgroundVisuals);
+  document.addEventListener("boi:agent-visuals", handleAgentVisuals);
   const lifecycleObserver = new MutationObserver(() => {
     if (panel.isConnected) return;
-    resizeObserver?.disconnect();
-    renderer?.kill();
-    renderer = null;
+    destroyRenderer(false);
+    document.removeEventListener("boi:background-visuals", handleBackgroundVisuals);
+    document.removeEventListener("boi:agent-visuals", handleAgentVisuals);
     lifecycleObserver.disconnect();
   });
   lifecycleObserver.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("pagehide", () => {
-    resizeObserver?.disconnect();
-    renderer?.kill();
-    renderer = null;
+    destroyRenderer(false);
+    document.removeEventListener("boi:background-visuals", handleBackgroundVisuals);
+    document.removeEventListener("boi:agent-visuals", handleAgentVisuals);
     lifecycleObserver.disconnect();
   }, { once: true });
   const details = panel.querySelector<HTMLElement>("[data-knowledge-node-details]");
@@ -125,7 +172,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   const showDetails = (nodeRef: string) => {
     if (!graph.hasNode(nodeRef) || !details) return;
     selectedRef = nodeRef;
-      const attributes = graph.getNodeAttributes(nodeRef);
+    const attributes = graph.getNodeAttributes(nodeRef);
     const incidentEdges = graph.edges(nodeRef).map((edgeId) => graph.getEdgeAttributes(edgeId));
     const relation = incidentEdges.find((item) => item.reason || item.label) || {};
     details.hidden = false;
@@ -183,11 +230,12 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   };
 
   const ensureRenderer = () => {
-    if (!renderer && !container.hidden && container.clientWidth > 0) {
+    if (!renderer && !backgroundSuspended && !container.hidden && container.clientWidth > 0) {
       renderer = new Sigma(graph, container, {
         renderEdgeLabels: false,
-        labelDensity: 0.1,
-        labelGridCellSize: 120,
+        labelDensity: 0.06,
+        labelGridCellSize: 150,
+        labelRenderedSizeThreshold: 8.5,
         stagePadding: 46,
         allowInvalidContainer: true,
       });
@@ -218,10 +266,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     const graphVisible = view === "explorer" || view === "path" || view === "impact";
     const graphLayout = panel.querySelector<HTMLElement>(".knowledge-graph-hub-layout");
     if (!graphVisible && renderer) {
-      resizeObserver?.disconnect();
-      resizeObserver = null;
-      renderer.kill();
-      renderer = null;
+      destroyRenderer(true);
     }
     if (graphLayout) graphLayout.hidden = !graphVisible;
     panel.querySelectorAll<HTMLButtonElement>("[data-knowledge-view]").forEach((button) => {
