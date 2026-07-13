@@ -13,7 +13,8 @@ from boi_api.app.v2.a2ui import (
     compile_surface,
     validate_surface,
 )
-from boi_api.app.v2.models import AgentTurnResponse, AnswerBlock, ArtifactRef
+from boi_api.app.v2.models import AgentTurnResponse, AnswerBlock, ArtifactRef, GraphQueryPlan
+from boi_api.app.v2.service import AgentV2Service
 from boi_api.app.v2.store import MemoryAgentV2Store
 from fastapi.testclient import TestClient
 
@@ -61,23 +62,26 @@ def test_acceptance_fixture_has_decision_complete_50_scenario_matrix():
     assert payload["thresholds"]["unauthorized_mutations"] == 0
 
 
-def test_browser_acceptance_manifest_covers_three_viewports_and_twelve_journeys():
+def test_browser_acceptance_manifest_covers_four_viewports_and_fifteen_real_journeys():
     payload = yaml.safe_load((ROOT / "tests/fixtures/task_ontology_a2ui_browser_scenarios.yaml").read_text(encoding="utf-8"))
     assert {(item["width"], item["height"]) for item in payload["viewports"]} == {
         (1440, 1000),
         (1180, 850),
+        (949, 1151),
         (390, 844),
     }
     journey_ids = {item["id"] for item in payload["journeys"]}
     assert journey_ids == {
         "inbox_to_task_work_record",
         "task_assignment_and_revision",
+        "task_work_record_persistence",
         "ontology_one_hop_expand",
         "agent_a2ui_and_fallback",
         "inbox_task_snapshot_parity",
         "ontology_path",
         "ontology_impact",
         "ontology_tour",
+        "ontology_semantic_queries",
         "agent_table_timeline_mermaid",
         "harness_review_release_rehearsal",
         "adapter_job_status_and_retry",
@@ -241,6 +245,46 @@ def test_ontology_result_uses_the_requested_dynamic_presentation(presentation, c
     assert component in {item["component"] for item in surface["components"]}
 
 
+def test_mermaid_graph_is_grounded_connected_and_bounded_around_focal_entity():
+    nodes = [
+        {"node_id": f"node:{index}", "node_type": "boi", "payload": {"title": f"Node {index}"}}
+        for index in range(24)
+    ]
+    edges = [
+        {
+            "edge_id": f"edge:{index}",
+            "source_id": f"node:{index}",
+            "target_id": f"node:{index + 1}",
+            "relation": "links_to",
+            "payload": {"source_refs": [f"boi:public:source:{index}"]},
+        }
+        for index in range(23)
+    ]
+    edges.append(
+        {
+            "edge_id": "edge:ungrounded",
+            "source_id": "node:0",
+            "target_id": "node:23",
+            "relation": "links_to",
+            "payload": {},
+        }
+    )
+
+    selected_nodes, selected_edges = AgentV2Service._bounded_mermaid_graph(
+        GraphQueryPlan(focal_entities=["node:0"], presentation="mermaid", depth=6),
+        nodes,
+        edges,
+    )
+
+    node_ids = {item["node_id"] for item in selected_nodes}
+    assert "node:0" in node_ids
+    assert len(selected_nodes) <= 14
+    assert len(selected_edges) <= 20
+    assert all({item["source_id"], item["target_id"]} <= node_ids for item in selected_edges)
+    assert all(item["payload"]["source_refs"] for item in selected_edges)
+    assert "edge:ungrounded" not in {item["edge_id"] for item in selected_edges}
+
+
 @pytest.mark.parametrize(
     ("mutation", "error"),
     [
@@ -361,6 +405,7 @@ def test_multi_assignee_task_is_projected_to_each_inbox_and_completes_once(boi_a
     )
     assert completed.status_code == 200
     assert completed.json()["record"]["actor_employee_id"] == "100002"
+    assert completed.json()["record"]["evidence_refs"] == ["human-note:multi-assignee-1"]
     assert not any(item["request_id"] == request_id for item in boi_app_module.agent_inbox_payload("100001", limit=100)["items"])
     assert not any(item["request_id"] == request_id for item in boi_app_module.agent_inbox_payload("100002", limit=100)["items"])
 

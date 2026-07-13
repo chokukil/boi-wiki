@@ -35,6 +35,7 @@ from boi_api.app.v2.models import (
     AgentTurnRequest,
     AgentTurnResponse,
     AnswerBlock,
+    ArtifactRef,
     CitationRef,
     ContextPlaybookCreateRequest,
     ContextPlaybookPatchRequest,
@@ -132,6 +133,15 @@ def test_response_budget_preserves_minimal_intent_citation_and_truthful_groundin
             goal="현재 문서의 판단 기준 설명",
             resolved_goal="현재 운영 가이드의 업무 맥락 판단 기준을 설명한다",
         ),
+        artifact_refs=[
+            ArtifactRef(
+                artifact_id="artifact-budget",
+                artifact_type="ontology_graph",
+                title="업무 관계",
+                preview="관계 미리보기 " * 500,
+                metadata={"revision": 1, "presentation": "timeline", "source_refs": ["boi:public:guide"] * 50},
+            )
+        ],
         grounding_status="grounded",
         context_usage={"page_anchor": {"ref": "boi:public:guide", "resolved": True}, "selected_source_count": 12},
     )
@@ -139,6 +149,7 @@ def test_response_budget_preserves_minimal_intent_citation_and_truthful_groundin
     assert compact.work_intent is not None
     assert compact.work_intent.operation.value == "understand"
     assert compact.citations and compact.citations[0].source_ref == "boi:public:guide"
+    assert compact.artifact_refs[0].metadata["presentation"] == "timeline"
     assert compact.grounding_status == "grounded"
     assert len(json.dumps(compact.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")) <= v2_service.settings.response_budget_bytes
 
@@ -718,9 +729,14 @@ class RepairingScopedMermaidModel(MultiTurnMermaidModel):
 
 
 class AlwaysOutOfScopeMermaidModel(MultiTurnMermaidModel):
+    def __init__(self):
+        super().__init__()
+        self.graph_calls = 0
+
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
         if required == {"title", "nodes", "edges"}:
+            self.graph_calls += 1
             return {
                 "title": "범위를 벗어난 그림",
                 "nodes": [
@@ -1827,6 +1843,41 @@ def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work
     assert "지금 처리할 업무" in response.answer.markdown
 
 
+def test_connect_intent_with_explorer_presentation_builds_graph_without_explicit_draft(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    source_ref = "boi:public:boi-wiki-manual:guide:final-operator-guide"
+    route = {
+        "capability_id": "knowledge.search",
+        "source": "llm_structured",
+        "reason": "관계 탐색 화면 요청",
+        "work_intent": WorkIntent(
+            goal="종합 가이드와 직접 연결된 업무 관계를 탐색한다",
+            resolved_goal="종합 가이드 중심 관계 탐색 화면을 제공한다",
+            asset_kind=WorkAssetKind.knowledge,
+            operation=WorkOperation.connect,
+            operation_plan=[WorkOperation.understand, WorkOperation.connect],
+            context_refs=[source_ref],
+            presentation_mode="explorer",
+            result_purpose="explain",
+            confidence=1.0,
+        ).model_dump(mode="json"),
+    }
+    monkeypatch.setattr(v2_service, "_semantic_route", lambda *_args, **_kwargs: route)
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="종합 가이드와 직접 연결된 업무 관계를 탐색해줘"),
+    )
+
+    assert response.work_intent and response.work_intent.graph_query_draft
+    assert response.work_intent.graph_query_draft.presentation == "explorer"
+    assert response.graph_result_ref
+    assert any(item.artifact_type == "ontology_graph" for item in response.artifact_refs)
+
+
 def test_completion_design_wording_does_not_become_a_task_completion_operation(
     v2_service: AgentV2Service,
 ):
@@ -1899,14 +1950,18 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     assert "boi:public:guide" in second.work_intent.context_refs
     assert second.context_usage["resolved_goal"] == second.work_intent.resolved_goal
     assert second.context_usage["presentation_mode"] == "mermaid"
-    assert second.artifact_refs[0].artifact_type == "mermaid_diagram"
+    assert second.work_intent.graph_query_draft is not None
+    assert second.work_intent.graph_query_draft.query_kind == "neighbors"
+    assert second.work_intent.graph_query_draft.presentation == "mermaid"
+    assert "boi:public:guide" in second.work_intent.graph_query_draft.focal_mentions
+    assert set(second.work_intent.graph_query_draft.focal_mentions) == set(second.work_intent.context_refs)
+    assert second.artifact_refs[0].artifact_type == "ontology_graph"
     artifact = v2_service.get_artifact(principal, second.artifact_refs[0].artifact_id)
-    assert artifact["draft"]["mermaid"].startswith("flowchart TD")
-    assert len(artifact["draft"]["nodes"]) == 3
-    assert len(artifact["draft"]["edges"]) == 2
-    assert all(item["source_refs"] for item in artifact["draft"]["nodes"])
-    assert all(item["source_refs"] for item in artifact["draft"]["edges"])
-    assert "<br/>" not in artifact["draft"]["mermaid"]
+    assert artifact["draft"]["presentation"] == "mermaid"
+    assert 1 <= len(artifact["draft"]["nodes"]) <= 10
+    assert 1 <= len(artifact["draft"]["edges"]) <= 14
+    assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["nodes"])
+    assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["edges"])
     assert artifact["actions"] == []
     assert second.artifact_refs[0].actions == []
     assert "Task 또는 SOP" not in second.answer.markdown
@@ -2015,7 +2070,7 @@ def test_task_split_followup_creates_workflow_draft_without_creating_an_sop_draf
     assert not v2_service.store.list("plans", employee_id=principal.employee_id, limit=100)
 
 
-def test_mermaid_regenerates_when_nodes_exceed_the_planner_asset_scope(
+def test_grounded_mermaid_uses_the_deterministic_graph_compiler_without_an_extra_model_call(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
@@ -2032,13 +2087,17 @@ def test_mermaid_regenerates_when_nodes_exceed_the_planner_asset_scope(
     )
 
     artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
-    assert model.graph_calls == 2
-    assert artifact["generation_attempts"] == 2
-    assert {item["asset_kind"] for item in artifact["draft"]["nodes"]} == {"knowledge"}
+    assert model.graph_calls == 0
+    assert artifact["artifact_type"] == "ontology_graph"
+    assert artifact["draft"]["presentation"] == "mermaid"
+    assert len(artifact["draft"]["nodes"]) <= 10
+    assert len(artifact["draft"]["edges"]) <= 14
+    assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["nodes"])
+    assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["edges"])
     assert artifact["actions"] == []
 
 
-def test_mermaid_validation_failure_keeps_internal_scope_details_out_of_the_ui(
+def test_grounded_mermaid_ignores_untrusted_model_graph_shapes(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
@@ -2053,17 +2112,17 @@ def test_mermaid_validation_failure_keeps_internal_scope_details_out_of_the_ui(
             page_ref="/docs/boi%3Apublic%3Aguide",
         ),
     )
-    work_run = v2_service.store.get("work_runs", response.work_run_id)
+    artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
 
-    assert response.status == "needs_input"
-    assert response.artifact_refs == []
-    assert "직접 연결된 근거" in response.answer.markdown
-    assert "workflow" not in response.answer.markdown.lower()
-    assert work_run and work_run["diagnostics"][-1]["kind"] == "mermaid_validation"
-    assert "workflow" in work_run["diagnostics"][-1]["detail"]
+    assert response.status == "completed"
+    assert model.graph_calls == 0
+    assert artifact["artifact_type"] == "ontology_graph"
+    assert artifact["draft"]["presentation"] == "mermaid"
+    assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["nodes"])
+    assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["edges"])
 
 
-def test_mermaid_regenerates_schema_shaped_labels_as_user_facing_language(
+def test_grounded_mermaid_uses_catalog_titles_instead_of_model_schema_labels(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
@@ -2080,11 +2139,10 @@ def test_mermaid_regenerates_schema_shaped_labels_as_user_facing_language(
     )
 
     artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
-    visible_labels = [item["label"] for item in artifact["draft"]["nodes"]]
-    visible_labels.extend(item["label"] for item in artifact["draft"]["edges"])
-    assert model.graph_calls == 2
-    assert artifact["generation_attempts"] == 2
-    assert all("_" not in item for item in visible_labels)
+    visible_titles = [str((item.get("payload") or {}).get("title") or "") for item in artifact["draft"]["nodes"]]
+    assert model.graph_calls == 0
+    assert artifact["draft"]["presentation"] == "mermaid"
+    assert all(title and title != str(item.get("node_id") or "") for title, item in zip(visible_titles, artifact["draft"]["nodes"]))
 
 
 def test_mermaid_uses_sideways_layout_for_a_wide_fan_out(
@@ -2142,6 +2200,10 @@ def test_starter_selection_uses_the_server_grounded_prompt_and_context(
     assert timeline[-2]["display_text"] == starter.prompt
     assert response.work_intent is not None
     assert starter.subject_ref in response.work_intent.context_refs
+    assert response.context_usage["timings_ms"]["total"] >= 0
+    assert response.context_usage["timings_ms"]["a2ui"] >= 0
+    stored_run = v2_service.store.get("runs", response.run_id)
+    assert stored_run and stored_run["timings_ms"] == response.context_usage["timings_ms"]
 
 
 def test_retrieval_query_keeps_the_title_of_each_planner_selected_context(
@@ -2562,7 +2624,7 @@ def test_natural_language_confirmation_semantically_continues_the_same_work_run(
         ),
     )
     waiting = v2_service.learning.get_run(principal, started.work_run_id)
-    assert waiting["status"] == "waiting_human"
+    assert waiting["status"] == "waiting_human", waiting
 
     continued = v2_service.run_turn(
         principal,
@@ -3980,12 +4042,15 @@ def test_confirmed_action_plan_records_the_real_domain_result_as_loop_progress(
     )
 
     assert response.plan_ref
+    assert response.work_intent is not None
+    assert response.work_intent.operation == WorkOperation.test
+    assert WorkOperation.run not in response.work_intent.operation_plan
     waiting = v2_service.learning.get_run(principal, response.work_run_id)
     assert waiting["status"] == "waiting_human"
     waiting_goal = v2_service.get_goal_plan(principal, response.goal_plan_ref)
     waiting_steps = {item["step_id"]: item["status"] for item in waiting_goal["steps"]}
     assert waiting_goal["status"] == "waiting_confirmation"
-    assert waiting_steps["run"] == "waiting_confirmation"
+    assert waiting_steps["test"] == "waiting_confirmation"
     assert waiting_steps["observe"] == "pending"
 
     confirmed = asyncio.run(v2_service.confirm_plan(principal, response.plan_ref, "dry-run 입력을 확인했습니다."))
@@ -4881,6 +4946,30 @@ def test_graph_query_kinds_have_distinct_semantic_contracts(
     assert [item["order"] for item in tour["tour_steps"]] == list(range(1, len(tour["tour_steps"]) + 1))
 
 
+def test_graph_query_cache_uses_context_fingerprint_without_sharing_acl(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    plan = GraphQueryPlan(
+        focal_entities=["boi:public:sop:manual"],
+        query_kind="neighbors",
+        depth=2,
+        presentation="auto",
+    )
+    first = v2_service.knowledge.query(principal, plan)
+    cached_rows = v2_service.store.list(
+        "knowledge_graph_queries",
+        employee_id=principal.employee_id,
+        limit=20,
+    )
+    second = v2_service.knowledge.query(principal, plan)
+
+    assert cached_rows
+    assert cached_rows[0]["context_fingerprint"]
+    assert first == second
+    assert all("boi:private:100002" not in str(node.get("node_id")) for node in second["nodes"])
+
+
 def test_graphify_adapter_imports_provenance_graph_without_changing_canonical_files(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -5078,12 +5167,13 @@ def test_openkb_adapter_executes_cli_and_excludes_navigation_pages(
     source_file.parent.mkdir(parents=True, exist_ok=True)
     source_file.write_bytes(b"fixture")
 
-    def fake_run(command, *, cwd, timeout_seconds, input_text=None):
+    def fake_run(command, *, cwd, timeout_seconds, input_text=None, extra_env=None):
         if "init" in command:
             assert "--model" in command
             assert "--language" in command
             assert input_text == "\n"
         if "add" in command:
+            assert extra_env and extra_env["BOI_OPENKB_COMPAT_GATEWAY"] == "1"
             wiki = cwd / "wiki"
             (wiki / "concepts").mkdir(parents=True, exist_ok=True)
             (wiki / "index.md").write_text("# Navigation", encoding="utf-8")
@@ -5380,6 +5470,8 @@ def test_graph_path_and_temporal_filter_are_parameterized_and_deterministic(
     )
     assert [node["node_id"] for node in timeline["nodes"]] == ["runtime:new"]
     assert timeline["presentation"] == "timeline"
+    assert [item["node_ref"] for item in timeline["timeline"]] == ["runtime:new"]
+    assert timeline["timeline"][0]["occurred_at"] == "2026-07-12T00:00:00+00:00"
 
 
 def test_graph_explorer_node_and_filters_are_acl_checked_and_parameterized(

@@ -115,6 +115,10 @@ def main() -> int:
 
     snapshot_latencies: list[float] = []
     graph_latencies: list[float] = []
+    path_latencies: list[float] = []
+    artifact_latencies: list[float] = []
+    surface_compile_latencies: list[float] = []
+    snapshot_first_ms = 0.0
     snapshot_status = "skipped"
     before_residency: dict[str, Any] = {}
     after_residency: dict[str, Any] = {}
@@ -139,6 +143,7 @@ def main() -> int:
                     )
                     response.raise_for_status()
                     snapshot_latencies.append(latency)
+                snapshot_first_ms = snapshot_latencies[0]
                 snapshot_status = "ready"
 
             graph_payload = {
@@ -159,12 +164,82 @@ def main() -> int:
                 response.raise_for_status()
                 graph_latencies.append(latency)
 
+            path_payload = {
+                "focal_entities": ["boi:public:boi-wiki-manual:guide:final-operator-guide"],
+                "target_entities": ["boi:public:boi-wiki-manual:operations:operator-runbook"],
+                "query_kind": "path",
+                "depth": 4,
+                "limit": 80,
+                "presentation": "mermaid",
+            }
+            for _ in range(5):
+                response, latency = timed(
+                    client,
+                    "POST",
+                    f"{base}/api/v2/knowledge-graph/query",
+                    params=params,
+                    json=path_payload,
+                )
+                response.raise_for_status()
+                path_latencies.append(latency)
+
+            session = client.post(
+                f"{base}/api/v2/work-sessions",
+                params=params,
+                json={"title": "동적 결과 성능 검증", "page_ref": "/sops"},
+            )
+            session.raise_for_status()
+            session_id = str(session.json()["session_id"])
+            starter_set = client.post(
+                f"{base}/api/v2/starter-suggestion-sets",
+                params=params,
+                json={"page_ref": "/sops", "work_session_id": session_id},
+            )
+            starter_set.raise_for_status()
+            starter_payload = starter_set.json()
+            starter = next(
+                (
+                    item
+                    for item in starter_payload.get("items") or []
+                    if item.get("graph_query_kind") and item.get("result_kind") in {"table", "timeline", "mermaid", "explorer"}
+                ),
+                None,
+            )
+            if starter:
+                for _ in range(5):
+                    response, latency = timed(
+                        client,
+                        "POST",
+                        f"{base}/api/v2/agent/turns",
+                        params=params,
+                        json={
+                            "question": starter["prompt"],
+                            "work_session_id": session_id,
+                            "page_ref": "/sops",
+                            "suggestion_set_id": starter_payload["set_id"],
+                            "suggestion_id": starter["suggestion_id"],
+                        },
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    if not payload.get("artifact_refs") or not payload.get("a2ui_surface_ref"):
+                        failures.append("grounded starter did not produce an artifact and A2UI surface")
+                        break
+                    artifact_latencies.append(latency)
+                    timings = (payload.get("context_usage") or {}).get("timings_ms") or {}
+                    surface_compile_latencies.append(float(timings.get("a2ui") or 0.0))
+            else:
+                failures.append("no grounded dynamic starter was available for performance measurement")
+
             after_response = client.get(f"{base}/api/v2/system/readiness", params=params)
             after_response.raise_for_status()
             after = after_response.json()
 
     snapshot_p95 = percentile(snapshot_latencies, 0.95)
     graph_p95 = percentile(graph_latencies, 0.95)
+    path_p95 = percentile(path_latencies, 0.95)
+    artifact_p95 = percentile(artifact_latencies, 0.95)
+    surface_compile_p95 = percentile(surface_compile_latencies, 0.95)
     if not args.skip_runtime:
         before_residency = residency(before)
         after_residency = residency(after)
@@ -174,8 +249,16 @@ def main() -> int:
         )
     if snapshot_latencies and snapshot_p95 > 500:
         failures.append(f"warm Task snapshot p95 must be <=500ms, got {snapshot_p95}ms")
+    if snapshot_first_ms > 1500:
+        failures.append(f"first Task snapshot must be <=1500ms, got {round(snapshot_first_ms, 2)}ms")
     if graph_latencies and graph_p95 > 200:
         failures.append(f"1-hop graph p95 must be <=200ms, got {graph_p95}ms")
+    if path_latencies and path_p95 > 500:
+        failures.append(f"4-hop graph path p95 must be <=500ms, got {path_p95}ms")
+    if surface_compile_latencies and surface_compile_p95 > 300:
+        failures.append(f"A2UI surface compile p95 must be <=300ms, got {surface_compile_p95}ms")
+    if artifact_latencies and artifact_p95 > 10000:
+        failures.append(f"generated artifact final p95 must be <=10000ms, got {artifact_p95}ms")
     if before_residency and after_residency["load_requests"] != before_residency["load_requests"]:
         failures.append("LM Studio load requests changed during acceptance navigation")
     if before_residency and after_residency["unload_requests"] != before_residency["unload_requests"]:
@@ -194,6 +277,7 @@ def main() -> int:
         "task_snapshot": {
             "status": snapshot_status,
             "samples": len(snapshot_latencies),
+            "first_ms": round(snapshot_first_ms, 2),
             "p50_ms": round(statistics.median(snapshot_latencies), 2) if snapshot_latencies else 0,
             "p95_ms": snapshot_p95,
         },
@@ -201,6 +285,21 @@ def main() -> int:
             "samples": len(graph_latencies),
             "p50_ms": round(statistics.median(graph_latencies), 2) if graph_latencies else 0,
             "p95_ms": graph_p95,
+        },
+        "graph_4hop_path": {
+            "samples": len(path_latencies),
+            "p50_ms": round(statistics.median(path_latencies), 2) if path_latencies else 0,
+            "p95_ms": path_p95,
+        },
+        "dynamic_surface_compile": {
+            "samples": len(surface_compile_latencies),
+            "p50_ms": round(statistics.median(surface_compile_latencies), 2) if surface_compile_latencies else 0,
+            "p95_ms": surface_compile_p95,
+        },
+        "generated_artifact_final": {
+            "samples": len(artifact_latencies),
+            "p50_ms": round(statistics.median(artifact_latencies), 2) if artifact_latencies else 0,
+            "p95_ms": artifact_p95,
         },
         "model_residency": {"before": before_residency, "after": after_residency},
         "failures": failures,

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -12,6 +13,29 @@ import uvicorn
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+def load_local_model_environment(path: Path) -> None:
+    allowed_prefixes = (
+        "BOI_V2_MODEL", "BOI_LLM_", "BOI_AGENT_LLM_", "BOI_AGENT_ROUTER_",
+        "BOI_LMSTUDIO_", "BOI_EMBEDDING_",
+    )
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = (item.strip() for item in line.split("=", 1))
+        if not key.startswith(allowed_prefixes) or key in os.environ:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        os.environ[key] = value
+
+
+if "--use-local-model" in sys.argv:
+    load_local_model_environment(ROOT / ".env")
 
 from boi_api.app.main import AGENT_V2_SERVICE, app
 from boi_api.app.v2.models import (
@@ -90,6 +114,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--employee-id", default="100001")
+    parser.add_argument("--use-local-model", action="store_true")
     args = parser.parse_args()
     seed_harness_candidate(args.employee_id)
     uvicorn.run(app, host=args.host, port=args.port)

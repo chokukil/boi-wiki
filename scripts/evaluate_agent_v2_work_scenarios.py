@@ -80,6 +80,17 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     )
     artifact_type = str(scenario.get("expected_artifact_type") or "")
     artifact_ok = not artifact_type or artifact_type in actual_artifact_types
+    expected_presentation = str(scenario.get("expected_presentation") or "")
+    actual_presentations = {
+        str(
+            (item.get("metadata") or {}).get("presentation")
+            or (item.get("payload") or {}).get("presentation")
+            or item.get("presentation")
+            or ""
+        )
+        for item in artifacts
+    }
+    presentation_ok = not expected_presentation or expected_presentation in actual_presentations
     plan_ok = not scenario.get("require_plan") or bool(response.get("plan_ref"))
     page_anchor = context_usage.get("page_anchor") if isinstance(context_usage.get("page_anchor"), dict) else {}
     page_anchor_ok = not scenario.get("require_page_anchor") or bool(page_anchor.get("resolved"))
@@ -140,7 +151,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         "route": route_ok,
         "operation": operation_ok,
         "grounding": grounding_ok,
-        "artifact": artifact_ok,
+        "artifact": artifact_ok and presentation_ok,
         "plan": plan_ok,
         "page_anchor": page_anchor_ok,
         "status": status_ok,
@@ -166,6 +177,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
             "loop_status": loop_state.get("status"),
             "grounding_status": response.get("grounding_status"),
             "artifact_types": sorted(actual_artifact_types),
+            "artifact_presentations": sorted(item for item in actual_presentations if item),
             "plan_ref": response.get("plan_ref"),
             "intent_overlap": round(intent_overlap, 3),
             "citation_sources": sorted(citation_sources),

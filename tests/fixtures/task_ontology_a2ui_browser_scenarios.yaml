@@ -2,6 +2,7 @@ version: "1.0"
 viewports:
   - {name: desktop, width: 1440, height: 1000}
   - {name: compact_desktop, width: 1180, height: 850}
+  - {name: narrow_desktop, width: 949, height: 1151}
   - {name: mobile, width: 390, height: 844}
 journeys:
   - id: inbox_to_task_work_record
@@ -21,6 +22,13 @@ journeys:
       - reviewer_visible
       - save_status_announced
       - keyboard_focus_visible
+  - id: task_work_record_persistence
+    start: "/tasks/console?employee_id=100001&task_id={fixture_task_ref}"
+    actions: [fill_work_record, select_evidence, confirm_record, submit_record]
+    assertions:
+      - saved_record_visible_after_navigation
+      - work_record_form_remains_available
+      - evidence_picker_remains_available
   - id: ontology_one_hop_expand
     start: "/docs/boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide?employee_id=100001"
     actions: [open_graph_explorer, select_first_neighbor]
@@ -28,6 +36,9 @@ journeys:
       - sigma_canvas_nonblank
       - node_count_below_500
       - selected_node_details_visible
+      - canonical_source_opens
+      - graph_uses_ninety_percent_of_result_width
+      - inspector_does_not_shrink_canvas
       - no_console_error
   - id: agent_a2ui_and_fallback
     start: "/agent?employee_id=100001"
@@ -35,6 +46,9 @@ journeys:
     assertions:
       - progress_visible_before_final
       - citation_visible
+      - ontology_artifact_visible
+      - focus_and_escape_order_work
+      - work_session_restores_graph_state
       - typed_fallback_visible
       - composer_keeps_focus
   - id: inbox_task_snapshot_parity
@@ -53,6 +67,10 @@ journeys:
     start: "/knowledge-graph?employee_id=100001"
     actions: [select_tour_view]
     assertions: [ordered_steps_visible]
+  - id: ontology_semantic_queries
+    start: "/knowledge-graph?employee_id=100001"
+    actions: [run_all_nine_graph_queries]
+    assertions: [query_plans_are_distinct, path_timeline_compare_and_tour_use_semantic_results]
   - id: agent_table_timeline_mermaid
     start: "/agent?employee_id=100001"
     actions: [submit_grounded_result_variants]
