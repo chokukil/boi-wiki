@@ -351,6 +351,7 @@
   }
 
   const MERMAID_MIN_ZOOM = .6;
+  const MERMAID_FIT_MIN_ZOOM = .25;
   const MERMAID_MAX_ZOOM = 5;
 
   function clampMermaidZoom(value) {
@@ -396,6 +397,16 @@
     const nodeScale = smallestNode ? 14 / smallestNode : 1;
     const edgeScale = smallestEdge ? 12 / smallestEdge : 1;
     return clampMermaidZoom(Math.ceil(Math.max(1, nodeScale, edgeScale) * 10) / 10);
+  }
+
+  function fittedMermaidZoom(svg, canvas) {
+    svg.style.width = "100%";
+    svg.style.maxWidth = "100%";
+    const bounds = svg.getBoundingClientRect();
+    if (!bounds.width || !bounds.height || !canvas.clientWidth || !canvas.clientHeight) return 1;
+    const widthScale = canvas.clientWidth / bounds.width;
+    const heightScale = canvas.clientHeight / bounds.height;
+    return Math.max(MERMAID_FIT_MIN_ZOOM, Math.min(1, widthScale, heightScale));
   }
 
   function mermaidLabelMinimums(svg) {
@@ -457,7 +468,11 @@
     const stored = state.diagramViews[key] || { mode: "read", zoom: 1, scrollLeft: 0, scrollTop: 0 };
     const mode = ["read", "fit", "custom"].includes(stored.mode) ? stored.mode : "read";
     const center = options.center || (diagram.dataset.viewApplied === "true" ? mermaidCanvasCenter(diagram) : null);
-    let zoom = mode === "read" ? readableMermaidZoom(svg) : mode === "fit" ? 1 : clampMermaidZoom(stored.zoom);
+    let zoom = mode === "read"
+      ? readableMermaidZoom(svg)
+      : mode === "fit"
+        ? fittedMermaidZoom(svg, canvas)
+        : clampMermaidZoom(stored.zoom);
     const applyZoom = () => {
       svg.style.width = `${Math.round(zoom * 100)}%`;
       svg.style.maxWidth = zoom > 1 ? "none" : "100%";
@@ -1705,7 +1720,7 @@
       if (diagram) {
         const action = mermaidControl.dataset.mermaidView;
         const current = Number(diagram.dataset.zoom || 1);
-        if (action === "read" || action === "fit") setMermaidView(diagram, action, action === "fit" ? 1 : current);
+        if (action === "read" || action === "fit") setMermaidView(diagram, action, current);
         else setMermaidView(diagram, "custom", current + (action === "in" ? .2 : -.2));
       }
       return;

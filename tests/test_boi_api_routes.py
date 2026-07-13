@@ -7617,6 +7617,8 @@ def test_pet_agent_mount_exposes_search_helper_contract(boi_app_module, monkeypa
     assert "읽기 크기" in script
     assert "전체 보기" in script
     assert "readableMermaidZoom" in script
+    assert "fittedMermaidZoom" in script
+    assert "canvas.clientHeight / bounds.height" in script
     assert "artifactFocusOpen" in script
     assert ".artifact-focus-open" in style
     assert "Task 다듬기" in script

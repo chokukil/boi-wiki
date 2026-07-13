@@ -254,7 +254,18 @@ async function main() {
     if (args.artifactId) {
       const artifactUrl = `${args.baseUrl}/agent?employee_id=${args.employeeId}&session=${encodeURIComponent(args.sessionId)}&artifact=${encodeURIComponent(args.artifactId)}`;
       await navigate(cdp, artifactUrl);
-      await waitUntil(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid][data-mermaid-state="rendered"] svg, [data-agent-v2-artifact-list] .ontology-result[data-a2ui-component]')`, 30000);
+      try {
+        await waitUntil(cdp, `!!document.querySelector('[data-v2-mermaid][data-mermaid-state="rendered"] svg, .ontology-result[data-a2ui-component]')`, 30000);
+      } catch (error) {
+        const diagnostic = await cdp.eval(`(() => ({
+          url: location.href,
+          workspace: !!document.querySelector('[data-agent-v2-workspace]'),
+          artifactList: document.querySelector('[data-agent-v2-artifact-list]')?.innerHTML.slice(0, 1200) || '',
+          notices: [...document.querySelectorAll('[data-agent-v2-error], .agent-surface-notice')].map((item) => item.textContent.trim()),
+          scripts: [...document.scripts].map((item) => item.src).filter(Boolean),
+        }))()`);
+        throw new Error(`${error.message}; diagnostic=${JSON.stringify(diagnostic)} console=${JSON.stringify(consoleErrors)}`);
+      }
       await sleep(600);
       const ontologyMode = await cdp.eval(`!!document.querySelector('[data-agent-v2-artifact-list] .ontology-result')`);
       if (ontologyMode) {
@@ -297,7 +308,7 @@ async function main() {
         return;
       }
       const desktop = await cdp.eval(`(() => {
-        const diagram = document.querySelector('[data-agent-v2-artifact-list] [data-v2-mermaid]');
+        const diagram = document.querySelector('[data-v2-mermaid]');
         const svg = diagram?.querySelector("svg");
         const bounds = svg?.getBoundingClientRect();
         const nodeLines = [...(svg?.querySelectorAll("g.node tspan") || [])];
@@ -355,7 +366,12 @@ async function main() {
       const fitView = await cdp.eval(`(() => {
         const diagram = document.querySelector("[data-v2-mermaid]");
         const canvas = diagram?.querySelector(".mermaid-v2-canvas");
-        return { mode: diagram?.dataset.viewMode || "", zoom: diagram?.querySelector("[data-mermaid-zoom]")?.textContent.trim() || "", fitsWidth: canvas ? canvas.scrollWidth <= canvas.clientWidth + 3 : false };
+        return {
+          mode: diagram?.dataset.viewMode || "",
+          zoom: diagram?.querySelector("[data-mermaid-zoom]")?.textContent.trim() || "",
+          fitsWidth: canvas ? canvas.scrollWidth <= canvas.clientWidth + 3 : false,
+          fitsHeight: canvas ? canvas.scrollHeight <= canvas.clientHeight + 3 : false,
+        };
       })()`);
       await cdp.eval(`document.querySelector('[data-mermaid-view="read"]')?.click()`);
       await sleep(150);
@@ -422,7 +438,7 @@ async function main() {
         readable_zoom_is_visible: /^\d+%$/.test(desktop.zoomLabel),
         focus_view_uses_full_result_width: desktop.focusControlVisible && focused.active && focused.conversationHidden && focused.workbenchWidth > desktop.workbenchWidth * 1.25,
         focused_diagram_has_one_scroll_owner: focused.outerOverflow === "hidden" && /auto|scroll/.test(focused.canvasOverflow),
-        fit_and_read_views_are_distinct: fitView.mode === "fit" && fitView.zoom === "100%" && fitView.fitsWidth,
+        fit_and_read_views_are_distinct: fitView.mode === "fit" && fitView.fitsWidth && fitView.fitsHeight,
         zoom_preserves_view_center: Math.abs(centerBefore.x - centerAfter.x) < .06 && Math.abs(centerBefore.y - centerAfter.y) < .06,
         escape_restores_split_view: !afterEscape.focused && afterEscape.conversationVisible,
         diagram_view_restores_after_reload: beforeReload.mode === "read" && restored.mode === "read" && !restored.focus && Math.abs(beforeReload.left - restored.left) < 4 && Math.abs(beforeReload.top - restored.top) < 4,

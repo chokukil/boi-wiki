@@ -10355,7 +10355,7 @@ def resolve_source_wiki_root(req: SourceWikiPlanRequest | SourceWikiRefreshPrevi
     elif repo_url.endswith("boi-wiki-local") or repo_url.endswith("boi-wiki-local.git"):
         root = Path("/home/chokukil/boi-wiki-local").resolve()
     elif repo_url.endswith("boi-wiki") or repo_url.endswith("boi-wiki.git"):
-        root = Path.cwd().resolve()
+        root = REPO_ROOT.resolve()
     else:
         raise HTTPException(status_code=400, detail="source_path is required unless repo_url maps to a known local checkout")
     if not root.exists() or not root.is_dir():

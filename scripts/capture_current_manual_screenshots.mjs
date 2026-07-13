@@ -196,7 +196,7 @@ async function capture(cdp, scenario, metadata) {
     path: scenario.output.replace(`${ROOT}/data/boi/`, ""),
     sha256: createHash("sha256").update(bytes).digest("hex"),
     source_kind: "browser-screenshot",
-    captured_url: `${BASE_URL}${scenario.routeTemplate}`,
+    captured_url: `<BOI_BASE_URL>${scenario.routeTemplate}`,
     captured_at: new Date().toISOString(),
     viewport: `${scenario.width}x${scenario.height}`,
     related_doc: scenario.relatedDoc,
@@ -354,6 +354,13 @@ async function main() {
       selector: "[data-agent-v2-workspace]",
       prepare: async (browser) => {
         await waitUntil(browser, `!!document.querySelector(".mermaid svg") || !!document.querySelector("[data-agent-v2-artifact-list] article")`, 30000);
+        await browser.eval(`document.querySelector('[data-mermaid-view="fit"]')?.click()`);
+        await waitUntil(browser, `document.querySelector('[data-v2-mermaid]')?.dataset.viewMode === 'fit'`, 5000);
+        const fits = await browser.eval(`(() => {
+          const canvas = document.querySelector('[data-v2-mermaid] .mermaid-v2-canvas');
+          return !!canvas && canvas.scrollWidth <= canvas.clientWidth + 3 && canvas.scrollHeight <= canvas.clientHeight + 3;
+        })()`);
+        if (!fits) throw new Error('Mermaid full view does not fit inside its canvas');
       },
     });
     await shot({
