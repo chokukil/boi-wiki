@@ -210,7 +210,7 @@ class FakeModel:
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             request = str((json.loads(prompt) if prompt.strip().startswith("{") else {}).get("request") or "")
             lowered = request.lower()
             read_request = "어떻게" in lowered or (
@@ -257,6 +257,7 @@ class FakeModel:
                 "result_purpose": "design" if operation in {"create", "refine"} else "execute" if operation == "run" else "explain",
                 "requested_asset_kinds": [asset_kind],
                 "artifact_actions": [],
+                "grounded_answer": {},
             }
         if "skill_id" in required:
             return {
@@ -290,7 +291,7 @@ class CountingSemanticRouteModel(FakeModel):
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "resolved_goal", "presentation_mode", "context_refs"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             self.planner_calls += 1
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
@@ -298,7 +299,7 @@ class CountingSemanticRouteModel(FakeModel):
 class BroadWorkQuestionReviewModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
                 {
@@ -320,7 +321,7 @@ class BroadWorkQuestionReviewModel(FakeModel):
 class MisroutedCurrentWorkReviewModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
                 {
@@ -345,7 +346,7 @@ class MisroutedCurrentWorkReviewModel(FakeModel):
 class RuntimeOnlyWrongScopeReviewModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
                 {
@@ -373,7 +374,7 @@ class KnowledgeCurrentScopeContradictionModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "scope"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             planned.update(
                 {
                     "capability_id": "knowledge.search",
@@ -392,7 +393,7 @@ class KnowledgeCurrentScopeContradictionModel(FakeModel):
 class GenericRetrievalQueryModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "resolved_goal", "retrieval_query", "context_refs"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             payload = json.loads(prompt)
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             trusted_refs = [str(item) for item in payload.get("trusted_context_refs") or []]
@@ -410,7 +411,7 @@ class GenericRetrievalQueryModel(FakeModel):
 class SemanticContinuationModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "continue_active_run", "continuation_kind", "user_confirmation"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             payload = json.loads(prompt)
             active_run = (payload.get("active_work") or {}).get("work_run") or {}
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
@@ -443,7 +444,7 @@ class SemanticContinuationModel(FakeModel):
 class TargetlessTaskLookupModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "continue_active_run", "continuation_kind", "user_confirmation"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             return {
                 "capability_id": "task.work",
                 "asset_kind": "task",
@@ -465,7 +466,7 @@ class TargetlessTaskLookupModel(FakeModel):
 class MisroutedActionRunModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "continue_active_run", "continuation_kind", "user_confirmation"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             return {
                 "capability_id": "task.work",
                 "asset_kind": "task",
@@ -583,6 +584,57 @@ class GroundedAnswerModel(FakeModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
+class CombinedPlannerAnswerModel(GroundedAnswerModel):
+    def __init__(self, *, invalid_ref: bool = False):
+        self.invalid_ref = invalid_ref
+        self.planner_calls = 0
+        self.answer_calls = 0
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+            self.planner_calls += 1
+            payload = json.loads(prompt)
+            hints = [item for item in payload.get("wiki_hybrid_hints") or [] if isinstance(item, dict)]
+            source_ref = "boi:public:not-retrieved" if self.invalid_ref else str(hints[0]["ref"])
+            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            planned.update(
+                {
+                    "resolved_goal": str(payload.get("request") or ""),
+                    "retrieval_query": str(payload.get("request") or ""),
+                    "presentation_mode": "prose",
+                    "work_view": "none",
+                    "grounded_answer": {
+                        "summary": "검토된 운영 가이드를 기준으로 게시와 근거 확인 절차를 설명합니다.",
+                        "summary_source_refs": [source_ref],
+                        "outcomes": [
+                            {
+                                "title": "확인 결과",
+                                "items": [
+                                    {
+                                        "text": "검토된 근거를 확인한 뒤 게시합니다.",
+                                        "source_refs": [source_ref],
+                                    }
+                                ],
+                            }
+                        ],
+                        "related_questions": [
+                            {
+                                "kind": "understand",
+                                "label": "게시 근거 더 보기",
+                                "question": "게시 전에 확인할 근거를 더 자세히 보여줘.",
+                                "source_refs": [source_ref],
+                            }
+                        ],
+                    },
+                }
+            )
+            return planned
+        if required == {"summary", "outcomes"}:
+            self.answer_calls += 1
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
 class ApplyRelatedQuestionModel(GroundedAnswerModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         result = super().generate_structured(system=system, prompt=prompt, schema=schema)
@@ -604,7 +656,7 @@ class MultiTurnMermaidModel(GroundedAnswerModel):
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "resolved_goal", "presentation_mode", "context_refs"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             payload = json.loads(prompt)
             self.planner_payloads.append(payload)
             request = str(payload.get("request") or "")
@@ -654,7 +706,7 @@ class MultiTurnMermaidModel(GroundedAnswerModel):
 class TransformMermaidModel(MultiTurnMermaidModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "resolved_goal", "presentation_mode", "context_refs"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             payload = json.loads(prompt)
             trusted_refs = [str(item) for item in payload.get("trusted_context_refs") or []]
             return {
@@ -695,7 +747,7 @@ class TransformMermaidModel(MultiTurnMermaidModel):
 class SplitOnlyFollowupModel(MultiTurnMermaidModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "resolved_goal", "presentation_mode", "context_refs"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             payload = json.loads(prompt)
             request = str(payload.get("request") or "")
             if "Task로 나눠" in request:
@@ -804,7 +856,7 @@ class RepairingReadableMermaidModel(MultiTurnMermaidModel):
 class AutomaticCheckModel(FakeModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "resolved_goal", "presentation_mode", "context_refs"} <= required:
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
             payload = json.loads(prompt)
             refs = [str(item) for item in payload.get("trusted_context_refs") or []]
             return {
@@ -1684,17 +1736,17 @@ def test_quick_agent_uses_structured_llm_planning_and_defaults_ambiguous_sop_que
     assert question_route["engine"] == "langgraph"
     assert question_route["capability_id"] == "knowledge.search"
     assert question_route["source"] == "llm_structured"
-    assert question_route["reason"] == "test semantic planner"
+    assert question_route["reason"] == "semantic_work_intent"
     assert draft_route["capability_id"] == "business_event.plan"
     assert search_route["capability_id"] == "knowledge.search"
-    assert search_route["reason"] == "test semantic planner"
+    assert search_route["reason"] == "semantic_work_intent"
     assert how_to_route["capability_id"] == "knowledge.search"
     assert ambiguous_noun_route["capability_id"] == "knowledge.search"
     assert search_then_draft["capability_id"] == "sop.plan"
     assert inbox_route["capability_id"] == "work.inbox"
     assert natural_inbox_route["capability_id"] == "work.inbox"
     assert active_sop_followup["capability_id"] == "sop.plan"
-    assert active_sop_followup["reason"] == "test semantic planner"
+    assert active_sop_followup["reason"] == "semantic_work_intent"
     assert knowledge_to_tasks["capability_id"] == "sop.plan"
     assert v2_service.quick_agent.route("Alarm 대응 SOP 만들어", page_kind="sop", model=v2_service.model)["capability_id"] == "sop.plan"
 
@@ -3574,6 +3626,45 @@ def test_grounded_answer_model_can_only_render_server_verified_citations(
     assert "### 다음 점검 항목" in response.answer.markdown
     assert f"/api/v2/citations/{response.citations[0].citation_id}" in response.answer.markdown
     assert "source_numbers" not in response.answer.markdown
+
+
+def test_read_only_grounded_answer_reuses_the_planner_call_when_refs_are_verified(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = CombinedPlannerAnswerModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="BoI Wiki 운영 가이드의 게시 기준을 알려줘"),
+    )
+
+    assert model.planner_calls == 1
+    assert model.answer_calls == 0
+    assert response.answer.summary.startswith("검토된 운영 가이드")
+    assert response.related_questions
+    assert all(item.source_refs for item in response.related_questions)
+    assert f"/api/v2/citations/{response.citations[0].citation_id}" in response.answer.markdown
+
+
+def test_planner_answer_with_an_unretrieved_ref_falls_back_to_the_grounded_answer_call(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = CombinedPlannerAnswerModel(invalid_ref=True)
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="BoI Wiki 운영 가이드의 게시 기준을 알려줘"),
+    )
+
+    assert model.planner_calls == 1
+    assert model.answer_calls == 1
+    assert response.answer.summary.startswith("초안은 검토 후 게시")
 
 
 def test_source_set_pin_exclude_and_private_note_stay_in_one_session(

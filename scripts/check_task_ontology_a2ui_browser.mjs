@@ -224,6 +224,11 @@ async function runViewport(cdp, viewport) {
     const before = canvas?.getBoundingClientRect();
     const href = source?.getAttribute('href') || '';
     const sourceStatus = href ? await fetch(href, {redirect:'manual'}).then(response => response.status).catch(() => 0) : 0;
+    const labelRects = [...(canvas?.querySelectorAll('.knowledge-graph-node-label') || [])].map(item => item.getBoundingClientRect());
+    let labelOverlaps = 0;
+    labelRects.forEach((rect, index) => labelRects.slice(index + 1).forEach(other => {
+      if (rect.left < other.right && rect.right > other.left && rect.top < other.bottom && rect.bottom > other.top) labelOverlaps += 1;
+    }));
     return {
       canvas: !!canvas?.querySelector('canvas'),
       details: Boolean(details && !details.hidden),
@@ -237,6 +242,9 @@ async function runViewport(cdp, viewport) {
       overflow: Math.max(0, document.documentElement.scrollWidth-innerWidth),
       nodeCount: Number(canvas?.dataset.nodeCount || 0),
       minimumNodeDistance: Number(canvas?.dataset.minimumNodeDistance || 0),
+      visibleLabelCount: labelRects.length,
+      labelOverlaps,
+      computedLabelOverlaps: Number(canvas?.dataset.labelOverlapCount || 0),
       consoleTitle: document.title,
     };
   })()`);
@@ -247,9 +255,11 @@ async function runViewport(cdp, viewport) {
   if (graph.rawRef) failures.push("raw ontology ref is visible");
   if (graph.overflow > 1) failures.push(`ontology overflow ${graph.overflow}px`);
   journeys.push(journey("ontology_one_hop_expand", graph.canvas && graph.details && Boolean(graph.title) && Boolean(graph.reason) && Boolean(graph.href) && [200, 303, 307].includes(graph.sourceStatus) && graph.widthRatio >= .9 && graph.inspectorWidthRatio >= .9 && !graph.rawRef && graph.overflow <= 1, graph));
-  const readableLayout = graph.nodeCount > 1 && graph.minimumNodeDistance >= 48;
-  if (!readableLayout) failures.push(`ontology nodes are only ${graph.minimumNodeDistance}px apart`);
-  journeys.push(journey("ontology_readable_layout", readableLayout, {nodeCount:graph.nodeCount,minimumNodeDistance:graph.minimumNodeDistance}));
+  const labelsComplete = graph.nodeCount > 25 || graph.visibleLabelCount === graph.nodeCount;
+  const readableLayout = graph.nodeCount > 1 && graph.minimumNodeDistance >= 48 && labelsComplete
+    && graph.labelOverlaps === 0 && graph.computedLabelOverlaps === 0;
+  if (!readableLayout) failures.push(`ontology layout is unreadable: nodes=${graph.nodeCount}, distance=${graph.minimumNodeDistance}px, labels=${graph.visibleLabelCount}, overlaps=${graph.labelOverlaps}/${graph.computedLabelOverlaps}`);
+  journeys.push(journey("ontology_readable_layout", readableLayout, {nodeCount:graph.nodeCount,minimumNodeDistance:graph.minimumNodeDistance,visibleLabelCount:graph.visibleLabelCount,labelOverlaps:graph.labelOverlaps,computedLabelOverlaps:graph.computedLabelOverlaps}));
   await cdp.eval(`document.querySelector('#knowledge-explorer [data-knowledge-node-close]')?.click()`);
   await wait(cdp, `document.querySelector('#knowledge-explorer [data-knowledge-node-details]')?.hidden === true`);
 
@@ -380,7 +390,12 @@ async function runViewport(cdp, viewport) {
     if (!keyboardSelection.detailsOpen) throw new Error(`Agent graph keyboard selection failed: ${JSON.stringify(keyboardSelection)}`);
     await cdp.eval(`document.querySelector('[data-agent-v2-artifact-focus]')?.click()`);
     await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open')`);
-    const beforeReload = await cdp.eval(`(() => ({
+    const beforeReload = await cdp.eval(`(() => {
+      const canvasNode=document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas');
+      const labelRects=[...(canvasNode?.querySelectorAll('.knowledge-graph-node-label')||[])].map(item=>item.getBoundingClientRect());
+      let labelOverlaps=0;
+      labelRects.forEach((rect,index)=>labelRects.slice(index+1).forEach(other=>{ if(rect.left<other.right&&rect.right>other.left&&rect.top<other.bottom&&rect.bottom>other.top) labelOverlaps+=1; }));
+      return ({
       sessionId: sessionStorage.getItem('boiAgentV2WorkSession') || '',
       progressSeen: window.__boiAcceptanceProgressSeen === true,
       surfaceRef: document.querySelector('[data-agent-v2-workspace]')?.dataset.a2uiSurfaceRef || '',
@@ -389,6 +404,9 @@ async function runViewport(cdp, viewport) {
       painted: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.graphPainted === 'true',
       nodeCount: Number(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.nodeCount || 0),
       minimumNodeDistance: Number(document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.dataset.minimumNodeDistance || 0),
+      visibleLabelCount: labelRects.length,
+      labelOverlaps,
+      computedLabelOverlaps: Number(canvasNode?.dataset.labelOverlapCount || 0),
       canvasHeight: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] .knowledge-graph-canvas')?.getBoundingClientRect().height || 0,
       duplicateConversationComponents: document.querySelectorAll('[data-agent-v2-artifact-list] [data-a2ui-component="Answer"], [data-agent-v2-artifact-list] [data-a2ui-component="CitationList"], [data-agent-v2-artifact-list] [data-a2ui-component="RelatedQuestions"]').length,
       inspector: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-node-details]')?.hidden === false,
@@ -396,7 +414,7 @@ async function runViewport(cdp, viewport) {
       sourceHref: document.querySelector('[data-agent-v2-artifact-list] [data-boi-a2ui-official] [data-knowledge-open-node]')?.getAttribute('href') || '',
       focused: document.querySelector('[data-agent-v2-workspace]')?.classList.contains('artifact-focus-open') || false,
       assistantMessages: document.querySelectorAll('.agent-v2-message.assistant').length,
-    }))()`);
+    }); })()`);
     if (screenshotDir) {
       await cdp.screenshot(join(screenshotDir, `agent-ontology-${viewport.width}x${viewport.height}.png`));
     }
@@ -480,6 +498,8 @@ async function runViewport(cdp, viewport) {
     agentSurface = {checked:true,naturalGraph,...beforeReload,expectedRestoredTitle,restored,invalidRejected,compactLifecyclePassed,officialLifecycle};
     const agentPassed = naturalGraph && beforeReload.progressSeen && beforeReload.canvas && beforeReload.painted
       && beforeReload.nodeCount > 0 && beforeReload.minimumNodeDistance >= 48 && beforeReload.canvasHeight >= 300
+      && (beforeReload.nodeCount > 25 || beforeReload.visibleLabelCount === beforeReload.nodeCount)
+      && beforeReload.labelOverlaps === 0 && beforeReload.computedLabelOverlaps === 0
       && beforeReload.duplicateConversationComponents === 0 && beforeReload.inspector && beforeReload.focused
       && Boolean(beforeReload.selectedTitle) && Boolean(beforeReload.sourceHref) && beforeReload.assistantMessages > 0
       && restored.sessionId === beforeReload.sessionId && restored.focused && restored.inspector

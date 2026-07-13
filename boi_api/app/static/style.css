@@ -2256,10 +2256,56 @@ main.data-library-page {
 }
 
 .knowledge-graph-canvas {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   height: 520px;
   background: #fff;
 }
+
+.knowledge-graph-canvas > canvas { background: transparent !important; }
+
+.knowledge-graph-label-layer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.knowledge-graph-node-label {
+  position: absolute;
+  display: block;
+  height: 26px;
+  overflow: hidden;
+  padding: 4px 8px;
+  border: 1px solid rgb(148 163 184 / 70%);
+  border-radius: 5px;
+  background: rgb(255 255 255 / 94%);
+  color: #172033;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 16px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.knowledge-graph-node-label:hover,
+.knowledge-graph-node-label:focus-visible,
+.knowledge-graph-node-label.selected {
+  z-index: 2;
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1e3a8a;
+  outline: none;
+}
+
+.knowledge-graph-node-label.focal { font-weight: 900; }
 
 .knowledge-graph-legend {
   position: absolute;
@@ -2441,12 +2487,12 @@ boi-a2ui-surface { display:grid; gap:12px; min-width:0; }
   .data-library-store-status { white-space: normal; }
   .integration-row { grid-template-columns: 1fr; }
   .knowledge-graph-shell,
-  .knowledge-graph-canvas { min-height: 420px; height: 420px; }
+  .knowledge-graph-canvas { min-height: 620px; height: 620px; }
   .knowledge-graph-intro { grid-template-columns: 1fr; padding: 16px; }
   .knowledge-graph-hub { margin: 0 12px 18px; }
   .knowledge-graph-hub-layout { grid-template-columns: 1fr; }
-  .knowledge-graph-hub .knowledge-graph-shell { border-right: 0; min-height: 440px; }
-  .knowledge-graph-hub .knowledge-graph-canvas { height: 440px; }
+  .knowledge-graph-hub .knowledge-graph-shell { border-right: 0; min-height: 640px; }
+  .knowledge-graph-hub .knowledge-graph-canvas { height: 640px; }
   .knowledge-node-details { max-height: 45dvh; padding: 12px; }
   .knowledge-node-details-body { grid-template-columns: 1fr; gap: 10px; }
   .knowledge-node-details dl { grid-template-columns: 1fr; }

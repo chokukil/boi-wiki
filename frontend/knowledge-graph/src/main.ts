@@ -51,7 +51,7 @@ const relationColors: Record<string, string> = {
 };
 
 const nodeTitle = (node: GraphNode): string => String(node.payload?.title || "연결된 항목");
-const graphLabel = (value: string): string => value.length > 24 ? `${value.slice(0, 23)}…` : value;
+const graphLabel = (value: string): string => value.length > 18 ? `${value.slice(0, 17)}…` : value;
 
 function seededPosition(value: string, focal: boolean): { x: number; y: number } {
   if (focal) return { x: 0, y: 0 };
@@ -127,6 +127,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
   let resizeObserver: ResizeObserver | null = null;
   let backgroundSuspended = false;
   let hoveredRef = "";
+  let labelLayer: HTMLElement | null = null;
   let primaryPath = new Set<string>();
   let activeRelationFamilies = new Set<string>();
   let restoredState: ExplorerViewState = {};
@@ -165,6 +166,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     resizeObserver = null;
     renderer.kill();
     renderer = null;
+    labelLayer?.replaceChildren();
   };
   const handleBackgroundVisuals = (event: Event) => {
     if (panel.closest(".agent-surface")) return;
@@ -254,6 +256,90 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     renderer?.refresh();
     emitState({ inspectorOpen: false });
     window.requestAnimationFrame(() => renderer?.resize());
+  };
+
+  const labelPriority = (node: string): number => {
+    if (node === selectedRef) return 100;
+    if (node === hoveredRef) return 95;
+    if (node === rootRef) return 90;
+    if (primaryPath.has(node)) return 80;
+    if (selectedRef && graph.hasNode(selectedRef) && graph.areNeighbors(node, selectedRef)) return 70;
+    return Number(graph.getNodeAttribute(node, "displayPriority") || 40);
+  };
+
+  const renderNodeLabels = () => {
+    if (!renderer || !labelLayer || !hasRenderableSize()) return;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    const allNodes = graph.nodes();
+    const visibleNodes = graph.order <= 25
+      ? allNodes
+      : allNodes.filter((node) => labelPriority(node) >= 70);
+    const placed: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+    let overlapCount = 0;
+    const elements: HTMLElement[] = [];
+    const intersects = (box: { left: number; top: number; right: number; bottom: number }) => placed.some(
+      (other) => box.left < other.right + 4 && box.right + 4 > other.left && box.top < other.bottom + 4 && box.bottom + 4 > other.top,
+    );
+    const keepInside = (left: number, top: number, boxWidth: number, boxHeight: number) => ({
+      left: Math.max(6, Math.min(width - boxWidth - 6, left)),
+      top: Math.max(48, Math.min(height - boxHeight - 6, top)),
+      right: Math.max(6, Math.min(width - boxWidth - 6, left)) + boxWidth,
+      bottom: Math.max(48, Math.min(height - boxHeight - 6, top)) + boxHeight,
+    });
+
+    [...visibleNodes].sort((left, right) => labelPriority(right) - labelPriority(left)).forEach((node) => {
+      const attributes = graph.getNodeAttributes(node);
+      const point = renderer!.graphToViewport(attributes);
+      const text = graphLabel(String(attributes.fullLabel || attributes.label || "연결된 항목"));
+      const textUnits = [...text].reduce((total, character) => total + (/[^\u0000-\u00ff]/.test(character) ? 11 : 7), 0);
+      const boxWidth = Math.min(184, Math.max(68, textUnits + 20));
+      const boxHeight = 26;
+      const nodeRadius = Number(attributes.size || 8) + 7;
+      const candidates = [
+        [point.x + nodeRadius, point.y - boxHeight / 2],
+        [point.x - nodeRadius - boxWidth, point.y - boxHeight / 2],
+        [point.x - boxWidth / 2, point.y - nodeRadius - boxHeight],
+        [point.x - boxWidth / 2, point.y + nodeRadius],
+        [point.x + nodeRadius, point.y - nodeRadius - boxHeight],
+        [point.x - nodeRadius - boxWidth, point.y - nodeRadius - boxHeight],
+        [point.x + nodeRadius, point.y + nodeRadius],
+        [point.x - nodeRadius - boxWidth, point.y + nodeRadius],
+      ].map(([left, top]) => keepInside(left, top, boxWidth, boxHeight));
+      let box = candidates.find((candidate) => !intersects(candidate));
+      if (!box) {
+        for (let step = 1; step <= 12 && !box; step += 1) {
+          const offset = step * 18;
+          const alternatives = [
+            keepInside(point.x + nodeRadius, point.y - boxHeight / 2 + offset, boxWidth, boxHeight),
+            keepInside(point.x - nodeRadius - boxWidth, point.y - boxHeight / 2 - offset, boxWidth, boxHeight),
+          ];
+          box = alternatives.find((candidate) => !intersects(candidate));
+        }
+      }
+      if (!box) {
+        box = candidates[0];
+        overlapCount += 1;
+      }
+      placed.push(box);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "knowledge-graph-node-label";
+      button.dataset.nodeId = node;
+      button.dataset.priority = String(labelPriority(node));
+      button.title = String(attributes.fullLabel || text);
+      button.textContent = text;
+      button.style.left = `${Math.round(box.left)}px`;
+      button.style.top = `${Math.round(box.top)}px`;
+      button.style.width = `${Math.round(box.right - box.left)}px`;
+      button.classList.toggle("selected", node === selectedRef);
+      button.classList.toggle("focal", node === rootRef);
+      button.addEventListener("click", () => showDetails(node));
+      elements.push(button);
+    });
+    labelLayer.replaceChildren(...elements);
+    container.dataset.visibleLabelCount = String(elements.length);
+    container.dataset.labelOverlapCount = String(overlapCount);
   };
 
   function handleRestoreState(event: Event): void {
@@ -346,7 +432,10 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
         for (let offset = 0; offset < sorted.length; offset += 12) {
           const ring = sorted.slice(offset, offset + 12);
           ringIndex += 1;
-          const radius = 34 + (ringIndex - 1) * 30;
+          // Keep the first ring large enough to remain readable when a second
+          // ring establishes the camera bounds. This avoids squeezing dense
+          // 20-25 node results into the center of Agent workbenches.
+          const radius = 44 + (ringIndex - 1) * 34;
           const angleOffset = ringIndex % 2 ? -Math.PI / 2 : -Math.PI / 2 + Math.PI / Math.max(3, ring.length);
           ring.forEach((node, index) => {
             const angle = angleOffset + (Math.PI * 2 * index) / Math.max(1, ring.length);
@@ -398,6 +487,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
         url: String(node.payload?.url || ""), summary: String(node.payload?.summary || node.payload?.description || ""),
         kind: String(node.node_type || "업무 지식"), provenance: String(node.payload?.provenance || "근거가 확인된 관계"),
         observedAt: String(node.payload?.observed_at || node.payload?.valid_from || node.payload?.recorded_at || ""),
+        displayPriority: Number(node.payload?.display_priority || (node.node_id === rootRef ? 100 : 40)),
       });
     });
     (payload.edges || []).forEach((edge) => {
@@ -442,10 +532,18 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
     if (!renderer && !backgroundSuspended && hasRenderableSize()) {
       visibilityRetryCount = 0;
       container.dataset.graphPainted = "false";
+      labelLayer = container.querySelector<HTMLElement>(".knowledge-graph-label-layer");
+      if (!labelLayer) {
+        labelLayer = document.createElement("div");
+        labelLayer.className = "knowledge-graph-label-layer";
+        labelLayer.setAttribute("aria-label", "그래프 항목 이름");
+        container.append(labelLayer);
+      }
       renderer = new Sigma(graph, container, {
         edgeProgramClasses: { arrow: EdgeArrowProgram },
         defaultEdgeType: "arrow",
-        renderEdgeLabels: true,
+        renderLabels: false,
+        renderEdgeLabels: false,
         labelDensity: 0.12,
         labelGridCellSize: 120,
         labelRenderedSizeThreshold: 7.5,
@@ -457,7 +555,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
           return {
             ...data,
             color: emphasized ? data.color : "#cbd5e1",
-            forceLabel: graph.order <= 25 || node === rootRef || node === selectedRef || node === hoveredRef || neighbors.has(node) || primaryPath.has(node),
+            forceLabel: false,
             highlighted: node === selectedRef || node === hoveredRef,
             zIndex: emphasized ? 2 : 0,
           };
@@ -472,9 +570,10 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
           const highlighted = primary || incident || source === hoveredRef || target === hoveredRef;
           return {
             ...data,
+            label: "",
             color: highlighted ? String(graph.getEdgeAttribute(edge, "color") || data.color) : "#d7dee8",
             size: primary ? 3.2 : highlighted ? 2 : 1,
-            forceLabel: primary || (incident && graph.order <= 25),
+            forceLabel: false,
             zIndex: highlighted ? 2 : 0,
           };
         },
@@ -488,7 +587,10 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
       } else if (container.clientWidth < 600 && graph.order <= 25) {
         renderer.getCamera().setState({ ratio: 0.68 });
       }
-      renderer.getCamera().on("updated", () => emitState());
+      renderer.getCamera().on("updated", () => {
+        emitState();
+        window.requestAnimationFrame(renderNodeLabels);
+      });
       const updateLayoutMetrics = () => {
         if (!renderer) return;
         const points = graph.nodes().map((node) => renderer!.graphToViewport(graph.getNodeAttributes(node)));
@@ -498,6 +600,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
         }));
         container.dataset.nodeCount = String(points.length);
         container.dataset.minimumNodeDistance = Number.isFinite(minimum) ? String(Math.round(minimum)) : "0";
+        renderNodeLabels();
         if (points.length > 0 && hasRenderableSize()) {
           const firstPaint = container.dataset.graphPainted !== "true";
           container.dataset.graphPainted = "true";
@@ -510,8 +613,8 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
         }
       };
       renderer.on("afterRender", updateLayoutMetrics);
-      renderer.on("enterNode", ({ node }) => { hoveredRef = node; renderer?.refresh(); });
-      renderer.on("leaveNode", () => { hoveredRef = ""; renderer?.refresh(); });
+      renderer.on("enterNode", ({ node }) => { hoveredRef = node; renderer?.refresh(); renderNodeLabels(); });
+      renderer.on("leaveNode", () => { hoveredRef = ""; renderer?.refresh(); renderNodeLabels(); });
       renderer.on("clickNode", async ({ node }) => {
         showDetails(node);
         if (activeView !== "explorer" || graph.order >= MAX_NODES) return;
@@ -541,6 +644,7 @@ async function render(panel: HTMLElement, initialPayload?: GraphPayload): Promis
         }
         renderer.resize();
         renderer.refresh();
+        window.requestAnimationFrame(renderNodeLabels);
       });
       resizeObserver.observe(container);
       renderer.scheduleRefresh();

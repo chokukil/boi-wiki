@@ -385,7 +385,7 @@ DRAFT_SCHEMAS: dict[str, dict[str, Any]] = {
 
 
 class AgentV2Service:
-    SEMANTIC_ROUTE_CACHE_VERSION = "11"
+    SEMANTIC_ROUTE_CACHE_VERSION = "14"
     SEMANTIC_ROUTE_CACHE_TTL_SECONDS = 900
     STARTER_SUGGESTION_VERSION = "2"
 
@@ -2789,6 +2789,107 @@ class AgentV2Service:
         except Exception:
             return fallback, []
 
+    def _grounded_answer_from_plan(
+        self,
+        principal: Principal,
+        session: dict[str, Any],
+        raw_answer: Any,
+        evidence: list[EvidenceRef],
+        citations: list[CitationRef],
+        *,
+        primary_source_ref: str = "",
+    ) -> tuple[AnswerBlock, list[RelatedQuestion]] | None:
+        """Render a planner answer only when every claim resolves to a retrieved citation."""
+        if not isinstance(raw_answer, dict) or not evidence or not citations:
+            return None
+        citation_by_source = {item.source_ref: item for item in citations}
+        evidence_by_source = {item.evidence_id: item for item in evidence}
+        number_by_ref = {
+            item.source_ref: index
+            for index, item in enumerate(citations, start=1)
+            if item.source_ref in evidence_by_source
+        }
+
+        def refs_for(value: Any) -> list[str]:
+            return list(
+                dict.fromkeys(
+                    str(item)
+                    for item in value or []
+                    if str(item) in citation_by_source and str(item) in evidence_by_source
+                )
+            )[:4]
+
+        def clean(value: Any, limit: int) -> str:
+            text = compact_text(str(value or ""), limit)
+            text = re.sub(r"\s*\[(?:\d+(?:\s*,\s*\d+)*)\]", "", text)
+            text = re.sub(r"\s*\(\s*출처\s*\d+(?:\s*,\s*\d+)*\s*\)", "", text)
+            return text.strip()
+
+        summary = clean(raw_answer.get("summary"), 620)
+        summary_refs = refs_for(raw_answer.get("summary_source_refs"))
+        if not summary or not summary_refs:
+            return None
+        lines = [
+            f"{summary} "
+            + " ".join(
+                f"[{number_by_ref[ref]}](/api/v2/citations/{citation_by_source[ref].citation_id})"
+                for ref in summary_refs
+            )
+        ]
+        used_refs = set(summary_refs)
+        rendered_sections = 0
+        rendered_items = 0
+        for raw_outcome in (raw_answer.get("outcomes") or [])[:3]:
+            if not isinstance(raw_outcome, dict) or rendered_items >= 6:
+                continue
+            title = clean(raw_outcome.get("title"), 90)
+            items: list[str] = []
+            for raw_item in (raw_outcome.get("items") or [])[:4]:
+                if not isinstance(raw_item, dict) or rendered_items >= 6:
+                    continue
+                text = clean(raw_item.get("text"), 380)
+                refs = refs_for(raw_item.get("source_refs"))
+                if not text or not refs:
+                    continue
+                used_refs.update(refs)
+                markers = " ".join(
+                    f"[{number_by_ref[ref]}](/api/v2/citations/{citation_by_source[ref].citation_id})"
+                    for ref in refs
+                )
+                items.append(f"- {text} {markers}")
+                rendered_items += 1
+            if title and items:
+                lines.extend(["", f"### {title}", *items])
+                rendered_sections += 1
+        if not rendered_sections:
+            return None
+        if primary_source_ref and primary_source_ref in citation_by_source and primary_source_ref not in used_refs:
+            return None
+        lines.extend(["", "### 사용한 지식"])
+        ordered_used_refs = [item.evidence_id for item in evidence if item.evidence_id in used_refs]
+        for ref in ordered_used_refs:
+            item = evidence_by_source[ref]
+            citation = citation_by_source[ref]
+            link = f"[{item.title}]({item.url})" if item.url else item.title
+            lines.append(f"- {link} [근거](/api/v2/citations/{citation.citation_id})")
+
+        citation_order = [citation_by_source[ref] for ref in ordered_used_refs]
+        related_number_by_ref = {
+            item.source_ref: index for index, item in enumerate(citation_order, start=1)
+        }
+        raw_related = []
+        for item in (raw_answer.get("related_questions") or [])[:3]:
+            if not isinstance(item, dict):
+                continue
+            source_numbers = [
+                related_number_by_ref[ref]
+                for ref in refs_for(item.get("source_refs"))
+                if ref in related_number_by_ref
+            ]
+            raw_related.append({**item, "source_numbers": source_numbers})
+        related = self._model_related_questions(principal, session, raw_related, citation_order)
+        return AnswerBlock(summary=summary, markdown="\n".join(lines)), related
+
     @staticmethod
     def _diagram_label(value: Any, limit: int) -> str:
         text = compact_text(str(value or ""), limit)
@@ -4736,11 +4837,16 @@ class AgentV2Service:
                         "ref": item.evidence_id,
                         "title": item.title,
                         "kind": item.kind,
-                        "summary": compact_text(item.summary, 180),
+                        "summary": compact_text(item.summary, 620),
                         "authority": item.authority,
                         "source": item.source,
+                        "is_primary": bool(
+                            page_anchor_for_route
+                            and page_anchor_for_route.resolved
+                            and item.evidence_id == page_anchor_for_route.ref
+                        ),
                     }
-                    for item in planner_search.items[:6]
+                    for item in planner_search.items[:4]
                 ]
             except Exception:
                 planner_hints = []
@@ -5089,11 +5195,38 @@ class AgentV2Service:
             ]
             if item and self._record_for_ref(principal, item)
         }
+        planned_grounded_answer = route.get("grounded_answer")
+        planned_grounded_refs: set[str] = set()
+        if isinstance(planned_grounded_answer, dict):
+            planned_grounded_refs.update(
+                str(item)
+                for item in planned_grounded_answer.get("summary_source_refs") or []
+                if str(item)
+            )
+            for outcome in planned_grounded_answer.get("outcomes") or []:
+                if not isinstance(outcome, dict):
+                    continue
+                for item in outcome.get("items") or []:
+                    if isinstance(item, dict):
+                        planned_grounded_refs.update(
+                            str(ref) for ref in item.get("source_refs") or [] if str(ref)
+                        )
+            for item in planned_grounded_answer.get("related_questions") or []:
+                if isinstance(item, dict):
+                    planned_grounded_refs.update(
+                        str(ref) for ref in item.get("source_refs") or [] if str(ref)
+                    )
+        planner_answer_is_bounded = bool(
+            planned_grounded_refs
+            and planned_grounded_refs.issubset(planner_evidence_ids)
+        )
         planner_search_covers_intent = bool(
             planner_search is not None
             and not include_history
             and capability_id != "cases.similar"
             and (
+                planner_answer_is_bounded
+                or
                 retrieval_query == request.question
                 or (
                     required_planner_refs
@@ -5648,20 +5781,35 @@ class AgentV2Service:
                     ],
                 ]
             ).strip()
-            answer, generated_related_questions = self._grounded_search_answer(
+            primary_source_ref = (
+                context.page_anchor.ref
+                if context.page_anchor and context.page_anchor.resolved
+                else ""
+            )
+            planned_answer = self._grounded_answer_from_plan(
                 principal,
                 session,
-                resolved_goal,
+                route.get("grounded_answer"),
                 evidence,
                 citations,
-                guidance=helper_guidance,
-                desired_outcome=intent.desired_outcome,
-                primary_source_ref=(
-                    context.page_anchor.ref
-                    if context.page_anchor and context.page_anchor.resolved
-                    else ""
-                ),
+                # The current page is a retrieval anchor, not a mandatory
+                # citation. Every planner claim is already constrained to and
+                # revalidated against the retrieved citation set.
+                primary_source_ref="",
             )
+            if planned_answer is not None and not helper_guidance:
+                answer, generated_related_questions = planned_answer
+            else:
+                answer, generated_related_questions = self._grounded_search_answer(
+                    principal,
+                    session,
+                    resolved_goal,
+                    evidence,
+                    citations,
+                    guidance=helper_guidance,
+                    desired_outcome=intent.desired_outcome,
+                    primary_source_ref=primary_source_ref,
+                )
             if route.get("source") == "safe_fallback":
                 status = "needs_input"
                 protected_local_models = (

@@ -30,6 +30,7 @@ class QuickAgentState(TypedDict, total=False):
     capability_id: str
     work_intent: dict[str, Any]
     continuation: dict[str, Any]
+    grounded_answer: dict[str, Any] | None
     route_source: str
     route_reason: str
     planner_error: str
@@ -142,32 +143,15 @@ class QuickAgentRuntime:
             for item in self.registry.all()
         ]
 
-    def _planner_schema(self) -> dict[str, Any]:
+    def _planner_schema(self, *, include_continuation: bool = False) -> dict[str, Any]:
         capability_ids = [item.capability_id for item in self.registry.all()]
-        return {
+        schema = {
             "type": "object",
             "required": [
                 "capability_id",
                 "asset_kind",
                 "operation",
-                "operation_plan",
-                "scope",
-                "desired_outcome",
-                "resolved_goal",
-                "retrieval_query",
                 "presentation_mode",
-                "work_view",
-                "current_scope_explicit",
-                "context_refs",
-                "result_purpose",
-                "requested_asset_kinds",
-                "artifact_actions",
-                "needs_clarification",
-                "confidence",
-                "reason",
-                "continue_active_run",
-                "continuation_kind",
-                "user_confirmation",
             ],
             "properties": {
                 "capability_id": {"type": "string", "enum": capability_ids},
@@ -257,8 +241,81 @@ class QuickAgentRuntime:
                     "type": "boolean",
                     "description": "True only when the user explicitly reports that a person reviewed the pending completion items and recorded the result.",
                 },
+                "grounded_answer": {
+                    "type": "object",
+                    "description": (
+                        "For an ordinary read-only prose knowledge.search question, the grounded answer produced in "
+                        "this planning call. Every source_refs value must come from wiki_hybrid_hints. Return an "
+                        "empty object for every other operation or when the hints are insufficient. The server "
+                        "validates the complete prose shape before using it."
+                    ),
+                    "properties": {
+                        "summary": {"type": "string", "maxLength": 420},
+                        "summary_source_refs": {
+                            "type": "array",
+                            "maxItems": 4,
+                            "items": {"type": "string"},
+                        },
+                        "outcomes": {
+                            "type": "array",
+                            "maxItems": 1,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string", "maxLength": 90},
+                                    "items": {
+                                        "type": "array",
+                                        "maxItems": 3,
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "text": {"type": "string", "maxLength": 300},
+                                                "source_refs": {
+                                                    "type": "array",
+                                                    "maxItems": 4,
+                                                    "items": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        "related_questions": {
+                            "type": "array",
+                            "maxItems": 1,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {"type": "string", "enum": ["understand", "connect", "apply"]},
+                                    "label": {"type": "string", "maxLength": 120},
+                                    "question": {"type": "string", "maxLength": 600},
+                                    "source_refs": {
+                                        "type": "array",
+                                        "maxItems": 4,
+                                        "items": {"type": "string"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
             },
         }
+        for derived_field in ("operation_plan", "desired_outcome", "reason"):
+            if derived_field in schema["required"]:
+                schema["required"].remove(derived_field)
+            schema["properties"].pop(derived_field, None)
+        if not include_continuation:
+            for continuation_field in (
+                "continue_active_run",
+                "continuation_kind",
+                "user_confirmation",
+            ):
+                if continuation_field in schema["required"]:
+                    schema["required"].remove(continuation_field)
+                schema["properties"].pop(continuation_field, None)
+        return schema
 
     def _explicit_plan(self, state: QuickAgentState, capability_id: str, source: str) -> dict[str, Any]:
         definition = self.registry.get(capability_id)
@@ -397,15 +454,20 @@ class QuickAgentRuntime:
             "Resolve short follow-ups into standalone resolved_goal using only recent messages, active artifact/page, and trusted "
             "refs. Preserve the prior subject for follow-ups, but drop it for a clearly new topic. retrieval_query keeps the named "
             "subject and relationship while removing display, transform, and negative-constraint instructions. Keep both fields in "
-            "the user's language. desired_outcome must also be short, natural user-facing Korean without API names, code, field "
-            "names, or implementation modes. context_refs may contain only trusted_context_refs.\n"
+            "the user's language. context_refs may contain only trusted_context_refs.\n"
             "Choose presentation_mode by requested result: prose for explanation, table for comparison or compact structured data, "
             "timeline for temporal history, mermaid for an actual requested diagram, explorer for a larger relationship set, and "
             "artifact for an editable deliverable. Explorer requires an enabled graph query with a focal subject. A flow mentioned "
             "in prose is not automatically a diagram. result_purpose is explain, compare, design, transform, or execute. Never add "
             "SOP, Task, Event, or Action incidentally. artifact_actions is empty for explain/compare; split_tasks and "
             "create_sop_draft require an explicit conversion request. Never invent refs, targets, capability IDs, confirmation, or "
-            "permissions."
+            "permissions. For an ordinary read-only prose question routed to knowledge.search, "
+            "grounded_answer MUST be a non-empty answer produced in this same call from the supplied wiki_hybrid_hints. Include "
+            "only claims supported by those hints and copy their exact ref "
+            "values into every source_refs field. Keep the conclusion short, use one section with no more than three outcome "
+            "items, and suggest no more than one related question. Omit "
+            "the content by returning grounded_answer={} for drafts, mutations, current/combined work views, diagrams, or when "
+            "the hints are insufficient. The empty object is valid and must not be filled with placeholder fields."
         )
         prompt = json.dumps(
             {
@@ -433,7 +495,11 @@ class QuickAgentRuntime:
             ensure_ascii=False,
         )
         try:
-            planned = model.generate_structured(system=system, prompt=prompt, schema=self._planner_schema())
+            planned = model.generate_structured(
+                system=system,
+                prompt=prompt,
+                schema=self._planner_schema(include_continuation=bool(state.get("active_work_run"))),
+            )
             capability_id = str(planned.get("capability_id") or "")
             definition = self.registry.get(capability_id)
             operation = str(planned.get("operation") or "understand")
@@ -574,6 +640,78 @@ class QuickAgentRuntime:
             )[: len(self._artifact_actions)]
             if result_purpose not in {"design", "transform"} or operation not in {"create", "refine"}:
                 artifact_actions = []
+            hint_refs = list(dict.fromkeys(
+                str(item.get("ref") or "")
+                for item in (state.get("knowledge_hints") or [])
+                if isinstance(item, dict) and str(item.get("ref") or "").strip()
+            ))
+            hint_ref_set = set(hint_refs)
+            grounded_answer = None
+            raw_grounded_answer = planned.get("grounded_answer")
+            if (
+                capability_id == "knowledge.search"
+                and operation in {"understand", "compare", "connect"}
+                and presentation_mode == "prose"
+                and work_view == "none"
+                and isinstance(raw_grounded_answer, dict)
+                and hint_ref_set
+            ):
+                summary = str(raw_grounded_answer.get("summary") or "").strip()[:420]
+                summary_refs = list(
+                    dict.fromkeys(
+                        str(item)
+                        for item in raw_grounded_answer.get("summary_source_refs") or []
+                        if str(item) in hint_ref_set
+                    )
+                )[:4]
+                outcomes: list[dict[str, Any]] = []
+                item_count = 0
+                for raw_outcome in (raw_grounded_answer.get("outcomes") or [])[:1]:
+                    if not isinstance(raw_outcome, dict) or item_count >= 3:
+                        continue
+                    items: list[dict[str, Any]] = []
+                    for raw_item in (raw_outcome.get("items") or [])[:3]:
+                        if not isinstance(raw_item, dict) or item_count >= 3:
+                            continue
+                        text = str(raw_item.get("text") or "").strip()[:300]
+                        refs = list(
+                            dict.fromkeys(
+                                str(item)
+                                for item in raw_item.get("source_refs") or []
+                                if str(item) in hint_ref_set
+                            )
+                        )[:4]
+                        if text and refs:
+                            items.append({"text": text, "source_refs": refs})
+                            item_count += 1
+                    title = str(raw_outcome.get("title") or "").strip()[:90]
+                    if title and items:
+                        outcomes.append({"title": title, "items": items})
+                related_questions: list[dict[str, Any]] = []
+                for raw_question in (raw_grounded_answer.get("related_questions") or [])[:1]:
+                    if not isinstance(raw_question, dict):
+                        continue
+                    refs = list(
+                        dict.fromkeys(
+                            str(item)
+                            for item in raw_question.get("source_refs") or []
+                            if str(item) in hint_ref_set
+                        )
+                    )[:4]
+                    kind = str(raw_question.get("kind") or "understand")
+                    label = str(raw_question.get("label") or "").strip()[:120]
+                    question = str(raw_question.get("question") or "").strip()[:600]
+                    if kind in {"understand", "connect", "apply"} and label and question and refs:
+                        related_questions.append(
+                            {"kind": kind, "label": label, "question": question, "source_refs": refs}
+                        )
+                if summary and summary_refs and outcomes:
+                    grounded_answer = {
+                        "summary": summary,
+                        "summary_source_refs": summary_refs,
+                        "outcomes": outcomes,
+                        "related_questions": related_questions,
+                    }
             trusted_ref_set = set(trusted_context_refs)
             context_refs = list(
                 dict.fromkeys(
@@ -582,16 +720,44 @@ class QuickAgentRuntime:
                     if str(item) in trusted_ref_set
                 )
             )[:20]
+            explorer_focal_refs = context_refs or hint_refs[:1]
+            if presentation_mode == "explorer" and graph_query_draft is None and explorer_focal_refs:
+                # The model has already selected an interactive relationship
+                # result. Complete an omitted traversal contract only from
+                # ACL-visible refs; do not reinterpret request wording here.
+                graph_query_draft = {
+                    "enabled": True,
+                    "query_kind": "neighbors",
+                    "focal_mentions": explorer_focal_refs[:1],
+                    "target_mentions": [],
+                    "node_kinds": [],
+                    "relation_kinds": [],
+                    "direction": "both",
+                    "depth": 2,
+                    "time_from": "",
+                    "time_to": "",
+                    "presentation": "explorer",
+                }
+            desired_outcome = {
+                "run": "run_result",
+                "test": "run_result",
+                "complete": "completion_record",
+                "capture": "knowledge_candidate",
+                "promote": "promotion_request",
+                "create": "draft",
+                "refine": "draft",
+                "validate": "validation_result",
+            }.get(operation, "answer")
             work_intent = {
                 "goal": str(state.get("question") or ""),
                 "resolved_goal": resolved_goal[:12000],
                 "retrieval_query": retrieval_query[:12000],
                 "asset_kind": asset_kind,
                 "operation": operation,
-                "operation_plan": self._operation_plan(operation, planned.get("operation_plan")),
+                "operation_plan": self._operation_plan(operation),
                 "target_ref": str(planned.get("target_ref") or state.get("task_ref") or state.get("page_ref") or ""),
                 "scope": str(planned.get("scope") or "auto"),
-                "desired_outcome": str(planned.get("desired_outcome") or "answer"),
+                "desired_outcome": desired_outcome,
                 "presentation_mode": presentation_mode,
                 "work_view": work_view,
                 "graph_query_draft": graph_query_draft,
@@ -618,7 +784,8 @@ class QuickAgentRuntime:
                     "user_confirmation": bool(planned.get("user_confirmation", False)) if continue_active_run else False,
                 },
                 "route_source": "llm_structured",
-                "route_reason": str(planned.get("reason") or "semantic_work_intent"),
+                "route_reason": "semantic_work_intent",
+                "grounded_answer": grounded_answer,
                 "trace": [*(state.get("trace") or []), "plan:llm_structured"],
             }
         except Exception as exc:
@@ -732,5 +899,6 @@ class QuickAgentRuntime:
             "source": result.get("route_source") or "",
             "reason": result.get("route_reason") or "",
             "planner_error": result.get("planner_error") or "",
+            "grounded_answer": result.get("grounded_answer"),
             "trace": result.get("trace") or [],
         }
