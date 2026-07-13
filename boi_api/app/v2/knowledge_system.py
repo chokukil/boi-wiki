@@ -104,8 +104,8 @@ class LivingKnowledgeService:
         self._adapter_worker_stop = threading.Event()
         self._adapter_worker_thread: threading.Thread | None = None
         self._ensure_defaults()
-        self._resume_adapter_jobs()
-        self._ensure_adapter_worker()
+        if self._resume_adapter_jobs():
+            self._ensure_adapter_worker()
 
     def directory_principals(self, current: Principal) -> list[Principal]:
         rows: list[Principal] = []
@@ -707,7 +707,8 @@ class LivingKnowledgeService:
         self._adapter_worker_event.set()
         return job
 
-    def _resume_adapter_jobs(self) -> None:
+    def _resume_adapter_jobs(self) -> bool:
+        resumed = False
         for job in self.store.list("knowledge_source_jobs", limit=500):
             if str(job.get("status") or "") not in {"queued", "running"}:
                 continue
@@ -716,6 +717,8 @@ class LivingKnowledgeService:
                 continue
             job.update({"status": "queued", "stage": "queued", "recovered_after_restart": True, "queued_at": now_iso()})
             self.store.put("knowledge_source_jobs", str(job["job_id"]), job)
+            resumed = True
+        return resumed
 
     def cancel_source_job(self, principal: Principal, job_id: str) -> dict[str, Any]:
         job = self.source_job(principal, job_id)

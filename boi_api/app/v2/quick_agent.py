@@ -534,6 +534,23 @@ class QuickAgentRuntime:
                         work_view = "combined" if reviewed_view == "current" and not explicit_current_only else reviewed_view
                 except Exception:
                     pass
+            planned_asset_kinds = {
+                str(item).strip()
+                for item in planned.get("requested_asset_kinds") or []
+                if str(item).strip()
+            }
+            responsibility_asset_kinds = {"person", "team", "role"}
+            if (
+                asset_kind == "runtime"
+                and str(planned.get("scope") or "") == "current"
+                and operation in {"understand", "observe"}
+                and planned_asset_kinds.intersection({"task", "evidence", "runtime"})
+                and not planned_asset_kinds.intersection(responsibility_asset_kinds)
+            ):
+                # Validate the model's own typed intent. A current runtime view
+                # that asks only for Tasks/evidence must not be broadened into
+                # stable Person/Role responsibility relationships.
+                work_view = "current"
             if work_view == "current":
                 capability_id = "work.inbox"
                 definition = self.registry.get(capability_id)

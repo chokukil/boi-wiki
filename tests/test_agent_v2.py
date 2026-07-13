@@ -299,6 +299,7 @@ class BroadWorkQuestionReviewModel(FakeModel):
                     "work_view": "current",
                     "resolved_goal": "현재 업무를 확인한다",
                     "result_purpose": "explain",
+                    "requested_asset_kinds": ["person", "role", "task"],
                 }
             )
             return planned
@@ -319,6 +320,34 @@ class MisroutedCurrentWorkReviewModel(FakeModel):
                     "operation": "understand",
                     "operation_plan": ["understand"],
                     "work_view": "combined",
+                    "graph_query_draft": {
+                        "enabled": True,
+                        "query_kind": "responsibility",
+                        "focal_mentions": ["현재 사용자"],
+                        "presentation": "table",
+                    },
+                }
+            )
+            return planned
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class RuntimeOnlyWrongScopeReviewModel(FakeModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if required == {"work_view", "explicit_current_only", "reason"}:
+            return {"work_view": "combined", "explicit_current_only": False, "reason": "범위를 과도하게 확장함"}
+        if {"capability_id", "asset_kind", "operation", "operation_plan", "scope"} <= required:
+            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            planned.update(
+                {
+                    "capability_id": "knowledge.search",
+                    "asset_kind": "runtime",
+                    "operation": "understand",
+                    "operation_plan": ["understand"],
+                    "scope": "current",
+                    "work_view": "combined",
+                    "requested_asset_kinds": ["task", "evidence"],
                     "graph_query_draft": {
                         "enabled": True,
                         "query_kind": "responsibility",
@@ -1740,6 +1769,27 @@ def test_current_work_scope_review_corrects_an_initial_relationship_overreach(
     monkeypatch: pytest.MonkeyPatch,
 ):
     model = MisroutedCurrentWorkReviewModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    monkeypatch.setattr(v2_service.repository, "current_work", lambda _principal, limit=50: [])
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="내가 지금 처리해야 할 업무와 먼저 확인할 근거를 보여줘.", page_ref="/inbox"),
+    )
+
+    assert response.capability_id == "work.inbox"
+    assert response.work_intent and response.work_intent.work_view == "current"
+    assert response.graph_result_ref == ""
+    assert response.artifact_refs == []
+
+
+def test_current_runtime_contract_prevents_a_scope_reviewer_from_adding_role_graphs(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = RuntimeOnlyWrongScopeReviewModel()
     v2_service.model = model
     v2_service.search.model = model
     monkeypatch.setattr(v2_service.repository, "current_work", lambda _principal, limit=50: [])
@@ -5121,9 +5171,10 @@ def test_adapter_running_job_is_requeued_after_restart(
             "created_at": now_iso(),
         },
     )
-    v2_service.knowledge._resume_adapter_jobs()
+    assert v2_service.knowledge._resume_adapter_jobs() is True
+    v2_service.knowledge._ensure_adapter_worker()
     recovered = v2_service.knowledge.source_job(admin, job_id)
-    assert recovered["status"] == "queued"
+    assert recovered["status"] in {"queued", "running", "completed"}
     assert recovered["recovered_after_restart"] is True
     v2_service.knowledge._adapter_worker_event.set()
     deadline = time.monotonic() + 3

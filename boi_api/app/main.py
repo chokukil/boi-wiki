@@ -8238,6 +8238,7 @@ def citation_rows_for_doc(
                     label = doc_display_title(target_doc)
                 else:
                     url = source_url_for_ref(ref, employee_id)
+        managed_source = ref.startswith(("data/boi/", "data/action_catalog/", "data/event_catalog/"))
         repo_source = False
         if not label and ref:
             repo_candidate = (REPO_ROOT / ref).resolve()
@@ -8246,7 +8247,7 @@ def citation_rows_for_doc(
             except ValueError:
                 repo_candidate = Path("/__invalid_source_ref__")
             if repo_candidate.is_file():
-                repo_source = True
+                repo_source = not managed_source
                 try:
                     raw_text = repo_candidate.read_text(encoding="utf-8", errors="replace") if repo_candidate.suffix.lower() == ".md" else ""
                     metadata, body = split_frontmatter(raw_text) if raw_text else ({}, "")
@@ -8263,7 +8264,19 @@ def citation_rows_for_doc(
                     label = friendly_repo_labels.get(repo_candidate.stem, label)
                 except OSError:
                     label = ""
-        if ref and not repo_source:
+        if managed_source:
+            url = source_url_for_ref(ref, employee_id)
+            managed_labels = {
+                "action_catalog": "연결된 근거 · Action 카탈로그 원본",
+                "event_catalog": "연결된 근거 · Event 카탈로그 원본",
+            }
+            label = str(
+                item.get("title")
+                or item.get("label")
+                or managed_labels.get(str(item.get("type") or ""))
+                or label
+            ).strip()
+        elif ref and not repo_source:
             candidate = (REPO_ROOT / ref).resolve()
             try:
                 candidate.relative_to(REPO_ROOT.resolve())
@@ -8817,6 +8830,15 @@ def apply_source_edit(
             source_path,
             f"Apply BoI source edit {source_ref_for_path(source_path)}",
         )
+        if (
+            str(commit.get("status") or "") == "failed"
+            and os.getenv("BOI_EDIT_REQUIRE_COMMIT", "true").lower() not in {"1", "true", "yes", "on"}
+        ):
+            commit = {
+                **commit,
+                "status": "unavailable",
+                "message": "Git commit is unavailable for this optional edit target.",
+            }
         try:
             require_edit_commit_success(commit, changed=True)
         except HTTPException:
@@ -30253,7 +30275,11 @@ def inbox_workflow_items_for_refs(employee_id: str, task_refs: list[str]) -> dic
         # deterministic path reads cached runtime logs only and never invokes a
         # model or semantic search.
         try:
-            snapshot_context, _snapshot_row = task_execution_context_fast(employee_id, task_ref)
+            snapshot_context, _snapshot_row = task_execution_context_fast(
+                employee_id,
+                task_ref,
+                row_override=row,
+            )
             item["_workflow_context"] = snapshot_context
         except HTTPException:
             item["_workflow_context"] = inbox_report_workflow_context(item)
@@ -30350,9 +30376,14 @@ def attach_inbox_workflow_canvases(
     return payload
 
 
-def task_execution_context_fast(employee_id: str, task_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def task_execution_context_fast(
+    employee_id: str,
+    task_id: str,
+    *,
+    row_override: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build the deterministic Task snapshot without Agent/search enrichment."""
-    row = visible_agent_inbox_task_row(
+    row = copy.deepcopy(row_override) if row_override is not None else visible_agent_inbox_task_row(
         task_id,
         employee_id,
         allowed_statuses={"manual_required", "approval_required", "manual_blocked", "needs_followup"},
