@@ -87,6 +87,8 @@ BoI Wiki의 `연결 관계`에서 문서, 사람, 팀, SOP, Workflow, Task, Even
 - 관계를 뒷받침하는 이동 가능한 근거
 - 해당 문서나 업무 화면으로 이동하는 명령
 
+그래프 안에는 항목 이름과 방향 화살표를 우선 표시한다. 관계 문구를 모든 선 위에 반복하면 교차 지점에서 읽을 수 없으므로, 선택 경로의 관계 이름과 provenance는 범례·필터·아래쪽 정보 영역에서 확인한다.
+
 아래쪽 정보 영역은 데스크톱에서 최대 220px, 모바일에서 화면 높이의 45%까지만 사용한다. 열고 닫아도 그래프 폭은 바뀌지 않으며 ResizeObserver가 남은 높이에 맞춰 canvas를 조정한다. `Esc`는 선택 정보부터 닫고, Agent 안에서는 이어서 결과 크게 보기와 Expanded를 순서대로 닫는다. 선택 노드와 확대 위치는 작업별로 복원한다.
 
 ![949px 폭에서도 그래프 폭을 유지하는 관계 탐색 화면](../_media/browser/current-guide/20260713-ontology-explorer-949x1151.png)
@@ -141,7 +143,7 @@ flowchart LR
 
 관리자가 staging 영역의 `graph.json`을 Source로 등록하면 구조 node·edge, source 위치, community와 centrality를 읽는다. 기존 import manifest와 비교해 사라진 관계만 tombstone 처리하고 변경된 source 소유 항목을 upsert한다. EXTRACTED, INFERRED, AMBIGUOUS provenance를 보존하며 정본 Markdown은 바꾸지 않는다.
 
-Graphify CLI는 선택 설치다. 2026-07-13 release gate에서는 격리된 실제 CLI에 `extract <source> --code-only --no-cluster` 계약으로 작은 Python corpus를 전달해 7개 node와 7개 edge를 만들고 import와 rollback을 검증했다. CLI가 없거나 export 검증이 실패해도 기본 BoI 검색, Ontology와 Agent는 계속 동작한다.
+Graphify CLI는 선택 설치다. 2026-07-14 release gate에서는 격리된 실제 CLI에 `extract <source> --code-only --no-cluster` 계약으로 작은 Python corpus를 전달해 5개 node와 6개 edge를 만들고 import와 rollback을 검증했다. CLI가 없거나 export 검증이 실패해도 기본 BoI 검색, Ontology와 Agent는 계속 동작한다.
 
 ## OpenKB export
 

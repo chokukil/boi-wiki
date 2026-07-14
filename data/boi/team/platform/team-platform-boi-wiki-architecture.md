@@ -248,7 +248,7 @@ flowchart LR
 
 Web client는 저장된 surface를 다시 조회하고 허용된 component registry로 실제 DOM을 만든다. 표, Timeline, Mermaid, Ontology Explorer, WorkRecordForm, EvidencePicker와 Confirmation이 1차 catalog다. Confirmation은 기존 plan·Harness·confirmation API만 호출하며 relation presentation hint가 work routine handler를 가로채지 못한다. surface validation과 fallback 상태는 Advanced `연결 상태`의 관리자용 접힌 진단에서만 확인하며 일반 사용자에게 protocol 이름을 노출하지 않는다.
 
-Ontology Explorer는 Agent와 `/knowledge-graph`가 같은 Graphology·Sigma renderer를 사용한다. Agent Expanded에서는 관계 artifact에 34:66 분할을 적용하고, 680px보다 좁은 첫 canvas는 결과 집중 보기로 전환한다. 선택 상세는 canvas 옆 열을 만들지 않고 아래쪽 inspector로 열어 그래프 폭을 보존한다. `PetSurfaceState`는 artifact별 선택 node, inspector, camera와 focus mode를 저장한다. Compact에서는 Sigma instance를 만들지 않으며 배경으로 내려간 renderer도 camera를 저장한 뒤 해제한다.
+Ontology Explorer는 Agent와 `/knowledge-graph`가 같은 Graphology·Sigma renderer를 사용한다. Agent Expanded에서는 관계 artifact에 34:66 분할을 적용하고, 680px보다 좁은 첫 canvas는 결과 집중 보기로 전환한다. 선택 상세는 canvas 옆 열을 만들지 않고 아래쪽 inspector로 열어 그래프 폭을 보존한다. canvas는 node label과 방향 화살표를 우선하고 관계 이름·provenance는 범례, 필터와 inspector에서 제공해 교차 edge의 문구 겹침을 막는다. `PetSurfaceState`는 artifact별 선택 node, inspector, camera와 focus mode를 저장한다. Compact에서는 Sigma instance를 만들지 않으며 배경으로 내려간 renderer도 camera를 저장한 뒤 해제한다.
 
 Mermaid runtime은 versioned module chunk로 번들링해 gzip으로 전송하고 browser idle에 미리 준비한다. transient load는 두 번 재시도하고 문법 오류와 구분한다. 실제 SVG compile은 질문 대상의 검증된 Ontology 관계를 우선하는 deterministic artifact source를 사용하며 답변·후속 질문·동적 화면 때문에 별도 LLM 호출을 추가하지 않는다. OpenKB compatibility gateway도 모델 관리 API를 호출하지 않고, `json_object` 요청만 일반 JSON 요청으로 변환한 뒤 schema 검증과 단 한 번의 복구를 수행한다.
 

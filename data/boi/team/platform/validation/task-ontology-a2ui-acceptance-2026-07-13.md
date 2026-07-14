@@ -5,7 +5,7 @@ type: boi/validation-report
 title: Task·Ontology·동적 결과 Acceptance 2026-07-13
 description: 실제 handler, 브라우저와 로컬 Gemma로 Task·Ontology·동적 결과 계약을 재검증한 결과
 tags: [Validation, Task, Ontology, A2UI, Harness, Browser, Gemma]
-timestamp: 2026-07-14T23:20:00+09:00
+timestamp: 2026-07-14T08:45:00+09:00
 boi_id: boi:team:platform:validation:task-ontology-a2ui-2026-07-13
 visibility: team
 team_id: platform
@@ -36,15 +36,15 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-14T23:20:00+09:00
+  reviewed_at: 2026-07-14T08:45:00+09:00
   review_status: needs_revision
 ---
 
 # 실행 기준
 
-> 이 문서는 재검증 감사 문서다. 빈 Ontology 그래프, Mermaid 초기 로드 실패와 자체 renderer 결함을 고친 뒤 결정적·clean 회귀·브라우저·Gemma·검색·parity·Adapter gate를 통과했다. 장문 grounded 답변 p95가 10초 기준을 넘고 fresh runtime Planner 실패가 한 차례 재현됐으므로 검증 상태는 `needs_revision`이다.
+> 이 문서는 재검증 감사 문서다. 빈 Ontology 그래프, Mermaid 초기 로드 실패와 자체 renderer 결함을 고친 뒤 결정적·브라우저·Gemma·Adapter gate를 다시 실행했다. 로컬 Gemma의 grounded 최종 응답 p95가 10초 기준을 넘으므로 검증 상태는 `needs_revision`이다. 기능 통과와 응답 성능 미달을 합쳐 완료로 기록하지 않는다.
 
-- 검증 기준: `4a3613d` 공식 A2UI·Mermaid·typed Ontology·실제 browser journey
+- 검증 기준: `4ca4743` 공식 A2UI·Mermaid·typed Ontology·grounded follow-up·실제 browser journey
 - fixture version: `1.0`
 - generation model: `google/gemma-4-26b-a4b-qat`
 - embedding model: `text-embedding-bge-m3`
@@ -56,27 +56,27 @@ review:
 | 영역 | 결과 |
 |---|---:|
 | 실제 scenario handler | 50/50 |
-| clean 전체 pytest | 821 passed · 현재 HEAD 단일 실행 · 25분 32초 · deprecation warning 1,904건 |
-| Gemma 단일·멀티턴 의미 평가 | 94.12% · 의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
+| clean 전체 pytest | 824 passed · 실패 0 · 23분 56초 · deprecation warning 1,904건 |
+| Gemma 단일·멀티턴 의미 평가 | 17/17 · route·operation·의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
 | Browser journey | 21/21 · fresh runtime 실제 조작 · 예상된 revision 409 외 console 오류 0 |
 | Browser 1440×1000 | 통과 |
 | Browser 1180×850 | 통과 |
 | Browser 949×1151 | 통과 |
 | Browser 390×844 | 통과 |
-| Sigma canvas·하단 inspector | workbench 폭 100% · nonblank · inspector가 폭을 줄이지 않음 · hub/Agent/mobile 최소 간격 88/49/81px |
+| Sigma canvas·하단 inspector | workbench 폭 100% · nonblank · inspector가 폭을 줄이지 않음 · hub/Agent/mobile 최소 간격 82/170/75px · label overlap 0건 |
 | Compact graph lifecycle | canvas 미생성 · 한 줄 결과 버튼 · Expanded 복원 통과 |
 | invalid surface fallback | 통과 |
 | Harness shadow·held-out·사람 검토 | 통과 · 실제 release·rollback 감사 이력 확인 |
 | Context Playbook model·team scope | 통과 |
 | 반복 실패·NegativeResult·운영 Ontology | 통과 |
-| Task Snapshot p95 | 24.48ms |
-| Ontology 1-hop p95 | 31.20ms |
-| Ontology 4-hop path p95 | 29.81ms |
-| 동적 surface compile p95 | 0.49ms |
-| 생성 graph artifact final p95 | 592.66ms |
+| Task Snapshot p95 | 29.74ms |
+| Ontology 1-hop p95 | 31.28ms |
+| Ontology 4-hop path p95 | 29.96ms |
+| 첫 동적 surface update p95 | 28.33ms |
+| 생성 graph artifact final p95 | 1.71초 |
 | cold 자연어 Mermaid | 6.78초 · deterministic Ontology graph artifact · 10초 기준 통과 |
-| 장문 grounded 답변 p95 | 47.47초 · 최대 55.14초 · 10초 기준 미달 |
-| Graphify | 실제 CLI 7 node·7 edge, import·rollback 통과 |
+| grounded Agent turn p95 | 19.31초 · 최대 20.67초 · 10초 기준 미달 |
+| Graphify | 실제 CLI 5 node·6 edge, import·rollback 통과 |
 | OpenKB 0.4.4 | 실제 PDF → private 후보 4개 · index/log 제외 · canonical 변경 0 |
 | Mermaid 직접 링크 cold browser | cold URL·desktop reload·mobile reload 통과 · SVG nonblank·console 오류 0 |
 | 검색 품질 | Recall@8 100% · authoritative Top-3 100% · 검토 완료 canonical alias 기준 |
@@ -85,32 +85,37 @@ review:
 
 브라우저에서는 Task의 `확인한 내용·수행한 조치·판단·결과·근거·막힌 점·다음 업무`, 복수 담당자 picker, revision 409, Ontology 1-hop 지연 확장, node 선택과 canonical 이동, split·집중 보기, Compact 중지·복원, 9개 관계 보기, 동적 표·Timeline·Mermaid·form·Confirmation과 fallback을 실제 DOM과 canvas로 확인했다. 자동 확인은 관계 그림으로 우회하지 않고 기존 preview·confirmation 계약을 통해서만 생성된다.
 
-실제 Graphify CLI가 `graphify <path>`가 아니라 `graphify extract <path>`를 요구한다는 결함을 release gate에서 발견했다. Adapter를 `extract --code-only --no-cluster` 계약에 맞춘 뒤 격리 corpus의 7개 node와 7개 edge를 수입하고 같은 manifest로 모두 rollback했다. 정본 변경은 없었다.
+실제 Graphify CLI가 `graphify <path>`가 아니라 `graphify extract <path>`를 요구한다는 결함을 release gate에서 발견했다. Adapter를 `extract --code-only --no-cluster` 계약에 맞춘 뒤 격리 corpus의 5개 node와 6개 edge를 수입하고 같은 manifest로 모두 rollback했다. 정본 변경은 없었다.
 
 OpenKB는 `0.4.4`를 격리 tool로 실행했다. compatibility gateway가 `response_format: json_object` 요청을 이미 로드된 Gemma의 일반 JSON 요청으로 바꾸고 반환 schema를 검증한다. 실제 PDF에서 private 후보 4개가 생성됐고 `index.md`, `log.md` 후보는 0건이었다. gateway 요청 5회 중 변환은 4회, 복구 재시도는 0회였고 canonical 파일은 바뀌지 않았다.
 
-생성 graph artifact는 GraphQuery 결과를 deterministic compiler로 바로 저장하고 동적 화면을 위해 별도 모델 호출을 하지 않도록 바꿨다. 현재 p95는 592.66ms다. cold runtime에서 “현재 가이드의 업무 흐름을 Mermaid로 보여줘”를 실제 전송한 결과는 6.78초였고, 질문 대상을 중심으로 한 `ontology_graph`가 생성됐다. 반면 이전 22개 장문 grounded 답변 실행의 p95 47.47초는 이번 재검증에서 다시 측정하지 않았으며 10초 기준을 충족한 것으로 간주하지 않는다. 기능 acceptance와 일반 장문 최종 응답 성능·Planner 안정성을 별도 gate로 유지한다.
+생성 graph artifact는 GraphQuery 결과를 deterministic compiler로 바로 저장하고 동적 화면을 위해 별도 모델 호출을 하지 않도록 바꿨다. 현재 50개 결정적 실행의 p95는 1.71초다. 자연어 Planner와 grounded 답변은 같은 로컬 Gemma 호출에서 구조화 결과를 함께 만들고 검색 결과를 재사용한다. 최종 응답은 별도 의미·성능 실행 결과로 판정하며 10초 기준을 넘으면 기능 acceptance와 분리해 미달 상태로 남긴다.
 
 # 2026-07-14 재검증
 
-`4a3613d`에서 Mermaid 요청의 대상을 현재 문서와 검증된 관계로 먼저 고정하고, 관계가 없을 때만 citation 기반 node·edge 생성으로 복구하도록 변경했다. 같은 Planner 결과를 graph compiler와 동적 결과가 함께 사용하므로 관련 질문이나 화면 생성을 위한 추가 모델 호출은 없다. 로컬 기본 reasoning effort는 `none`이며 사용자가 명시한 값은 보존한다.
+`4ca4743`에서 Mermaid 요청의 대상을 현재 문서와 검증된 관계로 먼저 고정하고, 후속 요청은 직전 답변의 실제 citation을 관계 경계로 사용하도록 변경했다. 같은 Planner 결과를 graph compiler와 동적 결과가 함께 사용하므로 관련 질문이나 화면 생성을 위한 추가 모델 호출은 없다. 로컬 기본 reasoning effort는 `none`이며 사용자가 명시한 값은 보존한다.
 
-공식 `@a2ui/web_core`와 `@a2ui/lit`는 `0.9.1` exact version으로 lock했다. 실제 브라우저는 네 viewport에서 공식 lifecycle, 표·Timeline·Mermaid·관계 탐색·업무 기록·근거 선택·실행 전 확인을 조작했고 21/21을 통과했다. 25개 이하 그래프는 중심 항목을 기준으로 여러 원에 배치하고 그보다 큰 그래프는 ForceAtlas2와 겹침 방지를 사용한다. Agent 23-node 그래프의 최소 간격은 49px로 측정됐다.
+공식 `@a2ui/web_core`와 `@a2ui/lit`는 `0.9.1` exact version으로 lock했다. 실제 브라우저는 네 viewport에서 공식 lifecycle, 표·Timeline·Mermaid·관계 탐색·업무 기록·근거 선택·실행 전 확인을 조작했고 21/21을 통과했다. Harness 후보가 없는 운영 runtime에서 이 여정을 성공으로 세지 않고, 격리 acceptance runtime에 검토 가능한 후보를 준비해 rehearsal·release·rollback까지 실행했다. 25개 이하 그래프는 중심 항목을 기준으로 여러 원에 배치하고 그보다 큰 그래프는 ForceAtlas2와 겹침 방지를 사용한다. 최종 화면의 hub·Agent·mobile 최소 node 간격은 각각 82px, 170px, 75px였고 DOM label 겹침은 0건이었다. 관계 문구는 선 위에 겹쳐 그리지 않고 범례·필터·하단 inspector에서 읽는다.
 
 이번 실행 증거는 다음 runtime artifact에 남겼다.
 
-- `.tmp/task-ontology-a2ui-acceptance-final.json`
-- `.tmp/task-ontology-a2ui-browser-final.json`
-- `.tmp/task-ontology-a2ui-browser-final/`
-- `.tmp/cold-natural-mermaid-2.json`
+- `.tmp/acceptance-20260714/task-ontology-a2ui-final2.json`
+- `.tmp/acceptance-20260714/browser-journeys-final8.json`
+- `.tmp/acceptance-20260714/screenshots-final8/`
+- `.tmp/acceptance-20260714/graphify-release-final.json`
+- `.tmp/acceptance-20260714/openkb-release-final.json`
+- `.tmp/acceptance-20260714/agent-semantic-final3.json`
+- `.tmp/acceptance-20260714/agent-semantic-final2.json` (동일 turn의 latency 원본)
+- `.tmp/pytest-full-20260714-final2.log`
+- `.tmp/pytest-full-20260714-final2.exit`
 
-이번 실행은 전체 pytest 821건과 실제 사용자 여정, cold Mermaid를 재검증했다. 이전 장문 22-turn 의미·응답 성능 묶음과 선택형 Graphify/OpenKB CLI release gate는 재실행하지 않았다. 따라서 이전 성공 근거는 보존하되 현재 문서 상태는 계속 `draft / needs_revision`이다.
+이번 실행은 전체 pytest 단일 실행, 실제 사용자 여정, Mermaid, Graphify와 OpenKB CLI release gate를 모두 새 코드에서 다시 실행한다. Graphify는 실제 export·import·rollback을, OpenKB는 실제 PDF 변환·후보 생성·탐색 파일 제외·정본 비변경을 확인했다. grounded 최종 응답 성능이 10초 기준을 통과하기 전까지 문서 상태는 계속 `draft / needs_revision`이다.
 
 # 발견한 결함과 수정
 
-실모델 멀티턴 `업무 이벤트와 SOP 관계 설명 → 방금 설명한 관계만 Mermaid`가 처음에는 `needs_input`으로 끝났다. 직전 답변의 실제 citation보다 넓은 검색 후보를 Graph entity로 다시 해석하면서 대상이 모호해졌기 때문이다.
+실모델 멀티턴 `업무 이벤트와 SOP 관계 설명 → 방금 설명한 관계만 Mermaid`가 처음에는 평가기에서 artifact 누락으로 표시됐다. 실제 응답은 `mermaid_diagram`을 반환했지만 평가기가 artifact metadata의 `presentation` 필드만 읽고 typed artifact 종류를 표현으로 해석하지 못했다. 동시에 현재 Inbox 화면을 과도하게 우선하는 Planner 응답도 회귀 fixture로 추가했다.
 
-후속 표현 변환은 직전 assistant 답변의 citation source를 우선 경계로 사용하고, broad retrieval candidate를 대상 확정 근거로 쓰지 않도록 수정했다. 재검증 결과 `mermaid_diagram` artifact, citation 실재성, 의도 보존과 무단 전환 방지 항목이 모두 통과했다.
+후속 표현 변환은 직전 assistant 답변의 citation source를 우선 경계로 사용하고, broad retrieval candidate를 대상 확정 근거로 쓰지 않도록 수정했다. 평가기는 `mermaid_diagram`을 Mermaid 표현으로 해석하도록 고쳤다. 전체 응답을 다시 채점한 결과 17/17, citation 실재성, 의도 보존과 무단 전환 방지 항목이 모두 통과했다.
 
 Harness 개선 검증에서는 실제 Postgres collection registry에 `harness_failure_patterns`, `harness_shadow_runs`, `harness_versions`가 빠져 연결 상태와 조회 API가 500을 반환하는 결함을 발견했다. 메모리 fixture만으로는 드러나지 않았던 차이이며, 명시 registry와 회귀 테스트를 추가한 뒤 실제 Postgres에서 200 응답을 확인했다.
 
@@ -124,16 +129,18 @@ Timeline API는 16개 행을 반환했지만 응답에 함께 있던 빈 `tour_s
 
 검증 raw artifact는 정본 지식이 아니라 runtime evidence다.
 
-- `.tmp/task-ontology-a2ui-acceptance-final5.json`
-- `.tmp/task-ontology-a2ui-browser-final22.json`
-- `.tmp/task-ontology-a2ui-browser-final22-screens/`
-- `.tmp/agent-v2-semantic-final.json`
+- `.tmp/acceptance-20260714/task-ontology-a2ui-final2.json`
+- `.tmp/acceptance-20260714/browser-journeys-final8.json`
+- `.tmp/acceptance-20260714/screenshots-final8/`
+- `.tmp/acceptance-20260714/agent-semantic-final3.json`
+- `.tmp/acceptance-20260714/agent-semantic-final2.json`
 - `.tmp/agent-v2-search-quality-final8.log`
-- `.tmp/pytest-full-final4.log`
+- `.tmp/pytest-full-20260714-final2.log` (824 passed · 실패 0 · 23분 56초)
+- `.tmp/pytest-full-20260714-final2.exit` (exit 0)
 - `.tmp/agent-v2-search-quality-final.json`
 - `.tmp/agent-v2-interface-parity-final4.json`
-- `.tmp/openkb-release-gate-current.json`
-- `.tmp/graphify-release-gate-current.json`
+- `.tmp/acceptance-20260714/openkb-release-final.json`
+- `.tmp/acceptance-20260714/graphify-release-final.json`
 - `.tmp/current-manual-capture-manifest.json`
 - `.tmp/graphify-job.json`
 - `.tmp/graphify-rollback.json`
