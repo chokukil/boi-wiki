@@ -271,28 +271,41 @@ DRAFT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "sop.plan": {
         "type": "object",
-        "required": ["title", "goal", "tasks", "mermaid"],
+        "required": ["title", "goal", "tasks"],
         "properties": {
-            "title": {"type": "string"},
-            "goal": {"type": "string"},
+            "title": {"type": "string", "maxLength": 100},
+            "goal": {"type": "string", "maxLength": 240},
             "tasks": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": 6,
                 "items": {
                     "type": "object",
                     "required": ["name", "purpose", "execution_mode", "exit_criteria", "required_evidence"],
                     "properties": {
-                        "name": {"type": "string"},
-                        "purpose": {"type": "string"},
+                        "name": {"type": "string", "maxLength": 90},
+                        "purpose": {"type": "string", "maxLength": 180},
                         "execution_mode": {"type": "string", "enum": ["manual", "copilot", "autopilot"]},
-                        "exit_criteria": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-                        "required_evidence": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-                        "completion_design": COMPLETION_DESIGN_SCHEMA,
+                        "exit_criteria": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 2,
+                            "items": {"type": "string", "maxLength": 160},
+                        },
+                        "required_evidence": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 2,
+                            "items": {"type": "string", "maxLength": 160},
+                        },
                     },
                 },
             },
-            "mermaid": {"type": "string"},
-            "gaps": {"type": "array", "items": {"type": "string"}},
+            "gaps": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "maxLength": 160},
+            },
         },
     },
     "action.plan": {
@@ -385,7 +398,7 @@ DRAFT_SCHEMAS: dict[str, dict[str, Any]] = {
 
 
 class AgentV2Service:
-    SEMANTIC_ROUTE_CACHE_VERSION = "15"
+    SEMANTIC_ROUTE_CACHE_VERSION = "21"
     SEMANTIC_ROUTE_CACHE_TTL_SECONDS = 900
     STARTER_SUGGESTION_VERSION = "2"
 
@@ -2861,8 +2874,6 @@ class AgentV2Service:
             if title and items:
                 lines.extend(["", f"### {title}", *items])
                 rendered_sections += 1
-        if not rendered_sections:
-            return None
         if primary_source_ref and primary_source_ref in citation_by_source and primary_source_ref not in used_refs:
             return None
         lines.extend(["", "### 사용한 지식"])
@@ -2889,6 +2900,59 @@ class AgentV2Service:
             raw_related.append({**item, "source_numbers": source_numbers})
         related = self._model_related_questions(principal, session, raw_related, citation_order)
         return AnswerBlock(summary=summary, markdown="\n".join(lines)), related
+
+    @staticmethod
+    def _grounded_evidence_table(
+        evidence: list[EvidenceRef],
+        citations: list[CitationRef],
+    ) -> tuple[AnswerBlock, list[RelatedQuestion]] | None:
+        """Compile an explicitly requested table from verified citation rows."""
+
+        evidence_by_ref = {item.evidence_id: item for item in evidence}
+        rows: list[str] = []
+        used_citations: list[CitationRef] = []
+
+        def cell(value: Any, limit: int) -> str:
+            return compact_text(str(value or ""), limit).replace("|", "\\|").replace("\n", " ")
+
+        for citation in citations[:6]:
+            item = evidence_by_ref.get(citation.source_ref)
+            if item is None:
+                continue
+            summary = cell(citation.excerpt or item.summary, 220)
+            if not summary:
+                continue
+            number = len(used_citations) + 1
+            title = cell(item.title, 100)
+            if item.url:
+                title = f"[{title}]({item.url})"
+            rows.append(
+                f"| {title} | {cell(item.kind, 40)} | {summary} "
+                f"[{number}](/api/v2/citations/{citation.citation_id}) |"
+            )
+            used_citations.append(citation)
+        if not rows:
+            return None
+        markers = " ".join(
+            f"[{index}](/api/v2/citations/{item.citation_id})"
+            for index, item in enumerate(used_citations, start=1)
+        )
+        markdown = "\n".join(
+            [
+                f"요청과 직접 관련된 확인 자료 {len(rows)}개를 구분했습니다. {markers}",
+                "",
+                "| 확인 자료 | 종류 | 확인할 내용 |",
+                "|---|---|---|",
+                *rows,
+            ]
+        )
+        return (
+            AnswerBlock(
+                summary=f"요청과 직접 관련된 확인 자료 {len(rows)}개를 구분했습니다.",
+                markdown=markdown,
+            ),
+            [],
+        )
 
     @staticmethod
     def _diagram_label(value: Any, limit: int) -> str:
@@ -3448,7 +3512,7 @@ class AgentV2Service:
                 "source_ref": item.evidence_id,
                 "title": item.title,
                 "kind": item.kind,
-                "summary": compact_text(item.summary, 500),
+                "summary": compact_text(item.summary, 320),
             }
             for item in evidence[:6]
         ]
@@ -3713,6 +3777,7 @@ class AgentV2Service:
         session: dict[str, Any],
         intent: WorkIntent,
         current_work: list[EvidenceRef],
+        citations: list[CitationRef],
         work_run_id: str,
     ) -> tuple[AnswerBlock, ArtifactRef, list[EvidenceRef]] | None:
         plan = self._graph_plan_for_intent(principal, intent)
@@ -3787,20 +3852,25 @@ class AgentV2Service:
         )
         artifact_id = new_id("artifact")
         title = "업무 역할과 연결 관계" if intent.work_view in {"responsibility", "combined"} else "지식 연결 관계"
+        presentation = str(result.get("presentation") or "list")
+        artifact_type = "mermaid_diagram" if presentation == "mermaid" else "ontology_graph"
+        draft_payload = {
+            "query_plan": result.get("query_plan") or plan.model_dump(mode="json"),
+            "presentation": presentation,
+            "nodes": nodes,
+            "edges": edges,
+            "source_refs": source_refs,
+        }
+        if artifact_type == "mermaid_diagram":
+            draft_payload["mermaid"] = self._mermaid_source_from_ontology_draft(draft_payload)
         stored = {
             "artifact_id": artifact_id,
             "employee_id": principal.employee_id,
             "capability_id": "knowledge.search",
-            "artifact_type": "ontology_graph",
+            "artifact_type": artifact_type,
             "status": "provisional",
             "title": title,
-            "draft": {
-                "query_plan": result.get("query_plan") or plan.model_dump(mode="json"),
-                "presentation": result.get("presentation") or "list",
-                "nodes": nodes,
-                "edges": edges,
-                "source_refs": source_refs,
-            },
+            "draft": draft_payload,
             "work_session_id": str(session["session_id"]),
             "work_run_id": work_run_id,
             "revision": 1,
@@ -3810,7 +3880,7 @@ class AgentV2Service:
         self.store.put("artifacts", artifact_id, stored)
         artifact = ArtifactRef(
             artifact_id=artifact_id,
-            artifact_type="ontology_graph",
+            artifact_type=artifact_type,
             title=title,
             status="provisional",
             url=f"/agent?session={session['session_id']}&artifact={artifact_id}",
@@ -3829,8 +3899,15 @@ class AgentV2Service:
             record = self._record_for_ref(principal, source_ref)
             if record:
                 graph_evidence.append(self._evidence_from_record(record, score=1.0))
+        citation_links = " ".join(
+            f"[{index}](/api/v2/citations/{citation.citation_id})"
+            for index, citation in enumerate(citations, start=1)
+        )
+        answer_lines = [summary, "", *lines]
+        if citation_links:
+            answer_lines.extend(["", f"근거: {citation_links}"])
         return (
-            AnswerBlock(summary=summary, markdown="\n".join([summary, "", *lines])),
+            AnswerBlock(summary=summary, markdown="\n".join(answer_lines)),
             artifact,
             list({item.evidence_id: item for item in graph_evidence}.values())[:8],
         )
@@ -3950,8 +4027,37 @@ class AgentV2Service:
                 "summary": compact_text(item.summary, 500),
                 "kind": item.kind,
             }
-            for item in evidence[:8]
+            for item in evidence[:6]
         ]
+        raw_session_context = request.input_delta.get("_work_session_context")
+        session_context = raw_session_context if isinstance(raw_session_context, dict) else {}
+        active_artifact = session_context.get("active_artifact")
+        active_artifact_outline = active_artifact if isinstance(active_artifact, dict) else {}
+        draft_context = {
+            "summary": compact_text(str(session_context.get("summary") or ""), 600),
+            "recent_messages": [
+                {
+                    "role": str(item.get("role") or ""),
+                    "text": compact_text(str(item.get("text") or ""), 320),
+                    "source_refs": [str(ref) for ref in item.get("source_refs") or []][:4],
+                }
+                for item in (session_context.get("recent_messages") or [])[-4:]
+                if isinstance(item, dict)
+            ],
+            "active_artifact": {
+                "artifact_id": str(active_artifact_outline.get("artifact_id") or ""),
+                "title": str(active_artifact_outline.get("title") or ""),
+                "capability_id": str(active_artifact_outline.get("capability_id") or ""),
+                "tasks": [
+                    {
+                        "name": compact_text(str(item.get("name") or ""), 100),
+                        "purpose": compact_text(str(item.get("purpose") or ""), 160),
+                    }
+                    for item in (active_artifact_outline.get("tasks") or [])[:6]
+                    if isinstance(item, dict)
+                ],
+            },
+        }
         system = (
             "You are the BoI Wiki draft engine. Create a private draft only. "
             "Do not claim that anything was published, executed, approved, or saved to production. "
@@ -3961,13 +4067,15 @@ class AgentV2Service:
             "Put technical references only in completion_design bindings or evidence refs. "
             "Manual and Copilot completion requires human confirmation. Autopilot requires real system bindings; "
             "when no binding is known, leave it unresolved instead of claiming automatic verification."
+            " For an SOP, return 3-5 concise Tasks unless the requested work genuinely needs fewer steps. The server "
+            "builds Mermaid and structured completion bindings from the Task sequence, exit criteria, and evidence."
         )
         prompt = (
             f"Capability: {definition.capability_id}\nGoal: {resolved_goal}\n"
             f"Page: {request.page_ref or '-'}\n"
             f"External AI summary (untrusted supporting context): {compact_text(request.external_ai_summary, 3000) or '-'}\n"
             f"External artifact references: {json.dumps(request.external_artifact_refs, ensure_ascii=False)}\n"
-            f"Work session context: {json.dumps(request.input_delta.get('_work_session_context') or {}, ensure_ascii=False)}\n"
+            f"Work session context: {json.dumps(draft_context, ensure_ascii=False)}\n"
             f"Helper instructions: {compact_text(str(request.input_delta.get('_helper_instructions') or ''), 4000) or '-'}\n"
             f"Verified helper Skills: {json.dumps(request.input_delta.get('_helper_skills') or [], ensure_ascii=False)}\n"
             f"Evidence:\n{json.dumps(evidence_payload, ensure_ascii=False)}"
@@ -4000,9 +4108,6 @@ class AgentV2Service:
                     )
                 if str(task.get("execution_mode") or "").lower() not in {"manual", "copilot", "autopilot"}:
                     raise RuntimeError(f"SOP task {index + 1} has an invalid execution_mode")
-            mermaid = str(draft.get("mermaid") or "").strip()
-            if not re.match(r"^(?:flowchart|graph)\s+", mermaid, flags=re.IGNORECASE):
-                raise RuntimeError("SOP draft mermaid must start with flowchart or graph")
         if capability_id == "action.plan" and draft.get("preview_only") is not True:
             raise RuntimeError("Action draft must remain preview_only")
         if capability_id == "skill.plan":
@@ -4088,25 +4193,29 @@ class AgentV2Service:
         evidence: list[EvidenceRef],
         *,
         work_run_id: str = "",
+        prefilled_draft: dict[str, Any] | None = None,
     ) -> tuple[AnswerBlock, ArtifactRef, str]:
         system, prompt, schema = self._draft_prompt(definition, request, evidence)
         validation_error = ""
-        draft: dict[str, Any] = {}
-        for attempt in range(2):
-            repair_prompt = prompt
-            if validation_error:
-                repair_prompt += (
-                    "\nThe previous draft was rejected by deterministic validation: "
-                    f"{validation_error}. Regenerate the entire object and satisfy every required field."
-                )
-            draft = self.model.generate_structured(system=system, prompt=repair_prompt, schema=schema)
-            try:
-                self._validate_draft(definition.capability_id, draft)
-                break
-            except RuntimeError as exc:
-                validation_error = str(exc)
-                if attempt == 1:
-                    raise
+        draft: dict[str, Any] = copy.deepcopy(prefilled_draft or {})
+        if draft:
+            self._validate_draft(definition.capability_id, draft)
+        else:
+            for attempt in range(2):
+                repair_prompt = prompt
+                if validation_error:
+                    repair_prompt += (
+                        "\nThe previous draft was rejected by deterministic validation: "
+                        f"{validation_error}. Regenerate the entire object and satisfy every required field."
+                    )
+                draft = self.model.generate_structured(system=system, prompt=repair_prompt, schema=schema)
+                try:
+                    self._validate_draft(definition.capability_id, draft)
+                    break
+                except RuntimeError as exc:
+                    validation_error = str(exc)
+                    if attempt == 1:
+                        raise
         if definition.capability_id == "sop.plan":
             draft = self._normalise_sop_draft(draft, principal=principal)
         title = str(draft.get("title") or definition.title).strip()
@@ -4114,24 +4223,14 @@ class AgentV2Service:
         title = re.sub(r"^(?:비공개\s*(?:SOP\s*)?초안|private\s*draft)\s*[:：-]\s*", "", title, flags=re.IGNORECASE)
         title = title or definition.title
         draft["title"] = title
-        self.evaluator.model = self.model
-        independent_review = self.evaluator.evaluate(
-            principal,
-            artifact_kind=str(definition.output_schema.get("type") or "draft"),
-            goal=request.question,
-            artifact=draft,
-            evidence=[item.model_dump(mode="json") for item in evidence[:12]],
-            rubric=[
-                "요청한 업무 목표를 실제로 충족하는가",
-                "중요한 판단과 제안이 제공된 근거로 추적 가능한가",
-                "현재 업무 맥락과 직접 관련된 근거를 사용하고 무관한 자산을 끌어오지 않았는가",
-                "사용자가 요청하지 않은 SOP, Event, Action 또는 실행 작업으로 과도하게 전환하지 않았는가",
-                "누락 정보와 불확실성을 성공처럼 표현하지 않았는가",
-                *definition.completion_criteria,
-            ],
-            work_run_id=work_run_id,
-            require_evidence_refs=True,
-        )
+        # A private preview already passed its schema, evidence and domain
+        # validators above. A second model review made the user wait for a
+        # result that still required human confirmation, so semantic review is
+        # performed only by an explicit validate/test operation.
+        independent_review = {
+            "status": "not_requested",
+            "summary": "개인 초안입니다. 게시 또는 실행 전에 검토를 요청할 수 있습니다.",
+        }
         artifact_id = new_id("artifact")
         plan_id = new_id("plan")
         domain_operation = {
@@ -4837,7 +4936,7 @@ class AgentV2Service:
                         "ref": item.evidence_id,
                         "title": item.title,
                         "kind": item.kind,
-                        "summary": compact_text(item.summary, 620),
+                        "summary": compact_text(item.summary, 360),
                         "authority": item.authority,
                         "source": item.source,
                         "is_primary": bool(
@@ -4850,6 +4949,70 @@ class AgentV2Service:
                 ]
             except Exception:
                 planner_hints = []
+        planner_hint_refs = {str(item.get("ref") or "") for item in planner_hints}
+        if (
+            page_anchor_for_route
+            and page_anchor_for_route.resolved
+            and page_anchor_for_route.ref not in planner_hint_refs
+        ):
+            page_record = self._record_for_ref(principal, page_anchor_for_route.ref)
+            if page_record:
+                page_evidence = self._evidence_from_record(page_record, score=1.0)
+                planner_hints = [
+                    {
+                        "ref": page_evidence.evidence_id,
+                        "title": page_evidence.title,
+                        "kind": page_evidence.kind,
+                        "summary": compact_text(page_evidence.summary, 360),
+                        "authority": page_evidence.authority,
+                        "source": page_evidence.source,
+                        "is_primary": True,
+                        "from_page_anchor": True,
+                    },
+                    *planner_hints,
+                ][:6]
+        planner_hints.sort(key=lambda item: not bool(item.get("is_primary")))
+        route_conversation_context = (
+            request.input_delta.get("_work_session_context")
+            if isinstance(request.input_delta.get("_work_session_context"), dict)
+            else {}
+        )
+        prior_citation_refs: list[str] = []
+        for message in reversed(route_conversation_context.get("recent_messages") or []):
+            if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            prior_citation_refs = [
+                str(item)
+                for item in message.get("source_refs") or []
+                if str(item).strip()
+            ][:4]
+            if prior_citation_refs:
+                break
+        prior_hints: list[dict[str, Any]] = []
+        planner_hint_refs = {str(item.get("ref") or "") for item in planner_hints}
+        for source_ref in prior_citation_refs:
+            if source_ref in planner_hint_refs:
+                continue
+            record = self._record_for_ref(principal, source_ref)
+            if not record:
+                continue
+            evidence_item = self._evidence_from_record(record, score=1.0)
+            prior_hints.append(
+                {
+                    "ref": evidence_item.evidence_id,
+                    "title": evidence_item.title,
+                    "kind": evidence_item.kind,
+                    "summary": compact_text(evidence_item.summary, 360),
+                    "authority": evidence_item.authority,
+                    "source": evidence_item.source,
+                    "is_primary": False,
+                    "from_previous_answer": True,
+                }
+            )
+            if len(prior_hints) >= 2:
+                break
+        if prior_hints:
+            planner_hints = [*prior_hints, *planner_hints][:6]
         mark_stage("retrieval")
         try:
             route_input = {
@@ -4868,11 +5031,7 @@ class AgentV2Service:
                 "active_work_run": self._active_work_run_for_planner(active_work_run),
                 "task_ref": request.task_ref,
                 "conversation_summary": str(session.get("conversation_summary") or ""),
-                "conversation_context": (
-                    request.input_delta.get("_work_session_context")
-                    if isinstance(request.input_delta.get("_work_session_context"), dict)
-                    else {}
-                ),
+                "conversation_context": route_conversation_context,
                 "knowledge_hints": planner_hints,
                 "trusted_targets": {
                     "action_key": str(request.input_delta.get("action_key") or "").strip(),
@@ -5419,6 +5578,7 @@ class AgentV2Service:
                     session=session,
                     intent=intent,
                     current_work=current_work_evidence,
+                    citations=citations,
                     work_run_id=str(work_run["work_run_id"]),
                 )
                 if (
@@ -5815,6 +5975,21 @@ class AgentV2Service:
             )
             if planned_answer is not None and not helper_guidance:
                 answer, generated_related_questions = planned_answer
+            elif intent.presentation_mode == "table" and not helper_guidance:
+                table_answer = self._grounded_evidence_table(evidence, citations)
+                if table_answer is not None:
+                    answer, generated_related_questions = table_answer
+                else:
+                    answer, generated_related_questions = self._grounded_search_answer(
+                        principal,
+                        session,
+                        resolved_goal,
+                        evidence,
+                        citations,
+                        guidance=helper_guidance,
+                        desired_outcome=intent.desired_outcome,
+                        primary_source_ref=primary_source_ref,
+                    )
             else:
                 answer, generated_related_questions = self._grounded_search_answer(
                     principal,
@@ -5851,30 +6026,55 @@ class AgentV2Service:
                     ),
                 )
         elif capability_id == "cases.similar":
-            answer, generated_related_questions = self._grounded_search_answer(
+            similar_guidance = "\n".join(
+                [
+                    str(request.input_delta.get("_helper_instructions") or ""),
+                    *[
+                        f"{item.get('title')}: {item.get('description')}"
+                        for item in request.input_delta.get("_helper_skills") or []
+                        if isinstance(item, dict)
+                    ],
+                ]
+            ).strip()
+            planned_answer = self._grounded_answer_from_plan(
                 principal,
                 session,
-                resolved_goal,
+                route.get("grounded_answer"),
                 evidence,
                 citations,
-                empty_label="유사 사례",
-                desired_outcome=intent.desired_outcome,
-                guidance="\n".join(
-                    [
-                        str(request.input_delta.get("_helper_instructions") or ""),
-                        *[
-                            f"{item.get('title')}: {item.get('description')}"
-                            for item in request.input_delta.get("_helper_skills") or []
-                            if isinstance(item, dict)
-                        ],
-                    ]
-                ).strip(),
-                primary_source_ref=(
-                    context.page_anchor.ref
-                    if context.page_anchor and context.page_anchor.resolved
-                    else ""
-                ),
             )
+            if planned_answer is not None and not similar_guidance:
+                answer, generated_related_questions = planned_answer
+            elif intent.presentation_mode == "table" and not similar_guidance:
+                table_answer = self._grounded_evidence_table(evidence, citations)
+                if table_answer is not None:
+                    answer, generated_related_questions = table_answer
+                else:
+                    answer, generated_related_questions = self._grounded_search_answer(
+                        principal,
+                        session,
+                        resolved_goal,
+                        evidence,
+                        citations,
+                        empty_label="유사 사례",
+                        desired_outcome=intent.desired_outcome,
+                    )
+            else:
+                answer, generated_related_questions = self._grounded_search_answer(
+                    principal,
+                    session,
+                    resolved_goal,
+                    evidence,
+                    citations,
+                    empty_label="유사 사례",
+                    desired_outcome=intent.desired_outcome,
+                    guidance=similar_guidance,
+                    primary_source_ref=(
+                        context.page_anchor.ref
+                        if context.page_anchor and context.page_anchor.resolved
+                        else ""
+                    ),
+                )
         elif capability_id == "work.inbox":
             answer = self._inbox_answer(current_work_evidence)
         elif definition.deep:
@@ -5898,6 +6098,11 @@ class AgentV2Service:
                     request,
                     evidence,
                     work_run_id=str(work_run["work_run_id"]),
+                    prefilled_draft=(
+                        route.get("sop_draft")
+                        if capability_id == "sop.plan" and isinstance(route.get("sop_draft"), dict)
+                        else None
+                    ),
                 )
                 artifacts.append(artifact)
             except Exception as exc:
@@ -6072,7 +6277,11 @@ class AgentV2Service:
             work_run_id=str(work_run["work_run_id"]),
             work_intent=intent,
             graph_result_ref=next(
-                (item.artifact_id for item in artifacts if item.artifact_type == "ontology_graph"),
+                (
+                    item.artifact_id
+                    for item in artifacts
+                    if item.artifact_type in {"ontology_graph", "mermaid_diagram"}
+                ),
                 "",
             ),
             loop_state={

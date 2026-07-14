@@ -40,6 +40,7 @@ from boi_api.app.v2.models import (
     ContextPlaybookCreateRequest,
     ContextPlaybookPatchRequest,
     DeepJobRequest,
+    EvidenceRef,
     GraphQueryDraft,
     GraphQueryPlan,
     HarnessCandidateCreateRequest,
@@ -510,6 +511,119 @@ class RepairingSopModel(FakeModel):
         }
 
 
+class PlannerPrefilledSopModel(RepairingSopModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            planned["sop_draft"] = {
+                "title": "근거 확인 SOP",
+                "goal": "검증된 근거로 업무 판단을 완료합니다.",
+                "tasks": [
+                    {
+                        "name": "근거 확인",
+                        "purpose": "판단에 필요한 자료와 담당자 확인 내용을 검토합니다.",
+                        "execution_mode": "copilot",
+                        "exit_criteria": ["필수 근거와 담당자 판단이 기록되었어요"],
+                        "required_evidence": ["검토 문서", "담당자 판단 기록"],
+                    }
+                ],
+                "gaps": [],
+            }
+            return planned
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+def test_sop_draft_reuses_the_valid_planner_outline_without_a_second_model_call(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = PlannerPrefilledSopModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="플래너 선행 근거 확인 SOP 초안을 새로 만들어줘"),
+    )
+    artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
+
+    assert model.calls == 0
+    assert artifact["generation_attempts"] == 1
+    assert artifact["draft"]["tasks"][0]["exit_criteria"] == ["필수 근거와 담당자 판단이 기록되었어요"]
+    assert artifact["draft"]["tasks"][0]["completion_design"]["checks"][0]["confirmation"] == "human"
+    assert artifact["draft"]["mermaid"].startswith("flowchart TD")
+
+
+def test_private_draft_returns_after_deterministic_validation_without_blocking_model_review(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = RepairingSopModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    def fail_if_reviewed(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("private draft must not wait for an independent model review")
+
+    v2_service.evaluator.evaluate = fail_if_reviewed  # type: ignore[method-assign]
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="근거 확인 SOP 초안을 만들어줘", capability_id="sop.plan"),
+    )
+    artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
+
+    assert artifact["independent_review"]["status"] == "not_requested"
+    assert response.artifact_refs[0].metadata["review_status"] == "not_requested"
+
+
+def test_planner_grounded_summary_does_not_require_an_optional_outcome_section(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    evidence = [
+        EvidenceRef(
+            evidence_id="boi:public:guide",
+            kind="document",
+            title="업무 관계 가이드",
+            summary="관계 근거와 원문을 함께 확인합니다.",
+            url="/docs/boi:public:guide",
+        )
+    ]
+    citations = [
+        CitationRef(
+            citation_id="cite-guide",
+            source_ref="boi:public:guide",
+            title="업무 관계 가이드",
+            excerpt="관계 근거와 원문을 함께 확인합니다.",
+        )
+    ]
+    v2_service.store.put(
+        "work_sessions",
+        "session-summary",
+        {"session_id": "session-summary", "employee_id": principal.employee_id, "status": "active"},
+    )
+
+    rendered = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-summary"},
+        {
+            "summary": "관계를 선택하면 검증된 근거와 원문을 함께 확인할 수 있습니다.",
+            "summary_source_refs": ["boi:public:guide"],
+            "outcomes": [],
+            "related_questions": [],
+        },
+        evidence,
+        citations,
+    )
+
+    assert rendered is not None
+    answer, related = rendered
+    assert "cite-guide" in answer.markdown
+    assert "업무 관계 가이드" in answer.markdown
+    assert related == []
+
+
 class RefiningSopModel(RepairingSopModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
@@ -585,8 +699,18 @@ class GroundedAnswerModel(FakeModel):
 
 
 class CombinedPlannerAnswerModel(GroundedAnswerModel):
-    def __init__(self, *, invalid_ref: bool = False):
+    def __init__(
+        self,
+        *,
+        invalid_ref: bool = False,
+        use_source_key: bool = False,
+        presentation_mode: str = "prose",
+        omit_grounded_answer: bool = False,
+    ):
         self.invalid_ref = invalid_ref
+        self.use_source_key = use_source_key
+        self.presentation_mode = presentation_mode
+        self.omit_grounded_answer = omit_grounded_answer
         self.planner_calls = 0
         self.answer_calls = 0
 
@@ -596,13 +720,15 @@ class CombinedPlannerAnswerModel(GroundedAnswerModel):
             self.planner_calls += 1
             payload = json.loads(prompt)
             hints = [item for item in payload.get("wiki_hybrid_hints") or [] if isinstance(item, dict)]
-            source_ref = "boi:public:not-retrieved" if self.invalid_ref else str(hints[0]["ref"])
+            source_ref = "boi:public:not-retrieved" if self.invalid_ref else str(
+                hints[0]["source_key"] if self.use_source_key else hints[0]["ref"]
+            )
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
                 {
                     "resolved_goal": str(payload.get("request") or ""),
                     "retrieval_query": str(payload.get("request") or ""),
-                    "presentation_mode": "prose",
+                    "presentation_mode": self.presentation_mode,
                     "work_view": "none",
                     "grounded_answer": {
                         "summary": "검토된 운영 가이드를 기준으로 게시와 근거 확인 절차를 설명합니다.",
@@ -629,6 +755,13 @@ class CombinedPlannerAnswerModel(GroundedAnswerModel):
                     },
                 }
             )
+            if self.omit_grounded_answer:
+                planned["grounded_answer"] = {
+                    "summary": "",
+                    "summary_source_refs": [],
+                    "outcomes": [],
+                    "related_questions": [],
+                }
             return planned
         if required == {"summary", "outcomes"}:
             self.answer_calls += 1
@@ -2047,7 +2180,8 @@ def test_read_only_mermaid_uses_grounded_graph_before_a_second_model_call(
     assert response.work_intent and response.work_intent.graph_query_draft
     assert response.work_intent.graph_query_draft.presentation == "mermaid"
     assert response.graph_result_ref
-    assert response.artifact_refs[0].artifact_type == "ontology_graph"
+    assert response.artifact_refs[0].artifact_type == "mermaid_diagram"
+    assert response.artifact_refs[0].metadata["presentation"] == "mermaid"
     artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
     assert artifact["draft"]["presentation"] == "mermaid"
     assert artifact["draft"]["edges"]
@@ -2120,6 +2254,48 @@ def test_current_page_is_a_wiki_wide_search_anchor_even_when_the_url_is_encoded(
     assert context["context_manifest"]["selected_refs"][0] == "boi:public:guide"
 
 
+def test_resolved_current_page_is_a_primary_planner_hint_without_limiting_wiki_search(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, Any] = {}
+
+    def semantic_route(_principal: Principal, route_input: dict[str, Any]) -> dict[str, Any]:
+        captured.update(route_input)
+        return {
+            "capability_id": "knowledge.search",
+            "source": "llm_structured",
+            "reason": "현재 문서와 Wiki 전체를 함께 이해",
+            "work_intent": WorkIntent(
+                goal=route_input["question"],
+                resolved_goal=route_input["question"],
+                asset_kind=WorkAssetKind.knowledge,
+                operation=WorkOperation.understand,
+                operation_plan=[WorkOperation.understand],
+                scope="wiki",
+                presentation_mode="prose",
+                result_purpose="explain",
+                confidence=1.0,
+            ).model_dump(mode="json"),
+        }
+
+    monkeypatch.setattr(v2_service, "_semantic_route", semantic_route)
+
+    v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="이 문서를 출발점으로 관련 기준을 Wiki 전체에서 설명해줘",
+            page_ref="/docs/boi%3Apublic%3Aguide?employee_id=100001",
+        ),
+    )
+
+    hints = captured["knowledge_hints"]
+    assert hints[0]["ref"] == "boi:public:guide"
+    assert hints[0]["is_primary"] is True
+    assert any(item["ref"] != "boi:public:guide" for item in hints)
+
+
 def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_grounded_mermaid(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -2156,9 +2332,10 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     assert second.work_intent.graph_query_draft.presentation == "mermaid"
     assert "boi:public:guide" in second.work_intent.graph_query_draft.focal_mentions
     assert set(second.work_intent.graph_query_draft.focal_mentions) == set(second.work_intent.context_refs)
-    assert second.artifact_refs[0].artifact_type == "ontology_graph"
+    assert second.artifact_refs[0].artifact_type == "mermaid_diagram"
     artifact = v2_service.get_artifact(principal, second.artifact_refs[0].artifact_id)
     assert artifact["draft"]["presentation"] == "mermaid"
+    assert artifact["draft"]["mermaid"].startswith("flowchart")
     assert 1 <= len(artifact["draft"]["nodes"]) <= 10
     assert 1 <= len(artifact["draft"]["edges"]) <= 14
     assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["nodes"])
@@ -2166,6 +2343,7 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     assert artifact["actions"] == []
     assert second.artifact_refs[0].actions == []
     assert "Task 또는 SOP" not in second.answer.markdown
+    assert all(item.citation_id in second.answer.markdown for item in second.citations)
     timeline = v2_service.session_timeline(principal, first.work_session_id)["items"]
     assert timeline[-2]["display_text"] == "머메이드 차트로 그려줘"
     assert timeline[-1]["artifact_refs"][0]["artifact_id"] == artifact["artifact_id"]
@@ -2202,7 +2380,7 @@ def test_multiturn_visual_followup_uses_prior_citations_even_when_planner_prefer
     assert second.work_intent.work_view == "none"
     assert second.work_intent.context_refs
     assert second.grounding_status == "grounded"
-    assert second.artifact_refs[0].artifact_type == "ontology_graph"
+    assert second.artifact_refs[0].artifact_type == "mermaid_diagram"
 
 
 def test_mermaid_conversion_actions_require_explicit_transform_intent(
@@ -2322,7 +2500,7 @@ def test_grounded_mermaid_uses_the_deterministic_graph_compiler_without_an_extra
 
     artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
     assert model.graph_calls == 0
-    assert artifact["artifact_type"] == "ontology_graph"
+    assert artifact["artifact_type"] == "mermaid_diagram"
     assert artifact["draft"]["presentation"] == "mermaid"
     assert len(artifact["draft"]["nodes"]) <= 10
     assert len(artifact["draft"]["edges"]) <= 14
@@ -2350,7 +2528,7 @@ def test_grounded_mermaid_ignores_untrusted_model_graph_shapes(
 
     assert response.status == "completed"
     assert model.graph_calls == 0
-    assert artifact["artifact_type"] == "ontology_graph"
+    assert artifact["artifact_type"] == "mermaid_diagram"
     assert artifact["draft"]["presentation"] == "mermaid"
     assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["nodes"])
     assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["edges"])
@@ -3707,6 +3885,71 @@ def test_read_only_grounded_answer_reuses_the_planner_call_when_refs_are_verifie
     assert response.related_questions
     assert all(item.source_refs for item in response.related_questions)
     assert f"/api/v2/citations/{response.citations[0].citation_id}" in response.answer.markdown
+
+
+def test_read_only_grounded_answer_resolves_short_planner_source_keys(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = CombinedPlannerAnswerModel(use_source_key=True)
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="BoI Wiki 운영 가이드의 게시 기준을 알려줘"),
+    )
+
+    assert model.planner_calls == 1
+    assert model.answer_calls == 0
+    assert response.used_source_refs
+    assert all(not item.startswith("S") for item in response.used_source_refs)
+    assert response.citations[0].source_ref in response.used_source_refs
+
+
+def test_read_only_table_reuses_the_grounded_planner_answer(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = CombinedPlannerAnswerModel(use_source_key=True, presentation_mode="table")
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="게시 전에 확인할 근거를 표로 보여줘"),
+    )
+
+    assert model.planner_calls == 1
+    assert model.answer_calls == 0
+    assert response.work_intent is not None
+    assert response.work_intent.presentation_mode == "table"
+    assert response.used_source_refs
+
+
+def test_read_only_table_compiles_verified_rows_when_the_planner_omits_answer_content(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = CombinedPlannerAnswerModel(
+        presentation_mode="table",
+        omit_grounded_answer=True,
+    )
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="게시 전에 실제 확인할 근거를 표로 구분해줘"),
+    )
+
+    assert model.planner_calls == 1
+    assert model.answer_calls == 0
+    assert response.work_intent is not None
+    assert response.work_intent.presentation_mode == "table"
+    assert "| 확인 자료 | 종류 | 확인할 내용 |" in response.answer.markdown
+    assert response.used_source_refs
+    assert all(item.citation_id in response.answer.markdown for item in response.citations)
 
 
 def test_planner_answer_with_an_unretrieved_ref_falls_back_to_the_grounded_answer_call(

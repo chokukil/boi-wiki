@@ -31,6 +31,8 @@ class QuickAgentState(TypedDict, total=False):
     work_intent: dict[str, Any]
     continuation: dict[str, Any]
     grounded_answer: dict[str, Any] | None
+    grounded_answer_diagnostics: dict[str, Any]
+    sop_draft: dict[str, Any] | None
     route_source: str
     route_reason: str
     planner_error: str
@@ -135,7 +137,7 @@ class QuickAgentRuntime:
         return [
             {
                 "capability_id": item.capability_id,
-                "description": item.description,
+                "description": str(item.description)[:180],
                 "primary_asset": item.primary_asset.value,
                 "operation_class": item.operation.value,
                 "deep": item.deep,
@@ -152,6 +154,8 @@ class QuickAgentRuntime:
                 "asset_kind",
                 "operation",
                 "presentation_mode",
+                "grounded_answer",
+                "sop_draft",
             ],
             "properties": {
                 "capability_id": {"type": "string", "enum": capability_ids},
@@ -250,10 +254,12 @@ class QuickAgentRuntime:
                 },
                 "grounded_answer": {
                     "type": "object",
+                    "required": ["summary", "summary_source_refs", "outcomes", "related_questions"],
                     "description": (
-                        "For an ordinary read-only prose knowledge.search question, the grounded answer produced in "
-                        "this planning call. Every source_refs value must come from wiki_hybrid_hints. Return an "
-                        "empty object for every other operation or when the hints are insufficient. The server "
+                        "For an ordinary read-only prose or table knowledge.search or cases.similar question, the grounded answer produced in "
+                        "this planning call. Every source_refs value must be a source_key from wiki_hybrid_hints. "
+                        "The server resolves those short keys to verified source refs. Return an "
+                        "empty fields for every other operation or when the hints are insufficient. The server "
                         "validates the complete prose shape before using it."
                     ),
                     "properties": {
@@ -262,6 +268,7 @@ class QuickAgentRuntime:
                             "type": "array",
                             "maxItems": 4,
                             "items": {"type": "string"},
+                            "description": "For a non-empty summary, one or more exact short source_key values such as S1.",
                         },
                         "outcomes": {
                             "type": "array",
@@ -304,6 +311,51 @@ class QuickAgentRuntime:
                                     },
                                 },
                             },
+                        },
+                    },
+                },
+                "sop_draft": {
+                    "type": "object",
+                    "required": ["title", "goal", "tasks", "gaps"],
+                    "description": (
+                        "For sop.plan create or refine, produce the private SOP outline in this same semantic call. "
+                        "For every other capability return title='', goal='', tasks=[], gaps=[]."
+                    ),
+                    "properties": {
+                        "title": {"type": "string", "maxLength": 100},
+                        "goal": {"type": "string", "maxLength": 240},
+                        "tasks": {
+                            "type": "array",
+                            "maxItems": 6,
+                            "items": {
+                                "type": "object",
+                                "required": [
+                                    "name", "purpose", "execution_mode", "exit_criteria", "required_evidence"
+                                ],
+                                "properties": {
+                                    "name": {"type": "string", "maxLength": 90},
+                                    "purpose": {"type": "string", "maxLength": 180},
+                                    "execution_mode": {
+                                        "type": "string",
+                                        "enum": ["manual", "copilot", "autopilot"],
+                                    },
+                                    "exit_criteria": {
+                                        "type": "array",
+                                        "maxItems": 2,
+                                        "items": {"type": "string", "maxLength": 160},
+                                    },
+                                    "required_evidence": {
+                                        "type": "array",
+                                        "maxItems": 2,
+                                        "items": {"type": "string", "maxLength": 160},
+                                    },
+                                },
+                            },
+                        },
+                        "gaps": {
+                            "type": "array",
+                            "maxItems": 4,
+                            "items": {"type": "string", "maxLength": 160},
                         },
                     },
                 },
@@ -434,6 +486,15 @@ class QuickAgentRuntime:
                 ]
             )
         )[:24]
+        knowledge_hints = [
+            item
+            for item in (state.get("knowledge_hints") or [])[:6]
+            if isinstance(item, dict) and str(item.get("ref") or "").strip()
+        ]
+        planner_hints = [
+            {**item, "source_key": f"S{index}"}
+            for index, item in enumerate(knowledge_hints, start=1)
+        ]
         system = (
             "You are the BoI Wiki work-intent planner. Interpret the complete workplace goal semantically, never by isolated "
             "keywords, and return the schema exactly. The current page and active artifact are anchors, not search boundaries; "
@@ -470,13 +531,17 @@ class QuickAgentRuntime:
             "in prose is not automatically a diagram. result_purpose is explain, compare, design, transform, or execute. Never add "
             "SOP, Task, Event, or Action incidentally. artifact_actions is empty for explain/compare; split_tasks and "
             "create_sop_draft require an explicit conversion request. Never invent refs, targets, capability IDs, confirmation, or "
-            "permissions. For an ordinary read-only prose question routed to knowledge.search, "
+            "permissions. For an ordinary read-only prose or table question routed to knowledge.search or cases.similar, "
             "grounded_answer MUST be a non-empty answer produced in this same call from the supplied wiki_hybrid_hints. Include "
-            "only claims supported by those hints and copy their exact ref "
-            "values into every source_refs field. Keep the conclusion short, use one section with no more than three outcome "
+            "only claims supported by those hints and copy their short source_key values (for example S1) into every "
+            "source_refs field. Keep the conclusion short, use one section with no more than three outcome "
             "items, and suggest no more than one related question. Omit "
-            "the content by returning grounded_answer={} for drafts, mutations, current/combined work views, diagrams, or when "
-            "the hints are insufficient. The empty object is valid and must not be filled with placeholder fields.\n"
+            "the content for drafts, mutations, current/combined work views, diagrams, or insufficient hints by returning "
+            "grounded_answer with summary='', summary_source_refs=[], outcomes=[], and related_questions=[]. Never return a "
+            "non-empty summary without at least one exact source_key in summary_source_refs. For sop.plan create or refine, "
+            "fill sop_draft from the resolved goal, conversation, and supplied Wiki hints in the same call. Keep it to 3-5 "
+            "workplace Tasks with observable completion criteria and actual evidence labels. This is a private preview, not a "
+            "published SOP. For every other route return the required empty sop_draft shape.\n"
             "Semantic examples: explaining the core of one guide is knowledge.search + understand; explaining how SOP, Event, "
             "Action, people, evidence, or outcomes connect is knowledge.search + connect; comparing a few known cases is "
             "cases.similar + compare; an explicit deep, durable investigation across multiple SOPs or sources is deep.research "
@@ -499,7 +564,7 @@ class QuickAgentRuntime:
                 "conversation_summary": str(state.get("conversation_summary") or "")[:2000],
                 "conversation_context": conversation_context,
                 "trusted_context_refs": trusted_context_refs,
-                "wiki_hybrid_hints": list(state.get("knowledge_hints") or [])[:6],
+                "wiki_hybrid_hints": planner_hints,
                 "trusted_targets": dict(state.get("trusted_targets") or {}),
                 "requested_result_kind": str(state.get("requested_result_kind") or ""),
                 "requested_graph_query_kind": str(state.get("requested_graph_query_kind") or ""),
@@ -659,24 +724,40 @@ class QuickAgentRuntime:
                 if isinstance(item, dict) and str(item.get("ref") or "").strip()
             ))
             hint_ref_set = set(hint_refs)
+            hint_key_to_ref = {
+                str(item.get("source_key") or ""): str(item.get("ref") or "")
+                for item in planner_hints
+                if str(item.get("source_key") or "") and str(item.get("ref") or "")
+            }
+
+            def resolve_hint_ref(value: Any) -> str:
+                candidate = str(value or "").strip()
+                if candidate in hint_ref_set:
+                    return candidate
+                return hint_key_to_ref.get(candidate, "")
+
+            def resolved_hint_refs(values: Any) -> list[str]:
+                return list(
+                    dict.fromkeys(
+                        resolved
+                        for item in (values or [])
+                        if (resolved := resolve_hint_ref(item))
+                    )
+                )[:4]
+
             grounded_answer = None
+            summary_refs: list[str] = []
             raw_grounded_answer = planned.get("grounded_answer")
             if (
-                capability_id == "knowledge.search"
+                capability_id in {"knowledge.search", "cases.similar"}
                 and operation in {"understand", "compare", "connect"}
-                and presentation_mode == "prose"
+                and presentation_mode in {"prose", "table"}
                 and work_view == "none"
                 and isinstance(raw_grounded_answer, dict)
                 and hint_ref_set
             ):
                 summary = str(raw_grounded_answer.get("summary") or "").strip()[:420]
-                summary_refs = list(
-                    dict.fromkeys(
-                        str(item)
-                        for item in raw_grounded_answer.get("summary_source_refs") or []
-                        if str(item) in hint_ref_set
-                    )
-                )[:4]
+                summary_refs = resolved_hint_refs(raw_grounded_answer.get("summary_source_refs"))
                 outcomes: list[dict[str, Any]] = []
                 item_count = 0
                 for raw_outcome in (raw_grounded_answer.get("outcomes") or [])[:1]:
@@ -687,13 +768,7 @@ class QuickAgentRuntime:
                         if not isinstance(raw_item, dict) or item_count >= 3:
                             continue
                         text = str(raw_item.get("text") or "").strip()[:300]
-                        refs = list(
-                            dict.fromkeys(
-                                str(item)
-                                for item in raw_item.get("source_refs") or []
-                                if str(item) in hint_ref_set
-                            )
-                        )[:4]
+                        refs = resolved_hint_refs(raw_item.get("source_refs"))
                         if text and refs:
                             items.append({"text": text, "source_refs": refs})
                             item_count += 1
@@ -704,13 +779,7 @@ class QuickAgentRuntime:
                 for raw_question in (raw_grounded_answer.get("related_questions") or [])[:1]:
                     if not isinstance(raw_question, dict):
                         continue
-                    refs = list(
-                        dict.fromkeys(
-                            str(item)
-                            for item in raw_question.get("source_refs") or []
-                            if str(item) in hint_ref_set
-                        )
-                    )[:4]
+                    refs = resolved_hint_refs(raw_question.get("source_refs"))
                     kind = str(raw_question.get("kind") or "understand")
                     label = str(raw_question.get("label") or "").strip()[:120]
                     question = str(raw_question.get("question") or "").strip()[:600]
@@ -718,12 +787,76 @@ class QuickAgentRuntime:
                         related_questions.append(
                             {"kind": kind, "label": label, "question": question, "source_refs": refs}
                         )
-                if summary and summary_refs and outcomes:
+                if summary and summary_refs:
                     grounded_answer = {
                         "summary": summary,
                         "summary_source_refs": summary_refs,
                         "outcomes": outcomes,
                         "related_questions": related_questions,
+                    }
+            grounded_answer_diagnostics = {
+                "raw_present": isinstance(raw_grounded_answer, dict) and bool(raw_grounded_answer),
+                "raw_summary_chars": len(str((raw_grounded_answer or {}).get("summary") or ""))
+                if isinstance(raw_grounded_answer, dict)
+                else 0,
+                "raw_summary_ref_count": len((raw_grounded_answer or {}).get("summary_source_refs") or [])
+                if isinstance(raw_grounded_answer, dict)
+                else 0,
+                "raw_summary_refs": [
+                    str(item)[:120]
+                    for item in ((raw_grounded_answer or {}).get("summary_source_refs") or [])[:4]
+                ]
+                if isinstance(raw_grounded_answer, dict)
+                else [],
+                "resolved_summary_ref_count": len(summary_refs),
+                "accepted": grounded_answer is not None,
+            }
+            sop_draft = None
+            raw_sop_draft = planned.get("sop_draft")
+            if (
+                capability_id == "sop.plan"
+                and operation in {"create", "refine"}
+                and isinstance(raw_sop_draft, dict)
+            ):
+                sop_tasks: list[dict[str, Any]] = []
+                for raw_task in (raw_sop_draft.get("tasks") or [])[:6]:
+                    if not isinstance(raw_task, dict):
+                        continue
+                    task = {
+                        "name": str(raw_task.get("name") or "").strip()[:90],
+                        "purpose": str(raw_task.get("purpose") or "").strip()[:180],
+                        "execution_mode": str(raw_task.get("execution_mode") or "").strip().lower(),
+                        "exit_criteria": [
+                            str(item).strip()[:160]
+                            for item in (raw_task.get("exit_criteria") or [])[:2]
+                            if str(item).strip()
+                        ],
+                        "required_evidence": [
+                            str(item).strip()[:160]
+                            for item in (raw_task.get("required_evidence") or [])[:2]
+                            if str(item).strip()
+                        ],
+                    }
+                    if (
+                        task["name"]
+                        and task["purpose"]
+                        and task["execution_mode"] in {"manual", "copilot", "autopilot"}
+                        and task["exit_criteria"]
+                        and task["required_evidence"]
+                    ):
+                        sop_tasks.append(task)
+                sop_title = str(raw_sop_draft.get("title") or "").strip()[:100]
+                sop_goal = str(raw_sop_draft.get("goal") or "").strip()[:240]
+                if sop_title and sop_goal and sop_tasks:
+                    sop_draft = {
+                        "title": sop_title,
+                        "goal": sop_goal,
+                        "tasks": sop_tasks,
+                        "gaps": [
+                            str(item).strip()[:160]
+                            for item in (raw_sop_draft.get("gaps") or [])[:4]
+                            if str(item).strip()
+                        ],
                     }
             trusted_ref_set = set(trusted_context_refs)
             context_refs = list(
@@ -799,6 +932,8 @@ class QuickAgentRuntime:
                 "route_source": "llm_structured",
                 "route_reason": "semantic_work_intent",
                 "grounded_answer": grounded_answer,
+                "grounded_answer_diagnostics": grounded_answer_diagnostics,
+                "sop_draft": sop_draft,
                 "trace": [*(state.get("trace") or []), "plan:llm_structured"],
             }
         except Exception as exc:
@@ -913,5 +1048,7 @@ class QuickAgentRuntime:
             "reason": result.get("route_reason") or "",
             "planner_error": result.get("planner_error") or "",
             "grounded_answer": result.get("grounded_answer"),
+            "grounded_answer_diagnostics": result.get("grounded_answer_diagnostics") or {},
+            "sop_draft": result.get("sop_draft"),
             "trace": result.get("trace") or [],
         }
