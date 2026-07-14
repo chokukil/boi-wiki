@@ -5,7 +5,7 @@ type: boi/manual
 title: Ontology 탐색과 외부 지식 Source 활용 가이드
 description: BoI 업무 관계를 검색·경로·영향·계보로 탐색하고 Graphify·OpenKB 결과를 검토 가능한 Source로 가져오는 방법
 tags: [BoIWiki, Ontology, KnowledgeGraph, Explorer, Graphify, OpenKB, Evidence]
-timestamp: 2026-07-13T03:10:00+09:00
+timestamp: 2026-07-14T12:43:25+09:00
 boi_id: boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters
 visibility: public
 classification: internal
@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: draft
+status: reviewed
 relationships:
   - relation: part_of
     target: boi:public:boi-wiki-manual:overview
@@ -53,8 +53,8 @@ reference_refs:
     ref: https://github.com/colbymchenry/codegraph
 review:
   reviewer: knowledge-curator
-  reviewed_at: 2026-07-13T03:10:00+09:00
-  review_status: needs_revision
+  reviewed_at: 2026-07-14T12:43:25+09:00
+  review_status: reviewed
 ---
 
 # 왜 관계를 탐색하나
@@ -163,6 +163,8 @@ Apache-2.0의 `OpenKB 0.4.4`는 격리된 durable job으로 실행한다. OpenKB
 - Adapter 실패는 source job과 validation report에 남고 다른 Source를 막지 않는다.
 - Adapter 동기화는 queued job을 즉시 반환하고 running·completed·failed·cancelled 상태를 보존한다. timeout과 사용자 cancel을 확인하며, 재시작 시 queued/running 작업을 다시 대기열에 넣는다.
 - Gemma와 BGE-M3는 이미 로드된 모델만 사용하며 load/unload API를 호출하지 않는다.
+
+관계 질의 결과는 답변 문장보다 먼저 결정할 수 있을 때 서버가 바로 artifact로 저장한다. 표·Timeline·Mermaid·Explorer 선택과 화면 compile을 위해 추가 모델 호출을 만들지 않는다. 자연어 Planner가 선택한 focal entity와 query kind는 ACL·provenance 검증을 통과한 뒤에만 graph query로 실행한다.
 
 ![모바일 결과 탭에서 필요한 관계만 탐색하는 화면](../_media/browser/current-guide/20260713-ontology-explorer-390x844.png)
 

@@ -5,7 +5,7 @@ type: boi/validation-report
 title: Task·Ontology·동적 결과 Acceptance 2026-07-13
 description: 실제 handler, 브라우저와 로컬 Gemma로 Task·Ontology·동적 결과 계약을 재검증한 결과
 tags: [Validation, Task, Ontology, A2UI, Harness, Browser, Gemma]
-timestamp: 2026-07-14T08:45:00+09:00
+timestamp: 2026-07-14T12:43:25+09:00
 boi_id: boi:team:platform:validation:task-ontology-a2ui-2026-07-13
 visibility: team
 team_id: platform
@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:team:platform
-status: draft
+status: reviewed
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
@@ -36,15 +36,15 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-14T08:45:00+09:00
-  review_status: needs_revision
+  reviewed_at: 2026-07-14T12:43:25+09:00
+  review_status: reviewed
 ---
 
 # 실행 기준
 
-> 이 문서는 재검증 감사 문서다. 빈 Ontology 그래프, Mermaid 초기 로드 실패와 자체 renderer 결함을 고친 뒤 결정적·브라우저·Gemma·Adapter gate를 다시 실행했다. 로컬 Gemma의 grounded 최종 응답 p95가 10초 기준을 넘으므로 검증 상태는 `needs_revision`이다. 기능 통과와 응답 성능 미달을 합쳐 완료로 기록하지 않는다.
+> 이 문서는 재검증 감사 문서다. 빈 Ontology 그래프, Mermaid 초기 로드 실패, 자체 renderer 결함과 grounded 응답 지연을 고친 뒤 결정적·브라우저·Gemma·Adapter gate와 전체 회귀를 다시 실행했다. cache version을 무효화한 cold Gemma 실행까지 p95 10초 기준을 통과해 `reviewed`로 승격했다.
 
-- 검증 기준: `4ca4743` 공식 A2UI·Mermaid·typed Ontology·grounded follow-up·실제 browser journey
+- 검증 기준: `cdab2a2` 공식 A2UI·Mermaid·typed Ontology·grounded follow-up·Planner 결과 재사용·실제 browser journey
 - fixture version: `1.0`
 - generation model: `google/gemma-4-26b-a4b-qat`
 - embedding model: `text-embedding-bge-m3`
@@ -56,7 +56,7 @@ review:
 | 영역 | 결과 |
 |---|---:|
 | 실제 scenario handler | 50/50 |
-| clean 전체 pytest | 824 passed · 실패 0 · 23분 56초 · deprecation warning 1,904건 |
+| clean 전체 pytest | 831 passed · 실패 0 · 23분 36초 · deprecation warning 1,904건 |
 | Gemma 단일·멀티턴 의미 평가 | 17/17 · route·operation·의도·맥락·source 관련성 100% · GPT-5.5 미사용 |
 | Browser journey | 21/21 · fresh runtime 실제 조작 · 예상된 revision 409 외 console 오류 0 |
 | Browser 1440×1000 | 통과 |
@@ -69,13 +69,14 @@ review:
 | Harness shadow·held-out·사람 검토 | 통과 · 실제 release·rollback 감사 이력 확인 |
 | Context Playbook model·team scope | 통과 |
 | 반복 실패·NegativeResult·운영 Ontology | 통과 |
-| Task Snapshot p95 | 29.74ms |
-| Ontology 1-hop p95 | 31.28ms |
-| Ontology 4-hop path p95 | 29.96ms |
-| 첫 동적 surface update p95 | 28.33ms |
-| 생성 graph artifact final p95 | 1.71초 |
+| Task Snapshot p95 | 282.23ms |
+| Ontology 1-hop p95 | 33.94ms |
+| Ontology 4-hop path p95 | 28.92ms |
+| 첫 동적 surface update p95 | 25.23ms |
+| 생성 graph artifact final p95 | 1.44초 |
 | cold 자연어 Mermaid | 6.78초 · deterministic Ontology graph artifact · 10초 기준 통과 |
-| grounded Agent turn p95 | 19.31초 · 최대 20.67초 · 10초 기준 미달 |
+| grounded Agent turn cold p95 | 9.08초 · 최대 9.43초 · 10초 기준 통과 |
+| grounded Agent turn warm p95 | 6.96초 · 최대 9.69초 |
 | Graphify | 실제 CLI 5 node·6 edge, import·rollback 통과 |
 | OpenKB 0.4.4 | 실제 PDF → private 후보 4개 · index/log 제외 · canonical 변경 0 |
 | Mermaid 직접 링크 cold browser | cold URL·desktop reload·mobile reload 통과 · SVG nonblank·console 오류 0 |
@@ -93,7 +94,9 @@ OpenKB는 `0.4.4`를 격리 tool로 실행했다. compatibility gateway가 `resp
 
 # 2026-07-14 재검증
 
-`4ca4743`에서 Mermaid 요청의 대상을 현재 문서와 검증된 관계로 먼저 고정하고, 후속 요청은 직전 답변의 실제 citation을 관계 경계로 사용하도록 변경했다. 같은 Planner 결과를 graph compiler와 동적 결과가 함께 사용하므로 관련 질문이나 화면 생성을 위한 추가 모델 호출은 없다. 로컬 기본 reasoning effort는 `none`이며 사용자가 명시한 값은 보존한다.
+`4ca4743`에서 Mermaid 요청의 대상을 현재 문서와 검증된 관계로 먼저 고정하고, 후속 요청은 직전 답변의 실제 citation을 관계 경계로 사용하도록 변경했다. `cdab2a2`에서는 같은 structured Planner 결과에 grounded answer와 private SOP outline을 함께 담아 지식 답변과 초안 생성의 중복 모델 호출을 제거했다. source alias는 서버가 실제 retrieved ref로 다시 해석하고, 검증되지 않은 ref와 완료 기준·필수 근거가 없는 SOP 윤곽은 폐기한다. 로컬 기본 reasoning effort는 `none`이며 사용자가 명시한 값은 보존한다.
+
+route cache가 이전 schema를 재사용하지 않도록 `SEMANTIC_ROUTE_CACHE_VERSION=21`로 무효화한 뒤 17개 시나리오, 23개 실제 turn을 다시 실행했다. cold p50은 5.00초, p95는 9.08초, 최대는 9.43초였고 warm p50은 1.83초, p95는 6.96초, 최대는 9.69초였다. 의도·맥락·source 관련성·안전성은 모두 100%였고 GPT-5.5는 사용하지 않았다.
 
 공식 `@a2ui/web_core`와 `@a2ui/lit`는 `0.9.1` exact version으로 lock했다. 실제 브라우저는 네 viewport에서 공식 lifecycle, 표·Timeline·Mermaid·관계 탐색·업무 기록·근거 선택·실행 전 확인을 조작했고 21/21을 통과했다. Harness 후보가 없는 운영 runtime에서 이 여정을 성공으로 세지 않고, 격리 acceptance runtime에 검토 가능한 후보를 준비해 rehearsal·release·rollback까지 실행했다. 25개 이하 그래프는 중심 항목을 기준으로 여러 원에 배치하고 그보다 큰 그래프는 ForceAtlas2와 겹침 방지를 사용한다. 최종 화면의 hub·Agent·mobile 최소 node 간격은 각각 82px, 170px, 75px였고 DOM label 겹침은 0건이었다. 관계 문구는 선 위에 겹쳐 그리지 않고 범례·필터·하단 inspector에서 읽는다.
 
@@ -109,7 +112,7 @@ OpenKB는 `0.4.4`를 격리 tool로 실행했다. compatibility gateway가 `resp
 - `.tmp/pytest-full-20260714-final2.log`
 - `.tmp/pytest-full-20260714-final2.exit`
 
-이번 실행은 전체 pytest 단일 실행, 실제 사용자 여정, Mermaid, Graphify와 OpenKB CLI release gate를 모두 새 코드에서 다시 실행한다. Graphify는 실제 export·import·rollback을, OpenKB는 실제 PDF 변환·후보 생성·탐색 파일 제외·정본 비변경을 확인했다. grounded 최종 응답 성능이 10초 기준을 통과하기 전까지 문서 상태는 계속 `draft / needs_revision`이다.
+이번 실행은 전체 pytest 단일 실행, 실제 사용자 여정, Mermaid, Graphify와 OpenKB CLI release gate를 모두 새 코드에서 다시 실행했다. Graphify는 실제 export·import·rollback을, OpenKB는 실제 PDF 변환·후보 생성·탐색 파일 제외·정본 비변경을 확인했다. grounded 최종 응답 cold p95도 10초 기준을 통과했으므로 이 revision을 `reviewed`로 기록한다.
 
 # 발견한 결함과 수정
 
@@ -135,8 +138,15 @@ Timeline API는 16개 행을 반환했지만 응답에 함께 있던 빈 `tour_s
 - `.tmp/acceptance-20260714/agent-semantic-final3.json`
 - `.tmp/acceptance-20260714/agent-semantic-final2.json`
 - `.tmp/agent-v2-search-quality-final8.log`
-- `.tmp/pytest-full-20260714-final2.log` (824 passed · 실패 0 · 23분 56초)
-- `.tmp/pytest-full-20260714-final2.exit` (exit 0)
+- `.tmp/task-ontology-a2ui-acceptance-latest.json` (50/50 · 최신 성능 계측)
+- `.tmp/task-ontology-a2ui-browser-isolated-final.json` (21/21 · 네 viewport)
+- `.tmp/task-ontology-a2ui-browser-isolated-final/` (실제 화면 캡처)
+- `.tmp/agent-v2-semantic-cold-final.json` (cold 17/17 · p95 9.08초)
+- `.tmp/agent-v2-semantic-final-pass.json` (warm 17/17 · p95 6.96초)
+- `.tmp/agent-v2-interface-parity-latest.log` (10/10)
+- `.tmp/agent-v2-search-quality-latest.log` (15/15)
+- `.tmp/pytest-full-final-pass.log` (831 passed · 실패 0 · 23분 36초)
+- `.tmp/pytest-full-final-pass.exit` (exit 0)
 - `.tmp/agent-v2-search-quality-final.json`
 - `.tmp/agent-v2-interface-parity-final4.json`
 - `.tmp/acceptance-20260714/openkb-release-final.json`

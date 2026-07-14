@@ -6,7 +6,7 @@ title: BoI Agent 사용 가이드
 description: 현재 화면과 Wiki 전체 지식을 바탕으로 질문, 근거 확인, Mermaid, SOP·Task 초안과 업무 수행을 이어가는 방법
 tags: [Manual, BoIAgent, Search, Citation, Mermaid, WorkSession]
 aliases: [BoI Agent로 무엇을 할 수 있나, BoI Agent 사용법, BoI Agent 도움말]
-timestamp: 2026-07-14T23:20:00+09:00
+timestamp: 2026-07-14T12:43:25+09:00
 boi_id: boi:public:boi-wiki-manual:agent:using-boi-agent
 visibility: public
 classification: internal
@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: draft
+status: reviewed
 agent_entrypoint_areas: [knowledge, automation]
 agent_entrypoint_prompts:
   knowledge:
@@ -50,7 +50,8 @@ relationships:
     label: 업무 맥락과 학습 순환
 review:
   reviewer: harness-curator
-  review_status: needs_revision
+  reviewed_at: 2026-07-14T12:43:25+09:00
+  review_status: reviewed
 ---
 
 # BoI Agent로 무엇을 할 수 있나
@@ -179,6 +180,10 @@ flowchart LR
 ```
 
 진행 중에는 `업무 맥락 확인`, `관련 지식 탐색`, `근거 검토`, `답변 정리`처럼 현재 단계를 표시한다. 내부 추론문이나 chain-of-thought는 보여주지 않는다. 중지하면 현재 요청만 취소하고 이전 대화와 결과는 유지한다.
+
+빠른 지식 답변과 SOP 초안은 질문 해석 단계에서 근거 답변 또는 Task 윤곽을 함께 준비한다. 화면을 만들기 위해 같은 질문을 모델에 다시 묻지 않는다. 대신 서버가 실제 검색된 source인지, 완료된 모습과 확인할 자료가 있는지, 권한과 schema를 만족하는지를 다시 검증한다. 검증하지 못한 내용은 답이나 초안으로 채택하지 않고 기존의 안전한 생성 경로 또는 근거 부족 안내로 돌아간다.
+
+따라서 빠르게 보인다는 이유로 검증을 생략하지 않으며, 명시적인 검토·시험 요청은 별도의 Harness 단계로 계속 수행한다.
 
 # 관련 질문과 다음 행동
 

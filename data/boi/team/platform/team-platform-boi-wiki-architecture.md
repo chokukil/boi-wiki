@@ -5,7 +5,7 @@ type: boi/reference
 title: BoI Wiki Architecture
 description: BoI Wiki의 Agent v2, Work Learning, Living Knowledge, Event·Workflow·Action runtime과 배포 경계를 설명하는 현재 아키텍처
 tags: [BoIWiki, Architecture, AgentV2, WorkRun, KnowledgeGraph, EventBroker, ActionGateway]
-timestamp: 2026-07-12T10:45:00+09:00
+timestamp: 2026-07-14T12:43:25+09:00
 boi_id: boi:team:platform:boi-wiki-architecture-v0.1
 visibility: team
 team_id: platform
@@ -15,7 +15,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:team:platform
-status: draft
+status: reviewed
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:agent:work-learning-system
@@ -46,8 +46,8 @@ implementation_refs:
     ref: boi_wiki_mcp/app/main.py
 review:
   reviewer: platform-lead
-  reviewed_at: 2026-07-12T15:00:00+09:00
-  review_status: needs_revision
+  reviewed_at: 2026-07-14T12:43:25+09:00
+  review_status: reviewed
 ---
 
 # 한 문장 정의
@@ -217,9 +217,13 @@ Ontology 갱신은 전체 table truncate가 아니라 source revision별 node·e
 
 자연어 관계 질문은 `GraphQueryDraft → EntityResolver → GraphQueryPlan → parameterized graph query` 순서로 실행한다. Planner는 사람·팀·자산 표현과 원하는 결과만 제안하며 SQL·Cypher를 만들지 않는다. `current`, `responsibility`, `combined` 업무 관점은 현재 Inbox와 공식 역할·검증 수행 이력을 분리한다.
 
+Quick Agent의 structured Planner는 자연어 route, grounded answer와 private SOP outline을 하나의 schema에서 반환할 수 있다. source는 짧은 key로만 참조하고 서버가 실제 retrieved ref로 다시 해석한다. grounded claim이 검색 경계 밖이거나 SOP Task에 완료 기준·필수 근거가 없으면 결과를 폐기하고 검증된 fallback을 사용한다. semantic route schema가 바뀌면 cache version을 올려 오래된 route가 새 계약을 우회하지 못하게 한다.
+
 Task 실행은 `TaskExecutionSnapshot`을 Inbox와 Task Console의 공통 read model로 사용한다. `TaskWorkRecord`는 확인 내용, 조치, 판단, 결과와 근거를 보존하고 복수 담당자는 하나의 Task 상태를 공유한다.
 
 Agent와 Task의 동적 표현은 A2UI protocol `0.9.1`과 `@a2ui/web_core/v0_9`, `@a2ui/lit/v0_9` runtime을 사용하는 `boi-a2ui/v1` catalog로 컴파일한다. 서버는 `createSurface → updateComponents → updateDataModel` 메시지와 persisted data model을 저장하고 Web은 공식 processor 위에 업무 component를 등록한다. A2UI는 정본이나 업무 규칙이 아니며, 허용된 component와 event만 렌더링한다. 지원하지 않는 client 또는 검증 실패 시 기존 typed response renderer 하나만 사용한다.
+
+Planner가 이미 만든 Domain Result는 deterministic compiler가 surface와 artifact로 바꾼다. 표·Timeline·Mermaid·Ontology Explorer를 위해 추가 모델 호출을 만들지 않으며, SSE는 `accepted → context → retrieval → evaluation → createSurface → updateComponents/updateDataModel → final` 순서를 유지한다.
 
 Harness 개선도 같은 표현 계층을 사용하지만 production mutation 경계와 분리한다. WorkRun의 verifier 실패는 인과적 FailurePattern과 NegativeResult로 누적되고, ContextPlaybook은 개인·팀·model profile·freshness 조건이 맞는 항목만 선택한다. Candidate는 editable surface allowlist와 반복 상한을 통과한 뒤 shadow, held-in/out, adversarial, long-term 평가와 사람 검토를 거친다.
 

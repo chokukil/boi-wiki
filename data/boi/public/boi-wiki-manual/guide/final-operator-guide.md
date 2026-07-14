@@ -5,7 +5,7 @@ type: boi/manual
 title: BoI Wiki 종합 가이드
 description: BoI Wiki에서 지식을 찾고 이해하며 업무를 수행하고 결과를 다시 지식으로 남기는 사용자 중심 가이드
 tags: [Manual, Guide, BoIAgent, Inbox, SOP, Event, Action, WorkLearning]
-timestamp: 2026-07-12T10:45:00+09:00
+timestamp: 2026-07-14T12:43:25+09:00
 boi_id: boi:public:boi-wiki-manual:guide:final-operator-guide
 visibility: public
 classification: internal
@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: draft
+status: reviewed
 agent_entrypoint_areas: [current_work, knowledge]
 agent_entrypoint_prompts:
   current_work:
@@ -49,7 +49,8 @@ implementation_refs:
     ref: boi_api/app/v2/knowledge_system.py
 review:
   reviewer: harness-curator
-  review_status: needs_revision
+  reviewed_at: 2026-07-14T12:43:25+09:00
+  review_status: reviewed
 ---
 
 # BoI Wiki로 하는 일

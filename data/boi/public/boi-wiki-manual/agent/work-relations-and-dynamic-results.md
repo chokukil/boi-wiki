@@ -5,7 +5,7 @@ type: boi/manual
 title: 업무 관계와 동적 결과 활용 가이드
 description: 사람·팀·Task·SOP·Event·Action의 검증된 관계를 질문하고 결과에 맞는 표, Timeline, Mermaid와 관계 탐색 화면을 사용하는 방법
 tags: [BoIWiki, BoIAgent, Ontology, WorkRelation, DynamicResult, Evidence]
-timestamp: 2026-07-14T23:20:00+09:00
+timestamp: 2026-07-14T12:43:25+09:00
 boi_id: boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results
 visibility: public
 classification: internal
@@ -14,7 +14,7 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:public
-status: draft
+status: reviewed
 agent_entrypoint_areas: [current_work, knowledge]
 agent_entrypoint_prompts:
   current_work:
@@ -49,7 +49,8 @@ implementation_refs:
     ref: boi_api/app/static/agent_workspace_v2.js
 review:
   reviewer: harness-curator
-  review_status: needs_revision
+  reviewed_at: 2026-07-14T12:43:25+09:00
+  review_status: reviewed
 ---
 
 # 무엇을 구분해서 보나
@@ -95,6 +96,10 @@ flowchart LR
 그래프는 결과 폭을 모두 사용하고, 선택 항목의 설명과 근거는 오른쪽 고정 열이 아니라 아래쪽 정보 영역에 연다. 정보 영역을 닫으면 그래프가 전체 높이를 다시 사용한다. 방향은 선의 화살표로 확인하고, 긴 관계 문구는 선 위에 겹쳐 놓지 않는다. 관계 이름과 검증 상태는 범례·필터·아래쪽 정보에서 읽는다. 항목 종류 범례와 검색 자동완성을 이용해 단순한 점 무리가 아니라 실제 업무 관계를 따라간다.
 
 동적 결과는 저장만 하는 JSON이 아니다. BoI Agent가 검증된 surface를 다시 읽어 관계표, 시간 흐름, 흐름 그림 또는 관계 탐색 DOM을 만든다. Task 수행 화면도 같은 계약의 `업무 기록 입력`과 `근거 선택`을 사용한다. surface가 손상됐거나 client가 지원하지 않으면 같은 의미의 기존 typed 화면으로 복구한다.
+
+결과는 기다림이 끝난 뒤 한꺼번에 나타나지 않는다. `맥락 확인 → 지식 탐색 → 관계 평가 → 결과 화면 준비` 상태가 먼저 보이고, 표나 입력 양식처럼 결정적으로 만들 수 있는 화면은 최종 문장보다 먼저 열릴 수 있다. 최종 답변이 도착하면 같은 결과 화면의 data만 확정하며 별도의 중복 화면을 만들지 않는다.
+
+업무 기록과 근거 선택의 입력값은 화면 안의 data model에 보존된다. 저장, Action 실행, 담당자 변경과 확인은 화면 component가 직접 처리하지 않고 기존 preview·Harness·confirmation API를 호출한다. 화면을 새로고침하거나 fallback으로 전환해도 이 안전 경계를 우회할 수 없다.
 
 ![공식 역할과 검증된 수행 관계를 표로 구분한 BoI Agent 화면](../_media/browser/current-guide/20260713-boi-agent-role-table-1440x1000.png)
 
