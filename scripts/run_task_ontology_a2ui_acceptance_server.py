@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import uvicorn
@@ -56,27 +57,57 @@ def seed_harness_candidate(employee_id: str) -> str:
         roles=["boi.viewer", "boi.editor", "boi.admin"],
         scopes=["boi.read", "boi.draft", "boi.admin"],
     )
-    failure_id = "browser-acceptance-harness-failure"
+    definition = service.harnesses.definition("context.work")
+    failure_ids: list[str] = []
+    failure_pattern_id = "browser-acceptance-context-evidence-pattern"
+    for index in range(3):
+        failure_id = f"browser-acceptance-harness-failure-{index + 1}"
+        failure_ids.append(failure_id)
+        service.store.put(
+            "harness_failure_records",
+            failure_id,
+            {
+                "failure_record_id": failure_id,
+                "employee_id": employee_id,
+                "work_run_id": f"browser-acceptance-failed-run-{index + 1}",
+                "harness_id": "context.work",
+                "harness_version": definition.version,
+                "model_profile": service.learning.model_profile,
+                "phase": "preflight",
+                "component_ref": "context.evidence",
+                "causal_taxonomy_revision": definition.causal_taxonomy_revision,
+                "causal_mechanism": "context.evidence",
+                "causal_agent_stage": "context.evidence",
+                "failure_pattern_id": failure_pattern_id,
+                "status": "open",
+                "summary": "브라우저 검증용 반복 근거 누락",
+            },
+        )
+    preservation_run_id = "browser-acceptance-preservation-run"
     service.store.put(
-        "harness_failure_records",
-        failure_id,
+        "work_runs",
+        preservation_run_id,
         {
-            "failure_record_id": failure_id,
+            "work_run_id": preservation_run_id,
             "employee_id": employee_id,
-            "harness_id": "context.work",
-            "causal_agent_stage": "context.evidence",
-            "status": "open",
-            "summary": "브라우저 검증용 반복 근거 누락",
+            "status": "completed",
+            "capability_id": "knowledge.search",
+            "created_at": datetime.now(timezone.utc).isoformat(),
         },
     )
     candidate = service.learning.create_harness_candidate(
         principal,
         HarnessCandidateCreateRequest(
             harness_id="context.work",
-            failure_record_ids=[failure_id],
+            failure_record_ids=failure_ids,
             model_profile=service.learning.model_profile,
             changes={"retrieval_policy": {"authority_weight": 1.05}},
             rationale="격리 브라우저 검증에서 검토 화면과 배포 연습 경계를 확인하는 후보입니다.",
+            predicted_impact={"grounded_recall": 0.0},
+            at_risk_regressions=["existing_grounded_read"],
+            preservation_run_ids=[preservation_run_id],
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+            rollback_target=definition.version,
         ),
     )
     shadow = service.learning.shadow_harness_candidate(
@@ -90,7 +121,7 @@ def seed_harness_candidate(employee_id: str) -> str:
         HarnessCandidateEvaluateRequest(
             shadow_run_id=shadow["shadow_run"]["shadow_run_id"],
             held_in={"passed": True},
-            held_out={"passed": True, "regressions": 0},
+            held_out={"passed": True, "regressions": 0, "metric_deltas": {"grounded_recall": 0.0}},
             adversarial={"passed": True, "unauthorized_mutations": 0},
             long_term={"passed": True, "regressions": 0},
             fixture_revision="browser-acceptance-v1",

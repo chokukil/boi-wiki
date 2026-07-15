@@ -37,10 +37,13 @@ class HarnessDefinition:
     retryable: bool = False
     interruptible: bool = False
     evaluator_policy: dict[str, Any] = field(default_factory=dict)
+    causal_taxonomy_revision: str = "verifier-mechanism/v1"
+    candidate_min_distinct_runs: int = 3
     # A candidate may only change surfaces with an executable runtime applier.
     # Additional surfaces are opt-in per catalog definition when their applier
     # exists; storing an inert reviewed change would make release misleading.
     editable_surfaces: tuple[str, ...] = ("loop_budget",)
+    editable_surface_components: dict[str, tuple[str, ...]] = field(default_factory=dict)
     immutable_boundaries: tuple[str, ...] = (
         "acl", "rbac", "risk_policy", "confirmation_policy", "autopilot_allowlist",
         "required_completion_evidence", "canonical_write_policy", "evaluator_thresholds",
@@ -70,7 +73,13 @@ class HarnessDefinition:
             "retryable": self.retryable,
             "interruptible": self.interruptible,
             "evaluator_policy": dict(self.evaluator_policy),
+            "causal_taxonomy_revision": self.causal_taxonomy_revision,
+            "candidate_min_distinct_runs": self.candidate_min_distinct_runs,
             "editable_surfaces": list(self.editable_surfaces),
+            "editable_surface_components": {
+                key: list(value)
+                for key, value in self.editable_surface_components.items()
+            },
             "immutable_boundaries": list(self.immutable_boundaries),
         }
 
@@ -407,6 +416,17 @@ class HarnessRegistry:
         )
         payload = yaml.safe_load(self.catalog_path.read_text(encoding="utf-8")) or {}
         self.version = str(payload.get("version") or "2.0")
+        default_taxonomy_revision = str(
+            payload.get("causal_taxonomy_revision") or "verifier-mechanism/v1"
+        )
+        default_candidate_min_runs = max(
+            3,
+            int(payload.get("candidate_min_distinct_runs") or 3),
+        )
+        default_surface_components = {
+            str(surface): tuple(str(item) for item in components or [])
+            for surface, components in (payload.get("editable_surface_components") or {}).items()
+        }
         definitions: dict[str, HarnessDefinition] = {}
         for raw in payload.get("harnesses") or []:
             harness_id = str(raw.get("harness_id") or "").strip()
@@ -440,7 +460,21 @@ class HarnessRegistry:
                 retryable=bool(raw.get("retryable", False)),
                 interruptible=bool(raw.get("interruptible", False)),
                 evaluator_policy=dict(raw.get("evaluator_policy") or {}),
+                causal_taxonomy_revision=str(
+                    raw.get("causal_taxonomy_revision") or default_taxonomy_revision
+                ),
+                candidate_min_distinct_runs=max(
+                    3,
+                    int(raw.get("candidate_min_distinct_runs") or default_candidate_min_runs),
+                ),
                 editable_surfaces=tuple(str(item) for item in raw.get("editable_surfaces") or HarnessDefinition.__dataclass_fields__["editable_surfaces"].default),
+                editable_surface_components={
+                    str(surface): tuple(str(item) for item in components or [])
+                    for surface, components in (
+                        raw.get("editable_surface_components")
+                        or default_surface_components
+                    ).items()
+                },
                 immutable_boundaries=tuple(str(item) for item in raw.get("immutable_boundaries") or HarnessDefinition.__dataclass_fields__["immutable_boundaries"].default),
             )
         self._definitions = definitions

@@ -811,12 +811,69 @@ class HarnessResult(BaseModel):
     interruptible: bool = False
 
 
+class HarnessFailureRecord(BaseModel):
+    failure_record_id: str
+    employee_id: str
+    work_run_id: str
+    harness_id: str
+    harness_version: str
+    model_profile: str
+    phase: str
+    component_ref: str
+    causal_taxonomy_revision: str
+    causal_mechanism: str
+    verifier_facts: dict[str, Any] = Field(default_factory=dict)
+    trace_refs: list[str] = Field(default_factory=list, max_length=50)
+    context_id: str = ""
+    evidence_refs: list[str] = Field(default_factory=list, max_length=100)
+    artifact_refs: list[str] = Field(default_factory=list, max_length=100)
+    catalog_revision: str = ""
+    planner_schema_revision: str = ""
+    source_revision: str = ""
+    failure_pattern_id: str = ""
+    status: Literal["open", "addressed", "dismissed"] = "open"
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class HarnessChangeHypothesis(BaseModel):
+    editable_surface: str
+    diff: dict[str, Any]
+    predicted_impact: dict[str, float] = Field(min_length=1, max_length=20)
+    at_risk_regressions: list[str] = Field(min_length=1, max_length=100)
+    preservation_run_ids: list[str] = Field(min_length=1, max_length=100)
+    expires_at: datetime
+    rollback_target: str = Field(min_length=1, max_length=160)
+
+
+class HarnessEvaluationReport(BaseModel):
+    eval_id: str
+    candidate_id: str
+    shadow_run_id: str
+    fixture_revision: str
+    held_in: dict[str, Any]
+    held_out: dict[str, Any]
+    preserved: dict[str, Any]
+    adversarial: dict[str, Any]
+    long_term: dict[str, Any]
+    predicted_impact: dict[str, float] = Field(default_factory=dict)
+    actual_impact: dict[str, float] = Field(default_factory=dict)
+    prediction_met: bool = False
+    qualified: bool = False
+    production_changed: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class HarnessCandidateCreateRequest(BaseModel):
     harness_id: str = Field(min_length=1, max_length=120)
-    failure_record_ids: list[str] = Field(min_length=1, max_length=50)
+    failure_record_ids: list[str] = Field(min_length=3, max_length=50)
     model_profile: str = Field(default="default", max_length=160)
     changes: dict[str, Any] = Field(default_factory=dict)
     rationale: str = Field(min_length=12, max_length=4000)
+    predicted_impact: dict[str, float] = Field(min_length=1, max_length=20)
+    at_risk_regressions: list[str] = Field(min_length=1, max_length=100)
+    preservation_run_ids: list[str] = Field(min_length=1, max_length=100)
+    expires_at: datetime
+    rollback_target: str = Field(min_length=1, max_length=160)
 
 
 class HarnessCandidateShadowRequest(BaseModel):

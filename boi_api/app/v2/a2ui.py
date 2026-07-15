@@ -310,6 +310,30 @@ def compile_harness_review_surface(
         for item in failure_patterns[:10]
     ]
     changes = candidate.get("changes") if isinstance(candidate.get("changes"), dict) else {}
+    hypothesis = candidate.get("hypothesis") if isinstance(candidate.get("hypothesis"), dict) else {}
+    predicted = candidate.get("predicted_impact") if isinstance(candidate.get("predicted_impact"), dict) else {}
+    actual = (evaluation or {}).get("actual_impact") if isinstance((evaluation or {}).get("actual_impact"), dict) else {}
+    hypothesis_items = [
+        {"label": "변경 범위", "value": str(hypothesis.get("editable_surface") or "확인 필요")},
+        {
+            "label": "보존할 기존 성공",
+            "value": f"{len(candidate.get('preservation_run_ids') or [])}건",
+        },
+        {
+            "label": "회귀 위험",
+            "value": ", ".join(str(item) for item in candidate.get("at_risk_regressions") or []) or "확인 필요",
+        },
+        {"label": "만료", "value": str(candidate.get("expires_at") or "확인 필요")},
+        {"label": "되돌릴 버전", "value": str(candidate.get("rollback_target") or "확인 필요")},
+    ]
+    prediction_items = [
+        {
+            "label": str(metric),
+            "value": f"예상 {expected:g} · 실제 {float(actual.get(metric) or 0):g}",
+        }
+        for metric, expected in sorted(predicted.items())
+        if isinstance(expected, (int, float)) and not isinstance(expected, bool)
+    ]
     trial_items = [
         {"label": "서버 사전 점검", "value": str((shadow_run or {}).get("status") or "아직 실행하지 않음")},
         {"label": "회귀·안전 평가", "value": "통과" if (evaluation or {}).get("qualified") else "미통과 또는 대기"},
@@ -335,6 +359,19 @@ def compile_harness_review_surface(
             "props": {
                 "summary": "다음 실행에서 시험할 변경",
                 "items": [{"label": key, "value": value} for key, value in sorted(changes.items())],
+            },
+        },
+        {
+            "id": "change-hypothesis",
+            "component": "DecisionSummary",
+            "props": {"summary": "변경 가설과 보존 경계", "items": hypothesis_items},
+        },
+        {
+            "id": "prediction-result",
+            "component": "DecisionSummary",
+            "props": {
+                "summary": "예측과 실제 결과",
+                "items": prediction_items or [{"label": "평가", "value": "아직 측정하지 않음"}],
             },
         },
         {

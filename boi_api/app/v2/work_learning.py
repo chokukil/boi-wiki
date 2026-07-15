@@ -17,7 +17,10 @@ from .models import (
     ContextManifest,
     EvidenceRef,
     ExitCriteriaResult,
+    HarnessChangeHypothesis,
     HarnessCheck,
+    HarnessEvaluationReport,
+    HarnessFailureRecord,
     HarnessResult,
     KnowledgeCandidatePatchRequest,
     KnowledgeCandidatePromoteRequest,
@@ -370,7 +373,35 @@ class ContextCompiler:
             ),
             reverse=True,
         )
-        playbook_items = playbook_items[:6]
+        active_harness = self.store.get(
+            "harness_active_versions",
+            f"context.work:{model_profile}",
+        ) or {}
+        active_changes = (
+            active_harness.get("changes")
+            if isinstance(active_harness.get("changes"), dict)
+            else {}
+        )
+        playbook_policy = (
+            active_changes.get("context_playbook")
+            if isinstance(active_changes.get("context_playbook"), dict)
+            else {}
+        )
+        pinned_ids = [str(item) for item in playbook_policy.get("item_ids") or [] if str(item)]
+        if pinned_ids:
+            by_id = {str(item.get("item_id") or ""): item for item in playbook_items}
+            pinned = [by_id[item_id] for item_id in pinned_ids if item_id in by_id]
+            remainder = [item for item in playbook_items if str(item.get("item_id") or "") not in pinned_ids]
+            playbook_items = (
+                [*remainder, *pinned]
+                if playbook_policy.get("order") == "append"
+                else [*pinned, *remainder]
+            )
+        try:
+            playbook_limit = max(1, min(20, int(playbook_policy.get("max_items") or 6)))
+        except (TypeError, ValueError):
+            playbook_limit = 6
+        playbook_items = playbook_items[:playbook_limit]
         if playbook_items:
             metadata["context_playbook"] = [
                 {
@@ -764,30 +795,59 @@ class WorkLearningService:
             if result.status != "blocked":
                 continue
             blocked_checks = [item for item in result.checks if item.status == "blocked"]
-            causal_stage = next((item.check_id for item in blocked_checks), "verifier.blocked")
+            definition = self.harnesses.definition(result.harness_id)
+            mechanisms = sorted(
+                {item.check_id for item in blocked_checks if item.check_id}
+                or {"verifier.blocked"}
+            )
+            causal_mechanism = "+".join(mechanisms)
+            component_ref = f"{result.harness_id}:{phase}"
             record_id = _id(
                 "hfailure",
-                f"{work_run['work_run_id']}:{result.harness_id}:{result.version}:{phase}:{causal_stage}",
+                f"{work_run['work_run_id']}:{result.harness_id}:{result.version}:{phase}:{causal_mechanism}",
+            )
+            context_manifest = (
+                context.context_manifest.model_dump(mode="json")
+                if context.context_manifest is not None
+                else {}
+            )
+            revisions = (
+                work_run.get("contract_revisions")
+                if isinstance(work_run.get("contract_revisions"), dict)
+                else {}
+            )
+            failure = HarnessFailureRecord(
+                failure_record_id=record_id,
+                employee_id=principal.employee_id,
+                work_run_id=str(work_run["work_run_id"]),
+                harness_id=result.harness_id,
+                harness_version=result.version,
+                model_profile=self.model_profile,
+                phase=phase,
+                component_ref=component_ref,
+                causal_taxonomy_revision=definition.causal_taxonomy_revision,
+                causal_mechanism=causal_mechanism,
+                verifier_facts={
+                    "terminal_cause": terminal_cause or "; ".join(result.blockers),
+                    "blocked_checks": [item.model_dump(mode="json") for item in blocked_checks],
+                    "evaluated_facts": dict(result.evaluated_facts),
+                },
+                trace_refs=[str(item) for item in work_run.get("checkpoint_ids") or []],
+                context_id=context.context_id,
+                evidence_refs=[item.evidence_id for item in context.evidence_refs],
+                artifact_refs=[str(item) for item in work_run.get("artifact_refs") or []],
+                catalog_revision=str(revisions.get("capability_catalog") or ""),
+                planner_schema_revision=str(revisions.get("planner_schema") or ""),
+                source_revision=str(context_manifest.get("source_revision") or ""),
             )
             record = {
-                "failure_record_id": record_id,
-                "employee_id": principal.employee_id,
-                "work_run_id": work_run["work_run_id"],
-                "harness_id": result.harness_id,
-                "harness_version": result.version,
-                "model_profile": self.model_profile,
-                "phase": phase,
-                "terminal_verifier_cause": terminal_cause or "; ".join(result.blockers),
-                "causal_agent_stage": causal_stage,
-                "exposed_mechanism": [item.check_id for item in blocked_checks],
-                "context_id": context.context_id,
-                "context_manifest": (
-                    context.context_manifest.model_dump(mode="json")
-                    if context.context_manifest is not None
-                    else {}
-                ),
-                "evidence_refs": [item.evidence_id for item in context.evidence_refs],
-                "artifact_refs": list(work_run.get("artifact_refs") or []),
+                **failure.model_dump(mode="json"),
+                # Kept as read aliases for stored v2 records and existing
+                # operational views. Grouping uses the typed mechanism below.
+                "terminal_verifier_cause": failure.verifier_facts["terminal_cause"],
+                "causal_agent_stage": causal_mechanism,
+                "exposed_mechanism": mechanisms,
+                "context_manifest": context_manifest,
                 "loop_deltas": list((work_run.get("loop") or {}).get("deltas") or [])[-10:],
                 "runtime_events": list(work_run.get("events") or [])[-10:],
                 "tool_action_results": [
@@ -802,15 +862,13 @@ class WorkLearningService:
                 ][-10:],
                 "reproducibility": "fixture_required",
                 "scope": "recurrent_candidate" if len(blocked_checks) == 1 else "run_specific",
-                "status": "open",
-                "created_at": now_iso(),
             }
             pattern_seed = {
                 "harness_id": result.harness_id,
                 "phase": phase,
-                "causal_stage": causal_stage,
-                "mechanisms": sorted(record["exposed_mechanism"]),
-                "cause": _compact(record["terminal_verifier_cause"], 300).casefold(),
+                "component_ref": component_ref,
+                "causal_taxonomy_revision": definition.causal_taxonomy_revision,
+                "causal_mechanism": causal_mechanism,
             }
             pattern_id = _id(
                 "hpattern",
@@ -822,8 +880,11 @@ class WorkLearningService:
                 "failure_pattern_id": pattern_id,
                 "harness_id": result.harness_id,
                 "phase": phase,
-                "causal_agent_stage": causal_stage,
-                "exposed_mechanism": record["exposed_mechanism"],
+                "component_ref": component_ref,
+                "causal_taxonomy_revision": definition.causal_taxonomy_revision,
+                "causal_mechanism": causal_mechanism,
+                "causal_agent_stage": causal_mechanism,
+                "exposed_mechanism": mechanisms,
                 "summary": record["terminal_verifier_cause"],
                 "failure_record_ids": [],
                 "work_run_ids": [],
@@ -831,12 +892,17 @@ class WorkLearningService:
                 "first_seen_at": now_iso(),
                 "status": "open",
             }
+            work_run_ids = list(
+                dict.fromkeys([*pattern.get("work_run_ids", []), work_run["work_run_id"]])
+            )[-200:]
             pattern.update(
                 {
                     "failure_record_ids": list(dict.fromkeys([*pattern.get("failure_record_ids", []), record_id]))[-200:],
-                    "work_run_ids": list(dict.fromkeys([*pattern.get("work_run_ids", []), work_run["work_run_id"]]))[-200:],
+                    "work_run_ids": work_run_ids,
                     "model_profiles": list(dict.fromkeys([*pattern.get("model_profiles", []), self.model_profile])),
-                    "occurrence_count": int(pattern.get("occurrence_count") or 0) + 1,
+                    "occurrence_count": len(work_run_ids),
+                    "candidate_eligible": len(work_run_ids) >= definition.candidate_min_distinct_runs,
+                    "candidate_min_distinct_runs": definition.candidate_min_distinct_runs,
                     "last_seen_at": now_iso(),
                 }
             )
@@ -1084,12 +1150,91 @@ class WorkLearningService:
             raise HTTPException(status_code=404, detail="실패 기록을 찾을 수 없습니다.")
         if not principal.is_admin and any(str(item.get("employee_id") or "") != principal.employee_id for item in failures if item):
             raise HTTPException(status_code=403, detail="다른 사용자의 실패 기록으로 후보를 만들 수 없습니다.")
+        mismatched_harnesses = sorted(
+            {
+                str(item.get("harness_id") or "")
+                for item in failures
+                if item and str(item.get("harness_id") or "") != request.harness_id
+            }
+        )
+        if mismatched_harnesses:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "harness_candidate_mixed_harnesses", "harnesses": mismatched_harnesses},
+            )
         pattern_ids = list(
             dict.fromkeys(str(item.get("failure_pattern_id") or "") for item in failures if item and item.get("failure_pattern_id"))
         )
-        recurrent = any(
-            int((self.store.get("harness_failure_patterns", pattern_id) or {}).get("occurrence_count") or 0) >= 2
-            for pattern_id in pattern_ids
+        work_run_ids = list(
+            dict.fromkeys(
+                str(item.get("work_run_id") or "")
+                for item in failures
+                if item and item.get("work_run_id")
+            )
+        )
+        mechanisms = {
+            (
+                str(item.get("causal_taxonomy_revision") or ""),
+                str(item.get("causal_mechanism") or item.get("causal_agent_stage") or ""),
+            )
+            for item in failures
+            if item
+        }
+        if (
+            len(pattern_ids) != 1
+            or len(mechanisms) != 1
+            or len(work_run_ids) < definition.candidate_min_distinct_runs
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_candidate_recurrence_required",
+                    "required_distinct_runs": definition.candidate_min_distinct_runs,
+                    "distinct_runs": len(work_run_ids),
+                    "pattern_count": len(pattern_ids),
+                    "mechanism_count": len(mechanisms),
+                },
+            )
+        active_key = f"{definition.harness_id}:{request.model_profile or self.model_profile}"
+        active = self.store.get("harness_active_versions", active_key) or {}
+        current_version = str(active.get("harness_version_id") or definition.version)
+        if request.rollback_target != current_version:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_candidate_rollback_target_stale",
+                    "expected": current_version,
+                },
+            )
+        expires_at = request.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail={"code": "harness_candidate_expired"})
+        preservation_runs = [
+            self.store.get("work_runs", work_run_id)
+            for work_run_id in request.preservation_run_ids
+        ]
+        if any(
+            not item or str(item.get("status") or "") != "completed"
+            for item in preservation_runs
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "harness_candidate_preservation_runs_invalid"},
+            )
+        hypothesis = HarnessChangeHypothesis(
+            editable_surface=(
+                next(iter(request.changes))
+                if len(request.changes) == 1
+                else "composite"
+            ),
+            diff=request.changes,
+            predicted_impact=request.predicted_impact,
+            at_risk_regressions=request.at_risk_regressions,
+            preservation_run_ids=request.preservation_run_ids,
+            expires_at=expires_at,
+            rollback_target=request.rollback_target,
         )
         candidate_fingerprint = hashlib.sha256(
             json.dumps(
@@ -1099,6 +1244,7 @@ class WorkLearningService:
                     "model_profile": request.model_profile,
                     "changes": request.changes,
                     "failure_pattern_ids": pattern_ids,
+                    "hypothesis": hypothesis.model_dump(mode="json"),
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -1114,9 +1260,18 @@ class WorkLearningService:
             "model_profile": request.model_profile,
             "failure_record_ids": request.failure_record_ids,
             "failure_pattern_ids": pattern_ids,
-            "recurrent_pattern": recurrent,
+            "causal_taxonomy_revision": next(iter(mechanisms))[0],
+            "causal_mechanism": next(iter(mechanisms))[1],
+            "work_run_ids": work_run_ids,
+            "recurrent_pattern": True,
             "changes": request.changes,
             "rationale": request.rationale,
+            "hypothesis": hypothesis.model_dump(mode="json"),
+            "predicted_impact": request.predicted_impact,
+            "at_risk_regressions": request.at_risk_regressions,
+            "preservation_run_ids": request.preservation_run_ids,
+            "expires_at": expires_at.isoformat(),
+            "rollback_target": request.rollback_target,
             "status": "shadow_pending",
             "production_changed": False,
             "candidate_fingerprint": candidate_fingerprint,
@@ -1127,13 +1282,15 @@ class WorkLearningService:
         return stored
 
     @staticmethod
-    def _candidate_addressable_stages(changes: dict[str, Any]) -> set[str]:
-        prefixes: set[str] = set()
-        if "retrieval_policy" in changes:
-            prefixes.update({"context", "knowledge", "task.evidence"})
-        if "loop_budget" in changes:
-            prefixes.update({"loop", "task"})
-        return prefixes
+    def _candidate_addressable_stages(
+        definition: Any,
+        changes: dict[str, Any],
+    ) -> set[str]:
+        return {
+            component
+            for surface in changes
+            for component in definition.editable_surface_components.get(surface, ())
+        }
 
     @staticmethod
     def _validate_executable_harness_changes(changes: dict[str, Any]) -> None:
@@ -1162,6 +1319,31 @@ class WorkLearningService:
                         "out_of_range": invalid,
                     },
                 )
+        context_playbook = changes.get("context_playbook")
+        if context_playbook is not None:
+            if not isinstance(context_playbook, dict):
+                raise HTTPException(status_code=400, detail={"code": "invalid_context_playbook"})
+            allowed = {"item_ids", "order", "max_items"}
+            unknown = sorted(set(context_playbook) - allowed)
+            item_ids = context_playbook.get("item_ids")
+            try:
+                valid = (
+                    isinstance(item_ids, list)
+                    and 1 <= len(item_ids) <= 20
+                    and len({str(item) for item in item_ids if str(item)}) == len(item_ids)
+                    and context_playbook.get("order", "prepend") in {"prepend", "append"}
+                    and 1 <= int(context_playbook.get("max_items") or 6) <= 20
+                )
+            except (TypeError, ValueError):
+                valid = False
+            if unknown or not valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "invalid_context_playbook",
+                        "unsupported": unknown,
+                    },
+                )
         loop_budget = changes.get("loop_budget")
         if loop_budget is not None:
             if not isinstance(loop_budget, dict):
@@ -1188,9 +1370,15 @@ class WorkLearningService:
             raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
         if not principal.is_admin and str(candidate.get("employee_id") or "") != principal.employee_id:
             raise HTTPException(status_code=403, detail="이 Harness 후보를 시험할 수 없습니다.")
+        expires_at = datetime.fromisoformat(str(candidate.get("expires_at") or "").replace("Z", "+00:00"))
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=409, detail={"code": "harness_candidate_expired"})
         definition = self.harnesses.definition(str(candidate.get("harness_id") or ""))
         forbidden = sorted(set(candidate.get("changes") or {}) & set(definition.immutable_boundaries))
-        addressable = self._candidate_addressable_stages(candidate.get("changes") or {})
+        addressable = self._candidate_addressable_stages(
+            definition,
+            candidate.get("changes") or {},
+        )
         failure_rows = [
             self.store.get("harness_failure_records", item) or {}
             for item in candidate.get("failure_record_ids") or []
@@ -1201,26 +1389,18 @@ class WorkLearningService:
             if str(row.get("causal_agent_stage") or "").split(".", 1)[0] not in addressable
         ]
         successful_runs = []
-        for run in self.store.list("work_runs", limit=2000):
-            if str(run.get("status") or "") != "completed":
-                continue
-            bindings = [item for item in run.get("harness_bindings") or [] if isinstance(item, dict)]
-            if not any(
-                item.get("harness_id") == candidate.get("harness_id")
-                and item.get("model_profile") == candidate.get("model_profile")
-                for item in bindings
-            ):
+        for work_run_id in (candidate.get("preservation_run_ids") or [])[: request.held_out_limit]:
+            run = self.store.get("work_runs", str(work_run_id))
+            if not run or str(run.get("status") or "") != "completed":
                 continue
             successful_runs.append(
                 {
                     "work_run_id": run.get("work_run_id"),
                     "intent": run.get("intent"),
-                    "harness_bindings": bindings,
+                    "harness_bindings": run.get("harness_bindings") or [],
                     "stop_reason": run.get("stop_reason") or "completed",
                 }
             )
-            if len(successful_runs) >= request.held_out_limit:
-                break
         loop_change = (candidate.get("changes") or {}).get("loop_budget")
         bounded_loop = True
         if isinstance(loop_change, dict):
@@ -1229,7 +1409,13 @@ class WorkLearningService:
                 and int(loop_change.get("max_no_progress") or 2) == 2
                 and 1 <= int(loop_change.get("max_tool_loops") or 5) <= 5
             )
-        preflight_passed = not forbidden and not unresolved and bounded_loop and bool(failure_rows)
+        preflight_passed = (
+            not forbidden
+            and not unresolved
+            and bounded_loop
+            and bool(failure_rows)
+            and len(successful_runs) == len(candidate.get("preservation_run_ids") or [])
+        )
         shadow_run_id = _id("hshadow", f"{candidate_id}:{request.fixture_revision}:{now_iso()}")
         shadow = {
             "shadow_run_id": shadow_run_id,
@@ -1310,20 +1496,56 @@ class WorkLearningService:
         )
         long_term_ok = request.long_term.get("passed") is True and int(request.long_term.get("regressions") or 0) == 0
         metric_deltas = request.held_out.get("metric_deltas") if isinstance(request.held_out.get("metric_deltas"), dict) else {}
+        actual_impact = {
+            str(key): float(value)
+            for key, value in metric_deltas.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        predicted_impact = {
+            str(key): float(value)
+            for key, value in (candidate.get("predicted_impact") or {}).items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        prediction_met = all(
+            actual_impact.get(key, 0.0) >= expected
+            if expected >= 0
+            else actual_impact.get(key, 0.0) <= expected
+            for key, expected in predicted_impact.items()
+        )
         regressed_metrics = sorted(
             key for key, value in metric_deltas.items() if isinstance(value, (int, float)) and float(value) < 0
         )
         eval_id = _id("heval", f"{candidate_id}:{request.fixture_revision}:{now_iso()}")
+        qualified = (
+            held_in_ok
+            and held_out_ok
+            and adversarial_ok
+            and long_term_ok
+            and not regressed_metrics
+            and prediction_met
+        )
+        report = HarnessEvaluationReport(
+            eval_id=eval_id,
+            candidate_id=candidate_id,
+            shadow_run_id=request.shadow_run_id,
+            fixture_revision=request.fixture_revision,
+            held_in=request.held_in,
+            held_out=request.held_out,
+            preserved={
+                "passed": held_out_server_ok,
+                "work_run_ids": preservation_ids,
+                "at_risk_regressions": candidate.get("at_risk_regressions") or [],
+            },
+            adversarial=request.adversarial,
+            long_term=request.long_term,
+            predicted_impact=predicted_impact,
+            actual_impact=actual_impact,
+            prediction_met=prediction_met,
+            qualified=qualified,
+        )
         evaluation = {
-            "eval_id": eval_id,
-            "candidate_id": candidate_id,
-            "shadow_run_id": request.shadow_run_id,
+            **report.model_dump(mode="json"),
             "employee_id": principal.employee_id,
-            "fixture_revision": request.fixture_revision,
-            "held_in": request.held_in,
-            "held_out": request.held_out,
-            "adversarial": request.adversarial,
-            "long_term": request.long_term,
             "server_observations": {
                 "held_in_failure_record_ids": [
                     str(item.get("failure_record_id") or "")
@@ -1340,9 +1562,6 @@ class WorkLearningService:
                 "regressed_metrics": regressed_metrics,
                 "no_regression": not regressed_metrics,
             },
-            "qualified": held_in_ok and held_out_ok and adversarial_ok and long_term_ok and not regressed_metrics,
-            "production_changed": False,
-            "created_at": now_iso(),
         }
         self.store.put("harness_eval_runs", eval_id, evaluation)
         candidate.update(
@@ -1369,6 +1588,9 @@ class WorkLearningService:
         candidate = self.store.get("harness_candidates", candidate_id)
         if not candidate:
             raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        expires_at = datetime.fromisoformat(str(candidate.get("expires_at") or "").replace("Z", "+00:00"))
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=409, detail={"code": "harness_candidate_expired"})
         evaluation = self.store.get("harness_eval_runs", request.expected_eval_id)
         if not evaluation or evaluation.get("candidate_id") != candidate_id:
             raise HTTPException(status_code=409, detail="검토할 평가 결과가 현재 후보와 일치하지 않습니다.")
@@ -1410,7 +1632,7 @@ class WorkLearningService:
                     "eval_id": request.expected_eval_id,
                     "status": "approved_not_deployed",
                     "production_changed": False,
-                    "rollback_version": candidate.get("base_version"),
+                    "rollback_version": candidate.get("rollback_target") or candidate.get("base_version"),
                     "created_at": now_iso(),
                 },
             )
@@ -1432,6 +1654,9 @@ class WorkLearningService:
         version = self.store.get("harness_versions", request.expected_version_id)
         if not candidate or not version or version.get("candidate_id") != candidate_id:
             raise HTTPException(status_code=404, detail="배포할 Harness 버전을 찾을 수 없습니다.")
+        expires_at = datetime.fromisoformat(str(candidate.get("expires_at") or "").replace("Z", "+00:00"))
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=409, detail={"code": "harness_candidate_expired"})
         if candidate.get("status") != "approved_for_manual_release" or version.get("status") != "approved_not_deployed":
             raise HTTPException(status_code=409, detail="사람 검토를 통과한 대기 버전만 배포할 수 있습니다.")
         if not request.user_confirmed:

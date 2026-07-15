@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -8505,6 +8506,65 @@ def test_postgres_registry_includes_graph_query_cache_collection():
     assert PostgresAgentV2Store.COLLECTION_TABLES["knowledge_graph_queries"] == "knowledge_graph_queries"
 
 
+def _record_recurrent_harness_failures(
+    service: AgentV2Service,
+    principal: Principal,
+    *,
+    context: WorkContextPack,
+    prefix: str,
+) -> list[str]:
+    result = HarnessResult(
+        harness_id="context.work",
+        version=service.harnesses.definition("context.work").version,
+        status="blocked",
+        checks=[
+            HarnessCheck(
+                check_id="context.evidence",
+                label="근거",
+                status="blocked",
+                message="검증된 근거가 없습니다.",
+            )
+        ],
+        blockers=["검증된 근거가 없습니다."],
+        evaluated_facts={"evidence_count": 0},
+    )
+    failure_ids: list[str] = []
+    for index in range(3):
+        work_run_id = f"{prefix}-failure-{index + 1}"
+        failure_ids.extend(
+            service.learning._record_harness_failures(
+                principal=principal,
+                work_run={
+                    "work_run_id": work_run_id,
+                    "artifact_refs": [],
+                    "checkpoint_ids": [f"checkpoint-{work_run_id}"],
+                    "contract_revisions": {
+                        "capability_catalog": service.registry.version,
+                        "planner_schema": "semantic-plan/v2",
+                    },
+                },
+                context=context,
+                results=[result],
+                phase="preflight",
+            )
+        )
+    return failure_ids
+
+
+def _harness_hypothesis_fields(
+    service: AgentV2Service,
+    *,
+    preservation_run_ids: list[str],
+) -> dict[str, Any]:
+    return {
+        "predicted_impact": {"grounded_recall": 0.0},
+        "at_risk_regressions": ["existing_grounded_read"],
+        "preservation_run_ids": preservation_run_ids,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        "rollback_target": service.harnesses.definition("context.work").version,
+    }
+
+
 def test_harness_candidate_cannot_change_immutable_safety_boundaries(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -8527,9 +8587,13 @@ def test_harness_candidate_cannot_change_immutable_safety_boundaries(
             principal,
             HarnessCandidateCreateRequest(
                 harness_id="context.work",
-                failure_record_ids=[failure_id],
+                failure_record_ids=[failure_id, failure_id, failure_id],
                 changes={"acl": {"allow_all": True}},
                 rationale="반복 실패를 해결하려는 후보지만 권한 경계는 바꿀 수 없습니다.",
+                **_harness_hypothesis_fields(
+                    v2_service,
+                    preservation_run_ids=["not-evaluated"],
+                ),
             ),
         )
 
@@ -8559,9 +8623,13 @@ def test_harness_candidate_rejects_a_surface_without_a_runtime_applier(
             principal,
             HarnessCandidateCreateRequest(
                 harness_id="context.work",
-                failure_record_ids=[failure_id],
+                failure_record_ids=[failure_id, failure_id, failure_id],
                 changes={"planner_instruction": "항상 다른 기능으로 바꾼다"},
                 rationale="실행기가 없는 변경은 검토 완료처럼 저장하지 않아야 합니다.",
+                **_harness_hypothesis_fields(
+                    v2_service,
+                    preservation_run_ids=["not-evaluated"],
+                ),
             ),
         )
 
@@ -8608,6 +8676,118 @@ def test_active_retrieval_harness_policy_is_consumed_and_pinned_by_the_turn(
     )
     assert binding["version"] == "hversion-runtime-policy"
     assert binding["active_changes"]["retrieval_policy"]["authority_weight"] == 1.4
+
+
+def test_active_context_playbook_policy_reorders_only_existing_reviewed_items(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    first = v2_service.learning.create_context_playbook_item(
+        principal,
+        ContextPlaybookCreateRequest(
+            description="현재 Task와 직접 연결된 검토 근거를 먼저 확인합니다.",
+            capability_ids=["knowledge.search"],
+            source_refs=["boi:public:boi-wiki-manual:guide:final-operator-guide"],
+        ),
+    )
+    second = v2_service.learning.create_context_playbook_item(
+        principal,
+        ContextPlaybookCreateRequest(
+            description="최근 완료 기록의 근거와 현재 판단 조건을 비교합니다.",
+            capability_ids=["knowledge.search"],
+            source_refs=["boi:public:boi-wiki-manual:agent:using-boi-agent"],
+        ),
+    )
+    for item in (first, second):
+        v2_service.learning.patch_context_playbook_item(
+            principal,
+            item["item_id"],
+            ContextPlaybookPatchRequest(
+                expected_revision=1,
+                status="active",
+                review_note="격리된 실행에서 근거 범위와 적용 조건을 확인했습니다.",
+            ),
+        )
+    model_profile = v2_service.learning.model_profile
+    v2_service.store.put(
+        "harness_active_versions",
+        f"context.work:{model_profile}",
+        {
+            "harness_version_id": "hversion-context-playbook-policy",
+            "harness_id": "context.work",
+            "model_profile": model_profile,
+            "changes": {
+                "context_playbook": {
+                    "item_ids": [second["item_id"]],
+                    "order": "prepend",
+                    "max_items": 1,
+                }
+            },
+        },
+    )
+    context = v2_service.learning.contexts.compile(
+        principal=principal,
+        definition=v2_service.registry.get("knowledge.search"),
+        goal="현재 판단 근거 확인",
+        page_ref="",
+        task_ref="",
+        task_mode=TaskMode.copilot,
+        task={},
+        evidence=[],
+        session={},
+        source_set={},
+        external_ai_summary="",
+        external_refs=[],
+        model_profile=model_profile,
+    )
+
+    assert context.manifest["context_playbook_item_ids"] == [second["item_id"]]
+
+
+def test_harness_candidate_requires_three_distinct_work_runs(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    context = WorkContextPack(
+        context_id="context-harness-distinct-runs",
+        employee_id=principal.employee_id,
+        capability_id="knowledge.search",
+        goal="반복 실패 원인을 검토한다",
+    )
+    failure_ids = _record_recurrent_harness_failures(
+        v2_service,
+        principal,
+        context=context,
+        prefix="distinct-run",
+    )
+    duplicate = v2_service.store.get("harness_failure_records", failure_ids[-1])
+    duplicate["work_run_id"] = "distinct-run-failure-1"
+    v2_service.store.put("harness_failure_records", failure_ids[-1], duplicate)
+    preservation_run_id = "work-run-distinct-preservation"
+    v2_service.store.put(
+        "work_runs",
+        preservation_run_id,
+        {"work_run_id": preservation_run_id, "employee_id": principal.employee_id, "status": "completed"},
+    )
+
+    with pytest.raises(Exception) as caught:
+        v2_service.learning.create_harness_candidate(
+            principal,
+            HarnessCandidateCreateRequest(
+                harness_id="context.work",
+                failure_record_ids=failure_ids,
+                model_profile=v2_service.learning.model_profile,
+                changes={"retrieval_policy": {"authority_weight": 1.1}},
+                rationale="서로 다른 실행에서 같은 실패가 확인된 경우에만 개선 후보를 생성합니다.",
+                **_harness_hypothesis_fields(
+                    v2_service,
+                    preservation_run_ids=[preservation_run_id],
+                ),
+            ),
+        )
+
+    assert getattr(caught.value, "status_code", None) == 409
+    assert caught.value.detail["code"] == "harness_candidate_recurrence_required"
 
 
 def test_harness_candidate_requires_held_out_and_human_review_before_any_production_change(
@@ -8677,26 +8857,24 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
     )
     assert baseline_run["status"] == "completed"
 
-    failure_id = "hfailure-retrieval"
-    v2_service.store.put(
-        "harness_failure_records",
-        failure_id,
-        {
-            "failure_record_id": failure_id,
-            "employee_id": principal.employee_id,
-            "harness_id": "context.work",
-            "causal_agent_stage": "context.evidence",
-            "status": "open",
-        },
+    failure_ids = _record_recurrent_harness_failures(
+        v2_service,
+        principal,
+        context=baseline_context,
+        prefix="held-out",
     )
     candidate = v2_service.learning.create_harness_candidate(
         principal,
         HarnessCandidateCreateRequest(
             harness_id="context.work",
-            failure_record_ids=[failure_id],
+            failure_record_ids=failure_ids,
             model_profile=v2_service.learning.model_profile,
             changes={"retrieval_policy": {"authority_weight": 1.2}},
             rationale="권위 있는 업무 근거가 반복적으로 누락되는 실패를 줄이기 위한 제한된 후보입니다.",
+            **_harness_hypothesis_fields(
+                v2_service,
+                preservation_run_ids=[baseline_run["work_run_id"]],
+            ),
         ),
     )
 
@@ -8723,7 +8901,7 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
         principal,
         HarnessCandidateCreateRequest(
             harness_id="context.work",
-            failure_record_ids=[failure_id],
+            failure_record_ids=failure_ids,
             model_profile=v2_service.learning.model_profile,
             changes={
                 "retrieval_policy": {"authority_weight": 1.1},
@@ -8734,6 +8912,10 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
                 },
             },
             rationale="같은 실패군을 대상으로 held-out 회귀 없이 개선되는지 다시 검증하는 후보입니다.",
+            **_harness_hypothesis_fields(
+                v2_service,
+                preservation_run_ids=[baseline_run["work_run_id"]],
+            ),
         ),
     )
     qualified_shadow = v2_service.learning.shadow_harness_candidate(
@@ -8820,8 +9002,9 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
         goal_plan_id="goal-plan-pinned-harness",
         catalog_revision=v2_service.registry.version,
     )
-    assert pinned_run["loop"]["max_iterations"] == 3
-    assert pinned_run["loop"]["max_tool_loops"] == 4
+    assert pinned_run["loop"]["max_iterations"] == 1
+    assert pinned_run["loop"]["policy"]["kind"] == "turn"
+    assert pinned_run["loop"]["max_tool_loops"] == 1
     assert pinned_run["loop"]["max_no_progress"] == 2
     assert pinned_run["harness_bindings"][0]["version"] == reviewed["harness_version_id"]
 
@@ -8904,7 +9087,7 @@ def test_same_causal_harness_failure_is_grouped_as_a_recurrent_pattern(
         checks=[HarnessCheck(check_id="context.evidence", label="근거", status="blocked", message="근거 없음")],
         blockers=["검증된 근거가 없습니다."],
     )
-    for suffix in ("one", "two"):
+    for suffix in ("one", "two", "three"):
         v2_service.learning._record_harness_failures(
             principal=principal,
             work_run={"work_run_id": f"work-run-{suffix}", "artifact_refs": []},
@@ -8914,8 +9097,13 @@ def test_same_causal_harness_failure_is_grouped_as_a_recurrent_pattern(
         )
     patterns = v2_service.learning.list_harness_failure_patterns(principal)["items"]
     assert len(patterns) == 1
-    assert patterns[0]["occurrence_count"] == 2
-    assert set(patterns[0]["work_run_ids"]) == {"work-run-one", "work-run-two"}
+    assert patterns[0]["occurrence_count"] == 3
+    assert patterns[0]["candidate_eligible"] is True
+    assert set(patterns[0]["work_run_ids"]) == {
+        "work-run-one",
+        "work-run-two",
+        "work-run-three",
+    }
 
 
 def test_context_playbook_is_deduplicated_versioned_and_model_scoped(
@@ -9066,32 +9254,37 @@ def test_harness_improvement_relations_are_compiled_into_admin_ontology(
     principal: Principal,
 ):
     admin = principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]})
-    pattern_id = "hpattern-ontology"
-    failure_id = "hfailure-ontology"
+    preservation_run_id = "work-run-harness-ontology-preserved"
     v2_service.store.put(
-        "harness_failure_patterns",
-        pattern_id,
-        {"failure_pattern_id": pattern_id, "summary": "근거 누락 반복", "status": "open", "occurrence_count": 2},
+        "work_runs",
+        preservation_run_id,
+        {"work_run_id": preservation_run_id, "status": "completed"},
     )
-    v2_service.store.put(
-        "harness_failure_records",
-        failure_id,
-        {
-            "failure_record_id": failure_id,
-            "failure_pattern_id": pattern_id,
-            "employee_id": admin.employee_id,
-            "harness_id": "context.work",
-            "causal_agent_stage": "context.evidence",
-            "status": "open",
-        },
+    failure_ids = _record_recurrent_harness_failures(
+        v2_service,
+        admin,
+        context=WorkContextPack(
+            context_id="context-harness-ontology",
+            employee_id=admin.employee_id,
+            capability_id="knowledge.search",
+            goal="근거 누락 개선 후보를 검증한다",
+        ),
+        prefix="ontology",
+    )
+    pattern_id = str(
+        v2_service.store.get("harness_failure_records", failure_ids[0])["failure_pattern_id"]
     )
     candidate = v2_service.learning.create_harness_candidate(
         admin,
         HarnessCandidateCreateRequest(
             harness_id="context.work",
-            failure_record_ids=[failure_id],
+            failure_record_ids=failure_ids,
             changes={"retrieval_policy": {"authority_weight": 1.1}},
             rationale="반복되는 근거 누락을 줄이기 위한 제한된 검색 정책 시험입니다.",
+            **_harness_hypothesis_fields(
+                v2_service,
+                preservation_run_ids=[preservation_run_id],
+            ),
         ),
     )
     v2_service.knowledge.compile_graph(admin)
