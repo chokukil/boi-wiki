@@ -1,5 +1,5 @@
 version: "1.0"
-expected_scenarios: 62
+expected_scenarios: 78
 thresholds:
   deterministic_pass_rate: 1.0
   live_scenario_pass_rate: 0.90
@@ -51,6 +51,23 @@ groups:
     - {id: harness_immutable_boundary, contract: permissions_and_safety_are_not_editable_surfaces, handler: "tests/test_agent_v2.py::test_harness_candidate_cannot_change_immutable_safety_boundaries"}
     - {id: harness_negative_result, contract: no_progress_and_rejected_candidates_are_preserved, handler: "tests/test_agent_v2.py::test_no_progress_is_preserved_as_a_negative_result"}
     - {id: harness_operational_ontology, contract: failure_candidate_eval_and_playbook_relations_are_admin_only, handler: "tests/test_agent_v2.py::test_harness_improvement_relations_are_compiled_into_admin_ontology"}
+  harness_loop_research:
+    - {id: harness_failure_causal_clustering, contract: failures_are_clustered_by_causal_mechanism_across_distinct_runs, handler: "tests/test_agent_v2.py::test_same_causal_harness_failure_is_grouped_as_a_recurrent_pattern"}
+    - {id: harness_prediction_manifest, contract: candidate_records_predicted_impact_risk_expiry_and_rollback_target, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: harness_passing_case_preservation, contract: candidate_evaluation_replays_declared_successful_work_runs, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: harness_held_out_regression, contract: held_out_regression_rejects_candidate_without_production_change, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: harness_rejected_attempt, contract: rejected_attempt_remains_auditable_and_cannot_be_released, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: harness_release_and_rollback, contract: reviewed_version_releases_explicitly_and_rolls_back_to_catalog_version, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}
+    - {id: loop_turn_contract, contract: single_turn_read_uses_turn_loop_and_agent_done_exit, handler: "tests/test_agent_v2.py::test_work_run_records_turn_and_goal_loop_policies"}
+    - {id: loop_goal_contract, contract: verifiable_task_work_uses_bounded_goal_loop_and_exit_criteria, handler: "tests/test_agent_v2.py::test_work_run_records_turn_and_goal_loop_policies"}
+    - {id: loop_time_contract, contract: scheduled_check_runs_one_bounded_child_run_and_honors_max_runs, handler: "tests/test_agent_v2.py::test_due_time_routine_stops_at_configured_max_runs"}
+    - {id: loop_proactive_contract, contract: business_event_trigger_runs_a_bounded_child_and_deduplicates_unchanged_wake, handler: "tests/test_agent_v2.py::test_event_work_routine_uses_proactive_policy_and_suppresses_unchanged_trigger"}
+    - {id: loop_no_progress_stop, contract: first_no_progress_requires_strategy_change_and_second_stops, handler: "tests/test_agent_v2.py::test_work_loop_requires_a_strategy_change_then_stops_on_repeated_no_progress"}
+    - {id: loop_durable_resume, contract: transient_failure_checkpoints_verify_and_reflect_before_resume, handler: "tests/test_agent_v2.py::test_transient_loop_failure_is_durable_retryable_and_idempotently_resumable"}
+    - {id: loop_idempotent_replay, contract: replayed_external_result_is_applied_once_per_idempotency_key, handler: "tests/test_agent_v2.py::test_transient_loop_failure_is_durable_retryable_and_idempotently_resumable"}
+    - {id: context_budget_degradation, contract: context_budget_drops_lower_priority_items_without_exceeding_provider_capacity, handler: "tests/test_agent_v2.py::test_context_manifest_tracks_item_budget_use_and_outcome_contribution"}
+    - {id: context_outcome_attribution, contract: only_evidence_contributing_to_the_outcome_is_marked_used, handler: "tests/test_agent_v2.py::test_context_manifest_tracks_item_budget_use_and_outcome_contribution"}
+    - {id: harness_immutable_surface, contract: acl_schema_confirmation_and_verifier_boundaries_are_not_candidate_changes, handler: "tests/test_agent_v2.py::test_harness_candidate_cannot_change_immutable_safety_boundaries"}
   integration_completion:
     - {id: harness_review_page, contract: candidate_opens_rendered_review_surface, handler: "tests/test_task_ontology_a2ui.py::test_harness_candidate_opens_rendered_review_page_instead_of_raw_surface"}
     - {id: harness_release_rehearsal, contract: rehearsal_never_changes_active_binding, handler: "tests/test_agent_v2.py::test_harness_candidate_requires_held_out_and_human_review_before_any_production_change"}

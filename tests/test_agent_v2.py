@@ -8977,6 +8977,12 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
         ),
     )
 
+    assert candidate["predicted_impact"] == {"grounded_recall": 0.0}
+    assert candidate["at_risk_regressions"] == ["existing_grounded_read"]
+    assert candidate["preservation_run_ids"] == [baseline_run["work_run_id"]]
+    assert candidate["rollback_target"] == v2_service.harnesses.definition("context.work").version
+    assert datetime.fromisoformat(candidate["expires_at"]) > datetime.now(timezone.utc)
+
     rejected_shadow = v2_service.learning.shadow_harness_candidate(
         principal,
         candidate["candidate_id"],
@@ -8995,6 +9001,21 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
     )
     assert rejected["candidate"]["status"] == "rejected"
     assert rejected["candidate"]["production_changed"] is False
+    rejected_record = v2_service.store.get("harness_candidates", candidate["candidate_id"])
+    assert rejected_record["status"] == "rejected"
+    assert rejected_record["latest_eval_id"] == rejected["evaluation"]["eval_id"]
+    with pytest.raises(Exception) as rejected_release:
+        v2_service.learning.release_harness_version(
+            principal.model_copy(update={"roles": [*principal.roles, "boi.admin"]}),
+            candidate["candidate_id"],
+            HarnessVersionReleaseRequest(
+                expected_version_id="not-approved",
+                note="회귀가 확인된 후보는 배포할 수 없어야 합니다.",
+                user_confirmed=True,
+            ),
+        )
+    assert getattr(rejected_release.value, "status_code", None) == 404
+    assert rejected_release.value.detail == "배포할 Harness 버전을 찾을 수 없습니다."
 
     candidate = v2_service.learning.create_harness_candidate(
         principal,
