@@ -61,6 +61,46 @@ _PROVIDER_USAGE_EVENTS: ContextVar[list[dict[str, Any]]] = ContextVar("boi_provi
 _MODEL_RUNTIME_PROFILE_CACHE: dict[tuple[str, str, str], tuple[float, ModelRuntimeProfile]] = {}
 
 
+_TRANSPORT_SCHEMA_KEYS = frozenset(
+    {
+        "type",
+        "properties",
+        "required",
+        "items",
+        "enum",
+        "const",
+        "anyOf",
+        "oneOf",
+        "additionalProperties",
+        "minItems",
+        "maxItems",
+    }
+)
+
+
+def structural_transport_schema(value: Any, *, property_map: bool = False) -> Any:
+    """Keep JSON shape constraints that provider grammars reliably enforce.
+
+    Domain validation always uses the original schema. This projection is only
+    a transport grammar for OpenAI-compatible providers that reject Pydantic's
+    descriptive and numeric annotations while still supporting object shape,
+    required fields, enums, and unions.
+    """
+
+    if isinstance(value, list):
+        return [structural_transport_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    if property_map:
+        return {key: structural_transport_schema(item) for key, item in value.items()}
+    projected: dict[str, Any] = {}
+    for key, item in value.items():
+        if key not in _TRANSPORT_SCHEMA_KEYS:
+            continue
+        projected[key] = structural_transport_schema(item, property_map=key == "properties")
+    return projected
+
+
 def _estimate_tokens(value: Any) -> int:
     if not value:
         return 0
@@ -913,6 +953,7 @@ class OpenAICompatibleGateway:
 
     def __init__(self, settings: AgentV2Settings):
         self.settings = settings
+        self._structured_transport = "json_schema"
 
     @property
     def generation_ready(self) -> bool:
@@ -945,20 +986,39 @@ class OpenAICompatibleGateway:
             self.settings,
             required_models=[self.settings.model_name],
         )
-        request_payload: dict[str, Any] = {
-            "model": self.settings.model_name,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "response_format": {
+        schema_transport = self._structured_transport
+        transport_system = system
+        response_format: dict[str, Any]
+        if schema_transport == "text_json":
+            response_format = {"type": "text"}
+            transport_system = (
+                f"{system}\n\n"
+                "The provider cannot enforce the full JSON Schema for this request. "
+                "Return exactly one JSON object that satisfies the complete JSON Schema below. "
+                "Do not omit required fields or add prose outside the object.\n"
+                f"JSON Schema:\n{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
+            )
+        else:
+            transport_schema = (
+                structural_transport_schema(schema)
+                if schema_transport == "compact_json_schema"
+                else schema
+            )
+            response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "boi_v2_response",
                     "strict": False,
-                    "schema": schema,
+                    "schema": transport_schema,
                 },
-            },
+            }
+        request_payload: dict[str, Any] = {
+            "model": self.settings.model_name,
+            "messages": [
+                {"role": "system", "content": transport_system},
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": response_format,
             "temperature": 0,
             "max_tokens": self.settings.model_max_output_tokens,
         }
@@ -970,6 +1030,19 @@ class OpenAICompatibleGateway:
             json=request_payload,
             timeout=60,
         )
+        if (
+            not response.is_success
+            and schema_transport in {"json_schema", "compact_json_schema"}
+            and response.status_code in {400, 422}
+        ):
+            # Provider grammar support is a transport concern. First retain
+            # structural JSON constraints without Pydantic annotations; only
+            # providers that reject that generic projection fall back to text.
+            # Callers still validate the result against the original schema.
+            self._structured_transport = (
+                "compact_json_schema" if schema_transport == "json_schema" else "text_json"
+            )
+            return self.generate_structured(system=system, prompt=prompt, schema=schema)
         if not response.is_success:
             raise RuntimeError(
                 f"OpenAI-compatible generation failed with HTTP {response.status_code}: "

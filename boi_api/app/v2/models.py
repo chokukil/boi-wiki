@@ -74,6 +74,8 @@ class LoopTriggerKind(str, Enum):
 class LoopContract(BaseModel):
     """Planner-selected loop semantics bounded by a catalog and a versioned Harness."""
 
+    model_config = ConfigDict(extra="forbid")
+
     kind: LoopKind = LoopKind.turn
     trigger: LoopTriggerKind = LoopTriggerKind.user
     task_stop: Literal["agent_done", "exit_criteria", "needs_context"] = "agent_done"
@@ -81,8 +83,10 @@ class LoopContract(BaseModel):
     max_iterations: int = Field(default=1, ge=1, le=20)
     max_no_progress: int = Field(default=2, ge=2, le=3)
     max_tool_loops: int = Field(default=1, ge=1, le=20)
-    max_model_calls: int = Field(default=3, ge=0, le=20)
-    max_elapsed_seconds: int = Field(default=30, ge=1, le=86_400)
+    # These are safety ceilings, not latency targets. A turn may need one plan
+    # repair and an independent evaluator, especially on a slower local model.
+    max_model_calls: int = Field(default=4, ge=0, le=20)
+    max_elapsed_seconds: int = Field(default=180, ge=1, le=86_400)
     # Zero delegates the input budget to the active provider profile. Positive
     # values remain available for an explicitly bounded operation or test.
     max_context_tokens: int = Field(default=0, ge=0, le=2_000_000)
@@ -596,6 +600,8 @@ class ContextManifest(BaseModel):
 
 
 class GraphQueryDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = False
     query_kind: Literal[
         "neighbors", "path", "workflow", "impact", "lineage",
@@ -614,6 +620,8 @@ class GraphQueryDraft(BaseModel):
 
 class SemanticSubject(BaseModel):
     """A subject selected by the planner, before ACL-bounded entity resolution."""
+
+    model_config = ConfigDict(extra="forbid")
 
     mention: str = Field(min_length=1, max_length=240)
     entity_ref: str = Field(default="", max_length=1000)
@@ -643,6 +651,8 @@ class SemanticContinuation(BaseModel):
 
 class SemanticPlan(BaseModel):
     """The model-owned meaning contract. Validators may reject it, never rewrite it."""
+
+    model_config = ConfigDict(extra="forbid")
 
     schema_revision: str = "semantic-plan/v2"
     resolved_goal: str = Field(min_length=1, max_length=12000)

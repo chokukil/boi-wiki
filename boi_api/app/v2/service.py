@@ -3209,7 +3209,14 @@ class AgentV2Service:
                 "결과 영역에서 질문과 직접 연결된 관계와 원문 근거를 확인할 수 있습니다. "
                 + " ".join(
                     f"[{index}](/api/v2/citations/{citation.citation_id})"
-                    for index, citation in enumerate(diagram_citations[:2], start=1)
+                    for index, citation in enumerate(
+                        [
+                            citation
+                            for citation in diagram_citations
+                            if citation.source_ref in set(graph["source_refs"])
+                        ],
+                        start=1,
+                    )
                 )
             ),
         )
@@ -3220,6 +3227,62 @@ class AgentV2Service:
             diagram_citations,
         )
         return answer, artifact, related
+
+    @staticmethod
+    def _grounded_claims_for_mermaid_graph(
+        graph: dict[str, Any],
+        citations: list[CitationRef],
+        *,
+        source_scope: str,
+    ) -> list[GroundedClaim]:
+        """Project validated diagram relations into the response grounding contract."""
+
+        citation_by_source = {
+            item.source_ref: item
+            for item in citations
+            if item.source_ref and item.chunk_id
+        }
+        node_labels = {
+            str(item.get("node_id") or ""): str(item.get("label") or "").strip()
+            for item in graph.get("nodes") or []
+            if isinstance(item, dict)
+        }
+        claims: list[GroundedClaim] = []
+        for index, edge in enumerate(graph.get("edges") or [], start=1):
+            if not isinstance(edge, dict):
+                continue
+            source_refs = list(
+                dict.fromkeys(
+                    str(item)
+                    for item in edge.get("source_refs") or []
+                    if str(item) in citation_by_source
+                )
+            )
+            if not source_refs:
+                continue
+            source_label = node_labels.get(str(edge.get("from") or ""), "")
+            target_label = node_labels.get(str(edge.get("to") or ""), "")
+            relation_label = str(edge.get("label") or "").strip()
+            if not source_label or not target_label or not relation_label:
+                continue
+            claims.append(
+                GroundedClaim(
+                    claim_id=f"diagram-relation-{index}",
+                    text=f"{source_label} - {relation_label} -> {target_label}",
+                    claim_kind="relationship",
+                    source_scope=(
+                        source_scope
+                        if source_scope in {"canonical", "operational", "validation"}
+                        else "canonical"
+                    ),
+                    source_refs=source_refs,
+                    supporting_chunk_ids=[citation_by_source[ref].chunk_id for ref in source_refs],
+                    support_status="supported",
+                    confidence=1.0,
+                    required_for_answer=True,
+                )
+            )
+        return claims
 
     def _split_mermaid_artifact_into_tasks(
         self,
@@ -4832,10 +4895,13 @@ class AgentV2Service:
             ][-20:]
             session["topic_corrections"] = corrections
         elif (
-            response.work_intent
-            and response.work_intent.topic_mode == "continue"
+            not response.artifact_refs
+            and (response.work_intent is None or response.work_intent.user_effect == "read")
             and not any(item.support_status == "supported" for item in response.grounded_claims)
         ):
+            # An ungrounded answer must not become the verified subject of the
+            # next turn. Preserve an existing topic, or keep the session topic
+            # empty when the first turn could not establish one.
             topic_state = prior_topic
         else:
             graph_entities = [
@@ -4862,6 +4928,11 @@ class AgentV2Service:
                             else []
                         ),
                         *graph_entities,
+                        # A grounded canonical or operational source is also a
+                        # verified topic identity. This keeps document-backed
+                        # concepts referenceable across turns even when no
+                        # separate ontology entity was resolved initially.
+                        *response.used_source_refs,
                         *([str(session.get("active_artifact_id"))] if session.get("active_artifact_id") else []),
                     ]
                 )),
@@ -6427,6 +6498,34 @@ class AgentV2Service:
                     capability_id=capability_id,
                 )
                 artifacts.append(diagram_artifact)
+                diagram_row = self.store.get("artifacts", diagram_artifact.artifact_id) or {}
+                diagram_graph = (
+                    diagram_row.get("draft")
+                    if isinstance(diagram_row.get("draft"), dict)
+                    else {}
+                )
+                grounded_claims = self._grounded_claims_for_mermaid_graph(
+                    diagram_graph,
+                    citations,
+                    source_scope=intent.answer_source_scope,
+                )
+                claim_grounded_response = bool(grounded_claims)
+                verified_used_source_refs.extend(
+                    source_ref
+                    for claim in grounded_claims
+                    for source_ref in claim.source_refs
+                    if source_ref
+                )
+                answerability = AnswerabilityReport(
+                    status="grounded" if grounded_claims else "insufficient",
+                    answer_intent="relationship",
+                    supported_claim_count=len(grounded_claims),
+                    missing_evidence=(
+                        []
+                        if grounded_claims
+                        else ["그림의 관계를 직접 뒷받침하는 내부 근거가 없습니다."]
+                    ),
+                )
             except RuntimeError as exc:
                 status = "needs_input"
                 work_run["diagnostics"] = [

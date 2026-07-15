@@ -342,6 +342,17 @@ class IndependentClaimEvaluator:
                 "criteria": [item.model_dump(mode="json") for item in selected],
                 "findings": [],
                 "provider": provider,
+                "verifier_facts": {
+                    "selected_claim_count": len(selected),
+                    "verdicts": [
+                        {
+                            "claim_id": item.claim_id,
+                            "support_status": item.support_status,
+                            "confidence": item.confidence,
+                        }
+                        for item in selected
+                    ],
+                },
             }
         except Exception as exc:
             if bool(policy.get("fail_closed", True)):
@@ -355,5 +366,10 @@ class IndependentClaimEvaluator:
                 "criteria": [],
                 "findings": [],
                 "provider": provider,
+                "verifier_facts": {
+                    "selected_claim_count": len(selected),
+                    "failure_type": type(exc).__name__,
+                    "failure_message": str(exc)[:500],
+                },
             }
         return claims, self.store.put("evaluations", evaluation_id, row)

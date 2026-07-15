@@ -8,8 +8,8 @@ loop_contract_templates:
     max_iterations: 1
     max_no_progress: 2
     max_tool_loops: 1
-    max_model_calls: 2
-    max_elapsed_seconds: 30
+    max_model_calls: 4
+    max_elapsed_seconds: 180
     max_context_tokens: 0
     max_runs: 1
     exit_criteria_refs: []
@@ -23,8 +23,8 @@ loop_contract_templates:
     max_iterations: 5
     max_no_progress: 2
     max_tool_loops: 5
-    max_model_calls: 5
-    max_elapsed_seconds: 120
+    max_model_calls: 8
+    max_elapsed_seconds: 900
     max_context_tokens: 0
     max_runs: 1
     exit_criteria_refs: []
@@ -38,8 +38,8 @@ loop_contract_templates:
     max_iterations: 5
     max_no_progress: 2
     max_tool_loops: 5
-    max_model_calls: 5
-    max_elapsed_seconds: 600
+    max_model_calls: 12
+    max_elapsed_seconds: 3600
     max_context_tokens: 0
     max_runs: 1
     exit_criteria_refs: []
@@ -94,7 +94,7 @@ capabilities:
     description: 빠른 질문, 현재 문서 설명, 관계 확인에 필요한 BoI 문서·SOP·Event·Action·Skill을 함께 찾습니다.
     primary_asset: knowledge
     supported_assets: [knowledge, sop, workflow, task, business_event, action, skill, runtime, evidence]
-    subject_kinds: [knowledge, document, sop, workflow, task, business_event, event, action, skill, runtime, runtime_catalog, evidence, person, team, role, data_artifact, work_record, completion_record, knowledge_candidate]
+    subject_kinds: [knowledge, concept, document, sop, workflow, task, business_event, event, action, skill, runtime, runtime_catalog, evidence, person, team, role, data_artifact, work_record, completion_record, knowledge_candidate]
     examples: [찾아줘, 검색, 관련 문서, 무엇인지 알려줘, 업무 지식]
     operation: read
     user_effects: [read]

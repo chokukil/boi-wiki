@@ -513,7 +513,11 @@ class PlanCompiler:
         )
 
 
-def semantic_plan_schema(registry: CapabilityRegistry) -> dict[str, Any]:
+def semantic_plan_schema(
+    registry: CapabilityRegistry,
+    *,
+    trusted_context_refs: list[str] | None = None,
+) -> dict[str, Any]:
     schema = copy.deepcopy(SemanticPlan.model_json_schema())
     definitions = schema.pop("$defs", {})
 
@@ -529,9 +533,67 @@ def semantic_plan_schema(registry: CapabilityRegistry) -> dict[str, Any]:
         return value
 
     schema = inline_refs(schema)
+
     properties = schema.get("properties") or {}
+    semantic_decisions = [
+        "resolved_goal",
+        "retrieval_query",
+        "topic_action",
+        "subjects",
+        "capability_id",
+        "user_effect",
+        "operation",
+        "evidence_scope",
+        "presentation",
+        "work_view",
+        "graph_query",
+        "context_refs",
+        "target_ref",
+        "answer_intent",
+        "clarification_question",
+        "loop_contract",
+        "confidence",
+    ]
+    schema["required"] = semantic_decisions
+    schema["additionalProperties"] = False
+
+    # Require semantic choices while leaving optional runtime payload details
+    # optional. In particular, a normal read turn must not be forced to invent
+    # WorkRecord content merely to satisfy the planner transport schema.
+    subject_schema = (properties.get("subjects") or {}).get("items") or {}
+    subject_schema["required"] = ["mention", "entity_ref", "entity_kind", "resolution"]
+    subject_schema["additionalProperties"] = False
+    graph_schema = properties.get("graph_query") or {}
+    for alternative in graph_schema.get("anyOf") or []:
+        if alternative.get("type") == "object" and isinstance(alternative.get("properties"), dict):
+            alternative["required"] = list(alternative["properties"])
+            alternative["additionalProperties"] = False
+    loop_schema = properties.get("loop_contract") or {}
+    if isinstance(loop_schema.get("properties"), dict):
+        loop_schema["required"] = list(loop_schema["properties"])
+        loop_schema["additionalProperties"] = False
     properties.setdefault("capability_id", {})["enum"] = [item.capability_id for item in registry.all()]
-    schema["required"] = list(dict.fromkeys([*(schema.get("required") or []), "loop_contract"]))
+    subject_kinds = sorted(
+        {
+            kind
+            for definition in registry.all()
+            for kind in definition.subject_kinds
+            if kind
+        }
+    )
+    subject_properties = subject_schema.get("properties") or {}
+    if subject_kinds:
+        subject_properties.setdefault("entity_kind", {})["enum"] = ["", *subject_kinds]
+
+    # The planner owns the subject mention, while internal identity remains an
+    # ACL boundary. A ref can only be empty or one of the values supplied in
+    # this request's visible context; downstream validation still uses the
+    # complete SemanticPlan model and Capability Catalog.
+    trusted_refs = list(dict.fromkeys(str(item) for item in (trusted_context_refs or []) if str(item)))
+    subject_properties.setdefault("entity_ref", {})["enum"] = ["", *trusted_refs]
+    properties.setdefault("target_ref", {})["enum"] = ["", *trusted_refs]
+    if trusted_refs:
+        ((properties.get("context_refs") or {}).get("items") or {})["enum"] = trusted_refs
     return schema
 
 

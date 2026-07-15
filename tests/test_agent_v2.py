@@ -139,6 +139,52 @@ def test_capability_registry_rejects_unimplemented_mutation_handlers_before_turn
     assert registry.handler_supported(read_definition.model_copy(update={"handler": "missing_plugin"})) is False
 
 
+def test_versioned_loop_contracts_leave_capacity_for_repair_and_fresh_evaluation():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    turn = registry.get("knowledge.search").default_loop_contract
+    goal = registry.get("task.work").default_loop_contract
+
+    assert turn.max_context_tokens == 0
+    assert turn.max_model_calls >= 4
+    assert turn.max_elapsed_seconds >= 180
+    assert goal.max_context_tokens == 0
+    assert goal.max_model_calls >= turn.max_model_calls
+    assert goal.max_elapsed_seconds >= turn.max_elapsed_seconds
+
+
+def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    runtime = QuickAgentRuntime(registry=registry)
+    schema = runtime._planner_schema(
+        {
+            "conversation_context": {"recent_source_refs": ["boi:public:guide"]},
+            "knowledge_hints": [{"ref": "boi:team:runbook"}],
+            "trusted_targets": {"person": "person:100001"},
+        }
+    )
+    plan_properties = schema["properties"]["semantic_plan"]["properties"]
+    subject_properties = plan_properties["subjects"]["items"]["properties"]
+
+    assert subject_properties["entity_ref"]["enum"] == [
+        "",
+        "boi:public:guide",
+        "boi:team:runbook",
+        "person:100001",
+    ]
+    assert plan_properties["target_ref"]["enum"] == subject_properties["entity_ref"]["enum"]
+    assert plan_properties["context_refs"]["items"]["enum"] == subject_properties["entity_ref"]["enum"][1:]
+    assert "concept" in subject_properties["entity_kind"]["enum"]
+    assert "topic_action" in schema["properties"]["semantic_plan"]["required"]
+    assert "presentation" in schema["properties"]["semantic_plan"]["required"]
+    assert "continuation" not in schema["properties"]["semantic_plan"]["required"]
+    assert set(subject_properties) == set(plan_properties["subjects"]["items"]["required"])
+    answer_properties = schema["properties"]["grounded_answer"]["properties"]
+    claim_properties = answer_properties["claims"]["items"]["properties"]
+    assert claim_properties["source_refs"]["minItems"] == 1
+    assert claim_properties["source_refs"]["items"]["enum"] == ["S1"]
+    assert claim_properties["supporting_chunk_ids"]["items"]["enum"] == ["C1"]
+
+
 def test_postgres_store_registers_every_helper_builder_collection():
     assert PostgresAgentV2Store.COLLECTION_TABLES["helper_drafts"] == "agent_helper_drafts"
     assert PostgresAgentV2Store.COLLECTION_TABLES["helpers"] == "agent_helpers"
@@ -590,6 +636,82 @@ class ScriptedPlanner:
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise RuntimeError("test embedding intentionally unavailable")
+
+
+class EmptyThenGroundedRepairModel(ScriptedPlanner):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        self.calls += 1
+        if _is_semantic_planner_schema(schema):
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="Work Learning Loop의 내부 정의를 설명한다",
+                    retrieval_query="Work Learning Loop 내부 정의",
+                    capability_id="knowledge.search",
+                    user_effect="read",
+                    operation="understand",
+                    evidence_scope="canonical",
+                    presentation="prose",
+                    answer_intent="definition",
+                    confidence=1.0,
+                ).model_dump(mode="json")
+            )
+        if set(schema.get("required") or []) == {
+            "summary",
+            "summary_source_refs",
+            "claims",
+            "outcomes",
+            "related_questions",
+        }:
+            return {
+                "summary": "Work Learning Loop는 검증된 결과를 다음 업무에 재사용하는 순환입니다.",
+                "summary_source_refs": ["S1"],
+                "claims": [
+                    {
+                        "claim_id": "loop-definition",
+                        "text": "Work Learning Loop는 검증된 결과를 다음 업무에 재사용하는 순환입니다.",
+                        "claim_kind": "definition",
+                        "source_scope": "canonical",
+                        "source_refs": ["S1"],
+                        "supporting_chunk_ids": ["C1"],
+                        "required_for_answer": True,
+                    }
+                ],
+                "outcomes": [],
+                "related_questions": [],
+            }
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+def test_empty_grounded_answer_repairs_once_without_changing_the_validated_plan(
+    v2_service: AgentV2Service,
+):
+    model = EmptyThenGroundedRepairModel()
+    route = v2_service.quick_agent.route(
+        "Work Learning Loop를 내부 문서로 설명해줘",
+        page_kind="library",
+        knowledge_hints=[
+            {
+                "ref": "boi:public:work-learning-loop",
+                "title": "Work Learning Loop",
+                "chunk_id": "chunk-loop",
+                "chunk_text": "Work Learning Loop는 검증된 결과를 다음 업무에 재사용하는 순환입니다.",
+                "answer_scope": "canonical",
+            }
+        ],
+        model=model,
+    )
+
+    assert model.calls == 2
+    assert route["semantic_plan"]["resolved_goal"] == "Work Learning Loop의 내부 정의를 설명한다"
+    assert route["grounded_answer_diagnostics"]["repair"] == "accepted"
+    assert route["grounded_answer"]["claims"][0]["source_refs"] == [
+        "boi:public:work-learning-loop"
+    ]
+    assert "grounded_answer:repair" in route["trace"]
 
 
 def _task_completion_plan(task_ref: str) -> dict[str, Any]:
@@ -2269,6 +2391,136 @@ def test_openai_compatible_generation_uses_lmstudio_json_schema_contract(monkeyp
     assert captured["json"]["max_tokens"] == settings.model_max_output_tokens
 
 
+def test_openai_compatible_generation_negotiates_structural_schema_when_full_schema_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    payloads: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def __init__(self, *, status_code: int, payload: dict[str, Any] | None = None):
+            self.status_code = status_code
+            self.is_success = status_code < 400
+            self._payload = payload or {}
+            self.text = '{"error":"structured transport rejected"}'
+
+        def json(self) -> dict[str, Any]:
+            return self._payload
+
+    responses = [
+        FakeResponse(status_code=400),
+        FakeResponse(
+            status_code=200,
+            payload={
+                "choices": [{"message": {"content": '{"ok": true}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13},
+            },
+        ),
+        FakeResponse(
+            status_code=200,
+            payload={
+                "choices": [{"message": {"content": '{"ok": true}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13},
+            },
+        ),
+    ]
+
+    def fake_post(_url: str, **kwargs: Any) -> FakeResponse:
+        payloads.append(kwargs["json"])
+        return responses.pop(0)
+
+    monkeypatch.setattr("boi_api.app.v2.model_gateway.httpx.post", fake_post)
+    base = AgentV2Settings.from_environment(repo_root=ROOT)
+    settings = replace(
+        base,
+        model_provider="openai_compatible",
+        model_base_url="http://lmstudio.example:1234/v1",
+        model_api_key="not-needed",
+        model_name="google/gemma-local",
+    )
+    schema = {"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}}
+    gateway = OpenAICompatibleGateway(settings)
+
+    assert gateway.generate_structured(system="Return valid JSON.", prompt="Confirm.", schema=schema) == {"ok": True}
+    assert payloads[0]["response_format"]["type"] == "json_schema"
+    assert payloads[1]["response_format"]["type"] == "json_schema"
+    assert payloads[1]["response_format"]["json_schema"]["schema"] == schema
+
+    assert gateway.generate_structured(system="Return valid JSON.", prompt="Confirm again.", schema=schema) == {"ok": True}
+    assert payloads[2]["response_format"]["type"] == "json_schema"
+
+
+def test_openai_compatible_generation_uses_text_only_after_structural_schema_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    payloads: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def __init__(self, *, status_code: int, payload: dict[str, Any] | None = None):
+            self.status_code = status_code
+            self.is_success = status_code < 400
+            self._payload = payload or {}
+            self.text = '{"error":"structured transport rejected"}'
+
+        def json(self) -> dict[str, Any]:
+            return self._payload
+
+    responses = [
+        FakeResponse(status_code=400),
+        FakeResponse(status_code=422),
+        FakeResponse(
+            status_code=200,
+            payload={
+                "choices": [{"message": {"content": '{"item": {"ok": true}}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 6, "total_tokens": 16},
+            },
+        ),
+    ]
+
+    def fake_post(_url: str, **kwargs: Any) -> FakeResponse:
+        payloads.append(kwargs["json"])
+        return responses.pop(0)
+
+    monkeypatch.setattr("boi_api.app.v2.model_gateway.httpx.post", fake_post)
+    base = AgentV2Settings.from_environment(repo_root=ROOT)
+    settings = replace(
+        base,
+        model_provider="openai_compatible",
+        model_base_url="http://lmstudio.example:1234/v1",
+        model_api_key="not-needed",
+        model_name="google/gemma-local",
+    )
+    schema = {
+        "type": "object",
+        "title": "Annotated response",
+        "required": ["item"],
+        "properties": {
+            "item": {
+                "type": "object",
+                "title": "Nested item",
+                "properties": {"ok": {"type": "boolean", "default": False}},
+            }
+        },
+    }
+    gateway = OpenAICompatibleGateway(settings)
+
+    assert gateway.generate_structured(system="Return valid JSON.", prompt="Confirm.", schema=schema) == {
+        "item": {"ok": True}
+    }
+    projected = payloads[1]["response_format"]["json_schema"]["schema"]
+    assert projected == {
+        "type": "object",
+        "required": ["item"],
+        "properties": {
+            "item": {
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+            }
+        },
+    }
+    assert payloads[2]["response_format"] == {"type": "text"}
+    assert json.dumps(schema, ensure_ascii=False, separators=(",", ":")) in payloads[2]["messages"][0]["content"]
+
+
 def test_lmstudio_residency_reports_missing_models_without_loading_or_unloading(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -3531,6 +3783,13 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     assert artifact["actions"] == []
     assert second.artifact_refs[0].actions == []
     assert "Task 또는 SOP" not in second.answer.markdown
+    assert second.grounding_status == "grounded"
+    assert second.answerability.status == "grounded"
+    assert second.grounded_claims
+    assert all(item.claim_kind == "relationship" for item in second.grounded_claims)
+    assert all(item.support_status == "supported" for item in second.grounded_claims)
+    assert set(second.used_source_refs) == set(artifact["draft"]["source_refs"])
+    assert {item.source_ref for item in second.citations} == set(artifact["draft"]["source_refs"])
     assert all(item.citation_id in second.answer.markdown for item in second.citations)
     timeline = v2_service.session_timeline(principal, first.work_session_id)["items"]
     assert timeline[-2]["display_text"] == "머메이드 차트로 그려줘"
@@ -3692,6 +3951,8 @@ def test_grounded_mermaid_uses_the_deterministic_graph_compiler_without_an_extra
     assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["nodes"])
     assert all((item.get("payload") or {}).get("source_refs") for item in artifact["draft"]["edges"])
     assert artifact["actions"] == []
+    assert response.grounding_status == "grounded"
+    assert response.grounded_claims
 
 
 def test_grounded_mermaid_ignores_untrusted_model_graph_shapes(
@@ -5809,6 +6070,7 @@ def test_session_followup_context_keeps_only_verified_claims_and_used_citations(
     assert assistant["grounded_claims"]
     assert all(item["support_status"] == "supported" for item in assistant["grounded_claims"])
     assert context["topic_state"]["used_source_refs"] == first.used_source_refs
+    assert set(first.used_source_refs).issubset(set(context["topic_state"]["entities"]))
 
 
 def test_session_context_preserves_complete_turns_and_evidence(
@@ -6426,6 +6688,8 @@ def test_unknown_internal_concept_returns_insufficient_instead_of_model_memory(
     assert response.grounded_claims == []
     assert response.answer.summary == "확인된 근거가 없습니다."
     assert "ZQX-99" not in response.answer.markdown
+    session = v2_service.store.get("work_sessions", response.work_session_id)
+    assert not session.get("topic_state")
 
 
 def test_followup_without_prior_subject_uses_verified_topic_identity_without_a_second_model_call(
@@ -10252,3 +10516,42 @@ def test_grounded_answer_contract_preserves_all_model_supported_claims_and_outco
     assert all(len(outcome["items"]) == 10 for outcome in answer["outcomes"])
     assert answer["summary"] == long_tail.strip()
     assert answer["claims"][-1]["text"] == long_tail.strip()
+
+
+def test_grounded_answer_uses_a_validated_claim_when_summary_has_an_unbound_extra_source():
+    hints = [
+        {"ref": "boi:public:loop", "chunk_id": "chunk-loop", "answer_scope": "canonical"},
+        {"ref": "boi:public:extra", "chunk_id": "chunk-extra", "answer_scope": "canonical"},
+    ]
+    envelope = {
+        "grounded_answer": {
+            "summary": "검증된 claim보다 더 넓은 별도 요약",
+            "summary_source_refs": ["S1", "S2"],
+            "claims": [
+                {
+                    "claim_id": "loop-definition",
+                    "text": "Work Learning Loop는 검증된 결과를 다음 업무에 재사용하는 순환입니다.",
+                    "claim_kind": "definition",
+                    "source_scope": "canonical",
+                    "source_refs": ["S1"],
+                    "supporting_chunk_ids": ["C1"],
+                    "required_for_answer": True,
+                }
+            ],
+            "outcomes": [],
+            "related_questions": [],
+        }
+    }
+    plan = SemanticPlan(
+        resolved_goal="Work Learning Loop를 설명한다",
+        retrieval_query="Work Learning Loop",
+        capability_id="knowledge.search",
+        evidence_scope="canonical",
+    )
+
+    answer, diagnostics = QuickAgentRuntime._resolve_grounded_answer(envelope, plan, hints)
+
+    assert diagnostics == {"accepted": True, "accepted_claims": 1, "rejected_claims": 0}
+    assert answer is not None
+    assert answer["summary"] == answer["claims"][0]["text"]
+    assert answer["summary_source_refs"] == ["boi:public:loop"]

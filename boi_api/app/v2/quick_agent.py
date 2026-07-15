@@ -108,8 +108,8 @@ class QuickAgentRuntime:
         ]
 
     @staticmethod
-    def _grounded_answer_schema() -> dict[str, Any]:
-        return {
+    def _grounded_answer_schema(*, hint_count: int = 0) -> dict[str, Any]:
+        schema = {
             "type": "object",
             "required": ["summary", "summary_source_refs", "claims", "outcomes", "related_questions"],
             "properties": {
@@ -196,14 +196,37 @@ class QuickAgentRuntime:
                 },
             },
         }
+        if hint_count > 0:
+            source_keys = [f"S{index}" for index in range(1, hint_count + 1)]
+            chunk_keys = [f"C{index}" for index in range(1, hint_count + 1)]
+            properties = schema["properties"]
+            properties["summary_source_refs"]["items"]["enum"] = source_keys
+            claim_properties = properties["claims"]["items"]["properties"]
+            claim_properties["source_refs"]["items"]["enum"] = source_keys
+            claim_properties["supporting_chunk_ids"]["items"]["enum"] = chunk_keys
+            outcome_ref_items = (
+                properties["outcomes"]["items"]["properties"]["items"]["items"]["properties"]
+                ["source_refs"]["items"]
+            )
+            outcome_ref_items["enum"] = source_keys
+            related_ref_items = (
+                properties["related_questions"]["items"]["properties"]["source_refs"]["items"]
+            )
+            related_ref_items["enum"] = source_keys
+        return schema
 
-    def _planner_schema(self) -> dict[str, Any]:
+    def _planner_schema(self, state: QuickAgentState | None = None) -> dict[str, Any]:
         return {
             "type": "object",
             "required": ["semantic_plan", "grounded_answer"],
             "properties": {
-                "semantic_plan": semantic_plan_schema(self.registry),
-                "grounded_answer": self._grounded_answer_schema(),
+                "semantic_plan": semantic_plan_schema(
+                    self.registry,
+                    trusted_context_refs=self._trusted_refs(state) if state is not None else [],
+                ),
+                "grounded_answer": self._grounded_answer_schema(
+                    hint_count=len(state.get("knowledge_hints") or []) if state is not None else 0,
+                ),
             },
             "additionalProperties": False,
         }
@@ -371,13 +394,19 @@ class QuickAgentRuntime:
             "Use only internal_wiki_hints, operational_runtime_hints, and validation_hints for grounded claims. "
             "Use validation_hints only when semantic_plan.evidence_scope is validation. Every factual claim must cite "
             "the exact source_key and chunk_key that directly support it. If direct support is absent, omit the claim and "
-            "return an empty grounded_answer. External knowledge is not evidence. Do not add an unrequested SOP, Task, "
+            "return an empty grounded_answer. Set required_for_answer=true only when omitting that claim would make the "
+            "answer materially wrong or unusable; supporting context and optional detail must set it to false. External "
+            "knowledge is not evidence. Do not add an unrequested SOP, Task, "
             "Event, Action, graph, or follow-up action. semantic_plan is the sole meaning contract; grounded_answer "
             "may express factual claims but must not change the selected meaning. Select loop_contract only from the "
             "capability contract. Use turn for one bounded response and goal only when the catalog supplies verifiable "
             "exit criteria. Do not create time or proactive loops from ordinary chat. Use conversation_turns to resolve "
             "discourse and follow-up references, but inherit factual content only from supported grounded_claims and "
-            "verified_topic_state."
+            "verified_topic_state. State every SemanticPlan field explicitly. Use topic_action=continue whenever the "
+            "request refers to, re-expresses, or changes only the presentation of a verified prior subject; use new "
+            "only for a distinct subject. retrieval_query must be a standalone, meaningful search request, never a "
+            "placeholder or serialized null. When active_work.work_run is empty, do not supply continuation work "
+            "details; the default continuation is inactive and empty."
         )
         if repair:
             return base + (
@@ -492,7 +521,7 @@ class QuickAgentRuntime:
             fixed_text = json.dumps(
                 {
                     "system": self._planner_system(repair=bool(invalid_output or validation_issues)),
-                    "schema": self._planner_schema(),
+                    "schema": self._planner_schema(state),
                     "payload": fixed_payload,
                 },
                 ensure_ascii=False,
@@ -684,7 +713,7 @@ class QuickAgentRuntime:
             and set(summary_refs).issubset(accepted_claim_refs)
             and refs_match_plan_scope(summary_refs)
         )
-        if not claims or not summary or not summary_grounded:
+        if not claims:
             if unsupported_claims:
                 return (
                     {
@@ -702,6 +731,14 @@ class QuickAgentRuntime:
                     },
                 )
             return None, {"accepted": False, "accepted_claims": len(claims), "rejected_claims": rejected}
+
+        # The rendered answer is claim-driven. If the model's separate summary
+        # cites a broader source set than its validated claims, derive the
+        # summary from the first accepted claim instead of discarding every
+        # otherwise grounded claim or trusting an unverified summary sentence.
+        if not summary or not summary_grounded:
+            summary = str(claims[0].get("text") or "").strip()
+            summary_refs = list(claims[0].get("source_refs") or [])
 
         outcomes: list[dict[str, Any]] = []
         for outcome in raw.get("outcomes") or []:
@@ -748,12 +785,72 @@ class QuickAgentRuntime:
                 "answer_intent": plan.answer_intent,
                 "summary": summary,
                 "summary_source_refs": summary_refs,
-                "claims": claims,
+                "claims": [*claims, *unsupported_claims],
                 "outcomes": outcomes,
                 "related_questions": related,
             },
             {"accepted": True, "accepted_claims": len(claims), "rejected_claims": rejected},
         )
+
+    def _repair_grounded_answer(
+        self,
+        *,
+        model: Any,
+        state: QuickAgentState,
+        plan: SemanticPlan,
+        hints: list[dict[str, Any]],
+        diagnostics: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        """Retry claim construction once without allowing the validated plan to change."""
+
+        matching_hints = [
+            item
+            for item in hints
+            if str(item.get("answer_scope") or "canonical") == plan.evidence_scope
+        ]
+        scoped_hints = [
+            {**item, "source_key": f"S{index}", "chunk_key": f"C{index}"}
+            for index, item in enumerate(matching_hints, start=1)
+        ]
+        if not scoped_hints or plan.user_effect != "read":
+            return None, {**diagnostics, "repair": "not_applicable"}
+        try:
+            repaired = model.generate_structured(
+                system=(
+                    "You repair only the grounded answer for an already validated BoI SemanticPlan. Do not change "
+                    "the plan, topic, capability, operation, effect, scope, or presentation. Use only the supplied "
+                    "internal hints. Every factual claim must cite the exact source_key and chunk_key that directly "
+                    "entail it. Omit unsupported claims and never use external or model-memory facts. Set "
+                    "required_for_answer=true only when omitting the claim would make the answer materially wrong or "
+                    "unusable; supporting context and optional detail must set it to false. Return only the requested "
+                    "grounded answer schema."
+                ),
+                prompt=json.dumps(
+                    {
+                        "request": state.get("question") or "",
+                        "validated_semantic_plan": plan.model_dump(mode="json"),
+                        "internal_hints": scoped_hints,
+                        "prior_grounding_diagnostics": diagnostics,
+                    },
+                    ensure_ascii=False,
+                ),
+                schema=self._grounded_answer_schema(hint_count=len(scoped_hints)),
+            )
+            grounded_answer, repaired_diagnostics = self._resolve_grounded_answer(
+                {"grounded_answer": repaired},
+                plan,
+                scoped_hints,
+            )
+            return grounded_answer, {
+                **repaired_diagnostics,
+                "repair": "accepted" if grounded_answer is not None else "insufficient",
+            }
+        except Exception as exc:
+            return None, {
+                **diagnostics,
+                "repair": "failed",
+                "repair_failure": type(exc).__name__,
+            }
 
     def _plan(self, state: QuickAgentState) -> dict[str, Any]:
         offered = str(state.get("offered_capability") or "").strip()
@@ -774,7 +871,7 @@ class QuickAgentRuntime:
             envelope = model.generate_structured(
                 system=self._planner_system(),
                 prompt=json.dumps(self._planner_payload(state), ensure_ascii=False),
-                schema=self._planner_schema(),
+                schema=self._planner_schema(state),
             )
             plan, report = self._validate_envelope(state, envelope)
         except Exception as exc:
@@ -796,7 +893,7 @@ class QuickAgentRuntime:
                         ),
                         ensure_ascii=False,
                     ),
-                    schema=self._planner_schema(),
+                    schema=self._planner_schema(state),
                 )
                 envelope = repaired
                 plan, report = self._validate_envelope(state, envelope)
@@ -821,6 +918,14 @@ class QuickAgentRuntime:
         )
         hints = [item for item in (state.get("knowledge_hints") or []) if isinstance(item, dict)]
         grounded_answer, diagnostics = self._resolve_grounded_answer(envelope, plan, hints)
+        if grounded_answer is None:
+            grounded_answer, diagnostics = self._repair_grounded_answer(
+                model=model,
+                state=state,
+                plan=plan,
+                hints=hints,
+                diagnostics=diagnostics,
+            )
         continuation = plan.continuation.model_dump(mode="json")
         return {
             "capability_id": compiled.capability_id,
@@ -833,7 +938,13 @@ class QuickAgentRuntime:
             "clarification_question": plan.clarification_question,
             "route_source": "llm_structured",
             "route_reason": "semantic_plan_validated",
-            "trace": [*(state.get("trace") or []), "semantic_plan:llm", "validate:passed", "compile"],
+            "trace": [
+                *(state.get("trace") or []),
+                "semantic_plan:llm",
+                "validate:passed",
+                *(["grounded_answer:repair"] if diagnostics.get("repair") else []),
+                "compile",
+            ],
         }
 
     def route(
