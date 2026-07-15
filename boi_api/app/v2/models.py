@@ -436,7 +436,7 @@ class TurnTopicState(BaseModel):
     subject: str = ""
     entities: list[str] = Field(default_factory=list, max_length=100)
     claims: list[GroundedClaim] = Field(default_factory=list)
-    used_source_refs: list[str] = Field(default_factory=list, max_length=100)
+    used_source_refs: list[str] = Field(default_factory=list)
     active_artifact_id: str = ""
     correction_status: Literal["active", "corrected", "invalidated"] = "active"
 
@@ -1099,7 +1099,7 @@ class AgentTurnResponse(BaseModel):
     goal_plan_ref: str = ""
     source_set_ref: str = ""
     citations: list[CitationRef] = Field(default_factory=list)
-    used_source_refs: list[str] = Field(default_factory=list, max_length=100)
+    used_source_refs: list[str] = Field(default_factory=list)
     related_questions: list[RelatedQuestion] = Field(default_factory=list, max_length=3)
     grounding_status: Literal["grounded", "partial", "insufficient", "conflicting", "no_evidence"] = "no_evidence"
     answerability: AnswerabilityReport = Field(default_factory=AnswerabilityReport)

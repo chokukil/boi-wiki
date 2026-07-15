@@ -6531,6 +6531,38 @@ def test_source_set_pin_exclude_and_private_note_stay_in_one_session(
     assert source_ref not in excluded["pinned"]
 
 
+def test_source_set_preserves_every_claim_supported_used_source(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    session = v2_service.create_work_session(
+        principal,
+        WorkSessionCreateRequest(title="전체 사용 근거 보존"),
+    )
+    evidence = [
+        EvidenceRef(
+            evidence_id=f"boi:public:test:used-source-{index}",
+            kind="boi",
+            title=f"사용 근거 {index}",
+            summary=f"검증된 claim {index}을 직접 뒷받침합니다.",
+        )
+        for index in range(1, 21)
+    ]
+    refs = [item.evidence_id for item in evidence]
+
+    v2_service._update_auto_sources(
+        principal,
+        session["session_id"],
+        evidence,
+        [],
+        used_refs=refs,
+    )
+
+    source_set = v2_service.get_source_set(principal, session["session_id"])
+    assert source_set["auto_selected"] == refs
+    assert [item["source_ref"] for item in source_set["groups"]["used"]] == refs
+
+
 def test_dictionary_alias_gets_ontology_authority_in_search(v2_service: AgentV2Service, principal: Principal):
     result = v2_service.search.search("단면검사", principal, limit=3)
     assert result.items[0].evidence_id == "boi:public:dictionary:cross-section-inspection"

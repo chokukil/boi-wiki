@@ -1185,10 +1185,10 @@ class AgentV2Service:
                 "excluded": excluded[:100],
                 "auto_selected": [
                     ref for ref in source_set.get("auto_selected") or [] if ref not in set(excluded)
-                ][:12],
+                ],
                 "related": [
                     ref for ref in source_set.get("related") or [] if ref not in set(excluded)
-                ][:12],
+                ],
                 "attached": (
                     list(dict.fromkeys(str(item) for item in request.attached_refs if str(item).strip()))[:100]
                     if request.attached_refs is not None
@@ -1214,8 +1214,8 @@ class AgentV2Service:
         excluded = {str(item) for item in source_set.get("excluded") or []}
         available_refs = [item.evidence_id for item in evidence if item.evidence_id not in excluded]
         used = [ref for ref in (used_refs or available_refs) if ref in available_refs]
-        auto_selected = list(dict.fromkeys(used))[:12]
-        related = [ref for ref in available_refs if ref not in set(auto_selected)][:12]
+        auto_selected = list(dict.fromkeys(used))
+        related = [ref for ref in available_refs if ref not in set(auto_selected)]
         attached = list(source_set.get("attached") or [])
         for ref in attached_refs:
             if ref and ref not in attached:
@@ -1449,7 +1449,7 @@ class AgentV2Service:
             "topic_state_ref": topic_state_ref,
             "used_source_refs": list(
                 dict.fromkeys(str(item).strip() for item in (used_source_refs or []) if str(item).strip())
-            )[:100],
+            ),
             "created_at": now_iso(),
         }
         return self.store.put("session_messages", message_id, payload)
