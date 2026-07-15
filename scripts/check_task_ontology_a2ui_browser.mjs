@@ -582,6 +582,18 @@ async function runViewport(cdp, viewport) {
     const canonicalMermaidPassed = canonicalMermaid.rendered && !canonicalMermaid.raw && !canonicalMermaid.error;
     if (!canonicalMermaidPassed) failures.push("canonical Mermaid did not render as SVG without raw source");
     journeys.push(journey("mermaid_document_rendering", canonicalMermaidPassed, canonicalMermaid));
+    let canonicalMedia = {count:0,decoded:0,failed:[],error:""};
+    try {
+      await wait(cdp, `[...document.querySelectorAll('.markdown-body img')].every(image => image.complete)`, 30000);
+      canonicalMedia = await cdp.eval(`(() => {
+        const images=[...document.querySelectorAll('.markdown-body img')];
+        const failed=images.filter(image=>!image.complete || image.naturalWidth < 1).map(image=>image.currentSrc || image.src);
+        return {count:images.length,decoded:images.length-failed.length,failed,error:""};
+      })()`);
+    } catch (caught) { canonicalMedia.error=String(caught?.message||caught); }
+    const canonicalMediaPassed = canonicalMedia.count > 0 && canonicalMedia.failed.length === 0 && !canonicalMedia.error;
+    if (!canonicalMediaPassed) failures.push("canonical guide media did not decode in the browser");
+    journeys.push(journey("canonical_media_decode", canonicalMediaPassed, canonicalMedia));
     const variantsPassed = variantChecks.every((item) => item.visible && item.active === item.component);
     if (!variantsPassed) failures.push("Agent table, timeline, and Mermaid surfaces were not rendered through the visible workbench");
     journeys.push(journey("agent_table_timeline_mermaid", variantsPassed, {variants:variantChecks}));
@@ -896,7 +908,7 @@ async function main() {
     }
     const journeyMap = new Map();
     results.flatMap((item) => item.journeys || []).forEach((item) => journeyMap.set(item.id, item));
-    const requiredJourneys = ["inbox_to_task_work_record","task_assignment_and_revision","task_work_record_persistence","ontology_one_hop_expand","ontology_readable_layout","ontology_path","ontology_impact","ontology_tour","ontology_semantic_queries","ontology_visible_semantic_views","agent_a2ui_and_fallback","a2ui_official_lifecycle","citation_canonical_navigation","agent_compact_suspends_graph","agent_table_timeline_mermaid","mermaid_document_rendering","agent_confirmation_surface","inbox_task_snapshot_parity","harness_review_release_rehearsal","adapter_job_status_and_retry","mobile_focus_and_fallback"];
+    const requiredJourneys = ["inbox_to_task_work_record","task_assignment_and_revision","task_work_record_persistence","ontology_one_hop_expand","ontology_readable_layout","ontology_path","ontology_impact","ontology_tour","ontology_semantic_queries","ontology_visible_semantic_views","agent_a2ui_and_fallback","a2ui_official_lifecycle","citation_canonical_navigation","agent_compact_suspends_graph","agent_table_timeline_mermaid","mermaid_document_rendering","canonical_media_decode","agent_confirmation_surface","inbox_task_snapshot_parity","harness_review_release_rehearsal","adapter_job_status_and_retry","mobile_focus_and_fallback"];
     const missingJourneys = requiredJourneys.filter((id) => !journeyMap.has(id));
     const failedJourneys = [...journeyMap.values()].filter((item) => !item.passed).map((item) => item.id);
     const unexpectedConsoleErrors = consoleErrors.filter((message) => !message.includes("409 (Conflict)"));
