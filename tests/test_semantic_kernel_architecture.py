@@ -100,6 +100,30 @@ def test_plan_validator_rejects_without_mutating_or_falling_back() -> None:
         raise AssertionError("an unknown capability must not compile through a fallback")
 
 
+def test_semantic_plan_preserves_large_trusted_context_sets() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    trusted_refs = {f"boi:public:reference:{index}" for index in range(40)}
+    plan = SemanticPlan(
+        resolved_goal="선택한 검토 지식 전체를 근거로 원칙을 설명한다",
+        retrieval_query="검토 지식 원칙",
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.understand,
+        context_refs=sorted(trusted_refs),
+        confidence=0.99,
+    )
+
+    report = PlanValidator(registry).validate(plan, trusted_context_refs=trusted_refs)
+    compiled = PlanCompiler(registry).compile(
+        plan,
+        original_question="검토 지식의 원칙을 설명해줘",
+        trusted_context_refs=trusted_refs,
+    )
+
+    assert report.valid is True
+    assert compiled.work_intent.context_refs == sorted(trusted_refs)
+
+
 def test_loop_contract_is_catalog_driven_and_not_reclassified_by_runtime() -> None:
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
     read_definition = registry.get("knowledge.search")

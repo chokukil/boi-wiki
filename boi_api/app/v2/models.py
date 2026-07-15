@@ -588,8 +588,12 @@ class ContextManifest(BaseModel):
     external_refs: list[str] = Field(default_factory=list)
     source_revision: str = ""
     token_budget: int = Field(default=0, ge=0)
-    policies: list[Literal["write", "select", "compress", "isolate"]] = Field(
-        default_factory=lambda: ["write", "select", "isolate"]
+    # ``compress`` and ``isolate`` remain readable for persisted v1 manifests,
+    # but new runs preserve selected items and reference large source artifacts.
+    policies: list[
+        Literal["write", "select", "preserve", "reference", "compress", "isolate"]
+    ] = Field(
+        default_factory=lambda: ["write", "select", "preserve", "reference"]
     )
     raw_content_in_prompt: bool = False
     provenance: dict[str, dict[str, str]] = Field(default_factory=dict)
@@ -676,7 +680,7 @@ class SemanticPlan(BaseModel):
     presentation: Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"] = "prose"
     work_view: Literal["none", "current", "responsibility", "combined"] = "none"
     graph_query: GraphQueryDraft | None = None
-    context_refs: list[str] = Field(default_factory=list, max_length=20)
+    context_refs: list[str] = Field(default_factory=list, max_length=100)
     target_ref: str = Field(default="", max_length=1000)
     answer_intent: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
     clarification_question: str = Field(default="", max_length=240)
@@ -749,7 +753,7 @@ class WorkIntent(BaseModel):
     presentation_mode: Literal["prose", "mermaid", "table", "timeline", "explorer", "artifact"] = "prose"
     work_view: Literal["none", "current", "responsibility", "combined"] = "none"
     graph_query_draft: GraphQueryDraft | None = None
-    context_refs: list[str] = Field(default_factory=list, max_length=20)
+    context_refs: list[str] = Field(default_factory=list, max_length=100)
     user_effect: Literal["read", "draft", "transform", "execute"] = "read"
     result_purpose: Literal["explain", "compare", "design", "transform", "execute"] = "explain"
     requested_transition: Literal["none", "draft", "transform", "execute"] = "none"
