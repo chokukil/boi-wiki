@@ -249,8 +249,13 @@ class LivingKnowledgeService:
                 rows = list(self.directory_provider() or [])
             except Exception:
                 rows = []
-        rows.append(current)
-        return list({item.employee_id: item for item in rows if item.employee_id}.values())
+        principals = {item.employee_id: item for item in rows if item.employee_id}
+        # Authentication scopes and transient roles belong to the request, not to
+        # the directory read model. Only use the caller as a directory fallback
+        # when that person is not present in the authoritative provider.
+        if current.employee_id:
+            principals.setdefault(current.employee_id, current)
+        return list(principals.values())
 
     def directory_signature(self, current: Principal) -> str:
         payload = [

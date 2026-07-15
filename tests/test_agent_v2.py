@@ -3929,6 +3929,26 @@ def test_directory_graph_keeps_shared_team_people_and_hides_other_teams(
     assert not any(item["node_id"] == "person:200001" for item in hidden["nodes"])
 
 
+def test_directory_signature_uses_authoritative_identity_not_request_roles(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    directory_identity = principal.model_copy(
+        update={"roles": ["boi.viewer"], "auth_source": "directory"}
+    )
+    request_identity = principal.model_copy(
+        update={"roles": ["boi.viewer", "boi.admin"], "auth_source": "acceptance_fixture"}
+    )
+    v2_service.knowledge.directory_provider = lambda: [directory_identity]
+
+    assert v2_service.knowledge.directory_signature(request_identity) == (
+        v2_service.knowledge.directory_signature(directory_identity)
+    )
+    resolved = v2_service.knowledge.directory_principals(request_identity)
+    assert len([item for item in resolved if item.employee_id == principal.employee_id]) == 1
+    assert next(item for item in resolved if item.employee_id == principal.employee_id).roles == ["boi.viewer"]
+
+
 def test_agent_returns_one_clarification_when_graph_entity_name_is_ambiguous(
     v2_service: AgentV2Service,
     principal: Principal,
