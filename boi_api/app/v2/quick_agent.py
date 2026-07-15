@@ -43,6 +43,7 @@ class QuickAgentState(TypedDict, total=False):
     capability_id: str
     semantic_plan: dict[str, Any]
     plan_validation: dict[str, Any]
+    planner_repair: dict[str, Any]
     work_intent: dict[str, Any]
     continuation: dict[str, Any]
     grounded_answer: dict[str, Any] | None
@@ -870,6 +871,7 @@ class QuickAgentRuntime:
 
         envelope: dict[str, Any] = {}
         first_error: SemanticPlanningError | None = None
+        planner_repair: dict[str, Any] = {"attempted": False, "reason": ""}
         try:
             envelope = model.generate_structured(
                 system=self._planner_system(),
@@ -881,6 +883,15 @@ class QuickAgentRuntime:
             first_error = exc if isinstance(exc, SemanticPlanningError) else SemanticPlanningError(
                 "planner_invalid", f"{type(exc).__name__}: {exc}"
             )
+            planner_repair = {
+                "attempted": True,
+                "reason": first_error.code,
+                "issues": (
+                    [item.model_dump(mode="json") for item in first_error.report.issues]
+                    if first_error.report
+                    else [{"code": first_error.code, "message": str(first_error)}]
+                ),
+            }
             try:
                 repaired = model.generate_structured(
                     system=self._planner_system(repair=True),
@@ -942,6 +953,7 @@ class QuickAgentRuntime:
             "capability_id": compiled.capability_id,
             "semantic_plan": plan.model_dump(mode="json"),
             "plan_validation": report,
+            "planner_repair": planner_repair,
             "work_intent": compiled.work_intent.model_dump(mode="json"),
             "continuation": continuation,
             "grounded_answer": grounded_answer,
@@ -952,6 +964,7 @@ class QuickAgentRuntime:
             "trace": [
                 *(state.get("trace") or []),
                 "semantic_plan:llm",
+                *(["semantic_plan:repair"] if planner_repair["attempted"] else []),
                 "validate:passed",
                 *(
                     ["grounded_answer:graph_result"]
@@ -1021,6 +1034,7 @@ class QuickAgentRuntime:
             "capability_id": result["capability_id"],
             "semantic_plan": result["semantic_plan"],
             "plan_validation": result["plan_validation"],
+            "planner_repair": result.get("planner_repair") or {"attempted": False, "reason": ""},
             "work_intent": result["work_intent"],
             "continuation": result.get("continuation") or {
                 "continue_active_run": False,

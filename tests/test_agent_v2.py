@@ -802,6 +802,44 @@ def test_graph_query_does_not_repair_an_unused_planner_answer(
     assert "grounded_answer:repair" not in route["trace"]
 
 
+def test_semantic_plan_repair_records_only_validation_diagnostics(
+    v2_service: AgentV2Service,
+):
+    invalid = SemanticPlan(
+        resolved_goal="검증된 관계를 탐색한다",
+        retrieval_query="검증된 관계",
+        capability_id="knowledge.search",
+        user_effect="execute",
+        operation="understand",
+        evidence_scope="canonical",
+        presentation="prose",
+        confidence=1.0,
+    ).model_dump(mode="json")
+    valid = SemanticPlan(
+        resolved_goal="검증된 관계를 탐색한다",
+        retrieval_query="검증된 관계",
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="understand",
+        evidence_scope="canonical",
+        presentation="prose",
+        confidence=1.0,
+    ).model_dump(mode="json")
+    model = ScriptedPlanner([invalid, valid])
+
+    route = v2_service.quick_agent.route(
+        "검증된 관계를 탐색해줘",
+        page_kind="library",
+        model=model,
+    )
+
+    assert route["planner_repair"]["attempted"] is True
+    assert route["planner_repair"]["reason"] == "planner_invalid"
+    assert route["planner_repair"]["issues"]
+    assert "semantic_plan:repair" in route["trace"]
+    assert route["semantic_plan"]["user_effect"] == "read"
+
+
 def _task_completion_plan(task_ref: str) -> dict[str, Any]:
     return SemanticPlan(
         resolved_goal=f"{task_ref} 업무의 근거와 수행 기록을 검증해 완료한다",
