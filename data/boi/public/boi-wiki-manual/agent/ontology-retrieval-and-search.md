@@ -68,7 +68,7 @@ flowchart LR
 
 # Chunk와 citation
 
-문서는 heading과 원문 line 범위를 가진 section chunk로 나뉜다. 일반 turn은 최대 12개 source와 24개 chunk를 사용한다. 서버는 답변 citation이 실제 회수된 chunk인지 다시 확인하며, 접근할 수 없는 문서나 회수되지 않은 문단을 근거로 만들 수 없다.
+문서는 heading과 원문 line 범위를 가진 section chunk로 나뉜다. 검색은 고정된 작은 source·chunk 개수로 답변 맥락을 자르지 않는다. 배포 환경의 retrieval candidate 설정으로 충분한 후보를 모은 뒤 ACL, 질문 관련성, 권위, 최신성, Ontology 관계와 현재 업무 기여도로 정렬하고 provider context window 안에 완전한 항목을 선택한다. 서버는 답변 citation이 실제 회수된 chunk인지 다시 확인하며, 접근할 수 없는 문서나 회수되지 않은 문단을 근거로 만들 수 없다.
 
 Data Lake와 MinIO의 긴 원본은 색인이나 prompt에 전문을 넣지 않는다. summary, profile, sample, checksum과 ACL URL만 사용하고 원본은 자료 보관함에서 연다.
 

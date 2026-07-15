@@ -79,8 +79,8 @@ flowchart TD
 
 - `write`: 대화, 작업 메모, artifact와 loop delta를 append-only WorkSession에 저장한다.
 - `select`: 현재 목표와 완료 조건에 직접 필요한 완전한 자료 항목을 관련성 순으로 고른다.
-- `fit`: 설정된 provider 또는 deployment가 제공하는 실제 context window 안에 완전한 항목을 차례로 배치한다.
-- `isolate`: 원본 파일, CSV, 긴 로그와 민감 원본은 MinIO/Data Lake에 두고 checksum과 ACL reference로 연결한다.
+- `preserve`: 설정된 provider 또는 deployment의 실제 context window 안에서 선택한 자료 항목을 중간 요약이나 문자열 절단 없이 보존한다.
+- `reference`: 원본 파일, CSV, 긴 로그와 민감 원본은 MinIO/Data Lake에 두고 checksum과 ACL reference로 연결하며, 필요한 부분은 권한 있는 tool이 읽는다.
 
 선택된 대화 turn, evidence, supporting chunk와 active artifact를 다시 요약하거나 문자열 길이로 자르지 않는다. 물리적인 provider context capacity에 다음 항목 전체가 들어가지 않을 때만 그 항목을 제외하고 `provider_context_capacity` 이유를 manifest에 남긴다. 문장 중간, source 중간 또는 Task 목록 중간을 잘라 맞추지 않는다.
 

@@ -60,7 +60,7 @@ Operations Center는 Event/Action JSONL을 매번 전체 스캔하지 않는다.
 
 Operations Center의 첫 렌더, Inbox 목록, SOP/Event/Action catalog는 LLM이나 sandbox를 기다리지 않는다. 이 경로는 runtime manifest/index만 사용한다.
 
-고급 실행 경로도 기본적으로 배포 환경에 설정된 LM Studio/OpenAI-compatible 모델을 사용한다. Pet, Quick Agent, DeepAgents, Sandbox 요약이 같은 로컬 model route를 사용하며, 사외·상시 운영에서는 GPT-5.5를 호출하지 않는다.
+고급 실행 경로도 배포 환경에 설정된 LM Studio 또는 OpenAI-compatible generation provider를 사용한다. Pet, Quick Agent, DeepAgents와 Sandbox 요약은 같은 provider 계약을 사용하며, pilot·production에서는 사내 GPT-5.5·GPT-5.6도 일반 generation provider가 될 수 있다.
 
 - Agent Builder draft test
 - Evidence Sandbox 실행 결과 요약
@@ -68,7 +68,7 @@ Operations Center의 첫 렌더, Inbox 목록, SOP/Event/Action catalog는 LLM�
 - Inbox 검증 보고서 BoI 생성
 - 복잡한 SOP/Event/Action 연결 제안
 
-GPT-5.5와 OpenAI Agents SDK 경로는 비용·품질 비교를 위한 명시적 일회성 검증 전용이다. `BOI_GPT55_TEST_MODE=true`와 별도 test credential을 함께 설정한 서버에서만 열리며, SDK가 없거나 test mode가 꺼져 있어도 core UI와 로컬 Agent는 영향을 받지 않는다. `/api/runtime/config`와 `/api/v2/system/readiness`에서 현재 model route와 test mode를 확인한다.
+`BOI_GPT55_TEST_MODE=true`와 OpenAI Agents SDK 경로는 운영 provider 선택과 별개인 일회성 judge·비교 검증용이다. 이 설정이 꺼져 있어도 core UI와 현재 generation provider는 영향을 받지 않는다. `/api/runtime/config`와 `/api/v2/system/readiness`에서 실제 model route와 별도 test mode를 함께 확인한다.
 
 Evidence Sandbox는 업무 판단 근거를 만들 수 있는 계산 workspace다. 단, 근거로 채택하려면 다음 조건을 만족해야 한다.
 

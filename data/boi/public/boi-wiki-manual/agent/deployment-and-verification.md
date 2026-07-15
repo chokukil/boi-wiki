@@ -80,7 +80,7 @@ Langflow는 선택형 connector와 시각적 실험 도구다. Pet·Quick Agent�
 
 `BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS=true`이면 native `GET /api/v1/models`로 수동 상주 상태만 확인한다. 모델이 없을 때 자동 load로 교대시키지 않고 요청을 차단해 원인을 진단에 남긴다. 사내 관리형 gateway에는 이 개발 PC 가드를 적용하지 않는다.
 
-GPT-5.5는 기본 runtime에서 호출하지 않는다. 품질 비교가 필요한 일회성 테스트에서만 `BOI_GPT55_TEST_MODE=true`와 별도 credential을 명시한다.
+pilot·production에서는 사내에 배포된 GPT-5.5·GPT-5.6을 일반 generation provider로 사용할 수 있다. 모델 이름에 따라 질문 범위나 Context를 임의로 축소하지 않고 같은 SemanticPlan·Harness·근거 검증 계약을 적용한다. `BOI_GPT55_TEST_MODE=true`는 production provider 선택과 별개로 특정 모델을 judge·비교 평가에만 격리하는 선택 설정이다.
 
 # Readiness
 
