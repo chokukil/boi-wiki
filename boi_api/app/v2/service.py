@@ -5369,6 +5369,7 @@ class AgentV2Service:
             "model_calls": usage_row.get("model_calls") or 0,
             "embedding_calls": usage_row.get("embedding_calls") or 0,
         }
+        response.usage = model_usage
         response.context_usage["model_usage"] = model_usage
         response = self._enforce_response_budget(response)
         stored_run = self.store.get("runs", response.run_id)
@@ -5965,11 +5966,7 @@ class AgentV2Service:
             context=context,
             intent=intent,
             goal_plan_id=str(goal_plan["goal_plan_id"]),
-            loop_policy=(
-                request.loop_policy
-                or request.input_delta.get("_loop_policy")
-                or request.input_delta.get("loop_policy")
-            ),
+            loop_policy=intent.loop_contract,
             catalog_revision=self.registry.version,
             planner_schema_revision=PLANNER_SCHEMA_REVISION,
             semantic_plan_ref=str(route.get("semantic_plan_ref") or ""),
@@ -6579,6 +6576,9 @@ class AgentV2Service:
             knowledge_candidates=knowledge_candidates,
             semantic_plan_ref=str(route.get("semantic_plan_ref") or ""),
             stop_reason=str(work_run.get("stop_reason") or ""),
+            loop_contract=LoopPolicy.model_validate(
+                (work_run.get("loop") or {}).get("policy") or intent.loop_contract
+            ),
             context_usage={
                 "page_anchor": context.page_anchor.model_dump(mode="json") if context.page_anchor else None,
                 "goal_anchor": context.goal_anchor.model_dump(mode="json") if context.goal_anchor else None,

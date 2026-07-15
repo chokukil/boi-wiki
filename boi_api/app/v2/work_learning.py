@@ -1612,20 +1612,12 @@ class WorkLearningService:
         intent: WorkIntent,
         policy: LoopPolicy | dict[str, Any] | None = None,
     ) -> LoopPolicy:
-        if policy is not None:
-            return policy if isinstance(policy, LoopPolicy) else LoopPolicy.model_validate(policy)
-        goal_based = intent.asset_kind == WorkAssetKind.task or intent.operation not in {
-            WorkOperation.understand,
-            WorkOperation.observe,
-            WorkOperation.compare,
-        }
-        return LoopPolicy(
-            kind=LoopKind.goal if goal_based else LoopKind.turn,
-            trigger=LoopTriggerKind.user,
-            task_stop="exit_criteria" if intent.asset_kind == WorkAssetKind.task else "agent_done",
-            routine_stop="one_shot",
-            max_runs=1,
-        )
+        selected = policy if policy is not None else intent.loop_contract
+        if isinstance(selected, LoopPolicy):
+            return selected
+        if hasattr(selected, "model_dump"):
+            selected = selected.model_dump(mode="json")
+        return LoopPolicy.model_validate(selected)
 
     def create_run(
         self,

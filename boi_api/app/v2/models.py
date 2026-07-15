@@ -71,21 +71,54 @@ class LoopTriggerKind(str, Enum):
     interval = "interval"
 
 
-class LoopPolicy(BaseModel):
-    """Execution limits and stop conditions, independent of semantic intent routing."""
+class LoopContract(BaseModel):
+    """Planner-selected loop semantics bounded by a catalog and a versioned Harness."""
 
     kind: LoopKind = LoopKind.turn
     trigger: LoopTriggerKind = LoopTriggerKind.user
     task_stop: Literal["agent_done", "exit_criteria", "needs_context"] = "agent_done"
     routine_stop: Literal["one_shot", "cancelled", "max_runs", "event_resolved"] = "one_shot"
-    max_iterations: int = Field(default=5, ge=1, le=20)
+    max_iterations: int = Field(default=1, ge=1, le=20)
     max_no_progress: int = Field(default=2, ge=2, le=3)
-    max_tool_loops: int = Field(default=5, ge=1, le=20)
+    max_tool_loops: int = Field(default=1, ge=1, le=20)
+    max_model_calls: int = Field(default=3, ge=0, le=20)
+    max_elapsed_seconds: int = Field(default=30, ge=1, le=86_400)
+    max_context_tokens: int = Field(default=12_000, ge=1_000, le=200_000)
     max_runs: int = Field(default=1, ge=0, le=10000)
     interval_seconds: int = Field(default=0, ge=0, le=31_536_000)
     adaptive_backoff: bool = True
+    exit_criteria_refs: list[str] = Field(default_factory=list, max_length=30)
+    progress_policy: Literal["structured_delta"] = "structured_delta"
+    verifier_policy: str = Field(default="harness", max_length=120)
     source_fingerprint: str = Field(default="", max_length=256)
     routine_id: str = Field(default="", max_length=120)
+
+    @model_validator(mode="after")
+    def validate_loop_shape(self) -> "LoopContract":
+        if self.kind in {LoopKind.turn, LoopKind.goal} and self.trigger not in {
+            LoopTriggerKind.user,
+            LoopTriggerKind.api,
+        }:
+            raise ValueError("turn and goal loops require a user or API trigger")
+        if self.kind == LoopKind.time and self.trigger not in {
+            LoopTriggerKind.schedule,
+            LoopTriggerKind.interval,
+        }:
+            raise ValueError("time loops require a schedule or interval trigger")
+        if self.kind == LoopKind.proactive and self.trigger not in {
+            LoopTriggerKind.event,
+            LoopTriggerKind.schedule,
+        }:
+            raise ValueError("proactive loops require an event or schedule trigger")
+        if self.kind == LoopKind.turn and (self.max_iterations != 1 or self.max_runs != 1):
+            raise ValueError("turn loops execute exactly one bounded iteration")
+        if self.trigger == LoopTriggerKind.interval and self.interval_seconds <= 0:
+            raise ValueError("interval triggers require interval_seconds")
+        return self
+
+
+class LoopPolicy(LoopContract):
+    """Backward-compatible request name for the LoopContract wire shape."""
 
 
 class CapabilityState(str, Enum):
@@ -240,6 +273,11 @@ class CapabilityDefinition(BaseModel):
     context_recipe: list[str] = Field(default_factory=list)
     evidence_policy: list[str] = Field(default_factory=list)
     completion_criteria: list[str] = Field(default_factory=list)
+    allowed_loop_kinds: list[LoopKind] = Field(default_factory=lambda: [LoopKind.turn])
+    allowed_loop_triggers: list[LoopTriggerKind] = Field(
+        default_factory=lambda: [LoopTriggerKind.user, LoopTriggerKind.api]
+    )
+    default_loop_contract: LoopContract = Field(default_factory=LoopContract)
     handler: str
     handler_config: dict[str, Any] = Field(default_factory=dict)
     renderer: str = "answer"
@@ -295,6 +333,10 @@ class CapabilityDefinition(BaseModel):
             raise ValueError("default_user_effect must be declared in user_effects")
         if self.default_operation is not None and self.default_operation not in self.semantic_operations:
             raise ValueError("default_operation must be declared in semantic_operations")
+        if self.default_loop_contract.kind not in self.allowed_loop_kinds:
+            raise ValueError("default loop kind must be declared in allowed_loop_kinds")
+        if self.default_loop_contract.trigger not in self.allowed_loop_triggers:
+            raise ValueError("default loop trigger must be declared in allowed_loop_triggers")
         for offer in self.starter_offers:
             effect = offer.user_effect or self.default_user_effect
             operation = offer.semantic_operation or self.default_operation
@@ -598,6 +640,7 @@ class SemanticPlan(BaseModel):
     answer_intent: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
     clarification_question: str = Field(default="", max_length=240)
     continuation: SemanticContinuation = Field(default_factory=SemanticContinuation)
+    loop_contract: LoopContract = Field(default_factory=LoopContract)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
@@ -673,6 +716,7 @@ class WorkIntent(BaseModel):
     requested_asset_kinds: list[WorkAssetKind] = Field(default_factory=list, max_length=9)
     harness_ids: list[str] = Field(default_factory=list, max_length=20)
     artifact_actions: list[Literal["split_tasks", "create_sop_draft"]] = Field(default_factory=list, max_length=2)
+    loop_contract: LoopContract = Field(default_factory=LoopContract)
     risk: RiskLevel = RiskLevel.low
     needs_clarification: bool = False
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -990,6 +1034,8 @@ class AgentTurnResponse(BaseModel):
     a2ui_surface_ref: str = ""
     graph_result_ref: str = ""
     semantic_plan_ref: str = ""
+    loop_contract: LoopContract = Field(default_factory=LoopContract)
+    usage: dict[str, Any] = Field(default_factory=dict)
     stop_reason: str = ""
 
 

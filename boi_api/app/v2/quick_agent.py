@@ -96,6 +96,9 @@ class QuickAgentRuntime:
                 "default_work_view": item.default_work_view,
                 "evidence_scopes": list(item.evidence_scopes),
                 "default_evidence_scope": item.default_evidence_scope,
+                "allowed_loop_kinds": [kind.value for kind in item.allowed_loop_kinds],
+                "allowed_loop_triggers": [trigger.value for trigger in item.allowed_loop_triggers],
+                "default_loop_contract": item.default_loop_contract.model_dump(mode="json"),
                 "subject_policy": item.subject_policy,
                 "examples": list(item.examples),
                 "deep": item.deep,
@@ -377,7 +380,9 @@ class QuickAgentRuntime:
             "the exact source_key and chunk_key that directly support it. If direct support is absent, omit the claim and "
             "return an empty grounded_answer. External knowledge is not evidence. Do not add an unrequested SOP, Task, "
             "Event, Action, graph, or follow-up action. semantic_plan is the sole meaning contract; grounded_answer "
-            "may express factual claims but must not change the selected meaning."
+            "may express factual claims but must not change the selected meaning. Select loop_contract only from the "
+            "capability contract. Use turn for one bounded response and goal only when the catalog supplies verifiable "
+            "exit criteria. Do not create time or proactive loops from ordinary chat."
         )
         if repair:
             return base + (

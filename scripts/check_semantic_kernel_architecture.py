@@ -204,6 +204,21 @@ def check(path: Path) -> list[str]:
             errors.append(
                 f"{path.relative_to(ROOT)}: free-text strategy must not contribute to progress signatures"
             )
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != "resolve_loop_policy":
+                continue
+            semantic_attributes = {
+                item.attr
+                for item in ast.walk(node)
+                if isinstance(item, ast.Attribute)
+                and item.attr in {"asset_kind", "operation", "goal", "resolved_goal"}
+            }
+            if semantic_attributes:
+                errors.append(
+                    f"{path.relative_to(ROOT)}:{node.lineno}: loop contracts must come from SemanticPlan/catalog; "
+                    f"runtime semantic inference found: {', '.join(sorted(semantic_attributes))}"
+                )
     visitor = SemanticArchitectureVisitor(path)
     visitor.visit(ast.parse(source, filename=str(path)))
     errors.extend(visitor.errors)

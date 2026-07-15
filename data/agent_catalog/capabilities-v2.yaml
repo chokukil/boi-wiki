@@ -1,4 +1,50 @@
 version: "2.0"
+loop_contract_templates:
+  bounded_turn: &bounded_turn
+    kind: turn
+    trigger: user
+    task_stop: agent_done
+    routine_stop: one_shot
+    max_iterations: 1
+    max_no_progress: 2
+    max_tool_loops: 1
+    max_model_calls: 2
+    max_elapsed_seconds: 30
+    max_context_tokens: 12000
+    max_runs: 1
+    exit_criteria_refs: []
+    progress_policy: structured_delta
+    verifier_policy: harness
+  bounded_goal: &bounded_goal
+    kind: goal
+    trigger: user
+    task_stop: exit_criteria
+    routine_stop: one_shot
+    max_iterations: 5
+    max_no_progress: 2
+    max_tool_loops: 5
+    max_model_calls: 5
+    max_elapsed_seconds: 120
+    max_context_tokens: 24000
+    max_runs: 1
+    exit_criteria_refs: []
+    progress_policy: structured_delta
+    verifier_policy: harness
+  deep_goal: &deep_goal
+    kind: goal
+    trigger: user
+    task_stop: exit_criteria
+    routine_stop: one_shot
+    max_iterations: 5
+    max_no_progress: 2
+    max_tool_loops: 5
+    max_model_calls: 5
+    max_elapsed_seconds: 600
+    max_context_tokens: 60000
+    max_runs: 1
+    exit_criteria_refs: []
+    progress_policy: structured_delta
+    verifier_policy: harness
 asset_defaults:
   knowledge: knowledge.search
   sop: sop.plan
@@ -71,6 +117,11 @@ capabilities:
     context_recipe: [page, selected_text, ontology, authoritative_knowledge]
     evidence_policy: [acl_visible, published_or_reviewed, cite_sources]
     completion_criteria: [one_or_more_relevant_evidence_or_explicit_no_result]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [one_or_more_relevant_evidence_or_explicit_no_result]
     handler: grounded_read
     handler_config:
       retrieval_provider: hybrid
@@ -249,6 +300,11 @@ capabilities:
     context_recipe: [current_identity, active_runtime]
     evidence_policy: [exclude_history_seed, acl_visible]
     completion_criteria: [current_work_count_reported]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [current_work_count_reported]
     handler: current_work
     handler_config:
       retrieval_provider: current_work
@@ -288,6 +344,11 @@ capabilities:
     context_recipe: [task, workflow, completion_design, evidence, active_work_run]
     evidence_policy: [acl_visible, task_completion_contract, human_or_system_confirmation]
     completion_criteria: [work_run_state_reported, completion_never_self_declared]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [task_exit_criteria, evidence_ledger_verified]
     handler: task_runtime
     handler_config:
       retrieval_provider: hybrid
@@ -320,6 +381,11 @@ capabilities:
     context_recipe: [active_artifact, source_refs]
     evidence_policy: [acl_visible, grounded_source_artifact, private_draft]
     completion_criteria: [workflow_tasks_present, production_unchanged]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [workflow_tasks_present, production_unchanged]
     handler: artifact_transform
     handler_config:
       domain_operation: mermaid.workflow_draft.create
@@ -356,6 +422,11 @@ capabilities:
     context_recipe: [task, exit_criteria, evidence_types, history_seed]
     evidence_policy: [acl_visible, outcome_present]
     completion_criteria: [similarity_reason_reported]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [similarity_reason_reported]
     handler: grounded_read
     handler_config:
       retrieval_provider: hybrid
@@ -418,6 +489,11 @@ capabilities:
     context_recipe: [goal, related_event_types, related_sops, evidence]
     evidence_policy: [cite_related_contracts]
     completion_criteria: [trigger_mode_present, target_event_present, source_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [trigger_mode_present, target_event_present, source_present]
     handler: draft_artifact
     handler_config:
       retrieval_provider: hybrid
@@ -452,6 +528,11 @@ capabilities:
     context_recipe: [goal, related_sops, actions, events, evidence]
     evidence_policy: [cite_reused_assets, mark_gaps]
     completion_criteria: [workflow_goal_present, tasks_have_exit_criteria]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [workflow_goal_present, tasks_have_exit_criteria]
     handler: draft_artifact
     handler_config:
       retrieval_provider: hybrid
@@ -519,6 +600,11 @@ capabilities:
     context_recipe: [goal, action_catalog, related_sops, connector_contract]
     evidence_policy: [risk_required, preview_only]
     completion_criteria: [inputs_present, output_contract_present, risk_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [inputs_present, output_contract_present, risk_present]
     handler: draft_artifact
     handler_config:
       retrieval_provider: hybrid
@@ -552,6 +638,11 @@ capabilities:
     context_recipe: [goal, capability_registry, existing_skills, actions]
     evidence_policy: [tests_required, permissions_required]
     completion_criteria: [schema_present, tests_present, permissions_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [schema_present, tests_present, permissions_present]
     handler: draft_artifact
     handler_config:
       retrieval_provider: hybrid
@@ -586,6 +677,11 @@ capabilities:
     context_recipe: [goal, evidence, task_outcome]
     evidence_policy: [provenance_required, private_provisional]
     completion_criteria: [source_refs_present, status_provisional]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [source_refs_present, status_provisional]
     handler: draft_artifact
     handler_config:
       retrieval_provider: hybrid
@@ -633,6 +729,11 @@ capabilities:
     context_recipe: [goal, current_page, active_task, source_refs]
     evidence_policy: [acl_visible, preview_before_activation]
     completion_criteria: [trigger_present, stop_condition_present, confirmation_required]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [trigger_present, stop_condition_present, confirmation_required]
     handler: routine_plan
     handler_config:
       retrieval_provider: hybrid
@@ -686,6 +787,11 @@ capabilities:
     context_recipe: [goal, bounded_context, evidence, artifact_refs]
     evidence_policy: [read_only_tools, draft_only, cite_sources]
     completion_criteria: [artifact_non_empty, evidence_ledger_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *deep_goal
+      exit_criteria_refs: [artifact_non_empty, evidence_ledger_present]
     handler: deep_job
     handler_config:
       retrieval_provider: hybrid

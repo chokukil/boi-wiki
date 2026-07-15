@@ -134,6 +134,32 @@ class PlanValidator:
                         details={"allowed": list(definition.evidence_scopes)},
                     )
                 )
+            if plan.loop_contract.kind not in definition.allowed_loop_kinds:
+                issues.append(
+                    self._issue(
+                        "loop.kind_not_allowed",
+                        "loop_contract.kind",
+                        "The selected loop kind is not declared by this capability contract.",
+                        details={"allowed": [item.value for item in definition.allowed_loop_kinds]},
+                    )
+                )
+            if plan.loop_contract.trigger not in definition.allowed_loop_triggers:
+                issues.append(
+                    self._issue(
+                        "loop.trigger_not_allowed",
+                        "loop_contract.trigger",
+                        "The selected loop trigger is not declared by this capability contract.",
+                        details={"allowed": [item.value for item in definition.allowed_loop_triggers]},
+                    )
+                )
+            if plan.loop_contract.kind.value == "goal" and not plan.loop_contract.exit_criteria_refs:
+                issues.append(
+                    self._issue(
+                        "loop.exit_criteria_required",
+                        "loop_contract.exit_criteria_refs",
+                        "A goal loop needs catalog-backed, verifiable exit criteria.",
+                    )
+                )
             if definition.subject_policy == "required" and not plan.subjects:
                 issues.append(
                     self._issue(
@@ -442,6 +468,7 @@ class PlanCompiler:
             requested_asset_kinds=list(definition.supported_assets),
             harness_ids=list(definition.harness_ids),
             artifact_actions=[],
+            loop_contract=plan.loop_contract,
             risk=definition.risk,
             needs_clarification=plan.topic_action == "clarify",
             confidence=plan.confidence,
@@ -475,6 +502,7 @@ class PlanCompiler:
             graph_query=command.graph_query,
             context_refs=command.subject_refs,
             target_ref=command.subject_refs[0] if command.subject_refs else "",
+            loop_contract=definition.default_loop_contract,
             confidence=1.0,
         )
         return self.compile(
@@ -503,6 +531,7 @@ def semantic_plan_schema(registry: CapabilityRegistry) -> dict[str, Any]:
     schema = inline_refs(schema)
     properties = schema.get("properties") or {}
     properties.setdefault("capability_id", {})["enum"] = [item.capability_id for item in registry.all()]
+    schema["required"] = list(dict.fromkeys([*(schema.get("required") or []), "loop_contract"]))
     return schema
 
 

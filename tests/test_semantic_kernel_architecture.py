@@ -7,8 +7,9 @@ from pathlib import Path
 import yaml
 
 from boi_api.app.v2.capabilities import CapabilityRegistry
-from boi_api.app.v2.models import SemanticPlan, WorkOperation
+from boi_api.app.v2.models import LoopContract, LoopKind, SemanticPlan, WorkIntent, WorkOperation
 from boi_api.app.v2.semantic_kernel import PlanCompiler, PlanValidator, SemanticPlanningError
+from boi_api.app.v2.work_learning import WorkLearningService
 from scripts.evaluate_agent_v2_work_scenarios import expand_scenarios
 
 
@@ -97,6 +98,49 @@ def test_plan_validator_rejects_without_mutating_or_falling_back() -> None:
         assert exc.code == "planner_invalid"
     else:
         raise AssertionError("an unknown capability must not compile through a fallback")
+
+
+def test_loop_contract_is_catalog_driven_and_not_reclassified_by_runtime() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    read_definition = registry.get("knowledge.search")
+    task_definition = registry.get("task.work")
+
+    read_intent = WorkIntent(
+        goal="업무 지식을 확인한다",
+        operation=WorkOperation.run,
+        loop_contract=read_definition.default_loop_contract,
+    )
+    task_intent = WorkIntent(
+        goal="업무 결과를 기록한다",
+        operation=WorkOperation.understand,
+        loop_contract=task_definition.default_loop_contract,
+    )
+
+    assert WorkLearningService.resolve_loop_policy(read_intent).kind == LoopKind.turn
+    assert WorkLearningService.resolve_loop_policy(task_intent).kind == LoopKind.goal
+
+
+def test_plan_validator_rejects_loop_outside_capability_contract() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    plan = SemanticPlan(
+        resolved_goal="검토된 지식을 설명한다",
+        retrieval_query="검토된 지식",
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.understand,
+        loop_contract=LoopContract(
+            kind=LoopKind.goal,
+            max_iterations=2,
+            max_runs=1,
+            exit_criteria_refs=["answer_grounded"],
+        ),
+        confidence=0.99,
+    )
+
+    report = PlanValidator(registry).validate(plan, trusted_context_refs=set())
+
+    assert report.valid is False
+    assert {item.code for item in report.issues} >= {"loop.kind_not_allowed"}
 
 
 def test_clarification_is_model_authored_and_never_filled_by_service_fallback() -> None:
