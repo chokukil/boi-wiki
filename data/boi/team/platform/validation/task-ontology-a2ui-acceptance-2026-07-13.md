@@ -15,7 +15,8 @@ author:
   type: agent
   agent_id: codex
 acl_policy: acl:team:platform
-status: reviewed
+status: draft
+answer_scope: validation
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
@@ -37,12 +38,12 @@ implementation_refs:
 review:
   reviewer: platform-lead
   reviewed_at: 2026-07-14T12:43:25+09:00
-  review_status: reviewed
+  review_status: needs_revision
 ---
 
 # 실행 기준
 
-> 이 문서는 재검증 감사 문서다. 빈 Ontology 그래프, Mermaid 초기 로드 실패, 자체 renderer 결함과 grounded 응답 지연을 고친 뒤 결정적·브라우저·Gemma·Adapter gate와 전체 회귀를 다시 실행했다. cache version을 무효화한 cold Gemma 실행까지 p95 10초 기준을 통과해 `reviewed`로 승격했다.
+> 이 문서는 재검증이 필요한 과거 실행 기록이다. A2UI 정의와 후속 질문에서 잘못된 claim이 validation 문서를 근거로 통과한 사실성 회귀가 확인되어 `draft / needs_revision`으로 되돌렸다. 아래 수치는 당시 실행 이력이며 현재 acceptance를 의미하지 않는다.
 
 - 검증 기준: `cdab2a2` 공식 A2UI·Mermaid·typed Ontology·grounded follow-up·Planner 결과 재사용·실제 browser journey
 - fixture version: `1.0`
@@ -112,7 +113,7 @@ route cache가 이전 schema를 재사용하지 않도록 `SEMANTIC_ROUTE_CACHE_
 - `.tmp/pytest-full-20260714-final2.log`
 - `.tmp/pytest-full-20260714-final2.exit`
 
-이번 실행은 전체 pytest 단일 실행, 실제 사용자 여정, Mermaid, Graphify와 OpenKB CLI release gate를 모두 새 코드에서 다시 실행했다. Graphify는 실제 export·import·rollback을, OpenKB는 실제 PDF 변환·후보 생성·탐색 파일 제외·정본 비변경을 확인했다. grounded 최종 응답 cold p95도 10초 기준을 통과했으므로 이 revision을 `reviewed`로 기록한다.
+당시 실행에서는 전체 pytest 단일 실행, 실제 사용자 여정, Mermaid, Graphify와 OpenKB CLI release gate를 통과한 것으로 기록했다. 그러나 이후 A2UI 정의 질문이 validation 문서를 일반 지식으로 사용하고 claim과 supporting chunk가 직접 일치하지 않아도 답변한 사실성 회귀가 확인됐다. 따라서 당시 `reviewed` 판정은 철회하며, 이 문서의 수치는 새 62개 결정적·29개 의미 acceptance의 합격 근거로 사용하지 않는다.
 
 # 발견한 결함과 수정
 

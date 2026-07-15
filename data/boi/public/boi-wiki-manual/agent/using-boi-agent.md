@@ -31,6 +31,8 @@ source_refs:
     ref: boi:public:boi-wiki-manual:agent:work-learning-system
   - type: boi
     ref: boi:public:boi-wiki-manual:workflows:task-execution-ontology-guide
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results
 implementation_refs:
   - type: repo
     ref: boi_api/app/templates/_agent_surface_v2.html
@@ -136,6 +138,8 @@ flowchart LR
 
 관계 탐색과 결과 화면의 자세한 사용법은 [업무 관계와 동적 결과 활용 가이드](/docs/boi:public:boi-wiki-manual:agent:work-relations-and-dynamic-results)를 따른다.
 
+A2UI의 내부 뜻과 현재 등록된 결과 화면은 [A2UI와 BoI 동적 결과 화면](/docs/boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results)에서 확인한다. 일반 사용 화면에서는 protocol 이름 대신 `표`, `시간 흐름`, `관계 탐색`, `업무 기록`, `실행 전 확인`처럼 실제 결과 이름을 사용한다.
+
 # 질문하는 방법
 
 업무 문장을 그대로 적는다.
@@ -149,9 +153,28 @@ flowchart LR
 
 후속 질문의 `그 흐름`, `방금 근거`, `첫 번째 Task`는 최근 대화, citation과 활성 artifact를 기준으로 해석한다. 명시적인 새 주제가 나오면 이전 대상을 강제로 이어 붙이지 않는다.
 
+# 의미 판단과 안전 경계
+
+자연어 질문은 로컬 Gemma가 한 번의 구조화된 `SemanticPlan`으로 해석한다. 이 계획에는 독립적으로 읽을 수 있는 목표, 주제 유지·전환, 대상, 수행 목적, 사용자에게 미치는 효과, operation, 사용할 근거 범위와 결과 표현이 함께 들어간다. 서버는 질문 속 단어나 문구를 찾아 다른 기능으로 바꾸지 않는다.
+
+코드의 `PlanValidator`는 다음 경계만 검사한다.
+
+- 선택한 capability와 operation이 현재 catalog에 선언되어 있는가
+- 대상과 source가 접근 가능한 Context에서 왔는가
+- 읽기 요청이 draft나 실행으로 바뀌지 않았는가
+- graph와 결과 표현이 schema를 만족하는가
+
+Validator는 계획을 고치거나 다른 capability를 대신 고르지 않는다. 계획이 계약을 통과하지 못하면 원 질문과 오류를 Gemma에 한 번만 다시 전달한다. 재판정도 실패하면 확인 질문 하나를 하거나 `planning_failed`로 중단한다. 모델을 사용할 수 없을 때 지식 검색 답변인 것처럼 위장하지 않는다.
+
+버튼, 시작 제안과 REST/MCP의 명시적인 command는 이미 capability·operation·effect가 정해진 typed command다. 이 경우 자연어 의미를 다시 추측하지 않지만 ACL, Harness와 confirmation은 자연어 요청과 똑같이 적용한다.
+
 # 답변과 citation
 
-답변은 결론을 먼저 보여주고, 실제 retrieved source로 뒷받침할 수 있는 문장에 citation을 붙인다. citation을 선택하면 페이지를 떠나지 않고 원문 문단, 문서 상태와 연결 관계를 확인할 수 있다.
+답변은 결론을 먼저 보여주고, 실제 retrieved chunk가 직접 뒷받침하는 문장에만 citation을 붙인다. citation을 선택하면 페이지를 떠나지 않고 원문 문단, 문서 상태와 연결 관계를 확인할 수 있다.
+
+BoI Agent는 접근 가능한 내부 Wiki 정본과 검증된 내부 업무 데이터만 답변 근거로 사용한다. 외부 검색 결과, 외부 공식 문서와 모델이 원래 알고 있던 내용으로 빈 곳을 채우지 않는다. 일반 질문에는 canonical 문서와 관련 operational 자료를 사용하며 validation 보고서, generated source, 탐색용 `index.md`·`log.md`, deprecated·smoke·seed 문서는 정의나 사실의 근거로 사용하지 않는다.
+
+답변을 만들 때 각 사실 문장은 claim으로 나누고 source와 chunk가 직접 지지하는지 확인한다. 정의, 약어, 버전과 수치는 더 엄격하게 확인한다. 핵심 claim이 직접 뒷받침되지 않거나 내부 문서가 충돌하면 그럴듯한 설명을 만들지 않고 `확인된 근거가 없습니다`라고 알린다.
 
 `사용한 지식`에는 다음 항목만 들어간다.
 
@@ -159,16 +182,31 @@ flowchart LR
 - artifact의 node, edge 또는 판단을 직접 뒷받침한 source
 - 사용자가 현재 작업에 고정한 source
 
-검색 후보였지만 사용하지 않은 문서는 Evidence Ledger에 사용된 근거로 기록하지 않는다. 근거가 부족하면 일반 모델 지식으로 채우지 않고 부족한 항목을 알린다.
+검색 후보였지만 사용하지 않은 문서는 Evidence Ledger에 사용된 근거로 기록하지 않는다. `사용한 지식`은 최종 지원 claim에서 다시 계산하므로 관련 문서가 검색됐다는 이유만으로 포함되지 않는다.
+
+# 후속 질문과 정정
+
+WorkSession은 직전 질문의 주제, 검증된 claim, 실제 사용 chunk와 citation, 활성 결과만 다음 turn에 이어준다. 넓은 검색 후보나 답변에 쓰지 않은 문서는 계승하지 않는다.
+
+- “실제로 사용된 부분 보여줄래”는 직전 주제를 포함한 독립 요청으로 다시 해석한다.
+- “새 주제로”처럼 대상을 명시하면 이전 주제를 제거한다.
+- 둘 이상의 대상이 같은 정도로 가능할 때만 확인 질문 하나를 한다.
+- 이전 답변이 상충 근거로 무효화되면 기존 claim과 citation을 더 이상 사용하지 않고 Timeline에 정정을 남긴다.
+
+새로고침하거나 페이지를 이동해도 같은 WorkSession을 열면 이 검증된 주제 상태를 복원한다.
 
 # 질문 처리 흐름
 
 ```mermaid
 flowchart LR
-  Q["자연어 요청"] --> I["WorkIntent"]
-  I --> C["현재 화면·Task·최근 대화"]
+  Q["자연어 요청"] --> O["Observe·검증된 주제 상태"]
+  O --> S["SemanticPlan"]
+  S --> V{"PlanValidator"}
+  V -->|검증 오류| REPAIR["Gemma 1회 재판정"]
+  REPAIR --> V
+  V -->|통과| C["WorkContextPack"]
   C --> R["Wiki 전체 Hybrid Recall"]
-  R --> P["GoalPlan"]
+  R --> P["GoalPlan·WorkRun"]
   P --> A{"처리 경로"}
   A -->|빠른 질문·초안| QUICK["Quick Agent"]
   A -->|긴 조사| DEEP["Deep Work"]
@@ -181,7 +219,7 @@ flowchart LR
 
 진행 중에는 `업무 맥락 확인`, `관련 지식 탐색`, `근거 검토`, `답변 정리`처럼 현재 단계를 표시한다. 내부 추론문이나 chain-of-thought는 보여주지 않는다. 중지하면 현재 요청만 취소하고 이전 대화와 결과는 유지한다.
 
-빠른 지식 답변과 SOP 초안은 질문 해석 단계에서 근거 답변 또는 Task 윤곽을 함께 준비한다. 화면을 만들기 위해 같은 질문을 모델에 다시 묻지 않는다. 대신 서버가 실제 검색된 source인지, 완료된 모습과 확인할 자료가 있는지, 권한과 schema를 만족하는지를 다시 검증한다. 검증하지 못한 내용은 답이나 초안으로 채택하지 않고 기존의 안전한 생성 경로 또는 근거 부족 안내로 돌아간다.
+빠른 지식 답변과 SOP 초안은 질문 해석 단계에서 근거 답변 또는 Task 윤곽을 함께 준비한다. 화면을 만들기 위해 같은 질문을 모델에 다시 묻지 않는다. 대신 서버가 실제 검색된 source인지, 완료된 모습과 확인할 자료가 있는지, 권한과 schema를 만족하는지를 다시 검증한다. 검증하지 못한 내용은 답이나 초안으로 채택하지 않고 근거 부족 또는 계획 실패로 명시적으로 중단한다. 다른 기능으로 조용히 바꾸는 fallback은 사용하지 않는다.
 
 따라서 빠르게 보인다는 이유로 검증을 생략하지 않으며, 명시적인 검토·시험 요청은 별도의 Harness 단계로 계속 수행한다.
 

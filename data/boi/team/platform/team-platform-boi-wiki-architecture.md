@@ -128,6 +128,8 @@ flowchart TB
 
 Web Pet, `/agent`, REST, MCP와 Codex/Claude Agent Kit은 같은 WorkSession, GoalPlan, Source Set, citation, WorkRun, Harness 결과와 artifact ID를 사용한다. Web은 사용자에게 기술 capability를 노출하지 않고 자연어 요청을 자동 route한다. 외부 자동화가 결정적인 기능을 요구할 때만 capability를 명시한다.
 
+자연어 route의 정본은 로컬 Gemma가 생성한 `SemanticPlan`이다. `PlanValidator`는 catalog, ACL-visible target, schema, effect·operation 충돌과 graph 계약을 순수 함수로 검사하며 plan을 변경하지 않는다. invalid plan은 원 질문·원 plan·검증 오류·고정된 catalog revision으로 한 번만 의미 재판정한다. 재실패와 모델 장애는 `planner_invalid` 또는 `planner_unavailable`로 끝나며 검색 capability로 fallback하지 않는다. UI·REST·MCP의 typed command는 의미를 다시 추론하지 않고 같은 compiler, Harness와 confirmation으로 들어간다.
+
 Pet은 유일한 기본 Agent 진입점이다. `/agent`는 같은 surface의 Fullpage 주소이며 Builder와 개인 외부 연결은 Expanded·Fullpage의 `⋯` 메뉴에서 연다. Advanced는 API/MCP contract, 권한과 integration 진단만 맡는다.
 
 StarterSuggestionSet은 ACL-visible Inbox, route-resolved 현재 문서, 최근 WorkSession·artifact, 팀 지식과 명시적인 `agent_entrypoint` 문서로 후보를 구성한다. 로컬 LLM은 제공된 source ref와 허용 operation 안에서 사용자에게 맞는 표현을 고르며, Pet 열기는 cached context fingerprint를 먼저 사용한다.
@@ -136,13 +138,19 @@ StarterSuggestionSet은 ACL-visible Inbox, route-resolved 현재 문서, 최근 
 sequenceDiagram
   participant U as User or External Agent
   participant G as Agent v2 Gateway
+  participant S as Semantic Planner
+  participant V as Plan Validator
   participant C as Context Compiler
   participant R as Hybrid Retrieval
   participant H as Harness
   participant W as WorkRun
 
   U->>G: 자연어 요청 + session + 현재 화면
-  G->>C: WorkIntent와 업무 맥락 구성
+  G->>S: 요청 + 검증된 topic + catalog
+  S-->>G: SemanticPlan
+  G->>V: catalog·ACL·schema 불변식 검증
+  V-->>G: 통과 또는 ValidationIssue
+  G->>C: 검증된 plan을 WorkIntent로 compile
   C->>R: ACL 범위의 지식·관계·사례 조회
   R-->>C: Source Set + citation 후보
   C-->>G: WorkContextPack
@@ -172,17 +180,19 @@ Context Compiler는 `write/select/compress/isolate`를 적용한다. 최근 대�
 ```mermaid
 flowchart LR
   O["Observe"] --> C["Context"]
-  C --> P["Plan Delta"]
-  P --> A["Act or Ask"]
+  C --> S["SemanticPlan"]
+  S --> A["Act or Ask"]
   A --> V["Verify"]
   V --> E{"완료 항목 충족?"}
-  E -->|진전 있음| P
+  E -->|진전 있음| C
   E -->|진전 없음| B["근거 전환·사람 요청·중단"]
   E -->|충족| R["Completion Record"]
   R --> K["Knowledge Candidate"]
 ```
 
-매 iteration은 Evidence, Action 결과, 사람 입력, artifact, 상태 전환, blocker 또는 지식 후보 중 하나를 `LoopDelta`로 남겨야 한다. 같은 query, tool+args, 질문과 결과 없는 재계획은 no-progress로 중단한다. Task 완료는 LLM 자기 선언이 아니라 구조화된 완료 항목, Evidence Ledger, Action 결과와 사람 확인으로 결정한다.
+각 node 경계에는 prompt 문장이 아닌 entity, evidence, tool result, artifact, completion 변화와 정책 revision을 가진 `WorkRunCheckpoint`를 저장한다. 매 iteration은 이 구조 데이터 중 하나가 달라진 `ProgressDelta`를 남겨야 한다. 첫 무진전은 다른 근거·tool·접근을 명시한 전략 전환 한 번만 허용하고, 연속 두 번째 무진전은 중단한다. 기본 goal loop와 tool loop 상한은 각각 5회다. Task 완료는 LLM 자기 선언이 아니라 `ExitCriteriaResult`, Evidence Ledger, Action 결과와 사람 확인으로 결정한다.
+
+WorkRun이 시작할 때 capability catalog, HarnessDefinition과 planner schema revision을 고정한다. 사람 입력이나 승인을 기다리면 raw state와 idempotency key를 영구 저장하고 같은 run ID로 재개한다. 외부 효과는 confirmation 뒤 별도 node에서 실행하며 이미 기록된 idempotency key는 다시 적용하지 않는다.
 
 # Manual, Copilot, Autopilot
 
@@ -218,6 +228,12 @@ Ontology 갱신은 전체 table truncate가 아니라 source revision별 node·e
 자연어 관계 질문은 `GraphQueryDraft → EntityResolver → GraphQueryPlan → parameterized graph query` 순서로 실행한다. Planner는 사람·팀·자산 표현과 원하는 결과만 제안하며 SQL·Cypher를 만들지 않는다. `current`, `responsibility`, `combined` 업무 관점은 현재 Inbox와 공식 역할·검증 수행 이력을 분리한다.
 
 Quick Agent의 structured Planner는 자연어 route, grounded answer와 private SOP outline을 하나의 schema에서 반환할 수 있다. source는 짧은 key로만 참조하고 서버가 실제 retrieved ref로 다시 해석한다. grounded claim이 검색 경계 밖이거나 SOP Task에 완료 기준·필수 근거가 없으면 결과를 폐기하고 검증된 fallback을 사용한다. semantic route schema가 바뀌면 cache version을 올려 오래된 route가 새 계약을 우회하지 못하게 한다.
+
+일반 지식 답변의 검색 범위는 `canonical|operational`로 제한한다. `validation`, `generated`, `navigation`, `deprecated` 문서는 검증 결과를 묻는 명시적 요청 외에는 Planner hint, citation과 Agent context에 넣지 않는다. 외부 검색과 모델 사전 지식도 답변 근거 계약 밖이다.
+
+Planner는 `answer_intent`, `resolved_goal`, `retrieval_query`와 claim별 source key·chunk key를 함께 반환한다. 서버는 key를 ACL-visible source와 chunk ID로 해석한 뒤 claim 텍스트가 해당 원문을 직접 뒷받침하는지 검증한다. 정의·약어·버전·수치처럼 민감한 claim은 같은 내부 excerpt만 전달한 조건부 의미 검증을 한 번 더 통과해야 한다. 핵심 claim이 unsupported 또는 conflicting이면 factual answer를 만들지 않는다.
+
+WorkSession의 `TurnTopicState`에는 주제 entity, 독립 resolved goal, 지원된 claim, 실제 사용 source·chunk, citation, 활성 artifact와 정정 상태만 저장한다. 후속 turn에는 이 검증된 상태만 전달하고 broad retrieval 후보는 계승하지 않는다. 새 주제는 이전 topic을 제거하며 상충 답변은 claim과 citation을 무효화하고 correction audit을 남긴다.
 
 Task 실행은 `TaskExecutionSnapshot`을 Inbox와 Task Console의 공통 read model로 사용한다. `TaskWorkRecord`는 확인 내용, 조치, 판단, 결과와 근거를 보존하고 복수 담당자는 하나의 Task 상태를 공유한다.
 

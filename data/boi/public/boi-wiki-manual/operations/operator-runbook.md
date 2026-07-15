@@ -191,9 +191,14 @@ BOI_BASE_URL="$BOI_BASE_URL" node scripts/check_manual_guides_ui.mjs
 Task·Ontology·동적 화면 acceptance:
 
 ```bash
+python scripts/check_semantic_kernel_architecture.py
+pytest -q tests/test_semantic_kernel_architecture.py
 pytest -q tests/test_task_ontology_a2ui.py tests/test_agent_v2.py
 python scripts/check_task_ontology_a2ui_acceptance.py --output .tmp/task-ontology-a2ui-acceptance.json
 python scripts/evaluate_agent_v2_work_scenarios.py --output .tmp/agent-v2-work-scenarios.json
+python scripts/evaluate_agent_v2_work_scenarios.py \
+  --fixture tests/fixtures/semantic_kernel_holdout.yaml \
+  --output .tmp/semantic-kernel-holdout.json
 node scripts/check_task_ontology_a2ui_browser.mjs \
   --base-url="$BOI_BASE_URL" \
   --output=.tmp/task-ontology-a2ui-browser.json \
@@ -202,9 +207,17 @@ python scripts/check_openkb_release_gate.py \
   --output .tmp/openkb-release-gate.json
 ```
 
-첫 명령은 격리된 결정적 계약, 두 번째는 실제 API 성능과 model residency, 세 번째는 로컬 Gemma 의미 품질, 네 번째는 21개 실제 브라우저 journey와 네 viewport를 검증한다. 브라우저 여정은 9개 관계 보기, 자연어 Graph plan, 공식 동적 surface lifecycle, guarded Confirmation, Harness release·rollback, Task 배정 충돌과 WorkRecord 저장을 실제로 조작한다. 마지막 명령은 실제 PDF·Office 원본에서 OpenKB private 후보가 생성되는지 확인한다. 실패·모호 사례를 별도 심사 대상으로 표시할 때만 `BOI_GPT55_TEST_MODE=1`과 `--judge-failures`를 함께 사용한다.
+AST gate는 질문·goal·title·prompt 문자열이나 regex를 이용한 semantic routing, validator의 plan mutation과 capability fallback을 차단한다. `semantic_kernel_holdout.yaml`은 12개 의도군의 서로 다른 표현 60개, 멀티턴 12개와 adversarial 8개를 각각 세 번 실행해 capability·operation·effect·topic 계약을 직접 채점한다. 문장 token이나 한국어 접미사 규칙으로 의미를 다시 추정하지 않는다. 이어지는 명령은 결정적 계약, 실제 API 성능과 model residency, 기존 회귀, 실제 브라우저 journey와 선택 Adapter gate를 검증한다. 실패 사례를 별도 심사 대상으로 표시하더라도 이 플랫폼의 기본 acceptance에서는 GPT-5.5를 호출하지 않는다.
+
+`planner_unavailable`, `planner_invalid`와 `planning_failed`는 정상적인 fail-closed 결과다. 운영자가 임의의 `safe_search`나 대체 capability를 추가해서는 안 된다. WorkRun 장애는 마지막 checkpoint의 raw state, 고정된 catalog·Harness revision, `ProgressDelta.error_disposition`과 idempotency key 순서로 확인한다.
 
 semantic route schema나 Planner가 한 호출에서 반환하는 grounded answer·SOP outline 계약을 바꾸면 `SEMANTIC_ROUTE_CACHE_VERSION`도 함께 올린다. 이전 cache를 그대로 둔 채 warm 결과만 측정하지 않고, cache version을 무효화한 실행에서 grounded Agent p95 10초 기준을 다시 확인한다.
+
+사실성 계약을 바꾸면 source scope와 topic state도 함께 점검한다. 일반 질문은 `canonical|operational`만 사용하고 validation·generated·navigation·deprecated는 제외한다. 응답의 `answerability`, `grounded_claims`, `used_source_refs`를 비교해 모든 supported claim에 ACL-visible source와 supporting chunk가 있는지 확인한다. source가 검색됐다는 사실만으로 grounded 처리해서는 안 된다.
+
+멀티턴 장애는 WorkSession의 `topic_state`와 `topic_corrections`를 먼저 확인한다. 다음 turn에는 직전 supported claim과 실제 used source만 있어야 한다. 후속 resolved goal에서 이전 subject가 빠지면 Planner를 한 번 재판정하고, 다시 빠지면 답변을 중단한다. 명시적 새 주제에서는 이전 subject가 남지 않아야 하며 conflicting 답변은 correction audit과 함께 무효화돼야 한다.
+
+내부에 근거가 없는 질문의 정상 결과는 `answerability.status=insufficient`와 `확인된 근거가 없습니다`다. 이를 모델 장애나 현재 화면 누락으로 바꿔 표시하지 않는다. GPT-5.5와 외부 검색은 기본·pilot acceptance에서 호출하지 않으며 LM Studio의 이미 로드된 모델에 load/unload 요청을 보내지 않는다.
 
 외부 Adapter release gate는 core acceptance와 분리한다. 운영자가 승인한 격리 tool 버전과 실제 export를 사용하고 mock CLI 통과를 release 통과로 계산하지 않는다.
 

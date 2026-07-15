@@ -187,6 +187,8 @@ flowchart TD
 
 대화 횟수나 로그 양만으로 후보를 만들지 않는다. 검증되지 않은 Agent 답변, source 없는 요약, 일회성 잡음과 민감정보는 Learning Harness가 차단한다.
 
+증분 색인이 끝난 Private provisional 자산과 검토된 Team/Public 자산은 다음 질문, SOP 설계와 Task 수행의 검색 후보가 된다. Context Compiler는 현재 업무 목표와 ACL에 맞는 source만 다시 선택하고, 선택된 근거는 답변 citation 또는 Task Evidence Ledger에 남긴다. 색인됐다는 사실만으로 정답이나 자동 승인 근거가 되지는 않는다.
+
 # 시간과 변경
 
 변화하는 판단은 `valid_from`, `valid_to`, `observed_at`, `supersedes`와 verification 상태를 사용한다. 새 내용을 기존 사실 위에 조용히 덮어쓰지 않는다. Git과 proposal diff가 변경 이유와 되돌리기 근거를 제공한다.

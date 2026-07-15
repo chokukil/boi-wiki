@@ -15,6 +15,7 @@ author:
   agent_id: codex
 acl_policy: acl:team:platform
 status: draft
+answer_scope: validation
 source_refs:
   - type: boi
     ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
@@ -27,7 +28,7 @@ implementation_refs:
     ref: scripts/evaluate_agent_v2_work_scenarios.py
 review:
   reviewer: platform-lead
-  review_status: draft
+  review_status: needs_revision
 ---
 
 # 결과 정정
