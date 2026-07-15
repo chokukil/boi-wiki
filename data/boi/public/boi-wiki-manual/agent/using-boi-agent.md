@@ -155,7 +155,7 @@ A2UI의 내부 뜻과 현재 등록된 결과 화면은 [A2UI와 BoI 동적 결�
 
 # 의미 판단과 안전 경계
 
-자연어 질문은 로컬 Gemma가 한 번의 구조화된 `SemanticPlan`으로 해석한다. 이 계획에는 독립적으로 읽을 수 있는 목표, 주제 유지·전환, 대상, 수행 목적, 사용자에게 미치는 효과, operation, 사용할 근거 범위와 결과 표현이 함께 들어간다. 서버는 질문 속 단어나 문구를 찾아 다른 기능으로 바꾸지 않는다.
+자연어 질문은 현재 배포에 설정된 generation model이 한 번의 구조화된 `SemanticPlan`으로 해석한다. 로컬 Gemma와 사내 관리형 GPT 계열 모두 같은 계약을 사용한다. 이 계획에는 독립적으로 읽을 수 있는 목표, 주제 유지·전환, 대상, 수행 목적, 사용자에게 미치는 효과, operation, 사용할 근거 범위와 결과 표현이 함께 들어간다. 서버는 질문 속 단어나 문구를 찾아 다른 기능으로 바꾸지 않는다.
 
 코드의 `PlanValidator`는 다음 경계만 검사한다.
 
@@ -164,7 +164,7 @@ A2UI의 내부 뜻과 현재 등록된 결과 화면은 [A2UI와 BoI 동적 결�
 - 읽기 요청이 draft나 실행으로 바뀌지 않았는가
 - graph와 결과 표현이 schema를 만족하는가
 
-Validator는 계획을 고치거나 다른 capability를 대신 고르지 않는다. 계획이 계약을 통과하지 못하면 원 질문과 오류를 Gemma에 한 번만 다시 전달한다. 재판정도 실패하면 확인 질문 하나를 하거나 `planning_failed`로 중단한다. 모델을 사용할 수 없을 때 지식 검색 답변인 것처럼 위장하지 않는다.
+Validator는 계획을 고치거나 다른 capability를 대신 고르지 않는다. 계획이 계약을 통과하지 못하면 원 질문과 오류를 같은 configured planner에 한 번만 다시 전달한다. 재판정도 실패하면 확인 질문 하나를 하거나 `planning_failed`로 중단한다. 모델을 사용할 수 없을 때 지식 검색 답변인 것처럼 위장하지 않는다.
 
 버튼, 시작 제안과 REST/MCP의 명시적인 command는 이미 capability·operation·effect가 정해진 typed command다. 이 경우 자연어 의미를 다시 추측하지 않지만 ACL, Harness와 confirmation은 자연어 요청과 똑같이 적용한다.
 
@@ -202,7 +202,7 @@ flowchart LR
   Q["자연어 요청"] --> O["Observe·검증된 주제 상태"]
   O --> S["SemanticPlan"]
   S --> V{"PlanValidator"}
-  V -->|검증 오류| REPAIR["Gemma 1회 재판정"]
+  V -->|검증 오류| REPAIR["Planner 1회 재판정"]
   REPAIR --> V
   V -->|통과| C["WorkContextPack"]
   C --> R["Wiki 전체 Hybrid Recall"]
@@ -282,7 +282,7 @@ SOP 초안은 결과 영역에서 Workflow와 Task 목록으로 보인다. `Task
 - prompt의 사번이나 role 요청으로 권한을 높이지 않는다.
 - 외부 부작용과 shared 정본 변경은 preview와 confirmation을 거친다.
 - Autopilot은 system binding이 없는 완료 항목을 자동 완료하지 않는다.
-- 긴 원본과 민감 자료는 자료 보관함에 두고 bounded context만 사용한다.
+- 긴 원본과 민감 자료는 자료 보관함에 두고 checksum·ACL reference로 연결한다. 선택된 대화와 근거는 provider의 실제 context capacity 안에서 항목 전체를 보존하며 임의 길이로 축약하지 않는다.
 
 # 관련 문서
 

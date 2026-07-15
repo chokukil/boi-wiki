@@ -5,7 +5,7 @@ type: boi/manual
 title: WorkContextPack 업무 맥락 계약
 description: Web·MCP·외부 Agent와 Task Loop가 같은 업무 목표·근거·완료 조건을 이해하기 위한 공통 context 계약
 tags: [BoIWiki, Agent, WorkContext, Workflow, Task, Evidence, MCP]
-timestamp: 2026-07-12T10:45:00+09:00
+timestamp: 2026-07-15T16:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:agent:work-context-pack
 visibility: public
 classification: internal
@@ -16,6 +16,11 @@ author:
 acl_policy: acl:public
 status: reviewed
 source_refs:
+  - type: boi
+    ref: boi:public:boi-wiki-manual:agent:work-learning-system
+  - type: boi
+    ref: boi:public:boi-wiki-manual:operations:harness-observability-and-improvement
+implementation_refs:
   - type: repo
     ref: boi_api/app/v2/models.py
   - type: repo
@@ -72,12 +77,16 @@ flowchart TD
 
 # Context 관리 원칙
 
-- `write`: 작업 메모, artifact와 loop delta를 WorkSession에 저장한다.
-- `select`: 현재 목표와 완료 조건에 직접 필요한 자료만 고른다.
-- `compress`: 오래된 대화와 긴 이력은 짧은 요약·profile로 바꾼다.
-- `isolate`: 파일, CSV, 로그와 민감 원본은 MinIO/Data Lake에 두고 prompt 밖에 둔다.
+- `write`: 대화, 작업 메모, artifact와 loop delta를 append-only WorkSession에 저장한다.
+- `select`: 현재 목표와 완료 조건에 직접 필요한 완전한 자료 항목을 관련성 순으로 고른다.
+- `fit`: 설정된 provider 또는 deployment가 제공하는 실제 context window 안에 완전한 항목을 차례로 배치한다.
+- `isolate`: 원본 파일, CSV, 긴 로그와 민감 원본은 MinIO/Data Lake에 두고 checksum과 ACL reference로 연결한다.
 
-일반 turn은 source 12개, chunk 24개 이내를 기본으로 하며 token budget을 넘기기 전에 관련성이 낮은 항목부터 제외한다. 제외 이유도 manifest에 남긴다.
+선택된 대화 turn, evidence, supporting chunk와 active artifact를 다시 요약하거나 문자열 길이로 자르지 않는다. 물리적인 provider context capacity에 다음 항목 전체가 들어가지 않을 때만 그 항목을 제외하고 `provider_context_capacity` 이유를 manifest에 남긴다. 문장 중간, source 중간 또는 Task 목록 중간을 잘라 맞추지 않는다.
+
+`max_context_tokens=0`은 작은 고정값이 아니라 provider runtime 또는 deployment가 선언한 용량을 자동 사용한다는 뜻이다. 운영자는 특정 실행에 더 작은 명시적 예산을 줄 수 있지만 모델 이름으로 임의의 예산 profile을 선택하지 않는다. 따라서 로컬 Gemma와 사내 관리형 GPT 계열은 같은 계약을 사용하고 각 배포가 제공하는 용량만 다르다.
+
+자료 보관함에 원본을 두는 것은 압축이 아니라 데이터 경계다. 질문에 필요한 profile, sample과 연결 정보는 완전한 context item으로 들어가고, 원본 전체가 필요하면 권한을 확인한 tool이 해당 artifact를 읽는다.
 
 # 사람과 AI의 협업
 
@@ -89,7 +98,7 @@ client가 mode를 높여 권한을 확대할 수 없다. 최종 가능 범위는
 
 # 외부 Agent 사용
 
-MCP `boi_context`와 Agent Kit은 같은 context reference를 반환한다. 기본 응답은 원본 context 전문 대신 요약과 evidence/artifact reference만 포함하며, 권한 있는 진단에서만 manifest와 tool trace를 볼 수 있다.
+MCP `boi_context`와 Agent Kit은 Web과 같은 context item, evidence와 artifact reference를 반환한다. 전송 contract가 원본 파일 자체를 인라인하지 않는 것은 저장 경계이며, 선택된 업무 맥락을 임의로 축약한다는 뜻이 아니다. 권한 있는 진단에서 manifest와 tool trace를 확인할 수 있다.
 
 # 관련 문서
 

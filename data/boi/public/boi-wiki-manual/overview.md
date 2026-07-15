@@ -106,3 +106,4 @@ flowchart LR
 - 문서·사람·팀·SOP·Event·Action 관계를 탐색한다면 [Ontology 탐색과 외부 지식 Source 활용 가이드](/docs/boi:public:boi-wiki-manual:knowledge:ontology-explorer-and-source-adapters)
 - REST API로 연동한다면 [BoI Wiki API v2](/docs/boi:public:boi-wiki-manual:api:boi-wiki-api-v2)
 - 반복 실패와 업무 맥락 개선을 운영한다면 [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)
+- Loop 종류, 종료·재개와 context 예산을 운영한다면 [BoI Harness와 Loop 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:boi-harness-and-loop-operations)

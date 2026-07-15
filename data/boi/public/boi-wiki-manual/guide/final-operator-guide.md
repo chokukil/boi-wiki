@@ -177,7 +177,7 @@ flowchart TD
   PROMOTE --> SEARCH
 ```
 
-자세한 구조는 [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)과 [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)을 참고한다.
+자세한 구조는 [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system), [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)과 [BoI Harness와 Loop 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:boi-harness-and-loop-operations)를 참고한다.
 
 # 외부 Agent 연결
 
@@ -190,7 +190,7 @@ Codex, Claude와 다른 MCP client도 Web BoI Agent와 같은 Context, Harness, 
 - citation이 없는 답변을 Team/Public 정본으로 옮기지 않는다.
 - 공유 전에는 출처, 공개 범위, 중복과 민감정보를 확인한다.
 - Autopilot은 시스템에서 검증할 수 있는 완료 항목과 허용된 저위험 Action만 사용한다.
-- 원본 파일과 긴 외부 AI 대화는 자료 보관함에 두고 요약과 checksum만 Context에 넣는다.
+- 원본 파일과 긴 외부 AI 대화는 자료 보관함에 두고 profile, 필요한 sample, checksum과 ACL reference로 연결한다. 선택된 대화와 근거 항목은 provider의 실제 context capacity 안에서 임의로 자르지 않는다.
 - 연결 상태와 운영 진단은 일반 업무 화면이 아니라 Advanced의 `연결 상태`에서 확인한다.
 
 # 역할별 다음 문서

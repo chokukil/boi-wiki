@@ -59,7 +59,7 @@ flowchart LR
 
 # 시나리오 구성
 
-목표 acceptance matrix는 기존 50개에 사실성·멀티턴 신뢰성 12개를 더한 62개다. 각 항목은 fixture에 이름만 존재해서는 통과로 계산하지 않으며, 대응 handler가 실제 API·domain service·browser journey를 실행하고 assertion 결과를 남겨야 한다.
+목표 acceptance matrix는 기존 62개에 Semantic Kernel·Harness·Loop 연구 반영 시나리오 16개를 더한 78개다. 각 항목은 fixture에 이름만 존재해서는 통과로 계산하지 않으며, 대응 handler가 실제 API·domain service·browser journey를 실행하고 assertion 결과를 남겨야 한다.
 
 | 영역 | 수 | 확인 내용 |
 |---|---:|---|
@@ -72,6 +72,7 @@ flowchart LR
 | 외부 Adapter | 6 | CLI export 계약, cancel, retry, restart resume와 rollback |
 | 전체 순환·parity | 2 | Work Learning loop와 Web·REST·MCP 의미 계약 |
 | 사실성·멀티턴 신뢰성 | 12 | source scope, claim-chunk 일치, 근거 부족·충돌 중단, 주제 계승·전환·정정 |
+| Semantic Kernel·Harness·Loop | 16 | 인과 실패 묶음, 예측 manifest, 성공 보존, held-out, 네 loop 종류, 무진전, durable resume, idempotency, context 보존과 immutable 경계 |
 
 Semantic Kernel 실모델 holdout은 12개 의도군마다 서로 다른 표현 5개씩 60개, 멀티턴 12개와 adversarial 8개로 총 80개다. 각 사례를 최소 세 번 실행해 240개 결과를 채점한다. `그 관계`, `방금 근거`, `이 흐름`을 이어받되 사용자가 새 주제를 명시하면 이전 대상을 강제하지 않아야 한다. 존재하지 않는 약어, Wiki에 없는 개념, validation 전용 용어, 직접 근거가 없는 수치와 prompt injection에도 fallback capability나 무단 mutation이 없어야 한다.
 

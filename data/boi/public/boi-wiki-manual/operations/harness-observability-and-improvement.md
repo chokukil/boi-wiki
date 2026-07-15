@@ -5,7 +5,7 @@ type: boi/manual
 title: 업무 실행 품질과 Harness 개선 운영 가이드
 description: 반복 실패를 원인별로 관측하고 업무 맥락 Playbook과 제한된 Harness 후보를 안전하게 시험·검토하는 기준
 tags: [BoIWiki, Harness, WorkRun, FailurePattern, ContextPlaybook, ShadowEvaluation, NegativeResult, Evaluation]
-timestamp: 2026-07-13T12:00:00+09:00
+timestamp: 2026-07-15T16:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:operations:harness-observability-and-improvement
 visibility: public
 classification: internal
@@ -22,9 +22,6 @@ source_refs:
     ref: boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance
   - type: boi
     ref: boi:public:boi-wiki-manual:operations:operator-runbook
-reference_refs:
-  - type: external
-    ref: https://lilianweng.github.io/posts/2026-07-04-harness/
 implementation_refs:
   - type: repo
     ref: boi_api/app/v2/work_learning.py
@@ -34,6 +31,10 @@ implementation_refs:
     ref: boi_api/app/v2/a2ui.py
   - type: repo
     ref: boi_api/app/v2/knowledge_system.py
+  - type: external
+    ref: https://lilianweng.github.io/posts/2026-07-04-harness/
+  - type: external
+    ref: https://claude.com/blog/getting-started-with-loops
 review:
   reviewer: platform-lead
   reviewed_at: 2026-07-13T12:00:00+09:00
@@ -87,7 +88,7 @@ flowchart LR
 | freshness | 유효 기간, revision과 갱신 시점 |
 | 상태 | provisional, active, deprecated, rejected |
 
-동일 항목은 fingerprint로 중복 생성하지 않는다. 현재 Task, Capability, 팀, model profile과 유효 기간이 맞는 항목만 WorkContextPack에 선택한다. Private provisional부터 시작하며 팀 활성화는 검토 권한이 필요하다. 새 항목이 기존 항목을 대체하면 이전 revision을 삭제하지 않고 deprecated와 superseded 관계로 남긴다.
+동일 항목은 fingerprint로 중복 생성하지 않는다. 현재 Task, Capability, 팀, model profile과 유효 기간이 맞는 항목만 WorkContextPack에 선택한다. 선택된 항목 수를 임의의 20개 기본값으로 다시 줄이지 않으며 provider capacity에 완전한 항목이 들어가는 만큼 사용한다. 명시적인 Harness limit이 있을 때만 그 제한을 적용한다. Private provisional부터 시작하며 팀 활성화는 검토 권한이 필요하다. 새 항목이 기존 항목을 대체하면 이전 revision을 삭제하지 않고 deprecated와 superseded 관계로 남긴다.
 
 # 바꿀 수 있는 것과 없는 것
 
@@ -95,11 +96,11 @@ flowchart LR
 
 | 시험 가능한 영역 | 자동 변경 금지 영역 |
 |---|---|
-| context recipe와 retrieval policy | ACL·RBAC와 identity |
-| planner·presentation 지침 | Action 위험도와 confirmation |
-| tool·fallback 순서 | Autopilot allowlist와 system binding |
-| 제한 안의 loop budget | 완료에 필요한 필수 근거 |
-| 모델별 profile | evaluator 합격선과 정본 승격 정책 |
+| Context Playbook과 retrieval policy | ACL·RBAC와 identity |
+| 제한 안의 loop policy | planner·evaluator instruction과 schema |
+| model profile별 검증된 Context 순서 | tool implementation과 capability 의미 |
+| 만료일이 있는 임시 운영 보조 설정 | Action 위험도와 confirmation |
+| | Autopilot allowlist·system binding·필수 근거·정본 승격 정책 |
 
 후보가 자동 변경 금지 영역을 포함하면 shadow 전에 차단한다. 반복 예산은 기존 상한보다 늘릴 수 없다. 후보와 평가가 합격해도 production은 바뀌지 않으며 상태는 `approved_not_deployed`로 남는다.
 
@@ -144,6 +145,7 @@ A2UI는 검토 표현일 뿐 배포 권한이 아니다. 승인·Action·배정�
 # 함께 보기
 
 - [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)
+- [BoI Harness와 Loop 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:boi-harness-and-loop-operations)
 - [Task·Ontology·동적 화면 검증 기준](/docs/boi:public:boi-wiki-manual:operations:task-ontology-a2ui-acceptance)
 - [BoI Wiki 운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)
 - [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)

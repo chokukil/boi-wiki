@@ -138,9 +138,21 @@ curl -s "$BOI_BASE_URL/api/v2/system/readiness" | python -m json.tool
 
 개발 PC에서는 `google/gemma-4-26b-a4b-qat`와 `text-embedding-bge-m3`처럼 사용자가 이미 띄운 generation/embedding model을 동시에 유지한다. 앱은 LM Studio load/unload API를 호출하지 않는다.
 
-`BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS=true`는 native `GET /api/v1/models`로 수동 상주 상태만 확인한다. 필수 모델이 없으면 자동 load 대신 요청을 차단한다. 이 guard는 개발 PC용이며 사내 관리형 OpenAI-compatible 서버에는 강제하지 않는다.
+`BOI_LMSTUDIO_REQUIRE_PRELOADED_MODELS=true`는 native `GET /api/v1/models`로 수동 상주 상태만 확인한다. generation 요청은 generation model만, embedding 요청은 embedding model만 검사한다. 따라서 embedding이 일시적으로 준비되지 않아도 이미 상주한 generation model의 답변까지 막지 않으며 semantic 검색만 degraded로 분리한다. 필요한 model이 없으면 자동 load 대신 해당 호출만 차단한다. 이 guard는 개발 PC용이며 사내 관리형 OpenAI-compatible 서버에는 강제하지 않는다.
 
-GPT-5.5는 `BOI_GPT55_TEST_MODE=true`와 별도 test credential을 함께 지정한 비교 검증에서만 사용한다.
+pilot·production에서는 사내에 배포된 GPT-5.5·GPT-5.6을 일반 generation provider로 설정할 수 있다. 모델 이름으로 기능이나 context 크기를 축소하지 않는다. `BOI_GPT55_TEST_MODE=true`는 production provider 선택과 별개인 선택적 judge·비교 검증 경로만 격리한다.
+
+Context Compiler의 기본 `max_context_tokens=0`은 무제한 문자열을 뜻하지 않고 provider runtime 또는 deployment가 선언한 실제 context window를 자동 사용한다는 뜻이다. 선택된 대화, evidence, chunk와 active artifact는 중간에서 자르지 않는다. 물리 용량을 넘길 때만 관련성 순서의 다음 항목 전체를 제외하고 manifest에 이유를 남긴다.
+
+운영자가 조정할 수 있는 주요 값은 다음과 같다.
+
+- `BOI_V2_MODEL_CONTEXT_WINDOW_TOKENS`: provider가 용량 metadata를 제공하지 않을 때의 명시적 deployment 용량
+- `BOI_V2_MODEL_CONTEXT_FALLBACK_TOKENS`: metadata와 명시 용량이 모두 없을 때의 보수적 fallback
+- `BOI_V2_MODEL_CONTEXT_RESERVE_TOKENS`: output과 provider overhead를 위한 reserve
+- `BOI_V2_MAX_OUTPUT_TOKENS`: 배포 모델이 허용하는 응답 예산
+- `BOI_DEEPAGENTS_MAX_INPUT_TOKENS=0`: Deep Work도 provider 용량을 자동 사용
+
+설정 변경 후 `/api/v2/system/readiness`의 `model_policy.context_window_tokens`, `profile_source`, generation/embedding dependency를 각각 확인한다.
 
 # Inbox 보고서 Coordinator
 

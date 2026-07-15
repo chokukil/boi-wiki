@@ -128,11 +128,11 @@ flowchart TB
 
 Web Pet, `/agent`, REST, MCP와 Codex/Claude Agent Kit은 같은 WorkSession, GoalPlan, Source Set, citation, WorkRun, Harness 결과와 artifact ID를 사용한다. Web은 사용자에게 기술 capability를 노출하지 않고 자연어 요청을 자동 route한다. 외부 자동화가 결정적인 기능을 요구할 때만 capability를 명시한다.
 
-자연어 route의 정본은 로컬 Gemma가 생성한 `SemanticPlan`이다. `PlanValidator`는 catalog, ACL-visible target, schema, effect·operation 충돌과 graph 계약을 순수 함수로 검사하며 plan을 변경하지 않는다. invalid plan은 원 질문·원 plan·검증 오류·고정된 catalog revision으로 한 번만 의미 재판정한다. 재실패와 모델 장애는 `planner_invalid` 또는 `planner_unavailable`로 끝나며 검색 capability로 fallback하지 않는다. UI·REST·MCP의 typed command는 의미를 다시 추론하지 않고 같은 compiler, Harness와 confirmation으로 들어간다.
+자연어 route의 정본은 설정된 generation provider가 생성한 `SemanticPlan`이다. 로컬에서는 이미 상주한 Gemma를 사용할 수 있고 사내 배포에서는 관리형 GPT 계열을 사용할 수 있지만 의미 계약은 같다. `PlanValidator`는 catalog, ACL-visible target, schema, effect·operation 충돌과 graph 계약을 순수 함수로 검사하며 plan을 변경하지 않는다. invalid plan은 원 질문·원 plan·검증 오류·고정된 catalog revision으로 한 번만 의미 재판정한다. 재실패와 모델 장애는 `planner_invalid` 또는 `planner_unavailable`로 끝나며 검색 capability로 fallback하지 않는다. UI·REST·MCP의 typed command는 의미를 다시 추론하지 않고 같은 compiler, Harness와 confirmation으로 들어간다.
 
 Pet은 유일한 기본 Agent 진입점이다. `/agent`는 같은 surface의 Fullpage 주소이며 Builder와 개인 외부 연결은 Expanded·Fullpage의 `⋯` 메뉴에서 연다. Advanced는 API/MCP contract, 권한과 integration 진단만 맡는다.
 
-StarterSuggestionSet은 ACL-visible Inbox, route-resolved 현재 문서, 최근 WorkSession·artifact, 팀 지식과 명시적인 `agent_entrypoint` 문서로 후보를 구성한다. 로컬 LLM은 제공된 source ref와 허용 operation 안에서 사용자에게 맞는 표현을 고르며, Pet 열기는 cached context fingerprint를 먼저 사용한다.
+StarterSuggestionSet은 ACL-visible Inbox, route-resolved 현재 문서, 최근 WorkSession·artifact, 팀 지식과 명시적인 `agent_entrypoint` 문서로 후보를 구성한다. 설정된 generation model은 제공된 source ref와 허용 operation 안에서 사용자에게 맞는 표현을 고르며, Pet 열기는 cached context fingerprint를 먼저 사용한다.
 
 ```mermaid
 sequenceDiagram
@@ -173,7 +173,7 @@ sequenceDiagram
 - 자료 보관함 artifact의 summary, profile, sample, checksum과 ACL URL
 - 외부 AI 결과의 요약과 provenance
 
-Context Compiler는 `write/select/compress/isolate`를 적용한다. 최근 대화와 활성 artifact는 WorkSession에 저장하고, 현재 단계에 필요한 것만 선택하며, 오래된 대화는 압축하고, 긴 원본은 MinIO에 격리한다. `ContextManifest`는 사용하거나 제외한 source와 이유, revision, token budget과 provenance를 기록한다.
+Context Compiler는 `write/select/fit/isolate`를 적용한다. 전체 대화와 활성 artifact는 append-only WorkSession에 저장하고 현재 단계에 필요한 완전한 항목을 선택한다. 선택한 대화, 근거, chunk와 artifact는 다시 요약하거나 문자열로 자르지 않는다. provider runtime 또는 deployment가 제공한 실제 context capacity에 다음 항목 전체가 들어가지 않을 때만 항목 단위로 제외한다. 긴 원본은 MinIO에 격리하되 profile, sample, checksum과 ACL reference는 완전한 context item으로 연결한다. `ContextManifest`는 사용하거나 제외한 source와 이유, revision, token cost와 provenance를 기록한다.
 
 # WorkRun과 Loop Engineering
 
@@ -328,7 +328,7 @@ Business Event Detector는 raw payload 전체를 기본 저장하지 않고 fing
 
 # Model Policy
 
-로컬과 사외 실행은 설정된 LM Studio/OpenAI-compatible generation model과 embedding model을 사용한다. GPT-5.5는 `BOI_GPT55_TEST_MODE=true`를 명시한 비교 검증에서만 허용한다. 개발 PC의 preloaded model guard는 LM Studio native model list로 이미 상주한 모델만 확인하고 load/unload를 수행하지 않는다.
+로컬과 사내 실행은 설정된 generation provider와 embedding provider를 독립적으로 사용한다. 개발 PC는 LM Studio에 이미 상주한 Gemma와 BGE-M3를 사용할 수 있고, pilot·production은 사내 관리형 GPT-5.5·GPT-5.6 같은 배포를 그대로 선택할 수 있다. 모델 이름으로 context budget이나 기능을 축소하지 않으며 provider가 공개한 context window와 운영자가 명시한 실행 예산을 사용한다. `BOI_GPT55_TEST_MODE`는 별도 judge 실험을 격리하는 acceptance 설정일 뿐 production provider 선택 제한이 아니다. 개발 PC의 preloaded model guard는 generation과 embedding을 각각 확인하며 load/unload를 수행하지 않는다.
 
 # Access와 Mutation 경계
 
