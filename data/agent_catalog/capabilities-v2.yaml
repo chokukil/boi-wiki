@@ -155,7 +155,20 @@ capabilities:
         reason_template: 현재 화면을 출발점으로 Wiki 전체의 관계를 살펴봅니다.
         priority: 20
         context_basis: page_anchor
-        result_kind: mermaid
+        result_kind: explorer
+        graph_query_kind: neighbors
+        fallback_to_answer: true
+      - offer_id: knowledge.page-relation-table
+        category: knowledge_relation
+        area: knowledge
+        selector: page_anchor
+        only_when_category_empty: false
+        label_template: "{subject_title}의 핵심 항목을 표로 보기"
+        prompt_template: 현재 보고 있는 {subject_title}과 직접 연결된 항목을 관계와 확인 상태가 드러나는 표로 보여줘.
+        reason_template: 현재 화면과 직접 연결된 검토 항목을 비교하기 쉽게 봅니다.
+        priority: 21
+        context_basis: page_anchor
+        result_kind: table
         graph_query_kind: neighbors
         fallback_to_answer: true
       - offer_id: knowledge.connected-workflow
@@ -251,14 +264,17 @@ capabilities:
         area: learning
         selector: canonical_entrypoint
         entrypoint_area: learning
-        only_when_area_empty: true
+        only_when_category_empty: false
+        only_when_area_empty: false
         use_entrypoint_copy: true
         label_template: "{subject_title}에서 지식 재사용 살펴보기"
         prompt_template: 검토된 지식 '{subject_title}'을 바탕으로 업무 결과가 다음 업무에 재사용되는 과정을 설명해줘.
         reason_template: 검토된 학습 순환 지식에서 살펴봅니다.
         priority: 94
         context_basis: canonical_entrypoint
-        result_kind: answer
+        result_kind: timeline
+        graph_query_kind: timeline
+        fallback_to_answer: true
       - offer_id: knowledge.entrypoint-automation
         category: automatic_check
         area: automation

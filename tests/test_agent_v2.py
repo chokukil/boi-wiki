@@ -4113,6 +4113,108 @@ def test_contextual_starters_are_grounded_in_real_accessible_subjects(
     assert not {item.category for item in starters}.intersection({"sop_task", "business_event", "action"})
 
 
+def test_dynamic_starter_falls_back_when_graph_is_not_meaningful(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        v2_service.knowledge,
+        "query",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "meaningful": False,
+            "nodes": [{"node_id": "boi:public:guide"}],
+            "edges": [{"source_id": "boi:public:guide", "target_id": "boi:public:guide"}],
+        },
+    )
+
+    starters = v2_service.starter_suggestions(
+        principal,
+        page_ref="/docs/boi%3Apublic%3Aguide",
+        limit=18,
+    )
+    relationship_starters = [
+        item
+        for item in starters
+        if item.subject_ref == "boi:public:guide" and item.area == "knowledge"
+    ]
+
+    assert relationship_starters
+    assert all(item.result_kind == "answer" for item in relationship_starters)
+    assert all(item.graph_query_kind == "" for item in relationship_starters)
+
+
+def test_catalog_keeps_distinct_explorer_table_and_timeline_starters_with_recent_artifact(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(v2_service.repository, "current_work", lambda _principal, limit=50: [])
+    _write_markdown(
+        v2_service.settings.content_root / "public" / "learning-loop.md",
+        {
+            "type": "boi/manual",
+            "title": "업무 결과 재사용 가이드",
+            "boi_id": "boi:public:learning-loop",
+            "visibility": "public",
+            "status": "reviewed",
+            "agent_entrypoint_areas": ["learning"],
+        },
+        "검증된 업무 결과와 근거를 다음 업무 맥락에 재사용합니다.",
+    )
+    v2_service.repository.invalidate_source_cache()
+    monkeypatch.setattr(
+        v2_service.knowledge,
+        "query",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "meaningful": True,
+            "nodes": [
+                {"node_id": "boi:public:guide"},
+                {"node_id": "boi:public:related"},
+            ],
+            "edges": [
+                {
+                    "source_id": "boi:public:guide",
+                    "target_id": "boi:public:related",
+                    "relation": "guides",
+                }
+            ],
+        },
+    )
+    v2_service.store.put(
+        "artifacts",
+        "artifact_recent_starter",
+        {
+            "artifact_id": "artifact_recent_starter",
+            "employee_id": principal.employee_id,
+            "artifact_type": "knowledge_candidate",
+            "title": "최근 검토 결과",
+        },
+    )
+    v2_service.store.put(
+        "work_sessions",
+        "session_recent_starter",
+        {
+            "session_id": "session_recent_starter",
+            "employee_id": principal.employee_id,
+            "active_artifact_id": "artifact_recent_starter",
+        },
+    )
+
+    starters = v2_service.starter_suggestions(
+        principal,
+        page_ref="/docs/boi%3Apublic%3Aguide",
+        limit=18,
+    )
+    offered_result_kinds = {item.result_kind for item in starters}
+
+    assert {"explorer", "table", "timeline"}.issubset(offered_result_kinds)
+    assert any(item.area == "learning" and item.result_kind == "work_form" for item in starters)
+    assert any(item.area == "learning" and item.result_kind == "timeline" for item in starters)
+
+
 def test_runtime_work_is_compiled_into_person_responsibility_graph(
     v2_service: AgentV2Service,
     principal: Principal,

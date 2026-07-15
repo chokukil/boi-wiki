@@ -652,7 +652,11 @@ class AgentV2Service:
                     )
                 except Exception:
                     graph_result = {}
-                if not graph_result.get("edges"):
+                if not (
+                    graph_result.get("ok")
+                    and graph_result.get("meaningful")
+                    and graph_result.get("edges")
+                ):
                     if not offer.fallback_to_answer:
                         return
                     result_kind = "answer"
