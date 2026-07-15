@@ -12,11 +12,18 @@ def _flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def deep_subagent_budget_limit(token_budget: int, max_input_tokens: int, *, hard_limit: int = 4) -> int:
-    """Reserve one parent and one review window, then budget isolated work windows."""
+def deep_subagent_budget_limit(
+    token_budget: int,
+    max_input_tokens: int,
+    *,
+    hard_limit: int = 4,
+    min_window_tokens: int = 16_000,
+) -> int:
+    """Reserve parent/review windows without treating provider capacity as mandatory spend."""
     if token_budget <= 0 or max_input_tokens <= 0:
         return 0
-    available = token_budget // max_input_tokens - 2
+    planning_window = min(max_input_tokens, max(4_000, int(min_window_tokens)))
+    available = token_budget // planning_window - 2
     return max(0, min(int(hard_limit), available))
 
 
@@ -49,7 +56,9 @@ class AgentV2Settings:
     model_context_window_tokens: int
     model_context_fallback_tokens: int
     model_context_reserve_tokens: int
+    retrieval_candidate_limit: int
     deep_max_input_tokens: int
+    deep_min_window_tokens: int
     model_route: str
     gpt55_test_mode: bool
     lmstudio_require_preloaded_models: bool
@@ -167,9 +176,17 @@ class AgentV2Settings:
                 2_048,
                 min(int(os.getenv("BOI_V2_MODEL_CONTEXT_RESERVE", "8192") or "8192"), 131_072),
             ),
+            retrieval_candidate_limit=max(
+                12,
+                min(int(os.getenv("BOI_AGENT_V2_RETRIEVAL_CANDIDATE_LIMIT", "48") or "48"), 500),
+            ),
             deep_max_input_tokens=max(
-                4096,
-                min(int(os.getenv("BOI_DEEPAGENTS_MAX_INPUT_TOKENS", "40000") or "40000"), 131072),
+                0,
+                min(int(os.getenv("BOI_DEEPAGENTS_MAX_INPUT_TOKENS", "0") or "0"), 2_000_000),
+            ),
+            deep_min_window_tokens=max(
+                4_000,
+                min(int(os.getenv("BOI_DEEPAGENTS_MIN_WINDOW_TOKENS", "16000") or "16000"), 262_144),
             ),
             model_route=model_route,
             gpt55_test_mode=gpt55_test_mode,
@@ -184,9 +201,9 @@ class AgentV2Settings:
             ),
             pat_hash_secret=(os.getenv("BOI_PAT_HASH_SECRET") or os.getenv("BOI_SESSION_SECRET") or "").strip(),
             offer_ttl_seconds=max(60, int(os.getenv("BOI_AGENT_V2_OFFER_TTL_SECONDS", "900") or "900")),
-            response_budget_bytes=max(4096, int(os.getenv("BOI_AGENT_V2_RESPONSE_BUDGET_BYTES", "32768") or "32768")),
-            run_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_RUN_TOKEN_BUDGET", "1000000") or "1000000")),
-            deep_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_DEEP_TOKEN_BUDGET", "160000") or "160000")),
+            response_budget_bytes=max(4096, int(os.getenv("BOI_AGENT_V2_RESPONSE_BUDGET_BYTES", "262144") or "262144")),
+            run_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_RUN_TOKEN_BUDGET", "4000000") or "4000000")),
+            deep_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_DEEP_TOKEN_BUDGET", "1000000") or "1000000")),
             independent_review=_flag("BOI_AGENT_V2_INDEPENDENT_REVIEW", True),
             claim_grounding_enabled=_flag("BOI_AGENT_CLAIM_GROUNDING_ENABLED", True),
             minio_endpoint=(os.getenv("BOI_DATALAKE_MINIO_ENDPOINT") or "").strip(),

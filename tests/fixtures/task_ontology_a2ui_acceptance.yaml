@@ -65,7 +65,7 @@ groups:
     - {id: loop_no_progress_stop, contract: first_no_progress_requires_strategy_change_and_second_stops, handler: "tests/test_agent_v2.py::test_work_loop_requires_a_strategy_change_then_stops_on_repeated_no_progress"}
     - {id: loop_durable_resume, contract: transient_failure_checkpoints_verify_and_reflect_before_resume, handler: "tests/test_agent_v2.py::test_transient_loop_failure_is_durable_retryable_and_idempotently_resumable"}
     - {id: loop_idempotent_replay, contract: replayed_external_result_is_applied_once_per_idempotency_key, handler: "tests/test_agent_v2.py::test_transient_loop_failure_is_durable_retryable_and_idempotently_resumable"}
-    - {id: context_budget_degradation, contract: context_budget_drops_lower_priority_items_without_exceeding_provider_capacity, handler: "tests/test_agent_v2.py::test_context_manifest_tracks_item_budget_use_and_outcome_contribution"}
+    - {id: context_full_capacity_preservation, contract: provider_capacity_preserves_complete_ranked_evidence_without_lossy_compaction, handler: "tests/test_agent_v2.py::test_context_manifest_tracks_item_budget_use_and_outcome_contribution"}
     - {id: context_outcome_attribution, contract: only_evidence_contributing_to_the_outcome_is_marked_used, handler: "tests/test_agent_v2.py::test_context_manifest_tracks_item_budget_use_and_outcome_contribution"}
     - {id: harness_immutable_surface, contract: acl_schema_confirmation_and_verifier_boundaries_are_not_candidate_changes, handler: "tests/test_agent_v2.py::test_harness_candidate_cannot_change_immutable_safety_boundaries"}
   integration_completion:

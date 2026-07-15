@@ -2599,7 +2599,7 @@ def test_context_budget_uses_runtime_capacity_without_model_name_rules():
     )
     local_resolution = resolve_context_budget(
         local,
-        requested_tokens=96_000,
+        requested_tokens=0,
         residency_state={"generation_context_window": 51_200},
     )
 
@@ -2610,13 +2610,17 @@ def test_context_budget_uses_runtime_capacity_without_model_name_rules():
         model_context_window_tokens=262_144,
     )
     managed_profile = inspect_model_runtime_profile(managed)
-    managed_resolution = resolve_context_budget(managed, requested_tokens=160_000)
+    managed_resolution = resolve_context_budget(managed, requested_tokens=0)
+    explicitly_bounded = resolve_context_budget(managed, requested_tokens=160_000)
 
     assert local_resolution.effective_tokens == 34_816
+    assert local_resolution.requested_tokens == 0
     assert local_resolution.profile_source == "provider_runtime"
     assert managed_profile.context_window_tokens == 262_144
     assert managed_profile.source == "deployment_config"
-    assert managed_resolution.effective_tokens == 160_000
+    assert managed_resolution.effective_tokens == 245_760
+    assert managed_resolution.requested_tokens == 0
+    assert explicitly_bounded.effective_tokens == 160_000
 
 
 def test_normal_runtime_does_not_inherit_openai_credentials(monkeypatch: pytest.MonkeyPatch):
@@ -5671,6 +5675,122 @@ def test_session_followup_context_keeps_only_verified_claims_and_used_citations(
     assert context["topic_state"]["used_source_refs"] == first.used_source_refs
 
 
+def test_session_context_preserves_complete_turns_and_evidence(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    session = v2_service.create_work_session(
+        principal,
+        WorkSessionCreateRequest(title="원문 보존 대화"),
+    )
+    full_answer = "검증된 업무 설명\n" + ("완전한 문맥을 보존합니다. " * 700)
+    evidence = [
+        EvidenceRef(
+            evidence_id=f"boi:public:evidence:{index}",
+            kind="document",
+            title=f"근거 {index}",
+            summary=f"근거 {index}의 전체 요약 " + ("내용 " * 80),
+            url=f"/docs/boi:public:evidence:{index}",
+        )
+        for index in range(20)
+    ]
+    v2_service._append_session_message(
+        principal,
+        str(session["session_id"]),
+        role="assistant",
+        display_text=full_answer,
+        evidence_refs=evidence,
+        used_source_refs=[item.evidence_id for item in evidence],
+    )
+
+    context = v2_service._session_context(principal, session)
+
+    assert context["recent_messages"][0]["text"] == full_answer
+    assert context["recent_messages"][0]["source_refs"] == [
+        item.evidence_id for item in evidence
+    ]
+    assert context["recent_source_refs"] == [item.evidence_id for item in evidence]
+
+
+def test_planner_payload_uses_complete_turns_and_ranked_chunks_within_provider_capacity(
+    v2_service: AgentV2Service,
+):
+    conversation_turns = [
+        {"role": "user", "text": "이전 질문 " + ("원문 " * 900), "source_refs": []},
+        {
+            "role": "assistant",
+            "text": "이전 답변 " + ("검증 내용 " * 900),
+            "source_refs": ["boi:public:source:0"],
+            "grounded_claims": [],
+        },
+    ]
+    hints = [
+        {
+            "ref": f"boi:public:source:{index}",
+            "title": f"정본 {index}",
+            "kind": "document",
+            "summary": f"정본 {index} 요약 " + ("설명 " * 100),
+            "answer_scope": "canonical",
+            "chunk_id": f"chunk-{index}",
+            "chunk_text": f"chunk-{index} 전체 본문 " + ("근거 문장 " * 250),
+        }
+        for index in range(20)
+    ]
+
+    payload = v2_service.quick_agent._planner_payload(
+        {
+            "question": "후속 질문",
+            "conversation_context": {
+                "recent_messages": conversation_turns,
+                "topic_state": {},
+                "recent_source_refs": [],
+            },
+            "knowledge_hints": hints,
+            "context_token_budget": 200_000,
+        }
+    )
+
+    assert payload["conversation_turns"] == conversation_turns
+    assert len(payload["internal_wiki_hints"]) == len(hints)
+    assert payload["internal_wiki_hints"][-1]["chunk_text"] == hints[-1]["chunk_text"]
+
+
+def test_planner_payload_excludes_an_oversized_turn_instead_of_truncating_it(
+    v2_service: AgentV2Service,
+):
+    oversized_turn = {
+        "role": "assistant",
+        "text": "절대 일부만 전달하지 않습니다. " * 20_000,
+        "source_refs": ["boi:public:prior"],
+        "grounded_claims": [],
+    }
+    hint = {
+        "ref": "boi:public:current",
+        "title": "현재 질문 정본",
+        "kind": "document",
+        "summary": "현재 질문을 직접 설명합니다.",
+        "answer_scope": "canonical",
+        "chunk_id": "chunk-current",
+        "chunk_text": "현재 질문을 직접 뒷받침하는 완전한 근거 문장입니다.",
+    }
+
+    payload = v2_service.quick_agent._planner_payload(
+        {
+            "question": "현재 질문",
+            "conversation_context": {
+                "recent_messages": [oversized_turn],
+                "topic_state": {},
+                "recent_source_refs": [],
+            },
+            "knowledge_hints": [hint],
+            "context_token_budget": 60_000,
+        }
+    )
+
+    assert payload["conversation_turns"] == []
+    assert payload["internal_wiki_hints"][0]["chunk_text"] == hint["chunk_text"]
+
+
 def test_claim_chunk_mismatch_is_insufficient_even_when_the_source_was_retrieved(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -7322,9 +7442,10 @@ def test_deep_job_pilot_clamps_isolated_subagents_and_parallelism(
     )
     expanded_job = v2_service.get_job(principal, expanded["job_id"])
 
-    assert expanded_job["subagent_budget_limit"] == 2
-    assert expanded_job["max_subagents"] == 2
-    assert expanded_job["max_parallelism"] == 2
+    assert expanded_job["subagent_budget_limit"] == 4
+    assert expanded_job["max_subagents"] == 4
+    assert expanded_job["max_parallelism"] == 4
+    assert expanded_job["max_input_tokens"] == 160000 // 6
     assert expanded_job["subagent_policy"] == "enabled"
     assert expanded_job["require_subagent"] is True
 
@@ -9307,7 +9428,7 @@ def test_context_manifest_tracks_item_budget_use_and_outcome_contribution(
     context = v2_service.learning.contexts.compile(
         principal=principal,
         definition=v2_service.registry.get("knowledge.search"),
-        goal="제한된 문맥 예산에서 직접 근거를 설명한다",
+        goal="가용 문맥 전체에서 직접 근거를 설명한다",
         page_ref="",
         task_ref="",
         task_mode=TaskMode.copilot,
@@ -9315,20 +9436,25 @@ def test_context_manifest_tracks_item_budget_use_and_outcome_contribution(
         evidence=evidence,
         session={},
         source_set={},
-        external_ai_summary="",
-        external_refs=[],
-        context_token_budget=1_000,
+        external_ai_summary="검토자가 남긴 요약을 원형 그대로 유지합니다.",
+        external_refs=["artifact:complete-source-reference"],
+        context_token_budget=50_000,
     )
     v2_service.store.put("contexts", context.context_id, context.model_dump(mode="json"))
 
     assert context.context_manifest is not None
     assert context.context_manifest.token_cost_total <= context.context_manifest.token_budget
-    assert context.context_manifest.items[0].selected is True
-    assert any(not item.selected for item in context.context_manifest.items[1:])
+    assert all(item.selected for item in context.context_manifest.items)
+    assert context.context_manifest.selected_refs == [item.evidence_id for item in evidence]
+    assert "compress" not in context.context_manifest.policies
+    assert context.evidence_refs[0].summary == evidence[0].summary
+    assert context.evidence_refs[0].metadata["best_chunk"]["text"] == evidence[0].metadata["best_chunk"]["text"]
+    assert context.external_ai_summary == "검토자가 남긴 요약을 원형 그대로 유지합니다."
+    assert context.context_manifest.external_refs == ["artifact:complete-source-reference"]
 
     intent = WorkIntent(
-        goal="제한된 문맥 예산에서 직접 근거를 설명한다",
-        resolved_goal="제한된 문맥 예산에서 직접 근거를 설명한다",
+        goal="가용 문맥 전체에서 직접 근거를 설명한다",
+        resolved_goal="가용 문맥 전체에서 직접 근거를 설명한다",
         operation=WorkOperation.understand,
         harness_ids=["context.work"],
     )
@@ -9363,6 +9489,59 @@ def test_context_manifest_tracks_item_budget_use_and_outcome_contribution(
     assert stored_run["context_usage"]["used_item_count"] == 1
     assert first_item.used is True
     assert first_item.outcome_contribution == "answer"
+
+
+def test_context_capacity_excludes_whole_ranked_items_without_lossy_truncation(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    compact_evidence = EvidenceRef(
+        evidence_id="boi:public:capacity-small",
+        kind="boi",
+        title="짧은 직접 근거",
+        summary="짧은 근거 본문 " * 30,
+        source="wiki",
+        authority="reviewed",
+        metadata={"best_chunk": {"chunk_id": "chunk-small", "text": "확인 내용 " * 30}},
+    )
+    large_summary = "손실 없이 보존해야 하는 긴 근거 " * 900
+    large_chunk = "원문 chunk 전체를 보존합니다 " * 900
+    large_evidence = EvidenceRef(
+        evidence_id="boi:public:capacity-large",
+        kind="boi",
+        title="긴 직접 근거",
+        summary=large_summary,
+        source="wiki",
+        authority="reviewed",
+        metadata={"best_chunk": {"chunk_id": "chunk-large", "text": large_chunk}},
+    )
+
+    context = v2_service.learning.contexts.compile(
+        principal=principal,
+        definition=v2_service.registry.get("knowledge.search"),
+        goal="provider 물리 용량 안에서 근거를 선택한다",
+        page_ref="",
+        task_ref="",
+        task_mode=TaskMode.copilot,
+        task={},
+        evidence=[compact_evidence, large_evidence],
+        session={},
+        source_set={},
+        external_ai_summary="",
+        external_refs=[],
+        context_token_budget=1_000,
+    )
+
+    assert [item.evidence_id for item in context.evidence_refs] == [compact_evidence.evidence_id]
+    assert context.evidence_refs[0].summary == compact_evidence.summary
+    assert context.context_manifest is not None
+    excluded = next(
+        item for item in context.context_manifest.items if item.item_ref == large_evidence.evidence_id
+    )
+    assert excluded.selected is False
+    assert excluded.selection_reason == "provider_context_capacity"
+    assert large_evidence.summary == large_summary
+    assert large_evidence.metadata["best_chunk"]["text"] == large_chunk
 
 
 def test_team_playbook_is_not_injected_before_review(

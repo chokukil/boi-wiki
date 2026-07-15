@@ -31,6 +31,7 @@ class QuickAgentState(TypedDict, total=False):
     conversation_summary: str
     conversation_context: dict[str, Any]
     knowledge_hints: list[dict[str, Any]]
+    context_token_budget: int
     trusted_targets: dict[str, str]
     selected_subject_refs: list[str]
     requested_user_effect: str
@@ -112,15 +113,15 @@ class QuickAgentRuntime:
             "type": "object",
             "required": ["summary", "summary_source_refs", "claims", "outcomes", "related_questions"],
             "properties": {
-                "summary": {"type": "string", "maxLength": 420},
+                "summary": {"type": "string", "maxLength": 1600},
                 "summary_source_refs": {
                     "type": "array",
-                    "maxItems": 4,
+                    "maxItems": 12,
                     "items": {"type": "string"},
                 },
                 "claims": {
                     "type": "array",
-                    "maxItems": 4,
+                    "maxItems": 12,
                     "items": {
                         "type": "object",
                         "required": [
@@ -134,7 +135,7 @@ class QuickAgentRuntime:
                         ],
                         "properties": {
                             "claim_id": {"type": "string", "maxLength": 80},
-                            "text": {"type": "string", "maxLength": 420},
+                            "text": {"type": "string", "maxLength": 1600},
                             "claim_kind": {
                                 "type": "string",
                                 "enum": ["definition", "fact", "procedure", "comparison", "relationship", "work"],
@@ -146,13 +147,13 @@ class QuickAgentRuntime:
                             "source_refs": {
                                 "type": "array",
                                 "minItems": 1,
-                                "maxItems": 4,
+                                "maxItems": 12,
                                 "items": {"type": "string"},
                             },
                             "supporting_chunk_ids": {
                                 "type": "array",
                                 "minItems": 1,
-                                "maxItems": 8,
+                                "maxItems": 24,
                                 "items": {"type": "string"},
                             },
                             "required_for_answer": {"type": "boolean"},
@@ -161,21 +162,21 @@ class QuickAgentRuntime:
                 },
                 "outcomes": {
                     "type": "array",
-                    "maxItems": 1,
+                    "maxItems": 4,
                     "items": {
                         "type": "object",
                         "properties": {
-                            "title": {"type": "string", "maxLength": 90},
+                            "title": {"type": "string", "maxLength": 160},
                             "items": {
                                 "type": "array",
-                                "maxItems": 3,
+                                "maxItems": 8,
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "text": {"type": "string", "maxLength": 300},
+                                        "text": {"type": "string", "maxLength": 800},
                                         "source_refs": {
                                             "type": "array",
-                                            "maxItems": 4,
+                                            "maxItems": 12,
                                             "items": {"type": "string"},
                                         },
                                     },
@@ -186,16 +187,16 @@ class QuickAgentRuntime:
                 },
                 "related_questions": {
                     "type": "array",
-                    "maxItems": 1,
+                    "maxItems": 3,
                     "items": {
                         "type": "object",
                         "properties": {
                             "kind": {"type": "string", "enum": ["understand", "connect", "apply"]},
-                            "label": {"type": "string", "maxLength": 120},
-                            "question": {"type": "string", "maxLength": 600},
+                            "label": {"type": "string", "maxLength": 160},
+                            "question": {"type": "string", "maxLength": 1000},
                             "source_refs": {
                                 "type": "array",
-                                "maxItems": 4,
+                                "maxItems": 12,
                                 "items": {"type": "string"},
                             },
                         },
@@ -244,7 +245,7 @@ class QuickAgentRuntime:
         if state.get("task_ref"):
             values.append(str(state["task_ref"]))
         values.extend(str(item) for item in (state.get("trusted_targets") or {}).values() if str(item).strip())
-        return list(dict.fromkeys(item for item in values if item))[:40]
+        return list(dict.fromkeys(item for item in values if item))[:500]
 
     @staticmethod
     def _prior_entities(state: QuickAgentState) -> list[str]:
@@ -382,7 +383,9 @@ class QuickAgentRuntime:
             "Event, Action, graph, or follow-up action. semantic_plan is the sole meaning contract; grounded_answer "
             "may express factual claims but must not change the selected meaning. Select loop_contract only from the "
             "capability contract. Use turn for one bounded response and goal only when the catalog supplies verifiable "
-            "exit criteria. Do not create time or proactive loops from ordinary chat."
+            "exit criteria. Do not create time or proactive loops from ordinary chat. Use conversation_turns to resolve "
+            "discourse and follow-up references, but inherit factual content only from supported grounded_claims and "
+            "verified_topic_state."
         )
         if repair:
             return base + (
@@ -461,12 +464,88 @@ class QuickAgentRuntime:
         invalid_output: dict[str, Any] | None = None,
         validation_issues: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        hints = [item for item in (state.get("knowledge_hints") or [])[:8] if isinstance(item, dict)]
+        hints = [item for item in (state.get("knowledge_hints") or []) if isinstance(item, dict)]
+        conversation = state.get("conversation_context") or {}
+        conversation_turns = [
+            item
+            for item in (
+                conversation.get("recent_messages")
+                if isinstance(conversation, dict)
+                else []
+            ) or []
+            if isinstance(item, dict)
+        ]
+        context_token_budget = max(0, int(state.get("context_token_budget") or 0))
+        if context_token_budget:
+            fixed_payload = {
+                "request": state.get("question") or "",
+                "current_page": {
+                    "kind": state.get("page_kind") or "library",
+                    "ref": state.get("page_ref") or "",
+                    "title": state.get("page_title") or "",
+                },
+                "active_work": {
+                    "capability_id": state.get("active_capability") or "",
+                    "title": state.get("active_artifact_title") or "",
+                    "task_ref": state.get("task_ref") or "",
+                    "work_run": state.get("active_work_run") or {},
+                },
+                "verified_topic_state": conversation.get("topic_state") or {},
+                "trusted_context_refs": self._trusted_refs(state),
+                "trusted_entities": dict(state.get("trusted_targets") or {}),
+                "capability_catalog": self._capability_catalog(),
+                "invalid_output": invalid_output or {},
+                "validation_issues": validation_issues or [],
+            }
+            fixed_text = json.dumps(
+                {
+                    "system": self._planner_system(repair=bool(invalid_output or validation_issues)),
+                    "schema": self._planner_schema(),
+                    "payload": fixed_payload,
+                },
+                ensure_ascii=False,
+                default=str,
+            )
+            remaining_tokens = max(
+                0,
+                context_token_budget - (len(fixed_text.encode("utf-8")) + 3) // 4,
+            )
+
+            def item_tokens(item: Any) -> int:
+                return max(
+                    1,
+                    (len(json.dumps(item, ensure_ascii=False, default=str).encode("utf-8")) + 3) // 4,
+                )
+
+            selected_turns: list[dict[str, Any]] = []
+            latest_turns = conversation_turns[-2:]
+            for item in latest_turns:
+                cost = item_tokens(item)
+                if cost <= remaining_tokens:
+                    selected_turns.append(item)
+                    remaining_tokens -= cost
+
+            selected_hints: list[dict[str, Any]] = []
+            for item in hints:
+                cost = item_tokens(item)
+                if cost > remaining_tokens:
+                    continue
+                selected_hints.append(item)
+                remaining_tokens -= cost
+
+            older_selected: list[dict[str, Any]] = []
+            for item in reversed(conversation_turns[:-2]):
+                cost = item_tokens(item)
+                if cost > remaining_tokens:
+                    continue
+                older_selected.append(item)
+                remaining_tokens -= cost
+            conversation_turns = [*reversed(older_selected), *selected_turns]
+            hints = selected_hints
         planner_hints = [
             {**item, "source_key": f"S{index}", "chunk_key": f"C{index}"}
             for index, item in enumerate(hints, start=1)
         ]
-        conversation = state.get("conversation_context") or {}
         return {
             "request": state.get("question") or "",
             "current_page": {
@@ -481,7 +560,7 @@ class QuickAgentRuntime:
                 "work_run": state.get("active_work_run") or {},
             },
             "verified_topic_state": conversation.get("topic_state") if isinstance(conversation, dict) else {},
-            "recent_verified_claims": conversation.get("recent_claims") if isinstance(conversation, dict) else [],
+            "conversation_turns": conversation_turns,
             "trusted_context_refs": self._trusted_refs(state),
             "trusted_entities": dict(state.get("trusted_targets") or {}),
             "verified_command_constraints": {
@@ -557,8 +636,8 @@ class QuickAgentRuntime:
         for raw_claim in raw.get("claims") or []:
             if not isinstance(raw_claim, dict):
                 continue
-            refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_claim.get("source_refs") or []))))[:4]
-            chunks = list(dict.fromkeys(filter(None, (chunk_ref(item) for item in raw_claim.get("supporting_chunk_ids") or []))))[:8]
+            refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_claim.get("source_refs") or []))))[:12]
+            chunks = list(dict.fromkeys(filter(None, (chunk_ref(item) for item in raw_claim.get("supporting_chunk_ids") or []))))[:24]
             chunk_sources = {
                 str((by_chunk.get(chunk) or {}).get("ref") or "")
                 for chunk in chunks
@@ -601,7 +680,7 @@ class QuickAgentRuntime:
                     )
 
         summary = str(raw.get("summary") or "").strip()
-        summary_refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw.get("summary_source_refs") or []))))[:4]
+        summary_refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw.get("summary_source_refs") or []))))[:12]
         accepted_claim_refs = {
             str(ref)
             for claim in claims
@@ -618,7 +697,7 @@ class QuickAgentRuntime:
                 return (
                     {
                         "answer_intent": plan.answer_intent,
-                        "summary": summary[:420],
+                        "summary": summary[:1600],
                         "summary_source_refs": summary_refs,
                         "claims": [*claims, *unsupported_claims],
                         "outcomes": [],
@@ -633,29 +712,29 @@ class QuickAgentRuntime:
             return None, {"accepted": False, "accepted_claims": len(claims), "rejected_claims": rejected}
 
         outcomes: list[dict[str, Any]] = []
-        for outcome in (raw.get("outcomes") or [])[:1]:
+        for outcome in (raw.get("outcomes") or [])[:4]:
             if not isinstance(outcome, dict):
                 continue
             items = []
-            for raw_item in (outcome.get("items") or [])[:3]:
+            for raw_item in (outcome.get("items") or [])[:8]:
                 if not isinstance(raw_item, dict):
                     continue
-                refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_item.get("source_refs") or []))))[:4]
+                refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_item.get("source_refs") or []))))[:12]
                 if (
                     refs
                     and set(refs).issubset(accepted_claim_refs)
                     and refs_match_plan_scope(refs)
                     and str(raw_item.get("text") or "").strip()
                 ):
-                    items.append({"text": str(raw_item["text"])[:300], "source_refs": refs})
+                    items.append({"text": str(raw_item["text"])[:800], "source_refs": refs})
             if items and str(outcome.get("title") or "").strip():
-                outcomes.append({"title": str(outcome["title"])[:90], "items": items})
+                outcomes.append({"title": str(outcome["title"])[:160], "items": items})
 
         related = []
-        for item in (raw.get("related_questions") or [])[:1]:
+        for item in (raw.get("related_questions") or [])[:3]:
             if not isinstance(item, dict):
                 continue
-            refs = list(dict.fromkeys(filter(None, (source_ref(ref) for ref in item.get("source_refs") or []))))[:4]
+            refs = list(dict.fromkeys(filter(None, (source_ref(ref) for ref in item.get("source_refs") or []))))[:12]
             if (
                 refs
                 and set(refs).issubset(accepted_claim_refs)
@@ -667,15 +746,15 @@ class QuickAgentRuntime:
                 related.append(
                     {
                         "kind": item["kind"],
-                        "label": str(item["label"])[:120],
-                        "question": str(item["question"])[:600],
+                        "label": str(item["label"])[:160],
+                        "question": str(item["question"])[:1000],
                         "source_refs": refs,
                     }
                 )
         return (
             {
                 "answer_intent": plan.answer_intent,
-                "summary": summary[:420],
+                "summary": summary[:1600],
                 "summary_source_refs": summary_refs,
                 "claims": claims,
                 "outcomes": outcomes,
@@ -748,7 +827,7 @@ class QuickAgentRuntime:
             prior_topic_entities=self._prior_entities(state),
             active_work_run=bool(state.get("active_work_run")),
         )
-        hints = [item for item in (state.get("knowledge_hints") or [])[:8] if isinstance(item, dict)]
+        hints = [item for item in (state.get("knowledge_hints") or []) if isinstance(item, dict)]
         grounded_answer, diagnostics = self._resolve_grounded_answer(envelope, plan, hints)
         continuation = plan.continuation.model_dump(mode="json")
         return {
@@ -788,6 +867,7 @@ class QuickAgentRuntime:
         requested_result_kind: str = "",
         requested_graph_query_kind: str = "",
         requested_work_view: str = "",
+        context_token_budget: int = 0,
         model: Any = None,
     ) -> dict[str, Any]:
         result = self._graph.invoke(
@@ -804,7 +884,8 @@ class QuickAgentRuntime:
                 "task_ref": task_ref,
                 "conversation_summary": conversation_summary,
                 "conversation_context": dict(conversation_context or {}),
-                "knowledge_hints": list(knowledge_hints or [])[:8],
+                "knowledge_hints": list(knowledge_hints or []),
+                "context_token_budget": max(0, int(context_token_budget or 0)),
                 "trusted_targets": dict(trusted_targets or {}),
                 "selected_subject_refs": list(selected_subject_refs or [])[:20],
                 "requested_user_effect": requested_user_effect,

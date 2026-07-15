@@ -10,7 +10,7 @@ loop_contract_templates:
     max_tool_loops: 1
     max_model_calls: 2
     max_elapsed_seconds: 30
-    max_context_tokens: 48000
+    max_context_tokens: 0
     max_runs: 1
     exit_criteria_refs: []
     progress_policy: structured_delta
@@ -25,7 +25,7 @@ loop_contract_templates:
     max_tool_loops: 5
     max_model_calls: 5
     max_elapsed_seconds: 120
-    max_context_tokens: 96000
+    max_context_tokens: 0
     max_runs: 1
     exit_criteria_refs: []
     progress_policy: structured_delta
@@ -40,7 +40,7 @@ loop_contract_templates:
     max_tool_loops: 5
     max_model_calls: 5
     max_elapsed_seconds: 600
-    max_context_tokens: 160000
+    max_context_tokens: 0
     max_runs: 1
     exit_criteria_refs: []
     progress_policy: structured_delta

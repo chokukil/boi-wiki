@@ -65,7 +65,7 @@ def _estimate_tokens(value: Any) -> int:
     if not value:
         return 0
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    return max(1, math.ceil(len(text) / 4))
+    return max(1, math.ceil(len(text.encode("utf-8")) / 4))
 
 
 def begin_model_usage(
@@ -468,10 +468,11 @@ def resolve_context_budget(
         1_000,
         profile.context_window_tokens - profile.max_output_tokens - reserved,
     )
-    requested = max(1_000, int(requested_tokens))
+    requested = max(0, int(requested_tokens))
+    effective = usable if requested == 0 else min(requested, usable)
     return ContextBudgetResolution(
         requested_tokens=requested,
-        effective_tokens=min(requested, usable),
+        effective_tokens=effective,
         context_window_tokens=profile.context_window_tokens,
         reserved_tokens=reserved,
         max_output_tokens=profile.max_output_tokens,

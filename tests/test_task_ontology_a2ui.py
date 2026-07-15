@@ -45,7 +45,7 @@ def _create_task(boi_app_module, request_id: str, *, employee_id: str = "100001"
     )
 
 
-def test_acceptance_fixture_has_decision_complete_62_scenario_matrix():
+def test_acceptance_fixture_has_decision_complete_78_scenario_matrix():
     payload = yaml.safe_load((ROOT / "tests/fixtures/task_ontology_a2ui_acceptance.yaml").read_text(encoding="utf-8"))
     groups = payload["groups"]
     assert {key: len(value) for key, value in groups.items()} == {
@@ -54,11 +54,12 @@ def test_acceptance_fixture_has_decision_complete_62_scenario_matrix():
         "a2ui": 6,
         "learning": 6,
         "harness_improvement": 6,
+        "harness_loop_research": 16,
         "integration_completion": 12,
         "reliability": 12,
     }
     scenario_ids = [item["id"] for items in groups.values() for item in items]
-    assert len(scenario_ids) == len(set(scenario_ids)) == 62
+    assert len(scenario_ids) == len(set(scenario_ids)) == 78
     assert all(item.get("handler", "").startswith("tests/") for items in groups.values() for item in items)
     assert len(payload["multiturn"]) >= 6
     assert all(len(item["turns"]) >= 2 for item in payload["multiturn"])

@@ -1413,17 +1413,12 @@ class AgentV2Service:
         used_source_refs: list[str] | None = None,
     ) -> dict[str, Any]:
         message_id = new_id("msg")
-        limit = 4000 if role == "user" else 8000
         payload = {
             "message_id": message_id,
             "session_id": session_id,
             "employee_id": principal.employee_id,
             "role": role,
-            "display_text": (
-                str(display_text or "")[:limit]
-                if role == "user"
-                else truncate_markdown(str(display_text or ""), limit)
-            ),
+            "display_text": str(display_text or ""),
             "display_html": render_agent_markdown(str(display_text or "")) if role == "assistant" else "",
             "run_id": run_id,
             "capability_id": capability_id,
@@ -1432,17 +1427,17 @@ class AgentV2Service:
                     "evidence_id": item.evidence_id,
                     "kind": item.kind,
                     "title": item.title,
-                    "summary": compact_text(item.summary, 240),
+                    "summary": item.summary,
                     "url": item.url,
                     "source": item.source,
                     "score": item.score,
                 }
-                for item in (evidence_refs or [])[:8]
+                for item in (evidence_refs or [])
             ],
-            "artifact_refs": [item.model_dump(mode="json") for item in (artifact_refs or [])[:3]],
-            "next_actions": [item.model_dump(mode="json") for item in (next_actions or [])[:3]],
-            "citations": [item.model_dump(mode="json") for item in (citations or [])[:8]],
-            "related_questions": [item.model_dump(mode="json") for item in (related_questions or [])[:3]],
+            "artifact_refs": [item.model_dump(mode="json") for item in (artifact_refs or [])],
+            "next_actions": [item.model_dump(mode="json") for item in (next_actions or [])],
+            "citations": [item.model_dump(mode="json") for item in (citations or [])],
+            "related_questions": [item.model_dump(mode="json") for item in (related_questions or [])],
             "goal_plan_ref": goal_plan_ref,
             "source_set_ref": source_set_ref,
             "work_run_id": work_run_id,
@@ -1454,22 +1449,14 @@ class AgentV2Service:
             "topic_state_ref": topic_state_ref,
             "used_source_refs": list(
                 dict.fromkeys(str(item).strip() for item in (used_source_refs or []) if str(item).strip())
-            )[:12],
+            )[:100],
             "created_at": now_iso(),
         }
         return self.store.put("session_messages", message_id, payload)
 
     def _session_context(self, principal: Principal, session: dict[str, Any]) -> dict[str, Any]:
-        timeline = self.session_timeline(principal, str(session["session_id"]), limit=100)["items"]
-        recent = timeline[-6:]
-        older = timeline[:-6]
+        timeline = self.session_timeline(principal, str(session["session_id"]), limit=500)["items"]
         summary = str(session.get("conversation_summary") or "")
-        if older:
-            fragments = [
-                f"{item.get('role')}: {compact_text(str(item.get('display_text') or ''), 220)}"
-                for item in older[-12:]
-            ]
-            summary = compact_text(" ".join([summary, *fragments]), 2000)
         artifact_outline: dict[str, Any] = {}
         artifact_id = str(session.get("active_artifact_id") or "")
         if artifact_id:
@@ -1483,11 +1470,11 @@ class AgentV2Service:
                 "tasks": [
                     {
                         "task_id": item.get("task_id") or "",
-                        "name": compact_text(str(item.get("name") or ""), 120),
-                        "purpose": compact_text(str(item.get("purpose") or ""), 240),
+                        "name": str(item.get("name") or ""),
+                        "purpose": str(item.get("purpose") or ""),
                         "exit_criteria": item.get("exit_criteria") or [],
                     }
-                    for item in (draft.get("tasks") or [])[:20]
+                    for item in (draft.get("tasks") or [])
                     if isinstance(item, dict)
                 ],
             }
@@ -1496,20 +1483,20 @@ class AgentV2Service:
                 [
                     *[
                         str(ref)
-                        for item in recent
+                        for item in timeline
                         for ref in item.get("used_source_refs") or []
                         if str(ref or "").strip()
                     ],
                     *([artifact_id] if artifact_id else []),
                 ]
             )
-        )[:24]
+        )
         return {
             "summary": summary,
             "recent_messages": [
                 {
                     "role": item.get("role"),
-                    "text": compact_text(str(item.get("display_text") or ""), 1000),
+                    "text": str(item.get("display_text") or ""),
                     # Only sources admitted by verified claims or a grounded domain
                     # artifact may cross the turn boundary. Citation presence alone is
                     # not proof that the source supported the answer.
@@ -1519,19 +1506,19 @@ class AgentV2Service:
                             for ref in item.get("used_source_refs") or []
                             if str(ref).strip()
                         )
-                    )[:8],
+                    ),
                     "grounded_claims": [
                         claim
                         for claim in item.get("grounded_claims") or []
                         if isinstance(claim, dict) and claim.get("support_status") == "supported"
-                    ][:8],
+                    ],
                     "artifact_refs": [
                         str(artifact.get("artifact_id") or "")
                         for artifact in item.get("artifact_refs") or []
                         if isinstance(artifact, dict) and artifact.get("artifact_id")
-                    ][:3],
+                    ],
                 }
-                for item in recent
+                for item in timeline
             ],
             "recent_source_refs": recent_source_refs,
             "active_artifact": artifact_outline,
@@ -1640,7 +1627,7 @@ class AgentV2Service:
         context: WorkContextPack,
         selected: list[EvidenceRef],
         *,
-        limit: int = 12,
+        limit: int | None = None,
     ) -> None:
         """Keep late-bound domain evidence inside the original context contract.
 
@@ -1656,7 +1643,9 @@ class AgentV2Service:
                 for item in [*selected, *context.evidence_refs]
                 if item.evidence_id
             }.values()
-        )[:limit]
+        )
+        if limit is not None:
+            merged = merged[:limit]
         context.evidence_refs = merged
         context.evidence_summary = {
             **context.evidence_summary,
@@ -1721,7 +1710,7 @@ class AgentV2Service:
                         evidence_id=ref,
                         kind="note",
                         title=str(artifact.get("title") or "private 지식 노트"),
-                        summary=compact_text(body, 360),
+                        summary=body,
                         url=f"/agent?session={session_id}&artifact={ref}",
                         source="private_note",
                         authority="provisional",
@@ -1729,7 +1718,7 @@ class AgentV2Service:
                     ),
                 )
                 seen.add(ref)
-        return [*priority, *selected][:12]
+        return [*priority, *selected]
 
     def _citations_for_evidence(
         self,
@@ -1739,7 +1728,7 @@ class AgentV2Service:
         evidence: list[EvidenceRef],
     ) -> list[CitationRef]:
         citations: list[CitationRef] = []
-        for item in evidence[:8]:
+        for item in evidence:
             record = self._record_for_ref(principal, item.evidence_id)
             if record:
                 chunk = item.metadata.get("best_chunk") if isinstance(item.metadata.get("best_chunk"), dict) else {}
@@ -1818,11 +1807,11 @@ class AgentV2Service:
         raw_questions: Any,
         citations: list[CitationRef],
     ) -> list[RelatedQuestion]:
-        citation_order = list(citations[:8])
+        citation_order = list(citations)
         if not citation_order or not isinstance(raw_questions, list):
             return []
         recent = {
-            compact_text(str(item.get("display_text") or ""), 300).lower()
+            str(item.get("display_text") or "").strip().lower()
             for item in self.session_timeline(principal, str(session["session_id"]), limit=6).get("items") or []
         }
         has_work_context = bool(
@@ -1837,8 +1826,8 @@ class AgentV2Service:
             kind = str(item.get("kind") or "understand")
             if kind not in {"understand", "connect", "apply"} or (kind == "apply" and not has_work_context):
                 continue
-            label = compact_text(str(item.get("label") or ""), 120)
-            question = compact_text(str(item.get("question") or ""), 600)
+            label = compact_text(str(item.get("label") or ""), 160)
+            question = compact_text(str(item.get("question") or ""), 1000)
             numbers = list(
                 dict.fromkeys(
                     int(number)
@@ -1999,7 +1988,7 @@ class AgentV2Service:
             else:
                 step_status = "pending"
             step["status"] = step_status
-            step["evidence_refs"] = [value.evidence_id for value in evidence[:12]]
+            step["evidence_refs"] = [value.evidence_id for value in evidence]
             step["artifact_refs"] = [value.artifact_id for value in artifacts[:3]]
             steps.append(step)
         statuses = {str(item.get("status") or "pending") for item in steps}
@@ -2530,7 +2519,7 @@ class AgentV2Service:
         task_override: dict[str, Any] | None = None,
         subject_ref: str = "",
         subject_title: str = "",
-        context_token_budget: int = 12_000,
+        context_token_budget: int = 0,
         context_budget_resolution: dict[str, Any] | None = None,
     ) -> WorkContextPack:
         task = normalise_task_completion(
@@ -2561,7 +2550,7 @@ class AgentV2Service:
             {
                 "evidence_count": len(context.evidence_refs),
                 "minio_enabled": bool(self.settings.minio_endpoint),
-                "external_artifact_refs": [compact_text(item, 500) for item in request.external_artifact_refs],
+                "external_artifact_refs": list(request.external_artifact_refs),
                 "source_set_ref": self._source_set_id(str(request.work_session_id or "")) if request.work_session_id else "",
                 "conversation": request.input_delta.get("_work_session_context") or {},
                 "helper_id": request.helper_id or "",
@@ -2628,7 +2617,7 @@ class AgentV2Service:
                     for item in value or []
                     if str(item) in citation_by_source and str(item) in evidence_by_source
                 )
-            )[:4]
+            )[:12]
 
         def clean(value: Any, limit: int) -> str:
             return compact_text(str(value or ""), limit).strip()
@@ -2648,7 +2637,7 @@ class AgentV2Service:
             # evaluator can establish that every bound chunk entails it.
             return 0.5
 
-        raw_claims = list(raw_answer.get("claims") or [])[:8]
+        raw_claims = list(raw_answer.get("claims") or [])[:12]
         if not raw_claims and not include_report:
             raw_claims = [
                 {
@@ -2664,9 +2653,9 @@ class AgentV2Service:
         for index, raw_claim in enumerate(raw_claims, start=1):
             if not isinstance(raw_claim, dict):
                 continue
-            text = clean(raw_claim.get("text"), 420)
+            text = clean(raw_claim.get("text"), 1600)
             source_refs = refs_for(raw_claim.get("source_refs"))
-            chunk_ids = list(dict.fromkeys(str(item) for item in raw_claim.get("supporting_chunk_ids") or [] if str(item)))[:8]
+            chunk_ids = list(dict.fromkeys(str(item) for item in raw_claim.get("supporting_chunk_ids") or [] if str(item)))[:24]
             claim_kind = str(raw_claim.get("claim_kind") or answer_intent)
             raw_claim_scope = str(raw_claim.get("source_scope") or "canonical")
             expected_scope = intent.answer_source_scope if intent is not None else raw_claim_scope
@@ -2708,7 +2697,7 @@ class AgentV2Service:
             if reviewed_runtime_projection and len(excerpts) == 1:
                 # Runtime records are deterministic read models. Render the
                 # exact bound projection rather than a generated paraphrase.
-                text = compact_text(excerpts[0], 420)
+                text = compact_text(excerpts[0], 1600)
             supported = bool(
                 text
                 and source_refs
@@ -2830,7 +2819,7 @@ class AgentV2Service:
         def cell(value: Any, limit: int) -> str:
             return compact_text(str(value or ""), limit).replace("|", "\\|").replace("\n", " ")
 
-        for citation in citations[:6]:
+        for citation in citations:
             item = evidence_by_ref.get(citation.source_ref)
             if item is None:
                 continue
@@ -4318,7 +4307,7 @@ class AgentV2Service:
                     "task_ref": request.task_ref,
                     "work_session_id": request.work_session_id or "",
                     "draft": copy.deepcopy(draft),
-                    "evidence_refs": [item.model_dump(mode="json") for item in evidence[:12]],
+                    "evidence_refs": [item.model_dump(mode="json") for item in evidence],
                 },
             )
         artifact_type = str(definition.output_schema.get("type") or "draft")
@@ -4469,21 +4458,33 @@ class AgentV2Service:
         requested_tools = int(request.input_delta.get("max_tool_calls") or 5)
         max_tool_calls = max(1, min(requested_tools, 5 if pilot_mode else 12))
         requested_budget = int(request.input_delta.get("token_budget") or self.settings.deep_token_budget)
-        token_budget = max(4000, min(requested_budget, 160000 if pilot_mode else 200000))
+        token_budget = max(4000, min(requested_budget, self.settings.deep_token_budget))
+        deep_context_budget = resolve_context_budget(
+            self.settings,
+            requested_tokens=self.settings.deep_max_input_tokens,
+            residency_state=self.model_residency,
+        ).effective_tokens
         requested_subagents = int(request.input_delta.get("max_subagents") if request.input_delta.get("max_subagents") is not None else 2)
         subagent_budget_limit = deep_subagent_budget_limit(
             token_budget,
-            self.settings.deep_max_input_tokens,
+            deep_context_budget,
             hard_limit=2 if pilot_mode else 4,
+            min_window_tokens=self.settings.deep_min_window_tokens,
         )
         max_subagents = max(0, min(requested_subagents, 2 if pilot_mode else 4, subagent_budget_limit))
+        execution_windows = max_subagents + 2
+        max_input_tokens = min(
+            deep_context_budget,
+            max(1_000, token_budget // execution_windows),
+        )
         require_subagent = bool(request.input_delta.get("require_subagent", False))
         if require_subagent and max_subagents < 1:
+            minimum_window = min(deep_context_budget, self.settings.deep_min_window_tokens)
             raise HTTPException(
                 status_code=422,
                 detail=(
                     "격리 검증을 요청하려면 token_budget을 최소 "
-                    f"{self.settings.deep_max_input_tokens * 4}로 늘리고 max_subagents를 1 이상으로 설정해주세요."
+                    f"{minimum_window * 3}로 늘리고 max_subagents를 1 이상으로 설정해주세요."
                 ),
             )
         requested_parallelism = int(request.input_delta.get("max_parallelism") or 2)
@@ -4518,6 +4519,8 @@ class AgentV2Service:
                 ),
                 "require_subagent": require_subagent,
                 "token_budget": token_budget,
+                "provider_context_capacity": deep_context_budget,
+                "max_input_tokens": max_input_tokens,
                 "independent_review_required": True,
                 "timeout_seconds": max(30, min(int(request.input_delta.get("timeout_seconds") or 900), 3600)),
                 "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=max(30, min(int(request.input_delta.get("timeout_seconds") or 900), 3600)))).isoformat(),
@@ -4858,9 +4861,9 @@ class AgentV2Service:
                 "subject": (
                     response.work_intent.topic_subject
                     if response.work_intent and response.work_intent.topic_subject
-                    else response.work_intent.resolved_goal[:200]
+                    else response.work_intent.resolved_goal
                     if response.work_intent
-                    else compact_text(question, 200)
+                    else question
                 ),
                 "entities": list(dict.fromkeys(
                     [
@@ -4872,7 +4875,7 @@ class AgentV2Service:
                         *graph_entities,
                         *([str(session.get("active_artifact_id"))] if session.get("active_artifact_id") else []),
                     ]
-                ))[:12],
+                )),
                 "operation": response.work_intent.operation.value if response.work_intent else "understand",
                 "answer_intent": response.work_intent.answer_intent if response.work_intent else "fact",
                 "answer_source_scope": response.work_intent.answer_source_scope if response.work_intent else "canonical",
@@ -5123,7 +5126,7 @@ class AgentV2Service:
                 answerability=report,
                 citations=[
                     item for item in execution.citations if item.source_ref in used_refs
-                ][:4],
+                ],
                 claim_grounded_response=True,
             )
 
@@ -5466,43 +5469,46 @@ class AgentV2Service:
             "retrieval",
             "Wiki 전체에서 관련 지식과 업무 이력을 찾고 있습니다.",
         )
+        if (
+            self.settings.lmstudio_require_preloaded_models
+            and not int(self.model_residency.get("generation_context_window") or 0)
+        ):
+            self.inspect_model_residency()
+        planner_context_budget = resolve_context_budget(
+            self.settings,
+            requested_tokens=(
+                request.loop_policy.max_context_tokens
+                if request.loop_policy is not None
+                else 0
+            ),
+            residency_state=self.model_residency,
+        )
         try:
             planner_search = self.search.search(
                     planner_retrieval_query,
                     principal,
-                    limit=12,
+                    limit=self.settings.retrieval_candidate_limit,
                     include_history=False,
                     page_ref=request.page_ref,
                     task_ref=request.task_ref,
                     answer_scopes={"canonical", "operational", "validation"},
                     ranking_policy=retrieval_policy,
             )
-            selected_planner_items = list(planner_search.items[:4])
-            operational_item = next(
-                    (
-                        item
-                        for item in planner_search.items
-                        if str(item.metadata.get("answer_scope") or "") == "operational"
-                    ),
-                    None,
-            )
-            if operational_item and all(
-                    item.evidence_id != operational_item.evidence_id for item in selected_planner_items
-            ):
-                selected_planner_items = [*selected_planner_items[:3], operational_item]
+            selected_planner_items = list(planner_search.items)
             planner_hints = [
                     {
                         "ref": item.evidence_id,
                         "title": item.title,
                         "kind": item.kind,
-                        "summary": compact_text(item.summary, 360),
+                        "summary": item.summary,
                         "authority": item.authority,
                         "source": item.source,
                         "answer_scope": str(item.metadata.get("answer_scope") or "canonical"),
                         "chunk_id": str((item.metadata.get("best_chunk") or {}).get("chunk_id") or ""),
-                        "chunk_text": compact_text(
-                            str((item.metadata.get("best_chunk") or {}).get("content") or item.summary),
-                            720,
+                        "chunk_text": str(
+                            (item.metadata.get("best_chunk") or {}).get("content")
+                            or (item.metadata.get("best_chunk") or {}).get("text")
+                            or item.summary
                         ),
                         "is_primary": bool(
                             page_anchor_for_route
@@ -5531,17 +5537,21 @@ class AgentV2Service:
                         "ref": page_item.evidence_id,
                         "title": page_item.title,
                         "kind": page_item.kind,
-                        "summary": compact_text(page_item.summary, 360),
+                        "summary": page_item.summary,
                         "authority": page_item.authority,
                         "source": page_item.source,
                         "answer_scope": str(page_item.metadata.get("answer_scope") or "canonical"),
                         "chunk_id": str(page_chunk.get("chunk_id") or ""),
-                        "chunk_text": compact_text(str(page_chunk.get("content") or page_item.summary), 720),
+                        "chunk_text": str(
+                            page_chunk.get("content")
+                            or page_chunk.get("text")
+                            or page_item.summary
+                        ),
                         "is_primary": True,
                         "from_page_anchor": True,
                     },
                     *planner_hints,
-                ][:6]
+                ]
         planner_hints.sort(key=lambda item: not bool(item.get("is_primary")))
         prior_hints: list[dict[str, Any]] = []
         prior_claim_chunks: dict[str, list[str]] = {}
@@ -5566,7 +5576,7 @@ class AgentV2Service:
             str(item)
             for item in prior_topic_state.get("used_source_refs") or []
             if str(item).strip() and str(item) in prior_claim_chunks
-        ][:4]
+        ]
         for source_ref in prior_citation_refs:
             record = self._record_for_ref(principal, source_ref)
             if not record or self.repository.answer_scope(record) not in {
@@ -5592,18 +5602,16 @@ class AgentV2Service:
                     "ref": evidence_item.evidence_id,
                     "title": evidence_item.title,
                     "kind": evidence_item.kind,
-                    "summary": compact_text(evidence_item.summary, 360),
+                    "summary": evidence_item.summary,
                     "authority": evidence_item.authority,
                     "source": evidence_item.source,
                     "answer_scope": self.repository.answer_scope(record),
                     "chunk_id": str(prior_chunk.get("chunk_id") or ""),
-                    "chunk_text": compact_text(str(prior_chunk.get("content") or evidence_item.summary), 720),
+                    "chunk_text": str(prior_chunk.get("content") or evidence_item.summary),
                     "is_primary": False,
                     "from_previous_answer": True,
                 }
             )
-            if len(prior_hints) >= 2:
-                break
         if prior_hints:
             prior_hint_refs = {str(item.get("ref") or "") for item in prior_hints}
             planner_hints = [
@@ -5613,7 +5621,7 @@ class AgentV2Service:
                     for item in planner_hints
                     if str(item.get("ref") or "") not in prior_hint_refs
                 ),
-            ][:6]
+            ]
 
         mark_stage("retrieval")
         try:
@@ -5674,7 +5682,10 @@ class AgentV2Service:
                 "requested_graph_query_kind": str(request.input_delta.get("_starter_graph_query_kind") or ""),
                 "requested_work_view": str(request.input_delta.get("work_view") or ""),
             }
-            route = self._semantic_route(principal, route_input)
+            route = self._semantic_route(
+                principal,
+                {**route_input, "context_token_budget": planner_context_budget.effective_tokens},
+            )
             capability_id = str(route["capability_id"])
             definition = self.registry.get(capability_id)
             semantic_plan = SemanticPlan.model_validate(route.get("semantic_plan") or {})
@@ -5928,7 +5939,7 @@ class AgentV2Service:
                 search_result = self.search.search(
                     retrieval_query,
                     principal,
-                    limit=12,
+                    limit=self.settings.retrieval_candidate_limit,
                     include_history=include_history,
                     page_ref=request.page_ref,
                     task_ref=request.task_ref,
@@ -5981,14 +5992,14 @@ class AgentV2Service:
             # context so the bounded citation window cannot discard the
             # planner's exact provenance.
             if planned_grounded_refs:
-                evidence = self._prioritize_evidence(evidence, planned_grounded_refs, limit=12)
+                evidence = self._prioritize_evidence(evidence, planned_grounded_refs)
         if preliminary_intent.work_view == "combined":
             evidence = list(
                 {
                     item.evidence_id: item
                     for item in [*evidence, *current_work_evidence]
                 }.values()
-            )[:24]
+            )
         citations = self._citations_for_evidence(
             principal,
             str(session["session_id"]),
@@ -6356,7 +6367,6 @@ class AgentV2Service:
                 resolved_goal,
                 citation_evidence,
             )
-            citations = citations[:8]
             citation_by_ref = {item.source_ref: item for item in citations if item.chunk_id}
             graph_source_ref = graph_evidence[0].evidence_id if graph_evidence else ""
             graph_citation = citation_by_ref.get(graph_source_ref)
@@ -6495,7 +6505,7 @@ class AgentV2Service:
         citations = [item for item in citations if item.source_ref in verified_used_set]
         verified_used_source_refs = list(
             dict.fromkeys(item.source_ref for item in citations if item.source_ref)
-        )[:12]
+        )
 
         if (
             intent.presentation_mode == "table"
@@ -6785,7 +6795,7 @@ class AgentV2Service:
                     for item in response.citations
                     if item.source_ref in verified_source_refs
                 )
-            )[:12]
+            )
 
         response.answer.markdown = re.sub(
             r"\n+###\s*사용한 지식\s*(?:\n[\s\S]*)?$",
@@ -8800,7 +8810,7 @@ class AgentV2Service:
             task_mode=TaskMode.copilot,
             evidence_refs=evidence,
             context_manifest=ContextManifest(
-                selected_refs=[item.evidence_id for item in evidence[:12]],
+                selected_refs=[item.evidence_id for item in evidence],
                 raw_content_in_prompt=False,
             ),
         )
@@ -9132,7 +9142,7 @@ class AgentV2Service:
                 item.capability_id in library_offer_ids for item in home_offers
             ),
             "history_seed_excluded_from_current_work": not bool(current_ids & seed_ids),
-            "bounded_response_budget": self.settings.response_budget_bytes <= 32768,
+            "bounded_response_budget": self.settings.response_budget_bytes <= 262144,
             "pat_available": bool(readiness["dependencies"]["pat"]),
         }
         full_checks = {

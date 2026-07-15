@@ -62,7 +62,7 @@ def _context_token_cost(*values: Any) -> int:
         for value in values
         if value not in (None, "", [], {})
     )
-    return max(0, (len(text) + 3) // 4)
+    return max(0, (len(text.encode("utf-8")) + 3) // 4)
 
 
 def _string_list(value: Any, *, limit: int = 50) -> list[str]:
@@ -308,7 +308,7 @@ class ContextCompiler:
         subject_ref: str = "",
         subject_title: str = "",
         model_profile: str = "default",
-        context_token_budget: int = 12_000,
+        context_token_budget: int = 0,
     ) -> WorkContextPack:
         page_anchor = self.page_anchor(principal, page_ref)
         goal_anchor = self.goal_anchor(
@@ -318,52 +318,39 @@ class ContextCompiler:
             subject_ref=subject_ref,
             subject_title=subject_title,
         )
-        context_token_budget = max(1_000, min(int(context_token_budget or 12_000), 200_000))
+        context_token_budget = max(0, min(int(context_token_budget or 0), 2_000_000))
         fixed_token_cost = _context_token_cost(
             goal,
             task.get("title") or task.get("name") or "",
             task.get("completion_design") or {},
             external_ai_summary,
         )
-        reserved_tokens = min(1_500, max(250, context_token_budget // 4))
-        evidence_budget = max(250, context_token_budget - fixed_token_cost - reserved_tokens)
+        # The provider resolver already reserves output and runtime headroom.
+        # Keep selected evidence intact; when the remaining physical capacity
+        # is exhausted, exclude the next ranked item instead of truncating it.
+        evidence_budget = (
+            max(0, context_token_budget - fixed_token_cost)
+            if context_token_budget > 0
+            else None
+        )
         selected: list[EvidenceRef] = []
         budget_excluded_refs: list[str] = []
         evidence_usage: list[ContextItemUsage] = []
         selected_token_cost = 0
         for item in evidence:
             best_chunk = item.metadata.get("best_chunk") if isinstance(item.metadata, dict) else {}
-            bounded_item = item
             item_cost = _context_token_cost(
                 item.title,
                 item.summary,
                 best_chunk.get("text") if isinstance(best_chunk, dict) else "",
             )
-            if not selected and item_cost > evidence_budget:
-                character_budget = max(400, evidence_budget * 4 - len(item.title or ""))
-                bounded_metadata = dict(item.metadata or {})
-                if isinstance(best_chunk, dict):
-                    bounded_metadata["best_chunk"] = {
-                        **best_chunk,
-                        "text": _compact(best_chunk.get("text") or "", character_budget // 3),
-                    }
-                bounded_item = item.model_copy(
-                    update={
-                        "summary": _compact(item.summary, (character_budget * 2) // 3),
-                        "metadata": bounded_metadata,
-                    }
-                )
-                bounded_best_chunk = bounded_metadata.get("best_chunk") or {}
-                item_cost = _context_token_cost(
-                    bounded_item.title,
-                    bounded_item.summary,
-                    bounded_best_chunk.get("text") if isinstance(bounded_best_chunk, dict) else "",
-                )
-            within_item_limit = len(selected) < 12
-            within_token_budget = not selected or selected_token_cost + item_cost <= evidence_budget
-            is_selected = within_item_limit and within_token_budget
+            within_token_budget = (
+                evidence_budget is None
+                or selected_token_cost + item_cost <= evidence_budget
+            )
+            is_selected = within_token_budget
             if is_selected:
-                selected.append(bounded_item)
+                selected.append(item)
                 selected_token_cost += item_cost
             else:
                 budget_excluded_refs.append(item.evidence_id)
@@ -382,9 +369,7 @@ class ContextCompiler:
                     selection_reason=(
                         "ranked_evidence"
                         if is_selected
-                        else "item_limit"
-                        if not within_item_limit
-                        else "context_token_budget"
+                        else "provider_context_capacity"
                     ),
                     source_refs=[item.evidence_id],
                 )
@@ -399,11 +384,14 @@ class ContextCompiler:
                 values = item.metadata.get(key) if isinstance(item.metadata, dict) else None
                 available_evidence_refs.update(_string_list(values, limit=100))
         missing = [item for item in required if str(item).strip() not in available_evidence_refs]
-        chunk_refs = [
-            str(item.metadata.get("best_chunk", {}).get("chunk_id") or "")
-            for item in selected
-            if isinstance(item.metadata.get("best_chunk"), dict) and item.metadata.get("best_chunk", {}).get("chunk_id")
-        ][:24]
+        chunk_refs = list(
+            dict.fromkeys(
+                str(item.metadata.get("best_chunk", {}).get("chunk_id") or "")
+                for item in selected
+                if isinstance(item.metadata.get("best_chunk"), dict)
+                and item.metadata.get("best_chunk", {}).get("chunk_id")
+            )
+        )
         metadata: dict[str, Any] = {}
         if page_anchor and page_anchor.resolved:
             record = next(
@@ -479,9 +467,9 @@ class ContextCompiler:
                 else [*pinned, *remainder]
             )
         try:
-            playbook_limit = max(1, min(20, int(playbook_policy.get("max_items") or 6)))
+            playbook_limit = max(1, min(100, int(playbook_policy.get("max_items") or 20)))
         except (TypeError, ValueError):
-            playbook_limit = 6
+            playbook_limit = 20
         playbook_items = playbook_items[:playbook_limit]
         playbook_usage = [
             ContextItemUsage(
@@ -501,11 +489,18 @@ class ContextCompiler:
             for item in playbook_items
             if item.get("item_id")
         ]
-        playbook_budget = max(0, context_token_budget - fixed_token_cost - selected_token_cost)
+        playbook_budget = (
+            max(0, context_token_budget - fixed_token_cost - selected_token_cost)
+            if context_token_budget > 0
+            else None
+        )
         accepted_playbook_usage: list[ContextItemUsage] = []
         accepted_playbook_cost = 0
         for usage in playbook_usage:
-            if accepted_playbook_cost + usage.token_cost > playbook_budget:
+            if (
+                playbook_budget is not None
+                and accepted_playbook_cost + usage.token_cost > playbook_budget
+            ):
                 continue
             accepted_playbook_usage.append(usage)
             accepted_playbook_cost += usage.token_cost
@@ -532,7 +527,7 @@ class ContextCompiler:
         else:
             metadata.pop("context_playbook", None)
         source_set_excluded = [str(item) for item in source_set.get("excluded") or []]
-        all_excluded = list(dict.fromkeys([*source_set_excluded, *budget_excluded_refs]))[:100]
+        all_excluded = list(dict.fromkeys([*source_set_excluded, *budget_excluded_refs]))[:1000]
         exclusion_reasons = {
             **{item: "user_excluded" for item in source_set_excluded},
             **{
@@ -541,14 +536,14 @@ class ContextCompiler:
                 if not item.selected and item.item_ref
             },
         }
-        context_items = [*evidence_usage, *playbook_usage][:50]
+        context_items = [*evidence_usage, *playbook_usage]
         manifest = ContextManifest(
             selected_refs=[item.evidence_id for item in selected],
             excluded_refs=all_excluded,
             exclusion_reasons=exclusion_reasons,
             pinned_refs=[str(item) for item in source_set.get("pinned") or []],
             chunk_refs=chunk_refs,
-            external_refs=[_compact(item, 500) for item in external_refs],
+            external_refs=list(dict.fromkeys(str(item) for item in external_refs if str(item)))[:100],
             source_revision=self.repository.source_signature(),
             token_budget=context_token_budget,
             raw_content_in_prompt=False,
@@ -577,7 +572,7 @@ class ContextCompiler:
             required_evidence=[str(item) for item in required],
             completion_design=TaskCompletionDesign.model_validate(completion) if completion else None,
             evidence_refs=selected,
-            external_ai_summary=_compact(external_ai_summary, 4000),
+            external_ai_summary=external_ai_summary,
             page_anchor=page_anchor,
             goal_anchor=goal_anchor,
             business_context=metadata,

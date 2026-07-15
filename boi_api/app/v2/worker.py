@@ -13,7 +13,12 @@ from typing import Any
 import httpx
 
 from .config import AgentV2Settings, deep_subagent_budget_limit
-from .model_gateway import begin_model_usage, finish_model_usage, require_lmstudio_models_preloaded
+from .model_gateway import (
+    begin_model_usage,
+    finish_model_usage,
+    require_lmstudio_models_preloaded,
+    resolve_context_budget,
+)
 from .models import ArtifactRef, Principal, WorkContextPack, WorkRoutineTriggerRequest
 from .service import AgentV2Service, new_id
 from .store import now_iso
@@ -302,8 +307,14 @@ class DeepWorkRunner:
         status = self._runtime_status()
         return status["deepagents"] and status["model_adapter"]
 
-    def _deep_model_adapter(self) -> Any:
+    def _deep_model_adapter(self, *, max_input_tokens: int | None = None) -> Any:
         settings = self.service.settings
+        if max_input_tokens is None:
+            max_input_tokens = resolve_context_budget(
+                settings,
+                requested_tokens=settings.deep_max_input_tokens,
+                residency_state=self.service.model_residency,
+            ).effective_tokens
         require_lmstudio_models_preloaded(settings)
         if settings.model_provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
@@ -318,7 +329,7 @@ class DeepWorkRunner:
             }
             if "profile" in ChatAnthropic.model_fields:
                 kwargs["profile"] = {
-                    "max_input_tokens": settings.deep_max_input_tokens,
+                    "max_input_tokens": max_input_tokens,
                     "max_output_tokens": settings.model_max_output_tokens,
                 }
             return ChatAnthropic(**kwargs)
@@ -354,7 +365,7 @@ class DeepWorkRunner:
         }
         if "profile" in GuardedChatOpenAI.model_fields:
             kwargs["profile"] = {
-                "max_input_tokens": settings.deep_max_input_tokens,
+                "max_input_tokens": max_input_tokens,
                 "max_output_tokens": settings.model_max_output_tokens,
                 "reasoning_output": bool(settings.model_reasoning_effort not in {"", "none"}),
                 "tool_calling": True,
@@ -378,11 +389,29 @@ class DeepWorkRunner:
         context = WorkContextPack.model_validate(context_row)
         pilot_mode = bool(job.get("pilot_mode", True))
         max_tool_calls = max(1, min(int(job.get("max_tool_calls") or 5), 5))
-        token_budget = max(4000, min(int(job.get("token_budget") or 160000), 200000))
+        token_budget = max(
+            4000,
+            min(
+                int(job.get("token_budget") or self.service.settings.deep_token_budget),
+                self.service.settings.deep_token_budget,
+            ),
+        )
+        max_input_tokens = max(
+            1_000,
+            int(
+                job.get("max_input_tokens")
+                or resolve_context_budget(
+                    self.service.settings,
+                    requested_tokens=self.service.settings.deep_max_input_tokens,
+                    residency_state=self.service.model_residency,
+                ).effective_tokens
+            ),
+        )
         subagent_budget_limit = deep_subagent_budget_limit(
             token_budget,
-            self.service.settings.deep_max_input_tokens,
+            max_input_tokens,
             hard_limit=2 if pilot_mode else 4,
+            min_window_tokens=self.service.settings.deep_min_window_tokens,
         )
         max_subagents = max(
             0,
@@ -598,7 +627,7 @@ class DeepWorkRunner:
             f"{job['job_id']}:start",
             {"job_id": job["job_id"], "employee_id": job.get("employee_id"), "state": "started", "created_at": now_iso()},
         )
-        model_adapter = self._deep_model_adapter()
+        model_adapter = self._deep_model_adapter(max_input_tokens=max_input_tokens)
         from langchain.agents import create_agent
         from langchain.agents.middleware import ModelCallLimitMiddleware
 
@@ -765,7 +794,7 @@ class DeepWorkRunner:
                 "max_subagents": max_subagents,
                 "subagent_budget_limit": subagent_budget_limit,
                 "max_parallelism": max_parallelism,
-                "max_input_tokens_per_call": self.service.settings.deep_max_input_tokens,
+                "max_input_tokens_per_call": max_input_tokens,
                 "pilot_mode": pilot_mode,
                 "created_at": now_iso(),
             }
@@ -814,7 +843,7 @@ class DeepWorkRunner:
                 "max_subagents": max_subagents,
                 "subagent_budget_limit": subagent_budget_limit,
                 "max_parallelism": max_parallelism,
-                "max_input_tokens_per_call": self.service.settings.deep_max_input_tokens,
+                "max_input_tokens_per_call": max_input_tokens,
                 "pilot_mode": pilot_mode,
                 "created_at": now_iso(),
             }
@@ -844,7 +873,7 @@ class DeepWorkRunner:
             "subagent_calls": delegation_count,
             "max_subagents": max_subagents,
             "max_parallelism": max_parallelism,
-            "max_input_tokens_per_call": self.service.settings.deep_max_input_tokens,
+            "max_input_tokens_per_call": max_input_tokens,
             "pilot_mode": pilot_mode,
             "created_at": now_iso(),
         }

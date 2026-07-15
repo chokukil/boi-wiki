@@ -83,7 +83,9 @@ class LoopContract(BaseModel):
     max_tool_loops: int = Field(default=1, ge=1, le=20)
     max_model_calls: int = Field(default=3, ge=0, le=20)
     max_elapsed_seconds: int = Field(default=30, ge=1, le=86_400)
-    max_context_tokens: int = Field(default=12_000, ge=1_000, le=200_000)
+    # Zero delegates the input budget to the active provider profile. Positive
+    # values remain available for an explicitly bounded operation or test.
+    max_context_tokens: int = Field(default=0, ge=0, le=2_000_000)
     max_runs: int = Field(default=1, ge=0, le=10000)
     interval_seconds: int = Field(default=0, ge=0, le=31_536_000)
     adaptive_backoff: bool = True
@@ -412,8 +414,8 @@ class GroundedClaim(BaseModel):
     text: str
     claim_kind: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
     source_scope: Literal["canonical", "operational", "validation"] = "canonical"
-    source_refs: list[str] = Field(default_factory=list, max_length=4)
-    supporting_chunk_ids: list[str] = Field(default_factory=list, max_length=8)
+    source_refs: list[str] = Field(default_factory=list, max_length=12)
+    supporting_chunk_ids: list[str] = Field(default_factory=list, max_length=24)
     support_status: Literal["supported", "partial", "unsupported", "conflicting"] = "unsupported"
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     required_for_answer: bool = False
@@ -432,9 +434,9 @@ class AnswerabilityReport(BaseModel):
 class TurnTopicState(BaseModel):
     topic_state_ref: str
     subject: str = ""
-    entities: list[str] = Field(default_factory=list, max_length=12)
+    entities: list[str] = Field(default_factory=list, max_length=100)
     claims: list[GroundedClaim] = Field(default_factory=list, max_length=12)
-    used_source_refs: list[str] = Field(default_factory=list, max_length=12)
+    used_source_refs: list[str] = Field(default_factory=list, max_length=100)
     active_artifact_id: str = ""
     correction_status: Literal["active", "corrected", "invalidated"] = "active"
 
@@ -574,22 +576,22 @@ class ContextItemUsage(BaseModel):
 
 
 class ContextManifest(BaseModel):
-    selected_refs: list[str] = Field(default_factory=list, max_length=12)
-    excluded_refs: list[str] = Field(default_factory=list, max_length=100)
+    selected_refs: list[str] = Field(default_factory=list, max_length=500)
+    excluded_refs: list[str] = Field(default_factory=list, max_length=1000)
     exclusion_reasons: dict[str, str] = Field(default_factory=dict)
-    pinned_refs: list[str] = Field(default_factory=list, max_length=100)
-    chunk_refs: list[str] = Field(default_factory=list, max_length=24)
-    external_refs: list[str] = Field(default_factory=list, max_length=20)
+    pinned_refs: list[str] = Field(default_factory=list, max_length=500)
+    chunk_refs: list[str] = Field(default_factory=list, max_length=500)
+    external_refs: list[str] = Field(default_factory=list, max_length=100)
     source_revision: str = ""
     token_budget: int = Field(default=0, ge=0)
     policies: list[Literal["write", "select", "compress", "isolate"]] = Field(
-        default_factory=lambda: ["write", "select", "compress", "isolate"]
+        default_factory=lambda: ["write", "select", "isolate"]
     )
     raw_content_in_prompt: bool = False
     provenance: dict[str, dict[str, str]] = Field(default_factory=dict)
-    items: list[ContextItemUsage] = Field(default_factory=list, max_length=50)
+    items: list[ContextItemUsage] = Field(default_factory=list, max_length=1000)
     token_cost_total: int = Field(default=0, ge=0)
-    used_refs: list[str] = Field(default_factory=list, max_length=100)
+    used_refs: list[str] = Field(default_factory=list, max_length=500)
     budget_resolution: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1097,7 +1099,7 @@ class AgentTurnResponse(BaseModel):
     goal_plan_ref: str = ""
     source_set_ref: str = ""
     citations: list[CitationRef] = Field(default_factory=list)
-    used_source_refs: list[str] = Field(default_factory=list, max_length=12)
+    used_source_refs: list[str] = Field(default_factory=list, max_length=100)
     related_questions: list[RelatedQuestion] = Field(default_factory=list, max_length=3)
     grounding_status: Literal["grounded", "partial", "insufficient", "conflicting", "no_evidence"] = "no_evidence"
     answerability: AnswerabilityReport = Field(default_factory=AnswerabilityReport)
