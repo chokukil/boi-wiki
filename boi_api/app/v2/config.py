@@ -46,6 +46,9 @@ class AgentV2Settings:
     deep_model: str
     model_reasoning_effort: str
     model_max_output_tokens: int
+    model_context_window_tokens: int
+    model_context_fallback_tokens: int
+    model_context_reserve_tokens: int
     deep_max_input_tokens: int
     model_route: str
     gpt55_test_mode: bool
@@ -103,19 +106,10 @@ class AgentV2Settings:
         )
         model_name = os.getenv("BOI_V2_MODEL") or local_model or openai_model or ""
         deep_model = (os.getenv("BOI_DEEPAGENTS_MODEL") or model_name).strip()
+        # Runtime model selection is explicit provider configuration. Never
+        # rewrite a configured model because of its name; the same contract
+        # must work for local and managed providers.
         model_route = "configured"
-        if "gpt-5.5" in model_name.lower() and not gpt55_test_mode:
-            if local_model and "gpt-5.5" not in local_model.lower() and local_base_url:
-                model_provider = "openai_compatible"
-                model_base_url = local_base_url
-                model_api_key = local_api_key
-                model_name = local_model
-                model_route = "local_fallback"
-            else:
-                model_name = ""
-                model_route = "gpt55_blocked"
-        if "gpt-5.5" in deep_model.lower() and not gpt55_test_mode:
-            deep_model = model_name
         dimensions = max(1, int(os.getenv("BOI_EMBEDDING_DIMENSIONS", "1536") or "1536"))
         embedding_base_url = (
             os.getenv("BOI_EMBEDDING_BASE_URL")
@@ -158,8 +152,20 @@ class AgentV2Settings:
             deep_model=deep_model,
             model_reasoning_effort=(os.getenv("BOI_V2_REASONING_EFFORT") or "").strip().lower(),
             model_max_output_tokens=max(
-                256,
-                min(int(os.getenv("BOI_V2_MAX_OUTPUT_TOKENS", "4096") or "4096"), 8192),
+                512,
+                min(int(os.getenv("BOI_V2_MAX_OUTPUT_TOKENS", "8192") or "8192"), 32_768),
+            ),
+            model_context_window_tokens=max(
+                0,
+                min(int(os.getenv("BOI_V2_MODEL_CONTEXT_WINDOW", "0") or "0"), 2_000_000),
+            ),
+            model_context_fallback_tokens=max(
+                16_384,
+                min(int(os.getenv("BOI_V2_MODEL_CONTEXT_FALLBACK", "131072") or "131072"), 2_000_000),
+            ),
+            model_context_reserve_tokens=max(
+                2_048,
+                min(int(os.getenv("BOI_V2_MODEL_CONTEXT_RESERVE", "8192") or "8192"), 131_072),
             ),
             deep_max_input_tokens=max(
                 4096,
@@ -178,8 +184,8 @@ class AgentV2Settings:
             ),
             pat_hash_secret=(os.getenv("BOI_PAT_HASH_SECRET") or os.getenv("BOI_SESSION_SECRET") or "").strip(),
             offer_ttl_seconds=max(60, int(os.getenv("BOI_AGENT_V2_OFFER_TTL_SECONDS", "900") or "900")),
-            response_budget_bytes=max(4096, int(os.getenv("BOI_AGENT_V2_RESPONSE_BUDGET_BYTES", "8192") or "8192")),
-            run_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_RUN_TOKEN_BUDGET", "32000") or "32000")),
+            response_budget_bytes=max(4096, int(os.getenv("BOI_AGENT_V2_RESPONSE_BUDGET_BYTES", "32768") or "32768")),
+            run_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_RUN_TOKEN_BUDGET", "1000000") or "1000000")),
             deep_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_DEEP_TOKEN_BUDGET", "160000") or "160000")),
             independent_review=_flag("BOI_AGENT_V2_INDEPENDENT_REVIEW", True),
             claim_grounding_enabled=_flag("BOI_AGENT_CLAIM_GROUNDING_ENABLED", True),

@@ -4,7 +4,7 @@ candidate_min_distinct_runs: 3
 editable_surface_components:
   retrieval_policy: [context, knowledge, task.evidence]
   context_playbook: [context, knowledge, task]
-  loop_budget: [loop, task]
+  loop_policy: [loop, task]
 harnesses:
   - harness_id: context.work
     version: "2.0.0"
@@ -21,11 +21,11 @@ harnesses:
     test_contracts: [deictic_anchor_resolves, selected_sources_have_provenance, raw_content_isolated]
     completion_policy: the request has a usable anchor or explicit Wiki scope and a provenance manifest
     fallback_policy: ask one focused context question or stop with explicit insufficient evidence
-    editable_surfaces: [retrieval_policy, context_playbook, loop_budget]
+    editable_surfaces: [retrieval_policy, context_playbook, loop_policy]
     editable_surface_components:
       retrieval_policy: [context, knowledge, task.evidence]
       context_playbook: [context, knowledge, task]
-      loop_budget: [loop, task]
+      loop_policy: [loop, task]
     retryable: true
     interruptible: true
 

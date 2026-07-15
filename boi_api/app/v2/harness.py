@@ -42,7 +42,7 @@ class HarnessDefinition:
     # A candidate may only change surfaces with an executable runtime applier.
     # Additional surfaces are opt-in per catalog definition when their applier
     # exists; storing an inert reviewed change would make release misleading.
-    editable_surfaces: tuple[str, ...] = ("loop_budget",)
+    editable_surfaces: tuple[str, ...] = ("loop_policy",)
     editable_surface_components: dict[str, tuple[str, ...]] = field(default_factory=dict)
     immutable_boundaries: tuple[str, ...] = (
         "acl", "rbac", "risk_policy", "confirmation_policy", "autopilot_allowlist",

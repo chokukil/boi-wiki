@@ -34,7 +34,11 @@ from .model_gateway import (
     build_model_gateway,
     finish_model_usage,
     inspect_lmstudio_model_residency,
+    inspect_model_runtime_profile,
     lmstudio_model_residency_state,
+    resolve_context_budget,
+    update_model_usage_limits,
+    update_model_token_budget,
 )
 from .models import (
     AgentTurnRequest,
@@ -2076,6 +2080,10 @@ class AgentV2Service:
         store_state = self.store.health()
         if self.settings.lmstudio_require_preloaded_models:
             self.inspect_model_residency()
+        runtime_profile = inspect_model_runtime_profile(
+            self.settings,
+            residency_state=self.model_residency,
+        )
         model_state = self.model.preflight() if probe_model else self.model.readiness()
         heartbeats = self.store.list("worker_heartbeats", limit=20)
         worker_ready = False
@@ -2171,8 +2179,12 @@ class AgentV2Service:
             "model_residency": dict(self.model_residency),
             "model_policy": {
                 "route": self.settings.model_route,
-                "gpt55_test_only": True,
-                "gpt55_test_mode": self.settings.gpt55_test_mode,
+                "provider": self.settings.model_provider,
+                "model": self.settings.model_name,
+                "context_window_tokens": runtime_profile.context_window_tokens,
+                "max_output_tokens": runtime_profile.max_output_tokens,
+                "profile_source": runtime_profile.source,
+                "external_judge_mode": self.settings.gpt55_test_mode,
             },
             "worker": {
                 "ready": worker_ready,
@@ -2518,6 +2530,8 @@ class AgentV2Service:
         task_override: dict[str, Any] | None = None,
         subject_ref: str = "",
         subject_title: str = "",
+        context_token_budget: int = 12_000,
+        context_budget_resolution: dict[str, Any] | None = None,
     ) -> WorkContextPack:
         task = normalise_task_completion(
             task_override or self.policy.resolve_task(principal, request.task_ref),
@@ -2539,7 +2553,10 @@ class AgentV2Service:
             subject_ref=subject_ref,
             subject_title=subject_title,
             model_profile=self.learning.model_profile,
+            context_token_budget=context_token_budget,
         )
+        if context.context_manifest is not None:
+            context.context_manifest.budget_resolution = dict(context_budget_resolution or {})
         context.manifest.update(
             {
                 "evidence_count": len(context.evidence_refs),
@@ -5368,6 +5385,9 @@ class AgentV2Service:
             "remaining_tokens_estimate": usage_row.get("remaining_tokens_estimate") or 0,
             "model_calls": usage_row.get("model_calls") or 0,
             "embedding_calls": usage_row.get("embedding_calls") or 0,
+            "max_model_calls": usage_row.get("max_model_calls") or 0,
+            "max_elapsed_seconds": usage_row.get("max_elapsed_seconds") or 0,
+            "elapsed_ms": usage_row.get("elapsed_ms") or 0,
         }
         response.usage = model_usage
         response.context_usage["model_usage"] = model_usage
@@ -5699,6 +5719,45 @@ class AgentV2Service:
                 raise HTTPException(status_code=422, detail={"status": "skill_unavailable", "skill_ids": missing_skills})
             request.input_delta.setdefault("_helper_skills", helper_skills)
         continuation = route.get("continuation") if isinstance(route.get("continuation"), dict) else {}
+        preliminary_intent = WorkIntent.model_validate(route.get("work_intent") or {})
+        if request.loop_policy is not None:
+            requested_loop = request.loop_policy
+            if (
+                requested_loop.kind not in definition.allowed_loop_kinds
+                or requested_loop.trigger not in definition.allowed_loop_triggers
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "loop_contract_not_allowed",
+                        "capability_id": definition.capability_id,
+                        "kind": requested_loop.kind.value,
+                        "trigger": requested_loop.trigger.value,
+                    },
+                )
+            preliminary_intent = preliminary_intent.model_copy(
+                update={"loop_contract": requested_loop.model_copy(deep=True)}
+            )
+        if (
+            self.settings.lmstudio_require_preloaded_models
+            and not int(self.model_residency.get("generation_context_window") or 0)
+        ):
+            self.inspect_model_residency()
+        context_budget = resolve_context_budget(
+            self.settings,
+            requested_tokens=preliminary_intent.loop_contract.max_context_tokens,
+            residency_state=self.model_residency,
+        )
+        update_model_usage_limits(
+            max_model_calls=preliminary_intent.loop_contract.max_model_calls,
+            max_elapsed_seconds=preliminary_intent.loop_contract.max_elapsed_seconds,
+        )
+        planned_run_token_budget = (
+            context_budget.effective_tokens + context_budget.max_output_tokens
+        ) * max(1, preliminary_intent.loop_contract.max_model_calls)
+        update_model_token_budget(
+            min(self.settings.run_token_budget, max(4_000, planned_run_token_budget))
+        )
         self._emit_turn_progress(
             progress_sink,
             "judgment",
@@ -5720,7 +5779,6 @@ class AgentV2Service:
                 turn_id=turn_id,
             )
         source_set = self._ensure_source_set(principal, str(session["session_id"]))
-        preliminary_intent = WorkIntent.model_validate(route.get("work_intent") or {})
         resolved_goal = compact_text(preliminary_intent.resolved_goal or request.question, 12000)
         retrieval_goal = compact_text(preliminary_intent.retrieval_query or resolved_goal, 12000)
         request.input_delta["_resolved_goal"] = resolved_goal
@@ -5949,6 +6007,8 @@ class AgentV2Service:
             task_override=active_session_task,
             subject_ref=preliminary_intent.target_ref,
             subject_title=preliminary_intent.topic_subject,
+            context_token_budget=context_budget.effective_tokens,
+            context_budget_resolution=context_budget.as_dict(),
         )
         context.business_context["user_work_profile"] = self.user_work_profile(principal)
         self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
@@ -6588,6 +6648,7 @@ class AgentV2Service:
                 "selected_source_count": len(context.evidence_refs),
                 "missing_evidence": (context.evidence_summary or {}).get("missing") or [],
                 "raw_content_in_prompt": False,
+                "resource_budget": context_budget.as_dict(),
             },
         )
         response = self._enforce_response_budget(response)
@@ -6790,6 +6851,32 @@ class AgentV2Service:
                 if key in artifact.metadata
             }
 
+        def representative_claims(limit: int) -> list[GroundedClaim]:
+            eligible = [
+                item
+                for item in response.grounded_claims
+                if item.support_status in {"supported", "partial", "conflicting"}
+            ]
+            selected: list[GroundedClaim] = []
+            selected_ids: set[str] = set()
+            seen_kinds: set[str] = set()
+            for item in eligible:
+                kind = str(item.claim_kind or "")
+                if kind in seen_kinds:
+                    continue
+                selected.append(item)
+                selected_ids.add(item.claim_id)
+                seen_kinds.add(kind)
+                if len(selected) >= limit:
+                    return selected
+            for item in eligible:
+                if item.claim_id in selected_ids:
+                    continue
+                selected.append(item)
+                if len(selected) >= limit:
+                    break
+            return selected
+
         refresh_display_html()
         keep_rendered_citations()
         latest_harnesses: dict[str, HarnessResult] = {}
@@ -6939,22 +7026,27 @@ class AgentV2Service:
         refresh_display_html()
         budget = self.settings.response_budget_bytes
         if response_size() > budget:
-            response.context_ref = ""
-            response.goal_plan_ref = ""
-            response.source_set_ref = ""
             response.progress = []
             response.offers = []
             response.next_actions = response.next_actions[:1]
             response.knowledge_candidates = response.knowledge_candidates[:1]
             response.answer.summary = compact_text(response.answer.summary, 240)
             refresh_display_html()
-        while response_size() > budget and len(response.answer.markdown) > 240:
+        # Citation restoration can make a truncated answer as long as it was
+        # before truncation. Keep compaction bounded and require every pass to
+        # make measurable progress before trying the same strategy again.
+        for _ in range(8):
+            if response_size() <= budget or len(response.answer.markdown) <= 240:
+                break
+            previous_length = len(response.answer.markdown)
             excess = response_size() - budget
             target = max(240, len(response.answer.markdown) - max(80, excess // 2 + 32))
             response.answer.markdown = truncate_markdown(response.answer.markdown, target)
             ensure_primary_citation()
             keep_rendered_citations()
             refresh_display_html()
+            if len(response.answer.markdown) >= previous_length:
+                break
         if response_size() > budget:
             response.related_questions = response.related_questions[:1]
             response.next_actions = []
@@ -6985,9 +7077,8 @@ class AgentV2Service:
                         "supporting_chunk_ids": item.supporting_chunk_ids[:2],
                     }
                 )
-                for item in response.grounded_claims
-                if item.support_status in {"supported", "partial", "conflicting"}
-            ][:4]
+                for item in representative_claims(4)
+            ]
             response.answerability = response.answerability.model_copy(
                 update={
                     "missing_evidence": [compact_text(item, 100) for item in response.answerability.missing_evidence[:2]],
@@ -7009,12 +7100,17 @@ class AgentV2Service:
                         "operation_plan": [response.work_intent.operation],
                     }
                 )
-        while response_size() > budget and len(response.answer.markdown) > 120:
+        for _ in range(8):
+            if response_size() <= budget or len(response.answer.markdown) <= 120:
+                break
+            previous_length = len(response.answer.markdown)
             excess = response_size() - budget
             target = max(120, len(response.answer.markdown) - max(40, excess + 24))
             response.answer.markdown = truncate_markdown(response.answer.markdown, target)
             ensure_primary_citation()
             keep_rendered_citations()
+            if len(response.answer.markdown) >= previous_length:
+                break
         if response_size() > budget:
             response.answer.summary = compact_text(response.answer.summary, 80)
             response.grounded_claims = response.grounded_claims[:1]
@@ -7042,6 +7138,14 @@ class AgentV2Service:
             # on the run and topic state when an unusually small response
             # budget cannot carry them safely.
             response.grounded_claims = []
+        if response_size() > budget:
+            # A constrained transport can resolve the full semantic plan and
+            # loop state through the durable refs retained above. Prefer the
+            # user answer, citations, artifact and those refs over duplicating
+            # the complete planning diagnostics in the same tiny response.
+            response.work_intent = None
+            response.loop_state = {}
+            response.presentation_plan = {}
         refresh_used_source_refs()
         response.grounding_status = response.answerability.status
         return response
@@ -9028,7 +9132,7 @@ class AgentV2Service:
                 item.capability_id in library_offer_ids for item in home_offers
             ),
             "history_seed_excluded_from_current_work": not bool(current_ids & seed_ids),
-            "compact_response_budget": self.settings.response_budget_bytes <= 8192,
+            "bounded_response_budget": self.settings.response_budget_bytes <= 32768,
             "pat_available": bool(readiness["dependencies"]["pat"]),
         }
         full_checks = {

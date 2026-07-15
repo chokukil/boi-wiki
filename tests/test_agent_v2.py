@@ -31,6 +31,9 @@ from boi_api.app.v2.model_gateway import (
     build_model_gateway,
     ensure_lmstudio_model_residency,
     finish_model_usage,
+    inspect_model_runtime_profile,
+    resolve_context_budget,
+    update_model_usage_limits,
 )
 from boi_api.app.v2.models import (
     AgentTurnRequest,
@@ -108,6 +111,16 @@ from boi_api.app.task_completion import normalise_task_completion
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _catalog_loop_contract(capability_id: str):
+    """Use the production catalog contract in planner fixtures.
+
+    Semantic validity belongs to the catalog, so tests should not duplicate
+    capability-to-loop routing rules in Python.
+    """
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    return registry.get(capability_id).default_loop_contract.model_copy(deep=True)
 
 
 def test_capability_registry_rejects_unimplemented_mutation_handlers_before_turn_execution():
@@ -584,6 +597,7 @@ def _task_completion_plan(task_ref: str) -> dict[str, Any]:
         context_refs=[task_ref],
         target_ref=task_ref,
         answer_intent="work",
+        loop_contract=_catalog_loop_contract("task.work"),
         confidence=1.0,
     ).model_dump(mode="json")
 
@@ -781,6 +795,7 @@ class SemanticContinuationModel(ScriptedPlanner):
                 context_refs=[task_ref],
                 target_ref=task_ref,
                 answer_intent="work",
+                loop_contract=_catalog_loop_contract("task.work"),
                 confidence=0.98,
             )
             planned = _planner_envelope(plan.model_dump(mode="json"))
@@ -812,6 +827,7 @@ class TargetlessTaskLookupModel(ScriptedPlanner):
                     operation="observe",
                     evidence_scope="operational",
                     presentation="prose",
+                    loop_contract=_catalog_loop_contract("task.work"),
                     confidence=0.96,
                 ).model_dump(mode="json")
             )
@@ -863,6 +879,7 @@ class RepairingSopModel(ScriptedPlanner):
                     evidence_scope="canonical",
                     presentation="artifact",
                     answer_intent="work",
+                    loop_contract=_catalog_loop_contract("sop.plan"),
                     confidence=1.0,
                 ).model_dump(mode="json")
             )
@@ -1090,6 +1107,7 @@ class RefiningSopModel(RepairingSopModel):
                     context_refs=[target_ref],
                     target_ref=target_ref,
                     answer_intent="work",
+                    loop_contract=_catalog_loop_contract("sop.plan"),
                     confidence=1.0,
                 ).model_dump(mode="json")
             )
@@ -1711,6 +1729,7 @@ class SplitOnlyFollowupModel(MultiTurnMermaidModel):
                     context_refs=[artifact_ref],
                     target_ref=artifact_ref,
                     answer_intent="work",
+                    loop_contract=_catalog_loop_contract("workflow.transform"),
                     confidence=0.99,
                 ).model_dump(mode="json")
             )
@@ -2523,13 +2542,17 @@ def test_lmstudio_residency_rejects_jit_ttl_instances_without_mutating_them(
     assert all(not call.startswith("POST") for call in calls)
 
 
-def test_gpt55_is_blocked_from_normal_runtime_and_falls_back_to_the_local_model(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("model_name", ["gpt-5.5", "gpt-5.6", "managed-reasoning-model"])
+def test_explicit_v2_model_is_never_rewritten_from_its_name(
+    monkeypatch: pytest.MonkeyPatch,
+    model_name: str,
+):
     monkeypatch.setenv("BOI_GPT55_TEST_MODE", "false")
     monkeypatch.setenv("BOI_V2_MODEL_PROVIDER", "openai_responses")
-    monkeypatch.setenv("BOI_V2_MODEL_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("BOI_V2_MODEL_BASE_URL", "https://llm-gateway.example.internal/v1")
     monkeypatch.setenv("BOI_V2_MODEL_API_KEY", "test-external-key")
-    monkeypatch.setenv("BOI_V2_MODEL", "gpt-5.5")
-    monkeypatch.setenv("BOI_DEEPAGENTS_MODEL", "gpt-5.5")
+    monkeypatch.setenv("BOI_V2_MODEL", model_name)
+    monkeypatch.setenv("BOI_DEEPAGENTS_MODEL", model_name)
     monkeypatch.setenv("BOI_LLM_BASE_URL", "http://lmstudio.example:1234/v1")
     monkeypatch.setenv("BOI_LLM_API_KEY", "not-needed")
     monkeypatch.setenv("BOI_LLM_MODEL", "google/gemma-local")
@@ -2537,15 +2560,15 @@ def test_gpt55_is_blocked_from_normal_runtime_and_falls_back_to_the_local_model(
 
     settings = AgentV2Settings.from_environment(repo_root=ROOT)
 
-    assert settings.model_provider == "openai_compatible"
-    assert settings.model_base_url == "http://lmstudio.example:1234/v1"
-    assert settings.model_name == "google/gemma-local"
-    assert settings.deep_model == "google/gemma-local"
-    assert settings.model_route == "local_fallback"
+    assert settings.model_provider == "openai_responses"
+    assert settings.model_base_url == "https://llm-gateway.example.internal/v1"
+    assert settings.model_name == model_name
+    assert settings.deep_model == model_name
+    assert settings.model_route == "configured"
     assert settings.gpt55_test_mode is False
 
 
-def test_gpt55_can_only_be_selected_in_explicit_test_mode(monkeypatch: pytest.MonkeyPatch):
+def test_explicit_external_judge_mode_preserves_the_configured_runtime(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BOI_GPT55_TEST_MODE", "true")
     monkeypatch.setenv("BOI_V2_MODEL_PROVIDER", "openai_responses")
     monkeypatch.setenv("BOI_V2_MODEL_BASE_URL", "https://api.openai.com/v1")
@@ -2560,6 +2583,40 @@ def test_gpt55_can_only_be_selected_in_explicit_test_mode(monkeypatch: pytest.Mo
     assert settings.deep_model == "gpt-5.5"
     assert settings.model_route == "configured"
     assert settings.gpt55_test_mode is True
+
+
+def test_context_budget_uses_runtime_capacity_without_model_name_rules():
+    base = AgentV2Settings.from_environment(repo_root=ROOT)
+    local = replace(
+        base,
+        model_provider="openai_compatible",
+        model_name="any-local-model",
+        model_context_window_tokens=0,
+        model_max_output_tokens=8_192,
+        model_context_reserve_tokens=8_192,
+        lmstudio_require_preloaded_models=False,
+        model_base_url="",
+    )
+    local_resolution = resolve_context_budget(
+        local,
+        requested_tokens=96_000,
+        residency_state={"generation_context_window": 51_200},
+    )
+
+    managed = replace(
+        local,
+        model_provider="openai_responses",
+        model_name="managed-reasoning-model",
+        model_context_window_tokens=262_144,
+    )
+    managed_profile = inspect_model_runtime_profile(managed)
+    managed_resolution = resolve_context_budget(managed, requested_tokens=160_000)
+
+    assert local_resolution.effective_tokens == 34_816
+    assert local_resolution.profile_source == "provider_runtime"
+    assert managed_profile.context_window_tokens == 262_144
+    assert managed_profile.source == "deployment_config"
+    assert managed_resolution.effective_tokens == 160_000
 
 
 def test_normal_runtime_does_not_inherit_openai_credentials(monkeypatch: pytest.MonkeyPatch):
@@ -2693,6 +2750,7 @@ def test_quick_agent_uses_structured_llm_planning_and_defaults_ambiguous_sop_que
             evidence_scope="canonical",
             presentation=presentation,  # type: ignore[arg-type]
             work_view=work_view,  # type: ignore[arg-type]
+            loop_contract=_catalog_loop_contract(capability_id),
             confidence=1.0,
         ).model_dump(mode="json")
 
@@ -3231,6 +3289,7 @@ def test_completion_design_wording_does_not_become_a_task_completion_operation(
         operation="create",
         context_refs=["boi:public:sop:manual"],
         target_ref="boi:public:sop:manual",
+        loop_contract=_catalog_loop_contract("sop.plan"),
         confidence=1.0,
     )
     route = v2_service.quick_agent.route(
@@ -4495,6 +4554,7 @@ def test_transient_loop_failure_is_durable_retryable_and_idempotently_resumable(
             resolved_goal="내부 운영 기준을 확인한다",
             operation=WorkOperation.understand,
             harness_ids=["context.work"],
+            loop_contract=_catalog_loop_contract("task.work"),
         ),
         goal_plan_id="goal-transient-retry",
         catalog_revision=v2_service.registry.version,
@@ -4881,6 +4941,45 @@ def test_model_usage_scope_tracks_calls_and_blocks_the_next_over_budget_call():
     finish_model_usage(tiny_token)
 
 
+def test_model_usage_scope_enforces_semantic_plan_call_and_elapsed_budgets(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    gateway = UsageTrackingGateway(ReviewerModel())
+    clock = [100.0]
+    monkeypatch.setattr("boi_api.app.v2.model_gateway.time.perf_counter", lambda: clock[0])
+    token = begin_model_usage(
+        "usage-loop-contract",
+        10_000,
+        max_model_calls=5,
+        max_elapsed_seconds=30,
+    )
+    gateway.generate_structured(
+        system="Plan once.",
+        prompt="Create a structured plan.",
+        schema={
+            "type": "object",
+            "required": ["status", "summary", "criteria", "findings"],
+        },
+    )
+    update_model_usage_limits(max_model_calls=1, max_elapsed_seconds=1)
+    with pytest.raises(RuntimeError, match="model call budget"):
+        gateway.generate_structured(
+            system="Do not exceed the contract.",
+            prompt="A second model call is not allowed.",
+            schema={
+                "type": "object",
+                "required": ["status", "summary", "criteria", "findings"],
+            },
+        )
+    clock[0] = 102.0
+    with pytest.raises(RuntimeError, match="elapsed-time budget"):
+        gateway.embed(["elapsed budget also bounds model-backed retrieval"])
+    usage = finish_model_usage(token)
+
+    assert usage["max_model_calls"] == 1
+    assert usage["max_elapsed_seconds"] == 1
+
+
 def test_model_usage_scope_prefers_provider_actual_usage_when_available():
     gateway = UsageTrackingGateway(ActualUsageModel())
     token = begin_model_usage("actual-usage-test", 1000)
@@ -5137,7 +5236,7 @@ def test_search_is_acl_aware_excludes_drafts_and_stays_compact(v2_service: Agent
     assert response.capability_id == "knowledge.search"
     assert response.answerability.status == "grounded"
     assert response.answer.summary.startswith("업무 지식과 실행 근거")
-    assert len(json.dumps(response.model_dump(mode="json"), ensure_ascii=False).encode()) <= 8192
+    assert len(json.dumps(response.model_dump(mode="json"), ensure_ascii=False).encode()) <= v2_service.settings.response_budget_bytes
     rendered_citation_ids = set(
         re.findall(r"/api/v2/citations/(cite_[A-Za-z0-9]+)", response.answer.markdown)
     )
@@ -8905,7 +9004,7 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
             model_profile=v2_service.learning.model_profile,
             changes={
                 "retrieval_policy": {"authority_weight": 1.1},
-                "loop_budget": {
+                    "loop_policy": {
                     "max_iterations": 3,
                     "max_no_progress": 2,
                     "max_tool_loops": 4,
@@ -8981,7 +9080,7 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
     binding = v2_service.learning.effective_harness_bindings(["context.work"])[0]
     assert binding["version"] == reviewed["harness_version_id"]
     assert binding["release_state"] == "active_reviewed_version"
-    assert binding["active_changes"]["loop_budget"]["max_iterations"] == 3
+    assert binding["active_changes"]["loop_policy"]["max_iterations"] == 3
 
     pinned_run = v2_service.learning.create_run(
         principal=principal,
@@ -9165,6 +9264,86 @@ def test_context_playbook_is_deduplicated_versioned_and_model_scoped(
     assert excluded.manifest["context_playbook_item_ids"] == []
 
 
+def test_context_manifest_tracks_item_budget_use_and_outcome_contribution(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    evidence = [
+        EvidenceRef(
+            evidence_id=f"boi:public:context-budget-{index}",
+            kind="boi",
+            title=f"검증 근거 {index}",
+            summary=("근거 본문 " * 900) + str(index),
+            source="wiki",
+            authority="reviewed",
+            metadata={
+                "revision": f"revision-{index}",
+                "best_chunk": {"chunk_id": f"chunk-{index}", "text": "상세 근거 " * 900},
+            },
+        )
+        for index in range(3)
+    ]
+    context = v2_service.learning.contexts.compile(
+        principal=principal,
+        definition=v2_service.registry.get("knowledge.search"),
+        goal="제한된 문맥 예산에서 직접 근거를 설명한다",
+        page_ref="",
+        task_ref="",
+        task_mode=TaskMode.copilot,
+        task={},
+        evidence=evidence,
+        session={},
+        source_set={},
+        external_ai_summary="",
+        external_refs=[],
+        context_token_budget=1_000,
+    )
+    v2_service.store.put("contexts", context.context_id, context.model_dump(mode="json"))
+
+    assert context.context_manifest is not None
+    assert context.context_manifest.token_cost_total <= context.context_manifest.token_budget
+    assert context.context_manifest.items[0].selected is True
+    assert any(not item.selected for item in context.context_manifest.items[1:])
+
+    intent = WorkIntent(
+        goal="제한된 문맥 예산에서 직접 근거를 설명한다",
+        resolved_goal="제한된 문맥 예산에서 직접 근거를 설명한다",
+        operation=WorkOperation.understand,
+        harness_ids=["context.work"],
+    )
+    run = v2_service.learning.create_run(
+        principal=principal,
+        agent_run_id="agent-context-budget",
+        session={"session_id": "session-context-budget"},
+        context=context,
+        intent=intent,
+        goal_plan_id="goal-context-budget",
+        catalog_revision=v2_service.registry.version,
+    )
+    stored_run, _ = v2_service.learning.finish_run(
+        principal=principal,
+        work_run=run,
+        context=context,
+        intent=intent,
+        response_status="completed",
+        answer_summary="첫 번째 검증 근거가 요청을 직접 뒷받침합니다.",
+        artifacts=[],
+        evidence_refs=[evidence[0].evidence_id],
+    )
+    stored_context = WorkContextPack.model_validate(
+        v2_service.store.get("contexts", context.context_id)
+    )
+    first_item = next(
+        item
+        for item in stored_context.context_manifest.items
+        if item.item_ref == evidence[0].evidence_id
+    )
+
+    assert stored_run["context_usage"]["used_item_count"] == 1
+    assert first_item.used is True
+    assert first_item.outcome_contribution == "answer"
+
+
 def test_team_playbook_is_not_injected_before_review(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -9247,6 +9426,55 @@ def test_no_progress_is_preserved_as_a_negative_result(
     assert stopped["status"] == "stopped"
     negatives = [v2_service.store.get("negative_results", item) for item in stopped["negative_result_ids"]]
     assert any(item and item["kind"] == "no_progress" for item in negatives)
+
+
+def test_continue_run_stops_before_mutation_when_elapsed_budget_is_exhausted(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    context = WorkContextPack(
+        context_id="context-loop-elapsed-budget",
+        employee_id=principal.employee_id,
+        capability_id="knowledge.search",
+        goal="시간 예산 안에서만 업무를 진행한다",
+    )
+    v2_service.store.put("contexts", context.context_id, context.model_dump(mode="json"))
+    run = v2_service.learning.create_run(
+        principal=principal,
+        agent_run_id="agent-loop-elapsed-budget",
+        session={"session_id": "session-loop-elapsed-budget"},
+        context=context,
+        intent=WorkIntent(
+            goal="시간 예산 안에서만 업무를 진행한다",
+            resolved_goal="시간 예산 안에서만 업무를 진행한다",
+            operation=WorkOperation.understand,
+            harness_ids=["context.work"],
+        ),
+        goal_plan_id="goal-loop-elapsed-budget",
+        catalog_revision=v2_service.registry.version,
+    )
+    run["loop"]["started_at"] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+    run["loop"]["max_elapsed_seconds"] = 1
+    v2_service.store.put("work_runs", run["work_run_id"], run)
+
+    stopped, candidates = v2_service.learning.continue_run(
+        principal,
+        run["work_run_id"],
+        WorkRunContinueRequest(
+            expected_revision=run["revision"],
+            idempotency_key="elapsed-budget-must-not-apply",
+            delta=LoopDelta(
+                kind="new_evidence",
+                ref="boi:public:must-not-be-recorded",
+                summary="시간 예산 뒤에는 이 근거를 적용하면 안 됩니다.",
+            ),
+        ),
+    )
+
+    assert candidates == []
+    assert stopped["status"] == "stopped"
+    assert stopped["stop_reason"] == "max_elapsed_seconds"
+    assert "elapsed-budget-must-not-apply" not in stopped["loop"]["idempotency_keys"]
 
 
 def test_harness_improvement_relations_are_compiled_into_admin_ontology(

@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from urllib.parse import unquote, urlsplit
 
 from fastapi import HTTPException
@@ -15,6 +15,7 @@ from .models import (
     CapabilityDefinition,
     ContextAnchor,
     ContextManifest,
+    ContextItemUsage,
     EvidenceRef,
     ExitCriteriaResult,
     HarnessChangeHypothesis,
@@ -53,6 +54,15 @@ def _id(prefix: str, value: str = "") -> str:
 
 def _compact(value: Any, limit: int) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+
+
+def _context_token_cost(*values: Any) -> int:
+    text = " ".join(
+        value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+        for value in values
+        if value not in (None, "", [], {})
+    )
+    return max(0, (len(text) + 3) // 4)
 
 
 def _string_list(value: Any, *, limit: int = 50) -> list[str]:
@@ -298,6 +308,7 @@ class ContextCompiler:
         subject_ref: str = "",
         subject_title: str = "",
         model_profile: str = "default",
+        context_token_budget: int = 12_000,
     ) -> WorkContextPack:
         page_anchor = self.page_anchor(principal, page_ref)
         goal_anchor = self.goal_anchor(
@@ -307,7 +318,77 @@ class ContextCompiler:
             subject_ref=subject_ref,
             subject_title=subject_title,
         )
-        selected = evidence[:12]
+        context_token_budget = max(1_000, min(int(context_token_budget or 12_000), 200_000))
+        fixed_token_cost = _context_token_cost(
+            goal,
+            task.get("title") or task.get("name") or "",
+            task.get("completion_design") or {},
+            external_ai_summary,
+        )
+        reserved_tokens = min(1_500, max(250, context_token_budget // 4))
+        evidence_budget = max(250, context_token_budget - fixed_token_cost - reserved_tokens)
+        selected: list[EvidenceRef] = []
+        budget_excluded_refs: list[str] = []
+        evidence_usage: list[ContextItemUsage] = []
+        selected_token_cost = 0
+        for item in evidence:
+            best_chunk = item.metadata.get("best_chunk") if isinstance(item.metadata, dict) else {}
+            bounded_item = item
+            item_cost = _context_token_cost(
+                item.title,
+                item.summary,
+                best_chunk.get("text") if isinstance(best_chunk, dict) else "",
+            )
+            if not selected and item_cost > evidence_budget:
+                character_budget = max(400, evidence_budget * 4 - len(item.title or ""))
+                bounded_metadata = dict(item.metadata or {})
+                if isinstance(best_chunk, dict):
+                    bounded_metadata["best_chunk"] = {
+                        **best_chunk,
+                        "text": _compact(best_chunk.get("text") or "", character_budget // 3),
+                    }
+                bounded_item = item.model_copy(
+                    update={
+                        "summary": _compact(item.summary, (character_budget * 2) // 3),
+                        "metadata": bounded_metadata,
+                    }
+                )
+                bounded_best_chunk = bounded_metadata.get("best_chunk") or {}
+                item_cost = _context_token_cost(
+                    bounded_item.title,
+                    bounded_item.summary,
+                    bounded_best_chunk.get("text") if isinstance(bounded_best_chunk, dict) else "",
+                )
+            within_item_limit = len(selected) < 12
+            within_token_budget = not selected or selected_token_cost + item_cost <= evidence_budget
+            is_selected = within_item_limit and within_token_budget
+            if is_selected:
+                selected.append(bounded_item)
+                selected_token_cost += item_cost
+            else:
+                budget_excluded_refs.append(item.evidence_id)
+            evidence_usage.append(
+                ContextItemUsage(
+                    item_ref=item.evidence_id,
+                    item_kind="evidence",
+                    provenance=item.source,
+                    revision=str(
+                        (item.metadata or {}).get("revision")
+                        or (best_chunk.get("revision") if isinstance(best_chunk, dict) else "")
+                        or ""
+                    ),
+                    token_cost=item_cost,
+                    selected=is_selected,
+                    selection_reason=(
+                        "ranked_evidence"
+                        if is_selected
+                        else "item_limit"
+                        if not within_item_limit
+                        else "context_token_budget"
+                    ),
+                    source_refs=[item.evidence_id],
+                )
+            )
         task_exit = task.get("exit_criteria") or task.get("completion_conditions") or definition.completion_criteria
         required = task.get("required_evidence") or task.get("evidence_requirements") or []
         task_exit = [task_exit] if isinstance(task_exit, str) else list(task_exit or [])
@@ -402,6 +483,39 @@ class ContextCompiler:
         except (TypeError, ValueError):
             playbook_limit = 6
         playbook_items = playbook_items[:playbook_limit]
+        playbook_usage = [
+            ContextItemUsage(
+                item_ref=str(item.get("item_id") or ""),
+                item_kind="playbook",
+                provenance="context_playbook",
+                revision=str(item.get("revision") or 1),
+                token_cost=_context_token_cost(
+                    item.get("description") or "",
+                    item.get("conditions") or [],
+                    item.get("source_refs") or [],
+                ),
+                selected=True,
+                selection_reason="active_context_playbook",
+                source_refs=[str(ref) for ref in item.get("source_refs") or [] if str(ref)],
+            )
+            for item in playbook_items
+            if item.get("item_id")
+        ]
+        playbook_budget = max(0, context_token_budget - fixed_token_cost - selected_token_cost)
+        accepted_playbook_usage: list[ContextItemUsage] = []
+        accepted_playbook_cost = 0
+        for usage in playbook_usage:
+            if accepted_playbook_cost + usage.token_cost > playbook_budget:
+                continue
+            accepted_playbook_usage.append(usage)
+            accepted_playbook_cost += usage.token_cost
+        playbook_usage = accepted_playbook_usage
+        accepted_playbook_ids = {item.item_ref for item in playbook_usage}
+        playbook_items = [
+            item
+            for item in playbook_items
+            if str(item.get("item_id") or "") in accepted_playbook_ids
+        ]
         if playbook_items:
             metadata["context_playbook"] = [
                 {
@@ -415,15 +529,28 @@ class ContextCompiler:
                 }
                 for item in playbook_items
             ]
+        else:
+            metadata.pop("context_playbook", None)
+        source_set_excluded = [str(item) for item in source_set.get("excluded") or []]
+        all_excluded = list(dict.fromkeys([*source_set_excluded, *budget_excluded_refs]))[:100]
+        exclusion_reasons = {
+            **{item: "user_excluded" for item in source_set_excluded},
+            **{
+                item.item_ref: item.selection_reason
+                for item in evidence_usage
+                if not item.selected and item.item_ref
+            },
+        }
+        context_items = [*evidence_usage, *playbook_usage][:50]
         manifest = ContextManifest(
             selected_refs=[item.evidence_id for item in selected],
-            excluded_refs=[str(item) for item in source_set.get("excluded") or []],
-            exclusion_reasons={str(item): "user_excluded" for item in source_set.get("excluded") or []},
+            excluded_refs=all_excluded,
+            exclusion_reasons=exclusion_reasons,
             pinned_refs=[str(item) for item in source_set.get("pinned") or []],
             chunk_refs=chunk_refs,
             external_refs=[_compact(item, 500) for item in external_refs],
             source_revision=self.repository.source_signature(),
-            token_budget=12000,
+            token_budget=context_token_budget,
             raw_content_in_prompt=False,
             provenance={
                 item.evidence_id: {
@@ -433,6 +560,8 @@ class ContextCompiler:
                 }
                 for item in selected
             },
+            items=context_items,
+            token_cost_total=fixed_token_cost + sum(item.token_cost for item in context_items if item.selected),
         )
         completion = task.get("completion_design")
         return WorkContextPack(
@@ -491,6 +620,44 @@ class WorkLearningService:
         self.knowledge_change_notifier = knowledge_change_notifier
         self.model_profile = model_profile or "default"
 
+    def _record_context_outcome(
+        self,
+        *,
+        context: WorkContextPack,
+        work_run: dict[str, Any],
+        used_source_refs: list[str],
+        outcome: Literal["answer", "artifact", "decision", "completion", "blocker"],
+    ) -> None:
+        manifest = context.context_manifest
+        if manifest is None:
+            return
+        used_refs = {str(item) for item in used_source_refs if str(item)}
+        updated_items: list[ContextItemUsage] = []
+        for item in manifest.items:
+            item_sources = {str(ref) for ref in item.source_refs if str(ref)}
+            used = item.item_ref in used_refs or bool(item_sources & used_refs)
+            updated_items.append(
+                item.model_copy(
+                    update={
+                        "used": used,
+                        "outcome_contribution": outcome if used else "none",
+                    }
+                )
+            )
+        manifest.items = updated_items
+        manifest.used_refs = sorted(used_refs)[:100]
+        context.context_manifest = manifest
+        summary = {
+            "selected_item_count": sum(1 for item in updated_items if item.selected),
+            "used_item_count": sum(1 for item in updated_items if item.used),
+            "token_cost_total": manifest.token_cost_total,
+            "token_budget": manifest.token_budget,
+            "outcome": outcome,
+        }
+        context.manifest["context_usage"] = summary
+        work_run["context_usage"] = summary
+        self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
+
     def _append_checkpoint(
         self,
         run: dict[str, Any],
@@ -508,6 +675,8 @@ class WorkLearningService:
             if isinstance(item, dict) and item.get("harness_id")
         }
         revisions = run.get("contract_revisions") if isinstance(run.get("contract_revisions"), dict) else {}
+        loop = run.get("loop") if isinstance(run.get("loop"), dict) else {}
+        status = str(run.get("status") or "")
         checkpoint = WorkRunCheckpoint(
             checkpoint_id=_id("checkpoint", f"{run['work_run_id']}:{sequence}:{node}"),
             work_run_id=str(run["work_run_id"]),
@@ -517,6 +686,20 @@ class WorkLearningService:
             catalog_revision=str(revisions.get("capability_catalog") or ""),
             harness_revisions=harness_revisions,
             planner_schema_revision=str(revisions.get("planner_schema") or "semantic-plan/v2"),
+            loop_position={
+                "iteration": int(loop.get("iteration_count") or 0),
+                "tool_calls": int(loop.get("tool_loop_count") or 0),
+                "no_progress": int(loop.get("no_progress_count") or 0),
+            },
+            pending_interrupt=(
+                {
+                    "status": status,
+                    "decision": str(run.get("decision") or ""),
+                    "stop_reason": str(run.get("stop_reason") or ""),
+                }
+                if status in {"waiting_human", "waiting_review", "waiting_signal"}
+                else {}
+            ),
             idempotency_key=idempotency_key,
         )
         self.store.put(
@@ -1344,24 +1527,24 @@ class WorkLearningService:
                         "unsupported": unknown,
                     },
                 )
-        loop_budget = changes.get("loop_budget")
-        if loop_budget is not None:
-            if not isinstance(loop_budget, dict):
-                raise HTTPException(status_code=400, detail={"code": "invalid_loop_budget"})
+        loop_policy = changes.get("loop_policy")
+        if loop_policy is not None:
+            if not isinstance(loop_policy, dict):
+                raise HTTPException(status_code=400, detail={"code": "invalid_loop_policy"})
             allowed = {"max_iterations", "max_no_progress", "max_tool_loops"}
-            unknown = sorted(set(loop_budget) - allowed)
+            unknown = sorted(set(loop_policy) - allowed)
             try:
                 valid = (
-                    1 <= int(loop_budget.get("max_iterations") or 5) <= 5
-                    and int(loop_budget.get("max_no_progress") or 2) == 2
-                    and 1 <= int(loop_budget.get("max_tool_loops") or 5) <= 5
+                    1 <= int(loop_policy.get("max_iterations") or 5) <= 5
+                    and int(loop_policy.get("max_no_progress") or 2) == 2
+                    and 1 <= int(loop_policy.get("max_tool_loops") or 5) <= 5
                 )
             except (TypeError, ValueError):
                 valid = False
             if unknown or not valid:
                 raise HTTPException(
                     status_code=400,
-                    detail={"code": "invalid_loop_budget", "unsupported": unknown},
+                    detail={"code": "invalid_loop_policy", "unsupported": unknown},
                 )
 
     def shadow_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
@@ -1401,7 +1584,7 @@ class WorkLearningService:
                     "stop_reason": run.get("stop_reason") or "completed",
                 }
             )
-        loop_change = (candidate.get("changes") or {}).get("loop_budget")
+        loop_change = (candidate.get("changes") or {}).get("loop_policy")
         bounded_loop = True
         if isinstance(loop_change, dict):
             bounded_loop = (
@@ -1799,16 +1982,16 @@ class WorkLearningService:
         return list(dict.fromkeys(selected))
 
     @staticmethod
-    def _apply_pinned_loop_budget(
+    def _apply_pinned_loop_policy(
         policy: LoopPolicy,
         bindings: list[dict[str, Any]],
     ) -> LoopPolicy:
         budgets = [
-            changes.get("loop_budget")
+            changes.get("loop_policy") or changes.get("loop_budget")
             for item in bindings
             if isinstance(item, dict)
             for changes in [item.get("active_changes") if isinstance(item.get("active_changes"), dict) else {}]
-            if isinstance(changes.get("loop_budget"), dict)
+            if isinstance(changes.get("loop_policy") or changes.get("loop_budget"), dict)
         ]
         if not budgets:
             return policy
@@ -1905,7 +2088,7 @@ class WorkLearningService:
             )
             for item in context.evidence_refs
         ]
-        resolved_loop_policy = self._apply_pinned_loop_budget(
+        resolved_loop_policy = self._apply_pinned_loop_policy(
             self.resolve_loop_policy(intent, loop_policy),
             harness_bindings,
         )
@@ -1930,7 +2113,11 @@ class WorkLearningService:
                 "max_iterations": resolved_loop_policy.max_iterations,
                 "max_no_progress": resolved_loop_policy.max_no_progress,
                 "max_tool_loops": resolved_loop_policy.max_tool_loops,
+                "max_model_calls": resolved_loop_policy.max_model_calls,
+                "max_elapsed_seconds": resolved_loop_policy.max_elapsed_seconds,
+                "max_context_tokens": resolved_loop_policy.max_context_tokens,
                 "tool_loop_count": 0,
+                "started_at": now_iso(),
                 "deltas": [],
                 "progress_deltas": [],
                 "progress_state": {
@@ -1942,6 +2129,11 @@ class WorkLearningService:
                     "completion": {},
                 },
                 "idempotency_keys": [],
+                "resource_budget": (
+                    context.context_manifest.budget_resolution
+                    if context.context_manifest is not None
+                    else {}
+                ),
             },
             "harness_results": [item.model_dump(mode="json") for item in preflights],
             "harness_bindings": harness_bindings,
@@ -2347,6 +2539,23 @@ class WorkLearningService:
                         "updated_at": now_iso(),
                     },
                 )
+        context_outcome: Literal["answer", "artifact", "decision", "completion", "blocker"]
+        if status == "blocked":
+            context_outcome = "blocker"
+        elif artifacts:
+            context_outcome = "artifact"
+        elif status == "completed" and intent.operation in {WorkOperation.complete, WorkOperation.capture}:
+            context_outcome = "completion"
+        elif status in {"waiting_human", "waiting_review", "waiting_signal"}:
+            context_outcome = "decision"
+        else:
+            context_outcome = "answer"
+        self._record_context_outcome(
+            context=context,
+            work_run=work_run,
+            used_source_refs=evidence_refs,
+            outcome=context_outcome,
+        )
         stored = self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
         if job_id:
             job = self.store.get("jobs", job_id)
@@ -2657,6 +2866,51 @@ class WorkLearningService:
             raise HTTPException(status_code=409, detail={"status": "revision_conflict", "current_revision": revision, "work_run": run})
         if run.get("status") in {"completed", "failed", "cancelled", "stopped"}:
             raise HTTPException(status_code=409, detail=f"work run is already {run.get('status')}")
+        loop_started_at = str(existing_loop.get("started_at") or run.get("created_at") or "")
+        try:
+            loop_started = datetime.fromisoformat(loop_started_at.replace("Z", "+00:00"))
+            if loop_started.tzinfo is None:
+                loop_started = loop_started.replace(tzinfo=timezone.utc)
+        except ValueError:
+            loop_started = datetime.now(timezone.utc)
+        elapsed_seconds = max(0.0, (datetime.now(timezone.utc) - loop_started).total_seconds())
+        max_elapsed_seconds = int(existing_loop.get("max_elapsed_seconds") or 30)
+        if elapsed_seconds >= max_elapsed_seconds:
+            run.update(
+                {
+                    "status": "stopped",
+                    "decision": "stop",
+                    "stop_reason": "max_elapsed_seconds",
+                    "exit_criteria_result": ExitCriteriaResult(
+                        satisfied=False,
+                        evaluated_facts={
+                            "elapsed_seconds": elapsed_seconds,
+                            "max_elapsed_seconds": max_elapsed_seconds,
+                        },
+                        stop_reason="max_elapsed_seconds",
+                    ).model_dump(mode="json"),
+                    "revision": revision + 1,
+                    "updated_at": now_iso(),
+                }
+            )
+            run.setdefault("events", []).append(
+                {
+                    "event": "work.stopped",
+                    "status": "stopped",
+                    "stop_reason": "max_elapsed_seconds",
+                    "at": now_iso(),
+                }
+            )
+            self._append_checkpoint(
+                run,
+                node="stop",
+                raw_state={
+                    "status": "stopped",
+                    "stop_reason": "max_elapsed_seconds",
+                    "elapsed_seconds": elapsed_seconds,
+                },
+            )
+            return self.store.put("work_runs", work_run_id, run), []
         mode = TaskMode(str(run.get("task_mode") or "copilot"))
         context_row = self.store.get("contexts", str(run.get("context_id") or "")) or {}
         context = WorkContextPack.model_validate(context_row)
@@ -3016,6 +3270,30 @@ class WorkLearningService:
             run["negative_result_ids"] = list(
                 dict.fromkeys([*run.get("negative_result_ids", []), negative_id])
             )
+        continuation_used_refs = list(
+            dict.fromkeys(
+                [
+                    *progress_delta.evidence_refs,
+                    *progress_delta.tool_result_refs,
+                    *progress_delta.artifact_refs,
+                ]
+            )
+        )
+        continuation_outcome: Literal["answer", "artifact", "decision", "completion", "blocker"]
+        if status == "completed":
+            continuation_outcome = "completion"
+        elif delta.kind == "blocker" or status in {"blocked", "stopped"}:
+            continuation_outcome = "blocker"
+        elif progress_delta.artifact_refs:
+            continuation_outcome = "artifact"
+        else:
+            continuation_outcome = "decision"
+        self._record_context_outcome(
+            context=context,
+            work_run=run,
+            used_source_refs=continuation_used_refs,
+            outcome=continuation_outcome,
+        )
         stored = self.store.put("work_runs", work_run_id, run)
         return stored, candidates
 

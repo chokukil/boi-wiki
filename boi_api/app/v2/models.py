@@ -558,6 +558,21 @@ class ContextAnchor(BaseModel):
     context_resolution: Literal["route", "ontology_only", "none"] = "none"
 
 
+class ContextItemUsage(BaseModel):
+    item_ref: str
+    item_kind: Literal["evidence", "playbook", "task", "page", "artifact"] = "evidence"
+    provenance: str = ""
+    revision: str = ""
+    token_cost: int = Field(default=0, ge=0)
+    selected: bool = False
+    used: bool = False
+    selection_reason: str = ""
+    outcome_contribution: Literal[
+        "none", "answer", "artifact", "decision", "completion", "blocker"
+    ] = "none"
+    source_refs: list[str] = Field(default_factory=list, max_length=50)
+
+
 class ContextManifest(BaseModel):
     selected_refs: list[str] = Field(default_factory=list, max_length=12)
     excluded_refs: list[str] = Field(default_factory=list, max_length=100)
@@ -572,6 +587,10 @@ class ContextManifest(BaseModel):
     )
     raw_content_in_prompt: bool = False
     provenance: dict[str, dict[str, str]] = Field(default_factory=dict)
+    items: list[ContextItemUsage] = Field(default_factory=list, max_length=50)
+    token_cost_total: int = Field(default=0, ge=0)
+    used_refs: list[str] = Field(default_factory=list, max_length=100)
+    budget_resolution: dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphQueryDraft(BaseModel):
@@ -770,6 +789,8 @@ class WorkRunCheckpoint(BaseModel):
     catalog_revision: str = ""
     harness_revisions: dict[str, str] = Field(default_factory=dict)
     planner_schema_revision: str = "semantic-plan/v2"
+    loop_position: dict[str, int] = Field(default_factory=dict)
+    pending_interrupt: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = ""
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -786,6 +807,8 @@ class ExitCriteriaResult(BaseModel):
         "policy_stop",
         "max_iterations",
         "max_tool_loops",
+        "max_elapsed_seconds",
+        "max_model_calls",
         "no_progress",
         "blocked",
     ] = ""

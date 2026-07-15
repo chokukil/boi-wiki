@@ -21,11 +21,44 @@ PLACEHOLDER_MARKERS = ("example", "not-needed", "dummy-key", "change-me")
 class ModelUsageScope:
     scope_id: str
     token_budget: int
+    max_model_calls: int
+    max_elapsed_seconds: int
+    started_at: float
     events: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class ModelRuntimeProfile:
+    provider: str
+    model: str
+    context_window_tokens: int
+    max_output_tokens: int
+    source: str
+
+
+@dataclass(frozen=True)
+class ContextBudgetResolution:
+    requested_tokens: int
+    effective_tokens: int
+    context_window_tokens: int
+    reserved_tokens: int
+    max_output_tokens: int
+    profile_source: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "requested_tokens": self.requested_tokens,
+            "effective_tokens": self.effective_tokens,
+            "context_window_tokens": self.context_window_tokens,
+            "reserved_tokens": self.reserved_tokens,
+            "max_output_tokens": self.max_output_tokens,
+            "profile_source": self.profile_source,
+        }
 
 
 _MODEL_USAGE_SCOPE: ContextVar[ModelUsageScope | None] = ContextVar("boi_model_usage_scope", default=None)
 _PROVIDER_USAGE_EVENTS: ContextVar[list[dict[str, Any]]] = ContextVar("boi_provider_usage_events", default=[])
+_MODEL_RUNTIME_PROFILE_CACHE: dict[tuple[str, str, str], tuple[float, ModelRuntimeProfile]] = {}
 
 
 def _estimate_tokens(value: Any) -> int:
@@ -35,10 +68,38 @@ def _estimate_tokens(value: Any) -> int:
     return max(1, math.ceil(len(text) / 4))
 
 
-def begin_model_usage(scope_id: str, token_budget: int) -> Token:
+def begin_model_usage(
+    scope_id: str,
+    token_budget: int,
+    *,
+    max_model_calls: int = 20,
+    max_elapsed_seconds: int = 300,
+) -> Token:
     return _MODEL_USAGE_SCOPE.set(
-        ModelUsageScope(scope_id=scope_id, token_budget=max(0, int(token_budget)), events=[])
+        ModelUsageScope(
+            scope_id=scope_id,
+            token_budget=max(0, int(token_budget)),
+            max_model_calls=max(0, int(max_model_calls)),
+            max_elapsed_seconds=max(1, int(max_elapsed_seconds)),
+            started_at=time.perf_counter(),
+            events=[],
+        )
     )
+
+
+def update_model_usage_limits(*, max_model_calls: int, max_elapsed_seconds: int) -> None:
+    scope = _MODEL_USAGE_SCOPE.get()
+    if scope is None:
+        return
+    scope.max_model_calls = max(0, int(max_model_calls))
+    scope.max_elapsed_seconds = max(1, int(max_elapsed_seconds))
+
+
+def update_model_token_budget(token_budget: int) -> None:
+    scope = _MODEL_USAGE_SCOPE.get()
+    if scope is None:
+        return
+    scope.token_budget = max(0, int(token_budget))
 
 
 def finish_model_usage(token: Token) -> dict[str, Any]:
@@ -60,6 +121,9 @@ def finish_model_usage(token: Token) -> dict[str, Any]:
         "output_tokens_estimate": output_tokens,
         "total_tokens_estimate": input_tokens + output_tokens,
         "token_budget": token_budget,
+        "max_model_calls": int(scope.max_model_calls if scope else 0),
+        "max_elapsed_seconds": int(scope.max_elapsed_seconds if scope else 0),
+        "elapsed_ms": int((time.perf_counter() - scope.started_at) * 1000) if scope else 0,
         "remaining_tokens_estimate": max(0, token_budget - input_tokens - output_tokens) if token_budget else 0,
         "model_calls": sum(1 for item in events if item.get("kind") in {"structured", "stream"}),
         "embedding_calls": sum(1 for item in events if item.get("kind") == "embedding"),
@@ -146,6 +210,9 @@ def lmstudio_model_residency_state(settings: AgentV2Settings) -> dict[str, Any]:
         "jit_models": [],
         "jit_loading_detected": None,
         "openai_visible_models": [],
+        "runtime_profiles": {},
+        "generation_context_window": 0,
+        "generation_max_context_window": 0,
         "missing_models": required if configured else [],
         "load_requests": [],
         "unload_requests": 0,
@@ -203,12 +270,24 @@ def inspect_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any
     loaded: set[str] = set()
     manual: set[str] = set()
     jit: set[str] = set()
+    runtime_profiles: dict[str, dict[str, int]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
         key = str(row.get("key") or "")
         instances = [item for item in row.get("loaded_instances") or [] if isinstance(item, dict)]
-        if not key or not instances:
+        if not key:
+            continue
+        loaded_context_lengths = [
+            int((item.get("config") or {}).get("context_length") or 0)
+            for item in instances
+            if isinstance(item.get("config"), dict)
+        ]
+        runtime_profiles[key] = {
+            "context_window_tokens": max(loaded_context_lengths or [0]),
+            "max_context_window_tokens": int(row.get("max_context_length") or 0),
+        }
+        if not instances:
             continue
         loaded.add(key)
         if any(item.get("remaining_ttl_seconds") is None for item in instances):
@@ -229,6 +308,7 @@ def inspect_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any
         }
     )
     jit_loading_detected = any(model not in loaded for model in openai_visible)
+    generation_profile = runtime_profiles.get(settings.model_name) or {}
     # JIT may remain enabled for other clients. The local guard only needs to
     # prove that every configured model already has a non-TTL instance, so our
     # requests cannot trigger a load or depend on an auto-evicted instance.
@@ -251,6 +331,9 @@ def inspect_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any
         "jit_models": jit_required,
         "jit_loading_detected": jit_loading_detected,
         "openai_visible_models": openai_visible,
+        "runtime_profiles": runtime_profiles,
+        "generation_context_window": int(generation_profile.get("context_window_tokens") or 0),
+        "generation_max_context_window": int(generation_profile.get("max_context_window_tokens") or 0),
         "missing_models": missing,
         "reason": (
             "Load every configured model manually without a TTL before retrying."
@@ -258,6 +341,142 @@ def inspect_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any
             else ""
         ),
     }
+
+
+def _context_window_from_model_row(row: dict[str, Any]) -> int:
+    for key in (
+        "context_window",
+        "context_window_tokens",
+        "context_length",
+        "max_context_length",
+        "max_input_tokens",
+    ):
+        try:
+            value = int(row.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+    return 0
+
+
+def inspect_model_runtime_profile(
+    settings: AgentV2Settings,
+    *,
+    residency_state: dict[str, Any] | None = None,
+) -> ModelRuntimeProfile:
+    """Resolve capacity from explicit config or read-only provider metadata.
+
+    Model names never select a budget profile. Providers that do not publish a
+    context window use the deployment fallback, which operators can override.
+    """
+
+    if settings.model_context_window_tokens > 0:
+        return ModelRuntimeProfile(
+            provider=settings.model_provider,
+            model=settings.model_name,
+            context_window_tokens=settings.model_context_window_tokens,
+            max_output_tokens=settings.model_max_output_tokens,
+            source="deployment_config",
+        )
+
+    state = residency_state or {}
+    detected = int(state.get("generation_context_window") or 0)
+    if detected > 0:
+        return ModelRuntimeProfile(
+            provider=settings.model_provider,
+            model=settings.model_name,
+            context_window_tokens=detected,
+            max_output_tokens=settings.model_max_output_tokens,
+            source="provider_runtime",
+        )
+
+    if settings.lmstudio_require_preloaded_models and settings.model_name:
+        inspected = inspect_lmstudio_model_residency(settings)
+        detected = int(inspected.get("generation_context_window") or 0)
+        if detected > 0:
+            return ModelRuntimeProfile(
+                provider=settings.model_provider,
+                model=settings.model_name,
+                context_window_tokens=detected,
+                max_output_tokens=settings.model_max_output_tokens,
+                source="provider_runtime",
+            )
+
+    cache_key = (settings.model_provider, settings.model_base_url, settings.model_name)
+    cached = _MODEL_RUNTIME_PROFILE_CACHE.get(cache_key)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+
+    if settings.model_base_url and settings.model_name:
+        headers = (
+            {"Authorization": f"Bearer {settings.model_api_key}"}
+            if settings.model_api_key
+            else {}
+        )
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get(f"{settings.model_base_url}/models", headers=headers)
+                response.raise_for_status()
+                rows = response.json().get("data") or response.json().get("models") or []
+            row = next(
+                (
+                    item
+                    for item in rows
+                    if isinstance(item, dict)
+                    and str(item.get("id") or item.get("key") or "") == settings.model_name
+                ),
+                {},
+            )
+            detected = _context_window_from_model_row(row)
+        except Exception:
+            detected = 0
+        if detected > 0:
+            profile = ModelRuntimeProfile(
+                provider=settings.model_provider,
+                model=settings.model_name,
+                context_window_tokens=detected,
+                max_output_tokens=settings.model_max_output_tokens,
+                source="provider_catalog",
+            )
+            _MODEL_RUNTIME_PROFILE_CACHE[cache_key] = (time.monotonic() + 60.0, profile)
+            return profile
+
+    profile = ModelRuntimeProfile(
+        provider=settings.model_provider,
+        model=settings.model_name,
+        context_window_tokens=settings.model_context_fallback_tokens,
+        max_output_tokens=settings.model_max_output_tokens,
+        source="deployment_fallback",
+    )
+    _MODEL_RUNTIME_PROFILE_CACHE[cache_key] = (time.monotonic() + 60.0, profile)
+    return profile
+
+
+def resolve_context_budget(
+    settings: AgentV2Settings,
+    *,
+    requested_tokens: int,
+    residency_state: dict[str, Any] | None = None,
+) -> ContextBudgetResolution:
+    profile = inspect_model_runtime_profile(settings, residency_state=residency_state)
+    reserved = min(
+        settings.model_context_reserve_tokens,
+        max(2_048, profile.context_window_tokens // 4),
+    )
+    usable = max(
+        1_000,
+        profile.context_window_tokens - profile.max_output_tokens - reserved,
+    )
+    requested = max(1_000, int(requested_tokens))
+    return ContextBudgetResolution(
+        requested_tokens=requested,
+        effective_tokens=min(requested, usable),
+        context_window_tokens=profile.context_window_tokens,
+        reserved_tokens=reserved,
+        max_output_tokens=profile.max_output_tokens,
+        profile_source=profile.source,
+    )
 
 
 def ensure_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any]:
@@ -405,9 +624,19 @@ class UsageTrackingGateway:
         return {**self.delegate.preflight(), "usage_tracking": "provider_actual_with_estimate_fallback"}
 
     @staticmethod
-    def _check_budget(input_tokens: int) -> None:
+    def _check_budget(input_tokens: int, *, kind: str) -> None:
         scope = _MODEL_USAGE_SCOPE.get()
-        if not scope or not scope.token_budget:
+        if not scope:
+            return
+        if time.perf_counter() - scope.started_at > scope.max_elapsed_seconds:
+            raise RuntimeError("model elapsed-time budget exceeded before the next call")
+        if kind in {"structured", "stream"}:
+            model_calls = sum(
+                1 for item in scope.events if item.get("kind") in {"structured", "stream"}
+            )
+            if model_calls >= scope.max_model_calls:
+                raise RuntimeError("model call budget exceeded before the next call")
+        if not scope.token_budget:
             return
         used = sum(
             int(item.get("input_tokens") or item.get("input_tokens_estimate") or 0)
@@ -453,7 +682,7 @@ class UsageTrackingGateway:
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         input_tokens = _estimate_tokens(system) + _estimate_tokens(prompt) + _estimate_tokens(schema)
-        self._check_budget(input_tokens)
+        self._check_budget(input_tokens, kind="structured")
         started = time.perf_counter()
         try:
             result = self.delegate.generate_structured(system=system, prompt=prompt, schema=schema)
@@ -479,7 +708,7 @@ class UsageTrackingGateway:
 
     def stream_text(self, *, system: str, prompt: str) -> Iterator[str]:
         input_tokens = _estimate_tokens(system) + _estimate_tokens(prompt)
-        self._check_budget(input_tokens)
+        self._check_budget(input_tokens, kind="stream")
         started = time.perf_counter()
         chunks: list[str] = []
         status = "completed"
@@ -502,7 +731,7 @@ class UsageTrackingGateway:
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         input_tokens = _estimate_tokens(texts)
-        self._check_budget(input_tokens)
+        self._check_budget(input_tokens, kind="embedding")
         started = time.perf_counter()
         try:
             result = self.delegate.embed(texts)

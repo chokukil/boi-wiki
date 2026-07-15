@@ -10,7 +10,7 @@ loop_contract_templates:
     max_tool_loops: 1
     max_model_calls: 2
     max_elapsed_seconds: 30
-    max_context_tokens: 12000
+    max_context_tokens: 48000
     max_runs: 1
     exit_criteria_refs: []
     progress_policy: structured_delta
@@ -25,7 +25,7 @@ loop_contract_templates:
     max_tool_loops: 5
     max_model_calls: 5
     max_elapsed_seconds: 120
-    max_context_tokens: 24000
+    max_context_tokens: 96000
     max_runs: 1
     exit_criteria_refs: []
     progress_policy: structured_delta
@@ -40,7 +40,7 @@ loop_contract_templates:
     max_tool_loops: 5
     max_model_calls: 5
     max_elapsed_seconds: 600
-    max_context_tokens: 60000
+    max_context_tokens: 160000
     max_runs: 1
     exit_criteria_refs: []
     progress_policy: structured_delta
@@ -117,8 +117,8 @@ capabilities:
     context_recipe: [page, selected_text, ontology, authoritative_knowledge]
     evidence_policy: [acl_visible, published_or_reviewed, cite_sources]
     completion_criteria: [one_or_more_relevant_evidence_or_explicit_no_result]
-    allowed_loop_kinds: [turn]
-    allowed_loop_triggers: [user, api]
+    allowed_loop_kinds: [turn, time, proactive]
+    allowed_loop_triggers: [user, api, event, schedule, interval]
     default_loop_contract:
       <<: *bounded_turn
       exit_criteria_refs: [one_or_more_relevant_evidence_or_explicit_no_result]
