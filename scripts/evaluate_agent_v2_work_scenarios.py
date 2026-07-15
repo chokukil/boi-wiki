@@ -297,6 +297,30 @@ def main() -> int:
     results: list[dict[str, Any]] = []
     session_ids: list[str] = []
     deep_jobs: dict[str, int] = {}
+
+    def checkpoint(scenario_id: str) -> None:
+        if args.output:
+            payload = {
+                "status": "running",
+                "accepted": False,
+                "fixture_version": fixture.get("version"),
+                "base_url": base_url,
+                "completed": len(results),
+                "total": len(scenarios),
+                "results": results,
+            }
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            temporary = args.output.with_suffix(f"{args.output.suffix}.tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            temporary.replace(args.output)
+        latest = results[-1] if results else {}
+        state = "passed" if latest.get("passed") else "failed"
+        print(
+            f"[semantic-holdout] {len(results)}/{len(scenarios)} {scenario_id} {state}",
+            file=sys.stderr,
+            flush=True,
+        )
+
     with httpx.Client(timeout=args.timeout) as client:
         try:
             readiness_response = client.get(f"{base_url}/api/v2/system/readiness", params=params)
@@ -362,6 +386,7 @@ def main() -> int:
                             "actual": {"status_code": response.status_code, "body": response.text[:1000]},
                         }
                     )
+                    checkpoint(str(scenario.get("id") or ""))
                     continue
                 response_payload = response.json()
                 response_payload["_scenario_question"] = turns[-1]
@@ -381,6 +406,7 @@ def main() -> int:
                 evaluated["actual"]["turn_count"] = len(turns)
                 evaluated["actual"]["turn_latencies_ms"] = turn_latencies
                 results.append(evaluated)
+                checkpoint(str(scenario.get("id") or ""))
                 job_ref = str(response_payload.get("job_ref") or "")
                 if job_ref:
                     deep_jobs[job_ref] = len(results) - 1
@@ -504,6 +530,7 @@ def main() -> int:
     thresholds = fixture.get("thresholds") or {}
     accepted = all(metrics.get(name, 0.0) >= float(value) for name, value in thresholds.items())
     report = {
+        "status": "completed",
         "accepted": accepted,
         "fixture_version": fixture.get("version"),
         "base_url": base_url,
