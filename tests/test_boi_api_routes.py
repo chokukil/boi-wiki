@@ -8470,6 +8470,7 @@ def test_hybrid_search_deep_work_and_mermaid_workflow_contracts(boi_app_module, 
     assert draft["deepagents_run"]["status"] in {"skipped", "failed", "executed"}
     assert draft["deepagents_run"]["tool_policy"] == "read_only_boi_search_context_graph"
     assert draft["context_manifest"]["loop_policy"]["requires_delta"] is True
+    assert draft["context_manifest"]["strategy"] == ["write", "select", "preserve", "reference"]
     assert draft["evidence_ledger"]
 
     mermaid = client.post(
@@ -16151,6 +16152,7 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert body["task_loop_state"]["exit_criteria"]["criteria"] == body["task_exit_criteria"]
     assert body["task_loop_state"]["progress"]["delta_required"] is True
     assert "data_lake_artifact_profiles" in body["context_manifest"]["included_sources"]
+    assert body["context_manifest"]["strategy"] == ["write", "select", "preserve", "reference"]
 
     console = client.get(f"/api/tasks/console?employee_id=100001&task_id=task:{request_id}")
     assert console.status_code == 200
@@ -16167,6 +16169,7 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert workflow_canvas["source"].startswith("flowchart LR")
     assert workflow_canvas["current_stage_id"] == "detect"
     assert workflow_canvas["actions"] == []
+    assert console_body["context_engineering"]["strategy"] == ["write", "select", "preserve", "reference"]
     assert console_body["context_engineering"]["manifest"]["raw_payload_policy"] == "profile_sample_checksum_url_only"
     assert any(item["kind"] == "external_ai_note" for item in console_body["ui_actions"])
     artifact_refs = console_body["evidence_collection"]["data_lake_artifacts"]

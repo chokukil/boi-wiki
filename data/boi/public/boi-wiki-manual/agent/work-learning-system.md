@@ -76,12 +76,14 @@ flowchart TD
 | 연속성 | 최근 대화 요약, 활성 artifact, 최근 loop delta |
 | provenance | source revision, checksum, 외부 AI 기여와 ACL URL |
 
-Context는 `write/select/compress/isolate`로 관리한다.
+Context는 `write/select/preserve/reference`로 관리한다.
 
 - write: WorkSession, scratchpad와 Task 상태를 저장한다.
 - select: 현재 단계와 완료 항목에 필요한 source만 고른다.
-- compress: 오래된 대화와 긴 이력을 bounded summary로 줄인다.
-- isolate: 원본 파일, 로그, CSV와 민감 데이터는 prompt 밖에 둔다.
+- preserve: 선택한 turn, claim, evidence, chunk와 artifact를 문자열 길이로 자르거나 손실 요약으로 바꾸지 않는다.
+- reference: 긴 원본 파일, 로그, CSV와 민감 데이터는 자료 보관함에 보존하고 checksum·ACL reference와 필요한 profile을 완전한 context item으로 전달한다.
+
+`max_context_tokens=0`은 작은 공통 상한이 아니라 generation provider가 선언한 실제 context window를 사용한다는 뜻이다. 로컬 Gemma와 사내 관리형 GPT 계열은 같은 선택 계약을 사용한다. 물리 용량을 넘을 때만 다음 context item 전체를 제외하며, 제외한 항목과 이유를 manifest에 기록한다. 모델 이름이나 응답 속도를 이유로 이미 선택한 근거를 임의 압축하지 않는다.
 
 `ContextManifest`는 사용한 source뿐 아니라 제외한 source와 이유도 남겨 재현성과 권한 검토를 돕는다.
 
@@ -115,7 +117,7 @@ Web, REST, MCP와 DeepAgents는 같은 Harness 결과와 blocker를 반환한다
 
 실행 실패는 단순 오류 문자열이 아니라 `operation → context → validator → blocker → fallback`의 인과 경로로 남긴다. 실패한 시도와 부정 결과도 보존해야 같은 도구 호출과 같은 질문을 반복하지 않고 다음 Plan Delta가 달라질 수 있다.
 
-`ContextPlaybook`은 특정 업무에서 효과가 확인된 context 선택·압축 방식을 private provisional 항목으로 보존한다. 다음 실행은 ACL과 model profile이 맞는 항목만 선택하며, 원본 전문이나 권한 밖 자료를 복제하지 않는다.
+`ContextPlaybook`은 특정 업무에서 효과가 확인된 context 선택·배치·reference 방식을 private provisional 항목으로 보존한다. 다음 실행은 ACL과 model profile이 맞는 완전한 항목만 선택하며, 원본 전문이나 권한 밖 자료를 복제하지 않는다.
 
 Harness 개선 후보는 production 계약을 직접 고치지 않는다. `HarnessCandidate`는 다음 순서를 모두 통과해야 사람 검토 대상으로 올라간다.
 

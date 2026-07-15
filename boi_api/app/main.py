@@ -22486,7 +22486,7 @@ async def run_deepagents_draft(
 
 def deep_work_context_manifest(req: DeepWorkRequest, context: dict[str, Any], search: dict[str, Any]) -> dict[str, Any]:
     return {
-        "strategy": ["write", "select", "compress", "isolate"],
+        "strategy": ["write", "select", "preserve", "reference"],
         "included_sources": [
             key
             for key, enabled in {
@@ -29407,7 +29407,7 @@ def work_context_pack(
     if not task_exit_criteria:
         task_exit_criteria = normalize_registry_list(default_completion_contract.get("exit_criteria"))
     context_manifest = {
-        "strategy": ["write", "select", "compress", "isolate"],
+        "strategy": ["write", "select", "preserve", "reference"],
         "included_sources": [
             key
             for key, enabled in {
@@ -30913,7 +30913,7 @@ def task_execution_context_fast(
         "historical_patterns": [],
         "recommended_next_steps": [],
         "context_manifest": {
-            "strategy": ["write", "select", "compress", "isolate"],
+            "strategy": ["write", "select", "preserve", "reference"],
             "included_sources": ["task", "workflow", "trace", *(["data_lake_artifact_profiles"] if data_lake_artifacts else [])],
             "excluded_sources": ["raw_file_body", "long_transcript", "large_csv"],
             "raw_payload_policy": "profile_sample_checksum_url_only",
@@ -31092,7 +31092,7 @@ def task_console_payload(
             "similar_cases": context.get("similar_case_summaries") or [],
         },
         "context_engineering": {
-            "strategy": ["write", "select", "compress", "isolate"],
+            "strategy": ["write", "select", "preserve", "reference"],
             "prompt_policy": "업무 판단에 필요한 요약 정보, 대표값, 체크섬, 링크만 전달합니다.",
             "large_original_policy": "원본 파일, 긴 로그, CSV, 외부 AI 대화 전문은 원본/첨부 저장소 링크로만 연결합니다.",
             "manifest": context.get("context_manifest") or {},
