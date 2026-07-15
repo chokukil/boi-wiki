@@ -43,6 +43,7 @@ from boi_api.app.v2.models import (
     AnswerBlock,
     ArtifactRef,
     CitationRef,
+    ContextItemUsage,
     ContextManifest,
     ContextPlaybookCreateRequest,
     ContextPlaybookPatchRequest,
@@ -6561,6 +6562,80 @@ def test_source_set_preserves_every_claim_supported_used_source(
     source_set = v2_service.get_source_set(principal, session["session_id"])
     assert source_set["auto_selected"] == refs
     assert [item["source_ref"] for item in source_set["groups"]["used"]] == refs
+
+
+def test_context_outcome_and_grounded_table_preserve_all_verified_provenance(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    refs = [f"boi:public:test:provenance-{index}" for index in range(1, 121)]
+    context = WorkContextPack(
+        context_id="context-complete-provenance",
+        employee_id=principal.employee_id,
+        capability_id="knowledge.search",
+        goal="검증에 사용한 모든 근거를 보존한다",
+        context_manifest=ContextManifest(
+            selected_refs=refs,
+            items=[
+                ContextItemUsage(
+                    item_ref=ref,
+                    selected=True,
+                    source_refs=[ref],
+                )
+                for ref in refs
+            ],
+        ),
+    )
+    run = v2_service.learning.create_run(
+        principal=principal,
+        agent_run_id="agent-complete-provenance",
+        session={"session_id": "session-complete-provenance"},
+        context=context,
+        intent=WorkIntent(
+            goal=context.goal,
+            resolved_goal=context.goal,
+            operation=WorkOperation.understand,
+            harness_ids=["context.work"],
+        ),
+        goal_plan_id="goal-complete-provenance",
+        catalog_revision=v2_service.registry.version,
+    )
+
+    v2_service.learning._record_context_outcome(
+        context=context,
+        work_run=run,
+        used_source_refs=refs,
+        outcome="answer",
+    )
+
+    stored = WorkContextPack.model_validate(v2_service.store.get("contexts", context.context_id))
+    assert stored.context_manifest is not None
+    assert stored.context_manifest.used_refs == sorted(refs)
+    assert all(item.used for item in stored.context_manifest.items)
+
+    claims = [
+        GroundedClaim(
+            claim_id=f"claim-{index}",
+            text=f"검증된 사실 {index}",
+            source_refs=[ref],
+            supporting_chunk_ids=[f"chunk-{index}"],
+            support_status="supported",
+            confidence=1.0,
+        )
+        for index, ref in enumerate(refs[:20], start=1)
+    ]
+    artifact = v2_service._grounded_claims_table_artifact(
+        principal,
+        session={"session_id": "session-complete-provenance"},
+        claims=claims,
+        work_run_id=run["work_run_id"],
+        capability_id="knowledge.search",
+    )
+
+    assert artifact is not None
+    stored_artifact = v2_service.store.get("artifacts", artifact.artifact_id)
+    assert stored_artifact["draft"]["source_refs"] == refs[:20]
+    assert len([item for item in stored_artifact["draft"]["nodes"] if item["node_kind"] == "grounded_claim"]) == 20
 
 
 def test_dictionary_alias_gets_ontology_authority_in_search(v2_service: AgentV2Service, principal: Principal):

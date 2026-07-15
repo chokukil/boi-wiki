@@ -2761,8 +2761,8 @@ class AgentV2Service:
             supported_claim_count=len(supported_claims),
             unsupported_claim_count=len(unsupported_claims),
             conflicting_claim_count=len(conflicting_claims),
-            missing_evidence=[item.text for item in unsupported_claims[:4]],
-            conflicts=[item.text for item in conflicting_claims[:4]],
+            missing_evidence=[item.text for item in unsupported_claims],
+            conflicts=[item.text for item in conflicting_claims],
         )
         unsupported_required_claims = [
             item
@@ -3667,7 +3667,7 @@ class AgentV2Service:
         underlying_source_refs: list[str] = []
         grounded_edges: list[dict[str, Any]] = []
         provenance: list[str] = []
-        for edge in edges[:24]:
+        for edge in edges:
             source_id = str(edge.get("source_id") or "")
             target_id = str(edge.get("target_id") or "")
             source = node_lookup.get(source_id) or {}
@@ -3710,15 +3710,15 @@ class AgentV2Service:
             if str(value or "")
         }
         nodes = [item for item in nodes if str(item.get("node_id") or "") in visible_node_ids]
-        underlying_source_refs = list(dict.fromkeys(underlying_source_refs))[:40]
+        underlying_source_refs = list(dict.fromkeys(underlying_source_refs))
 
         lines = ["### 확인된 업무 관계"]
-        lines.extend(relation_lines[:12] or ["- 검증된 업무 관계가 아직 없습니다."])
+        lines.extend(relation_lines or ["- 검증된 업무 관계가 아직 없습니다."])
         if intent.work_view == "combined":
             lines.extend(["", "### 지금 처리할 업무"])
             lines.extend(
                 f"- [{item.title}]({item.url}){f': {item.summary}' if item.summary else ''}"
-                for item in current_work[:8]
+                for item in current_work
             )
             if not current_work:
                 lines.append("- 현재 처리할 Inbox 업무가 없습니다.")
@@ -3840,7 +3840,7 @@ class AgentV2Service:
         edges: list[dict[str, Any]] = []
         seen_sources: set[str] = set()
         source_refs: list[str] = []
-        for claim in supported[:12]:
+        for claim in supported:
             claim_node_id = f"claim:{claim.claim_id}"
             nodes.append(
                 {
@@ -3889,7 +3889,7 @@ class AgentV2Service:
             return None
 
         artifact_id = new_id("artifact")
-        source_refs = list(dict.fromkeys(source_refs))[:24]
+        source_refs = list(dict.fromkeys(source_refs))
         stored = {
             "artifact_id": artifact_id,
             "employee_id": principal.employee_id,
@@ -4589,12 +4589,12 @@ class AgentV2Service:
             "task_ref": str(context.get("task_ref") or ""),
             "completion_items": [
                 str(item.get("label") or "")
-                for item in (completion.get("checks") or [])[:8]
+                for item in completion.get("checks") or []
                 if isinstance(item, dict) and item.get("label")
             ],
             "required_evidence": [
                 str(item.get("label") or "")
-                for item in (completion.get("evidence") or [])[:8]
+                for item in completion.get("evidence") or []
                 if isinstance(item, dict) and item.get("label") and item.get("required", True)
             ],
             "last_progress": compact_text(str((last_delta[-1] if last_delta else {}).get("summary") or ""), 500),
@@ -6218,7 +6218,7 @@ class AgentV2Service:
                 status = "needs_input"
                 answer = AnswerBlock(
                     summary=f"보완할 항목이 {len(blockers)}개 있습니다.",
-                    markdown="### 보완 필요\n\n" + "\n".join(f"- {item}" for item in blockers[:8]),
+                    markdown="### 보완 필요\n\n" + "\n".join(f"- {item}" for item in blockers),
                 )
             else:
                 if domain_test:
@@ -6411,7 +6411,7 @@ class AgentV2Service:
             if citations:
                 markers = " ".join(
                     f"[{index}](/api/v2/citations/{item.citation_id})"
-                    for index, item in enumerate(citations[:4], start=1)
+                    for index, item in enumerate(citations, start=1)
                 )
                 answer.markdown = f"{answer.markdown}\n\n관계 근거 {markers}"
         elif intent.presentation_mode == "mermaid" and bool(definition.graph_query_kinds):
@@ -6519,7 +6519,7 @@ class AgentV2Service:
         if citations and not claim_grounded_response:
             markers = " ".join(
                 f"[{index}](/api/v2/citations/{item.citation_id})"
-                for index, item in enumerate(citations[:4], start=1)
+                for index, item in enumerate(citations, start=1)
             )
             answer.markdown = f"{answer.markdown}\n\n사용한 지식 {markers}"
 

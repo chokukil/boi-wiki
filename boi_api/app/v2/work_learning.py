@@ -528,7 +528,7 @@ class ContextCompiler:
         else:
             metadata.pop("context_playbook", None)
         source_set_excluded = [str(item) for item in source_set.get("excluded") or []]
-        all_excluded = list(dict.fromkeys([*source_set_excluded, *budget_excluded_refs]))[:1000]
+        all_excluded = list(dict.fromkeys([*source_set_excluded, *budget_excluded_refs]))
         exclusion_reasons = {
             **{item: "user_excluded" for item in source_set_excluded},
             **{
@@ -544,7 +544,7 @@ class ContextCompiler:
             exclusion_reasons=exclusion_reasons,
             pinned_refs=[str(item) for item in source_set.get("pinned") or []],
             chunk_refs=chunk_refs,
-            external_refs=list(dict.fromkeys(str(item) for item in external_refs if str(item)))[:100],
+            external_refs=list(dict.fromkeys(str(item) for item in external_refs if str(item))),
             source_revision=self.repository.source_signature(),
             token_budget=context_token_budget,
             raw_content_in_prompt=False,
@@ -641,7 +641,7 @@ class WorkLearningService:
                 )
             )
         manifest.items = updated_items
-        manifest.used_refs = sorted(used_refs)[:100]
+        manifest.used_refs = sorted(used_refs)
         context.context_manifest = manifest
         summary = {
             "selected_item_count": sum(1 for item in updated_items if item.selected),
@@ -1121,7 +1121,7 @@ class WorkLearningService:
             "kind": kind,
             "summary": _compact(summary, 2000),
             "work_run_id": work_run_id,
-            "source_refs": list(dict.fromkeys(source_refs or []))[:50],
+            "source_refs": list(dict.fromkeys(source_refs or [])),
             "metadata": metadata or {},
         }
         negative_id = _id(
@@ -2333,7 +2333,7 @@ class WorkLearningService:
         ]
         ledger_ids = list(
             dict.fromkeys([*work_run.get("evidence_ledger_ids", []), *added_ledger_ids])
-        )[:100]
+        )
         eligible_complete = False
         if response_status == "failed" or blocked:
             status, decision, stop_reason = "blocked", "blocked", "policy_stop" if blocked else "unexpected_failure"
@@ -2421,7 +2421,7 @@ class WorkLearningService:
                 "stop_reason": stop_reason,
                 "loop": loop,
                 "artifact_refs": [str(item.get("artifact_id") or "") for item in artifacts if item.get("artifact_id")],
-                "evidence_refs": list(dict.fromkeys([*work_run.get("evidence_refs", []), *evidence_refs]))[:50],
+                "evidence_refs": list(dict.fromkeys([*work_run.get("evidence_refs", []), *evidence_refs])),
                 "job_id": job_id or work_run.get("job_id") or "",
                 "harness_results": [
                     *work_run.get("harness_results", []),
@@ -2639,7 +2639,7 @@ class WorkLearningService:
                 "decision": "complete" if successful else "blocked",
                 "stop_reason": "exit_criteria_satisfied" if successful else "unexpected_failure",
                 "loop": loop,
-                "evidence_ledger_ids": list(dict.fromkeys(ledger_ids))[:100],
+                "evidence_ledger_ids": list(dict.fromkeys(ledger_ids)),
                 "exit_criteria_result": exit_result.model_dump(mode="json"),
                 "revision": int(work_run.get("revision") or 1) + 1,
                 "updated_at": now_iso(),
@@ -3024,7 +3024,7 @@ class WorkLearningService:
                     verification="confirmed" if request.confirmation == "confirm" else "observed",
                 )
             )
-        ledger_ids = list(dict.fromkeys(ledger_ids))[:100]
+        ledger_ids = list(dict.fromkeys(ledger_ids))
         completion_attempt = standalone_action_complete or standalone_domain_confirmation or (
             request.confirmation == "confirm" and delta.kind in {"human_input", "state_transition"}
         ) or (mode == TaskMode.autopilot and delta.kind in {"action_result", "state_transition"})
@@ -3318,7 +3318,7 @@ class WorkLearningService:
             "title": _compact(title, 160) or "업무에서 남길 내용",
             "summary": clean_summary,
             "reusable_lesson": clean_summary,
-            "source_refs": refs[:50],
+            "source_refs": refs,
             "target_asset_ref": context.goal_anchor.ref if context.goal_anchor else context.page_anchor.ref if context.page_anchor else "",
             "visibility": "private",
             "status": "provisional",

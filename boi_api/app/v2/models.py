@@ -427,8 +427,8 @@ class AnswerabilityReport(BaseModel):
     supported_claim_count: int = Field(default=0, ge=0)
     unsupported_claim_count: int = Field(default=0, ge=0)
     conflicting_claim_count: int = Field(default=0, ge=0)
-    missing_evidence: list[str] = Field(default_factory=list, max_length=8)
-    conflicts: list[str] = Field(default_factory=list, max_length=8)
+    missing_evidence: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
 
 
 class TurnTopicState(BaseModel):
@@ -572,16 +572,16 @@ class ContextItemUsage(BaseModel):
     outcome_contribution: Literal[
         "none", "answer", "artifact", "decision", "completion", "blocker"
     ] = "none"
-    source_refs: list[str] = Field(default_factory=list, max_length=50)
+    source_refs: list[str] = Field(default_factory=list)
 
 
 class ContextManifest(BaseModel):
-    selected_refs: list[str] = Field(default_factory=list, max_length=500)
-    excluded_refs: list[str] = Field(default_factory=list, max_length=1000)
+    selected_refs: list[str] = Field(default_factory=list)
+    excluded_refs: list[str] = Field(default_factory=list)
     exclusion_reasons: dict[str, str] = Field(default_factory=dict)
-    pinned_refs: list[str] = Field(default_factory=list, max_length=500)
-    chunk_refs: list[str] = Field(default_factory=list, max_length=500)
-    external_refs: list[str] = Field(default_factory=list, max_length=100)
+    pinned_refs: list[str] = Field(default_factory=list)
+    chunk_refs: list[str] = Field(default_factory=list)
+    external_refs: list[str] = Field(default_factory=list)
     source_revision: str = ""
     token_budget: int = Field(default=0, ge=0)
     policies: list[Literal["write", "select", "compress", "isolate"]] = Field(
@@ -589,9 +589,9 @@ class ContextManifest(BaseModel):
     )
     raw_content_in_prompt: bool = False
     provenance: dict[str, dict[str, str]] = Field(default_factory=dict)
-    items: list[ContextItemUsage] = Field(default_factory=list, max_length=1000)
+    items: list[ContextItemUsage] = Field(default_factory=list)
     token_cost_total: int = Field(default=0, ge=0)
-    used_refs: list[str] = Field(default_factory=list, max_length=500)
+    used_refs: list[str] = Field(default_factory=list)
     budget_resolution: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -767,14 +767,14 @@ class ProgressDelta(BaseModel):
     kind: Literal[
         "evidence", "tool_result", "artifact", "human_input", "state_transition", "blocker", "strategy_change"
     ]
-    entity_refs: list[str] = Field(default_factory=list, max_length=50)
-    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
-    tool_result_refs: list[str] = Field(default_factory=list, max_length=50)
-    artifact_refs: list[str] = Field(default_factory=list, max_length=50)
+    entity_refs: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    tool_result_refs: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
     completion_changes: dict[str, Any] = Field(default_factory=dict)
     blocker_code: str = Field(default="", max_length=120)
     strategy: str = Field(default="", max_length=1000)
-    strategy_refs: list[str] = Field(default_factory=list, max_length=50)
+    strategy_refs: list[str] = Field(default_factory=list)
     error_disposition: Literal[
         "", "transient_retry", "semantic_repair", "human_interrupt", "policy_stop", "unexpected_failure"
     ] = ""
@@ -800,7 +800,7 @@ class WorkRunCheckpoint(BaseModel):
 class ExitCriteriaResult(BaseModel):
     satisfied: bool = False
     criteria: list[HarnessCheck] = Field(default_factory=list)
-    evidence_ledger_ids: list[str] = Field(default_factory=list, max_length=100)
+    evidence_ledger_ids: list[str] = Field(default_factory=list)
     evaluated_facts: dict[str, Any] = Field(default_factory=dict)
     stop_reason: Literal[
         "",
@@ -848,10 +848,10 @@ class HarnessFailureRecord(BaseModel):
     causal_taxonomy_revision: str
     causal_mechanism: str
     verifier_facts: dict[str, Any] = Field(default_factory=dict)
-    trace_refs: list[str] = Field(default_factory=list, max_length=50)
+    trace_refs: list[str] = Field(default_factory=list)
     context_id: str = ""
-    evidence_refs: list[str] = Field(default_factory=list, max_length=100)
-    artifact_refs: list[str] = Field(default_factory=list, max_length=100)
+    evidence_refs: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
     catalog_revision: str = ""
     planner_schema_revision: str = ""
     source_revision: str = ""
