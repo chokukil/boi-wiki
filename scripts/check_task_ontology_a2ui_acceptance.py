@@ -5,7 +5,9 @@ import argparse
 import json
 import subprocess
 import statistics
+import tempfile
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -58,28 +60,57 @@ def execute_handlers(fixture: dict[str, Any], timeout: float) -> tuple[list[dict
     handlers = sorted({str(item.get("handler") or "") for item in scenarios if item.get("handler")})
     results_by_handler: dict[str, dict[str, Any]] = {}
     failures: list[str] = []
-    for handler in handlers:
-        started = time.monotonic()
+    started = time.monotonic()
+    output = ""
+    with tempfile.TemporaryDirectory(prefix="boi-acceptance-") as temp_dir:
+        junit_path = Path(temp_dir) / "pytest.xml"
         try:
             completed = subprocess.run(
-                ["pytest", "-s", "-q", handler],
+                ["python", "-m", "pytest", "-s", "-q", f"--junitxml={junit_path}", *handlers],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
                 timeout=timeout,
                 check=False,
             )
-            passed = completed.returncode == 0
             output = (completed.stdout + "\n" + completed.stderr).strip()[-4000:]
         except subprocess.TimeoutExpired as exc:
-            passed = False
             output = f"timeout after {timeout}s: {(exc.stdout or '')} {(exc.stderr or '')}"[-4000:]
-        results_by_handler[handler] = {
-            "handler": handler,
-            "passed": passed,
-            "duration_ms": round((time.monotonic() - started) * 1000, 2),
-            "output": output,
-        }
+        if junit_path.exists():
+            root = ET.parse(junit_path).getroot()
+            for case in root.iter("testcase"):
+                classname = str(case.attrib.get("classname") or "")
+                name = str(case.attrib.get("name") or "")
+                if not classname or not name:
+                    continue
+                base_name = name.split("[", 1)[0]
+                node_id = f"{classname.replace('.', '/')}.py::{base_name}"
+                passed = not any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
+                details = "\n".join(
+                    str(child.text or "").strip()
+                    for tag in ("failure", "error", "skipped")
+                    for child in [case.find(tag)]
+                    if child is not None and str(child.text or "").strip()
+                )
+                duration_ms = round(float(case.attrib.get("time") or 0.0) * 1000, 2)
+                previous = results_by_handler.get(node_id)
+                results_by_handler[node_id] = {
+                    "handler": node_id,
+                    "passed": passed and bool(previous is None or previous["passed"]),
+                    "duration_ms": round(duration_ms + float((previous or {}).get("duration_ms") or 0.0), 2),
+                    "output": (details[-4000:] or str((previous or {}).get("output") or "") or output),
+                }
+    elapsed_ms = round((time.monotonic() - started) * 1000, 2)
+    for handler in handlers:
+        results_by_handler.setdefault(
+            handler,
+            {
+                "handler": handler,
+                "passed": False,
+                "duration_ms": elapsed_ms,
+                "output": output or "pytest did not emit a JUnit result for this handler",
+            },
+        )
     scenario_results: list[dict[str, Any]] = []
     for scenario in scenarios:
         handler = str(scenario.get("handler") or "")

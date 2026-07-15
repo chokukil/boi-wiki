@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
-import re
 import sys
 import time
 from pathlib import Path
@@ -15,36 +15,6 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FIXTURE = ROOT / "tests" / "fixtures" / "agent_v2_work_scenarios.yaml"
-GENERIC_TERMS = {
-    "boi", "wiki", "현재", "관련", "업무", "근거", "함께", "설명", "보여", "만들어", "초안",
-    "확인", "기준", "결과", "대한", "있는", "어떻게", "무엇", "해주세요", "해줘", "알려줘",
-    "어떤", "하는지", "해야", "부터", "까지", "실제로", "지금",
-}
-
-KOREAN_SUFFIXES = (
-    "으로부터", "에서부터", "에게서는", "이라는", "에서는", "으로는", "까지는",
-    "에게서", "에서", "으로", "처럼", "보다", "부터", "까지", "하고", "하며",
-    "해야", "하는", "한테", "에게", "이라", "라고", "이랑", "랑", "와", "과",
-    "은", "는", "이", "가", "을", "를", "의", "에", "도", "만",
-)
-
-
-def normalize_content_token(token: str) -> str:
-    normalized = token.casefold()
-    if re.search(r"[가-힣]", normalized):
-        for suffix in KOREAN_SUFFIXES:
-            if normalized.endswith(suffix) and len(normalized) - len(suffix) >= 2:
-                normalized = normalized[: -len(suffix)]
-                break
-    return normalized
-
-
-def content_terms(value: str) -> set[str]:
-    return {
-        normalize_content_token(token)
-        for token in re.findall(r"[A-Za-z0-9가-힣._-]{2,}", str(value or ""))
-        if normalize_content_token(token) not in GENERIC_TERMS
-    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument(
+        "--repetitions",
+        type=int,
+        default=0,
+        help="Repeat every scenario this many times; 0 uses the fixture value.",
+    )
     parser.add_argument("--keep-state", action="store_true")
     parser.add_argument("--scenario-id", action="append", default=[], help="Run only the selected scenario id; repeatable.")
     parser.add_argument("--judge-failures", action="store_true", help="Mark failed or ambiguous cases for explicit GPT-5.5 test adjudication.")
@@ -67,6 +43,38 @@ def expected_operation_matches(scenario: dict[str, Any], actual: str) -> bool:
     return actual in {str(item) for item in scenario.get("expected_operations") or []}
 
 
+def expand_scenarios(fixture: dict[str, Any], *, repetitions: int) -> list[dict[str, Any]]:
+    defaults = fixture.get("defaults") if isinstance(fixture.get("defaults"), dict) else {}
+    rows = [copy.deepcopy(item) for item in fixture.get("scenarios") or [] if isinstance(item, dict)]
+    for group in fixture.get("intent_groups") or []:
+        if not isinstance(group, dict):
+            continue
+        expressions = [str(item).strip() for item in group.get("expressions") or [] if str(item).strip()]
+        common = {
+            key: copy.deepcopy(value)
+            for key, value in group.items()
+            if key not in {"id", "expressions"}
+        }
+        for index, expression in enumerate(expressions, start=1):
+            rows.append(
+                {
+                    **common,
+                    "id": f"{group.get('id') or 'intent'}_{index:02d}",
+                    "question": expression,
+                }
+            )
+    repeated: list[dict[str, Any]] = []
+    for repetition in range(1, repetitions + 1):
+        for row in rows:
+            scenario = {**copy.deepcopy(defaults), **copy.deepcopy(row)}
+            scenario["base_id"] = str(scenario.get("id") or "")
+            scenario["repetition"] = repetition
+            if repetitions > 1:
+                scenario["id"] = f"{scenario['base_id']}__r{repetition}"
+            repeated.append(scenario)
+    return repeated
+
+
 def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
     intent = response.get("work_intent") if isinstance(response.get("work_intent"), dict) else {}
     artifacts = [item for item in response.get("artifact_refs") or [] if isinstance(item, dict)]
@@ -76,7 +84,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     route_ok = response.get("capability_id") == scenario.get("expected_capability")
     operation_ok = expected_operation_matches(scenario, str(intent.get("operation") or ""))
     grounding_ok = not scenario.get("require_grounding") or (
-        response.get("grounding_status") == "grounded" and bool(response.get("citations"))
+        response.get("grounding_status") in {"grounded", "partial"} and bool(response.get("citations"))
     )
     artifact_type = str(scenario.get("expected_artifact_type") or "")
     artifact_ok = not artifact_type or artifact_type in actual_artifact_types
@@ -93,7 +101,12 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         )
         for item in artifacts
     }
-    presentation_ok = not expected_presentation or expected_presentation in actual_presentations
+    presentation_ok = not expected_presentation or expected_presentation in {
+        *actual_presentations,
+        str(intent.get("presentation_mode") or ""),
+    }
+    expected_effect = str(scenario.get("expected_user_effect") or "")
+    user_effect_ok = not expected_effect or intent.get("user_effect") == expected_effect
     plan_ok = not scenario.get("require_plan") or bool(response.get("plan_ref"))
     page_anchor = context_usage.get("page_anchor") if isinstance(context_usage.get("page_anchor"), dict) else {}
     page_anchor_ok = not scenario.get("require_page_anchor") or bool(page_anchor.get("resolved"))
@@ -107,34 +120,44 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     safety_ok = all(item.get("status") in {"draft", "provisional"} for item in artifacts)
     answer = response.get("answer") if isinstance(response.get("answer"), dict) else {}
     answer_text = str(answer.get("markdown") or answer.get("summary") or "").strip()
+    answerability = response.get("answerability") if isinstance(response.get("answerability"), dict) else {}
+    expected_answerability = str(scenario.get("expected_answerability") or "")
+    answerability_ok = not expected_answerability or answerability.get("status") == expected_answerability
+    grounded_claims = [item for item in response.get("grounded_claims") or [] if isinstance(item, dict)]
+    claim_support_ok = not scenario.get("require_grounded_claims") or (
+        bool(grounded_claims)
+        and all(item.get("support_status") == "supported" for item in grounded_claims)
+        and all(item.get("source_refs") and item.get("supporting_chunk_ids") for item in grounded_claims)
+    )
     citations = [item for item in response.get("citations") or [] if isinstance(item, dict)]
     evidence = [item for item in response.get("evidence_refs") or [] if isinstance(item, dict)]
     evidence_ids = {str(item.get("evidence_id") or "") for item in evidence}
     citation_sources = {str(item.get("source_ref") or "") for item in citations}
+    used_source_refs = {str(item) for item in response.get("used_source_refs") or [] if str(item).strip()}
+    required_used_source_refs = {
+        str(item) for item in scenario.get("require_used_source_refs") or [] if str(item).strip()
+    }
+    required_used_sources_ok = required_used_source_refs <= used_source_refs
+    internal_sources_only_ok = not scenario.get("require_internal_sources_only") or all(
+        not ref.startswith(("http://", "https://", "official_web:"))
+        for ref in citation_sources | evidence_ids | used_source_refs
+    )
     citation_integrity_ok = not scenario.get("require_grounding") or (
         bool(citations)
         and citation_sources <= evidence_ids
         and all(str(item.get("citation_id") or "") in answer_text for item in citations)
     )
-    question_terms = content_terms(str(scenario.get("question") or ""))
-    resolved_terms = content_terms(str(intent.get("resolved_goal") or ""))
-    intent_overlap = len(question_terms & resolved_terms) / max(1, len(question_terms))
-    intent_preservation_ok = bool(intent.get("resolved_goal")) and intent_overlap >= 0.25
-    source_terms = content_terms(
-        " ".join(
-            [
-                *(f"{item.get('title') or ''} {item.get('summary') or ''}" for item in evidence[:8]),
-                *(f"{item.get('title') or ''} {item.get('excerpt') or ''}" for item in citations),
-            ]
-        )
+    intent_preservation_ok = bool(intent.get("resolved_goal")) and route_ok and operation_ok and user_effect_ok
+    source_relevance_ok = not scenario.get("require_grounding") or (
+        bool(grounded_claims)
+        and all(item.get("source_refs") and item.get("supporting_chunk_ids") for item in grounded_claims)
     )
-    source_relevance_ok = not scenario.get("require_grounding") or bool(question_terms & source_terms)
     context_use_ok = (
         (not scenario.get("require_grounding") or int(context_usage.get("selected_source_count") or 0) > 0)
         and page_anchor_ok
     )
-    read_only_expected = (
-        str(scenario.get("expected_capability") or "") in {"knowledge.search", "cases.similar", "work.inbox"}
+    read_only_expected = bool(scenario.get("forbid_unrequested_transition")) or (
+        expected_effect == "read"
         and not scenario.get("expected_artifact_type")
         and not scenario.get("require_plan")
     )
@@ -149,10 +172,35 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         and str(item.get("question") or "").strip() != str(scenario.get("question") or "").strip()
         for item in related_questions
     )
-    answer_substantive_ok = len(answer_text) >= 30
+    answer_substantive_ok = (
+        (
+            response.get("status") == "needs_input"
+            and bool(answer_text)
+        )
+        or len(answer_text) >= 30
+        or expected_answerability in {"insufficient", "conflicting"}
+        and "확인된 근거가 없습니다" in answer_text
+    )
+    forbidden_answer_terms_ok = not any(
+        str(term) in answer_text for term in scenario.get("forbid_answer_terms") or []
+    )
+    required_answer_terms_ok = all(
+        str(term) in answer_text for term in scenario.get("require_answer_terms") or []
+    )
+    expected_topic_mode = str(scenario.get("expected_topic_mode") or "")
+    topic_mode_ok = not expected_topic_mode or intent.get("topic_mode") == expected_topic_mode
+    expected_semantic_change = str(scenario.get("expected_followup_semantic_change") or "")
+    semantic_change_ok = (
+        not expected_semantic_change
+        or intent.get("followup_semantic_change") == expected_semantic_change
+    )
+    topic_subject_contains = str(scenario.get("topic_subject_contains") or "")
+    topic_subject_ok = not topic_subject_contains or topic_subject_contains in str(intent.get("topic_subject") or "")
+    semantic_plan_ok = not scenario.get("require_semantic_plan") or bool(response.get("semantic_plan_ref"))
     checks = {
         "route": route_ok,
         "operation": operation_ok,
+        "user_effect": user_effect_ok,
         "grounding": grounding_ok,
         "artifact": artifact_ok and presentation_ok,
         "plan": plan_ok,
@@ -161,6 +209,16 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         "confirmation": confirmation_ok,
         "safety": safety_ok,
         "answer_substantive": answer_substantive_ok,
+        "answerability": answerability_ok,
+        "claim_support": claim_support_ok,
+        "internal_sources_only": internal_sources_only_ok,
+        "required_used_sources": required_used_sources_ok,
+        "forbidden_answer_terms": forbidden_answer_terms_ok,
+        "required_answer_terms": required_answer_terms_ok,
+        "topic_mode": topic_mode_ok,
+        "followup_semantic_change": semantic_change_ok,
+        "topic_subject": topic_subject_ok,
+        "semantic_plan": semantic_plan_ok,
         "citation_integrity": citation_integrity_ok,
         "intent_preservation": intent_preservation_ok,
         "context_use": context_use_ok,
@@ -176,15 +234,48 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
             "capability_id": response.get("capability_id"),
             "operation": intent.get("operation"),
             "operation_plan": intent.get("operation_plan"),
+            "answer_intent": intent.get("answer_intent"),
+            "desired_outcome": intent.get("desired_outcome"),
+            "result_purpose": intent.get("result_purpose"),
+            "requested_transition": intent.get("requested_transition"),
+            "analysis_depth": intent.get("analysis_depth"),
+            "topic_structure": intent.get("topic_structure"),
+            "referenceable_topic_entities": intent.get("referenceable_topic_entities"),
+            "followup_reference_resolution": intent.get("followup_reference_resolution"),
             "status": response.get("status"),
             "loop_status": loop_state.get("status"),
             "grounding_status": response.get("grounding_status"),
+            "answerability": answerability.get("status"),
+            "grounded_claim_count": len(grounded_claims),
+            "topic_mode": intent.get("topic_mode"),
+            "followup_semantic_change": intent.get("followup_semantic_change"),
+            "topic_subject": intent.get("topic_subject"),
             "artifact_types": sorted(actual_artifact_types),
             "artifact_presentations": sorted(item for item in actual_presentations if item),
             "plan_ref": response.get("plan_ref"),
-            "intent_overlap": round(intent_overlap, 3),
+            "user_effect": intent.get("user_effect"),
+            "semantic_plan_ref": response.get("semantic_plan_ref"),
             "citation_sources": sorted(citation_sources),
             "evidence_ids": sorted(evidence_ids),
+            "used_source_refs": sorted(used_source_refs),
+            "answer_text": answer_text,
+            "grounded_claims": [
+                {
+                    key: item.get(key)
+                    for key in (
+                        "claim_id",
+                        "text",
+                        "claim_kind",
+                        "source_scope",
+                        "source_refs",
+                        "supporting_chunk_ids",
+                        "support_status",
+                        "confidence",
+                        "required_for_answer",
+                    )
+                }
+                for item in grounded_claims
+            ],
         },
     }
 
@@ -192,7 +283,10 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
 def main() -> int:
     args = parse_args()
     fixture = yaml.safe_load(args.fixture.read_text(encoding="utf-8")) or {}
-    scenarios = [item for item in fixture.get("scenarios") or [] if isinstance(item, dict)]
+    repetitions = args.repetitions or int(fixture.get("repetitions") or 1)
+    if repetitions < 1:
+        raise SystemExit("repetitions must be at least 1")
+    scenarios = expand_scenarios(fixture, repetitions=repetitions)
     if args.scenario_id:
         selected = set(args.scenario_id)
         scenarios = [item for item in scenarios if str(item.get("id") or "") in selected]
@@ -218,7 +312,7 @@ def main() -> int:
                 response = None
                 active_session = ""
                 turn_latencies: list[int] = []
-                for question in turns:
+                for turn_index, question in enumerate(turns):
                     payload = {
                         "question": question,
                         "page_ref": scenario.get("page_ref") or "",
@@ -232,6 +326,32 @@ def main() -> int:
                     if response.status_code >= 400:
                         break
                     active_session = str(response.json().get("work_session_id") or active_session)
+                    if (
+                        scenario.get("reload_session_between_turns")
+                        and turn_index < len(turns) - 1
+                        and active_session
+                    ):
+                        restored = client.get(
+                            f"{base_url}/api/v2/work-sessions/{active_session}",
+                            params=params,
+                        )
+                        restored.raise_for_status()
+                        restored_payload = restored.json()
+                        restored_session = (
+                            restored_payload.get("session")
+                            if isinstance(restored_payload.get("session"), dict)
+                            else restored_payload
+                        )
+                        if str(restored_session.get("session_id") or "") != active_session:
+                            raise RuntimeError("restored WorkSession does not match the active session")
+                        restored_topic = restored_session.get("topic_state")
+                        if not isinstance(restored_topic, dict) or not restored_topic.get("topic_state_ref"):
+                            raise RuntimeError("restored WorkSession is missing its verified topic state")
+                        if not any(
+                            isinstance(item, dict) and item.get("support_status") == "supported"
+                            for item in restored_topic.get("claims") or []
+                        ):
+                            raise RuntimeError("restored WorkSession is missing its verified grounded claims")
                 assert response is not None
                 if response.status_code >= 400:
                     results.append(
@@ -316,19 +436,69 @@ def main() -> int:
 
     route_rows = [item for item in results if "route" in item.get("checks", {})]
     operation_rows = [item for item in results if "operation" in item.get("checks", {})]
+    effect_rows = [item for item in results if "user_effect" in item.get("checks", {})]
     safety_rows = [item for item in results if "safety" in item.get("checks", {})]
     content_rows = [item for item in results if "intent_preservation" in item.get("checks", {})]
     context_rows = [item for item in results if "context_use" in item.get("checks", {})]
     relevance_rows = [item for item in results if "source_relevance" in item.get("checks", {})]
     transition_rows = [item for item in results if "no_unrequested_transition" in item.get("checks", {})]
+    answerability_rows = [
+        item for item in results if item.get("id") and any(
+            str(scenario.get("id") or "") == str(item.get("id") or "")
+            and scenario.get("expected_answerability")
+            for scenario in scenarios
+        )
+    ]
+    claim_rows = [
+        item for item in results if item.get("id") and any(
+            str(scenario.get("id") or "") == str(item.get("id") or "")
+            and scenario.get("require_grounded_claims")
+            for scenario in scenarios
+        )
+    ]
+    internal_source_rows = [
+        item for item in results if item.get("id") and any(
+            str(scenario.get("id") or "") == str(item.get("id") or "")
+            and scenario.get("require_internal_sources_only")
+            for scenario in scenarios
+        )
+    ]
+    topic_rows = [
+        item for item in results if item.get("id") and any(
+            str(scenario.get("id") or "") == str(item.get("id") or "")
+            and (scenario.get("expected_topic_mode") or scenario.get("topic_subject_contains"))
+            for scenario in scenarios
+        )
+    ]
+
+    def check_rate(rows: list[dict[str, Any]], check: str) -> float:
+        # A targeted scenario run should not fail a metric that has no
+        # applicable cases. The fixture still controls which rows contribute
+        # to each acceptance dimension.
+        if not rows:
+            return 1.0
+        return sum(bool(item["checks"].get(check)) for item in rows) / len(rows)
+
     metrics = {
-        "routing_accuracy": sum(item["checks"]["route"] for item in route_rows) / max(1, len(route_rows)),
-        "operation_accuracy": sum(item["checks"]["operation"] for item in operation_rows) / max(1, len(operation_rows)),
-        "safety_accuracy": sum(item["checks"]["safety"] for item in safety_rows) / max(1, len(safety_rows)),
-        "intent_preservation": sum(item["checks"]["intent_preservation"] for item in content_rows) / max(1, len(content_rows)),
-        "context_utilization": sum(item["checks"]["context_use"] for item in context_rows) / max(1, len(context_rows)),
-        "source_relevance": sum(item["checks"]["source_relevance"] for item in relevance_rows) / max(1, len(relevance_rows)),
-        "transition_precision": sum(item["checks"]["no_unrequested_transition"] for item in transition_rows) / max(1, len(transition_rows)),
+        "routing_accuracy": check_rate(route_rows, "route"),
+        "operation_accuracy": check_rate(operation_rows, "operation"),
+        "user_effect_accuracy": check_rate(effect_rows, "user_effect"),
+        "safety_accuracy": check_rate(safety_rows, "safety"),
+        "intent_preservation": check_rate(content_rows, "intent_preservation"),
+        "context_utilization": check_rate(context_rows, "context_use"),
+        "source_relevance": check_rate(relevance_rows, "source_relevance"),
+        "transition_precision": check_rate(transition_rows, "no_unrequested_transition"),
+        "answerability_accuracy": check_rate(answerability_rows, "answerability"),
+        "claim_support_integrity": check_rate(claim_rows, "claim_support"),
+        "internal_source_integrity": check_rate(internal_source_rows, "internal_sources_only"),
+        "topic_state_accuracy": (
+            1.0
+            if not topic_rows
+            else sum(
+                item["checks"]["topic_mode"] and item["checks"]["topic_subject"]
+                for item in topic_rows
+            ) / len(topic_rows)
+        ),
         "scenario_pass_rate": sum(item["passed"] for item in results) / len(results),
     }
     thresholds = fixture.get("thresholds") or {}

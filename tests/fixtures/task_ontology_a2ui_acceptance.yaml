@@ -1,5 +1,5 @@
 version: "1.0"
-expected_scenarios: 50
+expected_scenarios: 62
 thresholds:
   deterministic_pass_rate: 1.0
   live_scenario_pass_rate: 0.90
@@ -64,6 +64,19 @@ groups:
     - {id: adapter_rollback, contract: imported_graph_or_candidates_can_be_removed_without_canonical_change, handler: "tests/test_agent_v2.py::test_graphify_adapter_imports_provenance_graph_without_changing_canonical_files"}
     - {id: work_learning_full_cycle, contract: task_completion_candidate_reindex_and_new_session_reuse, handler: "tests/test_agent_v2.py::test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowledge_in_new_session"}
     - {id: interface_parity_full_cycle, contract: web_rest_mcp_share_work_run_and_learning_ids, handler: "tests/test_agent_v2.py::test_identical_cross_interface_turns_reuse_the_same_semantic_route_and_evidence"}
+  reliability:
+    - {id: reliability_canonical_scope, contract: ordinary_answers_use_canonical_or_operational_sources, handler: "tests/test_agent_v2.py::test_default_answer_scope_excludes_validation_generated_and_navigation_sources"}
+    - {id: reliability_validation_excluded, contract: validation_documents_are_not_definition_sources, handler: "tests/test_agent_v2.py::test_default_answer_scope_excludes_validation_generated_and_navigation_sources"}
+    - {id: reliability_a2ui_definition, contract: a2ui_definition_uses_internal_canonical_claims, handler: "tests/test_agent_v2.py::test_a2ui_definition_and_followup_use_canonical_claims_then_live_registry"}
+    - {id: reliability_a2ui_runtime_followup, contract: followup_uses_live_registered_components, handler: "tests/test_agent_v2.py::test_a2ui_definition_and_followup_use_canonical_claims_then_live_registry"}
+    - {id: reliability_verified_topic_context, contract: only_verified_claims_and_used_sources_are_inherited, handler: "tests/test_agent_v2.py::test_session_followup_context_keeps_only_verified_claims_and_used_citations"}
+    - {id: reliability_claim_chunk_match, contract: source_presence_without_direct_chunk_support_is_insufficient, handler: "tests/test_agent_v2.py::test_claim_chunk_mismatch_is_insufficient_even_when_the_source_was_retrieved"}
+    - {id: reliability_sensitive_conflict, contract: conflicting_definition_stops_the_answer, handler: "tests/test_agent_v2.py::test_sensitive_definition_conflict_stops_the_answer"}
+    - {id: reliability_live_catalog, contract: capability_catalog_is_derived_from_the_registered_runtime, handler: "tests/test_agent_v2.py::test_a2ui_capability_catalog_reports_live_registry_and_observed_surfaces"}
+    - {id: reliability_unknown_concept, contract: missing_internal_evidence_returns_insufficient_without_model_memory, handler: "tests/test_agent_v2.py::test_unknown_internal_concept_returns_insufficient_instead_of_model_memory"}
+    - {id: reliability_continuation_repair, contract: verified_topic_identity_is_reused_without_a_second_model_call, handler: "tests/test_agent_v2.py::test_followup_without_prior_subject_uses_verified_topic_identity_without_a_second_model_call"}
+    - {id: reliability_new_topic, contract: explicit_new_topic_drops_previous_subject, handler: "tests/test_agent_v2.py::test_explicit_new_topic_does_not_inherit_the_previous_subject"}
+    - {id: reliability_topic_correction, contract: conflicting_followup_invalidates_prior_claims_and_citations, handler: "tests/test_agent_v2.py::test_conflicting_followup_invalidates_prior_topic_and_records_correction"}
 multiturn:
   - id: followup_graph
     turns: ["업무 이벤트와 SOP 관계를 설명해줘", "그 관계만 흐름 그림으로 보여줘"]

@@ -34,15 +34,18 @@ from boi_api.app.v2.model_gateway import (
 from boi_api.app.v2.models import (
     AgentTurnRequest,
     AgentTurnResponse,
+    AnswerabilityReport,
     AnswerBlock,
     ArtifactRef,
     CitationRef,
+    ContextManifest,
     ContextPlaybookCreateRequest,
     ContextPlaybookPatchRequest,
     DeepJobRequest,
     EvidenceRef,
     GraphQueryDraft,
     GraphQueryPlan,
+    GroundedClaim,
     HarnessCandidateCreateRequest,
     HarnessCandidateEvaluateRequest,
     HarnessCandidateReviewRequest,
@@ -66,12 +69,15 @@ from boi_api.app.v2.models import (
     OfferRequest,
     Principal,
     RiskLevel,
+    SemanticPlan,
+    SemanticSubject,
     SkillArtifactActivateRequest,
     SkillArtifactTestRequest,
     SopArtifactPatchRequest,
     SourceSetPatchRequest,
     TaskMode,
     TokenCreateRequest,
+    WorkSessionCreateRequest,
     WorkSessionPatchRequest,
     WorkRunContinueRequest,
     WorkIntent,
@@ -85,11 +91,18 @@ from boi_api.app.v2.policy import TaskPolicy
 from boi_api.app.v2.repository import KnowledgeRecord, KnowledgeRepository
 from boi_api.app.v2.rendering import render_agent_markdown
 from boi_api.app.v2.routes import build_agent_v2_router
-from boi_api.app.v2.search import chunks_for_record, diversify_ranked, graph_score, identity_score, lexical_score
+from boi_api.app.v2.search import (
+    chunks_for_record,
+    context_anchor_score,
+    diversify_ranked,
+    graph_score,
+    identity_score,
+    lexical_score,
+)
 from boi_api.app.v2.service import AgentV2Service, truncate_markdown
+from boi_api.app.v2.semantic_kernel import PlanCompiler, PlanValidator, SemanticPlanningError
 from boi_api.app.v2.store import PostgresAgentV2Store, now_iso
 from boi_api.app.v2.worker import DeepWorkRunner, ensure_exact_evidence_ledger, latest_assistant_text
-from boi_api.app.v2.work_learning import WorkIntentEngine
 from boi_api.app.task_completion import normalise_task_completion
 
 
@@ -101,7 +114,7 @@ def test_capability_registry_rejects_unimplemented_mutation_handlers_before_turn
     read_definition = registry.get("knowledge.search")
 
     assert registry.handler_supported(read_definition) is True
-    assert registry.handler_supported(read_definition.model_copy(update={"operation": OperationClass.mutate})) is False
+    assert registry.handler_supported(read_definition.model_copy(update={"handler": "missing_plugin"})) is False
 
 
 def test_postgres_store_registers_every_helper_builder_collection():
@@ -144,6 +157,26 @@ def test_response_budget_preserves_minimal_intent_citation_and_truthful_groundin
             )
         ],
         grounding_status="grounded",
+        answerability=AnswerabilityReport(
+            status="grounded",
+            answer_intent="fact",
+            supported_claim_count=1,
+        ),
+        grounded_claims=[
+            GroundedClaim(
+                claim_id="claim-budget",
+                text="운영 가이드는 업무 맥락과 판단 근거를 설명합니다.",
+                source_refs=["boi:public:guide"],
+                supporting_chunk_ids=["boi:public:guide#body-0"],
+                support_status="supported",
+                confidence=1.0,
+                required_for_answer=True,
+            )
+        ],
+        semantic_plan_ref="semantic-plan-budget",
+        topic_state_ref="topic-state-budget",
+        a2ui_surface_ref="surface-budget",
+        graph_result_ref="graph-budget",
         context_usage={"page_anchor": {"ref": "boi:public:guide", "resolved": True}, "selected_source_count": 12},
     )
     compact = v2_service._enforce_response_budget(response)
@@ -152,48 +185,318 @@ def test_response_budget_preserves_minimal_intent_citation_and_truthful_groundin
     assert compact.citations and compact.citations[0].source_ref == "boi:public:guide"
     assert compact.artifact_refs[0].metadata["presentation"] == "timeline"
     assert compact.grounding_status == "grounded"
+    assert compact.semantic_plan_ref == "semantic-plan-budget"
+    assert compact.topic_state_ref == "topic-state-budget"
+    assert compact.a2ui_surface_ref == "surface-budget"
+    assert compact.graph_result_ref == "graph-budget"
     assert len(json.dumps(compact.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")) <= v2_service.settings.response_budget_bytes
 
 
-def test_explanatory_intent_cannot_execute_a_draft_capability(v2_service: AgentV2Service):
-    explanatory = WorkIntent(
-        goal="Action dry-run과 실제 실행의 차이를 알려줘",
-        resolved_goal="Action dry-run과 실제 실행의 차이를 설명한다",
-        operation=WorkOperation.compare,
-        operation_plan=[WorkOperation.understand, WorkOperation.compare],
-        asset_kind=WorkAssetKind.action,
-        result_purpose="compare",
+def test_plan_validator_rejects_effect_operation_conflicts_without_rewriting_the_plan():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    validator = PlanValidator(registry)
+    plan = SemanticPlan(
+        resolved_goal="Action 실행 요청 초안을 만든다",
+        retrieval_query="Action 실행 계약",
+        capability_id="action.plan",
+        user_effect="read",
+        operation="create",
+        confidence=1.0,
     )
-    assert v2_service._guard_explanatory_capability("action.plan", explanatory) == "knowledge.search"
-    assert v2_service._guard_explanatory_capability("deep.research", explanatory) == "deep.research"
-    executable = explanatory.model_copy(
-        update={
-            "operation": WorkOperation.run,
-            "operation_plan": [WorkOperation.run],
-            "result_purpose": "execute",
+
+    report = validator.validate(plan)
+
+    assert report.valid is False
+    assert {item.code for item in report.issues} >= {"effect.operation_conflict"}
+    assert plan.capability_id == "action.plan"
+    assert plan.operation == WorkOperation.create
+
+
+def test_planner_read_purpose_cannot_compile_to_a_draft_operation(v2_service: AgentV2Service):
+    class InconsistentDraftModel(ScriptedPlanner):
+        def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+            value = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            required = set(schema.get("required") or [])
+            if "semantic_plan" in required:
+                value["semantic_plan"].update(
+                    {
+                        "capability_id": "business_event.plan",
+                        "operation": "create",
+                        "answer_intent": "procedure",
+                    }
+                )
+            return value
+
+    with pytest.raises(SemanticPlanningError) as exc_info:
+        v2_service.quick_agent.route(
+            "업무 기준을 설명해줘",
+            page_kind="event",
+            model=InconsistentDraftModel(),
+        )
+
+    assert exc_info.value.code == "planner_invalid"
+    assert exc_info.value.report is not None
+    assert {item.code for item in exc_info.value.report.issues} >= {"effect.operation_conflict"}
+
+
+def test_plan_compiler_preserves_a_valid_capability_operation_effect_and_subject():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    compiler = PlanCompiler(registry)
+    plan = SemanticPlan(
+        resolved_goal="현재 사용자에게 배정된 업무를 확인한다",
+        retrieval_query="현재 사용자 배정 업무",
+        capability_id="work.inbox",
+        user_effect="read",
+        operation="observe",
+        work_view="current",
+        confidence=1.0,
+    )
+
+    compiled = compiler.compile(plan, original_question="지금 처리할 업무만 보여줘")
+
+    assert compiled.capability_id == "work.inbox"
+    assert compiled.work_intent.operation == WorkOperation.observe
+    assert compiled.work_intent.work_view == "current"
+
+
+def test_catalog_only_read_capability_executes_without_service_routing_change(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    catalog_path = v2_service.registry.catalog_path
+    catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    template = next(
+        item for item in catalog["capabilities"] if item["handler"] == "grounded_read"
+    )
+    catalog["capabilities"].append(
+        {
+            **template,
+            "capability_id": "test.unseen_asset",
+            "title": "테스트용 미지 자산 읽기",
+            "description": "카탈로그만으로 추가되는 내부 지식 읽기 자산",
+            "examples": [],
+            "starter_offers": [],
         }
     )
-    assert v2_service._guard_explanatory_capability("action.plan", executable) == "action.plan"
-
-
-def test_work_view_cannot_be_misrouted_to_an_automation_capability(v2_service: AgentV2Service):
-    combined = WorkIntent(
-        goal="내가 하는 일이 뭐지?",
-        resolved_goal="공식 역할과 현재 업무를 구분해 확인한다",
-        operation=WorkOperation.understand,
-        operation_plan=[WorkOperation.understand],
-        asset_kind=WorkAssetKind.runtime,
-        result_purpose="explain",
-        work_view="combined",
+    catalog_path.write_text(
+        yaml.safe_dump(catalog, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
     )
-    current = combined.model_copy(update={"work_view": "current"})
+    v2_service.registry.reload()
 
-    assert v2_service._guard_explanatory_capability("work_routine.plan", combined) == "knowledge.search"
-    assert v2_service._guard_explanatory_capability("knowledge.search", current) == "work.inbox"
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="BoI Wiki 운영 가이드의 검토 기준을 설명해줘",
+            capability_id="test.unseen_asset",
+        ),
+    )
+
+    assert response.capability_id == "test.unseen_asset"
+    assert response.error_code == ""
+    assert response.work_intent is not None
+    assert response.work_intent.operation == WorkOperation.understand
 
 
-class FakeModel:
+@pytest.mark.parametrize(
+    ("error", "expected_status", "expected_disposition"),
+    [
+        (
+            SemanticPlanningError("planner_unavailable", "planner offline"),
+            "failed",
+            "transient_retry",
+        ),
+        (
+            SemanticPlanningError("planner_invalid", "repair failed"),
+            "failed",
+            "semantic_repair",
+        ),
+        (
+            SemanticPlanningError(
+                "planner_invalid",
+                "ambiguous subject",
+                clarification_question="어느 업무를 말씀하시는지 선택해주세요.",
+            ),
+            "needs_input",
+            "human_interrupt",
+        ),
+    ],
+)
+def test_planning_failures_preserve_typed_error_disposition(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    error: SemanticPlanningError,
+    expected_status: str,
+    expected_disposition: str,
+):
+    session = v2_service.create_work_session(
+        principal,
+        WorkSessionCreateRequest(title="계획 오류 분류"),
+    )
+    response = v2_service._planning_failure_response(
+        principal=principal,
+        session=session,
+        request=AgentTurnRequest(question="업무 요청"),
+        run_id="run-planning-disposition",
+        turn_id="turn-planning-disposition",
+        error=error,
+    )
+
+    assert response.status == expected_status
+    assert response.stop_reason == expected_disposition
+    stored = v2_service.store.get("runs", response.run_id)
+    assert stored["error_disposition"] == expected_disposition
+
+
+def test_plan_validator_rejects_work_run_continuation_outside_the_semantic_contract_context():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    validator = PlanValidator(registry)
+    plan = SemanticPlan.model_validate(
+        {
+            **_task_completion_plan("review-task"),
+            "topic_action": "continue",
+            "subjects": [
+                {
+                    "mention": "진행 중 Task",
+                    "entity_ref": "review-task",
+                    "entity_kind": "task",
+                    "resolution": "resolved",
+                }
+            ],
+            "continuation": {
+                "continue_active_run": True,
+                "delta_kind": "human_input",
+                "user_confirmation": True,
+                "work_record": {"observations": "자료를 확인했습니다."},
+            },
+        }
+    )
+
+    report = validator.validate(
+        plan,
+        trusted_context_refs={"review-task"},
+        prior_topic_entities=["review-task"],
+        active_work_run=False,
+    )
+
+    assert report.valid is False
+    assert "continuation.active_run_missing" in {item.code for item in report.issues}
+
+
+def test_work_run_continuation_never_rewrites_an_invalid_delta_to_human_input(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    with pytest.raises(SemanticPlanningError) as exc_info:
+        v2_service._continue_active_work_from_turn(
+            principal=principal,
+            request=AgentTurnRequest(question="계속 진행해줘"),
+            session={"session_id": "session-invalid-continuation"},
+            active_work_run={"work_run_id": "workrun-invalid-continuation"},
+            route={
+                "semantic_plan": {
+                    "resolved_goal": "기존 업무를 이어간다",
+                    "retrieval_query": "기존 업무 진행 상태",
+                    "topic_action": "continue",
+                    "capability_id": "task.work",
+                    "user_effect": "execute",
+                    "operation": "complete",
+                    "continuation": {
+                        "continue_active_run": True,
+                        "delta_kind": "none",
+                    },
+                }
+            },
+            run_id="run-invalid-continuation",
+            turn_id="turn-invalid-continuation",
+        )
+
+    assert exc_info.value.code == "planner_invalid"
+
+
+def _is_semantic_planner_schema(schema: dict[str, Any]) -> bool:
+    return "semantic_plan" in set(schema.get("required") or [])
+
+
+class _PlannerEnvelope(dict[str, Any]):
+    _semantic_aliases = {
+        "topic_mode": "topic_action",
+        "presentation_mode": "presentation",
+        "graph_query_draft": "graph_query",
+    }
+    _continuation_aliases = {
+        "continue_active_run": "continue_active_run",
+        "continuation_kind": "delta_kind",
+        "user_confirmation": "user_confirmation",
+    }
+
+    def _semantic_key(self, key: str) -> str:
+        return self._semantic_aliases.get(key, key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        semantic_key = self._semantic_key(key)
+        if semantic_key in SemanticPlan.model_fields:
+            dict.__getitem__(self, "semantic_plan")[semantic_key] = value
+            return
+        continuation_key = self._continuation_aliases.get(key)
+        if continuation_key:
+            dict.__getitem__(self, "continuation")[continuation_key] = value
+            return
+        super().__setitem__(key, value)
+
+    def __getitem__(self, key: str) -> Any:
+        semantic_key = self._semantic_key(key)
+        if semantic_key in SemanticPlan.model_fields:
+            return dict.__getitem__(self, "semantic_plan")[semantic_key]
+        continuation_key = self._continuation_aliases.get(key)
+        if continuation_key:
+            return dict.__getitem__(self, "continuation")[continuation_key]
+        return super().__getitem__(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def update(self, other: Any = None, /, **kwargs: Any) -> None:
+        values = dict(other or {})
+        values.update(kwargs)
+        for key, value in values.items():
+            self[key] = value
+
+
+def _planner_envelope(plan: dict[str, Any]) -> _PlannerEnvelope:
+    return _PlannerEnvelope(
+        {
+            "semantic_plan": dict(plan),
+            "grounded_answer": {
+                "summary": "",
+                "summary_source_refs": [],
+                "claims": [],
+                "outcomes": [],
+                "related_questions": [],
+            },
+            "continuation": {
+                "continue_active_run": False,
+                "delta_kind": "none",
+                "user_confirmation": False,
+            },
+        }
+    )
+
+
+class ScriptedPlanner:
     provider = "test"
+
+    def __init__(
+        self,
+        plans: list[dict[str, Any]] | None = None,
+        *,
+        clarifications: list[str] | None = None,
+    ):
+        self.plans = [dict(item) for item in (plans or [])]
+        self.clarifications = list(clarifications or [])
 
     def readiness(self) -> dict[str, Any]:
         return {
@@ -211,54 +514,35 @@ class FakeModel:
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
-            request = str((json.loads(prompt) if prompt.strip().startswith("{") else {}).get("request") or "")
-            lowered = request.lower()
-            read_request = "어떻게" in lowered or (
-                any(term in lowered for term in ("찾아", "알려", "보여"))
-                and not any(term in lowered for term in ("만들어", "작성해", "설계해", "정의해"))
-            )
-            if any(term in lowered for term in ("내 할 일", "처리해야 할 업무", "현재 업무")):
-                capability_id, asset_kind, operation = "work.inbox", "runtime", "observe"
-            elif any(term in lowered for term in ("task로 나눠", "task로 쪼개")):
-                capability_id, asset_kind, operation = "sop.plan", "sop", "create"
-            elif "업무 이벤트" in lowered and any(term in lowered for term in ("만들어", "작성해", "정의해")) and not read_request:
-                capability_id, asset_kind, operation = "business_event.plan", "business_event", "create"
-            elif "sop" in lowered and any(term in lowered for term in ("만들어", "작성해", "설계해")) and not any(
-                term in lowered for term in ("검증", "다듬", "보완")
-            ) and not read_request:
-                capability_id, asset_kind, operation = "sop.plan", "sop", "create"
-            elif any(term in lowered for term in ("다듬", "보완", "구체적")):
-                capability_id, asset_kind, operation = "sop.plan", "sop", "refine"
-            elif any(term in lowered for term in ("검증", "점검")):
-                capability_id, asset_kind, operation = "sop.plan", "sop", "validate"
-            elif any(term in lowered for term in ("완료해", "완료하고", "완료 처리")):
-                capability_id, asset_kind, operation = "task.work", "task", "complete"
-            elif "연결" in lowered and "설명" in lowered:
-                capability_id, asset_kind, operation = "knowledge.search", "sop", "connect"
-            else:
-                capability_id, asset_kind, operation = "knowledge.search", "knowledge", "understand"
-            operation_plan = ["understand"] if operation == "understand" else ["understand", operation]
-            if operation in {"create", "refine", "connect", "validate"} and "validate" not in operation_plan:
-                operation_plan.append("validate")
-            if operation == "complete":
-                operation_plan.extend(["validate", "capture"])
+        if _is_semantic_planner_schema(schema):
+            plans = getattr(self, "plans", [])
+            semantic_plan = plans.pop(0) if plans else SemanticPlan(
+                    resolved_goal="검증된 내부 지식을 근거로 요청을 이해한다",
+                    retrieval_query="검증된 내부 지식",
+                    capability_id="knowledge.search",
+                    user_effect="read",
+                    operation="understand",
+                    evidence_scope="canonical",
+                    presentation="prose",
+                    confidence=1.0,
+                ).model_dump(mode="json")
+            return _planner_envelope(semantic_plan)
+        if required == {"clarification_question"}:
+            clarifications = getattr(self, "clarifications", [])
+            if not clarifications:
+                raise AssertionError("no scripted clarification was supplied")
+            return {"clarification_question": clarifications.pop(0)}
+        if required == {"verdicts"}:
+            claims = [item for item in json.loads(prompt).get("claims") or [] if isinstance(item, dict)]
             return {
-                "capability_id": capability_id,
-                "asset_kind": asset_kind,
-                "operation": operation,
-                "operation_plan": list(dict.fromkeys(operation_plan)),
-                "scope": "wiki" if "wiki 전체" in lowered else "auto",
-                "desired_outcome": "draft" if operation == "create" else "completion_record" if operation == "complete" else "answer",
-                "target_ref": "model-invented-task-ref",
-                "needs_clarification": False,
-                "confidence": 0.96,
-                "reason": "test semantic planner",
-                "current_scope_explicit": capability_id == "work.inbox",
-                "result_purpose": "design" if operation in {"create", "refine"} else "execute" if operation == "run" else "explain",
-                "requested_asset_kinds": [asset_kind],
-                "artifact_actions": [],
-                "grounded_answer": {},
+                "verdicts": [
+                    {
+                        "claim_id": str(item.get("claim_id") or ""),
+                        "support_status": "supported",
+                        "confidence": 1.0,
+                    }
+                    for item in claims
+                ]
             }
         if "skill_id" in required:
             return {
@@ -286,43 +570,92 @@ class FakeModel:
         raise RuntimeError("test embedding intentionally unavailable")
 
 
-class CountingSemanticRouteModel(FakeModel):
+def _task_completion_plan(task_ref: str) -> dict[str, Any]:
+    return SemanticPlan(
+        resolved_goal=f"{task_ref} 업무의 근거와 수행 기록을 검증해 완료한다",
+        retrieval_query=f"{task_ref} 완료 조건 근거 수행 기록",
+        capability_id="task.work",
+        user_effect="execute",
+        operation="complete",
+        evidence_scope="operational",
+        presentation="artifact",
+        work_view="current",
+        context_refs=[task_ref],
+        target_ref=task_ref,
+        answer_intent="work",
+        confidence=1.0,
+    ).model_dump(mode="json")
+
+
+def _knowledge_read_plan(query: str) -> dict[str, Any]:
+    return SemanticPlan(
+        resolved_goal=query,
+        retrieval_query=query,
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="understand",
+        evidence_scope="canonical",
+        presentation="prose",
+        answer_intent="fact",
+        confidence=1.0,
+    ).model_dump(mode="json")
+
+
+class CountingSemanticRouteModel(ScriptedPlanner):
     def __init__(self):
         self.planner_calls = 0
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             self.planner_calls += 1
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class BroadWorkQuestionReviewModel(FakeModel):
+class BroadWorkQuestionReviewModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
-            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
-            planned.update(
-                {
-                    "capability_id": "work.inbox",
-                    "asset_kind": "runtime",
-                    "operation": "understand",
-                    "operation_plan": ["understand"],
-                    "work_view": "current",
-                    "current_scope_explicit": True,
-                    "resolved_goal": "현재 업무를 확인한다",
-                    "result_purpose": "explain",
-                    "requested_asset_kinds": ["person", "role", "task"],
-                }
+        if _is_semantic_planner_schema(schema):
+            payload = json.loads(prompt)
+            person_ref = next(
+                (str(item) for item in payload.get("trusted_context_refs") or [] if str(item).startswith("person:")),
+                "",
             )
-            return planned
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="공식 역할과 검증된 업무 관계, 현재 처리할 업무를 구분해 설명한다",
+                    retrieval_query="공식 역할 검증된 업무 관계 현재 처리할 업무",
+                    subjects=[
+                        SemanticSubject(
+                            mention="현재 사용자",
+                            entity_ref=person_ref,
+                            entity_kind="person",
+                            resolution="resolved" if person_ref else "unresolved",
+                        )
+                    ] if person_ref else [],
+                    capability_id="knowledge.search",
+                    user_effect="read",
+                    operation="understand",
+                    evidence_scope="operational",
+                    presentation="table",
+                    work_view="combined",
+                    graph_query=GraphQueryDraft(
+                        enabled=True,
+                        query_kind="responsibility",
+                        focal_mentions=[person_ref] if person_ref else [],
+                        presentation="table",
+                    ),
+                    context_refs=[person_ref] if person_ref else [],
+                    confidence=1.0,
+                ).model_dump(mode="json")
+            )
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class MisroutedCurrentWorkReviewModel(FakeModel):
+class MisroutedCurrentWorkReviewModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
                 {
@@ -344,10 +677,10 @@ class MisroutedCurrentWorkReviewModel(FakeModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class RuntimeOnlyWrongScopeReviewModel(FakeModel):
+class RuntimeOnlyWrongScopeReviewModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
                 {
@@ -371,11 +704,11 @@ class RuntimeOnlyWrongScopeReviewModel(FakeModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class KnowledgeCurrentScopeContradictionModel(FakeModel):
+class KnowledgeCurrentScopeContradictionModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             planned.update(
                 {
                     "capability_id": "knowledge.search",
@@ -391,10 +724,10 @@ class KnowledgeCurrentScopeContradictionModel(FakeModel):
         return planned
 
 
-class GenericRetrievalQueryModel(FakeModel):
+class GenericRetrievalQueryModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             payload = json.loads(prompt)
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             trusted_refs = [str(item) for item in payload.get("trusted_context_refs") or []]
@@ -409,91 +742,129 @@ class GenericRetrievalQueryModel(FakeModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class SemanticContinuationModel(FakeModel):
+class SemanticContinuationModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             payload = json.loads(prompt)
             active_run = (payload.get("active_work") or {}).get("work_run") or {}
-            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            task_ref = str(
+                active_run.get("task_ref")
+                or (payload.get("active_work") or {}).get("task_ref")
+                or next(
+                    (
+                        item
+                        for item in payload.get("trusted_context_refs") or []
+                        if str(item).startswith(("task:", "review-task", "auto-task"))
+                    ),
+                    "",
+                )
+            )
+            plan = SemanticPlan(
+                resolved_goal=f"{task_ref} 업무의 근거와 수행 기록을 검증해 완료한다",
+                retrieval_query=f"{task_ref} 완료 조건 근거 수행 기록",
+                topic_action="continue" if active_run.get("status") == "waiting_human" else "new",
+                subjects=[
+                    SemanticSubject(
+                        mention="진행 중인 Task",
+                        entity_ref=task_ref,
+                        entity_kind="task",
+                        resolution="resolved",
+                    )
+                ],
+                capability_id="task.work",
+                user_effect="execute",
+                operation="complete",
+                evidence_scope="operational",
+                presentation="artifact",
+                work_view="current",
+                context_refs=[task_ref],
+                target_ref=task_ref,
+                answer_intent="work",
+                confidence=0.98,
+            )
+            planned = _planner_envelope(plan.model_dump(mode="json"))
             if active_run.get("status") == "waiting_human":
-                planned.update(
-                    {
-                        "asset_kind": "task",
-                        "operation": "complete",
-                        "operation_plan": ["understand", "validate", "complete", "capture"],
-                        "desired_outcome": "completion_record",
-                        "continue_active_run": True,
-                        "continuation_kind": "human_input",
-                        "user_confirmation": True,
-                        "confidence": 0.98,
-                        "reason": "the user explicitly confirmed the pending human completion checks",
-                    }
-                )
-            else:
-                planned.update(
-                    {
-                        "continue_active_run": False,
-                        "continuation_kind": "none",
-                        "user_confirmation": False,
-                    }
-                )
+                planned["continuation"] = {
+                    "continue_active_run": True,
+                    "delta_kind": "human_input",
+                    "user_confirmation": True,
+                    "work_record": {
+                        "observations": "필수 자료와 예외 사항을 직접 검토했습니다.",
+                        "judgment": "검토 기준을 충족한다고 판단했습니다.",
+                        "result": "판단과 결과를 검토 기록에 남겼습니다.",
+                    },
+                }
             return planned
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class TargetlessTaskLookupModel(FakeModel):
+class TargetlessTaskLookupModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
-            return {
-                "capability_id": "task.work",
-                "asset_kind": "task",
-                "operation": "observe",
-                "operation_plan": ["understand", "observe"],
-                "scope": "selected",
-                "desired_outcome": "기존 Task 판단 기록 찾기",
-                "target_ref": "",
-                "needs_clarification": False,
-                "confidence": 0.96,
-                "reason": "task-related lookup",
-                "continue_active_run": False,
-                "continuation_kind": "none",
-                "user_confirmation": False,
-            }
+        if _is_semantic_planner_schema(schema):
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="단면검사 Task의 이전 판단 기록을 찾는다",
+                    retrieval_query="단면검사 Task 이전 판단 기록",
+                    capability_id="task.work",
+                    user_effect="read",
+                    operation="observe",
+                    evidence_scope="operational",
+                    presentation="prose",
+                    confidence=0.96,
+                ).model_dump(mode="json")
+            )
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class MisroutedActionRunModel(FakeModel):
+class MisroutedActionRunModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
-            return {
-                "capability_id": "task.work",
-                "asset_kind": "task",
-                "operation": "run",
-                "operation_plan": ["understand", "validate", "run", "observe"],
-                "scope": "selected",
-                "desired_outcome": "dry-run result",
-                "target_ref": "manual.review",
-                "needs_clarification": False,
-                "confidence": 0.91,
-                "reason": "mistaken task execution route",
-                "continue_active_run": False,
-                "continuation_kind": "none",
-                "user_confirmation": False,
-            }
+        if _is_semantic_planner_schema(schema):
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="manual.review Action을 dry-run 한다",
+                    retrieval_query="manual.review Action 계약",
+                    subjects=[
+                        {
+                            "mention": "manual.review",
+                            "entity_ref": "manual.review",
+                            "entity_kind": "action",
+                            "resolution": "resolved",
+                        }
+                    ],
+                    capability_id="task.work",
+                    user_effect="execute",
+                    operation="run",
+                    evidence_scope="operational",
+                    presentation="artifact",
+                    target_ref="manual.review",
+                    confidence=0.91,
+                ).model_dump(mode="json")
+            )
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class RepairingSopModel(FakeModel):
+class RepairingSopModel(ScriptedPlanner):
     def __init__(self):
         self.calls = 0
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if "capability_id" in required:
-            return super().generate_structured(system=system, prompt=prompt, schema=schema)
+        if _is_semantic_planner_schema(schema):
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="검증할 근거와 완료 조건이 명확한 SOP 초안을 만든다",
+                    retrieval_query="SOP 근거 완료 조건 업무 단계",
+                    capability_id="sop.plan",
+                    user_effect="draft",
+                    operation="create",
+                    evidence_scope="canonical",
+                    presentation="artifact",
+                    answer_intent="work",
+                    confidence=1.0,
+                ).model_dump(mode="json")
+            )
         self.calls += 1
         task = {
             "name": "근거 확인",
@@ -514,8 +885,19 @@ class RepairingSopModel(FakeModel):
 class PlannerPrefilledSopModel(RepairingSopModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            planned.update(
+                {
+                    "resolved_goal": "검증된 근거로 업무 판단을 완료하는 SOP 초안을 만든다",
+                    "retrieval_query": "업무 판단 SOP 근거와 완료 조건",
+                    "capability_id": "sop.plan",
+                    "user_effect": "draft",
+                    "operation": "create",
+                    "presentation_mode": "artifact",
+                    "answer_intent": "work",
+                }
+            )
             planned["sop_draft"] = {
                 "title": "근거 확인 SOP",
                 "goal": "검증된 근거로 업무 판단을 완료합니다.",
@@ -534,7 +916,7 @@ class PlannerPrefilledSopModel(RepairingSopModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-def test_sop_draft_reuses_the_valid_planner_outline_without_a_second_model_call(
+def test_sop_draft_ignores_planner_authored_payload_and_uses_the_draft_contract(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
@@ -548,9 +930,9 @@ def test_sop_draft_reuses_the_valid_planner_outline_without_a_second_model_call(
     )
     artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
 
-    assert model.calls == 0
-    assert artifact["generation_attempts"] == 1
-    assert artifact["draft"]["tasks"][0]["exit_criteria"] == ["필수 근거와 담당자 판단이 기록되었어요"]
+    assert model.calls == 2
+    assert artifact["generation_attempts"] == 2
+    assert artifact["draft"]["tasks"][0]["exit_criteria"] == ["필수 근거가 확인되었어요"]
     assert artifact["draft"]["tasks"][0]["completion_design"]["checks"][0]["confirmation"] == "human"
     assert artifact["draft"]["mermaid"].startswith("flowchart TD")
 
@@ -624,9 +1006,92 @@ def test_planner_grounded_summary_does_not_require_an_optional_outcome_section(
     assert related == []
 
 
+def test_grounded_answer_rejects_validation_evidence_relabelled_as_canonical(
+    v2_service: AgentV2Service,
+):
+    plan = SemanticPlan(
+        resolved_goal="내부 A2UI 정의를 설명한다",
+        retrieval_query="A2UI 정의",
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="understand",
+        evidence_scope="canonical",
+        presentation="prose",
+        confidence=1.0,
+    )
+    answer, diagnostics = v2_service.quick_agent._resolve_grounded_answer(
+        {
+            "grounded_answer": {
+                "summary": "A2UI 정의라고 주장합니다.",
+                "summary_source_refs": ["S1"],
+                "claims": [
+                    {
+                        "claim_id": "claim-wrong-scope",
+                        "text": "A2UI 정의라고 주장합니다.",
+                        "source_scope": "canonical",
+                        "source_refs": ["S1"],
+                        "supporting_chunk_ids": ["C1"],
+                    }
+                ],
+            }
+        },
+        plan,
+        [
+            {
+                "ref": "boi:team:validation:a2ui",
+                "chunk_id": "boi:team:validation:a2ui#body-0",
+                "answer_scope": "validation",
+            }
+        ],
+    )
+
+    assert answer is not None
+    assert diagnostics["accepted"] is False
+    assert diagnostics["accepted_claims"] == 0
+    assert answer["claims"][0]["support_status"] == "unsupported"
+
+
 class RefiningSopModel(RepairingSopModel):
+    def __init__(self):
+        super().__init__()
+        self.semantic_calls = 0
+
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
+        if _is_semantic_planner_schema(schema):
+            self.semantic_calls += 1
+            payload = json.loads(prompt)
+            trusted_refs = [str(item) for item in payload.get("trusted_context_refs") or []]
+            target_ref = next((item for item in trusted_refs if item.startswith("artifact_")), "")
+            operation = "refine" if self.semantic_calls == 1 else "validate"
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal=(
+                        "선택한 SOP 초안의 완료 항목과 확인할 자료를 구체화한다"
+                        if operation == "refine"
+                        else "선택한 SOP 초안의 완료 조건과 근거 계약을 검증한다"
+                    ),
+                    retrieval_query="SOP 초안 완료 조건 근거 계약",
+                    topic_action="continue",
+                    subjects=[
+                        SemanticSubject(
+                            mention="선택한 SOP 초안",
+                            entity_ref=target_ref,
+                            entity_kind="sop",
+                            resolution="resolved",
+                        )
+                    ],
+                    capability_id="sop.plan",
+                    user_effect="draft",
+                    operation=operation,
+                    evidence_scope="canonical",
+                    presentation="artifact",
+                    context_refs=[target_ref],
+                    target_ref=target_ref,
+                    answer_intent="work",
+                    confidence=1.0,
+                ).model_dump(mode="json")
+            )
         if "completion_design" in required:
             return {
                 "name": "근거 확인",
@@ -660,9 +1125,70 @@ class RefiningSopModel(RepairingSopModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class GroundedAnswerModel(FakeModel):
+class GroundedAnswerModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
+        if _is_semantic_planner_schema(schema):
+            payload = json.loads(prompt)
+            hints = [
+                item
+                for item in [
+                    *(payload.get("internal_wiki_hints") or []),
+                    *(payload.get("operational_runtime_hints") or []),
+                ]
+                if isinstance(item, dict)
+            ]
+            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            if hints:
+                source_ref = str(hints[0].get("source_key") or hints[0].get("ref") or "")
+                entity_ref = str(hints[0].get("ref") or "")
+                chunk_id = str(hints[0].get("chunk_key") or hints[0].get("chunk_id") or "")
+                planned.update(
+                    {
+                        "answer_intent": "procedure",
+                        "topic_mode": "new",
+                        "subjects": [
+                            {
+                                "mention": str(hints[0].get("title") or "BoI Wiki 운영 가이드 게시 기준"),
+                                "entity_ref": entity_ref,
+                                "entity_kind": "knowledge",
+                                "resolution": "resolved",
+                            }
+                        ] if entity_ref else [],
+                        "context_refs": [entity_ref] if entity_ref else [],
+                        "target_ref": entity_ref,
+                        "grounded_answer": {
+                            "summary": "업무 지식과 실행 근거를 연결하고, 초안은 검토 후 게시합니다.",
+                            "summary_source_refs": [source_ref],
+                            "claims": [
+                                {
+                                    "claim_id": "claim-guide-evidence",
+                                    "text": "업무 지식과 실행 근거를 연결합니다.",
+                                    "claim_kind": "procedure",
+                                    "source_refs": [source_ref],
+                                    "supporting_chunk_ids": [chunk_id],
+                                },
+                                {
+                                    "claim_id": "claim-guide-publish",
+                                    "text": "초안은 검토 후 게시합니다.",
+                                    "claim_kind": "procedure",
+                                    "source_refs": [source_ref],
+                                    "supporting_chunk_ids": [chunk_id],
+                                },
+                            ],
+                            "outcomes": [],
+                            "related_questions": [
+                                {
+                                    "kind": "understand",
+                                    "label": "게시 근거 더 보기",
+                                    "question": "게시 전에 확인할 근거를 더 자세히 보여줘.",
+                                    "source_refs": [source_ref],
+                                }
+                            ],
+                        },
+                    }
+                )
+            return planned
         if required == {"summary", "outcomes"}:
             return {
                 "summary": "초안은 검토 후 게시하며, 업무 지식과 실행 근거를 함께 연결합니다.",
@@ -716,13 +1242,25 @@ class CombinedPlannerAnswerModel(GroundedAnswerModel):
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             self.planner_calls += 1
             payload = json.loads(prompt)
-            hints = [item for item in payload.get("wiki_hybrid_hints") or [] if isinstance(item, dict)]
-            source_ref = "boi:public:not-retrieved" if self.invalid_ref else str(
-                hints[0]["source_key"] if self.use_source_key else hints[0]["ref"]
+            hints = [
+                item
+                for item in [
+                    *(payload.get("internal_wiki_hints") or []),
+                    *(payload.get("operational_runtime_hints") or []),
+                ]
+                if isinstance(item, dict)
+            ]
+            selected = next(
+                (item for item in hints if str(item.get("ref") or "") == "boi:public:guide"),
+                hints[0],
             )
+            source_ref = "boi:public:not-retrieved" if self.invalid_ref else str(
+                selected["source_key"] if self.use_source_key else selected["ref"]
+            )
+            chunk_id = str(selected["chunk_key"] if self.use_source_key else selected["chunk_id"])
             planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
             planned.update(
                 {
@@ -730,9 +1268,21 @@ class CombinedPlannerAnswerModel(GroundedAnswerModel):
                     "retrieval_query": str(payload.get("request") or ""),
                     "presentation_mode": self.presentation_mode,
                     "work_view": "none",
+                    "answer_intent": "procedure",
+                    "topic_mode": "new",
+                    "topic_subject": "BoI Wiki 운영 가이드 게시 기준",
                     "grounded_answer": {
                         "summary": "검토된 운영 가이드를 기준으로 게시와 근거 확인 절차를 설명합니다.",
                         "summary_source_refs": [source_ref],
+                        "claims": [
+                            {
+                                "claim_id": "claim-publish-review",
+                                "text": "초안은 검토 후 게시합니다.",
+                                "claim_kind": "procedure",
+                                "source_refs": [source_ref],
+                                "supporting_chunk_ids": [chunk_id],
+                            }
+                        ],
                         "outcomes": [
                             {
                                 "title": "확인 결과",
@@ -759,6 +1309,7 @@ class CombinedPlannerAnswerModel(GroundedAnswerModel):
                 planned["grounded_answer"] = {
                     "summary": "",
                     "summary_source_refs": [],
+                    "claims": [],
                     "outcomes": [],
                     "related_questions": [],
                 }
@@ -768,9 +1319,239 @@ class CombinedPlannerAnswerModel(GroundedAnswerModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
+class A2UIReliabilityModel(ScriptedPlanner):
+    def __init__(self):
+        self.planner_payloads: list[dict[str, Any]] = []
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if _is_semantic_planner_schema(schema):
+            payload = json.loads(prompt)
+            self.planner_payloads.append(payload)
+            hints = [
+                item
+                for item in [
+                    *(payload.get("internal_wiki_hints") or []),
+                    *(payload.get("operational_runtime_hints") or []),
+                ]
+                if isinstance(item, dict)
+            ]
+            followup = "실제로 사용" in str(payload.get("request") or "")
+            selected = next(
+                (
+                    item
+                    for item in hints
+                    if (
+                        str(item.get("ref") or "") == "runtime:a2ui-capability-catalog"
+                        if followup
+                        else "a2ui-and-dynamic-results" in str(item.get("ref") or "")
+                    )
+                ),
+                hints[0],
+            )
+            source_ref = str(selected.get("source_key") or selected.get("ref") or "")
+            chunk_id = str(selected.get("chunk_key") or selected.get("chunk_id") or "")
+            prior_topic = payload.get("verified_topic_state") or {}
+            topic_subject = str(prior_topic.get("subject") or "A2UI와 BoI 동적 결과 화면")
+            if followup:
+                claim_text = "boi-a2ui/v1 catalog에는 Answer, CitationList, DataTable, Timeline, MermaidArtifact, OntologyExplorer가 등록되어 있습니다."
+                answer_intent = "fact"
+                topic_mode = "continue"
+                resolved_goal = f"{topic_subject}: 실제 등록 component와 사용 현황을 보여준다"
+                retrieval_query = f"{topic_subject}: 실제 등록 component와 사용 현황"
+            else:
+                claim_text = "A2UI는 Agent가 만든 결과의 선언적인 화면 구조와 데이터를 신뢰된 client component가 렌더링하도록 전달하는 표현 계약입니다."
+                answer_intent = "definition"
+                topic_mode = "new"
+                topic_subject = "A2UI와 BoI 동적 결과 화면"
+                resolved_goal = "A2UI와 BoI 동적 결과 화면의 내부 canonical 정의를 설명한다"
+                retrieval_query = "A2UI와 BoI 동적 결과 화면 정의"
+            entity_ref = str(selected.get("ref") or "")
+            planned = _planner_envelope(
+                SemanticPlan(
+                    resolved_goal=resolved_goal,
+                    retrieval_query=retrieval_query,
+                    topic_action=topic_mode,
+                    subjects=(
+                        [
+                            {
+                                "mention": topic_subject,
+                            "entity_ref": entity_ref,
+                            "entity_kind": "runtime_catalog",
+                                "resolution": "resolved",
+                            }
+                        ]
+                        if followup
+                        else [
+                            {
+                                "mention": topic_subject,
+                                "entity_ref": entity_ref,
+                                "entity_kind": "knowledge",
+                                "resolution": "resolved",
+                            }
+                        ] if entity_ref else []
+                    ),
+                    capability_id="knowledge.search",
+                    user_effect="read",
+                    operation="understand",
+                    evidence_scope="operational" if followup else "canonical",
+                    presentation="prose",
+                    answer_intent=answer_intent,
+                    context_refs=[entity_ref] if entity_ref else [],
+                    target_ref=entity_ref,
+                    confidence=0.99,
+                ).model_dump(mode="json")
+            )
+            planned["grounded_answer"] = {
+                    "summary": claim_text,
+                    "summary_source_refs": [source_ref],
+                    "claims": [
+                        {
+                                "claim_id": "claim-a2ui-runtime" if followup else "claim-a2ui-definition",
+                                "text": claim_text,
+                                "claim_kind": answer_intent,
+                                "source_scope": "operational" if followup else "canonical",
+                                "source_refs": [source_ref],
+                            "supporting_chunk_ids": [chunk_id],
+                        }
+                    ],
+                    "outcomes": [],
+                    "related_questions": [],
+            }
+            return planned
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class A2UIOmittedProvenanceModel(A2UIReliabilityModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+        required = set(schema.get("required") or [])
+        if _is_semantic_planner_schema(schema):
+            payload = json.loads(prompt)
+            if "실제로 사용" in str(payload.get("request") or ""):
+                answer = planned.get("grounded_answer") or {}
+                answer["summary_source_refs"] = []
+                for claim in answer.get("claims") or []:
+                    claim["source_refs"] = []
+                    claim["supporting_chunk_ids"] = ["model-omitted-provenance"]
+        return planned
+
+
+class A2UIMismatchedChunkModel(A2UIReliabilityModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+        required = set(schema.get("required") or [])
+        if _is_semantic_planner_schema(schema):
+            payload = json.loads(prompt)
+            if "실제로 사용" in str(payload.get("request") or ""):
+                for claim in (planned.get("grounded_answer") or {}).get("claims") or []:
+                    claim["supporting_chunk_ids"] = ["C1"]
+        return planned
+
+
+class UnknownConceptModel(ScriptedPlanner):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        required = set(schema.get("required") or [])
+        if _is_semantic_planner_schema(schema):
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="ZQX-99 내부 약어의 검증된 정의를 확인한다",
+                    retrieval_query="ZQX-99 내부 약어 정의",
+                    capability_id="knowledge.search",
+                    user_effect="read",
+                    operation="understand",
+                    evidence_scope="canonical",
+                    presentation="prose",
+                    answer_intent="definition",
+                    confidence=0.99,
+                ).model_dump(mode="json")
+            )
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class MalformedContinuationModel(A2UIReliabilityModel):
+    def __init__(self):
+        super().__init__()
+        self.followup_attempts = 0
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        payload = json.loads(prompt) if prompt.strip().startswith("{") else {}
+        result = super().generate_structured(system=system, prompt=prompt, schema=schema)
+        if (
+            _is_semantic_planner_schema(schema)
+            and "실제로 사용" in str(payload.get("request") or "")
+        ):
+            self.followup_attempts += 1
+            if not payload.get("validation_issues"):
+                result["resolved_goal"] = "실제 등록 component와 사용 현황을 보여준다"
+                result["retrieval_query"] = "실제 등록 component와 사용 현황"
+                result["subjects"] = []
+        return result
+
+
+class ExplicitNewTopicModel(ScriptedPlanner):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        result = super().generate_structured(system=system, prompt=prompt, schema=schema)
+        if _is_semantic_planner_schema(schema):
+            payload = json.loads(prompt)
+            hints = [
+                item
+                for item in [
+                    *(payload.get("internal_wiki_hints") or []),
+                    *(payload.get("operational_runtime_hints") or []),
+                ]
+                if isinstance(item, dict)
+            ]
+            entity_ref = str(hints[0].get("ref") or "") if hints else ""
+            result.update(
+                {
+                    "resolved_goal": "Action dry-run과 실제 실행의 차이를 설명한다",
+                    "retrieval_query": "Action dry-run 실제 실행 차이",
+                    "answer_intent": "comparison",
+                    "topic_mode": "new",
+                    "subjects": [
+                        {
+                            "mention": "Action dry-run과 실제 실행",
+                            "entity_ref": entity_ref,
+                            "entity_kind": "knowledge",
+                            "resolution": "resolved",
+                        }
+                    ] if entity_ref else [
+                        {
+                            "mention": "Action dry-run과 실제 실행",
+                            "entity_kind": "knowledge",
+                            "resolution": "unresolved",
+                        }
+                    ],
+                    "context_refs": [entity_ref] if entity_ref else [],
+                    "target_ref": entity_ref,
+                    "grounded_answer": {
+                        "summary": "",
+                        "summary_source_refs": [],
+                        "claims": [],
+                        "outcomes": [],
+                        "related_questions": [],
+                    },
+                }
+            )
+        return result
+
+
 class ApplyRelatedQuestionModel(GroundedAnswerModel):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         result = super().generate_structured(system=system, prompt=prompt, schema=schema)
+        if _is_semantic_planner_schema(schema):
+            answer = result.get("grounded_answer") if isinstance(result, dict) else None
+            refs = list(answer.get("summary_source_refs") or []) if isinstance(answer, dict) else []
+            if isinstance(answer, dict):
+                answer["related_questions"] = [
+                    {
+                        "kind": "apply",
+                        "label": "현재 업무에 적용",
+                        "question": "이 기준을 현재 업무에 적용하려면 무엇을 해야 하나요?",
+                        "source_refs": refs,
+                    }
+                ]
         if set(schema.get("required") or []) == {"summary", "outcomes"}:
             result["related_questions"] = [
                 {
@@ -784,42 +1565,101 @@ class ApplyRelatedQuestionModel(GroundedAnswerModel):
 
 
 class MultiTurnMermaidModel(GroundedAnswerModel):
-    def __init__(self):
+    def __init__(self, presentations: list[str] | None = None):
         self.planner_payloads: list[dict[str, Any]] = []
+        self.presentations = list(presentations or ["mermaid"])
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             payload = json.loads(prompt)
             self.planner_payloads.append(payload)
-            request = str(payload.get("request") or "")
             trusted_refs = [str(item) for item in payload.get("trusted_context_refs") or []]
-            diagram = "머메이드" in request
-            return {
-                "capability_id": "knowledge.search",
-                "asset_kind": "knowledge",
-                "operation": "connect" if diagram else "understand",
-                "operation_plan": ["understand", "connect", "validate"] if diagram else ["understand"],
-                "scope": "wiki",
-                "desired_outcome": "BoI Wiki RAG 검색 흐름을 실제 그림으로 확인" if diagram else "검색 방식 설명",
-                "resolved_goal": (
-                    "직전 답변에서 설명한 BoI Wiki RAG 검색 흐름을 근거 기반 Mermaid 차트로 그려줘"
-                    if diagram
-                    else request
-                ),
-                "presentation_mode": "mermaid" if diagram else "prose",
-                "context_refs": trusted_refs[:4] if diagram else [],
-                "result_purpose": "explain",
-                "requested_asset_kinds": ["knowledge"],
-                "artifact_actions": [],
-                "target_ref": "",
-                "needs_clarification": False,
-                "confidence": 0.99,
-                "reason": "the second turn requests a visual continuation of the grounded search explanation",
-                "continue_active_run": False,
-                "continuation_kind": "none",
-                "user_confirmation": False,
-            }
+            requested_presentation = self.presentations.pop(0) if self.presentations else "mermaid"
+            diagram = requested_presentation == "mermaid"
+            planned = super().generate_structured(system=system, prompt=prompt, schema=schema)
+            prior_topic = payload.get("verified_topic_state") or {}
+            prior_entities = [str(item) for item in prior_topic.get("entities") or []]
+            hints = [
+                item
+                for item in [
+                    *(payload.get("internal_wiki_hints") or []),
+                    *(payload.get("operational_runtime_hints") or []),
+                ]
+                if isinstance(item, dict)
+            ]
+            subject_ref = next((item for item in prior_entities if item in trusted_refs), "")
+            if not subject_ref:
+                subject_ref = next(
+                    (str(item.get("ref") or "") for item in hints if str(item.get("ref") or "") in trusted_refs),
+                    "",
+                )
+            topic_action = "continue" if prior_entities and subject_ref in prior_entities else "new"
+            if diagram:
+                planned.update(
+                    {
+                        "capability_id": "knowledge.search",
+                        "user_effect": "read",
+                        "operation": "connect",
+                        "resolved_goal": (
+                            f"직전 답변에서 설명한 대상을 이어서 {payload.get('request') or '관계 그림으로 보여준다'}"
+                            if topic_action == "continue"
+                            else str(payload.get("request") or "검증된 관계를 Mermaid로 보여준다")
+                        ),
+                        "retrieval_query": str(payload.get("request") or "검증된 관계 흐름"),
+                        "presentation_mode": "mermaid",
+                        "topic_mode": topic_action,
+                        "subjects": [
+                            {
+                                "mention": str(prior_topic.get("subject") or "검증된 지식 관계"),
+                                "entity_ref": subject_ref,
+                                "entity_kind": "knowledge",
+                                "resolution": "resolved",
+                            }
+                        ] if subject_ref else [],
+                        "context_refs": [subject_ref] if subject_ref else [],
+                        "target_ref": subject_ref,
+                        "graph_query_draft": {
+                            "enabled": True,
+                            "query_kind": "neighbors",
+                            "focal_mentions": [subject_ref] if subject_ref else [],
+                            "presentation": "mermaid",
+                        },
+                        "confidence": 0.99,
+                    }
+                )
+            else:
+                planned.update(
+                    {
+                        "resolved_goal": str(payload.get("request") or "검증된 지식을 설명한다"),
+                        "retrieval_query": str(payload.get("request") or "검증된 지식"),
+                        "capability_id": "knowledge.search",
+                        "user_effect": "read",
+                        "operation": "understand",
+                        "presentation_mode": "prose",
+                        "topic_mode": "new",
+                        "subjects": [
+                            {
+                                "mention": "검증된 지식",
+                                "entity_ref": subject_ref,
+                                "entity_kind": "knowledge",
+                                "resolution": "resolved",
+                            }
+                        ] if subject_ref else [],
+                        "context_refs": [subject_ref] if subject_ref else [],
+                        "target_ref": subject_ref,
+                        "confidence": 0.99,
+                    }
+                )
+            if diagram:
+                planned["grounded_answer"] = {
+                    "summary": "",
+                    "summary_source_refs": [],
+                    "claims": [],
+                    "outcomes": [],
+                    "related_questions": [],
+                }
+            return planned
         if required == {"title", "nodes", "edges"}:
             return {
                 "title": "BoI Wiki 근거 검색 흐름",
@@ -836,104 +1676,56 @@ class MultiTurnMermaidModel(GroundedAnswerModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class TransformMermaidModel(MultiTurnMermaidModel):
+class SplitOnlyFollowupModel(MultiTurnMermaidModel):
+    def __init__(self):
+        super().__init__(["mermaid"])
+        self.semantic_calls = 0
+
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
+            self.semantic_calls += 1
+            if self.semantic_calls == 1:
+                return super().generate_structured(system=system, prompt=prompt, schema=schema)
             payload = json.loads(prompt)
             trusted_refs = [str(item) for item in payload.get("trusted_context_refs") or []]
-            return {
-                "capability_id": "knowledge.search",
-                "asset_kind": "workflow",
-                "operation": "refine",
-                "operation_plan": ["understand", "refine", "validate"],
-                "scope": "wiki",
-                "desired_outcome": "현재 흐름을 Task와 SOP 초안으로 전환",
-                "resolved_goal": str(payload.get("request") or ""),
-                "presentation_mode": "mermaid",
-                "context_refs": trusted_refs[:4],
-                "result_purpose": "transform",
-                "requested_asset_kinds": ["workflow", "task", "sop"],
-                "artifact_actions": ["split_tasks", "create_sop_draft"],
-                "target_ref": "",
-                "needs_clarification": False,
-                "confidence": 0.99,
-                "reason": "the user explicitly requested artifact transformation",
-                "continue_active_run": False,
-                "continuation_kind": "none",
-                "user_confirmation": False,
-            }
-        if required == {"title", "nodes", "edges"}:
-            return {
-                "title": "업무 흐름 전환 후보",
-                "nodes": [
-                    {"node_id": "start", "label": "업무 시작", "kind": "Workflow", "asset_kind": "workflow", "source_numbers": [1]},
-                    {"node_id": "finish", "label": "업무 결과", "kind": "Workflow", "asset_kind": "workflow", "source_numbers": [1]},
-                ],
-                "edges": [
-                    {"from": "start", "to": "finish", "label": "업무 진행", "source_numbers": [1]},
-                ],
-            }
-        return GroundedAnswerModel.generate_structured(self, system=system, prompt=prompt, schema=schema)
-
-
-class SplitOnlyFollowupModel(MultiTurnMermaidModel):
-    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
-            payload = json.loads(prompt)
-            request = str(payload.get("request") or "")
-            if "Task로 나눠" in request:
-                trusted_refs = [str(item) for item in payload.get("trusted_context_refs") or []]
-                return {
-                    "capability_id": "sop.plan",
-                    "asset_kind": "workflow",
-                    "operation": "refine",
-                    "operation_plan": ["understand", "refine", "validate"],
-                    "scope": "current",
-                    "desired_outcome": "현재 흐름을 Task 후보로 분해",
-                    "resolved_goal": "현재 흐름을 Task 후보로 분해",
-                    "retrieval_query": "현재 흐름의 업무 단계",
-                    "presentation_mode": "artifact",
-                    "context_refs": trusted_refs[:4],
-                    "result_purpose": "transform",
-                    "requested_asset_kinds": ["task"],
-                    "artifact_actions": ["split_tasks"],
-                    "target_ref": trusted_refs[0] if trusted_refs else "",
-                    "needs_clarification": False,
-                    "confidence": 0.99,
-                    "reason": "the user explicitly requested task splitting only",
-                    "continue_active_run": False,
-                    "continuation_kind": "none",
-                    "user_confirmation": False,
-                }
+            artifact_ref = next((item for item in trusted_refs if item.startswith("artifact_")), "")
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="선택한 흐름을 실행 가능한 Task 후보로 나눈다",
+                    retrieval_query="선택한 흐름의 업무 단계",
+                    topic_action="continue",
+                    subjects=[
+                        SemanticSubject(
+                            mention="선택한 흐름",
+                            entity_ref=artifact_ref,
+                            entity_kind="artifact",
+                            resolution="resolved",
+                        )
+                    ],
+                    capability_id="workflow.transform",
+                    user_effect="transform",
+                    operation="refine",
+                    evidence_scope="canonical",
+                    presentation="artifact",
+                    context_refs=[artifact_ref],
+                    target_ref=artifact_ref,
+                    answer_intent="work",
+                    confidence=0.99,
+                ).model_dump(mode="json")
+            )
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
 class InboxBiasedMermaidModel(MultiTurnMermaidModel):
-    """Models a planner that over-weights an Inbox page on a visual follow-up."""
+    """Models a planner that keeps the verified prior subject despite an Inbox page anchor."""
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             payload = json.loads(prompt)
             request = str(payload.get("request") or "")
             if "머메이드" in request:
-                return {
-                    "capability_id": "work.inbox",
-                    "asset_kind": "runtime",
-                    "operation": "connect",
-                    "scope": "current",
-                    "resolved_goal": "직전 답변의 관계를 Mermaid로 표시",
-                    "retrieval_query": "직전 답변의 관계",
-                    "presentation_mode": "mermaid",
-                    "work_view": "current",
-                    "result_purpose": "explain",
-                    "requested_asset_kinds": ["runtime"],
-                    "artifact_actions": [],
-                    "needs_clarification": False,
-                    "confidence": 0.94,
-                }
+                return super().generate_structured(system=system, prompt=prompt, schema=schema)
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
@@ -1013,30 +1805,35 @@ class RepairingReadableMermaidModel(MultiTurnMermaidModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class AutomaticCheckModel(FakeModel):
+class AutomaticCheckModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
-        if {"capability_id", "asset_kind", "operation", "presentation_mode"} <= required:
+        if _is_semantic_planner_schema(schema):
             payload = json.loads(prompt)
             refs = [str(item) for item in payload.get("trusted_context_refs") or []]
-            return {
-                "capability_id": "work_routine.plan",
-                "asset_kind": "knowledge",
-                "operation": "create",
-                "operation_plan": ["understand", "create", "validate"],
-                "scope": "current",
-                "desired_outcome": "automatic check preview",
-                "resolved_goal": str(payload.get("request") or ""),
-                "presentation_mode": "artifact",
-                "context_refs": refs[:2],
-                "target_ref": refs[0] if refs else "boi:public:guide",
-                "needs_clarification": False,
-                "confidence": 0.99,
-                "reason": "the user asked for a scheduled re-check",
-                "continue_active_run": False,
-                "continuation_kind": "none",
-                "user_confirmation": False,
-            }
+            target_ref = refs[0] if refs else "boi:public:guide"
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal=str(payload.get("request") or ""),
+                    retrieval_query=str(payload.get("request") or ""),
+                    subjects=[
+                        SemanticSubject(
+                            mention=target_ref,
+                            entity_ref=target_ref,
+                            entity_kind="knowledge",
+                            resolution="resolved",
+                        )
+                    ],
+                    capability_id="work_routine.plan",
+                    user_effect="draft",
+                    operation="create",
+                    evidence_scope="operational",
+                    presentation="artifact",
+                    context_refs=refs[:2],
+                    target_ref=target_ref,
+                    confidence=0.99,
+                ).model_dump(mode="json")
+            )
         if required == {
             "title",
             "goal",
@@ -1069,7 +1866,7 @@ class AutomaticCheckModel(FakeModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class SkillExecutionModel(FakeModel):
+class SkillExecutionModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
         if required == {"result", "evidence_refs"}:
@@ -1077,7 +1874,7 @@ class SkillExecutionModel(FakeModel):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
-class ReviewerModel(FakeModel):
+class ReviewerModel(ScriptedPlanner):
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
         if required == {"status", "summary", "criteria", "findings"}:
@@ -1125,6 +1922,8 @@ def v2_service(tmp_path: Path) -> AgentV2Service:
     catalog = tmp_path / "agent_catalog"
     catalog.mkdir()
     shutil.copy(ROOT / "data" / "agent_catalog" / "capabilities-v2.yaml", catalog / "capabilities-v2.yaml")
+    shutil.copy(ROOT / "data" / "agent_catalog" / "draft-contracts-v2.yaml", catalog / "draft-contracts-v2.yaml")
+    shutil.copy(ROOT / "data" / "agent_catalog" / "harnesses-v2.yaml", catalog / "harnesses-v2.yaml")
 
     _write_markdown(
         content / "public" / "guide.md",
@@ -1136,6 +1935,14 @@ def v2_service(tmp_path: Path) -> AgentV2Service:
             "visibility": "public",
             "status": "reviewed",
             "timestamp": "2026-07-01T00:00:00+09:00",
+            "agent_entrypoint_areas": ["knowledge"],
+            "agent_entrypoint_prompts": {
+                "knowledge": {
+                    "label": "BoI Wiki 운영 가이드부터 살펴보기",
+                    "prompt": "BoI Wiki 운영 가이드의 핵심과 실제 연결 관계를 근거와 함께 설명해줘.",
+                    "reason": "검토된 공용 지식에서 시작합니다.",
+                }
+            },
         },
         "업무 지식과 실행 근거를 연결하고, 초안은 검토 후 게시합니다.",
     )
@@ -1329,7 +2136,7 @@ def v2_service(tmp_path: Path) -> AgentV2Service:
         independent_review=False,
     )
     service = AgentV2Service(settings)
-    planner = FakeModel()
+    planner = ScriptedPlanner()
     service.model = planner
     service.search.model = planner
     return service
@@ -1868,47 +2675,82 @@ def test_deprecated_knowledge_is_excluded_from_default_searchable_records(
 def test_quick_agent_uses_structured_llm_planning_and_defaults_ambiguous_sop_questions_to_search(
     v2_service: AgentV2Service,
 ):
-    question_route = v2_service.quick_agent.route("SOP와 업무 이벤트가 어떻게 연결돼?", page_kind="sop", model=v2_service.model)
-    draft_route = v2_service.quick_agent.route("업무 이벤트 정의 초안을 만들어줘", page_kind="event", model=v2_service.model)
-    search_route = v2_service.quick_agent.route("업무 이벤트 정의 만들기 자료를 찾아줘", page_kind="event", model=v2_service.model)
-    how_to_route = v2_service.quick_agent.route("업무 이벤트 정의는 어떻게 만들어?", page_kind="event", model=v2_service.model)
-    ambiguous_noun_route = v2_service.quick_agent.route("업무 이벤트 정의 초안", page_kind="event", model=v2_service.model)
-    search_then_draft = v2_service.quick_agent.route("관련 자료를 찾아 SOP 초안을 만들어줘", page_kind="sop", model=v2_service.model)
-    inbox_route = v2_service.quick_agent.route("현재 내 할 일을 보여줘", page_kind="library", model=v2_service.model)
+    def planned(
+        capability_id: str,
+        *,
+        effect: str = "read",
+        operation: str = "understand",
+        presentation: str = "prose",
+        work_view: str = "none",
+    ) -> dict[str, Any]:
+        return SemanticPlan(
+            resolved_goal=f"{capability_id} 계약으로 요청을 처리한다",
+            retrieval_query=capability_id,
+            capability_id=capability_id,
+            user_effect=effect,  # type: ignore[arg-type]
+            operation=operation,  # type: ignore[arg-type]
+            evidence_scope="canonical",
+            presentation=presentation,  # type: ignore[arg-type]
+            work_view=work_view,  # type: ignore[arg-type]
+            confidence=1.0,
+        ).model_dump(mode="json")
+
+    model = ScriptedPlanner(
+        plans=[
+            planned("knowledge.search", operation="connect"),
+            planned("business_event.plan", effect="draft", operation="create", presentation="artifact"),
+            planned("knowledge.search"),
+            planned("knowledge.search"),
+            planned("knowledge.search"),
+            planned("sop.plan", effect="draft", operation="create", presentation="artifact"),
+            planned("work.inbox", operation="observe", work_view="current"),
+            planned("work.inbox", operation="observe", work_view="current"),
+            planned("sop.plan", effect="transform", operation="refine", presentation="artifact"),
+            planned("sop.plan", effect="transform", operation="create", presentation="artifact"),
+            planned("sop.plan", effect="draft", operation="create", presentation="artifact"),
+        ]
+    )
+    question_route = v2_service.quick_agent.route("SOP와 업무 이벤트가 어떻게 연결돼?", page_kind="sop", model=model)
+    draft_route = v2_service.quick_agent.route("업무 이벤트 정의 초안을 만들어줘", page_kind="event", model=model)
+    search_route = v2_service.quick_agent.route("업무 이벤트 정의 만들기 자료를 찾아줘", page_kind="event", model=model)
+    how_to_route = v2_service.quick_agent.route("업무 이벤트 정의는 어떻게 만들어?", page_kind="event", model=model)
+    ambiguous_noun_route = v2_service.quick_agent.route("업무 이벤트 정의 초안", page_kind="event", model=model)
+    search_then_draft = v2_service.quick_agent.route("관련 자료를 찾아 SOP 초안을 만들어줘", page_kind="sop", model=model)
+    inbox_route = v2_service.quick_agent.route("현재 내 할 일을 보여줘", page_kind="library", model=model)
     natural_inbox_route = v2_service.quick_agent.route(
         "내가 지금 처리해야 할 업무와 다음에 확인할 내용을 보여줘",
         page_kind="library",
-        model=v2_service.model,
+        model=model,
     )
     active_sop_followup = v2_service.quick_agent.route(
         "이 초안의 Task 완료 항목을 다듬어줘",
         page_kind="agent",
         active_capability="sop.plan",
-        model=v2_service.model,
+        model=model,
     )
     knowledge_to_tasks = v2_service.quick_agent.route(
         "이걸 Task로 나눠줘",
         page_kind="agent",
         active_capability="knowledge.draft",
-        model=v2_service.model,
+        model=model,
     )
 
     assert question_route["engine"] == "langgraph"
     assert question_route["capability_id"] == "knowledge.search"
     assert question_route["source"] == "llm_structured"
-    assert question_route["reason"] == "semantic_work_intent"
+    assert question_route["reason"] == "semantic_plan_validated"
     assert draft_route["capability_id"] == "business_event.plan"
     assert search_route["capability_id"] == "knowledge.search"
-    assert search_route["reason"] == "semantic_work_intent"
+    assert search_route["reason"] == "semantic_plan_validated"
     assert how_to_route["capability_id"] == "knowledge.search"
     assert ambiguous_noun_route["capability_id"] == "knowledge.search"
     assert search_then_draft["capability_id"] == "sop.plan"
     assert inbox_route["capability_id"] == "work.inbox"
     assert natural_inbox_route["capability_id"] == "work.inbox"
     assert active_sop_followup["capability_id"] == "sop.plan"
-    assert active_sop_followup["reason"] == "semantic_work_intent"
+    assert active_sop_followup["reason"] == "semantic_plan_validated"
     assert knowledge_to_tasks["capability_id"] == "sop.plan"
-    assert v2_service.quick_agent.route("Alarm 대응 SOP 만들어", page_kind="sop", model=v2_service.model)["capability_id"] == "sop.plan"
+    assert v2_service.quick_agent.route("Alarm 대응 SOP 만들어", page_kind="sop", model=model)["capability_id"] == "sop.plan"
 
 
 def test_identical_cross_interface_turns_reuse_the_same_semantic_route_and_evidence(
@@ -1935,38 +2777,35 @@ def test_identical_cross_interface_turns_reuse_the_same_semantic_route_and_evide
     ]
 
 
-def test_targetless_task_lookup_is_normalized_to_wiki_search_by_capability_contract(
+def test_targetless_task_plan_is_rejected_instead_of_rewritten_as_search(
     v2_service: AgentV2Service,
 ):
-    route = v2_service.quick_agent.route(
-        "단면검사 Task에서 이전에 확인한 판단 기록을 찾아줘",
-        page_kind="library",
-        model=TargetlessTaskLookupModel(),
-    )
+    with pytest.raises(SemanticPlanningError) as exc_info:
+        v2_service.quick_agent.route(
+            "단면검사 Task에서 이전에 확인한 판단 기록을 찾아줘",
+            page_kind="library",
+            model=TargetlessTaskLookupModel(),
+        )
 
-    assert route["source"] == "llm_structured"
-    assert route["capability_id"] == "knowledge.search"
-    assert route["work_intent"]["asset_kind"] == "task"
-    assert route["work_intent"]["operation"] == "understand"
-    assert route["trace"][-1] == "validate:task_lookup_to_search"
+    assert exc_info.value.code == "planner_invalid"
+    assert exc_info.value.report is not None
+    assert {item.code for item in exc_info.value.report.issues} == {"subject.target_required"}
 
 
-def test_registered_action_target_keeps_a_run_on_the_action_capability_contract(
+def test_action_subject_on_task_capability_is_rejected_instead_of_remapped(
     v2_service: AgentV2Service,
 ):
-    route = v2_service.quick_agent.route(
-        "manual.review Action을 case_id A-100으로 dry-run 실행해줘.",
-        page_kind="action",
-        trusted_targets={"action_key": "manual.review"},
-        model=MisroutedActionRunModel(),
-    )
+    with pytest.raises(SemanticPlanningError) as exc_info:
+        v2_service.quick_agent.route(
+            "manual.review Action을 case_id A-100으로 dry-run 실행해줘.",
+            page_kind="action",
+            trusted_targets={"action_key": "manual.review"},
+            model=MisroutedActionRunModel(),
+        )
 
-    assert route["source"] == "llm_structured"
-    assert route["capability_id"] == "action.plan"
-    assert route["work_intent"]["asset_kind"] == "action"
-    assert route["work_intent"]["operation"] == "run"
-    assert route["work_intent"]["target_ref"] == "manual.review"
-    assert route["trace"][-1] == "validate:trusted_action_target"
+    assert exc_info.value.code == "planner_invalid"
+    assert exc_info.value.report is not None
+    assert "subject.kind_not_supported" in {item.code for item in exc_info.value.report.issues}
 
 
 def test_natural_language_router_never_uses_keyword_draft_guessing_when_the_intent_model_is_unavailable(
@@ -1974,23 +2813,47 @@ def test_natural_language_router_never_uses_keyword_draft_guessing_when_the_inte
 ):
     unavailable = UnavailableModelGateway("planner unavailable")
 
-    route = v2_service.quick_agent.route(
-        "설비 Alarm 대응 SOP를 만들고 Action까지 실행해줘",
-        page_kind="sop",
-        model=unavailable,
-    )
+    with pytest.raises(SemanticPlanningError) as exc_info:
+        v2_service.quick_agent.route(
+            "설비 Alarm 대응 SOP를 만들고 Action까지 실행해줘",
+            page_kind="sop",
+            model=unavailable,
+        )
 
-    assert route["capability_id"] == "knowledge.search"
-    assert route["source"] == "safe_fallback"
-    assert route["reason"] == "intent_model_unavailable"
-    assert route["work_intent"]["operation"] == "understand"
-    assert route["work_intent"]["needs_clarification"] is True
+    assert exc_info.value.code == "planner_unavailable"
 
 
 def test_explaining_cross_asset_connections_does_not_run_an_authoring_harness(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    source_ref = "boi:public:sop:manual"
+    model = ScriptedPlanner(
+        plans=[
+            SemanticPlan(
+                resolved_goal="선택한 SOP와 관련 업무 이벤트 및 Action의 검증된 연결을 설명한다",
+                retrieval_query="SOP 업무 이벤트 Action 연결",
+                subjects=[
+                    SemanticSubject(
+                        mention="사람 검토 SOP",
+                        entity_ref=source_ref,
+                        entity_kind="sop",
+                        resolution="resolved",
+                    )
+                ],
+                capability_id="knowledge.search",
+                user_effect="read",
+                operation="connect",
+                evidence_scope="canonical",
+                presentation="prose",
+                context_refs=[source_ref],
+                target_ref=source_ref,
+                confidence=1.0,
+            ).model_dump(mode="json")
+        ]
+    )
+    v2_service.model = model
+    v2_service.search.model = model
     response = v2_service.run_turn(
         principal,
         AgentTurnRequest(
@@ -2001,9 +2864,9 @@ def test_explaining_cross_asset_connections_does_not_run_an_authoring_harness(
 
     assert response.capability_id == "knowledge.search"
     assert response.work_intent is not None
-    assert response.work_intent.asset_kind.value == "sop"
+    assert response.work_intent.asset_kind.value == "knowledge"
     assert response.work_intent.operation.value == "connect"
-    assert response.work_intent.desired_outcome == "answer"
+    assert response.work_intent.desired_outcome == "search_results"
     assert [item.harness_id for item in response.harness_results] == ["context.work"]
     assert response.loop_state["status"] == "completed"
 
@@ -2014,6 +2877,23 @@ def test_empty_current_work_is_a_valid_result_instead_of_a_context_failure(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setattr(v2_service.repository, "current_work", lambda _principal, limit=50: [])
+    model = ScriptedPlanner(
+        plans=[
+            SemanticPlan(
+                resolved_goal="현재 처리할 업무와 다음 확인 내용을 조회한다",
+                retrieval_query="현재 처리할 업무",
+                capability_id="work.inbox",
+                user_effect="read",
+                operation="observe",
+                evidence_scope="operational",
+                presentation="prose",
+                work_view="current",
+                confidence=1.0,
+            ).model_dump(mode="json")
+        ]
+    )
+    v2_service.model = model
+    v2_service.search.model = model
 
     response = v2_service.run_turn(
         principal,
@@ -2026,10 +2906,45 @@ def test_empty_current_work_is_a_valid_result_instead_of_a_context_failure(
     assert response.capability_id == "work.inbox"
     assert response.answer.summary.startswith("현재 처리할 Inbox 업무가 없습니다")
     assert response.loop_state["status"] == "completed"
-    assert [item.status for item in response.harness_results] == ["passed"]
+    assert [item.status for item in response.harness_results] == ["warning"]
 
 
-def test_current_work_scope_review_corrects_an_initial_relationship_overreach(
+def test_current_work_projection_emits_chunk_bound_operational_claims(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = ScriptedPlanner(
+        plans=[
+            SemanticPlan(
+                resolved_goal="현재 처리할 업무를 조회한다",
+                retrieval_query="현재 처리할 업무",
+                capability_id="work.inbox",
+                user_effect="read",
+                operation="observe",
+                evidence_scope="operational",
+                presentation="prose",
+                work_view="current",
+                confidence=1.0,
+            ).model_dump(mode="json")
+        ]
+    )
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="지금 처리할 업무만 보여줘", page_ref="/inbox"),
+    )
+
+    assert response.answerability.status == "grounded"
+    assert response.grounded_claims
+    assert all(item.source_scope == "operational" for item in response.grounded_claims)
+    assert all(item.support_status == "supported" for item in response.grounded_claims)
+    assert all(item.supporting_chunk_ids for item in response.grounded_claims)
+    assert response.used_source_refs == [item.source_ref for item in response.citations]
+
+
+def test_invalid_current_work_plan_is_not_rewritten_to_another_capability(
     v2_service: AgentV2Service,
     principal: Principal,
     monkeypatch: pytest.MonkeyPatch,
@@ -2044,13 +2959,14 @@ def test_current_work_scope_review_corrects_an_initial_relationship_overreach(
         AgentTurnRequest(question="내가 지금 처리해야 할 업무와 먼저 확인할 근거를 보여줘.", page_ref="/inbox"),
     )
 
-    assert response.capability_id == "work.inbox"
-    assert response.work_intent and response.work_intent.work_view == "current"
+    assert response.capability_id == "semantic.planner"
+    assert response.error_code == "planner_invalid"
+    assert response.work_intent is None
     assert response.graph_result_ref == ""
     assert response.artifact_refs == []
 
 
-def test_current_runtime_contract_prevents_a_scope_reviewer_from_adding_role_graphs(
+def test_valid_planner_semantics_are_not_rewritten_by_question_text(
     v2_service: AgentV2Service,
     principal: Principal,
     monkeypatch: pytest.MonkeyPatch,
@@ -2065,22 +2981,24 @@ def test_current_runtime_contract_prevents_a_scope_reviewer_from_adding_role_gra
         AgentTurnRequest(question="내가 지금 처리해야 할 업무와 먼저 확인할 근거를 보여줘.", page_ref="/inbox"),
     )
 
-    assert response.capability_id == "work.inbox"
-    assert response.work_intent and response.work_intent.work_view == "current"
-    assert response.graph_result_ref == ""
-    assert response.artifact_refs == []
+    assert response.capability_id == "knowledge.search"
+    assert response.work_intent and response.work_intent.work_view == "combined"
 
 
 def test_current_work_view_rejects_a_knowledge_only_result_contract(v2_service: AgentV2Service):
-    route = v2_service.quick_agent.route(
-        "업무 학습 순환을 그림으로 보여줘",
-        page_kind="document",
-        model=KnowledgeCurrentScopeContradictionModel(),
-    )
+    with pytest.raises(SemanticPlanningError) as exc_info:
+        v2_service.quick_agent.route(
+            "업무 학습 순환을 그림으로 보여줘",
+            page_kind="document",
+            model=KnowledgeCurrentScopeContradictionModel(),
+        )
 
-    assert route["capability_id"] == "knowledge.search"
-    assert route["work_intent"]["work_view"] == "none"
-    assert route["work_intent"]["presentation_mode"] == "mermaid"
+    assert exc_info.value.code == "planner_invalid"
+    assert exc_info.value.report is not None
+    assert any(
+        item.code == "capability.work_view_not_allowed"
+        for item in exc_info.value.report.issues
+    )
 
 
 def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work(
@@ -2101,8 +3019,27 @@ def test_broad_work_question_is_semantically_reviewed_as_roles_plus_current_work
     assert response.graph_result_ref
     assert any(item.artifact_type == "ontology_graph" for item in response.artifact_refs)
     assert response.citations
+    assert response.answerability.status == "grounded"
+    assert response.grounded_claims
+    assert all(item.support_status == "supported" for item in response.grounded_claims)
+    assert all(item.supporting_chunk_ids for item in response.grounded_claims)
+    assert any(item.claim_kind == "relationship" for item in response.grounded_claims)
+    assert any(item.claim_kind == "work" for item in response.grounded_claims)
     assert response.used_source_refs == [item.source_ref for item in response.citations]
+    context = v2_service.get_context(principal, response.context_ref)
+    selected_refs = {
+        item["evidence_id"]
+        for item in context["evidence_refs"]
+    }
+    assert set(response.used_source_refs).issubset(selected_refs)
+    assert set(response.used_source_refs).issubset(
+        set(context["context_manifest"]["selected_refs"])
+    )
     assert "지금 처리할 업무" in response.answer.markdown
+    session = v2_service.store.get("work_sessions", response.work_session_id)
+    assert session is not None
+    assert "person:100001" in session["topic_state"]["entities"]
+    assert "현재 사용자" not in session["topic_state"]["entities"]
 
 
 def test_explorer_presentation_builds_graph_without_explicit_draft(
@@ -2110,11 +3047,38 @@ def test_explorer_presentation_builds_graph_without_explicit_draft(
     principal: Principal,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    source_ref = "boi:public:boi-wiki-manual:guide:final-operator-guide"
+    source_ref = "boi:public:guide"
+    semantic_plan = SemanticPlan(
+        resolved_goal="종합 가이드 중심 관계 탐색 화면을 제공한다",
+        retrieval_query="종합 가이드 직접 연결 업무 관계",
+        subjects=[
+            SemanticSubject(
+                mention="종합 가이드",
+                entity_ref=source_ref,
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="understand",
+        evidence_scope="canonical",
+        presentation="explorer",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="neighbors",
+            focal_mentions=[source_ref],
+            presentation="explorer",
+        ),
+        context_refs=[source_ref],
+        target_ref=source_ref,
+        answer_intent="relationship",
+        confidence=1.0,
+    )
     route = {
         "capability_id": "knowledge.search",
         "source": "llm_structured",
         "reason": "관계 탐색 화면 요청",
+        "semantic_plan": semantic_plan.model_dump(mode="json"),
         "work_intent": WorkIntent(
             goal="종합 가이드와 직접 연결된 업무 관계를 탐색한다",
             resolved_goal="종합 가이드 중심 관계 탐색 화면을 제공한다",
@@ -2125,7 +3089,14 @@ def test_explorer_presentation_builds_graph_without_explicit_draft(
             operation=WorkOperation.understand,
             operation_plan=[WorkOperation.understand],
             context_refs=[source_ref],
+            target_ref=source_ref,
             presentation_mode="explorer",
+            graph_query_draft=GraphQueryDraft(
+                enabled=True,
+                query_kind="neighbors",
+                focal_mentions=[source_ref],
+                presentation="explorer",
+            ),
             result_purpose="explain",
             confidence=1.0,
         ).model_dump(mode="json"),
@@ -2148,11 +3119,38 @@ def test_read_only_mermaid_uses_grounded_graph_before_a_second_model_call(
     principal: Principal,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    source_ref = "boi:public:boi-wiki-manual:guide:final-operator-guide"
+    source_ref = "boi:public:guide"
+    semantic_plan = SemanticPlan(
+        resolved_goal="종합 가이드의 검증된 관계를 Mermaid로 보여준다",
+        retrieval_query="종합 가이드 검증된 업무 관계",
+        subjects=[
+            SemanticSubject(
+                mention="종합 가이드",
+                entity_ref=source_ref,
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="understand",
+        evidence_scope="canonical",
+        presentation="mermaid",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="neighbors",
+            focal_mentions=[source_ref],
+            presentation="mermaid",
+        ),
+        context_refs=[source_ref],
+        target_ref=source_ref,
+        answer_intent="relationship",
+        confidence=1.0,
+    )
     route = {
         "capability_id": "knowledge.search",
         "source": "llm_structured",
         "reason": "근거 관계를 흐름 그림으로 설명",
+        "semantic_plan": semantic_plan.model_dump(mode="json"),
         "work_intent": WorkIntent(
             goal="종합 가이드와 연결된 업무 관계를 그림으로 설명한다",
             resolved_goal="종합 가이드의 검증된 관계를 Mermaid로 보여준다",
@@ -2160,7 +3158,14 @@ def test_read_only_mermaid_uses_grounded_graph_before_a_second_model_call(
             operation=WorkOperation.understand,
             operation_plan=[WorkOperation.understand],
             context_refs=[source_ref],
+            target_ref=source_ref,
             presentation_mode="mermaid",
+            graph_query_draft=GraphQueryDraft(
+                enabled=True,
+                query_kind="neighbors",
+                focal_mentions=[source_ref],
+                presentation="mermaid",
+            ),
             result_purpose="explain",
             confidence=1.0,
         ).model_dump(mode="json"),
@@ -2217,14 +3222,23 @@ def test_completion_design_wording_does_not_become_a_task_completion_operation(
     v2_service: AgentV2Service,
 ):
     question = "기존 SOP를 재사용하고 Task별 완료된 모습과 확인할 자료를 넣은 SOP 초안을 만들어줘."
-    route = v2_service.quick_agent.route(question, page_kind="sop", model=v2_service.model)
-    intent = WorkIntentEngine.infer(
-        question,
-        capability_id=route["capability_id"],
-        page_ref="/docs/boi%3Apublic%3Asop%3Amanual?employee_id=100001",
-        task_ref="",
+    plan = SemanticPlan(
+        resolved_goal="기존 SOP를 재사용해 완료 조건과 근거가 있는 SOP 초안을 만든다",
+        retrieval_query="기존 SOP 완료 조건 근거",
+        capability_id="sop.plan",
+        user_effect="draft",
+        operation="create",
+        context_refs=["boi:public:sop:manual"],
         target_ref="boi:public:sop:manual",
+        confidence=1.0,
     )
+    route = v2_service.quick_agent.route(
+        question,
+        page_kind="sop",
+        trusted_targets={"sop_ref": "boi:public:sop:manual"},
+        model=ScriptedPlanner([plan.model_dump(mode="json")]),
+    )
+    intent = WorkIntent.model_validate(route["work_intent"])
 
     assert route["capability_id"] == "sop.plan"
     assert [item.value for item in intent.operation_plan] == [
@@ -2249,9 +3263,26 @@ def test_current_page_is_a_wiki_wide_search_anchor_even_when_the_url_is_encoded(
     assert response.context_usage["page_anchor"]["ref"] == "boi:public:guide"
     assert response.context_usage["page_anchor"]["resolved"] is True
     assert response.evidence_refs[0].evidence_id == "boi:public:guide"
-    assert response.work_intent and response.work_intent.scope == "wiki"
+    assert response.work_intent and response.work_intent.scope == "auto"
     context = v2_service.get_context(principal, response.context_ref)
     assert context["context_manifest"]["selected_refs"][0] == "boi:public:guide"
+
+
+def test_current_page_only_boosts_results_that_are_relevant_to_the_question(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    response = v2_service.search.search(
+        "단면검사의 정의",
+        principal,
+        limit=8,
+        page_ref="/docs/boi%3Apublic%3Aguide",
+        answer_scopes={"canonical", "operational"},
+    )
+
+    refs = [item.evidence_id for item in response.items]
+    assert "boi:public:dictionary:cross-section-inspection" in refs
+    assert "boi:public:guide" not in refs
 
 
 def test_resolved_current_page_is_a_primary_planner_hint_without_limiting_wiki_search(
@@ -2263,10 +3294,22 @@ def test_resolved_current_page_is_a_primary_planner_hint_without_limiting_wiki_s
 
     def semantic_route(_principal: Principal, route_input: dict[str, Any]) -> dict[str, Any]:
         captured.update(route_input)
+        semantic_plan = SemanticPlan(
+            resolved_goal=route_input["question"],
+            retrieval_query="현재 문서 관련 기준 Wiki 전체",
+            capability_id="knowledge.search",
+            user_effect="read",
+            operation="understand",
+            evidence_scope="canonical",
+            presentation="prose",
+            answer_intent="procedure",
+            confidence=1.0,
+        )
         return {
             "capability_id": "knowledge.search",
             "source": "llm_structured",
             "reason": "현재 문서와 Wiki 전체를 함께 이해",
+            "semantic_plan": semantic_plan.model_dump(mode="json"),
             "work_intent": WorkIntent(
                 goal=route_input["question"],
                 resolved_goal=route_input["question"],
@@ -2300,7 +3343,7 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     v2_service: AgentV2Service,
     principal: Principal,
 ):
-    model = MultiTurnMermaidModel()
+    model = MultiTurnMermaidModel(["prose", "mermaid"])
     v2_service.model = model
     v2_service.search.model = model
     first = v2_service.run_turn(
@@ -2347,14 +3390,14 @@ def test_multiturn_visual_followup_resolves_the_prior_subject_and_creates_ground
     timeline = v2_service.session_timeline(principal, first.work_session_id)["items"]
     assert timeline[-2]["display_text"] == "머메이드 차트로 그려줘"
     assert timeline[-1]["artifact_refs"][0]["artifact_id"] == artifact["artifact_id"]
-    assert model.planner_payloads[-1]["conversation_context"]["recent_messages"]
+    assert model.planner_payloads[-1]["verified_topic_state"]["entities"]
 
 
 def test_multiturn_visual_followup_uses_prior_citations_even_when_planner_prefers_inbox(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
-    model = InboxBiasedMermaidModel()
+    model = InboxBiasedMermaidModel(["prose", "mermaid"])
     v2_service.model = model
     v2_service.search.model = model
     first = v2_service.run_turn(
@@ -2383,31 +3426,28 @@ def test_multiturn_visual_followup_uses_prior_citations_even_when_planner_prefer
     assert second.artifact_refs[0].artifact_type == "mermaid_diagram"
 
 
-def test_mermaid_conversion_actions_require_explicit_transform_intent(
+def test_read_only_mermaid_does_not_invent_transform_actions(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
-    model = TransformMermaidModel()
+    model = MultiTurnMermaidModel()
     v2_service.model = model
     v2_service.search.model = model
 
     response = v2_service.run_turn(
         principal,
         AgentTurnRequest(
-            question="이 근거 흐름을 Task로 나누고 SOP 초안으로 이어갈 수 있게 준비해줘",
+            question="이 근거 흐름을 설명용 Mermaid로 보여줘",
             page_ref="/docs/boi%3Apublic%3Aguide",
         ),
     )
 
     assert response.work_intent is not None
-    assert response.work_intent.result_purpose == "transform"
-    assert response.work_intent.artifact_actions == ["split_tasks", "create_sop_draft"]
-    assert [item.action_id for item in response.artifact_refs[0].actions] == [
-        "split_tasks",
-        "create_sop_draft",
-    ]
+    assert response.work_intent.result_purpose == "explain"
+    assert response.work_intent.artifact_actions == []
+    assert response.artifact_refs[0].actions == []
     artifact = v2_service.get_artifact(principal, response.artifact_refs[0].artifact_id)
-    assert [item["action_id"] for item in artifact["actions"]] == ["split_tasks", "create_sop_draft"]
+    assert artifact["actions"] == []
 
 
 def test_task_split_followup_creates_workflow_draft_without_creating_an_sop_draft(
@@ -2471,7 +3511,7 @@ def test_task_split_followup_creates_workflow_draft_without_creating_an_sop_draf
 
     assert domain_calls and domain_calls[0]["source_artifact_id"] == first.artifact_refs[0].artifact_id
     assert second.work_intent is not None
-    assert second.work_intent.artifact_actions == ["split_tasks"]
+    assert second.work_intent.artifact_actions == []
     assert second.plan_ref == ""
     assert [item.artifact_type for item in second.artifact_refs] == ["workflow_draft"]
     artifact = v2_service.get_artifact(principal, second.artifact_refs[0].artifact_id)
@@ -2636,7 +3676,7 @@ def test_retrieval_query_keeps_the_title_of_each_planner_selected_context(
 
     assert response.work_intent is not None
     assert response.work_intent.context_refs == ["boi:public:guide"]
-    assert "BoI Wiki 운영 가이드" in response.work_intent.retrieval_query
+    assert response.work_intent.retrieval_query == "구조와 관계 설명"
 
 
 def test_contextual_starters_are_grounded_in_real_accessible_subjects(
@@ -2659,7 +3699,10 @@ def test_contextual_starters_are_grounded_in_real_accessible_subjects(
         for item in starters
     )
     assert all(item.subject_ref and item.source_refs for item in starters)
-    assert all(item.subject_ref in item.source_refs for item in starters)
+    assert all(
+        item.subject_ref in item.source_refs or item.subject_ref.startswith("person:")
+        for item in starters
+    )
     assert all(item.suggestion_id.startswith("suggestion_") for item in starters)
     assert not {item.category for item in starters}.intersection({"sop_task", "business_event", "action"})
 
@@ -2754,10 +3797,33 @@ def test_agent_returns_one_clarification_when_graph_entity_name_is_ambiguous(
         for employee_id in ("100002", "100003")
     ]
     v2_service.entity_resolver = EntityResolver(lambda: [principal, *people])
+    v2_service.model = ScriptedPlanner(
+        clarifications=["어느 동일 이름 구성원의 업무 관계를 확인할까요?"]
+    )
+    semantic_plan = SemanticPlan(
+        resolved_goal="동일 이름의 검증된 업무 관계를 조회한다",
+        retrieval_query="동일 이름 업무 관계",
+        subjects=[SemanticSubject(mention="동일 이름", resolution="unresolved")],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="understand",
+        evidence_scope="operational",
+        presentation="table",
+        work_view="responsibility",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="responsibility",
+            focal_mentions=["동일 이름"],
+            presentation="table",
+        ),
+        answer_intent="relationship",
+        confidence=0.95,
+    )
     route = {
         "capability_id": "knowledge.search",
         "source": "llm_structured",
         "reason": "업무 관계 조회",
+        "semantic_plan": semantic_plan.model_dump(mode="json"),
         "work_intent": WorkIntent(
             goal="동일 이름의 업무 관계를 보여줘",
             resolved_goal="동일 이름의 검증된 업무 관계를 조회한다",
@@ -2784,7 +3850,8 @@ def test_agent_returns_one_clarification_when_graph_entity_name_is_ambiguous(
 
     assert response.status == "needs_input"
     assert response.work_intent and response.work_intent.needs_clarification is True
-    assert response.answer.markdown.count("어느 대상을 볼까요?") == 1
+    assert response.answer.markdown.count("?") == 1
+    assert "어느 동일 이름 구성원의 업무 관계를 확인할까요?" in response.answer.markdown
     assert "100002" in response.answer.markdown and "100003" in response.answer.markdown
 
 
@@ -2843,6 +3910,115 @@ def test_contextual_starters_do_not_invent_my_work_when_inbox_is_empty(
     assert all(item.source_refs for item in starters)
 
 
+def test_catalog_only_capability_can_add_a_grounded_starter_offer(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    tmp_path: Path,
+):
+    source_catalog = yaml.safe_load(
+        (ROOT / "data" / "agent_catalog" / "capabilities-v2.yaml").read_text(encoding="utf-8")
+    )
+    template = next(item for item in source_catalog["capabilities"] if item["handler"] == "grounded_read")
+    capability = {
+        **template,
+        "capability_id": "test.catalog-starter",
+        "title": "Catalog Starter",
+        "description": "서비스 분기 없이 추가되는 테스트 capability",
+        "examples": [],
+        "starter_offers": [
+            {
+                "offer_id": "test.catalog-starter.entrypoint",
+                "category": "knowledge_relation",
+                "area": "knowledge",
+                "selector": "canonical_entrypoint",
+                "entrypoint_area": "knowledge",
+                "only_when_category_empty": False,
+                "label_template": "{subject_title}에서 Catalog 기능 시작하기",
+                "prompt_template": "{subject_title}을 근거로 Catalog 기능을 실행해줘.",
+                "reason_template": "Catalog 선언으로 제공됩니다.",
+                "priority": 0,
+                "result_kind": "answer",
+            }
+        ],
+    }
+    source_catalog["capabilities"] = [*source_catalog["capabilities"], capability]
+    catalog_path = tmp_path / "catalog-only" / "capabilities-v2.yaml"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(
+        yaml.safe_dump(source_catalog, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    (catalog_path.parent / "draft-contracts-v2.yaml").write_text(
+        (ROOT / "data" / "agent_catalog" / "draft-contracts-v2.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    v2_service.registry = CapabilityRegistry(catalog_path)
+
+    starter = next(
+        item
+        for item in v2_service.starter_suggestions(principal, page_ref="/", limit=18)
+        if item.capability_id == "test.catalog-starter"
+    )
+
+    assert starter.subject_ref == "boi:public:guide"
+    assert starter.label == "BoI Wiki 운영 가이드에서 Catalog 기능 시작하기"
+    assert starter.prompt == "BoI Wiki 운영 가이드을 근거로 Catalog 기능을 실행해줘."
+
+
+def test_starter_refinement_can_rank_but_cannot_rewrite_catalog_semantics(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    source = [
+        item.model_dump(mode="json")
+        for item in v2_service.starter_suggestions(
+            principal,
+            page_ref="/docs/boi%3Apublic%3Aguide",
+            limit=2,
+        )
+    ]
+    set_id = "starterset_rank_only"
+    v2_service.store.put(
+        "starter_suggestion_sets",
+        set_id,
+        {
+            "set_id": set_id,
+            "employee_id": principal.employee_id,
+            "state": "updating",
+            "items": source,
+        },
+    )
+
+    class RewritingRanker(ScriptedPlanner):
+        def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "items": [
+                    {
+                        "suggestion_id": item["suggestion_id"],
+                        "label": "모델이 바꾼 제목",
+                        "prompt": "모델이 바꾼 의미",
+                        "capability_id": "unknown.rewrite",
+                    }
+                    for item in reversed(source)
+                ]
+            }
+
+    v2_service.model = RewritingRanker()
+    v2_service._refine_starter_suggestion_set(set_id, principal, source)
+
+    stored = v2_service.store.get("starter_suggestion_sets", set_id)
+    assert stored is not None
+    assert [item["suggestion_id"] for item in stored["items"]] == [
+        item["suggestion_id"] for item in reversed(source)
+    ]
+    originals = {item["suggestion_id"]: item for item in source}
+    for item in stored["items"]:
+        original = originals[item["suggestion_id"]]
+        assert item["label"] == original["label"]
+        assert item["prompt"] == original["prompt"]
+        assert item["capability_id"] == original["capability_id"]
+
+
 def test_automatic_check_is_previewed_then_created_only_after_confirmation(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -2870,8 +4046,11 @@ def test_automatic_check_is_previewed_then_created_only_after_confirmation(
     assert response.next_actions[0].action_kind == "confirm_plan"
 
     confirmed = asyncio.run(v2_service.confirm_plan(principal, response.plan_ref, "표시된 일정을 확인함"))
+    replayed = asyncio.run(v2_service.confirm_plan(principal, response.plan_ref, "표시된 일정을 확인함"))
 
     assert confirmed["production_changed"] is True
+    assert replayed["replayed"] is True
+    assert replayed["domain_result"] == confirmed["domain_result"]
     assert confirmed["domain_result"]["routine_id"].startswith("routine_")
     visible = v2_service.list_work_routines(principal, surface="pet", status="actionable")
     assert visible["count"] == 1
@@ -2995,10 +4174,36 @@ def test_pet_routine_filter_excludes_diagnostics_and_terminal_history(
     assert [item["routine_id"] for item in actionable["items"]] == [visible["routine_id"]]
 
 
+def test_work_routine_creation_is_idempotent_for_the_same_confirmed_effect(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    request = WorkRoutineCreateRequest(
+        title="동일 계획 자동 확인",
+        goal="같은 확인 계획을 한 번만 활성화합니다.",
+        trigger="interval",
+        interval_seconds=3600,
+        idempotency_key="plan:stable-confirmation",
+    )
+
+    first = v2_service.create_work_routine(principal, request)
+    second = v2_service.create_work_routine(principal, request)
+
+    assert first["routine_id"] == second["routine_id"]
+    assert first["idempotency_key"] == "plan:stable-confirmation"
+    matches = [
+        item
+        for item in v2_service.store.list("work_routines", employee_id=principal.employee_id, limit=100)
+        if item.get("idempotency_key") == "plan:stable-confirmation"
+    ]
+    assert len(matches) == 1
+
+
 def test_work_run_requires_human_completion_and_reuses_the_result_as_private_knowledge(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    v2_service.model = ScriptedPlanner([_task_completion_plan("review-task")])
     response = v2_service.run_turn(
         principal,
         AgentTurnRequest(
@@ -3021,10 +4226,10 @@ def test_work_run_requires_human_completion_and_reuses_the_result_as_private_kno
     goal_plan = v2_service.get_goal_plan(principal, response.goal_plan_ref)
     assert goal_plan["operation_plan"] == ["understand", "validate", "complete", "capture"]
     assert [item["step_id"] for item in goal_plan["steps"]] == [
-        "retrieve",
-        "validate",
-        "complete",
-        "capture",
+        "understand_1",
+        "validate_2",
+        "complete_3",
+        "capture_4",
     ]
     assert work_run["status"] == "waiting_human"
     assert work_run["decision"] == "needs_human"
@@ -3040,6 +4245,14 @@ def test_work_run_requires_human_completion_and_reuses_the_result_as_private_kno
                 kind="human_input",
                 summary="필수 근거를 확인했고 판단과 예외 사항을 검토 기록에 남겼습니다.",
                 ref="boi:public:sop:manual",
+                metadata={
+                    "work_record": {
+                        "observations": "필수 근거와 예외 사항을 확인했습니다.",
+                        "judgment": "검토 기준을 충족한다고 판단했습니다.",
+                        "result": "사람 검토를 완료했습니다.",
+                    },
+                    "completion_state": "completed",
+                },
             ),
         ),
     )
@@ -3110,6 +4323,14 @@ def test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowled
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    model = ScriptedPlanner(
+        [
+            _task_completion_plan("review-task"),
+            _knowledge_read_plan("예외 사항 검토 문서 담당자 판단 기록"),
+        ]
+    )
+    v2_service.model = model
+    v2_service.search.model = model
     completed_turn = v2_service.run_turn(
         principal,
         AgentTurnRequest(
@@ -3124,11 +4345,18 @@ def test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowled
         WorkRunContinueRequest(
             expected_revision=run["revision"],
             confirmation="confirm",
-            delta=LoopDelta(
-                kind="human_input",
-                summary="예외 사항은 검토 문서와 담당자 판단 기록을 함께 확인해야 한다고 확정했습니다.",
-                ref="boi:public:sop:manual",
-            ),
+                delta=LoopDelta(
+                    kind="human_input",
+                    summary="예외 사항은 검토 문서와 담당자 판단 기록을 함께 확인해야 한다고 확정했습니다.",
+                    ref="boi:public:sop:manual",
+                    metadata={
+                        "work_record": {
+                            "observations": "검토 문서와 담당자 판단 기록을 확인했습니다.",
+                            "judgment": "두 근거를 함께 확인해야 한다고 판단했습니다.",
+                            "result": "예외 사항 검토 기준을 확정했습니다.",
+                        }
+                    },
+                ),
         ),
     )
     candidate_id = completion["knowledge_candidates"][0]["candidate_id"]
@@ -3210,16 +4438,17 @@ def test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowled
     assert target_boi_id in {item.evidence_id for item in reused.evidence_refs}
 
 
-def test_work_loop_stops_the_first_no_progress_delta(
+def test_work_loop_requires_a_strategy_change_then_stops_on_repeated_no_progress(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    v2_service.model = ScriptedPlanner([_task_completion_plan("review-task")])
     response = v2_service.run_turn(
         principal,
         AgentTurnRequest(question="사람 검토 Task를 완료해줘", task_ref="review-task"),
     )
     work_run = v2_service.learning.get_run(principal, response.work_run_id)
-    stopped, _ = v2_service.learning.continue_run(
+    waiting, _ = v2_service.learning.continue_run(
         principal,
         response.work_run_id,
         WorkRunContinueRequest(
@@ -3228,17 +4457,164 @@ def test_work_loop_stops_the_first_no_progress_delta(
         ),
     )
 
+    assert waiting["status"] == "waiting_human"
+    assert waiting["stop_reason"] == "strategy_change_required"
+
+    stopped, _ = v2_service.learning.continue_run(
+        principal,
+        response.work_run_id,
+        WorkRunContinueRequest(
+            expected_revision=waiting["revision"],
+            delta=LoopDelta(kind="no_progress", summary="새 근거나 결과가 여전히 없습니다."),
+        ),
+    )
+
     assert stopped["status"] == "stopped"
     assert stopped["stop_reason"] == "no_progress"
+
+
+def test_transient_loop_failure_is_durable_retryable_and_idempotently_resumable(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    context = WorkContextPack(
+        context_id="context-transient-retry",
+        employee_id=principal.employee_id,
+        capability_id="knowledge.search",
+        goal="내부 운영 기준을 확인한다",
+    )
+    v2_service.store.put("contexts", context.context_id, context.model_dump(mode="json"))
+    run = v2_service.learning.create_run(
+        principal=principal,
+        agent_run_id="agent-run-transient-retry",
+        session={"session_id": "session-transient-retry"},
+        context=context,
+        intent=WorkIntent(
+            goal="내부 운영 기준을 확인한다",
+            resolved_goal="내부 운영 기준을 확인한다",
+            operation=WorkOperation.understand,
+            harness_ids=["context.work"],
+        ),
+        goal_plan_id="goal-transient-retry",
+        catalog_revision=v2_service.registry.version,
+    )
+    retryable = v2_service.learning.fail_run(
+        principal,
+        run["work_run_id"],
+        "일시적인 내부 도구 응답 실패",
+        disposition="transient_retry",
+    )
+
+    assert retryable["status"] == "in_progress"
+    assert retryable["decision"] == "continue"
+    assert retryable["stop_reason"] == "transient_retry"
+    checkpoint_nodes = [
+        v2_service.store.get("work_run_checkpoints", item)["node"]
+        for item in retryable["checkpoint_ids"]
+    ]
+    assert checkpoint_nodes[-2:] == ["verify", "reflect"]
+
+    request = WorkRunContinueRequest(
+        expected_revision=retryable["revision"],
+        idempotency_key="retry-result-once",
+        delta=LoopDelta(
+            kind="new_evidence",
+            ref="boi:public:guide",
+            summary="재시도에서 검증된 내부 근거를 확보했습니다.",
+        ),
+    )
+    resumed, _ = v2_service.learning.continue_run(principal, run["work_run_id"], request)
+    replayed, _ = v2_service.learning.continue_run(principal, run["work_run_id"], request)
+
+    assert resumed["status"] == "in_progress"
+    assert replayed["revision"] == resumed["revision"]
+    assert replayed["loop"]["idempotency_keys"].count("retry-result-once") == 1
+
+
+def test_policy_stop_is_terminal_and_records_a_stop_checkpoint(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    run = v2_service.learning.create_run(
+        principal=principal,
+        agent_run_id="agent-run-policy-stop",
+        session={"session_id": "session-policy-stop"},
+        context=WorkContextPack(
+            context_id="context-policy-stop",
+            employee_id=principal.employee_id,
+            capability_id="knowledge.search",
+            goal="허용되지 않은 실행을 중단한다",
+        ),
+        intent=WorkIntent(
+            goal="허용되지 않은 실행을 중단한다",
+            resolved_goal="허용되지 않은 실행을 중단한다",
+            operation=WorkOperation.understand,
+            harness_ids=["context.work"],
+        ),
+        goal_plan_id="goal-policy-stop",
+        catalog_revision=v2_service.registry.version,
+    )
+    stopped = v2_service.learning.fail_run(
+        principal,
+        run["work_run_id"],
+        "정책상 실행할 수 없습니다.",
+        disposition="policy_stop",
+    )
+
+    assert stopped["status"] == "stopped"
+    assert stopped["decision"] == "stop"
+    assert stopped["stop_reason"] == "policy_stop"
+    last_checkpoint = v2_service.store.get(
+        "work_run_checkpoints",
+        stopped["checkpoint_ids"][-1],
+    )
+    assert last_checkpoint["node"] == "stop"
+
+
+def test_work_loop_enforces_declared_tool_loop_cap(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    v2_service.model = ScriptedPlanner([_task_completion_plan("review-task")])
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="사람 검토 Task를 진행해줘", task_ref="review-task"),
+    )
+    run = v2_service.learning.get_run(principal, response.work_run_id)
+    run["loop"]["max_tool_loops"] = 1
+    run["loop"]["policy"]["max_tool_loops"] = 1
+    v2_service.store.put("work_runs", response.work_run_id, run)
+
+    stopped, _ = v2_service.learning.continue_run(
+        principal,
+        response.work_run_id,
+        WorkRunContinueRequest(
+            expected_revision=run["revision"],
+            delta=LoopDelta(
+                kind="action_result",
+                ref="tool-result-without-exit-evidence",
+                summary="도구 결과는 받았지만 완료 조건은 충족하지 못했습니다.",
+                metadata={"tool_result_refs": ["tool-result-without-exit-evidence"]},
+            ),
+        ),
+    )
+
+    assert stopped["status"] == "stopped"
+    assert stopped["stop_reason"] == "max_tool_loops"
+    assert stopped["loop"]["tool_loop_count"] == 1
+    assert stopped["exit_criteria_result"]["stop_reason"] == "max_tool_loops"
 
 
 def test_work_run_records_turn_and_goal_loop_policies(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    model = ScriptedPlanner([_task_completion_plan("review-task")])
+    v2_service.model = model
+    v2_service.search.model = model
     read_turn = v2_service.run_turn(
         principal,
-        AgentTurnRequest(question="BoI Wiki 운영 가이드를 알려줘"),
+        AgentTurnRequest(question="BoI Wiki 운영 가이드를 알려줘", capability_id="knowledge.search"),
     )
     task_turn = v2_service.run_turn(
         principal,
@@ -3524,6 +4900,9 @@ def test_repeated_manual_completion_becomes_a_skill_or_action_candidate(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    model = ScriptedPlanner([_task_completion_plan("review-task") for _ in range(3)])
+    v2_service.model = model
+    v2_service.search.model = model
     pattern_candidate = None
     for index in range(3):
         response = v2_service.run_turn(
@@ -3537,11 +4916,18 @@ def test_repeated_manual_completion_becomes_a_skill_or_action_candidate(
             WorkRunContinueRequest(
                 expected_revision=run["revision"],
                 confirmation="confirm",
-                delta=LoopDelta(
-                    kind="human_input",
-                    summary=f"{index + 1}번째 수행 결과와 판단 근거를 확인했습니다.",
-                    ref=f"boi:private:100001:manual-result-{index + 1}",
-                ),
+                    delta=LoopDelta(
+                        kind="human_input",
+                        summary=f"{index + 1}번째 수행 결과와 판단 근거를 확인했습니다.",
+                        ref=f"boi:private:100001:manual-result-{index + 1}",
+                        metadata={
+                            "work_record": {
+                                "observations": f"{index + 1}번째 수행 자료를 확인했습니다.",
+                                "judgment": "반복 업무 기준을 충족한다고 판단했습니다.",
+                                "result": f"{index + 1}번째 수행 결과를 기록했습니다.",
+                            }
+                        },
+                    ),
             ),
         )
         for item in continuation["knowledge_candidates"]:
@@ -3559,6 +4945,9 @@ def test_repeated_blocker_becomes_an_sop_or_harness_improvement_candidate(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    model = ScriptedPlanner([_task_completion_plan("review-task") for _ in range(2)])
+    v2_service.model = model
+    v2_service.search.model = model
     pattern_candidate = None
     for index in range(2):
         response = v2_service.run_turn(
@@ -3592,6 +4981,9 @@ def test_autopilot_only_completes_from_its_bound_system_result(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    model = ScriptedPlanner([_task_completion_plan("auto-task")])
+    v2_service.model = model
+    v2_service.search.model = model
     response = v2_service.run_turn(
         principal,
         AgentTurnRequest(question="자동 Task를 완료해줘", task_ref="auto-task"),
@@ -3642,8 +5034,9 @@ def test_generic_agent_route_does_not_become_graph_context():
         authority="reviewed",
         status="reviewed",
     )
-    assert graph_score(record, {"단면검사"}, "/agent", "") == 0.0
-    assert graph_score(record, {"단면검사"}, record.url, "") == 0.5
+    assert graph_score(record, {"단면검사"}) == 0.0
+    assert context_anchor_score(record, "/agent", "") == 0.0
+    assert context_anchor_score(record, record.url, "") == 0.5
 
 
 def test_search_diversifies_duplicate_titles_before_filling_remaining_slots():
@@ -3736,9 +5129,13 @@ def test_search_is_acl_aware_excludes_drafts_and_stays_compact(v2_service: Agent
     assert ids[0] == "boi:public:guide"
     assert "boi:public:skill:smoke" not in ids
     assert "boi:private:100002:secret" not in ids
+    model = GroundedAnswerModel()
+    v2_service.model = model
+    v2_service.search.model = model
     response = v2_service.run_turn(principal, AgentTurnRequest(question="BoI Wiki 운영 가이드 찾아줘"))
     assert response.capability_id == "knowledge.search"
-    assert response.answer.summary.startswith("검토된 근거 기준으로")
+    assert response.answerability.status == "grounded"
+    assert response.answer.summary.startswith("업무 지식과 실행 근거")
     assert len(json.dumps(response.model_dump(mode="json"), ensure_ascii=False).encode()) <= 8192
     rendered_citation_ids = set(
         re.findall(r"/api/v2/citations/(cite_[A-Za-z0-9]+)", response.answer.markdown)
@@ -3859,9 +5256,9 @@ def test_grounded_answer_model_can_only_render_server_verified_citations(
 
     response = v2_service.run_turn(principal, AgentTurnRequest(question="BoI Wiki 운영 가이드의 게시 기준을 알려줘"))
 
-    assert response.answer.summary.startswith("초안은 검토 후 게시")
+    assert response.answer.summary.startswith("업무 지식과 실행 근거")
     assert "업무 지식과 실행 근거를 연결합니다." in response.answer.markdown
-    assert "### 다음 점검 항목" in response.answer.markdown
+    assert "초안은 검토 후 게시합니다." in response.answer.markdown
     assert f"/api/v2/citations/{response.citations[0].citation_id}" in response.answer.markdown
     assert "source_numbers" not in response.answer.markdown
 
@@ -3881,7 +5278,7 @@ def test_read_only_grounded_answer_reuses_the_planner_call_when_refs_are_verifie
 
     assert model.planner_calls == 1
     assert model.answer_calls == 0
-    assert response.answer.summary.startswith("검토된 운영 가이드")
+    assert response.answer.summary == "초안은 검토 후 게시합니다."
     assert response.related_questions
     assert all(item.source_refs for item in response.related_questions)
     assert f"/api/v2/citations/{response.citations[0].citation_id}" in response.answer.markdown
@@ -3925,9 +5322,16 @@ def test_read_only_table_reuses_the_grounded_planner_answer(
     assert response.work_intent is not None
     assert response.work_intent.presentation_mode == "table"
     assert response.used_source_refs
+    assert response.graph_result_ref
+    assert response.artifact_refs[0].artifact_type == "ontology_graph"
+    assert response.artifact_refs[0].metadata["presentation"] == "table"
+    assert "DataTable" in response.presentation_plan["components"]
+    surface = v2_service.store.get("a2ui_surfaces", response.a2ui_surface_ref)
+    assert surface is not None
+    assert any(item["component"] == "DataTable" for item in surface["components"])
 
 
-def test_read_only_table_compiles_verified_rows_when_the_planner_omits_answer_content(
+def test_read_only_table_stops_when_the_planner_omits_claim_level_support(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
@@ -3947,12 +5351,46 @@ def test_read_only_table_compiles_verified_rows_when_the_planner_omits_answer_co
     assert model.answer_calls == 0
     assert response.work_intent is not None
     assert response.work_intent.presentation_mode == "table"
-    assert "| 확인 자료 | 종류 | 확인할 내용 |" in response.answer.markdown
-    assert response.used_source_refs
-    assert all(item.citation_id in response.answer.markdown for item in response.citations)
+    assert response.answer.summary == "확인된 근거가 없습니다."
+    assert response.answerability.status == "insufficient"
+    assert response.used_source_refs == []
+    assert response.citations == []
+    assert response.grounded_claims == []
+    assert response.artifact_refs == []
 
 
-def test_planner_answer_with_an_unretrieved_ref_falls_back_to_the_grounded_answer_call(
+def test_claim_selected_evidence_survives_the_bounded_context_window():
+    evidence = [
+        EvidenceRef(
+            evidence_id=f"boi:public:item:{index}",
+            kind="document",
+            title=f"문서 {index}",
+            summary="검증된 내부 문서",
+            url=f"/docs/boi:public:item:{index}",
+        )
+        for index in range(12)
+    ]
+    evidence.append(
+        EvidenceRef(
+            evidence_id="runtime:selected-claim-source",
+            kind="runtime",
+            title="선택된 운영 근거",
+            summary="Planner claim이 직접 선택한 운영 근거",
+            url="/api/runtime/source",
+        )
+    )
+
+    bounded = AgentV2Service._prioritize_evidence(
+        evidence,
+        {"runtime:selected-claim-source"},
+        limit=12,
+    )
+
+    assert bounded[0].evidence_id == "runtime:selected-claim-source"
+    assert len(bounded) == 12
+
+
+def test_planner_answer_with_an_unretrieved_ref_stops_without_a_second_model_call(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
@@ -3966,14 +5404,768 @@ def test_planner_answer_with_an_unretrieved_ref_falls_back_to_the_grounded_answe
     )
 
     assert model.planner_calls == 1
-    assert model.answer_calls == 1
-    assert response.answer.summary.startswith("초안은 검토 후 게시")
+    assert model.answer_calls == 0
+    assert response.answerability.status == "insufficient"
+    assert response.grounded_claims[0].support_status == "unsupported"
+    assert response.answer.summary == "확인된 근거가 없습니다."
+
+
+def _install_a2ui_reliability_documents(service: AgentV2Service) -> None:
+    root = service.settings.content_root
+    _write_markdown(
+        root / "public" / "a2ui-canonical.md",
+        {
+            "type": "boi/reference",
+            "title": "A2UI와 BoI 동적 결과 화면",
+            "description": "A2UI 내부 canonical 정의와 BoI catalog의 역할",
+            "boi_id": "boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results",
+            "visibility": "public",
+            "status": "reviewed",
+            "answer_scope": "canonical",
+        },
+        (
+            "A2UI는 Agent가 만든 결과의 선언적인 화면 구조와 데이터를 신뢰된 client component가 "
+            "렌더링하도록 전달하는 표현 계약입니다.\n\n"
+            "boi-a2ui/v1은 BoI Wiki가 허용한 component와 입력 규칙을 모은 내부 catalog입니다."
+        ),
+    )
+    _write_markdown(
+        root / "team" / "validation" / "a2ui-validation.md",
+        {
+            "type": "boi/validation-report",
+            "title": "A2UI Acceptance 결과",
+            "description": "과거 검증 결과",
+            "boi_id": "boi:team:platform:validation:a2ui",
+            "visibility": "team",
+            "team_id": "aix-tf",
+            "status": "reviewed",
+            "answer_scope": "validation",
+        },
+        "A2UI는 Acceptance 2UI 재검증 framework라는 과거 오답을 포함합니다.",
+    )
+    service.repository.invalidate_source_cache()
+
+
+def test_default_answer_scope_excludes_validation_generated_and_navigation_sources(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    _install_a2ui_reliability_documents(v2_service)
+
+    result = v2_service.search.search(
+        "a2ui 가 뭐니",
+        principal,
+        limit=8,
+        answer_scopes={"canonical", "operational"},
+    )
+
+    refs = [item.evidence_id for item in result.items]
+    assert "boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results" in refs[:3]
+    assert "boi:team:platform:validation:a2ui" not in refs
+    assert all(item.metadata.get("answer_scope") in {"canonical", "operational"} for item in result.items)
+
+
+def test_a2ui_definition_and_followup_use_canonical_claims_then_live_registry(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    _install_a2ui_reliability_documents(v2_service)
+    model = A2UIReliabilityModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    first = v2_service.run_turn(principal, AgentTurnRequest(question="a2ui 가 뭐니"))
+    second = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="실제로 사용된 부분 보여줄래",
+            work_session_id=first.work_session_id,
+        ),
+    )
+
+    assert first.answerability.status == "grounded"
+    assert first.grounded_claims[0].claim_kind == "definition"
+    assert "선언적인 화면 구조와 데이터" in first.answer.markdown
+    assert "Acceptance 2UI" not in first.answer.markdown
+    assert first.used_source_refs == ["boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results"]
+    assert second.answerability.status == "grounded", {
+        "claims": [item.model_dump(mode="json") for item in second.grounded_claims],
+        "citations": [item.model_dump(mode="json") for item in second.citations],
+        "evidence": [item.model_dump(mode="json") for item in second.evidence_refs],
+        "intent": second.work_intent.model_dump(mode="json") if second.work_intent else {},
+        "hints": model.planner_payloads[1].get("wiki_hybrid_hints"),
+    }
+    assert second.work_intent is not None and second.work_intent.topic_mode == "continue"
+    assert "A2UI와 BoI 동적 결과 화면" in second.work_intent.resolved_goal
+    assert second.used_source_refs == ["runtime:a2ui-capability-catalog"]
+    assert "OntologyExplorer" in second.answer.markdown
+    assert "Acceptance 2UI" not in second.answer.markdown
+    assert model.planner_payloads[1]["verified_topic_state"]["claims"]
+
+
+def test_followup_rejects_a_claim_when_the_model_omits_provenance(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    _install_a2ui_reliability_documents(v2_service)
+    model = A2UIOmittedProvenanceModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    first = v2_service.run_turn(principal, AgentTurnRequest(question="a2ui 가 뭐니"))
+    second = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="실제로 사용된 부분 보여줄래",
+            work_session_id=first.work_session_id,
+        ),
+    )
+
+    assert second.answerability.status == "insufficient"
+    assert second.used_source_refs == []
+    assert second.grounded_claims
+    assert all(claim.support_status == "unsupported" for claim in second.grounded_claims)
+
+
+def test_followup_rejects_a_claim_when_the_model_selects_a_mismatched_chunk(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    _install_a2ui_reliability_documents(v2_service)
+    model = A2UIMismatchedChunkModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    first = v2_service.run_turn(principal, AgentTurnRequest(question="a2ui 가 뭐니"))
+    second = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="실제로 사용된 부분 보여줄래",
+            work_session_id=first.work_session_id,
+        ),
+    )
+
+    assert second.answerability.status == "insufficient"
+    assert second.used_source_refs == []
+    assert second.grounded_claims
+    assert all(claim.support_status == "unsupported" for claim in second.grounded_claims)
+
+
+def test_session_followup_context_keeps_only_verified_claims_and_used_citations(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    _install_a2ui_reliability_documents(v2_service)
+    model = A2UIReliabilityModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    first = v2_service.run_turn(principal, AgentTurnRequest(question="a2ui 가 뭐니"))
+    session = v2_service.store.get("work_sessions", first.work_session_id)
+
+    context = v2_service._session_context(principal, session)
+
+    assistant = next(item for item in reversed(context["recent_messages"]) if item["role"] == "assistant")
+    assert assistant["source_refs"] == first.used_source_refs
+    assert assistant["grounded_claims"]
+    assert all(item["support_status"] == "supported" for item in assistant["grounded_claims"])
+    assert context["topic_state"]["used_source_refs"] == first.used_source_refs
+
+
+def test_claim_chunk_mismatch_is_insufficient_even_when_the_source_was_retrieved(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    evidence = [
+        EvidenceRef(
+            evidence_id="boi:public:guide",
+            kind="document",
+            title="운영 가이드",
+            summary="초안은 검토 후 게시합니다.",
+            url="/docs/boi:public:guide",
+        )
+    ]
+    citations = [
+        CitationRef(
+            citation_id="cite-claim-mismatch",
+            source_ref="boi:public:guide",
+            chunk_id="chunk-real",
+            title="운영 가이드",
+            excerpt="초안은 검토 후 게시합니다.",
+        )
+    ]
+    result = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-claim-mismatch"},
+        {
+            "answer_intent": "fact",
+            "claims": [
+                {
+                    "claim_id": "claim-mismatch",
+                    "text": "초안은 검토 후 게시합니다.",
+                    "claim_kind": "fact",
+                    "source_refs": ["boi:public:guide"],
+                    "supporting_chunk_ids": ["chunk-other"],
+                }
+            ],
+        },
+        evidence,
+        citations,
+        include_report=True,
+    )
+
+    answer, _related, claims, report = result
+    assert answer is None
+    assert report.status == "insufficient"
+    assert claims[0].support_status == "unsupported"
+
+
+def test_server_grounding_rejects_claim_scope_that_differs_from_semantic_plan(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    record = KnowledgeRecord(
+        record_id="boi:team:validation:semantic-kernel",
+        kind="document",
+        title="Semantic Kernel 검증 기록",
+        description="검증 실행 결과입니다.",
+        text="# 검증 기록\n\n이 문장은 validation 범위의 실행 결과입니다.",
+        url="/docs/boi:team:validation:semantic-kernel",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+        visibility="team",
+        metadata={"answer_scope": "validation"},
+    )
+    chunk = chunks_for_record(record)[0]
+    monkeypatch.setattr(
+        v2_service,
+        "_record_for_ref",
+        lambda _principal, ref: record if ref == record.record_id else None,
+    )
+    intent = WorkIntent(
+        goal="Semantic Kernel을 설명해줘",
+        resolved_goal="Semantic Kernel의 canonical 정의를 설명한다",
+        answer_source_scope="canonical",
+        operation=WorkOperation.understand,
+    )
+
+    answer, _related, claims, report = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-scope-boundary"},
+        {
+            "answer_intent": "definition",
+            "claims": [
+                {
+                    "claim_id": "claim-validation-only",
+                    "text": "이 문장은 validation 범위의 실행 결과입니다.",
+                    "claim_kind": "definition",
+                    "source_scope": "validation",
+                    "source_refs": [record.record_id],
+                    "supporting_chunk_ids": [chunk["chunk_id"]],
+                    "required_for_answer": True,
+                }
+            ],
+        },
+        [
+            EvidenceRef(
+                evidence_id=record.record_id,
+                kind=record.kind,
+                title=record.title,
+                summary=record.description,
+                url=record.url,
+            )
+        ],
+        [
+            CitationRef(
+                citation_id="cite-scope-boundary",
+                source_ref=record.record_id,
+                chunk_id=str(chunk["chunk_id"]),
+                title=record.title,
+                excerpt=str(chunk["content"]),
+            )
+        ],
+        include_report=True,
+        intent=intent,
+    )
+
+    assert answer is None
+    assert report.status == "insufficient"
+    assert claims[0].support_status == "unsupported"
+
+
+class ConflictingSensitiveClaimModel(ScriptedPlanner):
+    provider = "lmstudio-test"
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {"verdicts"}:
+            claim_id = json.loads(prompt)["claims"][0]["claim_id"]
+            return {
+                "verdicts": [
+                    {"claim_id": claim_id, "support_status": "conflicting", "confidence": 0.99}
+                ]
+            }
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class UnexpectedOperationalVerifierModel(ScriptedPlanner):
+    provider = "lmstudio"
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {"verdicts"}:
+            raise AssertionError("reviewed runtime claims must not invoke a second semantic verifier")
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class UnexpectedCanonicalFactVerifierModel(ScriptedPlanner):
+    provider = "lmstudio-test"
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {"verdicts"}:
+            raise AssertionError("a directly bound high-confidence fact must not invoke a second semantic verifier")
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+class CountingParaphraseVerifierModel(ScriptedPlanner):
+    provider = "lmstudio-test"
+
+    def __init__(self):
+        super().__init__()
+        self.verdict_calls = 0
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {"verdicts"}:
+            self.verdict_calls += 1
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
+def test_high_confidence_canonical_fact_skips_risk_adaptive_semantic_verifier(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = UnexpectedCanonicalFactVerifierModel()
+    v2_service.model = model
+    canonical_record = KnowledgeRecord(
+        record_id="boi:public:fact",
+        kind="document",
+        title="업무 사실",
+        description="검토된 내부 사실",
+        text="# 업무 사실\n\n현재 승인 단계는 담당자 검토입니다.",
+        url="/docs/boi:public:fact",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+        visibility="public",
+        metadata={"answer_scope": "canonical"},
+    )
+    chunk = chunks_for_record(canonical_record)[0]
+    monkeypatch.setattr(
+        v2_service,
+        "_record_for_ref",
+        lambda _principal, ref: canonical_record if ref == canonical_record.record_id else None,
+    )
+    monkeypatch.setattr(v2_service, "_model_related_questions", lambda *_args, **_kwargs: [])
+    evidence = [
+        EvidenceRef(
+            evidence_id=canonical_record.record_id,
+            kind="document",
+            title=canonical_record.title,
+            summary=canonical_record.description,
+            url=canonical_record.url,
+        )
+    ]
+    citations = [
+        CitationRef(
+            citation_id="cite-canonical-fact",
+            source_ref=canonical_record.record_id,
+            chunk_id=str(chunk["chunk_id"]),
+            title=canonical_record.title,
+            excerpt=str(chunk["content"]),
+        )
+    ]
+
+    answer, _related, claims, report = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-canonical-fact"},
+        {
+            "answer_intent": "fact",
+            "claims": [
+                {
+                    "claim_id": "claim-canonical-fact",
+                    "text": "현재 승인 단계는 담당자 검토입니다.",
+                    "claim_kind": "fact",
+                    "source_refs": [canonical_record.record_id],
+                    "supporting_chunk_ids": [chunk["chunk_id"]],
+                }
+            ],
+        },
+        evidence,
+        citations,
+        include_report=True,
+    )
+
+    assert answer is not None
+    assert report.status == "grounded"
+    assert claims[0].support_status == "supported"
+
+
+def test_paraphrased_fact_uses_fresh_context_support_evaluator(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = CountingParaphraseVerifierModel()
+    v2_service.model = model
+    canonical_record = KnowledgeRecord(
+        record_id="boi:public:fact-paraphrase",
+        kind="document",
+        title="업무 사실",
+        description="검토된 내부 사실",
+        text="# 업무 사실\n\n담당자가 초안을 검토한 다음 승인 여부를 결정합니다.",
+        url="/docs/boi:public:fact-paraphrase",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+        visibility="public",
+        metadata={"answer_scope": "canonical"},
+    )
+    chunk = chunks_for_record(canonical_record)[0]
+    monkeypatch.setattr(
+        v2_service,
+        "_record_for_ref",
+        lambda _principal, ref: canonical_record if ref == canonical_record.record_id else None,
+    )
+    monkeypatch.setattr(v2_service, "_model_related_questions", lambda *_args, **_kwargs: [])
+
+    answer, _related, claims, report = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-paraphrase-fact"},
+        {
+            "answer_intent": "fact",
+            "claims": [
+                {
+                    "claim_id": "claim-paraphrase-fact",
+                    "text": "승인은 담당자의 초안 검토 뒤에 결정됩니다.",
+                    "claim_kind": "fact",
+                    "source_scope": "canonical",
+                    "source_refs": [canonical_record.record_id],
+                    "supporting_chunk_ids": [chunk["chunk_id"]],
+                }
+            ],
+        },
+        [
+            EvidenceRef(
+                evidence_id=canonical_record.record_id,
+                kind=canonical_record.kind,
+                title=canonical_record.title,
+                summary=canonical_record.description,
+                url=canonical_record.url,
+            )
+        ],
+        [
+            CitationRef(
+                citation_id="cite-paraphrase-fact",
+                source_ref=canonical_record.record_id,
+                chunk_id=str(chunk["chunk_id"]),
+                title=canonical_record.title,
+                excerpt=str(chunk["content"]),
+            )
+        ],
+        include_report=True,
+    )
+
+    assert model.verdict_calls == 1
+    assert answer is not None
+    assert report.status == "grounded"
+    assert claims[0].support_status == "supported"
+
+
+def test_reviewed_runtime_number_uses_exact_chunk_validation_without_second_model_call(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = UnexpectedOperationalVerifierModel()
+    v2_service.model = model
+    runtime_record = KnowledgeRecord(
+        record_id="runtime:test-metrics",
+        kind="runtime",
+        title="현재 component 사용 현황",
+        description="검증된 내부 runtime projection",
+        text="현재 생성된 surface: 12건\n현재 등록 component Answer: 실제 surface 관측 10건",
+        url="/api/v2/test-metrics",
+        source="runtime",
+        authority="reviewed",
+        status="reviewed",
+        visibility="private",
+        owner=principal.employee_id,
+        metadata={"answer_scope": "operational"},
+    )
+    chunk = chunks_for_record(runtime_record)[0]
+    monkeypatch.setattr(
+        v2_service,
+        "_record_for_ref",
+        lambda _principal, ref: runtime_record if ref == runtime_record.record_id else None,
+    )
+    monkeypatch.setattr(v2_service, "_model_related_questions", lambda *_args, **_kwargs: [])
+    evidence = [
+        EvidenceRef(
+            evidence_id=runtime_record.record_id,
+            kind="runtime",
+            title=runtime_record.title,
+            summary=runtime_record.description,
+            url=runtime_record.url,
+        )
+    ]
+    citations = [
+        CitationRef(
+            citation_id="cite-runtime-metrics",
+            source_ref=runtime_record.record_id,
+            chunk_id=str(chunk["chunk_id"]),
+            title=runtime_record.title,
+            excerpt=str(chunk["content"]),
+        )
+    ]
+
+    answer, _related, claims, report = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-runtime-metrics"},
+        {
+            "answer_intent": "fact",
+            "claims": [
+                {
+                    "claim_id": "claim-runtime-count",
+                    "text": "현재 생성된 surface는 12건입니다.",
+                    "claim_kind": "fact",
+                    "source_scope": "operational",
+                    "source_refs": [runtime_record.record_id],
+                    "supporting_chunk_ids": [chunk["chunk_id"]],
+                }
+            ],
+        },
+        evidence,
+        citations,
+        include_report=True,
+    )
+
+    assert answer is not None
+    assert report.status == "grounded"
+    assert claims[0].support_status == "supported"
+
+
+def test_sensitive_definition_conflict_stops_the_answer(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = ConflictingSensitiveClaimModel()
+    v2_service.model = model
+    canonical_record = KnowledgeRecord(
+        record_id="boi:public:a2ui",
+        kind="document",
+        title="A2UI 내부 정의",
+        description="A2UI는 선언적 화면 표현 계약입니다.",
+        text="# A2UI 내부 정의\n\nA2UI는 선언적 화면 표현 계약입니다.",
+        url="/docs/boi:public:a2ui",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+        visibility="public",
+        metadata={"answer_scope": "canonical"},
+    )
+    original_record_for_ref = v2_service._record_for_ref
+    monkeypatch.setattr(
+        v2_service,
+        "_record_for_ref",
+        lambda active_principal, ref: canonical_record
+        if ref == canonical_record.record_id
+        else original_record_for_ref(active_principal, ref),
+    )
+    evidence = [
+        EvidenceRef(
+            evidence_id="boi:public:a2ui",
+            kind="document",
+            title="A2UI 내부 정의",
+            summary="A2UI는 선언적 화면 표현 계약입니다.",
+            url="/docs/boi:public:a2ui",
+        )
+    ]
+    citations = [
+        CitationRef(
+            citation_id="cite-a2ui-conflict",
+            source_ref="boi:public:a2ui",
+            chunk_id="chunk-a2ui",
+            title="A2UI 내부 정의",
+            excerpt="A2UI는 선언적 화면 표현 계약입니다.",
+        )
+    ]
+    answer, _related, claims, report = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-a2ui-conflict"},
+        {
+            "answer_intent": "definition",
+            "claims": [
+                {
+                    "claim_id": "claim-a2ui",
+                    "text": "A2UI는 선언적 화면 표현 계약입니다.",
+                    "claim_kind": "definition",
+                    "source_refs": ["boi:public:a2ui"],
+                    "supporting_chunk_ids": ["chunk-a2ui"],
+                }
+            ],
+        },
+        evidence,
+        citations,
+        include_report=True,
+    )
+
+    assert answer is None
+    assert report.status == "conflicting"
+    assert report.conflicting_claim_count == 1
+    assert claims[0].support_status == "conflicting"
+
+
+def test_a2ui_capability_catalog_reports_live_registry_and_observed_surfaces(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = GroundedAnswerModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    app = FastAPI()
+    app.include_router(build_agent_v2_router(v2_service))
+
+    with TestClient(app) as client:
+        turn = client.post("/api/v2/agent/turns", json={"question": "BoI Wiki 운영 가이드 찾아줘"})
+        assert turn.status_code == 200
+        catalog = client.get("/api/v2/a2ui/catalogs/boi/v1")
+
+    assert catalog.status_code == 200
+    payload = catalog.json()
+    assert payload["compatibility_id"] == "boi-a2ui/v1"
+    assert payload["surface_count"] >= 1
+    component_by_name = {item["name"]: item for item in payload["components"]}
+    assert {"Answer", "CitationList", "OntologyExplorer", "WorkRecordForm"} <= set(component_by_name)
+    assert component_by_name["Answer"]["observed_surface_count"] >= 1
+    runtime_record = v2_service.search.runtime_record("runtime:a2ui-capability-catalog", principal)
+    assert runtime_record is not None
+    assert "현재 실제 surface 관측이 가장 많은 component: Answer" in runtime_record.text
+
+
+def test_unknown_internal_concept_returns_insufficient_instead_of_model_memory(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    model = UnknownConceptModel()
+    v2_service.model = model
+    v2_service.search.model = model
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="Wiki에 없는 ZQX-99 내부 약어의 뜻을 알려줘"),
+    )
+
+    assert response.answerability.status == "insufficient"
+    assert response.grounded_claims == []
+    assert response.answer.summary == "확인된 근거가 없습니다."
+    assert "ZQX-99" not in response.answer.markdown
+
+
+def test_followup_without_prior_subject_uses_verified_topic_identity_without_a_second_model_call(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    _install_a2ui_reliability_documents(v2_service)
+    model = MalformedContinuationModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    first = v2_service.run_turn(principal, AgentTurnRequest(question="a2ui 가 뭐니"))
+
+    second = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="실제로 사용된 부분 보여줄래", work_session_id=first.work_session_id),
+    )
+
+    assert model.followup_attempts == 2
+    assert second.answerability.status == "grounded"
+    assert second.work_intent is not None
+    assert "A2UI와 BoI 동적 결과 화면" in second.work_intent.resolved_goal
+    assert "A2UI와 BoI 동적 결과 화면" in second.work_intent.retrieval_query
+
+
+def test_explicit_new_topic_does_not_inherit_the_previous_subject(v2_service: AgentV2Service):
+    route = v2_service.quick_agent.route(
+        "새 주제로 Action dry-run과 실제 실행의 차이를 알려줘",
+        page_kind="action",
+        conversation_context={
+            "topic_state": {
+                "subject": "A2UI와 BoI 동적 결과 화면",
+                "claims": [],
+                "used_source_refs": ["boi:public:a2ui"],
+            }
+        },
+        knowledge_hints=[
+            {
+                "ref": "boi:public:action-guide",
+                "title": "Action 실행 가이드",
+                "chunk_id": "chunk-action",
+                "chunk_text": "Action은 dry-run 검증 후 확인을 거쳐 실제 실행합니다.",
+            }
+        ],
+        model=ExplicitNewTopicModel(),
+    )
+
+    intent = route["work_intent"]
+    assert intent["topic_mode"] == "new"
+    assert intent["topic_subject"] == "Action dry-run과 실제 실행"
+    assert "A2UI" not in intent["resolved_goal"]
+    assert "A2UI" not in intent["retrieval_query"]
+
+
+def test_conflicting_followup_invalidates_prior_topic_and_records_correction(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    _install_a2ui_reliability_documents(v2_service)
+    model = A2UIReliabilityModel()
+    v2_service.model = model
+    v2_service.search.model = model
+    first = v2_service.run_turn(principal, AgentTurnRequest(question="a2ui 가 뭐니"))
+    session = v2_service.store.get("work_sessions", first.work_session_id)
+    conflicting_claim = first.grounded_claims[0].model_copy(update={"support_status": "conflicting"})
+    conflicting = first.model_copy(
+        deep=True,
+        update={
+            "run_id": "run-conflicting-correction",
+            "turn_id": "turn-conflicting-correction",
+            "topic_state_ref": "topic:conflicting-correction",
+            "grounded_claims": [conflicting_claim],
+            "answerability": AnswerabilityReport(
+                status="conflicting",
+                answer_intent="definition",
+                conflicting_claim_count=1,
+                conflicts=[conflicting_claim.text],
+            ),
+        },
+    )
+    conflicting.work_intent = first.work_intent.model_copy(update={"topic_mode": "continue"})
+
+    v2_service._finish_work_session(principal, session, conflicting, "방금 정의를 다시 확인해줘")
+
+    stored = v2_service.store.get("work_sessions", first.work_session_id)
+    assert stored["topic_state"]["correction_status"] == "invalidated"
+    assert stored["topic_state"]["invalidated_by_run_id"] == "run-conflicting-correction"
+    assert stored["topic_corrections"][-1]["reason"] == "conflicting_internal_evidence"
 
 
 def test_source_set_pin_exclude_and_private_note_stay_in_one_session(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    model = GroundedAnswerModel()
+    v2_service.model = model
+    v2_service.search.model = model
     response = v2_service.run_turn(principal, AgentTurnRequest(question="BoI Wiki 운영 가이드 찾아줘"))
     source_set = v2_service.get_source_set(principal, response.work_session_id)
     source_ref = response.citations[0].source_ref
@@ -3989,7 +6181,8 @@ def test_source_set_pin_exclude_and_private_note_stay_in_one_session(
         principal,
         NoteFromTurnRequest(run_id=response.run_id, work_session_id=response.work_session_id),
     )
-    assert note["artifact"]["capability_id"] == "knowledge.note"
+    assert note["artifact"]["artifact_type"] == "knowledge_note"
+    assert note["artifact"]["capability_id"] == response.capability_id
     assert note["artifact"]["status"] == "provisional"
     assert note["artifact"]["artifact_id"] in note["source_set"]["pinned"]
 
@@ -4335,7 +6528,7 @@ def test_semantic_search_passes_private_team_and_admin_acl_to_pgvector(
 ):
     captured: dict[str, Any] = {}
 
-    class EmbeddingModel(FakeModel):
+    class EmbeddingModel(ScriptedPlanner):
         def readiness(self) -> dict[str, Any]:
             return {**super().readiness(), "embeddings": True, "embedding_model": "test-embedding"}
 
@@ -4361,7 +6554,7 @@ def test_incremental_index_replaces_stale_chunks_and_reconcile_marks_fresh(
     principal: Principal,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    class EmbeddingModel(FakeModel):
+    class EmbeddingModel(ScriptedPlanner):
         def readiness(self) -> dict[str, Any]:
             return {
                 **super().readiness(),
@@ -4456,7 +6649,7 @@ def test_model_dependent_capabilities_are_unavailable_without_fake_success(v2_se
 
 
 def test_skill_plan_creates_private_draft_only(v2_service: AgentV2Service, principal: Principal):
-    fake = FakeModel()
+    fake = ScriptedPlanner()
     v2_service.model = fake
     v2_service.search.model = fake
     response = v2_service.run_turn(
@@ -4609,7 +6802,7 @@ def test_confirmed_action_plan_records_the_real_domain_result_as_loop_progress(
         }
 
     v2_service.domain_services = DomainServiceGateway({"action.invoke": invoke_action})
-    model = FakeModel()
+    model = ScriptedPlanner()
     v2_service.model = model
     v2_service.search.model = model
     response = v2_service.run_turn(
@@ -4629,14 +6822,19 @@ def test_confirmed_action_plan_records_the_real_domain_result_as_loop_progress(
 
     assert response.plan_ref
     assert response.work_intent is not None
-    assert response.work_intent.operation == WorkOperation.test
-    assert WorkOperation.run not in response.work_intent.operation_plan
+    assert response.work_intent.operation == WorkOperation.run
+    assert response.work_intent.operation_plan == [
+        WorkOperation.understand,
+        WorkOperation.validate,
+        WorkOperation.run,
+        WorkOperation.observe,
+    ]
     waiting = v2_service.learning.get_run(principal, response.work_run_id)
     assert waiting["status"] == "waiting_human"
     waiting_goal = v2_service.get_goal_plan(principal, response.goal_plan_ref)
-    waiting_steps = {item["step_id"]: item["status"] for item in waiting_goal["steps"]}
+    waiting_steps = {item["semantic_operation"]: item["status"] for item in waiting_goal["steps"]}
     assert waiting_goal["status"] == "waiting_confirmation"
-    assert waiting_steps["test"] == "waiting_confirmation"
+    assert waiting_steps["run"] == "waiting_confirmation"
     assert waiting_steps["observe"] == "pending"
 
     confirmed = asyncio.run(v2_service.confirm_plan(principal, response.plan_ref, "dry-run 입력을 확인했습니다."))
@@ -4688,7 +6886,7 @@ def test_natural_followup_refines_the_existing_task_as_a_preview_and_validates_t
 
 
 def test_manual_task_cannot_create_ai_draft(v2_service: AgentV2Service, principal: Principal):
-    fake = FakeModel()
+    fake = ScriptedPlanner()
     v2_service.model = fake
     v2_service.search.model = fake
     with pytest.raises(Exception) as exc_info:
@@ -4734,8 +6932,31 @@ def test_task_completion_hides_technical_refs_and_requires_real_autopilot_bindin
     ready = normalise_task_completion(
         {
             "execution_mode": "autopilot",
-            "exit_criteria": ["equipment.alarm.raised.v1 유형의 이벤트가 SOP 시작 트리거로 식별됨"],
-            "required_evidence": ["boi:public:event-types:equipment.alarm.raised.v1"],
+            "exit_criteria": ["설비 Alarm 발생 접수가 확인되어 업무를 시작할 수 있어요"],
+            "completion_design": {
+                "version": 1,
+                "checks": [
+                    {
+                        "check_id": "alarm-received",
+                        "label": "설비 Alarm 발생 접수가 확인되어 업무를 시작할 수 있어요",
+                        "confirmation": "system",
+                        "binding": {
+                            "kind": "event",
+                            "ref": "equipment.alarm.raised.v1",
+                        },
+                    }
+                ],
+                "evidence": [
+                    {
+                        "evidence_id": "alarm-event",
+                        "label": "설비 Alarm 발생",
+                        "source_kind": "event",
+                        "ref": "boi:public:event-types:equipment.alarm.raised.v1",
+                        "provided_by": "system",
+                        "required": True,
+                    }
+                ],
+            },
         },
         label_lookup=lookup,
     )
@@ -5522,6 +7743,74 @@ def test_relation_required_graph_query_does_not_report_empty_success(
     assert result["empty_reason"]
 
 
+def test_agent_does_not_publish_an_empty_relationship_artifact(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    source_ref = "boi:public:dictionary:cross-section-inspection"
+    semantic_plan = SemanticPlan(
+        resolved_goal="단면검사 개념과 직접 연결된 담당 관계를 확인한다",
+        retrieval_query="단면검사 담당 관계",
+        subjects=[
+            SemanticSubject(
+                mention="단면검사",
+                entity_ref=source_ref,
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="connect",
+        evidence_scope="canonical",
+        presentation="explorer",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="responsibility",
+            focal_mentions=[source_ref],
+            presentation="explorer",
+        ),
+        context_refs=[source_ref],
+        target_ref=source_ref,
+        answer_intent="relationship",
+        confidence=1.0,
+    )
+    route = {
+        "capability_id": "knowledge.search",
+        "source": "scripted_planner",
+        "reason": "근거 없는 관계 결과 차단",
+        "semantic_plan": semantic_plan.model_dump(mode="json"),
+        "work_intent": WorkIntent(
+            goal="직접 연결된 담당 관계를 확인한다",
+            resolved_goal="단면검사 개념과 직접 연결된 담당 관계를 확인한다",
+            asset_kind=WorkAssetKind.knowledge,
+            operation=WorkOperation.connect,
+            operation_plan=[WorkOperation.connect],
+            context_refs=[source_ref],
+            target_ref=source_ref,
+            presentation_mode="explorer",
+            graph_query_draft=GraphQueryDraft(
+                enabled=True,
+                query_kind="responsibility",
+                focal_mentions=[source_ref],
+                presentation="explorer",
+            ),
+            result_purpose="explain",
+            confidence=1.0,
+        ).model_dump(mode="json"),
+    }
+    monkeypatch.setattr(v2_service, "_semantic_route", lambda *_args, **_kwargs: route)
+
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(question="이 개념의 담당 관계를 그래프로 보여줘"),
+    )
+
+    assert response.graph_result_ref == ""
+    assert not any(item.artifact_type == "ontology_graph" for item in response.artifact_refs)
+    assert response.answerability.status != "grounded" or response.grounded_claims
+
+
 def test_graph_query_kinds_have_distinct_semantic_contracts(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -6248,10 +8537,146 @@ def test_harness_candidate_cannot_change_immutable_safety_boundaries(
     assert "acl" in caught.value.detail["immutable"]
 
 
+def test_harness_candidate_rejects_a_surface_without_a_runtime_applier(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    failure_id = "hfailure-inert-surface"
+    v2_service.store.put(
+        "harness_failure_records",
+        failure_id,
+        {
+            "failure_record_id": failure_id,
+            "employee_id": principal.employee_id,
+            "harness_id": "context.work",
+            "causal_agent_stage": "context.evidence",
+            "status": "open",
+        },
+    )
+
+    with pytest.raises(Exception) as caught:
+        v2_service.learning.create_harness_candidate(
+            principal,
+            HarnessCandidateCreateRequest(
+                harness_id="context.work",
+                failure_record_ids=[failure_id],
+                changes={"planner_instruction": "항상 다른 기능으로 바꾼다"},
+                rationale="실행기가 없는 변경은 검토 완료처럼 저장하지 않아야 합니다.",
+            ),
+        )
+
+    assert getattr(caught.value, "status_code", None) == 400
+    assert caught.value.detail["unsupported"] == ["planner_instruction"]
+
+
+def test_active_retrieval_harness_policy_is_consumed_and_pinned_by_the_turn(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model_profile = v2_service.learning.model_profile
+    v2_service.store.put(
+        "harness_active_versions",
+        f"context.work:{model_profile}",
+        {
+            "harness_version_id": "hversion-runtime-policy",
+            "harness_id": "context.work",
+            "model_profile": model_profile,
+            "changes": {"retrieval_policy": {"authority_weight": 1.4}},
+        },
+    )
+    observed: list[dict[str, float]] = []
+    original_search = v2_service.search.search
+
+    def recording_search(*args: Any, **kwargs: Any):
+        observed.append(dict(kwargs.get("ranking_policy") or {}))
+        return original_search(*args, **kwargs)
+
+    monkeypatch.setattr(v2_service.search, "search", recording_search)
+    response = v2_service.run_turn(
+        principal,
+        AgentTurnRequest(
+            question="BoI Wiki 운영 가이드의 검토 기준을 설명해줘",
+            capability_id="knowledge.search",
+        ),
+    )
+
+    assert observed and all(item.get("authority_weight") == 1.4 for item in observed)
+    work_run = v2_service.learning.get_run(principal, response.work_run_id)
+    binding = next(
+        item for item in work_run["harness_bindings"] if item["harness_id"] == "context.work"
+    )
+    assert binding["version"] == "hversion-runtime-policy"
+    assert binding["active_changes"]["retrieval_policy"]["authority_weight"] == 1.4
+
+
 def test_harness_candidate_requires_held_out_and_human_review_before_any_production_change(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    baseline_context = WorkContextPack(
+        context_id="context-harness-held-out",
+        employee_id=principal.employee_id,
+        capability_id="knowledge.search",
+        goal="기존 검증 동작을 보존한다",
+        evidence_refs=[
+            EvidenceRef(
+                evidence_id="boi:public:guide",
+                kind="boi",
+                title="검증된 운영 가이드",
+                summary="기존 검증 동작을 보존하기 위한 reviewed 근거입니다.",
+                url="/docs/boi:public:guide",
+                authority="reviewed",
+            )
+        ],
+        context_manifest=ContextManifest(
+            selected_refs=["boi:public:guide"],
+            chunk_refs=["chunk:boi:public:guide:1"],
+            source_revision="fixture-held-out-v1",
+            provenance={
+                "boi:public:guide": {
+                    "source_ref": "boi:public:guide",
+                    "revision": "fixture-held-out-v1",
+                }
+            },
+        ),
+    )
+    v2_service.store.put(
+        "contexts",
+        baseline_context.context_id,
+        baseline_context.model_dump(mode="json"),
+    )
+    baseline_run = v2_service.learning.create_run(
+        principal=principal,
+        agent_run_id="agent-run-harness-held-out",
+        session={"session_id": "session-harness-held-out"},
+        context=baseline_context,
+        intent=WorkIntent(
+            goal="기존 검증 동작을 보존한다",
+            resolved_goal="기존 검증 동작을 보존한다",
+            operation=WorkOperation.validate,
+            harness_ids=["context.work"],
+        ),
+        goal_plan_id="goal-harness-held-out",
+        catalog_revision=v2_service.registry.version,
+    )
+    baseline_run, _ = v2_service.learning.finish_run(
+        principal=principal,
+        work_run=baseline_run,
+        context=baseline_context,
+        intent=WorkIntent(
+            goal="기존 검증 동작을 보존한다",
+            resolved_goal="기존 검증 동작을 보존한다",
+            operation=WorkOperation.validate,
+            harness_ids=["context.work"],
+        ),
+        response_status="completed",
+        answer_summary="기존 검증 동작이 완료되었습니다.",
+        artifacts=[{"artifact_id": "artifact-held-out", "artifact_type": "data_table"}],
+        evidence_refs=["boi:public:guide"],
+    )
+    assert baseline_run["status"] == "completed"
+
     failure_id = "hfailure-retrieval"
     v2_service.store.put(
         "harness_failure_records",
@@ -6300,7 +8725,14 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
             harness_id="context.work",
             failure_record_ids=[failure_id],
             model_profile=v2_service.learning.model_profile,
-            changes={"retrieval_policy": {"authority_weight": 1.1}},
+            changes={
+                "retrieval_policy": {"authority_weight": 1.1},
+                "loop_budget": {
+                    "max_iterations": 3,
+                    "max_no_progress": 2,
+                    "max_tool_loops": 4,
+                },
+            },
             rationale="같은 실패군을 대상으로 held-out 회귀 없이 개선되는지 다시 검증하는 후보입니다.",
         ),
     )
@@ -6323,6 +8755,9 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
     )
     assert qualified["candidate"]["status"] == "review_required"
     assert qualified["candidate"]["production_changed"] is False
+    assert qualified["evaluation"]["server_observations"]["held_out_work_run_ids"] == [
+        baseline_run["work_run_id"]
+    ]
     reviewed = v2_service.learning.review_harness_candidate(
         principal,
         candidate["candidate_id"],
@@ -6364,6 +8799,31 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
     binding = v2_service.learning.effective_harness_bindings(["context.work"])[0]
     assert binding["version"] == reviewed["harness_version_id"]
     assert binding["release_state"] == "active_reviewed_version"
+    assert binding["active_changes"]["loop_budget"]["max_iterations"] == 3
+
+    pinned_run = v2_service.learning.create_run(
+        principal=principal,
+        agent_run_id="agent-run-pinned-harness",
+        session={"session_id": "session-pinned-harness"},
+        context=WorkContextPack(
+            context_id="context-pinned-harness",
+            employee_id=principal.employee_id,
+            capability_id="knowledge.search",
+            goal="검증된 운영 기준을 이해한다",
+        ),
+        intent=WorkIntent(
+            goal="검증된 운영 기준을 이해한다",
+            resolved_goal="검증된 운영 기준을 이해한다",
+            operation=WorkOperation.understand,
+            harness_ids=["context.work"],
+        ),
+        goal_plan_id="goal-plan-pinned-harness",
+        catalog_revision=v2_service.registry.version,
+    )
+    assert pinned_run["loop"]["max_iterations"] == 3
+    assert pinned_run["loop"]["max_tool_loops"] == 4
+    assert pinned_run["loop"]["max_no_progress"] == 2
+    assert pinned_run["harness_bindings"][0]["version"] == reviewed["harness_version_id"]
 
     rolled_back = v2_service.learning.rollback_harness_version(
         release_principal,
@@ -6375,6 +8835,10 @@ def test_harness_candidate_requires_held_out_and_human_review_before_any_product
     )
     assert rolled_back["production_changed"] is True
     assert v2_service.store.list("harness_active_versions", limit=10) == []
+    assert pinned_run["harness_bindings"][0]["version"] == reviewed["harness_version_id"]
+    restored_binding = v2_service.learning.effective_harness_bindings(["context.work"])[0]
+    assert restored_binding["version"] == v2_service.learning.harnesses.definition("context.work").version
+    assert restored_binding["release_state"] == "catalog_version"
 
 
 def test_blocked_harness_creates_causal_failure_and_negative_result(
@@ -6565,6 +9029,7 @@ def test_no_progress_is_preserved_as_a_negative_result(
     v2_service: AgentV2Service,
     principal: Principal,
 ):
+    v2_service.model = ScriptedPlanner([_task_completion_plan("negative-loop-task")])
     response = v2_service.run_turn(
         principal,
         AgentTurnRequest(question="사람 검토 Task를 진행해줘", task_ref="negative-loop-task"),
@@ -6580,8 +9045,19 @@ def test_no_progress_is_preserved_as_a_negative_result(
             delta=LoopDelta(kind="no_progress", summary="새 근거나 상태 변화가 없습니다."),
         ),
     )["work_run"]
-    assert continuation["status"] == "stopped"
-    negatives = [v2_service.store.get("negative_results", item) for item in continuation["negative_result_ids"]]
+    assert continuation["status"] == "waiting_human"
+    assert continuation["stop_reason"] == "strategy_change_required"
+
+    stopped = v2_service.continue_work_run(
+        principal,
+        response.work_run_id,
+        WorkRunContinueRequest(
+            expected_revision=continuation["revision"],
+            delta=LoopDelta(kind="no_progress", summary="전략을 바꿀 새 근거나 도구도 없습니다."),
+        ),
+    )["work_run"]
+    assert stopped["status"] == "stopped"
+    negatives = [v2_service.store.get("negative_results", item) for item in stopped["negative_result_ids"]]
     assert any(item and item["kind"] == "no_progress" for item in negatives)
 
 

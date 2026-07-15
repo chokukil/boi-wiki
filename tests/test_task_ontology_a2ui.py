@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from boi_api.app.task_execution import TaskExecutionStore
+from boi_api.app.task_completion import evaluate_evidence_requirements
 from boi_api.app.v2.a2ui import (
     A2UI_MESSAGE_VERSION,
     BOI_CATALOG_URL,
@@ -44,7 +45,7 @@ def _create_task(boi_app_module, request_id: str, *, employee_id: str = "100001"
     )
 
 
-def test_acceptance_fixture_has_decision_complete_50_scenario_matrix():
+def test_acceptance_fixture_has_decision_complete_62_scenario_matrix():
     payload = yaml.safe_load((ROOT / "tests/fixtures/task_ontology_a2ui_acceptance.yaml").read_text(encoding="utf-8"))
     groups = payload["groups"]
     assert {key: len(value) for key, value in groups.items()} == {
@@ -54,14 +55,34 @@ def test_acceptance_fixture_has_decision_complete_50_scenario_matrix():
         "learning": 6,
         "harness_improvement": 6,
         "integration_completion": 12,
+        "reliability": 12,
     }
     scenario_ids = [item["id"] for items in groups.values() for item in items]
-    assert len(scenario_ids) == len(set(scenario_ids)) == 50
+    assert len(scenario_ids) == len(set(scenario_ids)) == 62
     assert all(item.get("handler", "").startswith("tests/") for items in groups.values() for item in items)
     assert len(payload["multiturn"]) >= 6
     assert all(len(item["turns"]) >= 2 for item in payload["multiturn"])
     assert payload["thresholds"]["citation_integrity"] == 1.0
     assert payload["thresholds"]["unauthorized_mutations"] == 0
+
+
+def test_live_semantic_fixture_covers_twenty_nine_truthfulness_and_multiturn_scenarios():
+    payload = yaml.safe_load((ROOT / "tests/fixtures/agent_v2_work_scenarios.yaml").read_text(encoding="utf-8"))
+    scenarios = payload["scenarios"]
+    assert len(scenarios) == 29
+    ids = {item["id"] for item in scenarios}
+    assert {
+        "unknown_acronym_stops",
+        "validation_only_term_is_not_a_definition",
+        "conflicting_definition_prefers_canonical",
+        "correct_followup_topic_inheritance",
+        "explicit_new_topic_clears_a2ui",
+        "prior_answer_correction",
+        "session_restore_keeps_verified_topic",
+    } <= ids
+    assert payload["thresholds"]["answerability_accuracy"] == 1.0
+    assert payload["thresholds"]["claim_support_integrity"] == 1.0
+    assert payload["thresholds"]["internal_source_integrity"] == 1.0
 
 
 def test_browser_acceptance_manifest_covers_four_viewports_and_seventeen_real_journeys():
@@ -124,6 +145,67 @@ def test_task_execution_store_shares_assignment_and_records_between_assignees(tm
     assert store.assignment_history(row)[0]["after"]["revision"] == 1
     assert store.records(row)[0]["record_id"] == record["record_id"]
     assert store.records(row)[0]["actor_employee_id"] == "100002"
+
+
+def test_required_evidence_is_satisfied_only_by_exact_ref_or_explicit_requirement_link():
+    requirements = [
+        {
+            "evidence_id": "required-trend",
+            "label": "Trend 확인",
+            "ref": "data:trend-review",
+            "required": True,
+        }
+    ]
+
+    unrelated = evaluate_evidence_requirements(
+        requirements,
+        available_refs={"data:other-review"},
+    )
+    explicitly_linked = evaluate_evidence_requirements(
+        requirements,
+        available_refs={"data:other-review"},
+        linked_refs_by_requirement={"required-trend": {"data:other-review"}},
+    )
+
+    assert unrelated["satisfied_ids"] == []
+    assert unrelated["missing_ids"] == ["required-trend"]
+    assert explicitly_linked["satisfied_ids"] == ["required-trend"]
+
+
+def test_pending_action_is_not_projected_as_a_verified_action_result(boi_app_module):
+    pending = boi_app_module.work_context_evidence_summary(
+        ["action_results"],
+        [
+            {
+                "kind": "action",
+                "source_id": "action:request-1",
+                "request_id": "request-1",
+                "action_key": "action.review",
+                "status": "manual_required",
+                "title": "검토 대기",
+                "summary": "아직 사람이 검토해야 합니다.",
+            }
+        ],
+    )
+    completed = boi_app_module.work_context_evidence_summary(
+        ["action_results"],
+        [
+            {
+                "kind": "action",
+                "source_id": "action:request-1",
+                "request_id": "request-1",
+                "action_key": "action.review",
+                "status": "completed",
+                "title": "검토 완료",
+                "summary": "검토 결과가 기록되었습니다.",
+            }
+        ],
+    )
+
+    assert "action_results" in pending["missing_raw"]
+    assert "action_results" not in pending["available_refs"]
+    assert "action_results" not in completed["missing_raw"]
+    assert "action_results" in completed["available_refs"]
 
 
 def test_memory_ontology_incremental_upsert_preserves_unaffected_nodes_and_removes_tombstones():
@@ -491,6 +573,13 @@ def test_task_work_record_progress_blocker_and_completion_contract(boi_app_modul
 
     snapshot = client.get(f"/api/tasks/{item['task_ref']}/execution-snapshot?employee_id=100001").json()
     checks = [check["check_id"] for check in snapshot["completion"]["checks"]]
+    current_event = next(
+        evidence
+        for evidence in snapshot["completion"]["evidence"]
+        if evidence.get("ref") == "current_event"
+    )
+    assert current_event["available"] is True
+    assert current_event["satisfied_by"] == ["current_event"]
     missing = client.post(
         endpoint,
         json={

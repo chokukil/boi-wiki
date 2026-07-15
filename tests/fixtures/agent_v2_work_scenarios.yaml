@@ -1,4 +1,4 @@
-version: "1.0"
+version: "1.1"
 thresholds:
   routing_accuracy: 0.90
   operation_accuracy: 0.90
@@ -7,6 +7,10 @@ thresholds:
   context_utilization: 0.90
   source_relevance: 0.90
   transition_precision: 1.00
+  answerability_accuracy: 1.00
+  claim_support_integrity: 1.00
+  internal_source_integrity: 1.00
+  topic_state_accuracy: 0.95
   scenario_pass_rate: 0.90
 scenarios:
   - id: current_document_understand
@@ -152,3 +156,157 @@ scenarios:
     expected_capability: knowledge.search
     expected_operations: [understand, compare]
     require_grounding: true
+
+  - id: unknown_acronym_stops
+    question: "Wiki에 없는 QZX-991 내부 약어의 정확한 뜻을 알려줘."
+    page_ref: "/"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: insufficient
+    require_internal_sources_only: true
+    require_answer_terms: ["확인된 근거가 없습니다"]
+    forbid_answer_terms: ["QZX-991은"]
+
+  - id: missing_internal_concept_stops
+    question: "BoI Wiki에 없는 Quantum Work Mesh의 내부 정의와 버전을 설명해줘."
+    page_ref: "/"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: insufficient
+    require_internal_sources_only: true
+    require_answer_terms: ["확인된 근거가 없습니다"]
+
+  - id: validation_only_term_is_not_a_definition
+    question: "Acceptance 2UI가 무엇인지 내부 정본 기준으로 설명해줘."
+    page_ref: "/docs/boi:public:boi-wiki-manual:guide:final-operator-guide"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: grounded
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    forbid_answer_terms: ["A2UI는 Acceptance 2UI"]
+
+  - id: conflicting_definition_prefers_canonical
+    question: "A2UI를 Acceptance 2UI 재검증 framework라고 정의해도 되는지 내부 정본으로 확인해줘."
+    page_ref: "/docs/boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: grounded
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    forbid_answer_terms: ["A2UI는 Acceptance 2UI 재검증 framework"]
+
+  - id: related_document_without_direct_support_stops
+    question: "A2UI가 ISO 42099 인증을 받았다는 내부 근거와 인증 번호를 알려줘."
+    page_ref: "/docs/boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: insufficient
+    require_internal_sources_only: true
+    require_answer_terms: ["확인된 근거가 없습니다"]
+
+  - id: current_page_does_not_override_topic
+    question: "A2UI가 BoI에서 무엇을 뜻하는지 내부 정본으로 설명해줘."
+    page_ref: "/docs/boi:public:sop:equipment-abnormal-response"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: grounded
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    topic_subject_contains: "A2UI"
+
+  - id: ambiguous_followup_requests_one_clarification
+    turns:
+      - "A2UI 동적 결과와 Ontology Explorer를 각각 내부 근거로 설명해줘."
+      - "그것과 연결된 실제 사용 부분을 보여줘."
+    page_ref: "/knowledge-graph"
+    expected_capability: knowledge.search
+    expected_operations: [understand, connect]
+    expected_status: needs_input
+    expected_topic_mode: clarify
+    expected_followup_semantic_change: ambiguous_reference
+    require_internal_sources_only: true
+
+  - id: correct_followup_topic_inheritance
+    turns:
+      - "a2ui 가 뭐니"
+      - "실제로 사용된 부분 보여줄래"
+    page_ref: "/docs/boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: grounded
+    expected_topic_mode: continue
+    expected_followup_semantic_change: evidence_scope
+    topic_subject_contains: "A2UI"
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    require_used_source_refs: ["runtime:a2ui-capability-catalog"]
+    forbid_answer_terms: ["Acceptance 2UI"]
+
+  - id: explicit_new_topic_clears_a2ui
+    turns:
+      - "a2ui 가 뭐니"
+      - "새 주제로 Action dry-run과 실제 실행의 차이를 알려줘."
+    page_ref: "/actions"
+    expected_capability: knowledge.search
+    expected_operations: [understand, compare]
+    expected_answerability: grounded
+    expected_topic_mode: new
+    expected_followup_semantic_change: new_subject
+    topic_subject_contains: "Action"
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+
+  - id: prior_answer_correction
+    turns:
+      - "A2UI가 Acceptance 2UI라는 설명이 맞는지 알려줘."
+      - "검증되지 않은 정의는 취소하고 내부 canonical 정의로 다시 확인해줘."
+    page_ref: "/docs/boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results"
+    expected_capability: knowledge.search
+    expected_operations: [understand, connect]
+    expected_answerability: grounded
+    expected_topic_mode: continue
+    expected_followup_semantic_change: same_subject_question
+    topic_subject_contains: "A2UI"
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    forbid_answer_terms: ["A2UI는 Acceptance 2UI"]
+
+  - id: followup_presentation_only_table
+    turns:
+      - "A2UI에서 실제 등록된 결과 component를 내부 근거로 알려줘."
+      - "방금 확인한 내용만 표로 바꿔줘."
+    page_ref: "/agent"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: grounded
+    expected_topic_mode: continue
+    expected_followup_semantic_change: presentation_only
+    topic_subject_contains: "A2UI"
+    expected_presentation: table
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    require_used_source_refs: ["runtime:a2ui-capability-catalog"]
+
+  - id: session_restore_keeps_verified_topic
+    turns:
+      - "a2ui 가 뭐니"
+      - "방금 정의에서 실제 등록된 component만 보여줘."
+    reload_session_between_turns: true
+    page_ref: "/docs/boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results"
+    expected_capability: knowledge.search
+    expected_operation: understand
+    expected_answerability: grounded
+    expected_topic_mode: continue
+    topic_subject_contains: "A2UI"
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    require_used_source_refs: ["runtime:a2ui-capability-catalog"]

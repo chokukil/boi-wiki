@@ -16206,8 +16206,9 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert "무엇을 확인하면 될까요?" in console_page.text
     assert 'name="exit_criteria"' not in console_page.text
     assert 'name="required_evidence"' not in console_page.text
-    assert "다음 행동 점검" in console_page.text
-    assert "진전 확인하기" in console_page.text
+    assert "다음 행동 점검" not in console_page.text
+    assert "업무 기록 남기기" in console_page.text
+    assert "진전 확인하기" not in console_page.text
     assert "Manual" in console_page.text and "Copilot" in console_page.text and "Autopilot" in console_page.text
 
     fallback_trace_id = "trace-work-context-fallback"
@@ -16247,20 +16248,21 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert fallback_console.json()["completion"]["checks"]
     assert fallback_console.json()["completion"]["evidence"]
 
-    loop_form = client.post(
-        "/tasks/console/loop-evaluate?employee_id=100001",
-        data={
+    loop_progress = client.post(
+        "/api/context/work/loop/evaluate?employee_id=100001",
+        json={
             "task_id": f"task:{request_id}",
             "execution_mode": "manual",
-            "delta_kind": "human_input",
-            "delta_summary": "담당자가 Trend와 Raw Data를 확인했고 추가 근거를 남겼습니다.",
-            "iteration_count": "1",
-            "no_progress_count": "0",
+            "iteration_count": 1,
+            "proposed_delta": {
+                "kind": "human_input",
+                "ref": "workrecord:pytest-loop-progress",
+                "summary": "담당자가 Trend와 Raw Data를 확인했고 추가 근거를 남겼습니다.",
+            },
         },
     )
-    assert loop_form.status_code == 200
-    assert any(label in loop_form.text for label in ("계속 가능", "완료 조건 충족", "사람 확인 필요"))
-    assert "새 진전이 확인되었습니다" in loop_form.text
+    assert loop_progress.status_code == 200
+    assert loop_progress.json()["task_loop_state"]["progress"]["delta_detected"] is True
 
     rejected_external_ai = client.post(
         "/api/tasks/console/external-ai-note?employee_id=100001",
@@ -16320,7 +16322,11 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
         json={
             "task_id": f"task:{request_id}",
             "execution_mode": "manual",
-            "proposed_delta": {"kind": "human_input", "summary": "담당자가 Trend와 Raw Data를 확인했습니다."},
+            "proposed_delta": {
+                "kind": "human_input",
+                "ref": "workrecord:pytest-human-delta",
+                "summary": "담당자가 Trend와 Raw Data를 확인했습니다.",
+            },
         },
     )
     assert human_delta.status_code == 200
@@ -16333,19 +16339,58 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
         json={
             "task_id": f"task:{request_id}",
             "execution_mode": "copilot",
-            "proposed_delta": {"kind": "external_ai_summary", "summary": "별도 AI 검토 요약을 근거 모음에 추가했습니다."},
+            "proposed_delta": {
+                "kind": "external_ai_summary",
+                "artifact_ref": "artifact:pytest-external-ai-summary",
+                "summary": "별도 AI 검토 요약을 근거 모음에 추가했습니다.",
+            },
         },
     )
     assert external_ai_delta.status_code == 200
-    assert external_ai_delta.json()["task_loop_state"]["progress"]["delta_kind"] == "external_ai_summary"
+    assert external_ai_delta.json()["task_loop_state"]["progress"]["delta_kind"] == "artifact"
 
     max_iterations = client.post(
         "/api/context/work/loop/evaluate?employee_id=100001",
-        json={"task_id": f"task:{request_id}", "iteration_count": 5, "proposed_delta": {"kind": "new_evidence", "summary": "새 근거"}},
+        json={
+            "task_id": f"task:{request_id}",
+            "iteration_count": 5,
+            "proposed_delta": {"kind": "new_evidence", "evidence_ref": "evidence:pytest-new", "summary": "새 근거"},
+        },
     )
     assert max_iterations.status_code == 200
     assert max_iterations.json()["task_loop_state"]["decision"] == "stop"
     assert max_iterations.json()["task_loop_state"]["stop_reason"] == "max_iterations"
+
+    prose_repeat = client.post(
+        "/api/context/work/loop/evaluate?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "proposed_question": "같은 SOP를 다시 찾아줘",
+            "question_history": ["같은 SOP를 다시 찾아줘"],
+            "proposed_delta": {},
+        },
+    )
+    assert prose_repeat.status_code == 200
+    prose_state = prose_repeat.json()["task_loop_state"]
+    assert prose_state["progress"]["question_text_used_for_progress"] is False
+    assert prose_state["progress"]["no_progress_reason"] == "missing_required_delta"
+
+    state_delta = client.post(
+        "/api/context/work/loop/evaluate?employee_id=100001",
+        json={
+            "task_id": f"task:{request_id}",
+            "progress_state": {"evidence_refs": ["evidence:known"]},
+            "proposed_delta": {
+                "kind": "new_evidence",
+                "evidence_refs": ["evidence:known", "evidence:new"],
+                "summary": "문구가 같아도 새 근거 식별자가 있습니다.",
+            },
+        },
+    )
+    assert state_delta.status_code == 200
+    state_progress = state_delta.json()["task_loop_state"]["progress"]
+    assert state_progress["delta_detected"] is True
+    assert "evidence:new" in state_progress["progress_state"]["evidence_refs"]
 
     inbox = client.get("/api/agents/boi-wiki/inbox?employee_id=100001&include_context=compact&limit=20")
     assert inbox.status_code == 200
