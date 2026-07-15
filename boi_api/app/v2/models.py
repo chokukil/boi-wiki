@@ -414,8 +414,8 @@ class GroundedClaim(BaseModel):
     text: str
     claim_kind: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
     source_scope: Literal["canonical", "operational", "validation"] = "canonical"
-    source_refs: list[str] = Field(default_factory=list, max_length=12)
-    supporting_chunk_ids: list[str] = Field(default_factory=list, max_length=24)
+    source_refs: list[str] = Field(default_factory=list)
+    supporting_chunk_ids: list[str] = Field(default_factory=list)
     support_status: Literal["supported", "partial", "unsupported", "conflicting"] = "unsupported"
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     required_for_answer: bool = False
@@ -435,7 +435,7 @@ class TurnTopicState(BaseModel):
     topic_state_ref: str
     subject: str = ""
     entities: list[str] = Field(default_factory=list, max_length=100)
-    claims: list[GroundedClaim] = Field(default_factory=list, max_length=12)
+    claims: list[GroundedClaim] = Field(default_factory=list)
     used_source_refs: list[str] = Field(default_factory=list, max_length=100)
     active_artifact_id: str = ""
     correction_status: Literal["active", "corrected", "invalidated"] = "active"
@@ -1103,7 +1103,7 @@ class AgentTurnResponse(BaseModel):
     related_questions: list[RelatedQuestion] = Field(default_factory=list, max_length=3)
     grounding_status: Literal["grounded", "partial", "insufficient", "conflicting", "no_evidence"] = "no_evidence"
     answerability: AnswerabilityReport = Field(default_factory=AnswerabilityReport)
-    grounded_claims: list[GroundedClaim] = Field(default_factory=list, max_length=12)
+    grounded_claims: list[GroundedClaim] = Field(default_factory=list)
     topic_state_ref: str = ""
     progress: list[dict[str, Any]] = Field(default_factory=list)
     work_run_id: str = ""

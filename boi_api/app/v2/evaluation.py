@@ -92,7 +92,7 @@ class IndependentArtifactEvaluator:
             "artifact_kind": artifact_kind,
             "rubric": rubric,
             "artifact": artifact,
-            "evidence": evidence[:12],
+            "evidence": evidence,
         }
         try:
             generated = self.model.generate_structured(
@@ -104,7 +104,7 @@ class IndependentArtifactEvaluator:
                     "Task or override deterministic Harness, RBAC, or human confirmation."
                     " When evidence references are required, use the exact full evidence_id values supplied in the ledger."
                 ),
-                prompt=json.dumps(review_payload, ensure_ascii=False, default=str)[:24000],
+                prompt=json.dumps(review_payload, ensure_ascii=False, default=str),
                 schema=schema,
             )
             missing = [key for key in schema["required"] if key not in generated]
@@ -123,7 +123,7 @@ class IndependentArtifactEvaluator:
                     continue
                 criteria.append(
                     {
-                        "criterion": str(item.get("criterion") or "")[:500],
+                        "criterion": str(item.get("criterion") or ""),
                         "status": str(item.get("status") or "warning"),
                         "evidence_refs": clean_refs(item.get("evidence_refs")),
                     }
@@ -135,7 +135,7 @@ class IndependentArtifactEvaluator:
                 findings.append(
                     {
                         "severity": str(item.get("severity") or "warning"),
-                        "message": str(item.get("message") or "")[:1200],
+                        "message": str(item.get("message") or ""),
                         "evidence_refs": clean_refs(item.get("evidence_refs")),
                     }
                 )
@@ -160,9 +160,9 @@ class IndependentArtifactEvaluator:
             row = {
                 **base,
                 "status": status,
-                "summary": str(generated.get("summary") or "")[:2000],
-                "criteria": criteria[:20],
-                "findings": findings[:20],
+                "summary": str(generated.get("summary") or ""),
+                "criteria": criteria,
+                "findings": findings,
             }
         except Exception as exc:
             row = {

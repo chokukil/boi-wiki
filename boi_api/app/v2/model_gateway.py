@@ -204,6 +204,10 @@ def lmstudio_model_residency_state(settings: AgentV2Settings) -> dict[str, Any]:
         "management": "external",
         "status": "pending" if configured else "disabled",
         "ready": None,
+        "generation_ready": None,
+        "embedding_ready": None,
+        "generation_model": settings.model_name,
+        "embedding_model": settings.embedding_model,
         "required_models": required,
         "loaded_models": [],
         "manual_models": [],
@@ -312,7 +316,9 @@ def inspect_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any
     # JIT may remain enabled for other clients. The local guard only needs to
     # prove that every configured model already has a non-TTL instance, so our
     # requests cannot trigger a load or depend on an auto-evicted instance.
-    ready = not missing and not jit_only
+    generation_ready = bool(settings.model_name and settings.model_name in manual)
+    embedding_ready = bool(settings.embedding_model and settings.embedding_model in manual)
+    ready = generation_ready and embedding_ready
     status = "ready"
     if missing:
         status = "missing"
@@ -326,6 +332,8 @@ def inspect_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any
         **state,
         "status": status,
         "ready": ready,
+        "generation_ready": generation_ready,
+        "embedding_ready": embedding_ready,
         "loaded_models": loaded_required,
         "manual_models": manual_required,
         "jit_models": jit_required,
@@ -486,22 +494,39 @@ def ensure_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any]
     return inspect_lmstudio_model_residency(settings)
 
 
-def require_lmstudio_models_preloaded(settings: AgentV2Settings) -> None:
+def require_lmstudio_models_preloaded(
+    settings: AgentV2Settings,
+    *,
+    required_models: list[str] | tuple[str, ...] | None = None,
+) -> None:
     if not settings.lmstudio_require_preloaded_models:
         return
     state = inspect_lmstudio_model_residency(settings)
-    if state.get("ready") is True:
+    required = list(
+        dict.fromkeys(
+            model
+            for model in (
+                required_models
+                if required_models is not None
+                else (settings.model_name, settings.embedding_model)
+            )
+            if model
+        )
+    )
+    manual = set(state.get("manual_models") or [])
+    if required and all(model in manual for model in required):
         return
-    missing = ", ".join(state.get("missing_models") or [])
+    loaded = set(state.get("loaded_models") or [])
+    missing = ", ".join(model for model in required if model not in loaded)
     jit_only = ", ".join(
         model
-        for model in state.get("loaded_models") or []
-        if model not in (state.get("manual_models") or [])
+        for model in required
+        if model in loaded and model not in manual
     )
     detail = missing or jit_only or str(state.get("reason") or state.get("status") or "not ready")
     raise RuntimeError(
         "LM Studio preloaded model guard blocked JIT loading: "
-        f"{detail}. Load both configured models manually without a TTL before retrying."
+        f"{detail}. Load the required model manually without a TTL before retrying."
     )
 
 
@@ -563,7 +588,10 @@ class OpenAIEmbeddingGateway:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not self.ready:
             raise RuntimeError("embedding adapter is not configured")
-        require_lmstudio_models_preloaded(self.settings)
+        require_lmstudio_models_preloaded(
+            self.settings,
+            required_models=[self.settings.embedding_model],
+        )
         headers = (
             {"Authorization": f"Bearer {self.settings.embedding_api_key}"}
             if self.settings.embedding_api_key
@@ -913,7 +941,10 @@ class OpenAICompatibleGateway:
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         if not self.generation_ready:
             raise RuntimeError("OpenAI-compatible model is not configured")
-        require_lmstudio_models_preloaded(self.settings)
+        require_lmstudio_models_preloaded(
+            self.settings,
+            required_models=[self.settings.model_name],
+        )
         request_payload: dict[str, Any] = {
             "model": self.settings.model_name,
             "messages": [
@@ -974,7 +1005,10 @@ class OpenAICompatibleGateway:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not self.embedding_ready:
             raise RuntimeError("embedding model is not configured")
-        require_lmstudio_models_preloaded(self.settings)
+        require_lmstudio_models_preloaded(
+            self.settings,
+            required_models=[self.settings.embedding_model],
+        )
         response = httpx.post(
             f"{self.settings.model_base_url}/embeddings",
             headers=self._headers(),

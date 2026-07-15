@@ -74,7 +74,7 @@ def ensure_exact_evidence_ledger(content: str, evidence_ledger: dict[str, dict[s
         return content
     rows = [
         f"- `{evidence_id}` - {str(item.get('title') or '근거 자료')}"
-        for evidence_id, item in list(evidence_ledger.items())[:12]
+        for evidence_id, item in evidence_ledger.items()
         if evidence_id in missing_ids
     ]
     return (
@@ -83,6 +83,32 @@ def ensure_exact_evidence_ledger(content: str, evidence_ledger: dict[str, dict[s
         + "아래는 이 초안에 제공된 ACL 검증 근거입니다. 주장별 연결은 검토 단계에서 확인합니다.\n\n"
         + "\n".join(rows)
     )
+
+
+def build_deep_context_brief(context: WorkContextPack) -> dict[str, Any]:
+    """Serialize the selected context without silently shortening its meaning.
+
+    ContextCompiler already fits complete ranked items to the provider's
+    physical input capacity. Downstream workers must therefore preserve those
+    items exactly instead of applying a second, lossy set of prose limits.
+    """
+
+    return {
+        "goal": context.goal,
+        "current_page": context.page_anchor.model_dump(mode="json") if context.page_anchor else None,
+        "goal_anchor": context.goal_anchor.model_dump(mode="json") if context.goal_anchor else None,
+        "task_ref": context.task_ref,
+        "task_mode": context.task_mode.value,
+        "completion_checks": [
+            item.label for item in (context.completion_design.checks if context.completion_design else [])
+        ],
+        "required_evidence": list(context.required_evidence),
+        "selected_evidence": [item.model_dump(mode="json") for item in context.evidence_refs],
+        "external_ai_summary": context.external_ai_summary,
+        "external_refs": (
+            list(context.context_manifest.external_refs) if context.context_manifest else []
+        ),
+    }
 
 
 def execute_boi_api_routine_target(
@@ -315,7 +341,10 @@ class DeepWorkRunner:
                 requested_tokens=settings.deep_max_input_tokens,
                 residency_state=self.service.model_residency,
             ).effective_tokens
-        require_lmstudio_models_preloaded(settings)
+        require_lmstudio_models_preloaded(
+            settings,
+            required_models=[settings.deep_model or settings.model_name],
+        )
         if settings.model_provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
 
@@ -337,19 +366,31 @@ class DeepWorkRunner:
 
         class GuardedChatOpenAI(ChatOpenAI):
             def _generate(self, *args: Any, **kwargs: Any) -> Any:
-                require_lmstudio_models_preloaded(settings)
+                require_lmstudio_models_preloaded(
+                    settings,
+                    required_models=[settings.deep_model or settings.model_name],
+                )
                 return super()._generate(*args, **kwargs)
 
             def _stream(self, *args: Any, **kwargs: Any) -> Any:
-                require_lmstudio_models_preloaded(settings)
+                require_lmstudio_models_preloaded(
+                    settings,
+                    required_models=[settings.deep_model or settings.model_name],
+                )
                 return super()._stream(*args, **kwargs)
 
             async def _agenerate(self, *args: Any, **kwargs: Any) -> Any:
-                require_lmstudio_models_preloaded(settings)
+                require_lmstudio_models_preloaded(
+                    settings,
+                    required_models=[settings.deep_model or settings.model_name],
+                )
                 return await super()._agenerate(*args, **kwargs)
 
             async def _astream(self, *args: Any, **kwargs: Any) -> Any:
-                require_lmstudio_models_preloaded(settings)
+                require_lmstudio_models_preloaded(
+                    settings,
+                    required_models=[settings.deep_model or settings.model_name],
+                )
                 async for item in super()._astream(*args, **kwargs):
                     yield item
 
@@ -458,7 +499,7 @@ class DeepWorkRunner:
                     {
                         "status": "stop_and_synthesize",
                         "reason": "tool_budget_exhausted",
-                        "evidence_ids": list(evidence_ledger)[:12],
+                        "evidence_ids": list(evidence_ledger),
                     },
                     ensure_ascii=False,
                 )
@@ -467,7 +508,7 @@ class DeepWorkRunner:
             result = self.service.search.search(
                 query,
                 principal,
-                limit=4 if pilot_mode else 6,
+                limit=self.service.settings.retrieval_candidate_limit,
                 include_history=include_history,
                 page_ref=context.page_ref,
                 task_ref=context.task_ref,
@@ -496,7 +537,7 @@ class DeepWorkRunner:
                             if consecutive_no_progress == 1
                             else "Stop because two consecutive tool steps produced no domain progress."
                         ),
-                        "evidence_ids": list(evidence_ledger)[:12],
+                        "evidence_ids": list(evidence_ledger),
                     },
                     ensure_ascii=False,
                 )
@@ -505,7 +546,7 @@ class DeepWorkRunner:
                     {
                         "evidence_id": item.evidence_id,
                         "title": item.title,
-                        "summary": item.summary[:240],
+                        "summary": item.summary,
                         "url": item.url,
                     }
                     for item in result.items
@@ -522,7 +563,7 @@ class DeepWorkRunner:
                     {
                         "status": "stop_and_synthesize",
                         "reason": "tool_budget_exhausted",
-                        "evidence_ids": list(evidence_ledger)[:12],
+                        "evidence_ids": list(evidence_ledger),
                     },
                     ensure_ascii=False,
                 )
@@ -542,7 +583,7 @@ class DeepWorkRunner:
                             if consecutive_no_progress == 1
                             else "Stop because two consecutive tool steps produced no domain progress."
                         ),
-                        "evidence_ids": list(evidence_ledger)[:12],
+                        "evidence_ids": list(evidence_ledger),
                     },
                     ensure_ascii=False,
                 )
@@ -578,33 +619,14 @@ class DeepWorkRunner:
                     "evidence_id": record.record_id,
                     "title": record.title,
                     "description": record.description,
-                    "content": record.text[:2500],
+                    "content": record.text,
                     "url": record.url,
                     "source": record.source,
                 },
                 ensure_ascii=False,
             )
 
-        completion_labels = [item.label for item in (context.completion_design.checks if context.completion_design else [])]
-        context_brief = {
-            "goal": context.goal,
-            "current_page": context.page_anchor.model_dump(mode="json") if context.page_anchor else None,
-            "goal_anchor": context.goal_anchor.model_dump(mode="json") if context.goal_anchor else None,
-            "task_ref": context.task_ref,
-            "task_mode": context.task_mode.value,
-            "completion_checks": completion_labels,
-            "required_evidence": context.required_evidence,
-            "selected_evidence": [
-                {
-                    "evidence_id": item.evidence_id,
-                    "title": item.title,
-                    "summary": item.summary[:240],
-                }
-                for item in context.evidence_refs[:6]
-            ],
-            "external_ai_summary": context.external_ai_summary[:1000],
-            "external_refs": (context.context_manifest.external_refs if context.context_manifest else []),
-        }
+        context_brief = build_deep_context_brief(context)
         system_prompt = (
             "You are the BoI Wiki deep-work engine. Use only boi_search and boi_get. "
             "Never mutate production data. Produce a Korean draft with an evidence ledger. "
@@ -614,7 +636,7 @@ class DeepWorkRunner:
             "interpretation anchor, while searching the full ACL-visible Wiki when needed. "
             "Set boi_search include_history=true only when past cases are relevant to the current goal. "
             f"Delegate at most {max_subagents} distinct isolated tasks and never run more than {max_parallelism} delegations in one step."
-            " Return only the essential synthesis under 500 words; keep raw search results out of the final draft."
+            " Return a complete, non-repetitive synthesis appropriate to the goal; keep raw search results out of the final draft."
         )
         if require_subagent:
             system_prompt += (

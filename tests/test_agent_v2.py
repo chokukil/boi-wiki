@@ -32,6 +32,7 @@ from boi_api.app.v2.model_gateway import (
     ensure_lmstudio_model_residency,
     finish_model_usage,
     inspect_model_runtime_profile,
+    require_lmstudio_models_preloaded,
     resolve_context_budget,
     update_model_usage_limits,
 )
@@ -92,6 +93,7 @@ from boi_api.app.v2.models import (
     WorkContextPack,
 )
 from boi_api.app.v2.policy import TaskPolicy
+from boi_api.app.v2.quick_agent import QuickAgentRuntime
 from boi_api.app.v2.repository import KnowledgeRecord, KnowledgeRepository
 from boi_api.app.v2.rendering import render_agent_markdown
 from boi_api.app.v2.routes import build_agent_v2_router
@@ -106,7 +108,12 @@ from boi_api.app.v2.search import (
 from boi_api.app.v2.service import AgentV2Service, truncate_markdown
 from boi_api.app.v2.semantic_kernel import PlanCompiler, PlanValidator, SemanticPlanningError
 from boi_api.app.v2.store import PostgresAgentV2Store, now_iso
-from boi_api.app.v2.worker import DeepWorkRunner, ensure_exact_evidence_ledger, latest_assistant_text
+from boi_api.app.v2.worker import (
+    DeepWorkRunner,
+    build_deep_context_brief,
+    ensure_exact_evidence_ledger,
+    latest_assistant_text,
+)
 from boi_api.app.task_completion import normalise_task_completion
 
 
@@ -2397,6 +2404,79 @@ def test_lmstudio_residency_does_not_reload_models_that_are_already_loaded(
     assert result["jit_loading_detected"] is False
     assert result["manual_models"] == ["google/gemma-local", "text-embedding-bge-m3"]
     assert result["load_requests"] == []
+    assert all(not call.startswith("POST") for call in calls)
+
+
+def test_lmstudio_generation_stays_ready_when_only_embedding_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, Any]):
+            self.payload = payload
+
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return self.payload
+
+    class FakeClient:
+        def __init__(self, **_kwargs: Any):
+            return None
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def get(self, url: str, **_kwargs: Any) -> FakeResponse:
+            calls.append(f"GET {url}")
+            if "/api/v1/models" in url:
+                return FakeResponse(
+                    {
+                        "models": [
+                            {
+                                "key": "google/gemma-local",
+                                "loaded_instances": [{"id": "gemma", "remaining_ttl_seconds": None}],
+                            },
+                            {"key": "text-embedding-bge-m3", "loaded_instances": []},
+                        ]
+                    }
+                )
+            return FakeResponse(
+                {"data": [{"id": "google/gemma-local"}, {"id": "text-embedding-bge-m3"}]}
+            )
+
+        def post(self, url: str, **_kwargs: Any) -> FakeResponse:
+            calls.append(f"POST {url}")
+            raise AssertionError("model mutation is forbidden")
+
+    monkeypatch.setattr("boi_api.app.v2.model_gateway.httpx.Client", FakeClient)
+    base = AgentV2Settings.from_environment(repo_root=ROOT)
+    settings = replace(
+        base,
+        model_provider="openai_compatible",
+        model_base_url="http://lmstudio.example:1234/v1",
+        model_name="google/gemma-local",
+        embedding_provider="openai_compatible",
+        embedding_base_url="http://lmstudio.example:1234/v1",
+        embedding_model="text-embedding-bge-m3",
+        lmstudio_require_preloaded_models=True,
+        lmstudio_native_base_url="",
+    )
+
+    result = ensure_lmstudio_model_residency(settings)
+
+    assert result["ready"] is False
+    assert result["generation_ready"] is True
+    assert result["embedding_ready"] is False
+    require_lmstudio_models_preloaded(settings, required_models=[settings.model_name])
+    with pytest.raises(RuntimeError, match="text-embedding-bge-m3"):
+        require_lmstudio_models_preloaded(settings, required_models=[settings.embedding_model])
     assert all(not call.startswith("POST") for call in calls)
 
 
@@ -4918,6 +4998,41 @@ def test_independent_review_cannot_pass_without_a_real_evidence_reference(
     assert result["evidence_reference_required"] is True
 
 
+def test_independent_review_receives_every_selected_evidence_item_without_string_slicing(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    class CapturingReviewer(ReviewerModel):
+        prompt = ""
+
+        def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+            self.prompt = prompt
+            return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+    reviewer = CapturingReviewer()
+    evaluator = IndependentArtifactEvaluator(v2_service.store, reviewer, enabled=True)
+    evidence = [
+        {
+            "evidence_id": f"boi:public:evidence:{index}",
+            "title": f"근거 {index}",
+            "summary": ("충분한 원문 맥락 " * 120) + f"EVALUATOR_TAIL_{index}",
+        }
+        for index in range(20)
+    ]
+
+    evaluator.evaluate(
+        principal,
+        artifact_kind="sop_draft",
+        goal="모든 선택 근거를 사용해 초안을 검토한다",
+        artifact={"title": "검토 초안", "body": "본문"},
+        evidence=evidence,
+        rubric=["선택된 근거가 빠짐없이 전달되어야 한다"],
+    )
+
+    assert "boi:public:evidence:19" in reviewer.prompt
+    assert "EVALUATOR_TAIL_19" in reviewer.prompt
+
+
 def test_model_usage_scope_tracks_calls_and_blocks_the_next_over_budget_call():
     gateway = UsageTrackingGateway(ReviewerModel())
     token = begin_model_usage("usage-test", 10000)
@@ -6471,6 +6586,33 @@ def test_readiness_rejects_an_old_search_index_schema(v2_service: AgentV2Service
     assert readiness["dependencies"]["search_index"] is False
 
 
+def test_readiness_reports_generation_and_embedding_residency_independently(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    v2_service.settings = replace(v2_service.settings, lmstudio_require_preloaded_models=True)
+    residency = {
+        **v2_service.model_residency,
+        "ready": False,
+        "generation_ready": True,
+        "embedding_ready": False,
+        "manual_models": [v2_service.settings.model_name],
+        "missing_models": [v2_service.settings.embedding_model],
+    }
+
+    def inspect_residency() -> dict[str, Any]:
+        v2_service.model_residency = dict(residency)
+        return dict(residency)
+
+    monkeypatch.setattr(v2_service, "inspect_model_residency", inspect_residency)
+
+    readiness = v2_service.readiness(principal)
+
+    assert readiness["dependencies"]["model"] is True
+    assert readiness["dependencies"]["embedding"] is False
+
+
 def test_readiness_exposes_the_runtime_of_the_worker_it_actually_accepts(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -7383,6 +7525,93 @@ def test_deep_worker_appends_only_acl_verified_exact_evidence_ids():
 
     assert "`boi:public:guide` - BoI Wiki 운영 가이드" in rendered
     assert ensure_exact_evidence_ledger(rendered, ledger) == rendered
+
+
+def test_deep_worker_preserves_the_complete_selected_context_and_evidence_ledger():
+    evidence = [
+        EvidenceRef(
+            evidence_id=f"boi:public:deep:{index}",
+            kind="document",
+            title=f"심층 근거 {index}",
+            summary=("긴 근거 맥락 " * 120) + f"DEEP_TAIL_{index}",
+            url=f"/docs/boi:public:deep:{index}",
+            metadata={"best_chunk": {"chunk_id": f"chunk-{index}", "text": f"CHUNK_TAIL_{index}"}},
+        )
+        for index in range(20)
+    ]
+    context = WorkContextPack(
+        context_id="context-complete-deep",
+        employee_id="100001",
+        capability_id="knowledge.deep",
+        goal="선택된 모든 근거를 종합한다",
+        evidence_refs=evidence,
+        external_ai_summary=("외부 요약 " * 500) + "EXTERNAL_DEEP_TAIL",
+    )
+
+    brief = build_deep_context_brief(context)
+    ledger = {
+        item.evidence_id: {"title": item.title, "url": item.url}
+        for item in evidence
+    }
+    rendered = ensure_exact_evidence_ledger("심층 초안", ledger)
+
+    assert len(brief["selected_evidence"]) == 20
+    assert brief["selected_evidence"][-1]["summary"].endswith("DEEP_TAIL_19")
+    assert brief["selected_evidence"][-1]["metadata"]["best_chunk"]["text"] == "CHUNK_TAIL_19"
+    assert brief["external_ai_summary"].endswith("EXTERNAL_DEEP_TAIL")
+    assert "`boi:public:deep:19`" in rendered
+
+
+def test_draft_prompt_preserves_all_session_tasks_instructions_and_selected_evidence(
+    v2_service: AgentV2Service,
+):
+    definition = v2_service.registry.get("sop.plan")
+    evidence = [
+        EvidenceRef(
+            evidence_id=f"boi:public:draft:{index}",
+            kind="document",
+            title=f"초안 근거 {index}",
+            summary=("초안 원문 맥락 " * 120) + f"DRAFT_TAIL_{index}",
+            url=f"/docs/boi:public:draft:{index}",
+        )
+        for index in range(20)
+    ]
+    request = AgentTurnRequest(
+        question="근거를 모두 반영해 SOP 초안을 만들어줘",
+        external_ai_summary=("외부 검토 요약 " * 500) + "EXTERNAL_DRAFT_TAIL",
+        input_delta={
+            "_resolved_goal": "전체 근거와 대화 맥락을 보존한 SOP 초안을 만든다",
+            "_helper_instructions": ("도우미 지침 " * 600) + "HELPER_DRAFT_TAIL",
+            "_work_session_context": {
+                "summary": ("세션 요약 " * 200) + "SESSION_DRAFT_TAIL",
+                "recent_messages": [
+                    {"role": "user", "text": f"MESSAGE_{index}", "source_refs": [f"source:{index}"]}
+                    for index in range(20)
+                ],
+                "active_artifact": {
+                    "artifact_id": "artifact-complete",
+                    "tasks": [
+                        {"name": f"TASK_{index}", "purpose": ("목적 " * 100) + f"TASK_TAIL_{index}"}
+                        for index in range(10)
+                    ],
+                },
+            },
+        },
+    )
+
+    _system, prompt, _schema = v2_service._draft_prompt(definition, request, evidence)
+
+    for marker in (
+        "boi:public:draft:19",
+        "DRAFT_TAIL_19",
+        "MESSAGE_19",
+        "source:19",
+        "TASK_TAIL_9",
+        "SESSION_DRAFT_TAIL",
+        "EXTERNAL_DRAFT_TAIL",
+        "HELPER_DRAFT_TAIL",
+    ):
+        assert marker in prompt
 
 
 def test_deep_job_pilot_clamps_isolated_subagents_and_parallelism(
@@ -9833,3 +10062,66 @@ def test_agent_kit_uses_bootstrap_and_never_embeds_a_token():
     assert all(view in contents for view in ("neighbors", "path", "impact", "tour"))
     assert "boi_pat_..." not in contents
     assert "sk-proj-" not in contents
+
+
+def test_grounded_answer_contract_preserves_all_model_supported_claims_and_outcomes():
+    schema = QuickAgentRuntime._grounded_answer_schema()
+    assert "maxItems" not in schema["properties"]["claims"]
+    assert "maxLength" not in schema["properties"]["summary"]
+    assert "maxItems" not in schema["properties"]["outcomes"]
+
+    long_tail = "마지막 근거의 세부 판단과 예외 조건 " + ("전체 보존 " * 400)
+    hints = [
+        {
+            "ref": f"boi:public:test:source-{index}",
+            "chunk_id": f"chunk-{index}",
+            "answer_scope": "canonical",
+        }
+        for index in range(1, 21)
+    ]
+    claims = [
+        {
+            "claim_id": f"claim-{index}",
+            "text": long_tail if index == 20 else f"검증된 사실 {index}",
+            "claim_kind": "fact",
+            "source_scope": "canonical",
+            "source_refs": [f"S{index}"],
+            "supporting_chunk_ids": [f"C{index}"],
+            "required_for_answer": index == 20,
+        }
+        for index in range(1, 21)
+    ]
+    envelope = {
+        "grounded_answer": {
+            "summary": long_tail,
+            "summary_source_refs": [f"S{index}" for index in range(1, 21)],
+            "claims": claims,
+            "outcomes": [
+                {
+                    "title": f"결과 묶음 {group}",
+                    "items": [
+                        {"text": f"결과 {group}-{item}", "source_refs": [f"S{item}"]}
+                        for item in range(1, 11)
+                    ],
+                }
+                for group in range(1, 7)
+            ],
+            "related_questions": [],
+        }
+    }
+    plan = SemanticPlan(
+        resolved_goal="검증된 근거 전체를 빠짐없이 설명한다",
+        retrieval_query="검증된 근거 전체",
+        capability_id="knowledge.search",
+        evidence_scope="canonical",
+    )
+
+    answer, diagnostics = QuickAgentRuntime._resolve_grounded_answer(envelope, plan, hints)
+
+    assert diagnostics == {"accepted": True, "accepted_claims": 20, "rejected_claims": 0}
+    assert answer is not None
+    assert len(answer["claims"]) == 20
+    assert len(answer["outcomes"]) == 6
+    assert all(len(outcome["items"]) == 10 for outcome in answer["outcomes"])
+    assert answer["summary"] == long_tail.strip()
+    assert answer["claims"][-1]["text"] == long_tail.strip()

@@ -467,10 +467,11 @@ class ContextCompiler:
                 else [*pinned, *remainder]
             )
         try:
-            playbook_limit = max(1, min(100, int(playbook_policy.get("max_items") or 20)))
+            configured_playbook_limit = int(playbook_policy.get("max_items") or 0)
         except (TypeError, ValueError):
-            playbook_limit = 20
-        playbook_items = playbook_items[:playbook_limit]
+            configured_playbook_limit = 0
+        if configured_playbook_limit > 0:
+            playbook_items = playbook_items[: min(1000, configured_playbook_limit)]
         playbook_usage = [
             ContextItemUsage(
                 item_ref=str(item.get("item_id") or ""),
@@ -1507,10 +1508,10 @@ class WorkLearningService:
             try:
                 valid = (
                     isinstance(item_ids, list)
-                    and 1 <= len(item_ids) <= 20
+                    and 1 <= len(item_ids) <= 1000
                     and len({str(item) for item in item_ids if str(item)}) == len(item_ids)
                     and context_playbook.get("order", "prepend") in {"prepend", "append"}
-                    and 1 <= int(context_playbook.get("max_items") or 6) <= 20
+                    and 0 <= int(context_playbook.get("max_items") or 0) <= 1000
                 )
             except (TypeError, ValueError):
                 valid = False

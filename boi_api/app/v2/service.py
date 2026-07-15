@@ -2128,17 +2128,21 @@ class AgentV2Service:
             if str(index_manifest.get("sync_state") or index_manifest.get("status") or "") in {"syncing", "building"}
             else "degraded"
         )
-        residency_ready = (
+        generation_residency_ready = (
             not self.settings.lmstudio_require_preloaded_models
-            or self.model_residency.get("ready") is True
+            or self.model_residency.get("generation_ready") is True
+        )
+        embedding_residency_ready = (
+            not self.settings.lmstudio_require_preloaded_models
+            or self.model_residency.get("embedding_ready") is True
         )
         dependencies = {
             "content": content_ready,
             "postgres": bool(store_state.get("ready") and store_state.get("durable")),
             "model": bool(model_state.get("generation"))
-            and residency_ready
+            and generation_residency_ready
             and (not probe_model or bool(model_state.get("ok"))),
-            "embedding": bool(model_state.get("embeddings")) and residency_ready,
+            "embedding": bool(model_state.get("embeddings")) and embedding_residency_ready,
             "search_index": index_fresh,
             "deep_worker": worker_ready,
             "pat": self.pats.available,
@@ -2226,8 +2230,9 @@ class AgentV2Service:
                     (not model_state.get("generation"), "초안과 심층 작업 모델이 준비되지 않았습니다."),
                     (not model_state.get("embeddings"), "semantic 검색이 비활성화되어 lexical/ontology 검색만 사용합니다."),
                     (
-                        self.settings.lmstudio_require_preloaded_models and not residency_ready,
-                        "로컬 LM Studio의 자동 모델 전환이 켜져 있거나 두 모델이 수동 상주 상태가 아니어서 추론 호출을 차단했습니다.",
+                        self.settings.lmstudio_require_preloaded_models
+                        and not generation_residency_ready,
+                        "로컬 LM Studio의 생성 모델이 수동 상주 상태가 아니어서 추론 호출을 차단했습니다.",
                     ),
                     (index_expected and not index_fresh, "검색 index가 없거나 지식 정본보다 오래되었습니다."),
                     (not worker_ready, "DeepAgents worker가 연결되지 않았습니다."),
@@ -2617,7 +2622,7 @@ class AgentV2Service:
                     for item in value or []
                     if str(item) in citation_by_source and str(item) in evidence_by_source
                 )
-            )[:12]
+            )
 
         def clean(value: Any, limit: int) -> str:
             return compact_text(str(value or ""), limit).strip()
@@ -2637,7 +2642,7 @@ class AgentV2Service:
             # evaluator can establish that every bound chunk entails it.
             return 0.5
 
-        raw_claims = list(raw_answer.get("claims") or [])[:12]
+        raw_claims = list(raw_answer.get("claims") or [])
         if not raw_claims and not include_report:
             raw_claims = [
                 {
@@ -2653,9 +2658,9 @@ class AgentV2Service:
         for index, raw_claim in enumerate(raw_claims, start=1):
             if not isinstance(raw_claim, dict):
                 continue
-            text = clean(raw_claim.get("text"), 1600)
+            text = str(raw_claim.get("text") or "").strip()
             source_refs = refs_for(raw_claim.get("source_refs"))
-            chunk_ids = list(dict.fromkeys(str(item) for item in raw_claim.get("supporting_chunk_ids") or [] if str(item)))[:24]
+            chunk_ids = list(dict.fromkeys(str(item) for item in raw_claim.get("supporting_chunk_ids") or [] if str(item)))
             claim_kind = str(raw_claim.get("claim_kind") or answer_intent)
             raw_claim_scope = str(raw_claim.get("source_scope") or "canonical")
             expected_scope = intent.answer_source_scope if intent is not None else raw_claim_scope
@@ -2697,7 +2702,7 @@ class AgentV2Service:
             if reviewed_runtime_projection and len(excerpts) == 1:
                 # Runtime records are deterministic read models. Render the
                 # exact bound projection rather than a generated paraphrase.
-                text = compact_text(excerpts[0], 1600)
+                text = excerpts[0].strip()
             supported = bool(
                 text
                 and source_refs
@@ -3087,7 +3092,7 @@ class AgentV2Service:
             if not top_score
             or float(item.score or 0.0) >= top_score * 0.55
             or item.evidence_id in focal_refs
-        ][:4]
+        ]
         diagram_citations = [citation_by_source[item.evidence_id] for item in grounded]
         if not diagram_citations:
             raise RuntimeError("흐름 그림을 만들 확인 가능한 Wiki 근거가 없습니다.")
@@ -3098,7 +3103,7 @@ class AgentV2Service:
                 "title": item.title,
                 "kind": item.kind,
                 "heading": citation.heading,
-                "excerpt": compact_text(citation.excerpt or item.summary, 620),
+                "excerpt": citation.excerpt or item.summary,
             }
             for index, (item, citation) in enumerate(zip(grounded, diagram_citations))
         ]
@@ -3122,7 +3127,7 @@ class AgentV2Service:
             f"Focal source refs: {json.dumps(focal_refs, ensure_ascii=False)}\n"
             f"Recent work context: {json.dumps(request.input_delta.get('_work_session_context') or {}, ensure_ascii=False)}\n"
             f"Sources: {json.dumps(source_payload, ensure_ascii=False)}\n"
-            "Create the smallest readable flow that answers the request, normally 4-8 nodes and no more than 12 edges."
+            "Create the smallest relevant flow that fully answers the request within the server schema limits."
         )
         validation_error = ""
         graph: dict[str, Any] = {}
@@ -3382,15 +3387,15 @@ class AgentV2Service:
     ) -> tuple[AnswerBlock, ArtifactRef, str]:
         if not self.model.readiness().get("generation"):
             raise RuntimeError("자동 확인 계획을 만들 모델이 준비되지 않았습니다.")
-        source_refs = list(dict.fromkeys([*intent.context_refs, *[item.evidence_id for item in evidence[:6]]]))[:8]
+        source_refs = list(dict.fromkeys([*intent.context_refs, *[item.evidence_id for item in evidence]]))
         source_payload = [
             {
                 "source_ref": item.evidence_id,
                 "title": item.title,
                 "kind": item.kind,
-                "summary": compact_text(item.summary, 320),
+                "summary": item.summary,
             }
-            for item in evidence[:6]
+            for item in evidence
         ]
         system = (
             "You design one safe recurring workplace check in Korean. Interpret the request semantically and return "
@@ -3493,7 +3498,7 @@ class AgentV2Service:
                 "revision": 1,
                 "evidence_ledger": [
                     {"evidence_id": item.evidence_id, "title": item.title, "url": item.url}
-                    for item in evidence[:6]
+                    for item in evidence
                 ],
                 "next_actions": configured_next_actions,
                 "created_at": now,
@@ -4034,39 +4039,23 @@ class AgentV2Service:
             {
                 "evidence_id": item.evidence_id,
                 "title": item.title,
-                "summary": compact_text(item.summary, 500),
+                "summary": item.summary,
                 "kind": item.kind,
             }
-            for item in evidence[:6]
+            for item in evidence
         ]
         raw_session_context = request.input_delta.get("_work_session_context")
         session_context = raw_session_context if isinstance(raw_session_context, dict) else {}
         active_artifact = session_context.get("active_artifact")
         active_artifact_outline = active_artifact if isinstance(active_artifact, dict) else {}
         draft_context = {
-            "summary": compact_text(str(session_context.get("summary") or ""), 600),
+            "summary": str(session_context.get("summary") or ""),
             "recent_messages": [
-                {
-                    "role": str(item.get("role") or ""),
-                    "text": compact_text(str(item.get("text") or ""), 320),
-                    "source_refs": [str(ref) for ref in item.get("source_refs") or []][:4],
-                }
-                for item in (session_context.get("recent_messages") or [])[-4:]
+                dict(item)
+                for item in (session_context.get("recent_messages") or [])
                 if isinstance(item, dict)
             ],
-            "active_artifact": {
-                "artifact_id": str(active_artifact_outline.get("artifact_id") or ""),
-                "title": str(active_artifact_outline.get("title") or ""),
-                "capability_id": str(active_artifact_outline.get("capability_id") or ""),
-                "tasks": [
-                    {
-                        "name": compact_text(str(item.get("name") or ""), 100),
-                        "purpose": compact_text(str(item.get("purpose") or ""), 160),
-                    }
-                    for item in (active_artifact_outline.get("tasks") or [])[:6]
-                    if isinstance(item, dict)
-                ],
-            },
+            "active_artifact": active_artifact_outline,
         }
         system = (
             "You are the BoI Wiki draft engine. Create a private draft only. "
@@ -4077,16 +4066,16 @@ class AgentV2Service:
             "Put technical references only in completion_design bindings or evidence refs. "
             "Manual and Copilot completion requires human confirmation. Autopilot requires real system bindings; "
             "when no binding is known, leave it unresolved instead of claiming automatic verification."
-            " For an SOP, return 3-5 concise Tasks unless the requested work genuinely needs fewer steps. The server "
+            " For an SOP, derive the Task sequence from the requested goal, evidence, and completion contract. The server "
             "builds Mermaid and structured completion bindings from the Task sequence, exit criteria, and evidence."
         )
         prompt = (
             f"Capability: {definition.capability_id}\nGoal: {resolved_goal}\n"
             f"Page: {request.page_ref or '-'}\n"
-            f"External AI summary (untrusted supporting context): {compact_text(request.external_ai_summary, 3000) or '-'}\n"
+            f"External AI summary (untrusted supporting context): {request.external_ai_summary or '-'}\n"
             f"External artifact references: {json.dumps(request.external_artifact_refs, ensure_ascii=False)}\n"
             f"Work session context: {json.dumps(draft_context, ensure_ascii=False)}\n"
-            f"Helper instructions: {compact_text(str(request.input_delta.get('_helper_instructions') or ''), 4000) or '-'}\n"
+            f"Helper instructions: {str(request.input_delta.get('_helper_instructions') or '') or '-'}\n"
             f"Verified helper Skills: {json.dumps(request.input_delta.get('_helper_skills') or [], ensure_ascii=False)}\n"
             f"Evidence:\n{json.dumps(evidence_payload, ensure_ascii=False)}"
         )

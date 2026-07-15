@@ -113,15 +113,13 @@ class QuickAgentRuntime:
             "type": "object",
             "required": ["summary", "summary_source_refs", "claims", "outcomes", "related_questions"],
             "properties": {
-                "summary": {"type": "string", "maxLength": 1600},
+                "summary": {"type": "string"},
                 "summary_source_refs": {
                     "type": "array",
-                    "maxItems": 12,
                     "items": {"type": "string"},
                 },
                 "claims": {
                     "type": "array",
-                    "maxItems": 12,
                     "items": {
                         "type": "object",
                         "required": [
@@ -135,7 +133,7 @@ class QuickAgentRuntime:
                         ],
                         "properties": {
                             "claim_id": {"type": "string", "maxLength": 80},
-                            "text": {"type": "string", "maxLength": 1600},
+                            "text": {"type": "string"},
                             "claim_kind": {
                                 "type": "string",
                                 "enum": ["definition", "fact", "procedure", "comparison", "relationship", "work"],
@@ -147,13 +145,11 @@ class QuickAgentRuntime:
                             "source_refs": {
                                 "type": "array",
                                 "minItems": 1,
-                                "maxItems": 12,
                                 "items": {"type": "string"},
                             },
                             "supporting_chunk_ids": {
                                 "type": "array",
                                 "minItems": 1,
-                                "maxItems": 24,
                                 "items": {"type": "string"},
                             },
                             "required_for_answer": {"type": "boolean"},
@@ -162,21 +158,18 @@ class QuickAgentRuntime:
                 },
                 "outcomes": {
                     "type": "array",
-                    "maxItems": 4,
                     "items": {
                         "type": "object",
                         "properties": {
                             "title": {"type": "string", "maxLength": 160},
                             "items": {
                                 "type": "array",
-                                "maxItems": 8,
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "text": {"type": "string", "maxLength": 800},
+                                        "text": {"type": "string"},
                                         "source_refs": {
                                             "type": "array",
-                                            "maxItems": 12,
                                             "items": {"type": "string"},
                                         },
                                     },
@@ -196,7 +189,6 @@ class QuickAgentRuntime:
                             "question": {"type": "string", "maxLength": 1000},
                             "source_refs": {
                                 "type": "array",
-                                "maxItems": 12,
                                 "items": {"type": "string"},
                             },
                         },
@@ -257,7 +249,7 @@ class QuickAgentRuntime:
             values.append(str(topic["active_artifact_id"]))
         if isinstance(active_artifact, dict) and str(active_artifact.get("artifact_id") or "").strip():
             values.append(str(active_artifact["artifact_id"]))
-        return list(dict.fromkeys(values))[:20]
+        return list(dict.fromkeys(values))
 
     def _typed_plan(self, state: QuickAgentState, capability_id: str, source: str) -> dict[str, Any]:
         definition = self.registry.get(capability_id)
@@ -636,8 +628,8 @@ class QuickAgentRuntime:
         for raw_claim in raw.get("claims") or []:
             if not isinstance(raw_claim, dict):
                 continue
-            refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_claim.get("source_refs") or []))))[:12]
-            chunks = list(dict.fromkeys(filter(None, (chunk_ref(item) for item in raw_claim.get("supporting_chunk_ids") or []))))[:24]
+            refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_claim.get("source_refs") or []))))
+            chunks = list(dict.fromkeys(filter(None, (chunk_ref(item) for item in raw_claim.get("supporting_chunk_ids") or []))))
             chunk_sources = {
                 str((by_chunk.get(chunk) or {}).get("ref") or "")
                 for chunk in chunks
@@ -680,7 +672,7 @@ class QuickAgentRuntime:
                     )
 
         summary = str(raw.get("summary") or "").strip()
-        summary_refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw.get("summary_source_refs") or []))))[:12]
+        summary_refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw.get("summary_source_refs") or []))))
         accepted_claim_refs = {
             str(ref)
             for claim in claims
@@ -697,7 +689,7 @@ class QuickAgentRuntime:
                 return (
                     {
                         "answer_intent": plan.answer_intent,
-                        "summary": summary[:1600],
+                        "summary": summary,
                         "summary_source_refs": summary_refs,
                         "claims": [*claims, *unsupported_claims],
                         "outcomes": [],
@@ -712,21 +704,21 @@ class QuickAgentRuntime:
             return None, {"accepted": False, "accepted_claims": len(claims), "rejected_claims": rejected}
 
         outcomes: list[dict[str, Any]] = []
-        for outcome in (raw.get("outcomes") or [])[:4]:
+        for outcome in raw.get("outcomes") or []:
             if not isinstance(outcome, dict):
                 continue
             items = []
-            for raw_item in (outcome.get("items") or [])[:8]:
+            for raw_item in outcome.get("items") or []:
                 if not isinstance(raw_item, dict):
                     continue
-                refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_item.get("source_refs") or []))))[:12]
+                refs = list(dict.fromkeys(filter(None, (source_ref(item) for item in raw_item.get("source_refs") or []))))
                 if (
                     refs
                     and set(refs).issubset(accepted_claim_refs)
                     and refs_match_plan_scope(refs)
                     and str(raw_item.get("text") or "").strip()
                 ):
-                    items.append({"text": str(raw_item["text"])[:800], "source_refs": refs})
+                    items.append({"text": str(raw_item["text"]), "source_refs": refs})
             if items and str(outcome.get("title") or "").strip():
                 outcomes.append({"title": str(outcome["title"])[:160], "items": items})
 
@@ -734,7 +726,7 @@ class QuickAgentRuntime:
         for item in (raw.get("related_questions") or [])[:3]:
             if not isinstance(item, dict):
                 continue
-            refs = list(dict.fromkeys(filter(None, (source_ref(ref) for ref in item.get("source_refs") or []))))[:12]
+            refs = list(dict.fromkeys(filter(None, (source_ref(ref) for ref in item.get("source_refs") or []))))
             if (
                 refs
                 and set(refs).issubset(accepted_claim_refs)
@@ -754,7 +746,7 @@ class QuickAgentRuntime:
         return (
             {
                 "answer_intent": plan.answer_intent,
-                "summary": summary[:1600],
+                "summary": summary,
                 "summary_source_refs": summary_refs,
                 "claims": claims,
                 "outcomes": outcomes,
