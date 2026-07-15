@@ -17,6 +17,7 @@ const debugPage = (process.argv.find((item) => item.startsWith("--debug-page="))
 const debugGraph = process.argv.includes("--debug-graph");
 const debugFocus = process.argv.includes("--debug-focus");
 const debugHideAgent = process.argv.includes("--debug-hide-agent");
+const onlyConfirmation = process.argv.includes("--only-confirmation");
 const debugWidth = Number((process.argv.find((item) => item.startsWith("--debug-width=")) || "--debug-width=1440").split("=")[1]);
 const debugHeight = Number((process.argv.find((item) => item.startsWith("--debug-height=")) || "--debug-height=1000").split("=")[1]);
 const viewports = [
@@ -174,7 +175,7 @@ async function pressKey(cdp, key, code = key) {
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode });
 }
 
-async function submitAgentQuestion(cdp, question, timeout = 90000) {
+async function submitAgentQuestion(cdp, question, timeout = Math.max(timeoutMs, 180000)) {
   const before = await cdp.eval(`document.querySelectorAll('.agent-v2-message.assistant').length`);
   await cdp.eval(`(() => {
     window.__boiAcceptanceProgressSeen = false;
@@ -372,9 +373,13 @@ async function runViewport(cdp, viewport) {
     let naturalGraph = false;
     try { await wait(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-agent-ontology-explorer]')`, 30000); naturalGraph = true; } catch (_error) { naturalGraph = false; }
     if (!naturalGraph) {
+      await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.dataset.agentReady === 'true' && !document.querySelector('[data-agent-v2-new]')?.disabled`, 15000);
+      const previousSessionId = await cdp.eval(`document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''`);
       await cdp.eval(`document.querySelector('[data-agent-v2-new]')?.click()`);
-      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button').length > 0`, 15000);
-      const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>/Ontology|연결 관계|관계 그림/.test(item.textContent)); button?.click(); return Boolean(button); })()`);
+      await wait(cdp, `(() => { const id=document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''; return id && id !== ${JSON.stringify(previousSessionId)}; })()`, 15000);
+      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button:not(:disabled)').length > 0`, 15000);
+      await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
+      const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='explorer'); button?.click(); return Boolean(button); })()`);
       if (!clicked) throw new Error("grounded ontology starter is missing");
       await wait(cdp, `!!document.querySelector('[data-agent-v2-artifact-list] [data-agent-ontology-explorer]')`, 30000);
     }
@@ -522,8 +527,11 @@ async function runViewport(cdp, viewport) {
       let visible = false;
       let error = "";
       try {
+        await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.dataset.agentReady === 'true' && !document.querySelector('[data-agent-v2-new]')?.disabled`, 15000);
+        const previousSessionId = await cdp.eval(`document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''`);
         await cdp.eval(`document.querySelector('[data-agent-v2-new]')?.click()`);
-        await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button').length > 0`, 15000);
+        await wait(cdp, `(() => { const id=document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''; return id && id !== ${JSON.stringify(previousSessionId)}; })()`, 15000);
+        await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button:not(:disabled)').length > 0`, 15000);
         await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
         const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind===${JSON.stringify(variant.resultKind)}); button?.click(); return Boolean(button); })()`);
         if (!clicked) throw new Error(`grounded starter is missing: ${variant.label}`);
@@ -543,8 +551,11 @@ async function runViewport(cdp, viewport) {
     try {
       await navigate(cdp, `${baseUrl}/docs/boi%3Apublic%3Asop%3Aequipment-abnormal-response?employee_id=100001`, "[data-agent-v2-workspace]");
       await cdp.eval(`document.querySelector('[data-agent-v2-open]')?.click()`);
+      await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.dataset.agentReady === 'true' && !document.querySelector('[data-agent-v2-new]')?.disabled`, 15000);
+      const previousSessionId = await cdp.eval(`document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''`);
       await cdp.eval(`document.querySelector('[data-agent-v2-new]')?.click()`);
-      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button').length > 0`, 15000);
+      await wait(cdp, `(() => { const id=document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''; return id && id !== ${JSON.stringify(previousSessionId)}; })()`, 15000);
+      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button:not(:disabled)').length > 0`, 15000);
       await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
       const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='mermaid'); button?.click(); return Boolean(button); })()`);
       if (!clicked) throw new Error("grounded Mermaid starter is missing");
@@ -579,22 +590,33 @@ async function runViewport(cdp, viewport) {
     try {
       await navigate(cdp, `${baseUrl}/docs/boi%3Apublic%3Aboi-wiki-manual%3Aguide%3Afinal-operator-guide?employee_id=100001`, "[data-agent-v2-workspace]");
       await cdp.eval(`document.querySelector('[data-agent-v2-open]')?.click()`);
+      await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.dataset.agentReady === 'true' && !document.querySelector('[data-agent-v2-new]')?.disabled`, 15000);
+      const previousSessionId = await cdp.eval(`document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''`);
       await cdp.eval(`document.querySelector('[data-agent-v2-new]')?.click()`);
-      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button').length > 0`, 15000);
+      await wait(cdp, `(() => { const id=document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''; return id && id !== ${JSON.stringify(previousSessionId)}; })()`, 15000);
+      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button:not(:disabled)').length > 0`, 15000);
       await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
-      const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='confirmation'); button?.click(); return Boolean(button); })()`);
+      await wait(cdp, `!![...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='confirmation' && !item.disabled)`, 15000);
+      const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='confirmation' && !item.disabled); button?.click(); return Boolean(button); })()`);
       if (!clicked) throw new Error("grounded Confirmation starter is missing");
-      const confirmationLookup = `(() => { const roots=[document]; let fallback=null; for(let i=0;i<roots.length;i+=1){ const root=roots[i]; for(const item of root.querySelectorAll('*')) if(item.shadowRoot) roots.push(item.shadowRoot); for(const match of root.querySelectorAll('boi-a2ui-confirmation, [data-a2ui-component="Confirmation"]')){ fallback ||= match; if(match.querySelector('button')) return match; } } return fallback; })()`;
-      await wait(cdp, `!!(${confirmationLookup})?.querySelector('button')`, 90000);
+      const confirmationLookup = `(() => { const matches=[...document.querySelectorAll('boi-a2ui-confirmation, [data-a2ui-component="Confirmation"]')]; return matches.find(match => match.shadowRoot?.querySelector('button') || match.querySelector('button')) || matches[0] || null; })()`;
+      const confirmationButtonLookup = `(() => { const host=${confirmationLookup}; return host?.shadowRoot?.querySelector('button') || host?.querySelector('button') || null; })()`;
+      await wait(cdp, `!!(${confirmationButtonLookup})`, 90000);
       confirmationState = await cdp.eval(`(() => {
         const mount=${confirmationLookup};
+        const button=${confirmationButtonLookup};
         let emitted=false;
         document.addEventListener('boi:a2ui-confirm-request',()=>{ emitted=true; window.__boiConfirmationEmitted=true; },{once:true});
         const original=window.confirm;
         window.confirm=()=>false;
-        mount.querySelector('button')?.click();
+        button?.click();
         window.confirm=original;
-        return {visible:!mount.hidden,emitted:window.__boiConfirmationEmitted===true,planRef:mount.querySelector('button')?${JSON.stringify("stored-on-surface")}:"",title:mount.querySelector('h3')?.textContent.trim()||""};
+        return {
+          visible:!mount.hidden,
+          emitted:window.__boiConfirmationEmitted===true,
+          planRef:button?${JSON.stringify("stored-on-surface")}:"",
+          title:(mount.shadowRoot?.querySelector('h3') || mount.querySelector('h3'))?.textContent.trim()||"",
+        };
       })()`);
     } catch (caught) {
       confirmationState.error = String(caught?.message || caught);
@@ -708,9 +730,9 @@ async function runViewport(cdp, viewport) {
           root.querySelector('[data-harness-confirm]').checked=true;
           root.querySelector('[data-harness-release][data-rehearsal="true"]').click();
         })()`);
-        await wait(cdp, `document.querySelector('[data-harness-message]')?.textContent.includes('운영 변경 없이 연습을 마쳤습니다')`, 10000);
+        await wait(cdp, `document.querySelector('[data-harness-review]')?.dataset.harnessOperation === 'rehearsal'`, 10000);
         const after = await cdp.eval(`fetch('/api/v2/harness-candidates?employee_id=100001').then(r=>r.json()).then(payload=>(payload.items||[]).find(item=>item.candidate_id===${JSON.stringify(candidate.candidate_id)})||null)`);
-        harnessState = await cdp.eval(`(() => ({rendered:[...document.querySelectorAll('[data-harness-review] [data-a2ui-component-id]')].filter(node=>node.childElementCount>0).length,message:document.querySelector('[data-harness-message]')?.textContent||''}))()`);
+        harnessState = await cdp.eval(`(() => { const root=document.querySelector('[data-harness-review]'); return {rendered:[...root.querySelectorAll('[data-a2ui-component-id]')].filter(node=>node.childElementCount>0).length,message:root.querySelector('[data-harness-message]')?.textContent||'',operation:root.dataset.harnessOperation||'',productionChanged:root.dataset.harnessProductionChanged||'',revision:root.dataset.harnessRevision||''}; })()`);
         harnessState.available = true;
         harnessState.beforeStatus = beforeStatus;
         harnessState.afterStatus = after?.status || '';
@@ -730,7 +752,9 @@ async function runViewport(cdp, viewport) {
         harnessState.rolledBackStatus = rolledBack?.status || '';
         harnessState.releaseAndRollback = harnessState.releasedStatus === 'released' && harnessState.rolledBackStatus === 'rolled_back';
       }
-      const harnessPassed = harnessState.available && harnessState.rendered > 0 && harnessState.productionUnchanged && harnessState.message?.includes('운영 변경 없이') && harnessState.releaseAndRollback;
+      const harnessPassed = harnessState.available && harnessState.rendered > 0 && harnessState.productionUnchanged
+        && harnessState.operation === 'rehearsal' && harnessState.productionChanged === 'false'
+        && harnessState.releaseAndRollback;
       journeys.push(journey("harness_review_release_rehearsal", Boolean(harnessPassed), harnessState));
     }
   }
@@ -764,6 +788,50 @@ async function main() {
     await cdp.send("Page.enable"); await cdp.send("Runtime.enable"); await cdp.send("Log.enable");
     cdp.on("Runtime.exceptionThrown", (item) => consoleErrors.push(item.exceptionDetails?.exception?.description || item.exceptionDetails?.text || "exception"));
     cdp.on("Log.entryAdded", (item) => { if (item.entry?.level === "error") consoleErrors.push(item.entry.text); });
+    if (onlyConfirmation) {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: 1440,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await navigate(cdp, `${baseUrl}/docs/boi%3Apublic%3Aboi-wiki-manual%3Aguide%3Afinal-operator-guide?employee_id=100001`, "[data-agent-v2-workspace]");
+      await cdp.eval(`document.querySelector('[data-agent-v2-open]')?.click()`);
+      await wait(cdp, `document.querySelector('[data-agent-v2-workspace]')?.dataset.agentReady === 'true' && !document.querySelector('[data-agent-v2-new]')?.disabled`, 15000);
+      const before = await cdp.eval(`document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''`);
+      await cdp.eval(`document.querySelector('[data-agent-v2-new]')?.click()`);
+      await wait(cdp, `(() => { const id=document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || ''; return id && id !== ${JSON.stringify(before)}; })()`, 15000);
+      await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button:not(:disabled)').length > 0`, 15000);
+      await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
+      await wait(cdp, `!![...document.querySelectorAll('[data-agent-v2-starters] button')].find(item => item.dataset.resultKind === 'confirmation' && !item.disabled)`, 15000);
+      const beforeAssistant = await cdp.eval(`document.querySelectorAll('.agent-v2-message.assistant').length`);
+      await cdp.eval(`[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item => item.dataset.resultKind === 'confirmation' && !item.disabled)?.click()`);
+      await wait(cdp, `document.querySelectorAll('.agent-v2-message.assistant').length > ${beforeAssistant} && document.querySelector('[data-agent-v2-workspace]')?.getAttribute('aria-busy') === 'false'`, 180000);
+      const report = await cdp.eval(`(() => {
+        const confirmationMatches = [...document.querySelectorAll('boi-a2ui-confirmation, [data-a2ui-component="Confirmation"]')];
+        const confirmationHost = confirmationMatches.find(match => match.shadowRoot?.querySelector('button') || match.querySelector('button')) || confirmationMatches[0] || null;
+        return ({
+        pageRef: document.querySelector('[data-agent-v2-workspace]')?.dataset.pageRef || '',
+        sessionId: document.querySelector('[data-agent-v2-workspace]')?.dataset.sessionId || sessionStorage.getItem('boiAgentV2WorkSession') || '',
+        ready: document.querySelector('[data-agent-v2-workspace]')?.dataset.agentReady || '',
+        busy: document.querySelector('[data-agent-v2-workspace]')?.getAttribute('aria-busy') || '',
+        mode: document.querySelector('[data-agent-v2-workspace]')?.dataset.surfaceMode || '',
+        surfaceRef: document.querySelector('[data-agent-v2-workspace]')?.dataset.a2uiSurfaceRef || '',
+        activeComponent: document.querySelector('[data-agent-v2-artifact-list] [data-a2ui-component]')?.dataset.a2uiComponent || '',
+        confirmationButton: Boolean(confirmationHost?.shadowRoot?.querySelector('button') || confirmationHost?.querySelector('button')),
+        messages: [...document.querySelectorAll('.agent-v2-message')].map(item => item.textContent.trim()),
+        buttons: [...document.querySelectorAll('[data-agent-v2-starters] button')].map(item => ({
+          label: item.textContent.trim(),
+          resultKind: item.dataset.resultKind || '',
+          suggestionId: item.dataset.suggestionId || '',
+          disabled: item.disabled,
+        })),
+      }); })()`);
+      if (outputPath) writeFileSync(outputPath, JSON.stringify(report, null, 2) + "\n");
+      console.log(JSON.stringify(report, null, 2));
+      process.exitCode = report.activeComponent === "Confirmation" && report.confirmationButton ? 0 : 1;
+      return;
+    }
     if (debugSession) {
       await cdp.send("Emulation.setDeviceMetricsOverride", {
         width: debugWidth,

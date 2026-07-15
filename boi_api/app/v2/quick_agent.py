@@ -391,6 +391,8 @@ class QuickAgentRuntime:
             "comparison, or visualization; draft/transform/execute only when the user explicitly requests that effect. "
             "When verified_command_constraints are present, preserve their requested result form and graph query kind "
             "if the selected capability declares them; otherwise return a plan that validation can reject and repair. "
+            "Graph node, relation, and time filters narrow real data: leave them empty unless the user explicitly "
+            "asked for that exact restriction, and choose filter values only from graph_query_filter_contract. "
             "Use only internal_wiki_hints, operational_runtime_hints, and validation_hints for grounded claims. "
             "Use validation_hints only when semantic_plan.evidence_scope is validation. Every factual claim must cite "
             "the exact source_key and chunk_key that directly support it. If direct support is absent, omit the claim and "
@@ -594,6 +596,7 @@ class QuickAgentRuntime:
             "validation_hints": [item for item in planner_hints if item.get("answer_scope") == "validation"],
             "capability_catalog_revision": self.registry.version,
             "capability_catalog": self._capability_catalog(),
+            "graph_query_filter_contract": self.registry.graph_query_filter_contract.model_dump(mode="json"),
             "planner_schema_revision": PLANNER_SCHEMA_REVISION,
             "invalid_output": invalid_output or {},
             "validation_issues": validation_issues or [],

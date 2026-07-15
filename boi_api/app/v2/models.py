@@ -618,6 +618,16 @@ class GraphQueryDraft(BaseModel):
     presentation: Literal["auto", "list", "table", "timeline", "mermaid", "explorer"] = "auto"
 
 
+class GraphQueryFilterContract(BaseModel):
+    """Catalog-owned graph filter vocabulary supplied to the semantic planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    node_kinds: list[str] = Field(default_factory=list)
+    relation_kinds: list[str] = Field(default_factory=list)
+    filter_policy: Literal["explicit_only"] = "explicit_only"
+
+
 class SemanticSubject(BaseModel):
     """A subject selected by the planner, before ACL-bounded entity resolution."""
 

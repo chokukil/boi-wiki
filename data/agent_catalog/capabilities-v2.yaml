@@ -1,4 +1,61 @@
 version: "2.0"
+graph_query_filter_contract:
+  filter_policy: explicit_only
+  node_kinds:
+    - document
+    - dictionary
+    - concept
+    - sop
+    - workflow
+    - task
+    - event
+    - business_event
+    - action
+    - skill
+    - evidence
+    - data_artifact
+    - person
+    - team
+    - role
+    - work_record
+    - completion_record
+    - knowledge_candidate
+    - runtime
+    - runtime_catalog
+    - code_entity
+  relation_kinds:
+    - part_of
+    - guides
+    - uses
+    - triggers
+    - executes
+    - part_of_workflow
+    - has_task
+    - next_task
+    - precedes
+    - uses_sop
+    - uses_event
+    - uses_action
+    - uses_skill
+    - triggered_by
+    - results_in
+    - produces
+    - assigned_to
+    - reviewed_by
+    - related_team
+    - member_of
+    - has_role
+    - performed_by
+    - completed_by
+    - repeated_performer
+    - requires_evidence
+    - derived_from
+    - evidence
+    - broader
+    - narrower
+    - related
+    - links_to
+    - supersedes
 loop_contract_templates:
   bounded_turn: &bounded_turn
     kind: turn

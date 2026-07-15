@@ -17,6 +17,7 @@
     context: $("[data-agent-v2-context]"),
     notice: $("[data-agent-v2-notice]"),
     progress: $("[data-agent-v2-progress]"),
+    newSession: $("[data-agent-v2-new]"),
     mobileTabs: $("[data-agent-v2-mobile-tabs]"),
     attachments: $("[data-agent-v2-attachments]"),
     fileInput: $("[data-agent-v2-file]"),
@@ -58,6 +59,7 @@
     session: null,
     sessionId: params.get("session") || params.get("pet_session") || sessionStorage.getItem("boiAgentV2WorkSession") || "",
     busy: false,
+    initialized: false,
     evidence: [],
     citations: [],
     relatedQuestions: [],
@@ -88,11 +90,15 @@
     suggestionsExpanded: false,
     starterSet: null,
     starterSetLoading: false,
+    starterSetPromise: null,
+    starterSetEpoch: 0,
     starterSetPolls: 0,
     mobileView: "conversation",
     a2uiSurface: null,
     usedSourceRefs: [],
   };
+  root.dataset.agentReady = "false";
+  if (elements.newSession) elements.newSession.disabled = true;
   const pageRef = root.dataset.pageRef || `${location.pathname}${location.search}`;
   const channel = "BroadcastChannel" in window ? new BroadcastChannel("boi-agent-v2-artifacts") : null;
   let completionEditor = null;
@@ -620,6 +626,7 @@
     elements.messages.innerHTML = '<div class="agent-v2-empty"><strong>BoI Agent와 무엇을 해볼까요?</strong><div class="agent-v2-starters" data-agent-v2-starters></div></div>';
     elements.starters = $("[data-agent-v2-starters]");
     renderStarters();
+    ensureStarterSet().catch(() => {});
   }
 
   function renderStarters() {
@@ -643,6 +650,7 @@
       button.dataset.graphQueryKind = starter.graph_query_kind || "";
       button.innerHTML = `<strong>${escapeHtml(starter.label || starter.prompt)}</strong>${starter.reason ? `<span>${escapeHtml(starter.reason)}</span>` : ""}`;
       button.setAttribute("aria-label", starter.label || starter.prompt);
+      button.disabled = state.busy || !state.initialized;
       button.addEventListener("click", () => {
         submitQuestion(starter.prompt, { suggestionId: starter.suggestion_id, suggestionSetId: state.starterSet?.set_id || "" }).catch(showError);
       });
@@ -672,7 +680,9 @@
       const more = document.createElement("button");
       more.type = "button";
       more.className = "agent-v2-starters-more";
+      more.setAttribute("data-agent-v2-starters-more", "");
       more.innerHTML = `<strong>다른 제안 보기</strong><span>${starters.length - 4}개 더 보기</span>`;
+      more.disabled = state.busy || !state.initialized;
       more.addEventListener("click", () => {
         state.suggestionsExpanded = true;
         saveSurfaceState();
@@ -685,28 +695,43 @@
   async function pollStarterSet() {
     if (!state.starterSet?.set_id || state.starterSet.state !== "updating" || state.starterSetPolls >= 2) return;
     state.starterSetPolls += 1;
+    const epoch = state.starterSetEpoch;
+    const setId = state.starterSet.set_id;
     window.setTimeout(async () => {
       try {
-        state.starterSet = await api(`/api/v2/starter-suggestion-sets/${encodeURIComponent(state.starterSet.set_id)}`);
+        const starterSet = await api(`/api/v2/starter-suggestion-sets/${encodeURIComponent(setId)}`);
+        if (epoch !== state.starterSetEpoch || state.starterSet?.set_id !== setId) return;
+        state.starterSet = starterSet;
         if (elements.starters && !elements.form.elements.question.value.trim()) renderStarters();
         if (state.starterSet.state === "updating") pollStarterSet();
       } catch (_error) { /* Grounded immediate suggestions remain usable. */ }
     }, state.starterSetPolls === 1 ? 1000 : 2200);
   }
 
-  async function ensureStarterSet() {
-    if (state.starterSet || state.starterSetLoading || !elements.starters || state.mode === "closed") return;
+  function ensureStarterSet() {
+    if (state.starterSet) return Promise.resolve(state.starterSet);
+    if (state.starterSetPromise) return state.starterSetPromise;
+    if (!elements.starters || state.mode === "closed") return Promise.resolve(null);
     state.starterSetLoading = true;
-    try {
-      state.starterSet = await api("/api/v2/starter-suggestion-sets", {
-        method: "POST",
-        body: JSON.stringify({page_ref: pageRef, work_session_id: state.sessionId || ""}),
-      });
+    const epoch = state.starterSetEpoch;
+    const sessionId = state.sessionId;
+    const request = api("/api/v2/starter-suggestion-sets", {
+      method: "POST",
+      body: JSON.stringify({page_ref: pageRef, work_session_id: sessionId || ""}),
+    }).then((starterSet) => {
+      if (epoch !== state.starterSetEpoch || sessionId !== state.sessionId) return null;
+      state.starterSet = starterSet;
       renderStarters();
       pollStarterSet();
-    } finally {
-      state.starterSetLoading = false;
-    }
+      return starterSet;
+    }).finally(() => {
+      if (epoch === state.starterSetEpoch && state.starterSetPromise === request) {
+        state.starterSetLoading = false;
+        state.starterSetPromise = null;
+      }
+    });
+    state.starterSetPromise = request;
+    return request;
   }
 
   function renderNotice() {
@@ -1352,6 +1377,7 @@
     button.textContent = busy ? "…" : "↑";
     button.setAttribute("aria-label", busy ? "확인 중" : "보내기");
     elements.form.elements.question.disabled = busy;
+    if (elements.newSession) elements.newSession.disabled = busy || !state.initialized;
     elements.starters?.querySelectorAll("button").forEach((starter) => { starter.disabled = busy; });
   }
 
@@ -1699,6 +1725,7 @@
   }
 
   async function switchSession(sessionId) {
+    state.starterSetEpoch += 1;
     state.sessionId = sessionId;
     state.session = null;
     state.artifact = null;
@@ -1719,6 +1746,7 @@
     state.suggestionsExpanded = false;
     state.starterSet = null;
     state.starterSetLoading = false;
+    state.starterSetPromise = null;
     state.starterSetPolls = 0;
     delete root.dataset.a2uiSurfaceRef;
     delete root.dataset.a2uiCatalog;
@@ -1729,13 +1757,27 @@
   }
 
   async function newSession() {
-    const session = await api("/api/v2/work-sessions", { method: "POST", body: JSON.stringify({ title: "새 업무", page_ref: pageRef }) });
-    await switchSession(session.session_id);
-    renderEmpty();
-    elements.title.textContent = "무엇을 찾거나 진행할까요?";
-    elements.saveState.textContent = "새 작업";
-    elements.form.elements.question.focus();
-    await loadRecent();
+    if (state.busy || !state.initialized) return;
+    const previousSessionId = state.sessionId;
+    setBusy(true);
+    elements.messages.innerHTML = '<div class="agent-v2-empty" role="status"><strong>새 작업을 준비하고 있습니다.</strong></div>';
+    elements.starters = null;
+    try {
+      const session = await api("/api/v2/work-sessions", { method: "POST", body: JSON.stringify({ title: "새 업무", page_ref: pageRef }) });
+      await switchSession(session.session_id);
+      renderEmpty();
+      await ensureStarterSet();
+      elements.title.textContent = "무엇을 찾거나 진행할까요?";
+      elements.saveState.textContent = "새 작업";
+      await loadRecent();
+    } catch (error) {
+      state.sessionId = previousSessionId;
+      await loadSession().catch(() => renderEmpty());
+      throw error;
+    } finally {
+      setBusy(false);
+      elements.form.elements.question.focus();
+    }
   }
 
   function pendingDb() {
@@ -1992,6 +2034,10 @@
       elements.notice.hidden = false;
       elements.notice.textContent = "BoI Agent를 준비하지 못했습니다. 잠시 후 다시 열어주세요.";
       if (!elements.messages.children.length) renderEmpty();
+    } finally {
+      state.initialized = true;
+      root.dataset.agentReady = "true";
+      setBusy(false);
     }
   }
   initialize();

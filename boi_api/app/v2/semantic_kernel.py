@@ -283,6 +283,27 @@ class PlanValidator:
                         details={"allowed": list(definition.graph_query_kinds)},
                     )
                 )
+            filter_contract = self.registry.graph_query_filter_contract
+            unknown_node_kinds = sorted(set(graph.node_kinds) - set(filter_contract.node_kinds))
+            if unknown_node_kinds:
+                issues.append(
+                    self._issue(
+                        "graph.node_kind_unknown",
+                        "graph_query.node_kinds",
+                        "Graph node filters must come from the pinned ontology filter contract.",
+                        details={"unknown": unknown_node_kinds, "allowed": filter_contract.node_kinds},
+                    )
+                )
+            unknown_relation_kinds = sorted(set(graph.relation_kinds) - set(filter_contract.relation_kinds))
+            if unknown_relation_kinds:
+                issues.append(
+                    self._issue(
+                        "graph.relation_kind_unknown",
+                        "graph_query.relation_kinds",
+                        "Graph relation filters must come from the pinned ontology filter contract.",
+                        details={"unknown": unknown_relation_kinds, "allowed": filter_contract.relation_kinds},
+                    )
+                )
 
         if plan.user_effect == "read" and plan.operation in {
             WorkOperation.create,
@@ -568,6 +589,16 @@ def semantic_plan_schema(
         if alternative.get("type") == "object" and isinstance(alternative.get("properties"), dict):
             alternative["required"] = list(alternative["properties"])
             alternative["additionalProperties"] = False
+            graph_properties = alternative["properties"]
+            filter_contract = registry.graph_query_filter_contract
+            if filter_contract.node_kinds:
+                ((graph_properties.get("node_kinds") or {}).get("items") or {})["enum"] = list(
+                    filter_contract.node_kinds
+                )
+            if filter_contract.relation_kinds:
+                ((graph_properties.get("relation_kinds") or {}).get("items") or {})["enum"] = list(
+                    filter_contract.relation_kinds
+                )
     loop_schema = properties.get("loop_contract") or {}
     if isinstance(loop_schema.get("properties"), dict):
         loop_schema["required"] = list(loop_schema["properties"])

@@ -9,6 +9,7 @@ from .models import (
     CapabilityDefinition,
     CapabilityState,
     DraftContractDefinition,
+    GraphQueryFilterContract,
     HelperTemplateDefinition,
     OperationClass,
     Principal,
@@ -37,10 +38,14 @@ class CapabilityRegistry:
         self._legacy_required_capabilities: list[str] = []
         self._helper_templates: dict[str, HelperTemplateDefinition] = {}
         self._asset_defaults: dict[WorkAssetKind, str] = {}
+        self._graph_query_filter_contract = GraphQueryFilterContract()
         self.reload()
 
     def reload(self) -> None:
         payload = yaml.safe_load(self.catalog_path.read_text(encoding="utf-8")) or {}
+        graph_query_filter_contract = GraphQueryFilterContract.model_validate(
+            payload.get("graph_query_filter_contract") or {}
+        )
         definitions = [CapabilityDefinition.model_validate(item) for item in payload.get("capabilities") or []]
         helper_templates = [
             HelperTemplateDefinition.model_validate(item)
@@ -107,6 +112,7 @@ class CapabilityRegistry:
         self._draft_contracts = {item.contract_id: item for item in contracts}
         self._helper_templates = {item.template_id: item for item in helper_templates}
         self._asset_defaults = asset_defaults
+        self._graph_query_filter_contract = graph_query_filter_contract
         legacy_import = payload.get("legacy_import") if isinstance(payload.get("legacy_import"), dict) else {}
         self._legacy_capability_aliases = {
             str(key): str(value)
@@ -142,6 +148,10 @@ class CapabilityRegistry:
             for definition in self.all()
             for offer in definition.starter_offers
         ]
+
+    @property
+    def graph_query_filter_contract(self) -> GraphQueryFilterContract:
+        return self._graph_query_filter_contract.model_copy(deep=True)
 
     def helper_template(self, template_id: str) -> HelperTemplateDefinition:
         candidate = str(template_id or "").strip()

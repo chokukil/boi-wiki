@@ -184,6 +184,39 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
     assert claim_properties["source_refs"]["items"]["enum"] == ["S1"]
     assert claim_properties["supporting_chunk_ids"]["items"]["enum"] == ["C1"]
 
+    graph_schema = plan_properties["graph_query"]["anyOf"][0]["properties"]
+    graph_contract = registry.graph_query_filter_contract
+    assert graph_schema["node_kinds"]["items"]["enum"] == graph_contract.node_kinds
+    assert graph_schema["relation_kinds"]["items"]["enum"] == graph_contract.relation_kinds
+    assert "neighbors" not in graph_schema["relation_kinds"]["items"]["enum"]
+
+
+def test_plan_validator_rejects_graph_filters_outside_the_catalog_contract_without_rewriting():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    validator = PlanValidator(registry)
+    plan = SemanticPlan(
+        resolved_goal="검증된 업무 관계를 탐색한다",
+        retrieval_query="업무 관계",
+        capability_id="knowledge.connect",
+        user_effect="read",
+        operation="connect",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="neighbors",
+            focal_mentions=["boi:public:guide"],
+            relation_kinds=["neighbors"],
+            presentation="explorer",
+        ),
+        confidence=1.0,
+    )
+
+    report = validator.validate(plan)
+
+    assert report.valid is False
+    assert {item.code for item in report.issues} >= {"graph.relation_kind_unknown"}
+    assert plan.graph_query is not None
+    assert plan.graph_query.relation_kinds == ["neighbors"]
+
 
 def test_postgres_store_registers_every_helper_builder_collection():
     assert PostgresAgentV2Store.COLLECTION_TABLES["helper_drafts"] == "agent_helper_drafts"
@@ -4848,7 +4881,22 @@ def test_pet_client_never_classifies_confirmation_with_phrase_rules():
     switch_session = script[script.index("async function switchSession"):script.index("async function newSession")]
     assert "state.starterSet = null" in switch_session
     assert "state.starterSetLoading = false" in switch_session
+    assert "state.starterSetPromise = null" in switch_session
     assert "state.starterSetPolls = 0" in switch_session
+    render_empty = script[script.index("function renderEmpty"):script.index("function renderStarters")]
+    assert "ensureStarterSet().catch" in render_empty
+    new_session = script[script.index("async function newSession"):script.index("function pendingDb")]
+    assert "새 작업을 준비하고 있습니다." in new_session
+    assert "const previousSessionId = state.sessionId;" in new_session
+    assert "state.sessionId = previousSessionId;" in new_session
+    assert "await ensureStarterSet();" in new_session
+    assert "if (state.starterSetPromise) return state.starterSetPromise;" in script
+    assert "button.disabled = state.busy || !state.initialized;" in script
+    assert "more.disabled = state.busy || !state.initialized;" in script
+    assert "state.starterSetEpoch += 1;" in switch_session
+    assert "epoch !== state.starterSetEpoch" in script
+    assert 'root.dataset.agentReady = "true";' in script
+    assert "busy || !state.initialized" in script
 
 
 def test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowledge_in_new_session(
