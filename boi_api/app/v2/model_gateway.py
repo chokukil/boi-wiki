@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import threading
 import time
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
@@ -679,6 +680,56 @@ class CompositeModelGateway:
         return {**self.generation.preflight(), **self.embedding.readiness()}
 
 
+class ConcurrencyLimitedGenerationGateway:
+    """Bound generation calls without coupling them to the embedding model."""
+
+    def __init__(self, delegate: ModelGateway, *, max_concurrency: int, queue_timeout_seconds: float):
+        self.delegate = delegate
+        self.provider = delegate.provider
+        self.max_concurrency = max(1, int(max_concurrency))
+        self.queue_timeout_seconds = max(1.0, float(queue_timeout_seconds))
+        self._semaphore = threading.BoundedSemaphore(self.max_concurrency)
+
+    def readiness(self) -> dict[str, Any]:
+        return {
+            **self.delegate.readiness(),
+            "generation_concurrency": {
+                "max_concurrency": self.max_concurrency,
+                "queue_timeout_seconds": self.queue_timeout_seconds,
+            },
+        }
+
+    def preflight(self) -> dict[str, Any]:
+        return {
+            **self.delegate.preflight(),
+            "generation_concurrency": {
+                "max_concurrency": self.max_concurrency,
+                "queue_timeout_seconds": self.queue_timeout_seconds,
+            },
+        }
+
+    def _acquire(self) -> None:
+        if not self._semaphore.acquire(timeout=self.queue_timeout_seconds):
+            raise RuntimeError("model generation queue timed out")
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        self._acquire()
+        try:
+            return self.delegate.generate_structured(system=system, prompt=prompt, schema=schema)
+        finally:
+            self._semaphore.release()
+
+    def stream_text(self, *, system: str, prompt: str) -> Iterator[str]:
+        self._acquire()
+        try:
+            yield from self.delegate.stream_text(system=system, prompt=prompt)
+        finally:
+            self._semaphore.release()
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return self.delegate.embed(texts)
+
+
 class UsageTrackingGateway:
     """Adds scoped, provider-neutral usage visibility without changing model responses."""
 
@@ -1192,7 +1243,12 @@ def build_model_gateway(settings: AgentV2Settings) -> ModelGateway:
             generation = AnthropicGateway(settings)
         else:
             generation = UnavailableModelGateway(f"unsupported model provider: {settings.model_provider}")
-        return UsageTrackingGateway(CompositeModelGateway(generation, OpenAIEmbeddingGateway(settings)))
+        limited_generation = ConcurrencyLimitedGenerationGateway(
+            generation,
+            max_concurrency=settings.model_max_concurrency,
+            queue_timeout_seconds=settings.model_queue_timeout_seconds,
+        )
+        return UsageTrackingGateway(CompositeModelGateway(limited_generation, OpenAIEmbeddingGateway(settings)))
     except Exception as exc:
         return UsageTrackingGateway(
             UnavailableModelGateway(f"model gateway unavailable: {type(exc).__name__}: {exc}")

@@ -23,6 +23,7 @@ from boi_api.app.v2.domain import DomainServiceGateway
 from boi_api.app.v2.entity_resolver import AmbiguousEntityError, EntityResolver
 from boi_api.app.v2.evaluation import IndependentArtifactEvaluator
 from boi_api.app.v2.model_gateway import (
+    ConcurrencyLimitedGenerationGateway,
     OpenAICompatibleGateway,
     UnavailableModelGateway,
     UsageTrackingGateway,
@@ -2351,6 +2352,71 @@ def test_final_operator_guide_is_treated_as_the_library_home(v2_service: AgentV2
         OfferRequest(page_ref="/docs/boi:public:boi-wiki-manual:guide:final-operator-guide"),
     )
     assert {item.capability_id for item in offers} == {"knowledge.search", "work.inbox", "cases.similar"}
+
+
+def test_generation_concurrency_limit_serializes_structured_calls():
+    lock = threading.Lock()
+    release = threading.Event()
+    first_entered = threading.Event()
+    active = 0
+    peak = 0
+
+    class BlockingGateway:
+        provider = "test"
+
+        @staticmethod
+        def readiness() -> dict[str, Any]:
+            return {"generation": True}
+
+        @staticmethod
+        def preflight() -> dict[str, Any]:
+            return {"ok": True}
+
+        def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+                first_entered.set()
+            assert release.wait(2)
+            with lock:
+                active -= 1
+            return {"prompt": prompt}
+
+        @staticmethod
+        def stream_text(*, system: str, prompt: str) -> Iterator[str]:
+            yield prompt
+
+        @staticmethod
+        def embed(texts: list[str]) -> list[list[float]]:
+            return [[1.0] for _ in texts]
+
+    gateway = ConcurrencyLimitedGenerationGateway(
+        BlockingGateway(),
+        max_concurrency=1,
+        queue_timeout_seconds=2,
+    )
+    results: list[dict[str, Any]] = []
+
+    def invoke(prompt: str) -> None:
+        results.append(gateway.generate_structured(system="", prompt=prompt, schema={}))
+
+    first = threading.Thread(target=invoke, args=("first",))
+    second = threading.Thread(target=invoke, args=("second",))
+    first.start()
+    assert first_entered.wait(1)
+    second.start()
+    time.sleep(0.05)
+    assert peak == 1
+    release.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert peak == 1
+    assert {item["prompt"] for item in results} == {"first", "second"}
+    assert gateway.readiness()["generation_concurrency"]["max_concurrency"] == 1
 
 
 def test_anthropic_generation_can_use_an_independent_openai_compatible_embedding_adapter():

@@ -52,6 +52,8 @@ class AgentV2Settings:
     model_name: str
     deep_model: str
     model_reasoning_effort: str
+    model_max_concurrency: int
+    model_queue_timeout_seconds: float
     model_max_output_tokens: int
     model_context_window_tokens: int
     model_context_fallback_tokens: int
@@ -160,6 +162,14 @@ class AgentV2Settings:
             model_name=model_name,
             deep_model=deep_model,
             model_reasoning_effort=(os.getenv("BOI_V2_REASONING_EFFORT") or "").strip().lower(),
+            model_max_concurrency=max(
+                1,
+                min(int(os.getenv("BOI_AGENT_LLM_MAX_CONCURRENCY", "1") or "1"), 64),
+            ),
+            model_queue_timeout_seconds=max(
+                1.0,
+                min(float(os.getenv("BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS", "120") or "120"), 3_600.0),
+            ),
             model_max_output_tokens=max(
                 512,
                 min(int(os.getenv("BOI_V2_MAX_OUTPUT_TOKENS", "8192") or "8192"), 32_768),
