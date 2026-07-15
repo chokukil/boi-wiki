@@ -4845,6 +4845,10 @@ def test_pet_client_never_classifies_confirmation_with_phrase_rules():
     assert "/work-runs/${encodeURIComponent(state.workRunId)}/continue" not in script
     assert 'fetch("/api/v2/agent/turns"' in script
     assert '"Accept": "text/event-stream"' in script
+    switch_session = script[script.index("async function switchSession"):script.index("async function newSession")]
+    assert "state.starterSet = null" in switch_session
+    assert "state.starterSetLoading = false" in switch_session
+    assert "state.starterSetPolls = 0" in switch_session
 
 
 def test_full_learning_cycle_promotes_reindexes_and_reuses_authoritative_knowledge_in_new_session(

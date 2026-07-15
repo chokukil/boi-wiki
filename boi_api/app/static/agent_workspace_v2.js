@@ -1717,6 +1717,9 @@
     state.graphViews = {};
     state.artifactFocusChoices = {};
     state.suggestionsExpanded = false;
+    state.starterSet = null;
+    state.starterSetLoading = false;
+    state.starterSetPolls = 0;
     delete root.dataset.a2uiSurfaceRef;
     delete root.dataset.a2uiCatalog;
     delete root.dataset.a2uiRendered;

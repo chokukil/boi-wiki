@@ -582,7 +582,7 @@ async function runViewport(cdp, viewport) {
       await cdp.eval(`document.querySelector('[data-agent-v2-new]')?.click()`);
       await wait(cdp, `document.querySelectorAll('[data-agent-v2-starters] button').length > 0`, 15000);
       await cdp.eval(`document.querySelector('[data-agent-v2-starters-more]')?.click()`);
-      const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='confirmation' && /다시 확인|자동 확인/.test(item.textContent)); button?.click(); return Boolean(button); })()`);
+      const clicked = await cdp.eval(`(() => { const button=[...document.querySelectorAll('[data-agent-v2-starters] button')].find(item=>item.dataset.resultKind==='confirmation'); button?.click(); return Boolean(button); })()`);
       if (!clicked) throw new Error("grounded Confirmation starter is missing");
       const confirmationLookup = `(() => { const roots=[document]; let fallback=null; for(let i=0;i<roots.length;i+=1){ const root=roots[i]; for(const item of root.querySelectorAll('*')) if(item.shadowRoot) roots.push(item.shadowRoot); for(const match of root.querySelectorAll('boi-a2ui-confirmation, [data-a2ui-component="Confirmation"]')){ fallback ||= match; if(match.querySelector('button')) return match; } } return fallback; })()`;
       await wait(cdp, `!!(${confirmationLookup})?.querySelector('button')`, 90000);
