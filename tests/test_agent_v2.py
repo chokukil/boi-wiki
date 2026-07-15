@@ -720,6 +720,34 @@ class EmptyThenGroundedRepairModel(ScriptedPlanner):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
+class EmptyGraphAnswerModel(EmptyThenGroundedRepairModel):
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if _is_semantic_planner_schema(schema):
+            self.calls += 1
+            return _planner_envelope(
+                SemanticPlan(
+                    resolved_goal="Work Learning Loop의 검증된 연결 관계를 탐색한다",
+                    retrieval_query="Work Learning Loop 검증된 연결 관계",
+                    capability_id="knowledge.search",
+                    user_effect="read",
+                    operation="connect",
+                    evidence_scope="canonical",
+                    presentation="explorer",
+                    answer_intent="relationship",
+                    graph_query=GraphQueryDraft(
+                        enabled=True,
+                        query_kind="neighbors",
+                        focal_mentions=["Work Learning Loop"],
+                        direction="both",
+                        depth=1,
+                        presentation="explorer",
+                    ),
+                    confidence=1.0,
+                ).model_dump(mode="json")
+            )
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
 def test_empty_grounded_answer_repairs_once_without_changing_the_validated_plan(
     v2_service: AgentV2Service,
 ):
@@ -746,6 +774,32 @@ def test_empty_grounded_answer_repairs_once_without_changing_the_validated_plan(
         "boi:public:work-learning-loop"
     ]
     assert "grounded_answer:repair" in route["trace"]
+
+
+def test_graph_query_does_not_repair_an_unused_planner_answer(
+    v2_service: AgentV2Service,
+):
+    model = EmptyGraphAnswerModel()
+    route = v2_service.quick_agent.route(
+        "Work Learning Loop의 연결 관계를 탐색해줘",
+        page_kind="library",
+        knowledge_hints=[
+            {
+                "ref": "boi:public:work-learning-loop",
+                "title": "Work Learning Loop",
+                "chunk_id": "chunk-loop",
+                "chunk_text": "Work Learning Loop는 검증된 결과를 다음 업무에 재사용하는 순환입니다.",
+                "answer_scope": "canonical",
+            }
+        ],
+        model=model,
+    )
+
+    assert model.calls == 1
+    assert route["grounded_answer"] is None
+    assert route["grounded_answer_diagnostics"]["repair"] == "deferred_to_graph_result"
+    assert "grounded_answer:graph_result" in route["trace"]
+    assert "grounded_answer:repair" not in route["trace"]
 
 
 def _task_completion_plan(task_ref: str) -> dict[str, Any]:

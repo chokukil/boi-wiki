@@ -921,7 +921,13 @@ class QuickAgentRuntime:
         )
         hints = [item for item in (state.get("knowledge_hints") or []) if isinstance(item, dict)]
         grounded_answer, diagnostics = self._resolve_grounded_answer(envelope, plan, hints)
-        if grounded_answer is None:
+        # A validated graph query is answered from the ACL-bounded graph
+        # DomainResult and grounded again by the graph service. Repairing a
+        # planner-authored prose answer here adds another model call whose
+        # output is never used. Keep the one-shot repair for non-graph reads,
+        # where the planner answer is the actual domain result.
+        graph_result_is_authoritative = bool(plan.graph_query and plan.graph_query.enabled)
+        if grounded_answer is None and not graph_result_is_authoritative:
             grounded_answer, diagnostics = self._repair_grounded_answer(
                 model=model,
                 state=state,
@@ -929,6 +935,8 @@ class QuickAgentRuntime:
                 hints=hints,
                 diagnostics=diagnostics,
             )
+        elif grounded_answer is None:
+            diagnostics = {**diagnostics, "repair": "deferred_to_graph_result"}
         continuation = plan.continuation.model_dump(mode="json")
         return {
             "capability_id": compiled.capability_id,
@@ -945,7 +953,13 @@ class QuickAgentRuntime:
                 *(state.get("trace") or []),
                 "semantic_plan:llm",
                 "validate:passed",
-                *(["grounded_answer:repair"] if diagnostics.get("repair") else []),
+                *(
+                    ["grounded_answer:graph_result"]
+                    if diagnostics.get("repair") == "deferred_to_graph_result"
+                    else ["grounded_answer:repair"]
+                    if diagnostics.get("repair")
+                    else []
+                ),
                 "compile",
             ],
         }
