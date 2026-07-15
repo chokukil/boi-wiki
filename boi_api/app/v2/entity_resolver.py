@@ -20,7 +20,6 @@ ENTITY_PREFIXES = (
     "workflow:",
     "skill:",
 )
-SELF_MENTIONS = {"나", "내", "본인", "현재 사용자", "current user", "me"}
 
 
 def _normalise(value: str) -> str:
@@ -121,8 +120,6 @@ class EntityResolver:
         clean = str(mention or "").strip()
         if not clean:
             return ""
-        if _normalise(clean) in SELF_MENTIONS:
-            return f"person:{principal.employee_id}"
         if clean.startswith(ENTITY_PREFIXES):
             if clean.startswith("person:"):
                 employee_id = clean.split(":", 1)[1]
@@ -135,8 +132,6 @@ class EntityResolver:
                 team_id = clean.split(":", 1)[1]
                 return clean if principal.is_admin or team_id in principal.teams else ""
             return clean
-        if re.fullmatch(r"\d{4,12}", clean):
-            clean = clean
         candidates = [
             *self._directory_candidates(clean, principal),
             *self._record_candidates(clean, records),

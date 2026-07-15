@@ -6,8 +6,8 @@ import math
 import re
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import unquote, urlsplit
 
+from .a2ui import capability_catalog
 from .model_gateway import ModelGateway
 from .models import EvidenceRef, Principal, SearchResponse
 from .repository import KnowledgeRecord, KnowledgeRepository, normalize_tokens
@@ -204,7 +204,7 @@ def precise_context_ref(value: str) -> str:
     return ""
 
 
-def graph_score(record: KnowledgeRecord, query_tokens: set[str], page_ref: str, task_ref: str) -> float:
+def graph_score(record: KnowledgeRecord, query_tokens: set[str]) -> float:
     metadata = record.metadata
     links: list[str] = []
     for key in (
@@ -223,14 +223,19 @@ def graph_score(record: KnowledgeRecord, query_tokens: set[str], page_ref: str, 
         elif value:
             links.append(str(value))
     link_tokens = normalize_tokens(" ".join(links))
-    relation = min(1.0, len(query_tokens & link_tokens) / max(1, len(query_tokens)))
+    return clamp(min(1.0, len(query_tokens & link_tokens) / max(1, len(query_tokens))))
+
+
+def context_anchor_score(record: KnowledgeRecord, page_ref: str, task_ref: str) -> float:
+    """Boost an already-relevant result without making the current page a candidate."""
+
     context = 0.0
     page_context = precise_context_ref(page_ref)
     if page_context and (page_context == record.url.rstrip("/") or page_context in record.search_blob):
         context += 0.5
     if task_ref and task_ref in record.search_blob:
         context += 0.5
-    return clamp(max(relation, context))
+    return clamp(context)
 
 
 def diversify_ranked(
@@ -323,6 +328,76 @@ class HybridSearchService:
             },
         )
 
+    def runtime_record(self, ref: str, principal: Principal) -> KnowledgeRecord | None:
+        if ref != "runtime:a2ui-capability-catalog":
+            return None
+        surfaces = self.store.list(
+            "a2ui_surfaces",
+            employee_id="" if principal.is_admin else principal.employee_id,
+            limit=5000,
+        )
+        catalog = capability_catalog(surfaces)
+        component_rows = [
+            (
+                str(item["name"]),
+                int(item.get("observed_surface_count") or 0),
+            )
+            for item in catalog.get("components") or []
+            if isinstance(item, dict) and item.get("name")
+        ]
+        component_names = [name for name, _count in component_rows]
+        most_observed = max(component_rows, key=lambda item: item[1], default=("", 0))
+        component_lines = [
+            f"현재 등록 component {name}: 실제 surface 관측 {count}건"
+            for name, count in component_rows
+        ]
+        return KnowledgeRecord(
+            record_id=ref,
+            kind="runtime",
+            title="A2UI 현재 등록 component와 사용 현황",
+            description=(
+                f"{catalog.get('compatibility_id')} catalog의 현재 실제 registry와 사용자별 관측 surface 현황. "
+                "실제로 사용된 부분, 현재 등록된 component와 실제 사용 여부는 이 운영 상태 자료로 확인합니다."
+            ),
+            text="\n".join(
+                [
+                    "이 자료는 A2UI의 정의 문서가 아니라 현재 실행 중인 BoI component registry와 surface 사용 현황입니다.",
+                    "실제로 사용된 부분을 묻는 경우 현재 등록된 component와 관측된 surface를 이 자료에서 확인합니다.",
+                    f"현재 protocol version: {catalog.get('protocol_version')}",
+                    f"현재 catalog: {catalog.get('compatibility_id')}",
+                    f"현재 등록 component: {', '.join(component_names)}",
+                    f"현재 생성된 surface: {int(catalog.get('surface_count') or 0)}건",
+                    (
+                        f"현재 실제 surface 관측이 가장 많은 component: "
+                        f"{most_observed[0]} {most_observed[1]}건"
+                    ),
+                    *component_lines,
+                    f"현재 mutation policy: {catalog.get('mutation_policy')}",
+                ]
+            ),
+            url="/api/v2/a2ui/catalogs/boi/v1",
+            source="runtime",
+            authority="reviewed",
+            status="reviewed",
+            visibility="private",
+            owner=principal.employee_id,
+            metadata={
+                "answer_scope": "operational",
+                "catalog_id": catalog.get("compatibility_id"),
+                "protocol_version": catalog.get("protocol_version"),
+                "surface_count": catalog.get("surface_count"),
+                "component_names": component_names,
+                "component_usage": {
+                    name: count for name, count in component_rows
+                },
+                "mutation_policy": catalog.get("mutation_policy"),
+            },
+        )
+
+    def runtime_records(self, principal: Principal) -> list[KnowledgeRecord]:
+        record = self.runtime_record("runtime:a2ui-capability-catalog", principal)
+        return [record] if record is not None else []
+
     def search(
         self,
         query: str,
@@ -334,6 +409,8 @@ class HybridSearchService:
         page_ref: str = "",
         task_ref: str = "",
         kinds: set[str] | None = None,
+        answer_scopes: set[str] | None = None,
+        ranking_policy: dict[str, float] | None = None,
     ) -> SearchResponse:
         clean_query = query.strip()
         if not clean_query:
@@ -342,6 +419,7 @@ class HybridSearchService:
         query_tokens = meaningful_query_tokens(clean_query)
         expanded_tokens = query_tokens | normalize_tokens(" ".join(aliases))
         records = self.repository.authoritative_records(principal, include_drafts=include_drafts)
+        records.extend(self.runtime_records(principal))
         candidate_rows = self.store.list(
             "knowledge_candidates",
             employee_id=principal.employee_id,
@@ -358,6 +436,12 @@ class HybridSearchService:
             records.extend(self.repository.history_records(principal, include_seed=True))
         if kinds:
             records = [record for record in records if record.kind in kinds]
+        if answer_scopes:
+            records = [
+                record
+                for record in records
+                if self.repository.answer_scope(record) in answer_scopes
+            ]
 
         semantic_by_id: dict[str, float] = {}
         semantic_chunk_by_id: dict[str, dict[str, Any]] = {}
@@ -400,13 +484,6 @@ class HybridSearchService:
 
         record_ids = {item.record_id for item in records}
         graph_seed_ids: list[str] = []
-        page_path = unquote(urlsplit(str(page_ref or "")).path).rstrip("/")
-        if page_path.startswith("/docs/"):
-            page_id = page_path.removeprefix("/docs/")
-            if page_id in record_ids:
-                graph_seed_ids.append(page_id)
-        if task_ref:
-            graph_seed_ids.append(task_ref)
         semantic_seeds = sorted(semantic_by_id.items(), key=lambda item: -item[1])[:3]
         graph_seed_ids.extend(item[0] for item in semantic_seeds if item[0] in record_ids)
         for record in records:
@@ -454,28 +531,45 @@ class HybridSearchService:
             except Exception as exc:
                 degraded.append(f"ontology_traversal_failed:{type(exc).__name__}")
 
+        base_weights = {
+            "lexical": 0.30,
+            "semantic": 0.26,
+            "graph": 0.08,
+            "ontology": 0.18,
+            "authority": 0.07,
+            "recency": 0.03,
+            "identity": 0.08,
+            "context_anchor": 0.03,
+        }
+        multipliers = {
+            key: max(0.25, min(2.0, float((ranking_policy or {}).get(f"{key}_weight", 1.0))))
+            for key in base_weights
+        }
         ranked: list[tuple[float, KnowledgeRecord, dict[str, float]]] = []
         for record in records:
             lexical = lexical_score(query_tokens, record, expanded_tokens)
             semantic = semantic_by_id.get(record.record_id, 0.0)
             ontology = ontology_score(record, query_tokens)
-            graph = max(
-                graph_score(record, query_tokens, page_ref, task_ref),
-                graph_scores.get(record.record_id, 0.0),
-            )
+            graph = max(graph_score(record, query_tokens), graph_scores.get(record.record_id, 0.0))
+            context_anchor = context_anchor_score(record, page_ref, task_ref)
             authority = authority_score(record)
             recency = recency_score(record.timestamp)
             identity = identity_score(record, query_tokens)
-            if lexical <= 0 and semantic <= 0 and graph <= 0:
+            if lexical <= 0 and semantic <= 0 and graph <= 0 and ontology <= 0 and identity <= 0:
                 continue
-            score = (
-                0.30 * lexical
-                + 0.26 * semantic
-                + 0.08 * graph
-                + 0.18 * ontology
-                + 0.07 * authority
-                + 0.03 * recency
-                + 0.08 * identity
+            component_values = {
+                "lexical": lexical,
+                "semantic": semantic,
+                "graph": graph,
+                "ontology": ontology,
+                "authority": authority,
+                "recency": recency,
+                "identity": identity,
+                "context_anchor": context_anchor,
+            }
+            score = sum(
+                base_weights[key] * multipliers[key] * component_values[key]
+                for key in base_weights
             )
             ranked.append(
                 (
@@ -489,6 +583,7 @@ class HybridSearchService:
                         "authority": round(authority, 4),
                         "recency": round(recency, 4),
                         "identity": round(identity, 4),
+                        "context_anchor": round(context_anchor, 4),
                     },
                 )
             )
@@ -497,6 +592,7 @@ class HybridSearchService:
         items: list[EvidenceRef] = []
         for score, record, components in ranked[: max(1, min(limit, 20))]:
             summary = record.description or re.sub(r"\s+", " ", record.text).strip()[:360]
+            best_chunk = semantic_chunk_by_id.get(record.record_id) or best_chunk_for_query(record, clean_query)
             items.append(
                 EvidenceRef(
                     evidence_id=record.record_id,
@@ -510,7 +606,8 @@ class HybridSearchService:
                     metadata={
                         "score_components": components,
                         "status": record.status,
-                        "best_chunk": semantic_chunk_by_id.get(record.record_id) or {},
+                        "answer_scope": self.repository.answer_scope(record),
+                        "best_chunk": best_chunk,
                         "graph_paths": graph_paths.get(record.record_id, [])[:4],
                     },
                 )
@@ -534,6 +631,13 @@ class HybridSearchService:
                     "status",
                 )
                 if key in manifest
+            }
+            | {
+                "ranking_policy": {
+                    key: value
+                    for key, value in multipliers.items()
+                    if value != 1.0
+                }
             },
         )
 

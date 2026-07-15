@@ -64,7 +64,14 @@ from .workflow_materializer import (
     render_stage_execution_body,
 )
 from .simulation_agent import build_simulation_agent_result
-from .task_completion import friendly_label, normalise_task_completion
+from .task_completion import (
+    default_task_completion_contract,
+    evaluate_evidence_requirements,
+    friendly_label,
+    normalise_task_completion,
+    resolve_task_mode,
+)
+from .domain_status import action_has_successful_outcome
 from .task_execution import TaskExecutionStore
 from .inbox_report_coordinator import InboxReportCoordinator, PENDING_STATES as INBOX_REPORT_PENDING_STATES
 from .integration_health import IntegrationHealthRegistry, IntegrationTarget
@@ -9797,7 +9804,7 @@ def agent_v2_sop_registration_seed(request: Request, employee_id: str) -> dict[s
             "status": "missing" if exc.status_code == 404 else "forbidden",
             "message": str(exc.detail),
         }
-    if artifact.get("capability_id") != "sop.plan":
+    if service._artifact_contract_type(artifact) != "sop_draft":
         return {
             "draft_id": artifact_id,
             "source": "agent_v2_artifact",
@@ -11549,11 +11556,14 @@ class TaskLoopEvaluateRequest(BaseModel):
     iteration_count: int = Field(default=0, ge=0)
     no_progress_count: int = Field(default=0, ge=0)
     tool_history: list[dict[str, Any]] = Field(default_factory=list)
-    question_history: list[str] = Field(default_factory=list)
+    # Accepted for wire compatibility only. Question prose is never a progress key.
+    question_history: list[str] = Field(default_factory=list, json_schema_extra={"deprecated": True})
     proposed_tool_name: str = ""
     proposed_tool_args: dict[str, Any] = Field(default_factory=dict)
-    proposed_question: str = ""
+    proposed_question: str = Field(default="", json_schema_extra={"deprecated": True})
     proposed_delta: dict[str, Any] = Field(default_factory=dict)
+    progress_state: dict[str, Any] = Field(default_factory=dict)
+    strategy_change_used: bool = False
 
 
 class TaskCompletionConfirmRequest(BaseModel):
@@ -11597,6 +11607,7 @@ class TaskWorkRecordRequest(BaseModel):
     blocker: str = Field(default="", max_length=2000)
     next_work: str = Field(default="", max_length=2000)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+    satisfied_evidence_ids: list[str] = Field(default_factory=list, max_length=50)
     completed_check_ids: list[str] = Field(default_factory=list, max_length=50)
     user_confirmed: bool = False
 
@@ -12105,7 +12116,7 @@ async def startup() -> None:
         report_starter()
     agent_v2_service = globals().get("AGENT_V2_SERVICE")
     if agent_v2_service is not None and agent_v2_service.settings.enabled:
-        await asyncio.to_thread(agent_v2_service.ensure_model_residency)
+        await asyncio.to_thread(agent_v2_service.inspect_model_residency)
     index_starter = globals().get("start_knowledge_index_coordinator")
     if callable(index_starter):
         index_starter()
@@ -16553,6 +16564,7 @@ async def task_console_work_record_form(
         blocker=str(form.get("blocker") or ""),
         next_work=str(form.get("next_work") or ""),
         evidence_refs=split_list_like(form.get("evidence_refs")),
+        satisfied_evidence_ids=[str(item) for item in form.getlist("satisfied_evidence_ids")],
         completed_check_ids=[str(item) for item in form.getlist("completed_check_ids")],
         user_confirmed=str(form.get("user_confirmed") or "").lower() in {"1", "true", "yes", "on"},
     )
@@ -16634,7 +16646,7 @@ async def task_console_loop_evaluate_form(
         workflow_definition_key=req.workflow_definition_key,
         current_url=req.current_url,
     )
-    loop_state = task_loop_state_for_context(context, req)
+    loop_state = task_loop_state_for_context(context, req, employee_id=employee_id)
     payload = task_console_payload(
         employee_id,
         task_id=task_id,
@@ -28604,36 +28616,53 @@ def work_context_evidence_summary(
     *,
     sop_stage_id: str = "",
 ) -> dict[str, Any]:
-    acquired: list[dict[str, str]] = []
+    acquired: list[dict[str, Any]] = []
+    available_refs: set[str] = set()
     for item in stage_history:
         if item.get("kind") not in {"event", "action", "generated_boi"}:
             continue
         summary = str(item.get("summary") or item.get("title") or "").strip()
         if not summary:
             continue
+        kind = str(item.get("kind") or "")
+        source_id = str(item.get("source_id") or "")
+        satisfies = {source_id} if source_id else set()
+        if kind == "event":
+            event_id = str(item.get("event_id") or "")
+            event_type = str(item.get("event_type") or "")
+            satisfies.update(value for value in ("current_event", event_id, f"event:{event_type}" if event_type else "") if value)
+        elif kind == "action":
+            request_id = str(item.get("request_id") or "")
+            action_key = str(item.get("action_key") or "")
+            if action_has_successful_outcome(item.get("status")):
+                satisfies.update(
+                    value
+                    for value in (
+                        "action_results",
+                        request_id,
+                        f"action:{action_key}" if action_key else "",
+                    )
+                    if value
+                )
+        elif kind == "generated_boi":
+            boi_id = str(item.get("boi_id") or "")
+            if boi_id:
+                satisfies.add(boi_id)
+        available_refs.update(satisfies)
         acquired.append(
             {
-                "source_id": str(item.get("source_id") or ""),
-                "kind": str(item.get("kind") or ""),
+                "source_id": source_id,
+                "kind": kind,
                 "label": str(item.get("title") or ""),
                 "summary": summary,
                 "url": str(item.get("url") or ""),
+                "satisfies": sorted(satisfies),
             }
         )
-    has_event = any(item.get("kind") == "event" for item in stage_history)
-    has_action_result = any(item.get("kind") in {"action", "generated_boi"} for item in stage_history)
-    satisfied_raw: set[str] = set()
-    if has_event:
-        satisfied_raw.add("current_event")
-    if has_action_result:
-        satisfied_raw.add("action_results")
-    if sop_stage_id:
-        satisfied_raw.add("sop_stage")
-    acquired_text = " ".join(f"{item.get('label', '')} {item.get('summary', '')}" for item in acquired).lower()
     missing_raw = [
         evidence
         for evidence in required_evidence
-        if evidence and str(evidence).lower() not in satisfied_raw and str(evidence).lower() not in acquired_text
+        if evidence and str(evidence).strip() not in available_refs
     ]
     required_labels = [work_context_evidence_label(item) for item in required_evidence]
     missing = [work_context_evidence_label(item) for item in missing_raw]
@@ -28647,6 +28676,7 @@ def work_context_evidence_summary(
         "required": required_labels,
         "required_raw": required_evidence,
         "acquired": acquired[:6],
+        "available_refs": sorted(available_refs),
         "missing": missing[:6],
         "missing_raw": missing_raw[:6],
         "message": message,
@@ -28729,8 +28759,6 @@ def work_context_recommended_steps(
     evidence_summary: dict[str, Any] | None = None,
     similar_case_summaries: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    status = str(task.get("status") or ((task.get("result") or {}).get("status") if isinstance(task.get("result"), dict) else "") or "")
-    action_key = str(task.get("action_key") or "")
     steps: list[dict[str, Any]] = []
     evidence_summary = evidence_summary or {}
     similar_case_summaries = similar_case_summaries or []
@@ -28745,8 +28773,6 @@ def work_context_recommended_steps(
         case = similar_case_summaries[0]
         reason = str(case.get("note_excerpt") or case.get("confidence_label") or "과거 유사 처리 사례가 있습니다.")
         steps.append({"label": "유사 처리 사례 확인", "reason": reason})
-    if (status in {"manual_required", "manual_blocked", "needs_followup"} or action_key.startswith("manual.")) and (acquired or similar_case_summaries):
-        steps.append({"label": "조치 내용 초안 검토", "reason": "현재 trace 이력과 유사 사례를 반영한 초안을 확인하세요."})
     if not steps and patterns:
         steps.append({"label": "유사 처리 패턴 확인", "reason": patterns[0].get("summary") or "과거 유사 처리 패턴을 참고하세요."})
     return steps[:5]
@@ -28776,31 +28802,15 @@ def task_loop_tool_fingerprint(tool_name: str, args: dict[str, Any] | None = Non
     ).hexdigest()[:16]
 
 
-def task_loop_question_fingerprint(question: str) -> str:
-    normalized = re.sub(r"\s+", " ", str(question or "").strip().lower())
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16] if normalized else ""
-
-
 def work_context_task_execution_mode(context: dict[str, Any], requested_mode: str = "") -> str:
-    raw = str(requested_mode or "").strip().lower()
-    if raw in {"manual", "copilot", "autopilot"}:
-        return raw
     task = context.get("task") if isinstance(context.get("task"), dict) else {}
-    status = str(task.get("status") or "").strip().lower()
     action_key = str(task.get("action_key") or "").strip()
     action = action_catalog_by_key().get(action_key) if action_key else None
-    connector = str((action or {}).get("connector_kind") or (action or {}).get("action_type") or "").strip().lower()
-    action_execution_mode = str((action or {}).get("execution_mode") or "").strip().lower()
-    risk = str((action or {}).get("risk_level") or (action or {}).get("risk") or "").strip().lower()
-    if action_key.startswith("manual.") or connector == "manual" or action_execution_mode in {"human", "manual"}:
-        return "manual"
-    if status in {"manual_required", "manual_blocked", "needs_followup"}:
-        return "manual"
-    if status == "approval_required" or risk in {"high", "critical"} or bool((action or {}).get("approval_required")):
-        return "copilot"
-    if connector in {"api", "event_broker", "boi_writer", "webhook", "mcp", "langflow"} or action_execution_mode in {"gateway", "automated", "autopilot"}:
-        return "autopilot"
-    return "copilot"
+    return resolve_task_mode(
+        declared_mode=requested_mode or task.get("task_mode") or task.get("execution_mode"),
+        action_execution_mode=(action or {}).get("execution_mode"),
+        task_status=task.get("status"),
+    )
 
 
 def external_ai_target_refs(
@@ -28939,46 +28949,184 @@ def write_external_ai_contribution_record(req: ExternalAiContributionRequest, em
     return compact_external_ai_contribution(record)
 
 
-def task_loop_delta_progress(delta: dict[str, Any] | None) -> dict[str, Any]:
-    payload = delta if isinstance(delta, dict) else {}
-    kind = str(payload.get("kind") or "").strip()
-    progress_keys = [
-        "evidence_ref",
-        "artifact_ref",
-        "human_input",
-        "action_result",
-        "state_transition",
-        "blocker",
-        "summary",
-        "knowledge_candidate",
-    ]
-    has_progress = kind in TASK_LOOP_DELTA_KINDS or any(str(payload.get(key) or "").strip() for key in progress_keys)
-    if not kind and has_progress:
-        kind = "new_evidence" if payload.get("evidence_ref") else "action_result" if payload.get("action_result") else "human_input" if payload.get("human_input") else "new_artifact" if payload.get("artifact_ref") else "blocker" if payload.get("blocker") else "knowledge_candidate" if payload.get("knowledge_candidate") else "state_transition" if payload.get("state_transition") else "new_evidence"
+def _task_loop_ref_list(*values: Any, limit: int = 100) -> list[str]:
+    refs: list[str] = []
+    for value in values:
+        items = value if isinstance(value, (list, tuple, set)) else [value]
+        for item in items:
+            ref = str(item or "").strip()
+            if ref and ref not in refs:
+                refs.append(ref)
+            if len(refs) >= limit:
+                return refs
+    return refs
+
+
+def _task_loop_progress_state(value: dict[str, Any] | None) -> dict[str, Any]:
+    payload = value if isinstance(value, dict) else {}
+    completion = payload.get("completion") if isinstance(payload.get("completion"), dict) else {}
     return {
-        "has_progress": bool(has_progress),
-        "kind": kind,
-        "summary": text_excerpt(str(payload.get("summary") or payload.get("human_input") or payload.get("blocker") or ""), 180),
+        "entity_refs": _task_loop_ref_list(payload.get("entity_refs"), limit=500),
+        "evidence_refs": _task_loop_ref_list(payload.get("evidence_refs"), limit=500),
+        "tool_result_refs": _task_loop_ref_list(payload.get("tool_result_refs"), limit=500),
+        "artifact_refs": _task_loop_ref_list(payload.get("artifact_refs"), limit=500),
+        "blocker_codes": _task_loop_ref_list(payload.get("blocker_codes"), limit=200),
+        "completion": dict(completion),
     }
 
 
-def task_loop_state_for_context(context: dict[str, Any], request: TaskLoopEvaluateRequest | None = None) -> dict[str, Any]:
+def task_loop_delta_progress(
+    delta: dict[str, Any] | None,
+    *,
+    previous_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = delta if isinstance(delta, dict) else {}
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    kind = str(payload.get("kind") or metadata.get("kind") or "").strip()
+    kind_aliases = {
+        "new_evidence": "evidence",
+        "action_result": "tool_result",
+        "human_input": "human_input",
+        "new_artifact": "artifact",
+        "state_transition": "state_transition",
+        "blocker": "blocker",
+        "external_ai_summary": "artifact",
+        "knowledge_candidate": "artifact",
+        "strategy_change": "strategy_change",
+    }
+    progress_kind = kind_aliases.get(kind, kind if kind in set(kind_aliases.values()) else "")
+    entity_refs = _task_loop_ref_list(
+        payload.get("entity_refs"),
+        metadata.get("entity_refs"),
+        payload.get("human_input_ref"),
+    )
+    evidence_refs = _task_loop_ref_list(
+        payload.get("evidence_refs"),
+        metadata.get("evidence_refs"),
+        payload.get("evidence_ref"),
+    )
+    tool_result_refs = _task_loop_ref_list(
+        payload.get("tool_result_refs"),
+        metadata.get("tool_result_refs"),
+        payload.get("tool_result_ref"),
+        payload.get("action_result_ref"),
+    )
+    artifact_refs = _task_loop_ref_list(
+        payload.get("artifact_refs"),
+        metadata.get("artifact_refs"),
+        payload.get("artifact_ref"),
+        payload.get("knowledge_candidate_ref"),
+        payload.get("external_ai_summary_ref"),
+    )
+    ref = str(payload.get("ref") or metadata.get("ref") or "").strip()
+    if ref:
+        if progress_kind == "evidence":
+            evidence_refs = _task_loop_ref_list(evidence_refs, ref)
+        elif progress_kind == "tool_result":
+            tool_result_refs = _task_loop_ref_list(tool_result_refs, ref)
+        elif progress_kind == "artifact":
+            artifact_refs = _task_loop_ref_list(artifact_refs, ref)
+        elif progress_kind == "human_input":
+            entity_refs = _task_loop_ref_list(entity_refs, ref)
+    completion_changes = payload.get("completion_changes")
+    if not isinstance(completion_changes, dict):
+        completion_changes = metadata.get("completion_changes")
+    completion_changes = dict(completion_changes) if isinstance(completion_changes, dict) else {}
+    state_transition = payload.get("state_transition") or metadata.get("state_transition")
+    if isinstance(state_transition, dict):
+        completion_changes.update(state_transition)
+    blocker_code = str(payload.get("blocker_code") or metadata.get("blocker_code") or "").strip()
+    strategy = str(payload.get("strategy") or metadata.get("strategy") or "").strip()
+    alternate_refs = _task_loop_ref_list(
+        payload.get("alternate_evidence_refs"),
+        metadata.get("alternate_evidence_refs"),
+        payload.get("alternate_tool_refs"),
+        metadata.get("alternate_tool_refs"),
+        payload.get("approach_refs"),
+        metadata.get("approach_refs"),
+    )
+    error_disposition = str(payload.get("error_disposition") or metadata.get("error_disposition") or "").strip()
+    previous = _task_loop_progress_state(previous_state)
+    known_entities = set(previous["entity_refs"])
+    known_evidence = set(previous["evidence_refs"])
+    known_tools = set(previous["tool_result_refs"])
+    known_artifacts = set(previous["artifact_refs"])
+    known_blockers = set(previous["blocker_codes"])
+    known_completion = previous["completion"]
+    completion_changed = any(known_completion.get(key) != value for key, value in completion_changes.items())
+    has_progress = any(
+        (
+            set(entity_refs) - known_entities,
+            set(evidence_refs) - known_evidence,
+            set(tool_result_refs) - known_tools,
+            set(artifact_refs) - known_artifacts,
+            ({blocker_code} - known_blockers) if blocker_code else set(),
+        )
+    ) or completion_changed
+    strategy_change = bool(progress_kind == "strategy_change" and strategy and alternate_refs)
+    structural_payload = {
+        "kind": progress_kind,
+        "entity_refs": sorted(entity_refs),
+        "evidence_refs": sorted(evidence_refs),
+        "tool_result_refs": sorted(tool_result_refs),
+        "artifact_refs": sorted(artifact_refs),
+        "completion_changes": completion_changes,
+        "blocker_code": blocker_code,
+        "strategy": strategy,
+        "alternate_refs": sorted(alternate_refs),
+        "error_disposition": error_disposition,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(structural_payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    next_state = {
+        "entity_refs": sorted(known_entities | set(entity_refs)),
+        "evidence_refs": sorted(known_evidence | set(evidence_refs)),
+        "tool_result_refs": sorted(known_tools | set(tool_result_refs)),
+        "artifact_refs": sorted(known_artifacts | set(artifact_refs)),
+        "blocker_codes": sorted(known_blockers | ({blocker_code} if blocker_code else set())),
+        "completion": {**known_completion, **completion_changes},
+    }
+    return {
+        "has_progress": bool(has_progress),
+        "kind": progress_kind,
+        "summary": text_excerpt(str(payload.get("summary") or ""), 180),
+        "fingerprint": fingerprint,
+        "entity_refs": entity_refs,
+        "evidence_refs": evidence_refs,
+        "tool_result_refs": tool_result_refs,
+        "artifact_refs": artifact_refs,
+        "completion_changes": completion_changes,
+        "blocker_code": blocker_code,
+        "strategy_change": strategy_change,
+        "strategy": strategy,
+        "alternate_refs": alternate_refs,
+        "error_disposition": error_disposition,
+        "next_state": next_state,
+    }
+
+
+def task_loop_state_for_context(
+    context: dict[str, Any],
+    request: TaskLoopEvaluateRequest | None = None,
+    *,
+    employee_id: str = "",
+) -> dict[str, Any]:
     loop_policy = context.get("loop_policy") if isinstance(context.get("loop_policy"), dict) else {}
     max_iterations = int(loop_policy.get("max_iterations") or 5)
     max_no_progress = int(loop_policy.get("max_no_progress") or 1)
     max_tool_loops = int(loop_policy.get("max_tool_loops") or 5)
     evidence_summary = context.get("evidence_summary") if isinstance(context.get("evidence_summary"), dict) else {}
     missing_evidence = list(evidence_summary.get("missing") or [])
-    task = context.get("task") if isinstance(context.get("task"), dict) else {}
-    status = str(task.get("status") or "").strip().lower()
     execution_mode = work_context_task_execution_mode(context, request.execution_mode if request else "")
-    delta = task_loop_delta_progress(request.proposed_delta if request else {})
+    delta = task_loop_delta_progress(
+        request.proposed_delta if request else {},
+        previous_state=request.progress_state if request else {},
+    )
     iteration_count = int(request.iteration_count if request else 0)
     no_progress_count = int(request.no_progress_count if request else 0)
     repeated_tool = False
-    repeated_question = False
     proposed_tool_fingerprint = ""
-    proposed_question_fingerprint = ""
     if request and request.proposed_tool_name:
         proposed_tool_fingerprint = task_loop_tool_fingerprint(request.proposed_tool_name, request.proposed_tool_args)
         history_fingerprints = {
@@ -28987,42 +29135,45 @@ def task_loop_state_for_context(context: dict[str, Any], request: TaskLoopEvalua
             if isinstance(item, dict)
         }
         repeated_tool = proposed_tool_fingerprint in history_fingerprints
-    if request and request.proposed_question:
-        proposed_question_fingerprint = task_loop_question_fingerprint(request.proposed_question)
-        question_history = {task_loop_question_fingerprint(item) for item in request.question_history if str(item or "").strip()}
-        repeated_question = bool(proposed_question_fingerprint and proposed_question_fingerprint in question_history)
     no_progress_reason = ""
+    strategy_change_allowed = bool(
+        request
+        and delta["strategy_change"]
+        and no_progress_count >= 1
+        and not request.strategy_change_used
+    )
     if request:
-        if repeated_tool:
+        if delta["has_progress"]:
+            no_progress_reason = ""
+        elif strategy_change_allowed:
+            no_progress_reason = ""
+        elif repeated_tool:
             no_progress_reason = "same_tool_args_repeated"
-        elif repeated_question:
-            no_progress_reason = "same_question_repeated"
-        elif not delta["has_progress"]:
-            no_progress_reason = "missing_required_delta"
-    next_no_progress_count = no_progress_count + 1 if no_progress_reason else 0
-    criteria_satisfied = not missing_evidence
-    terminal_statuses = {"manual_completed", "completed", "success", "not_needed", "approved", "resolved"}
-    has_human_delta = delta["kind"] in {"human_input", "state_transition"} or status in terminal_statuses
-    has_action_delta = delta["kind"] in {"action_result", "new_artifact", "state_transition"} or status in terminal_statuses
-    completion_gate = {
-        "manual": "사람 입력 또는 완료 기록이 필요합니다.",
-        "copilot": "AI/도구 결과와 사람 검토 기록이 함께 필요합니다.",
-        "autopilot": "Action 결과와 검증 근거가 필요합니다.",
-    }.get(execution_mode, "Task 종료 기준과 근거가 필요합니다.")
-    complete_ready = False
-    needs_human = False
-    if criteria_satisfied:
-        if execution_mode == "manual":
-            complete_ready = has_human_delta
-            needs_human = not complete_ready
-        elif execution_mode == "copilot":
-            complete_ready = has_human_delta
-            needs_human = not complete_ready
-        elif execution_mode == "autopilot":
-            complete_ready = has_action_delta
-            needs_human = status == "approval_required"
         else:
-            complete_ready = has_human_delta or has_action_delta
+            no_progress_reason = "missing_required_delta"
+    if delta["has_progress"]:
+        next_no_progress_count = 0
+    elif strategy_change_allowed:
+        next_no_progress_count = max(1, no_progress_count)
+    else:
+        next_no_progress_count = no_progress_count + 1 if request else no_progress_count
+    contract = default_task_completion_contract(execution_mode)
+    completion_gate = str((contract.get("exit_criteria") or ["검증된 종료 조건과 근거가 필요합니다."])[0])
+    exit_result = task_exit_criteria_result_for_context(context, employee_id) if employee_id else {
+        "satisfied": False,
+        "criteria": [],
+        "evaluated_facts": {"reason": "server_evaluation_not_requested"},
+    }
+    complete_ready = bool(exit_result.get("satisfied"))
+    criteria_satisfied = complete_ready
+    needs_human = bool(
+        not complete_ready
+        and (
+            delta["error_disposition"] == "human_interrupt"
+            or delta["kind"] == "blocker"
+            or (not missing_evidence and execution_mode in {"manual", "copilot"})
+        )
+    )
     decision = "continue"
     stop_reason = ""
     if iteration_count >= max_iterations:
@@ -29031,6 +29182,9 @@ def task_loop_state_for_context(context: dict[str, Any], request: TaskLoopEvalua
     elif next_no_progress_count > max_no_progress:
         decision = "stop"
         stop_reason = "no_progress"
+    elif strategy_change_allowed:
+        decision = "continue"
+        stop_reason = "strategy_changed"
     elif no_progress_reason:
         decision = "no_progress"
         stop_reason = no_progress_reason
@@ -29072,13 +29226,16 @@ def task_loop_state_for_context(context: dict[str, Any], request: TaskLoopEvalua
             "delta_required": True,
             "delta_detected": bool(delta["has_progress"]),
             "delta_kind": delta["kind"],
+            "delta_fingerprint": delta["fingerprint"],
+            "progress_state": delta["next_state"],
             "no_progress_reason": no_progress_reason,
             "next_no_progress_count": next_no_progress_count,
             "repeated_tool": repeated_tool,
-            "repeated_question": repeated_question,
             "tool_fingerprint": proposed_tool_fingerprint,
-            "question_fingerprint": proposed_question_fingerprint,
+            "strategy_change_allowed": strategy_change_allowed,
+            "question_text_used_for_progress": False,
         },
+        "exit_criteria_result": exit_result,
         "decision": decision,
         "stop_reason": stop_reason,
         "next_allowed_steps": next_steps[:5],
@@ -29135,14 +29292,25 @@ def work_context_pack(
         limit=12,
     )
     patterns = historical_patterns_from_cases(similar_cases)
+    action_contract = action_catalog_by_key().get(action_key) if action_key else None
+    task_execution_mode = resolve_task_mode(
+        declared_mode=(task or {}).get("task_mode") or (task or {}).get("execution_mode"),
+        action_execution_mode=(action_contract or {}).get("execution_mode"),
+        task_status=(task or {}).get("status"),
+    )
+    default_completion_contract = default_task_completion_contract(task_execution_mode)
+    completion_design = (
+        copy.deepcopy((definition or {}).get("completion_design"))
+        if isinstance((definition or {}).get("completion_design"), dict)
+        else copy.deepcopy(default_completion_contract.get("completion_design") or {})
+    )
     required_evidence = normalize_registry_list((definition or {}).get("required_evidence")) if definition else []
-    if not required_evidence and task:
-        if event_type:
-            required_evidence.append("current_event")
-        if str(action_key).startswith("manual.") or str(task.get("status") or "") in {"manual_required", "pending_confirmation"}:
-            required_evidence.append("review_note")
-        elif action_key:
-            required_evidence.append("action_results")
+    if not required_evidence:
+        required_evidence = [
+            str(item.get("ref") or "")
+            for item in completion_design.get("evidence") or []
+            if isinstance(item, dict) and str(item.get("ref") or "")
+        ]
     trace_context = {
         "trace_id": trace_id,
         "events": [
@@ -29178,6 +29346,25 @@ def work_context_pack(
         focus_request_id=str(task.get("request_id") or "") if task else "",
     )
     evidence_summary = work_context_evidence_summary(required_evidence, stage_history_summary, sop_stage_id=sop_stage_id)
+    explicit_context_refs = {
+        value
+        for value in (
+            "current_event" if event_id else "",
+            event_id,
+            f"event:{event_type}" if event_type and event_id else "",
+        )
+        if value
+    }
+    if explicit_context_refs:
+        available_refs = set(evidence_summary.get("available_refs") or []) | explicit_context_refs
+        missing_raw = [item for item in required_evidence if str(item).strip() not in available_refs]
+        evidence_summary.update(
+            {
+                "available_refs": sorted(available_refs),
+                "missing_raw": missing_raw[:6],
+                "missing": [work_context_evidence_label(item) for item in missing_raw[:6]],
+            }
+        )
     similar_case_summaries = work_context_similar_case_summaries(similar_cases, patterns)
     recommended = work_context_recommended_steps(
         task,
@@ -29217,12 +29404,8 @@ def work_context_pack(
         limit=12,
     )
     task_exit_criteria = normalize_registry_list((definition or {}).get("completion_conditions")) if definition else []
-    if not task_exit_criteria and required_evidence:
-        task_title = clean_user_visible_text(
-            str(work_context_action_title(action_key) or display.get("title") or "현재 Task"),
-            120,
-        )
-        task_exit_criteria = [f"{task_title} 업무를 마치고 결과를 기록했어요"]
+    if not task_exit_criteria:
+        task_exit_criteria = normalize_registry_list(default_completion_contract.get("exit_criteria"))
     context_manifest = {
         "strategy": ["write", "select", "compress", "isolate"],
         "included_sources": [
@@ -29264,6 +29447,7 @@ def work_context_pack(
             "action_key": action_key,
             "event_type": event_type,
             "trace_id": trace_id,
+            "execution_mode": task_execution_mode,
             "display": display,
         },
         "sop_stage": {
@@ -29305,15 +29489,16 @@ def work_context_pack(
     }
     completion_model = normalise_task_completion(
         {
-            "execution_mode": work_context_task_execution_mode(result),
-            "exit_criteria": result.get("task_exit_criteria") or [],
-            "required_evidence": result.get("required_evidence") or [],
+            "execution_mode": task_execution_mode,
+            "completion_design": completion_design,
+            "exit_criteria": [] if completion_design else result.get("task_exit_criteria") or [],
+            "required_evidence": [] if completion_design else result.get("required_evidence") or [],
         },
         label_lookup=task_completion_catalog_label_lookup(),
     )
     result["completion_design"] = completion_model.get("completion_design") or {}
     result["completion_readiness"] = completion_model.get("completion_readiness") or {}
-    result["task_loop_state"] = task_loop_state_for_context(result)
+    result["task_loop_state"] = task_loop_state_for_context(result, employee_id=employee_id)
     if include_narrative:
         compact_for_narrative = compact_work_context_summary(result)
         result["work_context_narrative"] = work_context_narrative_for_compact(
@@ -29680,13 +29865,16 @@ def task_completion_model(context: dict[str, Any], employee_id: str) -> dict[str
     stage = context.get("sop_stage") if isinstance(context.get("sop_stage"), dict) else {}
     definition = workflow_definition_by_key().get(str(stage.get("workflow_definition_key") or ""), {})
     execution_mode = work_context_task_execution_mode(context)
+    explicit_completion_design = (
+        context.get("completion_design")
+        if isinstance(context.get("completion_design"), dict) and context.get("completion_design")
+        else definition.get("completion_design") if isinstance(definition.get("completion_design"), dict) else {}
+    )
     source = {
         "execution_mode": execution_mode,
-        "completion_design": context.get("completion_design")
-        if isinstance(context.get("completion_design"), dict)
-        else definition.get("completion_design") if isinstance(definition.get("completion_design"), dict) else {},
-        "exit_criteria": context.get("task_exit_criteria") or definition.get("completion_conditions") or [],
-        "required_evidence": context.get("required_evidence") or definition.get("required_evidence") or definition.get("evidence_requirements") or [],
+        "completion_design": explicit_completion_design,
+        "exit_criteria": [] if explicit_completion_design else context.get("task_exit_criteria") or definition.get("completion_conditions") or [],
+        "required_evidence": [] if explicit_completion_design else context.get("required_evidence") or definition.get("required_evidence") or definition.get("evidence_requirements") or [],
     }
     task_model = normalise_task_completion(source, label_lookup=task_completion_catalog_label_lookup())
     ledger = task_completion_ledger_rows(employee_id, context)
@@ -29699,23 +29887,40 @@ def task_completion_model(context: dict[str, Any], employee_id: str) -> dict[str
         if not isinstance(record, dict):
             continue
         confirmed_ids.update(str(item) for item in record.get("completed_check_ids") or [] if str(item))
-    loop_state = context.get("task_loop_state") if isinstance(context.get("task_loop_state"), dict) else {}
-    loop_complete = str(loop_state.get("decision") or "") == "complete"
     evidence_summary = context.get("evidence_summary") if isinstance(context.get("evidence_summary"), dict) else {}
-    label_lookup = task_completion_catalog_label_lookup()
     acquired_refs = {
+        str(item)
+        for item in evidence_summary.get("available_refs") or []
+        if str(item)
+    }
+    acquired_refs.update(
+        {
         str(item.get("source_id") or item.get("ref") or "")
         for item in evidence_summary.get("acquired") or []
         if isinstance(item, dict)
-    }
+        }
+    )
+    linked_refs_by_requirement: dict[str, set[str]] = {}
     for record in context.get("work_records") or []:
         if isinstance(record, dict):
-            acquired_refs.update(str(item) for item in record.get("evidence_refs") or [] if str(item))
+            record_refs = {str(item) for item in record.get("evidence_refs") or [] if str(item)}
+            acquired_refs.update(record_refs)
+            for requirement_id in record.get("satisfied_evidence_ids") or []:
+                if str(requirement_id):
+                    linked_refs_by_requirement.setdefault(str(requirement_id), set()).update(record_refs)
+
+    evidence_contract = evaluate_evidence_requirements(
+        [item for item in task_model.get("completion_design", {}).get("evidence") or [] if isinstance(item, dict)],
+        available_refs=acquired_refs,
+        linked_refs_by_requirement=linked_refs_by_requirement,
+    )
+    satisfied_ids = set(evidence_contract["satisfied_ids"])
+    satisfied_by = evidence_contract["satisfied_by"]
 
     checks: list[dict[str, Any]] = []
     for item in task_model.get("completion_design", {}).get("checks") or []:
         check = dict(item)
-        check["confirmed"] = str(check.get("check_id") or "") in confirmed_ids or loop_complete
+        check["confirmed"] = str(check.get("check_id") or "") in confirmed_ids
         check["status_label"] = "확인됨" if check["confirmed"] else (
             "시스템 확인 대기" if execution_mode == "autopilot" else "담당자 확인 필요"
         )
@@ -29723,8 +29928,9 @@ def task_completion_model(context: dict[str, Any], employee_id: str) -> dict[str
     evidence: list[dict[str, Any]] = []
     for item in task_model.get("completion_design", {}).get("evidence") or []:
         evidence_item = dict(item)
-        evidence_ref = str(evidence_item.get("ref") or "")
-        evidence_item["available"] = bool(evidence_ref and evidence_ref in acquired_refs)
+        evidence_id = str(evidence_item.get("evidence_id") or "")
+        evidence_item["available"] = evidence_id in satisfied_ids
+        evidence_item["satisfied_by"] = satisfied_by.get(evidence_id, [])
         evidence_item["status_label"] = "확보됨" if evidence_item["available"] else "확인 필요"
         evidence.append(evidence_item)
     return {
@@ -29735,6 +29941,86 @@ def task_completion_model(context: dict[str, Any], employee_id: str) -> dict[str
         "confirmed_count": sum(1 for item in checks if item.get("confirmed")),
         "execution_mode": execution_mode,
         "ledger_count": len(ledger),
+        "evidence_status": evidence_contract,
+    }
+
+
+def task_exit_criteria_result_for_context(context: dict[str, Any], employee_id: str) -> dict[str, Any]:
+    """Evaluate Task completion from durable records and exact evidence bindings."""
+
+    completion = task_completion_model(context, employee_id)
+    mode = str(completion.get("execution_mode") or "copilot")
+    evidence_items = [item for item in completion.get("evidence") or [] if isinstance(item, dict)]
+    missing_evidence = [
+        str(item.get("evidence_id") or item.get("label") or "evidence")
+        for item in evidence_items
+        if item.get("required", True) and not item.get("available")
+    ]
+    checks = [item for item in completion.get("checks") or [] if isinstance(item, dict)]
+    records = [item for item in context.get("work_records") or [] if isinstance(item, dict)]
+    completed_records = [
+        item
+        for item in records
+        if str(item.get("outcome") or "").strip().lower() == "completed"
+        and str(item.get("action_taken") or "").strip()
+        and str(item.get("decision") or "").strip()
+        and str(item.get("result") or "").strip()
+    ]
+    task = context.get("task") if isinstance(context.get("task"), dict) else {}
+    expected_action_key = str(task.get("action_key") or "").strip()
+    action_rows = [
+        item
+        for item in ((context.get("trace_context") or {}).get("actions") or [])
+        if isinstance(item, dict)
+        and action_has_successful_outcome(item.get("status"))
+        and (not expected_action_key or str(item.get("action_key") or "").strip() == expected_action_key)
+    ]
+    if mode == "autopilot":
+        domain_outcome = bool(action_rows)
+        checks_satisfied = bool(checks) and domain_outcome
+    else:
+        domain_outcome = bool(completed_records)
+        checks_satisfied = all(bool(item.get("confirmed")) for item in checks) if checks else domain_outcome
+    evidence_satisfied = not missing_evidence
+    satisfied = bool(domain_outcome and checks_satisfied and evidence_satisfied)
+    criteria = [
+        {
+            "check_id": "exit.domain-outcome",
+            "label": "검증된 업무 결과",
+            "status": "passed" if domain_outcome else "blocked",
+            "message": "" if domain_outcome else "완료로 검증된 WorkRecord 또는 Action 결과가 없습니다.",
+        },
+        {
+            "check_id": "exit.completion-design",
+            "label": "완료 설계 충족",
+            "status": "passed" if checks_satisfied else "blocked",
+            "message": "" if checks_satisfied else "완료 설계의 확인 항목이 충족되지 않았습니다.",
+        },
+        {
+            "check_id": "exit.required-evidence",
+            "label": "필수 근거 충족",
+            "status": "passed" if evidence_satisfied else "blocked",
+            "message": "" if evidence_satisfied else "필수 근거가 부족합니다: " + ", ".join(missing_evidence),
+        },
+    ]
+    return {
+        "satisfied": satisfied,
+        "criteria": criteria,
+        "evidence_ledger_ids": [
+            str(item.get("record_id") or item.get("confirmation_id") or "")
+            for item in [*completed_records, *task_completion_ledger_rows(employee_id, context)]
+            if str(item.get("record_id") or item.get("confirmation_id") or "")
+        ],
+        "evaluated_facts": {
+            "task_mode": mode,
+            "completed_work_record_ids": [str(item.get("record_id") or "") for item in completed_records],
+            "successful_action_result_ids": [
+                str(item.get("request_id") or item.get("result_ref") or "") for item in action_rows
+            ],
+            "missing_evidence_ids": missing_evidence,
+            "confirmed_check_ids": [str(item.get("check_id") or "") for item in checks if item.get("confirmed")],
+        },
+        "stop_reason": "exit_criteria_satisfied" if satisfied else "needs_human",
     }
 
 
@@ -29812,6 +30098,77 @@ def task_evidence_blockers(refs: list[str], employee_id: str, context: dict[str,
     return ["접근할 수 있거나 현재 업무에 연결된 확인 자료만 사용할 수 있습니다."] if unavailable else []
 
 
+def task_work_record_evidence_status(
+    req: TaskWorkRecordRequest,
+    completion: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    evidence_items = [item for item in completion.get("evidence") or [] if isinstance(item, dict)]
+    required_ids = {
+        str(item.get("evidence_id") or "")
+        for item in evidence_items
+        if item.get("required", True) and str(item.get("evidence_id") or "")
+    }
+    selected_ids = {str(item) for item in req.satisfied_evidence_ids if str(item)}
+    unknown_ids = sorted(selected_ids - required_ids)
+    if unknown_ids:
+        return {
+            "valid": False,
+            "blockers": ["현재 Task의 확인 자료 항목만 완료 근거로 연결할 수 있습니다."],
+            "unknown_ids": unknown_ids,
+        }
+
+    available_refs = {
+        str(item)
+        for item in ((context.get("evidence_summary") or {}).get("available_refs") or [])
+        if str(item)
+    }
+    available_refs.update(str(item) for item in req.evidence_refs if str(item))
+    existing_links: dict[str, set[str]] = {}
+    for record in context.get("work_records") or []:
+        if not isinstance(record, dict):
+            continue
+        record_refs = {str(item) for item in record.get("evidence_refs") or [] if str(item)}
+        available_refs.update(record_refs)
+        for requirement_id in record.get("satisfied_evidence_ids") or []:
+            if str(requirement_id):
+                existing_links.setdefault(str(requirement_id), set()).update(record_refs)
+
+    initial = evaluate_evidence_requirements(
+        evidence_items,
+        available_refs=available_refs,
+        linked_refs_by_requirement=existing_links,
+    )
+    # Additive compatibility for old clients: one explicit source can be linked
+    # only when exactly one required item remains. No label or prose matching is used.
+    if not selected_ids and req.evidence_refs and len(initial["missing_ids"]) == 1:
+        selected_ids.add(str(initial["missing_ids"][0]))
+    linked = {key: set(values) for key, values in existing_links.items()}
+    for requirement_id in selected_ids:
+        linked.setdefault(requirement_id, set()).update(str(item) for item in req.evidence_refs if str(item))
+    status = evaluate_evidence_requirements(
+        evidence_items,
+        available_refs=available_refs,
+        linked_refs_by_requirement=linked,
+    )
+    missing_labels = [
+        str(item.get("label") or item.get("evidence_id") or "확인 자료")
+        for item in status["requirements"]
+        if item["evidence_id"] in set(status["missing_ids"])
+    ]
+    return {
+        **status,
+        "valid": not status["missing_ids"],
+        "selected_ids": sorted(selected_ids),
+        "missing_labels": missing_labels,
+        "blockers": (
+            ["완료하려면 확인한 자료를 각 필수 항목에 연결해주세요: " + ", ".join(missing_labels)]
+            if missing_labels
+            else []
+        ),
+    }
+
+
 def write_task_work_record(req: TaskWorkRecordRequest, employee_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
     if not req.user_confirmed:
         raise HTTPException(status_code=400, detail="기록할 내용을 확인해주세요.")
@@ -29826,11 +30183,12 @@ def write_task_work_record(req: TaskWorkRecordRequest, employee_id: str) -> tupl
     completed_check_ids = [item for item in req.completed_check_ids if item in valid_check_ids]
     if req.outcome == "completed" and valid_check_ids and set(completed_check_ids) != valid_check_ids:
         raise HTTPException(status_code=400, detail="완료된 모습을 모두 확인한 뒤 완료할 수 있습니다.")
-    if req.outcome == "completed" and completion.get("evidence") and not req.evidence_refs:
-        raise HTTPException(status_code=400, detail="확인한 자료를 하나 이상 연결해주세요.")
     evidence_blockers = task_evidence_blockers(req.evidence_refs, employee_id, context)
     if evidence_blockers:
         raise HTTPException(status_code=400, detail=evidence_blockers[0])
+    evidence_status = task_work_record_evidence_status(req, completion, context)
+    if req.outcome == "completed" and not evidence_status.get("valid", True):
+        raise HTTPException(status_code=400, detail=(evidence_status.get("blockers") or ["필수 확인 자료가 부족합니다."])[0])
     record = TASK_EXECUTION_STORE.append_record(
         row,
         {
@@ -29846,6 +30204,7 @@ def write_task_work_record(req: TaskWorkRecordRequest, employee_id: str) -> tupl
             # the user-visible text scrubber here erased canonical `boi:` references
             # before they reached the Evidence Ledger.
             "evidence_refs": list(dict.fromkeys(item.strip() for item in req.evidence_refs if item.strip())),
+            "satisfied_evidence_ids": list(evidence_status.get("selected_ids") or []),
             "completed_check_ids": completed_check_ids,
             "trace_id": str(row.get("trace_id") or req.trace_id),
             "event_id": str(row.get("event_id") or req.event_id),
@@ -29929,7 +30288,7 @@ def write_task_completion_confirmation(
         execution_mode=str(completion.get("execution_mode") or ""),
         proposed_delta=row["delta"],
     )
-    loop_state = task_loop_state_for_context(context, loop_request)
+    loop_state = task_loop_state_for_context(context, loop_request, employee_id=employee_id)
     return row, context, loop_state
 
 
@@ -30450,10 +30809,45 @@ def task_execution_context_fast(
         focus_action_key=action_key,
         focus_request_id=str(row.get("request_id") or ""),
     )
+    action_contract = action_catalog_by_key().get(action_key) if action_key else None
+    task_execution_mode = resolve_task_mode(
+        declared_mode=row.get("task_mode") or row.get("execution_mode"),
+        action_execution_mode=(action_contract or {}).get("execution_mode"),
+        task_status=row.get("status"),
+    )
+    default_completion_contract = default_task_completion_contract(task_execution_mode)
+    completion_design = (
+        copy.deepcopy((definition or {}).get("completion_design"))
+        if isinstance((definition or {}).get("completion_design"), dict)
+        else copy.deepcopy(default_completion_contract.get("completion_design") or {})
+    )
     required_evidence = normalize_registry_list((definition or {}).get("required_evidence"))
     if not required_evidence:
-        required_evidence = ["current_event", "review_note"]
+        required_evidence = [
+            str(item.get("ref") or "")
+            for item in completion_design.get("evidence") or []
+            if isinstance(item, dict) and str(item.get("ref") or "")
+        ]
     evidence_summary = work_context_evidence_summary(required_evidence, stage_history, sop_stage_id=sop_stage_id)
+    explicit_event_refs = {
+        value
+        for value in (
+            "current_event" if row.get("event_id") else "",
+            str(row.get("event_id") or ""),
+            f"event:{event_type}" if event_type and row.get("event_id") else "",
+        )
+        if value
+    }
+    if explicit_event_refs:
+        available_refs = set(evidence_summary.get("available_refs") or []) | explicit_event_refs
+        missing_raw = [item for item in required_evidence if str(item).strip() not in available_refs]
+        evidence_summary.update(
+            {
+                "available_refs": sorted(available_refs),
+                "missing_raw": missing_raw[:6],
+                "missing": [work_context_evidence_label(item) for item in missing_raw[:6]],
+            }
+        )
     assignment_design = TASK_EXECUTION_STORE.assignment(row)
     records = TASK_EXECUTION_STORE.records(row)
     task_ref_values = {
@@ -30483,9 +30877,7 @@ def task_execution_context_fast(
     )
     task_exit_criteria = normalize_registry_list((definition or {}).get("completion_conditions"))
     if not task_exit_criteria:
-        task_exit_criteria = [
-            f"{clean_user_visible_text(str(work_context_action_title(action_key) or (item.get('display') or {}).get('title') or '현재 업무'), 120)} 업무를 마치고 결과를 기록했어요"
-        ]
+        task_exit_criteria = normalize_registry_list(default_completion_contract.get("exit_criteria"))
     context = {
         "ok": True,
         "employee_id": employee_id,
@@ -30498,6 +30890,7 @@ def task_execution_context_fast(
             "event_id": row.get("event_id") or "",
             "event_type": event_type,
             "action_key": action_key,
+            "execution_mode": task_execution_mode,
             "display": item.get("display") or {},
             "assignment_design": assignment_design,
         },
@@ -30511,9 +30904,9 @@ def task_execution_context_fast(
         "stage_history_summary": stage_history,
         "required_evidence": required_evidence,
         "evidence_summary": evidence_summary,
-        "completion_design": (definition or {}).get("completion_design") or {},
+        "completion_design": completion_design,
         "task_exit_criteria": task_exit_criteria,
-        "task_loop_state": {"execution_mode": str((definition or {}).get("execution_mode") or "manual"), "decision": "continue"},
+        "task_loop_state": {"execution_mode": task_execution_mode, "decision": "continue"},
         "data_lake_artifacts": data_lake_artifacts,
         "external_ai_contributions": external_ai,
         "similar_case_summaries": [],
@@ -30528,7 +30921,7 @@ def task_execution_context_fast(
         "work_records": records,
         "assignment_design": assignment_design,
     }
-    context["task_loop_state"] = task_loop_state_for_context(context)
+    context["task_loop_state"] = task_loop_state_for_context(context, employee_id=employee_id)
     return context, row
 
 
@@ -30665,7 +31058,7 @@ def task_console_payload(
                     "name": "evidence_refs",
                     "label": "확인한 자료",
                     "control": "text",
-                    "required": bool(completion.get("evidence")),
+                    "required": bool((completion.get("evidence_status") or {}).get("missing_ids")),
                     "placeholder": "문서, 파일 또는 결과 링크를 쉼표로 구분",
                 },
                 {
@@ -30685,6 +31078,7 @@ def task_console_payload(
                 },
             ],
             "completion_checks": completion.get("checks") or [],
+            "evidence_requirements": completion.get("evidence") or [],
         },
         "workflow_canvas": workflow_canvas,
         "work_context_summary": compact,
@@ -36182,10 +36576,17 @@ async def api_task_work_record_preview(
         blockers.append("수행한 조치가 필요합니다.")
     if req.outcome == "completed" and not req.decision.strip():
         blockers.append("판단·결과가 필요합니다.")
-    if req.outcome == "completed" and completion.get("evidence") and not req.evidence_refs:
-        blockers.append("확인한 자료를 연결해야 합니다.")
     blockers.extend(task_evidence_blockers(req.evidence_refs, employee_id, context))
-    return {"ok": True, "ready": not blockers, "blockers": blockers, "completion": completion}
+    evidence_status = task_work_record_evidence_status(req, completion, context)
+    if req.outcome == "completed":
+        blockers.extend(evidence_status.get("blockers") or [])
+    return {
+        "ok": True,
+        "ready": not blockers,
+        "blockers": list(dict.fromkeys(blockers)),
+        "completion": completion,
+        "evidence_status": evidence_status,
+    }
 
 
 @app.post("/api/tasks/{task_ref}/work-records")
@@ -36284,7 +36685,7 @@ async def api_work_context_loop_evaluate(req: TaskLoopEvaluateRequest, employee_
         workflow_definition_key=req.workflow_definition_key,
         current_url=req.current_url,
     )
-    loop_state = task_loop_state_for_context(context, req)
+    loop_state = task_loop_state_for_context(context, req, employee_id=employee_id)
     return {
         "ok": True,
         "employee_id": employee_id,

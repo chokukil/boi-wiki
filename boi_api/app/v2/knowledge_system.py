@@ -1410,9 +1410,11 @@ class LivingKnowledgeService:
             task_id = task_ref if task_ref.startswith(("task:", "runtime-task:")) else f"task:{task_ref}"
             revision = str(completion.get("completion_id") or completion.get("created_at") or "")
             clean_task_ref = task_ref.removeprefix("task:").removeprefix("runtime-task:")
-            completion_title = str(completion.get("task_title") or completion.get("title") or "").strip()
-            if not completion_title or len(completion_title) > 120 or "완료된 모습" in completion_title:
-                completion_title = task_titles.get(clean_task_ref) or re.sub(r"[_\-.]+", " ", clean_task_ref).strip()
+            completion_title = task_titles.get(clean_task_ref) or str(
+                completion.get("task_title") or completion.get("title") or ""
+            ).strip()
+            if not completion_title or len(completion_title) > 120:
+                completion_title = re.sub(r"[_\-.]+", " ", clean_task_ref).strip()
             nodes.append(
                 {
                     "node_id": task_id,

@@ -9,12 +9,15 @@ from urllib.parse import unquote, urlsplit
 
 from fastapi import HTTPException
 
+from ..task_completion import evaluate_evidence_requirements
 from .harness import HarnessRegistry
 from .models import (
     CapabilityDefinition,
     ContextAnchor,
     ContextManifest,
     EvidenceRef,
+    ExitCriteriaResult,
+    HarnessCheck,
     HarnessResult,
     KnowledgeCandidatePatchRequest,
     KnowledgeCandidatePromoteRequest,
@@ -23,6 +26,7 @@ from .models import (
     LoopPolicy,
     LoopTriggerKind,
     LoopDelta,
+    ProgressDelta,
     Principal,
     RiskLevel,
     TaskCompletionDesign,
@@ -32,6 +36,7 @@ from .models import (
     WorkIntent,
     WorkOperation,
     WorkRunContinueRequest,
+    WorkRunCheckpoint,
 )
 from .repository import KnowledgeRepository
 from .search import HybridSearchService
@@ -47,113 +52,97 @@ def _compact(value: Any, limit: int) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
 
 
-def _fingerprint(delta: LoopDelta) -> str:
-    if delta.fingerprint:
-        return delta.fingerprint
+def _string_list(value: Any, *, limit: int = 50) -> list[str]:
+    values = value if isinstance(value, (list, tuple, set)) else [value] if value else []
+    return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))[:limit]
+
+
+def _structured_progress(delta: LoopDelta, *, sequence: int) -> ProgressDelta:
+    metadata = delta.metadata if isinstance(delta.metadata, dict) else {}
+    kind_map = {
+        "new_evidence": "evidence",
+        "action_result": "tool_result",
+        "human_input": "human_input",
+        "new_artifact": "artifact",
+        "state_transition": "state_transition",
+        "blocker": "blocker",
+        "knowledge_candidate": "artifact",
+        "no_progress": "strategy_change" if metadata.get("strategy") else "blocker",
+    }
+    progress_kind = kind_map[delta.kind]
+    entity_refs = _string_list(metadata.get("entity_refs"))
+    evidence_refs = _string_list(metadata.get("evidence_refs"))
+    tool_result_refs = _string_list(metadata.get("tool_result_refs"))
+    artifact_refs = _string_list(metadata.get("artifact_refs"))
+    if delta.ref:
+        if progress_kind == "evidence":
+            evidence_refs = _string_list([*evidence_refs, delta.ref])
+        elif progress_kind == "tool_result":
+            tool_result_refs = _string_list([*tool_result_refs, delta.ref])
+        elif progress_kind == "artifact":
+            artifact_refs = _string_list([*artifact_refs, delta.ref])
+        elif progress_kind == "human_input":
+            entity_refs = _string_list([*entity_refs, delta.ref])
+    completion_changes = metadata.get("completion_changes")
+    if not isinstance(completion_changes, dict):
+        completion_changes = {}
+    for key in ("work_record", "verified_binding_refs", "completion_state"):
+        if key in metadata:
+            completion_changes[key] = metadata[key]
+    state_transition = metadata.get("state_transition")
+    if isinstance(state_transition, dict):
+        completion_changes = {**completion_changes, **state_transition}
+    blocker_code = str(metadata.get("blocker_code") or ("no_progress" if delta.kind == "no_progress" else "")).strip()
+    strategy = str(metadata.get("strategy") or "").strip()
+    strategy_refs = _string_list(
+        [
+            *_string_list(metadata.get("alternate_evidence_refs")),
+            *_string_list(metadata.get("alternate_tool_refs")),
+            *_string_list(metadata.get("approach_refs")),
+        ]
+    )
+    error_disposition = str(metadata.get("error_disposition") or "").strip()
+    allowed_dispositions = {
+        "", "transient_retry", "semantic_repair", "human_interrupt", "policy_stop", "unexpected_failure"
+    }
+    if error_disposition not in allowed_dispositions:
+        error_disposition = "unexpected_failure"
+    return ProgressDelta(
+        delta_id=_id("progress", f"{sequence}:{delta.kind}:{delta.ref}:{json.dumps(metadata, sort_keys=True, default=str)}"),
+        kind=progress_kind,  # type: ignore[arg-type]
+        entity_refs=entity_refs,
+        evidence_refs=evidence_refs,
+        tool_result_refs=tool_result_refs,
+        artifact_refs=artifact_refs,
+        completion_changes=completion_changes,
+        blocker_code=blocker_code,
+        strategy=strategy,
+        strategy_refs=strategy_refs,
+        error_disposition=error_disposition,  # type: ignore[arg-type]
+        summary=_compact(delta.summary, 2000),
+    )
+
+
+def _progress_signature(delta: ProgressDelta) -> str:
+    """Hash only durable domain changes; prose cannot manufacture progress."""
+
     value = json.dumps(
         {
             "kind": delta.kind,
-            "summary": _compact(delta.summary, 600).lower(),
-            "ref": delta.ref,
-            "metadata": delta.metadata,
+            "entity_refs": sorted(delta.entity_refs),
+            "evidence_refs": sorted(delta.evidence_refs),
+            "tool_result_refs": sorted(delta.tool_result_refs),
+            "artifact_refs": sorted(delta.artifact_refs),
+            "completion_changes": delta.completion_changes,
+            "blocker_code": delta.blocker_code,
+            "strategy_refs": sorted(delta.strategy_refs),
+            "error_disposition": delta.error_disposition,
         },
         ensure_ascii=False,
         sort_keys=True,
         default=str,
     )
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-class WorkIntentEngine:
-    @classmethod
-    def infer(
-        cls,
-        question: str,
-        *,
-        capability_id: str,
-        page_ref: str,
-        task_ref: str,
-        target_ref: str = "",
-        operation: WorkOperation | str | None = None,
-        scope: str = "auto",
-    ) -> WorkIntent:
-        draft_capabilities = {"business_event.plan", "sop.plan", "action.plan", "skill.plan", "knowledge.draft"}
-        capability_assets = {
-            "business_event.plan": WorkAssetKind.business_event,
-            "sop.plan": WorkAssetKind.sop,
-            "action.plan": WorkAssetKind.action,
-            "skill.plan": WorkAssetKind.skill,
-            "knowledge.draft": WorkAssetKind.knowledge,
-            "work.inbox": WorkAssetKind.runtime,
-            "cases.similar": WorkAssetKind.evidence,
-        }
-        asset = WorkAssetKind.task if task_ref else capability_assets.get(capability_id, WorkAssetKind.knowledge)
-        if isinstance(operation, WorkOperation):
-            selected_operation = operation
-        else:
-            try:
-                selected_operation = WorkOperation(str(operation or ""))
-            except ValueError:
-                selected_operation = WorkOperation.create if capability_id in draft_capabilities else WorkOperation.understand
-        risk = (
-            RiskLevel.high
-            if selected_operation in {WorkOperation.run, WorkOperation.promote, WorkOperation.complete}
-            else RiskLevel.medium
-            if selected_operation in {WorkOperation.connect, WorkOperation.test}
-            else RiskLevel.low
-        )
-        outcome = {
-            WorkOperation.create: "draft",
-            WorkOperation.refine: "proposal",
-            WorkOperation.connect: "proposal" if capability_id in draft_capabilities else "answer",
-            WorkOperation.validate: "validation",
-            WorkOperation.test: "preview",
-            WorkOperation.run: "run_result",
-            WorkOperation.complete: "completion_record",
-            WorkOperation.capture: "knowledge_candidate",
-            WorkOperation.promote: "promotion_request",
-        }.get(selected_operation, "answer")
-        operation_plan = [WorkOperation.understand]
-        if selected_operation != WorkOperation.understand:
-            operation_plan.append(selected_operation)
-        if selected_operation in {WorkOperation.create, WorkOperation.refine, WorkOperation.connect}:
-            operation_plan.append(WorkOperation.validate)
-        if selected_operation == WorkOperation.run:
-            operation_plan.extend([WorkOperation.validate, WorkOperation.observe])
-        if selected_operation == WorkOperation.complete:
-            operation_plan.extend([WorkOperation.validate, WorkOperation.capture])
-        operation_plan = list(dict.fromkeys(operation_plan))
-        canonical_order = {
-            item: index
-            for index, item in enumerate(
-                (
-                    WorkOperation.understand,
-                    WorkOperation.compare,
-                    WorkOperation.create,
-                    WorkOperation.refine,
-                    WorkOperation.connect,
-                    WorkOperation.validate,
-                    WorkOperation.test,
-                    WorkOperation.run,
-                    WorkOperation.observe,
-                    WorkOperation.complete,
-                    WorkOperation.capture,
-                    WorkOperation.promote,
-                )
-            )
-        }
-        operation_plan.sort(key=lambda item: canonical_order[item])
-        return WorkIntent(
-            goal=question,
-            asset_kind=asset,
-            operation=selected_operation,
-            operation_plan=operation_plan,
-            target_ref=task_ref or target_ref,
-            scope=scope if scope in {"auto", "current", "wiki", "selected"} else "auto",  # type: ignore[arg-type]
-            desired_outcome=outcome,
-            risk=risk,
-            confidence=1.0,
-        )
 
 
 class ContextCompiler:
@@ -252,9 +241,26 @@ class ContextCompiler:
             context_resolution="ontology_only",
         )
 
-    def goal_anchor(self, principal: Principal, session: dict[str, Any], task_ref: str) -> ContextAnchor | None:
+    def goal_anchor(
+        self,
+        principal: Principal,
+        session: dict[str, Any],
+        task_ref: str,
+        *,
+        subject_ref: str = "",
+        subject_title: str = "",
+    ) -> ContextAnchor | None:
         if task_ref:
             return ContextAnchor(ref=task_ref, kind="task", title="진행 중 Task", source="task", resolved=True)
+        if subject_ref:
+            return ContextAnchor(
+                ref=subject_ref,
+                kind=subject_ref.partition(":")[0] or "subject",
+                title=subject_title or subject_ref,
+                source="goal",
+                resolved=True,
+                context_resolution="ontology_only",
+            )
         artifact_id = str(session.get("active_artifact_id") or "")
         if not artifact_id:
             return None
@@ -286,19 +292,29 @@ class ContextCompiler:
         source_set: dict[str, Any],
         external_ai_summary: str,
         external_refs: list[str],
+        subject_ref: str = "",
+        subject_title: str = "",
         model_profile: str = "default",
     ) -> WorkContextPack:
         page_anchor = self.page_anchor(principal, page_ref)
-        goal_anchor = self.goal_anchor(principal, session, task_ref)
+        goal_anchor = self.goal_anchor(
+            principal,
+            session,
+            task_ref,
+            subject_ref=subject_ref,
+            subject_title=subject_title,
+        )
         selected = evidence[:12]
         task_exit = task.get("exit_criteria") or task.get("completion_conditions") or definition.completion_criteria
         required = task.get("required_evidence") or task.get("evidence_requirements") or []
         task_exit = [task_exit] if isinstance(task_exit, str) else list(task_exit or [])
         required = [required] if isinstance(required, str) else list(required or [])
-        searchable = " ".join(
-            f"{item.evidence_id} {item.title} {item.summary}".lower() for item in selected
-        )
-        missing = [item for item in required if str(item).lower() not in searchable]
+        available_evidence_refs = {item.evidence_id for item in selected if item.evidence_id}
+        for item in selected:
+            for key in ("satisfies_evidence_refs", "requirement_refs"):
+                values = item.metadata.get(key) if isinstance(item.metadata, dict) else None
+                available_evidence_refs.update(_string_list(values, limit=100))
+        missing = [item for item in required if str(item).strip() not in available_evidence_refs]
         chunk_refs = [
             str(item.metadata.get("best_chunk", {}).get("chunk_id") or "")
             for item in selected
@@ -407,7 +423,7 @@ class ContextCompiler:
             business_context=metadata,
             evidence_summary={
                 "required": [str(item) for item in required],
-                "available": [item.evidence_id for item in selected],
+                "available": sorted(available_evidence_refs),
                 "missing": [str(item) for item in missing],
             },
             context_manifest=manifest,
@@ -423,7 +439,7 @@ class ContextCompiler:
 
 
 class WorkLearningService:
-    FLOW = ["observe", "context", "plan_delta", "act_or_ask", "verify", "reflect", "continue_or_stop"]
+    FLOW = ["observe", "context", "semantic_plan", "act_or_ask", "verify", "reflect", "continue_or_stop"]
 
     def __init__(
         self,
@@ -443,6 +459,291 @@ class WorkLearningService:
         self.contexts = ContextCompiler(repository, store, page_context_provider)
         self.knowledge_change_notifier = knowledge_change_notifier
         self.model_profile = model_profile or "default"
+
+    def _append_checkpoint(
+        self,
+        run: dict[str, Any],
+        *,
+        node: str,
+        raw_state: dict[str, Any],
+        idempotency_key: str = "",
+    ) -> WorkRunCheckpoint:
+        checkpoint_ids = list(run.get("checkpoint_ids") or [])
+        sequence = len(checkpoint_ids) + 1
+        bindings = run.get("harness_bindings") or []
+        harness_revisions = {
+            str(item.get("harness_id") or ""): str(item.get("version") or "")
+            for item in bindings
+            if isinstance(item, dict) and item.get("harness_id")
+        }
+        revisions = run.get("contract_revisions") if isinstance(run.get("contract_revisions"), dict) else {}
+        checkpoint = WorkRunCheckpoint(
+            checkpoint_id=_id("checkpoint", f"{run['work_run_id']}:{sequence}:{node}"),
+            work_run_id=str(run["work_run_id"]),
+            node=node,  # type: ignore[arg-type]
+            sequence=sequence,
+            raw_state=raw_state,
+            catalog_revision=str(revisions.get("capability_catalog") or ""),
+            harness_revisions=harness_revisions,
+            planner_schema_revision=str(revisions.get("planner_schema") or "semantic-plan/v2"),
+            idempotency_key=idempotency_key,
+        )
+        self.store.put(
+            "work_run_checkpoints",
+            checkpoint.checkpoint_id,
+            {
+                "employee_id": run.get("employee_id") or "",
+                **checkpoint.model_dump(mode="json"),
+            },
+        )
+        run["checkpoint_ids"] = [*checkpoint_ids, checkpoint.checkpoint_id][-100:]
+        run.setdefault("events", []).append(
+            {
+                "event": "work.checkpoint",
+                "checkpoint_id": checkpoint.checkpoint_id,
+                "node": checkpoint.node,
+                "sequence": checkpoint.sequence,
+                "at": now_iso(),
+            }
+        )
+        return checkpoint
+
+    @staticmethod
+    def _valid_strategy_change(progress: ProgressDelta) -> bool:
+        return bool(progress.strategy and progress.strategy_refs)
+
+    def _append_progress(
+        self,
+        run: dict[str, Any],
+        delta: LoopDelta,
+    ) -> tuple[LoopDelta, ProgressDelta, bool, bool]:
+        loop = run.setdefault("loop", {})
+        progress_rows = list(loop.get("progress_deltas") or [])
+        progress = _structured_progress(delta, sequence=len(progress_rows) + 1)
+        signature = _progress_signature(progress)
+        delta = delta.model_copy(update={"fingerprint": signature})
+        state = loop.get("progress_state") if isinstance(loop.get("progress_state"), dict) else {}
+        known_entities = set(_string_list(state.get("entity_refs"), limit=500))
+        known_evidence = set(_string_list(state.get("evidence_refs"), limit=500))
+        known_tools = set(_string_list(state.get("tool_result_refs"), limit=500))
+        known_artifacts = set(_string_list(state.get("artifact_refs"), limit=500))
+        known_blockers = set(_string_list(state.get("blocker_codes"), limit=200))
+        known_completion = state.get("completion") if isinstance(state.get("completion"), dict) else {}
+        completion_changed = any(known_completion.get(key) != value for key, value in progress.completion_changes.items())
+        domain_progress = any(
+            (
+                set(progress.entity_refs) - known_entities,
+                set(progress.evidence_refs) - known_evidence,
+                set(progress.tool_result_refs) - known_tools,
+                set(progress.artifact_refs) - known_artifacts,
+                ({progress.blocker_code} - known_blockers) if progress.blocker_code and progress.blocker_code != "no_progress" else set(),
+            )
+        ) or completion_changed
+        if delta.kind == "no_progress" or progress.kind == "strategy_change":
+            domain_progress = False
+        payload = progress.model_dump(mode="json")
+        payload["signature"] = signature
+        payload["domain_progress"] = domain_progress
+        loop["progress_deltas"] = [*progress_rows, payload][-50:]
+        loop["deltas"] = [*(loop.get("deltas") or []), delta.model_dump(mode="json")][-50:]
+        if domain_progress:
+            loop["progress_state"] = {
+                "entity_refs": sorted(known_entities | set(progress.entity_refs)),
+                "evidence_refs": sorted(known_evidence | set(progress.evidence_refs)),
+                "tool_result_refs": sorted(known_tools | set(progress.tool_result_refs)),
+                "artifact_refs": sorted(known_artifacts | set(progress.artifact_refs)),
+                "blocker_codes": sorted(known_blockers | ({progress.blocker_code} if progress.blocker_code else set())),
+                "completion": {**known_completion, **progress.completion_changes},
+            }
+        repeated = any(str(item.get("signature") or "") == signature for item in progress_rows)
+        return delta, progress, domain_progress, repeated
+
+    @staticmethod
+    def _exit_result(
+        *,
+        context: WorkContextPack,
+        mode: TaskMode,
+        progress: ProgressDelta,
+        confirmation: str | None,
+        evidence_ledger_ids: list[str],
+        standalone_action: bool = False,
+        standalone_domain_confirmation: bool = False,
+    ) -> ExitCriteriaResult:
+        metadata_record = progress.completion_changes.get("work_record")
+        work_record = metadata_record if isinstance(metadata_record, dict) else {}
+        record_fields = ("observations", "actions", "judgment", "result")
+        recorded_fields = [name for name in record_fields if str(work_record.get(name) or "").strip()]
+        valid_record = len(recorded_fields) >= 2 and bool({"judgment", "result"} & set(recorded_fields))
+        work_record_ref = str(work_record.get("work_record_ref") or "").strip()
+        completion = context.completion_design
+        checks = list(completion.checks) if completion else []
+        binding_refs = {
+            item.binding.ref
+            for item in checks
+            if item.binding is not None and item.binding.ref
+        }
+        verified_bindings = set(_string_list(progress.completion_changes.get("verified_binding_refs"), limit=100))
+        completion_evidence = [
+            item.model_dump(mode="python")
+            for item in (completion.evidence if completion else [])
+            if item.required
+        ]
+        if not completion_evidence:
+            completion_evidence = [
+                {
+                    "evidence_id": str(item),
+                    "label": str(item),
+                    "ref": str(item),
+                    "source_kind": "human_note",
+                    "required": True,
+                }
+                for item in context.required_evidence
+                if str(item).strip()
+            ]
+        available_evidence_refs = set(_string_list(context.evidence_summary.get("available"), limit=100))
+        available_evidence_refs.update(progress.evidence_refs)
+        available_evidence_refs.update(progress.tool_result_refs)
+        record_evidence_refs = _string_list(work_record.get("evidence_refs"), limit=100)
+        if work_record_ref:
+            record_evidence_refs = _string_list([*record_evidence_refs, work_record_ref], limit=100)
+        available_evidence_refs.update(record_evidence_refs)
+        linked_refs_by_requirement = {
+            str(requirement_id): record_evidence_refs
+            for requirement_id in _string_list(work_record.get("satisfied_evidence_ids"), limit=100)
+        }
+        human_note_requirements = [
+            str(item.get("evidence_id") or "").strip()
+            for item in completion_evidence
+            if str(item.get("source_kind") or "") == "human_note"
+            and str(item.get("provided_by") or "human") == "human"
+            and bool(item.get("required", True))
+            and str(item.get("evidence_id") or "").strip()
+        ]
+        if (
+            valid_record
+            and confirmation == "confirm"
+            and work_record_ref
+            and len(human_note_requirements) == 1
+        ):
+            requirement_id = human_note_requirements[0]
+            linked_refs_by_requirement[requirement_id] = _string_list(
+                [*linked_refs_by_requirement.get(requirement_id, []), work_record_ref],
+                limit=100,
+            )
+        evidence_status = evaluate_evidence_requirements(
+            completion_evidence,
+            available_refs=available_evidence_refs,
+            linked_refs_by_requirement=linked_refs_by_requirement,
+        )
+        task_requires_evidence = bool(evidence_status["required_ids"])
+        required_evidence_ready = not evidence_status["missing_ids"]
+        has_ledger = bool(evidence_ledger_ids)
+        criteria: list[HarnessCheck] = []
+        if standalone_action:
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.action-result",
+                    label="검증된 Action 결과",
+                    status="passed" if bool(progress.tool_result_refs) else "blocked",
+                    message="검증된 Action 결과가 없습니다." if not progress.tool_result_refs else "",
+                )
+            )
+        elif standalone_domain_confirmation:
+            domain_status = str(progress.completion_changes.get("domain_result_status") or "").strip().lower()
+            accepted_status = bool(domain_status) and domain_status not in {
+                "failed",
+                "rejected",
+                "cancelled",
+                "error",
+            }
+            criteria.extend(
+                [
+                    HarnessCheck(
+                        check_id="exit.domain-outcome",
+                        label="업무 서비스 결과",
+                        status="passed" if accepted_status else "blocked",
+                        message="확인된 업무 서비스 결과가 없습니다." if not accepted_status else "",
+                    ),
+                    HarnessCheck(
+                        check_id="exit.human-confirmation",
+                        label="담당자 최종 확인",
+                        status="passed" if confirmation == "confirm" else "blocked",
+                        message="담당자의 최종 확인이 필요합니다." if confirmation != "confirm" else "",
+                    ),
+                ]
+            )
+        elif mode in {TaskMode.manual, TaskMode.copilot}:
+            criteria.extend(
+                [
+                    HarnessCheck(
+                        check_id="exit.work-record",
+                        label="업무 수행 기록",
+                        status="passed" if valid_record else "blocked",
+                        message="확인한 내용, 수행 조치, 판단 또는 결과가 포함된 업무 기록이 필요합니다." if not valid_record else "",
+                    ),
+                    HarnessCheck(
+                        check_id="exit.human-confirmation",
+                        label="담당자 최종 확인",
+                        status="passed" if confirmation == "confirm" else "blocked",
+                        message="담당자의 최종 확인이 필요합니다." if confirmation != "confirm" else "",
+                    ),
+                ]
+            )
+        else:
+            system_ready = bool(binding_refs) and verified_bindings.issuperset(binding_refs)
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.system-bindings",
+                    label="시스템 완료 조건",
+                    status="passed" if system_ready and bool(progress.tool_result_refs) else "blocked",
+                    message="허용된 Action 결과와 시스템 완료 조건이 모두 검증되어야 합니다."
+                    if not (system_ready and bool(progress.tool_result_refs))
+                    else "",
+                )
+            )
+        if task_requires_evidence:
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.required-evidence",
+                    label="필수 확인 자료",
+                    status="passed" if required_evidence_ready else "blocked",
+                    message=(
+                        "필수 확인 자료가 실제 근거와 연결되지 않았습니다: "
+                        + ", ".join(evidence_status["missing_ids"])
+                    )
+                    if not required_evidence_ready
+                    else "",
+                )
+            )
+        if task_requires_evidence or context.task_ref or standalone_action or standalone_domain_confirmation:
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.evidence-ledger",
+                    label="검증 근거 기록",
+                    status="passed" if has_ledger else "blocked",
+                    message="검증된 Evidence Ledger가 없습니다." if not has_ledger else "",
+                )
+            )
+        satisfied = bool(criteria) and all(item.status == "passed" for item in criteria)
+        return ExitCriteriaResult(
+            satisfied=satisfied,
+            criteria=criteria,
+            evidence_ledger_ids=evidence_ledger_ids,
+            evaluated_facts={
+                "task_mode": mode.value,
+                "work_record_fields": recorded_fields,
+                "required_binding_refs": sorted(binding_refs),
+                "verified_binding_refs": sorted(verified_bindings),
+                "task_requires_evidence": task_requires_evidence,
+                "required_evidence_ids": evidence_status["required_ids"],
+                "satisfied_evidence_ids": evidence_status["satisfied_ids"],
+                "missing_evidence_ids": evidence_status["missing_ids"],
+                "evidence_satisfied_by": evidence_status["satisfied_by"],
+                "standalone_domain_confirmation": standalone_domain_confirmation,
+                "domain_result_status": str(progress.completion_changes.get("domain_result_status") or ""),
+            },
+            stop_reason="exit_criteria_satisfied" if satisfied else "needs_human",
+        )
 
     def _notify_operational_change(self, record_id: str, employee_id: str) -> None:
         if self.knowledge_change_notifier is not None and record_id:
@@ -777,6 +1078,7 @@ class WorkLearningService:
                     "unsupported": unsupported,
                 },
             )
+        self._validate_executable_harness_changes(request.changes)
         failures = [self.store.get("harness_failure_records", item) for item in request.failure_record_ids]
         if any(not item for item in failures):
             raise HTTPException(status_code=404, detail="실패 기록을 찾을 수 없습니다.")
@@ -827,15 +1129,58 @@ class WorkLearningService:
     @staticmethod
     def _candidate_addressable_stages(changes: dict[str, Any]) -> set[str]:
         prefixes: set[str] = set()
-        if set(changes) & {"context_recipe", "retrieval_policy"}:
+        if "retrieval_policy" in changes:
             prefixes.update({"context", "knowledge", "task.evidence"})
-        if set(changes) & {"planner_instruction", "presentation_policy"}:
-            prefixes.update({"context", "sop", "event", "skill", "knowledge"})
-        if set(changes) & {"tool_order", "fallback_order"}:
-            prefixes.update({"action", "task", "event", "skill"})
         if "loop_budget" in changes:
             prefixes.update({"loop", "task"})
         return prefixes
+
+    @staticmethod
+    def _validate_executable_harness_changes(changes: dict[str, Any]) -> None:
+        retrieval = changes.get("retrieval_policy")
+        if retrieval is not None:
+            if not isinstance(retrieval, dict):
+                raise HTTPException(status_code=400, detail={"code": "invalid_retrieval_policy"})
+            allowed = {
+                "lexical_weight", "semantic_weight", "graph_weight", "ontology_weight",
+                "authority_weight", "recency_weight", "identity_weight", "context_anchor_weight",
+            }
+            unknown = sorted(set(retrieval) - allowed)
+            invalid = sorted(
+                key
+                for key, value in retrieval.items()
+                if isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not 0.25 <= float(value) <= 2.0
+            )
+            if unknown or invalid:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "invalid_retrieval_policy",
+                        "unsupported": unknown,
+                        "out_of_range": invalid,
+                    },
+                )
+        loop_budget = changes.get("loop_budget")
+        if loop_budget is not None:
+            if not isinstance(loop_budget, dict):
+                raise HTTPException(status_code=400, detail={"code": "invalid_loop_budget"})
+            allowed = {"max_iterations", "max_no_progress", "max_tool_loops"}
+            unknown = sorted(set(loop_budget) - allowed)
+            try:
+                valid = (
+                    1 <= int(loop_budget.get("max_iterations") or 5) <= 5
+                    and int(loop_budget.get("max_no_progress") or 2) == 2
+                    and 1 <= int(loop_budget.get("max_tool_loops") or 5) <= 5
+                )
+            except (TypeError, ValueError):
+                valid = False
+            if unknown or not valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "invalid_loop_budget", "unsupported": unknown},
+                )
 
     def shadow_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
         candidate = self.store.get("harness_candidates", candidate_id)
@@ -881,7 +1226,7 @@ class WorkLearningService:
         if isinstance(loop_change, dict):
             bounded_loop = (
                 1 <= int(loop_change.get("max_iterations") or 5) <= 5
-                and 0 <= int(loop_change.get("max_no_progress") or 1) <= 1
+                and int(loop_change.get("max_no_progress") or 2) == 2
                 and 1 <= int(loop_change.get("max_tool_loops") or 5) <= 5
             )
         preflight_passed = not forbidden and not unresolved and bounded_loop and bool(failure_rows)
@@ -931,9 +1276,38 @@ class WorkLearningService:
             raise HTTPException(status_code=409, detail="후보가 shadow preflight 이후 변경되었습니다.")
         if request.fixture_revision != shadow.get("fixture_revision"):
             raise HTTPException(status_code=409, detail="shadow와 평가 fixture revision이 다릅니다.")
-        held_in_ok = request.held_in.get("passed") is True
-        held_out_ok = request.held_out.get("passed") is True and int(request.held_out.get("regressions") or 0) == 0
-        adversarial_ok = request.adversarial.get("passed", True) is True and int(request.adversarial.get("unauthorized_mutations") or 0) == 0
+        held_in_records = [
+            self.store.get("harness_failure_records", str(item))
+            for item in shadow.get("held_in_failure_record_ids") or []
+        ]
+        preservation_ids = [
+            str(item.get("work_run_id") or "")
+            for item in shadow.get("held_out_preservation_runs") or []
+            if isinstance(item, dict) and item.get("work_run_id")
+        ]
+        preservation_runs = [self.store.get("work_runs", item) for item in preservation_ids]
+        held_in_server_ok = bool(held_in_records) and all(held_in_records) and not shadow.get("unaddressed_failure_record_ids")
+        held_out_server_ok = (
+            bool(preservation_runs)
+            and all(item and str(item.get("status") or "") == "completed" for item in preservation_runs)
+        )
+        shadow_adversarial = shadow.get("adversarial") if isinstance(shadow.get("adversarial"), dict) else {}
+        adversarial_server_ok = (
+            not shadow_adversarial.get("immutable_changes")
+            and bool(shadow_adversarial.get("bounded_loop"))
+            and bool(shadow_adversarial.get("permission_layer_outside_candidate"))
+        )
+        held_in_ok = request.held_in.get("passed") is True and held_in_server_ok
+        held_out_ok = (
+            request.held_out.get("passed") is True
+            and int(request.held_out.get("regressions") or 0) == 0
+            and held_out_server_ok
+        )
+        adversarial_ok = (
+            request.adversarial.get("passed", True) is True
+            and int(request.adversarial.get("unauthorized_mutations") or 0) == 0
+            and adversarial_server_ok
+        )
         long_term_ok = request.long_term.get("passed") is True and int(request.long_term.get("regressions") or 0) == 0
         metric_deltas = request.held_out.get("metric_deltas") if isinstance(request.held_out.get("metric_deltas"), dict) else {}
         regressed_metrics = sorted(
@@ -950,6 +1324,17 @@ class WorkLearningService:
             "held_out": request.held_out,
             "adversarial": request.adversarial,
             "long_term": request.long_term,
+            "server_observations": {
+                "held_in_failure_record_ids": [
+                    str(item.get("failure_record_id") or "")
+                    for item in held_in_records
+                    if item
+                ],
+                "held_out_work_run_ids": preservation_ids,
+                "held_in_verified": held_in_server_ok,
+                "held_out_verified": held_out_server_ok,
+                "adversarial_boundaries_verified": adversarial_server_ok,
+            },
             "pareto": {
                 "metric_deltas": metric_deltas,
                 "regressed_metrics": regressed_metrics,
@@ -1143,6 +1528,86 @@ class WorkLearningService:
         return bindings
 
     @staticmethod
+    def retrieval_policy(bindings: list[dict[str, Any]]) -> dict[str, float]:
+        policy: dict[str, float] = {}
+        for binding in bindings:
+            changes = binding.get("active_changes") if isinstance(binding, dict) else {}
+            retrieval = changes.get("retrieval_policy") if isinstance(changes, dict) else None
+            if not isinstance(retrieval, dict):
+                continue
+            for key, value in retrieval.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    policy[str(key)] = float(value)
+        return policy
+
+    @staticmethod
+    def _binding_for(
+        bindings: list[dict[str, Any]],
+        harness_id: str,
+    ) -> dict[str, Any] | None:
+        return next(
+            (
+                item
+                for item in bindings
+                if isinstance(item, dict) and str(item.get("harness_id") or "") == harness_id
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _pinned_harness_ids(
+        bindings: list[dict[str, Any]],
+        *,
+        operation: str,
+        phase: str,
+    ) -> list[str]:
+        selected: list[str] = []
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                continue
+            definition = binding.get("definition") if isinstance(binding.get("definition"), dict) else {}
+            phases = {str(item) for item in definition.get("phases") or []}
+            operations = {str(item) for item in definition.get("operations") or []}
+            harness_id = str(binding.get("harness_id") or "")
+            if harness_id and (not phases or phase in phases) and (not operations or operation in operations):
+                selected.append(harness_id)
+        return list(dict.fromkeys(selected))
+
+    @staticmethod
+    def _apply_pinned_loop_budget(
+        policy: LoopPolicy,
+        bindings: list[dict[str, Any]],
+    ) -> LoopPolicy:
+        budgets = [
+            changes.get("loop_budget")
+            for item in bindings
+            if isinstance(item, dict)
+            for changes in [item.get("active_changes") if isinstance(item.get("active_changes"), dict) else {}]
+            if isinstance(changes.get("loop_budget"), dict)
+        ]
+        if not budgets:
+            return policy
+        max_iterations = min(
+            [policy.max_iterations, *[int(item.get("max_iterations") or policy.max_iterations) for item in budgets]]
+        )
+        max_tool_loops = min(
+            [policy.max_tool_loops, *[int(item.get("max_tool_loops") or policy.max_tool_loops) for item in budgets]]
+        )
+        max_no_progress = min(
+            [policy.max_no_progress, *[int(item.get("max_no_progress") or policy.max_no_progress) for item in budgets]]
+        )
+        return policy.model_copy(
+            update={
+                "max_iterations": max(1, min(5, max_iterations)),
+                "max_tool_loops": max(1, min(5, max_tool_loops)),
+                # The loop contract stops after the second consecutive
+                # no-progress result. Reviewed candidates may tighten work and
+                # tool budgets, but cannot weaken this invariant.
+                "max_no_progress": 2,
+            }
+        )
+
+    @staticmethod
     def resolve_loop_policy(
         intent: WorkIntent,
         policy: LoopPolicy | dict[str, Any] | None = None,
@@ -1172,13 +1637,31 @@ class WorkLearningService:
         intent: WorkIntent,
         goal_plan_id: str,
         loop_policy: LoopPolicy | dict[str, Any] | None = None,
+        catalog_revision: str = "",
+        planner_schema_revision: str = "semantic-plan/v2",
+        semantic_plan_ref: str = "",
+        pinned_harness_bindings: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         work_run_id = _id("workrun", f"{agent_run_id}:{principal.employee_id}")
-        preflight_ids = [
-            harness_id
-            for harness_id in self.harnesses.harnesses_for(intent, intent.asset_kind.value)
-            if harness_id != "learning.capture"
+        all_harness_ids = self.harnesses.harnesses_for(
+            intent,
+            intent.asset_kind.value,
+        )
+        effective_bindings = self.effective_harness_bindings(all_harness_ids)
+        pinned_by_id = {
+            str(item.get("harness_id") or ""): item
+            for item in (pinned_harness_bindings or [])
+            if isinstance(item, dict) and item.get("harness_id")
+        }
+        harness_bindings = [
+            pinned_by_id.get(str(item.get("harness_id") or ""), item)
+            for item in effective_bindings
         ]
+        preflight_ids = self._pinned_harness_ids(
+            harness_bindings,
+            operation=intent.operation.value,
+            phase="preflight",
+        )
         preflights = [
             self.harnesses.evaluate(
                 harness_id,
@@ -1186,6 +1669,7 @@ class WorkLearningService:
                 intent=intent,
                 context=context,
                 task_mode=context.task_mode,
+                binding=self._binding_for(harness_bindings, harness_id),
             )
             for harness_id in preflight_ids
         ]
@@ -1204,7 +1688,10 @@ class WorkLearningService:
             )
             for item in context.evidence_refs
         ]
-        resolved_loop_policy = self.resolve_loop_policy(intent, loop_policy)
+        resolved_loop_policy = self._apply_pinned_loop_budget(
+            self.resolve_loop_policy(intent, loop_policy),
+            harness_bindings,
+        )
         run = {
             "work_run_id": work_run_id,
             "agent_run_id": agent_run_id,
@@ -1212,6 +1699,7 @@ class WorkLearningService:
             "work_session_id": session.get("session_id") or "",
             "context_id": context.context_id,
             "goal_plan_id": goal_plan_id,
+            "semantic_plan_ref": semantic_plan_ref,
             "intent": intent.model_dump(mode="json"),
             "task_mode": context.task_mode.value,
             "status": status,
@@ -1225,10 +1713,27 @@ class WorkLearningService:
                 "max_iterations": resolved_loop_policy.max_iterations,
                 "max_no_progress": resolved_loop_policy.max_no_progress,
                 "max_tool_loops": resolved_loop_policy.max_tool_loops,
+                "tool_loop_count": 0,
                 "deltas": [],
+                "progress_deltas": [],
+                "progress_state": {
+                    "entity_refs": [],
+                    "evidence_refs": [item.evidence_id for item in context.evidence_refs],
+                    "tool_result_refs": [],
+                    "artifact_refs": [],
+                    "blocker_codes": [],
+                    "completion": {},
+                },
+                "idempotency_keys": [],
             },
             "harness_results": [item.model_dump(mode="json") for item in preflights],
-            "harness_bindings": self.effective_harness_bindings(preflight_ids),
+            "harness_bindings": harness_bindings,
+            "contract_revisions": {
+                "capability_catalog": catalog_revision,
+                "harness_catalog": self.harnesses.version,
+                "planner_schema": planner_schema_revision,
+            },
+            "checkpoint_ids": [],
             "events": [
                 {"event": "work.observed", "at": now_iso()},
                 {"event": "context.compiled", "context_id": context.context_id, "at": now_iso()},
@@ -1246,6 +1751,38 @@ class WorkLearningService:
             "created_at": now_iso(),
             "updated_at": now_iso(),
         }
+        self._append_checkpoint(
+            run,
+            node="observe",
+            raw_state={
+                "agent_run_id": agent_run_id,
+                "session_id": session.get("session_id") or "",
+                "task_mode": context.task_mode.value,
+                "loop_policy": resolved_loop_policy.model_dump(mode="json"),
+            },
+        )
+        self._append_checkpoint(
+            run,
+            node="context",
+            raw_state={
+                "context_id": context.context_id,
+                "task_ref": context.task_ref,
+                "workflow_ref": context.workflow_ref,
+                "evidence_refs": [item.evidence_id for item in context.evidence_refs],
+                "context_manifest": context.context_manifest.model_dump(mode="json")
+                if context.context_manifest
+                else {},
+            },
+        )
+        self._append_checkpoint(
+            run,
+            node="semantic_plan",
+            raw_state={
+                "semantic_plan_ref": semantic_plan_ref,
+                "goal_plan_id": goal_plan_id,
+                "intent": intent.model_dump(mode="json"),
+            },
+        )
         for preflight in preflights:
             self.store.put(
                 "harness_results",
@@ -1313,11 +1850,19 @@ class WorkLearningService:
         job_id: str = "",
     ) -> tuple[dict[str, Any], list[KnowledgeCandidateRef]]:
         artifact = artifacts[0] if artifacts else {}
-        artifact_kind = str(artifact.get("artifact_type") or artifact.get("capability_id") or intent.asset_kind.value)
+        artifact_kind = str(artifact.get("artifact_type") or artifact.get("kind") or "")
         results: list[HarnessResult] = []
-        for harness_id in self.harnesses.harnesses_for(intent, artifact_kind):
-            if harness_id == "learning.capture":
-                continue
+        pinned_bindings = [
+            item
+            for item in work_run.get("harness_bindings") or []
+            if isinstance(item, dict)
+        ]
+        post_verify_ids = self._pinned_harness_ids(
+            pinned_bindings,
+            operation=intent.operation.value,
+            phase="post_verify",
+        )
+        for harness_id in post_verify_ids:
             result = self.harnesses.evaluate(
                 harness_id,
                 phase="post_verify",
@@ -1325,6 +1870,7 @@ class WorkLearningService:
                 context=context,
                 artifact=artifact,
                 task_mode=context.task_mode,
+                binding=self._binding_for(pinned_bindings, harness_id),
             )
             results.append(result)
             self.store.put(
@@ -1337,69 +1883,34 @@ class WorkLearningService:
                 },
             )
         blocked = any(item.status == "blocked" for item in results)
-        delta_kind = "state_transition" if job_id else "new_artifact" if artifacts else "new_evidence" if evidence_refs else "blocker"
+        if job_id:
+            delta_kind = "state_transition"
+        elif artifacts:
+            delta_kind = "new_artifact"
+        elif evidence_refs:
+            delta_kind = "new_evidence"
+        elif blocked or response_status in {"failed", "blocked"}:
+            delta_kind = "blocker"
+        else:
+            # Waiting for Task input is a normal state transition, not a blocker.
+            delta_kind = "state_transition"
         delta = LoopDelta(
             kind=delta_kind,  # type: ignore[arg-type]
             summary=("심층 작업이 대기열에 등록되었습니다." if job_id else answer_summary),
             ref=job_id or str(artifact.get("artifact_id") or (evidence_refs[0] if evidence_refs else "")),
+            metadata={
+                "evidence_refs": evidence_refs,
+                "artifact_refs": [str(item.get("artifact_id") or "") for item in artifacts if item.get("artifact_id")],
+                "completion_changes": {"response_status": response_status},
+                "blocker_code": "harness_blocked" if blocked else "response_failed" if response_status == "failed" else "",
+                "error_disposition": "policy_stop" if blocked else "unexpected_failure" if response_status == "failed" else "",
+            },
         )
-        delta.fingerprint = _fingerprint(delta)
+        loop = dict(work_run.get("loop") or {})
+        work_run["loop"] = loop
+        delta, progress_delta, _, _ = self._append_progress(work_run, delta)
         loop = dict(work_run.get("loop") or {})
         loop["iteration_count"] = int(loop.get("iteration_count") or 0) + 1
-        loop["deltas"] = [*(loop.get("deltas") or []), delta.model_dump(mode="json")][-20:]
-        if response_status == "failed" or blocked:
-            status, decision = "blocked", "blocked"
-        elif response_status == "queued":
-            status, decision = "queued", "continue"
-        elif intent.operation == WorkOperation.complete and not intent.needs_clarification:
-            if context.task_mode == TaskMode.autopilot:
-                status, decision = "waiting_signal", "continue"
-            else:
-                status, decision = "waiting_human", "needs_human"
-        elif response_status == "needs_input" or intent.needs_clarification:
-            status, decision = "waiting_human", "needs_human"
-        elif artifacts and intent.operation in {WorkOperation.validate, WorkOperation.test}:
-            status, decision = "completed", "complete"
-        elif artifacts and artifact_kind == "mermaid_diagram":
-            status, decision = "completed", "complete"
-        elif artifacts:
-            status, decision = "waiting_review", "needs_human"
-        elif intent.operation in {
-            WorkOperation.complete,
-            WorkOperation.test,
-            WorkOperation.run,
-            WorkOperation.promote,
-        }:
-            status, decision = "waiting_human", "needs_human"
-        else:
-            status, decision = "completed", "complete"
-        work_run.update(
-            {
-                "status": status,
-                "decision": decision,
-                "loop": loop,
-                "artifact_refs": [str(item.get("artifact_id") or "") for item in artifacts if item.get("artifact_id")],
-                "evidence_refs": list(dict.fromkeys([*work_run.get("evidence_refs", []), *evidence_refs]))[:50],
-                "job_id": job_id or work_run.get("job_id") or "",
-                "harness_results": [
-                    *work_run.get("harness_results", []),
-                    *[item.model_dump(mode="json") for item in results],
-                ],
-                "revision": int(work_run.get("revision") or 1) + 1,
-                "updated_at": now_iso(),
-            }
-        )
-        failure_ids = self._record_harness_failures(
-            principal=principal,
-            work_run=work_run,
-            context=context,
-            results=results,
-            phase="post_verify",
-            terminal_cause="response_failed" if response_status == "failed" else "",
-        )
-        work_run["harness_failure_record_ids"] = list(
-            dict.fromkeys([*work_run.get("harness_failure_record_ids", []), *failure_ids])
-        )
         added_ledger_ids = [
             self._record_evidence(
                 principal=principal,
@@ -1415,9 +1926,153 @@ class WorkLearningService:
             for ref in evidence_refs
             if ref
         ]
-        work_run["evidence_ledger_ids"] = list(
+        ledger_ids = list(
             dict.fromkeys([*work_run.get("evidence_ledger_ids", []), *added_ledger_ids])
         )[:100]
+        eligible_complete = False
+        if response_status == "failed" or blocked:
+            status, decision, stop_reason = "blocked", "blocked", "policy_stop" if blocked else "unexpected_failure"
+        elif response_status == "queued":
+            status, decision, stop_reason = "queued", "continue", ""
+        elif intent.operation == WorkOperation.complete and not intent.needs_clarification:
+            if context.task_mode == TaskMode.autopilot:
+                status, decision, stop_reason = "waiting_signal", "continue", "needs_human"
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        elif response_status == "needs_input" or intent.needs_clarification:
+            status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        elif context.task_ref and intent.asset_kind == WorkAssetKind.task:
+            if context.task_mode == TaskMode.autopilot:
+                status, decision, stop_reason = "waiting_signal", "continue", "needs_human"
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        elif artifacts and intent.operation in {WorkOperation.validate, WorkOperation.test}:
+            eligible_complete = True
+            status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        elif artifacts and artifact_kind in {
+            "mermaid_diagram",
+            "ontology_graph",
+            "knowledge_graph",
+            "data_table",
+            "timeline",
+        }:
+            eligible_complete = True
+            status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        elif artifacts:
+            status, decision, stop_reason = "waiting_review", "needs_human", "needs_human"
+        elif intent.operation in {
+            WorkOperation.complete,
+            WorkOperation.test,
+            WorkOperation.run,
+            WorkOperation.promote,
+        }:
+            status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        else:
+            eligible_complete = True
+            status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        exit_checks = [
+            HarnessCheck(
+                check_id="exit.operation-outcome",
+                label="업무 결과",
+                status="passed" if eligible_complete else "blocked",
+                message="검토, 사람 입력 또는 실행 결과가 더 필요합니다." if not eligible_complete else "",
+            ),
+            HarnessCheck(
+                check_id="exit.harness",
+                label="Harness 검증",
+                status="passed" if not blocked and response_status != "failed" else "blocked",
+                message="Harness 또는 실행 결과 검증을 통과하지 못했습니다."
+                if blocked or response_status == "failed"
+                else "",
+            ),
+        ]
+        if evidence_refs:
+            exit_checks.append(
+                HarnessCheck(
+                    check_id="exit.evidence-ledger",
+                    label="사용 근거 기록",
+                    status="passed" if ledger_ids else "blocked",
+                    message="사용한 근거가 Evidence Ledger에 기록되지 않았습니다." if not ledger_ids else "",
+                )
+            )
+        exit_result = ExitCriteriaResult(
+            satisfied=bool(exit_checks) and all(item.status == "passed" for item in exit_checks),
+            criteria=exit_checks,
+            evidence_ledger_ids=ledger_ids,
+            evaluated_facts={
+                "response_status": response_status,
+                "artifact_count": len(artifacts),
+                "evidence_count": len(evidence_refs),
+                "harness_blocked": blocked,
+            },
+            stop_reason="exit_criteria_satisfied" if eligible_complete and not blocked else "needs_human",
+        )
+        if status == "completed" and not exit_result.satisfied:
+            status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        work_run.update(
+            {
+                "status": status,
+                "decision": decision,
+                "stop_reason": stop_reason,
+                "loop": loop,
+                "artifact_refs": [str(item.get("artifact_id") or "") for item in artifacts if item.get("artifact_id")],
+                "evidence_refs": list(dict.fromkeys([*work_run.get("evidence_refs", []), *evidence_refs]))[:50],
+                "job_id": job_id or work_run.get("job_id") or "",
+                "harness_results": [
+                    *work_run.get("harness_results", []),
+                    *[item.model_dump(mode="json") for item in results],
+                ],
+                "evidence_ledger_ids": ledger_ids,
+                "exit_criteria_result": exit_result.model_dump(mode="json"),
+                "revision": int(work_run.get("revision") or 1) + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        failure_ids = self._record_harness_failures(
+            principal=principal,
+            work_run=work_run,
+            context=context,
+            results=results,
+            phase="post_verify",
+            terminal_cause="response_failed" if response_status == "failed" else "",
+        )
+        work_run["harness_failure_record_ids"] = list(
+            dict.fromkeys([*work_run.get("harness_failure_record_ids", []), *failure_ids])
+        )
+        self._append_checkpoint(
+            work_run,
+            node="act",
+            raw_state={
+                "progress_delta": progress_delta.model_dump(mode="json"),
+                "artifact_refs": work_run.get("artifact_refs") or [],
+                "job_id": job_id,
+            },
+        )
+        self._append_checkpoint(
+            work_run,
+            node="verify",
+            raw_state={
+                "harness_results": [item.model_dump(mode="json") for item in results],
+                "exit_criteria": exit_result.model_dump(mode="json"),
+            },
+        )
+        self._append_checkpoint(
+            work_run,
+            node="reflect",
+            raw_state={"status": status, "decision": decision, "stop_reason": stop_reason},
+        )
+        if status in {"completed", "blocked"}:
+            self._append_checkpoint(
+                work_run,
+                node="stop",
+                raw_state={"status": status, "decision": decision, "exit_criteria": exit_result.model_dump(mode="json")},
+            )
+        elif status in {"waiting_human", "waiting_review", "waiting_signal"}:
+            self._append_checkpoint(
+                work_run,
+                node="ask",
+                raw_state={"status": status, "decision": decision, "stop_reason": stop_reason},
+            )
         work_run.setdefault("events", []).extend(
             [
                 {"event": "loop.delta", "delta": delta.model_dump(mode="json"), "at": now_iso()},
@@ -1503,16 +2158,23 @@ class WorkLearningService:
 
         successful = result_status not in {"failed", "error", "blocked"}
         delta = LoopDelta(
-            kind="state_transition" if successful else "blocker",
+            kind="action_result" if successful else "blocker",
             summary=_compact(summary, 2000),
             ref=result_ref,
-            metadata=metadata or {},
+            metadata={
+                **(metadata or {}),
+                "tool_result_refs": [result_ref] if successful and result_ref else [],
+                "completion_changes": {"result_status": result_status},
+                "blocker_code": "system_operation_failed" if not successful else "",
+                "error_disposition": "unexpected_failure" if not successful else "",
+            },
         )
-        delta.fingerprint = _fingerprint(delta)
+        loop = dict(work_run.get("loop") or {})
+        work_run["loop"] = loop
+        delta, progress_delta, _, _ = self._append_progress(work_run, delta)
         loop = dict(work_run.get("loop") or {})
         loop["iteration_count"] = int(loop.get("iteration_count") or 0) + 1
         loop["no_progress_count"] = 0
-        loop["deltas"] = [*(loop.get("deltas") or []), delta.model_dump(mode="json")][-20:]
         ledger_ids = list(work_run.get("evidence_ledger_ids") or [])
         if result_ref:
             ledger_ids.append(
@@ -1528,13 +2190,35 @@ class WorkLearningService:
                     verification="verified" if successful else "failed",
                 )
             )
+        exit_result = ExitCriteriaResult(
+            satisfied=successful and bool(result_ref) and bool(ledger_ids),
+            criteria=[
+                HarnessCheck(
+                    check_id="exit.system-result",
+                    label="시스템 실행 결과",
+                    status="passed" if successful and bool(result_ref) else "blocked",
+                    message="검증 가능한 시스템 실행 결과가 없습니다." if not (successful and result_ref) else "",
+                ),
+                HarnessCheck(
+                    check_id="exit.evidence-ledger",
+                    label="실행 근거 기록",
+                    status="passed" if bool(ledger_ids) else "blocked",
+                    message="시스템 실행 결과가 Evidence Ledger에 기록되지 않았습니다." if not ledger_ids else "",
+                ),
+            ],
+            evidence_ledger_ids=ledger_ids,
+            evaluated_facts={"result_status": result_status, "result_ref": result_ref},
+            stop_reason="exit_criteria_satisfied" if successful and result_ref and ledger_ids else "blocked",
+        )
+        successful = successful and exit_result.satisfied
         work_run.update(
             {
                 "status": "completed" if successful else "blocked",
                 "decision": "complete" if successful else "blocked",
-                "stop_reason": "" if successful else "operation_failed",
+                "stop_reason": "exit_criteria_satisfied" if successful else "unexpected_failure",
                 "loop": loop,
                 "evidence_ledger_ids": list(dict.fromkeys(ledger_ids))[:100],
+                "exit_criteria_result": exit_result.model_dump(mode="json"),
                 "revision": int(work_run.get("revision") or 1) + 1,
                 "updated_at": now_iso(),
             }
@@ -1548,6 +2232,26 @@ class WorkLearningService:
                     "at": now_iso(),
                 },
             ]
+        )
+        self._append_checkpoint(
+            work_run,
+            node="act",
+            raw_state={"progress_delta": progress_delta.model_dump(mode="json")},
+        )
+        self._append_checkpoint(
+            work_run,
+            node="verify",
+            raw_state={"exit_criteria": exit_result.model_dump(mode="json")},
+        )
+        self._append_checkpoint(
+            work_run,
+            node="reflect",
+            raw_state={"status": work_run["status"], "decision": work_run["decision"]},
+        )
+        self._append_checkpoint(
+            work_run,
+            node="stop",
+            raw_state={"status": work_run["status"], "exit_criteria": exit_result.model_dump(mode="json")},
         )
         if not successful:
             negative_id = self._record_negative_result(
@@ -1563,33 +2267,90 @@ class WorkLearningService:
             )
         return self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
 
-    def fail_run(self, principal: Principal, work_run_id: str, message: str) -> dict[str, Any]:
+    def fail_run(
+        self,
+        principal: Principal,
+        work_run_id: str,
+        message: str,
+        *,
+        disposition: str = "unexpected_failure",
+    ) -> dict[str, Any]:
         run = self.get_run(principal, work_run_id)
-        delta = LoopDelta(kind="blocker", summary=_compact(message, 2000))
-        delta.fingerprint = _fingerprint(delta)
+        allowed = {"transient_retry", "semantic_repair", "human_interrupt", "policy_stop", "unexpected_failure"}
+        disposition = disposition if disposition in allowed else "unexpected_failure"
+        delta = LoopDelta(
+            kind="blocker",
+            summary=_compact(message, 2000),
+            metadata={"blocker_code": disposition, "error_disposition": disposition},
+        )
+        loop = dict(run.get("loop") or {})
+        run["loop"] = loop
+        delta, progress_delta, _, _ = self._append_progress(run, delta)
         loop = dict(run.get("loop") or {})
         loop["iteration_count"] = int(loop.get("iteration_count") or 0) + 1
-        loop["deltas"] = [*(loop.get("deltas") or []), delta.model_dump(mode="json")][-20:]
+        if disposition in {"transient_retry", "semantic_repair"}:
+            status, decision, stop_reason = "in_progress", "continue", disposition
+        elif disposition == "human_interrupt":
+            status, decision, stop_reason = "waiting_human", "needs_human", disposition
+        elif disposition == "policy_stop":
+            status, decision, stop_reason = "stopped", "stop", disposition
+        else:
+            status, decision, stop_reason = "blocked", "blocked", "unexpected_failure"
+        if (
+            disposition in {"transient_retry", "semantic_repair"}
+            and int(loop.get("iteration_count") or 0) >= int(loop.get("max_iterations") or 5)
+        ):
+            status, decision, stop_reason = "stopped", "stop", "max_iterations"
+            disposition = "policy_stop"
         run.update(
             {
-                "status": "blocked",
-                "decision": "blocked",
-                "stop_reason": "operation_failed",
+                "status": status,
+                "decision": decision,
+                "stop_reason": stop_reason,
+                "error_disposition": disposition,
                 "loop": loop,
                 "revision": int(run.get("revision") or 1) + 1,
                 "updated_at": now_iso(),
             }
         )
         run.setdefault("events", []).append(
-            {"event": "work.blocked", "delta": delta.model_dump(mode="json"), "at": now_iso()}
+            {
+                "event": (
+                    "work.retryable"
+                    if status == "in_progress"
+                    else "work.interrupted"
+                    if status == "waiting_human"
+                    else "work.stopped"
+                    if status == "stopped"
+                    else "work.blocked"
+                ),
+                "delta": delta.model_dump(mode="json"),
+                "at": now_iso(),
+            }
         )
+        self._append_checkpoint(
+            run,
+            node="verify",
+            raw_state={"progress_delta": progress_delta.model_dump(mode="json"), "error_disposition": disposition},
+        )
+        self._append_checkpoint(
+            run,
+            node="reflect",
+            raw_state={"status": status, "decision": decision, "error_disposition": disposition},
+        )
+        if status in {"stopped", "blocked"}:
+            self._append_checkpoint(
+                run,
+                node="stop",
+                raw_state={"status": status, "error_disposition": disposition},
+            )
         negative_id = self._record_negative_result(
             principal=principal,
             kind="failed_work_run",
             summary=message,
             work_run_id=work_run_id,
             source_refs=list(run.get("evidence_refs") or []),
-            metadata={"stop_reason": "operation_failed"},
+            metadata={"stop_reason": disposition},
         )
         run["negative_result_ids"] = list(dict.fromkeys([*run.get("negative_result_ids", []), negative_id]))
         return self.store.put("work_runs", work_run_id, run)
@@ -1645,6 +2406,19 @@ class WorkLearningService:
             )
             if item.get("ledger_id") in ledger_ids and item.get("work_run_id") == work_run_id
         ]
+        checkpoint_ids = set(run.get("checkpoint_ids") or [])
+        run["checkpoints"] = sorted(
+            [
+                item
+                for item in self.store.list(
+                    "work_run_checkpoints",
+                    employee_id=principal.employee_id,
+                    limit=500,
+                )
+                if item.get("checkpoint_id") in checkpoint_ids and item.get("work_run_id") == work_run_id
+            ],
+            key=lambda item: int(item.get("sequence") or 0),
+        )
         return run
 
     def list_runs(self, principal: Principal, *, limit: int = 20) -> dict[str, Any]:
@@ -1658,61 +2432,90 @@ class WorkLearningService:
         request: WorkRunContinueRequest,
     ) -> tuple[dict[str, Any], list[KnowledgeCandidateRef]]:
         run = self.get_run(principal, work_run_id)
+        existing_loop = run.get("loop") if isinstance(run.get("loop"), dict) else {}
+        if request.idempotency_key and request.idempotency_key in set(existing_loop.get("idempotency_keys") or []):
+            return run, []
         revision = int(run.get("revision") or 1)
         if request.expected_revision != revision:
             raise HTTPException(status_code=409, detail={"status": "revision_conflict", "current_revision": revision, "work_run": run})
         if run.get("status") in {"completed", "failed", "cancelled", "stopped"}:
             raise HTTPException(status_code=409, detail=f"work run is already {run.get('status')}")
-        delta = request.delta.model_copy(update={"fingerprint": _fingerprint(request.delta)})
-        loop = dict(run.get("loop") or {})
-        deltas = list(loop.get("deltas") or [])
-        repeated = any(str(item.get("fingerprint") or "") == delta.fingerprint for item in deltas)
-        no_progress = repeated or delta.kind == "no_progress"
-        no_progress_count = int(loop.get("no_progress_count") or 0) + 1 if no_progress else 0
-        iteration = int(loop.get("iteration_count") or 0) + 1
-        loop.update(
-            {
-                "iteration_count": iteration,
-                "no_progress_count": no_progress_count,
-                "deltas": [*deltas, delta.model_dump(mode="json")][-20:],
-            }
-        )
         mode = TaskMode(str(run.get("task_mode") or "copilot"))
         context_row = self.store.get("contexts", str(run.get("context_id") or "")) or {}
         context = WorkContextPack.model_validate(context_row)
         intent = WorkIntent.model_validate(run.get("intent") or {})
-        completion = context.completion_design
-        system_checks = list(completion.checks) if completion else []
-        if mode in {TaskMode.manual, TaskMode.copilot} and request.confirmation == "confirm" and delta.kind == "human_input" and not delta.ref:
-            delta = delta.model_copy(update={"ref": f"human:{work_run_id}:{iteration}"})
-            loop["deltas"][-1] = delta.model_dump(mode="json")
-        autopilot_ready = bool(system_checks) and all(
-            item.confirmation == "system"
-            and item.binding is not None
-            and item.binding.kind != "none"
-            and bool(item.binding.ref)
-            for item in system_checks
-        )
-        binding_refs = {
-            item.binding.ref
-            for item in system_checks
-            if item.binding is not None and item.binding.ref
-        }
-        verified_binding_refs = {
-            str(item)
-            for item in delta.metadata.get("verified_binding_refs") or []
-            if str(item).strip()
-        }
-        autopilot_delta_matches = bool(binding_refs) and (
-            verified_binding_refs.issuperset(binding_refs)
-            or (len(binding_refs) == 1 and delta.ref in binding_refs)
-        )
-        complete_delta = (
-            delta.kind in {"human_input", "state_transition"} and request.confirmation == "confirm"
-            if mode in {TaskMode.manual, TaskMode.copilot}
-            else autopilot_ready
-            and autopilot_delta_matches
-            and delta.kind in {"action_result", "state_transition"}
+        delta = request.delta
+        metadata = delta.metadata if isinstance(delta.metadata, dict) else {}
+        if mode == TaskMode.autopilot and delta.kind in {"action_result", "state_transition"} and delta.ref:
+            binding_refs = {
+                item.binding.ref
+                for item in (context.completion_design.checks if context.completion_design else [])
+                if item.binding is not None and item.binding.ref
+            }
+            if delta.ref in binding_refs:
+                metadata = {
+                    **metadata,
+                    "verified_binding_refs": _string_list(
+                        [*_string_list(metadata.get("verified_binding_refs")), delta.ref]
+                    ),
+                    "tool_result_refs": _string_list(
+                        [*_string_list(metadata.get("tool_result_refs")), delta.ref]
+                    ),
+                }
+                delta = delta.model_copy(update={"metadata": metadata})
+        work_record = metadata.get("work_record") if isinstance(metadata.get("work_record"), dict) else {}
+        if work_record:
+            record_payload = json.dumps(work_record, ensure_ascii=False, sort_keys=True, default=str)
+            work_record_ref = str(work_record.get("work_record_ref") or "").strip() or _id(
+                "workrecord",
+                f"{work_run_id}:{revision}:{record_payload}",
+            )
+            work_record = {**work_record, "work_record_ref": work_record_ref}
+            metadata = {
+                **metadata,
+                "work_record": work_record,
+                "evidence_refs": _string_list(
+                    [*_string_list(metadata.get("evidence_refs")), work_record_ref],
+                    limit=100,
+                ),
+            }
+            delta = delta.model_copy(
+                update={
+                    "ref": delta.ref or work_record_ref,
+                    "metadata": metadata,
+                }
+            )
+        loop = dict(run.get("loop") or {})
+        run["loop"] = loop
+        delta, progress_delta, domain_progress, repeated = self._append_progress(run, delta)
+        loop = dict(run.get("loop") or {})
+        valid_strategy_change = self._valid_strategy_change(progress_delta)
+        previous_no_progress = int(loop.get("no_progress_count") or 0)
+        strategy_change_used = bool(loop.get("strategy_change_used"))
+        if domain_progress:
+            no_progress_count = 0
+            strategy_change_used = False
+        elif valid_strategy_change and not strategy_change_used:
+            no_progress_count = max(1, previous_no_progress)
+            strategy_change_used = True
+        else:
+            no_progress_count = previous_no_progress + 1
+        iteration = int(loop.get("iteration_count") or 0) + 1
+        tool_loop_count = int(loop.get("tool_loop_count") or 0)
+        if delta.kind == "action_result" or progress_delta.tool_result_refs:
+            tool_loop_count += 1
+        loop.update(
+            {
+                "iteration_count": iteration,
+                "tool_loop_count": tool_loop_count,
+                "no_progress_count": no_progress_count,
+                "strategy_change_used": strategy_change_used,
+                "idempotency_keys": list(
+                    dict.fromkeys([*(loop.get("idempotency_keys") or []), request.idempotency_key])
+                )[-100:]
+                if request.idempotency_key
+                else list(loop.get("idempotency_keys") or []),
+            }
         )
         standalone_action_complete = (
             intent.operation in {WorkOperation.test, WorkOperation.run}
@@ -1721,18 +2524,95 @@ class WorkLearningService:
             and delta.kind == "action_result"
             and bool(delta.ref)
         )
-        if iteration >= int(loop.get("max_iterations") or 5):
-            status, decision, stop_reason = "stopped", "stop", "max_iterations"
-        elif no_progress_count >= int(loop.get("max_no_progress") or 1):
-            status, decision, stop_reason = "stopped", "stop", "no_progress"
-        elif mode == TaskMode.autopilot and delta.kind in {"action_result", "state_transition"} and not autopilot_ready:
-            status, decision, stop_reason = "waiting_human", "blocked", "completion_connections_required"
-        elif mode == TaskMode.autopilot and delta.kind in {"action_result", "state_transition"} and not autopilot_delta_matches:
-            status, decision, stop_reason = "waiting_signal", "continue", "unrelated_system_result"
-        elif delta.kind == "blocker":
-            status, decision, stop_reason = "waiting_human", "needs_human", "blocker"
-        elif complete_delta or standalone_action_complete:
+        standalone_domain_confirmation = (
+            not context.task_ref
+            and request.confirmation == "confirm"
+            and delta.kind == "human_input"
+            and bool(delta.ref)
+            and bool(str(metadata.get("domain_operation") or "").strip())
+            and bool(str(metadata.get("domain_result_status") or "").strip())
+        )
+        ledger_refs = list(
+            dict.fromkeys(
+                [
+                    *progress_delta.evidence_refs,
+                    *progress_delta.tool_result_refs,
+                    *progress_delta.artifact_refs,
+                    *([delta.ref] if delta.kind == "human_input" and delta.ref else []),
+                ]
+            )
+        )
+        ledger_ids = list(run.get("evidence_ledger_ids") or [])
+        for ref in ledger_refs:
+            ledger_ids.append(
+                self._record_evidence(
+                    principal=principal,
+                    work_run_id=work_run_id,
+                    evidence_id=ref,
+                    kind=delta.kind,
+                    title=delta.summary or ref,
+                    summary=delta.summary,
+                    source="human" if delta.kind == "human_input" else "runtime",
+                    authority="confirmed" if request.confirmation == "confirm" else "runtime",
+                    verification="confirmed" if request.confirmation == "confirm" else "observed",
+                )
+            )
+        ledger_ids = list(dict.fromkeys(ledger_ids))[:100]
+        completion_attempt = standalone_action_complete or standalone_domain_confirmation or (
+            request.confirmation == "confirm" and delta.kind in {"human_input", "state_transition"}
+        ) or (mode == TaskMode.autopilot and delta.kind in {"action_result", "state_transition"})
+        exit_result = self._exit_result(
+            context=context,
+            mode=mode,
+            progress=progress_delta,
+            confirmation=request.confirmation,
+            evidence_ledger_ids=ledger_ids,
+            standalone_action=standalone_action_complete,
+            standalone_domain_confirmation=standalone_domain_confirmation,
+        ) if completion_attempt else ExitCriteriaResult(
+            satisfied=False,
+            evidence_ledger_ids=ledger_ids,
+            evaluated_facts={"completion_attempt": False, "task_mode": mode.value},
+            stop_reason="needs_human",
+        )
+        if exit_result.satisfied:
             status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        elif tool_loop_count >= int(loop.get("max_tool_loops") or 5):
+            status, decision, stop_reason = "stopped", "stop", "max_tool_loops"
+            exit_result.stop_reason = "max_tool_loops"
+        elif iteration >= int(loop.get("max_iterations") or 5):
+            status, decision, stop_reason = "stopped", "stop", "max_iterations"
+            exit_result.stop_reason = "max_iterations"
+        elif no_progress_count >= int(loop.get("max_no_progress") or 2):
+            status, decision, stop_reason = "stopped", "stop", "no_progress"
+            exit_result.stop_reason = "no_progress"
+        elif completion_attempt:
+            if mode == TaskMode.autopilot:
+                required_bindings = set(exit_result.evaluated_facts.get("required_binding_refs") or [])
+                verified_bindings = set(exit_result.evaluated_facts.get("verified_binding_refs") or [])
+                stop_reason = (
+                    "unrelated_system_result"
+                    if required_bindings and not required_bindings.intersection(verified_bindings)
+                    else "exit_criteria_not_met"
+                )
+                status, decision = "waiting_signal", "continue"
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "exit_criteria_not_met"
+        elif delta.kind == "blocker":
+            disposition = progress_delta.error_disposition
+            if disposition in {"transient_retry", "semantic_repair"}:
+                status, decision, stop_reason = "in_progress", "continue", disposition
+            elif disposition == "policy_stop":
+                status, decision, stop_reason = "stopped", "stop", disposition
+            elif disposition == "unexpected_failure":
+                status, decision, stop_reason = "blocked", "blocked", disposition
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "human_interrupt"
+            exit_result.stop_reason = "policy_stop" if disposition == "policy_stop" else "blocked"
+        elif not domain_progress and valid_strategy_change:
+            status, decision, stop_reason = "in_progress", "continue", "strategy_changed"
+        elif not domain_progress:
+            status, decision, stop_reason = "waiting_human", "needs_human", "strategy_change_required"
         else:
             status, decision, stop_reason = "in_progress", "continue", "progress_recorded"
         run.update(
@@ -1741,28 +2621,59 @@ class WorkLearningService:
                 "decision": decision,
                 "stop_reason": stop_reason,
                 "loop": loop,
+                "evidence_ledger_ids": ledger_ids,
+                "exit_criteria_result": exit_result.model_dump(mode="json"),
                 "revision": revision + 1,
                 "updated_at": now_iso(),
             }
         )
         run.setdefault("events", []).append(
-            {"event": "loop.delta", "delta": delta.model_dump(mode="json"), "decision": decision, "at": now_iso()}
+            {
+                "event": "loop.delta",
+                "delta": delta.model_dump(mode="json"),
+                "progress_delta": progress_delta.model_dump(mode="json"),
+                "decision": decision,
+                "at": now_iso(),
+            }
         )
-        if delta.ref:
-            ledger_id = self._record_evidence(
-                principal=principal,
-                work_run_id=work_run_id,
-                evidence_id=delta.ref,
-                kind=delta.kind,
-                title=delta.summary or delta.ref,
-                summary=delta.summary,
-                source="human" if delta.kind == "human_input" else "runtime",
-                authority="confirmed" if request.confirmation == "confirm" else "runtime",
-                verification="confirmed" if request.confirmation == "confirm" else "observed",
+        self._append_checkpoint(
+            run,
+            node="act" if delta.kind not in {"human_input", "blocker"} else "ask",
+            raw_state={
+                "progress_delta": progress_delta.model_dump(mode="json"),
+                "confirmation": request.confirmation or "",
+            },
+            idempotency_key=request.idempotency_key,
+        )
+        self._append_checkpoint(
+            run,
+            node="verify",
+            raw_state={
+                "exit_criteria": exit_result.model_dump(mode="json"),
+                "domain_progress": domain_progress,
+                "repeated": repeated,
+            },
+            idempotency_key=request.idempotency_key,
+        )
+        self._append_checkpoint(
+            run,
+            node="reflect",
+            raw_state={
+                "status": status,
+                "decision": decision,
+                "stop_reason": stop_reason,
+                "no_progress_count": no_progress_count,
+                "tool_loop_count": tool_loop_count,
+            },
+            idempotency_key=request.idempotency_key,
+        )
+        if status in {"completed", "stopped"}:
+            self._append_checkpoint(
+                run,
+                node="stop",
+                raw_state={"status": status, "exit_criteria": exit_result.model_dump(mode="json")},
+                idempotency_key=request.idempotency_key,
             )
-            run["evidence_ledger_ids"] = list(
-                dict.fromkeys([*run.get("evidence_ledger_ids", []), ledger_id])
-            )[:100]
         candidates: list[KnowledgeCandidateRef] = []
         if status == "completed":
             completion_id = _id("completion", f"{work_run_id}:{revision + 1}")
@@ -1776,8 +2687,19 @@ class WorkLearningService:
                 "task_mode": mode.value,
                 "decision": "complete",
                 "summary": delta.summary,
-                "evidence_refs": list(dict.fromkeys([*run.get("evidence_refs", []), delta.ref] if delta.ref else run.get("evidence_refs", []))),
+                "evidence_refs": list(
+                    dict.fromkeys(
+                        [
+                            *run.get("evidence_refs", []),
+                            *progress_delta.evidence_refs,
+                            *progress_delta.tool_result_refs,
+                            *progress_delta.artifact_refs,
+                            *([delta.ref] if delta.ref else []),
+                        ]
+                    )
+                ),
                 "evidence_ledger_ids": run.get("evidence_ledger_ids", []),
+                "exit_criteria_result": exit_result.model_dump(mode="json"),
                 "created_at": now_iso(),
             }
             self.store.put("completion_records", completion_id, completion)
@@ -1926,6 +2848,10 @@ class WorkLearningService:
             context=context,
             candidate=candidate,
             task_mode=context.task_mode,
+            binding=self._binding_for(
+                [item for item in work_run.get("harness_bindings") or [] if isinstance(item, dict)],
+                "learning.capture",
+            ),
         )
         self.store.put(
             "harness_results",
@@ -2044,20 +2970,18 @@ class WorkLearningService:
             return None
         run_refs: list[str] = [str(work_run["work_run_id"])]
         occurrences = 1
-        for item in self.store.list("work_runs", employee_id=principal.employee_id, limit=500):
-            if item.get("work_run_id") == work_run.get("work_run_id"):
+        for item in self.store.list("negative_results", employee_id=principal.employee_id, limit=500):
+            if item.get("kind") != "work_blocker":
                 continue
-            candidate_context = self.store.get("contexts", str(item.get("context_id") or "")) or {}
+            source_run_id = str(item.get("work_run_id") or "")
+            if not source_run_id or source_run_id == work_run.get("work_run_id"):
+                continue
+            source_run = self.store.get("work_runs", source_run_id) or {}
+            candidate_context = self.store.get("contexts", str(source_run.get("context_id") or "")) or {}
             if candidate_context.get("task_ref") != context.task_ref:
                 continue
-            blocker_count = sum(
-                1
-                for delta in (item.get("loop") or {}).get("deltas") or []
-                if isinstance(delta, dict) and delta.get("kind") == "blocker"
-            )
-            if blocker_count:
-                occurrences += blocker_count
-                run_refs.extend([str(item.get("work_run_id") or "")] * blocker_count)
+            occurrences += 1
+            run_refs.append(str(item.get("negative_result_id") or source_run_id))
         if occurrences < 2:
             return None
         pattern_key = f"blocker:{context.task_ref}"
@@ -2149,6 +3073,10 @@ class WorkLearningService:
             context=context,
             candidate=candidate,
             task_mode=context.task_mode,
+            binding=self._binding_for(
+                [item for item in source_run.get("harness_bindings") or [] if isinstance(item, dict)],
+                "learning.capture",
+            ),
         )
         self.store.put(
             "harness_results",

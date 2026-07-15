@@ -1,0 +1,172 @@
+version: "2.0"
+harnesses:
+  - harness_id: context.work
+    version: "2.0.0"
+    title: 업무 맥락 Harness
+    validator_plugin: context_invariants
+    phases: [preflight, post_verify]
+    operations: [understand, create, refine, compare, connect, validate, test, run, observe, complete, capture, promote]
+    document_ref: boi:public:boi-wiki-manual:agent:work-context-pack
+    required_context: [goal, context_manifest, source_provenance]
+    input_contract: WorkIntent + WorkContextPack
+    output_contract: HarnessResult
+    allowed_tools: [boi_search, boi_get, boi_context]
+    risk_policy: read-only context selection; raw and secret content must stay outside prompts
+    test_contracts: [deictic_anchor_resolves, selected_sources_have_provenance, raw_content_isolated]
+    completion_policy: the request has a usable anchor or explicit Wiki scope and a provenance manifest
+    fallback_policy: ask one focused context question or stop with explicit insufficient evidence
+    editable_surfaces: [retrieval_policy, loop_budget]
+    retryable: true
+    interruptible: true
+
+  - harness_id: claim.grounding
+    version: "2.0.0"
+    title: 내부 근거 Claim Harness
+    validator_plugin: claim_grounding_invariants
+    phases: [preflight, evaluate, post_verify]
+    operations: [understand, compare, connect, validate, observe]
+    document_ref: boi:public:boi-wiki-manual:agent:a2ui-and-dynamic-results
+    required_context: [source_provenance, supporting_chunks]
+    input_contract: GroundedClaim[] + ACL-visible internal chunks
+    output_contract: AnswerabilityReport + evaluated GroundedClaim[]
+    allowed_tools: []
+    risk_policy: external knowledge is forbidden; definitions, conflicts, weak support and changing or executable outcomes use a fresh-context evaluator and fail closed
+    test_contracts: [source_and_chunk_exist, scope_matches, risk_adaptive_fresh_context_entailment, conflict_stops_answer]
+    completion_policy: every emitted factual claim is directly entailed by its bound internal chunks
+    fallback_policy: omit unsupported claims and return explicit insufficient or conflicting evidence
+    retryable: false
+    interruptible: false
+    evaluator_policy:
+      allowed_providers: [openai_compatible, lmstudio, lmstudio-test, test]
+      always_review_claim_kinds: [definition]
+      review_support_statuses: [conflicting]
+      min_support_confidence: 0.85
+      risky_user_effects: [draft, transform, execute]
+      risky_operations: [validate, test, run, complete, promote]
+      fail_closed: true
+
+  - harness_id: sop.authoring
+    version: "2.0.0"
+    title: SOP 작성 Harness
+    validator_plugin: sop_invariants
+    phases: [preflight, validate, preview, test, post_verify]
+    operations: [create, refine, connect, validate, test, promote]
+    document_ref: boi:public:harness:sop-authoring-harness
+    required_context: [business_goal, task_mode, evidence_policy]
+    input_contract: SOP draft with Workflow and structured Task completion design
+    output_contract: validated SOP registration draft
+    allowed_tools: [boi_search, boi_get, sop_draft_create, sop_draft_validate]
+    risk_policy: draft-only until a named person confirms the existing SOP publication path
+    test_contracts: [workflow_has_tasks, tasks_have_completion_design, autopilot_bindings_are_verifiable]
+    completion_policy: all Tasks have purpose, mode, completion checks, evidence and valid automatic bindings where needed
+    fallback_policy: save a private draft and interrupt for missing contracts
+    retryable: true
+    interruptible: true
+
+  - harness_id: action.authoring
+    version: "2.0.0"
+    title: Action 작성 Harness
+    validator_plugin: action_authoring_invariants
+    phases: [preflight, validate, preview, test, post_verify]
+    operations: [create, refine, connect, validate, test]
+    document_ref: boi:public:harness:action-authoring-harness
+    required_context: [business_goal, connector, input_output_contract]
+    input_contract: Action registration draft
+    output_contract: validated Action draft or dry-run result
+    allowed_tools: [boi_search, boi_get, action_draft_create, action_draft_validate]
+    risk_policy: new Action stays preview-only; side effects require Action Gateway policy and confirmation
+    test_contracts: [connector_configured, input_output_schema_present, dry_run_default, risk_classified]
+    completion_policy: connector, schemas, risk and preview behavior are validated
+    fallback_policy: keep a Manual Action draft and interrupt for a missing connector or contract
+    retryable: true
+    interruptible: true
+
+  - harness_id: action.execution
+    version: "2.0.0"
+    title: Action 실행 Harness
+    validator_plugin: action_execution_invariants
+    phases: [preflight, validate, post_verify]
+    operations: [test, run]
+    document_ref: boi:public:harness:action-authoring-harness
+    required_context: [action_target, business_context, evidence]
+    input_contract: guarded Action invocation plan
+    output_contract: Action Gateway result + ProgressDelta
+    allowed_tools: [boi_plan, boi_confirm, action_gateway_invoke]
+    risk_policy: dry-run first; medium/high risk or external side effects always require confirmation
+    test_contracts: [target_resolved, context_present, secrets_isolated, result_contract_valid]
+    completion_policy: an Action Gateway result is recorded and the Task completion binding verifies it
+    fallback_policy: policy stop or human interrupt; never choose another Action
+    retryable: true
+    interruptible: true
+
+  - harness_id: business-event.definition
+    version: "2.0.0"
+    title: 업무 이벤트 정의 Harness
+    validator_plugin: business_event_invariants
+    phases: [preflight, validate, preview, test, post_verify]
+    operations: [create, refine, connect, validate, test, run]
+    document_ref: boi:public:boi-wiki-manual:use-cases:event-to-action-workflow-planning
+    required_context: [business_goal, source_signal, occurrence_mode]
+    input_contract: BusinessEventDefinition draft + sample signal
+    output_contract: SignalDecision preview and inactive definition draft
+    allowed_tools: [boi_search, business_event_draft_create, business_event_test]
+    risk_policy: definitions remain inactive until sample test and explicit activation confirmation
+    test_contracts: [source_configured, trigger_valid, conditions_valid, dedupe_or_state_grouping_valid]
+    completion_policy: sample decisions match the expected publish, ignore, suppress or pending result
+    fallback_policy: keep the draft inactive and interrupt for missing signal evidence
+    retryable: true
+    interruptible: true
+
+  - harness_id: skill.authoring
+    version: "2.0.0"
+    title: Skill 작성 Harness
+    validator_plugin: skill_invariants
+    phases: [preflight, validate, preview, test, post_verify]
+    operations: [create, refine, validate, test, promote]
+    document_ref: boi:public:harness:skill-authoring-harness
+    required_context: [repeated_work_goal, source_refs]
+    input_contract: Skill candidate with schemas, permissions and tests
+    output_contract: private Skill candidate
+    allowed_tools: [boi_search, boi_get, skill_candidate_create, skill_test]
+    risk_policy: Skill is a draft until tests pass; it cannot widen its own permissions
+    test_contracts: [schemas_present, permissions_bounded, test_scenarios_present]
+    completion_policy: the Skill contract and at least one representative test are valid
+    fallback_policy: keep the work Manual or Copilot and interrupt for a missing reusable contract
+    retryable: true
+    interruptible: true
+
+  - harness_id: task.runtime
+    version: "2.0.0"
+    title: Task 수행 Harness
+    validator_plugin: task_runtime_invariants
+    phases: [preflight, validate, post_verify]
+    operations: [run, observe, complete]
+    document_ref: boi:public:boi-wiki-manual:agent:task-loop
+    required_context: [task, task_mode, completion_design, evidence]
+    input_contract: WorkContextPack + ProgressDelta
+    output_contract: verified CompletionRecord or explicit blocker
+    allowed_tools: [boi_context, boi_search, boi_plan, boi_confirm, boi_job_status]
+    risk_policy: Manual and Copilot need human confirmation; Autopilot needs allowlisted, verifiable system bindings
+    test_contracts: [mode_specific_completion, required_evidence_present, no_progress_stops, limits_enforced]
+    completion_policy: ExitCriteriaResult and Evidence Ledger prove the Task is done
+    fallback_policy: strategy change once, then human interrupt or policy stop
+    retryable: true
+    interruptible: true
+
+  - harness_id: learning.capture
+    version: "2.0.0"
+    title: 지식 자산화 Harness
+    validator_plugin: learning_invariants
+    phases: [capture, promote]
+    operations: [capture, complete, promote]
+    document_ref: boi:public:boi-wiki-manual:agent:personal-work-pattern-assets
+    required_context: [source_work_run, evidence_ledger, novelty_check]
+    input_contract: CompletionRecord or evidence-backed KnowledgeCandidate
+    output_contract: private provisional candidate or promotion preview
+    allowed_tools: [boi_search, boi_get, promotion_preview, boi_confirm]
+    risk_policy: raw chat is never knowledge; Team/Public writes require promotion validation and explicit confirmation
+    test_contracts: [sources_present, lesson_reusable, duplicate_checked, raw_transcript_excluded]
+    completion_policy: the candidate has provenance, reuse value and a passed promotion preview when shared
+    fallback_policy: keep or archive the private candidate; never auto-promote
+    retryable: false
+    interruptible: true

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def utc_now() -> datetime:
@@ -79,7 +79,7 @@ class LoopPolicy(BaseModel):
     task_stop: Literal["agent_done", "exit_criteria", "needs_context"] = "agent_done"
     routine_stop: Literal["one_shot", "cancelled", "max_runs", "event_resolved"] = "one_shot"
     max_iterations: int = Field(default=5, ge=1, le=20)
-    max_no_progress: int = Field(default=1, ge=1, le=3)
+    max_no_progress: int = Field(default=2, ge=2, le=3)
     max_tool_loops: int = Field(default=5, ge=1, le=20)
     max_runs: int = Field(default=1, ge=0, le=10000)
     interval_seconds: int = Field(default=0, ge=0, le=31_536_000)
@@ -94,6 +94,106 @@ class CapabilityState(str, Enum):
     unavailable = "unavailable"
 
 
+class DraftContractDefinition(BaseModel):
+    """Versioned structured-output contract referenced by catalog capabilities."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: str
+    version: str = "1.0"
+    schema_: dict[str, Any] = Field(alias="schema")
+    validator_plugins: list[str] = Field(default_factory=list)
+    normalizer_plugins: list[str] = Field(default_factory=list)
+
+
+class StarterOfferDefinition(BaseModel):
+    """Declarative, grounded entry point owned by a capability definition."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    offer_id: str
+    category: Literal[
+        "current_work",
+        "knowledge_relation",
+        "similar_case",
+        "sop_task",
+        "business_event",
+        "action",
+        "knowledge_capture",
+        "automatic_check",
+    ]
+    area: Literal["current_work", "knowledge", "workflow", "event_action", "learning", "automation"]
+    selector: Literal[
+        "current_work",
+        "page_anchor",
+        "recent_artifact",
+        "connected_record",
+        "canonical_entrypoint",
+        "current_or_page",
+    ]
+    subject_binding: Literal["selected_record", "principal_person"] = "selected_record"
+    record_kinds: list[str] = Field(default_factory=list)
+    artifact_type_prefixes: list[str] = Field(default_factory=list)
+    entrypoint_area: Literal[
+        "", "current_work", "knowledge", "workflow", "event_action", "learning", "automation"
+    ] = ""
+    anchor_entrypoint_area: Literal[
+        "", "current_work", "knowledge", "workflow", "event_action", "learning", "automation"
+    ] = ""
+    current_work_condition: Literal["any", "present", "absent"] = "any"
+    include_anchor_source: bool = False
+    only_when_category_empty: bool = True
+    only_when_area_empty: bool = False
+    use_entrypoint_copy: bool = False
+    label_template: str = Field(min_length=1, max_length=240)
+    prompt_template: str = Field(min_length=1, max_length=1600)
+    reason_template: str = Field(min_length=1, max_length=320)
+    priority: int = Field(default=100, ge=0, le=1000)
+    context_basis: str = Field(default="knowledge", max_length=80)
+    result_kind: Literal[
+        "answer", "table", "timeline", "mermaid", "explorer", "work_form", "confirmation"
+    ] = "answer"
+    graph_query_kind: Literal[
+        "", "neighbors", "path", "workflow", "impact", "lineage",
+        "responsibility", "timeline", "compare", "tour",
+    ] = ""
+    fallback_to_answer: bool = False
+    user_effect: Literal["read", "draft", "transform", "execute"] | None = None
+    semantic_operation: WorkOperation | None = None
+    work_view: Literal["none", "current", "responsibility", "combined"] | None = None
+
+    @field_validator("offer_id")
+    @classmethod
+    def validate_offer_id(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789._-" for char in clean):
+            raise ValueError("offer_id must be a lowercase dotted identifier")
+        return clean
+
+    @model_validator(mode="after")
+    def validate_selector_contract(self) -> "StarterOfferDefinition":
+        if self.selector == "canonical_entrypoint" and not self.entrypoint_area:
+            raise ValueError("canonical_entrypoint selectors require entrypoint_area")
+        if self.selector != "canonical_entrypoint" and self.entrypoint_area:
+            raise ValueError("entrypoint_area is only valid for canonical_entrypoint selectors")
+        if self.selector != "connected_record" and self.anchor_entrypoint_area:
+            raise ValueError("anchor_entrypoint_area is only valid for connected_record selectors")
+        if self.selector != "recent_artifact" and self.artifact_type_prefixes:
+            raise ValueError("artifact_type_prefixes require a recent_artifact selector")
+        if self.selector != "connected_record" and self.include_anchor_source:
+            raise ValueError("include_anchor_source requires a connected_record selector")
+        return self
+
+
+class HelperTemplateDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str
+    name: str
+    instructions: str = ""
+    capability_ids: list[str] = Field(default_factory=list)
+
+
 class CapabilityDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -103,8 +203,36 @@ class CapabilityDefinition(BaseModel):
     description: str
     primary_asset: WorkAssetKind = WorkAssetKind.knowledge
     supported_assets: list[WorkAssetKind] = Field(default_factory=lambda: list(WorkAssetKind))
+    subject_kinds: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
     operation: OperationClass
+    user_effects: list[Literal["read", "draft", "transform", "execute"]] = Field(default_factory=list)
+    default_user_effect: Literal["read", "draft", "transform", "execute"] | None = None
+    semantic_operations: list[WorkOperation] = Field(default_factory=list)
+    default_operation: WorkOperation | None = None
+    operation_pipeline: list[WorkOperation] = Field(default_factory=list)
+    operation_pipelines: dict[str, list[WorkOperation]] = Field(default_factory=dict)
+    presentations: list[Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"]] = Field(
+        default_factory=lambda: ["prose"]
+    )
+    default_presentation: Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"] = "prose"
+    presentation_aliases: dict[
+        str,
+        Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"],
+    ] = Field(default_factory=dict)
+    graph_query_kinds: list[Literal[
+        "neighbors", "path", "workflow", "impact", "lineage", "responsibility", "timeline", "compare", "tour"
+    ]] = Field(default_factory=list)
+    work_views: list[Literal["none", "current", "responsibility", "combined"]] = Field(
+        default_factory=lambda: ["none", "current", "responsibility", "combined"]
+    )
+    default_work_view: Literal["none", "current", "responsibility", "combined"] = "none"
+    evidence_scopes: list[Literal["canonical", "operational", "validation"]] = Field(
+        default_factory=lambda: ["canonical", "operational"]
+    )
+    default_evidence_scope: Literal["canonical", "operational", "validation"] = "canonical"
+    harness_ids: list[str] = Field(default_factory=lambda: ["context.work"])
+    subject_policy: Literal["optional", "required", "target_required"] = "optional"
     risk: RiskLevel = RiskLevel.low
     task_modes: list[TaskMode] = Field(default_factory=lambda: list(TaskMode))
     input_schema: dict[str, Any] = Field(default_factory=dict)
@@ -113,9 +241,14 @@ class CapabilityDefinition(BaseModel):
     evidence_policy: list[str] = Field(default_factory=list)
     completion_criteria: list[str] = Field(default_factory=list)
     handler: str
+    handler_config: dict[str, Any] = Field(default_factory=dict)
     renderer: str = "answer"
     permissions: list[str] = Field(default_factory=lambda: ["boi.viewer"])
     readiness: list[str] = Field(default_factory=list)
+    offer_surfaces: list[Literal["library", "document", "inbox", "sop", "event", "action", "agent"]] = Field(
+        default_factory=list
+    )
+    starter_offers: list[StarterOfferDefinition] = Field(default_factory=list)
     external: bool = True
     deep: bool = False
 
@@ -126,6 +259,61 @@ class CapabilityDefinition(BaseModel):
         if not clean or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789._-" for char in clean):
             raise ValueError("capability_id must be a lowercase dotted identifier")
         return clean
+
+    @field_validator("semantic_operations")
+    @classmethod
+    def validate_semantic_operations(cls, value: list[WorkOperation]) -> list[WorkOperation]:
+        return list(dict.fromkeys(value))
+
+    @field_validator("operation_pipelines")
+    @classmethod
+    def validate_operation_pipelines(
+        cls,
+        value: dict[str, list[WorkOperation]],
+    ) -> dict[str, list[WorkOperation]]:
+        allowed = {item.value for item in WorkOperation}
+        unknown = sorted(set(value) - allowed)
+        if unknown:
+            raise ValueError(f"unknown operation pipeline keys: {', '.join(unknown)}")
+        return {key: list(dict.fromkeys(items)) for key, items in value.items()}
+
+    @model_validator(mode="after")
+    def validate_catalog_defaults(self) -> "CapabilityDefinition":
+        if self.default_presentation not in self.presentations:
+            raise ValueError("default_presentation must be declared in presentations")
+        invalid_aliases = sorted(
+            key for key, value in self.presentation_aliases.items()
+            if not key.strip() or value not in self.presentations
+        )
+        if invalid_aliases:
+            raise ValueError("presentation aliases must have a name and target a declared presentation")
+        if self.default_work_view not in self.work_views:
+            raise ValueError("default_work_view must be declared in work_views")
+        if self.default_evidence_scope not in self.evidence_scopes:
+            raise ValueError("default_evidence_scope must be declared in evidence_scopes")
+        if self.default_user_effect is not None and self.default_user_effect not in self.user_effects:
+            raise ValueError("default_user_effect must be declared in user_effects")
+        if self.default_operation is not None and self.default_operation not in self.semantic_operations:
+            raise ValueError("default_operation must be declared in semantic_operations")
+        for offer in self.starter_offers:
+            effect = offer.user_effect or self.default_user_effect
+            operation = offer.semantic_operation or self.default_operation
+            work_view = offer.work_view or self.default_work_view
+            presentation = (
+                self.presentation_aliases.get(offer.result_kind)
+                or (self.default_presentation if offer.result_kind == "answer" else offer.result_kind)
+            )
+            if effect not in self.user_effects:
+                raise ValueError(f"starter offer {offer.offer_id} uses an undeclared user effect")
+            if operation not in self.semantic_operations:
+                raise ValueError(f"starter offer {offer.offer_id} uses an undeclared semantic operation")
+            if work_view not in self.work_views:
+                raise ValueError(f"starter offer {offer.offer_id} uses an undeclared work view")
+            if presentation not in self.presentations:
+                raise ValueError(f"starter offer {offer.offer_id} uses an undeclared presentation")
+            if offer.graph_query_kind and offer.graph_query_kind not in self.graph_query_kinds:
+                raise ValueError(f"starter offer {offer.offer_id} uses an undeclared graph query")
+        return self
 
 
 class Principal(BaseModel):
@@ -177,6 +365,38 @@ class CitationRef(BaseModel):
     resolved_source: ResolvedSourceRef | None = None
 
 
+class GroundedClaim(BaseModel):
+    claim_id: str
+    text: str
+    claim_kind: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
+    source_scope: Literal["canonical", "operational", "validation"] = "canonical"
+    source_refs: list[str] = Field(default_factory=list, max_length=4)
+    supporting_chunk_ids: list[str] = Field(default_factory=list, max_length=8)
+    support_status: Literal["supported", "partial", "unsupported", "conflicting"] = "unsupported"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    required_for_answer: bool = False
+
+
+class AnswerabilityReport(BaseModel):
+    status: Literal["grounded", "partial", "insufficient", "conflicting"] = "insufficient"
+    answer_intent: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
+    supported_claim_count: int = Field(default=0, ge=0)
+    unsupported_claim_count: int = Field(default=0, ge=0)
+    conflicting_claim_count: int = Field(default=0, ge=0)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=8)
+    conflicts: list[str] = Field(default_factory=list, max_length=8)
+
+
+class TurnTopicState(BaseModel):
+    topic_state_ref: str
+    subject: str = ""
+    entities: list[str] = Field(default_factory=list, max_length=12)
+    claims: list[GroundedClaim] = Field(default_factory=list, max_length=12)
+    used_source_refs: list[str] = Field(default_factory=list, max_length=12)
+    active_artifact_id: str = ""
+    correction_status: Literal["active", "corrected", "invalidated"] = "active"
+
+
 class RelatedQuestion(BaseModel):
     question_id: str
     kind: Literal["understand", "connect", "apply"]
@@ -214,6 +434,10 @@ class StarterSuggestion(BaseModel):
         "", "neighbors", "path", "workflow", "impact", "lineage",
         "responsibility", "timeline", "compare", "tour",
     ] = ""
+    capability_id: str = Field(min_length=1, max_length=120)
+    user_effect: Literal["read", "draft", "transform", "execute"] = "read"
+    operation: WorkOperation = WorkOperation.understand
+    work_view: Literal["none", "current", "responsibility", "combined"] = "none"
 
 
 class StarterSuggestionSetRequest(BaseModel):
@@ -226,6 +450,7 @@ class GoalStep(BaseModel):
     capability_id: str
     label: str
     operation: Literal["read", "draft", "deep", "guarded"] = "read"
+    semantic_operation: WorkOperation = WorkOperation.understand
     depends_on: list[str] = Field(default_factory=list)
     status: Literal[
         "pending",
@@ -324,10 +549,113 @@ class GraphQueryDraft(BaseModel):
     presentation: Literal["auto", "list", "table", "timeline", "mermaid", "explorer"] = "auto"
 
 
+class SemanticSubject(BaseModel):
+    """A subject selected by the planner, before ACL-bounded entity resolution."""
+
+    mention: str = Field(min_length=1, max_length=240)
+    entity_ref: str = Field(default="", max_length=1000)
+    entity_kind: str = Field(default="", max_length=80)
+    resolution: Literal["unresolved", "resolved", "ambiguous", "missing"] = "unresolved"
+
+
+class SemanticWorkRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observations: str = Field(default="", max_length=2000)
+    actions: str = Field(default="", max_length=2000)
+    judgment: str = Field(default="", max_length=2000)
+    result: str = Field(default="", max_length=2000)
+    blocker: str = Field(default="", max_length=1000)
+    next_work: str = Field(default="", max_length=1000)
+
+
+class SemanticContinuation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    continue_active_run: bool = False
+    delta_kind: Literal["none", "human_input", "new_evidence", "blocker", "state_transition"] = "none"
+    user_confirmation: bool = False
+    work_record: SemanticWorkRecord = Field(default_factory=SemanticWorkRecord)
+
+
+class SemanticPlan(BaseModel):
+    """The model-owned meaning contract. Validators may reject it, never rewrite it."""
+
+    schema_revision: str = "semantic-plan/v2"
+    resolved_goal: str = Field(min_length=1, max_length=12000)
+    retrieval_query: str = Field(min_length=1, max_length=12000)
+    topic_action: Literal["new", "continue", "clarify"] = "new"
+    subjects: list[SemanticSubject] = Field(default_factory=list, max_length=20)
+    capability_id: str = Field(min_length=1, max_length=120)
+    user_effect: Literal["read", "draft", "transform", "execute"] = "read"
+    operation: WorkOperation = WorkOperation.understand
+    evidence_scope: Literal["canonical", "operational", "validation"] = "canonical"
+    presentation: Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"] = "prose"
+    work_view: Literal["none", "current", "responsibility", "combined"] = "none"
+    graph_query: GraphQueryDraft | None = None
+    context_refs: list[str] = Field(default_factory=list, max_length=20)
+    target_ref: str = Field(default="", max_length=1000)
+    answer_intent: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
+    clarification_question: str = Field(default="", max_length=240)
+    continuation: SemanticContinuation = Field(default_factory=SemanticContinuation)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ValidationIssue(BaseModel):
+    code: str = Field(min_length=1, max_length=120)
+    field: str = Field(default="", max_length=240)
+    message: str = Field(min_length=1, max_length=1000)
+    severity: Literal["error", "warning"] = "error"
+    repairable: bool = True
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanValidationReport(BaseModel):
+    valid: bool
+    issues: list[ValidationIssue] = Field(default_factory=list, max_length=50)
+    catalog_revision: str = ""
+    planner_schema_revision: str = "semantic-plan/v2"
+
+
+class TypedCommand(BaseModel):
+    """An explicit UI/API/MCP command whose semantics are not reinterpreted."""
+
+    capability_id: str = Field(min_length=1, max_length=120)
+    user_effect: Literal["read", "draft", "transform", "execute"]
+    operation: WorkOperation
+    goal: str = Field(min_length=1, max_length=12000)
+    subject_refs: list[str] = Field(default_factory=list, max_length=20)
+    presentation: Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"] = "prose"
+    work_view: Literal["none", "current", "responsibility", "combined"] = "none"
+    graph_query: GraphQueryDraft | None = None
+    input_delta: dict[str, Any] = Field(default_factory=dict)
+
+
 class WorkIntent(BaseModel):
     goal: str
     resolved_goal: str = ""
     retrieval_query: str = ""
+    answer_intent: Literal["definition", "fact", "procedure", "comparison", "relationship", "work"] = "fact"
+    answer_source_scope: Literal["canonical", "operational", "validation"] = "canonical"
+    topic_mode: Literal["new", "continue", "clarify"] = "new"
+    topic_subject: str = ""
+    topic_structure: Literal["single_focal", "multiple_focal", "collective"] = "single_focal"
+    primary_topic_entity: str = ""
+    topic_entities: list[str] = Field(default_factory=list, max_length=12)
+    referenceable_topic_entities: list[str] = Field(default_factory=list, max_length=12)
+    followup_reference_resolution: Literal["none", "all", "specific", "ambiguous"] = "none"
+    selected_prior_topic_entities: list[str] = Field(default_factory=list, max_length=12)
+    followup_semantic_change: Literal[
+        "none",
+        "presentation_only",
+        "evidence_scope",
+        "same_subject_question",
+        "new_subject",
+        "ambiguous_reference",
+    ] = "none"
+    comparison_axes: list[str] = Field(default_factory=list, max_length=6)
+    comparison_focal_entities: list[str] = Field(default_factory=list, max_length=12)
+    relationship_focal_entities: list[str] = Field(default_factory=list, max_length=12)
     asset_kind: WorkAssetKind = WorkAssetKind.knowledge
     operation: WorkOperation = WorkOperation.understand
     operation_plan: list[WorkOperation] = Field(default_factory=lambda: [WorkOperation.understand])
@@ -338,8 +666,12 @@ class WorkIntent(BaseModel):
     work_view: Literal["none", "current", "responsibility", "combined"] = "none"
     graph_query_draft: GraphQueryDraft | None = None
     context_refs: list[str] = Field(default_factory=list, max_length=20)
+    user_effect: Literal["read", "draft", "transform", "execute"] = "read"
     result_purpose: Literal["explain", "compare", "design", "transform", "execute"] = "explain"
+    requested_transition: Literal["none", "draft", "transform", "execute"] = "none"
+    analysis_depth: Literal["standard", "deep"] = "standard"
     requested_asset_kinds: list[WorkAssetKind] = Field(default_factory=list, max_length=9)
+    harness_ids: list[str] = Field(default_factory=list, max_length=20)
     artifact_actions: list[Literal["split_tasks", "create_sop_draft"]] = Field(default_factory=list, max_length=2)
     risk: RiskLevel = RiskLevel.low
     needs_clarification: bool = False
@@ -363,6 +695,58 @@ class LoopDelta(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProgressDelta(BaseModel):
+    """Structured progress at a loop boundary; prose is never the progress key."""
+
+    delta_id: str
+    kind: Literal[
+        "evidence", "tool_result", "artifact", "human_input", "state_transition", "blocker", "strategy_change"
+    ]
+    entity_refs: list[str] = Field(default_factory=list, max_length=50)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+    tool_result_refs: list[str] = Field(default_factory=list, max_length=50)
+    artifact_refs: list[str] = Field(default_factory=list, max_length=50)
+    completion_changes: dict[str, Any] = Field(default_factory=dict)
+    blocker_code: str = Field(default="", max_length=120)
+    strategy: str = Field(default="", max_length=1000)
+    strategy_refs: list[str] = Field(default_factory=list, max_length=50)
+    error_disposition: Literal[
+        "", "transient_retry", "semantic_repair", "human_interrupt", "policy_stop", "unexpected_failure"
+    ] = ""
+    summary: str = Field(default="", max_length=2000)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class WorkRunCheckpoint(BaseModel):
+    checkpoint_id: str
+    work_run_id: str
+    node: Literal["observe", "context", "semantic_plan", "act", "ask", "verify", "reflect", "stop"]
+    sequence: int = Field(ge=1)
+    raw_state: dict[str, Any] = Field(default_factory=dict)
+    catalog_revision: str = ""
+    harness_revisions: dict[str, str] = Field(default_factory=dict)
+    planner_schema_revision: str = "semantic-plan/v2"
+    idempotency_key: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ExitCriteriaResult(BaseModel):
+    satisfied: bool = False
+    criteria: list[HarnessCheck] = Field(default_factory=list)
+    evidence_ledger_ids: list[str] = Field(default_factory=list, max_length=100)
+    evaluated_facts: dict[str, Any] = Field(default_factory=dict)
+    stop_reason: Literal[
+        "",
+        "exit_criteria_satisfied",
+        "needs_human",
+        "policy_stop",
+        "max_iterations",
+        "max_tool_loops",
+        "no_progress",
+        "blocked",
+    ] = ""
+
+
 class HarnessCheck(BaseModel):
     check_id: str
     label: str
@@ -376,6 +760,11 @@ class HarnessResult(BaseModel):
     status: Literal["passed", "warning", "blocked"] = "passed"
     checks: list[HarnessCheck] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
+    definition_ref: str = ""
+    phase: str = ""
+    evaluated_facts: dict[str, Any] = Field(default_factory=dict)
+    retryable: bool = False
+    interruptible: bool = False
 
 
 class HarnessCandidateCreateRequest(BaseModel):
@@ -555,6 +944,7 @@ class NextAction(BaseModel):
         "execute_capability",
         "open_artifact",
         "confirm_plan",
+        "transform_artifact",
     ]
     state: Literal["ready", "unavailable"] = "ready"
     artifact_id: str = ""
@@ -585,7 +975,10 @@ class AgentTurnResponse(BaseModel):
     citations: list[CitationRef] = Field(default_factory=list)
     used_source_refs: list[str] = Field(default_factory=list, max_length=12)
     related_questions: list[RelatedQuestion] = Field(default_factory=list, max_length=3)
-    grounding_status: Literal["grounded", "partial", "no_evidence"] = "no_evidence"
+    grounding_status: Literal["grounded", "partial", "insufficient", "conflicting", "no_evidence"] = "no_evidence"
+    answerability: AnswerabilityReport = Field(default_factory=AnswerabilityReport)
+    grounded_claims: list[GroundedClaim] = Field(default_factory=list, max_length=12)
+    topic_state_ref: str = ""
     progress: list[dict[str, Any]] = Field(default_factory=list)
     work_run_id: str = ""
     work_intent: WorkIntent | None = None
@@ -596,6 +989,8 @@ class AgentTurnResponse(BaseModel):
     presentation_plan: dict[str, Any] = Field(default_factory=dict)
     a2ui_surface_ref: str = ""
     graph_result_ref: str = ""
+    semantic_plan_ref: str = ""
+    stop_reason: str = ""
 
 
 class WorkSessionCreateRequest(BaseModel):
@@ -618,6 +1013,7 @@ class WorkRunContinueRequest(BaseModel):
     delta: LoopDelta
     confirmation: Literal["confirm"] | None = None
     expected_revision: int = Field(ge=1)
+    idempotency_key: str = Field(default="", max_length=160)
 
 
 class KnowledgeSourceDefinition(BaseModel):
@@ -832,7 +1228,7 @@ class PlanConfirmRequest(BaseModel):
 
 class DeepJobRequest(BaseModel):
     goal: str = Field(min_length=1, max_length=12000)
-    capability_id: str = "deep.research"
+    capability_id: str | None = Field(default=None, min_length=1, max_length=120)
     page_ref: str = ""
     task_ref: str = ""
     input: dict[str, Any] = Field(default_factory=dict)
@@ -861,6 +1257,7 @@ class WorkRoutineCreateRequest(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
     origin: Literal["user", "business_event", "verification"] = "user"
     surface_visibility: Literal["normal", "diagnostic"] = "normal"
+    idempotency_key: str = Field(default="", max_length=256)
 
 
 class WorkRoutineTriggerRequest(BaseModel):

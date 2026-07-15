@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 import urllib.request
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -23,23 +24,24 @@ from .capabilities import CapabilityRegistry
 from .config import AgentV2Settings, deep_subagent_budget_limit
 from .domain import DomainServiceGateway
 from .entity_resolver import AmbiguousEntityError, EntityResolver
-from .evaluation import IndependentArtifactEvaluator
+from .evaluation import IndependentArtifactEvaluator, IndependentClaimEvaluator
 from .harness import HarnessRegistry
+from .handler_registry import CapabilityHandlerRegistry
 from .knowledge_system import LivingKnowledgeService
 from .model_gateway import (
     ModelGateway,
     begin_model_usage,
     build_model_gateway,
-    ensure_lmstudio_model_residency,
     finish_model_usage,
+    inspect_lmstudio_model_residency,
     lmstudio_model_residency_state,
 )
 from .models import (
     AgentTurnRequest,
     AgentTurnResponse,
+    AnswerabilityReport,
     AnswerBlock,
     ArtifactRef,
-    ArtifactAction,
     CapabilityDefinition,
     CapabilityOffer,
     CapabilityPlanRequest,
@@ -49,8 +51,8 @@ from .models import (
     DeepJobRequest,
     EvidenceRef,
     GoalStep,
-    GraphQueryDraft,
     GraphQueryPlan,
+    GroundedClaim,
     HarnessValidateRequest,
     HarnessResult,
     HelperActivateRequest,
@@ -74,6 +76,7 @@ from .models import (
     RelatedQuestion,
     ResolvedSourceRef,
     RiskLevel,
+    SemanticPlan,
     SourceSetPatchRequest,
     StarterSuggestion,
     StarterSuggestionSetRequest,
@@ -95,11 +98,12 @@ from .models import (
 )
 from .policy import TaskPolicy
 from .quick_agent import QuickAgentRuntime
+from .semantic_kernel import PLANNER_SCHEMA_REVISION, SemanticPlanningError
 from .repository import KnowledgeRecord, KnowledgeRepository
 from .rendering import render_agent_markdown
-from .search import SEARCH_INDEX_SCHEMA_VERSION, HybridSearchService, best_chunk_for_query
+from .search import SEARCH_INDEX_SCHEMA_VERSION, HybridSearchService, best_chunk_for_query, chunks_for_record
 from .store import AgentV2Store, build_store, now_iso
-from .work_learning import WorkIntentEngine, WorkLearningService
+from .work_learning import WorkLearningService
 
 
 def new_id(prefix: str) -> str:
@@ -126,6 +130,42 @@ def truncate_markdown(value: str, limit: int) -> str:
     if candidate.rfind("[") > candidate.rfind(")"):
         candidate = candidate[: candidate.rfind("[")].rstrip()
     return f"{candidate}\n\n…" if candidate else "…"
+
+
+@dataclass
+class CapabilityHandlerContext:
+    principal: Principal
+    definition: CapabilityDefinition
+    request: AgentTurnRequest
+    session: dict[str, Any]
+    intent: WorkIntent
+    work_context: WorkContextPack
+    evidence: list[EvidenceRef]
+    citations: list[CitationRef]
+    current_work_evidence: list[EvidenceRef]
+    work_run: dict[str, Any]
+    route: dict[str, Any]
+    active_artifact: dict[str, Any] | None
+    run_id: str
+    turn_id: str
+    goal_plan: dict[str, Any]
+    source_set: dict[str, Any]
+
+
+@dataclass
+class CapabilityHandlerResult:
+    answer: AnswerBlock
+    status: str = "completed"
+    artifacts: list[ArtifactRef] = field(default_factory=list)
+    related_questions: list[RelatedQuestion] = field(default_factory=list)
+    grounded_claims: list[GroundedClaim] = field(default_factory=list)
+    used_source_refs: list[str] = field(default_factory=list)
+    answerability: AnswerabilityReport | None = None
+    citations: list[CitationRef] | None = None
+    evidence: list[EvidenceRef] | None = None
+    plan_ref: str = ""
+    job_ref: str = ""
+    claim_grounded_response: bool = False
 
 
 def parse_time(value: str) -> datetime:
@@ -254,151 +294,8 @@ MERMAID_GRAPH_SCHEMA: dict[str, Any] = {
 }
 
 
-DRAFT_SCHEMAS: dict[str, dict[str, Any]] = {
-    "business_event.plan": {
-        "type": "object",
-        "required": ["title", "source_kind", "trigger_mode", "target_event_type", "conditions"],
-        "properties": {
-            "title": {"type": "string"},
-            "source_kind": {"type": "string"},
-            "trigger_mode": {"type": "string"},
-            "target_event_type": {"type": "string"},
-            "conditions": {"type": "object"},
-            "fingerprint_fields": {"type": "array", "items": {"type": "string"}},
-            "workflow_ref": {"type": "string"},
-            "assumptions": {"type": "array", "items": {"type": "string"}},
-        },
-    },
-    "sop.plan": {
-        "type": "object",
-        "required": ["title", "goal", "tasks"],
-        "properties": {
-            "title": {"type": "string", "maxLength": 100},
-            "goal": {"type": "string", "maxLength": 240},
-            "tasks": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 6,
-                "items": {
-                    "type": "object",
-                    "required": ["name", "purpose", "execution_mode", "exit_criteria", "required_evidence"],
-                    "properties": {
-                        "name": {"type": "string", "maxLength": 90},
-                        "purpose": {"type": "string", "maxLength": 180},
-                        "execution_mode": {"type": "string", "enum": ["manual", "copilot", "autopilot"]},
-                        "exit_criteria": {
-                            "type": "array",
-                            "minItems": 1,
-                            "maxItems": 2,
-                            "items": {"type": "string", "maxLength": 160},
-                        },
-                        "required_evidence": {
-                            "type": "array",
-                            "minItems": 1,
-                            "maxItems": 2,
-                            "items": {"type": "string", "maxLength": 160},
-                        },
-                    },
-                },
-            },
-            "gaps": {
-                "type": "array",
-                "maxItems": 4,
-                "items": {"type": "string", "maxLength": 160},
-            },
-        },
-    },
-    "action.plan": {
-        "type": "object",
-        "required": ["title", "connector", "inputs", "output_contract", "risk", "preview_only"],
-        "properties": {
-            "title": {"type": "string"},
-            "connector": {"type": "string"},
-            "inputs": {"type": "object"},
-            "output_contract": {"type": "object"},
-            "risk": {"type": "string"},
-            "preview_only": {"type": "boolean"},
-        },
-    },
-    "skill.plan": {
-        "type": "object",
-        "required": ["skill_id", "title", "description", "input_schema", "output_schema", "permissions", "tests"],
-        "properties": {
-            "skill_id": {"type": "string"},
-            "title": {"type": "string"},
-            "description": {"type": "string"},
-            "input_schema": {"type": "object"},
-            "output_schema": {"type": "object"},
-            "permissions": {"type": "array", "items": {"type": "string"}},
-            "tests": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "required": ["name", "sample_input", "expected_contains"],
-                    "properties": {
-                        "name": {"type": "string"},
-                        "sample_input": {"type": "object"},
-                        "expected_contains": {"type": "array", "items": {"type": "string"}},
-                    },
-                },
-            },
-            "available_actions": {"type": "array", "items": {"type": "string"}},
-        },
-    },
-    "knowledge.draft": {
-        "type": "object",
-        "required": ["title", "summary", "body", "source_refs", "status"],
-        "properties": {
-            "title": {"type": "string"},
-            "summary": {"type": "string"},
-            "body": {"type": "string"},
-            "source_refs": {"type": "array", "items": {"type": "string"}},
-            "status": {"const": "provisional"},
-        },
-    },
-    "work_routine.plan": {
-        "type": "object",
-        "required": [
-            "title",
-            "goal",
-            "trigger",
-            "schedule_description",
-            "calendar",
-            "routine_stop",
-            "completion_condition",
-        ],
-        "properties": {
-            "title": {"type": "string"},
-            "goal": {"type": "string"},
-            "trigger": {"type": "string", "enum": ["event", "schedule", "interval"]},
-            "schedule_description": {"type": "string"},
-            "calendar": {
-                "type": "object",
-                "required": ["minutes", "hours", "days_of_month", "months", "weekdays"],
-                "properties": {
-                    "minutes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 59}},
-                    "hours": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 23}},
-                    "days_of_month": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 31}},
-                    "months": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 12}},
-                    "weekdays": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 6}},
-                },
-            },
-            "interval_seconds": {"type": "integer", "minimum": 60, "maximum": 31536000},
-            "cron": {"type": "string"},
-            "timezone": {"type": "string"},
-            "event_ref": {"type": "string"},
-            "routine_stop": {"type": "string", "enum": ["cancelled", "max_runs", "event_resolved"]},
-            "max_runs": {"type": "integer", "minimum": 0, "maximum": 10000},
-            "completion_condition": {"type": "string"},
-            "target_ref": {"type": "string"},
-        },
-    },
-}
-
-
 class AgentV2Service:
-    SEMANTIC_ROUTE_CACHE_VERSION = "21"
+    SEMANTIC_ROUTE_CACHE_VERSION = "42"
     SEMANTIC_ROUTE_CACHE_TTL_SECONDS = 900
     STARTER_SUGGESTION_VERSION = "2"
 
@@ -423,11 +320,16 @@ class AgentV2Service:
         self.quick_agent = QuickAgentRuntime(self.registry)
         self.entity_resolver = EntityResolver(directory_provider)
         self.pats = PatService(self.store, settings.pat_hash_secret, identity_provider=identity_provider)
-        self.harnesses = HarnessRegistry()
+        self.harnesses = HarnessRegistry(settings.agent_catalog_root / "harnesses-v2.yaml")
         self.evaluator = IndependentArtifactEvaluator(
             self.store,
             self.model,
             enabled=settings.independent_review,
+        )
+        self.claim_evaluator = IndependentClaimEvaluator(
+            self.store,
+            self.model,
+            enabled=settings.claim_grounding_enabled,
         )
         self.domain_services = domain_services or DomainServiceGateway()
         self.routine_target_executor = routine_target_executor
@@ -446,15 +348,51 @@ class AgentV2Service:
             search=self.search,
             directory_provider=directory_provider,
         )
+        self.capability_handlers = CapabilityHandlerRegistry()
+        for handler_id, handler in {
+            "artifact_transform": self._handle_artifact_transform,
+            "routine_plan": self._handle_routine_plan,
+            "task_runtime": self._handle_task_runtime,
+            "grounded_read": self._handle_grounded_read,
+            "current_work": self._handle_current_work,
+            "deep_job": self._handle_deep_job,
+            "draft_artifact": self._handle_draft_artifact,
+        }.items():
+            self.capability_handlers.register(handler_id, handler)
+        missing_handlers = CapabilityRegistry.HANDLER_PLUGINS - self.capability_handlers.registered_ids()
+        if missing_handlers:
+            raise RuntimeError("missing capability handler plugins: " + ", ".join(sorted(missing_handlers)))
+
+    def inspect_model_residency(self) -> dict[str, Any]:
+        self.model_residency = inspect_lmstudio_model_residency(self.settings)
+        return dict(self.model_residency)
 
     def ensure_model_residency(self) -> dict[str, Any]:
-        self.model_residency = ensure_lmstudio_model_residency(self.settings)
-        return dict(self.model_residency)
+        """Compatibility alias; model lifecycle remains externally managed by LM Studio."""
+
+        return self.inspect_model_residency()
 
     def _semantic_route_cache_key(self, principal: Principal, route_input: dict[str, Any]) -> str:
         model_state = self.model.readiness()
+        cache_route_input = copy.deepcopy(route_input)
+        cache_hints = []
+        for hint in cache_route_input.get("knowledge_hints") or []:
+            if not isinstance(hint, dict):
+                continue
+            if str(hint.get("answer_scope") or "canonical") == "operational":
+                cache_hints.append(
+                    {
+                        key: hint.get(key)
+                        for key in ("ref", "title", "kind", "authority", "source", "answer_scope")
+                    }
+                )
+            else:
+                cache_hints.append(hint)
+        cache_route_input["knowledge_hints"] = cache_hints
         payload = {
             "version": self.SEMANTIC_ROUTE_CACHE_VERSION,
+            "catalog_revision": self.registry.version,
+            "planner_schema_revision": PLANNER_SCHEMA_REVISION,
             "employee_id": principal.employee_id,
             "team_ids": sorted(principal.teams),
             "roles": sorted(principal.roles),
@@ -463,7 +401,7 @@ class AgentV2Service:
                 "provider": model_state.get("provider") or "",
                 "name": model_state.get("model") or "",
             },
-            "route_input": route_input,
+            "route_input": cache_route_input,
         }
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
         return "semantic_route_" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -484,10 +422,38 @@ class AgentV2Service:
         except (TypeError, ValueError):
             cache_valid = False
         if cache_valid:
-            return copy.deepcopy(cached["route"])
+            cached_route = copy.deepcopy(cached["route"])
+            cached_intent = cached_route.get("work_intent") if isinstance(cached_route.get("work_intent"), dict) else {}
+            if str(cached_intent.get("answer_source_scope") or "canonical") != "operational":
+                return cached_route
 
         route = self.quick_agent.route(**route_input, model=self.model)
-        if route.get("source") == "llm_structured":
+        semantic_plan = route.get("semantic_plan") if isinstance(route.get("semantic_plan"), dict) else {}
+        if not semantic_plan:
+            raise SemanticPlanningError("planner_invalid", "Validated semantic plan is missing from the route.")
+        plan_payload = json.dumps(semantic_plan, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        semantic_plan_ref = "semantic_plan_" + hashlib.sha256(
+            f"{principal.employee_id}:{self.registry.version}:{plan_payload}".encode("utf-8")
+        ).hexdigest()[:32]
+        self.store.put(
+            "semantic_plans",
+            semantic_plan_ref,
+            {
+                "semantic_plan_ref": semantic_plan_ref,
+                "employee_id": principal.employee_id,
+                "catalog_revision": self.registry.version,
+                "planner_schema_revision": PLANNER_SCHEMA_REVISION,
+                "plan": semantic_plan,
+                "validation": route.get("plan_validation") or {},
+                "created_at": now_iso(),
+            },
+        )
+        route["semantic_plan_ref"] = semantic_plan_ref
+        route_intent = route.get("work_intent") if isinstance(route.get("work_intent"), dict) else {}
+        if (
+            route.get("source") in {"llm_structured", "explicit", "offer_id"}
+            and str(route_intent.get("answer_source_scope") or "canonical") != "operational"
+        ):
             self.store.put(
                 "semantic_routes",
                 cache_key,
@@ -619,43 +585,60 @@ class AgentV2Service:
         used_categories: set[str] = set()
         area_counts: dict[str, int] = {}
         seen_suggestions: set[str] = set()
-        area_for_category = {
-            "current_work": "current_work",
-            "knowledge_relation": "knowledge",
-            "similar_case": "knowledge",
-            "sop_task": "workflow",
-            "business_event": "event_action",
-            "action": "event_action",
-            "knowledge_capture": "learning",
-            "automatic_check": "automation",
-        }
 
-        def add(
-            category: str,
-            *,
-            label: str,
-            prompt: str,
-            subject_ref: str,
-            source_refs: list[str],
-            reason: str,
-            priority: int,
-            area: str = "",
-            context_basis: str = "",
-            result_kind: str = "answer",
-            graph_query_kind: str = "",
-            fallback_to_answer: bool = False,
-        ) -> None:
-            refs = list(dict.fromkeys(str(item).strip() for item in source_refs if str(item).strip()))[:4]
-            subject = str(subject_ref or "").strip()
+        class TemplateValues(dict[str, str]):
+            def __missing__(self, key: str) -> str:
+                return ""
+
+        def add(definition: CapabilityDefinition, offer: Any, candidate: dict[str, Any]) -> None:
+            selected_ref = str(candidate.get("record_id") or "").strip()
+            selected_title = compact_text(str(candidate.get("title") or ""), 160)
+            subject = (
+                f"person:{principal.employee_id}"
+                if offer.subject_binding == "principal_person"
+                else selected_ref
+            )
+            refs = [selected_ref]
+            if offer.include_anchor_source:
+                refs.append(str(candidate.get("anchor_ref") or ""))
+            refs = list(dict.fromkeys(ref for ref in refs if ref))[:4]
             if not subject or not refs:
                 return
+            if offer.only_when_category_empty and offer.category in used_categories:
+                return
+            if offer.only_when_area_empty and area_counts.get(offer.area):
+                return
+            values = TemplateValues(
+                subject_title=selected_title,
+                subject_ref=selected_ref,
+                anchor_title=compact_text(str(candidate.get("anchor_title") or ""), 160),
+                anchor_ref=str(candidate.get("anchor_ref") or ""),
+                employee_id=principal.employee_id,
+            )
+            label = offer.label_template.format_map(values)
+            prompt = offer.prompt_template.format_map(values)
+            reason = offer.reason_template.format_map(values)
+            if offer.use_entrypoint_copy:
+                metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
+                prompts = metadata.get("agent_entrypoint_prompts") if isinstance(metadata, dict) else {}
+                prompt_spec = prompts.get(offer.entrypoint_area) if isinstance(prompts, dict) else None
+                if isinstance(prompt_spec, dict):
+                    label = str(prompt_spec.get("label") or label)
+                    prompt = str(prompt_spec.get("prompt") or prompt)
+                    reason = str(prompt_spec.get("reason") or reason)
+            user_effect = offer.user_effect or definition.default_user_effect
+            operation = offer.semantic_operation or definition.default_operation
+            work_view = offer.work_view or definition.default_work_view
+            if user_effect is None or operation is None:
+                return
+            result_kind = offer.result_kind
+            graph_query_kind = offer.graph_query_kind
             if graph_query_kind and result_kind in {"table", "timeline", "mermaid", "explorer"}:
-                graph_subject = f"person:{principal.employee_id}" if graph_query_kind == "responsibility" else subject
                 try:
                     graph_result = self.knowledge.query(
                         principal,
                         GraphQueryPlan(
-                            focal_entities=[graph_subject],
+                            focal_entities=[subject],
                             query_kind=graph_query_kind,  # type: ignore[arg-type]
                             direction="both",
                             depth=2,
@@ -666,35 +649,37 @@ class AgentV2Service:
                 except Exception:
                     graph_result = {}
                 if not graph_result.get("edges"):
-                    if not fallback_to_answer:
+                    if not offer.fallback_to_answer:
                         return
                     result_kind = "answer"
                     graph_query_kind = ""
-            digest = hashlib.sha256(f"{category}:{subject}:{prompt}".encode("utf-8")).hexdigest()[:16]
+            digest = hashlib.sha256(f"{offer.offer_id}:{subject}:{prompt}".encode("utf-8")).hexdigest()[:16]
             if digest in seen_suggestions:
                 return
-            resolved_area = area or area_for_category.get(category, "knowledge")
-            subject_record = self._record_for_ref(principal, subject)
             suggestions.append(
                 StarterSuggestion(
                     suggestion_id=f"suggestion_{digest}",
-                    category=category,  # type: ignore[arg-type]
+                    category=offer.category,
                     label=compact_text(label, 160),
                     prompt=compact_text(prompt, 1200),
                     subject_ref=subject,
                     source_refs=refs,
                     reason=compact_text(reason, 240),
-                    priority=priority,
-                    area=resolved_area,  # type: ignore[arg-type]
-                    context_basis=context_basis or ("current_work" if category == "current_work" else "knowledge"),
-                    subject_title=compact_text(str((subject_record.title if subject_record else "") or label), 160),
+                    priority=offer.priority,
+                    area=offer.area,
+                    context_basis=offer.context_basis,
+                    subject_title=selected_title or compact_text(label, 160),
                     result_kind=result_kind,  # type: ignore[arg-type]
                     graph_query_kind=graph_query_kind,  # type: ignore[arg-type]
+                    capability_id=definition.capability_id,
+                    user_effect=user_effect,  # type: ignore[arg-type]
+                    operation=operation,
+                    work_view=work_view,  # type: ignore[arg-type]
                 )
             )
             seen_suggestions.add(digest)
-            used_categories.add(category)
-            area_counts[resolved_area] = area_counts.get(resolved_area, 0) + 1
+            used_categories.add(offer.category)
+            area_counts[offer.area] = area_counts.get(offer.area, 0) + 1
 
         records = [
             item
@@ -750,71 +735,12 @@ class AgentV2Service:
 
         current_work = self.repository.current_work(principal, limit=3)
         current = current_work[0] if current_work else None
-        if current:
-            add(
-                "current_work",
-                label="내 역할과 지금 맡은 일을 한눈에 보기",
-                prompt=(
-                    "내 공식 역할과 검증된 업무 관계를 현재 Inbox 업무와 구분해서 보여줘. "
-                    f"지금은 '{current.title}'을 포함해 먼저 확인할 일을 표로 정리해줘."
-                ),
-                subject_ref=current.record_id,
-                source_refs=[current.record_id],
-                reason="현재 처리할 업무가 있습니다.",
-                priority=10,
-                result_kind="table",
-                graph_query_kind="responsibility",
-            )
-            add(
-                "similar_case",
-                label=f"'{current.title}'와 비슷한 사례 보기",
-                prompt=f"'{current.title}'와 업무 맥락과 결과가 비슷한 과거 사례를 근거와 함께 비교해줘.",
-                subject_ref=current.record_id,
-                source_refs=[current.record_id],
-                reason="현재 업무에 참고할 과거 결과를 찾습니다.",
-                priority=30,
-                result_kind="table",
-                graph_query_kind="compare",
-                fallback_to_answer=True,
-            )
-
         page_anchor = self.learning.contexts.page_anchor(principal, page_ref)
-        if page_anchor and page_anchor.resolved:
-            page_record = self._record_for_ref(principal, page_anchor.ref)
-        else:
-            page_record = None
-        if page_anchor and page_anchor.resolved and page_record:
-            page_neighbors = directly_connected_records([page_anchor.ref])
-            related_refs = [item.record_id for item in page_neighbors]
-            page_source_refs = list(dict.fromkeys([page_anchor.ref, *related_refs]))[:4]
-            add(
-                "knowledge_relation",
-                label=f"{page_anchor.title}의 핵심과 연결 관계 보기",
-                prompt=(
-                    f"현재 보고 있는 {page_anchor.title}의 핵심을 설명하고, "
-                    "Wiki 전체에서 실제로 연결된 내용만 근거와 함께 보여줘."
-                ),
-                subject_ref=page_anchor.ref,
-                source_refs=page_source_refs,
-                reason="현재 화면을 출발점으로 Wiki 전체의 관계를 살펴봅니다.",
-                priority=20,
-                result_kind="mermaid",
-                graph_query_kind="neighbors",
-                fallback_to_answer=True,
-            )
-            if not current:
-                add(
-                    "similar_case",
-                    label=f"{page_anchor.title}와 닮은 사례 보기",
-                    prompt=f"{page_anchor.title}와 관련된 실제 처리 사례와 결과를 찾아 차이점을 비교해줘.",
-                    subject_ref=page_anchor.ref,
-                    source_refs=[page_anchor.ref],
-                    reason="현재 화면과 관련된 과거 처리 결과를 찾습니다.",
-                    priority=35,
-                    result_kind="table",
-                    graph_query_kind="compare",
-                    fallback_to_answer=True,
-                )
+        page_record = (
+            self._record_for_ref(principal, page_anchor.ref)
+            if page_anchor and page_anchor.resolved
+            else None
+        )
 
         recent_artifact: dict[str, Any] | None = None
         for work_session in self.store.list("work_sessions", employee_id=principal.employee_id, limit=10):
@@ -823,158 +749,23 @@ class AgentV2Service:
             if artifact and self._owns(principal, artifact):
                 recent_artifact = artifact
                 break
-        if recent_artifact:
-            artifact_ref = str(recent_artifact["artifact_id"])
-            artifact_title = str(recent_artifact.get("title") or "최근 작업 결과")
-            if str(recent_artifact.get("artifact_type") or "").startswith("sop"):
-                add(
-                    "sop_task",
-                    label=f"'{artifact_title}' Task 이어서 다듬기",
-                    prompt=f"최근 만든 '{artifact_title}'을 열어 Task별 목적, 완료된 모습과 확인할 자료를 함께 다듬어줘.",
-                    subject_ref=artifact_ref,
-                    source_refs=[artifact_ref],
-                    reason="최근 저장한 SOP 초안을 이어서 작업합니다.",
-                    priority=25,
-                    result_kind="work_form",
-                    graph_query_kind="workflow",
-                )
-            add(
-                "knowledge_capture",
-                label=f"'{artifact_title}'에서 재사용할 내용 남기기",
-                prompt=f"최근 작업한 '{artifact_title}'에서 다음 업무에도 재사용할 판단과 근거만 private 지식 후보로 정리해줘.",
-                subject_ref=artifact_ref,
-                source_refs=[artifact_ref],
-                reason="최근 결과에서 재사용 가치가 있는 내용을 남깁니다.",
-                priority=70,
-                result_kind="timeline",
-                graph_query_kind="lineage",
-            )
 
-        suggestion_anchor = page_record
-        if "knowledge_relation" not in used_categories:
-            record = next(
-                (
-                    item
-                    for item in records
-                    if "knowledge" in (item.metadata.get("agent_entrypoint_areas") or [])
-                ),
-                next((item for item in records if str(item.metadata.get("type") or "") == "boi/manual"), None),
-            )
-            if record:
-                suggestion_anchor = record
-                add(
-                    "knowledge_relation",
-                    label=f"{record.title}부터 BoI Wiki 살펴보기",
-                    prompt=f"검토된 지식 {record.title}의 핵심과 실제로 연결된 내용을 Wiki 전체 근거로 설명해줘.",
-                    subject_ref=record.record_id,
-                    source_refs=[record.record_id],
-                    reason="현재 맥락이 없어 검토된 공용 지식에서 시작합니다.",
-                    priority=40,
-                    result_kind="explorer",
-                    graph_query_kind="neighbors",
-                    fallback_to_answer=True,
-                )
+        def record_candidate(
+            record: KnowledgeRecord,
+            *,
+            anchor: KnowledgeRecord | None = None,
+        ) -> dict[str, Any]:
+            return {
+                "record_id": record.record_id,
+                "title": record.title,
+                "kind": record.kind,
+                "metadata": record.metadata,
+                "anchor_ref": anchor.record_id if anchor else "",
+                "anchor_title": anchor.title if anchor else "",
+            }
 
-        connected_records = directly_connected_records([suggestion_anchor.record_id]) if suggestion_anchor else []
-        if suggestion_anchor and "sop_task" not in used_categories:
-            record = next((item for item in connected_records if item.kind in {"sop", "workflow"}), None)
-            if record:
-                add(
-                    "sop_task",
-                    label=f"{suggestion_anchor.title}와 연결된 '{record.title}' 보기",
-                    prompt=(
-                        f"'{suggestion_anchor.title}'과 '{record.title}'이 실제로 어떻게 연결되는지, "
-                        "업무 흐름과 근거를 쉽게 설명해줘."
-                    ),
-                    subject_ref=record.record_id,
-                    source_refs=[record.record_id, suggestion_anchor.record_id],
-                    reason="현재 맥락과 직접 연결된 검토된 업무 흐름입니다.",
-                    priority=50,
-                    result_kind="mermaid",
-                    graph_query_kind="workflow",
-                )
-        event_record = next((item for item in connected_records if item.kind == "event"), None)
-        if event_record:
-            add(
-                "business_event",
-                label=f"{suggestion_anchor.title}와 연결된 '{event_record.title}' 보기",
-                prompt=(
-                    f"'{suggestion_anchor.title}'과 업무 이벤트 '{event_record.title}'의 실제 연결 관계와 "
-                    "발생 조건, 이어지는 결과를 근거와 함께 보여줘."
-                ),
-                subject_ref=event_record.record_id,
-                source_refs=[event_record.record_id, suggestion_anchor.record_id],
-                reason="현재 맥락과 직접 연결된 검토된 업무 이벤트입니다.",
-                priority=60,
-                result_kind="explorer",
-                graph_query_kind="impact",
-            )
-        action_record = next((item for item in connected_records if item.kind == "action"), None)
-        if action_record:
-            add(
-                "action",
-                label=f"{suggestion_anchor.title}와 연결된 '{action_record.title}' 보기",
-                prompt=(
-                    f"'{suggestion_anchor.title}'에서 Action '{action_record.title}'을 어디에 사용하는지, "
-                    "입력과 결과 및 실행 전 확인할 근거를 설명해줘."
-                ),
-                subject_ref=action_record.record_id,
-                source_refs=[action_record.record_id, suggestion_anchor.record_id],
-                reason="현재 맥락과 직접 연결된 검토된 Action입니다.",
-                priority=65,
-                result_kind="confirmation",
-                graph_query_kind="impact",
-            )
-
-        automatic_subject = current or (
-            self._record_for_ref(principal, page_anchor.ref)
-            if page_anchor and page_anchor.resolved
-            else None
-        )
-        if automatic_subject:
-            add(
-                "automatic_check",
-                label=f"'{automatic_subject.title}' 다시 확인하도록 계획하기",
-                prompt=(
-                    f"'{automatic_subject.title}'을 정해진 시간이나 상태 변화에 따라 다시 확인하는 "
-                    "자동 확인 계획을 먼저 보여줘. 만들기 전에는 내 확인을 받아줘."
-                ),
-                subject_ref=automatic_subject.record_id,
-                source_refs=[automatic_subject.record_id],
-                reason="현재 대상의 변화를 놓치지 않도록 확인 계획을 만듭니다.",
-                priority=80,
-                result_kind="confirmation",
-                graph_query_kind="timeline",
-            )
-
-        entrypoint_categories = {
-            "current_work": "knowledge_relation",
-            "knowledge": "knowledge_relation",
-            "workflow": "sop_task",
-            "event_action": "business_event",
-            "learning": "knowledge_capture",
-            "automation": "automatic_check",
-        }
-        entrypoint_priorities = {
-            "current_work": 90,
-            "knowledge": 91,
-            "workflow": 92,
-            "event_action": 93,
-            "learning": 94,
-            "automation": 95,
-        }
-        entrypoint_results = {
-            "current_work": ("table", "responsibility"),
-            "knowledge": ("explorer", "neighbors"),
-            "workflow": ("mermaid", "workflow"),
-            "event_action": ("explorer", "impact"),
-            "learning": ("timeline", "lineage"),
-            "automation": ("confirmation", "timeline"),
-        }
-        for area, category in entrypoint_categories.items():
-            if area_counts.get(area):
-                continue
-            record = next(
+        def entrypoint_record(area: str) -> KnowledgeRecord | None:
+            return next(
                 (
                     item
                     for item in records
@@ -982,32 +773,72 @@ class AgentV2Service:
                 ),
                 None,
             )
-            if not record:
-                continue
-            prompts = record.metadata.get("agent_entrypoint_prompts") or {}
-            prompt_spec = prompts.get(area) if isinstance(prompts, dict) else None
-            if isinstance(prompt_spec, dict):
-                entry_label = str(prompt_spec.get("label") or record.title)
-                entry_prompt = str(prompt_spec.get("prompt") or f"'{record.title}'을 바탕으로 이 업무 영역에서 할 수 있는 일을 근거와 함께 설명해줘.")
-                entry_reason = str(prompt_spec.get("reason") or "검토된 시작 지식에서 살펴봅니다.")
+
+        connected_cache: dict[str, list[KnowledgeRecord]] = {}
+
+        def candidates_for(offer: Any) -> list[dict[str, Any]]:
+            if offer.current_work_condition == "present" and current is None:
+                return []
+            if offer.current_work_condition == "absent" and current is not None:
+                return []
+            selected: list[dict[str, Any]]
+            if offer.selector == "current_work":
+                selected = [record_candidate(current)] if current else []
+            elif offer.selector == "page_anchor":
+                selected = [record_candidate(page_record)] if page_record else []
+            elif offer.selector == "recent_artifact":
+                if not recent_artifact:
+                    selected = []
+                else:
+                    artifact_type = str(recent_artifact.get("artifact_type") or "")
+                    if offer.artifact_type_prefixes and not any(
+                        artifact_type.startswith(prefix)
+                        for prefix in offer.artifact_type_prefixes
+                    ):
+                        selected = []
+                    else:
+                        selected = [
+                            {
+                                "record_id": str(recent_artifact.get("artifact_id") or ""),
+                                "title": str(recent_artifact.get("title") or "최근 작업 결과"),
+                                "kind": artifact_type,
+                                "metadata": {},
+                                "anchor_ref": "",
+                                "anchor_title": "",
+                            }
+                        ]
+            elif offer.selector == "connected_record":
+                relationship_anchor = page_record or entrypoint_record(offer.anchor_entrypoint_area)
+                anchor_ref = relationship_anchor.record_id if relationship_anchor else ""
+                if anchor_ref and anchor_ref not in connected_cache:
+                    connected_cache[anchor_ref] = directly_connected_records([anchor_ref])
+                selected = [
+                    record_candidate(item, anchor=relationship_anchor)
+                    for item in connected_cache.get(anchor_ref, [])
+                    if not offer.record_kinds or item.kind in offer.record_kinds
+                ]
+            elif offer.selector == "canonical_entrypoint":
+                record = entrypoint_record(offer.entrypoint_area)
+                selected = [record_candidate(record)] if record else []
+            elif offer.selector == "current_or_page":
+                record = current or page_record
+                selected = [record_candidate(record)] if record else []
             else:
-                entry_label = f"{record.title}에서 시작하기"
-                entry_prompt = f"검토된 지식 '{record.title}'을 바탕으로 이 업무 영역에서 할 수 있는 일을 근거와 함께 설명해줘."
-                entry_reason = "검토된 시작 지식에서 살펴봅니다."
-            add(
-                category,
-                label=entry_label,
-                prompt=entry_prompt,
-                subject_ref=record.record_id,
-                source_refs=[record.record_id],
-                reason=entry_reason,
-                priority=entrypoint_priorities[area],
-                area=area,
-                context_basis="canonical_entrypoint",
-                result_kind=entrypoint_results[area][0],
-                graph_query_kind=entrypoint_results[area][1],
-                fallback_to_answer=True,
-            )
+                selected = []
+            if offer.record_kinds:
+                selected = [item for item in selected if item.get("kind") in offer.record_kinds]
+            return selected
+
+        offers = sorted(
+            self.registry.starter_offers(),
+            key=lambda pair: (pair[1].priority, pair[1].offer_id),
+        )
+        for definition, offer in offers:
+            for candidate in candidates_for(offer):
+                before = len(suggestions)
+                add(definition, offer, candidate)
+                if len(suggestions) > before and offer.only_when_category_empty:
+                    break
 
         suggestions.sort(key=lambda item: (item.priority, item.label))
         for index, item in enumerate(suggestions):
@@ -1072,11 +903,8 @@ class AgentV2Service:
                         "type": "object",
                         "properties": {
                             "suggestion_id": {"type": "string"},
-                            "label": {"type": "string"},
-                            "prompt": {"type": "string"},
-                            "reason": {"type": "string"},
                         },
-                        "required": ["suggestion_id", "label", "prompt", "reason"],
+                        "required": ["suggestion_id"],
                         "additionalProperties": False,
                     },
                 }
@@ -1087,14 +915,14 @@ class AgentV2Service:
         try:
             generated = self.model.generate_structured(
                 system=(
-                    "You rank and rewrite grounded BoI Agent starter questions in concise Korean. "
-                    "Preserve suggestion_id and business meaning. Never invent a source, subject, capability, or current task. "
+                    "You only rank grounded BoI Agent starter question IDs. "
+                    "Never rewrite text or invent a source, subject, capability, or current task. "
                     "Prefer personal current work, then page context, recent work, team knowledge, and reviewed public entrypoints."
                 ),
                 prompt=json.dumps(
                     {
                         "identity": {"teams": principal.teams, "roles": principal.roles},
-                        "instructions": "Return the useful items in best order. Keep at least one item per available area.",
+                        "instructions": "Return only suggestion_id values in best order. Keep at least one item per available area.",
                         "candidates": [
                             {key: item.get(key) for key in ("suggestion_id", "area", "label", "prompt", "reason", "subject_title", "context_basis")}
                             for item in source
@@ -1112,14 +940,7 @@ class AgentV2Service:
                 original = allowed.get(suggestion_id)
                 if not original or suggestion_id in used:
                     continue
-                refined.append(
-                    {
-                        **original,
-                        "label": compact_text(str(row.get("label") or original.get("label") or ""), 160),
-                        "prompt": compact_text(str(row.get("prompt") or original.get("prompt") or ""), 1200),
-                        "reason": compact_text(str(row.get("reason") or original.get("reason") or ""), 240),
-                    }
-                )
+                refined.append(copy.deepcopy(original))
                 used.add(suggestion_id)
             refined.extend(item for item in source if str(item.get("suggestion_id")) not in used)
             for index, item in enumerate(refined):
@@ -1232,6 +1053,7 @@ class AgentV2Service:
             request.input_delta["_starter_suggestion_status"] = "stale"
             return
         request.question = suggestion.prompt
+        request.capability_id = suggestion.capability_id
         request.input_delta.update(
             {
                 "_starter_suggestion_status": "resolved",
@@ -1240,6 +1062,9 @@ class AgentV2Service:
                 "_starter_source_refs": list(suggestion.source_refs),
                 "_starter_result_kind": suggestion.result_kind,
                 "_starter_graph_query_kind": suggestion.graph_query_kind,
+                "user_effect": suggestion.user_effect,
+                "operation": suggestion.operation.value,
+                "work_view": suggestion.work_view,
             }
         )
 
@@ -1455,7 +1280,7 @@ class AgentV2Service:
             session = self.store.get("work_sessions", session_id)
             if session and self._owns(principal, session):
                 agent_run = self.store.get("runs", str(run.get("agent_run_id") or "")) or {}
-                capability_id = str(agent_run.get("capability_id") or "knowledge.search")
+                capability_id = str(agent_run.get("capability_id") or "")
                 self._append_session_message(
                     principal,
                     session_id,
@@ -1578,6 +1403,10 @@ class AgentV2Service:
         loop_state: dict[str, Any] | None = None,
         harness_results: list[HarnessResult] | None = None,
         knowledge_candidates: list[KnowledgeCandidateRef] | None = None,
+        grounded_claims: list[GroundedClaim] | None = None,
+        answerability: AnswerabilityReport | None = None,
+        topic_state_ref: str = "",
+        used_source_refs: list[str] | None = None,
     ) -> dict[str, Any]:
         message_id = new_id("msg")
         limit = 4000 if role == "user" else 8000
@@ -1616,6 +1445,12 @@ class AgentV2Service:
             "loop_state": loop_state or {},
             "harness_results": [item.model_dump(mode="json") for item in (harness_results or [])],
             "knowledge_candidates": [item.model_dump(mode="json") for item in (knowledge_candidates or [])],
+            "grounded_claims": [item.model_dump(mode="json") for item in (grounded_claims or [])],
+            "answerability": answerability.model_dump(mode="json") if answerability else {},
+            "topic_state_ref": topic_state_ref,
+            "used_source_refs": list(
+                dict.fromkeys(str(item).strip() for item in (used_source_refs or []) if str(item).strip())
+            )[:12],
             "created_at": now_iso(),
         }
         return self.store.put("session_messages", message_id, payload)
@@ -1658,23 +1493,7 @@ class AgentV2Service:
                     *[
                         str(ref)
                         for item in recent
-                        for ref in [
-                            *[
-                                evidence.get("evidence_id")
-                                for evidence in item.get("evidence_refs") or []
-                                if isinstance(evidence, dict)
-                            ],
-                            *[
-                                citation.get("source_ref")
-                                for citation in item.get("citations") or []
-                                if isinstance(citation, dict)
-                            ],
-                            *[
-                                artifact.get("artifact_id")
-                                for artifact in item.get("artifact_refs") or []
-                                if isinstance(artifact, dict)
-                            ],
-                        ]
+                        for ref in item.get("used_source_refs") or []
                         if str(ref or "").strip()
                     ],
                     *([artifact_id] if artifact_id else []),
@@ -1687,24 +1506,21 @@ class AgentV2Service:
                 {
                     "role": item.get("role"),
                     "text": compact_text(str(item.get("display_text") or ""), 1000),
-                    # Citations are the sources that actually supported the answer. Keep
-                    # broader retrieval candidates out of follow-up subject resolution.
+                    # Only sources admitted by verified claims or a grounded domain
+                    # artifact may cross the turn boundary. Citation presence alone is
+                    # not proof that the source supported the answer.
                     "source_refs": list(
                         dict.fromkeys(
-                            [
-                                *[
-                                    str(citation.get("source_ref") or "")
-                                    for citation in item.get("citations") or []
-                                    if isinstance(citation, dict) and citation.get("source_ref")
-                                ],
-                                *[
-                                    str(evidence.get("evidence_id") or "")
-                                    for evidence in item.get("evidence_refs") or []
-                                    if isinstance(evidence, dict) and evidence.get("evidence_id")
-                                ],
-                            ]
+                            str(ref)
+                            for ref in item.get("used_source_refs") or []
+                            if str(ref).strip()
                         )
                     )[:8],
+                    "grounded_claims": [
+                        claim
+                        for claim in item.get("grounded_claims") or []
+                        if isinstance(claim, dict) and claim.get("support_status") == "supported"
+                    ][:8],
                     "artifact_refs": [
                         str(artifact.get("artifact_id") or "")
                         for artifact in item.get("artifact_refs") or []
@@ -1715,6 +1531,7 @@ class AgentV2Service:
             ],
             "recent_source_refs": recent_source_refs,
             "active_artifact": artifact_outline,
+            "topic_state": session.get("topic_state") if isinstance(session.get("topic_state"), dict) else {},
         }
 
     def _active_session_task(self, principal: Principal, session: dict[str, Any]) -> dict[str, Any]:
@@ -1730,6 +1547,35 @@ class AgentV2Service:
         return next((item for item in tasks if item.get("task_id") == task_id), None) or (tasks[0] if tasks else {})
 
     def _record_for_ref(self, principal: Principal, ref: str) -> Any | None:
+        runtime_record = self.search.runtime_record(ref, principal)
+        if runtime_record is not None:
+            return runtime_record
+        if ref.startswith("graph-evidence:"):
+            row = self.store.get("graph_relation_evidence", ref)
+            if not row:
+                return None
+            if str(row.get("employee_id") or "") != principal.employee_id and not principal.is_admin:
+                return None
+            return KnowledgeRecord(
+                record_id=ref,
+                kind="relationship",
+                title=str(row.get("title") or "검증된 업무 관계"),
+                description=str(row.get("summary") or ""),
+                text=str(row.get("text") or row.get("summary") or ""),
+                url=str(row.get("url") or "/knowledge-graph"),
+                source="ontology",
+                authority="reviewed",
+                status="reviewed",
+                visibility="private",
+                owner=str(row.get("employee_id") or ""),
+                timestamp=str(row.get("created_at") or ""),
+                metadata={
+                    "answer_scope": "operational",
+                    "query_plan": row.get("query_plan") or {},
+                    "underlying_source_refs": row.get("underlying_source_refs") or [],
+                    "provenance": row.get("provenance") or [],
+                },
+            )
         records = self.repository.authoritative_records(principal, include_drafts=True)
         records.extend(self.repository.history_records(principal, include_seed=True))
         record = next((item for item in records if item.record_id == ref), None)
@@ -1771,6 +1617,59 @@ class AgentV2Service:
             score=score,
             metadata={"status": record.status},
         )
+
+    @staticmethod
+    def _prioritize_evidence(
+        evidence: list[EvidenceRef],
+        priority_refs: set[str],
+        *,
+        limit: int | None = None,
+    ) -> list[EvidenceRef]:
+        ordered = [
+            *[item for item in evidence if item.evidence_id in priority_refs],
+            *[item for item in evidence if item.evidence_id not in priority_refs],
+        ]
+        return ordered[:limit] if limit is not None else ordered
+
+    @staticmethod
+    def _merge_context_evidence(
+        context: WorkContextPack,
+        selected: list[EvidenceRef],
+        *,
+        limit: int = 12,
+    ) -> None:
+        """Keep late-bound domain evidence inside the original context contract.
+
+        Some deterministic domain readers, such as the ontology query service,
+        resolve their exact provenance after the initial hybrid recall. Those
+        sources still have to be part of the selected WorkContextPack before
+        they can become citations or Evidence Ledger entries.
+        """
+
+        merged = list(
+            {
+                item.evidence_id: item
+                for item in [*selected, *context.evidence_refs]
+                if item.evidence_id
+            }.values()
+        )[:limit]
+        context.evidence_refs = merged
+        context.evidence_summary = {
+            **context.evidence_summary,
+            "available": [item.evidence_id for item in merged],
+        }
+        context.manifest["evidence_count"] = len(merged)
+        if context.context_manifest is None:
+            return
+        context.context_manifest.selected_refs = [item.evidence_id for item in merged]
+        context.context_manifest.provenance = {
+            item.evidence_id: {
+                "source": item.source,
+                "authority": item.authority,
+                "url": item.url,
+            }
+            for item in merged
+        }
 
     def _apply_source_set(
         self,
@@ -1965,64 +1864,62 @@ class AgentV2Service:
         route: dict[str, Any],
         intent: WorkIntent,
     ) -> dict[str, Any]:
+        operation_labels = {
+            WorkOperation.understand: "업무 맥락과 근거 이해",
+            WorkOperation.compare: "근거와 차이 비교",
+            WorkOperation.create: "검토 가능한 초안 생성",
+            WorkOperation.refine: "현재 결과 개선",
+            WorkOperation.connect: "검증된 관계 연결",
+            WorkOperation.validate: "완료 조건과 근거 검증",
+            WorkOperation.test: "적용 전 시험",
+            WorkOperation.run: "확인된 실행 수행",
+            WorkOperation.observe: "실행 결과와 상태 확인",
+            WorkOperation.complete: "완료 조건 충족 확인",
+            WorkOperation.capture: "재사용할 결과 정리",
+            WorkOperation.promote: "공유 검토 요청",
+        }
+        read_operations = {
+            WorkOperation.understand,
+            WorkOperation.compare,
+            WorkOperation.validate,
+            WorkOperation.test,
+            WorkOperation.observe,
+        }
+        guarded_operations = {WorkOperation.run, WorkOperation.complete, WorkOperation.promote}
+        pipeline = list(intent.operation_plan or [intent.operation])
         steps: list[GoalStep] = []
-        if definition.capability_id == "work.inbox":
-            steps.append(GoalStep(step_id="current_work", capability_id="work.inbox", label="현재 업무 확인"))
-        elif definition.deep:
-            steps.append(GoalStep(step_id="retrieve", capability_id="knowledge.search", label="관련 지식과 업무 맥락 확인"))
+        custom_labels = definition.handler_config.get("operation_labels")
+        custom_labels = custom_labels if isinstance(custom_labels, dict) else {}
+        for index, operation in enumerate(pipeline):
+            operation_class = (
+                "deep"
+                if definition.deep and operation in {WorkOperation.create, WorkOperation.compare}
+                else "guarded"
+                if operation in guarded_operations
+                else "read"
+                if operation in read_operations
+                else "draft"
+            )
             steps.append(
                 GoalStep(
-                    step_id="deep_research",
-                    capability_id="deep.research",
-                    label="관련 지식 심층 조사",
-                    operation="deep",
-                    depends_on=["retrieve"],
+                    step_id=f"{operation.value}_{index + 1}",
+                    capability_id=definition.capability_id,
+                    label=compact_text(
+                        str(custom_labels.get(operation.value) or operation_labels[operation]),
+                        120,
+                    ),
+                    operation=operation_class,  # type: ignore[arg-type]
+                    semantic_operation=operation,
+                    depends_on=[steps[-1].step_id] if steps else [],
                 )
             )
-        else:
-            steps.append(GoalStep(step_id="retrieve", capability_id="knowledge.search", label="관련 지식과 업무 맥락 확인"))
-            operation_steps: dict[WorkOperation, tuple[str, str, str, str]] = {
-                WorkOperation.compare: ("compare", "cases.similar", "관련 지식과 과거 사례 비교", "read"),
-                WorkOperation.create: ("create", definition.capability_id, definition.title, "draft"),
-                WorkOperation.refine: ("refine", definition.capability_id, "현재 결과 다듬기", "draft"),
-                WorkOperation.connect: ("connect", definition.capability_id, "업무 흐름과 실행 연결 확인", "draft"),
-                WorkOperation.validate: ("validate", "harness.validate", "완료 조건과 근거 검증", "read"),
-                WorkOperation.test: ("test", "harness.test", "적용 전 시험", "read"),
-                WorkOperation.run: ("run", definition.capability_id, "확인 후 업무 실행", "guarded"),
-                WorkOperation.observe: ("observe", "runtime.observe", "실행 결과와 상태 확인", "read"),
-                WorkOperation.complete: ("complete", "task.complete", "완료된 모습과 근거 확인", "guarded"),
-                WorkOperation.capture: ("capture", "learning.capture", "이번 업무에서 남길 내용 정리", "draft"),
-                WorkOperation.promote: ("promote", "knowledge.promote", "공유 검토 요청", "guarded"),
-            }
-            for operation in intent.operation_plan:
-                if operation == WorkOperation.understand:
-                    continue
-                step_id, capability_id, label, step_operation = operation_steps[operation]
-                steps.append(
-                    GoalStep(
-                        step_id=step_id,
-                        capability_id=capability_id,
-                        label=label,
-                        operation=step_operation,  # type: ignore[arg-type]
-                        depends_on=[steps[-1].step_id],
-                    )
-                )
-            if intent.operation_plan == [WorkOperation.understand]:
-                steps.append(
-                    GoalStep(
-                        step_id="answer",
-                        capability_id="knowledge.answer",
-                        label="근거를 바탕으로 답변",
-                        depends_on=["retrieve"],
-                    )
-                )
         route_class = "deep" if definition.deep else "workflow" if len(steps) > 2 or intent.operation != WorkOperation.understand else "quick"
         goal_plan_id = new_id("goal")
         plan = {
             "goal_plan_id": goal_plan_id,
             "employee_id": principal.employee_id,
             "work_session_id": session["session_id"],
-            "interpreted_goal": question,
+            "interpreted_goal": intent.resolved_goal or question,
             "route_class": route_class,
             "confidence": intent.confidence,
             "route_source": route.get("source") or "auto",
@@ -2057,28 +1954,28 @@ class AgentV2Service:
         work_status = str(work_run.get("status") or "")
         candidate_ready = bool(work_run.get("knowledge_candidate_ids"))
         steps = []
-        for item in goal_plan.get("steps") or []:
+        raw_steps = list(goal_plan.get("steps") or [])
+        current_index = next(
+            (
+                index
+                for index, item in enumerate(raw_steps)
+                if str(item.get("semantic_operation") or "understand") == intent.operation.value
+            ),
+            len(raw_steps) - 1,
+        )
+        for index, item in enumerate(raw_steps):
             step = dict(item)
-            step_id = str(step.get("step_id") or "")
-            if step_id in {"retrieve", "current_work"}:
-                step_status = "blocked" if work_status == "blocked" and not evidence else "completed"
-            elif queued and step.get("operation") == "deep":
+            semantic_operation = str(step.get("semantic_operation") or "understand")
+            is_current = semantic_operation == intent.operation.value
+            if work_status == "blocked" and is_current:
+                step_status = "blocked"
+            elif queued and step.get("operation") == "deep" and is_current:
                 step_status = "queued"
-            elif step_id == "answer":
-                step_status = "completed" if response_status == "completed" else "waiting_input"
-            elif step_id == "validate" and intent.operation in {
-                WorkOperation.create,
-                WorkOperation.refine,
-                WorkOperation.connect,
-                WorkOperation.validate,
-                WorkOperation.test,
-                WorkOperation.run,
-                WorkOperation.complete,
-            }:
+            elif semantic_operation == WorkOperation.validate.value and harness_blocked:
                 step_status = "blocked" if harness_blocked else "completed"
-            elif step_id == "capture":
+            elif semantic_operation == WorkOperation.capture.value:
                 step_status = "completed" if candidate_ready else "pending"
-            elif step_id == intent.operation.value:
+            elif is_current:
                 if response_status == "failed":
                     step_status = "failed"
                 elif response_status == "needs_input":
@@ -2093,6 +1990,8 @@ class AgentV2Service:
                     step_status = "waiting_review"
                 else:
                     step_status = "completed"
+            elif index < current_index:
+                step_status = "completed"
             else:
                 step_status = "pending"
             step["status"] = step_status
@@ -2143,21 +2042,25 @@ class AgentV2Service:
         if not goal_plan_id:
             return {}
         goal_plan = self.get_goal_plan(principal, goal_plan_id)
-        action_step = str((run.get("intent") or {}).get("operation") or "run")
-        completed_steps = {
-            "action.invoke": {action_step, "observe"},
-            "knowledge.promotion.submit": {"promote"},
-            "sop.draft.publish_request": {"create", "validate"},
-            "action.draft.publish_request": {"create", "validate"},
-        }.get(domain_operation, set())
-        if not completed_steps:
-            return goal_plan
         steps = []
+        transitioned = False
+        run_completed = str(run.get("status") or "") == "completed"
         for raw in goal_plan.get("steps") or []:
             step = dict(raw)
-            if step.get("step_id") in completed_steps:
+            step_status = str(step.get("status") or "")
+            if (
+                run_completed
+                and step_status not in {"failed", "blocked", "cancelled", "stopped"}
+            ) or step_status in {"waiting_confirmation", "waiting_review"}:
                 step["status"] = "completed"
+                step["domain_result"] = {
+                    "operation": domain_operation,
+                    "confirmed": True,
+                }
+                transitioned = True
             steps.append(step)
+        if not transitioned:
+            return goal_plan
         statuses = {str(item.get("status") or "pending") for item in steps}
         goal_plan.update(
             {
@@ -2172,7 +2075,7 @@ class AgentV2Service:
     def readiness(self, principal: Principal, *, probe_model: bool = False) -> dict[str, Any]:
         store_state = self.store.health()
         if self.settings.lmstudio_require_preloaded_models:
-            self.ensure_model_residency()
+            self.inspect_model_residency()
         model_state = self.model.preflight() if probe_model else self.model.readiness()
         heartbeats = self.store.list("worker_heartbeats", limit=20)
         worker_ready = False
@@ -2386,15 +2289,12 @@ class AgentV2Service:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     def _offer_candidates(self, page_kind: str) -> list[str]:
-        return {
-            "library": ["knowledge.search", "work.inbox", "cases.similar"],
-            "document": ["knowledge.search", "cases.similar", "knowledge.draft"],
-            "inbox": ["work.inbox", "cases.similar", "knowledge.draft"],
-            "sop": ["knowledge.search", "sop.plan", "action.plan"],
-            "event": ["knowledge.search", "business_event.plan", "cases.similar"],
-            "action": ["knowledge.search", "action.plan", "cases.similar"],
-            "agent": ["knowledge.search", "deep.research", "skill.plan"],
-        }.get(page_kind, ["knowledge.search"])
+        candidates = [
+            definition.capability_id
+            for definition in self.registry.all()
+            if page_kind in definition.offer_surfaces
+        ]
+        return candidates
 
     def create_offers(self, principal: Principal, request: OfferRequest) -> list[CapabilityOffer]:
         for existing in self.store.list("offers", employee_id=principal.employee_id, limit=500):
@@ -2479,10 +2379,13 @@ class AgentV2Service:
         )
         if fingerprint != offer.get("context_fingerprint"):
             raise HTTPException(status_code=409, detail="page or Task context changed; refresh recommendations")
-        capability_id = str(offer.get("capability_id") or "knowledge.search")
+        capability_id = str(offer.get("capability_id") or "")
+        if not capability_id:
+            raise HTTPException(status_code=409, detail="offer capability is missing")
+        definition = self.registry.get(capability_id)
         goal = str(request.input_delta.get("goal") or request.input_delta.get("query") or offer.get("selected_text") or "").strip()
-        if not goal and capability_id == "work.inbox":
-            goal = "현재 내가 처리할 업무를 보여줘"
+        if not goal:
+            goal = str(definition.handler_config.get("default_goal") or "").strip()
         if not goal:
             return self._needs_input_response(
                 capability_id,
@@ -2521,6 +2424,63 @@ class AgentV2Service:
             error_code="needs_input:" + ",".join(fields),
         )
 
+    def _planning_failure_response(
+        self,
+        *,
+        principal: Principal,
+        session: dict[str, Any],
+        request: AgentTurnRequest,
+        run_id: str,
+        turn_id: str,
+        error: SemanticPlanningError,
+    ) -> AgentTurnResponse:
+        clarification = str(error.clarification_question or "").strip()
+        status = "needs_input" if clarification else "failed"
+        if clarification:
+            error_disposition = "human_interrupt"
+        elif error.code == "planner_unavailable":
+            error_disposition = "transient_retry"
+        elif error.code == "planner_invalid":
+            error_disposition = "semantic_repair"
+        else:
+            error_disposition = "unexpected_failure"
+        message = clarification or (
+            "로컬 의미 판단 모델을 사용할 수 없습니다. 잠시 후 다시 시도해주세요."
+            if error.code == "planner_unavailable"
+            else "요청의 의미와 실행 계약을 안전하게 확정하지 못했습니다. 다른 기능으로 바꾸어 실행하지 않았습니다."
+        )
+        response = AgentTurnResponse(
+            run_id=run_id,
+            turn_id=turn_id,
+            conversation_id=str(session["conversation_id"]),
+            work_session_id=str(session["session_id"]),
+            status=status,  # type: ignore[arg-type]
+            capability_id="semantic.planner",
+            answer=AnswerBlock(summary=message, markdown=message),
+            error_code=error.code,
+            grounding_status="no_evidence",
+            answerability=AnswerabilityReport(status="insufficient"),
+            stop_reason=error_disposition,
+        )
+        self.store.put(
+            "runs",
+            run_id,
+            {
+                "run_id": run_id,
+                "turn_id": turn_id,
+                "employee_id": principal.employee_id,
+                "work_session_id": session["session_id"],
+                "capability_id": "semantic.planner",
+                "status": status,
+                "error_code": error.code,
+                "error_disposition": error_disposition,
+                "plan_validation": error.report.model_dump(mode="json") if error.report else {},
+                "created_at": now_iso(),
+            },
+        )
+        self._finish_work_session(principal, session, response, request.question)
+        return response
+
     def _resolve_turn_session(self, principal: Principal, request: AgentTurnRequest) -> dict[str, Any]:
         session_id = str(request.work_session_id or "")
         if not session_id and str(request.conversation_id or "").startswith("ws_"):
@@ -2556,6 +2516,8 @@ class AgentV2Service:
         source_set: dict[str, Any],
         resolved_goal: str = "",
         task_override: dict[str, Any] | None = None,
+        subject_ref: str = "",
+        subject_title: str = "",
     ) -> WorkContextPack:
         task = normalise_task_completion(
             task_override or self.policy.resolve_task(principal, request.task_ref),
@@ -2574,6 +2536,8 @@ class AgentV2Service:
             source_set=source_set,
             external_ai_summary=request.external_ai_summary,
             external_refs=request.external_artifact_refs,
+            subject_ref=subject_ref,
+            subject_title=subject_title,
             model_profile=self.learning.model_profile,
         )
         context.manifest.update(
@@ -2589,219 +2553,6 @@ class AgentV2Service:
         self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
         return context
 
-    @staticmethod
-    def _search_answer(
-        query: str,
-        evidence: list[EvidenceRef],
-        *,
-        citations: list[CitationRef] | None = None,
-        empty_label: str = "관련 자료",
-    ) -> AnswerBlock:
-        if not evidence:
-            message = f"'{compact_text(query, 80)}'에 해당하는 {empty_label}를 찾지 못했습니다. 검색 범위나 업무 용어를 더 구체적으로 적어주세요."
-            return AnswerBlock(summary=message, markdown=message)
-        direct_parts = [compact_text(item.summary, 220) for item in evidence[:2] if item.summary]
-        direct = " ".join(dict.fromkeys(direct_parts))
-        summary = (
-            f"검토된 근거 기준으로 {direct}"
-            if direct
-            else f"{len(evidence)}개의 관련 근거를 찾았습니다. 가장 관련성이 높은 항목은 '{evidence[0].title}'입니다."
-        )
-        citation_by_source = {
-            item.source_ref: (index + 1, item)
-            for index, item in enumerate((citations or [])[:4])
-        }
-        first_citation = citation_by_source.get(evidence[0].evidence_id)
-        if first_citation:
-            index, citation = first_citation
-            summary += f" [{index}](/api/v2/citations/{citation.citation_id})"
-        lines = [summary, "", "### 관련 근거"]
-        for item in evidence[:4]:
-            link = f"[{item.title}]({item.url})" if item.url else item.title
-            marker = ""
-            if item.evidence_id in citation_by_source:
-                index, citation = citation_by_source[item.evidence_id]
-                marker = f" [{index}](/api/v2/citations/{citation.citation_id})"
-            lines.append(f"- {link}{marker}: {item.summary or item.kind}")
-        return AnswerBlock(summary=summary, markdown="\n".join(lines))
-
-    def _grounded_search_answer(
-        self,
-        principal: Principal,
-        session: dict[str, Any],
-        query: str,
-        evidence: list[EvidenceRef],
-        citations: list[CitationRef],
-        *,
-        empty_label: str = "관련 자료",
-        guidance: str = "",
-        desired_outcome: str = "",
-        primary_source_ref: str = "",
-    ) -> tuple[AnswerBlock, list[RelatedQuestion]]:
-        fallback = self._search_answer(query, evidence, citations=citations, empty_label=empty_label)
-        if not evidence or not citations or not self.model.readiness().get("generation"):
-            return fallback, []
-        citation_by_source = {item.source_ref: item for item in citations}
-        grounded_sources = [item for item in evidence if item.evidence_id in citation_by_source][:4]
-        if not grounded_sources:
-            return fallback, []
-        source_payload = []
-        citation_order: list[CitationRef] = []
-        for item in grounded_sources:
-            citation = citation_by_source[item.evidence_id]
-            citation_order.append(citation)
-            source_payload.append(
-                {
-                    "number": len(source_payload) + 1,
-                    "title": item.title,
-                    "kind": item.kind,
-                    "heading": citation.heading,
-                    "excerpt": compact_text(citation.excerpt, 620),
-                    "is_primary": item.evidence_id == primary_source_ref,
-                }
-            )
-        schema = {
-            "type": "object",
-            "required": ["summary", "outcomes"],
-            "properties": {
-                "summary": {"type": "string"},
-                "outcomes": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 3,
-                    "items": {
-                        "type": "object",
-                        "required": ["title", "items"],
-                        "properties": {
-                            "title": {"type": "string"},
-                            "items": {
-                                "type": "array",
-                                "minItems": 1,
-                                "maxItems": 4,
-                                "items": {
-                                    "type": "object",
-                                    "required": ["text", "source_numbers"],
-                                    "properties": {
-                                        "text": {"type": "string"},
-                                        "source_numbers": {
-                                            "type": "array",
-                                            "items": {"type": "integer"},
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-                "related_questions": MERMAID_GRAPH_SCHEMA["properties"]["related_questions"],
-            },
-        }
-        try:
-            generated = self.model.generate_structured(
-                system=(
-                    "You answer workplace questions in concise Korean using only the supplied BoI Wiki excerpts. "
-                    "Do not add general model knowledge. Put the conclusion first. Every factual point must cite "
-                    "one or more supplied source numbers. Split the user's request into distinct requested outcomes "
-                    "and return one section for each outcome; do not silently omit a requested deliverable. "
-                    "When one retrieved source has is_primary=true, make that source the focal subject, cite it in "
-                    "the summary and at least one outcome item, and use the other sources only to clarify its directly "
-                    "related context. Do not replace the focal document with a tangential dictionary term. "
-                    "If evidence is insufficient, say exactly what is missing in that outcome. "
-                    "Suggest at most three short follow-up questions only when directly supported by the supplied sources. "
-                    "Do not steer an explanation toward SOP, Task, Event, or Action unless the request and evidence require it. "
-                    "Write user-facing text in natural Korean. Do not expose file names, storage identifiers, or raw "
-                    "snake_case schema fields unless the user explicitly requested the technical schema. "
-                    + (f"Follow this verified helper guidance when it does not conflict with evidence: {compact_text(guidance, 5000)}" if guidance else "")
-                ),
-                prompt=(
-                    f"Question: {query}\n"
-                    f"Requested result: {desired_outcome or query}\n"
-                    f"Retrieved sources: {json.dumps(source_payload, ensure_ascii=False)}\n"
-                    "Return a short direct summary, at most three outcome sections with no more than six total items, "
-                    "and optional grounded related_questions."
-                ),
-                schema=schema,
-            )
-            def clean_generated_text(value: Any, limit: int) -> str:
-                text = compact_text(str(value or ""), limit)
-                text = re.sub(r"\s*\[(?:\d+(?:\s*,\s*\d+)*)\]", "", text)
-                text = re.sub(r"\s*\(\s*출처\s*\d+(?:\s*,\s*\d+)*\s*\)", "", text)
-                return text.strip()
-
-            summary = clean_generated_text(generated.get("summary"), 620)
-            rendered_sections: list[tuple[str, list[str]]] = []
-            first_valid_numbers: list[int] = []
-            used_source_numbers: set[int] = set()
-            remaining_items = 6
-            for raw_outcome in (generated.get("outcomes") or [])[:3]:
-                if not isinstance(raw_outcome, dict) or remaining_items <= 0:
-                    continue
-                title = clean_generated_text(raw_outcome.get("title"), 90) or "확인 결과"
-                rendered_items: list[str] = []
-                for raw in (raw_outcome.get("items") or [])[: min(4, remaining_items)]:
-                    if not isinstance(raw, dict):
-                        continue
-                    text = clean_generated_text(raw.get("text"), 380)
-                    numbers = list(
-                        dict.fromkeys(
-                            int(number)
-                            for number in raw.get("source_numbers") or []
-                            if isinstance(number, int) and 1 <= number <= len(citation_order)
-                        )
-                    )
-                    if not text or not numbers:
-                        continue
-                    used_source_numbers.update(numbers)
-                    if not first_valid_numbers:
-                        first_valid_numbers = numbers
-                    markers = " ".join(
-                        f"[{number}](/api/v2/citations/{citation_order[number - 1].citation_id})"
-                        for number in numbers
-                    )
-                    rendered_items.append(f"- {text} {markers}")
-                    remaining_items -= 1
-                if not rendered_items:
-                    continue
-                rendered_sections.append((title, rendered_items))
-            if not summary or not rendered_sections:
-                return fallback, []
-            primary_number = next(
-                (
-                    index
-                    for index, item in enumerate(grounded_sources, start=1)
-                    if item.evidence_id == primary_source_ref
-                ),
-                0,
-            )
-            if primary_number and primary_number not in used_source_numbers:
-                return fallback, []
-            summary_numbers = list(
-                dict.fromkeys([*([primary_number] if primary_number else []), *(first_valid_numbers or [1])])
-            )
-            summary_markers = " ".join(
-                f"[{number}](/api/v2/citations/{citation_order[number - 1].citation_id})"
-                for number in summary_numbers
-            )
-            lines = [f"{summary} {summary_markers}"]
-            for title, items in rendered_sections:
-                lines.extend(["", f"### {title}", *items])
-            lines.extend(["", "### 사용한 지식"])
-            for number, (item, citation) in enumerate(zip(grounded_sources, citation_order), start=1):
-                link = f"[{item.title}]({item.url})" if item.url else item.title
-                lines.append(
-                    f"- {link} [{number}](/api/v2/citations/{citation.citation_id})"
-                    + (f" · {citation.heading}" if citation.heading else "")
-                )
-            related = self._model_related_questions(
-                principal,
-                session,
-                generated.get("related_questions"),
-                citation_order,
-            )
-            return AnswerBlock(summary=summary, markdown="\n".join(lines)), related
-        except Exception:
-            return fallback, []
-
     def _grounded_answer_from_plan(
         self,
         principal: Principal,
@@ -2811,12 +2562,42 @@ class AgentV2Service:
         citations: list[CitationRef],
         *,
         primary_source_ref: str = "",
-    ) -> tuple[AnswerBlock, list[RelatedQuestion]] | None:
-        """Render a planner answer only when every claim resolves to a retrieved citation."""
+        include_report: bool = False,
+        intent: WorkIntent | None = None,
+        work_run_id: str = "",
+    ) -> Any:
+        """Bind claims structurally, then use the versioned fresh-context evaluator."""
+        answer_intent = intent.answer_intent if intent is not None else "fact"
+        if intent is None and isinstance(raw_answer, dict):
+            answer_intent = str(raw_answer.get("answer_intent") or "fact")
+        if answer_intent not in {"definition", "fact", "procedure", "comparison", "relationship", "work"}:
+            answer_intent = "fact"
+        insufficient = AnswerabilityReport(status="insufficient", answer_intent=answer_intent)
+        def packed(
+            answer: AnswerBlock | None,
+            related: list[RelatedQuestion],
+            claims: list[GroundedClaim],
+            report: AnswerabilityReport,
+        ) -> Any:
+            return (answer, related, claims, report) if include_report else ((answer, related) if answer else None)
+
         if not isinstance(raw_answer, dict) or not evidence or not citations:
-            return None
+            insufficient.missing_evidence = ["질문을 직접 뒷받침하는 Wiki 근거를 찾지 못했습니다."]
+            return packed(None, [], [], insufficient)
         citation_by_source = {item.source_ref: item for item in citations}
         evidence_by_source = {item.evidence_id: item for item in evidence}
+        full_chunk_text: dict[tuple[str, str], str] = {}
+        record_by_source: dict[str, Any] = {}
+        for source_ref, citation in citation_by_source.items():
+            record = self._record_for_ref(principal, source_ref)
+            record_by_source[source_ref] = record
+            if record is None:
+                continue
+            for chunk in chunks_for_record(record):
+                chunk_id = str(chunk.get("chunk_id") or "")
+                if chunk_id == citation.chunk_id:
+                    full_chunk_text[(source_ref, chunk_id)] = str(chunk.get("content") or "")
+                    break
         number_by_ref = {
             item.source_ref: index
             for index, item in enumerate(citations, start=1)
@@ -2833,49 +2614,165 @@ class AgentV2Service:
             )[:4]
 
         def clean(value: Any, limit: int) -> str:
-            text = compact_text(str(value or ""), limit)
-            text = re.sub(r"\s*\[(?:\d+(?:\s*,\s*\d+)*)\]", "", text)
-            text = re.sub(r"\s*\(\s*출처\s*\d+(?:\s*,\s*\d+)*\s*\)", "", text)
-            return text.strip()
+            return compact_text(str(value or ""), limit).strip()
 
-        summary = clean(raw_answer.get("summary"), 620)
-        summary_refs = refs_for(raw_answer.get("summary_source_refs"))
-        if not summary or not summary_refs:
-            return None
-        lines = [
-            f"{summary} "
-            + " ".join(
-                f"[{number_by_ref[ref]}](/api/v2/citations/{citation_by_source[ref].citation_id})"
-                for ref in summary_refs
-            )
-        ]
-        used_refs = set(summary_refs)
-        rendered_sections = 0
-        rendered_items = 0
-        for raw_outcome in (raw_answer.get("outcomes") or [])[:3]:
-            if not isinstance(raw_outcome, dict) or rendered_items >= 6:
+        def direct_extract_confidence(text: str, excerpts: list[str]) -> float:
+            normalized_claim = re.sub(r"\s+", " ", text).strip().casefold()
+            normalized_excerpts = [
+                re.sub(r"\s+", " ", excerpt).strip().casefold()
+                for excerpt in excerpts
+                if excerpt.strip()
+            ]
+            if normalized_claim and normalized_excerpts and all(
+                normalized_claim in excerpt for excerpt in normalized_excerpts
+            ):
+                return 1.0
+            # A paraphrase may still be valid, but only a fresh-context
+            # evaluator can establish that every bound chunk entails it.
+            return 0.5
+
+        raw_claims = list(raw_answer.get("claims") or [])[:8]
+        if not raw_claims and not include_report:
+            raw_claims = [
+                {
+                    "claim_id": "claim-summary",
+                    "text": raw_answer.get("summary") or "",
+                    "claim_kind": answer_intent,
+                    "source_refs": raw_answer.get("summary_source_refs") or [],
+                    "supporting_chunk_ids": [item.chunk_id or f"source:{item.source_ref}" for item in citations],
+                }
+            ]
+        grounded_claims: list[GroundedClaim] = []
+        support_text_by_claim: dict[str, list[str]] = {}
+        for index, raw_claim in enumerate(raw_claims, start=1):
+            if not isinstance(raw_claim, dict):
                 continue
-            title = clean(raw_outcome.get("title"), 90)
-            items: list[str] = []
-            for raw_item in (raw_outcome.get("items") or [])[:4]:
-                if not isinstance(raw_item, dict) or rendered_items >= 6:
-                    continue
-                text = clean(raw_item.get("text"), 380)
-                refs = refs_for(raw_item.get("source_refs"))
-                if not text or not refs:
-                    continue
-                used_refs.update(refs)
-                markers = " ".join(
-                    f"[{number_by_ref[ref]}](/api/v2/citations/{citation_by_source[ref].citation_id})"
-                    for ref in refs
+            text = clean(raw_claim.get("text"), 420)
+            source_refs = refs_for(raw_claim.get("source_refs"))
+            chunk_ids = list(dict.fromkeys(str(item) for item in raw_claim.get("supporting_chunk_ids") or [] if str(item)))[:8]
+            claim_kind = str(raw_claim.get("claim_kind") or answer_intent)
+            raw_claim_scope = str(raw_claim.get("source_scope") or "canonical")
+            expected_scope = intent.answer_source_scope if intent is not None else raw_claim_scope
+            claim_scope = raw_claim_scope
+            if claim_scope not in {"canonical", "operational", "validation"}:
+                claim_scope = "canonical"
+            if claim_kind not in {"definition", "fact", "procedure", "comparison", "relationship", "work"}:
+                claim_kind = answer_intent
+            excerpt_pairs: list[tuple[str, str]] = []
+            for ref in source_refs:
+                citation = citation_by_source[ref]
+                chunk_matches = citation.chunk_id in chunk_ids or (
+                    not include_report and f"source:{citation.source_ref}" in chunk_ids
                 )
-                items.append(f"- {text} {markers}")
-                rendered_items += 1
-            if title and items:
-                lines.extend(["", f"### {title}", *items])
-                rendered_sections += 1
-        if primary_source_ref and primary_source_ref in citation_by_source and primary_source_ref not in used_refs:
-            return None
+                if not chunk_matches:
+                    continue
+                excerpt_pairs.append(
+                    (
+                        ref,
+                        full_chunk_text.get((ref, citation.chunk_id), citation.excerpt),
+                    )
+                )
+            excerpts = [excerpt for _, excerpt in excerpt_pairs]
+            source_records = [record_by_source.get(ref) for ref in source_refs]
+            scope_matches = bool(source_records) and claim_scope == expected_scope and all(
+                record is not None and self.repository.answer_scope(record) == expected_scope
+                for record in source_records
+            )
+            reviewed_runtime_projection = bool(
+                claim_scope == "operational"
+                and source_records
+                and all(
+                    record is not None
+                    and record.source == "runtime"
+                    and record.authority == "reviewed"
+                    for record in source_records
+                )
+            )
+            if reviewed_runtime_projection and len(excerpts) == 1:
+                # Runtime records are deterministic read models. Render the
+                # exact bound projection rather than a generated paraphrase.
+                text = compact_text(excerpts[0], 420)
+            supported = bool(
+                text
+                and source_refs
+                and len(excerpt_pairs) == len(source_refs)
+                and scope_matches
+            )
+            support_confidence = direct_extract_confidence(text, excerpts) if supported else 0.0
+            claim_id = str(raw_claim.get("claim_id") or f"claim-{index}")[:80]
+            grounded_claims.append(
+                GroundedClaim(
+                    claim_id=claim_id,
+                    text=text,
+                    claim_kind=claim_kind,  # type: ignore[arg-type]
+                    source_scope=claim_scope,  # type: ignore[arg-type]
+                    source_refs=source_refs,
+                    supporting_chunk_ids=chunk_ids,
+                    support_status="supported" if supported else "unsupported",
+                    confidence=support_confidence,
+                    required_for_answer=bool(raw_claim.get("required_for_answer", False)),
+                )
+            )
+            support_text_by_claim[claim_id] = excerpts
+
+        evaluator_policy = self.harnesses.definition("claim.grounding").evaluator_policy
+        grounded_claims, _evaluation = self.claim_evaluator.evaluate(
+            principal,
+            claims=grounded_claims,
+            supporting_text=support_text_by_claim,
+            policy=evaluator_policy,
+            user_effect=intent.user_effect if intent else "read",
+            operation=intent.operation.value if intent else "understand",
+            work_run_id=work_run_id,
+            model=self.model,
+        )
+
+        supported_claims = list(
+            {
+                item.text: item
+                for item in grounded_claims
+                if item.support_status == "supported"
+            }.values()
+        )
+        conflicting_claims = [item for item in grounded_claims if item.support_status == "conflicting"]
+        unsupported_claims = [item for item in grounded_claims if item.support_status in {"partial", "unsupported"}]
+        report = AnswerabilityReport(
+            status=(
+                "conflicting"
+                if conflicting_claims
+                else "partial"
+                if supported_claims and unsupported_claims
+                else "grounded"
+                if supported_claims
+                else "insufficient"
+            ),
+            answer_intent=answer_intent,  # type: ignore[arg-type]
+            supported_claim_count=len(supported_claims),
+            unsupported_claim_count=len(unsupported_claims),
+            conflicting_claim_count=len(conflicting_claims),
+            missing_evidence=[item.text for item in unsupported_claims[:4]],
+            conflicts=[item.text for item in conflicting_claims[:4]],
+        )
+        unsupported_required_claims = [
+            item
+            for item in grounded_claims
+            if item.required_for_answer and item.support_status != "supported"
+        ]
+        if not supported_claims or unsupported_required_claims or conflicting_claims:
+            return packed(None, [], grounded_claims, report)
+
+        used_refs = {ref for claim in supported_claims for ref in claim.source_refs}
+
+        lines: list[str] = []
+        for index, claim in enumerate(supported_claims):
+            markers = " ".join(
+                f"[{number_by_ref[ref]}](/api/v2/citations/{citation_by_source[ref].citation_id})"
+                for ref in claim.source_refs
+            )
+            if index == 0:
+                lines.append(f"{claim.text} {markers}")
+            else:
+                lines.append(f"- {claim.text} {markers}")
         lines.extend(["", "### 사용한 지식"])
         ordered_used_refs = [item.evidence_id for item in evidence if item.evidence_id in used_refs]
         for ref in ordered_used_refs:
@@ -2899,7 +2796,8 @@ class AgentV2Service:
             ]
             raw_related.append({**item, "source_numbers": source_numbers})
         related = self._model_related_questions(principal, session, raw_related, citation_order)
-        return AnswerBlock(summary=summary, markdown="\n".join(lines)), related
+        summary = supported_claims[0].text
+        return packed(AnswerBlock(summary=summary, markdown="\n".join(lines)), related, grounded_claims, report)
 
     @staticmethod
     def _grounded_evidence_table(
@@ -3006,33 +2904,6 @@ class AgentV2Service:
             "case": "evidence",
             "evidence": "evidence",
         }.get(str(kind or "").strip(), "knowledge")
-
-    @staticmethod
-    def _artifact_actions_for_intent(intent: WorkIntent, artifact_id: str) -> list[ArtifactAction]:
-        if intent.result_purpose not in {"design", "transform"} or intent.operation not in {
-            WorkOperation.create,
-            WorkOperation.refine,
-        }:
-            return []
-        requested_kinds = {item.value for item in intent.requested_asset_kinds}
-        labels = {
-            "split_tasks": "Task로 나누기",
-            "create_sop_draft": "SOP 초안으로 저장",
-        }
-        actions: list[ArtifactAction] = []
-        for action_id in intent.artifact_actions:
-            if action_id == "split_tasks" and not requested_kinds.intersection({"task", "workflow", "sop"}):
-                continue
-            if action_id == "create_sop_draft" and "sop" not in requested_kinds:
-                continue
-            actions.append(
-                ArtifactAction(
-                    action_id=action_id,
-                    label=labels[action_id],
-                    artifact_id=artifact_id,
-                )
-            )
-        return actions
 
     def _normalise_mermaid_graph(
         self,
@@ -3191,6 +3062,7 @@ class AgentV2Service:
         evidence: list[EvidenceRef],
         citations: list[CitationRef],
         work_run_id: str,
+        capability_id: str,
     ) -> tuple[AnswerBlock, ArtifactRef, list[RelatedQuestion]]:
         if not self.model.readiness().get("generation"):
             raise RuntimeError("흐름 그림을 만들 모델이 준비되지 않았습니다.")
@@ -3277,11 +3149,11 @@ class AgentV2Service:
 
         artifact_id = new_id("artifact")
         title = graph["title"]
-        actions = self._artifact_actions_for_intent(intent, artifact_id)
+        actions = []
         payload = {
             "artifact_id": artifact_id,
             "employee_id": principal.employee_id,
-            "capability_id": "knowledge.search",
+            "capability_id": capability_id,
             "artifact_type": "mermaid_diagram",
             "status": "provisional",
             "title": title,
@@ -3311,7 +3183,7 @@ class AgentV2Service:
             url=f"/agent?session={session['session_id']}&artifact={artifact_id}",
             preview="흐름 그림",
             metadata={
-                "capability_id": "knowledge.search",
+                "capability_id": capability_id,
                 "revision": 1,
                 "node_count": len(graph["nodes"]),
                 "edge_count": len(graph["edges"]),
@@ -3342,13 +3214,21 @@ class AgentV2Service:
         self,
         principal: Principal,
         *,
+        definition: CapabilityDefinition,
         source_artifact: dict[str, Any],
         session: dict[str, Any],
         work_run_id: str,
         page_ref: str,
     ) -> tuple[AnswerBlock, ArtifactRef]:
-        if not self.domain_services.supports("mermaid.workflow_draft.create"):
+        config = definition.handler_config or {}
+        domain_operation = str(config.get("domain_operation") or "").strip()
+        accepted_types = {
+            str(item) for item in config.get("accepted_artifact_types") or [] if str(item).strip()
+        }
+        if not domain_operation or not self.domain_services.supports(domain_operation):
             raise RuntimeError("Task 후보 변환 서비스가 준비되지 않았습니다.")
+        if accepted_types and str(source_artifact.get("artifact_type") or "") not in accepted_types:
+            raise RuntimeError("선택한 결과물은 이 변환 계약에서 지원하지 않습니다.")
         source_draft = source_artifact.get("draft") if isinstance(source_artifact.get("draft"), dict) else {}
         mermaid_source = str(source_draft.get("mermaid") or "").strip()
         if (
@@ -3360,14 +3240,15 @@ class AgentV2Service:
         if not mermaid_source:
             raise RuntimeError("Task로 나눌 흐름 그림 원문이 없습니다.")
         source_title = str(source_artifact.get("title") or "업무 흐름").strip()
+        title_suffix = str(config.get("title_suffix") or "Task 후보").strip()
         result = self.domain_services.execute(
-            "mermaid.workflow_draft.create",
+            domain_operation,
             principal,
             {
-                "title": f"{source_title} Task 후보",
+                "title": f"{source_title} {title_suffix}",
                 "mermaid_source": mermaid_source,
                 "current_url": page_ref,
-                "note": "BoI Agent에서 사용자가 명시적으로 Task 분해를 요청함",
+                "note": str(config.get("note") or ""),
                 "source_artifact_id": str(source_artifact.get("artifact_id") or ""),
                 "work_session_id": str(session.get("session_id") or ""),
             },
@@ -3390,7 +3271,7 @@ class AgentV2Service:
             for index, item in enumerate(raw_tasks[:20])
         ]
         artifact_id = new_id("artifact")
-        title = str(domain_draft.get("title") or f"{source_title} Task 후보")
+        title = str(domain_draft.get("title") or f"{source_title} {title_suffix}")
         draft = {
             "title": title,
             "goal": "기존 흐름을 실행 가능한 Task 후보로 나눈 나만의 초안",
@@ -3410,8 +3291,8 @@ class AgentV2Service:
         payload = {
             "artifact_id": artifact_id,
             "employee_id": principal.employee_id,
-            "capability_id": "workflow.transform",
-            "artifact_type": "workflow_draft",
+            "capability_id": definition.capability_id,
+            "artifact_type": str(config.get("output_artifact_type") or "workflow_draft"),
             "status": "draft",
             "title": title,
             "draft": draft,
@@ -3426,13 +3307,13 @@ class AgentV2Service:
         self.store.put("artifacts", artifact_id, payload)
         artifact = ArtifactRef(
             artifact_id=artifact_id,
-            artifact_type="workflow_draft",
+            artifact_type=str(config.get("output_artifact_type") or "workflow_draft"),
             title=title,
             status="draft",
             url=f"/agent?session={session['session_id']}&artifact={artifact_id}",
             preview=f"Task 후보 {len(tasks)}개",
             metadata={
-                "capability_id": "workflow.transform",
+                "capability_id": definition.capability_id,
                 "revision": 1,
                 "task_count": len(tasks),
                 "source_artifact_id": str(source_artifact.get("artifact_id") or ""),
@@ -3451,24 +3332,6 @@ class AgentV2Service:
 
     @staticmethod
     def _mermaid_source_from_ontology_draft(draft: dict[str, Any]) -> str:
-        relation_labels = {
-            "assigned_to": "현재 담당",
-            "reviewed_by": "검토 담당",
-            "performed_by": "수행 기록",
-            "completed_by": "검증 완료",
-            "repeated_performer": "반복 수행",
-            "related_team": "관련 조직",
-            "has_task": "포함 Task",
-            "uses_sop": "관련 SOP",
-            "uses_event": "관련 업무 이벤트",
-            "uses_action": "관련 Action",
-            "requires_evidence": "확인할 근거",
-            "member_of": "소속 조직",
-            "has_role": "공식 역할",
-            "evidence": "근거 연결",
-            "links_to": "지식 연결",
-        }
-
         def clean(value: Any, limit: int = 80) -> str:
             return re.sub(r'["\n\r|<>]', " ", str(value or "")).strip()[:limit]
 
@@ -3490,13 +3353,20 @@ class AgentV2Service:
             target = node_ids.get(str(edge.get("target_id") or ""))
             if not source or not target:
                 continue
-            relation = str(edge.get("relation") or "related")
-            lines.append(f"  {source} -->|{clean(relation_labels.get(relation, relation))}| {target}")
+            payload = edge.get("payload") if isinstance(edge.get("payload"), dict) else {}
+            relation_label = (
+                edge.get("user_label")
+                or payload.get("user_label")
+                or edge.get("relation")
+                or "관련"
+            )
+            lines.append(f"  {source} -->|{clean(relation_label)}| {target}")
         return "\n".join(lines) if len(lines) > 1 else ""
 
     def _work_routine_plan(
         self,
         principal: Principal,
+        definition: CapabilityDefinition,
         *,
         request: AgentTurnRequest,
         session: dict[str, Any],
@@ -3543,10 +3413,10 @@ class AgentV2Service:
             draft = self.model.generate_structured(
                 system=system,
                 prompt=repair_prompt,
-                schema=DRAFT_SCHEMAS["work_routine.plan"],
+                schema=self._draft_schema(definition),
             )
             try:
-                self._validate_draft("work_routine.plan", draft)
+                self._validate_draft(definition, draft)
                 trigger = str(draft.get("trigger") or "")
                 if trigger == "schedule":
                     draft["cron"] = self._compile_calendar_cron(draft.get("calendar"))
@@ -3565,7 +3435,7 @@ class AgentV2Service:
         routine_request = WorkRoutineCreateRequest(
             title=compact_text(str(draft.get("title") or "자동 확인"), 160),
             goal=compact_text(str(draft.get("goal") or intent.resolved_goal or request.question), 12000),
-            capability_id="knowledge.search",
+            capability_id=str(definition.handler_config.get("target_capability") or ""),
             page_ref=request.page_ref,
             task_ref=request.task_ref,
             trigger=trigger,  # type: ignore[arg-type]
@@ -3595,13 +3465,19 @@ class AgentV2Service:
         artifact_id = new_id("artifact")
         plan_id = new_id("plan")
         now = now_iso()
+        configured_next_actions = self._configured_next_actions(
+            definition,
+            artifact_id=artifact_id,
+            plan_id=plan_id,
+            work_session_id=str(session["session_id"]),
+        )
         self.store.put(
             "artifacts",
             artifact_id,
             {
                 "artifact_id": artifact_id,
                 "employee_id": principal.employee_id,
-                "capability_id": "work_routine.plan",
+                "capability_id": definition.capability_id,
                 "artifact_type": "work_routine_draft",
                 "status": "draft",
                 "title": routine_request.title,
@@ -3613,6 +3489,7 @@ class AgentV2Service:
                     {"evidence_id": item.evidence_id, "title": item.title, "url": item.url}
                     for item in evidence[:6]
                 ],
+                "next_actions": configured_next_actions,
                 "created_at": now,
                 "updated_at": now,
             },
@@ -3623,7 +3500,7 @@ class AgentV2Service:
             {
                 "plan_id": plan_id,
                 "employee_id": principal.employee_id,
-                "capability_id": "work_routine.plan",
+                "capability_id": definition.capability_id,
                 "artifact_id": artifact_id,
                 "status": "draft",
                 "risk": "medium",
@@ -3642,7 +3519,12 @@ class AgentV2Service:
             status="draft",
             url=f"/agent?session={session['session_id']}&artifact={artifact_id}",
             preview=str(draft.get("schedule_description") or "자동 확인 계획"),
-            metadata={"plan_id": plan_id, "capability_id": "work_routine.plan", "revision": 1},
+            metadata={
+                "plan_id": plan_id,
+                "capability_id": definition.capability_id,
+                "revision": 1,
+                "next_actions": configured_next_actions,
+            },
         )
         answer = AnswerBlock(
             summary=f"'{routine_request.title}' 자동 확인 계획을 준비했습니다.",
@@ -3713,28 +3595,6 @@ class AgentV2Service:
 
     def _graph_plan_for_intent(self, principal: Principal, intent: WorkIntent) -> GraphQueryPlan | None:
         draft = intent.graph_query_draft
-        if (
-            (not draft or not draft.enabled)
-            and intent.context_refs
-            and (
-                intent.operation == WorkOperation.connect
-                or intent.presentation_mode == "explorer"
-            )
-            and intent.presentation_mode in {"table", "timeline", "mermaid", "artifact", "explorer"}
-        ):
-            presentation = {
-                "table": "table",
-                "timeline": "timeline",
-                "mermaid": "mermaid",
-                "artifact": "explorer",
-                "explorer": "explorer",
-            }[intent.presentation_mode]
-            draft = GraphQueryDraft(
-                enabled=True,
-                query_kind="timeline" if presentation == "timeline" else "neighbors",
-                focal_mentions=list(intent.context_refs[:20]),
-                presentation=presentation,  # type: ignore[arg-type]
-            )
         if not draft or not draft.enabled:
             return None
         records = self.repository.authoritative_records(principal, include_drafts=True)
@@ -3744,8 +3604,6 @@ class AgentV2Service:
             principal=principal,
             records=records,
         )
-        if not focal_entities and intent.work_view in {"responsibility", "combined"}:
-            focal_entities.append(f"person:{principal.employee_id}")
         if not focal_entities and intent.target_ref:
             focal_entities.append(intent.target_ref)
         if not focal_entities:
@@ -3779,39 +3637,25 @@ class AgentV2Service:
         current_work: list[EvidenceRef],
         citations: list[CitationRef],
         work_run_id: str,
-    ) -> tuple[AnswerBlock, ArtifactRef, list[EvidenceRef]] | None:
+        capability_id: str,
+    ) -> tuple[AnswerBlock, ArtifactRef, list[EvidenceRef], list[str]] | None:
         plan = self._graph_plan_for_intent(principal, intent)
         if not plan:
             return None
         result = self.knowledge.query(principal, plan)
         nodes = [item for item in result.get("nodes") or [] if isinstance(item, dict)]
         edges = [item for item in result.get("edges") or [] if isinstance(item, dict)]
-        if not nodes:
+        if not nodes or not result.get("ok") or not result.get("meaningful"):
             return None
         if str(result.get("presentation") or "") == "mermaid":
             nodes, edges = self._bounded_mermaid_graph(plan, nodes, edges)
             if not edges:
                 return None
         node_lookup = {str(item.get("node_id") or ""): item for item in nodes}
-        relation_labels = {
-            "assigned_to": "현재 담당",
-            "reviewed_by": "검토 담당",
-            "performed_by": "수행 기록",
-            "completed_by": "검증 완료",
-            "repeated_performer": "반복 수행",
-            "related_team": "관련 조직",
-            "has_task": "포함 Task",
-            "uses_sop": "관련 SOP",
-            "uses_event": "관련 업무 이벤트",
-            "uses_action": "관련 Action",
-            "requires_evidence": "확인할 근거",
-            "member_of": "소속 조직",
-            "has_role": "공식 역할",
-            "evidence": "근거 연결",
-            "links_to": "지식 연결",
-        }
         relation_lines: list[str] = []
-        source_refs: list[str] = []
+        underlying_source_refs: list[str] = []
+        grounded_edges: list[dict[str, Any]] = []
+        provenance: list[str] = []
         for edge in edges[:24]:
             source_id = str(edge.get("source_id") or "")
             target_id = str(edge.get("target_id") or "")
@@ -3821,19 +3665,41 @@ class AgentV2Service:
             target_payload = target.get("payload") if isinstance(target.get("payload"), dict) else {}
             source_title = str(source_payload.get("title") or source_id)
             target_title = str(target_payload.get("title") or target_id)
-            relation = str(edge.get("relation") or "related")
-            relation_lines.append(f"- {source_title} — {relation_labels.get(relation, relation)} → {target_title}")
             payload = edge.get("payload") if isinstance(edge.get("payload"), dict) else {}
-            source_refs.extend(str(item) for item in payload.get("source_refs") or [] if str(item))
+            edge_provenance = str(payload.get("provenance") or "")
+            edge_source_refs = [
+                str(item)
+                for item in payload.get("source_refs") or []
+                if str(item).strip()
+            ]
             metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
             if metadata.get("source_ref"):
-                source_refs.append(str(metadata["source_ref"]))
-        source_refs.extend(
-            str((item.get("payload") or {}).get("source_ref") or "")
-            for item in nodes
-            if isinstance(item.get("payload"), dict)
-        )
-        source_refs = list(dict.fromkeys(item for item in source_refs if item))[:40]
+                edge_source_refs.append(str(metadata["source_ref"]))
+            edge_source_refs = list(dict.fromkeys(edge_source_refs))
+            if edge_provenance in {"inferred", "ambiguous"} or not edge_source_refs:
+                continue
+            relation_label = str(
+                edge.get("user_label")
+                or payload.get("user_label")
+                or edge.get("relation")
+                or "관련"
+            )
+            relation_lines.append(f"- {source_title} — {relation_label} → {target_title}")
+            underlying_source_refs.extend(edge_source_refs)
+            provenance.append(edge_provenance)
+            grounded_edges.append(edge)
+
+        if not grounded_edges:
+            return None
+        edges = grounded_edges
+        visible_node_ids = {
+            str(value)
+            for edge in edges
+            for value in (edge.get("source_id"), edge.get("target_id"))
+            if str(value or "")
+        }
+        nodes = [item for item in nodes if str(item.get("node_id") or "") in visible_node_ids]
+        underlying_source_refs = list(dict.fromkeys(underlying_source_refs))[:40]
 
         lines = ["### 확인된 업무 관계"]
         lines.extend(relation_lines[:12] or ["- 검증된 업무 관계가 아직 없습니다."])
@@ -3851,6 +3717,46 @@ class AgentV2Service:
             else f"확인 가능한 업무 관계 {len(edges)}건을 정리했습니다."
         )
         artifact_id = new_id("artifact")
+        graph_evidence_id = "graph-evidence:" + hashlib.sha256(
+            json.dumps(
+                {
+                    "employee_id": principal.employee_id,
+                    "plan": plan.model_dump(mode="json"),
+                    "edges": [str(item.get("edge_id") or "") for item in edges],
+                    "source_refs": underlying_source_refs,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:24]
+        graph_evidence_text = "\n".join(
+            [
+                "검증된 Ontology 관계 조회 결과",
+                f"질의 종류: {plan.query_kind}",
+                *relation_lines,
+            ]
+        )
+        self.store.put(
+            "graph_relation_evidence",
+            graph_evidence_id,
+            {
+                "evidence_id": graph_evidence_id,
+                "employee_id": principal.employee_id,
+                "title": "검증된 업무 관계",
+                "summary": summary,
+                "text": graph_evidence_text,
+                "url": f"/knowledge-graph?focus={plan.focal_entities[0]}",
+                "query_plan": plan.model_dump(mode="json"),
+                "underlying_source_refs": underlying_source_refs,
+                "provenance": list(dict.fromkeys(provenance)),
+                "artifact_id": artifact_id,
+                "created_at": now_iso(),
+            },
+        )
+        graph_evidence_record = self._record_for_ref(principal, graph_evidence_id)
+        if graph_evidence_record is None:
+            return None
+        graph_evidence = [self._evidence_from_record(graph_evidence_record, score=1.0)]
         title = "업무 역할과 연결 관계" if intent.work_view in {"responsibility", "combined"} else "지식 연결 관계"
         presentation = str(result.get("presentation") or "list")
         artifact_type = "mermaid_diagram" if presentation == "mermaid" else "ontology_graph"
@@ -3859,14 +3765,15 @@ class AgentV2Service:
             "presentation": presentation,
             "nodes": nodes,
             "edges": edges,
-            "source_refs": source_refs,
+            "source_refs": [graph_evidence_id],
+            "underlying_source_refs": underlying_source_refs,
         }
         if artifact_type == "mermaid_diagram":
             draft_payload["mermaid"] = self._mermaid_source_from_ontology_draft(draft_payload)
         stored = {
             "artifact_id": artifact_id,
             "employee_id": principal.employee_id,
-            "capability_id": "knowledge.search",
+            "capability_id": capability_id,
             "artifact_type": artifact_type,
             "status": "provisional",
             "title": title,
@@ -3886,30 +3793,127 @@ class AgentV2Service:
             url=f"/agent?session={session['session_id']}&artifact={artifact_id}",
             preview=summary,
             metadata={
-                "capability_id": "knowledge.search",
+                "capability_id": capability_id,
                 "revision": 1,
                 "presentation": stored["draft"]["presentation"],
                 "node_count": len(nodes),
                 "edge_count": len(edges),
-                "source_refs": source_refs,
+                "focal_entities": list(plan.focal_entities),
+                "source_refs": [graph_evidence_id],
+                "underlying_source_refs": underlying_source_refs,
             },
         )
-        graph_evidence: list[EvidenceRef] = []
-        for source_ref in source_refs:
-            record = self._record_for_ref(principal, source_ref)
-            if record:
-                graph_evidence.append(self._evidence_from_record(record, score=1.0))
-        citation_links = " ".join(
-            f"[{index}](/api/v2/citations/{citation.citation_id})"
-            for index, citation in enumerate(citations, start=1)
-        )
         answer_lines = [summary, "", *lines]
-        if citation_links:
-            answer_lines.extend(["", f"근거: {citation_links}"])
         return (
             AnswerBlock(summary=summary, markdown="\n".join(answer_lines)),
             artifact,
-            list({item.evidence_id: item for item in graph_evidence}.values())[:8],
+            graph_evidence,
+            [item.removeprefix("- ") for item in relation_lines],
+        )
+
+    def _grounded_claims_table_artifact(
+        self,
+        principal: Principal,
+        *,
+        session: dict[str, Any],
+        claims: list[GroundedClaim],
+        work_run_id: str,
+        capability_id: str,
+    ) -> ArtifactRef | None:
+        """Compile verified claims into the shared table artifact contract."""
+
+        supported = [item for item in claims if item.support_status == "supported"]
+        if not supported:
+            return None
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
+        seen_sources: set[str] = set()
+        source_refs: list[str] = []
+        for claim in supported[:12]:
+            claim_node_id = f"claim:{claim.claim_id}"
+            nodes.append(
+                {
+                    "node_id": claim_node_id,
+                    "node_kind": "grounded_claim",
+                    "payload": {
+                        "title": claim.text,
+                        "claim_kind": claim.claim_kind,
+                        "confidence": claim.confidence,
+                    },
+                }
+            )
+            for source_ref in claim.source_refs:
+                if not source_ref:
+                    continue
+                source_refs.append(source_ref)
+                source_node_id = f"source:{source_ref}"
+                if source_node_id not in seen_sources:
+                    seen_sources.add(source_node_id)
+                    record = self._record_for_ref(principal, source_ref)
+                    evidence = self._evidence_from_record(record, score=1.0) if record else None
+                    nodes.append(
+                        {
+                            "node_id": source_node_id,
+                            "node_kind": "source",
+                            "payload": {
+                                "title": evidence.title if evidence else source_ref,
+                                "source_ref": source_ref,
+                                "url": evidence.url if evidence else "",
+                            },
+                        }
+                    )
+                edges.append(
+                    {
+                        "source_id": claim_node_id,
+                        "target_id": source_node_id,
+                        "relation": "supported_by",
+                        "payload": {
+                            "provenance": "verified",
+                            "source_refs": [source_ref],
+                            "supporting_chunk_ids": list(claim.supporting_chunk_ids),
+                        },
+                    }
+                )
+        if not edges:
+            return None
+
+        artifact_id = new_id("artifact")
+        source_refs = list(dict.fromkeys(source_refs))[:24]
+        stored = {
+            "artifact_id": artifact_id,
+            "employee_id": principal.employee_id,
+            "capability_id": capability_id,
+            "artifact_type": "ontology_graph",
+            "status": "provisional",
+            "title": "검증된 답변 근거 표",
+            "draft": {
+                "presentation": "table",
+                "nodes": nodes,
+                "edges": edges,
+                "source_refs": source_refs,
+            },
+            "work_session_id": str(session["session_id"]),
+            "work_run_id": work_run_id,
+            "revision": 1,
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        }
+        self.store.put("artifacts", artifact_id, stored)
+        return ArtifactRef(
+            artifact_id=artifact_id,
+            artifact_type="ontology_graph",
+            title=str(stored["title"]),
+            status="provisional",
+            url=f"/agent?session={session['session_id']}&artifact={artifact_id}",
+            preview=f"검증된 claim {len(supported)}건과 직접 근거를 표로 정리했습니다.",
+            metadata={
+                "capability_id": capability_id,
+                "revision": 1,
+                "presentation": "table",
+                "node_count": len(nodes),
+                "edge_count": len(edges),
+                "source_refs": source_refs,
+            },
         )
 
     @staticmethod
@@ -4018,7 +4022,7 @@ class AgentV2Service:
         request: AgentTurnRequest,
         evidence: list[EvidenceRef],
     ) -> tuple[str, str, dict[str, Any]]:
-        schema = DRAFT_SCHEMAS[definition.capability_id]
+        schema = self._draft_schema(definition)
         resolved_goal = str(request.input_delta.get("_resolved_goal") or request.question)
         evidence_payload = [
             {
@@ -4082,9 +4086,59 @@ class AgentV2Service:
         )
         return system, prompt, schema
 
+    def _draft_contract(self, definition: CapabilityDefinition):
+        contract_id = str(definition.handler_config.get("draft_contract") or "")
+        if not contract_id:
+            raise RuntimeError("draft contract is missing from the capability catalog")
+        try:
+            return self.registry.draft_contract(contract_id)
+        except KeyError as exc:
+            raise RuntimeError(f"unknown draft contract: {contract_id}") from exc
+
+    def _draft_schema(self, definition: CapabilityDefinition) -> dict[str, Any]:
+        return copy.deepcopy(self._draft_contract(definition).schema_)
+
     @staticmethod
-    def _validate_draft(capability_id: str, draft: dict[str, Any]) -> None:
-        schema = DRAFT_SCHEMAS[capability_id]
+    def _validate_sop_tasks(draft: dict[str, Any]) -> None:
+        tasks = draft.get("tasks") or []
+        if not tasks or any(not isinstance(task, dict) for task in tasks):
+            raise RuntimeError("SOP draft requires one or more structured tasks")
+        for index, task in enumerate(tasks):
+            missing_task_fields = [
+                field
+                for field in ("name", "purpose", "execution_mode", "exit_criteria", "required_evidence")
+                if task.get(field) in (None, "", [], {})
+            ]
+            if missing_task_fields:
+                raise RuntimeError(
+                    f"SOP task {index + 1} is missing: " + ", ".join(missing_task_fields)
+                )
+            if str(task.get("execution_mode") or "").lower() not in {"manual", "copilot", "autopilot"}:
+                raise RuntimeError(f"SOP task {index + 1} has an invalid execution_mode")
+
+    @staticmethod
+    def _validate_preview_only(draft: dict[str, Any]) -> None:
+        if draft.get("preview_only") is not True:
+            raise RuntimeError("Action draft must remain preview_only")
+
+    @staticmethod
+    def _validate_skill_tests(draft: dict[str, Any]) -> None:
+        tests = [item for item in draft.get("tests") or [] if isinstance(item, dict)]
+        if not tests or any(
+            not isinstance(item.get("sample_input"), dict)
+            or not isinstance(item.get("expected_contains"), list)
+            or not item.get("expected_contains")
+            for item in tests
+        ):
+            raise RuntimeError("Skill draft requires a runnable sample_input and expected_contains test")
+
+    @staticmethod
+    def _validate_provisional_status(draft: dict[str, Any]) -> None:
+        if draft.get("status") != "provisional":
+            raise RuntimeError("knowledge draft must remain provisional")
+
+    def _validate_draft(self, definition: CapabilityDefinition, draft: dict[str, Any]) -> None:
+        schema = self._draft_schema(definition)
         missing = [
             key
             for key in schema.get("required") or []
@@ -4092,35 +4146,35 @@ class AgentV2Service:
         ]
         if missing:
             raise RuntimeError("draft is missing required fields: " + ", ".join(missing))
-        if capability_id == "sop.plan":
-            tasks = draft.get("tasks") or []
-            if not tasks or any(not isinstance(task, dict) for task in tasks):
-                raise RuntimeError("SOP draft requires one or more structured tasks")
-            for index, task in enumerate(tasks):
-                missing_task_fields = [
-                    field
-                    for field in ("name", "purpose", "execution_mode", "exit_criteria", "required_evidence")
-                    if task.get(field) in (None, "", [], {})
-                ]
-                if missing_task_fields:
-                    raise RuntimeError(
-                        f"SOP task {index + 1} is missing: " + ", ".join(missing_task_fields)
-                    )
-                if str(task.get("execution_mode") or "").lower() not in {"manual", "copilot", "autopilot"}:
-                    raise RuntimeError(f"SOP task {index + 1} has an invalid execution_mode")
-        if capability_id == "action.plan" and draft.get("preview_only") is not True:
-            raise RuntimeError("Action draft must remain preview_only")
-        if capability_id == "skill.plan":
-            tests = [item for item in draft.get("tests") or [] if isinstance(item, dict)]
-            if not tests or any(
-                not isinstance(item.get("sample_input"), dict)
-                or not isinstance(item.get("expected_contains"), list)
-                or not item.get("expected_contains")
-                for item in tests
-            ):
-                raise RuntimeError("Skill draft requires a runnable sample_input and expected_contains test")
-        if capability_id == "knowledge.draft" and draft.get("status") != "provisional":
-            raise RuntimeError("knowledge draft must remain provisional")
+        validators = {
+            "sop_tasks": self._validate_sop_tasks,
+            "preview_only": self._validate_preview_only,
+            "skill_tests": self._validate_skill_tests,
+            "provisional_status": self._validate_provisional_status,
+        }
+        for plugin_id in self._draft_contract(definition).validator_plugins:
+            validator = validators.get(str(plugin_id))
+            if validator is None:
+                raise RuntimeError(f"unknown draft validator plugin: {plugin_id}")
+            validator(draft)
+
+    def _normalise_draft(
+        self,
+        definition: CapabilityDefinition,
+        draft: dict[str, Any],
+        *,
+        principal: Principal,
+    ) -> dict[str, Any]:
+        normalizers = {
+            "sop_tasks": lambda value: self._normalise_sop_draft(value, principal=principal),
+        }
+        normalised = copy.deepcopy(draft)
+        for plugin_id in self._draft_contract(definition).normalizer_plugins:
+            normalizer = normalizers.get(str(plugin_id))
+            if normalizer is None:
+                raise RuntimeError(f"unknown draft normalizer plugin: {plugin_id}")
+            normalised = normalizer(normalised)
+        return normalised
 
     def _normalise_sop_task(
         self,
@@ -4199,7 +4253,7 @@ class AgentV2Service:
         validation_error = ""
         draft: dict[str, Any] = copy.deepcopy(prefilled_draft or {})
         if draft:
-            self._validate_draft(definition.capability_id, draft)
+            self._validate_draft(definition, draft)
         else:
             for attempt in range(2):
                 repair_prompt = prompt
@@ -4210,14 +4264,13 @@ class AgentV2Service:
                     )
                 draft = self.model.generate_structured(system=system, prompt=repair_prompt, schema=schema)
                 try:
-                    self._validate_draft(definition.capability_id, draft)
+                    self._validate_draft(definition, draft)
                     break
                 except RuntimeError as exc:
                     validation_error = str(exc)
                     if attempt == 1:
                         raise
-        if definition.capability_id == "sop.plan":
-            draft = self._normalise_sop_draft(draft, principal=principal)
+        draft = self._normalise_draft(definition, draft, principal=principal)
         title = str(draft.get("title") or definition.title).strip()
         title = re.sub(r"^\[(?:비공개\s*초안|private\s*draft)\]\s*", "", title, flags=re.IGNORECASE)
         title = re.sub(r"^(?:비공개\s*(?:SOP\s*)?초안|private\s*draft)\s*[:：-]\s*", "", title, flags=re.IGNORECASE)
@@ -4233,12 +4286,7 @@ class AgentV2Service:
         }
         artifact_id = new_id("artifact")
         plan_id = new_id("plan")
-        domain_operation = {
-            "sop.plan": "sop.draft.create",
-            "business_event.plan": "business_event.draft.create",
-            "action.plan": "action.draft.create",
-            "skill.plan": "skill.draft.create",
-        }.get(definition.capability_id, "")
+        domain_operation = str(definition.handler_config.get("domain_operation") or "")
         domain_result: dict[str, Any] = {}
         if domain_operation and self.domain_services.supports(domain_operation):
             domain_result = self.domain_services.execute(
@@ -4257,7 +4305,13 @@ class AgentV2Service:
                 },
             )
         artifact_type = str(definition.output_schema.get("type") or "draft")
-        artifact_status = "provisional" if definition.capability_id == "knowledge.draft" else "draft"
+        artifact_status = str(definition.handler_config.get("artifact_status") or "draft")
+        configured_next_actions = self._configured_next_actions(
+            definition,
+            artifact_id=artifact_id,
+            plan_id=plan_id,
+            work_session_id=request.work_session_id or "",
+        )
         payload = {
             "artifact_id": artifact_id,
             "employee_id": principal.employee_id,
@@ -4274,6 +4328,7 @@ class AgentV2Service:
             ],
             "domain": domain_result,
             "independent_review": independent_review,
+            "next_actions": configured_next_actions,
             "created_at": now_iso(),
             "updated_at": now_iso(),
             "generation_attempts": 2 if validation_error else 1,
@@ -4315,18 +4370,19 @@ class AgentV2Service:
             metadata={
                 "plan_id": plan_id,
                 "capability_id": definition.capability_id,
-                "mermaid": str(draft.get("mermaid") or "") if definition.capability_id == "sop.plan" else "",
+                "mermaid": str(draft.get("mermaid") or ""),
                 "revision": 1,
-                "task_count": len(draft.get("tasks") or []) if definition.capability_id == "sop.plan" else 0,
+                "task_count": len(draft.get("tasks") or []) if isinstance(draft.get("tasks"), list) else 0,
                 "domain_ref": str(domain_result.get("domain_ref") or ""),
                 "domain_kind": str(domain_result.get("domain_kind") or ""),
                 "domain_status": str(domain_result.get("status") or ""),
                 "evaluation_ref": str(independent_review.get("evaluation_id") or ""),
                 "review_status": str(independent_review.get("status") or "unavailable"),
+                "next_actions": configured_next_actions,
             },
         )
         task_summary = ""
-        if definition.capability_id == "sop.plan":
+        if isinstance(draft.get("tasks"), list):
             task_summary = f"\n\nTask {len(draft.get('tasks') or [])}개와 각 Task의 종료 기준·필수 근거를 결과 영역에 정리했습니다."
         review_summary = ""
         if independent_review.get("status") == "needs_revision":
@@ -4345,6 +4401,42 @@ class AgentV2Service:
             ),
         )
         return answer, artifact, plan_id
+
+    @staticmethod
+    def _configured_next_actions(
+        definition: CapabilityDefinition,
+        *,
+        artifact_id: str,
+        plan_id: str,
+        work_session_id: str,
+    ) -> list[dict[str, Any]]:
+        """Bind catalog-declared commands without inferring them from capability IDs."""
+
+        configured: list[dict[str, Any]] = []
+        for raw in definition.handler_config.get("next_actions") or []:
+            if not isinstance(raw, dict):
+                continue
+            payload = {
+                key: value
+                for key, value in raw.items()
+                if key not in {"bind_artifact", "bind_plan", "href_template"}
+            }
+            if raw.get("bind_artifact"):
+                payload["artifact_id"] = artifact_id
+            if raw.get("bind_plan"):
+                payload["plan_id"] = plan_id
+            href_template = str(raw.get("href_template") or "")
+            if href_template:
+                payload["href"] = (
+                    href_template.replace("{artifact_id}", artifact_id)
+                    .replace("{plan_id}", plan_id)
+                    .replace("{work_session_id}", work_session_id)
+                )
+            try:
+                configured.append(NextAction.model_validate(payload).model_dump(mode="json"))
+            except ValueError:
+                continue
+        return configured[:3]
 
     def _queue_deep_job(
         self,
@@ -4426,67 +4518,28 @@ class AgentV2Service:
         plan_ref: str = "",
     ) -> list[NextAction]:
         actions: list[NextAction] = []
-        artifact = artifacts[0] if artifacts else None
-        if artifact and artifact.metadata.get("capability_id") == "work_routine.plan" and plan_ref:
-            actions.append(
-                NextAction(
-                    action_id="confirm_automatic_check",
-                    label="확인하고 자동 확인 만들기",
-                    action_kind="confirm_plan",
-                    artifact_id=artifact.artifact_id,
-                    plan_id=plan_ref,
-                )
-            )
-        elif artifact and artifact.metadata.get("capability_id") == "sop.plan":
-            actions.extend(
-                [
+        for artifact in artifacts:
+            for configured in artifact.metadata.get("next_actions") or []:
+                if not isinstance(configured, dict):
+                    continue
+                payload = dict(configured)
+                payload.setdefault("artifact_id", artifact.artifact_id)
+                if plan_ref:
+                    payload.setdefault("plan_id", plan_ref)
+                try:
+                    actions.append(NextAction.model_validate(payload))
+                except ValueError:
+                    continue
+            for artifact_action in artifact.actions:
+                actions.append(
                     NextAction(
-                        action_id="task_refine",
-                        label="Task 다듬기",
-                        action_kind="open_task_editor",
+                        action_id=artifact_action.action_id,
+                        label=artifact_action.label,
+                        action_kind=artifact_action.action_kind,
+                        state=artifact_action.state,
                         artifact_id=artifact.artifact_id,
-                    ),
-                    NextAction(
-                        action_id="sop_full_edit",
-                        label="전체 SOP 편집",
-                        action_kind="open_full_editor",
-                        artifact_id=artifact.artifact_id,
-                        href=(
-                            f"/sops/new?work_session_id={work_session_id}"
-                            f"&artifact_id={artifact.artifact_id}"
-                            f"&return_to=/agent?session={work_session_id}"
-                        ),
-                    ),
-                ]
-            )
-        elif artifact and artifact.artifact_type == "mermaid_diagram":
-            actions.append(
-                NextAction(
-                    action_id="open_diagram",
-                    label="흐름 그림 보기",
-                    action_kind="open_artifact",
-                    artifact_id=artifact.artifact_id,
-                    href=f"/agent?session={work_session_id}&artifact={artifact.artifact_id}",
+                    )
                 )
-            )
-        elif artifact:
-            actions.append(
-                NextAction(
-                    action_id="open_artifact",
-                    label="초안 확인",
-                    action_kind="open_artifact",
-                    artifact_id=artifact.artifact_id,
-                    href=f"/agent?session={work_session_id}&artifact={artifact.artifact_id}",
-                )
-            )
-        if evidence and not artifact:
-            actions.append(
-                NextAction(
-                    action_id="save_note",
-                    label="노트로 저장",
-                    action_kind="save_note",
-                )
-            )
         if evidence:
             actions.append(
                 NextAction(
@@ -4538,20 +4591,6 @@ class AgentV2Service:
             "last_progress": compact_text(str((last_delta[-1] if last_delta else {}).get("summary") or ""), 500),
         }
 
-    @staticmethod
-    def _guard_explanatory_capability(capability_id: str, intent: WorkIntent) -> str:
-        read_operations = {WorkOperation.understand, WorkOperation.compare, WorkOperation.connect, WorkOperation.observe}
-        draft_capabilities = {"business_event.plan", "sop.plan", "action.plan", "skill.plan", "knowledge.draft"}
-        if intent.operation in read_operations and intent.result_purpose in {"explain", "compare"}:
-            if intent.work_view == "current":
-                return "work.inbox"
-            if intent.work_view in {"responsibility", "combined"}:
-                return "knowledge.search"
-        if intent.result_purpose in {"explain", "compare"} and intent.operation in read_operations:
-            if capability_id in {*draft_capabilities, "work_routine.plan"}:
-                return "knowledge.search"
-        return capability_id
-
     def _continue_active_work_from_turn(
         self,
         *,
@@ -4563,21 +4602,24 @@ class AgentV2Service:
         run_id: str,
         turn_id: str,
     ) -> AgentTurnResponse:
-        continuation = route.get("continuation") if isinstance(route.get("continuation"), dict) else {}
-        delta_kind = str(continuation.get("delta_kind") or "human_input")
-        if delta_kind not in {"human_input", "new_evidence", "blocker", "state_transition"}:
-            delta_kind = "human_input"
+        semantic_plan = SemanticPlan.model_validate(route.get("semantic_plan") or {})
+        continuation = semantic_plan.continuation
+        if not continuation.continue_active_run or continuation.delta_kind == "none":
+            raise SemanticPlanningError(
+                "planner_invalid",
+                "The validated SemanticPlan does not contain a WorkRun continuation delta.",
+            )
+        delta_kind = continuation.delta_kind
         external_refs = [str(item).strip() for item in request.external_artifact_refs if str(item).strip()]
         delta_ref = external_refs[0] if external_refs else ""
-        if not delta_ref and delta_kind in {"new_evidence", "state_transition"}:
-            digest = hashlib.sha256(request.question.encode("utf-8")).hexdigest()[:16]
-            delta_ref = f"human:{active_work_run['work_run_id']}:{digest}"
-        user_confirmation = bool(continuation.get("user_confirmation", False)) and delta_kind == "human_input"
+        user_confirmation = continuation.user_confirmation
+        work_record = continuation.work_record.model_dump(mode="json", exclude_defaults=True)
         continued, candidates = self.learning.continue_run(
             principal,
             str(active_work_run["work_run_id"]),
             WorkRunContinueRequest(
                 expected_revision=int(active_work_run.get("revision") or 1),
+                idempotency_key=str(request.input_delta.get("idempotency_key") or ""),
                 confirmation="confirm" if user_confirmation else None,
                 delta=LoopDelta(
                     kind=delta_kind,  # type: ignore[arg-type]
@@ -4587,13 +4629,28 @@ class AgentV2Service:
                         "semantic_continuation": True,
                         "external_ai_summary_present": bool(request.external_ai_summary.strip()),
                         "external_artifact_ref_count": len(external_refs),
+                        **({"work_record": work_record} if work_record else {}),
                     },
                 ),
             ),
         )
         context_row = self.store.get("contexts", str(continued.get("context_id") or "")) or {}
         agent_run = self.store.get("runs", str(continued.get("agent_run_id") or "")) or {}
-        capability_id = str(agent_run.get("capability_id") or context_row.get("capability_id") or "knowledge.search")
+        semantic_plan_row = self.store.get(
+            "semantic_plans",
+            str(continued.get("semantic_plan_ref") or ""),
+        ) or {}
+        semantic_plan = (
+            semantic_plan_row.get("plan")
+            if isinstance(semantic_plan_row.get("plan"), dict)
+            else {}
+        )
+        capability_id = str(
+            agent_run.get("capability_id")
+            or context_row.get("capability_id")
+            or semantic_plan.get("capability_id")
+            or ""
+        )
         view = self.learning.view_run(principal, str(continued["work_run_id"]))
         evidence = [
             EvidenceRef(
@@ -4674,6 +4731,8 @@ class AgentV2Service:
             progress=[{"status": status_value, "label": message}],
             work_run_id=str(continued["work_run_id"]),
             work_intent=WorkIntent.model_validate(route.get("work_intent") or continued.get("intent") or {}),
+            semantic_plan_ref=str(route.get("semantic_plan_ref") or ""),
+            stop_reason=str(continued.get("stop_reason") or ""),
             loop_state=loop_state,
             harness_results=[HarnessResult.model_validate(item) for item in continued.get("harness_results") or []],
             knowledge_candidates=candidates,
@@ -4735,12 +4794,76 @@ class AgentV2Service:
             loop_state=response.loop_state,
             harness_results=response.harness_results,
             knowledge_candidates=response.knowledge_candidates,
+            grounded_claims=response.grounded_claims,
+            answerability=response.answerability,
+            topic_state_ref=response.topic_state_ref,
+            used_source_refs=response.used_source_refs,
         )
         if response.artifact_refs:
             session["active_artifact_id"] = response.artifact_refs[0].artifact_id
             session["title"] = compact_text(response.artifact_refs[0].title, 120) or session.get("title") or "새 업무"
         elif session.get("title") in {"", "새 업무"}:
             session["title"] = compact_text(question, 80) or "새 업무"
+        prior_topic = session.get("topic_state") if isinstance(session.get("topic_state"), dict) else {}
+        if response.answerability.status == "conflicting" and prior_topic:
+            topic_state = {
+                **prior_topic,
+                "topic_state_ref": response.topic_state_ref,
+                "correction_status": "invalidated",
+                "invalidated_by_run_id": response.run_id,
+            }
+            corrections = [
+                *[item for item in session.get("topic_corrections") or [] if isinstance(item, dict)],
+                {
+                    "topic_state_ref": str(prior_topic.get("topic_state_ref") or ""),
+                    "invalidated_by_run_id": response.run_id,
+                    "reason": "conflicting_internal_evidence",
+                    "created_at": now_iso(),
+                },
+            ][-20:]
+            session["topic_corrections"] = corrections
+        elif (
+            response.work_intent
+            and response.work_intent.topic_mode == "continue"
+            and not any(item.support_status == "supported" for item in response.grounded_claims)
+        ):
+            topic_state = prior_topic
+        else:
+            graph_entities = [
+                str(entity_ref)
+                for artifact in response.artifact_refs
+                if artifact.artifact_type in {"ontology_graph", "mermaid_diagram"}
+                for entity_ref in artifact.metadata.get("focal_entities") or []
+                if str(entity_ref)
+            ]
+            topic_state = {
+                "topic_state_ref": response.topic_state_ref,
+                "subject": (
+                    response.work_intent.topic_subject
+                    if response.work_intent and response.work_intent.topic_subject
+                    else response.work_intent.resolved_goal[:200]
+                    if response.work_intent
+                    else compact_text(question, 200)
+                ),
+                "entities": list(dict.fromkeys(
+                    [
+                        *(
+                            response.work_intent.referenceable_topic_entities
+                            if response.work_intent
+                            else []
+                        ),
+                        *graph_entities,
+                        *([str(session.get("active_artifact_id"))] if session.get("active_artifact_id") else []),
+                    ]
+                ))[:12],
+                "operation": response.work_intent.operation.value if response.work_intent else "understand",
+                "answer_intent": response.work_intent.answer_intent if response.work_intent else "fact",
+                "answer_source_scope": response.work_intent.answer_source_scope if response.work_intent else "canonical",
+                "claims": [item.model_dump(mode="json") for item in response.grounded_claims if item.support_status == "supported"],
+                "used_source_refs": list(response.used_source_refs),
+                "active_artifact_id": str(session.get("active_artifact_id") or ""),
+                "correction_status": "active",
+            }
         session.update(
             {
                 "last_run_id": response.run_id,
@@ -4748,6 +4871,7 @@ class AgentV2Service:
                 "active_work_run_id": response.work_run_id,
                 "active_goal_plan_id": response.goal_plan_ref,
                 "source_set_id": response.source_set_ref,
+                "topic_state": topic_state,
                 "revision": int(session.get("revision") or 1) + 1,
                 "updated_at": now_iso(),
                 "expires_at": (
@@ -4774,6 +4898,410 @@ class AgentV2Service:
             sink("progress", {"stage": stage, "message": message, **payload})
         except Exception:
             return
+
+    def _handle_artifact_transform(
+        self,
+        execution: CapabilityHandlerContext,
+    ) -> CapabilityHandlerResult:
+        source = execution.active_artifact
+        if execution.intent.target_ref:
+            selected = self.store.get("artifacts", execution.intent.target_ref)
+            if selected and self._owns(execution.principal, selected):
+                source = selected
+        try:
+            if not source:
+                raise RuntimeError("변환할 결과물을 선택하지 않았습니다.")
+            answer, artifact = self._split_mermaid_artifact_into_tasks(
+                execution.principal,
+                definition=execution.definition,
+                source_artifact=source,
+                session=execution.session,
+                work_run_id=str(execution.work_run["work_run_id"]),
+                page_ref=execution.request.page_ref,
+            )
+            return CapabilityHandlerResult(answer=answer, artifacts=[artifact])
+        except RuntimeError:
+            return CapabilityHandlerResult(
+                status="needs_input",
+                answer=AnswerBlock(
+                    summary="흐름을 Task로 나누지 못했습니다.",
+                    markdown=(
+                        "현재 흐름에서 확인 가능한 Task 후보를 만들지 못했습니다. "
+                        "Task로 나눌 흐름 그림을 다시 선택하거나 필요한 단계를 조금 더 설명해주세요."
+                    ),
+                ),
+            )
+
+    def _handle_routine_plan(
+        self,
+        execution: CapabilityHandlerContext,
+    ) -> CapabilityHandlerResult:
+        try:
+            answer, artifact, plan_ref = self._work_routine_plan(
+                execution.principal,
+                execution.definition,
+                request=execution.request,
+                session=execution.session,
+                intent=execution.intent,
+                evidence=execution.evidence,
+                work_run_id=str(execution.work_run["work_run_id"]),
+            )
+            return CapabilityHandlerResult(
+                answer=answer,
+                artifacts=[artifact],
+                plan_ref=plan_ref,
+            )
+        except RuntimeError as exc:
+            return CapabilityHandlerResult(
+                status="needs_input",
+                answer=AnswerBlock(
+                    summary="자동 확인 계획을 만들려면 정보가 더 필요합니다.",
+                    markdown=(
+                        f"{compact_text(str(exc), 500)} "
+                        "시간이나 상태 조건을 조금 더 구체적으로 알려주세요."
+                    ),
+                ),
+            )
+
+    def _handle_task_runtime(
+        self,
+        execution: CapabilityHandlerContext,
+    ) -> CapabilityHandlerResult:
+        context = execution.work_context
+        completion_checks = [
+            item.label
+            for item in (context.completion_design.checks if context.completion_design else [])
+        ] or list(context.exit_criteria)
+        completion_evidence = [
+            item.label
+            for item in (context.completion_design.evidence if context.completion_design else [])
+            if item.required
+        ] or list(context.required_evidence)
+        task_title = (
+            context.goal_anchor.title
+            if context.goal_anchor and context.goal_anchor.title not in {"", "진행 중 Task"}
+            else execution.request.task_ref or "현재 Task"
+        )
+        if execution.intent.operation == WorkOperation.complete:
+            lines = [
+                f"'{task_title}'의 완료 여부는 담당자 또는 연결된 시스템의 확인이 있어야 확정됩니다.",
+                "",
+                "### 완료된 모습",
+                *([f"- {item}" for item in completion_checks] or ["- 이 Task의 완료된 모습을 먼저 정해주세요."]),
+                "",
+                "### 확인할 자료",
+                *([f"- {item}" for item in completion_evidence] or ["- 확인할 자료를 먼저 정해주세요."]),
+                "",
+                (
+                    "직접 확인한 내용과 판단 기록을 남기면 같은 업무에서 완료 여부를 다시 평가합니다."
+                    if context.task_mode in {TaskMode.manual, TaskMode.copilot}
+                    else "연결된 Event·Action·데이터 결과가 확인될 때만 자동 완료됩니다."
+                ),
+            ]
+            return CapabilityHandlerResult(
+                status="needs_input",
+                answer=AnswerBlock(
+                    summary=f"'{task_title}'의 완료 확인을 기다리고 있습니다.",
+                    markdown="\n".join(lines),
+                ),
+            )
+        return CapabilityHandlerResult(
+            answer=AnswerBlock(
+                summary=f"'{task_title}'의 현재 업무 맥락과 확인 항목을 정리했습니다.",
+                markdown="\n".join(
+                    [
+                        f"### {task_title}",
+                        f"- 수행 방식: {context.task_mode.value}",
+                        *[f"- 완료된 모습: {item}" for item in completion_checks],
+                        *[f"- 확인할 자료: {item}" for item in completion_evidence],
+                    ]
+                ),
+            )
+        )
+
+    def _handle_current_work(
+        self,
+        execution: CapabilityHandlerContext,
+    ) -> CapabilityHandlerResult:
+        source_refs = {item.evidence_id for item in execution.current_work_evidence}
+        citations = [item for item in execution.citations if item.source_ref in source_refs]
+        evidence_by_ref = {
+            item.evidence_id: item for item in execution.current_work_evidence
+        }
+        claims = [
+            GroundedClaim(
+                claim_id=f"current-work-{index}",
+                text=(
+                    f"{evidence_by_ref[item.source_ref].title}: "
+                    f"{evidence_by_ref[item.source_ref].summary}"
+                ),
+                claim_kind="work",
+                source_scope="operational",
+                source_refs=[item.source_ref],
+                supporting_chunk_ids=[item.chunk_id],
+                support_status="supported",
+                confidence=1.0,
+                required_for_answer=True,
+            )
+            for index, item in enumerate(citations, start=1)
+            if item.chunk_id and item.source_ref in evidence_by_ref
+        ]
+        return CapabilityHandlerResult(
+            answer=self._inbox_answer(execution.current_work_evidence),
+            grounded_claims=claims,
+            used_source_refs=[item.source_ref for item in citations],
+            citations=citations,
+            answerability=AnswerabilityReport(
+                status="grounded" if claims else "insufficient",
+                answer_intent="work",
+                supported_claim_count=len(claims),
+                missing_evidence=[] if claims else ["현재 업무 projection을 뒷받침하는 기록이 없습니다."],
+            ),
+            claim_grounded_response=bool(claims),
+        )
+
+    def _handle_grounded_read(
+        self,
+        execution: CapabilityHandlerContext,
+    ) -> CapabilityHandlerResult:
+        empty_summary = str(
+            execution.definition.handler_config.get("empty_summary")
+            or "확인된 근거가 없습니다."
+        )
+        helper_guidance = "\n".join(
+            [
+                str(execution.request.input_delta.get("_helper_instructions") or ""),
+                *[
+                    f"{item.get('title')}: {item.get('description')}"
+                    for item in execution.request.input_delta.get("_helper_skills") or []
+                    if isinstance(item, dict)
+                ],
+            ]
+        ).strip()
+        planned_block, planned_questions, planned_claims, report = self._grounded_answer_from_plan(
+            execution.principal,
+            execution.session,
+            execution.route.get("grounded_answer"),
+            execution.evidence,
+            execution.citations,
+            primary_source_ref="",
+            include_report=True,
+            intent=execution.intent,
+            work_run_id=str(execution.work_run["work_run_id"]),
+        )
+        if planned_block is not None and not helper_guidance:
+            supported_claims = [
+                claim for claim in planned_claims if claim.support_status == "supported"
+            ]
+            used_refs = {
+                source_ref
+                for claim in supported_claims
+                for source_ref in claim.source_refs
+            }
+            return CapabilityHandlerResult(
+                answer=planned_block,
+                related_questions=planned_questions,
+                grounded_claims=supported_claims,
+                used_source_refs=list(used_refs),
+                answerability=report,
+                citations=[
+                    item for item in execution.citations if item.source_ref in used_refs
+                ][:4],
+                claim_grounded_response=True,
+            )
+
+        if execution.intent.presentation_mode == "table" and not helper_guidance:
+            prior_topic = (
+                execution.session.get("topic_state")
+                if isinstance(execution.session.get("topic_state"), dict)
+                else {}
+            )
+            prior_verified_chunks: dict[str, set[str]] = {}
+            for prior_claim in prior_topic.get("claims") or []:
+                if (
+                    not isinstance(prior_claim, dict)
+                    or prior_claim.get("support_status") != "supported"
+                ):
+                    continue
+                chunk_ids = {
+                    str(item)
+                    for item in prior_claim.get("supporting_chunk_ids") or []
+                    if str(item)
+                }
+                for source_ref in prior_claim.get("source_refs") or []:
+                    source_key = str(source_ref)
+                    if source_key and chunk_ids:
+                        prior_verified_chunks.setdefault(source_key, set()).update(chunk_ids)
+            prior_citations = [
+                item
+                for item in execution.citations
+                if item.source_ref in prior_verified_chunks
+                and item.chunk_id in prior_verified_chunks[item.source_ref]
+            ]
+            prior_refs = {item.source_ref for item in prior_citations}
+            prior_evidence = [
+                item for item in execution.evidence if item.evidence_id in prior_refs
+            ]
+            table_answer = (
+                self._grounded_evidence_table(prior_evidence, prior_citations)
+                if execution.intent.followup_semantic_change == "evidence_scope"
+                and prior_verified_chunks
+                else None
+            )
+            if table_answer is not None:
+                answer, related_questions = table_answer
+                return CapabilityHandlerResult(
+                    answer=answer,
+                    related_questions=related_questions,
+                    grounded_claims=planned_claims,
+                    used_source_refs=list(prior_refs),
+                    answerability=AnswerabilityReport(
+                        status="grounded",
+                        answer_intent=execution.intent.answer_intent,
+                        supported_claim_count=len(prior_citations),
+                    ),
+                    citations=prior_citations,
+                    claim_grounded_response=True,
+                )
+
+        return CapabilityHandlerResult(
+            answer=AnswerBlock(
+                summary=empty_summary,
+                markdown=(
+                    "확인된 근거가 없습니다. 이 질문을 직접 뒷받침하는 ACL-visible "
+                    "BoI Wiki 정본을 찾지 못했습니다. 관련 정본이 추가되거나 질문 대상을 "
+                    "지정하면 다시 확인하겠습니다."
+                ),
+            ),
+            grounded_claims=planned_claims,
+            answerability=report,
+            citations=[],
+            claim_grounded_response=True,
+        )
+
+    def _handle_deep_job(
+        self,
+        execution: CapabilityHandlerContext,
+    ) -> CapabilityHandlerResult:
+        job_ref = self._queue_deep_job(
+            execution.principal,
+            execution.definition,
+            execution.request,
+            execution.work_context,
+            work_session_id=str(execution.session["session_id"]),
+        )
+        return CapabilityHandlerResult(
+            status="queued",
+            job_ref=job_ref,
+            answer=AnswerBlock(
+                summary="심층 작업을 시작했습니다. 결과는 검토 가능한 draft로만 생성됩니다.",
+                markdown=(
+                    f"심층 작업 `{job_ref}`을 시작했습니다. "
+                    "작업공간에서 진행 상태와 근거를 확인할 수 있습니다."
+                ),
+            ),
+        )
+
+    def _handle_draft_artifact(
+        self,
+        execution: CapabilityHandlerContext,
+    ) -> CapabilityHandlerResult:
+        prefill_key = str(execution.definition.handler_config.get("planner_prefill_key") or "")
+        prefilled = execution.route.get(prefill_key) if prefill_key else None
+        try:
+            answer, artifact, plan_ref = self._draft(
+                execution.principal,
+                execution.definition,
+                execution.request,
+                execution.evidence,
+                work_run_id=str(execution.work_run["work_run_id"]),
+                prefilled_draft=prefilled if isinstance(prefilled, dict) else None,
+            )
+            return CapabilityHandlerResult(
+                answer=answer,
+                artifacts=[artifact],
+                plan_ref=plan_ref,
+            )
+        except Exception as exc:
+            capability_id = execution.definition.capability_id
+            self.learning.fail_run(
+                execution.principal,
+                str(execution.work_run["work_run_id"]),
+                f"{execution.definition.title} 작업 실패: {type(exc).__name__}",
+            )
+            failure = {
+                "status": "draft_generation_failed",
+                "capability_id": capability_id,
+                "message": f"{type(exc).__name__}: {exc}",
+                "run_id": execution.run_id,
+            }
+            self.store.put(
+                "runs",
+                execution.run_id,
+                {
+                    "run_id": execution.run_id,
+                    "employee_id": execution.principal.employee_id,
+                    "conversation_id": str(execution.session["conversation_id"]),
+                    "work_session_id": str(execution.session["session_id"]),
+                    "capability_id": capability_id,
+                    "status": "failed",
+                    "context_id": execution.work_context.context_id,
+                    "routing": execution.route,
+                    "events": [
+                        {"event": "accepted", "run_id": execution.run_id},
+                        {"event": "capability.selected", "capability_id": capability_id},
+                        {"event": "error", **failure},
+                    ],
+                    "error": failure,
+                    "created_at": now_iso(),
+                },
+            )
+            self.store.put(
+                "turns",
+                execution.turn_id,
+                {
+                    "turn_id": execution.turn_id,
+                    "run_id": execution.run_id,
+                    "employee_id": execution.principal.employee_id,
+                    "question_hash": hashlib.sha256(
+                        execution.request.question.encode("utf-8")
+                    ).hexdigest(),
+                    "capability_id": capability_id,
+                    "status": "failed",
+                    "created_at": now_iso(),
+                },
+            )
+            execution.goal_plan.update({"status": "failed", "updated_at": now_iso()})
+            self.store.put(
+                "goal_plans",
+                str(execution.goal_plan["goal_plan_id"]),
+                execution.goal_plan,
+            )
+            failure_response = AgentTurnResponse(
+                run_id=execution.run_id,
+                turn_id=execution.turn_id,
+                conversation_id=str(execution.session["conversation_id"]),
+                work_session_id=str(execution.session["session_id"]),
+                status="failed",
+                capability_id=capability_id,
+                answer=AnswerBlock(
+                    summary="초안을 만들지 못했습니다.",
+                    markdown="초안을 만들지 못했습니다. 입력과 모델 준비 상태를 확인해주세요.",
+                ),
+                context_ref=execution.work_context.context_id,
+                error_code="draft_generation_failed",
+                goal_plan_ref=str(execution.goal_plan["goal_plan_id"]),
+                source_set_ref=str(execution.source_set["source_set_id"]),
+                citations=execution.citations,
+                grounding_status="partial" if execution.citations else "no_evidence",
+            )
+            self._finish_work_session(
+                execution.principal,
+                execution.session,
+                failure_response,
+                execution.request.question,
+            )
+            raise HTTPException(status_code=502, detail=failure) from exc
 
     def run_turn(
         self,
@@ -4878,6 +5406,8 @@ class AgentV2Service:
         turn_id = new_id("turn")
         self._apply_starter_suggestion(principal, request)
         session = self._resolve_turn_session(principal, request)
+        planning_harness_bindings = self.learning.effective_harness_bindings(["context.work"])
+        retrieval_policy = self.learning.retrieval_policy(planning_harness_bindings)
         self._emit_turn_progress(
             progress_sink,
             "context",
@@ -4899,39 +5429,47 @@ class AgentV2Service:
         active_work_run = self._active_session_work_run(principal, session)
         page_anchor_for_route = self.learning.contexts.page_anchor(principal, request.page_ref)
         starter_refs = [str(item) for item in request.input_delta.get("_starter_source_refs") or [] if str(item)]
-        starter_result_kind = str(request.input_delta.get("_starter_result_kind") or "")
-        starter_graph_query_kind = str(request.input_delta.get("_starter_graph_query_kind") or "")
-        verified_starter = bool(
-            request.input_delta.get("_starter_suggestion_status") == "resolved"
-            and starter_refs
+        route_conversation_context = (
+            request.input_delta.get("_work_session_context")
+            if isinstance(request.input_delta.get("_work_session_context"), dict)
+            else {}
         )
-        verified_graph_starter = bool(
-            verified_starter
-            and starter_graph_query_kind
-            and starter_result_kind in {"table", "timeline", "mermaid", "explorer"}
-        )
-        verified_confirmation_starter = bool(
-            verified_starter and starter_result_kind == "confirmation"
-        )
+        # Retrieve the current request as written. The verified prior topic and
+        # citations are supplied as separate planner context below. Prefixing
+        # every turn with the old subject polluted explicit topic changes,
+        # while short follow-ups can still resolve through prior hints.
+        planner_retrieval_query = request.question
         planner_search = None
         self._emit_turn_progress(
             progress_sink,
             "retrieval",
             "Wiki 전체에서 관련 지식과 업무 이력을 찾고 있습니다.",
         )
-        if verified_graph_starter:
-            planner_hints = []
-        else:
-            try:
-                planner_search = self.search.search(
-                    request.question,
+        try:
+            planner_search = self.search.search(
+                    planner_retrieval_query,
                     principal,
                     limit=12,
                     include_history=False,
                     page_ref=request.page_ref,
                     task_ref=request.task_ref,
-                )
-                planner_hints = [
+                    answer_scopes={"canonical", "operational", "validation"},
+                    ranking_policy=retrieval_policy,
+            )
+            selected_planner_items = list(planner_search.items[:4])
+            operational_item = next(
+                    (
+                        item
+                        for item in planner_search.items
+                        if str(item.metadata.get("answer_scope") or "") == "operational"
+                    ),
+                    None,
+            )
+            if operational_item and all(
+                    item.evidence_id != operational_item.evidence_id for item in selected_planner_items
+            ):
+                selected_planner_items = [*selected_planner_items[:3], operational_item]
+            planner_hints = [
                     {
                         "ref": item.evidence_id,
                         "title": item.title,
@@ -4939,64 +5477,95 @@ class AgentV2Service:
                         "summary": compact_text(item.summary, 360),
                         "authority": item.authority,
                         "source": item.source,
+                        "answer_scope": str(item.metadata.get("answer_scope") or "canonical"),
+                        "chunk_id": str((item.metadata.get("best_chunk") or {}).get("chunk_id") or ""),
+                        "chunk_text": compact_text(
+                            str((item.metadata.get("best_chunk") or {}).get("content") or item.summary),
+                            720,
+                        ),
                         "is_primary": bool(
                             page_anchor_for_route
                             and page_anchor_for_route.resolved
                             and item.evidence_id == page_anchor_for_route.ref
                         ),
                     }
-                    for item in planner_search.items[:4]
-                ]
-            except Exception:
-                planner_hints = []
+                    for item in selected_planner_items
+            ]
+        except Exception:
+            planner_hints = []
         planner_hint_refs = {str(item.get("ref") or "") for item in planner_hints}
-        if (
-            page_anchor_for_route
-            and page_anchor_for_route.resolved
-            and page_anchor_for_route.ref not in planner_hint_refs
-        ):
-            page_record = self._record_for_ref(principal, page_anchor_for_route.ref)
-            if page_record:
-                page_evidence = self._evidence_from_record(page_record, score=1.0)
+        if page_anchor_for_route and page_anchor_for_route.resolved and page_anchor_for_route.ref not in planner_hint_refs:
+            page_item = next(
+                (
+                    item
+                    for item in (planner_search.items if planner_search else [])
+                    if item.evidence_id == page_anchor_for_route.ref
+                ),
+                None,
+            )
+            if page_item is not None:
+                page_chunk = page_item.metadata.get("best_chunk") or {}
                 planner_hints = [
                     {
-                        "ref": page_evidence.evidence_id,
-                        "title": page_evidence.title,
-                        "kind": page_evidence.kind,
-                        "summary": compact_text(page_evidence.summary, 360),
-                        "authority": page_evidence.authority,
-                        "source": page_evidence.source,
+                        "ref": page_item.evidence_id,
+                        "title": page_item.title,
+                        "kind": page_item.kind,
+                        "summary": compact_text(page_item.summary, 360),
+                        "authority": page_item.authority,
+                        "source": page_item.source,
+                        "answer_scope": str(page_item.metadata.get("answer_scope") or "canonical"),
+                        "chunk_id": str(page_chunk.get("chunk_id") or ""),
+                        "chunk_text": compact_text(str(page_chunk.get("content") or page_item.summary), 720),
                         "is_primary": True,
                         "from_page_anchor": True,
                     },
                     *planner_hints,
                 ][:6]
         planner_hints.sort(key=lambda item: not bool(item.get("is_primary")))
-        route_conversation_context = (
-            request.input_delta.get("_work_session_context")
-            if isinstance(request.input_delta.get("_work_session_context"), dict)
+        prior_hints: list[dict[str, Any]] = []
+        prior_claim_chunks: dict[str, list[str]] = {}
+        prior_topic_state = (
+            route_conversation_context.get("topic_state")
+            if isinstance(route_conversation_context.get("topic_state"), dict)
             else {}
         )
-        prior_citation_refs: list[str] = []
-        for message in reversed(route_conversation_context.get("recent_messages") or []):
-            if not isinstance(message, dict) or message.get("role") != "assistant":
+        for prior_claim in prior_topic_state.get("claims") or []:
+            if not isinstance(prior_claim, dict) or prior_claim.get("support_status") != "supported":
                 continue
-            prior_citation_refs = [
+            claim_chunks = [
                 str(item)
-                for item in message.get("source_refs") or []
+                for item in prior_claim.get("supporting_chunk_ids") or []
                 if str(item).strip()
-            ][:4]
-            if prior_citation_refs:
-                break
-        prior_hints: list[dict[str, Any]] = []
-        planner_hint_refs = {str(item.get("ref") or "") for item in planner_hints}
+            ]
+            for source_ref in prior_claim.get("source_refs") or []:
+                source_key = str(source_ref).strip()
+                if source_key and claim_chunks:
+                    prior_claim_chunks.setdefault(source_key, []).extend(claim_chunks)
+        prior_citation_refs = [
+            str(item)
+            for item in prior_topic_state.get("used_source_refs") or []
+            if str(item).strip() and str(item) in prior_claim_chunks
+        ][:4]
         for source_ref in prior_citation_refs:
-            if source_ref in planner_hint_refs:
-                continue
             record = self._record_for_ref(principal, source_ref)
-            if not record:
+            if not record or self.repository.answer_scope(record) not in {
+                "canonical",
+                "operational",
+                "validation",
+            }:
                 continue
             evidence_item = self._evidence_from_record(record, score=1.0)
+            trusted_chunk_ids = set(prior_claim_chunks.get(source_ref) or [])
+            prior_chunk = next(
+                (
+                    item
+                    for item in chunks_for_record(record)
+                    if str(item.get("chunk_id") or "") in trusted_chunk_ids
+                ),
+                None,
+            )
+            if prior_chunk is None:
+                continue
             prior_hints.append(
                 {
                     "ref": evidence_item.evidence_id,
@@ -5005,6 +5574,9 @@ class AgentV2Service:
                     "summary": compact_text(evidence_item.summary, 360),
                     "authority": evidence_item.authority,
                     "source": evidence_item.source,
+                    "answer_scope": self.repository.answer_scope(record),
+                    "chunk_id": str(prior_chunk.get("chunk_id") or ""),
+                    "chunk_text": compact_text(str(prior_chunk.get("content") or evidence_item.summary), 720),
                     "is_primary": False,
                     "from_previous_answer": True,
                 }
@@ -5012,7 +5584,16 @@ class AgentV2Service:
             if len(prior_hints) >= 2:
                 break
         if prior_hints:
-            planner_hints = [*prior_hints, *planner_hints][:6]
+            prior_hint_refs = {str(item.get("ref") or "") for item in prior_hints}
+            planner_hints = [
+                *prior_hints,
+                *(
+                    item
+                    for item in planner_hints
+                    if str(item.get("ref") or "") not in prior_hint_refs
+                ),
+            ][:6]
+
         mark_stage("retrieval")
         try:
             route_input = {
@@ -5034,90 +5615,77 @@ class AgentV2Service:
                 "conversation_context": route_conversation_context,
                 "knowledge_hints": planner_hints,
                 "trusted_targets": {
-                    "action_key": str(request.input_delta.get("action_key") or "").strip(),
+                    "current_principal": f"person:{principal.employee_id}",
+                    "action_key": (
+                        f"action:{str(request.input_delta.get('action_key') or '').strip()}"
+                        if str(request.input_delta.get("action_key") or "").strip()
+                        else ""
+                    ),
+                    "starter_subject": str(request.input_delta.get("_starter_subject_ref") or ""),
+                    **{f"starter_source_{index}": ref for index, ref in enumerate(starter_refs, start=1)},
                 },
-                "requested_operation": str(request.input_delta.get("operation") or ""),
+                "selected_subject_refs": list(
+                    dict.fromkeys(
+                        ref
+                        for ref in [
+                            (
+                                f"action:{str(request.input_delta.get('action_key') or '').strip()}"
+                                if str(request.input_delta.get("action_key") or "").strip()
+                                else ""
+                            ),
+                            str(request.input_delta.get("_starter_subject_ref") or ""),
+                            *starter_refs,
+                        ]
+                        if ref
+                    )
+                ),
+                "requested_user_effect": str(request.input_delta.get("user_effect") or ""),
+                "requested_operation": (
+                    str(request.input_delta.get("operation") or "")
+                    or (
+                        "test"
+                        if bool(request.input_delta.get("dry_run"))
+                        and bool(request.capability_id or offer_capability)
+                        else ""
+                    )
+                ),
                 "requested_result_kind": str(request.input_delta.get("_starter_result_kind") or ""),
                 "requested_graph_query_kind": str(request.input_delta.get("_starter_graph_query_kind") or ""),
+                "requested_work_view": str(request.input_delta.get("work_view") or ""),
             }
-            if verified_graph_starter:
-                subject_ref = str(request.input_delta.get("_starter_subject_ref") or starter_refs[0])
-                graph_subject = "현재 사용자" if starter_graph_query_kind == "responsibility" else subject_ref
-                starter_intent = WorkIntent(
-                    goal=request.question,
-                    resolved_goal=request.question,
-                    retrieval_query=request.question,
-                    asset_kind=WorkAssetKind.runtime if starter_graph_query_kind == "responsibility" else WorkAssetKind.knowledge,
-                    operation=WorkOperation.connect,
-                    operation_plan=[WorkOperation.understand, WorkOperation.connect],
-                    target_ref=subject_ref,
-                    scope="selected",
-                    desired_outcome=request.question,
-                    presentation_mode=starter_result_kind,  # type: ignore[arg-type]
-                    work_view="combined" if starter_graph_query_kind == "responsibility" else "none",
-                    graph_query_draft=GraphQueryDraft(
-                        enabled=True,
-                        query_kind=starter_graph_query_kind,  # type: ignore[arg-type]
-                        focal_mentions=[graph_subject],
-                        presentation=starter_result_kind,  # type: ignore[arg-type]
-                    ),
-                    context_refs=starter_refs,
-                    result_purpose="explain",
-                    requested_asset_kinds=[WorkAssetKind.knowledge],
-                    confidence=1.0,
-                )
-                route = {
-                    "capability_id": "knowledge.search",
-                    "source": "verified_starter",
-                    "reason": "사용자가 검증된 맥락 제안을 선택함",
-                    "work_intent": starter_intent.model_dump(mode="json"),
-                    "continuation": {},
-                }
-            elif verified_confirmation_starter:
-                subject_ref = str(request.input_delta.get("_starter_subject_ref") or starter_refs[0])
-                starter_intent = WorkIntent(
-                    goal=request.question,
-                    resolved_goal=request.question,
-                    retrieval_query=request.question,
-                    asset_kind=WorkAssetKind.runtime,
-                    operation=WorkOperation.create,
-                    operation_plan=[
-                        WorkOperation.understand,
-                        WorkOperation.create,
-                        WorkOperation.validate,
-                    ],
-                    target_ref=subject_ref,
-                    scope="selected",
-                    desired_outcome="자동 확인 계획을 검토한 뒤 활성화 여부 결정",
-                    presentation_mode="artifact",
-                    work_view="none",
-                    context_refs=starter_refs,
-                    result_purpose="design",
-                    requested_asset_kinds=[WorkAssetKind.runtime, WorkAssetKind.knowledge],
-                    confidence=1.0,
-                )
-                route = {
-                    "capability_id": "work_routine.plan",
-                    "source": "verified_starter",
-                    "reason": "사용자가 검증된 자동 확인 제안을 선택함",
-                    "work_intent": starter_intent.model_dump(mode="json"),
-                    "continuation": {},
-                }
-            else:
-                route = self._semantic_route(principal, route_input)
+            route = self._semantic_route(principal, route_input)
             capability_id = str(route["capability_id"])
             definition = self.registry.get(capability_id)
+            semantic_plan = SemanticPlan.model_validate(route.get("semantic_plan") or {})
+            if semantic_plan.topic_action == "clarify" and not semantic_plan.clarification_question.strip():
+                raise SemanticPlanningError(
+                    "planner_invalid",
+                    "A clarification plan reached execution without a model-authored question.",
+                )
+        except SemanticPlanningError as exc:
+            return self._planning_failure_response(
+                principal=principal,
+                session=session,
+                request=request,
+                run_id=run_id,
+                turn_id=turn_id,
+                error=exc,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         mark_stage("planning")
         if request.helper_id:
             helper = self.get_helper(principal, request.helper_id)
-            allowed = list(helper.get("capability_ids") or ["knowledge.search"])
+            allowed = list(helper.get("capability_ids") or [])
             if capability_id not in allowed:
-                fallback = "knowledge.search" if "knowledge.search" in allowed else allowed[0]
-                capability_id = fallback
-                definition = self.registry.get(capability_id)
-                route = {**route, "capability_id": capability_id, "source": "helper_allowlist"}
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "status": "capability_not_allowed",
+                        "capability_id": capability_id,
+                        "helper_id": request.helper_id,
+                    },
+                )
             request.input_delta.setdefault("_helper_instructions", str(helper.get("instructions") or ""))
             request.input_delta.setdefault("_helper_source_scopes", helper.get("source_scopes") or [])
             request.input_delta.setdefault("_helper_skill_ids", helper.get("skill_ids") or [])
@@ -5140,7 +5708,6 @@ class AgentV2Service:
             active_work_run
             and route.get("source") == "llm_structured"
             and bool(continuation.get("continue_active_run"))
-            and float((route.get("work_intent") or {}).get("confidence") or 0.0) >= 0.75
         ):
             return self._continue_active_work_from_turn(
                 principal=principal,
@@ -5153,134 +5720,8 @@ class AgentV2Service:
             )
         source_set = self._ensure_source_set(principal, str(session["session_id"]))
         preliminary_intent = WorkIntent.model_validate(route.get("work_intent") or {})
-        guarded_capability = self._guard_explanatory_capability(capability_id, preliminary_intent)
-        if guarded_capability != capability_id:
-            capability_id = guarded_capability
-            definition = self.registry.get(capability_id)
-            route = {
-                **route,
-                "capability_id": capability_id,
-                "source": f"{route.get('source') or 'semantic'}:explanatory_guard",
-            }
-        if starter_refs:
-            result_kind = str(request.input_delta.get("_starter_result_kind") or "")
-            graph_query_kind = str(request.input_delta.get("_starter_graph_query_kind") or "")
-            presentation = {
-                "table": "table",
-                "timeline": "timeline",
-                "mermaid": "mermaid",
-                "explorer": "explorer",
-            }.get(result_kind, preliminary_intent.presentation_mode)
-            graph_draft = preliminary_intent.graph_query_draft
-            if graph_query_kind:
-                graph_draft = GraphQueryDraft(
-                    enabled=True,
-                    query_kind=graph_query_kind,  # type: ignore[arg-type]
-                    focal_mentions=(
-                        ["현재 사용자"]
-                        if graph_query_kind == "responsibility"
-                        else [str(request.input_delta.get("_starter_subject_ref") or starter_refs[0])]
-                    ),
-                    presentation=presentation if presentation in {"auto", "list", "table", "timeline", "mermaid", "explorer"} else "auto",  # type: ignore[arg-type]
-                )
-            preliminary_intent = preliminary_intent.model_copy(
-                update={
-                    "context_refs": list(dict.fromkeys([*starter_refs, *preliminary_intent.context_refs]))[:20],
-                    "target_ref": str(request.input_delta.get("_starter_subject_ref") or preliminary_intent.target_ref),
-                    "presentation_mode": presentation,
-                    "graph_query_draft": graph_draft,
-                    "work_view": "combined" if graph_query_kind == "responsibility" else preliminary_intent.work_view,
-                }
-            )
-        explicit_target_ref = str(preliminary_intent.target_ref or "").strip()
-        if explicit_target_ref and self._record_for_ref(principal, explicit_target_ref):
-            preliminary_intent = preliminary_intent.model_copy(
-                update={
-                    "context_refs": list(
-                        dict.fromkeys([explicit_target_ref, *preliminary_intent.context_refs])
-                    )[:20]
-                }
-            )
-        session_context = request.input_delta.get("_work_session_context")
-        recent_messages = (
-            session_context.get("recent_messages")
-            if isinstance(session_context, dict) and isinstance(session_context.get("recent_messages"), list)
-            else []
-        )
-        prior_answer_refs: list[str] = []
-        for message in reversed(recent_messages):
-            if not isinstance(message, dict) or message.get("role") != "assistant":
-                continue
-            prior_answer_refs = [str(item) for item in message.get("source_refs") or [] if str(item).strip()]
-            if prior_answer_refs:
-                break
-        if (
-            preliminary_intent.presentation_mode == "mermaid"
-            and not preliminary_intent.artifact_actions
-            and preliminary_intent.operation
-            in {WorkOperation.understand, WorkOperation.compare, WorkOperation.connect}
-            and prior_answer_refs
-        ):
-            # A read-only visual follow-up is a presentation change over the last
-            # grounded answer. Reuse that answer's citation boundary instead of
-            # resolving broad business nouns as a new graph query.
-            preliminary_intent = preliminary_intent.model_copy(
-                update={
-                    "asset_kind": WorkAssetKind.knowledge,
-                    "operation": WorkOperation.connect,
-                    "operation_plan": [WorkOperation.understand, WorkOperation.connect],
-                    "work_view": "none",
-                    "context_refs": list(dict.fromkeys(prior_answer_refs))[:20],
-                    "graph_query_draft": GraphQueryDraft(
-                        enabled=True,
-                        query_kind="neighbors",
-                        focal_mentions=list(dict.fromkeys(prior_answer_refs))[:20],
-                        presentation="mermaid",
-                    ),
-                    "needs_clarification": False,
-                }
-            )
-            # A visual follow-up over the preceding grounded answer is a
-            # knowledge presentation, even when the planner over-weighted the
-            # current Inbox page. Keep the correction tied to the typed
-            # presentation contract and verified citation boundary.
-            capability_id = "knowledge.search"
-            definition = self.registry.get(capability_id)
-            route = {
-                **route,
-                "capability_id": capability_id,
-                "source": f"{route.get('source') or 'semantic'}:grounded_visual_followup",
-            }
-        if (
-            bool(request.input_delta.get("dry_run"))
-            and preliminary_intent.asset_kind.value == "action"
-            and preliminary_intent.operation == WorkOperation.run
-        ):
-            preliminary_intent = preliminary_intent.model_copy(
-                update={
-                    "operation": WorkOperation.test,
-                    "operation_plan": [
-                        WorkOperation.test if item == WorkOperation.run else item
-                        for item in preliminary_intent.operation_plan
-                    ],
-                }
-            )
         resolved_goal = compact_text(preliminary_intent.resolved_goal or request.question, 12000)
         retrieval_goal = compact_text(preliminary_intent.retrieval_query or resolved_goal, 12000)
-        retrieval_subjects: list[str] = []
-        for context_ref in preliminary_intent.context_refs[:4]:
-            record = self._record_for_ref(principal, context_ref)
-            title = compact_text(str(getattr(record, "title", "") or ""), 240) if record else ""
-            if title and title.casefold() not in retrieval_goal.casefold():
-                retrieval_subjects.append(title)
-        if retrieval_subjects:
-            retrieval_goal = compact_text(
-                f"{retrieval_goal}\n확인할 대상: {', '.join(dict.fromkeys(retrieval_subjects))}",
-                12000,
-            )
-        preliminary_intent = preliminary_intent.model_copy(
-            update={"resolved_goal": resolved_goal, "retrieval_query": retrieval_goal}
-        )
         request.input_delta["_resolved_goal"] = resolved_goal
         request.input_delta["_retrieval_query"] = retrieval_goal
         goal_plan = self._create_goal_plan(
@@ -5337,26 +5778,14 @@ class AgentV2Service:
         self.policy.enforce(decision)
 
         retrieval_query = retrieval_goal
-        session_context = request.input_delta.get("_work_session_context")
-        active_artifact = session_context.get("active_artifact") if isinstance(session_context, dict) else {}
-        active_artifact_id_for_context = str(active_artifact.get("artifact_id") or "") if isinstance(active_artifact, dict) else ""
-        if (
-            isinstance(active_artifact, dict)
-            and active_artifact.get("title")
-            and (
-                preliminary_intent.target_ref == active_artifact_id_for_context
-                or preliminary_intent.scope == "current"
-                or preliminary_intent.operation
-                in {WorkOperation.refine, WorkOperation.validate, WorkOperation.test}
-            )
-        ):
-            task_names = " ".join(
-                str(item.get("name") or "")
-                for item in (active_artifact.get("tasks") or [])[:8]
-                if isinstance(item, dict)
-            )
-            retrieval_query = f"{resolved_goal}\n활성 결과: {active_artifact.get('title')} {task_names}".strip()
-        include_history = capability_id == "cases.similar" or bool(request.input_delta.get("include_history", False))
+        handler_config = definition.handler_config or {}
+        retrieval_provider = str(handler_config.get("retrieval_provider") or "hybrid")
+        include_history = bool(handler_config.get("include_history")) or bool(
+            request.input_delta.get("include_history", False)
+        )
+        retrieval_kinds = {
+            str(item) for item in handler_config.get("kinds") or [] if str(item).strip()
+        } or None
         planner_evidence_ids = {
             item.evidence_id
             for item in (planner_search.items if planner_search is not None else [])
@@ -5378,6 +5807,12 @@ class AgentV2Service:
                 for item in planned_grounded_answer.get("summary_source_refs") or []
                 if str(item)
             )
+            for claim in planned_grounded_answer.get("claims") or []:
+                if isinstance(claim, dict):
+                    claim_refs = [str(ref) for ref in claim.get("source_refs") or [] if str(ref)]
+                    planned_grounded_refs.update(
+                        claim_refs
+                    )
             for outcome in planned_grounded_answer.get("outcomes") or []:
                 if not isinstance(outcome, dict):
                     continue
@@ -5398,7 +5833,7 @@ class AgentV2Service:
         planner_search_covers_intent = bool(
             planner_search is not None
             and not include_history
-            and capability_id != "cases.similar"
+            and not bool(handler_config.get("include_history"))
             and (
                 planner_answer_is_bounded
                 or
@@ -5410,7 +5845,8 @@ class AgentV2Service:
             )
         )
         context_started = time.perf_counter()
-        if capability_id == "work.inbox":
+        allowed_answer_scopes = {preliminary_intent.answer_source_scope}
+        if retrieval_provider == "current_work":
             work = self.repository.current_work(principal)
             evidence = [
                 EvidenceRef(
@@ -5437,10 +5873,20 @@ class AgentV2Service:
                     include_history=include_history,
                     page_ref=request.page_ref,
                     task_ref=request.task_ref,
-                    kinds={"case"} if capability_id == "cases.similar" else None,
+                    kinds=retrieval_kinds,
+                    answer_scopes=allowed_answer_scopes,
+                    ranking_policy=retrieval_policy,
                 )
             evidence = search_result.items
             current_work_evidence = []
+            evidence_refs = {item.evidence_id for item in evidence}
+            for source_ref in sorted(planned_grounded_refs - evidence_refs):
+                record = self._record_for_ref(principal, source_ref)
+                if record is None or self.repository.answer_scope(record) not in allowed_answer_scopes:
+                    continue
+                evidence.append(self._evidence_from_record(record, score=1.0))
+            if planned_grounded_refs:
+                evidence = self._prioritize_evidence(evidence, planned_grounded_refs)
         if preliminary_intent.work_view == "combined" and not current_work_evidence:
             current_work_evidence = [
                 EvidenceRef(
@@ -5455,7 +5901,7 @@ class AgentV2Service:
                 )
                 for item in self.repository.current_work(principal)
             ]
-        if capability_id != "work.inbox":
+        if retrieval_provider != "current_work":
             evidence = self._apply_source_set(
                 principal,
                 str(session["session_id"]),
@@ -5463,6 +5909,20 @@ class AgentV2Service:
                 page_ref=request.page_ref,
                 context_refs=preliminary_intent.context_refs,
             )
+            evidence = [
+                item
+                for item in evidence
+                if (
+                    (record := self._record_for_ref(principal, item.evidence_id)) is None
+                    or self.repository.answer_scope(record) in allowed_answer_scopes
+                )
+            ]
+            # Claim-selected sources are the only candidates that can become
+            # final citations. Keep them ahead of broader retrieval and pinned
+            # context so the bounded citation window cannot discard the
+            # planner's exact provenance.
+            if planned_grounded_refs:
+                evidence = self._prioritize_evidence(evidence, planned_grounded_refs, limit=12)
         if preliminary_intent.work_view == "combined":
             evidence = list(
                 {
@@ -5486,62 +5946,16 @@ class AgentV2Service:
             source_set=source_set,
             resolved_goal=resolved_goal,
             task_override=active_session_task,
+            subject_ref=preliminary_intent.target_ref,
+            subject_title=preliminary_intent.topic_subject,
         )
         context.business_context["user_work_profile"] = self.user_work_profile(principal)
         self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
         stage_timings_ms["context"] = round((time.perf_counter() - context_started) * 1000, 2)
-        resolved_target = (
-            request.task_ref
-            or (context.goal_anchor.ref if context.goal_anchor and context.goal_anchor.resolved else "")
-            or (context.page_anchor.ref if context.page_anchor and context.page_anchor.resolved else "")
-            or preliminary_intent.target_ref
-        )
-        intent = preliminary_intent.model_copy(update={"target_ref": resolved_target})
-        if (
-            (not intent.graph_query_draft or not intent.graph_query_draft.enabled)
-            and (
-                intent.operation == WorkOperation.connect
-                or intent.presentation_mode == "explorer"
-                or (
-                    intent.presentation_mode == "mermaid"
-                    and intent.result_purpose == "explain"
-                    and not intent.artifact_actions
-                )
-            )
-            and intent.presentation_mode in {"table", "timeline", "mermaid", "artifact", "explorer"}
-        ):
-            focal_refs = list(
-                dict.fromkeys(
-                    [
-                        intent.target_ref,
-                        *intent.context_refs,
-                        *(item.evidence_id for item in evidence if item.evidence_id),
-                    ]
-                )
-            )
-            if focal_refs:
-                presentation = {
-                    "table": "table",
-                    "timeline": "timeline",
-                    "mermaid": "mermaid",
-                    "artifact": "explorer",
-                    "explorer": "explorer",
-                }[intent.presentation_mode]
-                intent = intent.model_copy(
-                    update={
-                        "graph_query_draft": GraphQueryDraft(
-                            enabled=True,
-                            query_kind="timeline" if presentation == "timeline" else "neighbors",
-                            focal_mentions=focal_refs[:20],
-                            presentation=presentation,  # type: ignore[arg-type]
-                        )
-                    }
-                )
+        intent = preliminary_intent
         requested_action_key = str(request.input_delta.get("action_key") or "").strip()
         if requested_action_key:
             context.business_context["action_key"] = requested_action_key
-            if intent.asset_kind.value == "action":
-                intent.target_ref = f"action:{requested_action_key}"
             self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
         presentation_started = time.perf_counter()
         work_run = self.learning.create_run(
@@ -5556,9 +5970,20 @@ class AgentV2Service:
                 or request.input_delta.get("_loop_policy")
                 or request.input_delta.get("loop_policy")
             ),
+            catalog_revision=self.registry.version,
+            planner_schema_revision=PLANNER_SCHEMA_REVISION,
+            semantic_plan_ref=str(route.get("semantic_plan_ref") or ""),
+            pinned_harness_bindings=planning_harness_bindings,
         )
         artifacts: list[ArtifactRef] = []
         generated_related_questions: list[RelatedQuestion] = []
+        grounded_claims: list[GroundedClaim] = []
+        verified_used_source_refs: list[str] = []
+        answerability = AnswerabilityReport(
+            status="insufficient",
+            answer_intent=intent.answer_intent,
+        )
+        claim_grounded_response = False
         plan_ref = ""
         job_ref = ""
         status: str = "completed"
@@ -5569,8 +5994,25 @@ class AgentV2Service:
             if candidate_artifact and self._owns(principal, candidate_artifact):
                 active_artifact_row = candidate_artifact
         graph_clarification = ""
+        graph_planning_error: SemanticPlanningError | None = None
+        response_error_code = ""
         graph_result_bundle = None
+        planned_grounded_answer = route.get("grounded_answer")
+        has_planned_grounded_content = bool(
+            isinstance(planned_grounded_answer, dict)
+            and (
+                str(planned_grounded_answer.get("summary") or "").strip()
+                or any(
+                    isinstance(item, dict) and str(item.get("text") or "").strip()
+                    for item in planned_grounded_answer.get("claims") or []
+                )
+            )
+        )
         graph_started = time.perf_counter()
+        if intent.topic_mode == "clarify" or intent.needs_clarification:
+            graph_clarification = semantic_plan.clarification_question.strip()
+            work_run["status"] = "waiting_input"
+            self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
         try:
             graph_result_bundle = (
                 self._graph_result_artifact(
@@ -5580,25 +6022,64 @@ class AgentV2Service:
                     current_work=current_work_evidence,
                     citations=citations,
                     work_run_id=str(work_run["work_run_id"]),
+                    capability_id=capability_id,
                 )
                 if (
-                    capability_id in {"knowledge.search", "cases.similar"}
+                    not graph_clarification
                     and intent.graph_query_draft
                     and intent.graph_query_draft.enabled
+                    and intent.graph_query_draft.query_kind in set(definition.graph_query_kinds)
                 )
                 else None
             )
         except AmbiguousEntityError as exc:
-            candidate_labels = ", ".join(item.label for item in exc.candidates[:5])
-            graph_clarification = f"'{exc.mention}'에 해당하는 대상이 여러 개입니다: {candidate_labels}. 어느 대상을 볼까요?"
-            intent = intent.model_copy(update={"needs_clarification": True})
-            work_run["intent"] = intent.model_dump(mode="json")
-            work_run["status"] = "waiting_input"
-            self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
+            if intent.presentation_mode == "prose" and has_planned_grounded_content:
+                # A relationship traversal is an enrichment for prose. When
+                # entity resolution is ambiguous but the Planner supplied
+                # directly grounded claims, keep the answer and omit the
+                # optional graph instead of blocking the user's read request.
+                graph_result_bundle = None
+            else:
+                try:
+                    question = semantic_plan.clarification_question.strip() or self.quick_agent.clarify_ambiguous_subject(
+                        model=self.model,
+                        original_request=request.question,
+                        semantic_plan=semantic_plan,
+                        mention=exc.mention,
+                        candidates=[
+                            {
+                                "entity_ref": item.entity_id,
+                                "label": item.label,
+                                "entity_kind": item.entity_kind,
+                            }
+                            for item in exc.candidates[:10]
+                        ],
+                    )
+                    choices = "\n".join(
+                        f"- {item.label}"
+                        for item in exc.candidates[:10]
+                    )
+                    graph_clarification = f"{question}\n\n{choices}" if choices else question
+                    intent = intent.model_copy(update={"needs_clarification": True})
+                    work_run["intent"] = intent.model_dump(mode="json")
+                    work_run["status"] = "waiting_input"
+                except SemanticPlanningError as planning_error:
+                    graph_planning_error = planning_error
+                    response_error_code = planning_error.code
+                    work_run["status"] = "failed"
+                    work_run["stop_reason"] = "semantic_repair"
+                self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
         finally:
             stage_timings_ms["graph"] = round((time.perf_counter() - graph_started) * 1000, 2)
 
-        if graph_clarification:
+        if graph_planning_error:
+            status = "failed"
+            citations = []
+            answer = AnswerBlock(
+                summary="확인할 대상을 안전하게 확정하지 못했습니다.",
+                markdown="요청의 대상을 안전하게 확정하지 못했습니다. 다른 기능으로 바꾸어 실행하지 않았습니다.",
+            )
+        elif graph_clarification:
             status = "needs_input"
             citations = []
             answer = AnswerBlock(
@@ -5615,38 +6096,6 @@ class AgentV2Service:
                     "대상 문서나 Task를 지정하면 Wiki 전체의 관련 지식과 함께 다시 확인하겠습니다."
                 ),
             )
-        elif (
-            active_artifact_row
-            and (
-                active_artifact_row.get("artifact_type") == "mermaid_diagram"
-                or (
-                    active_artifact_row.get("artifact_type") == "ontology_graph"
-                    and isinstance(active_artifact_row.get("draft"), dict)
-                    and active_artifact_row["draft"].get("presentation") == "mermaid"
-                )
-            )
-            and intent.result_purpose == "transform"
-            and "split_tasks" in intent.artifact_actions
-            and "create_sop_draft" not in intent.artifact_actions
-        ):
-            try:
-                answer, workflow_artifact = self._split_mermaid_artifact_into_tasks(
-                    principal,
-                    source_artifact=active_artifact_row,
-                    session=session,
-                    work_run_id=str(work_run["work_run_id"]),
-                    page_ref=request.page_ref,
-                )
-                artifacts.append(workflow_artifact)
-            except RuntimeError:
-                status = "needs_input"
-                answer = AnswerBlock(
-                    summary="흐름을 Task로 나누지 못했습니다.",
-                    markdown=(
-                        "현재 흐름에서 확인 가능한 Task 후보를 만들지 못했습니다. "
-                        "Task로 나눌 흐름 그림을 다시 선택하거나 필요한 단계를 조금 더 설명해주세요."
-                    ),
-                )
         elif active_artifact_row and intent.operation in {WorkOperation.validate, WorkOperation.test}:
             domain_test: dict[str, Any] = {}
             artifact_domain = (
@@ -5677,13 +6126,7 @@ class AgentV2Service:
                 active_artifact_row["domain_test"] = domain_test
                 active_artifact_row["updated_at"] = now_iso()
                 self.store.put("artifacts", str(active_artifact_row["artifact_id"]), active_artifact_row)
-            try:
-                artifact_type = str(
-                    self.registry.get(str(active_artifact_row.get("capability_id") or "knowledge.search")).output_schema.get("type")
-                    or "draft"
-                )
-            except KeyError:
-                artifact_type = "knowledge_draft"
+            artifact_type = self._artifact_contract_type(active_artifact_row) or "draft"
             preview_results = [
                 self.harnesses.evaluate(
                     harness_id,
@@ -5693,8 +6136,11 @@ class AgentV2Service:
                     artifact=active_artifact_row,
                     task_mode=context.task_mode,
                 )
-                for harness_id in self.harnesses.harnesses_for(intent, artifact_type)
-                if harness_id != "context.work"
+                for harness_id in self.harnesses.harnesses_for(
+                    intent,
+                    artifact_type,
+                    phase="test" if intent.operation == WorkOperation.test else "validate",
+                )
             ]
             blockers = [message for item in preview_results for message in item.blockers]
             artifacts.append(
@@ -5736,7 +6182,7 @@ class AgentV2Service:
                     )
         elif (
             active_artifact_row
-            and active_artifact_row.get("capability_id") == "sop.plan"
+            and self._artifact_contract_type(active_artifact_row) == "sop_draft"
             and intent.operation == WorkOperation.refine
         ):
             draft = active_artifact_row.get("draft") if isinstance(active_artifact_row.get("draft"), dict) else {}
@@ -5774,7 +6220,7 @@ class AgentV2Service:
                             status="draft",
                             url=f"/agent?session={session['session_id']}&artifact={active_artifact_row['artifact_id']}",
                             metadata={
-                                "capability_id": "sop.plan",
+                                "capability_id": str(active_artifact_row.get("capability_id") or ""),
                                 "revision": active_artifact_row.get("revision") or 1,
                                 "proposal_id": proposal["proposal_id"],
                                 "task_id": task["task_id"],
@@ -5839,15 +6285,72 @@ class AgentV2Service:
                     markdown="대상, 입력값, 예상 결과와 위험도를 확인한 뒤 승인해야 기존 업무 API의 실행 단계로 이어집니다. 아직 실행하거나 게시하지 않았습니다.",
                 )
         elif graph_result_bundle is not None:
-            answer, graph_artifact, graph_evidence = graph_result_bundle
+            answer, graph_artifact, graph_evidence, graph_claim_texts = graph_result_bundle
             artifacts.append(graph_artifact)
             evidence = graph_evidence or evidence
-            citation_evidence = graph_evidence or evidence
+            if graph_evidence:
+                self._merge_context_evidence(context, graph_evidence)
+            citation_evidence = list(graph_evidence)
+            if intent.work_view == "combined":
+                citation_evidence.extend(current_work_evidence)
             citations = self._citations_for_evidence(
                 principal,
                 str(session["session_id"]),
                 resolved_goal,
                 citation_evidence,
+            )
+            citations = citations[:8]
+            citation_by_ref = {item.source_ref: item for item in citations if item.chunk_id}
+            graph_source_ref = graph_evidence[0].evidence_id if graph_evidence else ""
+            graph_citation = citation_by_ref.get(graph_source_ref)
+            if graph_citation:
+                grounded_claims.extend(
+                    GroundedClaim(
+                        claim_id=f"graph-relation-{index}",
+                        text=text,
+                        claim_kind="relationship",
+                        source_scope="operational",
+                        source_refs=[graph_source_ref],
+                        supporting_chunk_ids=[graph_citation.chunk_id],
+                        support_status="supported",
+                        confidence=1.0,
+                        required_for_answer=True,
+                    )
+                    for index, text in enumerate(graph_claim_texts, start=1)
+                )
+            if intent.work_view == "combined":
+                current_work_by_ref = {
+                    item.evidence_id: item for item in current_work_evidence
+                }
+                for citation in citations:
+                    work_item = current_work_by_ref.get(citation.source_ref)
+                    if work_item is None or not citation.chunk_id:
+                        continue
+                    grounded_claims.append(
+                        GroundedClaim(
+                            claim_id=f"current-work-{len(grounded_claims) + 1}",
+                            text=f"{work_item.title}: {work_item.summary}",
+                            claim_kind="work",
+                            source_scope="operational",
+                            source_refs=[citation.source_ref],
+                            supporting_chunk_ids=[citation.chunk_id],
+                            support_status="supported",
+                            confidence=1.0,
+                            required_for_answer=True,
+                        )
+                    )
+            claim_grounded_response = bool(grounded_claims)
+            verified_used_source_refs.extend(
+                source_ref
+                for claim in grounded_claims
+                for source_ref in claim.source_refs
+                if source_ref
+            )
+            answerability = AnswerabilityReport(
+                status="grounded" if grounded_claims else "insufficient",
+                answer_intent="relationship",
+                supported_claim_count=len(grounded_claims),
+                missing_evidence=[] if grounded_claims else ["관계 결과를 직접 뒷받침하는 내부 기록이 없습니다."],
             )
             if citations:
                 markers = " ".join(
@@ -5855,7 +6358,7 @@ class AgentV2Service:
                     for index, item in enumerate(citations[:4], start=1)
                 )
                 answer.markdown = f"{answer.markdown}\n\n관계 근거 {markers}"
-        elif intent.presentation_mode == "mermaid" and capability_id in {"knowledge.search", "cases.similar"}:
+        elif intent.presentation_mode == "mermaid" and bool(definition.graph_query_kinds):
             try:
                 answer, diagram_artifact, generated_related_questions = self._mermaid_artifact(
                     principal,
@@ -5865,6 +6368,7 @@ class AgentV2Service:
                     evidence=evidence,
                     citations=citations,
                     work_run_id=str(work_run["work_run_id"]),
+                    capability_id=capability_id,
                 )
                 artifacts.append(diagram_artifact)
             except RuntimeError as exc:
@@ -5886,305 +6390,77 @@ class AgentV2Service:
                         "확인할 대상이나 관계를 조금 더 구체적으로 지정하면 다시 만들 수 있습니다."
                     ),
                 )
-        elif capability_id == "work_routine.plan":
-            try:
-                answer, routine_artifact, plan_ref = self._work_routine_plan(
-                    principal,
+        else:
+            handler_result = self.capability_handlers.execute(
+                definition.handler,
+                CapabilityHandlerContext(
+                    principal=principal,
+                    definition=definition,
                     request=request,
                     session=session,
                     intent=intent,
+                    work_context=context,
                     evidence=evidence,
-                    work_run_id=str(work_run["work_run_id"]),
-                )
-                artifacts.append(routine_artifact)
-            except RuntimeError as exc:
-                status = "needs_input"
-                answer = AnswerBlock(
-                    summary="자동 확인 계획을 만들려면 정보가 더 필요합니다.",
-                    markdown=f"{compact_text(str(exc), 500)} 시간이나 상태 조건을 조금 더 구체적으로 알려주세요.",
-                )
-        elif capability_id == "task.work":
-            completion_checks = [item.label for item in (context.completion_design.checks if context.completion_design else [])]
-            completion_evidence = [item.label for item in (context.completion_design.evidence if context.completion_design else []) if item.required]
-            completion_checks = completion_checks or list(context.exit_criteria)
-            completion_evidence = completion_evidence or list(context.required_evidence)
-            task_title = (
-                context.goal_anchor.title
-                if context.goal_anchor and context.goal_anchor.title not in {"", "진행 중 Task"}
-                else request.task_ref or "현재 Task"
-            )
-            if intent.operation == WorkOperation.complete:
-                status = "needs_input"
-                lines = [
-                    f"'{task_title}'의 완료 여부는 담당자 또는 연결된 시스템의 확인이 있어야 확정됩니다.",
-                    "",
-                    "### 완료된 모습",
-                    *([f"- {item}" for item in completion_checks] or ["- 이 Task의 완료된 모습을 먼저 정해주세요."]),
-                    "",
-                    "### 확인할 자료",
-                    *([f"- {item}" for item in completion_evidence] or ["- 확인할 자료를 먼저 정해주세요."]),
-                    "",
-                    (
-                        "직접 확인한 내용과 판단 기록을 남기면 같은 업무에서 완료 여부를 다시 평가합니다."
-                        if context.task_mode in {TaskMode.manual, TaskMode.copilot}
-                        else "연결된 Event·Action·데이터 결과가 확인될 때만 자동 완료됩니다."
-                    ),
-                ]
-                answer = AnswerBlock(
-                    summary=f"'{task_title}'의 완료 확인을 기다리고 있습니다.",
-                    markdown="\n".join(lines),
-                )
-            else:
-                answer = AnswerBlock(
-                    summary=f"'{task_title}'의 현재 업무 맥락과 확인 항목을 정리했습니다.",
-                    markdown="\n".join(
-                        [
-                            f"### {task_title}",
-                            f"- 수행 방식: {context.task_mode.value}",
-                            *[f"- 완료된 모습: {item}" for item in completion_checks],
-                            *[f"- 확인할 자료: {item}" for item in completion_evidence],
-                        ]
-                    ),
-                )
-        elif capability_id == "knowledge.search":
-            helper_guidance = "\n".join(
-                [
-                    str(request.input_delta.get("_helper_instructions") or ""),
-                    *[
-                        f"{item.get('title')}: {item.get('description')}"
-                        for item in request.input_delta.get("_helper_skills") or []
-                        if isinstance(item, dict)
-                    ],
-                ]
-            ).strip()
-            primary_source_ref = (
-                context.page_anchor.ref
-                if context.page_anchor and context.page_anchor.resolved
-                else ""
-            )
-            planned_answer = self._grounded_answer_from_plan(
-                principal,
-                session,
-                route.get("grounded_answer"),
-                evidence,
-                citations,
-                # The current page is a retrieval anchor, not a mandatory
-                # citation. Every planner claim is already constrained to and
-                # revalidated against the retrieved citation set.
-                primary_source_ref="",
-            )
-            if planned_answer is not None and not helper_guidance:
-                answer, generated_related_questions = planned_answer
-            elif intent.presentation_mode == "table" and not helper_guidance:
-                table_answer = self._grounded_evidence_table(evidence, citations)
-                if table_answer is not None:
-                    answer, generated_related_questions = table_answer
-                else:
-                    answer, generated_related_questions = self._grounded_search_answer(
-                        principal,
-                        session,
-                        resolved_goal,
-                        evidence,
-                        citations,
-                        guidance=helper_guidance,
-                        desired_outcome=intent.desired_outcome,
-                        primary_source_ref=primary_source_ref,
-                    )
-            else:
-                answer, generated_related_questions = self._grounded_search_answer(
-                    principal,
-                    session,
-                    resolved_goal,
-                    evidence,
-                    citations,
-                    guidance=helper_guidance,
-                    desired_outcome=intent.desired_outcome,
-                    primary_source_ref=primary_source_ref,
-                )
-            if route.get("source") == "safe_fallback":
-                status = "needs_input"
-                protected_local_models = (
-                    self.settings.lmstudio_require_preloaded_models
-                    and self.model_residency.get("ready") is not True
-                )
-                answer = AnswerBlock(
-                    summary=(
-                        "로컬 AI 모델의 교대 재로딩을 막고 관련 지식만 확인했습니다."
-                        if protected_local_models
-                        else "요청의 업무 동작을 안전하게 판단하지 못해 관련 지식만 확인했습니다."
-                    ),
-                    markdown=(
-                        (
-                            "LM Studio에서 필요한 생성·임베딩 모델의 수동 상주 상태를 확인하지 못해 "
-                            "교대 로딩을 막기 위해 AI 답변 생성을 중단했습니다. 두 모델을 TTL 없이 "
-                            "직접 로드한 뒤 다시 시도해주세요.\n\n"
-                            if protected_local_models
-                            else "의도 판단 모델이 준비되지 않았거나 구조화된 판단을 검증하지 못했습니다. "
-                            "초안 생성이나 실행은 추측하지 않았습니다.\n\n"
-                        )
-                        + answer.markdown
-                    ),
-                )
-        elif capability_id == "cases.similar":
-            similar_guidance = "\n".join(
-                [
-                    str(request.input_delta.get("_helper_instructions") or ""),
-                    *[
-                        f"{item.get('title')}: {item.get('description')}"
-                        for item in request.input_delta.get("_helper_skills") or []
-                        if isinstance(item, dict)
-                    ],
-                ]
-            ).strip()
-            planned_answer = self._grounded_answer_from_plan(
-                principal,
-                session,
-                route.get("grounded_answer"),
-                evidence,
-                citations,
-            )
-            if planned_answer is not None and not similar_guidance:
-                answer, generated_related_questions = planned_answer
-            elif intent.presentation_mode == "table" and not similar_guidance:
-                table_answer = self._grounded_evidence_table(evidence, citations)
-                if table_answer is not None:
-                    answer, generated_related_questions = table_answer
-                else:
-                    answer, generated_related_questions = self._grounded_search_answer(
-                        principal,
-                        session,
-                        resolved_goal,
-                        evidence,
-                        citations,
-                        empty_label="유사 사례",
-                        desired_outcome=intent.desired_outcome,
-                    )
-            else:
-                answer, generated_related_questions = self._grounded_search_answer(
-                    principal,
-                    session,
-                    resolved_goal,
-                    evidence,
-                    citations,
-                    empty_label="유사 사례",
-                    desired_outcome=intent.desired_outcome,
-                    guidance=similar_guidance,
-                    primary_source_ref=(
-                        context.page_anchor.ref
-                        if context.page_anchor and context.page_anchor.resolved
-                        else ""
-                    ),
-                )
-        elif capability_id == "work.inbox":
-            answer = self._inbox_answer(current_work_evidence)
-        elif definition.deep:
-            job_ref = self._queue_deep_job(
-                principal,
-                definition,
-                request,
-                context,
-                work_session_id=str(session["session_id"]),
-            )
-            status = "queued"
-            answer = AnswerBlock(
-                summary="심층 작업을 시작했습니다. 결과는 검토 가능한 draft로만 생성됩니다.",
-                markdown=f"심층 작업 `{job_ref}`을 시작했습니다. 작업공간에서 진행 상태와 근거를 확인할 수 있습니다.",
-            )
-        elif definition.operation == OperationClass.draft:
-            try:
-                answer, artifact, plan_ref = self._draft(
-                    principal,
-                    definition,
-                    request,
-                    evidence,
-                    work_run_id=str(work_run["work_run_id"]),
-                    prefilled_draft=(
-                        route.get("sop_draft")
-                        if capability_id == "sop.plan" and isinstance(route.get("sop_draft"), dict)
-                        else None
-                    ),
-                )
-                artifacts.append(artifact)
-            except Exception as exc:
-                self.learning.fail_run(
-                    principal,
-                    str(work_run["work_run_id"]),
-                    f"{definition.title} 작업 실패: {type(exc).__name__}",
-                )
-                failure = {
-                    "status": "draft_generation_failed",
-                    "capability_id": capability_id,
-                    "message": f"{type(exc).__name__}: {exc}",
-                    "run_id": run_id,
-                }
-                self.store.put(
-                    "runs",
-                    run_id,
-                    {
-                        "run_id": run_id,
-                        "employee_id": principal.employee_id,
-                        "conversation_id": str(session["conversation_id"]),
-                        "work_session_id": str(session["session_id"]),
-                        "capability_id": capability_id,
-                        "status": "failed",
-                        "context_id": context.context_id,
-                        "routing": route,
-                        "events": [
-                            {"event": "accepted", "run_id": run_id},
-                            {"event": "capability.selected", "capability_id": capability_id},
-                            {"event": "error", **failure},
-                        ],
-                        "error": failure,
-                        "created_at": now_iso(),
-                    },
-                )
-                self.store.put(
-                    "turns",
-                    turn_id,
-                    {
-                        "turn_id": turn_id,
-                        "run_id": run_id,
-                        "employee_id": principal.employee_id,
-                        "question_hash": hashlib.sha256(request.question.encode("utf-8")).hexdigest(),
-                        "capability_id": capability_id,
-                        "status": "failed",
-                        "created_at": now_iso(),
-                    },
-                )
-                failure_response = AgentTurnResponse(
+                    citations=citations,
+                    current_work_evidence=current_work_evidence,
+                    work_run=work_run,
+                    route=route,
+                    active_artifact=active_artifact_row,
                     run_id=run_id,
                     turn_id=turn_id,
-                    conversation_id=str(session["conversation_id"]),
-                    work_session_id=str(session["session_id"]),
-                    status="failed",
-                    capability_id=capability_id,
-                    answer=AnswerBlock(
-                        summary="초안을 만들지 못했습니다.",
-                        markdown="초안을 만들지 못했습니다. 입력과 모델 준비 상태를 확인해주세요.",
-                    ),
-                    context_ref=context.context_id,
-                    error_code="draft_generation_failed",
-                    goal_plan_ref=str(goal_plan["goal_plan_id"]),
-                    source_set_ref=str(source_set["source_set_id"]),
-                    citations=citations,
-                    grounding_status="partial" if citations else "no_evidence",
-                )
-                goal_plan.update({"status": "failed", "updated_at": now_iso()})
-                self.store.put("goal_plans", str(goal_plan["goal_plan_id"]), goal_plan)
-                self._finish_work_session(principal, session, failure_response, request.question)
-                raise HTTPException(
-                    status_code=502,
-                    detail=failure,
-                ) from exc
-        else:
-            raise RuntimeError(f"capability handler contract violated: {capability_id}")
+                    goal_plan=goal_plan,
+                    source_set=source_set,
+                ),
+            )
+            answer = handler_result.answer
+            status = handler_result.status
+            artifacts.extend(handler_result.artifacts)
+            generated_related_questions.extend(handler_result.related_questions)
+            grounded_claims = handler_result.grounded_claims
+            verified_used_source_refs.extend(handler_result.used_source_refs)
+            if handler_result.answerability is not None:
+                answerability = handler_result.answerability
+            if handler_result.citations is not None:
+                citations = handler_result.citations
+            if handler_result.evidence is not None:
+                evidence = handler_result.evidence
+            plan_ref = handler_result.plan_ref
+            job_ref = handler_result.job_ref
+            claim_grounded_response = handler_result.claim_grounded_response
+
+        for artifact in artifacts:
+            verified_used_source_refs.extend(
+                str(item)
+                for item in artifact.metadata.get("source_refs") or []
+                if str(item)
+            )
+        verified_used_set = set(verified_used_source_refs)
+        citations = [item for item in citations if item.source_ref in verified_used_set]
+        verified_used_source_refs = list(
+            dict.fromkeys(item.source_ref for item in citations if item.source_ref)
+        )[:12]
+
+        if (
+            intent.presentation_mode == "table"
+            and claim_grounded_response
+            and not artifacts
+        ):
+            table_artifact = self._grounded_claims_table_artifact(
+                principal,
+                session=session,
+                claims=grounded_claims,
+                work_run_id=str(work_run["work_run_id"]),
+                capability_id=capability_id,
+            )
+            if table_artifact is not None:
+                artifacts.append(table_artifact)
 
         stage_timings_ms["presentation"] = round(
             (time.perf_counter() - presentation_started) * 1000,
             2,
         )
 
-        if citations and capability_id not in {"knowledge.search", "cases.similar"}:
+        if citations and not claim_grounded_response:
             markers = " ".join(
                 f"[{index}](/api/v2/citations/{item.citation_id})"
                 for index, item in enumerate(citations[:4], start=1)
@@ -6248,6 +6524,8 @@ class AgentV2Service:
             for item in goal_plan.get("steps") or []
         ]
 
+        topic_state_ref = f"topic:{session['session_id']}:{turn_id}"
+
         response = AgentTurnResponse(
             run_id=run_id,
             turn_id=turn_id,
@@ -6256,6 +6534,7 @@ class AgentV2Service:
             status=status,  # type: ignore[arg-type]
             capability_id=capability_id,
             answer=answer,
+            error_code=response_error_code,
             evidence_refs=evidence,
             artifact_refs=artifacts,
             offers=[],
@@ -6271,8 +6550,12 @@ class AgentV2Service:
             goal_plan_ref=str(goal_plan["goal_plan_id"]),
             source_set_ref=str(source_set["source_set_id"]),
             citations=citations,
+            used_source_refs=verified_used_source_refs,
             related_questions=related_questions,
-            grounding_status=("grounded" if citations or graph_result_bundle is not None else "no_evidence"),
+            grounding_status=answerability.status,
+            answerability=answerability,
+            grounded_claims=grounded_claims,
+            topic_state_ref=topic_state_ref,
             progress=progress,
             work_run_id=str(work_run["work_run_id"]),
             work_intent=intent,
@@ -6294,6 +6577,8 @@ class AgentV2Service:
             },
             harness_results=harness_results,
             knowledge_candidates=knowledge_candidates,
+            semantic_plan_ref=str(route.get("semantic_plan_ref") or ""),
+            stop_reason=str(work_run.get("stop_reason") or ""),
             context_usage={
                 "page_anchor": context.page_anchor.model_dump(mode="json") if context.page_anchor else None,
                 "goal_anchor": context.goal_anchor.model_dump(mode="json") if context.goal_anchor else None,
@@ -6348,6 +6633,7 @@ class AgentV2Service:
             "goal_plan_id": goal_plan["goal_plan_id"],
             "source_set_id": source_set["source_set_id"],
             "work_run_id": work_run["work_run_id"],
+            "semantic_plan_ref": str(route.get("semantic_plan_ref") or ""),
             "events": [
                 {"event": "accepted", "run_id": run_id},
                 {
@@ -6388,6 +6674,7 @@ class AgentV2Service:
             "resolved_goal": intent.resolved_goal,
             "presentation_mode": intent.presentation_mode,
             "context_refs": list(intent.context_refs),
+            "planner_grounding_diagnostics": route.get("grounded_answer_diagnostics") or {},
             "timings_ms": stage_timings_ms,
             "created_at": now_iso(),
         }
@@ -6417,6 +6704,27 @@ class AgentV2Service:
         citation_link_pattern = re.compile(
             r"\s*\[\d+\]\(/api/v2/citations/(cite_[A-Za-z0-9]+)\)"
         )
+        verified_source_refs = {
+            str(item)
+            for item in response.used_source_refs
+            if str(item).strip()
+        }
+        verified_source_refs.update(
+            str(ref)
+            for claim in response.grounded_claims
+            if claim.support_status == "supported"
+            for ref in claim.source_refs
+            if str(ref).strip()
+        )
+
+        def refresh_used_source_refs() -> None:
+            response.used_source_refs = list(
+                dict.fromkeys(
+                    item.source_ref
+                    for item in response.citations
+                    if item.source_ref in verified_source_refs
+                )
+            )[:12]
 
         response.answer.markdown = re.sub(
             r"\n+###\s*사용한 지식\s*(?:\n[\s\S]*)?$",
@@ -6501,9 +6809,7 @@ class AgentV2Service:
             for key in ("iteration_count", "decision", "status", "revision")
             if key in response.loop_state
         }
-        response.used_source_refs = list(
-            dict.fromkeys(item.source_ref for item in response.citations if item.source_ref)
-        )[:12]
+        refresh_used_source_refs()
         payload = response.model_dump(mode="json")
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= self.settings.response_budget_bytes:
             return response
@@ -6656,7 +6962,7 @@ class AgentV2Service:
             response.plan_ref = ""
             response.job_ref = ""
             refresh_display_html()
-        response.grounding_status = "grounded" if response.citations or response.graph_result_ref else "no_evidence"
+        response.grounding_status = response.answerability.status
         if response_size() > budget:
             response.related_questions = []
             response.artifact_refs = [
@@ -6670,10 +6976,74 @@ class AgentV2Service:
             refresh_display_html()
         if response_size() > budget:
             response.answer.display_html = ""
-        response.used_source_refs = list(
-            dict.fromkeys(item.source_ref for item in response.citations if item.source_ref)
-        )[:12]
-        response.grounding_status = "grounded" if response.citations or response.graph_result_ref else "no_evidence"
+        if response_size() > budget:
+            response.grounded_claims = [
+                item.model_copy(
+                    update={
+                        "text": compact_text(item.text, 180),
+                        "source_refs": item.source_refs[:2],
+                        "supporting_chunk_ids": item.supporting_chunk_ids[:2],
+                    }
+                )
+                for item in response.grounded_claims
+                if item.support_status in {"supported", "partial", "conflicting"}
+            ][:4]
+            response.answerability = response.answerability.model_copy(
+                update={
+                    "missing_evidence": [compact_text(item, 100) for item in response.answerability.missing_evidence[:2]],
+                    "conflicts": [compact_text(item, 100) for item in response.answerability.conflicts[:2]],
+                }
+            )
+            if response.work_intent:
+                response.work_intent = response.work_intent.model_copy(
+                    update={
+                        "goal": compact_text(response.work_intent.goal, 100),
+                        "resolved_goal": compact_text(response.work_intent.resolved_goal, 140),
+                        "retrieval_query": compact_text(response.work_intent.retrieval_query, 100),
+                        "topic_subject": compact_text(response.work_intent.topic_subject, 100),
+                        "primary_topic_entity": compact_text(response.work_intent.primary_topic_entity, 100),
+                        "topic_entities": response.work_intent.topic_entities[:4],
+                        "referenceable_topic_entities": response.work_intent.referenceable_topic_entities[:4],
+                        "selected_prior_topic_entities": response.work_intent.selected_prior_topic_entities[:4],
+                        "context_refs": response.work_intent.context_refs[:2],
+                        "operation_plan": [response.work_intent.operation],
+                    }
+                )
+        while response_size() > budget and len(response.answer.markdown) > 120:
+            excess = response_size() - budget
+            target = max(120, len(response.answer.markdown) - max(40, excess + 24))
+            response.answer.markdown = truncate_markdown(response.answer.markdown, target)
+            ensure_primary_citation()
+            keep_rendered_citations()
+        if response_size() > budget:
+            response.answer.summary = compact_text(response.answer.summary, 80)
+            response.grounded_claims = response.grounded_claims[:1]
+            response.answerability = response.answerability.model_copy(
+                update={"missing_evidence": [], "conflicts": []}
+            )
+        if response_size() > budget and response.work_intent:
+            response.work_intent = response.work_intent.model_copy(
+                update={
+                    "topic_entities": response.work_intent.topic_entities[:1],
+                    "referenceable_topic_entities": response.work_intent.referenceable_topic_entities[:1],
+                    "selected_prior_topic_entities": response.work_intent.selected_prior_topic_entities[:1],
+                    "comparison_focal_entities": response.work_intent.comparison_focal_entities[:1],
+                    "relationship_focal_entities": response.work_intent.relationship_focal_entities[:1],
+                    "context_refs": response.work_intent.context_refs[:1],
+                    "harness_ids": response.work_intent.harness_ids[:1],
+                    "requested_asset_kinds": response.work_intent.requested_asset_kinds[:1],
+                }
+            )
+        if response_size() > budget:
+            response.context_usage = {}
+        if response_size() > budget:
+            # The citation and AnswerabilityReport retain the transport-level
+            # grounding contract. Detailed claim/chunk bindings remain durable
+            # on the run and topic state when an unusually small response
+            # budget cannot carry them safely.
+            response.grounded_claims = []
+        refresh_used_source_refs()
+        response.grounding_status = response.answerability.status
         return response
 
     def get_run(self, principal: Principal, run_id: str) -> dict[str, Any]:
@@ -6701,7 +7071,8 @@ class AgentV2Service:
         artifact = {
             "artifact_id": artifact_id,
             "employee_id": principal.employee_id,
-            "capability_id": "knowledge.note",
+            "capability_id": str(run.get("capability_id") or ""),
+            "artifact_type": "knowledge_note",
             "status": "provisional",
             "title": title or "업무 지식 노트",
             "draft": {
@@ -6741,7 +7112,7 @@ class AgentV2Service:
 
     def use_note_as_source(self, principal: Principal, artifact_id: str) -> dict[str, Any]:
         artifact = self.get_artifact(principal, artifact_id)
-        if artifact.get("capability_id") != "knowledge.note":
+        if self._artifact_contract_type(artifact) != "knowledge_note":
             raise HTTPException(status_code=409, detail="only a private knowledge note can be used as a source")
         session_id = str(artifact.get("work_session_id") or "")
         source_set = self._ensure_source_set(principal, session_id)
@@ -6782,7 +7153,7 @@ class AgentV2Service:
 
     def list_harnesses(self) -> dict[str, Any]:
         items = self.harnesses.definitions()
-        return {"version": "1.0", "count": len(items), "items": items}
+        return {"version": self.harnesses.version, "count": len(items), "items": items}
 
     def validate_harness(
         self,
@@ -6792,18 +7163,15 @@ class AgentV2Service:
     ) -> dict[str, Any]:
         context = WorkContextPack.model_validate(self.get_context(principal, request.context_id))
         run = self.learning.get_run(principal, request.work_run_id) if request.work_run_id else None
-        intent = (
-            WorkIntentEngine.infer(
-                context.goal,
-                capability_id=context.capability_id,
-                page_ref=context.page_ref,
-                task_ref=context.task_ref,
-                target_ref=(context.page_anchor.ref if context.page_anchor else ""),
-                operation=WorkOperation.validate,
+        if run is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "status": "work_run_required",
+                    "message": "Harness 검증은 catalog와 intent revision이 고정된 WorkRun이 필요합니다.",
+                },
             )
-            if run is None
-            else WorkIntent.model_validate(run.get("intent") or {})
-        )
+        intent = WorkIntent.model_validate(run.get("intent") or {})
         artifact = self.get_artifact(principal, request.artifact_id) if request.artifact_id else None
         candidate = self.learning.get_candidate(principal, request.candidate_id) if request.candidate_id else None
         try:
@@ -6895,7 +7263,7 @@ class AgentV2Service:
         plan = {
             "plan_id": plan_id,
             "employee_id": principal.employee_id,
-            "capability_id": "knowledge.draft",
+            "capability_id": self.registry.default_for_asset(WorkAssetKind.knowledge).capability_id,
             "status": "draft",
             "candidate_id": candidate_id,
             "artifact_id": "",
@@ -6926,6 +7294,11 @@ class AgentV2Service:
             raise HTTPException(status_code=404, detail="plan not found")
         if plan.get("employee_id") != principal.employee_id and not principal.is_admin:
             raise HTTPException(status_code=403, detail="plan belongs to another employee")
+        if plan.get("status") == "confirmed":
+            replay = plan.get("confirmation_result")
+            if isinstance(replay, dict):
+                return {**replay, "replayed": True}
+            raise HTTPException(status_code=409, detail="confirmed plan result is unavailable")
         if plan.get("status") != "draft":
             raise HTTPException(status_code=409, detail="only a draft plan can be confirmed")
         if not reason.strip():
@@ -6937,42 +7310,58 @@ class AgentV2Service:
                 detail={"status": "domain_validation_failed", "validation": validation},
             )
         domain_operation = str(plan.get("domain_operation") or "")
+        domain_payload = dict(plan.get("domain_payload") or {}) if isinstance(plan.get("domain_payload"), dict) else {}
+        execution_key = str(
+            domain_payload.get("idempotency_key")
+            or plan.get("idempotency_key")
+            or f"plan:{plan_id}"
+        )
+        domain_payload["idempotency_key"] = execution_key
         if domain_operation == "action.invoke" and principal.token_id and "boi.execute.low" not in principal.token_scopes:
             raise HTTPException(status_code=403, detail="boi.execute.low scope is required")
+        plan["idempotency_key"] = execution_key
+        plan["domain_payload"] = domain_payload
+        plan["status"] = "executing"
+        plan["confirmation_started_at"] = now_iso()
+        plan["confirmation_reason"] = reason.strip()
+        self.store.put("plans", plan_id, plan)
         domain_result: dict[str, Any] = {}
-        if domain_operation == "work_routine.create":
-            routine = self.create_work_routine(
-                principal,
-                WorkRoutineCreateRequest.model_validate(plan.get("domain_payload") or {}),
-            )
-            domain_result = {
-                "status": "active",
-                "routine_id": routine["routine_id"],
-                "next_run_at": routine.get("next_run_at") or "",
-                "production_changed": True,
-            }
-        elif domain_operation:
-            try:
+        try:
+            if domain_operation == "work_routine.create":
+                routine = self.create_work_routine(
+                    principal,
+                    WorkRoutineCreateRequest.model_validate(domain_payload),
+                )
+                domain_result = {
+                    "status": "active",
+                    "routine_id": routine["routine_id"],
+                    "next_run_at": routine.get("next_run_at") or "",
+                    "production_changed": True,
+                }
+            elif domain_operation:
                 domain_result = await self.domain_services.execute_async(
                     domain_operation,
                     principal,
                     {
-                        **(plan.get("domain_payload") if isinstance(plan.get("domain_payload"), dict) else {}),
+                        **domain_payload,
                         "domain_ref": str(plan.get("domain_ref") or ""),
                         "plan_id": plan_id,
                         "reason": reason.strip(),
                     },
                 )
-            except RuntimeError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except (RuntimeError, HTTPException, ValueError) as exc:
+            plan["status"] = "draft"
+            plan["last_execution_error"] = f"{type(exc).__name__}: {exc}"
+            plan["updated_at"] = now_iso()
+            self.store.put("plans", plan_id, plan)
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         plan.update(
             {
-                "status": "confirmed",
-                "confirmed_at": now_iso(),
-                "confirmed_by": principal.employee_id,
-                "confirmation_reason": reason,
                 "domain_result": domain_result,
                 "production_changed": bool(domain_result.get("production_changed", False)),
+                "updated_at": now_iso(),
             }
         )
         self.store.put("plans", plan_id, plan)
@@ -7029,6 +7418,7 @@ class AgentV2Service:
                     work_run_id,
                     WorkRunContinueRequest(
                         expected_revision=int(current.get("revision") or 1),
+                        idempotency_key=execution_key,
                         confirmation="confirm" if delta_kind == "human_input" else None,
                         delta=LoopDelta(
                             kind=delta_kind,  # type: ignore[arg-type]
@@ -7038,7 +7428,15 @@ class AgentV2Service:
                                 else "초안 검토를 확인하고 기존 업무 서비스의 다음 단계로 전달했습니다."
                             ),
                             ref=result_ref,
-                            metadata={"plan_id": plan_id, "domain_operation": domain_operation},
+                            metadata={
+                                "plan_id": plan_id,
+                                "domain_operation": domain_operation,
+                                "domain_result_status": str(domain_result.get("status") or ""),
+                                "completion_changes": {
+                                    "domain_operation": domain_operation,
+                                    "domain_result_status": str(domain_result.get("status") or ""),
+                                },
+                            },
                         ),
                     ),
                 )
@@ -7047,7 +7445,7 @@ class AgentV2Service:
             work_run_id=work_run_id,
             domain_operation=domain_operation,
         )
-        return {
+        confirmation_result = {
             "plan_id": plan_id,
             "status": "confirmed",
             "artifact_id": plan.get("artifact_id") or "",
@@ -7068,8 +7466,27 @@ class AgentV2Service:
                 else "초안 검토를 확인했습니다. 실제 게시나 실행은 해당 업무 API의 별도 확인을 거칩니다."
             ),
         }
+        plan.update(
+            {
+                "status": "confirmed",
+                "confirmed_at": now_iso(),
+                "confirmed_by": principal.employee_id,
+                "confirmation_reason": reason.strip(),
+                "confirmation_result": confirmation_result,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("plans", plan_id, plan)
+        return confirmation_result
 
     def create_deep_job(self, principal: Principal, request: DeepJobRequest) -> dict[str, Any]:
+        capability = (
+            self.registry.get(request.capability_id)
+            if request.capability_id
+            else self.registry.unique_for_handler("deep_job")
+        )
+        if capability.handler != "deep_job":
+            raise HTTPException(status_code=422, detail="capability is not a deep-job contract")
         response = self.run_turn(
             principal,
             AgentTurnRequest(
@@ -7085,7 +7502,7 @@ class AgentV2Service:
                     "max_subagents": request.max_subagents,
                     "max_parallelism": request.max_parallelism,
                 },
-                capability_id=request.capability_id,
+                capability_id=capability.capability_id,
             ),
         )
         return {"job_id": response.job_ref, "run_id": response.run_id, "status": response.status}
@@ -7171,7 +7588,16 @@ class AgentV2Service:
         principal: Principal,
         request: WorkRoutineCreateRequest,
     ) -> dict[str, Any]:
-        routine_id = new_id("routine")
+        routine_id = (
+            f"routine_{hashlib.sha256(f'{principal.employee_id}:{request.idempotency_key}'.encode('utf-8')).hexdigest()[:32]}"
+            if request.idempotency_key
+            else new_id("routine")
+        )
+        existing = self.store.get("work_routines", routine_id)
+        if existing:
+            if existing.get("employee_id") != principal.employee_id and not principal.is_admin:
+                raise HTTPException(status_code=403, detail="work routine belongs to another employee")
+            return existing
         trigger = LoopTriggerKind(request.trigger)
         loop_kind = LoopKind.proactive if trigger == LoopTriggerKind.event else LoopKind.time
         if request.routine_stop == "max_runs" and request.max_runs < 1:
@@ -7215,6 +7641,7 @@ class AgentV2Service:
             "run_history": [],
             "origin": request.origin,
             "surface_visibility": request.surface_visibility,
+            "idempotency_key": request.idempotency_key,
             "created_at": now,
             "updated_at": now,
         }
@@ -7240,6 +7667,7 @@ class AgentV2Service:
             WorkRoutineCreateRequest(
                 title=title,
                 goal=f"정해진 일정에 {title} 신호를 평가합니다.",
+                capability_id=self.registry.default_for_asset(WorkAssetKind.business_event).capability_id,
                 trigger="schedule",
                 schedule_config=schedule_config,
                 cron=cron,
@@ -7304,7 +7732,7 @@ class AgentV2Service:
         context = WorkContextPack(
             context_id=context_id,
             employee_id=principal.employee_id,
-            capability_id="business_event.plan" if target_kind == "business_event" else "knowledge.search",
+            capability_id=str(routine.get("capability_id") or ""),
             goal=str(routine.get("goal") or routine.get("title") or "예약 업무 실행"),
             page_ref=str(routine.get("page_ref") or ""),
             task_ref=str(routine.get("task_ref") or ""),
@@ -7352,6 +7780,8 @@ class AgentV2Service:
             intent=intent,
             goal_plan_id="",
             loop_policy=policy,
+            catalog_revision=self.registry.version,
+            planner_schema_revision=PLANNER_SCHEMA_REVISION,
         )
         if work_run.get("status") == "blocked":
             raise RuntimeError("scheduled system target failed Harness preflight")
@@ -7711,9 +8141,26 @@ class AgentV2Service:
             raise HTTPException(status_code=403, detail="artifact belongs to another employee")
         hydrated = copy.deepcopy(artifact)
         hydrated.setdefault("actions", [])
-        if hydrated.get("capability_id") == "sop.plan" and isinstance(hydrated.get("draft"), dict):
+        if self._artifact_contract_type(hydrated) == "sop_draft" and isinstance(hydrated.get("draft"), dict):
             hydrated["draft"] = self._normalise_sop_draft(hydrated["draft"], principal=principal)
         return hydrated
+
+    def _artifact_contract_type(self, artifact: dict[str, Any]) -> str:
+        explicit = str(artifact.get("artifact_type") or "").strip()
+        if explicit:
+            return explicit
+        capability_id = str(artifact.get("capability_id") or "").strip()
+        if capability_id:
+            try:
+                declared = str(self.registry.get(capability_id).output_schema.get("type") or "").strip()
+            except KeyError:
+                declared = ""
+            if declared:
+                return declared
+        draft = artifact.get("draft") if isinstance(artifact.get("draft"), dict) else {}
+        if {"body", "source_refs", "citation_refs"}.issubset(draft):
+            return "knowledge_note"
+        return ""
 
     def patch_sop_artifact(
         self,
@@ -7722,7 +8169,7 @@ class AgentV2Service:
         request: SopArtifactPatchRequest,
     ) -> dict[str, Any]:
         artifact = self.get_artifact(principal, artifact_id)
-        if artifact.get("capability_id") != "sop.plan":
+        if self._artifact_contract_type(artifact) != "sop_draft":
             raise HTTPException(status_code=409, detail="only SOP artifacts can be edited here")
         current_revision = int(artifact.get("revision") or 1)
         draft = copy.deepcopy(artifact.get("draft") or {})
@@ -7844,7 +8291,7 @@ class AgentV2Service:
         request: TaskRefinePreviewRequest,
     ) -> dict[str, Any]:
         artifact = self.get_artifact(principal, artifact_id)
-        if artifact.get("capability_id") != "sop.plan":
+        if self._artifact_contract_type(artifact) != "sop_draft":
             raise HTTPException(status_code=409, detail="only SOP tasks can be refined")
         revision = int(artifact.get("revision") or 1)
         if request.expected_revision != revision:
@@ -7958,27 +8405,8 @@ class AgentV2Service:
     def get_task_proposal(self, principal: Principal, proposal_id: str) -> dict[str, Any]:
         return self._require_owned(principal, self.store.get("evaluations", proposal_id), "proposal")
 
-    @staticmethod
-    def _helper_template(template_id: str) -> dict[str, Any]:
-        templates = {
-            "search": {
-                "name": "자료 찾기 도우미",
-                "instructions": "질문과 관련된 검토된 BoI 자료를 먼저 찾고, 근거 링크와 함께 간결하게 답합니다.",
-                "capability_ids": ["knowledge.search", "cases.similar"],
-            },
-            "sop": {
-                "name": "SOP 설계 도우미",
-                "instructions": "업무 목표를 Task로 나누고 각 Task의 목적, 종료 기준, 필요한 근거를 구체화합니다.",
-                "capability_ids": ["knowledge.search", "sop.plan", "action.plan", "business_event.plan"],
-            },
-            "evidence": {
-                "name": "근거 검증 도우미",
-                "instructions": "주장의 근거를 BoI Wiki와 유사 사례에서 확인하고, 부족한 근거와 다음 확인 항목을 구분합니다.",
-                "capability_ids": ["knowledge.search", "cases.similar", "knowledge.draft"],
-            },
-            "blank": {"name": "새 BoI Agent", "instructions": "", "capability_ids": ["knowledge.search"]},
-        }
-        return copy.deepcopy(templates.get(template_id, templates["blank"]))
+    def _helper_template(self, template_id: str) -> dict[str, Any]:
+        return self.registry.helper_template(template_id).model_dump(mode="json")
 
     def create_helper_draft(self, principal: Principal, request: HelperDraftCreateRequest) -> dict[str, Any]:
         seed = self._helper_template(request.template_id)
@@ -8023,34 +8451,20 @@ class AgentV2Service:
         owner = str(legacy.get("created_by") or principal.employee_id)
         if owner != principal.employee_id and not principal.is_admin:
             raise HTTPException(status_code=403, detail="legacy helper draft belongs to another employee")
-        capability_map = {
-            "search": "knowledge.search",
-            "summarize": "knowledge.search",
-            "validate": "cases.similar",
-            "diagram": "sop.plan",
-            "draft": "knowledge.draft",
-            "request_action": "action.plan",
-            "sop": "sop.plan",
-            "event": "business_event.plan",
-        }
         raw_capabilities = legacy.get("capabilities") if isinstance(legacy.get("capabilities"), list) else []
         capability_ids = []
         known = {item.capability_id for item in self.registry.all()}
         for value in raw_capabilities:
-            candidate = str(value or "")
-            mapped = capability_map.get(candidate, candidate)
+            mapped = self.registry.legacy_capability_id(str(value or ""))
             if mapped in known and mapped not in capability_ids:
                 capability_ids.append(mapped)
-        if "knowledge.search" not in capability_ids:
-            capability_ids.insert(0, "knowledge.search")
+        for required_capability in reversed(self.registry.legacy_required_capabilities()):
+            if required_capability in known and required_capability not in capability_ids:
+                capability_ids.insert(0, required_capability)
         references = legacy.get("reference_sources") if isinstance(legacy.get("reference_sources"), list) else []
-        source_map = {
-            "boi_docs": "boi",
-            "sops": "sop",
-            "events_actions": "event",
-            "similar_cases": "history",
-        }
-        source_scopes = list(dict.fromkeys(source_map.get(str(value), str(value)) for value in references if value))
+        source_scopes = list(
+            dict.fromkeys(self.registry.legacy_source_scope(str(value)) for value in references if value)
+        )
         connectors = []
         for value in [*(legacy.get("connection_presets") or []), *(legacy.get("mcp_servers") or [])]:
             clean = str(value or "").strip()
@@ -8165,7 +8579,7 @@ class AgentV2Service:
         request: SkillArtifactTestRequest,
     ) -> dict[str, Any]:
         artifact = self.get_artifact(principal, artifact_id)
-        if artifact.get("capability_id") != "skill.plan":
+        if self._artifact_contract_type(artifact) != "skill_draft":
             raise HTTPException(status_code=409, detail="only Skill draft artifacts can be tested")
         revision = int(artifact.get("revision") or 1)
         if request.expected_revision != revision:
@@ -8274,7 +8688,10 @@ class AgentV2Service:
         context = WorkContextPack(
             context_id=new_id("context"),
             employee_id=principal.employee_id,
-            capability_id="skill.plan",
+            capability_id=str(
+                artifact.get("capability_id")
+                or self.registry.default_for_asset(WorkAssetKind.skill).capability_id
+            ),
             goal=str(draft.get("description") or draft.get("title") or "Skill 시험"),
             task_mode=TaskMode.copilot,
             evidence_refs=evidence,
@@ -8331,7 +8748,7 @@ class AgentV2Service:
         request: SkillArtifactActivateRequest,
     ) -> dict[str, Any]:
         artifact = self.get_artifact(principal, artifact_id)
-        if artifact.get("capability_id") != "skill.plan":
+        if self._artifact_contract_type(artifact) != "skill_draft":
             raise HTTPException(status_code=409, detail="only Skill draft artifacts can be activated")
         revision = int(artifact.get("revision") or 1)
         if request.expected_revision != revision:
@@ -8594,27 +9011,21 @@ class AgentV2Service:
             for item in self.repository.history_records(principal, include_seed=True)
             if item.source == "history_seed"
         }
-        capability_ids = {item.capability_id for item in self.registry.all()}
-        expected = {
-            "knowledge.search",
-            "work.inbox",
-            "task.work",
-            "cases.similar",
-            "business_event.plan",
-            "sop.plan",
-            "action.plan",
-            "skill.plan",
-            "knowledge.draft",
-            "work_routine.plan",
-            "deep.research",
+        definitions = self.registry.all()
+        capability_ids = {item.capability_id for item in definitions}
+        catalog_contract_valid = bool(definitions) and len(capability_ids) == len(definitions) and all(
+            self.registry.handler_supported(item) for item in definitions
+        )
+        library_offer_ids = {
+            item.capability_id for item in definitions if "library" in item.offer_surfaces
         }
         core_checks = {
             "content_ready": bool(readiness["dependencies"]["content"]),
-            "capability_catalog_exact": capability_ids == expected,
+            "capability_catalog_exact": catalog_contract_valid,
             "home_offers_are_typed": bool(home_offers)
-            and all(item.offer_id.startswith("offer_") and item.capability_id in expected for item in home_offers),
+            and all(item.offer_id.startswith("offer_") and item.capability_id in capability_ids for item in home_offers),
             "home_not_misclassified_as_document": all(
-                item.capability_id not in {"knowledge.draft", "sop.plan", "business_event.plan"} for item in home_offers
+                item.capability_id in library_offer_ids for item in home_offers
             ),
             "history_seed_excluded_from_current_work": not bool(current_ids & seed_ids),
             "compact_response_budget": self.settings.response_budget_bytes <= 8192,

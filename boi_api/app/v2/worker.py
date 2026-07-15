@@ -64,11 +64,13 @@ def latest_assistant_text(messages: list[Any]) -> str:
 
 
 def ensure_exact_evidence_ledger(content: str, evidence_ledger: dict[str, dict[str, str]]) -> str:
-    if not evidence_ledger or any(evidence_id in content for evidence_id in evidence_ledger):
+    missing_ids = [evidence_id for evidence_id in evidence_ledger if evidence_id not in content]
+    if not missing_ids:
         return content
     rows = [
         f"- `{evidence_id}` - {str(item.get('title') or '근거 자료')}"
         for evidence_id, item in list(evidence_ledger.items())[:12]
+        if evidence_id in missing_ids
     ]
     return (
         content.rstrip()
@@ -186,7 +188,7 @@ class DeepWorkRunner:
                         status="draft",
                         url=f"/agent?session={work_session_id}&artifact={artifact_id}",
                         preview=str(result.get("body") or "")[:1200],
-                        metadata={"capability_id": job.get("capability_id") or "deep.research", "revision": 1},
+                        metadata={"capability_id": str(job.get("capability_id") or ""), "revision": 1},
                     )
                     self.service._append_session_message(
                         principal,
@@ -194,7 +196,7 @@ class DeepWorkRunner:
                         role="assistant",
                         display_text="심층 작업 초안이 준비되었습니다. 근거와 내용을 확인해주세요.",
                         run_id=str(job.get("run_id") or ""),
-                        capability_id=str(job.get("capability_id") or "deep.research"),
+                        capability_id=str(job.get("capability_id") or ""),
                         artifact_refs=[artifact_ref],
                         next_actions=self.service._next_actions(
                             work_session_id=work_session_id,
@@ -375,7 +377,7 @@ class DeepWorkRunner:
         context_row = self.service.store.get("contexts", str(job.get("context_id") or "")) or {}
         context = WorkContextPack.model_validate(context_row)
         pilot_mode = bool(job.get("pilot_mode", True))
-        max_tool_calls = max(1, min(int(job.get("max_tool_calls") or 5), 5 if pilot_mode else 12))
+        max_tool_calls = max(1, min(int(job.get("max_tool_calls") or 5), 5))
         token_budget = max(4000, min(int(job.get("token_budget") or 160000), 200000))
         subagent_budget_limit = deep_subagent_budget_limit(
             token_budget,
@@ -394,8 +396,9 @@ class DeepWorkRunner:
         require_subagent = bool(job.get("require_subagent", False))
         if require_subagent and max_subagents < 1:
             raise RuntimeError("deep-work required subagent is unavailable within the token budget")
-        seen_calls: dict[str, int] = {}
         tool_calls = 0
+        consecutive_no_progress = 0
+        read_evidence_ids: set[str] = set()
         evidence_ledger: dict[str, dict[str, str]] = {
             item.evidence_id: {
                 "evidence_id": item.evidence_id,
@@ -419,7 +422,7 @@ class DeepWorkRunner:
 
         def boi_search(query: str, include_history: bool = False) -> str:
             """Search ACL-visible BoI knowledge and return compact evidence references."""
-            nonlocal tool_calls
+            nonlocal tool_calls, consecutive_no_progress
             ensure_active()
             if tool_calls >= max_tool_calls:
                 return json.dumps(
@@ -431,17 +434,7 @@ class DeepWorkRunner:
                     ensure_ascii=False,
                 )
             tool_calls += 1
-            signature = f"search:{query.strip().lower()}"
-            if seen_calls.get(signature, 0) >= 1:
-                return json.dumps(
-                    {
-                        "status": "stop_and_synthesize",
-                        "reason": "no_progress_repeated_search",
-                        "evidence_ids": list(evidence_ledger)[:12],
-                    },
-                    ensure_ascii=False,
-                )
-            seen_calls[signature] = 1
+            known_evidence = set(evidence_ledger)
             result = self.service.search.search(
                 query,
                 principal,
@@ -456,6 +449,28 @@ class DeepWorkRunner:
                     "title": item.title,
                     "url": item.url,
                 }
+            new_evidence = set(evidence_ledger) - known_evidence
+            if new_evidence:
+                consecutive_no_progress = 0
+            else:
+                consecutive_no_progress += 1
+                return json.dumps(
+                    {
+                        "status": (
+                            "stop_and_synthesize"
+                            if consecutive_no_progress >= 2
+                            else "strategy_change_required"
+                        ),
+                        "reason": "no_new_evidence",
+                        "required_change": (
+                            "Use another evidence source, tool, or retrieval approach."
+                            if consecutive_no_progress == 1
+                            else "Stop because two consecutive tool steps produced no domain progress."
+                        ),
+                        "evidence_ids": list(evidence_ledger)[:12],
+                    },
+                    ensure_ascii=False,
+                )
             return json.dumps(
                 [
                     {
@@ -471,7 +486,7 @@ class DeepWorkRunner:
 
         def boi_get(evidence_id: str) -> str:
             """Read one ACL-visible evidence item by identifier without mutating it."""
-            nonlocal tool_calls
+            nonlocal tool_calls, consecutive_no_progress
             ensure_active()
             if tool_calls >= max_tool_calls:
                 return json.dumps(
@@ -483,20 +498,47 @@ class DeepWorkRunner:
                     ensure_ascii=False,
                 )
             tool_calls += 1
-            signature = f"get:{evidence_id}"
-            if seen_calls.get(signature, 0) >= 1:
+            if evidence_id in read_evidence_ids:
+                consecutive_no_progress += 1
                 return json.dumps(
                     {
-                        "status": "stop_and_synthesize",
-                        "reason": "no_progress_repeated_evidence_read",
+                        "status": (
+                            "stop_and_synthesize"
+                            if consecutive_no_progress >= 2
+                            else "strategy_change_required"
+                        ),
+                        "reason": "no_new_evidence_state",
+                        "required_change": (
+                            "Read another evidence item or use another tool."
+                            if consecutive_no_progress == 1
+                            else "Stop because two consecutive tool steps produced no domain progress."
+                        ),
                         "evidence_ids": list(evidence_ledger)[:12],
                     },
                     ensure_ascii=False,
                 )
-            seen_calls[signature] = 1
             record = self.service._record_for_ref(principal, evidence_id)
             if not record:
-                return json.dumps({"status": "not_found", "evidence_id": evidence_id}, ensure_ascii=False)
+                consecutive_no_progress += 1
+                return json.dumps(
+                    {
+                        "status": (
+                            "stop_and_synthesize"
+                            if consecutive_no_progress >= 2
+                            else "strategy_change_required"
+                        ),
+                        "reason": "evidence_not_found",
+                        "evidence_id": evidence_id,
+                        "required_change": (
+                            "Search for another ACL-visible evidence item."
+                            if consecutive_no_progress == 1
+                            else "Stop because two consecutive tool steps produced no domain progress."
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+            read_evidence_ids.add(evidence_id)
+            consecutive_no_progress = 0
             evidence_ledger[record.record_id] = {
                 "evidence_id": record.record_id,
                 "title": record.title,
@@ -680,7 +722,7 @@ class DeepWorkRunner:
         if not content:
             raise RuntimeError("DeepAgents returned an empty artifact")
         content = ensure_exact_evidence_ledger(content, evidence_ledger)
-        if "evidence" not in content.lower() and "근거" not in content:
+        if any(evidence_id not in content for evidence_id in evidence_ledger):
             raise RuntimeError("DeepAgents artifact is missing an evidence ledger")
         input_tokens = 0
         output_tokens = 0
@@ -853,7 +895,7 @@ def main() -> None:
             principal,
         ),
     )
-    service.ensure_model_residency()
+    service.inspect_model_residency()
     DeepWorkRunner(service).run_forever()
 
 

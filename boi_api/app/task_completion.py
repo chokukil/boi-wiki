@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Mapping
+
+import yaml
 
 
 COMPLETION_VERSION = 1
@@ -20,6 +25,71 @@ SOURCE_KINDS = {
 PROVIDER_KINDS = {"human", "agent", "system"}
 BINDING_KINDS = {"none", "event", "action_result", "artifact", "data_field", "state"}
 SYSTEM_BINDING_KINDS = BINDING_KINDS - {"none"}
+
+
+def _task_contract_catalog_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "data" / "agent_catalog" / "task-completion-contracts-v2.yaml"
+
+
+@lru_cache(maxsize=4)
+def _task_contract_catalog(path_value: str) -> dict[str, Any]:
+    path = Path(path_value)
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    aliases = payload.get("execution_mode_aliases")
+    defaults = payload.get("defaults")
+    if not isinstance(aliases, dict) or not isinstance(defaults, dict):
+        raise ValueError("task completion contract catalog is missing aliases or defaults")
+    return payload
+
+
+def resolve_task_mode(
+    *,
+    declared_mode: Any = "",
+    action_execution_mode: Any = "",
+    task_status: Any = "",
+    catalog_path: Path | None = None,
+) -> str:
+    """Resolve only declared contract values, never action names or status prose."""
+
+    path = catalog_path or _task_contract_catalog_path()
+    payload = _task_contract_catalog(str(path.resolve()))
+    aliases = {
+        str(key).strip().lower(): str(value).strip().lower()
+        for key, value in (payload.get("execution_mode_aliases") or {}).items()
+    }
+    for candidate in (declared_mode, action_execution_mode):
+        normalized = str(candidate or "").strip().lower()
+        resolved = aliases.get(normalized, "")
+        if resolved in TASK_MODES:
+            return resolved
+    status_defaults = {
+        str(key).strip().lower(): str(value).strip().lower()
+        for key, value in (payload.get("status_mode_defaults") or {}).items()
+    }
+    status_mode = status_defaults.get(str(task_status or "").strip().lower(), "")
+    if status_mode in TASK_MODES:
+        return status_mode
+    default_mode = str(payload.get("default_mode") or "copilot").strip().lower()
+    if default_mode not in TASK_MODES:
+        raise ValueError("task completion contract catalog has an invalid default_mode")
+    return default_mode
+
+
+def default_task_completion_contract(
+    mode: Any,
+    *,
+    catalog_path: Path | None = None,
+) -> dict[str, Any]:
+    path = catalog_path or _task_contract_catalog_path()
+    payload = _task_contract_catalog(str(path.resolve()))
+    resolved_mode = resolve_task_mode(declared_mode=mode, catalog_path=path)
+    contract = (payload.get("defaults") or {}).get(resolved_mode)
+    if not isinstance(contract, dict):
+        raise ValueError(f"task completion contract is missing mode: {resolved_mode}")
+    result = copy.deepcopy(contract)
+    result["catalog_version"] = str(payload.get("version") or "")
+    result["execution_mode"] = resolved_mode
+    return result
 
 _TECHNICAL_REF_RE = re.compile(
     r"(?:boi:[A-Za-z0-9_.:/-]+|(?:event|action|workflow|skill|data):[A-Za-z0-9_.:/-]+|[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+){2,})"
@@ -85,20 +155,18 @@ def _lookup_label(value: str, lookup: Mapping[str, str]) -> str:
     return ""
 
 
-def _find_known_ref(value: str, lookup: Mapping[str, str]) -> str:
+def _explicit_contract_ref(value: str, lookup: Mapping[str, str]) -> str:
+    """Return only an explicit identifier, never one inferred from prose."""
+
     clean = str(value or "").strip()
     if not clean:
         return ""
     if clean in lookup or clean.lower() in lookup:
         return clean
-    for candidate in sorted((key for key in lookup if len(key) >= 7), key=len, reverse=True):
-        if candidate.lower() in clean.lower():
-            return candidate
-    for candidate in _TECHNICAL_REF_RE.findall(clean):
-        if _lookup_label(candidate, lookup):
-            return candidate
-        if candidate.startswith(("boi:", "event:", "action:", "workflow:", "data:")):
-            return candidate
+    if _TECHNICAL_REF_RE.fullmatch(clean):
+        return clean
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", clean) and ("_" in clean or "-" in clean):
+        return clean
     return ""
 
 
@@ -149,7 +217,7 @@ def friendly_label(value: str, label_lookup: Mapping[str, str] | None = None, *,
     raw = str(value or "").strip()
     if not raw:
         return ""
-    ref = _find_known_ref(raw, lookup)
+    ref = _explicit_contract_ref(raw, lookup)
     resolved = _lookup_label(ref or raw, lookup)
     if raw == ref and resolved:
         return resolved
@@ -224,7 +292,7 @@ def normalise_completion_design(
         item = raw_item if isinstance(raw_item, dict) else {"label": str(raw_item or "")}
         raw_label = str(item.get("label") or item.get("text") or "").strip()
         inferred_ref = str((item.get("binding") or {}).get("ref") or "") if isinstance(item.get("binding"), dict) else ""
-        inferred_ref = inferred_ref or _find_known_ref(raw_label, lookup)
+        inferred_ref = inferred_ref or _explicit_contract_ref(raw_label, lookup)
         binding = _normalise_binding(item.get("binding"), fallback_ref=inferred_ref)
         label = friendly_label(raw_label or inferred_ref, lookup, check=True)
         if not label:
@@ -256,9 +324,7 @@ def normalise_completion_design(
     for index, raw_item in enumerate(raw_evidence):
         item = raw_item if isinstance(raw_item, dict) else {"label": str(raw_item or "")}
         raw_label = str(item.get("label") or item.get("title") or item.get("ref") or "").strip()
-        ref = str(item.get("ref") or _find_known_ref(raw_label, lookup)).strip()
-        if not ref and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", raw_label) and ("_" in raw_label or "-" in raw_label):
-            ref = raw_label
+        ref = str(item.get("ref") or _explicit_contract_ref(raw_label, lookup)).strip()
         source_kind = _source_kind(ref, str(item.get("source_kind") or "").strip().lower())
         label = friendly_label(raw_label or ref, lookup)
         if not label:
@@ -291,6 +357,74 @@ def normalise_completion_design(
             item["label"] = f"{item['label']} · BoI 문서"
 
     return {"version": COMPLETION_VERSION, "checks": checks, "evidence": evidence}
+
+
+def evaluate_evidence_requirements(
+    evidence: list[Mapping[str, Any]],
+    *,
+    available_refs: list[str] | set[str] | tuple[str, ...] = (),
+    linked_refs_by_requirement: Mapping[str, list[str] | set[str] | tuple[str, ...]] | None = None,
+) -> dict[str, Any]:
+    """Evaluate evidence by stable IDs and explicit links only.
+
+    Labels and summaries are intentionally excluded. They are presentation data,
+    not proof that a requirement was met.
+    """
+
+    available = {str(item).strip() for item in available_refs if str(item).strip()}
+    links = {
+        str(requirement_id).strip(): {
+            str(ref).strip()
+            for ref in refs
+            if str(ref).strip()
+        }
+        for requirement_id, refs in (linked_refs_by_requirement or {}).items()
+        if str(requirement_id).strip()
+    }
+    required_ids: list[str] = []
+    satisfied_ids: list[str] = []
+    missing_ids: list[str] = []
+    satisfied_by: dict[str, list[str]] = {}
+    requirements: list[dict[str, Any]] = []
+
+    for index, raw in enumerate(evidence):
+        item = dict(raw)
+        if not bool(item.get("required", True)):
+            continue
+        requirement_id = str(item.get("evidence_id") or "").strip()
+        explicit_ref = str(item.get("ref") or "").strip()
+        if not requirement_id:
+            requirement_id = _stable_id(
+                "evidence",
+                explicit_ref or str(item.get("label") or "unresolved"),
+                index,
+            )
+        required_ids.append(requirement_id)
+        matched = set()
+        if explicit_ref and explicit_ref in available:
+            matched.add(explicit_ref)
+        matched.update(links.get(requirement_id, set()) & available)
+        requirement = {
+            "evidence_id": requirement_id,
+            "label": str(item.get("label") or requirement_id),
+            "ref": explicit_ref,
+            "source_kind": str(item.get("source_kind") or ""),
+            "satisfied_by": sorted(matched),
+        }
+        requirements.append(requirement)
+        if matched:
+            satisfied_ids.append(requirement_id)
+            satisfied_by[requirement_id] = sorted(matched)
+        else:
+            missing_ids.append(requirement_id)
+
+    return {
+        "required_ids": required_ids,
+        "satisfied_ids": satisfied_ids,
+        "missing_ids": missing_ids,
+        "satisfied_by": satisfied_by,
+        "requirements": requirements,
+    }
 
 
 def completion_readiness(task: Mapping[str, Any], design: Mapping[str, Any] | None = None) -> dict[str, Any]:

@@ -16,6 +16,7 @@ from .a2ui import (
     BOI_CATALOG_ID,
     BOI_CATALOG_URL,
     COMPONENT_PROP_SCHEMAS,
+    capability_catalog,
     compile_harness_review_surface,
 )
 from .models import (
@@ -790,23 +791,12 @@ def build_agent_v2_router(
     @router.get("/api/v2/a2ui/catalogs/boi/v1")
     async def a2ui_boi_catalog(identity: Principal = Depends(principal)) -> dict[str, Any]:
         require_scope(identity, "boi.read")
-        return {
-            "catalog_id": BOI_CATALOG_URL,
-            "compatibility_id": BOI_CATALOG_ID,
-            "protocol_version": A2UI_PROTOCOL_VERSION,
-            "message_version": A2UI_MESSAGE_VERSION,
-            "components": [
-                {
-                    "name": name,
-                    "props": {
-                        key: expected.__name__
-                        for key, expected in COMPONENT_PROP_SCHEMAS.get(name, {}).items()
-                    },
-                }
-                for name in sorted(ALLOWED_COMPONENTS)
-            ],
-            "mutation_policy": "preview_harness_confirmation",
-        }
+        surfaces = service.store.list(
+            "a2ui_surfaces",
+            employee_id="" if identity.is_admin else identity.employee_id,
+            limit=5000,
+        )
+        return capability_catalog(surfaces)
 
     @router.get("/api/v2/a2ui-surfaces/{surface_id}")
     async def a2ui_surface(surface_id: str, identity: Principal = Depends(principal)) -> dict[str, Any]:

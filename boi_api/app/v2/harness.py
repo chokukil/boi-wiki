@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
+
+import yaml
 
 from .models import HarnessCheck, HarnessResult, TaskMode, WorkContextPack, WorkIntent, WorkOperation
 
@@ -16,6 +19,7 @@ class HarnessDefinition:
     title: str
     phases: tuple[str, ...]
     operations: tuple[str, ...]
+    validator_plugin: str
     validator: Validator
     document_ref: str
     required_context: tuple[str, ...]
@@ -30,10 +34,13 @@ class HarnessDefinition:
     model_profiles: tuple[str, ...] = ("default",)
     fixture_revision: str = ""
     rollback_version: str = ""
-    editable_surfaces: tuple[str, ...] = (
-        "context_recipe", "retrieval_policy", "tool_order", "loop_budget",
-        "planner_instruction", "presentation_policy", "fallback_order",
-    )
+    retryable: bool = False
+    interruptible: bool = False
+    evaluator_policy: dict[str, Any] = field(default_factory=dict)
+    # A candidate may only change surfaces with an executable runtime applier.
+    # Additional surfaces are opt-in per catalog definition when their applier
+    # exists; storing an inert reviewed change would make release misleading.
+    editable_surfaces: tuple[str, ...] = ("loop_budget",)
     immutable_boundaries: tuple[str, ...] = (
         "acl", "rbac", "risk_policy", "confirmation_policy", "autopilot_allowlist",
         "required_completion_evidence", "canonical_write_policy", "evaluator_thresholds",
@@ -46,6 +53,7 @@ class HarnessDefinition:
             "title": self.title,
             "phases": list(self.phases),
             "operations": list(self.operations),
+            "validator_plugin": self.validator_plugin,
             "document_ref": self.document_ref,
             "required_context": list(self.required_context),
             "input_contract": self.input_contract,
@@ -59,6 +67,9 @@ class HarnessDefinition:
             "model_profiles": list(self.model_profiles),
             "fixture_revision": self.fixture_revision,
             "rollback_version": self.rollback_version,
+            "retryable": self.retryable,
+            "interruptible": self.interruptible,
+            "evaluator_policy": dict(self.evaluator_policy),
             "editable_surfaces": list(self.editable_surfaces),
             "immutable_boundaries": list(self.immutable_boundaries),
         }
@@ -71,6 +82,9 @@ class HarnessDefinition:
             "model_profile": model_profile or "default",
             "fixture_revision": self.fixture_revision,
             "rollback_version": self.rollback_version,
+            "definition": self.public_payload(),
+            "active_changes": {},
+            "release_state": "catalog_version",
         }
 
 
@@ -86,27 +100,51 @@ def _check(check_id: str, label: str, passed: bool, message: str, *, warning: bo
 def _context_checks(payload: dict[str, Any]) -> list[HarnessCheck]:
     context: WorkContextPack = payload["context"]
     intent: WorkIntent = payload["intent"]
-    deictic = any(term in intent.goal.lower() for term in ("이 문서", "이 sop", "이 task", "현재 문서", "여기"))
+    anchor_required = bool(
+        intent.scope in {"current", "selected"}
+        or intent.context_refs
+        or intent.target_ref
+        or context.task_ref
+    )
     anchor_ready = bool(
         (context.page_anchor and context.page_anchor.resolved)
         or (context.goal_anchor and context.goal_anchor.resolved)
         or context.task_ref
+        or (
+            intent.target_ref
+            and str(context.business_context.get("target_ref") or "") == intent.target_ref
+        )
     )
-    evidence_ready = bool(context.evidence_refs)
-    empty_result_is_valid = context.capability_id == "work.inbox"
+    # A Task's completion/evidence design is the verified execution contract
+    # needed to open the work loop. It is not completion evidence: the Task
+    # runtime Harness and ExitCriteriaResult still require the resulting human
+    # record or system binding before completion.
+    execution_contract_ready = bool(
+        context.task_ref
+        and (context.completion_design or context.required_evidence)
+    )
+    evidence_ready = bool(context.evidence_refs) or execution_contract_ready
+    no_evidence_can_be_reported = intent.operation in {
+        WorkOperation.understand,
+        WorkOperation.observe,
+        WorkOperation.compare,
+        WorkOperation.connect,
+        WorkOperation.create,
+        WorkOperation.refine,
+    }
     return [
         _check(
             "context.anchor",
             "현재 업무 맥락",
-            not deictic or anchor_ready,
+            not anchor_required or anchor_ready,
             "현재 화면을 업무 맥락으로 확인하지 못했습니다.",
         ),
         _check(
             "context.evidence",
             "사용할 근거",
-            evidence_ready or empty_result_is_valid or intent.operation in {WorkOperation.create, WorkOperation.capture},
+            evidence_ready or intent.operation in {WorkOperation.create, WorkOperation.capture},
             "답변이나 판단에 사용할 검증된 근거가 없습니다.",
-            warning=intent.operation in {WorkOperation.create, WorkOperation.refine},
+            warning=no_evidence_can_be_reported,
         ),
         _check(
             "context.raw-isolation",
@@ -326,149 +364,86 @@ def _learning_checks(payload: dict[str, Any]) -> list[HarnessCheck]:
     ]
 
 
-class HarnessRegistry:
-    def __init__(self) -> None:
-        self._definitions = {
-            item.harness_id: item
-            for item in (
-                HarnessDefinition(
-                    harness_id="context.work",
-                    version="1.1",
-                    title="업무 맥락 Harness",
-                    phases=("preflight", "post_verify"),
-                    operations=tuple(item.value for item in WorkOperation),
-                    validator=_context_checks,
-                    document_ref="boi:public:boi-wiki-manual:agent:work-context-pack",
-                    required_context=("goal", "context_manifest", "source_provenance"),
-                    input_contract="WorkIntent + WorkContextPack",
-                    output_contract="HarnessResult",
-                    allowed_tools=("boi_search", "boi_get", "boi_context"),
-                    risk_policy="read-only context selection; raw and secret content must stay outside prompts",
-                    test_contracts=("deictic_anchor_resolves", "selected_sources_have_provenance", "raw_content_isolated"),
-                    completion_policy="the request has a usable anchor or explicit Wiki scope and a provenance manifest",
-                    fallback_policy="ask one focused context question or continue with an explicit no-evidence answer",
-                ),
-                HarnessDefinition(
-                    harness_id="sop.authoring",
-                    version="1.1",
-                    title="SOP 작성 Harness",
-                    phases=("preflight", "validate", "preview", "test", "post_verify"),
-                    operations=("create", "refine", "connect", "validate", "test", "promote"),
-                    validator=_sop_checks,
-                    document_ref="boi:public:harness:sop-authoring-harness",
-                    required_context=("business_goal", "task_mode", "evidence_policy"),
-                    input_contract="SOP draft with Workflow and structured Task completion design",
-                    output_contract="validated SOP registration draft",
-                    allowed_tools=("boi_search", "boi_get", "sop_draft_create", "sop_draft_validate"),
-                    risk_policy="draft-only until a named person confirms the existing SOP publication path",
-                    test_contracts=("workflow_has_tasks", "tasks_have_completion_design", "autopilot_bindings_are_verifiable"),
-                    completion_policy="all Tasks have purpose, mode, completion checks, evidence and valid automatic bindings where needed",
-                    fallback_policy="save a private draft, mark missing connections, and offer Copilot instead of unsafe Autopilot",
-                ),
-                HarnessDefinition(
-                    harness_id="action.authoring",
-                    version="1.1",
-                    title="Action 작성 Harness",
-                    phases=("preflight", "validate", "preview", "test", "post_verify"),
-                    operations=("create", "refine", "connect", "validate", "test", "run"),
-                    validator=_action_checks,
-                    document_ref="boi:public:harness:action-authoring-harness",
-                    required_context=("business_goal", "connector", "input_output_contract"),
-                    input_contract="Action registration draft",
-                    output_contract="validated Action draft or dry-run result",
-                    allowed_tools=("boi_search", "boi_get", "action_draft_create", "action_draft_validate"),
-                    risk_policy="new Action stays preview-only; side effects require Action Gateway policy and confirmation",
-                    test_contracts=("connector_configured", "input_output_schema_present", "dry_run_default", "risk_classified"),
-                    completion_policy="connector, schemas, risk and preview behavior are validated",
-                    fallback_policy="keep a Manual Action draft and report the missing connector or contract",
-                ),
-                HarnessDefinition(
-                    harness_id="action.execution",
-                    version="1.1",
-                    title="Action 실행 Harness",
-                    phases=("preflight", "validate", "post_verify"),
-                    operations=("test", "run"),
-                    validator=_action_execution_checks,
-                    document_ref="boi:public:harness:action-authoring-harness",
-                    required_context=("action_target", "business_context", "evidence"),
-                    input_contract="guarded Action invocation plan",
-                    output_contract="Action Gateway result + LoopDelta(action_result)",
-                    allowed_tools=("boi_plan", "boi_confirm", "action_gateway_invoke"),
-                    risk_policy="dry-run first; medium/high risk or external side effects always require confirmation",
-                    test_contracts=("target_resolved", "context_present", "secrets_isolated", "result_contract_valid"),
-                    completion_policy="an Action Gateway result is recorded and the Task completion binding verifies it",
-                    fallback_policy="stop execution, preserve the plan, and ask for a safer target or human handling",
-                ),
-                HarnessDefinition(
-                    harness_id="business-event.definition",
-                    version="1.1",
-                    title="업무 이벤트 정의 Harness",
-                    phases=("preflight", "validate", "preview", "test", "post_verify"),
-                    operations=("create", "refine", "connect", "validate", "test", "run"),
-                    validator=_business_event_checks,
-                    document_ref="boi:public:boi-wiki-manual:use-cases:event-to-action-workflow-planning",
-                    required_context=("business_goal", "source_signal", "occurrence_mode"),
-                    input_contract="BusinessEventDefinition draft + sample signal",
-                    output_contract="SignalDecision preview and inactive definition draft",
-                    allowed_tools=("boi_search", "business_event_draft_create", "business_event_test"),
-                    risk_policy="definitions remain inactive until sample test and explicit activation confirmation",
-                    test_contracts=("source_configured", "trigger_valid", "conditions_valid", "dedupe_or_state_grouping_valid"),
-                    completion_policy="sample decisions match the expected publish, ignore, suppress or pending result",
-                    fallback_policy="keep the draft inactive and request the missing signal example or grouping key",
-                ),
-                HarnessDefinition(
-                    harness_id="skill.authoring",
-                    version="1.1",
-                    title="Skill 작성 Harness",
-                    phases=("preflight", "validate", "preview", "test", "post_verify"),
-                    operations=("create", "refine", "validate", "test", "promote"),
-                    validator=_skill_checks,
-                    document_ref="boi:public:harness:skill-authoring-harness",
-                    required_context=("repeated_work_goal", "source_refs"),
-                    input_contract="Skill candidate with schemas, permissions and tests",
-                    output_contract="private Skill candidate",
-                    allowed_tools=("boi_search", "boi_get", "skill_candidate_create", "skill_test"),
-                    risk_policy="Skill is a draft until tests pass; it cannot widen its own permissions",
-                    test_contracts=("schemas_present", "permissions_bounded", "test_scenarios_present"),
-                    completion_policy="the Skill contract and at least one representative test are valid",
-                    fallback_policy="keep the repeated workflow Manual/Copilot and show the missing reusable contract",
-                ),
-                HarnessDefinition(
-                    harness_id="task.runtime",
-                    version="1.1",
-                    title="Task 수행 Harness",
-                    phases=("preflight", "validate", "post_verify"),
-                    operations=("run", "observe", "complete"),
-                    validator=_task_runtime_checks,
-                    document_ref="boi:public:boi-wiki-manual:agent:task-loop",
-                    required_context=("task", "task_mode", "completion_design", "evidence"),
-                    input_contract="WorkContextPack + LoopDelta",
-                    output_contract="verified CompletionRecord or explicit blocker",
-                    allowed_tools=("boi_context", "boi_search", "boi_plan", "boi_confirm", "boi_job_status"),
-                    risk_policy="Manual and Copilot need human confirmation; Autopilot needs allowlisted, verifiable system bindings",
-                    test_contracts=("mode_specific_completion", "required_evidence_present", "no_progress_stops", "limits_enforced"),
-                    completion_policy="structured completion checks and Evidence Ledger prove the Task is done",
-                    fallback_policy="switch evidence, ask a person, move to Copilot, or stop with a named blocker",
-                ),
-                HarnessDefinition(
-                    harness_id="learning.capture",
-                    version="1.1",
-                    title="지식 자산화 Harness",
-                    phases=("capture", "promote"),
-                    operations=("capture", "complete", "promote"),
-                    validator=_learning_checks,
-                    document_ref="boi:public:boi-wiki-manual:agent:personal-work-pattern-assets",
-                    required_context=("source_work_run", "evidence_ledger", "novelty_check"),
-                    input_contract="CompletionRecord or evidence-backed KnowledgeCandidate",
-                    output_contract="private provisional candidate or promotion preview",
-                    allowed_tools=("boi_search", "boi_get", "promotion_preview", "boi_confirm"),
-                    risk_policy="raw chat is never knowledge; Team/Public writes require promotion validation and explicit confirmation",
-                    test_contracts=("sources_present", "lesson_reusable", "duplicate_checked", "raw_transcript_excluded"),
-                    completion_policy="the candidate has provenance, reuse value and a passed promotion preview when shared",
-                    fallback_policy="keep or archive the private candidate and prefer augmenting an existing authoritative asset",
-                ),
+def _claim_grounding_checks(payload: dict[str, Any]) -> list[HarnessCheck]:
+    context: WorkContextPack = payload["context"]
+    artifact = payload.get("artifact") or {}
+    claims = [item for item in artifact.get("claims") or [] if isinstance(item, dict)]
+    if payload.get("phase") == "preflight":
+        return [
+            _check(
+                "claim-grounding.provenance",
+                "근거 출처",
+                bool(context.context_manifest and not context.context_manifest.raw_content_in_prompt),
+                "claim 검증에 사용할 source provenance가 준비되지 않았습니다.",
             )
-        }
+        ]
+    return [
+        _check(
+            "claim-grounding.binding",
+            "claim과 chunk 연결",
+            bool(claims)
+            and all(item.get("source_refs") and item.get("supporting_chunk_ids") for item in claims),
+            "직접 연결된 source와 chunk가 없는 factual claim이 있습니다.",
+        )
+    ]
+
+
+class HarnessRegistry:
+    _VALIDATORS: dict[str, Validator] = {
+        "context_invariants": _context_checks,
+        "sop_invariants": _sop_checks,
+        "action_authoring_invariants": _action_checks,
+        "action_execution_invariants": _action_execution_checks,
+        "business_event_invariants": _business_event_checks,
+        "skill_invariants": _skill_checks,
+        "task_runtime_invariants": _task_runtime_checks,
+        "learning_invariants": _learning_checks,
+        "claim_grounding_invariants": _claim_grounding_checks,
+    }
+
+    def __init__(self, catalog_path: Path | None = None) -> None:
+        self.catalog_path = catalog_path or (
+            Path(__file__).resolve().parents[3] / "data" / "agent_catalog" / "harnesses-v2.yaml"
+        )
+        payload = yaml.safe_load(self.catalog_path.read_text(encoding="utf-8")) or {}
+        self.version = str(payload.get("version") or "2.0")
+        definitions: dict[str, HarnessDefinition] = {}
+        for raw in payload.get("harnesses") or []:
+            harness_id = str(raw.get("harness_id") or "").strip()
+            plugin_id = str(raw.get("validator_plugin") or "").strip()
+            if not harness_id or harness_id in definitions:
+                raise ValueError(f"invalid or duplicate harness_id: {harness_id}")
+            validator = self._VALIDATORS.get(plugin_id)
+            if validator is None:
+                raise ValueError(f"unknown harness validator plugin: {plugin_id}")
+            definitions[harness_id] = HarnessDefinition(
+                harness_id=harness_id,
+                version=str(raw.get("version") or "1.0"),
+                title=str(raw.get("title") or harness_id),
+                phases=tuple(str(item) for item in raw.get("phases") or []),
+                operations=tuple(str(item) for item in raw.get("operations") or []),
+                validator_plugin=plugin_id,
+                validator=validator,
+                document_ref=str(raw.get("document_ref") or ""),
+                required_context=tuple(str(item) for item in raw.get("required_context") or []),
+                input_contract=str(raw.get("input_contract") or ""),
+                output_contract=str(raw.get("output_contract") or ""),
+                allowed_tools=tuple(str(item) for item in raw.get("allowed_tools") or []),
+                risk_policy=str(raw.get("risk_policy") or ""),
+                test_contracts=tuple(str(item) for item in raw.get("test_contracts") or []),
+                completion_policy=str(raw.get("completion_policy") or ""),
+                fallback_policy=str(raw.get("fallback_policy") or ""),
+                status=str(raw.get("status") or "active"),
+                model_profiles=tuple(str(item) for item in raw.get("model_profiles") or ["default"]),
+                fixture_revision=str(raw.get("fixture_revision") or ""),
+                rollback_version=str(raw.get("rollback_version") or ""),
+                retryable=bool(raw.get("retryable", False)),
+                interruptible=bool(raw.get("interruptible", False)),
+                evaluator_policy=dict(raw.get("evaluator_policy") or {}),
+                editable_surfaces=tuple(str(item) for item in raw.get("editable_surfaces") or HarnessDefinition.__dataclass_fields__["editable_surfaces"].default),
+                immutable_boundaries=tuple(str(item) for item in raw.get("immutable_boundaries") or HarnessDefinition.__dataclass_fields__["immutable_boundaries"].default),
+            )
+        self._definitions = definitions
 
     def definitions(self) -> list[dict[str, Any]]:
         return [item.public_payload() for item in self._definitions.values()]
@@ -489,9 +464,16 @@ class HarnessRegistry:
         artifact: dict[str, Any] | None = None,
         candidate: dict[str, Any] | None = None,
         task_mode: TaskMode = TaskMode.copilot,
+        binding: dict[str, Any] | None = None,
     ) -> HarnessResult:
         definition = self._definitions[harness_id]
-        if phase not in definition.phases:
+        snapshot = binding.get("definition") if isinstance(binding, dict) else {}
+        snapshot = snapshot if isinstance(snapshot, dict) else {}
+        phases = tuple(str(item) for item in snapshot.get("phases") or definition.phases)
+        version = str((binding or {}).get("version") or snapshot.get("version") or definition.version)
+        retryable = bool(snapshot.get("retryable", definition.retryable))
+        interruptible = bool(snapshot.get("interruptible", definition.interruptible))
+        if phase not in phases:
             checks = [
                 _check(
                     "harness.phase",
@@ -502,10 +484,15 @@ class HarnessRegistry:
             ]
             return HarnessResult(
                 harness_id=definition.harness_id,
-                version=definition.version,
+                version=version,
                 status="blocked",
                 checks=checks,
                 blockers=[checks[0].message],
+                definition_ref=f"{definition.harness_id}@{version}",
+                phase=phase,
+                evaluated_facts={"operation": intent.operation.value, "phase_supported": False},
+                retryable=False,
+                interruptible=interruptible,
             )
         checks = definition.validator(
             {
@@ -521,49 +508,40 @@ class HarnessRegistry:
         status = "blocked" if blockers else "warning" if any(item.status == "warning" for item in checks) else "passed"
         return HarnessResult(
             harness_id=definition.harness_id,
-            version=definition.version,
+            version=version,
             status=status,
             checks=checks,
             blockers=blockers,
+            definition_ref=f"{definition.harness_id}@{version}",
+            phase=phase,
+            evaluated_facts={
+                "operation": intent.operation.value,
+                "task_mode": task_mode.value,
+                "evidence_count": len(context.evidence_refs),
+                "artifact_present": bool(artifact),
+                "candidate_present": bool(candidate),
+                "active_change_keys": sorted((binding or {}).get("active_changes") or {}),
+            },
+            retryable=retryable and status != "passed",
+            interruptible=interruptible and status != "passed",
         )
 
-    @staticmethod
-    def harnesses_for(intent: WorkIntent, artifact_kind: str = "") -> list[str]:
-        result = ["context.work"]
-        kind = artifact_kind or intent.asset_kind.value
-        action_invocation = (
-            kind in {"action", "action_draft", "action.plan"}
-            and intent.operation in {WorkOperation.test, WorkOperation.run}
-            and bool(intent.target_ref)
-            and intent.desired_outcome == "run_result"
-        )
-        authoring = intent.operation in {
-            WorkOperation.create,
-            WorkOperation.refine,
-            WorkOperation.validate,
-        } or (intent.operation == WorkOperation.test and not action_invocation) or (
-            intent.operation == WorkOperation.connect and intent.desired_outcome != "answer"
-        )
-        if authoring and kind in {"sop", "workflow", "sop_draft", "sop.plan"}:
-            result.append("sop.authoring")
-        if authoring and kind in {"action", "action_draft", "action.plan"}:
-            result.append("action.authoring")
-        if authoring and kind in {"business_event", "business_event_definition_draft", "event", "business_event.plan"}:
-            result.append("business-event.definition")
-        if intent.operation == WorkOperation.run and intent.asset_kind.value == "business_event":
-            result.append("business-event.definition")
-        if authoring and kind in {"skill", "skill_draft", "skill.plan"}:
-            result.append("skill.authoring")
-        if action_invocation:
-            result.append("action.execution")
-        elif (
-            intent.operation in {WorkOperation.run, WorkOperation.complete}
-            and intent.asset_kind.value in {"task", "workflow"}
-        ) or (
-            intent.operation == WorkOperation.observe
-            and intent.asset_kind.value in {"task", "workflow"}
-        ):
-            result.append("task.runtime")
-        if intent.operation in {WorkOperation.capture, WorkOperation.complete, WorkOperation.promote}:
-            result.append("learning.capture")
-        return list(dict.fromkeys(result))
+    def harnesses_for(
+        self,
+        intent: WorkIntent,
+        artifact_kind: str = "",
+        *,
+        phase: str = "",
+    ) -> list[str]:
+        requested = list(dict.fromkeys(intent.harness_ids or ["context.work"]))
+        unknown = [item for item in requested if item not in self._definitions]
+        if unknown:
+            raise KeyError(f"unknown harness binding: {', '.join(unknown)}")
+        operation = intent.operation.value
+        return [
+            harness_id
+            for harness_id in requested
+            if not self._definitions[harness_id].operations
+            or operation in self._definitions[harness_id].operations
+            if not phase or phase in self._definitions[harness_id].phases
+        ]

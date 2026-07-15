@@ -46,6 +46,40 @@ COMPONENT_PROP_SCHEMAS: dict[str, dict[str, type]] = {
 _UNSAFE_HTML = re.compile(r"<(?:script|iframe|object|embed)\b|\son[a-z]+\s*=", re.IGNORECASE)
 
 
+def capability_catalog(surfaces: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Return the live catalog and observed component use."""
+
+    rows = [item for item in (surfaces or []) if isinstance(item, dict)]
+    usage: dict[str, int] = {name: 0 for name in ALLOWED_COMPONENTS}
+    for surface in rows:
+        observed = {
+            str(item.get("component") or "")
+            for item in surface.get("components") or []
+            if isinstance(item, dict) and str(item.get("component") or "") in ALLOWED_COMPONENTS
+        }
+        for name in observed:
+            usage[name] += 1
+    return {
+        "catalog_id": BOI_CATALOG_URL,
+        "compatibility_id": BOI_CATALOG_ID,
+        "protocol_version": A2UI_PROTOCOL_VERSION,
+        "message_version": A2UI_MESSAGE_VERSION,
+        "surface_count": len(rows),
+        "components": [
+            {
+                "name": name,
+                "props": {
+                    key: expected.__name__
+                    for key, expected in COMPONENT_PROP_SCHEMAS.get(name, {}).items()
+                },
+                "observed_surface_count": usage[name],
+            }
+            for name in sorted(ALLOWED_COMPONENTS)
+        ],
+        "mutation_policy": "preview_harness_confirmation",
+    }
+
+
 def _official_data_model(surface: dict[str, Any]) -> dict[str, Any]:
     surface_id = str(surface["surface_id"])
     components = list(surface.get("components") or [])

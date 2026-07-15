@@ -152,7 +152,7 @@ def lmstudio_model_residency_state(settings: AgentV2Settings) -> dict[str, Any]:
     }
 
 
-def ensure_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any]:
+def inspect_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any]:
     """Inspect externally managed LM Studio models without loading or unloading anything."""
     state = lmstudio_model_residency_state(settings)
     if not settings.lmstudio_require_preloaded_models:
@@ -260,10 +260,16 @@ def ensure_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any]
     }
 
 
+def ensure_lmstudio_model_residency(settings: AgentV2Settings) -> dict[str, Any]:
+    """Compatibility wrapper for the former name; this still performs read-only inspection."""
+
+    return inspect_lmstudio_model_residency(settings)
+
+
 def require_lmstudio_models_preloaded(settings: AgentV2Settings) -> None:
     if not settings.lmstudio_require_preloaded_models:
         return
-    state = ensure_lmstudio_model_residency(settings)
+    state = inspect_lmstudio_model_residency(settings)
     if state.get("ready") is True:
         return
     missing = ", ".join(state.get("missing_models") or [])

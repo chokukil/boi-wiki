@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from .model_gateway import ModelGateway
-from .models import Principal
+from .models import GroundedClaim, Principal
 from .store import AgentV2Store, now_iso
 
 
@@ -173,3 +173,187 @@ class IndependentArtifactEvaluator:
                 "findings": [],
             }
         return self.store.put("evaluations", evaluation_id, row)
+
+
+class IndependentClaimEvaluator:
+    """Evaluate claim entailment in fresh context using only bound internal chunks."""
+
+    def __init__(self, store: AgentV2Store, model: ModelGateway, *, enabled: bool = True):
+        self.store = store
+        self.model = model
+        self.enabled = enabled
+
+    @staticmethod
+    def _needs_review(
+        claim: GroundedClaim,
+        *,
+        policy: dict[str, Any],
+        user_effect: str,
+        operation: str,
+    ) -> bool:
+        if claim.claim_kind in set(policy.get("always_review_claim_kinds") or []):
+            return True
+        if claim.support_status in set(policy.get("review_support_statuses") or []):
+            return True
+        minimum_confidence = float(policy.get("min_support_confidence") or 0.0)
+        if claim.support_status == "supported" and float(claim.confidence or 0.0) < minimum_confidence:
+            return True
+        if user_effect in set(policy.get("risky_user_effects") or []):
+            return True
+        return operation in set(policy.get("risky_operations") or [])
+
+    def evaluate(
+        self,
+        principal: Principal,
+        *,
+        claims: list[GroundedClaim],
+        supporting_text: dict[str, list[str]],
+        policy: dict[str, Any],
+        user_effect: str = "read",
+        operation: str = "understand",
+        work_run_id: str = "",
+        model: ModelGateway | None = None,
+    ) -> tuple[list[GroundedClaim], dict[str, Any]]:
+        active_model = model or self.model
+        selected = [
+            item
+            for item in claims
+            if item.support_status == "supported"
+            and self._needs_review(
+                item,
+                policy=policy,
+                user_effect=user_effect,
+                operation=operation,
+            )
+        ]
+        evaluation_id = f"evaluation_{uuid.uuid4().hex}"
+        base = {
+            "evaluation_id": evaluation_id,
+            "employee_id": principal.employee_id,
+            "work_run_id": work_run_id,
+            "artifact_kind": "grounded_claims",
+            "review_context": "fresh",
+            "authoritative_for_completion": False,
+            "created_at": now_iso(),
+        }
+        if not selected:
+            row = {
+                **base,
+                "status": "not_required",
+                "summary": "Versioned Harness policy did not require a semantic evaluator for these claims.",
+                "criteria": [],
+                "findings": [],
+            }
+            return claims, self.store.put("evaluations", evaluation_id, row)
+
+        readiness = active_model.readiness()
+        provider = str(readiness.get("provider") or getattr(active_model, "provider", ""))
+        allowed_providers = set(policy.get("allowed_providers") or [])
+        available = bool(
+            self.enabled
+            and readiness.get("generation")
+            and provider in allowed_providers
+        )
+        if not available:
+            if bool(policy.get("fail_closed", True)):
+                for item in selected:
+                    item.support_status = "unsupported"
+                    item.confidence = 0.0
+            row = {
+                **base,
+                "status": "unavailable",
+                "summary": "Fresh-context internal claim evaluation was unavailable; risky claims failed closed.",
+                "criteria": [],
+                "findings": [],
+                "provider": provider,
+            }
+            return claims, self.store.put("evaluations", evaluation_id, row)
+
+        schema = {
+            "type": "object",
+            "required": ["verdicts"],
+            "properties": {
+                "verdicts": {
+                    "type": "array",
+                    "minItems": len(selected),
+                    "maxItems": len(selected),
+                    "items": {
+                        "type": "object",
+                        "required": ["claim_id", "support_status", "confidence"],
+                        "properties": {
+                            "claim_id": {"type": "string"},
+                            "support_status": {
+                                "type": "string",
+                                "enum": ["supported", "unsupported", "conflicting"],
+                            },
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                        },
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "additionalProperties": False,
+        }
+        prompt = json.dumps(
+            {
+                "instruction": (
+                    "For each claim, decide only whether every supplied internal excerpt directly entails it. "
+                    "If any bound excerpt is unrelated or insufficient, mark the claim unsupported. "
+                    "Do not use model memory, external facts, likely meanings, or omitted context. "
+                    "Use conflicting only when the supplied excerpts directly disagree with the claim."
+                ),
+                "claims": [
+                    {
+                        "claim_id": item.claim_id,
+                        "claim": item.text,
+                        "claim_kind": item.claim_kind,
+                        "internal_excerpts": supporting_text.get(item.claim_id) or [],
+                    }
+                    for item in selected
+                ],
+            },
+            ensure_ascii=False,
+        )
+        try:
+            generated = active_model.generate_structured(
+                system=(
+                    "You are a fresh-context internal evidence evaluator. Use only the supplied BoI excerpts. "
+                    "Never use external knowledge and return only the requested schema."
+                ),
+                prompt=prompt,
+                schema=schema,
+            )
+            verdicts = {
+                str(item.get("claim_id") or ""): item
+                for item in generated.get("verdicts") or []
+                if isinstance(item, dict)
+            }
+            for item in selected:
+                verdict = verdicts.get(item.claim_id) or {}
+                status = str(verdict.get("support_status") or "unsupported")
+                item.support_status = (
+                    status if status in {"supported", "unsupported", "conflicting"} else "unsupported"
+                )
+                item.confidence = max(0.0, min(1.0, float(verdict.get("confidence") or 0.0)))
+            row = {
+                **base,
+                "status": "pass" if all(item.support_status == "supported" for item in selected) else "needs_revision",
+                "summary": "Fresh-context claim entailment evaluation completed.",
+                "criteria": [item.model_dump(mode="json") for item in selected],
+                "findings": [],
+                "provider": provider,
+            }
+        except Exception as exc:
+            if bool(policy.get("fail_closed", True)):
+                for item in selected:
+                    item.support_status = "unsupported"
+                    item.confidence = 0.0
+            row = {
+                **base,
+                "status": "unavailable",
+                "summary": f"Fresh-context claim evaluation failed closed: {type(exc).__name__}",
+                "criteria": [],
+                "findings": [],
+                "provider": provider,
+            }
+        return claims, self.store.put("evaluations", evaluation_id, row)

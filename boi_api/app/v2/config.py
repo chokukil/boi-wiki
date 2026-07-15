@@ -58,6 +58,7 @@ class AgentV2Settings:
     run_token_budget: int
     deep_token_budget: int
     independent_review: bool
+    claim_grounding_enabled: bool
     minio_endpoint: str
     minio_bucket: str
     mcp_external_url: str
@@ -181,6 +182,7 @@ class AgentV2Settings:
             run_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_RUN_TOKEN_BUDGET", "32000") or "32000")),
             deep_token_budget=max(4000, int(os.getenv("BOI_AGENT_V2_DEEP_TOKEN_BUDGET", "160000") or "160000")),
             independent_review=_flag("BOI_AGENT_V2_INDEPENDENT_REVIEW", True),
+            claim_grounding_enabled=_flag("BOI_AGENT_CLAIM_GROUNDING_ENABLED", True),
             minio_endpoint=(os.getenv("BOI_DATALAKE_MINIO_ENDPOINT") or "").strip(),
             minio_bucket=(os.getenv("BOI_DATALAKE_BUCKET") or "boi-datalake").strip(),
             mcp_external_url=cls._mcp_v2_url(os.getenv("BOI_WIKI_MCP_EXTERNAL_URL") or "http://localhost:8200"),

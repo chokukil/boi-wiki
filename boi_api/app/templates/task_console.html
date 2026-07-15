@@ -180,6 +180,21 @@
               {% endfor %}
             </fieldset>
             {% endif %}
+            {% if work_form.evidence_requirements %}
+            <fieldset class="task-work-record-checks">
+              <legend>실제 근거와 연결할 확인 자료</legend>
+              {% for item in work_form.evidence_requirements %}
+              <label>
+                {% if item.available %}
+                <input type="checkbox" checked disabled />
+                {% else %}
+                <input type="checkbox" name="satisfied_evidence_ids" value="{{ item.evidence_id }}" />
+                {% endif %}
+                {{ item.label }} · {{ item.status_label }}
+              </label>
+              {% endfor %}
+            </fieldset>
+            {% endif %}
             <label class="task-console-confirm">
               <input type="checkbox" name="user_confirmed" value="true" required />
               위 내용이 실제로 확인하고 수행한 기록과 일치합니다.
@@ -369,95 +384,6 @@
           </li>
           {% endfor %}
         </ul>
-
-        <div class="task-console-section">
-          <div class="mode-panel-heading">
-            <strong>다음 행동 점검</strong>
-            <span>반복 질문이나 같은 도구 호출이 아니라 새 근거·사람 입력·Action 결과가 남는지 확인합니다.</span>
-          </div>
-          {% if loop_result %}
-          <div class="task-console-loop-result">
-            <strong>
-              {% if loop_result.decision == "complete" %}완료 조건 충족
-              {% elif loop_result.decision == "stop" %}중지 권장
-              {% elif loop_result.decision == "no_progress" %}진전 없음
-              {% elif loop_result.decision == "needs_human" %}사람 확인 필요
-              {% else %}계속 가능{% endif %}
-            </strong>
-            <p>
-              {% if loop_result.progress.delta_detected %}
-              새 진전이 확인되었습니다{% if loop_result.progress.delta_kind %}: {{ loop_result.progress.delta_kind }}{% endif %}.
-              {% else %}
-              새 진전이 아직 확인되지 않았습니다.
-              {% endif %}
-              {% if loop_result.stop_reason %} 판단 이유: {{ loop_result.stop_reason }}.{% endif %}
-            </p>
-            <ul class="task-console-next-list">
-              {% for item in loop_result.next_allowed_steps %}
-              <li>
-                <strong>{{ item.label }}</strong>
-                {% if item.reason %}<span>{{ item.reason }}</span>{% endif %}
-              </li>
-              {% endfor %}
-            </ul>
-          </div>
-          {% endif %}
-          <form class="task-console-note-form" method="post" action="/tasks/console/loop-evaluate?employee_id={{ employee_id }}">
-            <input type="hidden" name="task_id" value="{{ task.ui_task_id or task.task_id }}" />
-            <input type="hidden" name="trace_id" value="{{ task.trace_id }}" />
-            <input type="hidden" name="event_id" value="{{ task.event_id }}" />
-            <input type="hidden" name="action_key" value="{{ task.action_key }}" />
-            <input type="hidden" name="sop_ref" value="{{ stage.sop_ref }}" />
-            <input type="hidden" name="sop_stage_id" value="{{ stage.sop_stage_id }}" />
-            <input type="hidden" name="workflow_definition_key" value="{{ stage.workflow_definition_key }}" />
-            <input type="hidden" name="current_url" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
-            <label>
-              수행 방식
-              <select name="execution_mode">
-                <option value="manual" {% if payload.execution_mode == "manual" %}selected{% endif %}>Manual · 사람이 직접 수행</option>
-                <option value="copilot" {% if payload.execution_mode == "copilot" %}selected{% endif %}>Copilot · AI와 함께 수행</option>
-                <option value="autopilot" {% if payload.execution_mode == "autopilot" %}selected{% endif %}>Autopilot · 자동 실행 후 확인</option>
-              </select>
-            </label>
-            <label>
-              이번에 새로 남긴 것
-              <select name="delta_kind">
-                <option value="human_input">사람 입력/판단</option>
-                <option value="new_evidence">새 근거</option>
-                <option value="action_result">Action 결과</option>
-                <option value="external_ai_summary">외부 AI 요약</option>
-                <option value="state_transition">상태 전환</option>
-                <option value="blocker">막힌 점</option>
-              </select>
-            </label>
-            <label>
-              내용
-              <textarea name="delta_summary" rows="3" required placeholder="예: 담당자가 Trend와 Raw Data를 확인했고 Alarm 재발 여부를 추가 근거로 남겼습니다."></textarea>
-            </label>
-            <details>
-              <summary>반복 점검</summary>
-              <label>
-                이번에 다시 쓰려는 도구
-                <input name="proposed_tool_name" type="text" placeholder="예: hybrid_search" />
-              </label>
-              <label>
-                이번에 다시 묻는 질문
-                <input name="proposed_question" type="text" placeholder="예: 같은 SOP 다시 찾아줘" />
-              </label>
-              <div class="task-console-form-grid">
-                <label>
-                  현재 반복 횟수
-                  <input name="iteration_count" type="number" min="0" value="0" />
-                </label>
-                <label>
-                  진전 없음 누적
-                  <input name="no_progress_count" type="number" min="0" value="{{ loop.progress.next_no_progress_count or 0 }}" />
-                </label>
-              </div>
-            </details>
-            <button class="button primary" type="submit">진전 확인하기</button>
-          </form>
-        </div>
 
         <details class="task-console-section task-console-context-policy">
           <summary>업무 맥락 사용 원칙</summary>

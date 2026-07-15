@@ -16,21 +16,11 @@ import yaml
 
 from .config import AgentV2Settings
 from .models import Principal
+from ..domain_status import ACTION_OPEN_STATES, ACTION_TERMINAL_STATES
 
 
 FRONT_MATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣_.:-]+")
-TERMINAL_ACTION_STATES = {"completed", "success", "succeeded", "failed", "cancelled", "rejected", "approved"}
-OPEN_ACTION_STATES = {
-    "open",
-    "pending",
-    "pending_confirmation",
-    "awaiting_confirmation",
-    "needs_confirmation",
-    "running",
-    "queued",
-    "blocked",
-}
 
 
 KOREAN_PARTICLES = (
@@ -177,7 +167,7 @@ class KnowledgeRecord:
 
 
 class KnowledgeRepository:
-    DISK_CACHE_VERSION = 4
+    DISK_CACHE_VERSION = 5
 
     def __init__(self, settings: AgentV2Settings):
         self.settings = settings
@@ -270,6 +260,26 @@ class KnowledgeRepository:
         marker = f"{record.title} {record.description} {record.metadata.get('tags', [])}".lower()
         return "smoke" not in marker and "fixture" not in marker
 
+    @staticmethod
+    def answer_scope(record: KnowledgeRecord) -> str:
+        explicit = str(record.metadata.get("answer_scope") or "").strip().lower()
+        if explicit in {"canonical", "operational", "validation", "generated", "navigation", "deprecated"}:
+            return explicit
+        if record.status.lower() == "deprecated":
+            return "deprecated"
+        relative = str(record.metadata.get("relative_path") or "").lower()
+        boi_type = str(record.metadata.get("type") or "").lower()
+        tags = " ".join(str(item) for item in record.metadata.get("tags") or []).lower()
+        if relative.rsplit("/", 1)[-1] in NAVIGATION_MARKDOWN_NAMES:
+            return "navigation"
+        if "validation" in boi_type or "/validation/" in f"/{relative}" or "acceptance" in tags:
+            return "validation"
+        if "source-wiki" in relative or "generated" in boi_type or record.source == "generated":
+            return "generated"
+        if record.source != "knowledge" or "/operations/" in f"/{relative}" or "runbook" in relative:
+            return "operational"
+        return "canonical"
+
     def _markdown_records(self) -> list[KnowledgeRecord]:
         root = self.settings.content_root
         if not root.exists():
@@ -308,7 +318,7 @@ class KnowledgeRepository:
                 owner=owner,
                 team_id=str(metadata.get("team_id") or ""),
                 timestamp=str(metadata.get("timestamp") or ""),
-                metadata={**metadata, "relative_path": relative},
+                metadata={**metadata, "relative_path": relative, "answer_scope": str(metadata.get("answer_scope") or "")},
             )
 
         paths = list(root.rglob("*.md"))
@@ -638,7 +648,7 @@ class KnowledgeRepository:
             state = record.status.lower()
             metadata = record.metadata
             requires_confirmation = bool(metadata.get("approval_required") or metadata.get("requires_confirmation"))
-            if state in OPEN_ACTION_STATES or (requires_confirmation and state not in TERMINAL_ACTION_STATES):
+            if state in ACTION_OPEN_STATES or (requires_confirmation and state not in ACTION_TERMINAL_STATES):
                 current.append(record)
         current.sort(key=lambda item: item.timestamp, reverse=True)
         return current[:limit]
