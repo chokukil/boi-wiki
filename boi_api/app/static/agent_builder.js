@@ -106,7 +106,7 @@
     state.textContent = data.status || data.state || data.runtime_backend || "초안";
     heading.append(headingText, state);
     const summaryText = document.createElement("p");
-    summaryText.textContent = data.summary || data.title || data.prompt || "업무 도우미 초안이 준비되었습니다.";
+    summaryText.textContent = data.summary || data.title || data.prompt || "BoI Agent 초안이 준비되었습니다.";
     const meta = document.createElement("div");
     meta.className = "agent-builder-result-meta";
     const rows = [
@@ -231,7 +231,7 @@
     try {
       const published = await postJson(`/api/agents/drafts/${encodeURIComponent(currentDraft.draft_id)}/publish`, {
         scope,
-        note: "업무 도우미 Builder 저장",
+        note: "BoI Agent Builder 저장",
         user_confirmed: true,
       });
       currentDraft = published.draft;

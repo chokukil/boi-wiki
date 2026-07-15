@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>업무 도우미 만들기 · BoI Wiki</title>
+  <title>나만의 BoI Agent 만들기 · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('agent_builder.js') }}" defer></script>
 </head>
@@ -20,8 +20,8 @@
         data-employee-id="{{ employee_id }}">
     <section class="page-section agent-builder-hero">
       <div>
-        <p class="eyebrow">업무 도우미</p>
-        <h2>업무 도우미 만들기</h2>
+        <p class="eyebrow">BoI Agent</p>
+        <h2>나만의 BoI Agent 만들기</h2>
         <p>어떤 업무를 도울지, 어떤 지식을 참고할지, 어떤 일을 할 수 있는지만 고르면 BoI Wiki가 검색·근거·흐름 정리를 연결합니다.</p>
       </div>
       <div class="agent-runtime-strip" data-agent-runtime>
@@ -35,14 +35,14 @@
       <form class="agent-builder-form page-section" data-agent-builder-form>
         <header class="section-heading">
           <div>
-            <h2>새 업무 도우미</h2>
+            <h2>새 BoI Agent</h2>
             <p class="muted">먼저 업무 목적을 적고, 참고할 지식과 할 수 있는 일을 카드로 고릅니다.</p>
           </div>
           <output class="agent-builder-status" data-agent-builder-status>대기 중</output>
         </header>
 
         <label>
-          <span>도우미 이름</span>
+          <span>BoI Agent 이름</span>
           <input name="title" value="Trend 근거 정리 도우미" placeholder="예: Trend 근거 정리 도우미" required>
         </label>
         <label>
@@ -276,13 +276,13 @@ print("agent-builder-sandbox-ok")</textarea>
           <a class="card event-card" href="{{ api_docs_url }}" target="_blank" rel="noopener">
             <strong>연동 문서</strong>
             <small>관리자용</small>
-            <p>업무 도우미, Inbox, SOP 실행 화면의 연결 상태를 확인합니다.</p>
+            <p>BoI Agent, Inbox, SOP 실행 화면의 연결 상태를 확인합니다.</p>
           </a>
           {% if mcp_url %}
           <a class="card event-card" href="{{ mcp_url }}" target="_blank" rel="noopener">
             <strong>외부 도구 연결</strong>
             <small>고급 연결</small>
-            <p>외부 도우미와 업무 도구 연결 상태를 확인합니다.</p>
+            <p>외부 Agent와 업무 도구 연결 상태를 확인합니다.</p>
           </a>
           {% endif %}
           {% if langflow_url %}
