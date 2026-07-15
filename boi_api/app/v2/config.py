@@ -168,7 +168,7 @@ class AgentV2Settings:
             ),
             model_queue_timeout_seconds=max(
                 1.0,
-                min(float(os.getenv("BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS", "120") or "120"), 3_600.0),
+                min(float(os.getenv("BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS", "600") or "600"), 3_600.0),
             ),
             model_max_output_tokens=max(
                 512,

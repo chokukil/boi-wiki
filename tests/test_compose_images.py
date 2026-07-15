@@ -65,7 +65,7 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS: ${EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS:-0}" in compose
     assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS: ${BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS:-3}" in compose
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY: ${BOI_AGENT_LLM_MAX_CONCURRENCY:-1}" in compose
-    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS: ${BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS:-120}" in compose
+    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS: ${BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS:-600}" in compose
     assert "OPENAI_API_KEY: ${BOI_GPT55_TEST_API_KEY:-}" in compose
     assert "condition: service_completed_successfully" not in compose
 
@@ -91,7 +91,7 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "EVENT_ROUTER_POST_TOPIC_READY_DELAY_SECONDS=5" in local_env
     assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in local_env
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in local_env
-    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in local_env
+    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=600" in local_env
     assert "BOI_GPT55_TEST_MODE=false" in local_env
     assert "BOI_GPT55_TEST_API_KEY=" in local_env
     assert "KAFKA_MODE=external" in pilot_env
@@ -110,7 +110,7 @@ def test_compose_declares_pilot_profiles_and_external_service_modes():
     assert "BOI_AUTO_PUSH=true" in pilot_env
     assert "BOI_AGENT_SUGGESTIONS_MAX_ATTEMPTS=3" in pilot_env
     assert "BOI_AGENT_LLM_MAX_CONCURRENCY=1" in pilot_env
-    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=120" in pilot_env
+    assert "BOI_AGENT_LLM_QUEUE_TIMEOUT_SECONDS=600" in pilot_env
     assert "BOI_GPT55_TEST_MODE=false" in pilot_env
     assert "BOI_GPT55_TEST_API_KEY=" in pilot_env
     assert "KAFKA_MODE=local" in env_example
