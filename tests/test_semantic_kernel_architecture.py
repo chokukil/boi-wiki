@@ -454,6 +454,34 @@ def test_plan_validator_uses_catalog_owned_work_view_operation_contract() -> Non
     assert "work_view.operation_not_allowed" in {item.code for item in report.issues}
 
 
+def test_catalog_operation_can_require_a_graph_without_service_routing_rules() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    plan = SemanticPlan(
+        resolved_goal="검증된 업무 관계를 탐색한다",
+        retrieval_query="검증된 업무 관계",
+        subjects=[
+            SemanticSubject(
+                mention="현재 사용자",
+                entity_ref="person:100001",
+                entity_kind="person",
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.connect,
+        presentation="table",
+        work_view="combined",
+    )
+
+    report = PlanValidator(registry).validate(
+        plan,
+        trusted_context_refs={"person:100001"},
+    )
+
+    assert "operation.graph_required" in {item.code for item in report.issues}
+
+
 def test_plan_validator_rejects_duplicate_resolved_subjects() -> None:
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
     person_ref = "person:100001"

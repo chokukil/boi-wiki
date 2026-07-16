@@ -3412,8 +3412,18 @@ def test_quick_agent_uses_structured_llm_planning_and_defaults_ambiguous_sop_que
         operation: str = "understand",
         presentation: str = "prose",
         work_view: str = "none",
-    ) -> dict[str, Any]:
-        return SemanticPlan(
+        ) -> dict[str, Any]:
+            graph_query = (
+                GraphQueryDraft(
+                    enabled=True,
+                    query_kind="neighbors",
+                    focal_mentions=[capability_id],
+                    presentation="auto",
+                )
+                if operation == "connect"
+                else None
+            )
+            return SemanticPlan(
             resolved_goal=f"{capability_id} 계약으로 요청을 처리한다",
             retrieval_query=capability_id,
             capability_id=capability_id,
@@ -3421,8 +3431,9 @@ def test_quick_agent_uses_structured_llm_planning_and_defaults_ambiguous_sop_que
             operation=operation,  # type: ignore[arg-type]
             evidence_scope="canonical",
             presentation=presentation,  # type: ignore[arg-type]
-            work_view=work_view,  # type: ignore[arg-type]
-            loop_contract=_catalog_loop_contract(capability_id),
+                work_view=work_view,  # type: ignore[arg-type]
+                graph_query=graph_query,
+                loop_contract=_catalog_loop_contract(capability_id),
             confidence=1.0,
         ).model_dump(mode="json")
 
@@ -3577,6 +3588,12 @@ def test_explaining_cross_asset_connections_does_not_run_an_authoring_harness(
                 operation="connect",
                 evidence_scope="canonical",
                 presentation="prose",
+                graph_query=GraphQueryDraft(
+                    enabled=True,
+                    query_kind="neighbors",
+                    focal_mentions=["사람 검토 SOP"],
+                    presentation="list",
+                ),
                 context_refs=[source_ref],
                 target_ref=source_ref,
                 confidence=1.0,

@@ -258,6 +258,12 @@ scenarios:
     expected_work_view: combined
     expected_presentation: table
     expected_topic_mode: continue
+    expected_artifact_type: ontology_graph
+    expected_answerability: grounded
+    require_grounding: true
+    require_grounded_claims: true
+    require_internal_sources_only: true
+    require_answer_terms: ["확인된 업무 관계", "지금 처리할 업무"]
 
   - id: mt_case_to_source
     turns:

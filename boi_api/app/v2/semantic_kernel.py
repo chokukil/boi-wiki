@@ -108,6 +108,17 @@ class PlanValidator:
                     )
                 )
             operation_contract = definition.semantic_operation_contracts.get(plan.operation)
+            if operation_contract is not None and operation_contract.requires_graph and not (
+                plan.graph_query and plan.graph_query.enabled
+            ):
+                issues.append(
+                    self._issue(
+                        "operation.graph_required",
+                        "graph_query",
+                        "The selected operation contract requires an explicit graph traversal.",
+                        details={"operation": plan.operation.value},
+                    )
+                )
             if (
                 operation_contract is not None
                 and operation_contract.presentations

@@ -245,6 +245,7 @@ class SemanticOperationContract(BaseModel):
     graph_query_kinds: list[Literal[
         "neighbors", "path", "workflow", "impact", "lineage", "responsibility", "timeline", "compare", "tour"
     ]] = Field(default_factory=list)
+    requires_graph: bool = False
 
 
 class CapabilityDefinition(BaseModel):

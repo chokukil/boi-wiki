@@ -170,6 +170,7 @@ capabilities:
         description: Traverse, sequence, or visualize verified relationships between selected subjects.
         presentations: [prose, table, timeline, mermaid, explorer]
         graph_query_kinds: [neighbors, path, workflow, impact, lineage, responsibility, timeline, tour]
+        requires_graph: true
       validate:
         description: Check a claim or result against its supporting evidence and provenance.
         presentations: [prose, table, timeline, mermaid, explorer]
@@ -530,6 +531,7 @@ capabilities:
         description: Traverse the evidence lineage, path, or time sequence that connects cases and their outcomes.
         presentations: [prose, table, timeline, mermaid, explorer]
         graph_query_kinds: [neighbors, path, lineage, timeline]
+        requires_graph: true
     default_operation: compare
     operation_pipeline: [understand, compare]
     presentations: [prose, table, timeline, mermaid, explorer]
