@@ -285,9 +285,15 @@ class QuickAgentRuntime:
         conversation = state.get("conversation_context") or {}
         topic = conversation.get("topic_state") if isinstance(conversation, dict) else {}
         active_artifact = conversation.get("active_artifact") if isinstance(conversation, dict) else {}
-        values = [str(item) for item in (topic.get("entities") or []) if str(item).strip()] if isinstance(topic, dict) else []
-        if isinstance(topic, dict) and str(topic.get("active_artifact_id") or "").strip():
-            values.append(str(topic["active_artifact_id"]))
+        values: list[str] = []
+        if isinstance(topic, dict):
+            structured_values = [
+                *(topic.get("subjects") or []),
+                *(topic.get("result_entities") or []),
+                *(topic.get("artifact_entities") or []),
+            ]
+            source_values = structured_values if structured_values else topic.get("entities") or []
+            values.extend(str(item) for item in source_values if str(item).strip())
         if isinstance(active_artifact, dict) and str(active_artifact.get("artifact_id") or "").strip():
             values.append(str(active_artifact["artifact_id"]))
         return list(dict.fromkeys(values))

@@ -198,7 +198,10 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
     continued_schema = runtime._planner_schema(
         {
             "conversation_context": {
-                "topic_state": {"entities": ["boi:public:a", "boi:public:b"]},
+                "topic_state": {
+                    "subjects": ["boi:public:a", "boi:public:b"],
+                    "entities": ["boi:public:a", "boi:public:b", "boi:public:supporting-citation"],
+                },
             },
         }
     )
@@ -206,6 +209,27 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
         "reference_resolution"
     ]
     assert continued_resolution["enum"] == ["none", "all", "specific", "ambiguous"]
+    assert runtime._prior_entities(
+        {
+            "conversation_context": {
+                "topic_state": {
+                    "subjects": ["boi:public:a", "boi:public:b"],
+                    "entities": ["boi:public:a", "boi:public:b", "boi:public:supporting-citation"],
+                }
+            }
+        }
+    ) == ["boi:public:a", "boi:public:b"]
+    assert runtime._prior_entities(
+        {
+            "conversation_context": {
+                "topic_state": {
+                    "subjects": ["case:current"],
+                    "result_entities": ["case:first", "case:second"],
+                    "entities": ["case:current", "case:first", "case:second", "boi:public:retrieval-only"],
+                }
+            }
+        }
+    ) == ["case:current", "case:first", "case:second"]
 
     search_contract = next(
         item for item in runtime._capability_catalog() if item["capability_id"] == "knowledge.search"
@@ -6506,7 +6530,10 @@ def test_session_followup_context_keeps_only_verified_claims_and_used_citations(
     assert all(item["support_status"] == "supported" for item in assistant["grounded_claims"])
     assert context["topic_state"]["used_source_refs"] == first.used_source_refs
     assert set(first.used_source_refs).issubset(set(context["topic_state"]["entities"]))
-    assert context["topic_state"]["subjects"] == first.work_intent.topic_entities
+    assert context["topic_state"]["subjects"] == first.work_intent.referenceable_topic_entities
+    assert set(context["topic_state"]["result_entities"]) == (
+        set(first.used_source_refs) - set(first.work_intent.referenceable_topic_entities)
+    )
 
 
 def test_acl_verified_domain_entities_establish_a_multi_subject_topic_without_prose_claims(
@@ -6549,7 +6576,7 @@ def test_acl_verified_domain_entities_establish_a_multi_subject_topic_without_pr
     )
 
     stored = v2_service.store.get("work_sessions", str(session["session_id"]))
-    assert stored["topic_state"]["subjects"] == ["첫 사례", "둘째 사례"]
+    assert stored["topic_state"]["subjects"] == ["case:one", "case:two"]
     assert stored["topic_state"]["topic_structure"] == "multiple_focal"
     assert stored["topic_state"]["entities"] == ["case:one", "case:two"]
 

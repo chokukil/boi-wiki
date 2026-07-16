@@ -4933,6 +4933,43 @@ class AgentV2Service:
                 for entity_ref in artifact.metadata.get("focal_entities") or []
                 if str(entity_ref)
             ]
+            grounded_result_entities = list(
+                dict.fromkeys(
+                    str(source_ref)
+                    for claim in response.grounded_claims
+                    if claim.support_status == "supported" and "grounded_claims" in topic_identity_sources
+                    for source_ref in claim.source_refs
+                    if str(source_ref)
+                )
+            )
+            resolved_candidates = (
+                response.work_intent.referenceable_topic_entities
+                if response.work_intent
+                else []
+            )
+            resolved_topic_entities = list(
+                dict.fromkeys(
+                    item
+                    for item in resolved_candidates
+                    if "resolved_entities" in topic_identity_sources
+                    or (
+                        "grounded_claims" in topic_identity_sources
+                        and item in grounded_result_entities
+                    )
+                )
+            )
+            artifact_entities = list(
+                dict.fromkeys(
+                    [
+                        *graph_entities,
+                        *(
+                            [str(session.get("active_artifact_id"))]
+                            if "artifact" in topic_identity_sources and session.get("active_artifact_id")
+                            else []
+                        ),
+                    ]
+                )
+            )
             topic_state = {
                 "topic_state_ref": response.topic_state_ref,
                 "subject": (
@@ -4942,13 +4979,11 @@ class AgentV2Service:
                     if response.work_intent
                     else question
                 ),
-                "subjects": list(
-                    dict.fromkeys(
-                        response.work_intent.topic_entities
-                        if response.work_intent
-                        else []
-                    )
-                ),
+                "subjects": resolved_topic_entities,
+                "result_entities": [
+                    item for item in grounded_result_entities if item not in resolved_topic_entities
+                ],
+                "artifact_entities": artifact_entities,
                 "topic_structure": (
                     response.work_intent.topic_structure
                     if response.work_intent
@@ -4956,18 +4991,9 @@ class AgentV2Service:
                 ),
                 "entities": list(dict.fromkeys(
                     [
-                        *(
-                            response.work_intent.referenceable_topic_entities
-                            if response.work_intent
-                            else []
-                        ),
-                        *graph_entities,
-                        # A grounded canonical or operational source is also a
-                        # verified topic identity. This keeps document-backed
-                        # concepts referenceable across turns even when no
-                        # separate ontology entity was resolved initially.
-                        *response.used_source_refs,
-                        *([str(session.get("active_artifact_id"))] if session.get("active_artifact_id") else []),
+                        *resolved_topic_entities,
+                        *grounded_result_entities,
+                        *artifact_entities,
                     ]
                 )),
                 "operation": response.work_intent.operation.value if response.work_intent else "understand",
