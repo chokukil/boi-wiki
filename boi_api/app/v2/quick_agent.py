@@ -868,6 +868,7 @@ class QuickAgentRuntime:
         plan: SemanticPlan,
     ) -> None:
         prior_refs = self._prior_entities(state)
+        focal_refs = self._prior_focal_entities(state)
         if not (
             len(prior_refs) > 1
             and plan.topic_action == "continue"
@@ -881,6 +882,8 @@ class QuickAgentRuntime:
             if item.resolution == "resolved" and item.entity_ref in prior_refs
         ]
         if len(selected_refs) != 1:
+            return
+        if len(focal_refs) == 1 and selected_refs[0] == focal_refs[0]:
             return
 
         titles = {

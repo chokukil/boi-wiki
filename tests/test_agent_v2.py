@@ -262,6 +262,9 @@ class _ReferenceAssessmentModel:
 
 
 class _RoleAwareReferenceAssessmentModel:
+    def __init__(self) -> None:
+        self.reference_calls = 0
+
     def generate_structured(
         self,
         *,
@@ -272,6 +275,7 @@ class _RoleAwareReferenceAssessmentModel:
     ) -> dict[str, Any]:
         if set(schema.get("required") or []) == {"status", "issues", "clarification_question"}:
             return {"status": "aligned", "issues": [], "clarification_question": ""}
+        self.reference_calls += 1
         payload = json.loads(prompt)
         assert [item["role"] for item in payload["prior_subjects"]] == [
             "subject",
@@ -407,14 +411,92 @@ def test_specific_reference_preserves_focal_subject_role_with_supporting_results
         target_ref=subject_ref,
     )
 
+    model = _RoleAwareReferenceAssessmentModel()
     validated, report = runtime._validate_envelope(
         state,
         {"semantic_plan": plan.model_dump(mode="json")},
-        model=_RoleAwareReferenceAssessmentModel(),
+        model=model,
     )
 
     assert validated.target_ref == subject_ref
     assert report["valid"] is True
+    assert model.reference_calls == 0
+
+
+def test_specific_reference_to_supporting_result_uses_role_aware_evaluation() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    runtime = QuickAgentRuntime(registry=registry)
+    subject_ref = "boi:public:concept:a"
+    result_ref = "boi:public:guide:a"
+    artifact_ref = "artifact:relationship-a"
+    state = {
+        "question": "직전 결과 문서의 관계를 보여줘.",
+        "trusted_targets": {
+            "개념 A": subject_ref,
+            "개념 A 가이드": result_ref,
+            "개념 A 관계 결과": artifact_ref,
+        },
+        "conversation_context": {
+            "topic_state": {
+                "subjects": [subject_ref],
+                "result_entities": [result_ref],
+                "artifact_entities": [artifact_ref],
+                "entity_labels": {
+                    subject_ref: "개념 A",
+                    result_ref: "개념 A 가이드",
+                    artifact_ref: "개념 A 관계 결과",
+                },
+                "topic_structure": "single_focal",
+                "operation": "understand",
+                "answer_intent": "relationship",
+                "claims": [
+                    {
+                        "claim_id": "claim-a",
+                        "text": "개념 A와 관련 업무의 검증된 관계",
+                        "source_refs": [result_ref],
+                    }
+                ],
+            }
+        },
+    }
+    plan = SemanticPlan(
+        resolved_goal="직전 결과 문서의 검증된 관계를 본다",
+        retrieval_query="직전 결과 문서 관계",
+        topic_action="continue",
+        reference_resolution="specific",
+        subjects=[
+            SemanticSubject(
+                mention="직전 결과 문서",
+                entity_ref=result_ref,
+                entity_kind="document",
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="connect",
+        evidence_scope="canonical",
+        presentation="mermaid",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="neighbors",
+            focal_mentions=[result_ref],
+            presentation="mermaid",
+        ),
+        context_refs=[result_ref],
+        target_ref=result_ref,
+    )
+    model = _RoleAwareReferenceAssessmentModel()
+
+    validated, report = runtime._validate_envelope(
+        state,
+        {"semantic_plan": plan.model_dump(mode="json")},
+        model=model,
+    )
+
+    assert validated.target_ref == result_ref
+    assert report["valid"] is True
+    assert model.reference_calls == 1
 
 
 def test_plan_validator_rejects_graph_filters_outside_the_catalog_contract_without_rewriting():
