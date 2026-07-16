@@ -4881,6 +4881,29 @@ class AgentV2Service:
         elif session.get("title") in {"", "새 업무"}:
             session["title"] = compact_text(question, 80) or "새 업무"
         prior_topic = session.get("topic_state") if isinstance(session.get("topic_state"), dict) else {}
+        try:
+            topic_identity_sources = set(
+                self.registry.get(response.capability_id).topic_identity_sources
+            )
+        except KeyError:
+            # Internal failure responses are not executable catalog
+            # capabilities and must not establish a referenceable topic.
+            topic_identity_sources = set()
+        has_topic_identity = any(
+            (
+                source == "grounded_claims"
+                and any(item.support_status == "supported" for item in response.grounded_claims)
+            )
+            or (
+                source == "resolved_entities"
+                and bool(
+                    response.work_intent
+                    and response.work_intent.referenceable_topic_entities
+                )
+            )
+            or (source == "artifact" and bool(response.artifact_refs))
+            for source in topic_identity_sources
+        )
         if response.answerability.status == "conflicting" and prior_topic:
             topic_state = {
                 **prior_topic,
@@ -4898,14 +4921,9 @@ class AgentV2Service:
                 },
             ][-20:]
             session["topic_corrections"] = corrections
-        elif (
-            not response.artifact_refs
-            and (response.work_intent is None or response.work_intent.user_effect == "read")
-            and not any(item.support_status == "supported" for item in response.grounded_claims)
-        ):
-            # An ungrounded answer must not become the verified subject of the
-            # next turn. Preserve an existing topic, or keep the session topic
-            # empty when the first turn could not establish one.
+        elif not has_topic_identity:
+            # Only evidence types declared by the capability contract may
+            # establish a referenceable topic for the next turn.
             topic_state = prior_topic
         else:
             graph_entities = [
@@ -4923,6 +4941,18 @@ class AgentV2Service:
                     else response.work_intent.resolved_goal
                     if response.work_intent
                     else question
+                ),
+                "subjects": list(
+                    dict.fromkeys(
+                        response.work_intent.topic_entities
+                        if response.work_intent
+                        else []
+                    )
+                ),
+                "topic_structure": (
+                    response.work_intent.topic_structure
+                    if response.work_intent
+                    else "single_focal"
                 ),
                 "entities": list(dict.fromkeys(
                     [

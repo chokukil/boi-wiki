@@ -451,6 +451,15 @@ def main() -> int:
                     active_session = str(turn_payload.get("work_session_id") or active_session)
                     if active_session:
                         session_ids.append(active_session)
+                    run_diagnostics: dict[str, Any] = {}
+                    turn_run_id = str(turn_payload.get("run_id") or "")
+                    if turn_run_id and turn_payload.get("error_code"):
+                        run_response = client.get(
+                            f"{base_url}/api/v2/agent/runs/{turn_run_id}",
+                            params=params,
+                        )
+                        if run_response.status_code == 200:
+                            run_diagnostics = run_response.json()
                     session_topic: dict[str, Any] = {}
                     restored_session: dict[str, Any] = {}
                     if active_session:
@@ -481,8 +490,11 @@ def main() -> int:
                             "question": question,
                             "latency_ms": turn_latencies[-1],
                             "status": turn_payload.get("status"),
+                            "run_id": turn_run_id,
                             "capability_id": turn_payload.get("capability_id"),
                             "error_code": turn_payload.get("error_code"),
+                            "plan_validation": run_diagnostics.get("plan_validation") or {},
+                            "error_disposition": run_diagnostics.get("error_disposition") or "",
                             "semantic_plan_ref": turn_payload.get("semantic_plan_ref"),
                             "operation": turn_intent.get("operation"),
                             "topic_mode": turn_intent.get("topic_mode"),

@@ -6388,6 +6388,94 @@ def test_session_followup_context_keeps_only_verified_claims_and_used_citations(
     assert all(item["support_status"] == "supported" for item in assistant["grounded_claims"])
     assert context["topic_state"]["used_source_refs"] == first.used_source_refs
     assert set(first.used_source_refs).issubset(set(context["topic_state"]["entities"]))
+    assert context["topic_state"]["subjects"] == first.work_intent.topic_entities
+
+
+def test_acl_verified_domain_entities_establish_a_multi_subject_topic_without_prose_claims(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    session = v2_service.create_work_session(
+        principal,
+        WorkSessionCreateRequest(title="유사 사례 비교"),
+    )
+    intent = WorkIntent(
+        goal="두 사례를 비교한다",
+        resolved_goal="검증된 두 사례를 비교한다",
+        topic_mode="new",
+        topic_subject="검증된 사례",
+        topic_structure="multiple_focal",
+        topic_entities=["첫 사례", "둘째 사례"],
+        referenceable_topic_entities=["case:one", "case:two"],
+        operation=WorkOperation.compare,
+        user_effect="read",
+    )
+    response = AgentTurnResponse(
+        run_id="run-domain-topic",
+        turn_id="turn-domain-topic",
+        conversation_id=str(session["conversation_id"]),
+        work_session_id=str(session["session_id"]),
+        status="completed",
+        capability_id="cases.similar",
+        answer=AnswerBlock(summary="비교 결과", markdown="비교 결과"),
+        work_intent=intent,
+        answerability=AnswerabilityReport(status="insufficient"),
+        topic_state_ref="topic:domain-entities",
+    )
+
+    v2_service._finish_work_session(
+        principal,
+        session,
+        response,
+        "두 사례를 비교해줘",
+    )
+
+    stored = v2_service.store.get("work_sessions", str(session["session_id"]))
+    assert stored["topic_state"]["subjects"] == ["첫 사례", "둘째 사례"]
+    assert stored["topic_state"]["topic_structure"] == "multiple_focal"
+    assert stored["topic_state"]["entities"] == ["case:one", "case:two"]
+
+
+def test_unclaimed_entities_do_not_establish_topic_without_catalog_permission(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    session = v2_service.create_work_session(
+        principal,
+        WorkSessionCreateRequest(title="문서 후보"),
+    )
+    intent = WorkIntent(
+        goal="후보 문서를 설명한다",
+        resolved_goal="후보 문서를 설명한다",
+        topic_mode="new",
+        topic_subject="후보 문서",
+        topic_entities=["후보 문서"],
+        referenceable_topic_entities=["boi:public:unrelated"],
+        operation=WorkOperation.understand,
+        user_effect="read",
+    )
+    response = AgentTurnResponse(
+        run_id="run-unclaimed-topic",
+        turn_id="turn-unclaimed-topic",
+        conversation_id=str(session["conversation_id"]),
+        work_session_id=str(session["session_id"]),
+        status="completed",
+        capability_id="knowledge.search",
+        answer=AnswerBlock(summary="근거 부족", markdown="확인된 근거가 없습니다."),
+        work_intent=intent,
+        answerability=AnswerabilityReport(status="insufficient"),
+        topic_state_ref="topic:unclaimed-entity",
+    )
+
+    v2_service._finish_work_session(
+        principal,
+        session,
+        response,
+        "후보 문서를 설명해줘",
+    )
+
+    stored = v2_service.store.get("work_sessions", str(session["session_id"]))
+    assert stored["topic_state"] == {}
 
 
 def test_session_context_preserves_complete_turns_and_evidence(

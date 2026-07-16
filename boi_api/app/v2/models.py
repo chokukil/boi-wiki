@@ -239,6 +239,9 @@ class SemanticOperationContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     description: str = Field(min_length=1, max_length=1000)
+    presentations: list[
+        Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"]
+    ] = Field(default_factory=list)
     graph_query_kinds: list[Literal[
         "neighbors", "path", "workflow", "impact", "lineage", "responsibility", "timeline", "compare", "tour"
     ]] = Field(default_factory=list)
@@ -282,6 +285,9 @@ class CapabilityDefinition(BaseModel):
         default_factory=lambda: ["canonical", "operational"]
     )
     default_evidence_scope: Literal["canonical", "operational", "validation"] = "canonical"
+    topic_identity_sources: list[
+        Literal["grounded_claims", "resolved_entities", "artifact"]
+    ] = Field(default_factory=lambda: ["grounded_claims", "artifact"])
     harness_ids: list[str] = Field(default_factory=lambda: ["context.work"])
     subject_policy: Literal["optional", "required", "target_required"] = "optional"
     risk: RiskLevel = RiskLevel.low
@@ -373,6 +379,19 @@ class CapabilityDefinition(BaseModel):
                 raise ValueError(
                     "semantic operation contracts use undeclared graph queries: "
                     + ", ".join(undeclared_graph_queries)
+                )
+            undeclared_presentations = sorted(
+                {
+                    presentation
+                    for contract in self.semantic_operation_contracts.values()
+                    for presentation in contract.presentations
+                    if presentation not in self.presentations
+                }
+            )
+            if undeclared_presentations:
+                raise ValueError(
+                    "semantic operation contracts use undeclared presentations: "
+                    + ", ".join(undeclared_presentations)
                 )
         if self.default_loop_contract.kind not in self.allowed_loop_kinds:
             raise ValueError("default loop kind must be declared in allowed_loop_kinds")
@@ -473,6 +492,8 @@ class AnswerabilityReport(BaseModel):
 class TurnTopicState(BaseModel):
     topic_state_ref: str
     subject: str = ""
+    subjects: list[str] = Field(default_factory=list, max_length=20)
+    topic_structure: Literal["single_focal", "multiple_focal", "collective"] = "single_focal"
     entities: list[str] = Field(default_factory=list, max_length=100)
     claims: list[GroundedClaim] = Field(default_factory=list)
     used_source_refs: list[str] = Field(default_factory=list)

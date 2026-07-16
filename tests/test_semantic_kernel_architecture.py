@@ -199,7 +199,10 @@ def test_plan_validator_uses_catalog_owned_graph_operation_contracts() -> None:
     valid_report = PlanValidator(registry).validate(valid, trusted_context_refs=set())
 
     assert invalid_report.valid is False
-    assert {item.code for item in invalid_report.issues} >= {"operation.graph_query_not_allowed"}
+    assert {item.code for item in invalid_report.issues} >= {
+        "operation.graph_query_not_allowed",
+        "operation.presentation_not_allowed",
+    }
     assert valid_report.valid is True
 
 

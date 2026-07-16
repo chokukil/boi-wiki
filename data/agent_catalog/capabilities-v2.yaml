@@ -160,18 +160,23 @@ capabilities:
     semantic_operation_contracts:
       understand:
         description: Explain the meaning, facts, or procedure of the selected subjects without traversing a relationship graph.
+        presentations: [prose, table]
         graph_query_kinds: []
       compare:
         description: Contrast two or more selected subjects and make their similarities and differences explicit.
+        presentations: [prose, table]
         graph_query_kinds: [compare]
       connect:
         description: Traverse, sequence, or visualize verified relationships between selected subjects.
+        presentations: [prose, table, timeline, mermaid, explorer]
         graph_query_kinds: [neighbors, path, workflow, impact, lineage, responsibility, timeline, tour]
       validate:
         description: Check a claim or result against its supporting evidence and provenance.
+        presentations: [prose, table, timeline, mermaid, explorer]
         graph_query_kinds: [lineage]
       observe:
         description: Report current operational state without changing it or inferring a relationship traversal.
+        presentations: [prose, table, timeline]
         graph_query_kinds: []
     default_operation: understand
     operation_pipeline: [understand]
@@ -390,6 +395,7 @@ capabilities:
     work_views: [current]
     default_work_view: current
     default_evidence_scope: operational
+    topic_identity_sources: [grounded_claims, artifact, resolved_entities]
     harness_ids: [context.work]
     subject_policy: optional
     risk: low
@@ -434,6 +440,7 @@ capabilities:
     presentations: [prose, table, timeline, artifact]
     presentation_aliases: {answer: prose, work_form: artifact}
     default_evidence_scope: operational
+    topic_identity_sources: [grounded_claims, artifact, resolved_entities]
     harness_ids: [context.work, task.runtime]
     subject_policy: target_required
     risk: low
@@ -512,6 +519,7 @@ capabilities:
     presentations: [prose, table, timeline, mermaid, explorer]
     presentation_aliases: {answer: prose}
     graph_query_kinds: [neighbors, path, lineage, timeline, compare]
+    topic_identity_sources: [grounded_claims, artifact, resolved_entities]
     harness_ids: [context.work]
     subject_policy: required
     risk: low

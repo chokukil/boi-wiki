@@ -107,6 +107,24 @@ class PlanValidator:
                         details={"allowed": [item.value for item in definition.semantic_operations]},
                     )
                 )
+            operation_contract = definition.semantic_operation_contracts.get(plan.operation)
+            if (
+                operation_contract is not None
+                and operation_contract.presentations
+                and plan.presentation not in operation_contract.presentations
+            ):
+                issues.append(
+                    self._issue(
+                        "operation.presentation_not_allowed",
+                        "operation",
+                        "The selected presentation is not declared for this semantic operation.",
+                        details={
+                            "operation": plan.operation.value,
+                            "presentation": plan.presentation,
+                            "allowed": list(operation_contract.presentations),
+                        },
+                    )
+                )
             if plan.presentation not in definition.presentations:
                 issues.append(
                     self._issue(
