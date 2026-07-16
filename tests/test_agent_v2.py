@@ -212,6 +212,80 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
     )
     assert search_contract["work_view_operation_contracts"]["combined"] == ["connect", "validate"]
 
+    cases_contract = next(
+        item for item in runtime._capability_catalog() if item["capability_id"] == "cases.similar"
+    )
+    assert cases_contract["semantic_operation_contracts"]["compare"]["graph_query_kinds"] == []
+
+
+class _ReferenceAssessmentModel:
+    def __init__(self, status: str):
+        self.status = status
+
+    def generate_structured(self, *, prompt: str, schema: dict[str, Any], **_: Any) -> dict[str, Any]:
+        payload = json.loads(prompt)
+        assert len(payload["prior_subjects"]) == 2
+        selected_ref = payload["planner_selected_ref"]
+        return {
+            "status": self.status,
+            "selected_ref": selected_ref if self.status == "justified" else "",
+            "clarification_question": "어느 항목을 말씀하시나요?" if self.status == "ambiguous" else "",
+        }
+
+
+def test_specific_reference_uses_independent_semantic_evaluation_for_multiple_prior_subjects():
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    runtime = QuickAgentRuntime(registry=registry)
+    refs = ["boi:public:concept:a", "boi:public:concept:b"]
+    state = {
+        "question": "선택한 항목의 실제 사용 부분을 보여줘.",
+        "conversation_context": {"topic_state": {"entities": refs}},
+        "knowledge_hints": [
+            {"ref": refs[0], "title": "개념 A"},
+            {"ref": refs[1], "title": "개념 B"},
+        ],
+    }
+    plan = SemanticPlan(
+        resolved_goal="선택한 개념의 실제 사용 범위를 확인한다",
+        retrieval_query="선택한 개념 실제 사용 범위",
+        topic_action="continue",
+        reference_resolution="specific",
+        subjects=[
+            SemanticSubject(
+                mention="개념 A",
+                entity_ref=refs[0],
+                entity_kind="concept",
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="understand",
+        presentation="prose",
+        context_refs=[refs[0]],
+        target_ref=refs[0],
+    )
+    envelope = {"semantic_plan": plan.model_dump(mode="json")}
+
+    with pytest.raises(SemanticPlanningError) as ambiguous:
+        runtime._validate_envelope(
+            state,
+            envelope,
+            model=_ReferenceAssessmentModel("ambiguous"),
+        )
+    assert ambiguous.value.report is not None
+    assert {item.code for item in ambiguous.value.report.issues} == {
+        "topic.specific_reference_not_justified"
+    }
+
+    validated, report = runtime._validate_envelope(
+        state,
+        envelope,
+        model=_ReferenceAssessmentModel("justified"),
+    )
+    assert validated.reference_resolution == "specific"
+    assert report["valid"] is True
+
 
 def test_plan_validator_rejects_graph_filters_outside_the_catalog_contract_without_rewriting():
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
@@ -1998,6 +2072,17 @@ class SplitOnlyFollowupModel(MultiTurnMermaidModel):
         self.semantic_calls = 0
 
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {
+            "status",
+            "selected_ref",
+            "clarification_question",
+        }:
+            payload = json.loads(prompt)
+            return {
+                "status": "justified",
+                "selected_ref": payload["planner_selected_ref"],
+                "clarification_question": "",
+            }
         if _is_semantic_planner_schema(schema):
             self.semantic_calls += 1
             if self.semantic_calls == 1:

@@ -6,7 +6,14 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from .capabilities import CapabilityRegistry
-from .models import GroundedClaim, SemanticPlan, TypedCommand, WorkOperation
+from .models import (
+    GroundedClaim,
+    PlanValidationReport,
+    SemanticPlan,
+    TypedCommand,
+    ValidationIssue,
+    WorkOperation,
+)
 from .semantic_kernel import (
     PLANNER_SCHEMA_REVISION,
     PlanCompiler,
@@ -628,7 +635,106 @@ class QuickAgentRuntime:
             "validation_issues": validation_issues or [],
         }
 
-    def _validate_envelope(self, state: QuickAgentState, envelope: dict[str, Any]) -> tuple[SemanticPlan, dict[str, Any]]:
+    @staticmethod
+    def _reference_assessment_schema(prior_refs: list[str]) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["status", "selected_ref", "clarification_question"],
+            "properties": {
+                "status": {"type": "string", "enum": ["justified", "ambiguous"]},
+                "selected_ref": {"type": "string", "enum": ["", *prior_refs]},
+                "clarification_question": {"type": "string", "maxLength": 240},
+            },
+        }
+
+    def _validate_specific_reference_semantics(
+        self,
+        *,
+        state: QuickAgentState,
+        model: Any,
+        plan: SemanticPlan,
+    ) -> None:
+        prior_refs = self._prior_entities(state)
+        if not (
+            len(prior_refs) > 1
+            and plan.topic_action == "continue"
+            and plan.reference_resolution == "specific"
+        ):
+            return
+
+        selected_refs = [
+            item.entity_ref
+            for item in plan.subjects
+            if item.resolution == "resolved" and item.entity_ref in prior_refs
+        ]
+        if len(selected_refs) != 1:
+            return
+
+        titles = {
+            str(item.get("ref") or ""): str(item.get("title") or item.get("label") or "")
+            for item in (state.get("knowledge_hints") or [])
+            if isinstance(item, dict) and str(item.get("ref") or "")
+        }
+        candidates = [
+            {"ref": ref, "title": titles.get(ref) or ref}
+            for ref in prior_refs
+        ]
+        try:
+            assessment = model.generate_structured(
+                system=(
+                    "You are an independent discourse-reference evaluator. Decide only whether the current request "
+                    "uniquely identifies the planner-selected prior subject from the supplied complete candidate set. "
+                    "Do not use outside knowledge and do not answer the request. Return justified only when the current "
+                    "request itself distinguishes that one candidate; if another candidate remains equally possible, "
+                    "return ambiguous and one short clarification question."
+                ),
+                prompt=json.dumps(
+                    {
+                        "request": state.get("question") or "",
+                        "prior_subjects": candidates,
+                        "planner_selected_ref": selected_refs[0],
+                    },
+                    ensure_ascii=False,
+                ),
+                schema=self._reference_assessment_schema(prior_refs),
+            )
+        except Exception as exc:
+            raise SemanticPlanningError(
+                "planner_invalid",
+                f"Reference evaluation failed: {type(exc).__name__}: {exc}",
+            ) from exc
+
+        status = str((assessment or {}).get("status") or "")
+        selected_ref = str((assessment or {}).get("selected_ref") or "")
+        if status == "justified" and selected_ref == selected_refs[0]:
+            return
+
+        issue = ValidationIssue(
+            code="topic.specific_reference_not_justified",
+            field="reference_resolution",
+            message="An independent semantic evaluation found that the request does not uniquely select one prior subject.",
+            details={"prior": prior_refs, "planner_selected": selected_refs[0]},
+        )
+        raise SemanticPlanningError(
+            "planner_invalid",
+            "Semantic plan failed reference evaluation.",
+            report=PlanValidationReport(
+                valid=False,
+                issues=[issue],
+                catalog_revision=self.registry.version,
+                planner_schema_revision=PLANNER_SCHEMA_REVISION,
+            ),
+            clarification_question=str((assessment or {}).get("clarification_question") or ""),
+        )
+
+    def _validate_envelope(
+        self,
+        state: QuickAgentState,
+        envelope: dict[str, Any],
+        *,
+        model: Any,
+    ) -> tuple[SemanticPlan, dict[str, Any]]:
         raw_plan = dict(envelope.get("semantic_plan") or {}) if isinstance(envelope.get("semantic_plan"), dict) else {}
         legacy_continuation = envelope.get("continuation")
         if "continuation" not in raw_plan and isinstance(legacy_continuation, dict):
@@ -647,6 +753,7 @@ class QuickAgentRuntime:
                 report=report,
                 clarification_question=plan.clarification_question,
             )
+        self._validate_specific_reference_semantics(state=state, model=model, plan=plan)
         return plan, report.model_dump(mode="json")
 
     @staticmethod
@@ -903,7 +1010,7 @@ class QuickAgentRuntime:
                 prompt=json.dumps(self._planner_payload(state), ensure_ascii=False),
                 schema=self._planner_schema(state),
             )
-            plan, report = self._validate_envelope(state, envelope)
+            plan, report = self._validate_envelope(state, envelope, model=model)
         except Exception as exc:
             first_error = exc if isinstance(exc, SemanticPlanningError) else SemanticPlanningError(
                 "planner_invalid", f"{type(exc).__name__}: {exc}"
@@ -935,7 +1042,7 @@ class QuickAgentRuntime:
                     schema=self._planner_schema(state),
                 )
                 envelope = repaired
-                plan, report = self._validate_envelope(state, envelope)
+                plan, report = self._validate_envelope(state, envelope, model=model)
             except Exception as repair_exc:
                 error = repair_exc if isinstance(repair_exc, SemanticPlanningError) else SemanticPlanningError(
                     "planner_invalid", f"{type(repair_exc).__name__}: {repair_exc}"

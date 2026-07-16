@@ -525,7 +525,7 @@ capabilities:
       compare:
         description: Find and contrast two or more relevant cases; do not use this operation for a drill-down into one selected case.
         presentations: [prose, table]
-        graph_query_kinds: [compare]
+        graph_query_kinds: []
       connect:
         description: Traverse the evidence lineage, path, or time sequence that connects cases and their outcomes.
         presentations: [prose, table, timeline, mermaid, explorer]
