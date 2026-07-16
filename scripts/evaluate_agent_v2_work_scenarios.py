@@ -6,6 +6,7 @@ import copy
 import json
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,11 @@ def parse_args() -> argparse.Namespace:
         help="Repeat every scenario this many times; 0 uses the fixture value.",
     )
     parser.add_argument("--keep-state", action="store_true")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume completed scenario ids from a compatible running checkpoint.",
+    )
     parser.add_argument("--scenario-id", action="append", default=[], help="Run only the selected scenario id; repeatable.")
     parser.add_argument("--judge-failures", action="store_true", help="Mark failed or ambiguous cases for explicit GPT-5.5 test adjudication.")
     return parser.parse_args()
@@ -73,6 +79,29 @@ def expand_scenarios(fixture: dict[str, Any], *, repetitions: int) -> list[dict[
                 scenario["id"] = f"{scenario['base_id']}__r{repetition}"
             repeated.append(scenario)
     return repeated
+
+
+def load_resume_checkpoint(
+    path: Path,
+    *,
+    fixture_version: Any,
+    base_url: str,
+    scenario_ids: list[str],
+) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    previous = json.loads(path.read_text(encoding="utf-8"))
+    previous_results = [item for item in previous.get("results") or [] if isinstance(item, dict)]
+    previous_ids = [str(item.get("id") or "") for item in previous_results]
+    compatible = (
+        previous.get("fixture_version") == fixture_version
+        and str(previous.get("base_url") or "").rstrip("/") == base_url.rstrip("/")
+        and int(previous.get("total") or 0) == len(scenario_ids)
+        and previous_ids == scenario_ids[: len(previous_ids)]
+    )
+    if not compatible:
+        raise ValueError("existing checkpoint is not compatible with this evaluation run")
+    return previous_results
 
 
 def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
@@ -295,17 +324,36 @@ def main() -> int:
     base_url = args.base_url.rstrip("/")
     params = {"employee_id": args.employee_id}
     results: list[dict[str, Any]] = []
+    if args.resume and args.output and args.output.exists():
+        expected_ids = [str(item.get("id") or "") for item in scenarios]
+        try:
+            results.extend(
+                load_resume_checkpoint(
+                    args.output,
+                    fixture_version=fixture.get("version"),
+                    base_url=base_url,
+                    scenario_ids=expected_ids,
+                )
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
     session_ids: list[str] = []
     deep_jobs: dict[str, int] = {}
 
     def checkpoint(scenario_id: str) -> None:
+        passed = sum(bool(item.get("passed")) for item in results)
+        failed = len(results) - passed
         if args.output:
             payload = {
                 "status": "running",
                 "accepted": False,
                 "fixture_version": fixture.get("version"),
                 "base_url": base_url,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
                 "completed": len(results),
+                "passed": passed,
+                "failed": failed,
+                "remaining": max(0, len(scenarios) - len(results)),
                 "total": len(scenarios),
                 "results": results,
             }
@@ -316,7 +364,9 @@ def main() -> int:
         latest = results[-1] if results else {}
         state = "passed" if latest.get("passed") else "failed"
         print(
-            f"[semantic-holdout] {len(results)}/{len(scenarios)} {scenario_id} {state}",
+            f"[semantic-holdout] {len(results)}/{len(scenarios)} "
+            f"passed={passed} failed={failed} remaining={max(0, len(scenarios) - len(results))} "
+            f"{scenario_id} {state}",
             file=sys.stderr,
             flush=True,
         )
@@ -329,13 +379,17 @@ def main() -> int:
             model_state = readiness.get("model") if isinstance(readiness.get("model"), dict) else {}
             if not model_state.get("generation"):
                 raise SystemExit("Agent v2 structured intent model is not ready")
+            completed_ids = {str(item.get("id") or "") for item in results}
             for scenario in scenarios:
+                if str(scenario.get("id") or "") in completed_ids:
+                    continue
                 turns = [str(item) for item in scenario.get("turns") or [] if str(item).strip()]
                 if not turns:
                     turns = [str(scenario["question"])]
                 response = None
                 active_session = ""
                 turn_latencies: list[int] = []
+                request_error = ""
                 for turn_index, question in enumerate(turns):
                     payload = {
                         "question": question,
@@ -345,8 +399,14 @@ def main() -> int:
                     if active_session:
                         payload["work_session_id"] = active_session
                     started = time.monotonic()
-                    response = client.post(f"{base_url}/api/v2/agent/turns", params=params, json=payload)
+                    try:
+                        response = client.post(f"{base_url}/api/v2/agent/turns", params=params, json=payload)
+                    except Exception as exc:
+                        request_error = f"{type(exc).__name__}: {exc}"
+                        response = None
                     turn_latencies.append(round((time.monotonic() - started) * 1000))
+                    if response is None:
+                        break
                     if response.status_code >= 400:
                         break
                     active_session = str(response.json().get("work_session_id") or active_session)
@@ -376,7 +436,22 @@ def main() -> int:
                             for item in restored_topic.get("claims") or []
                         ):
                             raise RuntimeError("restored WorkSession is missing its verified grounded claims")
-                assert response is not None
+                if response is None:
+                    results.append(
+                        {
+                            "id": scenario.get("id"),
+                            "passed": False,
+                            "checks": {"http": False},
+                            "actual": {
+                                "status_code": 0,
+                                "error": request_error or "request did not return a response",
+                                "turn_count": len(turns),
+                                "turn_latencies_ms": turn_latencies,
+                            },
+                        }
+                    )
+                    checkpoint(str(scenario.get("id") or ""))
+                    continue
                 if response.status_code >= 400:
                     results.append(
                         {
@@ -534,6 +609,12 @@ def main() -> int:
         "accepted": accepted,
         "fixture_version": fixture.get("version"),
         "base_url": base_url,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "completed": len(results),
+        "passed": sum(bool(item.get("passed")) for item in results),
+        "failed": sum(not bool(item.get("passed")) for item in results),
+        "remaining": max(0, len(scenarios) - len(results)),
+        "total": len(scenarios),
         "metrics": metrics,
         "thresholds": thresholds,
         "results": results,

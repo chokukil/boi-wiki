@@ -10,7 +10,7 @@ from boi_api.app.v2.capabilities import CapabilityRegistry
 from boi_api.app.v2.models import LoopContract, LoopKind, SemanticPlan, WorkIntent, WorkOperation
 from boi_api.app.v2.semantic_kernel import PlanCompiler, PlanValidator, SemanticPlanningError
 from boi_api.app.v2.work_learning import WorkLearningService
-from scripts.evaluate_agent_v2_work_scenarios import expand_scenarios
+from scripts.evaluate_agent_v2_work_scenarios import expand_scenarios, load_resume_checkpoint
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -227,3 +227,40 @@ def test_semantic_kernel_holdout_has_required_coverage() -> None:
     assert len(base) == 80
     assert len(repeated) == 240
     assert all(item.get("require_semantic_plan") for item in repeated)
+
+
+def test_semantic_holdout_checkpoint_resumes_only_a_compatible_prefix(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "holdout.json"
+    checkpoint.write_text(
+        """{
+  "fixture_version": "semantic-kernel-holdout/v1",
+  "base_url": "http://127.0.0.1:8769",
+  "total": 3,
+  "results": [
+    {"id": "scenario-1", "passed": true},
+    {"id": "scenario-2", "passed": false}
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    restored = load_resume_checkpoint(
+        checkpoint,
+        fixture_version="semantic-kernel-holdout/v1",
+        base_url="http://127.0.0.1:8769/",
+        scenario_ids=["scenario-1", "scenario-2", "scenario-3"],
+    )
+
+    assert [item["id"] for item in restored] == ["scenario-1", "scenario-2"]
+    try:
+        load_resume_checkpoint(
+            checkpoint,
+            fixture_version="semantic-kernel-holdout/v2",
+            base_url="http://127.0.0.1:8769",
+            scenario_ids=["scenario-1", "scenario-2", "scenario-3"],
+        )
+    except ValueError as exc:
+        assert "not compatible" in str(exc)
+    else:
+        raise AssertionError("an incompatible checkpoint must not be resumed")
