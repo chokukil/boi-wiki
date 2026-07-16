@@ -2345,7 +2345,7 @@ class WorkLearningService:
             else:
                 status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
         elif response_status == "needs_input" or intent.needs_clarification:
-            status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+            status, decision, stop_reason = "waiting_human", "needs_human", "human_interrupt"
         elif context.task_ref and intent.asset_kind == WorkAssetKind.task:
             if context.task_mode == TaskMode.autopilot:
                 status, decision, stop_reason = "waiting_signal", "continue", "needs_human"

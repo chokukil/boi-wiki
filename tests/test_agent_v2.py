@@ -261,6 +261,31 @@ class _ReferenceAssessmentModel:
         }
 
 
+class _RoleAwareReferenceAssessmentModel:
+    def generate_structured(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict[str, Any],
+        **_: Any,
+    ) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {"status", "issues", "clarification_question"}:
+            return {"status": "aligned", "issues": [], "clarification_question": ""}
+        payload = json.loads(prompt)
+        assert [item["role"] for item in payload["prior_subjects"]] == [
+            "subject",
+            "result",
+            "artifact",
+        ]
+        assert "Supporting result and artifact candidates alone" in system
+        return {
+            "status": "justified",
+            "selected_ref": payload["planner_selected_ref"],
+            "clarification_question": "",
+        }
+
+
 def test_specific_reference_uses_independent_semantic_evaluation_for_multiple_prior_subjects():
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
     runtime = QuickAgentRuntime(registry=registry)
@@ -312,6 +337,70 @@ def test_specific_reference_uses_independent_semantic_evaluation_for_multiple_pr
         model=_ReferenceAssessmentModel("justified"),
     )
     assert validated.reference_resolution == "specific"
+    assert report["valid"] is True
+
+
+def test_specific_reference_preserves_focal_subject_role_with_supporting_results() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    runtime = QuickAgentRuntime(registry=registry)
+    subject_ref = "boi:public:concept:a"
+    result_ref = "boi:public:guide:a"
+    artifact_ref = "artifact:relationship-a"
+    state = {
+        "question": "직전 관계를 다른 표현으로 보여줘.",
+        "trusted_targets": {
+            "개념 A": subject_ref,
+            "개념 A 가이드": result_ref,
+            "개념 A 관계 결과": artifact_ref,
+        },
+        "conversation_context": {
+            "topic_state": {
+                "subjects": [subject_ref],
+                "result_entities": [result_ref],
+                "artifact_entities": [artifact_ref],
+                "entity_labels": {
+                    subject_ref: "개념 A",
+                    result_ref: "개념 A 가이드",
+                    artifact_ref: "개념 A 관계 결과",
+                },
+            }
+        },
+    }
+    plan = SemanticPlan(
+        resolved_goal="직전 주제의 검증된 관계를 다른 표현으로 본다",
+        retrieval_query="직전 주제 관계",
+        topic_action="continue",
+        reference_resolution="specific",
+        subjects=[
+            SemanticSubject(
+                mention="직전 주제",
+                entity_ref=subject_ref,
+                entity_kind="concept",
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="connect",
+        evidence_scope="canonical",
+        presentation="mermaid",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="neighbors",
+            focal_mentions=[subject_ref],
+            presentation="mermaid",
+        ),
+        context_refs=[subject_ref],
+        target_ref=subject_ref,
+    )
+
+    validated, report = runtime._validate_envelope(
+        state,
+        {"semantic_plan": plan.model_dump(mode="json")},
+        model=_RoleAwareReferenceAssessmentModel(),
+    )
+
+    assert validated.target_ref == subject_ref
     assert report["valid"] is True
 
 
@@ -855,6 +944,35 @@ class FidelityRepairPlanner(ScriptedPlanner):
         return {"status": "aligned", "issues": [], "clarification_question": ""}
 
 
+class TopicContinuityRepairPlanner(ScriptedPlanner):
+    def __init__(self, plans: list[dict[str, Any]]):
+        super().__init__(plans)
+        self.fidelity_calls = 0
+
+    def evaluate_semantic_plan(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        self.fidelity_calls += 1
+        assert "time perspective" in system
+        plan = json.loads(prompt)["proposed_semantic_plan"]
+        if plan.get("topic_action") != "continue":
+            return {
+                "status": "misaligned",
+                "issues": [
+                    {
+                        "field": "topic_action",
+                        "message": "The requested view keeps the verified focal subject.",
+                    }
+                ],
+                "clarification_question": "",
+            }
+        return {"status": "aligned", "issues": [], "clarification_question": ""}
+
+
 def test_independent_fidelity_review_repairs_omitted_semantic_dimensions() -> None:
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
     person_ref = "person:100001"
@@ -924,6 +1042,87 @@ def test_independent_fidelity_review_repairs_omitted_semantic_dimensions() -> No
     assert route["work_intent"]["operation"] == "connect"
     assert route["work_intent"]["work_view"] == "combined"
     assert route["work_intent"]["graph_query_draft"]["query_kind"] == "responsibility"
+    assert model.fidelity_calls == 2
+
+
+def test_independent_fidelity_review_rejects_a_followup_marked_as_new_topic() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    runtime = QuickAgentRuntime(registry=registry)
+    subject_ref = "boi:public:workflow:equipment-response"
+    common = {
+        "resolved_goal": "검증된 대상의 시간 흐름을 본다",
+        "retrieval_query": "검증된 대상 시간 흐름",
+        "subjects": [
+            SemanticSubject(
+                mention="검증된 대상",
+                entity_ref=subject_ref,
+                entity_kind="workflow",
+                resolution="resolved",
+            )
+        ],
+        "capability_id": "knowledge.search",
+        "user_effect": "read",
+        "operation": "connect",
+        "evidence_scope": "operational",
+        "presentation": "timeline",
+        "graph_query": GraphQueryDraft(
+            enabled=True,
+            query_kind="timeline",
+            focal_mentions=[subject_ref],
+            presentation="timeline",
+        ),
+        "context_refs": [subject_ref],
+        "target_ref": subject_ref,
+        "answer_intent": "relationship",
+        "confidence": 1.0,
+    }
+    bad = SemanticPlan(
+        **common,
+        topic_action="new",
+        reference_resolution="none",
+    ).model_dump(mode="json")
+    repaired = SemanticPlan(
+        **common,
+        topic_action="continue",
+        reference_resolution="specific",
+    )
+    model = TopicContinuityRepairPlanner([])
+    state = {
+        "question": "검증된 대상의 다른 관점을 보여줘",
+        "page_kind": "workflow",
+        "conversation_context": {
+            "topic_state": {
+                "subject": "검증된 대상",
+                "subjects": [subject_ref],
+                "entities": [subject_ref],
+            }
+        },
+        "knowledge_hints": [
+            {
+                "ref": subject_ref,
+                "title": "설비 대응 흐름",
+                "chunk_id": "workflow-equipment-response",
+                "chunk_text": "설비 대응 흐름의 검증된 업무 이력",
+                "answer_scope": "operational",
+            }
+        ],
+        "trusted_targets": {subject_ref: "설비 대응 흐름"},
+    }
+
+    with pytest.raises(SemanticPlanningError) as mismatch:
+        runtime._validate_plan_fidelity(
+            state=state,
+            model=model,
+            plan=SemanticPlan.model_validate(bad),
+        )
+    assert mismatch.value.report is not None
+    assert {item.field for item in mismatch.value.report.issues} == {"topic_action"}
+
+    runtime._validate_plan_fidelity(
+        state=state,
+        model=model,
+        plan=repaired,
+    )
     assert model.fidelity_calls == 2
 
 
@@ -4855,6 +5054,7 @@ def test_agent_returns_one_clarification_when_graph_entity_name_is_ambiguous(
 
     assert response.status == "needs_input"
     assert response.work_intent and response.work_intent.needs_clarification is True
+    assert response.stop_reason == "human_interrupt"
     assert response.answer.markdown.count("?") == 1
     assert "어느 동일 이름 구성원의 업무 관계를 확인할까요?" in response.answer.markdown
     assert "100002" in response.answer.markdown and "100003" in response.answer.markdown
