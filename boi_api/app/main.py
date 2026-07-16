@@ -27782,7 +27782,7 @@ def derive_work_pattern_candidates(employee_id: str, *, limit: int = 8) -> list[
         artifact_type = str(metadata.get("artifact_type") or "")
         title = str(row.get("title") or "")
         target = str(row.get("target") or "")
-        if artifact_type == "mermaid" or "Mermaid" in title or "머메이드" in title:
+        if artifact_type in {"mermaid", "mermaid_diagram"}:
             key = ("answer_preference", "mermaid")
             description = "SOP나 업무 흐름을 Mermaid 다이어그램으로 확인하는 선호가 반복되었습니다."
         elif activity_type in {"followup_click", "suggestion_click"}:

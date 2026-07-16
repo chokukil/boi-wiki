@@ -89,6 +89,10 @@ class QuickAgentRuntime:
                 "supported_assets": [asset.value for asset in item.supported_assets],
                 "user_effects": list(item.user_effects),
                 "semantic_operations": [operation.value for operation in item.semantic_operations],
+                "semantic_operation_contracts": {
+                    operation.value: contract.model_dump(mode="json")
+                    for operation, contract in item.semantic_operation_contracts.items()
+                },
                 "default_operation": item.default_operation.value if item.default_operation else "",
                 "presentations": list(item.presentations),
                 "default_presentation": item.default_presentation,

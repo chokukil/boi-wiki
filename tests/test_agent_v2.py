@@ -520,6 +520,17 @@ def _is_semantic_planner_schema(schema: dict[str, Any]) -> bool:
     return "semantic_plan" in set(schema.get("required") or [])
 
 
+def _has_verified_topic_state(payload: dict[str, Any]) -> bool:
+    topic_state = payload.get("verified_topic_state")
+    if not isinstance(topic_state, dict):
+        return False
+    return bool(
+        topic_state.get("topic_state_ref")
+        or topic_state.get("entities")
+        or topic_state.get("claims")
+    )
+
+
 class _PlannerEnvelope(dict[str, Any]):
     _semantic_aliases = {
         "topic_mode": "topic_action",
@@ -906,7 +917,7 @@ class BroadWorkQuestionReviewModel(ScriptedPlanner):
                     ] if person_ref else [],
                     capability_id="knowledge.search",
                     user_effect="read",
-                    operation="understand",
+                    operation="connect",
                     evidence_scope="operational",
                     presentation="table",
                     work_view="combined",
@@ -957,8 +968,8 @@ class RuntimeOnlyWrongScopeReviewModel(ScriptedPlanner):
                 {
                     "capability_id": "knowledge.search",
                     "asset_kind": "runtime",
-                    "operation": "understand",
-                    "operation_plan": ["understand"],
+                    "operation": "connect",
+                    "operation_plan": ["connect"],
                     "scope": "current",
                     "work_view": "combined",
                     "current_scope_explicit": False,
@@ -1611,7 +1622,7 @@ class A2UIReliabilityModel(ScriptedPlanner):
                 ]
                 if isinstance(item, dict)
             ]
-            followup = "실제로 사용" in str(payload.get("request") or "")
+            followup = _has_verified_topic_state(payload)
             selected = next(
                 (
                     item
@@ -1627,6 +1638,7 @@ class A2UIReliabilityModel(ScriptedPlanner):
             source_ref = str(selected.get("source_key") or selected.get("ref") or "")
             chunk_id = str(selected.get("chunk_key") or selected.get("chunk_id") or "")
             prior_topic = payload.get("verified_topic_state") or {}
+            prior_entities = [str(item) for item in prior_topic.get("entities") or [] if str(item)]
             topic_subject = str(prior_topic.get("subject") or "A2UI와 BoI 동적 결과 화면")
             if followup:
                 claim_text = "boi-a2ui/v1 catalog에는 Answer, CitationList, DataTable, Timeline, MermaidArtifact, OntologyExplorer가 등록되어 있습니다."
@@ -1642,37 +1654,39 @@ class A2UIReliabilityModel(ScriptedPlanner):
                 resolved_goal = "A2UI와 BoI 동적 결과 화면의 내부 canonical 정의를 설명한다"
                 retrieval_query = "A2UI와 BoI 동적 결과 화면 정의"
             entity_ref = str(selected.get("ref") or "")
+            subject_rows = []
+            if followup:
+                subject_rows.extend(
+                    {
+                        "mention": topic_subject,
+                        "entity_ref": ref,
+                        "entity_kind": "knowledge",
+                        "resolution": "resolved",
+                    }
+                    for ref in prior_entities
+                )
+            if entity_ref and entity_ref not in {str(item.get("entity_ref") or "") for item in subject_rows}:
+                subject_rows.append(
+                    {
+                        "mention": "BoI 동적 결과 component registry" if followup else topic_subject,
+                        "entity_ref": entity_ref,
+                        "entity_kind": "runtime_catalog" if followup else "knowledge",
+                        "resolution": "resolved",
+                    }
+                )
             planned = _planner_envelope(
                 SemanticPlan(
                     resolved_goal=resolved_goal,
                     retrieval_query=retrieval_query,
                     topic_action=topic_mode,
-                    subjects=(
-                        [
-                            {
-                                "mention": topic_subject,
-                            "entity_ref": entity_ref,
-                            "entity_kind": "runtime_catalog",
-                                "resolution": "resolved",
-                            }
-                        ]
-                        if followup
-                        else [
-                            {
-                                "mention": topic_subject,
-                                "entity_ref": entity_ref,
-                                "entity_kind": "knowledge",
-                                "resolution": "resolved",
-                            }
-                        ] if entity_ref else []
-                    ),
+                    subjects=subject_rows,
                     capability_id="knowledge.search",
                     user_effect="read",
                     operation="understand",
                     evidence_scope="operational" if followup else "canonical",
                     presentation="prose",
                     answer_intent=answer_intent,
-                    context_refs=[entity_ref] if entity_ref else [],
+                    context_refs=[str(item.get("entity_ref") or "") for item in subject_rows],
                     target_ref=entity_ref,
                     confidence=0.99,
                 ).model_dump(mode="json")
@@ -1703,7 +1717,7 @@ class A2UIOmittedProvenanceModel(A2UIReliabilityModel):
         required = set(schema.get("required") or [])
         if _is_semantic_planner_schema(schema):
             payload = json.loads(prompt)
-            if "실제로 사용" in str(payload.get("request") or ""):
+            if _has_verified_topic_state(payload):
                 answer = planned.get("grounded_answer") or {}
                 answer["summary_source_refs"] = []
                 for claim in answer.get("claims") or []:
@@ -1718,7 +1732,7 @@ class A2UIMismatchedChunkModel(A2UIReliabilityModel):
         required = set(schema.get("required") or [])
         if _is_semantic_planner_schema(schema):
             payload = json.loads(prompt)
-            if "실제로 사용" in str(payload.get("request") or ""):
+            if _has_verified_topic_state(payload):
                 for claim in (planned.get("grounded_answer") or {}).get("claims") or []:
                     claim["supporting_chunk_ids"] = ["C1"]
         return planned
@@ -1754,7 +1768,7 @@ class MalformedContinuationModel(A2UIReliabilityModel):
         result = super().generate_structured(system=system, prompt=prompt, schema=schema)
         if (
             _is_semantic_planner_schema(schema)
-            and "실제로 사용" in str(payload.get("request") or "")
+            and _has_verified_topic_state(payload)
         ):
             self.followup_attempts += 1
             if not payload.get("validation_issues"):
@@ -1994,15 +2008,6 @@ class SplitOnlyFollowupModel(MultiTurnMermaidModel):
 
 class InboxBiasedMermaidModel(MultiTurnMermaidModel):
     """Models a planner that keeps the verified prior subject despite an Inbox page anchor."""
-
-    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        required = set(schema.get("required") or [])
-        if _is_semantic_planner_schema(schema):
-            payload = json.loads(prompt)
-            request = str(payload.get("request") or "")
-            if "머메이드" in request:
-                return super().generate_structured(system=system, prompt=prompt, schema=schema)
-        return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
 class RepairingScopedMermaidModel(MultiTurnMermaidModel):

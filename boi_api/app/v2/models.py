@@ -233,6 +233,17 @@ class HelperTemplateDefinition(BaseModel):
     capability_ids: list[str] = Field(default_factory=list)
 
 
+class SemanticOperationContract(BaseModel):
+    """Catalog-owned meaning boundary for one semantic operation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(min_length=1, max_length=1000)
+    graph_query_kinds: list[Literal[
+        "neighbors", "path", "workflow", "impact", "lineage", "responsibility", "timeline", "compare", "tour"
+    ]] = Field(default_factory=list)
+
+
 class CapabilityDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -248,6 +259,7 @@ class CapabilityDefinition(BaseModel):
     user_effects: list[Literal["read", "draft", "transform", "execute"]] = Field(default_factory=list)
     default_user_effect: Literal["read", "draft", "transform", "execute"] | None = None
     semantic_operations: list[WorkOperation] = Field(default_factory=list)
+    semantic_operation_contracts: dict[WorkOperation, SemanticOperationContract] = Field(default_factory=dict)
     default_operation: WorkOperation | None = None
     operation_pipeline: list[WorkOperation] = Field(default_factory=list)
     operation_pipelines: dict[str, list[WorkOperation]] = Field(default_factory=dict)
@@ -339,6 +351,29 @@ class CapabilityDefinition(BaseModel):
             raise ValueError("default_user_effect must be declared in user_effects")
         if self.default_operation is not None and self.default_operation not in self.semantic_operations:
             raise ValueError("default_operation must be declared in semantic_operations")
+        if self.semantic_operation_contracts:
+            unknown_contracts = sorted(
+                operation.value
+                for operation in set(self.semantic_operation_contracts) - set(self.semantic_operations)
+            )
+            if unknown_contracts:
+                raise ValueError(
+                    "semantic operation contracts must target declared operations: "
+                    + ", ".join(unknown_contracts)
+                )
+            undeclared_graph_queries = sorted(
+                {
+                    query_kind
+                    for contract in self.semantic_operation_contracts.values()
+                    for query_kind in contract.graph_query_kinds
+                    if query_kind not in self.graph_query_kinds
+                }
+            )
+            if undeclared_graph_queries:
+                raise ValueError(
+                    "semantic operation contracts use undeclared graph queries: "
+                    + ", ".join(undeclared_graph_queries)
+                )
         if self.default_loop_contract.kind not in self.allowed_loop_kinds:
             raise ValueError("default loop kind must be declared in allowed_loop_kinds")
         if self.default_loop_contract.trigger not in self.allowed_loop_triggers:

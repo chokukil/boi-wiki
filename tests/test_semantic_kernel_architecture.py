@@ -7,7 +7,15 @@ from pathlib import Path
 import yaml
 
 from boi_api.app.v2.capabilities import CapabilityRegistry
-from boi_api.app.v2.models import LoopContract, LoopKind, SemanticPlan, WorkIntent, WorkOperation
+from boi_api.app.v2.models import (
+    GraphQueryDraft,
+    LoopContract,
+    LoopKind,
+    SemanticPlan,
+    SemanticSubject,
+    WorkIntent,
+    WorkOperation,
+)
 from boi_api.app.v2.semantic_kernel import PlanCompiler, PlanValidator, SemanticPlanningError
 from boi_api.app.v2.work_learning import WorkLearningService
 from scripts.evaluate_agent_v2_work_scenarios import expand_scenarios, load_resume_checkpoint
@@ -165,6 +173,78 @@ def test_plan_validator_rejects_loop_outside_capability_contract() -> None:
 
     assert report.valid is False
     assert {item.code for item in report.issues} >= {"loop.kind_not_allowed"}
+
+
+def test_plan_validator_uses_catalog_owned_graph_operation_contracts() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    graph = GraphQueryDraft(
+        enabled=True,
+        query_kind="workflow",
+        focal_mentions=["업무 이벤트", "SOP"],
+        presentation="mermaid",
+    )
+    invalid = SemanticPlan(
+        resolved_goal="업무 이벤트와 SOP의 관계를 그림으로 본다",
+        retrieval_query="업무 이벤트 SOP 관계",
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.understand,
+        presentation="mermaid",
+        graph_query=graph,
+        confidence=0.95,
+    )
+    valid = invalid.model_copy(update={"operation": WorkOperation.connect})
+
+    invalid_report = PlanValidator(registry).validate(invalid, trusted_context_refs=set())
+    valid_report = PlanValidator(registry).validate(valid, trusted_context_refs=set())
+
+    assert invalid_report.valid is False
+    assert {item.code for item in invalid_report.issues} >= {"operation.graph_query_not_allowed"}
+    assert valid_report.valid is True
+
+
+def test_plan_validator_rejects_inconsistent_topic_and_target_identity() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    prior_ref = "boi:public:workflow:event-response"
+    other_ref = "runtime:a2ui-capability-catalog"
+    trusted = {prior_ref, other_ref}
+    reused_as_new = SemanticPlan(
+        resolved_goal="같은 관계를 다른 화면으로 본다",
+        retrieval_query="업무 이벤트 관계",
+        topic_action="new",
+        subjects=[
+            SemanticSubject(
+                mention="업무 이벤트 관계",
+                entity_ref=prior_ref,
+                entity_kind="workflow",
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.connect,
+        presentation="mermaid",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="workflow",
+            focal_mentions=["업무 이벤트 관계"],
+            presentation="mermaid",
+        ),
+        target_ref=other_ref,
+        confidence=0.9,
+    )
+
+    report = PlanValidator(registry).validate(
+        reused_as_new,
+        trusted_context_refs=trusted,
+        prior_topic_entities=[prior_ref],
+    )
+
+    assert report.valid is False
+    assert {item.code for item in report.issues} >= {
+        "topic.new_reuses_prior_subject",
+        "subject.target_mismatch",
+    }
 
 
 def test_clarification_is_model_authored_and_never_filled_by_service_fallback() -> None:

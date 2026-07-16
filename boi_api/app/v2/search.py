@@ -354,15 +354,13 @@ class HybridSearchService:
         return KnowledgeRecord(
             record_id=ref,
             kind="runtime",
-            title="A2UI 현재 등록 component와 사용 현황",
+            title="BoI 동적 결과 component registry",
             description=(
-                f"{catalog.get('compatibility_id')} catalog의 현재 실제 registry와 사용자별 관측 surface 현황. "
-                "실제로 사용된 부분, 현재 등록된 component와 실제 사용 여부는 이 운영 상태 자료로 확인합니다."
+                f"{catalog.get('compatibility_id')} catalog의 현재 registry와 사용자별 관측 surface 현황입니다."
             ),
             text="\n".join(
                 [
                     "이 자료는 A2UI의 정의 문서가 아니라 현재 실행 중인 BoI component registry와 surface 사용 현황입니다.",
-                    "실제로 사용된 부분을 묻는 경우 현재 등록된 component와 관측된 surface를 이 자료에서 확인합니다.",
                     f"현재 protocol version: {catalog.get('protocol_version')}",
                     f"현재 catalog: {catalog.get('compatibility_id')}",
                     f"현재 등록 component: {', '.join(component_names)}",

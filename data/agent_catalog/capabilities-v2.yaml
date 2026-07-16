@@ -157,6 +157,22 @@ capabilities:
     user_effects: [read]
     default_user_effect: read
     semantic_operations: [understand, compare, connect, validate, observe]
+    semantic_operation_contracts:
+      understand:
+        description: Explain the meaning, facts, or procedure of the selected subjects without traversing a relationship graph.
+        graph_query_kinds: []
+      compare:
+        description: Contrast two or more selected subjects and make their similarities and differences explicit.
+        graph_query_kinds: [compare]
+      connect:
+        description: Traverse, sequence, or visualize verified relationships between selected subjects.
+        graph_query_kinds: [neighbors, path, workflow, impact, lineage, responsibility, timeline, tour]
+      validate:
+        description: Check a claim or result against its supporting evidence and provenance.
+        graph_query_kinds: [lineage]
+      observe:
+        description: Report current operational state without changing it or inferring a relationship traversal.
+        graph_query_kinds: []
     default_operation: understand
     operation_pipeline: [understand]
     presentations: [prose, table, timeline, mermaid, explorer]
@@ -201,6 +217,7 @@ capabilities:
         context_basis: current_work
         result_kind: table
         graph_query_kind: responsibility
+        semantic_operation: connect
         fallback_to_answer: true
         work_view: combined
       - offer_id: knowledge.page-relations
@@ -214,6 +231,7 @@ capabilities:
         context_basis: page_anchor
         result_kind: explorer
         graph_query_kind: neighbors
+        semantic_operation: connect
         fallback_to_answer: true
       - offer_id: knowledge.page-relation-table
         category: knowledge_relation
@@ -227,6 +245,7 @@ capabilities:
         context_basis: page_anchor
         result_kind: table
         graph_query_kind: neighbors
+        semantic_operation: connect
         fallback_to_answer: true
       - offer_id: knowledge.connected-workflow
         category: sop_task
@@ -242,6 +261,7 @@ capabilities:
         context_basis: ontology_neighbor
         result_kind: mermaid
         graph_query_kind: workflow
+        semantic_operation: connect
       - offer_id: knowledge.connected-event
         category: business_event
         area: event_action
@@ -256,6 +276,7 @@ capabilities:
         context_basis: ontology_neighbor
         result_kind: explorer
         graph_query_kind: impact
+        semantic_operation: connect
       - offer_id: knowledge.connected-action
         category: action
         area: event_action
@@ -271,6 +292,7 @@ capabilities:
         context_basis: ontology_neighbor
         result_kind: explorer
         graph_query_kind: impact
+        semantic_operation: connect
       - offer_id: knowledge.entrypoint-knowledge
         category: knowledge_relation
         area: knowledge
@@ -285,6 +307,7 @@ capabilities:
         context_basis: canonical_entrypoint
         result_kind: explorer
         graph_query_kind: neighbors
+        semantic_operation: connect
         fallback_to_answer: true
       - offer_id: knowledge.entrypoint-workflow
         category: sop_task
@@ -300,6 +323,7 @@ capabilities:
         context_basis: canonical_entrypoint
         result_kind: mermaid
         graph_query_kind: workflow
+        semantic_operation: connect
         fallback_to_answer: true
       - offer_id: knowledge.entrypoint-event-action
         category: business_event
@@ -315,6 +339,7 @@ capabilities:
         context_basis: canonical_entrypoint
         result_kind: explorer
         graph_query_kind: impact
+        semantic_operation: connect
         fallback_to_answer: true
       - offer_id: knowledge.entrypoint-learning
         category: knowledge_capture
@@ -331,6 +356,7 @@ capabilities:
         context_basis: canonical_entrypoint
         result_kind: timeline
         graph_query_kind: timeline
+        semantic_operation: connect
         fallback_to_answer: true
       - offer_id: knowledge.entrypoint-automation
         category: automatic_check

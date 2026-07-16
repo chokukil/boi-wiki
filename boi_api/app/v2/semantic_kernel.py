@@ -227,6 +227,46 @@ class PlanValidator:
                     "A follow-up must resolve its inherited subject in the standalone plan.",
                 )
             )
+        prior_refs = {str(item).strip() for item in prior_topic_entities or [] if str(item).strip()}
+        resolved_subject_refs = {
+            item.entity_ref.strip()
+            for item in plan.subjects
+            if item.entity_ref.strip()
+        }
+        inherited_refs = prior_refs & resolved_subject_refs
+        if plan.topic_action == "new" and inherited_refs:
+            issues.append(
+                self._issue(
+                    "topic.new_reuses_prior_subject",
+                    "topic_action",
+                    "A new topic cannot reuse a verified prior subject as its resolved subject.",
+                    details={"overlap": sorted(inherited_refs)},
+                )
+            )
+        if plan.topic_action == "continue" and prior_refs and resolved_subject_refs and not inherited_refs:
+            issues.append(
+                self._issue(
+                    "topic.continuation_subject_mismatch",
+                    "subjects",
+                    "A continued topic must retain at least one verified prior subject.",
+                    details={
+                        "prior": sorted(prior_refs),
+                        "selected": sorted(resolved_subject_refs),
+                    },
+                )
+            )
+        if plan.target_ref and resolved_subject_refs and plan.target_ref not in resolved_subject_refs:
+            issues.append(
+                self._issue(
+                    "subject.target_mismatch",
+                    "target_ref",
+                    "The target ref must identify one of the plan's resolved subjects.",
+                    details={
+                        "target_ref": plan.target_ref,
+                        "subject_refs": sorted(resolved_subject_refs),
+                    },
+                )
+            )
 
         trusted_refs = trusted_context_refs if trusted_context_refs is not None else set()
         untrusted_refs = [item for item in plan.context_refs if item not in trusted_refs]
@@ -283,6 +323,24 @@ class PlanValidator:
                         details={"allowed": list(definition.graph_query_kinds)},
                     )
                 )
+            if definition is not None and definition.semantic_operation_contracts:
+                operation_contract = definition.semantic_operation_contracts.get(plan.operation)
+                if (
+                    operation_contract is not None
+                    and graph.query_kind not in operation_contract.graph_query_kinds
+                ):
+                    issues.append(
+                        self._issue(
+                            "operation.graph_query_not_allowed",
+                            "operation",
+                            "The selected graph traversal is not declared for this semantic operation.",
+                            details={
+                                "operation": plan.operation.value,
+                                "query_kind": graph.query_kind,
+                                "allowed": list(operation_contract.graph_query_kinds),
+                            },
+                        )
+                    )
             filter_contract = self.registry.graph_query_filter_contract
             unknown_node_kinds = sorted(set(graph.node_kinds) - set(filter_contract.node_kinds))
             if unknown_node_kinds:
