@@ -684,15 +684,43 @@ class QuickAgentRuntime:
             for item in (state.get("knowledge_hints") or [])
             if isinstance(item, dict) and str(item.get("ref") or "")
         }
+        conversation = state.get("conversation_context") or {}
+        topic_state = conversation.get("topic_state") if isinstance(conversation, dict) else {}
+        topic_state = topic_state if isinstance(topic_state, dict) else {}
+        entity_labels = {
+            str(ref): str(label)
+            for ref, label in (topic_state.get("entity_labels") or {}).items()
+            if str(ref) and str(label)
+        }
+        subject_refs = {str(item) for item in (topic_state.get("subjects") or []) if str(item)}
+        result_refs = {str(item) for item in (topic_state.get("result_entities") or []) if str(item)}
+        artifact_refs = {str(item) for item in (topic_state.get("artifact_entities") or []) if str(item)}
+
+        def candidate_role(ref: str) -> str:
+            if ref in subject_refs:
+                return "subject"
+            if ref in result_refs:
+                return "result"
+            if ref in artifact_refs:
+                return "artifact"
+            return "context"
+
         candidates = [
-            {"ref": ref, "title": titles.get(ref) or ref}
-            for ref in prior_refs
+            {
+                "ref": ref,
+                "title": entity_labels.get(ref) or titles.get(ref) or ref,
+                "role": candidate_role(ref),
+                "order": index,
+            }
+            for index, ref in enumerate(prior_refs)
         ]
         try:
             assessment = model.generate_structured(
                 system=(
                     "You are an independent discourse-reference evaluator. Decide only whether the current request "
                     "uniquely identifies the planner-selected prior subject from the supplied complete candidate set. "
+                    "Candidate role and order are verified dialogue structure: subject is the focal topic, result is "
+                    "a grounded result item, and artifact is a produced result. Use them as semantic evidence. "
                     "Do not use outside knowledge and do not answer the request. Return justified only when the current "
                     "request itself distinguishes that one candidate; if another candidate remains equally possible, "
                     "return ambiguous and one short clarification question."

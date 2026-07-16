@@ -4958,6 +4958,24 @@ class AgentV2Service:
                     )
                 )
             )
+            topic_label = (
+                response.work_intent.topic_subject
+                if response.work_intent and response.work_intent.topic_subject
+                else response.work_intent.resolved_goal
+                if response.work_intent
+                else question
+            )
+            if (
+                not resolved_topic_entities
+                and grounded_result_entities
+                and "grounded_claims" in topic_identity_sources
+                and response.topic_state_ref
+            ):
+                # A grounded answer can establish a dialogue-level focal subject
+                # even when no single domain entity represents the whole concept.
+                # The source documents remain ordered result identities rather
+                # than being promoted to focal subjects.
+                resolved_topic_entities = [response.topic_state_ref]
             artifact_entities = list(
                 dict.fromkeys(
                     [
@@ -4970,20 +4988,34 @@ class AgentV2Service:
                     ]
                 )
             )
+            entity_labels = {
+                **{
+                    citation.source_ref: citation.title
+                    for citation in response.citations
+                    if citation.source_ref and citation.title
+                },
+                **{
+                    evidence.evidence_id: evidence.title
+                    for evidence in response.evidence_refs
+                    if evidence.evidence_id and evidence.title
+                },
+                **{
+                    artifact.artifact_id: artifact.title
+                    for artifact in response.artifact_refs
+                    if artifact.artifact_id and artifact.title
+                },
+            }
+            for subject_ref in resolved_topic_entities:
+                entity_labels.setdefault(subject_ref, topic_label)
             topic_state = {
                 "topic_state_ref": response.topic_state_ref,
-                "subject": (
-                    response.work_intent.topic_subject
-                    if response.work_intent and response.work_intent.topic_subject
-                    else response.work_intent.resolved_goal
-                    if response.work_intent
-                    else question
-                ),
+                "subject": topic_label,
                 "subjects": resolved_topic_entities,
                 "result_entities": [
                     item for item in grounded_result_entities if item not in resolved_topic_entities
                 ],
                 "artifact_entities": artifact_entities,
+                "entity_labels": entity_labels,
                 "topic_structure": (
                     response.work_intent.topic_structure
                     if response.work_intent

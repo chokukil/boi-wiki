@@ -54,6 +54,54 @@ def test_planner_schema_exposes_workrun_continuation_only_for_an_active_run() ->
     assert "continuation" in active["properties"]
 
 
+def test_planner_schema_requires_a_focal_subject_only_when_graph_traversal_is_enabled() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+
+    schema = semantic_plan_schema(registry, active_work_run=False)
+    alternatives = schema["properties"]["graph_query"]["anyOf"]
+    enabled = next(
+        item for item in alternatives
+        if item.get("type") == "object"
+        and item["properties"]["enabled"].get("const") is True
+    )
+    disabled = next(
+        item for item in alternatives
+        if item.get("type") == "object"
+        and item["properties"]["enabled"].get("const") is False
+    )
+
+    assert enabled["properties"]["focal_mentions"]["minItems"] == 1
+    assert "minItems" not in disabled["properties"]["focal_mentions"]
+
+
+def test_retrieval_query_is_optional_only_for_a_model_authored_clarification() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    clarify = SemanticPlan(
+        resolved_goal="모호한 대화 대상을 확인한다",
+        retrieval_query="",
+        topic_action="clarify",
+        reference_resolution="ambiguous",
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.understand,
+        presentation="prose",
+        clarification_question="어느 대상을 말씀하시는지 확인해 주세요.",
+    )
+    executable = clarify.model_copy(
+        update={
+            "topic_action": "new",
+            "reference_resolution": "none",
+            "clarification_question": "",
+        }
+    )
+
+    clarify_report = PlanValidator(registry).validate(clarify, trusted_context_refs=set())
+    executable_report = PlanValidator(registry).validate(executable, trusted_context_refs=set())
+
+    assert clarify_report.valid is True
+    assert "retrieval.query_required" in {item.code for item in executable_report.issues}
+
+
 def test_catalog_only_capability_compiles_without_service_routing_change(tmp_path: Path) -> None:
     source_catalog = yaml.safe_load(
         (ROOT / "data/agent_catalog/capabilities-v2.yaml").read_text(encoding="utf-8")

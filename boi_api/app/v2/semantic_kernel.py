@@ -243,6 +243,14 @@ class PlanValidator:
                     "An ambiguous plan must contain one focused clarification question.",
                 )
             )
+        if plan.topic_action != "clarify" and not plan.retrieval_query.strip():
+            issues.append(
+                self._issue(
+                    "retrieval.query_required",
+                    "retrieval_query",
+                    "An executable semantic plan needs a standalone retrieval query.",
+                )
+            )
         prior_refs = {str(item).strip() for item in prior_topic_entities or [] if str(item).strip()}
         resolved_subject_refs = {
             item.entity_ref.strip()
@@ -765,8 +773,12 @@ def semantic_plan_schema(
     subject_schema["required"] = ["mention", "entity_ref", "entity_kind", "resolution"]
     subject_schema["additionalProperties"] = False
     graph_schema = properties.get("graph_query") or {}
-    for alternative in graph_schema.get("anyOf") or []:
+    graph_alternatives = graph_schema.get("anyOf") or []
+    graph_object_schema: dict[str, Any] | None = None
+    graph_null_schemas: list[dict[str, Any]] = []
+    for alternative in graph_alternatives:
         if alternative.get("type") == "object" and isinstance(alternative.get("properties"), dict):
+            graph_object_schema = alternative
             alternative["required"] = list(alternative["properties"])
             alternative["additionalProperties"] = False
             graph_properties = alternative["properties"]
@@ -779,6 +791,21 @@ def semantic_plan_schema(
                 ((graph_properties.get("relation_kinds") or {}).get("items") or {})["enum"] = list(
                     filter_contract.relation_kinds
                 )
+        elif alternative.get("type") == "null":
+            graph_null_schemas.append(alternative)
+    if graph_object_schema is not None:
+        graph_enabled_schema = copy.deepcopy(graph_object_schema)
+        graph_disabled_schema = copy.deepcopy(graph_object_schema)
+        graph_enabled_properties = graph_enabled_schema.get("properties") or {}
+        graph_disabled_properties = graph_disabled_schema.get("properties") or {}
+        graph_enabled_properties.setdefault("enabled", {})["const"] = True
+        graph_disabled_properties.setdefault("enabled", {})["const"] = False
+        graph_enabled_properties.setdefault("focal_mentions", {})["minItems"] = 1
+        graph_schema["anyOf"] = [
+            graph_enabled_schema,
+            graph_disabled_schema,
+            *graph_null_schemas,
+        ]
     loop_schema = properties.get("loop_contract") or {}
     if isinstance(loop_schema.get("properties"), dict):
         loop_schema["required"] = list(loop_schema["properties"])

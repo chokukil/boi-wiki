@@ -6581,6 +6581,69 @@ def test_acl_verified_domain_entities_establish_a_multi_subject_topic_without_pr
     assert stored["topic_state"]["entities"] == ["case:one", "case:two"]
 
 
+def test_grounded_answer_without_one_domain_entity_keeps_a_composite_focal_topic(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    session = v2_service.create_work_session(
+        principal,
+        WorkSessionCreateRequest(title="복합 관계 설명"),
+    )
+    source_ref = "boi:public:guide:task-assignment"
+    topic_ref = "topic:composite-assignment-completion"
+    response = AgentTurnResponse(
+        run_id="run-composite-topic",
+        turn_id="turn-composite-topic",
+        conversation_id=str(session["conversation_id"]),
+        work_session_id=str(session["session_id"]),
+        status="completed",
+        capability_id="knowledge.search",
+        answer=AnswerBlock(summary="관계 설명", markdown="검증된 관계 설명"),
+        work_intent=WorkIntent(
+            goal="Task 배정과 완료 기록의 관계를 설명한다",
+            resolved_goal="Task 배정과 완료 기록의 관계를 설명한다",
+            topic_subject="Task 배정과 완료 기록의 관계",
+            operation=WorkOperation.connect,
+            user_effect="read",
+        ),
+        answerability=AnswerabilityReport(status="grounded", supported_claim_count=1),
+        grounded_claims=[
+            GroundedClaim(
+                claim_id="claim-composite-topic",
+                text="Task 배정과 완료 기록은 검증된 업무 관계를 구성한다.",
+                claim_kind="relationship",
+                source_refs=[source_ref],
+                supporting_chunk_ids=[f"chunk:{source_ref}:0"],
+                support_status="supported",
+                confidence=0.95,
+            )
+        ],
+        citations=[
+            CitationRef(
+                citation_id="citation-composite-topic",
+                source_ref=source_ref,
+                chunk_id=f"chunk:{source_ref}:0",
+                title="Task 수행과 업무 관계 활용 가이드",
+            )
+        ],
+        topic_state_ref=topic_ref,
+    )
+
+    v2_service._finish_work_session(
+        principal,
+        session,
+        response,
+        "Task 배정과 완료 기록의 관계를 설명해줘.",
+    )
+
+    stored = v2_service.store.get("work_sessions", str(session["session_id"]))
+    state = stored["topic_state"]
+    assert state["subjects"] == [topic_ref]
+    assert state["result_entities"] == [source_ref]
+    assert state["entity_labels"][topic_ref] == "Task 배정과 완료 기록의 관계"
+    assert state["entity_labels"][source_ref] == "Task 수행과 업무 관계 활용 가이드"
+
+
 def test_unclaimed_entities_do_not_establish_topic_without_catalog_permission(
     v2_service: AgentV2Service,
     principal: Principal,

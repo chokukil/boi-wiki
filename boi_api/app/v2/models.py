@@ -518,6 +518,9 @@ class TurnTopicState(BaseModel):
     subjects: list[str] = Field(default_factory=list, max_length=20)
     topic_structure: Literal["single_focal", "multiple_focal", "collective"] = "single_focal"
     entities: list[str] = Field(default_factory=list, max_length=100)
+    result_entities: list[str] = Field(default_factory=list, max_length=100)
+    artifact_entities: list[str] = Field(default_factory=list, max_length=100)
+    entity_labels: dict[str, str] = Field(default_factory=dict)
     claims: list[GroundedClaim] = Field(default_factory=list)
     used_source_refs: list[str] = Field(default_factory=list)
     active_artifact_id: str = ""
@@ -749,7 +752,14 @@ class SemanticPlan(BaseModel):
 
     schema_revision: str = "semantic-plan/v3"
     resolved_goal: str = Field(min_length=1, max_length=12000)
-    retrieval_query: str = Field(min_length=1, max_length=12000)
+    retrieval_query: str = Field(
+        default="",
+        max_length=12000,
+        description=(
+            "Standalone retrieval query for an executable new or continued topic. It may be empty only when "
+            "topic_action is clarify because a clarification turn does not execute retrieval."
+        ),
+    )
     topic_action: Literal["new", "continue", "clarify"] = Field(
         default="new",
         description=(
