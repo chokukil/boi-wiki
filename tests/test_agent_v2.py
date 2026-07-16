@@ -278,7 +278,10 @@ class _RoleAwareReferenceAssessmentModel:
             "result",
             "artifact",
         ]
-        assert "Supporting result and artifact candidates alone" in system
+        assert payload["verified_prior_topic"]["operation"] == "understand"
+        assert payload["verified_prior_topic"]["claims"][0]["claim_id"] == "claim-a"
+        assert payload["proposed_semantic_plan"]["operation"] == "connect"
+        assert "Candidate presence alone" in system
         return {
             "status": "justified",
             "selected_ref": payload["planner_selected_ref"],
@@ -363,6 +366,16 @@ def test_specific_reference_preserves_focal_subject_role_with_supporting_results
                     result_ref: "개념 A 가이드",
                     artifact_ref: "개념 A 관계 결과",
                 },
+                "topic_structure": "single_focal",
+                "operation": "understand",
+                "answer_intent": "relationship",
+                "claims": [
+                    {
+                        "claim_id": "claim-a",
+                        "text": "개념 A와 관련 업무의 검증된 관계",
+                        "source_refs": [result_ref],
+                    }
+                ],
             }
         },
     }

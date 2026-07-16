@@ -873,6 +873,11 @@ class QuickAgentRuntime:
         subject_refs = {str(item) for item in (topic_state.get("subjects") or []) if str(item)}
         result_refs = {str(item) for item in (topic_state.get("result_entities") or []) if str(item)}
         artifact_refs = {str(item) for item in (topic_state.get("artifact_entities") or []) if str(item)}
+        recent_messages = [
+            item
+            for item in (conversation.get("recent_messages") or [])[-6:]
+            if isinstance(item, dict)
+        ]
 
         def candidate_role(ref: str) -> str:
             if ref in subject_refs:
@@ -899,8 +904,10 @@ class QuickAgentRuntime:
                     "uniquely identifies the planner-selected prior subject from the supplied complete candidate set. "
                     "Candidate role and order are verified dialogue structure: subject is the focal topic, result is "
                     "a grounded supporting item, and artifact is a produced representation. Use those roles as semantic "
-                    "evidence. A focal subject remains the referent for a follow-up about the prior question, answer, "
-                    "or relationship. A result or artifact becomes an independent referent only when the request "
+                    "evidence together with the verified prior operation, claims, and topic structure. Candidate "
+                    "presence alone does not make candidates equally referential. A focal subject remains the referent "
+                    "for a follow-up about the prior question, answer, or relationship. A result or artifact becomes "
+                    "an independent referent only when the request "
                     "semantically selects it by its title, dialogue selection or order, a distinguishing property, or "
                     "an explicit request for that result or artifact. Supporting result and artifact candidates alone "
                     "must not make an otherwise focal-subject reference ambiguous. Do not use outside knowledge and do "
@@ -913,6 +920,27 @@ class QuickAgentRuntime:
                         "request": state.get("question") or "",
                         "prior_subjects": candidates,
                         "planner_selected_ref": selected_refs[0],
+                        "verified_prior_topic": {
+                            "subject": topic_state.get("subject") or "",
+                            "topic_structure": topic_state.get("topic_structure") or "",
+                            "operation": topic_state.get("operation") or "",
+                            "answer_intent": topic_state.get("answer_intent") or "",
+                            "claims": [
+                                {
+                                    "claim_id": str(item.get("claim_id") or ""),
+                                    "text": str(item.get("text") or ""),
+                                    "source_refs": [
+                                        str(ref)
+                                        for ref in item.get("source_refs") or []
+                                        if str(ref)
+                                    ],
+                                }
+                                for item in (topic_state.get("claims") or [])[:12]
+                                if isinstance(item, dict)
+                            ],
+                        },
+                        "recent_turns": recent_messages,
+                        "proposed_semantic_plan": plan.model_dump(mode="json"),
                     },
                     ensure_ascii=False,
                 ),
