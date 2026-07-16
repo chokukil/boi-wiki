@@ -23,7 +23,11 @@ from boi_api.app.v2.semantic_kernel import (
     semantic_plan_schema,
 )
 from boi_api.app.v2.work_learning import WorkLearningService
-from scripts.evaluate_agent_v2_work_scenarios import expand_scenarios, load_resume_checkpoint
+from scripts.evaluate_agent_v2_work_scenarios import (
+    evaluate_response,
+    expand_scenarios,
+    load_resume_checkpoint,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -523,3 +527,63 @@ def test_semantic_holdout_checkpoint_resumes_only_a_compatible_prefix(tmp_path: 
         assert "not compatible" in str(exc)
     else:
         raise AssertionError("an incompatible checkpoint must not be resumed")
+
+
+def test_semantic_holdout_accepts_a_fail_closed_human_interrupt_without_an_execution_plan() -> None:
+    evaluated = evaluate_response(
+        {
+            "id": "ambiguous-reference",
+            "expected_capability": "knowledge.search",
+            "expected_operation": "understand",
+            "expected_user_effect": "read",
+            "expected_topic_mode": "clarify",
+            "expected_status": "needs_input",
+            "require_semantic_plan": True,
+            "require_internal_sources_only": True,
+        },
+        {
+            "status": "needs_input",
+            "capability_id": "semantic.planner",
+            "stop_reason": "human_interrupt",
+            "answer": {"markdown": "어느 항목을 말씀하시는지 하나를 선택해주세요."},
+            "answerability": {"status": "insufficient"},
+            "artifact_refs": [],
+            "plan_ref": "",
+            "semantic_plan_ref": "",
+            "used_source_refs": [],
+            "citations": [],
+            "evidence_refs": [],
+        },
+    )
+
+    assert evaluated["passed"] is True
+    assert evaluated["checks"]["human_interrupt"] is True
+
+
+def test_semantic_holdout_rejects_a_human_interrupt_that_created_a_mutation_plan() -> None:
+    evaluated = evaluate_response(
+        {
+            "id": "unsafe-ambiguous-reference",
+            "expected_capability": "knowledge.search",
+            "expected_operation": "understand",
+            "expected_user_effect": "read",
+            "expected_status": "needs_input",
+            "require_semantic_plan": True,
+        },
+        {
+            "status": "needs_input",
+            "capability_id": "semantic.planner",
+            "stop_reason": "human_interrupt",
+            "answer": {"markdown": "어느 항목을 말씀하시는지 하나를 선택해주세요."},
+            "answerability": {"status": "insufficient"},
+            "artifact_refs": [],
+            "plan_ref": "plan-unsafe",
+            "semantic_plan_ref": "",
+            "used_source_refs": [],
+            "citations": [],
+            "evidence_refs": [],
+        },
+    )
+
+    assert evaluated["passed"] is False
+    assert evaluated["checks"]["human_interrupt"] is False

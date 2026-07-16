@@ -534,7 +534,7 @@ capabilities:
     operation_pipeline: [understand, compare]
     presentations: [prose, table, timeline, mermaid, explorer]
     presentation_aliases: {answer: prose}
-    graph_query_kinds: [neighbors, path, lineage, timeline, compare]
+    graph_query_kinds: [neighbors, path, lineage, timeline]
     topic_identity_sources: [grounded_claims, artifact, resolved_entities]
     harness_ids: [context.work]
     subject_policy: required
@@ -572,7 +572,6 @@ capabilities:
         priority: 30
         context_basis: current_work
         result_kind: table
-        graph_query_kind: compare
         fallback_to_answer: true
       - offer_id: cases.page-similar
         category: similar_case
@@ -585,7 +584,6 @@ capabilities:
         priority: 35
         context_basis: page_anchor
         result_kind: table
-        graph_query_kind: compare
         fallback_to_answer: true
 
   - capability_id: business_event.plan

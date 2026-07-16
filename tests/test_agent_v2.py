@@ -216,6 +216,7 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
         item for item in runtime._capability_catalog() if item["capability_id"] == "cases.similar"
     )
     assert cases_contract["semantic_operation_contracts"]["compare"]["graph_query_kinds"] == []
+    assert "compare" not in cases_contract["graph_query_kinds"]
 
 
 class _ReferenceAssessmentModel:
@@ -4410,9 +4411,13 @@ def test_contextual_starters_are_grounded_in_real_accessible_subjects(
     assert starters[0].result_kind == "table"
     assert starters[0].graph_query_kind == "responsibility"
     assert all(
-        item.result_kind in {"answer", "work_form", "confirmation"} or item.graph_query_kind
+        item.result_kind
+        in {"answer", "table", "timeline", "mermaid", "explorer", "work_form", "confirmation"}
         for item in starters
     )
+    similar_case = next(item for item in starters if item.category == "similar_case")
+    assert similar_case.result_kind == "table"
+    assert similar_case.graph_query_kind == ""
     assert all(item.subject_ref and item.source_refs for item in starters)
     assert all(
         item.subject_ref in item.source_refs or item.subject_ref.startswith("person:")

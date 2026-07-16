@@ -166,6 +166,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     page_anchor_ok = not scenario.get("require_page_anchor") or bool(page_anchor.get("resolved"))
     expected_status = str(scenario.get("expected_status") or "")
     status_ok = not expected_status or response.get("status") == expected_status
+    expected_human_interrupt = expected_status == "needs_input"
     confirmation_ok = not scenario.get("require_confirmation_wait") or (
         bool(response.get("plan_ref"))
         and loop_state.get("status") in {"waiting_human", "waiting_review"}
@@ -251,6 +252,25 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     topic_subject_contains = str(scenario.get("topic_subject_contains") or "")
     topic_subject_ok = not topic_subject_contains or topic_subject_contains in str(intent.get("topic_subject") or "")
     semantic_plan_ok = not scenario.get("require_semantic_plan") or bool(response.get("semantic_plan_ref"))
+    human_interrupt_ok = not expected_human_interrupt or (
+        response.get("status") == "needs_input"
+        and response.get("stop_reason") == "human_interrupt"
+        and bool(answer_text)
+        and not response.get("plan_ref")
+        and not artifacts
+    )
+    if expected_human_interrupt:
+        # A fail-closed clarification is intentionally not an executable work
+        # plan. Judge the interrupt contract and mutation safety instead of
+        # requiring compiled routing fields that must not execute yet.
+        route_ok = True
+        operation_ok = True
+        user_effect_ok = True
+        intent_preservation_ok = True
+        topic_mode_ok = True
+        semantic_change_ok = True
+        topic_subject_ok = True
+        semantic_plan_ok = True
     checks = {
         "route": route_ok,
         "operation": operation_ok,
@@ -273,6 +293,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         "followup_semantic_change": semantic_change_ok,
         "topic_subject": topic_subject_ok,
         "semantic_plan": semantic_plan_ok,
+        "human_interrupt": human_interrupt_ok,
         "citation_integrity": citation_integrity_ok,
         "intent_preservation": intent_preservation_ok,
         "context_use": context_use_ok,

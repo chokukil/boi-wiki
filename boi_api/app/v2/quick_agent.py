@@ -439,6 +439,8 @@ class QuickAgentRuntime:
             "Select work_view from the requested workplace perspective before choosing operation. When a non-none "
             "work_view is requested, choose only an operation declared by that capability's "
             "work_view_operation_contracts; do not bypass the requested perspective by returning work_view=none. "
+            "If the selected semantic_operation_contract declares no graph_query_kinds, set graph_query.enabled=false. "
+            "Never select a graph traversal that is absent from the selected semantic operation contract. "
             "retrieval_query must be a standalone, meaningful search request, never a "
             "placeholder or serialized null. When active_work.work_run is empty, do not supply continuation work "
             "details; the default continuation is inactive and empty."
