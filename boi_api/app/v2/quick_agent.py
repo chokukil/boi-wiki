@@ -485,7 +485,11 @@ class QuickAgentRuntime:
                 "contains genuinely equal focal candidates that the request cannot distinguish, and then set "
                 "reference_resolution=ambiguous. When the verified topic state has one focal subject and the request asks "
                 "for another view, representation, or time perspective of it, retain that subject with "
-                "topic_action=continue and reference_resolution=specific while repairing the operation contract."
+                "topic_action=continue and reference_resolution=specific while repairing the operation contract. "
+                "If a continuation deliberately retains the complete verified prior entity set, use "
+                "reference_resolution=all instead of labeling that multi-entity selection specific. If the request "
+                "selects a prior relationship or result set, preserve that verified set as the subject of the new "
+                "representation; do not collapse it to an arbitrary document."
             )
         return base
 
@@ -596,7 +600,12 @@ class QuickAgentRuntime:
             "when a follow-up keeps the verified focal subject and asks for another view, representation, time "
             "perspective, or relationship over that subject, topic_action must remain continue. topic_action may "
             "be new only when the request introduces a genuinely distinct subject; a deictic or pronominal "
-            "reference must not be converted into a fresh synthetic topic. Return aligned only when the proposed "
+            "reference must not be converted into a fresh synthetic topic. verified_topic_state.subjects is the "
+            "complete authoritative focal set. When it contains multiple focal subjects, a reference that does not "
+            "semantically distinguish one subject or explicitly select the whole set is genuinely ambiguous; a plan "
+            "that silently selects one or all is not aligned. Supporting result_entities and artifact_entities do not "
+            "become focal merely because they are present, but the request may explicitly select a prior result, "
+            "artifact, relationship set, or ordered item. Return aligned only when the proposed "
             "plan preserves the complete meaning. Return misaligned with the affected plan fields when it omits "
             "or changes meaning. Return ambiguous only when the user genuinely has to choose between equally "
             "plausible subjects, with one short clarification question."

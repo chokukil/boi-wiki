@@ -4890,10 +4890,16 @@ class AgentV2Service:
             # Internal failure responses are not executable catalog
             # capabilities and must not establish a referenceable topic.
             topic_identity_sources = set()
+        visible_used_source_refs = set(response.used_source_refs)
         has_topic_identity = any(
             (
                 source == "grounded_claims"
-                and any(item.support_status == "supported" for item in response.grounded_claims)
+                and bool(response.used_source_refs)
+                and any(
+                    item.support_status == "supported"
+                    and any(ref in visible_used_source_refs for ref in item.source_refs)
+                    for item in response.grounded_claims
+                )
             )
             or (
                 source == "resolved_entities"

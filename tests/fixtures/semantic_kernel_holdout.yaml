@@ -178,6 +178,8 @@ scenarios:
     expected_operation: connect
     expected_user_effect: read
     expected_presentation: mermaid
+    require_presentation_surface: true
+    expected_surface_component: MermaidArtifact
     expected_topic_mode: continue
 
   - id: mt_explain_to_table
@@ -269,7 +271,7 @@ scenarios:
     turns:
       - "현재 Alarm과 비슷한 사례를 비교해줘."
       - "그중 첫 사례의 판단 근거만 설명해줘."
-    expected_capability: knowledge.search
+    expected_capability: cases.similar
     expected_operation: understand
     expected_user_effect: read
     expected_topic_mode: continue

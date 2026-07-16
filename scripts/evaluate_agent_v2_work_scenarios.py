@@ -155,10 +155,19 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         )
         for item in artifacts
     }
-    presentation_ok = not expected_presentation or expected_presentation in {
-        *actual_presentations,
-        str(intent.get("presentation_mode") or ""),
+    surface_components = {
+        str(item)
+        for item in response.get("_a2ui_components") or []
+        if str(item).strip()
     }
+    expected_surface_component = str(scenario.get("expected_surface_component") or "")
+    surface_component_ok = (
+        not expected_surface_component
+        or expected_surface_component in surface_components
+    )
+    presentation_ok = not expected_presentation or expected_presentation in actual_presentations
+    if not scenario.get("require_presentation_surface"):
+        presentation_ok = presentation_ok or expected_presentation == str(intent.get("presentation_mode") or "")
     expected_effect = str(scenario.get("expected_user_effect") or "")
     user_effect_ok = not expected_effect or intent.get("user_effect") == expected_effect
     expected_work_view = str(scenario.get("expected_work_view") or "")
@@ -286,7 +295,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         "user_effect": user_effect_ok,
         "work_view": work_view_ok,
         "grounding": grounding_ok,
-        "artifact": artifact_ok and presentation_ok,
+        "artifact": artifact_ok and presentation_ok and surface_component_ok,
         "plan": plan_ok,
         "page_anchor": page_anchor_ok,
         "status": status_ok,
@@ -337,6 +346,8 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
             "topic_subject": intent.get("topic_subject"),
             "artifact_types": sorted(actual_artifact_types),
             "artifact_presentations": sorted(item for item in actual_presentations if item),
+            "a2ui_surface_ref": response.get("a2ui_surface_ref"),
+            "a2ui_components": sorted(surface_components),
             "plan_ref": response.get("plan_ref"),
             "user_effect": intent.get("user_effect"),
             "work_view": intent.get("work_view"),
@@ -594,6 +605,19 @@ def main() -> int:
                     )
                     if context_response.status_code == 200:
                         response_payload["evidence_refs"] = context_response.json().get("evidence_refs") or []
+                surface_ref = str(response_payload.get("a2ui_surface_ref") or "")
+                if surface_ref:
+                    surface_response = client.get(
+                        f"{base_url}/api/v2/a2ui-surfaces/{surface_ref}",
+                        params=params,
+                    )
+                    if surface_response.status_code == 200:
+                        surface_payload = surface_response.json()
+                        response_payload["_a2ui_components"] = [
+                            str(item.get("component") or "")
+                            for item in surface_payload.get("components") or []
+                            if isinstance(item, dict) and str(item.get("component") or "")
+                        ]
                 evaluation_scenario = {**scenario, "question": " ".join(turns)}
                 evaluated = evaluate_response(evaluation_scenario, response_payload)
                 evaluated["actual"]["turn_count"] = len(turns)

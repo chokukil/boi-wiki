@@ -7156,6 +7156,7 @@ def test_grounded_answer_without_one_domain_entity_keeps_a_composite_focal_topic
                 title="Task 수행과 업무 관계 활용 가이드",
             )
         ],
+        used_source_refs=[source_ref],
         topic_state_ref=topic_ref,
     )
 
@@ -7172,6 +7173,60 @@ def test_grounded_answer_without_one_domain_entity_keeps_a_composite_focal_topic
     assert state["result_entities"] == [source_ref]
     assert state["entity_labels"][topic_ref] == "Task 배정과 완료 기록의 관계"
     assert state["entity_labels"][source_ref] == "Task 수행과 업무 관계 활용 가이드"
+
+
+def test_supported_claims_hidden_by_answerability_do_not_establish_a_topic(
+    v2_service: AgentV2Service,
+    principal: Principal,
+):
+    session = v2_service.create_work_session(
+        principal,
+        WorkSessionCreateRequest(title="근거 부족 답변"),
+    )
+    response = AgentTurnResponse(
+        run_id="run-hidden-claim",
+        turn_id="turn-hidden-claim",
+        conversation_id=str(session["conversation_id"]),
+        work_session_id=str(session["session_id"]),
+        status="completed",
+        capability_id="knowledge.search",
+        answer=AnswerBlock(summary="근거 부족", markdown="확인된 근거가 없습니다."),
+        work_intent=WorkIntent(
+            goal="관계를 확인한다",
+            resolved_goal="검증 가능한 관계를 확인한다",
+            topic_subject="검증되지 않은 관계",
+            operation=WorkOperation.understand,
+            user_effect="read",
+        ),
+        answerability=AnswerabilityReport(
+            status="partial",
+            supported_claim_count=1,
+            unsupported_claim_count=1,
+        ),
+        grounded_claims=[
+            GroundedClaim(
+                claim_id="claim-hidden",
+                text="사용자 답변에는 포함되지 않은 부분 근거입니다.",
+                claim_kind="relationship",
+                source_refs=["boi:public:hidden-support"],
+                supporting_chunk_ids=["chunk:hidden-support"],
+                support_status="supported",
+                confidence=1.0,
+            )
+        ],
+        used_source_refs=[],
+        topic_state_ref="topic:hidden-claim",
+    )
+
+    v2_service._finish_work_session(
+        principal,
+        session,
+        response,
+        "근거가 부족한 관계를 설명해줘",
+    )
+
+    stored = v2_service.store.get("work_sessions", str(session["session_id"]))
+    assert stored["topic_state"] == {}
 
 
 def test_unclaimed_entities_do_not_establish_topic_without_catalog_permission(

@@ -128,6 +128,48 @@ def test_semantic_evaluator_requires_the_fixture_workplace_perspective() -> None
     assert result["checks"]["intent_preservation"] is False
 
 
+def test_semantic_evaluator_requires_a_real_dynamic_surface_when_requested() -> None:
+    scenario = {
+        "id": "real-mermaid-surface",
+        "expected_capability": "knowledge.search",
+        "expected_operation": "connect",
+        "expected_user_effect": "read",
+        "expected_presentation": "mermaid",
+        "require_presentation_surface": True,
+        "expected_surface_component": "MermaidArtifact",
+    }
+    response = {
+        "capability_id": "knowledge.search",
+        "status": "completed",
+        "work_intent": {
+            "resolved_goal": "검증된 관계를 흐름 그림으로 본다",
+            "operation": "connect",
+            "user_effect": "read",
+            "work_view": "none",
+            "presentation_mode": "mermaid",
+        },
+        "answer": {"markdown": "그림을 준비했습니다."},
+        "answerability": {"status": "grounded"},
+        "artifact_refs": [],
+        "_a2ui_components": ["Answer"],
+    }
+
+    missing = evaluate_response(scenario, response)
+    response["artifact_refs"] = [
+        {
+            "artifact_id": "artifact-mermaid",
+            "artifact_type": "mermaid_diagram",
+            "status": "provisional",
+            "metadata": {"presentation": "mermaid"},
+        }
+    ]
+    response["_a2ui_components"] = ["Answer", "MermaidArtifact"]
+    rendered = evaluate_response(scenario, response)
+
+    assert missing["checks"]["artifact"] is False
+    assert rendered["checks"]["artifact"] is True
+
+
 def test_catalog_only_capability_compiles_without_service_routing_change(tmp_path: Path) -> None:
     source_catalog = yaml.safe_load(
         (ROOT / "data/agent_catalog/capabilities-v2.yaml").read_text(encoding="utf-8")
