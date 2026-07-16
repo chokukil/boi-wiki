@@ -785,9 +785,10 @@ class SemanticPlan(BaseModel):
     work_view: Literal["none", "current", "responsibility", "combined"] = Field(
         default="none",
         description=(
-            "Requested workplace perspective. none means no person-work perspective; current means only current "
-            "operational assignments; responsibility means declared roles and verified recurring work; combined "
-            "means show responsibility and current assignments as separate sections in one result."
+            "The workplace perspective explicitly requested by the user. current means only active assignments; "
+            "responsibility means declared roles and verified recurring work; combined means both perspectives, "
+            "kept as separate sections in one result; none is valid only when the requested result needs none of "
+            "those workplace perspectives. Do not use none to bypass a requested workplace perspective."
         ),
     )
     graph_query: GraphQueryDraft | None = None
