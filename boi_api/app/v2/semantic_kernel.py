@@ -636,6 +636,7 @@ def semantic_plan_schema(
     registry: CapabilityRegistry,
     *,
     trusted_context_refs: list[str] | None = None,
+    active_work_run: bool = False,
 ) -> dict[str, Any]:
     schema = copy.deepcopy(SemanticPlan.model_json_schema())
     definitions = schema.pop("$defs", {})
@@ -654,6 +655,11 @@ def semantic_plan_schema(
     schema = inline_refs(schema)
 
     properties = schema.get("properties") or {}
+    if not active_work_run:
+        # Conversation topic continuation and durable WorkRun continuation are
+        # separate contracts. Do not expose execution-resume payloads when
+        # there is no active run to resume.
+        properties.pop("continuation", None)
     semantic_decisions = [
         "resolved_goal",
         "retrieval_query",

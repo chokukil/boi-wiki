@@ -16,7 +16,12 @@ from boi_api.app.v2.models import (
     WorkIntent,
     WorkOperation,
 )
-from boi_api.app.v2.semantic_kernel import PlanCompiler, PlanValidator, SemanticPlanningError
+from boi_api.app.v2.semantic_kernel import (
+    PlanCompiler,
+    PlanValidator,
+    SemanticPlanningError,
+    semantic_plan_schema,
+)
 from boi_api.app.v2.work_learning import WorkLearningService
 from scripts.evaluate_agent_v2_work_scenarios import expand_scenarios, load_resume_checkpoint
 
@@ -33,6 +38,16 @@ def test_semantic_kernel_architecture_guard() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_planner_schema_exposes_workrun_continuation_only_for_an_active_run() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+
+    inactive = semantic_plan_schema(registry, active_work_run=False)
+    active = semantic_plan_schema(registry, active_work_run=True)
+
+    assert "continuation" not in inactive["properties"]
+    assert "continuation" in active["properties"]
 
 
 def test_catalog_only_capability_compiles_without_service_routing_change(tmp_path: Path) -> None:

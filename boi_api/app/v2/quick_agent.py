@@ -228,6 +228,7 @@ class QuickAgentRuntime:
                 "semantic_plan": semantic_plan_schema(
                     self.registry,
                     trusted_context_refs=self._trusted_refs(state) if state is not None else [],
+                    active_work_run=bool(state and state.get("active_work_run")),
                 ),
                 "grounded_answer": self._grounded_answer_schema(
                     hint_count=len(state.get("knowledge_hints") or []) if state is not None else 0,
