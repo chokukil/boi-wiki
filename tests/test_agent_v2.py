@@ -986,6 +986,17 @@ class TopicContinuityRepairPlanner(ScriptedPlanner):
         return {"status": "aligned", "issues": [], "clarification_question": ""}
 
 
+class CatalogContractRepairPlanner(ScriptedPlanner):
+    def __init__(self, plans: list[dict[str, Any]]):
+        super().__init__(plans)
+        self.planner_systems: list[str] = []
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if _is_semantic_planner_schema(schema):
+            self.planner_systems.append(system)
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
 def test_independent_fidelity_review_repairs_omitted_semantic_dimensions() -> None:
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
     person_ref = "person:100001"
@@ -1137,6 +1148,91 @@ def test_independent_fidelity_review_rejects_a_followup_marked_as_new_topic() ->
         plan=repaired,
     )
     assert model.fidelity_calls == 2
+
+
+def test_catalog_repair_preserves_requested_view_without_false_clarification() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    subject_ref = "boi:public:workflow:equipment-response"
+    common = {
+        "resolved_goal": "검증된 대상의 시간 흐름을 본다",
+        "retrieval_query": "검증된 대상 시간 흐름",
+        "subjects": [
+            SemanticSubject(
+                mention="검증된 대상",
+                entity_ref=subject_ref,
+                entity_kind="workflow",
+                resolution="resolved",
+            )
+        ],
+        "capability_id": "knowledge.search",
+        "user_effect": "read",
+        "evidence_scope": "operational",
+        "presentation": "timeline",
+        "context_refs": [subject_ref],
+        "target_ref": subject_ref,
+        "answer_intent": "relationship",
+        "confidence": 1.0,
+    }
+    invalid = SemanticPlan(
+        **common,
+        topic_action="clarify",
+        reference_resolution="specific",
+        operation="understand",
+        clarification_question="대상을 다시 선택해 주세요.",
+    ).model_dump(mode="json")
+    repaired = SemanticPlan(
+        **common,
+        topic_action="continue",
+        reference_resolution="specific",
+        operation="connect",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="timeline",
+            focal_mentions=[subject_ref],
+            presentation="timeline",
+        ),
+    ).model_dump(mode="json")
+    model = CatalogContractRepairPlanner([invalid, repaired])
+
+    route = QuickAgentRuntime(registry=registry).route(
+        "검증된 대상의 다른 관점을 보여줘",
+        page_kind="workflow",
+        conversation_context={
+            "topic_state": {
+                "subject": "검증된 대상",
+                "subjects": [subject_ref],
+                "entities": [subject_ref],
+                "topic_structure": {
+                    "subject_shape": "single_focal",
+                    "focal_subjects": [subject_ref],
+                    "supporting_results": [],
+                },
+            }
+        },
+        knowledge_hints=[
+            {
+                "ref": subject_ref,
+                "title": "설비 대응 흐름",
+                "chunk_id": "workflow-equipment-response",
+                "chunk_text": "설비 대응 흐름의 검증된 업무 이력",
+                "answer_scope": "operational",
+            }
+        ],
+        trusted_targets={subject_ref: "설비 대응 흐름"},
+        model=model,
+    )
+
+    assert route["planner_repair"]["attempted"] is True
+    assert {item["code"] for item in route["planner_repair"]["issues"]} == {
+        "operation.presentation_not_allowed",
+        "topic.clarification_resolution_mismatch",
+    }
+    assert route["work_intent"]["operation"] == "connect"
+    assert route["work_intent"]["presentation_mode"] == "timeline"
+    assert route["work_intent"]["graph_query_draft"]["query_kind"] == "timeline"
+    assert route["semantic_plan"]["topic_action"] == "continue"
+    assert len(model.planner_systems) == 2
+    assert "invalid operation/presentation combination is not subject ambiguity" in model.planner_systems[1]
 
 
 class EmptyThenGroundedRepairModel(ScriptedPlanner):

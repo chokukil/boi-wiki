@@ -475,7 +475,15 @@ class QuickAgentRuntime:
         if repair:
             return base + (
                 " This is the single repair attempt. Preserve the user's request. Correct only the reported validation "
-                "issues using the supplied catalog; do not choose a fallback capability or reduce the requested effect."
+                "issues using the supplied catalog; do not choose a fallback capability or reduce the requested effect. "
+                "When validation reports that an operation does not allow the requested presentation or graph view, "
+                "keep the requested result form and select a compatible operation and graph contract declared by the "
+                "same capability. An invalid operation/presentation combination is not subject ambiguity. Do not change "
+                "topic_action to clarify merely to escape a contract error. Clarify only when the verified topic state "
+                "contains genuinely equal focal candidates that the request cannot distinguish, and then set "
+                "reference_resolution=ambiguous. When the verified topic state has one focal subject and the request asks "
+                "for another view, representation, or time perspective of it, retain that subject with "
+                "topic_action=continue and reference_resolution=specific while repairing the operation contract."
             )
         return base
 
