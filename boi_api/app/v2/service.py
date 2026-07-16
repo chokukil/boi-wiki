@@ -2658,7 +2658,7 @@ class AgentV2Service:
                 }
             ]
         grounded_claims: list[GroundedClaim] = []
-        support_text_by_claim: dict[str, list[str]] = {}
+        support_bindings_by_claim: dict[str, list[dict[str, str]]] = {}
         for index, raw_claim in enumerate(raw_claims, start=1):
             if not isinstance(raw_claim, dict):
                 continue
@@ -2673,7 +2673,7 @@ class AgentV2Service:
                 claim_scope = "canonical"
             if claim_kind not in {"definition", "fact", "procedure", "comparison", "relationship", "work"}:
                 claim_kind = answer_intent
-            excerpt_pairs: list[tuple[str, str]] = []
+            excerpt_bindings: list[dict[str, str]] = []
             for ref in source_refs:
                 citation = citation_by_source[ref]
                 chunk_matches = citation.chunk_id in chunk_ids or (
@@ -2681,13 +2681,14 @@ class AgentV2Service:
                 )
                 if not chunk_matches:
                     continue
-                excerpt_pairs.append(
-                    (
-                        ref,
-                        full_chunk_text.get((ref, citation.chunk_id), citation.excerpt),
-                    )
+                excerpt_bindings.append(
+                    {
+                        "source_ref": ref,
+                        "chunk_id": citation.chunk_id,
+                        "text": full_chunk_text.get((ref, citation.chunk_id), citation.excerpt),
+                    }
                 )
-            excerpts = [excerpt for _, excerpt in excerpt_pairs]
+            excerpts = [binding["text"] for binding in excerpt_bindings]
             source_records = [record_by_source.get(ref) for ref in source_refs]
             scope_matches = bool(source_records) and claim_scope == expected_scope and all(
                 record is not None and self.repository.answer_scope(record) == expected_scope
@@ -2710,7 +2711,7 @@ class AgentV2Service:
             supported = bool(
                 text
                 and source_refs
-                and len(excerpt_pairs) == len(source_refs)
+                and len(excerpt_bindings) == len(source_refs)
                 and scope_matches
             )
             support_confidence = direct_extract_confidence(text, excerpts) if supported else 0.0
@@ -2728,13 +2729,13 @@ class AgentV2Service:
                     required_for_answer=bool(raw_claim.get("required_for_answer", False)),
                 )
             )
-            support_text_by_claim[claim_id] = excerpts
+            support_bindings_by_claim[claim_id] = excerpt_bindings
 
         evaluator_policy = self.harnesses.definition("claim.grounding").evaluator_policy
         grounded_claims, _evaluation = self.claim_evaluator.evaluate(
             principal,
             claims=grounded_claims,
-            supporting_text=support_text_by_claim,
+            supporting_bindings=support_bindings_by_claim,
             policy=evaluator_policy,
             user_effect=intent.user_effect if intent else "read",
             operation=intent.operation.value if intent else "understand",

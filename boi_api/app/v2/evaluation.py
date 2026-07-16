@@ -207,7 +207,7 @@ class IndependentClaimEvaluator:
         principal: Principal,
         *,
         claims: list[GroundedClaim],
-        supporting_text: dict[str, list[str]],
+        supporting_bindings: dict[str, list[dict[str, str]]],
         policy: dict[str, Any],
         user_effect: str = "read",
         operation: str = "understand",
@@ -279,7 +279,12 @@ class IndependentClaimEvaluator:
                     "maxItems": len(selected),
                     "items": {
                         "type": "object",
-                        "required": ["claim_id", "support_status", "confidence"],
+                        "required": [
+                            "claim_id",
+                            "support_status",
+                            "confidence",
+                            "supporting_excerpt_indexes",
+                        ],
                         "properties": {
                             "claim_id": {"type": "string"},
                             "support_status": {
@@ -287,6 +292,11 @@ class IndependentClaimEvaluator:
                                 "enum": ["supported", "unsupported", "conflicting"],
                             },
                             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                            "supporting_excerpt_indexes": {
+                                "type": "array",
+                                "items": {"type": "integer", "minimum": 0},
+                                "uniqueItems": True,
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -297,8 +307,12 @@ class IndependentClaimEvaluator:
         prompt = json.dumps(
             {
                 "instruction": (
-                    "For each claim, decide only whether every supplied internal excerpt directly entails it. "
-                    "If any bound excerpt is unrelated or insufficient, mark the claim unsupported. "
+                    "For each claim, identify the smallest subset of numbered internal excerpts whose combined "
+                    "content directly entails every material part of the claim. Return those zero-based indexes. "
+                    "A redundant or unrelated excerpt is not a reason to reject an otherwise supported claim; omit "
+                    "that excerpt from supporting_excerpt_indexes. Mark the claim unsupported when no supplied "
+                    "subset entails the whole claim. Do not infer an unstated consequence, causal link, threshold, "
+                    "scope, status transition, or relationship merely because it seems plausible. "
                     "Do not use model memory, external facts, likely meanings, or omitted context. "
                     "Use conflicting only when the supplied excerpts directly disagree with the claim."
                 ),
@@ -307,7 +321,12 @@ class IndependentClaimEvaluator:
                         "claim_id": item.claim_id,
                         "claim": item.text,
                         "claim_kind": item.claim_kind,
-                        "internal_excerpts": supporting_text.get(item.claim_id) or [],
+                        "internal_excerpts": [
+                            {"index": index, **binding}
+                            for index, binding in enumerate(
+                                supporting_bindings.get(item.claim_id) or []
+                            )
+                        ],
                     }
                     for item in selected
                 ],
@@ -331,10 +350,41 @@ class IndependentClaimEvaluator:
             for item in selected:
                 verdict = verdicts.get(item.claim_id) or {}
                 status = str(verdict.get("support_status") or "unsupported")
+                bindings = supporting_bindings.get(item.claim_id) or []
+                raw_indexes = verdict.get("supporting_excerpt_indexes")
+                if raw_indexes is None and status == "supported":
+                    # Backward compatibility for injected test models. Real
+                    # providers receive the required current schema.
+                    raw_indexes = list(range(len(bindings)))
+                selected_indexes = list(
+                    dict.fromkeys(
+                        int(index)
+                        for index in raw_indexes or []
+                        if isinstance(index, int) and 0 <= index < len(bindings)
+                    )
+                )
+                if status == "supported" and not selected_indexes:
+                    status = "unsupported"
                 item.support_status = (
                     status if status in {"supported", "unsupported", "conflicting"} else "unsupported"
                 )
                 item.confidence = max(0.0, min(1.0, float(verdict.get("confidence") or 0.0)))
+                if item.support_status == "supported":
+                    selected_bindings = [bindings[index] for index in selected_indexes]
+                    item.source_refs = list(
+                        dict.fromkeys(
+                            binding["source_ref"]
+                            for binding in selected_bindings
+                            if binding.get("source_ref")
+                        )
+                    )
+                    item.supporting_chunk_ids = list(
+                        dict.fromkeys(
+                            binding["chunk_id"]
+                            for binding in selected_bindings
+                            if binding.get("chunk_id")
+                        )
+                    )
             row = {
                 **base,
                 "status": "pass" if all(item.support_status == "supported" for item in selected) else "needs_revision",
@@ -349,6 +399,8 @@ class IndependentClaimEvaluator:
                             "claim_id": item.claim_id,
                             "support_status": item.support_status,
                             "confidence": item.confidence,
+                            "source_refs": list(item.source_refs),
+                            "supporting_chunk_ids": list(item.supporting_chunk_ids),
                         }
                         for item in selected
                     ],

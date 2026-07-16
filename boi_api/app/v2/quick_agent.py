@@ -440,7 +440,9 @@ class QuickAgentRuntime:
             "the exact source_key and chunk_key that directly support it. If direct support is absent, omit the claim and "
             "return an empty grounded_answer. Set required_for_answer=true only when omitting that claim would make the "
             "answer materially wrong or unusable; supporting context and optional detail must set it to false. External "
-            "knowledge is not evidence. Do not add an unrequested SOP, Task, "
+            "knowledge is not evidence. Phrase each claim as the narrowest statement directly entailed by its cited "
+            "chunks. Do not add an unstated consequence, causal link, threshold, scope, status transition, or "
+            "relationship, and cite only chunks that support the claim. Do not add an unrequested SOP, Task, "
             "Event, Action, graph, or follow-up action. semantic_plan is the sole meaning contract; grounded_answer "
             "may express factual claims but must not change the selected meaning. Select loop_contract only from the "
             "capability contract. Use turn for one bounded response and goal only when the catalog supplies verifiable "
@@ -1236,7 +1238,10 @@ class QuickAgentRuntime:
                     "internal hints. Every factual claim must cite the exact source_key and chunk_key that directly "
                     "entail it. Omit unsupported claims and never use external or model-memory facts. Set "
                     "required_for_answer=true only when omitting the claim would make the answer materially wrong or "
-                    "unusable; supporting context and optional detail must set it to false. Return only the requested "
+                    "unusable; supporting context and optional detail must set it to false. Phrase every claim as the "
+                    "narrowest statement supported by the cited chunks. Do not add an unstated consequence, causal "
+                    "link, threshold, scope, status transition, or relationship, and do not cite chunks that merely "
+                    "provide adjacent context. Return only the requested "
                     "grounded answer schema."
                 ),
                 prompt=json.dumps(

@@ -7500,6 +7500,27 @@ class CountingParaphraseVerifierModel(ScriptedPlanner):
         return super().generate_structured(system=system, prompt=prompt, schema=schema)
 
 
+class SelectiveParaphraseVerifierModel(ScriptedPlanner):
+    provider = "lmstudio-test"
+
+    def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {"verdicts"}:
+            claim = json.loads(prompt)["claims"][0]
+            assert [item["index"] for item in claim["internal_excerpts"]] == [0, 1]
+            assert "smallest subset" in json.loads(prompt)["instruction"]
+            return {
+                "verdicts": [
+                    {
+                        "claim_id": claim["claim_id"],
+                        "support_status": "supported",
+                        "confidence": 0.98,
+                        "supporting_excerpt_indexes": [0],
+                    }
+                ]
+            }
+        return super().generate_structured(system=system, prompt=prompt, schema=schema)
+
+
 def test_high_confidence_canonical_fact_skips_risk_adaptive_semantic_verifier(
     v2_service: AgentV2Service,
     principal: Principal,
@@ -7640,6 +7661,94 @@ def test_paraphrased_fact_uses_fresh_context_support_evaluator(
     assert answer is not None
     assert report.status == "grounded"
     assert claims[0].support_status == "supported"
+
+
+def test_fresh_context_evaluator_keeps_only_chunks_that_support_the_claim(
+    v2_service: AgentV2Service,
+    principal: Principal,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = SelectiveParaphraseVerifierModel()
+    v2_service.model = model
+    supporting_record = KnowledgeRecord(
+        record_id="boi:public:fact-supporting",
+        kind="document",
+        title="승인 절차",
+        description="검토된 승인 절차",
+        text="# 승인 절차\n\n담당자가 초안을 검토한 다음 승인 여부를 결정합니다.",
+        url="/docs/boi:public:fact-supporting",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+        visibility="public",
+        metadata={"answer_scope": "canonical"},
+    )
+    adjacent_record = KnowledgeRecord(
+        record_id="boi:public:fact-adjacent",
+        kind="document",
+        title="결과 보관",
+        description="검토된 결과 보관 절차",
+        text="# 결과 보관\n\n완료 결과는 검토 후 지식 후보로 보관합니다.",
+        url="/docs/boi:public:fact-adjacent",
+        source="wiki",
+        authority="reviewed",
+        status="reviewed",
+        visibility="public",
+        metadata={"answer_scope": "canonical"},
+    )
+    records = {
+        supporting_record.record_id: supporting_record,
+        adjacent_record.record_id: adjacent_record,
+    }
+    chunks = {ref: chunks_for_record(record)[0] for ref, record in records.items()}
+    monkeypatch.setattr(v2_service, "_record_for_ref", lambda _principal, ref: records.get(ref))
+    monkeypatch.setattr(v2_service, "_model_related_questions", lambda *_args, **_kwargs: [])
+
+    answer, _related, claims, report = v2_service._grounded_answer_from_plan(
+        principal,
+        {"session_id": "session-selective-support"},
+        {
+            "answer_intent": "fact",
+            "claims": [
+                {
+                    "claim_id": "claim-selective-support",
+                    "text": "승인은 담당자의 초안 검토 뒤에 결정됩니다.",
+                    "claim_kind": "fact",
+                    "source_scope": "canonical",
+                    "source_refs": list(records),
+                    "supporting_chunk_ids": [chunks[ref]["chunk_id"] for ref in records],
+                }
+            ],
+        },
+        [
+            EvidenceRef(
+                evidence_id=record.record_id,
+                kind=record.kind,
+                title=record.title,
+                summary=record.description,
+                url=record.url,
+            )
+            for record in records.values()
+        ],
+        [
+            CitationRef(
+                citation_id=f"cite-{index}",
+                source_ref=ref,
+                chunk_id=str(chunks[ref]["chunk_id"]),
+                title=records[ref].title,
+                excerpt=str(chunks[ref]["content"]),
+            )
+            for index, ref in enumerate(records, start=1)
+        ],
+        include_report=True,
+    )
+
+    assert answer is not None
+    assert report.status == "grounded"
+    assert claims[0].support_status == "supported"
+    assert claims[0].source_refs == [supporting_record.record_id]
+    assert claims[0].supporting_chunk_ids == [chunks[supporting_record.record_id]["chunk_id"]]
+    assert adjacent_record.title not in answer.markdown
 
 
 def test_reviewed_runtime_number_uses_exact_chunk_validation_without_second_model_call(
