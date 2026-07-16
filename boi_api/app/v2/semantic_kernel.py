@@ -710,6 +710,7 @@ def semantic_plan_schema(
     registry: CapabilityRegistry,
     *,
     trusted_context_refs: list[str] | None = None,
+    prior_topic_entities: list[str] | None = None,
     active_work_run: bool = False,
 ) -> dict[str, Any]:
     schema = copy.deepcopy(SemanticPlan.model_json_schema())
@@ -783,6 +784,18 @@ def semantic_plan_schema(
         loop_schema["required"] = list(loop_schema["properties"])
         loop_schema["additionalProperties"] = False
     properties.setdefault("capability_id", {})["enum"] = [item.capability_id for item in registry.all()]
+    prior_refs = list(dict.fromkeys(str(item) for item in (prior_topic_entities or []) if str(item)))
+    if not prior_refs:
+        properties.setdefault("reference_resolution", {})["enum"] = ["none"]
+    elif len(prior_refs) == 1:
+        properties.setdefault("reference_resolution", {})["enum"] = ["none", "specific"]
+    else:
+        properties.setdefault("reference_resolution", {})["enum"] = [
+            "none",
+            "all",
+            "specific",
+            "ambiguous",
+        ]
     subject_kinds = sorted(
         {
             kind

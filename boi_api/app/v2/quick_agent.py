@@ -99,6 +99,10 @@ class QuickAgentRuntime:
                 "presentation_aliases": dict(item.presentation_aliases),
                 "graph_query_kinds": list(item.graph_query_kinds),
                 "work_views": list(item.work_views),
+                "work_view_operation_contracts": {
+                    work_view: [operation.value for operation in operations]
+                    for work_view, operations in item.work_view_operation_contracts.items()
+                },
                 "default_work_view": item.default_work_view,
                 "evidence_scopes": list(item.evidence_scopes),
                 "default_evidence_scope": item.default_evidence_scope,
@@ -228,6 +232,7 @@ class QuickAgentRuntime:
                 "semantic_plan": semantic_plan_schema(
                     self.registry,
                     trusted_context_refs=self._trusted_refs(state) if state is not None else [],
+                    prior_topic_entities=self._prior_entities(state) if state is not None else [],
                     active_work_run=bool(state and state.get("active_work_run")),
                 ),
                 "grounded_answer": self._grounded_answer_schema(
@@ -424,6 +429,9 @@ class QuickAgentRuntime:
             "equally plausible and the request does not distinguish one, set reference_resolution=ambiguous and clarify "
             "instead of choosing arbitrarily. For a continuation, set reference_resolution=specific only when exactly "
             "one prior subject is selected, or all when every prior subject is selected. New topics use none. "
+            "Select work_view from the requested workplace perspective before choosing operation. When a non-none "
+            "work_view is requested, choose only an operation declared by that capability's "
+            "work_view_operation_contracts; do not bypass the requested perspective by returning work_view=none. "
             "retrieval_query must be a standalone, meaningful search request, never a "
             "placeholder or serialized null. When active_work.work_run is empty, do not supply continuation work "
             "details; the default continuation is inactive and empty."

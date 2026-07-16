@@ -178,6 +178,7 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
     assert "topic_action" in schema["properties"]["semantic_plan"]["required"]
     assert "reference_resolution" in schema["properties"]["semantic_plan"]["required"]
     assert "uniquely identifies exactly one" in plan_properties["reference_resolution"]["description"]
+    assert plan_properties["reference_resolution"]["enum"] == ["none"]
     assert "current assignments as separate sections" in plan_properties["work_view"]["description"]
     assert "presentation" in schema["properties"]["semantic_plan"]["required"]
     assert "continuation" not in schema["properties"]["semantic_plan"]["required"]
@@ -193,6 +194,23 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
     assert graph_schema["node_kinds"]["items"]["enum"] == graph_contract.node_kinds
     assert graph_schema["relation_kinds"]["items"]["enum"] == graph_contract.relation_kinds
     assert "neighbors" not in graph_schema["relation_kinds"]["items"]["enum"]
+
+    continued_schema = runtime._planner_schema(
+        {
+            "conversation_context": {
+                "topic_state": {"entities": ["boi:public:a", "boi:public:b"]},
+            },
+        }
+    )
+    continued_resolution = continued_schema["properties"]["semantic_plan"]["properties"][
+        "reference_resolution"
+    ]
+    assert continued_resolution["enum"] == ["none", "all", "specific", "ambiguous"]
+
+    search_contract = next(
+        item for item in runtime._capability_catalog() if item["capability_id"] == "knowledge.search"
+    )
+    assert search_contract["work_view_operation_contracts"]["combined"] == ["connect", "validate"]
 
 
 def test_plan_validator_rejects_graph_filters_outside_the_catalog_contract_without_rewriting():
