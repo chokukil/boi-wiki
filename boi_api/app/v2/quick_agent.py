@@ -476,6 +476,177 @@ class QuickAgentRuntime:
             },
         }
 
+    @staticmethod
+    def _plan_fidelity_schema() -> dict[str, Any]:
+        """Schema for an independent meaning-preservation review.
+
+        The reviewer does not route or repair a plan. It only identifies
+        semantic decisions that fail to preserve the complete user request.
+        """
+
+        fields = [
+            "resolved_goal",
+            "retrieval_query",
+            "topic_action",
+            "reference_resolution",
+            "subjects",
+            "capability_id",
+            "user_effect",
+            "operation",
+            "evidence_scope",
+            "presentation",
+            "work_view",
+            "graph_query",
+            "answer_intent",
+        ]
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["status", "issues", "clarification_question"],
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["aligned", "misaligned", "ambiguous"],
+                },
+                "issues": {
+                    "type": "array",
+                    "maxItems": 12,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["field", "message"],
+                        "properties": {
+                            "field": {"type": "string", "enum": fields},
+                            "message": {"type": "string", "maxLength": 500},
+                        },
+                    },
+                },
+                "clarification_question": {"type": "string", "maxLength": 240},
+            },
+        }
+
+    def _validate_plan_fidelity(
+        self,
+        *,
+        state: QuickAgentState,
+        model: Any,
+        plan: SemanticPlan,
+    ) -> None:
+        """Use a fresh model context to verify that the plan kept the request.
+
+        This deliberately performs no Python interpretation of the question.
+        The model owns the semantic judgment, while Python validates the
+        bounded verdict and turns any issue into the existing one-shot repair
+        path.
+        """
+
+        conversation = state.get("conversation_context") or {}
+        conversation = conversation if isinstance(conversation, dict) else {}
+        recent_messages = [
+            item
+            for item in (conversation.get("recent_messages") or [])[-6:]
+            if isinstance(item, dict)
+        ]
+        selected_definition = next(
+            (
+                item
+                for item in self._capability_catalog()
+                if item.get("capability_id") == plan.capability_id
+            ),
+            {},
+        )
+        system = (
+            "You are an independent semantic-plan fidelity evaluator. Compare the complete current request, "
+            "verified conversation topic, and recent turns with the proposed SemanticPlan. Judge whether every "
+            "requested subject, workplace perspective, user effect, operation, evidence scope, and result form "
+            "is preserved. Use the supplied Capability Catalog contract as the only operation vocabulary. "
+            "The work_view meanings are: current=active assignments only, responsibility=declared roles and "
+            "verified recurring work only, combined=both perspectives kept distinct, none=no workplace "
+            "perspective requested. A requested relationship traversal must not be reduced to a plain factual "
+            "explanation, and a requested read must not become a mutation. Do not answer the request, retrieve "
+            "facts, choose a replacement plan, or use keyword matching. Return aligned only when the proposed "
+            "plan preserves the complete meaning. Return misaligned with the affected plan fields when it omits "
+            "or changes meaning. Return ambiguous only when the user genuinely has to choose between equally "
+            "plausible subjects, with one short clarification question."
+        )
+        prompt = json.dumps(
+            {
+                "request": state.get("question") or "",
+                "recent_turns": recent_messages,
+                "verified_topic_state": conversation.get("topic_state") or {},
+                "proposed_semantic_plan": plan.model_dump(mode="json"),
+                "selected_capability_contract": selected_definition,
+            },
+            ensure_ascii=False,
+        )
+        try:
+            scripted_evaluator = getattr(model, "evaluate_semantic_plan", None)
+            assessment = (
+                scripted_evaluator(system=system, prompt=prompt, schema=self._plan_fidelity_schema())
+                if callable(scripted_evaluator)
+                else model.generate_structured(
+                    system=system,
+                    prompt=prompt,
+                    schema=self._plan_fidelity_schema(),
+                )
+            )
+        except Exception as exc:
+            raise SemanticPlanningError(
+                "planner_invalid",
+                f"Semantic-plan fidelity evaluation failed: {type(exc).__name__}: {exc}",
+            ) from exc
+
+        status = str((assessment or {}).get("status") or "")
+        if status == "aligned":
+            return
+
+        raw_issues = [
+            item
+            for item in (assessment or {}).get("issues") or []
+            if isinstance(item, dict)
+        ]
+        issues = [
+            ValidationIssue(
+                code="semantic.fidelity_mismatch",
+                field=str(item.get("field") or "resolved_goal"),
+                message=str(item.get("message") or "The plan did not preserve the complete request."),
+                details={"assessment_status": status},
+            )
+            for item in raw_issues[:12]
+        ]
+        if not issues:
+            issues = [
+                ValidationIssue(
+                    code=(
+                        "semantic.request_ambiguous"
+                        if status == "ambiguous"
+                        else "semantic.fidelity_mismatch"
+                    ),
+                    field="resolved_goal",
+                    message=(
+                        "The request needs one clarification before it can be planned."
+                        if status == "ambiguous"
+                        else "The plan did not preserve the complete request."
+                    ),
+                    details={"assessment_status": status},
+                )
+            ]
+        raise SemanticPlanningError(
+            "planner_invalid",
+            "Semantic plan failed independent fidelity evaluation.",
+            report=PlanValidationReport(
+                valid=False,
+                issues=issues,
+                catalog_revision=self.registry.version,
+                planner_schema_revision=PLANNER_SCHEMA_REVISION,
+            ),
+            clarification_question=(
+                str((assessment or {}).get("clarification_question") or "")
+                if status == "ambiguous"
+                else ""
+            ),
+        )
+
     def clarify_ambiguous_subject(
         self,
         *,
@@ -792,6 +963,7 @@ class QuickAgentRuntime:
                 report=report,
                 clarification_question=plan.clarification_question,
             )
+        self._validate_plan_fidelity(state=state, model=model, plan=plan)
         self._validate_specific_reference_semantics(state=state, model=model, plan=plan)
         return plan, report.model_dump(mode="json")
 

@@ -249,6 +249,8 @@ class _ReferenceAssessmentModel:
         self.status = status
 
     def generate_structured(self, *, prompt: str, schema: dict[str, Any], **_: Any) -> dict[str, Any]:
+        if set(schema.get("required") or []) == {"status", "issues", "clarification_question"}:
+            return {"status": "aligned", "issues": [], "clarification_question": ""}
         payload = json.loads(prompt)
         assert len(payload["prior_subjects"]) == 2
         selected_ref = payload["planner_selected_ref"]
@@ -748,6 +750,15 @@ class ScriptedPlanner:
     def preflight(self) -> dict[str, Any]:
         return {**self.readiness(), "ok": True}
 
+    def evaluate_semantic_plan(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {"status": "aligned", "issues": [], "clarification_question": ""}
+
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         required = set(schema.get("required") or [])
         if _is_semantic_planner_schema(schema):
@@ -768,6 +779,12 @@ class ScriptedPlanner:
             if not clarifications:
                 raise AssertionError("no scripted clarification was supplied")
             return {"clarification_question": clarifications.pop(0)}
+        if required == {"status", "issues", "clarification_question"}:
+            return {
+                "status": "aligned",
+                "issues": [],
+                "clarification_question": "",
+            }
         if required == {"verdicts"}:
             claims = [item for item in json.loads(prompt).get("claims") or [] if isinstance(item, dict)]
             return {
@@ -804,6 +821,110 @@ class ScriptedPlanner:
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise RuntimeError("test embedding intentionally unavailable")
+
+
+class FidelityRepairPlanner(ScriptedPlanner):
+    def __init__(self, plans: list[dict[str, Any]]):
+        super().__init__(plans)
+        self.fidelity_calls = 0
+
+    def evaluate_semantic_plan(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        self.fidelity_calls += 1
+        plan = json.loads(prompt)["proposed_semantic_plan"]
+        if plan.get("work_view") != "combined":
+            return {
+                "status": "misaligned",
+                "issues": [
+                    {
+                        "field": "work_view",
+                        "message": "The plan omitted one of the two requested workplace perspectives.",
+                    },
+                    {
+                        "field": "operation",
+                        "message": "The plan reduced a relationship request to a plain explanation.",
+                    },
+                ],
+                "clarification_question": "",
+            }
+        return {"status": "aligned", "issues": [], "clarification_question": ""}
+
+
+def test_independent_fidelity_review_repairs_omitted_semantic_dimensions() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    person_ref = "person:100001"
+    common = {
+        "resolved_goal": "현재 업무와 공식 역할을 구분한다",
+        "retrieval_query": "현재 업무 공식 역할",
+        "topic_action": "continue",
+        "reference_resolution": "specific",
+        "subjects": [
+            SemanticSubject(
+                mention="현재 사용자",
+                entity_ref=person_ref,
+                entity_kind="person",
+                resolution="resolved",
+            )
+        ],
+        "capability_id": "knowledge.search",
+        "user_effect": "read",
+        "evidence_scope": "operational",
+        "presentation": "table",
+        "context_refs": [person_ref],
+        "answer_intent": "work",
+        "confidence": 1.0,
+    }
+    bad = SemanticPlan(
+        **common,
+        operation="understand",
+        work_view="none",
+    ).model_dump(mode="json")
+    repaired = SemanticPlan(
+        **common,
+        operation="connect",
+        work_view="combined",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="responsibility",
+            focal_mentions=[person_ref],
+            presentation="table",
+        ),
+    ).model_dump(mode="json")
+    model = FidelityRepairPlanner([bad, repaired])
+
+    route = QuickAgentRuntime(registry=registry).route(
+        "현재 업무와 공식 역할을 각각 보여줘",
+        page_kind="inbox",
+        conversation_context={
+            "topic_state": {
+                "subject": "현재 사용자",
+                "subjects": [person_ref],
+                "entities": [person_ref],
+            }
+        },
+        knowledge_hints=[
+            {
+                "ref": person_ref,
+                "title": "현재 사용자",
+                "chunk_id": "person-100001",
+                "chunk_text": "현재 사용자 업무 관계",
+                "answer_scope": "operational",
+            }
+        ],
+        trusted_targets={person_ref: "현재 사용자"},
+        model=model,
+    )
+
+    assert route["planner_repair"]["attempted"] is True
+    assert route["work_intent"]["operation"] == "connect"
+    assert route["work_intent"]["work_view"] == "combined"
+    assert route["work_intent"]["graph_query_draft"]["query_kind"] == "responsibility"
+    assert model.fidelity_calls == 2
 
 
 class EmptyThenGroundedRepairModel(ScriptedPlanner):
