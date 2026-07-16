@@ -161,6 +161,8 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
     }
     expected_effect = str(scenario.get("expected_user_effect") or "")
     user_effect_ok = not expected_effect or intent.get("user_effect") == expected_effect
+    expected_work_view = str(scenario.get("expected_work_view") or "")
+    work_view_ok = not expected_work_view or intent.get("work_view") == expected_work_view
     plan_ok = not scenario.get("require_plan") or bool(response.get("plan_ref"))
     page_anchor = context_usage.get("page_anchor") if isinstance(context_usage.get("page_anchor"), dict) else {}
     page_anchor_ok = not scenario.get("require_page_anchor") or bool(page_anchor.get("resolved"))
@@ -202,7 +204,13 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         and citation_sources <= evidence_ids
         and all(str(item.get("citation_id") or "") in answer_text for item in citations)
     )
-    intent_preservation_ok = bool(intent.get("resolved_goal")) and route_ok and operation_ok and user_effect_ok
+    intent_preservation_ok = (
+        bool(intent.get("resolved_goal"))
+        and route_ok
+        and operation_ok
+        and user_effect_ok
+        and work_view_ok
+    )
     source_relevance_ok = not scenario.get("require_grounding") or (
         bool(grounded_claims)
         and all(item.get("source_refs") and item.get("supporting_chunk_ids") for item in grounded_claims)
@@ -266,6 +274,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         route_ok = True
         operation_ok = True
         user_effect_ok = True
+        work_view_ok = True
         intent_preservation_ok = True
         topic_mode_ok = True
         semantic_change_ok = True
@@ -275,6 +284,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
         "route": route_ok,
         "operation": operation_ok,
         "user_effect": user_effect_ok,
+        "work_view": work_view_ok,
         "grounding": grounding_ok,
         "artifact": artifact_ok and presentation_ok,
         "plan": plan_ok,
@@ -329,6 +339,7 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
             "artifact_presentations": sorted(item for item in actual_presentations if item),
             "plan_ref": response.get("plan_ref"),
             "user_effect": intent.get("user_effect"),
+            "work_view": intent.get("work_view"),
             "semantic_plan_ref": response.get("semantic_plan_ref"),
             "error_code": response.get("error_code"),
             "stop_reason": response.get("stop_reason"),

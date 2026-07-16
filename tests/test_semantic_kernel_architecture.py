@@ -102,6 +102,32 @@ def test_retrieval_query_is_optional_only_for_a_model_authored_clarification() -
     assert "retrieval.query_required" in {item.code for item in executable_report.issues}
 
 
+def test_semantic_evaluator_requires_the_fixture_workplace_perspective() -> None:
+    scenario = {
+        "id": "combined-work-view",
+        "expected_capability": "knowledge.search",
+        "expected_operation": "connect",
+        "expected_user_effect": "read",
+        "expected_work_view": "combined",
+    }
+    response = {
+        "capability_id": "knowledge.search",
+        "status": "completed",
+        "work_intent": {
+            "resolved_goal": "현재 업무와 책임을 구분한다",
+            "operation": "connect",
+            "user_effect": "read",
+            "work_view": "responsibility",
+        },
+        "answer": {"markdown": "공식 역할 관계만 표시했습니다."},
+    }
+
+    result = evaluate_response(scenario, response)
+
+    assert result["checks"]["work_view"] is False
+    assert result["checks"]["intent_preservation"] is False
+
+
 def test_catalog_only_capability_compiles_without_service_routing_change(tmp_path: Path) -> None:
     source_catalog = yaml.safe_load(
         (ROOT / "data/agent_catalog/capabilities-v2.yaml").read_text(encoding="utf-8")

@@ -255,6 +255,7 @@ scenarios:
     expected_capability: knowledge.search
     expected_operation: connect
     expected_user_effect: read
+    expected_work_view: combined
     expected_presentation: table
     expected_topic_mode: continue
 
@@ -342,4 +343,3 @@ scenarios:
     expected_capability: knowledge.search
     expected_operation: understand
     expected_user_effect: read
-
