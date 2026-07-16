@@ -211,7 +211,27 @@ class PlanValidator:
                     "An ambiguous plan must contain one focused clarification question.",
                 )
             )
-        if plan.topic_action == "continue" and not (prior_topic_entities or []):
+        prior_refs = {str(item).strip() for item in prior_topic_entities or [] if str(item).strip()}
+        resolved_subject_refs = {
+            item.entity_ref.strip()
+            for item in plan.subjects
+            if item.entity_ref.strip()
+        }
+        subject_ref_rows = [item.entity_ref.strip() for item in plan.subjects if item.entity_ref.strip()]
+        duplicate_subject_refs = sorted(
+            {item for item in subject_ref_rows if subject_ref_rows.count(item) > 1}
+        )
+        if duplicate_subject_refs:
+            issues.append(
+                self._issue(
+                    "subject.duplicate_ref",
+                    "subjects",
+                    "Each resolved subject identity may appear only once in a semantic plan.",
+                    details={"refs": duplicate_subject_refs},
+                )
+            )
+        inherited_refs = prior_refs & resolved_subject_refs
+        if plan.topic_action == "continue" and not prior_refs:
             issues.append(
                 self._issue(
                     "topic.prior_state_missing",
@@ -219,7 +239,7 @@ class PlanValidator:
                     "The plan cannot continue a topic that has no verified prior entity state.",
                 )
             )
-        if plan.topic_action == "continue" and not plan.subjects:
+        if plan.topic_action == "continue" and not resolved_subject_refs:
             issues.append(
                 self._issue(
                     "topic.subject_not_resolved",
@@ -227,13 +247,15 @@ class PlanValidator:
                     "A follow-up must resolve its inherited subject in the standalone plan.",
                 )
             )
-        prior_refs = {str(item).strip() for item in prior_topic_entities or [] if str(item).strip()}
-        resolved_subject_refs = {
-            item.entity_ref.strip()
-            for item in plan.subjects
-            if item.entity_ref.strip()
-        }
-        inherited_refs = prior_refs & resolved_subject_refs
+        if plan.topic_action == "new" and prior_refs and not resolved_subject_refs:
+            issues.append(
+                self._issue(
+                    "topic.new_subject_not_resolved",
+                    "subjects",
+                    "A new topic in an existing session must resolve its distinct subject.",
+                    details={"prior": sorted(prior_refs)},
+                )
+            )
         if plan.topic_action == "new" and inherited_refs:
             issues.append(
                 self._issue(

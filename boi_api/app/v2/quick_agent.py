@@ -411,7 +411,12 @@ class QuickAgentRuntime:
             "discourse and follow-up references, but inherit factual content only from supported grounded_claims and "
             "verified_topic_state. State every SemanticPlan field explicitly. Use topic_action=continue whenever the "
             "request refers to, re-expresses, or changes only the presentation of a verified prior subject; use new "
-            "only for a distinct subject. retrieval_query must be a standalone, meaningful search request, never a "
+            "only for a distinct subject. A drill-down, selection from a prior result, added comparison subject, or "
+            "additional view of prior work is a continuation: retain at least one verified prior entity and add every "
+            "newly resolved entity without duplicates. When a request explicitly names multiple subjects, resolve and "
+            "preserve each ACL-visible subject rather than collapsing them into one. If multiple prior subjects remain "
+            "equally plausible and the request does not distinguish one, clarify instead of choosing arbitrarily. "
+            "retrieval_query must be a standalone, meaningful search request, never a "
             "placeholder or serialized null. When active_work.work_run is empty, do not supply continuation work "
             "details; the default continuation is inactive and empty."
         )

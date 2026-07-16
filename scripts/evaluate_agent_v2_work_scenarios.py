@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -36,6 +38,11 @@ def parse_args() -> argparse.Namespace:
         "--resume",
         action="store_true",
         help="Resume completed scenario ids from a compatible running checkpoint.",
+    )
+    parser.add_argument(
+        "--implementation-revision",
+        default="",
+        help="Server implementation revision. Defaults to the current Git HEAD.",
     )
     parser.add_argument("--scenario-id", action="append", default=[], help="Run only the selected scenario id; repeatable.")
     parser.add_argument("--judge-failures", action="store_true", help="Mark failed or ambiguous cases for explicit GPT-5.5 test adjudication.")
@@ -87,6 +94,9 @@ def load_resume_checkpoint(
     fixture_version: Any,
     base_url: str,
     scenario_ids: list[str],
+    implementation_revision: str,
+    runner_revision: str,
+    fixture_checksum: str,
 ) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -96,12 +106,27 @@ def load_resume_checkpoint(
     compatible = (
         previous.get("fixture_version") == fixture_version
         and str(previous.get("base_url") or "").rstrip("/") == base_url.rstrip("/")
+        and str(previous.get("implementation_revision") or "") == implementation_revision
+        and str(previous.get("runner_revision") or "") == runner_revision
+        and str(previous.get("fixture_checksum") or "") == fixture_checksum
         and int(previous.get("total") or 0) == len(scenario_ids)
         and previous_ids == scenario_ids[: len(previous_ids)]
     )
     if not compatible:
         raise ValueError("existing checkpoint is not compatible with this evaluation run")
     return previous_results
+
+
+def current_git_revision() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
 
 
 def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
@@ -284,6 +309,8 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
             "plan_ref": response.get("plan_ref"),
             "user_effect": intent.get("user_effect"),
             "semantic_plan_ref": response.get("semantic_plan_ref"),
+            "error_code": response.get("error_code"),
+            "stop_reason": response.get("stop_reason"),
             "citation_sources": sorted(citation_sources),
             "evidence_ids": sorted(evidence_ids),
             "used_source_refs": sorted(used_source_refs),
@@ -311,7 +338,11 @@ def evaluate_response(scenario: dict[str, Any], response: dict[str, Any]) -> dic
 
 def main() -> int:
     args = parse_args()
-    fixture = yaml.safe_load(args.fixture.read_text(encoding="utf-8")) or {}
+    fixture_bytes = args.fixture.read_bytes()
+    fixture = yaml.safe_load(fixture_bytes.decode("utf-8")) or {}
+    implementation_revision = args.implementation_revision.strip() or current_git_revision()
+    runner_revision = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    fixture_checksum = hashlib.sha256(fixture_bytes).hexdigest()
     repetitions = args.repetitions or int(fixture.get("repetitions") or 1)
     if repetitions < 1:
         raise SystemExit("repetitions must be at least 1")
@@ -333,6 +364,9 @@ def main() -> int:
                     fixture_version=fixture.get("version"),
                     base_url=base_url,
                     scenario_ids=expected_ids,
+                    implementation_revision=implementation_revision,
+                    runner_revision=runner_revision,
+                    fixture_checksum=fixture_checksum,
                 )
             )
         except ValueError as exc:
@@ -349,6 +383,9 @@ def main() -> int:
                 "accepted": False,
                 "fixture_version": fixture.get("version"),
                 "base_url": base_url,
+                "implementation_revision": implementation_revision,
+                "runner_revision": runner_revision,
+                "fixture_checksum": fixture_checksum,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "completed": len(results),
                 "passed": passed,
@@ -389,6 +426,7 @@ def main() -> int:
                 response = None
                 active_session = ""
                 turn_latencies: list[int] = []
+                turn_results: list[dict[str, Any]] = []
                 request_error = ""
                 for turn_index, question in enumerate(turns):
                     payload = {
@@ -409,12 +447,13 @@ def main() -> int:
                         break
                     if response.status_code >= 400:
                         break
-                    active_session = str(response.json().get("work_session_id") or active_session)
-                    if (
-                        scenario.get("reload_session_between_turns")
-                        and turn_index < len(turns) - 1
-                        and active_session
-                    ):
+                    turn_payload = response.json()
+                    active_session = str(turn_payload.get("work_session_id") or active_session)
+                    if active_session:
+                        session_ids.append(active_session)
+                    session_topic: dict[str, Any] = {}
+                    restored_session: dict[str, Any] = {}
+                    if active_session:
                         restored = client.get(
                             f"{base_url}/api/v2/work-sessions/{active_session}",
                             params=params,
@@ -426,6 +465,40 @@ def main() -> int:
                             if isinstance(restored_payload.get("session"), dict)
                             else restored_payload
                         )
+                        session_topic = (
+                            restored_session.get("topic_state")
+                            if isinstance(restored_session.get("topic_state"), dict)
+                            else {}
+                        )
+                    turn_intent = (
+                        turn_payload.get("work_intent")
+                        if isinstance(turn_payload.get("work_intent"), dict)
+                        else {}
+                    )
+                    turn_results.append(
+                        {
+                            "turn": turn_index + 1,
+                            "question": question,
+                            "latency_ms": turn_latencies[-1],
+                            "status": turn_payload.get("status"),
+                            "capability_id": turn_payload.get("capability_id"),
+                            "error_code": turn_payload.get("error_code"),
+                            "semantic_plan_ref": turn_payload.get("semantic_plan_ref"),
+                            "operation": turn_intent.get("operation"),
+                            "topic_mode": turn_intent.get("topic_mode"),
+                            "topic_subject": turn_intent.get("topic_subject"),
+                            "referenceable_topic_entities": turn_intent.get("referenceable_topic_entities") or [],
+                            "answerability": (turn_payload.get("answerability") or {}).get("status"),
+                            "used_source_refs": turn_payload.get("used_source_refs") or [],
+                            "grounded_claim_count": len(turn_payload.get("grounded_claims") or []),
+                            "session_topic_state": session_topic,
+                        }
+                    )
+                    if (
+                        scenario.get("reload_session_between_turns")
+                        and turn_index < len(turns) - 1
+                        and active_session
+                    ):
                         if str(restored_session.get("session_id") or "") != active_session:
                             raise RuntimeError("restored WorkSession does not match the active session")
                         restored_topic = restored_session.get("topic_state")
@@ -447,6 +520,7 @@ def main() -> int:
                                 "error": request_error or "request did not return a response",
                                 "turn_count": len(turns),
                                 "turn_latencies_ms": turn_latencies,
+                                "turns": turn_results,
                             },
                         }
                     )
@@ -480,6 +554,7 @@ def main() -> int:
                 evaluated = evaluate_response(evaluation_scenario, response_payload)
                 evaluated["actual"]["turn_count"] = len(turns)
                 evaluated["actual"]["turn_latencies_ms"] = turn_latencies
+                evaluated["actual"]["turns"] = turn_results
                 results.append(evaluated)
                 checkpoint(str(scenario.get("id") or ""))
                 job_ref = str(response_payload.get("job_ref") or "")
@@ -609,6 +684,9 @@ def main() -> int:
         "accepted": accepted,
         "fixture_version": fixture.get("version"),
         "base_url": base_url,
+        "implementation_revision": implementation_revision,
+        "runner_revision": runner_revision,
+        "fixture_checksum": fixture_checksum,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "completed": len(results),
         "passed": sum(bool(item.get("passed")) for item in results),

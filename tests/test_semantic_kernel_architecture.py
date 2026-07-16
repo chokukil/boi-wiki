@@ -247,6 +247,88 @@ def test_plan_validator_rejects_inconsistent_topic_and_target_identity() -> None
     }
 
 
+def test_plan_validator_requires_resolved_identity_for_topic_transition() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    prior_ref = "boi:public:workflow:event-response"
+    unresolved = SemanticSubject(
+        mention="그 대상",
+        entity_ref="",
+        entity_kind="workflow",
+        resolution="unresolved",
+    )
+    base = SemanticPlan(
+        resolved_goal="선택한 대상의 시간 흐름을 본다",
+        retrieval_query="선택한 대상 시간 흐름",
+        subjects=[unresolved],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.connect,
+        presentation="timeline",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="timeline",
+            focal_mentions=["그 대상"],
+            presentation="timeline",
+        ),
+        confidence=0.9,
+    )
+
+    continued = PlanValidator(registry).validate(
+        base.model_copy(update={"topic_action": "continue"}),
+        trusted_context_refs={prior_ref},
+        prior_topic_entities=[prior_ref],
+    )
+    changed = PlanValidator(registry).validate(
+        base.model_copy(update={"topic_action": "new"}),
+        trusted_context_refs={prior_ref},
+        prior_topic_entities=[prior_ref],
+    )
+
+    assert {item.code for item in continued.issues} >= {"topic.subject_not_resolved"}
+    assert {item.code for item in changed.issues} >= {"topic.new_subject_not_resolved"}
+
+
+def test_plan_validator_rejects_duplicate_resolved_subjects() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    person_ref = "person:100001"
+    plan = SemanticPlan(
+        resolved_goal="현재 업무와 공식 역할 관계를 구분한다",
+        retrieval_query="현재 업무 공식 역할 관계",
+        subjects=[
+            SemanticSubject(
+                mention="현재 사용자",
+                entity_ref=person_ref,
+                entity_kind="person",
+                resolution="resolved",
+            ),
+            SemanticSubject(
+                mention="담당자",
+                entity_ref=person_ref,
+                entity_kind="person",
+                resolution="resolved",
+            ),
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.connect,
+        presentation="table",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="responsibility",
+            focal_mentions=[person_ref],
+            presentation="table",
+        ),
+        confidence=0.9,
+    )
+
+    report = PlanValidator(registry).validate(
+        plan,
+        trusted_context_refs={person_ref},
+    )
+
+    assert {item.code for item in report.issues} >= {"subject.duplicate_ref"}
+
+
 def test_clarification_is_model_authored_and_never_filled_by_service_fallback() -> None:
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
     plan = SemanticPlan(
@@ -315,6 +397,9 @@ def test_semantic_holdout_checkpoint_resumes_only_a_compatible_prefix(tmp_path: 
         """{
   "fixture_version": "semantic-kernel-holdout/v1",
   "base_url": "http://127.0.0.1:8769",
+  "implementation_revision": "revision-1",
+  "runner_revision": "runner-1",
+  "fixture_checksum": "fixture-1",
   "total": 3,
   "results": [
     {"id": "scenario-1", "passed": true},
@@ -330,6 +415,9 @@ def test_semantic_holdout_checkpoint_resumes_only_a_compatible_prefix(tmp_path: 
         fixture_version="semantic-kernel-holdout/v1",
         base_url="http://127.0.0.1:8769/",
         scenario_ids=["scenario-1", "scenario-2", "scenario-3"],
+        implementation_revision="revision-1",
+        runner_revision="runner-1",
+        fixture_checksum="fixture-1",
     )
 
     assert [item["id"] for item in restored] == ["scenario-1", "scenario-2"]
@@ -339,6 +427,9 @@ def test_semantic_holdout_checkpoint_resumes_only_a_compatible_prefix(tmp_path: 
             fixture_version="semantic-kernel-holdout/v2",
             base_url="http://127.0.0.1:8769",
             scenario_ids=["scenario-1", "scenario-2", "scenario-3"],
+            implementation_revision="revision-2",
+            runner_revision="runner-1",
+            fixture_checksum="fixture-1",
         )
     except ValueError as exc:
         assert "not compatible" in str(exc)
