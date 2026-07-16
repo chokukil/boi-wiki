@@ -750,15 +750,36 @@ class SemanticPlan(BaseModel):
     schema_revision: str = "semantic-plan/v3"
     resolved_goal: str = Field(min_length=1, max_length=12000)
     retrieval_query: str = Field(min_length=1, max_length=12000)
-    topic_action: Literal["new", "continue", "clarify"] = "new"
-    reference_resolution: Literal["none", "all", "specific", "ambiguous"] = "none"
+    topic_action: Literal["new", "continue", "clarify"] = Field(
+        default="new",
+        description=(
+            "How this turn relates to verified topic state: new selects a distinct subject, continue keeps "
+            "one or all uniquely identified prior subjects, and clarify is required when the current request "
+            "does not uniquely identify which prior subject it means."
+        ),
+    )
+    reference_resolution: Literal["none", "all", "specific", "ambiguous"] = Field(
+        default="none",
+        description=(
+            "Resolution of references to prior subjects. Use none when topic_action is new; all when the request "
+            "covers every prior subject; specific only when the current request uniquely identifies exactly one "
+            "prior subject; ambiguous when more than one prior subject remains possible and clarification is needed."
+        ),
+    )
     subjects: list[SemanticSubject] = Field(default_factory=list, max_length=20)
     capability_id: str = Field(min_length=1, max_length=120)
     user_effect: Literal["read", "draft", "transform", "execute"] = "read"
     operation: WorkOperation = WorkOperation.understand
     evidence_scope: Literal["canonical", "operational", "validation"] = "canonical"
     presentation: Literal["prose", "table", "timeline", "mermaid", "explorer", "artifact"] = "prose"
-    work_view: Literal["none", "current", "responsibility", "combined"] = "none"
+    work_view: Literal["none", "current", "responsibility", "combined"] = Field(
+        default="none",
+        description=(
+            "Requested workplace perspective. none means no person-work perspective; current means only current "
+            "operational assignments; responsibility means declared roles and verified recurring work; combined "
+            "means show responsibility and current assignments as separate sections in one result."
+        ),
+    )
     graph_query: GraphQueryDraft | None = None
     context_refs: list[str] = Field(default_factory=list, max_length=100)
     target_ref: str = Field(default="", max_length=1000)

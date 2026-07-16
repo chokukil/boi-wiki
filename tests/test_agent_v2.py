@@ -177,6 +177,8 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
     assert "concept" in subject_properties["entity_kind"]["enum"]
     assert "topic_action" in schema["properties"]["semantic_plan"]["required"]
     assert "reference_resolution" in schema["properties"]["semantic_plan"]["required"]
+    assert "uniquely identifies exactly one" in plan_properties["reference_resolution"]["description"]
+    assert "current assignments as separate sections" in plan_properties["work_view"]["description"]
     assert "presentation" in schema["properties"]["semantic_plan"]["required"]
     assert "continuation" not in schema["properties"]["semantic_plan"]["required"]
     assert set(subject_properties) == set(plan_properties["subjects"]["items"]["required"])
