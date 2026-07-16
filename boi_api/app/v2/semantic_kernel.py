@@ -19,7 +19,7 @@ from .models import (
 )
 
 
-PLANNER_SCHEMA_REVISION = "semantic-plan/v2"
+PLANNER_SCHEMA_REVISION = "semantic-plan/v3"
 
 
 class SemanticPlanningError(RuntimeError):
@@ -143,6 +143,20 @@ class PlanValidator:
                         details={"allowed": list(definition.work_views)},
                     )
                 )
+            work_view_operations = definition.work_view_operation_contracts.get(plan.work_view) or []
+            if work_view_operations and plan.operation not in work_view_operations:
+                issues.append(
+                    self._issue(
+                        "work_view.operation_not_allowed",
+                        "operation",
+                        "The selected operation is not declared for this work view.",
+                        details={
+                            "work_view": plan.work_view,
+                            "operation": plan.operation.value,
+                            "allowed": [item.value for item in work_view_operations],
+                        },
+                    )
+                )
             if plan.evidence_scope not in definition.evidence_scopes:
                 issues.append(
                     self._issue(
@@ -249,6 +263,66 @@ class PlanValidator:
                 )
             )
         inherited_refs = prior_refs & resolved_subject_refs
+        if plan.topic_action == "new" and plan.reference_resolution != "none":
+            issues.append(
+                self._issue(
+                    "topic.new_reference_resolution",
+                    "reference_resolution",
+                    "A new topic must not claim to resolve a prior reference.",
+                )
+            )
+        if plan.topic_action == "clarify" and plan.reference_resolution != "ambiguous":
+            issues.append(
+                self._issue(
+                    "topic.clarification_resolution_mismatch",
+                    "reference_resolution",
+                    "A clarification must identify the prior reference as ambiguous.",
+                )
+            )
+        if plan.topic_action == "continue" and plan.reference_resolution not in {"all", "specific"}:
+            issues.append(
+                self._issue(
+                    "topic.continuation_resolution_missing",
+                    "reference_resolution",
+                    "A continued topic must state whether it selects all or one specific prior subject.",
+                )
+            )
+        if plan.reference_resolution == "ambiguous" and plan.topic_action != "clarify":
+            issues.append(
+                self._issue(
+                    "topic.ambiguous_reference_requires_clarification",
+                    "topic_action",
+                    "An ambiguous prior reference requires one clarification question.",
+                )
+            )
+        if (
+            plan.topic_action == "continue"
+            and plan.reference_resolution == "specific"
+            and prior_refs
+            and len(inherited_refs) != 1
+        ):
+            issues.append(
+                self._issue(
+                    "topic.specific_reference_cardinality",
+                    "subjects",
+                    "A specific continuation must retain exactly one verified prior subject.",
+                    details={"prior": sorted(prior_refs), "selected": sorted(inherited_refs)},
+                )
+            )
+        if (
+            plan.topic_action == "continue"
+            and plan.reference_resolution == "all"
+            and prior_refs
+            and inherited_refs != prior_refs
+        ):
+            issues.append(
+                self._issue(
+                    "topic.all_reference_incomplete",
+                    "subjects",
+                    "An all-subject continuation must retain every verified prior subject.",
+                    details={"prior": sorted(prior_refs), "selected": sorted(inherited_refs)},
+                )
+            )
         if plan.topic_action == "continue" and not prior_refs:
             issues.append(
                 self._issue(
@@ -563,7 +637,7 @@ class PlanCompiler:
             primary_topic_entity=topic_entities[0] if len(topic_entities) == 1 else "",
             topic_entities=topic_entities,
             referenceable_topic_entities=resolved_subject_refs,
-            followup_reference_resolution="specific" if plan.topic_action == "continue" else "none",
+            followup_reference_resolution=plan.reference_resolution,
             selected_prior_topic_entities=resolved_subject_refs if plan.topic_action == "continue" else [],
             followup_semantic_change=(
                 "same_subject_question" if plan.topic_action == "continue" else "new_subject" if plan.topic_action == "new" else "ambiguous_reference"
@@ -664,6 +738,7 @@ def semantic_plan_schema(
         "resolved_goal",
         "retrieval_query",
         "topic_action",
+        "reference_resolution",
         "subjects",
         "capability_id",
         "user_effect",

@@ -292,7 +292,7 @@ def test_plan_validator_requires_resolved_identity_for_topic_transition() -> Non
     )
 
     continued = PlanValidator(registry).validate(
-        base.model_copy(update={"topic_action": "continue"}),
+        base.model_copy(update={"topic_action": "continue", "reference_resolution": "specific"}),
         trusted_context_refs={prior_ref},
         prior_topic_entities=[prior_ref],
     )
@@ -304,6 +304,76 @@ def test_plan_validator_requires_resolved_identity_for_topic_transition() -> Non
 
     assert {item.code for item in continued.issues} >= {"topic.subject_not_resolved"}
     assert {item.code for item in changed.issues} >= {"topic.new_subject_not_resolved"}
+
+
+def test_plan_validator_requires_explicit_consistent_multi_subject_reference_resolution() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    refs = ["boi:public:concept:a2ui", "boi:public:concept:ontology"]
+    subjects = [
+        SemanticSubject(
+            mention=ref.rsplit(":", 1)[-1],
+            entity_ref=ref,
+            entity_kind="concept",
+            resolution="resolved",
+        )
+        for ref in refs
+    ]
+    base = SemanticPlan(
+        resolved_goal="직전 두 주제의 실제 사용 범위를 확인한다",
+        retrieval_query="A2UI Ontology 실제 사용 범위",
+        topic_action="continue",
+        subjects=subjects,
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.understand,
+        presentation="prose",
+    )
+
+    missing = PlanValidator(registry).validate(
+        base,
+        trusted_context_refs=set(refs),
+        prior_topic_entities=refs,
+    )
+    specific = PlanValidator(registry).validate(
+        base.model_copy(update={"reference_resolution": "specific"}),
+        trusted_context_refs=set(refs),
+        prior_topic_entities=refs,
+    )
+    all_subjects = PlanValidator(registry).validate(
+        base.model_copy(update={"reference_resolution": "all"}),
+        trusted_context_refs=set(refs),
+        prior_topic_entities=refs,
+    )
+
+    assert "topic.continuation_resolution_missing" in {item.code for item in missing.issues}
+    assert "topic.specific_reference_cardinality" in {item.code for item in specific.issues}
+    assert all_subjects.valid is True
+
+
+def test_plan_validator_uses_catalog_owned_work_view_operation_contract() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    person_ref = "person:100001"
+    plan = SemanticPlan(
+        resolved_goal="공식 역할과 현재 업무를 구분한다",
+        retrieval_query="공식 역할 현재 업무",
+        subjects=[
+            SemanticSubject(
+                mention="현재 사용자",
+                entity_ref=person_ref,
+                entity_kind="person",
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation=WorkOperation.observe,
+        presentation="table",
+        work_view="combined",
+    )
+
+    report = PlanValidator(registry).validate(plan, trusted_context_refs={person_ref})
+
+    assert "work_view.operation_not_allowed" in {item.code for item in report.issues}
 
 
 def test_plan_validator_rejects_duplicate_resolved_subjects() -> None:

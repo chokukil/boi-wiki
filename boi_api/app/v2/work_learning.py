@@ -681,7 +681,7 @@ class WorkLearningService:
             raw_state=raw_state,
             catalog_revision=str(revisions.get("capability_catalog") or ""),
             harness_revisions=harness_revisions,
-            planner_schema_revision=str(revisions.get("planner_schema") or "semantic-plan/v2"),
+            planner_schema_revision=str(revisions.get("planner_schema") or "semantic-plan/v3"),
             loop_position={
                 "iteration": int(loop.get("iteration_count") or 0),
                 "tool_calls": int(loop.get("tool_loop_count") or 0),
@@ -2034,7 +2034,7 @@ class WorkLearningService:
         goal_plan_id: str,
         loop_policy: LoopPolicy | dict[str, Any] | None = None,
         catalog_revision: str = "",
-        planner_schema_revision: str = "semantic-plan/v2",
+        planner_schema_revision: str = "semantic-plan/v3",
         semantic_plan_ref: str = "",
         pinned_harness_bindings: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:

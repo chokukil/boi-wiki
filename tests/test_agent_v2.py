@@ -176,6 +176,7 @@ def test_semantic_planner_schema_bounds_internal_refs_to_acl_visible_context():
     assert plan_properties["context_refs"]["items"]["enum"] == subject_properties["entity_ref"]["enum"][1:]
     assert "concept" in subject_properties["entity_kind"]["enum"]
     assert "topic_action" in schema["properties"]["semantic_plan"]["required"]
+    assert "reference_resolution" in schema["properties"]["semantic_plan"]["required"]
     assert "presentation" in schema["properties"]["semantic_plan"]["required"]
     assert "continuation" not in schema["properties"]["semantic_plan"]["required"]
     assert set(subject_properties) == set(plan_properties["subjects"]["items"]["required"])
@@ -457,6 +458,7 @@ def test_plan_validator_rejects_work_run_continuation_outside_the_semantic_contr
         {
             **_task_completion_plan("review-task"),
             "topic_action": "continue",
+            "reference_resolution": "specific",
             "subjects": [
                 {
                     "mention": "진행 중 Task",
@@ -500,6 +502,7 @@ def test_work_run_continuation_never_rewrites_an_invalid_delta_to_human_input(
                     "resolved_goal": "기존 업무를 이어간다",
                     "retrieval_query": "기존 업무 진행 상태",
                     "topic_action": "continue",
+                    "reference_resolution": "specific",
                     "capability_id": "task.work",
                     "user_effect": "execute",
                     "operation": "complete",
@@ -1045,6 +1048,7 @@ class SemanticContinuationModel(ScriptedPlanner):
                 resolved_goal=f"{task_ref} 업무의 근거와 수행 기록을 검증해 완료한다",
                 retrieval_query=f"{task_ref} 완료 조건 근거 수행 기록",
                 topic_action="continue" if active_run.get("status") == "waiting_human" else "new",
+                reference_resolution="specific" if active_run.get("status") == "waiting_human" else "none",
                 subjects=[
                     SemanticSubject(
                         mention="진행 중인 Task",
@@ -1358,6 +1362,7 @@ class RefiningSopModel(RepairingSopModel):
                     ),
                     retrieval_query="SOP 초안 완료 조건 근거 계약",
                     topic_action="continue",
+                    reference_resolution="specific",
                     subjects=[
                         SemanticSubject(
                             mention="선택한 SOP 초안",
@@ -1679,6 +1684,7 @@ class A2UIReliabilityModel(ScriptedPlanner):
                     resolved_goal=resolved_goal,
                     retrieval_query=retrieval_query,
                     topic_action=topic_mode,
+                    reference_resolution="all" if followup else "none",
                     subjects=subject_rows,
                     capability_id="knowledge.search",
                     user_effect="read",
@@ -1898,6 +1904,7 @@ class MultiTurnMermaidModel(GroundedAnswerModel):
                         "retrieval_query": str(payload.get("request") or "검증된 관계 흐름"),
                         "presentation_mode": "mermaid",
                         "topic_mode": topic_action,
+                        "reference_resolution": "specific" if topic_action == "continue" else "none",
                         "subjects": [
                             {
                                 "mention": str(prior_topic.get("subject") or "검증된 지식 관계"),
@@ -1983,6 +1990,7 @@ class SplitOnlyFollowupModel(MultiTurnMermaidModel):
                     resolved_goal="선택한 흐름을 실행 가능한 Task 후보로 나눈다",
                     retrieval_query="선택한 흐름의 업무 단계",
                     topic_action="continue",
+                    reference_resolution="specific",
                     subjects=[
                         SemanticSubject(
                             mention="선택한 흐름",
@@ -9785,7 +9793,7 @@ def _record_recurrent_harness_failures(
                     "checkpoint_ids": [f"checkpoint-{work_run_id}"],
                     "contract_revisions": {
                         "capability_catalog": service.registry.version,
-                        "planner_schema": "semantic-plan/v2",
+                        "planner_schema": "semantic-plan/v3",
                     },
                 },
                 context=context,

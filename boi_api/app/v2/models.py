@@ -280,6 +280,10 @@ class CapabilityDefinition(BaseModel):
     work_views: list[Literal["none", "current", "responsibility", "combined"]] = Field(
         default_factory=lambda: ["none", "current", "responsibility", "combined"]
     )
+    work_view_operation_contracts: dict[
+        Literal["none", "current", "responsibility", "combined"],
+        list[WorkOperation],
+    ] = Field(default_factory=dict)
     default_work_view: Literal["none", "current", "responsibility", "combined"] = "none"
     evidence_scopes: list[Literal["canonical", "operational", "validation"]] = Field(
         default_factory=lambda: ["canonical", "operational"]
@@ -351,6 +355,25 @@ class CapabilityDefinition(BaseModel):
             raise ValueError("presentation aliases must have a name and target a declared presentation")
         if self.default_work_view not in self.work_views:
             raise ValueError("default_work_view must be declared in work_views")
+        undeclared_work_views = sorted(set(self.work_view_operation_contracts) - set(self.work_views))
+        if undeclared_work_views:
+            raise ValueError(
+                "work view operation contracts target undeclared work views: "
+                + ", ".join(undeclared_work_views)
+            )
+        undeclared_work_view_operations = sorted(
+            {
+                operation.value
+                for operations in self.work_view_operation_contracts.values()
+                for operation in operations
+                if operation not in self.semantic_operations
+            }
+        )
+        if undeclared_work_view_operations:
+            raise ValueError(
+                "work view operation contracts use undeclared operations: "
+                + ", ".join(undeclared_work_view_operations)
+            )
         if self.default_evidence_scope not in self.evidence_scopes:
             raise ValueError("default_evidence_scope must be declared in evidence_scopes")
         if self.default_user_effect is not None and self.default_user_effect not in self.user_effects:
@@ -724,10 +747,11 @@ class SemanticPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_revision: str = "semantic-plan/v2"
+    schema_revision: str = "semantic-plan/v3"
     resolved_goal: str = Field(min_length=1, max_length=12000)
     retrieval_query: str = Field(min_length=1, max_length=12000)
     topic_action: Literal["new", "continue", "clarify"] = "new"
+    reference_resolution: Literal["none", "all", "specific", "ambiguous"] = "none"
     subjects: list[SemanticSubject] = Field(default_factory=list, max_length=20)
     capability_id: str = Field(min_length=1, max_length=120)
     user_effect: Literal["read", "draft", "transform", "execute"] = "read"
@@ -758,7 +782,7 @@ class PlanValidationReport(BaseModel):
     valid: bool
     issues: list[ValidationIssue] = Field(default_factory=list, max_length=50)
     catalog_revision: str = ""
-    planner_schema_revision: str = "semantic-plan/v2"
+    planner_schema_revision: str = "semantic-plan/v3"
 
 
 class TypedCommand(BaseModel):
@@ -870,7 +894,7 @@ class WorkRunCheckpoint(BaseModel):
     raw_state: dict[str, Any] = Field(default_factory=dict)
     catalog_revision: str = ""
     harness_revisions: dict[str, str] = Field(default_factory=dict)
-    planner_schema_revision: str = "semantic-plan/v2"
+    planner_schema_revision: str = "semantic-plan/v3"
     loop_position: dict[str, int] = Field(default_factory=dict)
     pending_interrupt: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = ""

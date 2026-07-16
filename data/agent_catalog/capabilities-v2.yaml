@@ -184,6 +184,9 @@ capabilities:
     presentation_aliases: {answer: prose}
     graph_query_kinds: [neighbors, path, workflow, impact, lineage, responsibility, timeline, compare, tour]
     work_views: [none, responsibility, combined]
+    work_view_operation_contracts:
+      responsibility: [connect, validate]
+      combined: [connect, validate]
     evidence_scopes: [canonical, operational, validation]
     default_evidence_scope: canonical
     harness_ids: [context.work]
@@ -514,6 +517,19 @@ capabilities:
     user_effects: [read]
     default_user_effect: read
     semantic_operations: [understand, compare, connect]
+    semantic_operation_contracts:
+      understand:
+        description: Explain one selected case and its verified judgment evidence without searching for another comparison set.
+        presentations: [prose, table]
+        graph_query_kinds: []
+      compare:
+        description: Find and contrast two or more relevant cases; do not use this operation for a drill-down into one selected case.
+        presentations: [prose, table]
+        graph_query_kinds: [compare]
+      connect:
+        description: Traverse the evidence lineage, path, or time sequence that connects cases and their outcomes.
+        presentations: [prose, table, timeline, mermaid, explorer]
+        graph_query_kinds: [neighbors, path, lineage, timeline]
     default_operation: compare
     operation_pipeline: [understand, compare]
     presentations: [prose, table, timeline, mermaid, explorer]
