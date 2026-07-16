@@ -240,6 +240,7 @@ class QuickAgentRuntime:
                     self.registry,
                     trusted_context_refs=self._trusted_refs(state) if state is not None else [],
                     prior_topic_entities=self._prior_entities(state) if state is not None else [],
+                    prior_focal_entities=self._prior_focal_entities(state) if state is not None else [],
                     active_work_run=bool(state and state.get("active_work_run")),
                 ),
                 "grounded_answer": self._grounded_answer_schema(
@@ -297,6 +298,23 @@ class QuickAgentRuntime:
         if isinstance(active_artifact, dict) and str(active_artifact.get("artifact_id") or "").strip():
             values.append(str(active_artifact["artifact_id"]))
         return list(dict.fromkeys(values))
+
+    @staticmethod
+    def _prior_focal_entities(state: QuickAgentState) -> list[str]:
+        conversation = state.get("conversation_context") or {}
+        topic = conversation.get("topic_state") if isinstance(conversation, dict) else {}
+        if not isinstance(topic, dict):
+            return []
+        subjects = [str(item) for item in topic.get("subjects") or [] if str(item).strip()]
+        if subjects:
+            return list(dict.fromkeys(subjects))
+        return list(
+            dict.fromkeys(
+                str(item)
+                for item in topic.get("entities") or []
+                if str(item).strip()
+            )
+        )
 
     def _typed_plan(self, state: QuickAgentState, capability_id: str, source: str) -> dict[str, Any]:
         definition = self.registry.get(capability_id)
@@ -991,6 +1009,7 @@ class QuickAgentRuntime:
             plan,
             trusted_context_refs=set(self._trusted_refs(state)),
             prior_topic_entities=self._prior_entities(state),
+            prior_focal_entities=self._prior_focal_entities(state),
             active_work_run=bool(state.get("active_work_run")),
         )
         if not report.valid:
@@ -1308,6 +1327,7 @@ class QuickAgentRuntime:
             original_question=str(state.get("question") or ""),
             trusted_context_refs=set(self._trusted_refs(state)),
             prior_topic_entities=self._prior_entities(state),
+            prior_focal_entities=self._prior_focal_entities(state),
             active_work_run=bool(state.get("active_work_run")),
         )
         hints = [item for item in (state.get("knowledge_hints") or []) if isinstance(item, dict)]

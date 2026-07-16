@@ -428,6 +428,54 @@ def test_plan_validator_requires_explicit_consistent_multi_subject_reference_res
     assert all_subjects.valid is True
 
 
+def test_plan_validator_keeps_focal_subjects_separate_from_supporting_results() -> None:
+    registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
+    subject_ref = "topic:verified-relationship"
+    result_refs = ["boi:public:guide:a", "boi:public:guide:b"]
+    plan = SemanticPlan(
+        resolved_goal="직전 관계를 다른 표현으로 본다",
+        retrieval_query="직전 관계",
+        topic_action="continue",
+        reference_resolution="all",
+        subjects=[
+            SemanticSubject(
+                mention="직전 관계",
+                entity_ref=subject_ref,
+                entity_kind="concept",
+                resolution="resolved",
+            )
+        ],
+        capability_id="knowledge.search",
+        user_effect="read",
+        operation="connect",
+        presentation="mermaid",
+        graph_query=GraphQueryDraft(
+            enabled=True,
+            query_kind="neighbors",
+            focal_mentions=[subject_ref],
+            presentation="mermaid",
+        ),
+        context_refs=[subject_ref],
+        target_ref=subject_ref,
+    )
+
+    report = PlanValidator(registry).validate(
+        plan,
+        trusted_context_refs={subject_ref, *result_refs},
+        prior_topic_entities=[subject_ref, *result_refs],
+        prior_focal_entities=[subject_ref],
+    )
+    schema = semantic_plan_schema(
+        registry,
+        trusted_context_refs=[subject_ref, *result_refs],
+        prior_topic_entities=[subject_ref, *result_refs],
+        prior_focal_entities=[subject_ref],
+    )
+
+    assert report.valid is True
+    assert schema["properties"]["reference_resolution"]["enum"] == ["none", "specific"]
+
+
 def test_plan_validator_uses_catalog_owned_work_view_operation_contract() -> None:
     registry = CapabilityRegistry(ROOT / "data/agent_catalog/capabilities-v2.yaml")
     person_ref = "person:100001"

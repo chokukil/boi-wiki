@@ -5017,9 +5017,7 @@ class AgentV2Service:
                 "artifact_entities": artifact_entities,
                 "entity_labels": entity_labels,
                 "topic_structure": (
-                    response.work_intent.topic_structure
-                    if response.work_intent
-                    else "single_focal"
+                    "multiple_focal" if len(resolved_topic_entities) > 1 else "single_focal"
                 ),
                 "entities": list(dict.fromkeys(
                     [

@@ -73,6 +73,7 @@ class PlanValidator:
         *,
         trusted_context_refs: set[str] | None = None,
         prior_topic_entities: list[str] | None = None,
+        prior_focal_entities: list[str] | None = None,
         active_work_run: bool = False,
     ) -> PlanValidationReport:
         issues: list[ValidationIssue] = []
@@ -263,6 +264,15 @@ class PlanValidator:
                 )
             )
         prior_refs = {str(item).strip() for item in prior_topic_entities or [] if str(item).strip()}
+        focal_refs = {
+            str(item).strip()
+            for item in (
+                prior_focal_entities
+                if prior_focal_entities is not None
+                else prior_topic_entities or []
+            )
+            if str(item).strip()
+        }
         resolved_subject_refs = {
             item.entity_ref.strip()
             for item in plan.subjects
@@ -331,15 +341,15 @@ class PlanValidator:
         if (
             plan.topic_action == "continue"
             and plan.reference_resolution == "all"
-            and prior_refs
-            and inherited_refs != prior_refs
+            and focal_refs
+            and not focal_refs.issubset(inherited_refs)
         ):
             issues.append(
                 self._issue(
                     "topic.all_reference_incomplete",
                     "subjects",
                     "An all-subject continuation must retain every verified prior subject.",
-                    details={"prior": sorted(prior_refs), "selected": sorted(inherited_refs)},
+                    details={"prior": sorted(focal_refs), "selected": sorted(inherited_refs)},
                 )
             )
         if plan.topic_action == "continue" and not prior_refs:
@@ -629,12 +639,14 @@ class PlanCompiler:
         original_question: str,
         trusted_context_refs: set[str] | None = None,
         prior_topic_entities: list[str] | None = None,
+        prior_focal_entities: list[str] | None = None,
         active_work_run: bool = False,
     ) -> CompiledSemanticPlan:
         report = self.validator.validate(
             plan,
             trusted_context_refs=trusted_context_refs,
             prior_topic_entities=prior_topic_entities,
+            prior_focal_entities=prior_focal_entities,
             active_work_run=active_work_run,
         )
         if not report.valid:
@@ -730,6 +742,7 @@ def semantic_plan_schema(
     *,
     trusted_context_refs: list[str] | None = None,
     prior_topic_entities: list[str] | None = None,
+    prior_focal_entities: list[str] | None = None,
     active_work_run: bool = False,
 ) -> dict[str, Any]:
     schema = copy.deepcopy(SemanticPlan.model_json_schema())
@@ -822,10 +835,20 @@ def semantic_plan_schema(
         loop_schema["required"] = list(loop_schema["properties"])
         loop_schema["additionalProperties"] = False
     properties.setdefault("capability_id", {})["enum"] = [item.capability_id for item in registry.all()]
-    prior_refs = list(dict.fromkeys(str(item) for item in (prior_topic_entities or []) if str(item)))
-    if not prior_refs:
+    focal_refs = list(
+        dict.fromkeys(
+            str(item)
+            for item in (
+                prior_focal_entities
+                if prior_focal_entities is not None
+                else prior_topic_entities or []
+            )
+            if str(item)
+        )
+    )
+    if not focal_refs:
         properties.setdefault("reference_resolution", {})["enum"] = ["none"]
-    elif len(prior_refs) == 1:
+    elif len(focal_refs) == 1:
         properties.setdefault("reference_resolution", {})["enum"] = ["none", "specific"]
     else:
         properties.setdefault("reference_resolution", {})["enum"] = [
