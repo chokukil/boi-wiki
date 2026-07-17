@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/harness
 title: Data Lake Artifact Harness
 description: 파일 근거를 MinIO Data Lake artifact로 저장하고 BoI에는 bounded reference만 남기는 기준

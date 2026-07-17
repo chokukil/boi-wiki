@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>주간 설비 가동 대시보드 (하네스 골든 태스크)</title>
+<style>
+  body { font-family: sans-serif; margin: 2rem; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid #999; padding: 0.4rem 0.8rem; }
+  .bar { display: inline-block; height: 0.8rem; background: #2b6cb0; }
+</style>
+</head>
+<body>
+<h1>주간 설비 가동 대시보드</h1>
+<p>self-contained 공유 HTML 골든 태스크 문서입니다. 인라인 CSS/JS만 사용하며 외부 참조가 없습니다.</p>
+<table>
+  <thead><tr><th>설비</th><th>가동률</th><th>추이</th></tr></thead>
+  <tbody>
+    <tr><td>ETCH-01</td><td>96%</td><td><span class="bar" style="width:96px"></span></td></tr>
+    <tr><td>ETCH-02</td><td>88%</td><td><span class="bar" style="width:88px"></span></td></tr>
+    <tr><td>CLEAN-01</td><td>91%</td><td><span class="bar" style="width:91px"></span></td></tr>
+  </tbody>
+</table>
+<p id="summary"></p>
+<script>
+  const rates = [96, 88, 91];
+  const avg = Math.round(rates.reduce((a, b) => a + b, 0) / rates.length);
+  document.getElementById("summary").textContent = "평균 가동률: " + avg + "%";
+</script>
+</body>
+</html>

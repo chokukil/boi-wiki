@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ shell.title }} · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main class="missing-doc">
+    <section class="empty-state">
+      {% if gone %}
+      <strong>삭제된 공유 주소</strong>
+      <p><code>/{{ name }}</code></p>
+      <p>이 단축주소로 공유되던 HTML은 삭제되었습니다. 북마크 하이재킹을 막기 위해 삭제된 이름은 다른 사용자가 다시 사용할 수 없습니다.</p>
+      <p><a href="{{ share_url }}">공유 목록으로 이동</a></p>
+      {% else %}
+      <strong>등록되지 않은 단축주소</strong>
+      <p><code>/{{ name }}</code></p>
+      <p>아직 아무도 이 이름을 사용하지 않았거나, 접근 권한이 없는 공유일 수 있습니다.</p>
+      <p>
+        <a href="{{ search_url }}">'{{ name }}' 검색하기</a>
+        ·
+        <a href="{{ share_url }}">이 이름으로 공유 등록하기</a>
+      </p>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

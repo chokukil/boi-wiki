@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/reference
 title: Dictionary Authoring Harness
 description: 반도체/품질/설비/AI Native Workflow dictionary term을 추가하거나 승격할 때 agent가 따라야 하는 작성 기준

@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/reference
 title: Local Private Agent Harness
 description: Codex, Claude, Cursor가 Local Private BoI workspace를 같은 방식으로 만들고 검증하는 기준
@@ -16,6 +17,8 @@ author:
 acl_policy: acl:public
 status: reviewed
 source_refs:
+  - type: repo
+    ref: data/boi/public/boi-wiki-manual/local-private/overview.md
   - type: boi
     ref: boi:public:boi-wiki-manual:local-private:overview
 review:

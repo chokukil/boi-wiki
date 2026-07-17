@@ -10,3 +10,4 @@
 * [Data Lake Artifact Harness](data-lake-artifact-harness.md) - File upload/profile/download/attach rules for raw evidence without context overflow.
 * [Dictionary Authoring Harness](dictionary-authoring-harness.md) - Public/team/private dictionary term authoring, source, mapping, and graph-link rules.
 * [Local Private Agent Harness](local-private-agent-harness.md) - Local Private BoI workspace, validation, lifecycle, and promotion rules.
+* [HTML Share Harness](html-share-harness.md) - Self-contained HTML publication with BoI HTML Profile, knowledge card, shortlink name/scope/tombstone, and preview-confirm-publish rules.

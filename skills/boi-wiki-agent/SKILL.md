@@ -55,6 +55,14 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 - SOP Builder is a design surface, not a raw file upload surface. While authoring `/sops/new`, define required evidence types and where those files will be attached during execution. Actual human-uploaded Raw Data, PDF, PPT, Excel, logs, screenshots, and result files are attached from SOP Run stage panels, Manual Action completion, Inbox decisions, Report BoI review, or Agent conversations.
 - Human-uploaded files are first-class evidence. When a user attaches a file while completing a manual action, making an Inbox decision, reviewing a report, working in a SOP Run stage, or chatting with an Agent, keep `uploaded_by_employee_id`, `attached_from_surface`, `target_type`, `target_id`, `attachment_role`, `human_note`, and `validation_state`. Do not ask for a separate "use as evidence" checkbox; infer the target from the current work context and let the user remove or retarget the attachment.
 
+## HTML Share Work
+
+To publish a self-contained HTML document (any general document: report, dashboard, guide) to a wiki shortlink, follow `harness/html-share-harness.md` (wiki copy: `data/boi/public/harness/html-share-harness.md`).
+
+- Use MCP `html_share_preview` first (non-mutating), then `html_share_publish` only with explicit `user_confirmed=true`.
+- Use `shortlink_check`/`shortlink_list` for name availability and existing links; `shortlink_register` (user-confirmed) creates doc-kind shortlinks for existing BoI documents.
+- The server injects the BoI HTML Profile (JSON-LD) and generates the knowledge card automatically; do not hand-author either.
+
 ## SOP Work
 
 When a user supplies an SOP image, OCR text, or process description:

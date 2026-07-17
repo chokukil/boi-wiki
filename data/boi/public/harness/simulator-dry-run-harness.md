@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/harness
 title: Simulator Dry Run Harness
 description: Langflow Universal Simulator를 dry-run/PoC 도구로 검증하는 기준

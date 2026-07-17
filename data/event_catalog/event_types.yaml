@@ -297,3 +297,36 @@ event_types:
     topic: boi.events
     workflow_stage: Event Ingestion
     wiki_usage: API/Webhook을 통해 들어온 이벤트를 BoI로 정리하고 필요한 Flow 또는 Action으로 연결
+  - event_type: html.share.published.v1
+    name_ko: HTML 공유 게시
+    description: self-contained HTML 문서(보고서, 대시보드, 가이드 등 무엇이든)가 단축주소로 게시되거나 갱신된 시점
+    default_boi_type: boi/html-document
+    default_flow_key: boi-html-share-card-v0.1
+    default_visibility: public
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    workflow_stage: Knowledge Ingest
+    wiki_usage: 업로드와 동시에 생성된 지식 카드가 검색/링크 그래프/신선도 루프에 편입되고, 후속 enrich 단계(요약·태그·관련 SOP 링크)의 입력이 된다
+  - event_type: wiki.gardening.requested.v1
+    name_ko: 위키 가드닝 점검 요청
+    description: 외부 cron/스케줄러(이벤트 발행자)가 BoI Wiki 지식 정원 점검(stale/orphan/broken link/중복 후보/피드백)을 요청한 시점
+    default_boi_type: boi/report
+    default_flow_key: wiki-gardening-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    workflow_stage: Knowledge Gardening
+    wiki_usage: 스케줄러는 외부 cron/이벤트 발행자다. 이 이벤트를 받은 wiki.gardening.run 액션이 boi-api POST /api/gardening/run을 호출해 점검 보고서를 만들고, 발견 항목을 wiki.remediation.requested.v1로 재발행한다 (REST 엔드포인트는 수동/로컬 트리거 겸용)
+  - event_type: wiki.remediation.requested.v1
+    name_ko: 위키 정비 요청
+    description: 가드닝 점검에서 발견된 항목(stale/orphan/broken link/중복 후보/수정 필요 피드백)의 정비가 필요한 시점
+    default_boi_type: boi/task
+    default_flow_key: wiki-remediation-v0.1
+    default_visibility: private
+    owner: AIX 확산 TF
+    status: poc
+    topic: boi.events
+    workflow_stage: Knowledge Gardening
+    wiki_usage: boi.materialize_event가 finding payload를 event-linked BoI로 자산화해 Inbox 루프를 닫는다. 담당자/에이전트가 처리한 결과가 다시 BoI로 돌아온다

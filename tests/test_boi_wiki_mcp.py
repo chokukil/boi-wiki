@@ -33,7 +33,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 131
+    assert body["capabilities"]["tools"] == 136
     assert body["capabilities"]["tools"] == len(body["capability_lists"]["tools"])
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
@@ -81,6 +81,11 @@ def test_boi_wiki_mcp_health(mcp_module):
         "private_memory_mark_memory",
         "agent_memory_review",
         "harness_acceptance",
+        "html_share_publish",
+        "html_share_preview",
+        "shortlink_check",
+        "shortlink_list",
+        "shortlink_register",
     } <= boi_wiki_tools
     sop_group = next(group for group in body["tool_groups"] if group["name"] == "SOP")
     sop_tools = {tool["name"] for tool in sop_group["tools"]}
@@ -258,6 +263,11 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "capability_deduplicate" in tool_names
     assert "event_skills_list" in tool_names
     assert "action_skills_list" in tool_names
+    assert "html_share_publish" in tool_names
+    assert "html_share_preview" in tool_names
+    assert "shortlink_check" in tool_names
+    assert "shortlink_list" in tool_names
+    assert "shortlink_register" in tool_names
     assert "source_create_draft" not in tool_names
     assert "doc_body_create_draft" not in tool_names
     assert any(item["name"] == "promotion_submit" for item in body["capability_lists"]["tools"])
@@ -1083,6 +1093,72 @@ def test_boi_wiki_mcp_rbac_tools_delegate_to_boi_api(mcp_module, monkeypatch):
     ]
     assert calls[1]["payload"]["required_role"] == "boi.action_invoker"
     assert calls[3]["params"]["action"] == "team_upsert"
+
+
+def test_boi_wiki_mcp_html_share_tools_delegate_and_require_confirmation(mcp_module, monkeypatch):
+    import base64 as base64_module
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_api_get(path, **kwargs):
+        calls.append({"method": "get", "path": path, **kwargs})
+        return {"ok": True, "path": path, "items": [], "status": "available"}
+
+    async def fake_api_post(path, **kwargs):
+        calls.append({"method": "post", "path": path, **kwargs})
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
+    monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+
+    sample_html = "<html><head></head><body>공유 HTML 문서</body></html>"
+
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.html_share_publish(content=sample_html, name="mcp-share", user_confirmed=False))
+    with pytest.raises(RuntimeError, match="content"):
+        asyncio.run(mcp_module.html_share_publish(name="mcp-share", user_confirmed=True))
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.shortlink_register(name="go-doc", target_boi_id="boi:public:harness:overview"))
+
+    published = asyncio.run(
+        mcp_module.html_share_publish(
+            content=sample_html,
+            name="mcp-share",
+            title="MCP 공유",
+            employee_id="100001",
+            user_confirmed=True,
+        )
+    )
+    preview = asyncio.run(mcp_module.html_share_preview(content=sample_html, name="mcp-share", employee_id="100001"))
+    availability = asyncio.run(mcp_module.shortlink_check(name="mcp-share", employee_id="100001"))
+    listing = asyncio.run(mcp_module.shortlink_list(employee_id="100001"))
+    registered = asyncio.run(
+        mcp_module.shortlink_register(
+            name="go-doc",
+            target_boi_id="boi:public:harness:overview",
+            employee_id="100001",
+            user_confirmed=True,
+        )
+    )
+
+    assert published["path"] == "/api/share/html"
+    assert preview["path"] == "/api/share/preview"
+    assert availability["path"] == "/api/share/names/mcp-share/availability"
+    assert listing["mine"] == [] and listing["public"] == []
+    assert registered["path"] == "/api/share/links"
+    assert [item["path"] for item in calls] == [
+        "/api/share/html",
+        "/api/share/preview",
+        "/api/share/names/mcp-share/availability",
+        "/api/share/mine",
+        "/api/share/list",
+        "/api/share/links",
+    ]
+    decoded = base64_module.b64decode(calls[0]["payload"]["content_base64"]).decode("utf-8")
+    assert decoded == sample_html
+    assert calls[0]["payload"]["name"] == "mcp-share"
+    assert calls[-1]["payload"]["user_confirmed"] is True
+    assert calls[-1]["payload"]["target_boi_id"] == "boi:public:harness:overview"
 
 
 def test_boi_wiki_mcp_agent_capabilities_delegate_to_boi_api(mcp_module, monkeypatch):

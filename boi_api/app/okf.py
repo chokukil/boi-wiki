@@ -34,6 +34,16 @@ RESERVED_FILENAMES = {"index.md", "log.md"}
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 ALLOWED_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+# BoI HTML Profile: 공유 HTML 문서(<head>)에 내장되는 단일 JSON-LD 블록.
+# Markdown frontmatter와 같은 BoI Profile 필드를 boiProfile 객체로 직렬화한다.
+HTML_PROFILE_SCRIPT_RE = re.compile(
+    r"<script\b[^>]*\bid\s*=\s*[\"']boi-profile[\"'][^>]*>(.*?)</script>\s*",
+    re.IGNORECASE | re.DOTALL,
+)
+HTML_EXTERNAL_REF_RE = re.compile(
+    r"<(?:script\b[^>]*\bsrc|link\b[^>]*\bhref)\s*=\s*[\"']https?://",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -42,6 +52,7 @@ class OkfLintResult:
     warnings: list[str] = field(default_factory=list)
     checked_markdown_count: int = 0
     checked_log_item_count: int = 0
+    checked_html_count: int = 0
     markdown_link_count: int = 0
     media_link_count: int = 0
     link_edges: list[dict[str, Any]] = field(default_factory=list)
@@ -385,6 +396,63 @@ def lint_markdown_file(
     return errors, edges
 
 
+def parse_html_profile(content: str) -> dict[str, Any] | None:
+    """공유 HTML에서 BoI HTML Profile(JSON-LD, id="boi-profile") 블록을 관대하게 파싱한다."""
+    match = HTML_PROFILE_SCRIPT_RE.search(content or "")
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(1).strip())
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def html_card_source_ref_sha256(card_metadata: dict[str, Any]) -> str:
+    for ref in card_metadata.get("source_refs") or []:
+        if isinstance(ref, dict) and str(ref.get("type") or "") == "html_artifact":
+            return str(ref.get("sha256") or "")
+    return ""
+
+
+def lint_html_file(path: Path, boi_root: Path | None = None) -> tuple[list[str], list[str]]:
+    """data/boi 아래 공유 HTML 문서(*.html) 검증: BoI HTML Profile + 지식 카드 무결성.
+
+    Returns (errors, warnings). 외부 참조(<script src>/<link href> http(s))는
+    사내망에서 깨질 수 있으므로 warning으로만 보고한다.
+    """
+    boi_root = boi_root or path.parents[0]
+    errors: list[str] = []
+    warnings: list[str] = []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    profile = parse_html_profile(text)
+    if profile is None:
+        errors.append('missing or unparseable BoI HTML Profile (<script type="application/ld+json" id="boi-profile"> block)')
+    else:
+        boi_profile = profile.get("boiProfile")
+        if not isinstance(boi_profile, dict):
+            errors.append("BoI HTML Profile JSON-LD must contain a boiProfile object")
+        else:
+            errors.extend(validate_boi_profile_metadata(boi_profile))
+            errors.extend(validate_boi_profile_path_acl(boi_profile, path, boi_root))
+    card_path = path.with_suffix(".md")
+    if not card_path.exists():
+        errors.append(f"html document requires a sibling knowledge card: {card_path.name}")
+    else:
+        try:
+            card_metadata, _card_body = split_frontmatter(card_path.read_text(encoding="utf-8"))
+        except Exception:
+            card_metadata = {}
+        expected_sha = html_card_source_ref_sha256(card_metadata if isinstance(card_metadata, dict) else {})
+        if not expected_sha:
+            errors.append("knowledge card is missing an html_artifact source_ref with sha256")
+        elif expected_sha != file_sha256(path):
+            errors.append("html artifact sha256 mismatch with knowledge card")
+    if HTML_EXTERNAL_REF_RE.search(text):
+        warnings.append("external http(s) <script src>/<link href> reference may break on the intranet (사내망): inline assets into the self-contained HTML")
+    return errors, warnings
+
+
 def materialized_item_acl_errors(item: dict[str, Any], boi_root: Path) -> list[str]:
     metadata = item.get("metadata") or {}
     uri = str(item.get("uri") or "").strip()
@@ -419,6 +487,13 @@ def lint_data_root(
             result.media_link_count += len(extract_markdown_images(body))
         except Exception:
             pass
+    for path in sorted(boi_root.rglob("*.html")):
+        if not path.is_file():
+            continue
+        result.checked_html_count += 1
+        html_errors, html_warnings = lint_html_file(path, boi_root=boi_root)
+        result.extend(str(path), html_errors)
+        result.warnings.extend(f"{path}: {warning}" for warning in html_warnings)
     result.errors.extend(lint_media_assets(boi_root, strict_media=strict_media))
     if include_logs:
         for log_root_name in ("events", "actions"):

@@ -138,6 +138,8 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 | `sop_catalog_search` / `sop_run_get` / `sop_run_graph` / `sop_run_context` | SOP 전체 목록, 조건 검색, 현재 페이지 관련 SOP 범위를 명시적으로 구분하고 선택한 SOP 실행 인스턴스의 그래프와 판단 맥락 조회 |
 | `data_lake_status` / `data_lake_sources` / `data_lake_query_plan` / `data_lake_query_preview` / `data_lake_query_execute` / `data_lake_artifact_get` / `data_lake_import_sources` | Optional Data Lake 도구. Data Lake는 MinIO artifact store이며, PostgreSQL은 별도 Legacy DB Demo adapter다. 기본 profile에서는 disabled contract를 반환하며 BoI Wiki core를 실패시키지 않는다. 실행은 plan/preview 이후 `user_confirmed=true`가 필요하다. `data_lake_import_sources`는 선택한 source profile을 private OKF Data Context BoI로 materialize할 때만 사용한다. |
 | `harness_acceptance` | Observation, Context, Control, Action, State, Verification release acceptance matrix 조회 |
+| `html_share_publish` / `html_share_preview` | self-contained HTML 문서(보고서, 대시보드, 가이드 등 무엇이든)를 단축주소로 게시하거나 게시 결과를 비변경 preview로 확인. publish는 `user_confirmed=true`가 없으면 MCP 단계에서 차단되며, 게시 시 BoI HTML Profile(JSON-LD) 주입과 지식 카드 자동 생성이 함께 일어난다 |
+| `shortlink_check` / `shortlink_list` / `shortlink_register` | 단축주소 이름 중복 확인, 내/공개 단축주소 목록, 접근 가능한 기존 BoI 문서에 대한 doc-kind 단축주소 등록. register는 `user_confirmed=true`가 없으면 MCP 단계에서 차단 |
 | `source_wiki_plan` / `source_wiki_job_start` / `source_wiki_job_get` / `source_wiki_refresh_preview` / `source_wiki_markdown_export` | repo/source inventory 기반 source-grounded wiki 계획, 사용자 확인된 생성, manifest 조회, last-good 보존 refresh preview, Markdown export |
 | `agent_inbox*` | Deprecated compatibility aliases. 새 client는 `boi_inbox*`를 사용한다. |
 | `manual_handoff_complete` | 사용자 확인된 manual handoff 완료 기록. 완료 대상 task는 같은 사번의 Inbox에 보이는 항목이어야 한다. |
@@ -163,7 +165,7 @@ Cursor UI에서 static resource가 비어 보일 수 있다. BoI Wiki MCP는 정
 - Employee-scoped Resource 예: `boi://employees/100001/search/ontology/설비%20이상`
 - Prompt 예: `create_sop_from_source`, `author_action_spec`, `build_langflow_boi_flow`
 
-현재 프로토콜 기준 기대값은 `tools: 124`, `resources: 0`, `resource_templates: 11`, `prompts: 5`다. `resources: 0`은 오류가 아니다. 정적 resource를 미리 노출하지 않고 resource template으로 필요한 문서, 검색 결과, Agent 응답 스키마를 읽는다. 늘어난 tool은 BoI Inbox, Private Memory cleanup, BoI Operations Center, SOP runtime, Event Producer Adapter, Optional Data Lake, Harness acceptance, Source Wiki, Promotion preview처럼 사용자-facing IA와 선택형 운영 기능을 명확히 분리하기 위한 것이다.
+현재 프로토콜 기준 기대값은 `tools: 136`, `resources: 0`, `resource_templates: 11`, `prompts: 5`다. `resources: 0`은 오류가 아니다. 정적 resource를 미리 노출하지 않고 resource template으로 필요한 문서, 검색 결과, Agent 응답 스키마를 읽는다. 늘어난 tool은 BoI Inbox, Private Memory cleanup, BoI Operations Center, SOP runtime, Event Producer Adapter, Optional Data Lake, Harness acceptance, Source Wiki, Promotion preview처럼 사용자-facing IA와 선택형 운영 기능을 명확히 분리하기 위한 것이다.
 
 Unscoped resource template인 `boi://docs/{boi_id}`, `boi://folders/{folder}`, `boi://actions/{action_key}`는 public 문서와 public action 확인용이다. Workflow status와 ontology search처럼 사번별 ACL/RBAC 판단이 필요한 resource는 `boi://employees/{employee_id}/workflows/{workflow_key}/status/{trace_id}`, `boi://employees/{employee_id}/search/ontology/{query}`처럼 employee-scoped URI를 사용한다. Unscoped URI로 private/team 문서, trace, ontology search를 읽으려 하면 MCP server는 기본 사번으로 대신 조회하지 않고 `employee_scoped_resource_required` 오류와 올바른 employee-scoped URI를 반환한다. 일반 tool 호출에서는 기존처럼 `employee_id` argument를 명시한다.
 
@@ -247,7 +249,7 @@ python3 scripts/check_boi_wiki_mcp.py \
 
 # Runtime Evidence
 
-상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록과 MCP auth 상태를 보여준다. `tools=124`, `resource_templates=11`, `prompts=5`, `resources=0`이 현재 기준이며, 요약 표기에서는 `tools: 124`, `resource_templates: 11`, `resources: 0`처럼 보인다. `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 tool 목록은 `BoI Wiki`, `BoI Inbox`, `SOP`, `Event Broker`, `Action`, `Advanced`, `Optional Data Lake`, `Deprecated / Compatibility` 그룹으로 먼저 보이고, 전체 tool 목록은 호환 확인용으로 함께 남는다. WorkflowDefinition, Source Wiki, Promotion preview tool은 Advanced 내부 도구로 분류하고, Data Lake tool은 선택형 MinIO artifact store가 켜진 경우에 artifact를 반환한다. SQL-style demo query는 별도 Legacy DB Demo adapter가 켜진 경우에만 사용한다. legacy `agent_inbox*`와 `capabilities_*` tool은 Deprecated / Compatibility 그룹에만 둔다. 외부에 공개된 endpoint에서는 `mcp_auth.required=true`가 권장된다.
+상태 페이지는 서버 health뿐 아니라 실제 MCP capabilities 목록과 MCP auth 상태를 보여준다. `tools=136`, `resource_templates=11`, `prompts=5`, `resources=0`이 현재 기준이며, 요약 표기에서는 `tools: 136`, `resource_templates: 11`, `resources: 0`처럼 보인다. `resources=0`은 정적 resource 대신 resource template을 쓰는 설계라서 정상이다. 상태 페이지의 tool 목록은 `BoI Wiki`, `BoI Inbox`, `SOP`, `Event Broker`, `Action`, `Advanced`, `Optional Data Lake`, `Deprecated / Compatibility` 그룹으로 먼저 보이고, 전체 tool 목록은 호환 확인용으로 함께 남는다. WorkflowDefinition, Source Wiki, Promotion preview tool은 Advanced 내부 도구로 분류하고, Data Lake tool은 선택형 MinIO artifact store가 켜진 경우에 artifact를 반환한다. SQL-style demo query는 별도 Legacy DB Demo adapter가 켜진 경우에만 사용한다. legacy `agent_inbox*`와 `capabilities_*` tool은 Deprecated / Compatibility 그룹에만 둔다. 외부에 공개된 endpoint에서는 `mcp_auth.required=true`가 권장된다.
 
 ![BoI Wiki MCP Status capabilities](/public/boi-wiki-manual/_media/browser/mcp-status/20260619-151048-boi-wiki-mcp-status-capabilities-current-1440x1000-89caadae3b92.png)
 

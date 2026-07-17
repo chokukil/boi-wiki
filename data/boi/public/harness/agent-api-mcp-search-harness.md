@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/reference
 title: BoI Agent API, MCP, Ontology Search Harness
 description: BoI Agent, ontology search, dictionary, memory, inbox, manual handoff API/MCP 사용 기준
@@ -94,8 +95,10 @@ Pet UI가 보내는 `current_url`, `page_title`, `selected_text`는 힌트다. �
 - `source_apply`
 - `doc_body_apply`
 - `promotion_submit`
+- `html_share_publish`
+- `shortlink_register`
 
-Agent는 확인 없이 source file, body, promotion, action execution, Event Type draft 생성/반영을 변경하지 않는다. Manual handoff completion은 기존 action log를 수정하지 않고 append-only completion row로 남긴다. 신규 Event Type은 `event_type_draft_create`로 draft와 catalog patch proposal을 만든 뒤 `event_type_draft_validate`를 거치고, 별도 확인과 `boi.promoter` 권한이 있을 때만 `event_type_draft_apply`로 catalog에 반영한다.
+Agent는 확인 없이 source file, body, promotion, action execution, Event Type draft 생성/반영, HTML 공유 게시, 단축주소 등록을 변경하지 않는다. HTML 공유는 `html_share_preview`로 먼저 확인하고, 게시 계약은 [HTML Share Harness](/public/harness/html-share-harness.md)를 따른다. Manual handoff completion은 기존 action log를 수정하지 않고 append-only completion row로 남긴다. 신규 Event Type은 `event_type_draft_create`로 draft와 catalog patch proposal을 만든 뒤 `event_type_draft_validate`를 거치고, 별도 확인과 `boi.promoter` 권한이 있을 때만 `event_type_draft_apply`로 catalog에 반영한다.
 
 ## ACL and RBAC Guardrail
 

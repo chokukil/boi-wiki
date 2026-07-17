@@ -48,6 +48,7 @@ from .okf import (
     iter_materialized_items,
     markdown_link_edges,
     lint_data_root,
+    lint_html_file,
     resolve_okf_media_path,
     resolve_okf_link,
     validate_okf_metadata,
@@ -72,6 +73,9 @@ from .native_agent import (
     select_agent_goal_profile,
 )
 from .access_policy import CLASSIFICATION_POLICY_VERSION, AccessPolicyDecision, doc_access_policy
+from . import share as html_share
+from . import harness_meta
+from . import loops as wiki_loops
 from .auth import (
     AuthError,
     AuthIdentity,
@@ -176,6 +180,10 @@ DRAFT_ROOT = Path(os.getenv("DRAFT_ROOT") or str(BOI_RUNTIME_ROOT / "drafts"))
 ACTIVITY_ROOT = Path(os.getenv("ACTIVITY_ROOT") or str(BOI_RUNTIME_ROOT / "activity"))
 RBAC_ROOT = Path(os.getenv("RBAC_ROOT") or str(BOI_RUNTIME_ROOT / "rbac"))
 SEARCH_INDEX_ROOT = Path(os.getenv("SEARCH_INDEX_ROOT") or str(BOI_RUNTIME_ROOT / "index"))
+TELEMETRY_ROOT = Path(os.getenv("TELEMETRY_ROOT") or str(BOI_RUNTIME_ROOT / "telemetry"))
+GARDENING_ROOT = Path(os.getenv("GARDENING_ROOT") or str(BOI_RUNTIME_ROOT / "gardening"))
+# 조회/클릭/피드백 카운터는 runtime에만 산다 — 문서 frontmatter는 조회로 다시 쓰지 않는다.
+USAGE_TELEMETRY = wiki_loops.TelemetryStore(TELEMETRY_ROOT)
 OPS_RUNTIME_INDEX_ROOT = Path(os.getenv("OPS_RUNTIME_INDEX_ROOT") or str(BOI_RUNTIME_ROOT / "ops"))
 PRIVATE_MEMORY_TRASH_ROOT = Path(os.getenv("PRIVATE_MEMORY_TRASH_ROOT") or str(BOI_RUNTIME_ROOT / "private-trash"))
 PRIVATE_MEMORY_QUARANTINE_DAYS = int(os.getenv("PRIVATE_MEMORY_QUARANTINE_DAYS", "7") or "7")
@@ -6030,6 +6038,7 @@ def okf_lint_report(root: Path, temp_root: Path | None = None, include_logs: boo
         "warnings": normalize_lint_messages(result.warnings, temp_root),
         "checked_markdown_count": result.checked_markdown_count,
         "checked_log_item_count": result.checked_log_item_count,
+        "checked_html_count": result.checked_html_count,
         "markdown_link_count": result.markdown_link_count,
         "media_link_count": result.media_link_count,
     }
@@ -8113,6 +8122,7 @@ def harness_acceptance_payload(employee_id: str) -> dict[str, Any]:
         "Action": [],
         "State": [],
         "Verification": [],
+        "Meta": [],
     }
     inbox = agent_inbox_payload(employee_id, status="open", limit=5, include_context="compact")
     checks["Observation"].append(acceptance_check("boi_inbox_manifest", bool(inbox.get("ok", True)), {"count": inbox.get("count", 0)}))
@@ -8134,11 +8144,72 @@ def harness_acceptance_payload(employee_id: str) -> dict[str, Any]:
             {"root": str(SOURCE_WIKI_ROOT), "optional_overlay": True},
         )
     )
+    registry_issues: list[str] = []
+    registry_record_count = 0
+    try:
+        if SHORTLINK_REGISTRY_PATH.exists():
+            raw_registry = yaml.safe_load(SHORTLINK_REGISTRY_PATH.read_text(encoding="utf-8"))
+            if raw_registry is not None and not isinstance(raw_registry, list):
+                registry_issues.append("shortlink registry must be a YAML list")
+        registry_records = shortlink_records()
+        registry_record_count = len(registry_records)
+        for record in registry_records:
+            record_name = html_share.normalize_share_name(str(record.get("name") or ""))
+            if str(record.get("status") or "") != "active":
+                continue
+            if record_name in html_share.RESERVED_SHORTLINK_NAMES:
+                registry_issues.append(f"active shortlink uses a reserved name: {record_name}")
+            if not html_share.SHORTLINK_NAME_RE.match(record_name):
+                registry_issues.append(f"active shortlink has an invalid name: {record_name!r}")
+            if str(record.get("target_kind") or "") != "html":
+                continue
+            try:
+                stored_path = html_share.storage_path_for_record(DATA_ROOT, record)
+            except ValueError:
+                registry_issues.append(f"active html shortlink has an invalid storage path: {record_name}")
+                continue
+            if not stored_path.exists():
+                registry_issues.append(f"active html shortlink is missing its stored file: {record_name}")
+            if not stored_path.with_suffix(".md").exists():
+                registry_issues.append(f"active html shortlink is missing its knowledge card: {record_name}")
+    except Exception as exc:
+        registry_issues.append(f"shortlink registry check failed: {exc}")
+    checks["State"].append(
+        acceptance_check(
+            "shortlink_registry_integrity",
+            not registry_issues,
+            {"registry": str(SHORTLINK_REGISTRY_PATH), "records": registry_record_count, "issues": registry_issues[:10]},
+        )
+    )
     try:
         lint_report = okf_lint_report(DATA_ROOT.parent)
     except Exception as exc:
         lint_report = {"ok": False, "errors": [str(exc)], "warnings": []}
     checks["Verification"].append(acceptance_check("okf_strict_lint", bool(lint_report.get("ok")), {"errors": lint_report.get("errors", [])[:10], "warnings": lint_report.get("warnings", [])[:10]}))
+    html_lint_errors: list[str] = []
+    html_lint_warnings: list[str] = []
+    checked_html_count = 0
+    try:
+        for html_path in sorted(DATA_ROOT.rglob("*.html")):
+            if not html_path.is_file():
+                continue
+            checked_html_count += 1
+            html_errors, html_warnings = lint_html_file(html_path, boi_root=DATA_ROOT)
+            html_lint_errors.extend(f"{html_path}: {error}" for error in html_errors)
+            html_lint_warnings.extend(f"{html_path}: {warning}" for warning in html_warnings)
+    except Exception as exc:
+        html_lint_errors.append(f"html share lint failed: {exc}")
+    checks["Verification"].append(
+        acceptance_check(
+            "html_share_lint",
+            not html_lint_errors,
+            {
+                "checked_html_count": checked_html_count,
+                "errors": html_lint_errors[:10],
+                "warnings": html_lint_warnings[:10],
+            },
+        )
+    )
     checks["Verification"].append(
         acceptance_check(
             "promotion_preview_available",
@@ -8146,6 +8217,80 @@ def harness_acceptance_payload(employee_id: str) -> dict[str, Any]:
             {"api": "/api/promotions/preview", "mcp": "promotion_preview", "mutating": False},
         )
     )
+    # Meta 버킷: 하네스 자체의 진화 체계(manifest SSOT + CHANGELOG ratchet + eval 상태).
+    # 배포 컨테이너에는 boi_api/app만 복사되어 repo checkout(harness/)이 없을 수 있으므로,
+    # 그 경우 source_wiki_last_good_store와 같은 optional-overlay 관례로 skip한다.
+    harness_repo_root = harness_meta.REPO_ROOT
+    if not harness_meta.harness_repo_available(harness_repo_root):
+        checks["Meta"].append(
+            acceptance_check(
+                "harness_manifest_consistent",
+                True,
+                {"state": "unavailable", "repo_root": str(harness_repo_root), "optional_overlay": True},
+            )
+        )
+        checks["Meta"].append(
+            acceptance_check(
+                "harness_changelog_ratchet",
+                True,
+                {"state": "unavailable", "repo_root": str(harness_repo_root), "optional_overlay": True},
+            )
+        )
+    else:
+        try:
+            manifest_issues = harness_meta.harness_manifest_issues(harness_repo_root, DATA_ROOT)
+        except Exception as exc:
+            manifest_issues = [f"harness manifest check failed: {exc}"]
+        checks["Meta"].append(
+            acceptance_check(
+                "harness_manifest_consistent",
+                not manifest_issues,
+                {
+                    "manifest": str(harness_repo_root / harness_meta.MANIFEST_RELATIVE_PATH),
+                    "issues": manifest_issues[:10],
+                },
+            )
+        )
+        try:
+            changelog_issues = harness_meta.changelog_covers_manifest(harness_repo_root)
+        except Exception as exc:
+            changelog_issues = [f"harness changelog check failed: {exc}"]
+        checks["Meta"].append(
+            acceptance_check(
+                "harness_changelog_ratchet",
+                not changelog_issues,
+                {
+                    "changelog": str(harness_repo_root / harness_meta.CHANGELOG_RELATIVE_PATH),
+                    "issues": changelog_issues[:10],
+                },
+            )
+        )
+    eval_status = harness_meta.read_eval_status(BOI_RUNTIME_ROOT)
+    if eval_status is None:
+        # 기록이 없으면 실패로 보지 않는다: 기록된 마지막 실행이 실패했을 때만 fail.
+        checks["Meta"].append(
+            acceptance_check(
+                "harness_eval_status",
+                True,
+                {"state": "not_recorded", "path": str(harness_meta.eval_status_path(BOI_RUNTIME_ROOT))},
+            )
+        )
+    else:
+        eval_total = int(eval_status.get("total") or 0)
+        eval_passed = int(eval_status.get("passed") or 0)
+        eval_ok = eval_total > 0 and eval_passed == eval_total
+        checks["Meta"].append(
+            acceptance_check(
+                "harness_eval_status",
+                eval_ok,
+                {
+                    "state": "passed" if eval_ok else "failed",
+                    "ran_at": eval_status.get("ran_at"),
+                    "total": eval_total,
+                    "passed": eval_passed,
+                },
+            )
+        )
     all_checks = [item for group in checks.values() for item in group]
     return {
         "ok": all(item.get("ok") for item in all_checks),
@@ -17682,6 +17827,7 @@ async def doc_page(
             },
             status_code=404,
         )
+    record_doc_view_telemetry(doc, employee_id)
     doc_lookup = referenced_doc_lookup_for_doc(doc, employee_id)
     doc_folder_path = doc_folder(doc)
     return_folder = normalize_folder(folder) or doc_folder_path
@@ -17717,6 +17863,7 @@ async def doc_page(
             "source_url": source_url_for_doc(doc, employee_id),
             "doc_graph_url": "/api/okf/graph/doc/" + graph_ref + "?" + urlencode({"employee_id": employee_id}),
             "access_policy_url": "/api/docs/" + graph_ref + "/access?" + doc_query,
+            "feedback_api_url": "/api/docs/" + graph_ref + "/feedback?" + doc_query,
             "metadata_fragment_url": "/api/docs/" + graph_ref + "/metadata-fragment?" + doc_query,
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
             "body_html": doc_body_html_for_request(doc, employee_id, doc_lookup, request),
@@ -20499,6 +20646,13 @@ def native_agent_llm_json(employee_id: str, task: str, payload: dict[str, Any]) 
 
 def native_agent_memory_tool(query: str, employee_id: str, limit: int = 5) -> dict[str, Any]:
     items = agent_memory_items(employee_id, q=query, limit=limit)
+    # 회상되어 에이전트에게 전달된 메모리만 runtime recall 카운트를 올린다.
+    # frontmatter usage_count는 건드리지 않는다(git churn 방지) — 실패해도 무시.
+    for item in items:
+        try:
+            USAGE_TELEMETRY.record("memory_recall", boi_id=str(item.get("memory_id") or ""), employee_id=employee_id)
+        except Exception:
+            pass
     return {"ok": True, "count": len(items), "items": items}
 
 
@@ -23109,9 +23263,16 @@ def agent_memory_items(employee_id: str, q: str = "", limit: int = 20, include_a
                 visibility = "public"
         scope_priority = {"private": 100, "team": 60, "public": 20}.get(visibility, 10)
         try:
-            usage_bonus = min(int(metadata.get("usage_count") or 1), 10)
+            frontmatter_usage = int(metadata.get("usage_count") or 1)
         except (TypeError, ValueError):
-            usage_bonus = 1
+            frontmatter_usage = 1
+        # 실사용 반영: frontmatter usage_count(생성 시 1 고정)에 runtime recall 횟수를 더한다.
+        try:
+            recall_count = USAGE_TELEMETRY.memory_recall_count(str(metadata.get("boi_id") or ""))
+        except Exception:
+            recall_count = 0
+        effective_usage = frontmatter_usage + recall_count
+        usage_bonus = min(effective_usage, 10)
         try:
             importance_bonus = max(0, min(int(metadata.get("importance") or 3), 5))
         except (TypeError, ValueError):
@@ -23122,7 +23283,7 @@ def agent_memory_items(employee_id: str, q: str = "", limit: int = 20, include_a
                 "title": metadata.get("title"),
                 "memory_kind": metadata.get("memory_kind") or "",
                 "description": metadata.get("description") or "",
-                "usage_count": metadata.get("usage_count", 1),
+                "usage_count": effective_usage,
                 "archive_status": metadata.get("archive_status", "active"),
                 "scope": visibility,
                 "classification": metadata.get("classification") or "internal",
@@ -29910,6 +30071,20 @@ async def submit_promotion(req: PromotionSubmitRequest, employee_id: str = Depen
     )
 
 
+# NOTE: /api/promotions/{promotion_id}보다 먼저 등록해야 "recommendations"가
+# promotion_id로 흡수되지 않는다. (Phase 3 promotion 추천 루프 — HOTL, 추천만 반환)
+@app.get("/api/promotions/recommendations")
+async def api_promotion_recommendations(
+    employee_id: str = Depends(current_employee),
+    limit: int = Query(10, ge=1, le=50),
+) -> dict[str, Any]:
+    require_employee_role(employee_id, "boi.promoter")
+    items = wiki_loops.promotion_candidates(
+        accessible_docs(employee_id), USAGE_TELEMETRY.usage_counts(), limit=limit
+    )
+    return {"ok": True, "employee_id": employee_id, "count": len(items), "items": items}
+
+
 @app.get("/api/promotions/{promotion_id}")
 async def get_promotion_status(promotion_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     require_employee_role(employee_id, "boi.viewer")
@@ -32278,3 +32453,885 @@ async def users() -> dict[str, Any]:
         "auth_mode": auth_mode(),
         "users": [{"employee_id": k, "name": USER_NAMES.get(k), "teams": v} for k, v in USER_TEAMS.items()],
     }
+
+
+# ---------------------------------------------------------------------------
+# HTML 공유 + 단축주소 (Phase 1) — docs/HTML_SHARE_AND_META_HARNESS_PLAN.md §4.2~4.4
+# 정책/레지스트리/ACL/검증 로직은 boi_api/app/share.py에 있고, 여기는 라우트 글루만 둔다.
+# GET /{name} catch-all은 반드시 이 파일의 마지막 라우트로 등록되어야 한다.
+
+SHORTLINK_REGISTRY_PATH = DATA_ROOT.parent / "registry" / "shortlinks.yaml"
+
+
+def shortlink_records() -> list[dict[str, Any]]:
+    return html_share.registry_load(SHORTLINK_REGISTRY_PATH)
+
+
+def share_owner_label(record: dict[str, Any]) -> str:
+    owner = str(record.get("owner_employee_id") or "")
+    name = user_name_for(owner)
+    return f"{name} ({owner})" if name and name != owner else owner
+
+
+# --- Phase 3 루프 엔지니어링 글루 (계획서 §4.6) — 로직은 boi_api/app/loops.py ----
+# 텔레메트리는 어떤 실패도 페이지 렌더/업로드를 깨뜨리면 안 된다: 모든 호출을 try로 감싼다.
+
+
+def record_doc_view_telemetry(doc: dict[str, Any], employee_id: str) -> None:
+    try:
+        boi_id = str((doc.get("metadata") or {}).get("boi_id") or "")
+        if boi_id:
+            USAGE_TELEMETRY.record("doc_view", boi_id=boi_id, employee_id=employee_id)
+    except Exception:
+        pass
+
+
+def record_shortlink_click_telemetry(record: dict[str, Any], employee_id: str, surface: str) -> None:
+    try:
+        USAGE_TELEMETRY.record(
+            "shortlink_click",
+            name=html_share.normalize_share_name(str(record.get("name") or "")),
+            target_kind=str(record.get("target_kind") or ""),
+            target=str(record.get("target") or ""),
+            employee_id=employee_id,
+            surface=surface,
+        )
+    except Exception:
+        pass
+
+
+def shortlink_view_count(name: str) -> int:
+    try:
+        return USAGE_TELEMETRY.shortlink_views(html_share.normalize_share_name(name))
+    except Exception:
+        return 0
+
+
+def public_dictionary_titles(employee_id: str) -> list[str]:
+    try:
+        return [
+            str(term.get("term") or "")
+            for term in dictionary_terms_for_employee(employee_id, scope="public")
+            if str(term.get("term") or "").strip()
+        ]
+    except Exception:
+        return []
+
+
+def share_html_analysis(html_text: str, employee_id: str) -> dict[str, Any] | None:
+    """업로드/enrich용 결정적 자동 분석 — 실패하면 None (카드 생성은 계속 진행)."""
+    try:
+        return wiki_loops.analyze_html_content(html_text, public_dictionary_titles(employee_id))
+    except Exception:
+        return None
+
+
+def share_items_for(employee_id: str, *, mine: bool) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for record in shortlink_records():
+        if str(record.get("status") or "") != "active":
+            continue
+        if mine:
+            if str(record.get("owner_employee_id") or "") != employee_id:
+                continue
+        elif str(record.get("visibility") or "public") != "public":
+            continue
+        view = html_share.share_record_view(record)
+        view["owner_label"] = share_owner_label(record)
+        view["viewer_url"] = app_url(view["url"], employee_id)
+        view["raw_viewer_url"] = app_url(view["raw_url"], employee_id)
+        view["views"] = shortlink_view_count(view["name"])
+        items.append(view)
+    items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    return items
+
+
+async def publish_html_share_event(
+    *,
+    employee_id: str,
+    name: str,
+    boi_id: str,
+    visibility: str,
+    title: str,
+    action: str,
+) -> str:
+    """`html.share.published.v1` 발행 (best-effort). 실패해도 업로드는 절대 실패하지 않는다."""
+    event_type = "html.share.published.v1"
+    try:
+        event = {
+            "event_id": f"evt-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+            "event_type": event_type,
+            "event_version": "1",
+            "occurred_at": now_iso(),
+            "producer": "boi-api-web",
+            "actor": {"type": "human", "employee_id_hash": employee_id, "employee_id": employee_id},
+            "visibility_hint": visibility,
+            "classification_hint": "internal",
+            "source_refs": [{"type": "boi", "ref": boi_id}],
+            "target": {"flow_key": event_to_flow_key(event_type), "boi_type": event_to_boi_type(event_type)},
+            "event_type_label": event_label(event_type),
+            "payload": {
+                "name": name,
+                "boi_id": boi_id,
+                "visibility": visibility,
+                "owner_employee_id": employee_id,
+                "title": title,
+                "action": action,
+            },
+            "trace_id": f"trace-{uuid.uuid4().hex}",
+        }
+        append_event_log(status="published", event=event)
+    except Exception:
+        return "failed"
+    try:
+        broker = await publish_event_to_kafka(event)
+        return str(broker.get("status") or "published")
+    except Exception:
+        # Kafka가 없거나 실패해도 event log에는 남았으므로 log_only로만 보고한다.
+        return "log_only"
+
+
+@app.post("/api/share/html")
+async def api_share_html_upload(request: Request, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    request_content_type = str(request.headers.get("content-type") or "")
+    if "multipart/form-data" in request_content_type.lower():
+        form = await request.form()
+        uploaded = form.get("file")
+        if uploaded is None or not hasattr(uploaded, "read"):
+            raise HTTPException(status_code=400, detail="file 필드에 HTML 파일을 첨부해야 합니다.")
+        # 상한+1 바이트까지만 읽어 초대형 업로드가 크기 검증 전에 메모리를 소모하지 않게 한다.
+        content = await uploaded.read(html_share.HTML_SHARE_MAX_BYTES + 1)
+        filename = getattr(uploaded, "filename", "") or "shared.html"
+        content_type = getattr(uploaded, "content_type", "") or ""
+        fields: dict[str, Any] = {key: form.get(key) for key in ("name", "title", "description", "visibility", "team_id")}
+    else:
+        # MCP/자동화 경로: data-lake artifact upload와 같은 JSON(content_base64) 이중 모드.
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="JSON 업로드 본문이 필요합니다.")
+        encoded = str(payload.get("content_base64") or "")
+        if not encoded:
+            raise HTTPException(status_code=400, detail="JSON 업로드에는 content_base64가 필요합니다.")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="content_base64는 올바른 base64 문자열이어야 합니다.") from exc
+        filename = safe_filename(str(payload.get("filename") or "")) if payload.get("filename") else "shared.html"
+        content_type = str(payload.get("content_type") or "text/html")
+        fields = payload
+    upload_error = html_share.validate_html_upload(content, content_type, SECRET_VALUE_RE)
+    if upload_error:
+        raise HTTPException(status_code=upload_error[0], detail=upload_error[1])
+    name = html_share.normalize_share_name(str(fields.get("name") or "")) or html_share.suggest_share_name(filename)
+    name_error = html_share.share_name_error(name)
+    if name_error:
+        raise HTTPException(status_code=400, detail=name_error)
+    title = str(fields.get("title") or "").strip() or Path(filename).stem
+    description = str(fields.get("description") or "").strip()
+    visibility = str(fields.get("visibility") or "public").strip().lower() or "public"
+    if visibility not in {"public", "team", "private"}:
+        raise HTTPException(status_code=400, detail="visibility는 public, team, private 중 하나여야 합니다.")
+    team_id = str(fields.get("team_id") or "").strip()
+    if visibility == "team":
+        team_id = team_id or DEFAULT_TEAM_ID
+        if team_id not in teams_for(employee_id):
+            raise HTTPException(status_code=403, detail=f"'{team_id}' 팀 멤버만 해당 팀 범위로 공유할 수 있습니다.")
+    else:
+        team_id = ""
+    records = shortlink_records()
+    existing = html_share.registry_find(records, name)
+    if existing is not None:
+        tombstoned = str(existing.get("status") or "") == "tombstone"
+        if tombstoned or str(existing.get("owner_employee_id") or "") != employee_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "ok": False,
+                    "name": name,
+                    "status": "tombstone" if tombstoned else "taken",
+                    "message": (
+                        f"'{name}'은(는) 삭제된 단축주소라 다시 사용할 수 없습니다."
+                        if tombstoned
+                        else f"'{name}'은(는) 다른 사용자가 이미 사용 중입니다. 본인 공유만 같은 이름으로 업데이트할 수 있습니다."
+                    ),
+                    "suggested_names": html_share.suggested_alternative_names(records, name),
+                },
+            )
+    try:
+        target_path = html_share.html_storage_path(DATA_ROOT, visibility, name, employee_id=employee_id, team_id=team_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="공유 파일 저장 경로를 계산할 수 없습니다.") from exc
+    if existing is not None:
+        try:
+            previous_path = html_share.storage_path_for_record(DATA_ROOT, existing)
+            if previous_path != target_path and previous_path.exists():
+                previous_path.unlink()
+                git_commit_for_path(previous_path, f"share: move /{name} storage")
+            previous_card_path = previous_path.with_suffix(".md")
+            if previous_path != target_path and previous_card_path.exists():
+                previous_card_path.unlink()
+                git_commit_for_path(previous_card_path, f"share: move /{name} knowledge card")
+        except (ValueError, OSError):
+            pass
+    ensure_dirs()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    now = now_iso()
+    created_at = str((existing or {}).get("created_at") or now)
+    original_sha256 = hashlib.sha256(content).hexdigest()
+    uploader_label = share_owner_label({"owner_employee_id": employee_id})
+    # 경로↔ACL 규칙: private 스코프의 owner는 반드시 경로의 사번과 같아야 한다.
+    owner = employee_id if visibility == "private" else uploader_label
+    boi_id = html_share.share_boi_id(visibility, name, employee_id=employee_id, team_id=team_id)
+    profile = html_share.build_html_profile_jsonld(
+        name=name,
+        title=title,
+        description=description,
+        visibility=visibility,
+        team_id=team_id,
+        owner=owner,
+        owner_employee_id=employee_id,
+        reviewer=uploader_label,
+        timestamp=now,
+        original_filename=filename,
+        original_sha256=original_sha256,
+    )
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        # /r/{name}은 utf-8로 서빙되므로 비 UTF-8 문서는 최선 노력으로 변환해 저장한다.
+        text = content.decode("utf-8", errors="replace")
+    stored_bytes = html_share.inject_html_profile(text, profile).encode("utf-8")
+    target_path.write_bytes(stored_bytes)
+    stored_sha256 = hashlib.sha256(stored_bytes).hexdigest()
+    data_root_resolved = Path(DATA_ROOT).resolve()
+    html_repo_path = "data/boi/" + str(target_path.relative_to(data_root_resolved)).replace("\\", "/")
+    card_path = target_path.with_suffix(".md")
+    card_path.write_text(
+        html_share.build_knowledge_card_markdown(
+            name=name,
+            title=title,
+            description=description,
+            visibility=visibility,
+            team_id=team_id,
+            owner=owner,
+            owner_label=uploader_label,
+            owner_employee_id=employee_id,
+            created_at=created_at,
+            updated_at=now,
+            original_filename=filename,
+            original_sha256=original_sha256,
+            stored_sha256=stored_sha256,
+            html_repo_path=html_repo_path,
+            # 결정적 자동 분석(제목/목차/발췌/사전 태그) — 원본 텍스트 기준(프로필 주입 전).
+            analysis=share_html_analysis(text, employee_id),
+        ),
+        encoding="utf-8",
+    )
+    record = html_share.build_shortlink_record(
+        name=name,
+        target_kind="html",
+        target=boi_id,
+        owner_employee_id=employee_id,
+        visibility=visibility,
+        team_id=team_id,
+        title=title,
+        description=description,
+        now=now,
+        created_at=created_at,
+    )
+    html_share.registry_upsert(SHORTLINK_REGISTRY_PATH, record)
+    invalidate_doc_caches()
+    html_commit = git_commit_for_path(target_path, f"share: publish /{name} ({visibility})")
+    card_commit = git_commit_for_path(card_path, f"share: knowledge card for /{name}")
+    registry_commit = git_commit_for_path(SHORTLINK_REGISTRY_PATH, f"share: shortlink registry update for /{name}")
+    event_status = await publish_html_share_event(
+        employee_id=employee_id,
+        name=name,
+        boi_id=boi_id,
+        visibility=visibility,
+        title=title,
+        action="updated" if existing is not None else "created",
+    )
+    return {
+        "ok": True,
+        "name": name,
+        "url": f"/{name}",
+        "raw_url": f"/r/{name}",
+        "boi_id": boi_id,
+        "card_uri": "/" + str(card_path.relative_to(data_root_resolved)).replace("\\", "/"),
+        "owner_employee_id": employee_id,
+        "visibility": visibility,
+        "team_id": team_id,
+        "title": title,
+        "status": "updated" if existing is not None else "created",
+        "commit": {
+            "html": html_commit.get("status"),
+            "card": card_commit.get("status"),
+            "registry": registry_commit.get("status"),
+        },
+        "event": event_status,
+    }
+
+
+@app.post("/api/share/preview")
+async def api_share_preview(request: Request, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    """게시 없이 이름/본문/스코프를 검증하고 게시될 결과를 미리 보여준다. (비변경)"""
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="JSON preview 본문이 필요합니다.")
+    filename = safe_filename(str(payload.get("filename") or "")) if payload.get("filename") else "shared.html"
+    content = b""
+    encoded = str(payload.get("content_base64") or "")
+    if encoded:
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="content_base64는 올바른 base64 문자열이어야 합니다.") from exc
+    elif payload.get("content"):
+        content = str(payload.get("content") or "").encode("utf-8")
+    blockers: list[str] = []
+    if content:
+        upload_error = html_share.validate_html_upload(content, str(payload.get("content_type") or "text/html"), SECRET_VALUE_RE)
+        if upload_error:
+            blockers.append(upload_error[1])
+    name = html_share.normalize_share_name(str(payload.get("name") or "")) or html_share.suggest_share_name(filename)
+    name_error = html_share.share_name_error(name)
+    if name_error:
+        blockers.append(name_error)
+    visibility = str(payload.get("visibility") or "public").strip().lower() or "public"
+    if visibility not in {"public", "team", "private"}:
+        blockers.append("visibility는 public, team, private 중 하나여야 합니다.")
+        visibility = "public"
+    team_id = str(payload.get("team_id") or "").strip()
+    if visibility == "team":
+        team_id = team_id or DEFAULT_TEAM_ID
+        if team_id not in teams_for(employee_id):
+            blockers.append(f"'{team_id}' 팀 멤버만 해당 팀 범위로 공유할 수 있습니다.")
+    else:
+        team_id = ""
+    records = shortlink_records()
+    name_status = html_share.shortlink_name_status(records, name, employee_id)
+    suggested_names: list[str] = []
+    if name_status in {"taken", "tombstone"}:
+        suggested_names = html_share.suggested_alternative_names(records, name)
+        blockers.append(
+            f"'{name}'은(는) 삭제된 단축주소라 다시 사용할 수 없습니다."
+            if name_status == "tombstone"
+            else f"'{name}'은(는) 다른 사용자가 이미 사용 중입니다. 다른 이름을 선택해주세요."
+        )
+    title = str(payload.get("title") or "").strip() or Path(filename).stem
+    description = str(payload.get("description") or "").strip()
+    return {
+        "ok": not blockers,
+        "mutating": False,
+        "employee_id": employee_id,
+        "name": name,
+        "name_status": name_status,
+        "suggested_names": suggested_names,
+        "content_checked": bool(content),
+        "content_bytes": len(content),
+        "blockers": blockers,
+        "would_publish": {
+            "action": "update" if name_status == "owned_by_me" else "create",
+            "url": f"/{name}",
+            "raw_url": f"/r/{name}",
+            "boi_id": html_share.share_boi_id(visibility, name, employee_id=employee_id, team_id=team_id),
+            "visibility": visibility,
+            "team_id": team_id,
+            "title": title,
+            "description": html_share.share_card_description(title, description),
+            "knowledge_card": "지식 카드(.md)가 HTML 옆에 자동 생성되어 검색/그래프에 편입됩니다.",
+            "event": "html.share.published.v1",
+        },
+    }
+
+
+@app.post("/api/share/links")
+async def api_share_register_doc_link(request: Request, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    """접근 가능한 기존 BoI 문서에 대한 doc-kind 단축주소 등록. 이름 정책은 업로드와 동일하다."""
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="JSON 본문이 필요합니다.")
+    target_boi_id = str(payload.get("target_boi_id") or payload.get("boi_id") or payload.get("target") or "").strip()
+    if not target_boi_id:
+        raise HTTPException(status_code=400, detail="target_boi_id가 필요합니다.")
+    doc = find_doc_by_id(target_boi_id, employee_id)
+    if doc is None:
+        # 접근 불가와 미존재를 같은 404로 응답해 문서 존재 여부 노출을 피한다.
+        raise HTTPException(status_code=404, detail="대상 BoI 문서를 찾을 수 없거나 접근 권한이 없습니다.")
+    doc_metadata = doc.get("metadata") or {}
+    name = html_share.normalize_share_name(str(payload.get("name") or "")) or html_share.suggest_share_name(
+        target_boi_id.split(":")[-1]
+    )
+    name_error = html_share.share_name_error(name)
+    if name_error:
+        raise HTTPException(status_code=400, detail=name_error)
+    records = shortlink_records()
+    existing = html_share.registry_find(records, name)
+    if existing is not None:
+        tombstoned = str(existing.get("status") or "") == "tombstone"
+        if tombstoned or str(existing.get("owner_employee_id") or "") != employee_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "ok": False,
+                    "name": name,
+                    "status": "tombstone" if tombstoned else "taken",
+                    "message": (
+                        f"'{name}'은(는) 삭제된 단축주소라 다시 사용할 수 없습니다."
+                        if tombstoned
+                        else f"'{name}'은(는) 다른 사용자가 이미 사용 중입니다. 본인 단축주소만 같은 이름으로 업데이트할 수 있습니다."
+                    ),
+                    "suggested_names": html_share.suggested_alternative_names(records, name),
+                },
+            )
+    now = now_iso()
+    record = html_share.build_shortlink_record(
+        name=name,
+        target_kind="doc",
+        target=target_boi_id,
+        owner_employee_id=employee_id,
+        visibility=str(doc_metadata.get("visibility") or "private"),
+        team_id=str(doc_metadata.get("team_id") or ""),
+        title=str(payload.get("title") or doc_metadata.get("title") or name).strip() or name,
+        description=str(payload.get("description") or doc_metadata.get("description") or "").strip(),
+        now=now,
+        created_at=str((existing or {}).get("created_at") or now),
+    )
+    html_share.registry_upsert(SHORTLINK_REGISTRY_PATH, record)
+    invalidate_doc_caches()
+    registry_commit = git_commit_for_path(SHORTLINK_REGISTRY_PATH, f"share: register doc shortlink /{name}")
+    view = html_share.share_record_view(record)
+    view["status"] = "updated" if existing is not None else "created"
+    view["ok"] = True
+    view["commit"] = {"registry": registry_commit.get("status")}
+    return view
+
+
+@app.get("/api/share/names/{name}/availability")
+async def api_share_name_availability(name: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    normalized = html_share.normalize_share_name(name)
+    return {
+        "name": normalized,
+        "status": html_share.shortlink_name_status(shortlink_records(), normalized, employee_id),
+    }
+
+
+@app.get("/api/share/mine")
+async def api_share_mine(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    items = share_items_for(employee_id, mine=True)
+    return {"ok": True, "employee_id": employee_id, "count": len(items), "items": items}
+
+
+@app.get("/api/share/list")
+async def api_share_public_list(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    items = share_items_for(employee_id, mine=False)
+    return {"ok": True, "employee_id": employee_id, "count": len(items), "items": items}
+
+
+@app.delete("/api/share/{name}")
+async def api_share_delete(name: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("status") or "") != "active":
+        raise HTTPException(status_code=404, detail="삭제할 공유를 찾을 수 없습니다.")
+    if str(record.get("owner_employee_id") or "") != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="본인이 등록한 공유만 삭제할 수 있습니다.")
+    html_share.registry_tombstone(SHORTLINK_REGISTRY_PATH, normalized, now_iso())
+    if str(record.get("target_kind") or "") == "html":
+        try:
+            file_path = html_share.storage_path_for_record(DATA_ROOT, record)
+            if file_path.exists():
+                file_path.unlink()
+                git_commit_for_path(file_path, f"share: delete /{normalized}")
+            card_path = file_path.with_suffix(".md")
+            if card_path.exists():
+                card_path.unlink()
+                git_commit_for_path(card_path, f"share: delete knowledge card /{normalized}")
+        except (ValueError, OSError):
+            pass
+    invalidate_doc_caches()
+    git_commit_for_path(SHORTLINK_REGISTRY_PATH, f"share: tombstone /{normalized}")
+    return {"ok": True, "name": normalized, "status": "tombstone"}
+
+
+# --- Phase 3: 텔레메트리/피드백/가드닝/enrich 라우트 (계획서 §4.6) -------------
+
+
+class FeedbackRequest(BaseModel):
+    helpful: bool
+    comment: str = Field(default="", max_length=500)
+
+
+@app.get("/api/telemetry/usage")
+async def api_telemetry_usage(
+    employee_id: str = Depends(current_employee),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict[str, Any]:
+    """요청자가 읽을 수 있는 문서/단축주소의 상위 사용량 집계 (개인별 로그 미노출)."""
+    usage = USAGE_TELEMETRY.usage_counts()
+    records = {
+        html_share.normalize_share_name(str(record.get("name") or "")): record
+        for record in shortlink_records()
+    }
+    teams = teams_for(employee_id)
+    items: list[dict[str, Any]] = []
+    for key, stats in usage.items():
+        if key.startswith("boi:"):
+            if find_doc_by_id(key, employee_id) is None:
+                continue
+            kind = "doc"
+        else:
+            record = records.get(key)
+            if record is None or not html_share.can_read_share(record, employee_id=employee_id, teams=teams):
+                continue
+            kind = "shortlink"
+        items.append({"key": key, "kind": kind, **stats})
+    items.sort(
+        key=lambda item: (
+            -(int(item.get("views") or 0) + int(item.get("clicks") or 0)),
+            str(item.get("key") or ""),
+        )
+    )
+    items = items[:limit]
+    return {"ok": True, "employee_id": employee_id, "count": len(items), "items": items}
+
+
+@app.post("/api/docs/{boi_id:path}/feedback")
+async def api_doc_feedback(
+    boi_id: str, req: FeedbackRequest, employee_id: str = Depends(current_employee)
+) -> dict[str, Any]:
+    doc = find_doc_by_id(boi_id, employee_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="BoI 문서를 찾을 수 없거나 접근 권한이 없습니다.")
+    canonical = str((doc.get("metadata") or {}).get("boi_id") or boi_id)
+    # 코멘트는 JSONL 이벤트에만 남고 카운터/조회 API에는 집계 수치만 노출된다.
+    recorded = USAGE_TELEMETRY.record(
+        "doc_feedback",
+        boi_id=canonical,
+        employee_id=employee_id,
+        helpful=bool(req.helpful),
+        comment=str(req.comment or "").strip()[:500],
+    )
+    return {"ok": True, "boi_id": canonical, "recorded": recorded, "feedback": USAGE_TELEMETRY.doc_feedback_counts(canonical)}
+
+
+@app.get("/api/docs/{boi_id:path}/feedback")
+async def api_doc_feedback_counts(boi_id: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    doc = find_doc_by_id(boi_id, employee_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="BoI 문서를 찾을 수 없거나 접근 권한이 없습니다.")
+    canonical = str((doc.get("metadata") or {}).get("boi_id") or boi_id)
+    return {"ok": True, "boi_id": canonical, **USAGE_TELEMETRY.doc_feedback_counts(canonical)}
+
+
+@app.post("/api/share/{name}/feedback")
+async def api_share_feedback(
+    name: str, req: FeedbackRequest, employee_id: str = Depends(current_employee)
+) -> dict[str, Any]:
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("status") or "") != "active":
+        raise HTTPException(status_code=404, detail="피드백을 남길 공유를 찾을 수 없습니다.")
+    if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
+        raise HTTPException(status_code=404, detail="피드백을 남길 공유를 찾을 수 없습니다.")
+    recorded = USAGE_TELEMETRY.record(
+        "share_feedback",
+        name=normalized,
+        target=str(record.get("target") or ""),
+        employee_id=employee_id,
+        helpful=bool(req.helpful),
+        comment=str(req.comment or "").strip()[:500],
+    )
+    return {"ok": True, "name": normalized, "recorded": recorded, "feedback": USAGE_TELEMETRY.shortlink_feedback_counts(normalized)}
+
+
+@app.post("/api/share/{name}/enrich")
+async def api_share_enrich(name: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    """지식 카드의 `# 자동 분석` 섹션/tags를 다시 계산한다 (결정적, LLM 없음).
+
+    소유자 또는 서비스 토큰(admin 역할로 해석) 호출만 허용 — 비동기 파이프라인이
+    html.share.published.v1 이벤트를 받아 재-enrich하는 경로가 후자다.
+    """
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("target_kind") or "") != "html" or str(record.get("status") or "") != "active":
+        raise HTTPException(status_code=404, detail="enrich할 공유 HTML을 찾을 수 없습니다.")
+    if str(record.get("owner_employee_id") or "") != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="본인이 등록한 공유만 enrich할 수 있습니다.")
+    try:
+        file_path = html_share.storage_path_for_record(DATA_ROOT, record)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="enrich할 공유 HTML을 찾을 수 없습니다.") from exc
+    card_path = file_path.with_suffix(".md")
+    if not file_path.exists() or not card_path.exists():
+        raise HTTPException(status_code=404, detail="공유 HTML 또는 지식 카드가 없습니다.")
+    analysis = share_html_analysis(file_path.read_text(encoding="utf-8", errors="replace"), employee_id)
+    if analysis is None:
+        raise HTTPException(status_code=500, detail="자동 분석에 실패했습니다. 잠시 후 다시 시도해주세요.")
+    card_text = card_path.read_text(encoding="utf-8")
+    updated_text = wiki_loops.upsert_card_analysis(card_text, analysis)
+    changed = updated_text != card_text
+    commit_status = "unchanged"
+    if changed:
+        card_path.write_text(updated_text, encoding="utf-8")
+        invalidate_doc_caches()
+        commit_status = str(git_commit_for_path(card_path, f"share: enrich knowledge card /{normalized}").get("status") or "")
+    return {
+        "ok": True,
+        "name": normalized,
+        "updated": changed,
+        "commit": commit_status,
+        "analysis": {
+            "title": analysis.get("title"),
+            "heading_count": len(analysis.get("headings") or []),
+            "table_count": analysis.get("table_count"),
+            "script_count": analysis.get("script_count"),
+            "tags": wiki_loops.analysis_tags(analysis),
+        },
+    }
+
+
+async def publish_wiki_remediation_event(employee_id: str, finding: dict[str, Any], ran_at: str) -> str:
+    """gardening finding 1건을 `wiki.remediation.requested.v1`로 발행 (best-effort).
+
+    boi.materialize_event(event_types: ["*"])가 이 이벤트를 BoI 문서로 자산화해
+    Inbox 루프를 닫는다. Kafka가 없으면 event log에만 남기고(log_only) 실패는 삼킨다.
+    """
+    event_type = "wiki.remediation.requested.v1"
+    try:
+        boi_ref = str(finding.get("boi_id") or "")
+        event = {
+            "event_id": f"evt-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}",
+            "event_type": event_type,
+            "event_version": "1",
+            "occurred_at": now_iso(),
+            "producer": "boi-api-gardening",
+            "actor": {"type": "system", "employee_id_hash": employee_id, "employee_id": employee_id},
+            "visibility_hint": "private",
+            "classification_hint": "internal",
+            "source_refs": [{"type": "boi", "ref": boi_ref}] if boi_ref.startswith("boi:") else [],
+            "target": {"flow_key": event_to_flow_key(event_type), "boi_type": event_to_boi_type(event_type)},
+            "event_type_label": event_label(event_type),
+            "payload": {
+                "title": f"[gardening:{finding.get('kind')}] {finding.get('title') or finding.get('boi_id')}",
+                "kind": finding.get("kind"),
+                "boi_id": finding.get("boi_id"),
+                "path": finding.get("path") or "",
+                "detail": finding.get("detail"),
+                "fingerprint": finding.get("fingerprint"),
+                "gardening_ran_at": ran_at,
+            },
+            "trace_id": f"trace-{uuid.uuid4().hex}",
+        }
+        append_event_log(status="published", event=event)
+    except Exception:
+        return "failed"
+    try:
+        broker = await publish_event_to_kafka(event)
+        return str(broker.get("status") or "published")
+    except Exception:
+        return "log_only"
+
+
+@app.post("/api/gardening/run")
+async def api_gardening_run(
+    employee_id: str = Depends(current_employee),
+    max_age_days: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=20, ge=0, le=1000),
+) -> dict[str, Any]:
+    """sleep-time gardening 점검 실행. 운영 트리거는 외부 cron/스케줄러가 발행하는
+    wiki.gardening.requested.v1 이벤트(→ wiki.gardening.run 액션)이고,
+    이 REST 엔드포인트는 수동/로컬 트리거를 겸한다."""
+    # 서비스 토큰 요청은 admin 역할로 해석되므로 boi.admin 확인 하나로 두 경로를 모두 허용한다.
+    require_employee_role(employee_id, "boi.admin")
+    docs = accessible_docs(employee_id)
+    link_edges: list[dict[str, Any]] | None = None
+    lint_errors: list[str] = []
+    try:
+        lint_result = lint_data_root(DATA_ROOT.parent, strict_links=True)
+        link_edges = lint_result.link_edges
+        lint_errors = lint_result.errors
+    except Exception:
+        link_edges = None  # 링크 그래프 실패는 실행을 막지 않되 orphan 점검만 건너뛴다.
+    try:
+        needs_fix = USAGE_TELEMETRY.docs_needs_fix_counts()
+        usage = USAGE_TELEMETRY.usage_counts()
+    except Exception:
+        needs_fix = {}
+        usage = {}
+    findings, meta = wiki_loops.build_gardening_findings(
+        docs=docs,
+        link_edges=link_edges,
+        lint_errors=lint_errors,
+        needs_fix_counts=needs_fix,
+        today=datetime.now(KST).date(),
+        max_age_days=max_age_days,
+    )
+    try:
+        candidates = wiki_loops.promotion_candidates(docs, usage, limit=10)
+    except Exception:
+        candidates = []
+    ran_at = now_iso()
+    report = {
+        "ran_at": ran_at,
+        "employee_id": employee_id,
+        "max_age_days": max_age_days,
+        "counts": {**meta, "promotion_candidates": len(candidates)},
+        "findings": findings,
+        "promotion_candidates": candidates,
+    }
+    try:
+        wiki_loops.store_gardening_report(GARDENING_ROOT, report)
+    except Exception:
+        pass
+    try:
+        new_findings = wiki_loops.claim_new_findings(GARDENING_ROOT, findings, limit=limit, now=ran_at)
+    except Exception:
+        new_findings = []
+    emitted: list[dict[str, Any]] = []
+    for finding in new_findings:
+        emitted.append(
+            {
+                "fingerprint": finding.get("fingerprint"),
+                "kind": finding.get("kind"),
+                "event": await publish_wiki_remediation_event(employee_id, finding, ran_at),
+            }
+        )
+    return {"ok": True, "report": report, "remediation": {"emitted_count": len(emitted), "events": emitted}}
+
+
+@app.get("/api/gardening/report")
+async def api_gardening_report(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
+    if not ({"boi.admin", "boi.promoter"} & set(roles_for(employee_id))):
+        raise HTTPException(status_code=403, detail="missing required role: boi.promoter")
+    report = wiki_loops.load_gardening_report(GARDENING_ROOT)
+    if report is None:
+        raise HTTPException(status_code=404, detail="아직 gardening 보고서가 없습니다. POST /api/gardening/run으로 점검을 실행하세요.")
+    return {"ok": True, "report": report}
+
+
+@app.get("/r/{name}")
+async def share_raw_html(name: str, employee_id: str = Depends(current_employee)) -> Response:
+    normalized = html_share.normalize_share_name(name)
+    if normalized in html_share.RESERVED_SHORTLINK_NAMES or not html_share.SHORTLINK_NAME_RE.match(normalized):
+        raise HTTPException(status_code=404, detail="shared html not found")
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("target_kind") or "") != "html":
+        raise HTTPException(status_code=404, detail="shared html not found")
+    if str(record.get("status") or "") == "tombstone":
+        raise HTTPException(status_code=410, detail="삭제된 공유 주소입니다.")
+    if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
+        # doc_page와 동일하게 404로 응답해 문서 존재 여부 노출을 피한다.
+        raise HTTPException(status_code=404, detail="shared html not found")
+    try:
+        file_path = html_share.storage_path_for_record(DATA_ROOT, record)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="shared html not found") from exc
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="shared html not found")
+    record_shortlink_click_telemetry(record, employee_id, "raw")
+    # SECURITY INVARIANT: CSP sandbox 값에 allow-same-origin을 절대 추가하지 않는다.
+    # allow-scripts + allow-same-origin 조합은 업로드된 HTML이 위키 도메인의
+    # 쿠키/세션/스토리지에 접근할 수 있게 만들어 XSS 세션 탈취로 이어진다. (계획서 §4.3 Q3)
+    return Response(
+        content=file_path.read_bytes(),
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Security-Policy": "sandbox allow-scripts",
+            "X-Content-Type-Options": "nosniff",
+            "Cross-Origin-Resource-Policy": "same-site",
+        },
+    )
+
+
+@app.get("/share", response_class=HTMLResponse)
+async def share_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "share.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="library",
+                title="HTML 공유",
+                description="Self-contained HTML 문서를 업로드하면 단축주소(/{이름})로 바로 공유됩니다.",
+            ),
+            "my_shares": share_items_for(employee_id, mine=True),
+            "public_shares": share_items_for(employee_id, mine=False),
+            "teams": teams_for(employee_id),
+            "default_team_id": DEFAULT_TEAM_ID,
+            "upload_api_url": "/api/share/html",
+            "availability_api_base": "/api/share/names",
+        },
+    )
+
+
+def share_missing_response(request: Request, employee_id: str, name: str, *, gone: bool) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "share_missing.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="library",
+                title="삭제된 공유 주소" if gone else "등록되지 않은 단축주소",
+                description=(
+                    "이 단축주소는 삭제되었고, 북마크 하이재킹 방지를 위해 같은 이름은 다시 사용되지 않습니다."
+                    if gone
+                    else "아직 아무도 사용하지 않는 단축주소입니다. 검색하거나 이 이름으로 직접 공유를 등록할 수 있습니다."
+                ),
+            ),
+            "name": name,
+            "gone": gone,
+            "search_url": app_url("/", employee_id, view="explorer", q=name),
+            "share_url": app_url("/share", employee_id),
+        },
+        status_code=410 if gone else 404,
+    )
+
+
+# 이 catch-all 라우트는 반드시 main.py의 마지막 라우트여야 한다.
+# 새 루트 경로를 추가하면 share.RESERVED_SHORTLINK_NAMES에도 반드시 등록해야 하며
+# tests/test_html_share.py::test_all_root_segments_are_reserved 가 이를 강제한다.
+@app.get("/{name}", response_class=HTMLResponse)
+async def shortlink_viewer_page(request: Request, name: str, employee_id: str = Depends(current_employee)) -> Response:
+    normalized = html_share.normalize_share_name(name)
+    if normalized in html_share.RESERVED_SHORTLINK_NAMES or not html_share.SHORTLINK_NAME_RE.match(normalized):
+        raise HTTPException(status_code=404, detail="not found")
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None:
+        return share_missing_response(request, employee_id, normalized, gone=False)
+    if str(record.get("status") or "") == "tombstone":
+        return share_missing_response(request, employee_id, normalized, gone=True)
+    if str(record.get("target_kind") or "") == "doc":
+        record_shortlink_click_telemetry(record, employee_id, "viewer")
+        return RedirectResponse(doc_url_for_ref(str(record.get("target") or ""), employee_id), status_code=302)
+    if str(record.get("target_kind") or "") == "url":
+        record_shortlink_click_telemetry(record, employee_id, "viewer")
+        return RedirectResponse(str(record.get("target") or "/share"), status_code=302)
+    if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
+        # 접근 불가와 미등록을 같은 404로 응답해 존재 여부 노출을 피한다.
+        return share_missing_response(request, employee_id, normalized, gone=False)
+    record_shortlink_click_telemetry(record, employee_id, "viewer")
+    view = html_share.share_record_view(record)
+    return templates.TemplateResponse(
+        "html_viewer.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "share": view,
+            "owner_label": share_owner_label(record),
+            "home_url": final_operator_guide_url(employee_id),
+            # 조회수는 best-effort — 텔레메트리 실패가 뷰어 렌더를 깨면 안 된다.
+            "views": shortlink_view_count(normalized),
+            "feedback_api_url": app_url(f"/api/share/{normalized}/feedback", employee_id),
+            # dev 모드에서는 employee_id query가 인증 수단이므로 iframe src에도 전파한다.
+            "raw_url": app_url(view["raw_url"], employee_id),
+            "share_page_url": app_url("/share", employee_id),
+        },
+    )

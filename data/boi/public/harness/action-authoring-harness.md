@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/reference
 title: Action Authoring Harness
 description: API, Webhook, MCP, Langflow, Manual, Event Broker, BoI Writer action을 같은 방식으로 정의하는 기준

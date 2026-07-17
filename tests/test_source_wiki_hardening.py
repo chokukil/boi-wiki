@@ -132,5 +132,7 @@ def test_agent_memory_review_and_harness_acceptance(boi_app_module):
     acceptance = client.get("/api/harness/acceptance?employee_id=100001")
     assert acceptance.status_code == 200
     body = acceptance.json()
-    assert set(body["matrix"]) == {"Observation", "Context", "Control", "Action", "State", "Verification"}
-    assert body["summary"]["total"] >= 6
+    assert set(body["matrix"]) == {"Observation", "Context", "Control", "Action", "State", "Verification", "Meta"}
+    meta_names = [item["name"] for item in body["matrix"]["Meta"]]
+    assert meta_names == ["harness_manifest_consistent", "harness_changelog_ratchet", "harness_eval_status"]
+    assert body["summary"]["total"] >= 9

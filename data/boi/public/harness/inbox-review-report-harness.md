@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/harness
 title: Inbox Review Report Harness
 description: BoI Inbox 검증 보고서 품질, 성능, 근거 정책을 검증하는 하네스

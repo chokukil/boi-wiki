@@ -1,3 +1,4 @@
+import base64
 import inspect
 import json
 import os
@@ -232,6 +233,11 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "capability_deduplicate", "description": "[Deprecated alias] Use workflow_definition_deduplicate."},
     {"name": "event_skills_list", "description": "List Event Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
     {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
+    {"name": "html_share_publish", "description": "Publish a user-confirmed self-contained HTML document to a BoI Wiki shortlink with an embedded BoI HTML Profile and auto-generated knowledge card."},
+    {"name": "html_share_preview", "description": "Preview HTML share publication without mutating anything: validates content, name availability, and scope."},
+    {"name": "shortlink_check", "description": "Check availability of a BoI Wiki shortlink name (available/owned_by_me/taken/tombstone/reserved/invalid)."},
+    {"name": "shortlink_list", "description": "List the caller's shortlinks and public shortlinks from the shared registry."},
+    {"name": "shortlink_register", "description": "Register a user-confirmed doc-kind shortlink for an existing accessible BoI document."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://docs/{boi_id}", "description": "Public BoI document as JSON text. Use employee-scoped templates for private/team content."},
@@ -287,6 +293,11 @@ MCP_TOOL_IA_GROUPS = [
             "private_memory_restore",
             "private_memory_mark_memory",
             "harness_acceptance",
+            "html_share_publish",
+            "html_share_preview",
+            "shortlink_check",
+            "shortlink_list",
+            "shortlink_register",
         },
     ),
     (
@@ -1130,6 +1141,120 @@ async def agent_memory_review(
 async def harness_acceptance(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
     """Return BoI Harness responsibility/acceptance matrix."""
     return await api_get("/api/harness/acceptance", employee_id=employee_id)
+
+
+def html_share_content_base64(content: str, content_base64: str) -> str:
+    if content_base64:
+        return content_base64
+    if content:
+        return base64.b64encode(content.encode("utf-8")).decode("ascii")
+    return ""
+
+
+@mcp.tool(name="html_share_publish")
+async def html_share_publish(
+    content: str = "",
+    content_base64: str = "",
+    name: str = "",
+    title: str = "",
+    description: str = "",
+    visibility: Literal["public", "team", "private"] = "public",
+    team_id: str = "",
+    filename: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Publish a user-confirmed self-contained HTML document to a BoI Wiki shortlink with a knowledge card."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before publishing shared HTML")
+    encoded = html_share_content_base64(content, content_base64)
+    if not encoded:
+        raise RuntimeError("content or content_base64 is required to publish shared HTML")
+    return await api_post(
+        "/api/share/html",
+        employee_id=employee_id,
+        payload={
+            "content_base64": encoded,
+            "name": name,
+            "title": title,
+            "description": description,
+            "visibility": visibility,
+            "team_id": team_id,
+            "filename": filename,
+        },
+    )
+
+
+@mcp.tool(name="html_share_preview")
+async def html_share_preview(
+    content: str = "",
+    content_base64: str = "",
+    name: str = "",
+    title: str = "",
+    description: str = "",
+    visibility: Literal["public", "team", "private"] = "public",
+    team_id: str = "",
+    filename: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Preview what an HTML share publication would produce without mutating anything."""
+    return await api_post(
+        "/api/share/preview",
+        employee_id=employee_id,
+        payload={
+            "content_base64": html_share_content_base64(content, content_base64),
+            "name": name,
+            "title": title,
+            "description": description,
+            "visibility": visibility,
+            "team_id": team_id,
+            "filename": filename,
+        },
+    )
+
+
+@mcp.tool(name="shortlink_check")
+async def shortlink_check(name: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """Check availability of a BoI Wiki shortlink name."""
+    return await api_get(f"/api/share/names/{name}/availability", employee_id=employee_id)
+
+
+@mcp.tool(name="shortlink_list")
+async def shortlink_list(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
+    """List the caller's shortlinks and public shortlinks."""
+    mine = await api_get("/api/share/mine", employee_id=employee_id)
+    public = await api_get("/api/share/list", employee_id=employee_id)
+    return {
+        "ok": bool(mine.get("ok", True)) and bool(public.get("ok", True)),
+        "employee_id": employee_id,
+        "mine": mine.get("items", []),
+        "public": public.get("items", []),
+    }
+
+
+@mcp.tool(name="shortlink_register")
+async def shortlink_register(
+    name: str,
+    target_boi_id: str,
+    title: str = "",
+    description: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Register a user-confirmed doc-kind shortlink for an existing accessible BoI document."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before registering a shortlink")
+    return await api_post(
+        "/api/share/links",
+        employee_id=employee_id,
+        payload={
+            "name": name,
+            "target_boi_id": target_boi_id,
+            "title": title,
+            "description": description,
+            "user_confirmed": True,
+        },
+    )
 
 
 @mcp.tool(name="private_memory_cleanup_preview")

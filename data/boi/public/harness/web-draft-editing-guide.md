@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/reference
 title: Web Validated Editing Guide
 description: BoI Wiki source/body 직접 수정은 preview, validation, apply, auto-commit을 쓰고 promotion publish는 별도 경로를 쓰는 절차

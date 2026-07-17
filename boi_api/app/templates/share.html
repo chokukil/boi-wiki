@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HTML 공유 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <style>
+    .share-upload-layout { display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr); gap:18px; align-items:start; }
+    .share-dropzone { display:flex; flex-direction:column; gap:4px; align-items:center; justify-content:center; border:2px dashed #cbd5e1; border-radius:12px; padding:26px; text-align:center; background:#f8fafc; color:#475569; font-size:13px; cursor:pointer; transition:border-color .15s, background .15s; }
+    .share-dropzone.dragover { border-color:#2563eb; background:#eff6ff; color:#1e40af; }
+    .share-dropzone strong { display:block; margin-bottom:4px; color:#0f172a; }
+    .share-dropzone input[type="file"] { display:none; }
+    .share-selected-file { margin-top:8px; font-size:13px; color:#334155; }
+    .share-form-grid { display:grid; gap:12px; margin-top:14px; }
+    .share-form-grid label { display:flex; flex-direction:column; gap:5px; font-size:13px; font-weight:700; color:#334155; }
+    .share-form-grid label[hidden] { display:none; }
+    .share-form-grid input, .share-form-grid select, .share-form-grid textarea { border:1px solid #dbe3ef; border-radius:8px; padding:9px; font:inherit; background:#fff; }
+    .share-name-row { display:flex; gap:8px; align-items:center; }
+    .share-name-row input { flex:1; }
+    .share-name-status { font-size:12px; font-weight:800; }
+    .share-name-status.ok { color:#166534; }
+    .share-name-status.warn { color:#92400e; }
+    .share-name-status.bad { color:#991b1b; }
+    .share-suggestions button { margin-right:6px; }
+    .share-submit-row { display:flex; align-items:center; gap:12px; margin-top:14px; }
+    .share-result { font-size:13px; }
+    .share-result a { font-weight:800; }
+    .share-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .share-table th, .share-table td { text-align:left; padding:8px 10px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
+    .share-table td .muted { display:block; font-size:12px; }
+    @media (max-width: 960px) { .share-upload-layout { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+{% include "_app_shell.html" %}
+
+<main class="page-content share-page" data-employee-id="{{ employee_id }}">
+  {% with title="HTML 공유·단축주소", description="Self-contained HTML 문서를 업로드하면 " ~ request.url.hostname ~ "/{이름} 단축주소로 사내에 공유됩니다. 같은 이름으로 다시 올리면 내 공유가 업데이트됩니다.", eyebrow="Share" %}
+    {% include "_section_intro.html" %}
+  {% endwith %}
+
+  <section class="share-upload-layout">
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <h2>HTML 업로드</h2>
+          <p>단일 self-contained HTML 파일(최대 20MB)만 지원합니다. 외부 CDN 참조는 사내망에서 깨질 수 있습니다.</p>
+        </div>
+      </div>
+      <form id="share-upload-form" data-upload-url="{{ upload_api_url }}" data-availability-base="{{ availability_api_base }}">
+        <label class="share-dropzone" id="share-dropzone">
+          <strong>HTML 파일을 끌어다 놓거나 클릭해서 선택</strong>
+          <span>파일명이 단축주소 이름 기본값이 됩니다 (예: report_2026-07.html → report-2026-07)</span>
+          <span class="share-selected-file" id="share-selected-file"></span>
+          <input type="file" name="file" id="share-file-input" accept=".html,.htm,text/html" />
+        </label>
+        <div class="share-form-grid">
+          <label>
+            단축주소 이름
+            <span class="share-name-row">
+              <input name="name" id="share-name-input" placeholder="예: weekly-etch-report" autocomplete="off" spellcheck="false" />
+              <span class="share-name-status" id="share-name-status"></span>
+            </span>
+            <span class="muted share-suggestions" id="share-name-suggestions"></span>
+          </label>
+          <label>
+            제목
+            <input name="title" id="share-title-input" placeholder="공유 목록에 표시될 제목" />
+          </label>
+          <label>
+            설명
+            <textarea name="description" rows="2" placeholder="어떤 문서인지 한 줄로 설명해주세요. (보고서, 대시보드, 가이드 등 무엇이든 좋습니다)"></textarea>
+          </label>
+          <label>
+            공개 범위
+            <select name="visibility" id="share-visibility-select">
+              <option value="public" selected>public — 전사 공유</option>
+              <option value="team">team — 팀 공유</option>
+              <option value="private">private — 나만 보기</option>
+            </select>
+          </label>
+          <label id="share-team-row" hidden>
+            팀 선택
+            <select name="team_id">
+              {% for team in teams %}
+              <option value="{{ team }}" {% if team == default_team_id %}selected{% endif %}>{{ team }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="share-submit-row">
+          <button type="submit" id="share-submit-button">공유하기</button>
+          <span class="share-result" id="share-result" aria-live="polite"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <h2>내 공유</h2>
+          <p>같은 이름으로 다시 업로드하면 업데이트되고, 삭제하면 이름은 영구히 회수됩니다(tombstone).</p>
+        </div>
+      </div>
+      {% if my_shares %}
+      <table class="share-table">
+        <thead><tr><th>단축주소</th><th>범위</th><th>조회</th><th>갱신</th><th></th></tr></thead>
+        <tbody>
+          {% for item in my_shares %}
+          <tr>
+            <td>
+              <a href="{{ item.viewer_url }}">/{{ item.name }}</a>
+              <span class="muted">{{ item.title }}</span>
+            </td>
+            <td><span class="badge {{ item.visibility }}">{{ item.visibility }}</span>{% if item.team_id %}<span class="muted">{{ item.team_id }}</span>{% endif %}</td>
+            <td>{{ item.views }}회</td>
+            <td>{{ item.updated_at }}</td>
+            <td><button type="button" class="inline-button" data-share-delete="{{ item.name }}">삭제</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state compact"><p>아직 공유한 HTML이 없습니다. 왼쪽에서 첫 파일을 올려보세요.</p></div>
+      {% endif %}
+    </section>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>전사 공개 공유</h2>
+        <p>public으로 공유된 HTML 문서 목록입니다.</p>
+      </div>
+    </div>
+    {% if public_shares %}
+    <table class="share-table">
+      <thead><tr><th>단축주소</th><th>설명</th><th>소유자</th><th>조회</th><th>갱신</th></tr></thead>
+      <tbody>
+        {% for item in public_shares %}
+        <tr>
+          <td><a href="{{ item.viewer_url }}">/{{ item.name }}</a><span class="muted">{{ item.title }}</span></td>
+          <td>{{ item.description or "-" }}</td>
+          <td>{{ item.owner_label }}</td>
+          <td>{{ item.views }}회</td>
+          <td>{{ item.updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state compact"><p>아직 전사 공개된 공유가 없습니다.</p></div>
+    {% endif %}
+  </section>
+</main>
+
+<script>
+(function () {
+  var page = document.querySelector(".share-page");
+  var employeeId = page.getAttribute("data-employee-id") || "";
+  var form = document.getElementById("share-upload-form");
+  var dropzone = document.getElementById("share-dropzone");
+  var fileInput = document.getElementById("share-file-input");
+  var selectedFile = document.getElementById("share-selected-file");
+  var nameInput = document.getElementById("share-name-input");
+  var titleInput = document.getElementById("share-title-input");
+  var nameStatus = document.getElementById("share-name-status");
+  var suggestionsBox = document.getElementById("share-name-suggestions");
+  var visibilitySelect = document.getElementById("share-visibility-select");
+  var teamRow = document.getElementById("share-team-row");
+  var submitButton = document.getElementById("share-submit-button");
+  var resultBox = document.getElementById("share-result");
+  var availabilityBase = form.getAttribute("data-availability-base");
+  var uploadUrl = form.getAttribute("data-upload-url");
+  var availabilityTimer = null;
+
+  function withEmployee(url) {
+    return url + (url.indexOf("?") >= 0 ? "&" : "?") + "employee_id=" + encodeURIComponent(employeeId);
+  }
+
+  function slugify(value) {
+    var stem = String(value || "").replace(/\.[^.]+$/, "");
+    var slug = stem.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64).replace(/-+$/g, "");
+    return slug;
+  }
+
+  var statusLabels = {
+    available: ["사용 가능", "ok"],
+    owned_by_me: ["내 공유 — 업로드하면 업데이트됩니다", "warn"],
+    taken: ["다른 사용자가 사용 중", "bad"],
+    reserved: ["예약어라 사용할 수 없음", "bad"],
+    invalid: ["형식 오류 (소문자·숫자·하이픈 2~64자)", "bad"],
+    tombstone: ["삭제된 이름 — 다시 사용할 수 없음", "bad"]
+  };
+
+  function checkAvailability() {
+    var name = nameInput.value.trim().toLowerCase();
+    nameStatus.textContent = "";
+    nameStatus.className = "share-name-status";
+    if (!name) { return; }
+    fetch(withEmployee(availabilityBase + "/" + encodeURIComponent(name) + "/availability"))
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        var label = statusLabels[data.status] || [data.status, "warn"];
+        nameStatus.textContent = label[0];
+        nameStatus.className = "share-name-status " + label[1];
+      })
+      .catch(function () {});
+  }
+
+  nameInput.addEventListener("input", function () {
+    window.clearTimeout(availabilityTimer);
+    availabilityTimer = window.setTimeout(checkAvailability, 250);
+  });
+
+  function applyFile(file) {
+    if (!file) { return; }
+    selectedFile.textContent = file.name + " (" + Math.round(file.size / 1024) + " KB)";
+    if (!nameInput.value.trim()) { nameInput.value = slugify(file.name); }
+    if (!titleInput.value.trim()) { titleInput.value = file.name.replace(/\.[^.]+$/, ""); }
+    checkAvailability();
+  }
+
+  fileInput.addEventListener("change", function () { applyFile(fileInput.files[0]); });
+  ["dragover", "dragenter"].forEach(function (type) {
+    dropzone.addEventListener(type, function (event) { event.preventDefault(); dropzone.classList.add("dragover"); });
+  });
+  ["dragleave", "drop"].forEach(function (type) {
+    dropzone.addEventListener(type, function (event) { event.preventDefault(); dropzone.classList.remove("dragover"); });
+  });
+  dropzone.addEventListener("drop", function (event) {
+    if (event.dataTransfer && event.dataTransfer.files.length) {
+      fileInput.files = event.dataTransfer.files;
+      applyFile(event.dataTransfer.files[0]);
+    }
+  });
+
+  visibilitySelect.addEventListener("change", function () {
+    teamRow.hidden = visibilitySelect.value !== "team";
+  });
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    resultBox.textContent = "";
+    suggestionsBox.textContent = "";
+    if (!fileInput.files.length) {
+      resultBox.textContent = "먼저 HTML 파일을 선택해주세요.";
+      return;
+    }
+    submitButton.disabled = true;
+    resultBox.textContent = "업로드 중...";
+    var formData = new FormData(form);
+    fetch(withEmployee(uploadUrl), { method: "POST", body: formData })
+      .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
+      .then(function (result) {
+        submitButton.disabled = false;
+        if (result.status === 200 && result.data && result.data.ok) {
+          var viewerUrl = withEmployee(result.data.url);
+          resultBox.innerHTML = "";
+          var link = document.createElement("a");
+          link.href = viewerUrl;
+          link.textContent = location.origin + result.data.url;
+          resultBox.appendChild(document.createTextNode(result.data.status === "updated" ? "업데이트 완료: " : "공유 완료: "));
+          resultBox.appendChild(link);
+          window.setTimeout(function () { location.reload(); }, 1200);
+          return;
+        }
+        var detail = result.data && result.data.detail;
+        if (detail && typeof detail === "object") {
+          resultBox.textContent = detail.message || "이미 사용 중인 이름입니다.";
+          (detail.suggested_names || []).forEach(function (candidate) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "inline-button";
+            button.textContent = candidate;
+            button.addEventListener("click", function () {
+              nameInput.value = candidate;
+              checkAvailability();
+              suggestionsBox.textContent = "";
+            });
+            suggestionsBox.appendChild(button);
+          });
+        } else {
+          resultBox.textContent = typeof detail === "string" ? detail : "업로드에 실패했습니다.";
+        }
+      })
+      .catch(function () {
+        submitButton.disabled = false;
+        resultBox.textContent = "업로드 요청에 실패했습니다. 네트워크 상태를 확인해주세요.";
+      });
+  });
+
+  document.querySelectorAll("[data-share-delete]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var name = button.getAttribute("data-share-delete");
+      if (!window.confirm("/" + name + " 공유를 삭제할까요? 삭제된 이름은 다시 사용할 수 없습니다.")) { return; }
+      button.disabled = true;
+      fetch(withEmployee("/api/share/" + encodeURIComponent(name)), { method: "DELETE" })
+        .then(function (resp) {
+          if (resp.ok) { location.reload(); return; }
+          return resp.json().then(function (data) {
+            button.disabled = false;
+            window.alert((data && data.detail) || "삭제에 실패했습니다.");
+          });
+        })
+        .catch(function () { button.disabled = false; });
+    });
+  });
+})();
+</script>
+</body>
+</html>

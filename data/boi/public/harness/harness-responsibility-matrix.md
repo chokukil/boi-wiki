@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/reference
 title: Harness Responsibility Matrix
 description: BoI Wiki harness runtime responsibilities and verification boundaries

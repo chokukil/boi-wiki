@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/harness
 title: Data Lake Query Harness
 description: 선택형 Data Lake evidence를 BoI API/MCP를 통해 안전하게 쓰는 기준

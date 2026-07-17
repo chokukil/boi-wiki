@@ -1,0 +1,87 @@
+# BoI Harness version manifest — 하네스 버전의 SSOT (Single Source of Truth).
+#
+# - 서빙 사본(data/boi/public/harness/*.md) frontmatter의 `harness_version`은
+#   반드시 이 파일의 version과 일치해야 한다 (boi_api/app/harness_meta.py가 검증).
+# - repo 원본이 plain markdown이어도 버전은 이 manifest가 대표한다
+#   (원본에는 frontmatter를 추가하지 않는다).
+# - version bump 시 harness/CHANGELOG.md에 근거(evidence)를 반드시 기록한다 (ratchet 원칙).
+version: 1
+docs:
+  - key: overview
+    version: "0.2.0"
+    repo_path: harness/README.md
+    served_path: data/boi/public/harness/overview.md
+    served_boi_id: boi:public:harness:overview
+    title: BoI Agent Harness Overview
+  - key: harness-responsibility-matrix
+    version: "0.1.0"
+    repo_path: harness/harness-responsibility-matrix.md
+    served_path: data/boi/public/harness/harness-responsibility-matrix.md
+    served_boi_id: boi:public:harness:harness-responsibility-matrix
+    title: Harness Responsibility Matrix
+  - key: web-draft-editing-guide
+    version: "0.1.0"
+    repo_path: harness/web-draft-editing-guide.md
+    served_path: data/boi/public/harness/web-draft-editing-guide.md
+    served_boi_id: boi:public:harness:web-draft-editing-guide
+    title: Web Validated Editing Guide
+  - key: sop-authoring-harness
+    version: "0.1.0"
+    repo_path: harness/sop-authoring-harness.md
+    served_path: data/boi/public/harness/sop-authoring-harness.md
+    served_boi_id: boi:public:harness:sop-authoring-harness
+    title: SOP Authoring Harness
+  - key: action-authoring-harness
+    version: "0.1.0"
+    repo_path: harness/action-authoring-harness.md
+    served_path: data/boi/public/harness/action-authoring-harness.md
+    served_boi_id: boi:public:harness:action-authoring-harness
+    title: Action Authoring Harness
+  - key: agent-api-mcp-search-harness
+    version: "0.1.0"
+    repo_path: skills/boi-wiki-agent/SKILL.md
+    served_path: data/boi/public/harness/agent-api-mcp-search-harness.md
+    served_boi_id: boi:public:harness:agent-api-mcp-search-harness
+    title: BoI Agent API, MCP, Ontology Search Harness
+  - key: data-lake-query-harness
+    version: "0.1.0"
+    repo_path: harness/data-lake-query-harness.md
+    served_path: data/boi/public/harness/data-lake-query-harness.md
+    served_boi_id: boi:public:harness:data-lake-query-harness
+    title: Data Lake Query Harness
+  - key: data-lake-artifact-harness
+    version: "0.1.0"
+    repo_path: harness/data-lake-artifact-harness.md
+    served_path: data/boi/public/harness/data-lake-artifact-harness.md
+    served_boi_id: boi:public:harness:data-lake-artifact-harness
+    title: Data Lake Artifact Harness
+  - key: dictionary-authoring-harness
+    version: "0.1.0"
+    repo_path: tests/test_public_dictionary_quality.py
+    served_path: data/boi/public/harness/dictionary-authoring-harness.md
+    served_boi_id: boi:public:harness:dictionary-authoring-harness
+    title: Dictionary Authoring Harness
+  - key: local-private-agent-harness
+    version: "0.1.0"
+    repo_path: data/boi/public/boi-wiki-manual/local-private/overview.md
+    served_path: data/boi/public/harness/local-private-agent-harness.md
+    served_boi_id: boi:public:harness:local-private-agent-harness
+    title: Local Private Agent Harness
+  - key: inbox-review-report-harness
+    version: "0.1.0"
+    repo_path: harness/inbox-review-report-harness.md
+    served_path: data/boi/public/harness/inbox-review-report-harness.md
+    served_boi_id: boi:public:harness:inbox-review-report-harness
+    title: Inbox Review Report Harness
+  - key: simulator-dry-run-harness
+    version: "0.1.0"
+    repo_path: harness/simulator-dry-run-harness.md
+    served_path: data/boi/public/harness/simulator-dry-run-harness.md
+    served_boi_id: boi:public:harness:simulator-dry-run-harness
+    title: Simulator Dry Run Harness
+  - key: html-share-harness
+    version: "1.0.0"
+    repo_path: harness/html-share-harness.md
+    served_path: data/boi/public/harness/html-share-harness.md
+    served_boi_id: boi:public:harness:html-share-harness
+    title: HTML Share Harness

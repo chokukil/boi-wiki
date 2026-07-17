@@ -1,6 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
+harness_version: "0.1.0"
 type: boi/reference
 title: SOP Authoring Harness
 description: 이미지, 문서, OCR 텍스트에서 BoI Wiki 표준 SOP package를 만드는 기준

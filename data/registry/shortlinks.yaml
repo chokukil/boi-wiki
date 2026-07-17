@@ -1,0 +1,6 @@
+# BoI Wiki 단축주소 레지스트리 (docs/HTML_SHARE_AND_META_HARNESS_PLAN.md §4.2)
+# 레코드: {name, target_kind: html|doc|url, target, owner_employee_id,
+#          visibility, team_id, title, description, created_at, updated_at,
+#          status: active|tombstone}
+# 이 파일은 boi-api가 관리하며 콘텐츠와 함께 git으로 커밋됩니다. 직접 수정하지 마세요.
+[]

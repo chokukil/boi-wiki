@@ -328,6 +328,114 @@ def test_okf_lint_rejects_materialized_log_acl_path_mismatch(tmp_path: Path):
     assert any("private BoI acl_policy must match acl:private:{employee_id}" in error for error in result.errors)
 
 
+def write_html_share_pair(data_root: Path, *, name: str = "lint-share", extra_html: str = "") -> tuple[Path, Path]:
+    """공유 HTML + 지식 카드 쌍을 실제 share 빌더로 생성한다."""
+    from boi_api.app import share as share_module
+
+    html_path = data_root / "boi" / "public" / "html" / f"{name}.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    original = (
+        "<!doctype html>\n"
+        f"<html lang=\"ko\">\n<head><meta charset=\"utf-8\"><title>{name}</title>{extra_html}</head>\n"
+        "<body><h1>공유 HTML 문서</h1></body>\n</html>\n"
+    )
+    original_sha = hashlib.sha256(original.encode("utf-8")).hexdigest()
+    profile = share_module.build_html_profile_jsonld(
+        name=name,
+        title="Lint Share",
+        description="okf lint fixture",
+        visibility="public",
+        team_id="",
+        owner="테스트 사용자 (100001)",
+        owner_employee_id="100001",
+        reviewer="테스트 사용자 (100001)",
+        timestamp="2026-07-17T12:00:00+09:00",
+        original_filename=f"{name}.html",
+        original_sha256=original_sha,
+    )
+    stored = share_module.inject_html_profile(original, profile).encode("utf-8")
+    html_path.write_bytes(stored)
+    card_path = html_path.with_suffix(".md")
+    card_path.write_text(
+        share_module.build_knowledge_card_markdown(
+            name=name,
+            title="Lint Share",
+            description="okf lint fixture",
+            visibility="public",
+            team_id="",
+            owner="테스트 사용자 (100001)",
+            owner_label="테스트 사용자 (100001)",
+            owner_employee_id="100001",
+            created_at="2026-07-17T12:00:00+09:00",
+            updated_at="2026-07-17T12:00:00+09:00",
+            original_filename=f"{name}.html",
+            original_sha256=original_sha,
+            stored_sha256=hashlib.sha256(stored).hexdigest(),
+            html_repo_path=f"data/boi/public/html/{name}.html",
+        ),
+        encoding="utf-8",
+    )
+    return html_path, card_path
+
+
+def test_okf_lint_accepts_html_share_pair(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    write_html_share_pair(data_root)
+
+    result = lint_data_root(data_root, strict_links=True, strict_media=True)
+
+    assert result.ok, result.errors
+    assert result.checked_html_count == 1
+    assert result.warnings == []
+
+
+def test_okf_lint_rejects_html_without_profile_or_card(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    html_path = data_root / "boi" / "public" / "html" / "no-profile.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text("<!doctype html>\n<html><head></head><body>no profile</body></html>\n", encoding="utf-8")
+
+    result = lint_data_root(data_root)
+
+    assert not result.ok
+    assert result.checked_html_count == 1
+    assert any("missing or unparseable BoI HTML Profile" in error for error in result.errors)
+    assert any("sibling knowledge card" in error for error in result.errors)
+
+
+def test_okf_lint_rejects_html_card_sha256_mismatch(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    html_path, _card_path = write_html_share_pair(data_root, name="lint-mismatch")
+    html_path.write_bytes(html_path.read_bytes() + "<!-- tampered after card generation -->".encode("utf-8"))
+
+    result = lint_data_root(data_root)
+
+    assert not result.ok
+    assert any("html artifact sha256 mismatch with knowledge card" in error for error in result.errors)
+
+
+def test_okf_lint_warns_on_external_html_references(tmp_path: Path):
+    from boi_api.app.okf import lint_data_root
+
+    data_root = tmp_path / "data"
+    write_html_share_pair(
+        data_root,
+        name="lint-external",
+        extra_html='<script src="https://cdn.example.com/chart.js"></script>',
+    )
+
+    result = lint_data_root(data_root)
+
+    assert result.ok, result.errors
+    assert any("사내망" in warning for warning in result.warnings)
+
+
 def test_okf_lint_cli_runs_against_repo_data():
     response = subprocess.run(
         ["python", "scripts/okf_lint.py", "--root", "data", "--include-logs"],
