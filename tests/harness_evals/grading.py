@@ -22,11 +22,13 @@ from boi_api.app.okf import (
     split_frontmatter,
 )
 
-# 계획서 §4.3에서 확정된 raw 서빙 보안 헤더 3종 (정확히 이 값이어야 한다).
+# 계획서 §4.3(원본 3종) + §10 P0-5(frame-ancestors/Referrer-Policy 보강)에서
+# 확정된 raw 서빙 보안 헤더 (정확히 이 값이어야 한다).
 RAW_SECURITY_HEADERS = {
-    "content-security-policy": "sandbox allow-scripts",
+    "content-security-policy": "sandbox allow-scripts; frame-ancestors 'self'",
     "x-content-type-options": "nosniff",
     "cross-origin-resource-policy": "same-site",
+    "referrer-policy": "no-referrer",
 }
 CARD_REQUIRED_SECTIONS = ("# Summary", "# 링크", "# 출처", "# Citations")
 

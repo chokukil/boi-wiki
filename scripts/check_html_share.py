@@ -117,9 +117,10 @@ def main() -> int:
     status, headers, payload = http_call("GET", f"{base}/r/{name}?employee_id={other}")
     raw_text = payload.decode("utf-8", errors="ignore")
     check("raw page 200", status == 200, f"status={status}")
-    check("raw CSP header", headers.get("content-security-policy") == "sandbox allow-scripts", f"got={headers.get('content-security-policy')!r}")
+    check("raw CSP header", headers.get("content-security-policy") == "sandbox allow-scripts; frame-ancestors 'self'", f"got={headers.get('content-security-policy')!r}")
     check("raw nosniff header", headers.get("x-content-type-options") == "nosniff", f"got={headers.get('x-content-type-options')!r}")
     check("raw CORP header", headers.get("cross-origin-resource-policy") == "same-site", f"got={headers.get('cross-origin-resource-policy')!r}")
+    check("raw referrer-policy header", headers.get("referrer-policy") == "no-referrer", f"got={headers.get('referrer-policy')!r}")
     check("raw content-type", headers.get("content-type") == "text/html; charset=utf-8", f"got={headers.get('content-type')!r}")
     check("raw body served", "HTML share smoke" in raw_text, "uploaded body missing")
 

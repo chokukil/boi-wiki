@@ -296,17 +296,124 @@ def looks_like_html(content: bytes, content_type: str) -> bool:
     return "<html" in head or "<!doctype html" in head
 
 
-def validate_html_upload(content: bytes, content_type: str, secret_pattern: Pattern[str]) -> tuple[int, str] | None:
+def validate_html_upload(
+    content: bytes,
+    content_type: str,
+    secret_pattern: Pattern[str],
+    *,
+    decoded_text: str | None = None,
+) -> tuple[int, str] | None:
     if not content:
         return (400, "업로드된 파일이 비어 있습니다. HTML 파일을 선택한 뒤 다시 시도해주세요.")
     if len(content) > HTML_SHARE_MAX_BYTES:
         return (413, "HTML 파일은 20MB 이하만 업로드할 수 있습니다.")
     if not looks_like_html(content, content_type):
         return (400, "HTML 파일이 아닙니다. <html> 태그 또는 <!doctype html> 선언이 포함된 self-contained HTML 파일만 업로드할 수 있습니다.")
-    text = content.decode("utf-8", errors="ignore")
+    # 비밀 스캔은 실제로 저장될 디코딩 결과(decode_html_bytes)를 기준으로 한다 —
+    # 비-UTF-8 업로드를 naive errors="ignore" 디코딩으로 스캔하면 멀티바이트 문자가
+    # 깨져 비밀 값 패턴이 우연히 숨거나 왜곡될 수 있다 (§10 P0-3).
+    text = decoded_text if decoded_text is not None else content.decode("utf-8", errors="ignore")
     if secret_pattern.search(text):
         return (400, "API key/token/password로 보이는 비밀 값이 포함되어 있어 업로드할 수 없습니다. 비밀 값을 제거한 뒤 다시 업로드해주세요.")
     return None
+
+
+# --- Phase P0-3: 인코딩 감지·변환 (계획서 §10 항목 3) --------------------------
+# 사내 legacy HTML 보고서는 EUC-KR/CP949일 가능성이 높다. 예전에는 errors="replace"로
+# 무조건 깨진 채 저장했다 — 감지된 인코딩으로 정확히 디코딩해 utf-8로 다시 저장한다.
+
+_BOM_UTF8 = b"\xef\xbb\xbf"
+_BOM_UTF16_LE = b"\xff\xfe"
+_BOM_UTF16_BE = b"\xfe\xff"
+# <meta charset="..."> 또는 <meta http-equiv="Content-Type" content="...;charset=...">
+# 양쪽 형태를 모두 첫 4KB(바이트 단위, ASCII 호환 인코딩이라면 태그 이름/속성은 항상
+# 1바이트로 보존된다)에서 관대하게 탐지한다.
+_META_CHARSET_RE = re.compile(rb'<meta[^>]*?charset\s*=\s*["\']?\s*([a-zA-Z0-9_\-]+)', re.IGNORECASE)
+_META_CHARSET_SNIFF_BYTES = 4096
+_CHARSET_ALIASES = {
+    "euc-kr": "cp949",
+    "euckr": "cp949",
+    "ks_c_5601-1987": "cp949",
+    "ks_c_5601": "cp949",
+    "ksc5601": "cp949",
+    "x-windows-949": "cp949",
+    "ms949": "cp949",
+    "utf8": "utf-8",
+}
+
+
+def _normalize_codec_name(raw: str) -> str:
+    key = str(raw or "").strip().lower()
+    return _CHARSET_ALIASES.get(key, key)
+
+
+def sniff_meta_charset(content: bytes) -> str:
+    """첫 4KB에서 <meta charset=...>/<meta http-equiv=... charset=...>를 탐지해 정규화한다."""
+    match = _META_CHARSET_RE.search(content[:_META_CHARSET_SNIFF_BYTES])
+    if not match:
+        return ""
+    return _normalize_codec_name(match.group(1).decode("ascii", errors="ignore"))
+
+
+def decode_html_bytes(content: bytes) -> tuple[str, str, bool]:
+    """업로드 바이트를 감지된 인코딩으로 디코딩한다. 반환: (텍스트, 감지된 인코딩, lossy 여부).
+
+    감지 순서: UTF-8/UTF-16 BOM → strict UTF-8 → <meta charset> 스니핑(첫 4KB, 별칭
+    euc-kr/ks_c_5601-1987/ksc5601 → cp949 정규화) 후 해당 코덱 시도 → 실패 시 cp949
+    최종 시도 → 그래도 실패하면 utf-8 errors="replace" (lossy=True, 최후 수단).
+    """
+    if content.startswith(_BOM_UTF8):
+        try:
+            return content[len(_BOM_UTF8):].decode("utf-8"), "utf-8", False
+        except UnicodeDecodeError:
+            pass
+    if content.startswith(_BOM_UTF16_LE) or content.startswith(_BOM_UTF16_BE):
+        try:
+            return content.decode("utf-16"), "utf-16", False
+        except UnicodeDecodeError:
+            pass
+    try:
+        return content.decode("utf-8"), "utf-8", False
+    except UnicodeDecodeError:
+        pass
+    sniffed = sniff_meta_charset(content)
+    if sniffed and sniffed != "utf-8":
+        try:
+            return content.decode(sniffed), sniffed, False
+        except (UnicodeDecodeError, LookupError):
+            pass
+    if sniffed != "cp949":
+        try:
+            return content.decode("cp949"), "cp949", False
+        except (UnicodeDecodeError, LookupError):
+            pass
+    return content.decode("utf-8", errors="replace"), "utf-8", True
+
+
+_META_CHARSET_TAG_RE = re.compile(r'(<meta\b[^>]*\bcharset\s*=\s*["\']?)([a-zA-Z0-9_\-]+)', re.IGNORECASE)
+
+
+def ensure_utf8_meta_charset(html_text: str) -> str:
+    """비-UTF-8 업로드를 변환 저장한 뒤 charset 선언을 utf-8로 다시 쓴다.
+
+    <meta charset=...>와 <meta http-equiv="Content-Type" content="...charset=...">
+    양쪽 형태를 모두 처리한다(닫는 따옴표/태그는 건드리지 않아 원래 구문을 보존한다).
+    선언이 아예 없으면 <head> 바로 뒤(없으면 <html> 바로 뒤, 그마저 없으면 문서
+    맨 앞)에 새로 추가한다 — 그렇지 않으면 브라우저가 여전히 원본 인코딩으로 오인해
+    변환된 utf-8 바이트를 다시 깨뜨려 렌더링한다.
+    """
+    text = str(html_text or "")
+    if _META_CHARSET_TAG_RE.search(text):
+        return _META_CHARSET_TAG_RE.sub(lambda m: m.group(1) + "utf-8", text)
+    head_match = re.search(r"<head\b[^>]*>", text, flags=re.IGNORECASE)
+    if head_match:
+        index = head_match.end()
+        return text[:index] + '\n<meta charset="utf-8">' + text[index:]
+    html_match = re.search(r"<html\b[^>]*>", text, flags=re.IGNORECASE)
+    if html_match:
+        index = html_match.end()
+        return text[:index] + '\n<head><meta charset="utf-8"></head>' + text[index:]
+    return '<meta charset="utf-8">\n' + text
 
 
 def can_read_share(record: dict[str, Any], *, employee_id: str, teams: list[str]) -> bool:

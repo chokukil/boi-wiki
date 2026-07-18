@@ -34,8 +34,8 @@ payload_contract:
 result_contract:
   status: live
   fields:
-  - report
-  - remediation
+  - status
+  - job
 source_refs:
 - type: action_catalog
   ref: data/action_catalog/actions.yaml
@@ -71,13 +71,13 @@ response_schema:
   type: object
   required:
   - ok
-  - report
+  - status
   properties:
     ok:
       type: boolean
-    report:
-      type: object
-    remediation:
+    status:
+      type: string
+    job:
       type: object
 example_request:
   payload:
@@ -88,16 +88,10 @@ example_request:
   approved_by: ''
 example_response:
   ok: true
-  report:
-    ran_at: '2026-07-18T02:00:00+09:00'
-    counts:
-      stale: 1
-      orphan: 2
-      broken_link: 0
-      duplicate: 1
-      feedback: 0
-  remediation:
-    emitted_count: 4
+  status: started
+  job:
+    state: running
+    started_at: '2026-07-18T02:00:00+09:00'
 curl: 'curl -X POST ''http://boi-api:8000/api/gardening/run'' -H ''x-service-token:
   $SERVICE_TOKEN'' -H ''Content-Type: application/json'''
 action_gateway_mapping:
@@ -120,3 +114,10 @@ security_notes:
 발행하면 이 action이 boi-api의 gardening 점검을 호출하고, 발견 항목을
 `wiki.remediation.requested.v1`로 재발행해 `boi.materialize_event`가 Inbox 루프를 닫는다.
 `POST /api/gardening/run`은 수동/로컬 트리거로도 사용된다.
+
+기본은 비동기 job이다: 이 action이 호출하는 응답은 스캔이 끝났다는 뜻이 아니라
+`{ok, status: started|already_running, job}`로 스캔이 "시작됐다"는 즉시 응답이다(문서
+수천 개 규모에서 요청 스레드가 타임아웃나던 문제를 막는다). 실제 점검 결과는
+`GET /api/gardening/report`를 폴링해 `state`가 `ready`가 될 때까지 기다린 뒤 그 응답의
+`report`/`remediation` 필드에서 읽는다. 테스트/소규모 코퍼스에서 즉시 블로킹 응답이
+필요하면 `sync=true` 쿼리 파라미터를 준다(이 경우 응답이 `{ok, report, remediation}`이 된다).

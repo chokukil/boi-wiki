@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import yaml
@@ -292,6 +293,59 @@ def test_doc_and_share_feedback_post_get_and_acl(boi_app_module):
     assert too_long.status_code == 422
 
 
+def test_feedback_comments_surfacing_persists_acl_and_share_badge(boi_app_module):
+    # §10 P0-2: 코멘트가 텔레메트리 JSONL에만 갇히지 않고 별도 로그 + API + /share 배지로 노출된다.
+    client = make_client(boi_app_module)
+
+    assert upload_html(client, "100002", name="loop-comment-share").status_code == 200
+    card_boi_id = "boi:public:html:loop-comment-share"
+
+    posted = client.post(
+        f"/api/docs/{card_boi_id}/feedback?employee_id=100003",
+        json={"helpful": False, "comment": "표가 깨져 보입니다"},
+    )
+    assert posted.status_code == 200
+
+    # 문서 소유자(100002)는 코멘트를 볼 수 있다.
+    owner_view = client.get(f"/api/docs/{card_boi_id}/feedback/comments?employee_id=100002")
+    assert owner_view.status_code == 200
+    assert owner_view.json()["comments"][0]["comment"] == "표가 깨져 보입니다"
+    assert owner_view.json()["comments"][0]["helpful"] is False
+
+    # promoter/admin(100001)도 볼 수 있다.
+    assert client.get(f"/api/docs/{card_boi_id}/feedback/comments?employee_id=100001").status_code == 200
+
+    # 소유자도 promoter/admin도 아닌 사용자(코멘트 작성자 본인 포함)는 403.
+    assert client.get(f"/api/docs/{card_boi_id}/feedback/comments?employee_id=100003").status_code == 403
+
+    # 공유 쪽 코멘트 API도 동일한 ACL을 따른다.
+    share_posted = client.post(
+        "/api/share/loop-comment-share/feedback?employee_id=100003",
+        json={"helpful": False, "comment": "표가 깨져 보입니다 (공유)"},
+    )
+    assert share_posted.status_code == 200
+    share_owner_view = client.get("/api/share/loop-comment-share/feedback/comments?employee_id=100002")
+    assert share_owner_view.status_code == 200
+    assert any(item["comment"] == "표가 깨져 보입니다 (공유)" for item in share_owner_view.json()["comments"])
+    assert client.get("/api/share/loop-comment-share/feedback/comments?employee_id=100003").status_code == 403
+
+    # 코멘트는 별도 append-only 로그({BOI_RUNTIME_ROOT}/telemetry/feedback-comments.jsonl)에 남는다.
+    comments_log = (boi_app_module.TELEMETRY_ROOT / "feedback-comments.jsonl").read_text(encoding="utf-8")
+    assert "표가 깨져 보입니다" in comments_log
+
+    # /share 내 공유 목록은 소유자에게 피드백 배지를 보여준다 (공유 이름 자체에 남긴 needs_fix 1건).
+    mine = client.get("/api/share/mine?employee_id=100002")
+    item = next(entry for entry in mine.json()["items"] if entry["name"] == "loop-comment-share")
+    assert item["feedback"] == {"helpful": 0, "needs_fix": 1}
+
+    # gardening feedback finding의 detail에 최근 코멘트가 포함된다.
+    gardening = client.post("/api/gardening/run?employee_id=100001&limit=1000&sync=true")
+    assert gardening.status_code == 200
+    findings = gardening.json()["report"]["findings"]
+    feedback_finding = next(item for item in findings if item["kind"] == "feedback" and item["boi_id"] == card_boi_id)
+    assert "표가 깨져 보입니다" in feedback_finding["detail"]
+
+
 # --- Gardening 루프 ----------------------------------------------------------
 
 
@@ -359,10 +413,10 @@ def test_gardening_run_produces_findings_report_and_deduped_events(boi_app_modul
     )
     assert feedback.status_code == 200
 
-    forbidden = client.post("/api/gardening/run?employee_id=100003")
+    forbidden = client.post("/api/gardening/run?employee_id=100003&sync=true")
     assert forbidden.status_code == 403
 
-    first = client.post("/api/gardening/run?employee_id=100001&limit=1000&max_age_days=30")
+    first = client.post("/api/gardening/run?employee_id=100001&limit=1000&max_age_days=30&sync=true")
     assert first.status_code == 200
     body = first.json()
     assert body["ok"] is True
@@ -402,15 +456,128 @@ def test_gardening_run_produces_findings_report_and_deduped_events(boi_app_modul
     assert stale_finding["fingerprint"] in emitted_fingerprints
 
     # 두 번째 실행은 같은 finding을 재발행하지 않는다 (fingerprint 대장 dedup).
-    second = client.post("/api/gardening/run?employee_id=100001&limit=1000&max_age_days=30")
+    second = client.post("/api/gardening/run?employee_id=100001&limit=1000&max_age_days=30&sync=true")
     assert second.status_code == 200
     assert second.json()["remediation"]["emitted_count"] == 0
+    assert second.json()["report"]["remediation"]["reopened_this_run"] == 0
 
     # 보고서 조회 권한: promoter(100002)는 가능, viewer(100003)는 403.
     assert client.get("/api/gardening/report?employee_id=100002").status_code == 200
     assert client.get("/api/gardening/report?employee_id=100003").status_code == 403
     report_body = client.get("/api/gardening/report?employee_id=100001").json()
     assert report_body["report"]["ran_at"]
+    assert report_body["state"] == "ready"
+
+
+def test_gardening_remediation_lifecycle_resolves_and_reopens(boi_app_module):
+    # §10 P0-1: 고쳐진 finding은 resolved로 전환되고, 재발하면 다시 발행(reopen)된다.
+    client = make_client(boi_app_module)
+    stale_id = "boi:public:loop-tests:lifecycle-stale-doc"
+    stale_path = write_boi_doc(
+        boi_app_module,
+        "public/loop-tests/lifecycle-stale-doc.md",
+        boi_id=stale_id,
+        title="생명주기 테스트 문서",
+        extra={"review_after": "2020-01-01"},
+    )
+
+    def has_stale_finding(findings: list[dict]) -> bool:
+        return any(item["kind"] == "stale" and item["boi_id"] == stale_id for item in findings)
+
+    def rewrite_review_after(value: str) -> None:
+        metadata, body = split_frontmatter(stale_path.read_text(encoding="utf-8"))
+        metadata["review_after"] = value
+        stale_path.write_text(
+            "---\n" + yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False) + "---\n\n" + body,
+            encoding="utf-8",
+        )
+        boi_app_module.invalidate_doc_caches()
+
+    first = client.post("/api/gardening/run?employee_id=100001&limit=1000&sync=true")
+    assert first.status_code == 200
+    first_report = first.json()["report"]
+    assert has_stale_finding(first_report["findings"])
+    assert first_report["remediation"]["resolved_this_run"] == 0
+    assert first_report["remediation"]["reopened_this_run"] == 0
+    assert first_report["remediation"]["open"] >= 1
+    assert first_report["remediation"]["total_tracked"] >= 1
+
+    # 문제를 고친다: review_after를 미래로 옮긴다.
+    rewrite_review_after("2099-01-01")
+    second = client.post("/api/gardening/run?employee_id=100001&limit=1000&sync=true")
+    assert second.status_code == 200
+    second_report = second.json()["report"]
+    assert not has_stale_finding(second_report["findings"])
+    assert second_report["remediation"]["resolved_this_run"] >= 1
+
+    # 재발시킨다: review_after를 다시 과거로 되돌린다 (동일 fingerprint로 재발).
+    rewrite_review_after("2020-01-01")
+    third = client.post("/api/gardening/run?employee_id=100001&limit=1000&sync=true")
+    assert third.status_code == 200
+    third_body = third.json()
+    third_report = third_body["report"]
+    assert has_stale_finding(third_report["findings"])
+    assert third_report["remediation"]["reopened_this_run"] >= 1
+    # 재발한 finding은 다시 remediation 이벤트로 발행(re-emit)된다.
+    reemitted_fingerprints = {event["fingerprint"] for event in third_body["remediation"]["events"]}
+    stale_finding = next(
+        item for item in third_report["findings"] if item["kind"] == "stale" and item["boi_id"] == stale_id
+    )
+    assert stale_finding["fingerprint"] in reemitted_fingerprints
+
+
+def test_gardening_run_async_default_polls_until_ready_and_sync_still_works(boi_app_module):
+    # §10 P0-4: 기본은 비동기 job이다 — POST는 즉시 반환하고, GET report가 상태를 노출한다.
+    client = make_client(boi_app_module)
+    seed_gardening_fixtures(boi_app_module)
+
+    started = client.post("/api/gardening/run?employee_id=100001&limit=1000&max_age_days=30")
+    assert started.status_code == 200
+    body = started.json()
+    assert body["ok"] is True
+    assert body["status"] in {"started", "already_running"}
+    assert body["job"]["state"] == "running"
+    assert body["job"]["started_at"]
+
+    # 실행 중 재요청이 와도 스레드가 쌓이지 않는다 (already_running 또는 이미 끝나 새로 started).
+    immediate_repost = client.post("/api/gardening/run?employee_id=100001")
+    assert immediate_repost.status_code == 200
+    assert immediate_repost.json()["status"] in {"started", "already_running"}
+
+    report_response = None
+    for _ in range(300):
+        report_response = client.get("/api/gardening/report?employee_id=100002")
+        assert report_response.status_code == 200
+        if report_response.json().get("state") == "ready":
+            break
+        time.sleep(0.05)
+    assert report_response is not None
+    payload = report_response.json()
+    assert payload["state"] == "ready"
+    assert payload["started_at"]
+    assert payload["report"]["findings"]
+
+    # sync=true는 이전과 동일하게 즉시 블로킹 응답을 반환한다 (테스트/소규모 코퍼스용).
+    sync_response = client.post("/api/gardening/run?employee_id=100001&limit=1000&max_age_days=30&sync=true")
+    assert sync_response.status_code == 200
+    sync_body = sync_response.json()
+    assert sync_body["ok"] is True
+    assert "report" in sync_body
+    assert "remediation" in sync_body
+    assert "status" not in sync_body
+
+
+def test_gardening_job_guard_blocks_concurrent_runs(boi_app_module):
+    # HTTP 타이밍 레이스에 의존하지 않고 in-flight 가드 로직 자체를 결정적으로 검증한다.
+    assert boi_app_module.gardening_job_try_start("2026-07-18T00:00:00+09:00") is True
+    assert boi_app_module.gardening_job_try_start("2026-07-18T00:00:01+09:00") is False
+    boi_app_module.gardening_job_mark_finished(ok=True)
+    snapshot = boi_app_module.gardening_job_snapshot()
+    assert snapshot["state"] == "ready"
+    assert boi_app_module.gardening_job_try_start("2026-07-18T00:00:02+09:00") is True
+    boi_app_module.gardening_job_mark_finished(ok=False, error="boom")
+    assert boi_app_module.gardening_job_snapshot()["state"] == "failed"
+    assert boi_app_module.gardening_job_snapshot()["error"] == "boom"
 
 
 # --- Promotion 추천 루프 -----------------------------------------------------

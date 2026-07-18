@@ -11,7 +11,7 @@ Use this harness when publishing a self-contained HTML document (a general docum
 ## Self-contained Principle
 
 - One `.html` file, 20MB max. Inline all CSS/JS/data. The intranet has no external CDN, so external `<script src=`/`<link href=` http(s) references are reported as lint warnings and will likely break for readers.
-- Inline scripts are allowed and run inside an isolated iframe (`sandbox="allow-scripts"`); the raw route serves `Content-Security-Policy: sandbox allow-scripts`. Never add `allow-same-origin` — the combination lets uploaded HTML reach wiki cookies/sessions (XSS session theft).
+- Inline scripts are allowed and run inside an isolated iframe (`sandbox="allow-scripts"`); the raw route serves `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'` plus `Referrer-Policy: no-referrer` (blocks third-party sites from framing `/r/{name}` and stops the shortlink name leaking via the `Referer` header). Never add `allow-same-origin` — the combination lets uploaded HTML reach wiki cookies/sessions (XSS session theft).
 - Secret-looking values (api key/token/password patterns) are rejected at upload.
 
 ## BoI HTML Profile (JSON-LD)

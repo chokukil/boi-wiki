@@ -32541,6 +32541,12 @@ def share_items_for(employee_id: str, *, mine: bool) -> list[dict[str, Any]]:
         view["viewer_url"] = app_url(view["url"], employee_id)
         view["raw_viewer_url"] = app_url(view["raw_url"], employee_id)
         view["views"] = shortlink_view_count(view["name"])
+        if mine:
+            # 내 공유 목록에만 피드백 배지를 노출한다(§10 P0-2) — 남의 공유 피드백은 비공개.
+            try:
+                view["feedback"] = USAGE_TELEMETRY.shortlink_feedback_counts(view["name"])
+            except Exception:
+                view["feedback"] = {"helpful": 0, "needs_fix": 0}
         items.append(view)
     items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     return items
@@ -32619,7 +32625,10 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
         filename = safe_filename(str(payload.get("filename") or "")) if payload.get("filename") else "shared.html"
         content_type = str(payload.get("content_type") or "text/html")
         fields = payload
-    upload_error = html_share.validate_html_upload(content, content_type, SECRET_VALUE_RE)
+    # 인코딩 감지·변환(§10 P0-3): BOM/strict UTF-8/<meta charset> 스니핑 순으로 감지하고,
+    # 비밀 스캔·프로필 주입·카드 발췌는 전부 이 디코딩 결과 위에서 동작한다.
+    decoded_text, detected_encoding, decode_lossy = html_share.decode_html_bytes(content)
+    upload_error = html_share.validate_html_upload(content, content_type, SECRET_VALUE_RE, decoded_text=decoded_text)
     if upload_error:
         raise HTTPException(status_code=upload_error[0], detail=upload_error[1])
     name = html_share.normalize_share_name(str(fields.get("name") or "")) or html_share.suggest_share_name(filename)
@@ -32695,11 +32704,12 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
         original_filename=filename,
         original_sha256=original_sha256,
     )
-    try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        # /r/{name}은 utf-8로 서빙되므로 비 UTF-8 문서는 최선 노력으로 변환해 저장한다.
-        text = content.decode("utf-8", errors="replace")
+    text = decoded_text
+    # detected_encoding이 utf-8이 아니거나(별도 코덱으로 변환) 최후 수단 lossy replace를
+    # 썼다면, 저장 전에 charset 선언을 utf-8로 다시 써야 브라우저가 올바르게 렌더링한다.
+    encoding_converted = detected_encoding != "utf-8" or decode_lossy
+    if encoding_converted:
+        text = html_share.ensure_utf8_meta_charset(text)
     stored_bytes = html_share.inject_html_profile(text, profile).encode("utf-8")
     target_path.write_bytes(stored_bytes)
     stored_sha256 = hashlib.sha256(stored_bytes).hexdigest()
@@ -32752,6 +32762,16 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
         title=title,
         action="updated" if existing is not None else "created",
     )
+    encoding_info: dict[str, Any] = {
+        "detected": detected_encoding,
+        "converted": encoding_converted,
+        "lossy": decode_lossy,
+    }
+    if decode_lossy:
+        encoding_info["warning"] = (
+            "일부 문자를 원본 인코딩에서 올바르게 변환하지 못해 깨진 문자(�)로 대체되었을 수 있습니다. "
+            "가능하면 UTF-8로 저장한 뒤 다시 업로드해주세요."
+        )
     return {
         "ok": True,
         "name": name,
@@ -32770,6 +32790,7 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
             "registry": registry_commit.get("status"),
         },
         "event": event_status,
+        "encoding": encoding_info,
     }
 
 
@@ -33005,13 +33026,18 @@ async def api_doc_feedback(
     if doc is None:
         raise HTTPException(status_code=404, detail="BoI 문서를 찾을 수 없거나 접근 권한이 없습니다.")
     canonical = str((doc.get("metadata") or {}).get("boi_id") or boi_id)
-    # 코멘트는 JSONL 이벤트에만 남고 카운터/조회 API에는 집계 수치만 노출된다.
+    comment_text = str(req.comment or "").strip()[:500]
+    # 코멘트는 텔레메트리 JSONL 이벤트에 남고, 카운터/조회 API에는 집계 수치만 노출된다.
     recorded = USAGE_TELEMETRY.record(
         "doc_feedback",
         boi_id=canonical,
         employee_id=employee_id,
         helpful=bool(req.helpful),
-        comment=str(req.comment or "").strip()[:500],
+        comment=comment_text,
+    )
+    # 코멘트 표면화(§10 P0-2): 텔레메트리와 별개로 조회 가능한 코멘트 로그에도 남긴다.
+    USAGE_TELEMETRY.record_feedback_comment(
+        kind="doc_feedback", boi_id=canonical, employee_id=employee_id, helpful=bool(req.helpful), comment=comment_text
     )
     return {"ok": True, "boi_id": canonical, "recorded": recorded, "feedback": USAGE_TELEMETRY.doc_feedback_counts(canonical)}
 
@@ -33025,6 +33051,26 @@ async def api_doc_feedback_counts(boi_id: str, employee_id: str = Depends(curren
     return {"ok": True, "boi_id": canonical, **USAGE_TELEMETRY.doc_feedback_counts(canonical)}
 
 
+def doc_owned_by(doc: dict[str, Any], employee_id: str) -> bool:
+    """private BoI는 owner가 곧 사번이다(경로↔ACL 규칙). public/team owner는 팀/조직
+    라벨이라 사번과 직접 비교할 수 없으므로, 그 경우 promoter/admin 경로로만 열람 가능하다."""
+    metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    return str(metadata.get("owner") or "") == employee_id
+
+
+@app.get("/api/docs/{boi_id:path}/feedback/comments")
+async def api_doc_feedback_comments(
+    boi_id: str, employee_id: str = Depends(current_employee), limit: int = Query(20, ge=1, le=100)
+) -> dict[str, Any]:
+    doc = find_doc_by_id(boi_id, employee_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="BoI 문서를 찾을 수 없거나 접근 권한이 없습니다.")
+    canonical = str((doc.get("metadata") or {}).get("boi_id") or boi_id)
+    if not (doc_owned_by(doc, employee_id) or {"boi.promoter", "boi.admin"} & set(roles_for(employee_id))):
+        raise HTTPException(status_code=403, detail="문서 소유자 또는 boi.promoter/boi.admin만 코멘트를 볼 수 있습니다.")
+    return {"ok": True, "boi_id": canonical, "comments": USAGE_TELEMETRY.doc_feedback_comments(canonical, limit=limit)}
+
+
 @app.post("/api/share/{name}/feedback")
 async def api_share_feedback(
     name: str, req: FeedbackRequest, employee_id: str = Depends(current_employee)
@@ -33035,15 +33081,43 @@ async def api_share_feedback(
         raise HTTPException(status_code=404, detail="피드백을 남길 공유를 찾을 수 없습니다.")
     if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
         raise HTTPException(status_code=404, detail="피드백을 남길 공유를 찾을 수 없습니다.")
+    comment_text = str(req.comment or "").strip()[:500]
     recorded = USAGE_TELEMETRY.record(
         "share_feedback",
         name=normalized,
         target=str(record.get("target") or ""),
         employee_id=employee_id,
         helpful=bool(req.helpful),
-        comment=str(req.comment or "").strip()[:500],
+        comment=comment_text,
+    )
+    target_ref = str(record.get("target") or "")
+    USAGE_TELEMETRY.record_feedback_comment(
+        kind="share_feedback",
+        name=normalized,
+        # 카운터(_apply_locked)와 동일하게, html 대상이면 대상 지식 카드 boi_id에도 코멘트를
+        # 남겨 gardening feedback finding의 최근 코멘트 수집(doc_feedback_comments)에 잡히게 한다.
+        boi_id=target_ref if target_ref.startswith("boi:") else "",
+        employee_id=employee_id,
+        helpful=bool(req.helpful),
+        comment=comment_text,
     )
     return {"ok": True, "name": normalized, "recorded": recorded, "feedback": USAGE_TELEMETRY.shortlink_feedback_counts(normalized)}
+
+
+@app.get("/api/share/{name}/feedback/comments")
+async def api_share_feedback_comments(
+    name: str, employee_id: str = Depends(current_employee), limit: int = Query(20, ge=1, le=100)
+) -> dict[str, Any]:
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("status") or "") != "active":
+        raise HTTPException(status_code=404, detail="코멘트를 볼 공유를 찾을 수 없습니다.")
+    if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
+        raise HTTPException(status_code=404, detail="코멘트를 볼 공유를 찾을 수 없습니다.")
+    is_owner = str(record.get("owner_employee_id") or "") == employee_id
+    if not (is_owner or {"boi.promoter", "boi.admin"} & set(roles_for(employee_id))):
+        raise HTTPException(status_code=403, detail="공유 소유자 또는 boi.promoter/boi.admin만 코멘트를 볼 수 있습니다.")
+    return {"ok": True, "name": normalized, "comments": USAGE_TELEMETRY.share_feedback_comments(normalized, limit=limit)}
 
 
 @app.post("/api/share/{name}/enrich")
@@ -33134,17 +33208,54 @@ async def publish_wiki_remediation_event(employee_id: str, finding: dict[str, An
         return "log_only"
 
 
-@app.post("/api/gardening/run")
-async def api_gardening_run(
-    employee_id: str = Depends(current_employee),
-    max_age_days: int | None = Query(default=None, ge=1),
-    limit: int = Query(default=20, ge=0, le=1000),
-) -> dict[str, Any]:
-    """sleep-time gardening 점검 실행. 운영 트리거는 외부 cron/스케줄러가 발행하는
-    wiki.gardening.requested.v1 이벤트(→ wiki.gardening.run 액션)이고,
-    이 REST 엔드포인트는 수동/로컬 트리거를 겸한다."""
-    # 서비스 토큰 요청은 admin 역할로 해석되므로 boi.admin 확인 하나로 두 경로를 모두 허용한다.
-    require_employee_role(employee_id, "boi.admin")
+GARDENING_JOB_LOCK = threading.Lock()
+# 상태: none(한 번도 실행 안 함) | running | ready | failed. §10 P0-4 비동기 job 가드.
+GARDENING_JOB_STATE: dict[str, Any] = {"state": "none", "started_at": "", "finished_at": "", "error": ""}
+
+
+def gardening_job_snapshot() -> dict[str, Any]:
+    with GARDENING_JOB_LOCK:
+        return dict(GARDENING_JOB_STATE)
+
+
+def gardening_job_try_start(started_at: str) -> bool:
+    """이미 실행 중이면 False(already_running)를 반환해 스레드가 쌓이지 않게 막는다."""
+    with GARDENING_JOB_LOCK:
+        if GARDENING_JOB_STATE.get("state") == "running":
+            return False
+        GARDENING_JOB_STATE["state"] = "running"
+        GARDENING_JOB_STATE["started_at"] = started_at
+        GARDENING_JOB_STATE["finished_at"] = ""
+        GARDENING_JOB_STATE["error"] = ""
+        return True
+
+
+def gardening_job_mark_finished(*, ok: bool, error: str = "") -> None:
+    with GARDENING_JOB_LOCK:
+        GARDENING_JOB_STATE["state"] = "ready" if ok else "failed"
+        GARDENING_JOB_STATE["finished_at"] = now_iso()
+        GARDENING_JOB_STATE["error"] = error
+
+
+def gardening_needs_fix_comments(needs_fix: dict[str, int]) -> dict[str, list[str]]:
+    """수정 필요 피드백이 쌓인 문서의 최근 코멘트(최대 3건)를 모은다 (§10 P0-2)."""
+    comments: dict[str, list[str]] = {}
+    for boi_id in needs_fix or {}:
+        try:
+            recent = [
+                str(row.get("comment") or "")
+                for row in USAGE_TELEMETRY.doc_feedback_comments(boi_id, limit=20)
+                if not row.get("helpful") and str(row.get("comment") or "").strip()
+            ][:3]
+        except Exception:
+            recent = []
+        if recent:
+            comments[boi_id] = recent
+    return comments
+
+
+def run_gardening_scan(employee_id: str, *, max_age_days: int | None, limit: int) -> dict[str, Any]:
+    """gardening 스캔 1회 실행 — sync/async 두 경로가 공유하는 핵심 로직 (§10 P0-1/P0-4)."""
     docs = accessible_docs(employee_id)
     link_edges: list[dict[str, Any]] | None = None
     lint_errors: list[str] = []
@@ -33165,6 +33276,7 @@ async def api_gardening_run(
         link_edges=link_edges,
         lint_errors=lint_errors,
         needs_fix_counts=needs_fix,
+        needs_fix_comments=gardening_needs_fix_comments(needs_fix),
         today=datetime.now(KST).date(),
         max_age_days=max_age_days,
     )
@@ -33173,6 +33285,10 @@ async def api_gardening_run(
     except Exception:
         candidates = []
     ran_at = now_iso()
+    try:
+        new_findings, remediation_meta = wiki_loops.claim_new_findings(GARDENING_ROOT, findings, limit=limit, now=ran_at)
+    except Exception:
+        new_findings, remediation_meta = [], {"open": 0, "resolved_this_run": 0, "reopened_this_run": 0, "total_tracked": 0}
     report = {
         "ran_at": ran_at,
         "employee_id": employee_id,
@@ -33180,15 +33296,19 @@ async def api_gardening_run(
         "counts": {**meta, "promotion_candidates": len(candidates)},
         "findings": findings,
         "promotion_candidates": candidates,
+        # 생명주기 추이(§10 P0-1): 열림/이번 실행 해결/이번 실행 재발/총 추적 건수.
+        "remediation": remediation_meta,
     }
     try:
         wiki_loops.store_gardening_report(GARDENING_ROOT, report)
     except Exception:
         pass
-    try:
-        new_findings = wiki_loops.claim_new_findings(GARDENING_ROOT, findings, limit=limit, now=ran_at)
-    except Exception:
-        new_findings = []
+    return {"report": report, "new_findings": new_findings, "ran_at": ran_at}
+
+
+async def emit_gardening_remediation(
+    employee_id: str, new_findings: list[dict[str, Any]], ran_at: str
+) -> list[dict[str, Any]]:
     emitted: list[dict[str, Any]] = []
     for finding in new_findings:
         emitted.append(
@@ -33198,17 +33318,94 @@ async def api_gardening_run(
                 "event": await publish_wiki_remediation_event(employee_id, finding, ran_at),
             }
         )
-    return {"ok": True, "report": report, "remediation": {"emitted_count": len(emitted), "events": emitted}}
+    return emitted
+
+
+def gardening_job_background(employee_id: str, *, max_age_days: int | None, limit: int) -> None:
+    """daemon 스레드 본체 (inbox 백그라운드 리포트 생성 패턴과 동일 —
+    schedule_inbox_report_generation 참고). 어떤 예외도 프로세스를 죽이지 않고
+    state: failed로만 기록한다."""
+    try:
+        result = run_gardening_scan(employee_id, max_age_days=max_age_days, limit=limit)
+        try:
+            # 백그라운드 스레드에는 실행 중인 이벤트 루프가 없으므로 새 루프에서 발행한다.
+            asyncio.run(emit_gardening_remediation(employee_id, result["new_findings"], result["ran_at"]))
+        except Exception:
+            pass
+        gardening_job_mark_finished(ok=True)
+    except Exception as exc:
+        gardening_job_mark_finished(ok=False, error=str(exc)[:500])
+
+
+@app.post("/api/gardening/run")
+async def api_gardening_run(
+    employee_id: str = Depends(current_employee),
+    max_age_days: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=20, ge=0, le=1000),
+    sync: bool = Query(default=False),
+) -> dict[str, Any]:
+    """sleep-time gardening 점검 실행. 운영 트리거는 외부 cron/스케줄러가 발행하는
+    wiki.gardening.requested.v1 이벤트(→ wiki.gardening.run 액션)이고,
+    이 REST 엔드포인트는 수동/로컬 트리거를 겸한다.
+
+    기본은 비동기다(§10 P0-4): 요청 스레드가 코퍼스 전체를 스캔하면 문서 수천 개
+    규모에서 타임아웃난다 — POST는 즉시 반환하고 daemon 스레드가 스캔·저장·remediation
+    발행을 수행한다. sync=true는 테스트/소규모 코퍼스를 위한 이전 블로킹 동작을 유지한다.
+    """
+    # 서비스 토큰 요청은 admin 역할로 해석되므로 boi.admin 확인 하나로 두 경로를 모두 허용한다.
+    require_employee_role(employee_id, "boi.admin")
+    if sync:
+        started_at = now_iso()
+        with GARDENING_JOB_LOCK:
+            GARDENING_JOB_STATE["started_at"] = started_at
+        try:
+            result = run_gardening_scan(employee_id, max_age_days=max_age_days, limit=limit)
+            emitted = await emit_gardening_remediation(employee_id, result["new_findings"], result["ran_at"])
+        except Exception as exc:
+            gardening_job_mark_finished(ok=False, error=str(exc)[:500])
+            raise
+        gardening_job_mark_finished(ok=True)
+        return {
+            "ok": True,
+            "report": result["report"],
+            "remediation": {"emitted_count": len(emitted), "events": emitted},
+        }
+    started_at = now_iso()
+    if not gardening_job_try_start(started_at):
+        running = gardening_job_snapshot()
+        return {
+            "ok": True,
+            "status": "already_running",
+            "job": {"state": "running", "started_at": running.get("started_at") or started_at},
+        }
+    thread = threading.Thread(
+        target=gardening_job_background,
+        kwargs={"employee_id": employee_id, "max_age_days": max_age_days, "limit": limit},
+        daemon=True,
+        name="gardening-run",
+    )
+    thread.start()
+    return {"ok": True, "status": "started", "job": {"state": "running", "started_at": started_at}}
 
 
 @app.get("/api/gardening/report")
 async def api_gardening_report(employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     if not ({"boi.admin", "boi.promoter"} & set(roles_for(employee_id))):
         raise HTTPException(status_code=403, detail="missing required role: boi.promoter")
+    job = gardening_job_snapshot()
     report = wiki_loops.load_gardening_report(GARDENING_ROOT)
-    if report is None:
+    state = str(job.get("state") or "none")
+    if state == "none" and report is not None:
+        # 프로세스 재기동 등으로 job 상태가 유실돼도 저장된 리포트가 있으면 ready로 본다.
+        state = "ready"
+    if report is None and state == "none":
         raise HTTPException(status_code=404, detail="아직 gardening 보고서가 없습니다. POST /api/gardening/run으로 점검을 실행하세요.")
-    return {"ok": True, "report": report}
+    payload: dict[str, Any] = {"ok": True, "state": state, "started_at": str(job.get("started_at") or "")}
+    if report is not None:
+        payload["report"] = report
+    if job.get("error"):
+        payload["error"] = str(job.get("error"))
+    return payload
 
 
 @app.get("/r/{name}")
@@ -33234,13 +33431,18 @@ async def share_raw_html(name: str, employee_id: str = Depends(current_employee)
     # SECURITY INVARIANT: CSP sandbox 값에 allow-same-origin을 절대 추가하지 않는다.
     # allow-scripts + allow-same-origin 조합은 업로드된 HTML이 위키 도메인의
     # 쿠키/세션/스토리지에 접근할 수 있게 만들어 XSS 세션 탈취로 이어진다. (계획서 §4.3 Q3)
+    # §10 P0-5: sandbox/nosniff/CORP 3종은 문서 자체의 origin 격리만 담당하고, 외부
+    # 사이트가 /r/{name}을 iframe으로 끼워넣는 것과 referer를 통한 단축주소 유출은
+    # 막지 못했다 — frame-ancestors 'self'와 Referrer-Policy: no-referrer를 더한다
+    # (harness/CHANGELOG.md html-share-harness 1.1.0 참고).
     return Response(
         content=file_path.read_bytes(),
         media_type="text/html; charset=utf-8",
         headers={
-            "Content-Security-Policy": "sandbox allow-scripts",
+            "Content-Security-Policy": "sandbox allow-scripts; frame-ancestors 'self'",
             "X-Content-Type-Options": "nosniff",
             "Cross-Origin-Resource-Policy": "same-site",
+            "Referrer-Policy": "no-referrer",
         },
     )
 

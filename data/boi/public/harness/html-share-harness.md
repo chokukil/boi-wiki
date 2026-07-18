@@ -1,7 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
-harness_version: "1.0.0"
+harness_version: "1.1.0"
 type: boi/harness
 title: HTML Share Harness
 description: self-contained HTML 문서를 단축주소로 게시할 때의 BoI HTML Profile, 지식 카드, 이름/스코프/tombstone, preview→확인→publish 계약
@@ -31,7 +31,7 @@ self-contained HTML 문서(보고서, 대시보드, 가이드 등 무엇이든)�
 # Self-contained 원칙
 
 - 단일 `.html` 파일, 20MB 이하. CSS/JS/데이터를 모두 인라인한다. 사내망에는 외부 CDN이 없어 외부 `<script src=`/`<link href=` http(s) 참조는 lint warning으로 보고되고 열람자 화면에서 깨질 수 있다.
-- 인라인 스크립트는 허용되며 `sandbox="allow-scripts"` iframe과 `Content-Security-Policy: sandbox allow-scripts` 응답 헤더로 opaque origin에 격리된다. `allow-same-origin`은 어떤 경우에도 추가 금지 — 업로드된 HTML이 위키 쿠키/세션에 접근할 수 있게 된다.
+- 인라인 스크립트는 허용되며 `sandbox="allow-scripts"` iframe과 `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'` + `Referrer-Policy: no-referrer` 응답 헤더로 opaque origin에 격리된다(`frame-ancestors`는 외부 사이트의 iframe 끼워넣기를, `Referrer-Policy`는 referer를 통한 단축주소 유출을 막는다). `allow-same-origin`은 어떤 경우에도 추가 금지 — 업로드된 HTML이 위키 쿠키/세션에 접근할 수 있게 된다.
 - api key/token/password로 보이는 비밀 값이 있으면 업로드가 거부된다.
 
 # BoI HTML Profile 계약 (JSON-LD)

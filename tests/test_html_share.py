@@ -125,9 +125,10 @@ def test_upload_happy_path_viewer_and_raw_headers(boi_app_module):
 
     raw = client.get("/r/weekly-etch-report?employee_id=100002")
     assert raw.status_code == 200
-    assert raw.headers["content-security-policy"] == "sandbox allow-scripts"
+    assert raw.headers["content-security-policy"] == "sandbox allow-scripts; frame-ancestors 'self'"
     assert raw.headers["x-content-type-options"] == "nosniff"
     assert raw.headers["cross-origin-resource-policy"] == "same-site"
+    assert raw.headers["referrer-policy"] == "no-referrer"
     assert raw.headers["content-type"] == "text/html; charset=utf-8"
     assert "사내 HTML 보고서" in raw.text
 
@@ -349,6 +350,61 @@ def test_json_upload_branch_accepts_content_base64(boi_app_module):
     missing = client.post("/api/share/html?employee_id=100001", json={"name": "json-upload-share"})
     assert missing.status_code == 400
     assert "content_base64" in missing.json()["detail"]
+
+
+def test_upload_transcodes_non_utf8_encoding_and_rewrites_meta_charset(boi_app_module):
+    # 사내 legacy HTML은 EUC-KR/CP949일 가능성이 높다 (§10 P0-3). errors="replace"로
+    # 깨진 채 저장하지 않고, 감지된 인코딩으로 정확히 디코딩해 utf-8로 다시 저장해야 한다.
+    client = make_client(boi_app_module)
+
+    korean_text = "인코딩 변환 테스트: 한글 레거시 업로드 확인"
+    cp949_html = (
+        "<!doctype html>\n"
+        "<html lang=\"ko\">\n"
+        "<head><meta charset=\"euc-kr\"><title>인코딩 테스트</title></head>\n"
+        f"<body><h1>{korean_text}</h1></body>\n"
+        "</html>\n"
+    ).encode("cp949")
+
+    response = client.post(
+        "/api/share/html?employee_id=100001",
+        data={"name": "encoding-cp949-share", "title": "인코딩 테스트", "visibility": "public"},
+        files={"file": ("report.html", cp949_html, "text/html")},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["encoding"]["detected"] == "cp949"
+    assert body["encoding"]["converted"] is True
+    assert body["encoding"]["lossy"] is False
+
+    stored = boi_app_module.DATA_ROOT / "public" / "html" / "encoding-cp949-share.html"
+    # 예외 없이 utf-8로 읽히면 변환이 성공했다는 뜻이다 (읽기 실패 시 UnicodeDecodeError).
+    stored_text = stored.read_text(encoding="utf-8")
+    assert korean_text in stored_text
+    assert "euc-kr" not in stored_text.lower()
+    assert 'charset="utf-8"' in stored_text.lower()
+    assert "�" not in stored_text
+
+    raw = client.get("/r/encoding-cp949-share?employee_id=100002")
+    assert raw.status_code == 200
+    assert korean_text in raw.text
+
+    card = stored.with_suffix(".md")
+    card_text = card.read_text(encoding="utf-8")
+    assert "�" not in card_text
+
+
+def test_upload_utf8_content_is_unaffected_by_encoding_detection(boi_app_module):
+    # 정상 UTF-8 업로드는 기존과 동일하게 동작해야 한다 (변환/메타 재작성 없음).
+    client = make_client(boi_app_module)
+
+    created = upload_html(client, "100001", name="utf8-unaffected-share")
+    assert created.status_code == 200
+    body = created.json()
+    assert body["encoding"] == {"detected": "utf-8", "converted": False, "lossy": False}
+
+    stored = boi_app_module.DATA_ROOT / "public" / "html" / "utf8-unaffected-share.html"
+    assert "사내 HTML 보고서" in stored.read_text(encoding="utf-8")
 
 
 def test_delete_removes_knowledge_card_with_html(boi_app_module):

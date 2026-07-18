@@ -105,7 +105,7 @@
       </div>
       {% if my_shares %}
       <table class="share-table">
-        <thead><tr><th>단축주소</th><th>범위</th><th>조회</th><th>갱신</th><th></th></tr></thead>
+        <thead><tr><th>단축주소</th><th>범위</th><th>조회</th><th>피드백</th><th>갱신</th><th></th></tr></thead>
         <tbody>
           {% for item in my_shares %}
           <tr>
@@ -115,6 +115,7 @@
             </td>
             <td><span class="badge {{ item.visibility }}">{{ item.visibility }}</span>{% if item.team_id %}<span class="muted">{{ item.team_id }}</span>{% endif %}</td>
             <td>{{ item.views }}회</td>
+            <td>도움됨 {{ item.feedback.helpful }} · 수정필요 {{ item.feedback.needs_fix }}</td>
             <td>{{ item.updated_at }}</td>
             <td><button type="button" class="inline-button" data-share-delete="{{ item.name }}">삭제</button></td>
           </tr>

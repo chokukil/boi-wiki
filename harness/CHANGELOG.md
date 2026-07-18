@@ -11,6 +11,13 @@
 - 규칙 제거도 기록 대상이다: load-bearing 재검증(`harness/README.md`)에서 더 이상 유효하지 않다고
   확인된 규칙은 제거하고, 제거 근거(eval 결과)를 여기 남긴다.
 
+## 2026-07-18
+
+### `html-share-harness` 1.1.0 — `/r/` 헤더 보강 (frame-ancestors + Referrer-Policy)
+
+- 변경: `/r/{name}` 응답 CSP에 `frame-ancestors 'self'`를 병기하고 `Referrer-Policy: no-referrer`를 추가한다. 기존 `sandbox allow-scripts` + `X-Content-Type-Options: nosniff` + `Cross-Origin-Resource-Policy: same-site` 3종 헤더는 그대로 유지한다.
+- 근거(evidence): 외부 사이트가 `/r/{name}`을 iframe으로 끼워넣는 것과 referer를 통한 단축주소 유출은 기존 3종 헤더가 막지 못했다. `frame-ancestors 'self'`는 타 origin의 프레이밍을 차단하고, `Referrer-Policy: no-referrer`는 사용자가 공유 HTML 안의 링크를 클릭했을 때 `Referer` 헤더로 단축주소 이름이 외부에 노출되는 경로를 막는다 (계획서 §10 P0-5, 코드 내에서 가능한 심층 방어의 마지막 조각).
+
 ## 2026-07-17
 
 ### `overview` 0.2.0 — 메타 하네스 체계 도입

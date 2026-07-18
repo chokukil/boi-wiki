@@ -31,6 +31,8 @@ KST = timezone(timedelta(hours=9))
 # --- 텔레메트리 루프 ---------------------------------------------------------
 
 TELEMETRY_COUNTER_FIELDS = ("views", "clicks", "feedback_helpful", "feedback_needs_fix")
+# 코멘트 있는 피드백만 담는 별도 append-only 로그 (§10 P0-2 피드백 표면화).
+FEEDBACK_COMMENTS_FILENAME = "feedback-comments.jsonl"
 
 
 def _now() -> datetime:
@@ -184,6 +186,80 @@ class TelemetryStore:
         entry = (self._snapshot().get("memories") or {}).get(str(boi_id))
         return int((entry or {}).get("recalls") or 0) if isinstance(entry, dict) else 0
 
+    # --- 피드백 코멘트 표면화 (§10 P0-2) --------------------------------------
+    # counters.json/events-*.jsonl과 별개로, "수정 필요"/"도움됨" 코멘트만
+    # 조회 가능한 형태로 남긴다. 이 로그가 없으면 코멘트는 텔레메트리 JSONL에만
+    # 쌓여 아무 API/UI로도 노출되지 않는다(수집만 하는 피드백은 루프가 아니다).
+
+    def _feedback_comments_path(self) -> Path:
+        return self.root / FEEDBACK_COMMENTS_FILENAME
+
+    def record_feedback_comment(
+        self, *, kind: str, employee_id: str, helpful: bool, comment: str, boi_id: str = "", name: str = ""
+    ) -> bool:
+        """comment가 있는 피드백만 별도 로그에 남긴다. 빈 코멘트는 남길 게 없어 True를 반환한다."""
+        comment_text = str(comment or "").strip()
+        if not comment_text:
+            return True
+        try:
+            row: dict[str, Any] = {
+                "ts": _now().isoformat(),
+                "kind": str(kind),
+                "employee_id": str(employee_id or ""),
+                "helpful": bool(helpful),
+                "comment": comment_text,
+            }
+            if boi_id:
+                row["boi_id"] = str(boi_id)
+            if name:
+                row["name"] = str(name)
+            with self._lock:
+                self.root.mkdir(parents=True, exist_ok=True)
+                with self._feedback_comments_path().open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            return True
+        except Exception:
+            return False
+
+    def _feedback_comment_rows(self) -> list[dict[str, Any]]:
+        path = self._feedback_comments_path()
+        if not path.exists():
+            return []
+        rows: list[dict[str, Any]] = []
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+        except Exception:
+            return []
+        return rows
+
+    @staticmethod
+    def _comment_view(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "ts": str(row.get("ts") or ""),
+            "employee_id": str(row.get("employee_id") or ""),
+            "helpful": bool(row.get("helpful")),
+            "comment": str(row.get("comment") or ""),
+        }
+
+    def doc_feedback_comments(self, boi_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        """최근 N건(최신순) — 문서 소유자/promoter/admin 전용 API가 그대로 노출한다."""
+        matches = [row for row in self._feedback_comment_rows() if str(row.get("boi_id") or "") == str(boi_id)]
+        matches.reverse()
+        return [self._comment_view(row) for row in matches[: max(0, int(limit))]]
+
+    def share_feedback_comments(self, name: str, limit: int = 20) -> list[dict[str, Any]]:
+        matches = [row for row in self._feedback_comment_rows() if str(row.get("name") or "") == str(name)]
+        matches.reverse()
+        return [self._comment_view(row) for row in matches[: max(0, int(limit))]]
+
 
 # --- Gardening 루프 (sleep-time 점검) ---------------------------------------
 
@@ -250,6 +326,7 @@ def build_gardening_findings(
     needs_fix_counts: dict[str, int],
     today: date,
     max_age_days: int | None = None,
+    needs_fix_comments: dict[str, list[str]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """public+team 문서에 대한 stale/orphan/broken_link/duplicate/feedback 점검.
 
@@ -350,10 +427,16 @@ def build_gardening_findings(
             titles = " / ".join(sorted({str(member["title"]) for member in members}))
             findings.append(_finding("duplicate", group_ref, f"{reason} 중복 후보: {titles}"))
     # feedback: 수정 필요 피드백이 쌓인 문서는 gardening 우선순위를 높인다.
+    # 최근 코멘트(최대 3건)를 detail에 포함해 담당자가 리포트만 보고도 무엇을
+    # 고쳐야 하는지 알 수 있게 한다 (§10 P0-2 — 코멘트가 텔레메트리에만 갇히지 않도록).
     for boi_id, count in sorted((needs_fix_counts or {}).items()):
         if int(count) <= 0 or boi_id not in boi_ids_in_scope:
             continue
-        findings.append(_finding("feedback", str(boi_id), f"수정 필요 피드백 {int(count)}건"))
+        detail = f"수정 필요 피드백 {int(count)}건"
+        comments = [str(c).strip() for c in (needs_fix_comments or {}).get(boi_id) or [] if str(c or "").strip()]
+        if comments:
+            detail = f"{detail} — 최근 코멘트: " + " / ".join(comments[:3])
+        findings.append(_finding("feedback", str(boi_id), detail))
     counts = {kind: 0 for kind in GARDENING_FINDING_KINDS}
     for finding in findings:
         counts[finding["kind"]] = counts.get(finding["kind"], 0) + 1
@@ -381,34 +464,91 @@ def load_gardening_report(root: Path) -> dict[str, Any] | None:
 
 def claim_new_findings(
     root: Path, findings: list[dict[str, Any]], *, limit: int, now: str
-) -> list[dict[str, Any]]:
-    """emitted.json 대장에 없는 NEW finding을 최대 limit개 선점(claim)한다.
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """생명주기 원장(emitted.json)을 갱신하고 이번 실행에 새로 발행할 finding을 반환한다.
 
-    선점된 fingerprint는 즉시 대장에 기록되어 다음 실행에서 재발행되지 않는다.
+    원장 스키마: ``{fingerprint: {status: open|resolved, first_emitted_at,
+    last_seen_at, resolved_at?, kind}}``. 구 스키마(``{fingerprint: {claimed_at,
+    kind}}``, status 없음)는 이미 발행된 open 항목으로 관대하게 마이그레이션한다.
+
+    이번 스캔(``findings``)에 없는 open 항목은 resolved로 전환한다(원장에서 지우지
+    않고 이력만 남긴다 — 발견→해결 추이 추적). resolved였던 항목이 이번 스캔에 다시
+    나타나면 reopen되어 재발행 대상(claimed)에 포함된다 — 한 번 고쳐졌다가 재발한
+    문제가 다시는 발행되지 않던 문제(§10 P0-1)를 고친다. limit은 이번 실행에서
+    새로 claim(신규 + reopen 합산)할 수 있는 최대 건수다.
+    반환: (claimed findings, {open, resolved_this_run, reopened_this_run, total_tracked}).
     """
-    if limit <= 0:
-        return []
+    if limit < 0:
+        limit = 0
     root = Path(root)
     with _GARDENING_LOCK:
         ledger_path = root / GARDENING_EMITTED_FILENAME
         try:
             raw = json.loads(ledger_path.read_text(encoding="utf-8"))
-            ledger = raw if isinstance(raw, dict) else {}
+            ledger: dict[str, Any] = raw if isinstance(raw, dict) else {}
         except Exception:
             ledger = {}
+
+        # 관대한 마이그레이션: status 없는 legacy 항목은 이미 발행된 open으로 간주한다.
+        for fingerprint, entry in list(ledger.items()):
+            if not isinstance(entry, dict):
+                ledger[fingerprint] = {"status": "open", "first_emitted_at": now, "last_seen_at": now}
+                continue
+            if "status" not in entry:
+                claimed_at = str(entry.get("claimed_at") or now)
+                entry["status"] = "open"
+                entry.setdefault("first_emitted_at", claimed_at)
+                entry.setdefault("last_seen_at", claimed_at)
+
+        current_fingerprints = {
+            str(finding.get("fingerprint") or "") for finding in findings or [] if finding.get("fingerprint")
+        }
+        resolved_this_run = 0
+        for fingerprint, entry in ledger.items():
+            if isinstance(entry, dict) and entry.get("status") == "open" and fingerprint not in current_fingerprints:
+                entry["status"] = "resolved"
+                entry["resolved_at"] = now
+                resolved_this_run += 1
+
         claimed: list[dict[str, Any]] = []
+        reopened_this_run = 0
         for finding in findings or []:
             fingerprint = str(finding.get("fingerprint") or "")
-            if not fingerprint or fingerprint in ledger:
+            if not fingerprint:
                 continue
-            ledger[fingerprint] = {"claimed_at": now, "kind": str(finding.get("kind") or "")}
-            claimed.append(finding)
-            if len(claimed) >= limit:
-                break
-        if claimed:
-            root.mkdir(parents=True, exist_ok=True)
-            ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
-        return claimed
+            entry = ledger.get(fingerprint)
+            if entry is None:
+                if len(claimed) >= limit:
+                    continue  # 다음 실행에서 다시 신규로 시도된다 (원장 미기록)
+                ledger[fingerprint] = {
+                    "status": "open",
+                    "first_emitted_at": now,
+                    "last_seen_at": now,
+                    "kind": str(finding.get("kind") or ""),
+                }
+                claimed.append(finding)
+            elif isinstance(entry, dict) and entry.get("status") == "resolved":
+                if len(claimed) >= limit:
+                    continue  # 다음 실행에서 다시 reopen 후보로 남는다 (resolved 유지)
+                entry["status"] = "open"
+                entry["last_seen_at"] = now
+                entry["kind"] = str(finding.get("kind") or entry.get("kind") or "")
+                reopened_this_run += 1
+                claimed.append(finding)
+            elif isinstance(entry, dict):
+                entry["last_seen_at"] = now
+
+        total_tracked = len(ledger)
+        open_count = sum(1 for entry in ledger.values() if isinstance(entry, dict) and entry.get("status") == "open")
+        root.mkdir(parents=True, exist_ok=True)
+        ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+        meta = {
+            "open": open_count,
+            "resolved_this_run": resolved_this_run,
+            "reopened_this_run": reopened_this_run,
+            "total_tracked": total_tracked,
+        }
+        return claimed, meta
 
 
 # --- Promotion 추천 루프 -----------------------------------------------------
