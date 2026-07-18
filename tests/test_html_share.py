@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+
+import pytest
 from fastapi.testclient import TestClient
 
 from boi_api.app import share as share_module
@@ -710,3 +713,448 @@ def test_transfer_rejects_missing_and_same_owner(boi_app_module):
         json={"new_owner_employee_id": "100003"},
     )
     assert missing_share.status_code == 404
+
+
+# --- §10 P2-13: url-kind go-link 등록 개방 --------------------------------------
+
+
+def test_url_kind_shortlink_allowed_host_redirects_lists_publicly_and_tombstones(boi_app_module, monkeypatch):
+    client = make_client(boi_app_module)
+    monkeypatch.setenv("BOI_SHARE_URL_ALLOWED_HOSTS", "wiki-tools.internal")
+
+    disallowed = client.post(
+        "/api/share/links?employee_id=100001",
+        json={"name": "go-external", "target_kind": "url", "target_url": "https://evil.example.com/phish"},
+    )
+    assert disallowed.status_code == 400
+    assert "허용된" in disallowed.json()["detail"]
+
+    allowed = client.post(
+        "/api/share/links?employee_id=100001",
+        json={
+            "name": "go-internal-tool",
+            "target_kind": "url",
+            "target_url": "https://wiki-tools.internal/dashboard",
+            "title": "내부 대시보드",
+        },
+    )
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["target_kind"] == "url"
+    assert body["visibility"] == "public"
+
+    redirect = client.get("/go-internal-tool?employee_id=100002", follow_redirects=False)
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == "https://wiki-tools.internal/dashboard"
+
+    # url-link는 공개 메타데이터라 등록자 외 다른 사용자에게도 공개 목록에 노출된다.
+    public_list = client.get("/api/share/list?employee_id=100002")
+    assert any(item["name"] == "go-internal-tool" for item in public_list.json()["items"])
+
+    # 같은 이름 정책: 소유자만 갱신 가능, 타인은 409.
+    taken = client.post(
+        "/api/share/links?employee_id=100002",
+        json={"name": "go-internal-tool", "target_kind": "url", "target_url": "https://wiki-tools.internal/other"},
+    )
+    assert taken.status_code == 409
+
+    # 삭제 = tombstone: 이름 영구 재사용 불가.
+    deleted = client.delete("/api/share/go-internal-tool?employee_id=100001")
+    assert deleted.status_code == 200
+    reuse = client.post(
+        "/api/share/links?employee_id=100002",
+        json={"name": "go-internal-tool", "target_kind": "url", "target_url": "https://wiki-tools.internal/other"},
+    )
+    assert reuse.status_code == 409
+    assert reuse.json()["detail"]["status"] == "tombstone"
+
+
+def test_url_kind_shortlink_default_hosts_and_validation(boi_app_module):
+    client = make_client(boi_app_module)
+
+    ok = client.post(
+        "/api/share/links?employee_id=100001",
+        json={"name": "go-local", "target_kind": "url", "target_url": "http://localhost:28000/internal"},
+    )
+    assert ok.status_code == 200
+
+    bad_scheme = client.post(
+        "/api/share/links?employee_id=100001",
+        json={"name": "go-ftp", "target_kind": "url", "target_url": "ftp://localhost/file"},
+    )
+    assert bad_scheme.status_code == 400
+
+    missing_url = client.post(
+        "/api/share/links?employee_id=100001",
+        json={"name": "go-empty", "target_kind": "url", "target_url": ""},
+    )
+    assert missing_url.status_code == 400
+
+    bad_kind = client.post(
+        "/api/share/links?employee_id=100001",
+        json={"name": "go-bad-kind", "target_kind": "not-a-kind"},
+    )
+    assert bad_kind.status_code == 400
+
+    # doc-kind 등록은 target_kind를 생략해도(기본값 doc) 이전과 동일하게 동작한다.
+    doc_default = client.post(
+        "/api/share/links?employee_id=100001",
+        json={"name": "go-doc-default", "target_boi_id": "boi:public:harness:overview"},
+    )
+    assert doc_default.status_code == 200
+    assert doc_default.json()["target_kind"] == "doc"
+
+
+# --- §10 P2-16: 업로드 quota (env, monkeypatch로 재정의) -------------------------
+
+
+def test_upload_quota_per_user_active_share_cap(boi_app_module, monkeypatch):
+    client = make_client(boi_app_module)
+    monkeypatch.setattr(boi_app_module, "BOI_SHARE_MAX_PER_USER", 1)
+
+    first = upload_html(client, "100002", name="quota-user-first")
+    assert first.status_code == 200
+
+    second = upload_html(client, "100002", name="quota-user-second")
+    assert second.status_code == 429
+    assert "개수" in second.json()["detail"]
+
+    # 재업로드(overwrite)는 활성 공유 개수를 늘리지 않으므로 상한 검사에서 빠진다.
+    overwrite = upload_html(client, "100002", name="quota-user-first", title="다시 업로드")
+    assert overwrite.status_code == 200
+
+    # 다른 사용자는 자신만의 상한을 갖는다.
+    other_user = upload_html(client, "100003", name="quota-user-other")
+    assert other_user.status_code == 200
+
+
+def test_upload_quota_daily_upload_cap(boi_app_module, monkeypatch):
+    client = make_client(boi_app_module)
+    monkeypatch.setattr(boi_app_module, "BOI_SHARE_MAX_UPLOADS_PER_DAY", 1)
+
+    first = upload_html(client, "100002", name="quota-daily-first")
+    assert first.status_code == 200
+
+    # 같은 이름 재업로드도 하루 업로드 상한에 반영된다.
+    second = upload_html(client, "100002", name="quota-daily-first", title="다시")
+    assert second.status_code == 429
+    assert "하루" in second.json()["detail"]
+
+    # 신규 이름 업로드도 동일하게 막힌다.
+    third = upload_html(client, "100002", name="quota-daily-second")
+    assert third.status_code == 429
+
+    # 다른 사용자는 자신의 하루 카운트를 별도로 갖는다.
+    other_user = upload_html(client, "100003", name="quota-daily-other-user")
+    assert other_user.status_code == 200
+
+
+def test_upload_quota_disabled_when_limit_is_zero(boi_app_module, monkeypatch):
+    client = make_client(boi_app_module)
+    monkeypatch.setattr(boi_app_module, "BOI_SHARE_MAX_PER_USER", 0)
+    monkeypatch.setattr(boi_app_module, "BOI_SHARE_MAX_UPLOADS_PER_DAY", 0)
+    assert upload_html(client, "100002", name="quota-disabled-a").status_code == 200
+    assert upload_html(client, "100002", name="quota-disabled-b").status_code == 200
+    assert upload_html(client, "100002", name="quota-disabled-c").status_code == 200
+
+
+# --- §10 P2-17: 레지스트리 동시성 (inter-process 파일락) -------------------------
+
+
+def test_registry_upsert_creates_inter_process_lock_file(boi_app_module):
+    if share_module.fcntl is None:
+        pytest.skip("fcntl is unavailable on this platform (e.g. Windows dev environment)")
+    client = make_client(boi_app_module)
+    assert upload_html(client, "100001", name="lock-file-share").status_code == 200
+    lock_path = boi_app_module.SHORTLINK_REGISTRY_PATH.parent / (boi_app_module.SHORTLINK_REGISTRY_PATH.name + ".lock")
+    assert lock_path.exists()
+
+    # tombstone(레지스트리 삭제 경로)도 같은 락 파일을 재사용한다.
+    assert client.delete("/api/share/lock-file-share?employee_id=100001").status_code == 200
+    assert lock_path.exists()
+
+
+# --- §10 P2-14: 버전 이력 뷰 -----------------------------------------------------
+
+
+def test_share_history_gracefully_unavailable_without_git(boi_app_module):
+    # 기본 테스트 환경(DATA_ROOT가 git 저장소가 아님)에서는 하드 실패 없이 unavailable로 응답한다.
+    client = make_client(boi_app_module)
+    assert upload_html(client, "100001", name="history-no-git").status_code == 200
+
+    history = client.get("/api/share/history-no-git/history?employee_id=100001")
+    assert history.status_code == 200
+    body = history.json()
+    assert body["ok"] is True
+    assert body["available"] is False
+    assert body["entries"] == []
+
+    invalid_commit = client.get("/api/share/history-no-git/history/not-a-hash?employee_id=100001")
+    assert invalid_commit.status_code == 400
+
+    missing_version = client.get("/api/share/history-no-git/history/abc1234?employee_id=100001")
+    assert missing_version.status_code == 404
+
+    missing_share = client.get("/api/share/never-registered-history/history?employee_id=100001")
+    assert missing_share.status_code == 404
+
+
+def _init_isolated_git_repo(root) -> None:
+    """pytest tmp_path 아래 완전히 새 git 저장소를 만든다 — 실제 저장소의 .git과 무관하다."""
+    subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=harness-eval@example.com", "-c", "user.name=harness-eval", "add", "-A"],
+        cwd=str(root),
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=harness-eval@example.com",
+            "-c",
+            "user.name=harness-eval",
+            "commit",
+            "-q",
+            "-m",
+            "seed",
+        ],
+        cwd=str(root),
+        check=False,  # 이미 커밋된 상태 등으로 "nothing to commit"이면 무시한다.
+    )
+
+
+def test_share_history_lists_and_serves_versions_with_real_git_repo(boi_app_module):
+    # §10 P2-14: BOI_AUTO_COMMIT을 켜고 실제(격리된) git 저장소로 전체 라우트를 검증한다.
+    client = make_client(boi_app_module)
+    _init_isolated_git_repo(boi_app_module.DATA_ROOT)
+    boi_app_module.BOI_AUTO_COMMIT = True
+
+    first_content = SAMPLE_HTML.replace("사내 HTML 보고서", "버전 1")
+    assert upload_html(client, "100001", name="history-real-git", content=first_content).status_code == 200
+    second_content = SAMPLE_HTML.replace("사내 HTML 보고서", "버전 2")
+    assert upload_html(client, "100001", name="history-real-git", content=second_content).status_code == 200
+
+    history = client.get("/api/share/history-real-git/history?employee_id=100002")
+    assert history.status_code == 200
+    body = history.json()
+    assert body["available"] is True
+    assert len(body["entries"]) >= 2
+    commits = [entry["commit"] for entry in body["entries"]]
+    assert len(commits) == len(set(commits))
+    for entry in body["entries"]:
+        assert entry["committed_at"]
+        assert entry["message"]
+
+    oldest_commit = body["entries"][-1]["commit"]
+    oldest_version = client.get(f"/api/share/history-real-git/history/{oldest_commit}?employee_id=100002")
+    assert oldest_version.status_code == 200
+    assert oldest_version.headers["content-security-policy"] == "sandbox allow-scripts; frame-ancestors 'self'"
+    assert oldest_version.headers["x-content-type-options"] == "nosniff"
+    assert oldest_version.headers["cross-origin-resource-policy"] == "same-site"
+    assert oldest_version.headers["referrer-policy"] == "no-referrer"
+    assert "버전 1" in oldest_version.text
+
+    latest_commit = body["entries"][0]["commit"]
+    latest_version = client.get(f"/api/share/history-real-git/history/{latest_commit}?employee_id=100002")
+    assert "버전 2" in latest_version.text
+
+    invalid_commit = client.get("/api/share/history-real-git/history/deadbeefzz?employee_id=100002")
+    assert invalid_commit.status_code == 400
+
+    unknown_commit = client.get("/api/share/history-real-git/history/0123456?employee_id=100002")
+    assert unknown_commit.status_code == 404
+
+    # ACL: private 공유의 이력은 소유자 외에는 볼 수 없다.
+    assert upload_html(client, "100002", name="history-private-git", visibility="private").status_code == 200
+    private_history = client.get("/api/share/history-private-git/history?employee_id=100003")
+    assert private_history.status_code == 404
+
+
+# --- §10 P2-15: 다중 파일 번들(assets) -------------------------------------------
+
+
+def upload_bundle(
+    client: TestClient,
+    employee_id: str,
+    *,
+    name: str,
+    content: str = SAMPLE_HTML,
+    assets=None,
+    visibility: str = "public",
+    team_id: str = "",
+    title: str = "번들 테스트",
+    description: str = "pytest bundle",
+):
+    data = {"title": title, "description": description, "visibility": visibility, "name": name}
+    if team_id:
+        data["team_id"] = team_id
+    files = [("file", ("report.html", content.encode("utf-8"), "text/html"))]
+    for asset_name, asset_bytes, asset_content_type in assets or []:
+        files.append(("assets", (asset_name, asset_bytes, asset_content_type)))
+    return client.post(f"/api/share/html?employee_id={employee_id}", data=data, files=files)
+
+
+def test_bundle_upload_serves_index_and_assets_with_security_headers(boi_app_module):
+    from boi_api.app.okf import lint_data_root, split_frontmatter
+
+    client = make_client(boi_app_module)
+    css_bytes = b"body{background:#fff}"
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"0" * 16
+
+    created = upload_bundle(
+        client,
+        "100001",
+        name="bundle-report",
+        assets=[("style.css", css_bytes, "text/css"), ("logo.png", png_bytes, "image/png")],
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["bundle"] is True
+    assert sorted(body["assets"]) == ["logo.png", "style.css"]
+    assert body["card_uri"] == "/public/html/bundle-report.md"
+
+    bundle_dir = boi_app_module.DATA_ROOT / "public" / "html" / "bundle-report"
+    assert (bundle_dir / "index.html").exists()
+    assert (bundle_dir / "style.css").read_bytes() == css_bytes
+    assert (bundle_dir / "logo.png").read_bytes() == png_bytes
+    card_path = boi_app_module.DATA_ROOT / "public" / "html" / "bundle-report.md"
+    assert card_path.exists()
+
+    metadata, card_body = split_frontmatter(card_path.read_text(encoding="utf-8"))
+    assert metadata["bundle"] is True
+    assert metadata["source_refs"][0]["ref"] == "data/boi/public/html/bundle-report/index.html"
+    assert "style.css" in card_body
+
+    index_response = client.get("/r/bundle-report?employee_id=100002")
+    assert index_response.status_code == 200
+
+    css_response = client.get("/r/bundle-report/style.css?employee_id=100002")
+    assert css_response.status_code == 200
+    assert css_response.content == css_bytes
+    assert css_response.headers["content-security-policy"] == "sandbox allow-scripts; frame-ancestors 'self'"
+    assert css_response.headers["x-content-type-options"] == "nosniff"
+    assert css_response.headers["cross-origin-resource-policy"] == "same-site"
+    assert css_response.headers["referrer-policy"] == "no-referrer"
+
+    png_response = client.get("/r/bundle-report/logo.png?employee_id=100002")
+    assert png_response.status_code == 200
+    assert png_response.content == png_bytes
+
+    # private 자산: 다른 스코프였다면 접근 불가 — 여기서는 public이므로 정상 접근.
+    result = lint_data_root(boi_app_module.DATA_ROOT.parent, strict_links=True)
+    bundle_errors = [error for error in result.errors if "bundle-report" in error]
+    assert bundle_errors == []
+
+
+def test_bundle_asset_traversal_and_bad_extension_are_rejected(boi_app_module):
+    client = make_client(boi_app_module)
+    assert (
+        upload_bundle(client, "100001", name="bundle-guard", assets=[("style.css", b"a{}", "text/css")]).status_code
+        == 200
+    )
+
+    # 경로 탈출 시도는 어떤 형태든 200(자산 노출)이어서는 안 된다.
+    traversal = client.get("/r/bundle-guard/../../../etc/passwd?employee_id=100001")
+    assert traversal.status_code != 200
+    encoded_traversal = client.get("/r/bundle-guard/..%2f..%2fsecret.css?employee_id=100001")
+    assert encoded_traversal.status_code != 200
+
+    bad_extension = upload_bundle(
+        client, "100001", name="bundle-bad-ext", assets=[("payload.exe", b"MZ", "application/octet-stream")]
+    )
+    assert bad_extension.status_code == 400
+    assert "확장자" in bad_extension.json()["detail"]
+
+    too_large = upload_bundle(
+        client,
+        "100001",
+        name="bundle-too-large",
+        assets=[("huge.css", b"a" * (share_module.HTML_BUNDLE_ASSET_MAX_BYTES + 1), "text/css")],
+    )
+    assert too_large.status_code == 400
+    assert "5MB" in too_large.json()["detail"]
+
+    non_bundle_asset_request = client.get("/r/never-registered-bundle/style.css?employee_id=100001")
+    assert non_bundle_asset_request.status_code == 404
+
+
+def test_bundle_too_many_assets_are_rejected(boi_app_module):
+    client = make_client(boi_app_module)
+    assets = [(f"asset-{index}.css", b"a{}", "text/css") for index in range(share_module.HTML_BUNDLE_ASSET_MAX_COUNT + 1)]
+    response = upload_bundle(client, "100001", name="bundle-too-many", assets=assets)
+    assert response.status_code == 400
+    assert "20" in response.json()["detail"]
+
+
+def test_bundle_delete_removes_whole_folder(boi_app_module):
+    client = make_client(boi_app_module)
+    assert (
+        upload_bundle(client, "100002", name="bundle-delete", assets=[("style.css", b"a{}", "text/css")]).status_code
+        == 200
+    )
+    bundle_dir = boi_app_module.DATA_ROOT / "public" / "html" / "bundle-delete"
+    assert bundle_dir.exists()
+
+    deleted = client.delete("/api/share/bundle-delete?employee_id=100002")
+    assert deleted.status_code == 200
+    assert not bundle_dir.exists()
+    assert not (boi_app_module.DATA_ROOT / "public" / "html" / "bundle-delete.md").exists()
+
+
+def test_bundle_patch_visibility_move_relocates_whole_folder(boi_app_module):
+    client = make_client(boi_app_module)
+    assert (
+        upload_bundle(client, "100002", name="bundle-move", assets=[("style.css", b"a{}", "text/css")]).status_code
+        == 200
+    )
+    old_dir = boi_app_module.DATA_ROOT / "public" / "html" / "bundle-move"
+    assert old_dir.exists()
+
+    patched = client.patch(
+        "/api/share/bundle-move?employee_id=100002", json={"visibility": "team", "team_id": "aix-tf"}
+    )
+    assert patched.status_code == 200
+    assert not old_dir.exists()
+    new_dir = boi_app_module.DATA_ROOT / "team" / "aix-tf" / "html" / "bundle-move"
+    assert new_dir.exists()
+    assert (new_dir / "index.html").exists()
+    assert (new_dir / "style.css").read_bytes() == b"a{}"
+    assert (boi_app_module.DATA_ROOT / "team" / "aix-tf" / "html" / "bundle-move.md").exists()
+
+    # ACL이 새 스코프로 정상 적용된다.
+    assert client.get("/r/bundle-move?employee_id=100001").status_code == 200
+    assert client.get("/r/bundle-move?employee_id=100003").status_code == 404
+
+
+def test_bundle_name_availability_shared_with_single_file_form(boi_app_module):
+    client = make_client(boi_app_module)
+    assert (
+        upload_bundle(
+            client, "100002", name="bundle-or-file", assets=[("style.css", b"a{}", "text/css")]
+        ).status_code
+        == 200
+    )
+    # 같은 이름은 파일/폴더 형태와 무관하게 여전히 소유자만 갱신할 수 있다.
+    conflict = upload_html(client, "100003", name="bundle-or-file")
+    assert conflict.status_code == 409
+
+    overwrite_single = upload_html(client, "100002", name="bundle-or-file", title="단일 파일로 전환")
+    assert overwrite_single.status_code == 200
+    assert overwrite_single.json()["bundle"] is False
+    # 번들 폴더는 정리되고 단일 파일만 남는다.
+    assert not (boi_app_module.DATA_ROOT / "public" / "html" / "bundle-or-file").exists()
+    assert (boi_app_module.DATA_ROOT / "public" / "html" / "bundle-or-file.html").exists()
+
+
+def test_single_file_uploads_unaffected_by_bundle_support(boi_app_module):
+    # §10 P2-15 회귀 가드: assets 필드를 보내지 않으면 기존 단일 파일 동작이 그대로다.
+    client = make_client(boi_app_module)
+    created = upload_html(client, "100001", name="still-single-file")
+    assert created.status_code == 200
+    body = created.json()
+    assert body["bundle"] is False
+    assert body["assets"] == []
+    stored = boi_app_module.DATA_ROOT / "public" / "html" / "still-single-file.html"
+    assert stored.exists()
+    assert stored.with_suffix(".md").exists()

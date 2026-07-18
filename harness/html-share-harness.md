@@ -40,9 +40,38 @@ Every stored HTML gets exactly one `<script type="application/ld+json" id="boi-p
 
 - Name: `^[a-z0-9][a-z0-9-]{1,63}$`, reserved root segments denied, FCFS. Default name comes from the filename slug; check with `GET /api/share/names/{name}/availability` or MCP `shortlink_check`.
 - Only the owner can re-upload or update the same name (409 with suggested alternatives otherwise).
-- Scope decides storage: `data/boi/{public|team/{team_id}|private/{employee_id}}/html/{name}.html`. Team scope requires team membership.
-- Delete = tombstone: the name is never reusable again (bookmark-hijacking protection), the stored HTML and its knowledge card are removed.
-- Doc-kind shortlinks for existing accessible BoI documents use `POST /api/share/links` or MCP `shortlink_register` with the same name policy.
+- Scope decides storage: `data/boi/{public|team/{team_id}|private/{employee_id}}/html/{name}.html`. Team scope requires team membership. File and folder forms (single-file vs bundle, §10 P2-15) share the same name policy — availability treats them as the same name.
+- Delete = tombstone: the name is never reusable again (bookmark-hijacking protection), the stored HTML (or bundle folder) and its knowledge card are removed.
+- Doc-kind shortlinks for existing accessible BoI documents, or url-kind shortlinks for allowlisted internal URLs (§10 P2-13), use `POST /api/share/links` or MCP `shortlink_register` with the same name policy.
+
+## url-kind Go-links (§10 P2-13)
+
+- `POST /api/share/links` with `target_kind: "url"` and `target_url` registers a redirect-only shortlink for an internal URL — absorbing the go-link culture beyond BoI docs/HTML.
+- `target_url` must be `http`/`https` and its hostname must be in `BOI_SHARE_URL_ALLOWED_HOSTS` (csv env; default = the `BOI_EXTERNAL_URL` hostname plus `localhost`, `127.0.0.1`, `wiki.skhynix.com`). Disallowed hosts get 400.
+- url-links are public metadata (creator-owned, visible in lists); `GET /{name}` 302-redirects to `target_url` (the same redirect branch that already serves doc-kind links).
+- MCP `shortlink_register` accepts `target_kind`/`target_url` on the same tool (no new tool; the schema grew).
+
+## Version History (§10 P2-14)
+
+- `GET /api/share/{name}/history` returns the git log (`--follow`) for the share's stored file as a read-only list of `{commit, committed_at, message}`, available to anyone who can read the share.
+- `GET /api/share/{name}/history/{commit}` serves that historical version's raw HTML via `git show <commit>:<relpath>`, with the same security headers as `/r/{name}` (`sandbox allow-scripts; frame-ancestors 'self'`, `nosniff`, CORP `same-site`, `Referrer-Policy: no-referrer`). `commit` must match `^[0-9a-f]{7,40}$`.
+- When git is unavailable or the file has no commit history (auto-commit disabled, dev/test environments), both endpoints degrade gracefully to `{available: false}` — never a hard failure.
+- The viewer shows an "이력" (history) link only when history is available.
+
+## Multi-file Bundles (§10 P2-15)
+
+- Upload accepts an optional repeated `assets` multipart field alongside the primary HTML file. When present, the share is stored as `data/boi/{scope}/html/{name}/index.html` plus the asset files flattened into the same folder (basename only — no subdirectories in this MVP).
+- Allowed asset extensions: `png jpg jpeg webp gif svg css js json woff woff2 ttf map`. Per-asset cap 5MB, at most 20 assets per bundle.
+- The knowledge card still lives at `data/boi/{scope}/html/{name}.md` (one level above the bundle folder); its `html_artifact` source_ref points at `{name}/index.html`. The registry record gains `bundle: true`.
+- `GET /r/{name}/{asset_path:path}` serves bundle assets with the same security headers, a path-traversal guard, and the extension allowlist — no new top-level route (it rides under the already-reserved `/r/{name}` segment).
+- `okf_lint` recognizes the bundle layout (`{name}/index.html` → sibling card `{name}.md` one directory up) and separately validates every non-index bundle asset's extension (bundle assets are exempt from HTML lint, never from the extension allowlist).
+- Delete/tombstone removes the whole bundle folder; PATCH visibility moves relocate the whole folder (assets included).
+
+## Upload Quota (§10 P2-16)
+
+- `BOI_SHARE_MAX_PER_USER` (default 200) caps each employee's active share count — only new-name uploads are checked against it (overwrites never grow the active count).
+- `BOI_SHARE_MAX_UPLOADS_PER_DAY` (default 50) caps uploads (new + overwrite) per employee per day, tracked via a `share_upload` telemetry event and counted from that day's `events-YYYYMMDD.jsonl`.
+- Exceeding either limit returns 429 with a Korean message; quotas of `0` disable the corresponding check.
 
 ## Publish Flow (preview → user_confirmed → publish)
 
@@ -71,7 +100,7 @@ Every stored HTML gets exactly one `<script type="application/ld+json" id="boi-p
 
 ## One Contract, Many Consumers
 
-The Web UI (`/share`), REST API, and MCP tools (`html_share_publish`, `html_share_preview`, `shortlink_check`, `shortlink_list`, `shortlink_register`) all use the same registry, the same name policy, the same profile injection, and the same knowledge card generation. Web users never need to know the harness exists; agents must follow it.
+The Web UI (`/share`), REST API, and MCP tools (`html_share_publish`, `html_share_preview`, `html_share_update`, `html_share_transfer`, `shortlink_check`, `shortlink_list`, `shortlink_register`) all use the same registry, the same name policy, the same profile injection, and the same knowledge card generation. Web users never need to know the harness exists; agents must follow it.
 
 ## Validation
 

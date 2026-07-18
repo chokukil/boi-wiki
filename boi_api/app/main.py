@@ -42,6 +42,7 @@ from markupsafe import Markup
 from pydantic import BaseModel, Field
 
 from .okf import (
+    ALLOWED_HTML_BUNDLE_ASSET_EXTENSIONS,
     ALLOWED_MEDIA_EXTENSIONS,
     REQUIRED_FIELDS,
     iter_jsonl_rows,
@@ -8170,7 +8171,7 @@ def harness_acceptance_payload(employee_id: str) -> dict[str, Any]:
                 continue
             if not stored_path.exists():
                 registry_issues.append(f"active html shortlink is missing its stored file: {record_name}")
-            if not stored_path.with_suffix(".md").exists():
+            if not html_share.card_path_for_record(DATA_ROOT, record).exists():
                 registry_issues.append(f"active html shortlink is missing its knowledge card: {record_name}")
     except Exception as exc:
         registry_issues.append(f"shortlink registry check failed: {exc}")
@@ -23158,6 +23159,110 @@ async def api_agent_pattern_archive(pattern_id: str, req: AgentMemoryUpdateReque
     return {"ok": True, "item": update_memory_metadata(pattern_id, employee_id, {"archive_status": "archived", "archive_note": req.note})}
 
 
+# --- §10 P2-19: 패턴→자산 합성 루프 (탐색적, 최소 구현) --------------------------
+# derive_work_pattern_candidates가 만드는 candidate_only 후보를 SOP 초안 스켈레톤으로
+# 이어 붙인다. 자동 게시는 절대 하지 않는다(HOTL) — private draft만 생성하고,
+# 다음 단계(sop_registration_plan/preview)로 안내한다.
+
+
+class PatternSynthesizeRequest(BaseModel):
+    pattern: dict[str, Any] = Field(default_factory=dict)
+    user_confirmed: bool = False
+
+
+def pattern_sop_skeleton_steps(pattern: dict[str, Any]) -> list[str]:
+    """패턴 kind별 결정적 SOP 단계 스켈레톤 — LLM 호출 없음."""
+    kind = str(pattern.get("pattern_kind") or "").strip()
+    if kind == "answer_preference":
+        return [
+            "1. 관련 SOP/업무 흐름 문서를 찾는다 (`ontology_search` 또는 `boi_search`).",
+            "2. 해당 흐름을 Mermaid 다이어그램으로 정리한다.",
+            "3. 다이어그램을 SOP 초안의 절차 섹션에 첨부한다.",
+        ]
+    if kind == "manual_to_ai_candidate":
+        return [
+            "1. Inbox에서 반복되는 수동 조치 유형을 식별한다.",
+            "2. 해당 조치를 수행할 Action/Workflow 후보를 정의한다.",
+            "3. `sop_registration_plan`으로 Event/SOP/Action 초안을 정리한다.",
+        ]
+    if kind == "workflow_habit":
+        return [
+            "1. 후속 질문 패턴에서 반복되는 업무 맥락을 식별한다.",
+            "2. `work_context_pack`에 포함할 근거(evidence)를 정리한다.",
+            "3. SOP 단계에 다음 담당자를 위한 맥락 전달 절차를 추가한다.",
+        ]
+    return [
+        "1. 반복되는 업무 요청의 공통 절차를 식별한다.",
+        "2. 필요한 입력/출력과 담당자를 정리한다.",
+        "3. `sop_registration_plan`으로 SOP 등록 흐름을 시작한다.",
+    ]
+
+
+@app.post("/api/agents/boi-wiki/patterns/synthesize")
+async def api_agent_pattern_synthesize(
+    req: PatternSynthesizeRequest, employee_id: str = Depends(current_employee)
+) -> dict[str, Any]:
+    """work_pattern candidate(§10 P2-19) → private draft doc. 자동 게시 없음(HOTL).
+
+    body: {pattern: <derive 엔드포인트가 반환한 candidate 하나>, user_confirmed: true}.
+    user_confirmed가 없으면 쓰기 경계에서 400으로 거부한다(다른 쓰기 API와 동일 관례).
+    """
+    if not req.user_confirmed:
+        raise HTTPException(status_code=400, detail="user_confirmed=true가 필요합니다.")
+    pattern = req.pattern or {}
+    title = str(pattern.get("title") or "").strip() or "업무 패턴 초안"
+    description = str(pattern.get("description") or "").strip() or "반복 업무 패턴에서 합성된 SOP 초안 제안"
+    usage_count = int(pattern.get("usage_count") or 0)
+    confidence = str(pattern.get("confidence") or "medium")
+    pattern_kind = str(pattern.get("pattern_kind") or "")
+    pattern_id = str(pattern.get("pattern_id") or "")
+    source_refs_in = [str(ref) for ref in (pattern.get("source_activity_refs") or []) if str(ref or "").strip()]
+    steps = pattern_sop_skeleton_steps(pattern)
+    occurrences_lines = "\n".join(f"- {ref}" for ref in source_refs_in[:12]) or "- (활동 근거 없음)"
+    body = (
+        "# Summary\n\n"
+        f"{description}\n\n"
+        "# 패턴 요약\n\n"
+        f"- 종류: {pattern_kind or '(미상)'}\n"
+        f"- 반복 횟수: {usage_count}\n"
+        f"- 신뢰도: {confidence}\n\n"
+        "# 근거 (occurrences)\n\n"
+        f"{occurrences_lines}\n\n"
+        "# 제안 SOP 단계 스켈레톤\n\n"
+        + "\n".join(steps)
+        + "\n\n"
+        "# 다음 단계 안내\n\n"
+        "이 draft는 자동으로 게시되지 않습니다. 검토 후 기존 SOP 추가 흐름"
+        "(`sop_registration_plan` → `sop_registration_preview` → `sop_registration_draft_create`)으로 이어가세요.\n"
+    )
+    tags = ["WorkPattern", "Draft"]
+    if pattern_kind:
+        tags.append(pattern_kind)
+    metadata = make_metadata(
+        boi_type="boi/work-pattern-draft",
+        title=f"[패턴 초안] {title}",
+        description=description,
+        owner=employee_id,
+        visibility="private",
+        status="draft",
+        tags=tags,
+        source_refs=[{"type": "pattern", "ref": pattern_id}] if pattern_id else None,
+    )
+    doc = write_boi_to_subfolder(metadata, body, "agent-memory")
+    doc_metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    draft_boi_id = str(doc_metadata.get("boi_id") or "")
+    return {
+        "ok": True,
+        "employee_id": employee_id,
+        "draft": {
+            "boi_id": draft_boi_id,
+            "uri": doc.get("uri"),
+            "url": doc_url_for_ref(draft_boi_id, employee_id) if draft_boi_id else "",
+        },
+        "message": "패턴 초안이 비공개로 생성되었습니다. 검토 후 SOP 등록 흐름으로 이어가세요.",
+    }
+
+
 def agent_signals_payload(employee_id: str, current_url: str = "", limit: int = 5) -> dict[str, Any]:
     inbox = agent_inbox_payload(employee_id, status="open", limit=10, include_context="compact")
     page_context = resolve_agent_page_context(current_url, employee_id) if current_url else {}
@@ -32557,9 +32662,32 @@ async def users() -> dict[str, Any]:
 
 SHORTLINK_REGISTRY_PATH = DATA_ROOT.parent / "registry" / "shortlinks.yaml"
 
+# --- §10 P2-16: 업로드 quota (env, 테스트가 monkeypatch로 재정의) ----------------
+BOI_SHARE_MAX_PER_USER = int(os.getenv("BOI_SHARE_MAX_PER_USER", "") or html_share.BOI_SHARE_MAX_PER_USER_DEFAULT)
+BOI_SHARE_MAX_UPLOADS_PER_DAY = int(
+    os.getenv("BOI_SHARE_MAX_UPLOADS_PER_DAY", "") or html_share.BOI_SHARE_MAX_UPLOADS_PER_DAY_DEFAULT
+)
+
 
 def shortlink_records() -> list[dict[str, Any]]:
     return html_share.registry_load(SHORTLINK_REGISTRY_PATH)
+
+
+# --- §10 P2-13: url-kind go-link 등록 개방 --------------------------------------
+def share_url_allowed_hosts() -> set[str]:
+    """`BOI_SHARE_URL_ALLOWED_HOSTS`(csv)를 env에서 매번 새로 읽는다(테스트 monkeypatch 지원).
+
+    기본값 = BOI_EXTERNAL_URL의 호스트명 + localhost,127.0.0.1 + wiki.skhynix.com.
+    """
+    raw = os.getenv("BOI_SHARE_URL_ALLOWED_HOSTS", "")
+    configured = {host.strip().lower() for host in raw.split(",") if host.strip()}
+    if configured:
+        return configured
+    defaults = {"localhost", "127.0.0.1", "wiki.skhynix.com"}
+    external_host = hostname_from_url_or_host(os.getenv("BOI_EXTERNAL_URL") or "")
+    if external_host:
+        defaults.add(external_host)
+    return defaults
 
 
 def share_owner_label(record: dict[str, Any]) -> str:
@@ -32823,6 +32951,7 @@ async def publish_html_share_event(
 @app.post("/api/share/html")
 async def api_share_html_upload(request: Request, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
     request_content_type = str(request.headers.get("content-type") or "")
+    asset_items: list[tuple[str, bytes]] = []
     if "multipart/form-data" in request_content_type.lower():
         form = await request.form()
         uploaded = form.get("file")
@@ -32833,6 +32962,23 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
         filename = getattr(uploaded, "filename", "") or "shared.html"
         content_type = getattr(uploaded, "content_type", "") or ""
         fields: dict[str, Any] = {key: form.get(key) for key in ("name", "title", "description", "visibility", "team_id")}
+        # §10 P2-15: 다중 파일 번들 — repeated `assets` 필드(웹 UI 전용, JSON/MCP 경로는
+        # 단일 파일만 지원한다). 파일명은 basename만 남기고(평탄화, MVP는 하위 폴더 없음)
+        # 개수 상한을 먼저 확인해 무제한 메모리 로딩을 막는다.
+        raw_assets = form.getlist("assets") if hasattr(form, "getlist") else []
+        raw_assets = [item for item in raw_assets if item is not None and hasattr(item, "read")]
+        if len(raw_assets) > html_share.HTML_BUNDLE_ASSET_MAX_COUNT:
+            raise HTTPException(
+                status_code=400,
+                detail=f"번들 자산은 최대 {html_share.HTML_BUNDLE_ASSET_MAX_COUNT}개까지 업로드할 수 있습니다.",
+            )
+        for asset_upload in raw_assets:
+            asset_filename = html_share.bundle_asset_filename(getattr(asset_upload, "filename", "") or "")
+            asset_bytes = await asset_upload.read(html_share.HTML_BUNDLE_ASSET_MAX_BYTES + 1)
+            asset_error = html_share.bundle_asset_error(asset_filename, len(asset_bytes))
+            if asset_error:
+                raise HTTPException(status_code=400, detail=asset_error)
+            asset_items.append((html_share.bundle_asset_filename(asset_filename), asset_bytes))
     else:
         # MCP/자동화 경로: data-lake artifact upload와 같은 JSON(content_base64) 이중 모드.
         payload = await request.json()
@@ -32889,17 +33035,46 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
                     "suggested_names": html_share.suggested_alternative_names(records, name),
                 },
             )
+    # --- §10 P2-16: 업로드 quota ---------------------------------------------
+    # 신규 이름 업로드만 사번당 활성 공유 상한에 반영한다. 재업로드(overwrite)는
+    # 활성 공유 개수를 늘리지 않으므로 상한 검사에서 빠지고, 일일 업로드 상한에만
+    # 반영된다 (신규/재업로드 모두 일일 상한은 함께 적용).
+    if BOI_SHARE_MAX_UPLOADS_PER_DAY > 0:
+        uploads_today = USAGE_TELEMETRY.share_uploads_today(employee_id)
+        if uploads_today >= BOI_SHARE_MAX_UPLOADS_PER_DAY:
+            raise HTTPException(
+                status_code=429,
+                detail=f"하루 업로드 한도({BOI_SHARE_MAX_UPLOADS_PER_DAY}건)를 초과했습니다. 내일 다시 시도해주세요.",
+            )
+    if existing is None and BOI_SHARE_MAX_PER_USER > 0:
+        active_count = html_share.active_share_count_for_owner(records, employee_id)
+        if active_count >= BOI_SHARE_MAX_PER_USER:
+            raise HTTPException(
+                status_code=429,
+                detail=f"공유 가능한 개수(최대 {BOI_SHARE_MAX_PER_USER}개)를 초과했습니다. 기존 공유를 삭제한 뒤 다시 시도해주세요.",
+            )
+    bundle = bool(asset_items)
     try:
-        target_path = html_share.html_storage_path(DATA_ROOT, visibility, name, employee_id=employee_id, team_id=team_id)
+        target_path = html_share.html_storage_path(
+            DATA_ROOT, visibility, name, employee_id=employee_id, team_id=team_id, bundle=bundle
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="공유 파일 저장 경로를 계산할 수 없습니다.") from exc
     if existing is not None:
         try:
+            previous_bundle = bool(existing.get("bundle"))
             previous_path = html_share.storage_path_for_record(DATA_ROOT, existing)
-            if previous_path != target_path and previous_path.exists():
-                previous_path.unlink()
-                git_commit_for_path(previous_path, f"share: move /{name} storage")
-            previous_card_path = previous_path.with_suffix(".md")
+            previous_card_path = html_share.card_path_for_stored_path(previous_path, bundle=previous_bundle)
+            if previous_path != target_path:
+                # §10 P2-15: 번들이었던 옛 저장 위치는 폴더 전체(자산 포함)를 지운다 —
+                # index.html만 지우면 자산 파일이 고아로 남는다.
+                if previous_bundle:
+                    if previous_path.parent.exists():
+                        shutil.rmtree(previous_path.parent, ignore_errors=True)
+                        git_commit_for_path(previous_path.parent, f"share: move /{name} storage")
+                elif previous_path.exists():
+                    previous_path.unlink()
+                    git_commit_for_path(previous_path, f"share: move /{name} storage")
             if previous_path != target_path and previous_card_path.exists():
                 previous_card_path.unlink()
                 git_commit_for_path(previous_card_path, f"share: move /{name} knowledge card")
@@ -32938,7 +33113,17 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
     stored_sha256 = hashlib.sha256(stored_bytes).hexdigest()
     data_root_resolved = Path(DATA_ROOT).resolve()
     html_repo_path = "data/boi/" + str(target_path.relative_to(data_root_resolved)).replace("\\", "/")
-    card_path = target_path.with_suffix(".md")
+    asset_filenames_written: list[str] = []
+    asset_commit_statuses: list[str] = []
+    if bundle:
+        for asset_filename, asset_bytes in asset_items:
+            asset_path = target_path.parent / asset_filename
+            asset_path.write_bytes(asset_bytes)
+            asset_filenames_written.append(asset_filename)
+            asset_commit_statuses.append(
+                str(git_commit_for_path(asset_path, f"share: bundle asset {asset_filename} for /{name}").get("status") or "")
+            )
+    card_path = html_share.card_path_for_stored_path(target_path, bundle=bundle)
     card_path.write_text(
         html_share.build_knowledge_card_markdown(
             name=name,
@@ -32957,6 +33142,8 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
             html_repo_path=html_repo_path,
             # 결정적 자동 분석(제목/목차/발췌/사전 태그) — 원본 텍스트 기준(프로필 주입 전).
             analysis=share_html_analysis(text, employee_id),
+            bundle=bundle,
+            asset_filenames=asset_filenames_written,
         ),
         encoding="utf-8",
     )
@@ -32971,6 +33158,7 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
         description=description,
         now=now,
         created_at=created_at,
+        bundle=bundle,
     )
     html_share.registry_upsert(SHORTLINK_REGISTRY_PATH, record)
     invalidate_doc_caches()
@@ -32983,6 +33171,13 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
         boi_id=boi_id,
         visibility=visibility,
         title=title,
+        action="updated" if existing is not None else "created",
+    )
+    # §10 P2-16: 일일 quota 카운트 — 신규/재업로드 모두 하루 상한에 반영한다.
+    USAGE_TELEMETRY.record(
+        "share_upload",
+        employee_id=employee_id,
+        name=name,
         action="updated" if existing is not None else "created",
     )
     encoding_info: dict[str, Any] = {
@@ -33007,10 +33202,13 @@ async def api_share_html_upload(request: Request, employee_id: str = Depends(cur
         "team_id": team_id,
         "title": title,
         "status": "updated" if existing is not None else "created",
+        "bundle": bundle,
+        "assets": asset_filenames_written,
         "commit": {
             "html": html_commit.get("status"),
             "card": card_commit.get("status"),
             "registry": registry_commit.get("status"),
+            "assets": asset_commit_statuses,
         },
         "event": event_status,
         "encoding": encoding_info,
@@ -33092,21 +33290,46 @@ async def api_share_preview(request: Request, employee_id: str = Depends(current
 
 @app.post("/api/share/links")
 async def api_share_register_doc_link(request: Request, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    """접근 가능한 기존 BoI 문서에 대한 doc-kind 단축주소 등록. 이름 정책은 업로드와 동일하다."""
+    """go-link 등록: 접근 가능한 기존 BoI 문서(doc-kind) 또는 허용된 내부 URL(url-kind, §10 P2-13).
+
+    이름 정책/충돌/tombstone 규칙은 두 kind 모두 업로드와 동일한 레지스트리를 공유한다.
+    url-kind는 소유자가 등록한 공개 메타데이터다(공개 목록에 노출, 뷰어는 302 redirect).
+    """
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="JSON 본문이 필요합니다.")
-    target_boi_id = str(payload.get("target_boi_id") or payload.get("boi_id") or payload.get("target") or "").strip()
-    if not target_boi_id:
-        raise HTTPException(status_code=400, detail="target_boi_id가 필요합니다.")
-    doc = find_doc_by_id(target_boi_id, employee_id)
-    if doc is None:
-        # 접근 불가와 미존재를 같은 404로 응답해 문서 존재 여부 노출을 피한다.
-        raise HTTPException(status_code=404, detail="대상 BoI 문서를 찾을 수 없거나 접근 권한이 없습니다.")
-    doc_metadata = doc.get("metadata") or {}
-    name = html_share.normalize_share_name(str(payload.get("name") or "")) or html_share.suggest_share_name(
-        target_boi_id.split(":")[-1]
-    )
+    target_kind = str(payload.get("target_kind") or "doc").strip().lower()
+    if target_kind not in {"doc", "url"}:
+        raise HTTPException(status_code=400, detail="target_kind는 doc 또는 url이어야 합니다.")
+
+    if target_kind == "url":
+        target_url = str(payload.get("target_url") or "").strip()
+        url_error = html_share.share_url_target_error(target_url, share_url_allowed_hosts())
+        if url_error:
+            raise HTTPException(status_code=400, detail=url_error)
+        target = target_url
+        default_name_seed = urlsplit(target_url).hostname or "shared-url"
+        default_title = str(payload.get("title") or target_url).strip() or target_url
+        default_description = str(payload.get("description") or "").strip()
+        record_visibility = "public"
+        record_team_id = ""
+    else:
+        target_boi_id = str(payload.get("target_boi_id") or payload.get("boi_id") or payload.get("target") or "").strip()
+        if not target_boi_id:
+            raise HTTPException(status_code=400, detail="target_boi_id가 필요합니다.")
+        doc = find_doc_by_id(target_boi_id, employee_id)
+        if doc is None:
+            # 접근 불가와 미존재를 같은 404로 응답해 문서 존재 여부 노출을 피한다.
+            raise HTTPException(status_code=404, detail="대상 BoI 문서를 찾을 수 없거나 접근 권한이 없습니다.")
+        doc_metadata = doc.get("metadata") or {}
+        target = target_boi_id
+        default_name_seed = target_boi_id.split(":")[-1]
+        default_title = str(payload.get("title") or doc_metadata.get("title") or default_name_seed).strip() or default_name_seed
+        default_description = str(payload.get("description") or doc_metadata.get("description") or "").strip()
+        record_visibility = str(doc_metadata.get("visibility") or "private")
+        record_team_id = str(doc_metadata.get("team_id") or "")
+
+    name = html_share.normalize_share_name(str(payload.get("name") or "")) or html_share.suggest_share_name(default_name_seed)
     name_error = html_share.share_name_error(name)
     if name_error:
         raise HTTPException(status_code=400, detail=name_error)
@@ -33132,19 +33355,19 @@ async def api_share_register_doc_link(request: Request, employee_id: str = Depen
     now = now_iso()
     record = html_share.build_shortlink_record(
         name=name,
-        target_kind="doc",
-        target=target_boi_id,
+        target_kind=target_kind,
+        target=target,
         owner_employee_id=employee_id,
-        visibility=str(doc_metadata.get("visibility") or "private"),
-        team_id=str(doc_metadata.get("team_id") or ""),
-        title=str(payload.get("title") or doc_metadata.get("title") or name).strip() or name,
-        description=str(payload.get("description") or doc_metadata.get("description") or "").strip(),
+        visibility=record_visibility,
+        team_id=record_team_id,
+        title=default_title,
+        description=default_description,
         now=now,
         created_at=str((existing or {}).get("created_at") or now),
     )
     html_share.registry_upsert(SHORTLINK_REGISTRY_PATH, record)
     invalidate_doc_caches()
-    registry_commit = git_commit_for_path(SHORTLINK_REGISTRY_PATH, f"share: register doc shortlink /{name}")
+    registry_commit = git_commit_for_path(SHORTLINK_REGISTRY_PATH, f"share: register {target_kind} shortlink /{name}")
     view = html_share.share_record_view(record)
     view["status"] = "updated" if existing is not None else "created"
     view["ok"] = True
@@ -33184,11 +33407,17 @@ async def api_share_delete(name: str, employee_id: str = Depends(current_employe
     html_share.registry_tombstone(SHORTLINK_REGISTRY_PATH, normalized, now_iso())
     if str(record.get("target_kind") or "") == "html":
         try:
+            is_bundle = bool(record.get("bundle"))
             file_path = html_share.storage_path_for_record(DATA_ROOT, record)
-            if file_path.exists():
+            if is_bundle:
+                # §10 P2-15: 번들은 폴더 전체(index.html + 자산)를 지운다.
+                if file_path.parent.exists():
+                    shutil.rmtree(file_path.parent, ignore_errors=True)
+                    git_commit_for_path(file_path.parent, f"share: delete /{normalized}")
+            elif file_path.exists():
                 file_path.unlink()
                 git_commit_for_path(file_path, f"share: delete /{normalized}")
-            card_path = file_path.with_suffix(".md")
+            card_path = html_share.card_path_for_stored_path(file_path, bundle=is_bundle)
             if card_path.exists():
                 card_path.unlink()
                 git_commit_for_path(card_path, f"share: delete knowledge card /{normalized}")
@@ -33221,12 +33450,14 @@ def _share_republish_files(
     새 boi_id/acl_policy/owner 규칙으로 프로필+카드를 재생성하고, 저장 경로가
     바뀌면(스코프 변경 또는 private 소유자 변경) 새 위치에 쓰고 옛 파일/카드를
     삭제한다. 업로드 provenance(원본 파일명/sha256)는 기존 카드에서 그대로 재사용한다.
+    번들 공유(§10 P2-15)는 index.html과 함께 폴더 전체(자산 포함)를 이동한다.
     """
     normalized = html_share.normalize_share_name(str(record.get("name") or ""))
+    is_bundle = bool(record.get("bundle"))
     old_path = html_share.storage_path_for_record(DATA_ROOT, record)
     if not old_path.exists():
         raise HTTPException(status_code=404, detail="공유 HTML 파일을 찾을 수 없습니다.")
-    old_card_path = old_path.with_suffix(".md")
+    old_card_path = html_share.card_path_for_stored_path(old_path, bundle=is_bundle)
     card_metadata_before: dict[str, Any] = {}
     if old_card_path.exists():
         parsed_before, _card_body = split_frontmatter(old_card_path.read_text(encoding="utf-8"))
@@ -33235,7 +33466,7 @@ def _share_republish_files(
 
     try:
         new_path = html_share.html_storage_path(
-            DATA_ROOT, new_visibility, normalized, employee_id=new_owner_employee_id, team_id=new_team_id
+            DATA_ROOT, new_visibility, normalized, employee_id=new_owner_employee_id, team_id=new_team_id, bundle=is_bundle
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="새 저장 경로를 계산할 수 없습니다.") from exc
@@ -33270,7 +33501,26 @@ def _share_republish_files(
     stored_sha256 = hashlib.sha256(stored_bytes).hexdigest()
     data_root_resolved = Path(DATA_ROOT).resolve()
     html_repo_path = "data/boi/" + str(new_path.relative_to(data_root_resolved)).replace("\\", "/")
-    new_card_path = new_path.with_suffix(".md")
+    existing_asset_filenames: list[str] = []
+    if is_bundle and old_path.parent.exists():
+        existing_asset_filenames = sorted(
+            asset.name for asset in old_path.parent.iterdir() if asset.is_file() and asset.name != old_path.name
+        )
+    # §10 P2-15: 번들이 이동(스코프/소유자 변경)하면 index.html/카드뿐 아니라 자산도
+    # 새 위치로 복사한다 — 새 index.html/카드는 이미 위에서 새로 쓰였으므로 자산만 옮긴다.
+    asset_commit_statuses: list[str] = []
+    if is_bundle and moved:
+        for asset_name in existing_asset_filenames:
+            try:
+                asset_bytes = (old_path.parent / asset_name).read_bytes()
+            except OSError:
+                continue
+            new_asset_path = new_path.parent / asset_name
+            new_asset_path.write_bytes(asset_bytes)
+            asset_commit_statuses.append(
+                str(git_commit_for_path(new_asset_path, f"{commit_reason} (asset {asset_name})").get("status") or "")
+            )
+    new_card_path = html_share.card_path_for_stored_path(new_path, bundle=is_bundle)
     created_at = str(record.get("created_at") or now)
     # 결정적 자동 분석은 원본(프로필 주입 전) 텍스트 기준으로 다시 계산한다 (업로드와 동일).
     analysis = share_html_analysis(original_html_text, employee_id)
@@ -33291,17 +33541,27 @@ def _share_republish_files(
             stored_sha256=stored_sha256,
             html_repo_path=html_repo_path,
             analysis=analysis,
+            bundle=is_bundle,
+            asset_filenames=existing_asset_filenames,
         ),
         encoding="utf-8",
     )
     html_commit = git_commit_for_path(new_path, commit_reason)
     card_commit = git_commit_for_path(new_card_path, f"{commit_reason} (card)")
     if moved:
-        try:
-            old_path.unlink()
-            git_commit_for_path(old_path, f"share: remove old path for /{normalized}")
-        except OSError:
-            pass
+        if is_bundle:
+            try:
+                if old_path.parent.exists():
+                    shutil.rmtree(old_path.parent, ignore_errors=True)
+                    git_commit_for_path(old_path.parent, f"share: remove old bundle for /{normalized}")
+            except OSError:
+                pass
+        else:
+            try:
+                old_path.unlink()
+                git_commit_for_path(old_path, f"share: remove old path for /{normalized}")
+            except OSError:
+                pass
         try:
             if old_card_path.exists():
                 old_card_path.unlink()
@@ -33314,7 +33574,7 @@ def _share_republish_files(
         "card_path": new_card_path,
         "boi_id": boi_id,
         "moved": moved,
-        "commit": {"html": html_commit.get("status"), "card": card_commit.get("status")},
+        "commit": {"html": html_commit.get("status"), "card": card_commit.get("status"), "assets": asset_commit_statuses},
     }
 
 
@@ -33381,6 +33641,7 @@ async def api_share_patch(
         description=new_description,
         now=now,
         created_at=str(record.get("created_at") or now),
+        bundle=bool(record.get("bundle")),
     )
     if record.get("transfers"):
         updated_record["transfers"] = record["transfers"]
@@ -33460,6 +33721,7 @@ async def api_share_transfer(
         description=description,
         now=now,
         created_at=str(record.get("created_at") or now),
+        bundle=bool(record.get("bundle")),
     )
     updated_record["transfers"] = transfers
     html_share.registry_upsert(SHORTLINK_REGISTRY_PATH, updated_record)
@@ -33648,7 +33910,7 @@ async def api_share_enrich(name: str, employee_id: str = Depends(current_employe
         file_path = html_share.storage_path_for_record(DATA_ROOT, record)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="enrich할 공유 HTML을 찾을 수 없습니다.") from exc
-    card_path = file_path.with_suffix(".md")
+    card_path = html_share.card_path_for_record(DATA_ROOT, record)
     if not file_path.exists() or not card_path.exists():
         raise HTTPException(status_code=404, detail="공유 HTML 또는 지식 카드가 없습니다.")
     analysis = share_html_analysis(file_path.read_text(encoding="utf-8", errors="replace"), employee_id)
@@ -33678,6 +33940,130 @@ async def api_share_enrich(name: str, employee_id: str = Depends(current_employe
         },
         "component_errors": component_errors,
     }
+
+
+# --- §10 P2-14: 버전 이력 뷰 (git log 기반, auto-commit 이력 재사용) --------------
+# git_commit_for_path와 동일한 방식(`git -C <path.parent> rev-parse --show-toplevel`)으로
+# 콘텐츠 저장소를 찾는다 — 별도의 "safe.directory" 설정을 추가하지 않고 기존 패턴을 그대로
+# 따른다. git이 없거나(개발/테스트 임시 디렉토리) 커밋 이력이 없으면 {available: false}로
+# 관대하게 응답한다(하드 실패 금지).
+
+
+def _git_toplevel_for(path: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"],
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+    except Exception:
+        return None
+    return result.stdout.strip() or None
+
+
+def _git_relative_path(root: str, file_path: Path) -> str | None:
+    try:
+        return str(file_path.resolve().relative_to(Path(root).resolve())).replace("\\", "/")
+    except ValueError:
+        return None
+
+
+def share_history_entries(file_path: Path, *, limit: int = 20) -> list[dict[str, str]] | None:
+    """`file_path`의 git 이력을 (commit, committed_at, message) 목록으로 반환한다.
+
+    git이 없거나 커밋 이력이 없으면 None(호출부가 {available: false}로 응답).
+    """
+    root = _git_toplevel_for(file_path)
+    if root is None:
+        return None
+    rel_path = _git_relative_path(root, file_path)
+    if rel_path is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", root, "log", f"-n{max(1, int(limit))}", "--format=%H|%cI|%s", "--follow", "--", rel_path],
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    entries: list[dict[str, str]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+        commit_hash, committed_at, subject = parts
+        entries.append({"commit": commit_hash, "committed_at": committed_at, "message": subject})
+    return entries or None
+
+
+@app.get("/api/share/{name}/history")
+async def api_share_history(
+    name: str, employee_id: str = Depends(current_employee), limit: int = Query(20, ge=1, le=100)
+) -> dict[str, Any]:
+    """이 공유의 이전 버전 목록(읽기 전용) — 공유 접근 가능한 사용자 전체."""
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("status") or "") != "active" or str(record.get("target_kind") or "") != "html":
+        raise HTTPException(status_code=404, detail="이력을 볼 공유를 찾을 수 없습니다.")
+    if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
+        raise HTTPException(status_code=404, detail="이력을 볼 공유를 찾을 수 없습니다.")
+    try:
+        file_path = html_share.storage_path_for_record(DATA_ROOT, record)
+    except ValueError:
+        return {"ok": True, "name": normalized, "available": False, "entries": []}
+    entries = share_history_entries(file_path, limit=limit) if file_path.exists() else None
+    if not entries:
+        return {"ok": True, "name": normalized, "available": False, "entries": []}
+    return {"ok": True, "name": normalized, "available": True, "entries": entries}
+
+
+@app.get("/api/share/{name}/history/{commit}")
+async def api_share_history_version(
+    name: str, commit: str, employee_id: str = Depends(current_employee)
+) -> Response:
+    """`git show <commit>:<relpath>`로 과거 버전의 raw HTML을 서빙한다 (/r/{name}과 동일 보안 헤더)."""
+    if not html_share.GIT_COMMIT_HASH_RE.match(str(commit or "")):
+        raise HTTPException(status_code=400, detail="commit 값이 올바르지 않습니다 (7~40자 hex).")
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("target_kind") or "") != "html":
+        raise HTTPException(status_code=404, detail="이력을 볼 공유를 찾을 수 없습니다.")
+    if str(record.get("status") or "") == "tombstone":
+        raise HTTPException(status_code=410, detail="삭제된 공유 주소입니다.")
+    if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
+        raise HTTPException(status_code=404, detail="이력을 볼 공유를 찾을 수 없습니다.")
+    try:
+        file_path = html_share.storage_path_for_record(DATA_ROOT, record)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="이력을 볼 공유를 찾을 수 없습니다.") from exc
+    root = _git_toplevel_for(file_path)
+    if root is None:
+        raise HTTPException(status_code=404, detail="git 이력을 사용할 수 없습니다.")
+    rel_path = _git_relative_path(root, file_path)
+    if rel_path is None:
+        raise HTTPException(status_code=404, detail="git 이력을 사용할 수 없습니다.")
+    try:
+        result = subprocess.run(
+            ["git", "-C", root, "show", f"{commit}:{rel_path}"],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="해당 커밋의 버전을 찾을 수 없습니다.")
+    if result.returncode != 0 or not result.stdout:
+        raise HTTPException(status_code=404, detail="해당 커밋의 버전을 찾을 수 없습니다.")
+    return Response(
+        content=result.stdout,
+        media_type="text/html; charset=utf-8",
+        headers=dict(SHARE_RAW_SECURITY_HEADERS),
+    )
 
 
 async def publish_wiki_remediation_event(employee_id: str, finding: dict[str, Any], ran_at: str) -> str:
@@ -33961,6 +34347,56 @@ async def share_raw_html(name: str, employee_id: str = Depends(current_employee)
     )
 
 
+# §10 P2-15: /r/{name}의 raw HTML과 동일한 origin 격리/유출 방지 헤더 세트.
+# 번들 자산(/r/{name}/{asset_path})과 버전 이력 열람(§10 P2-14)이 이 상수를 공유한다.
+SHARE_RAW_SECURITY_HEADERS = {
+    "Content-Security-Policy": "sandbox allow-scripts; frame-ancestors 'self'",
+    "X-Content-Type-Options": "nosniff",
+    "Cross-Origin-Resource-Policy": "same-site",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+@app.get("/r/{name}/{asset_path:path}")
+async def share_raw_bundle_asset(name: str, asset_path: str, employee_id: str = Depends(current_employee)) -> Response:
+    """§10 P2-15: 다중 파일 번들의 index.html 외 자산(css/js/이미지/폰트 등)을 서빙한다.
+
+    새 루트 세그먼트를 추가하지 않는다 — 기존 `/r/{name}` 예약 세그먼트("r") 아래
+    한 단계 더 들어간 경로다. `/r/{name}` raw HTML과 동일한 보안 헤더 + 경로 탈출
+    가드 + 확장자 allowlist(okf.ALLOWED_HTML_BUNDLE_ASSET_EXTENSIONS)를 적용한다.
+    """
+    normalized = html_share.normalize_share_name(name)
+    if normalized in html_share.RESERVED_SHORTLINK_NAMES or not html_share.SHORTLINK_NAME_RE.match(normalized):
+        raise HTTPException(status_code=404, detail="shared html asset not found")
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("target_kind") or "") != "html" or not bool(record.get("bundle")):
+        raise HTTPException(status_code=404, detail="shared html asset not found")
+    if str(record.get("status") or "") == "tombstone":
+        raise HTTPException(status_code=410, detail="삭제된 공유 주소입니다.")
+    if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
+        raise HTTPException(status_code=404, detail="shared html asset not found")
+    try:
+        bundle_dir = html_share.bundle_dir_for_record(DATA_ROOT, record)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="shared html asset not found") from exc
+    # 경로 탈출 방지: /okf-media와 동일한 패턴 — resolve 후 bundle_dir 밖이면 거부.
+    target_path = (bundle_dir / asset_path).resolve()
+    try:
+        target_path.relative_to(bundle_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=404, detail="shared html asset not found")
+    if target_path.suffix.lower() not in ALLOWED_HTML_BUNDLE_ASSET_EXTENSIONS:
+        raise HTTPException(status_code=404, detail="shared html asset not found")
+    if not target_path.exists() or not target_path.is_file():
+        raise HTTPException(status_code=404, detail="shared html asset not found")
+    guessed_type, _encoding = mimetypes.guess_type(target_path.name)
+    return Response(
+        content=target_path.read_bytes(),
+        media_type=guessed_type or "application/octet-stream",
+        headers=dict(SHARE_RAW_SECURITY_HEADERS),
+    )
+
+
 @app.get("/share", response_class=HTMLResponse)
 async def share_page(request: Request, employee_id: str = Depends(current_employee)) -> HTMLResponse:
     return templates.TemplateResponse(
@@ -34035,6 +34471,16 @@ async def shortlink_viewer_page(request: Request, name: str, employee_id: str = 
         return share_missing_response(request, employee_id, normalized, gone=False)
     record_shortlink_click_telemetry(record, employee_id, "viewer")
     view = html_share.share_record_view(record)
+    # §10 P2-14: 이력 링크는 BOI_AUTO_COMMIT이 꺼져 있으면(로컬/테스트 대부분) git 이력이
+    # 있을 리 없으므로 subprocess 호출 자체를 건너뛴다 — 매 조회마다 불필요한 git 프로세스를
+    # 띄우지 않기 위한 최소한의 방어. 실패해도 뷰어 렌더는 절대 깨지지 않는다(try/except).
+    history_available = False
+    if BOI_AUTO_COMMIT:
+        try:
+            stored_path = html_share.storage_path_for_record(DATA_ROOT, record)
+            history_available = bool(stored_path.exists() and share_history_entries(stored_path, limit=1))
+        except Exception:
+            history_available = False
     return templates.TemplateResponse(
         "html_viewer.html",
         {
@@ -34049,5 +34495,7 @@ async def shortlink_viewer_page(request: Request, name: str, employee_id: str = 
             # dev 모드에서는 employee_id query가 인증 수단이므로 iframe src에도 전파한다.
             "raw_url": app_url(view["raw_url"], employee_id),
             "share_page_url": app_url("/share", employee_id),
+            "history_available": history_available,
+            "history_url": app_url(f"/api/share/{normalized}/history", employee_id),
         },
     )

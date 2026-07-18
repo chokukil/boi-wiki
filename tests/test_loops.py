@@ -740,6 +740,71 @@ def test_promotion_recommendations_ranked_by_seeded_telemetry(boi_app_module):
 # --- Agent memory usage_count 실증가 -----------------------------------------
 
 
+# --- §10 P2-18: 텔레메트리 보존 정책 --------------------------------------------
+
+
+def test_telemetry_prunes_old_events_at_most_once_per_process_day(tmp_path, monkeypatch):
+    root = tmp_path / "telemetry"
+    root.mkdir(parents=True)
+    monkeypatch.setenv("BOI_TELEMETRY_RETENTION_DAYS", "1")
+
+    from datetime import date, timedelta
+
+    today = date.today()
+    old_day = (today - timedelta(days=5)).strftime("%Y%m%d")
+    recent_day = today.strftime("%Y%m%d")
+    old_path = root / f"events-{old_day}.jsonl"
+    recent_path = root / f"events-{recent_day}.jsonl"
+    old_path.write_text('{"kind": "doc_view", "ts": "old"}\n', encoding="utf-8")
+    recent_path.write_text('{"kind": "doc_view", "ts": "recent"}\n', encoding="utf-8")
+
+    store = loops_module.TelemetryStore(root)
+    assert store._last_pruned_day == ""
+    assert store.record("doc_view", boi_id="boi:public:x")
+    # 보존기간(1일)보다 오래된 파일은 삭제되고, 오늘 파일과 방금 기록된 오늘자 이벤트는 남는다.
+    assert not old_path.exists()
+    assert recent_path.exists()
+    assert store._last_pruned_day == today.strftime("%Y%m%d")
+
+    # 같은 프로세스(인스턴스)에서 같은 날 다시 오래된 파일이 생겨도 이번 record() 호출은
+    # 다시 스캔하지 않는다 (마커 속성이 하루 한 번만 허용한다).
+    stale_again = root / f"events-{old_day}.jsonl"
+    stale_again.write_text('{"kind": "doc_view", "ts": "reappeared"}\n', encoding="utf-8")
+    assert store.record("doc_view", boi_id="boi:public:y")
+    assert stale_again.exists()  # 오늘 이미 정리를 수행했으므로 다시 스캔하지 않는다.
+
+    # 새 인스턴스(다음 프로세스를 시뮬레이션)는 마커가 초기화돼 있어 다시 정리한다.
+    fresh_store = loops_module.TelemetryStore(root)
+    assert fresh_store.record("doc_view", boi_id="boi:public:z")
+    assert not stale_again.exists()
+
+
+def test_telemetry_prune_never_raises_on_unreadable_filenames(tmp_path, monkeypatch):
+    root = tmp_path / "telemetry"
+    root.mkdir(parents=True)
+    monkeypatch.setenv("BOI_TELEMETRY_RETENTION_DAYS", "not-a-number")
+    (root / "events-not-a-date.jsonl").write_text("not json\n", encoding="utf-8")
+
+    store = loops_module.TelemetryStore(root)
+    # 잘못된 env(비정수)와 잘못된 파일명이 섞여 있어도 record()는 절대 예외를 던지지 않는다.
+    assert store.record("doc_view", boi_id="boi:public:x") is True
+    assert loops_module.telemetry_retention_days() == loops_module.TELEMETRY_RETENTION_DAYS_DEFAULT
+
+
+def test_share_uploads_today_counts_only_matching_employee_and_kind(tmp_path):
+    root = tmp_path / "telemetry"
+    root.mkdir(parents=True)
+    store = loops_module.TelemetryStore(root)
+    assert store.record("share_upload", employee_id="100001", name="a")
+    assert store.record("share_upload", employee_id="100001", name="b")
+    assert store.record("share_upload", employee_id="100002", name="c")
+    assert store.record("doc_view", boi_id="boi:public:unrelated")
+
+    assert store.share_uploads_today("100001") == 2
+    assert store.share_uploads_today("100002") == 1
+    assert store.share_uploads_today("100003") == 0
+
+
 def test_memory_recall_adds_runtime_usage_without_frontmatter_rewrite(boi_app_module):
     client = make_client(boi_app_module)
 

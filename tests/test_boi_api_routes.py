@@ -14823,3 +14823,62 @@ def test_work_pattern_derivation_uses_agent_activity_without_publishing(boi_app_
     assert candidate["usage_count"] >= 3
     assert candidate["visibility"] == "private"
     assert body["published"] is False
+
+
+def test_pattern_synthesize_requires_confirmation_and_creates_private_lint_clean_draft(boi_app_module):
+    # §10 P2-19: 패턴→자산 합성 루프 (탐색적, 최소 구현). derive → synthesize → private draft.
+    from boi_api.app.okf import lint_markdown_file, split_frontmatter
+
+    client = TestClient(boi_app_module.app)
+    for index in range(3):
+        assert client.post(
+            "/api/agents/boi-wiki/activity?employee_id=100001",
+            json={
+                "activity_type": "artifact_open",
+                "target": "/docs/boi:public:sop:equipment-abnormal-response",
+                "title": "Mermaid 크게 보기",
+                "metadata": {"artifact_type": "mermaid", "question": "이 SOP를 Mermaid로 보여줘", "index": index},
+            },
+        ).status_code == 200
+
+    derived = client.post("/api/agents/boi-wiki/patterns/derive?employee_id=100001")
+    assert derived.status_code == 200
+    candidate = derived.json()["candidates"][0]
+
+    unconfirmed = client.post(
+        "/api/agents/boi-wiki/patterns/synthesize?employee_id=100001",
+        json={"pattern": candidate, "user_confirmed": False},
+    )
+    assert unconfirmed.status_code == 400
+
+    synthesized = client.post(
+        "/api/agents/boi-wiki/patterns/synthesize?employee_id=100001",
+        json={"pattern": candidate, "user_confirmed": True},
+    )
+    assert synthesized.status_code == 200
+    body = synthesized.json()
+    assert body["ok"] is True
+    boi_id = body["draft"]["boi_id"]
+    assert boi_id.startswith("boi:private:100001:")
+    assert body["draft"]["url"]
+    assert body["message"]
+
+    draft_path = next(
+        path
+        for path in (boi_app_module.DATA_ROOT / "private" / "100001" / "agent-memory").glob("*.md")
+        if "패턴 초안" in path.read_text(encoding="utf-8")
+    )
+    metadata, body_text = split_frontmatter(draft_path.read_text(encoding="utf-8"))
+    assert metadata["type"] == "boi/work-pattern-draft"
+    assert metadata["visibility"] == "private"
+    assert metadata["status"] == "draft"
+    assert "제안 SOP 단계 스켈레톤" in body_text
+    assert "다음 단계 안내" in body_text
+    assert "근거 (occurrences)" in body_text
+
+    lint_errors, _edges = lint_markdown_file(draft_path, boi_root=boi_app_module.DATA_ROOT)
+    assert lint_errors == []
+
+    # private draft — 다른 사용자는 읽을 수 없다.
+    assert client.get(f"/docs/{boi_id}?employee_id=100002").status_code == 404
+    assert client.get(f"/docs/{boi_id}?employee_id=100001").status_code == 200

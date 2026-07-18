@@ -32,6 +32,9 @@
       <button type="button" class="inline-button" data-feedback-value="needs_fix">수정 필요</button>
       <span class="muted" id="share-feedback-status" aria-live="polite"></span>
       <a class="inline-button" href="{{ raw_url }}" target="_blank" rel="noopener">원본 크게 보기</a>
+      {% if history_available %}
+      <a class="inline-button" href="{{ history_url }}" target="_blank" rel="noopener">이력</a>
+      {% endif %}
       <a class="inline-button" href="{{ share_page_url }}">공유 관리</a>
     </div>
   </header>

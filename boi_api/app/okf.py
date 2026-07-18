@@ -34,6 +34,23 @@ RESERVED_FILENAMES = {"index.md", "log.md"}
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 ALLOWED_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+# §10 P2-15: 다중 파일 HTML 번들(assets)에 허용되는 확장자. lint_html_bundle_assets가
+# ALLOWED_MEDIA_EXTENSIONS(마크다운 _media 이미지 전용)와 별개로 검증한다.
+ALLOWED_HTML_BUNDLE_ASSET_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".svg",
+    ".css",
+    ".js",
+    ".json",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".map",
+}
 # BoI HTML Profile: 공유 HTML 문서(<head>)에 내장되는 단일 JSON-LD 블록.
 # Markdown frontmatter와 같은 BoI Profile 필드를 boiProfile 객체로 직렬화한다.
 HTML_PROFILE_SCRIPT_RE = re.compile(
@@ -415,11 +432,43 @@ def html_card_source_ref_sha256(card_metadata: dict[str, Any]) -> str:
     return ""
 
 
+def html_bundle_card_path(path: Path) -> Path:
+    """번들 레이아웃(`{name}/index.html`)에서는 카드가 폴더 한 단계 위 `{name}.md`에 있다.
+
+    단일 파일 공유(`{name}.html`)는 기존과 동일하게 `path.with_suffix(".md")`다.
+    """
+    if path.name == "index.html":
+        return path.parent.with_suffix(".md")
+    return path.with_suffix(".md")
+
+
+def lint_html_bundle_assets(boi_root: Path) -> list[str]:
+    """번들 폴더(`html/{name}/index.html`이 있는 폴더) 안의 비-index 자산을 확장자 allowlist로 검증한다.
+
+    번들 자산은 lint_html_file의 BoI HTML Profile/카드 검증 대상이 아니지만
+    (계획서 §10 P2-15), 업로드 시 강제한 확장자 allowlist는 여기서도 그대로 강제한다 —
+    lint_media_assets가 `_media` 이미지 자산을 검증하는 것과 같은 패턴이다.
+    """
+    errors: list[str] = []
+    root = Path(boi_root).resolve()
+    for index_path in sorted(root.rglob("html/*/index.html")):
+        if not index_path.is_file():
+            continue
+        bundle_dir = index_path.parent
+        for asset_path in sorted(bundle_dir.rglob("*")):
+            if not asset_path.is_file() or asset_path == index_path:
+                continue
+            if asset_path.suffix.lower() not in ALLOWED_HTML_BUNDLE_ASSET_EXTENSIONS:
+                errors.append(f"unsupported html bundle asset extension: {asset_path}")
+    return errors
+
+
 def lint_html_file(path: Path, boi_root: Path | None = None) -> tuple[list[str], list[str]]:
     """data/boi 아래 공유 HTML 문서(*.html) 검증: BoI HTML Profile + 지식 카드 무결성.
 
     Returns (errors, warnings). 외부 참조(<script src>/<link href> http(s))는
-    사내망에서 깨질 수 있으므로 warning으로만 보고한다.
+    사내망에서 깨질 수 있으므로 warning으로만 보고한다. 다중 파일 번들(§10 P2-15)의
+    `{name}/index.html`도 이 함수로 검증되며, 사이드카 카드는 폴더 한 단계 위에 있다.
     """
     boi_root = boi_root or path.parents[0]
     errors: list[str] = []
@@ -435,7 +484,7 @@ def lint_html_file(path: Path, boi_root: Path | None = None) -> tuple[list[str],
         else:
             errors.extend(validate_boi_profile_metadata(boi_profile))
             errors.extend(validate_boi_profile_path_acl(boi_profile, path, boi_root))
-    card_path = path.with_suffix(".md")
+    card_path = html_bundle_card_path(path)
     if not card_path.exists():
         errors.append(f"html document requires a sibling knowledge card: {card_path.name}")
     else:
@@ -495,6 +544,7 @@ def lint_data_root(
         result.extend(str(path), html_errors)
         result.warnings.extend(f"{path}: {warning}" for warning in html_warnings)
     result.errors.extend(lint_media_assets(boi_root, strict_media=strict_media))
+    result.errors.extend(lint_html_bundle_assets(boi_root))
     if include_logs:
         for log_root_name in ("events", "actions"):
             for path in sorted((root / log_root_name).glob("*.jsonl")):

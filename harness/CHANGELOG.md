@@ -13,6 +13,16 @@
 
 ## 2026-07-18
 
+### `overview` 0.4.0 — LLM 골든 태스크 eval(옵트인) 절차 등재
+
+- 변경: `harness/README.md`(및 서빙 사본)에 "LLM 골든 태스크 eval (옵트인)" 절을 추가해 `tests/harness_evals_llm/`의 존재·실행 조건(`BOI_HARNESS_LLM_EVALS=1` + composer 설정)·채점 원칙(생성자/평가자 분리)을 명문화한다.
+- 근거(evidence): 결정적 golden task suite(`tests/harness_evals/`)는 LLM을 호출하지 않아 "실제 에이전트가 저작 태스크를 수행했을 때"의 품질(한국어 출력, 길이, 태그 수, 비밀 값 등)을 채점하는 경로가 없었다(계획서 §10 P2-20). 네트워크/LLM 가용성 의존 때문에 결정적 suite에 섞으면 회귀 게이트가 불안정해지므로 별도 디렉터리 + 옵트인으로 분리했다.
+
+### `html-share-harness` 1.3.0 — url go-link 개방 + 버전 이력 + 다중 파일 번들 + quota + MCP parity
+
+- 변경: (1) `POST /api/share/links`가 `target_kind: "url"`(허용 내부 호스트, `BOI_SHARE_URL_ALLOWED_HOSTS`)을 받아 임의 내부 URL도 go-link로 등록할 수 있다(MCP `shortlink_register`도 동일 스키마로 확장 — 신규 tool 없음). (2) `GET /api/share/{name}/history`(git log 기반 이전 버전 목록)와 `GET /api/share/{name}/history/{commit}`(과거 버전 raw HTML, `/r/{name}`과 동일 보안 헤더)을 추가하고 뷰어에 "이력" 링크를 노출한다. (3) 업로드가 `assets`(multipart 반복 필드)를 받아 `{name}/index.html` + 평탄화된 자산 파일로 이루어진 다중 파일 번들을 지원한다(자산당 5MB·최대 20개, 확장자 allowlist, `/r/{name}/{asset_path:path}` 서빙, okf lint의 사이드카 카드 탐색과 자산 확장자 검증이 번들을 인식). (4) 사번당 활성 공유 상한(`BOI_SHARE_MAX_PER_USER`, 기본 200)과 일일 업로드 상한(`BOI_SHARE_MAX_UPLOADS_PER_DAY`, 기본 50)을 추가한다. (5) MCP `html_share_update`(PATCH 프록시)/`html_share_transfer`(transfer 프록시)를 추가해 웹 API와 MCP 도구 표면을 동등하게 맞춘다(tool 수 136→138).
+- 근거(evidence): go-link 문화(trot.to류 셀프서비스 단축주소)를 BoI 문서/HTML뿐 아니라 임의 내부 URL까지 완전히 흡수해야 사내 URL 단축 수요를 대체할 수 있었다. 대용량 대시보드/보고서는 자산(이미지·CSS·차트 라이브러리)을 분리해야 하는데 단일 HTML 파일 제약이 이런 수요를 막고 있었다. 재업로드가 옛 버전을 덮어써 "직전 버전이 뭐였는지" 확인할 방법이 없었다(auto-commit 이력은 이미 있는데 열람 경로가 없었다). 업로드 quota/rate limit이 없어 한 사용자가 대량 업로드로 레지스트리·저장소를 소진할 수 있었다. PATCH/transfer 웹 API가 이미 있는데 MCP에는 대응 tool이 없어 Agent가 같은 작업을 하지 못했다(§10 P2-13/14/15/16 + MCP parity).
+
 ### `html-share-harness` 1.2.0 — PATCH(메타데이터 수정) + 소유권 이전 계약 추가
 
 - 변경: `PATCH /api/share/{name}`(제목/설명/공개범위 수정, 프로필+카드 재생성, visibility/team 변경 시 파일 이동)과 `POST /api/share/{name}/transfer`(소유권 지명 이전 또는 admin 회수, `transfers` 이력 append, private 스코프 파일의 소유자 폴더 재배치)를 하네스 계약에 추가한다.

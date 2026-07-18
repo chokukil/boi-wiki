@@ -235,9 +235,11 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
     {"name": "html_share_publish", "description": "Publish a user-confirmed self-contained HTML document to a BoI Wiki shortlink with an embedded BoI HTML Profile and auto-generated knowledge card."},
     {"name": "html_share_preview", "description": "Preview HTML share publication without mutating anything: validates content, name availability, and scope."},
+    {"name": "html_share_update", "description": "Update a user-confirmed share's title/description/visibility without re-uploading the file (PATCH proxy)."},
+    {"name": "html_share_transfer", "description": "Transfer or reclaim ownership of a user-confirmed HTML share to another employee (transfer proxy)."},
     {"name": "shortlink_check", "description": "Check availability of a BoI Wiki shortlink name (available/owned_by_me/taken/tombstone/reserved/invalid)."},
     {"name": "shortlink_list", "description": "List the caller's shortlinks and public shortlinks from the shared registry."},
-    {"name": "shortlink_register", "description": "Register a user-confirmed doc-kind shortlink for an existing accessible BoI document."},
+    {"name": "shortlink_register", "description": "Register a user-confirmed doc-kind or url-kind (allowlisted internal host) shortlink."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://docs/{boi_id}", "description": "Public BoI document as JSON text. Use employee-scoped templates for private/team content."},
@@ -295,6 +297,8 @@ MCP_TOOL_IA_GROUPS = [
             "harness_acceptance",
             "html_share_publish",
             "html_share_preview",
+            "html_share_update",
+            "html_share_transfer",
             "shortlink_check",
             "shortlink_list",
             "shortlink_register",
@@ -657,6 +661,27 @@ async def api_post(
     headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
     async with httpx.AsyncClient(timeout=MCP_BACKEND_TIMEOUT_SECONDS) as client:
         resp = await client.post(f"{BOI_API_URL}{path}", params=params, headers=headers, json=payload or {})
+    try:
+        body: Any = resp.json()
+    except Exception:
+        body = {"text": resp.text}
+    if resp.status_code >= 400:
+        raise RuntimeError(json.dumps({"status_code": resp.status_code, "body": body}, ensure_ascii=False))
+    return body if isinstance(body, dict) else {"value": body}
+
+
+async def api_patch(
+    path: str,
+    *,
+    employee_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+    service_token: bool = False,
+) -> dict[str, Any]:
+    """§10 MCP parity: html_share_update(PATCH proxy)가 사용하는 PATCH 헬퍼."""
+    params = {"employee_id": employee_id or DEFAULT_EMPLOYEE_ID}
+    headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
+    async with httpx.AsyncClient(timeout=MCP_BACKEND_TIMEOUT_SECONDS) as client:
+        resp = await client.patch(f"{BOI_API_URL}{path}", params=params, headers=headers, json=payload or {})
     try:
         body: Any = resp.json()
     except Exception:
@@ -1235,25 +1260,74 @@ async def shortlink_list(employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, An
 @mcp.tool(name="shortlink_register")
 async def shortlink_register(
     name: str,
-    target_boi_id: str,
+    target_boi_id: str = "",
+    target_kind: Literal["doc", "url"] = "doc",
+    target_url: str = "",
     title: str = "",
     description: str = "",
     employee_id: str = DEFAULT_EMPLOYEE_ID,
     user_confirmed: bool = False,
 ) -> dict[str, Any]:
-    """Register a user-confirmed doc-kind shortlink for an existing accessible BoI document."""
+    """Register a user-confirmed doc-kind shortlink for an accessible BoI document, or a
+    url-kind shortlink for an allowlisted internal URL (BOI_SHARE_URL_ALLOWED_HOSTS, §10 P2-13)."""
     if not user_confirmed:
         raise RuntimeError("user_confirmed=true is required before registering a shortlink")
+    payload: dict[str, Any] = {
+        "name": name,
+        "target_kind": target_kind,
+        "title": title,
+        "description": description,
+        "user_confirmed": True,
+    }
+    if target_kind == "url":
+        payload["target_url"] = target_url
+    else:
+        payload["target_boi_id"] = target_boi_id
+    return await api_post("/api/share/links", employee_id=employee_id, payload=payload)
+
+
+@mcp.tool(name="html_share_update")
+async def html_share_update(
+    name: str,
+    title: str | None = None,
+    description: str | None = None,
+    visibility: str = "",
+    team_id: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Update a user-confirmed share's title/description/visibility without re-uploading the file
+    (PATCH /api/share/{name} proxy, §10 P1-6/MCP parity). visibility must be "public"/"team"/"private"
+    when provided; leave it empty to keep the share's current visibility."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before updating a shared HTML's metadata")
+    payload: dict[str, Any] = {}
+    if title is not None:
+        payload["title"] = title
+    if description is not None:
+        payload["description"] = description
+    if visibility:
+        payload["visibility"] = visibility
+    if team_id:
+        payload["team_id"] = team_id
+    return await api_patch(f"/api/share/{name}", employee_id=employee_id, payload=payload)
+
+
+@mcp.tool(name="html_share_transfer")
+async def html_share_transfer(
+    name: str,
+    new_owner_employee_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    user_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Transfer or reclaim ownership of a user-confirmed HTML share to another employee
+    (POST /api/share/{name}/transfer proxy, §10 P1-7/MCP parity)."""
+    if not user_confirmed:
+        raise RuntimeError("user_confirmed=true is required before transferring a shared HTML's ownership")
     return await api_post(
-        "/api/share/links",
+        f"/api/share/{name}/transfer",
         employee_id=employee_id,
-        payload={
-            "name": name,
-            "target_boi_id": target_boi_id,
-            "title": title,
-            "description": description,
-            "user_confirmed": True,
-        },
+        payload={"new_owner_employee_id": new_owner_employee_id},
     )
 
 

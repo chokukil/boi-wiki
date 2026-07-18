@@ -56,3 +56,23 @@ The BoI Wiki copies live under `data/boi/public/harness/` so Langflow, Codex, Cl
    python3 scripts/run_harness_ablation.py --flags frame-ancestors-check
    ```
 3. 더 이상 load-bearing이 아닌 규칙은 제거하고, 제거 근거(eval 결과)를 CHANGELOG에 기록한다.
+
+## LLM 골든 태스크 eval (옵트인, §10 P2-20)
+
+`tests/harness_evals/`는 LLM을 호출하지 않는 결정적 suite다(`harness_eval_status` 회귀 게이트).
+`tests/harness_evals_llm/`은 별도 디렉터리로, 실제 composer LLM에게 저작 태스크(예: 공유 HTML
+본문에서 제목/설명/태그 초안 작성)를 수행시키고 결과를 채점하는 옵트인 suite다 — 네트워크/LLM
+가용성에 의존하므로 결정적 suite의 상태에는 절대 포함하지 않는다.
+
+- 기본 실행(`pytest` 전체 또는 `pytest tests/harness_evals_llm`)은 항상 SKIP된다.
+- `BOI_HARNESS_LLM_EVALS=1`이고 composer LLM 엔드포인트(`BOI_AGENT_COMPOSER_BASE_URL`,
+  `BOI_AGENT_COMPOSER_MODEL`, 선택적으로 `BOI_AGENT_COMPOSER_API_KEY`)가 설정되어 있을 때만 실행된다:
+
+  ```bash
+  BOI_HARNESS_LLM_EVALS=1 \
+  BOI_AGENT_COMPOSER_BASE_URL=http://llm-gateway.example:1236/v1 \
+  BOI_AGENT_COMPOSER_MODEL=google/gemma-4-26b-a4b-qat \
+  python3 -m pytest tests/harness_evals_llm -q
+  ```
+- 채점은 `tests/harness_evals_llm/grading_llm.py`(단일 평가자)에 위임한다: 한국어 출력, title/description
+  길이 범위, tags 8개 이하, 비밀 값 패턴 없음을 확인한다(생성자/평가자 분리 원칙은 결정적 suite와 동일).

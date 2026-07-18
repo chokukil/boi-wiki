@@ -8,7 +8,7 @@
 version: 1
 docs:
   - key: overview
-    version: "0.3.0"
+    version: "0.4.0"
     repo_path: harness/README.md
     served_path: data/boi/public/harness/overview.md
     served_boi_id: boi:public:harness:overview
@@ -80,7 +80,7 @@ docs:
     served_boi_id: boi:public:harness:simulator-dry-run-harness
     title: Simulator Dry Run Harness
   - key: html-share-harness
-    version: "1.2.0"
+    version: "1.3.0"
     repo_path: harness/html-share-harness.md
     served_path: data/boi/public/harness/html-share-harness.md
     served_boi_id: boi:public:harness:html-share-harness

@@ -1,7 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
-harness_version: "1.2.0"
+harness_version: "1.3.0"
 type: boi/harness
 title: HTML Share Harness
 description: self-contained HTML 문서를 단축주소로 게시할 때의 BoI HTML Profile, 지식 카드, 이름/스코프/tombstone, preview→확인→publish 계약
@@ -60,9 +60,38 @@ self-contained HTML 문서(보고서, 대시보드, 가이드 등 무엇이든)�
 
 - 이름: `^[a-z0-9][a-z0-9-]{1,63}$`, 루트 예약어 금지, FCFS 선점. 기본값은 파일명 slug이며 `GET /api/share/names/{name}/availability` 또는 MCP `shortlink_check`로 중복을 확인한다.
 - 같은 이름 재업로드/변경은 소유자만 가능하다(타인은 409 + 대안 이름 제시).
-- 스코프가 저장 경로를 결정한다: `data/boi/{public|team/{team_id}|private/{사번}}/html/{name}.html`. team 스코프는 팀 멤버십이 필요하다.
-- 삭제 = tombstone: 이름은 영구히 재사용 불가(북마크 하이재킹 방지)이며 저장 HTML과 지식 카드가 함께 삭제된다.
-- 기존 BoI 문서용 doc-kind 단축주소는 `POST /api/share/links` 또는 MCP `shortlink_register`로 등록하며 이름 정책은 업로드와 동일하다.
+- 스코프가 저장 경로를 결정한다: `data/boi/{public|team/{team_id}|private/{사번}}/html/{name}.html`. team 스코프는 팀 멤버십이 필요하다. 파일 형태(단일)와 폴더 형태(번들, §10 P2-15)는 같은 이름 정책을 공유한다 — 가용성 판정은 둘을 같은 이름으로 취급한다.
+- 삭제 = tombstone: 이름은 영구히 재사용 불가(북마크 하이재킹 방지)이며 저장 HTML(또는 번들 폴더 전체)과 지식 카드가 함께 삭제된다.
+- 기존 BoI 문서용 doc-kind 단축주소 또는 허용된 내부 URL용 url-kind 단축주소(§10 P2-13)는 `POST /api/share/links` 또는 MCP `shortlink_register`로 등록하며 이름 정책은 업로드와 동일하다.
+
+# url-kind go-link (§10 P2-13)
+
+- `POST /api/share/links`에 `target_kind: "url"`과 `target_url`을 주면 임의 내부 URL로 리다이렉트만 하는 단축주소를 등록한다 — go-link 문화를 BoI 문서/HTML 밖까지 완전히 흡수한다.
+- `target_url`은 http/https만 허용하고, 호스트명이 `BOI_SHARE_URL_ALLOWED_HOSTS`(csv env; 기본값 = `BOI_EXTERNAL_URL` 호스트명 + `localhost` + `127.0.0.1` + `wiki.skhynix.com`)에 있어야 한다. 허용되지 않은 호스트는 400.
+- url-link는 공개 메타데이터다(등록자 소유, 목록에 노출). `GET /{name}`은 `target_url`로 302 리다이렉트한다(doc-kind와 같은 redirect 분기를 재사용).
+- MCP `shortlink_register`는 같은 tool에서 `target_kind`/`target_url`을 받는다(신규 tool 없음 — 스키마만 확장).
+
+# 버전 이력 뷰 (§10 P2-14)
+
+- `GET /api/share/{name}/history`는 저장 파일의 git log(`--follow`)를 `{commit, committed_at, message}` 목록(읽기 전용)으로 반환한다. 공유를 읽을 수 있는 사용자라면 누구나 볼 수 있다.
+- `GET /api/share/{name}/history/{commit}`은 `git show <commit>:<relpath>`로 그 시점 버전의 raw HTML을 서빙하며, `/r/{name}`과 동일한 보안 헤더(`sandbox allow-scripts; frame-ancestors 'self'`, `nosniff`, CORP `same-site`, `Referrer-Policy: no-referrer`)를 적용한다. `commit`은 `^[0-9a-f]{7,40}$`을 만족해야 한다.
+- git이 없거나 커밋 이력이 없으면(auto-commit 비활성 등 개발/테스트 환경) 두 엔드포인트 모두 하드 실패 없이 `{available: false}`로 관대하게 응답한다.
+- 뷰어는 이력이 있을 때만 "이력" 링크를 보여준다.
+
+# 다중 파일 번들 (§10 P2-15)
+
+- 업로드는 기본 HTML 파일과 함께 선택적으로 반복 `assets` multipart 필드를 받는다. 있으면 `data/boi/{scope}/html/{name}/index.html` + 같은 폴더에 평탄화된 자산 파일들로 저장된다(파일명만 사용 — MVP는 하위 폴더 없음).
+- 허용 자산 확장자: `png jpg jpeg webp gif svg css js json woff woff2 ttf map`. 자산당 5MB 상한, 번들당 최대 20개.
+- 지식 카드는 그대로 `data/boi/{scope}/html/{name}.md`(번들 폴더 한 단계 위)에 있고, `html_artifact` source_ref는 `{name}/index.html`을 가리킨다. 레지스트리 레코드는 `bundle: true`를 갖는다.
+- `GET /r/{name}/{asset_path:path}`가 같은 보안 헤더 + 경로 탈출 가드 + 확장자 allowlist로 번들 자산을 서빙한다 — 새 루트 세그먼트 없이 기존 예약 세그먼트 `/r/{name}` 아래에서 동작한다.
+- `okf_lint`는 번들 레이아웃(`{name}/index.html` → 한 단계 위 카드 `{name}.md`)을 인식하고, index가 아닌 모든 번들 자산의 확장자를 별도로 검증한다(번들 자산은 HTML lint 대상은 아니지만 확장자 allowlist는 항상 적용된다).
+- 삭제/tombstone은 번들 폴더 전체를 지우고, PATCH의 visibility 이동은 폴더 전체(자산 포함)를 재배치한다.
+
+# 업로드 quota (§10 P2-16)
+
+- `BOI_SHARE_MAX_PER_USER`(기본 200)는 사번당 활성 공유 개수를 제한한다 — 신규 이름 업로드만 이 상한 검사 대상이다(재업로드는 활성 개수를 늘리지 않는다).
+- `BOI_SHARE_MAX_UPLOADS_PER_DAY`(기본 50)는 사번당 하루 업로드(신규+재업로드) 건수를 제한하며, `share_upload` 텔레메트리 이벤트로 그날의 `events-YYYYMMDD.jsonl`에서 집계한다.
+- 둘 중 하나라도 초과하면 한국어 메시지와 함께 429를 반환한다. 값이 0이면 해당 검사가 꺼진다.
 
 # 게시 흐름 (preview → user_confirmed → publish)
 
@@ -82,6 +111,7 @@ self-contained HTML 문서(보고서, 대시보드, 가이드 등 무엇이든)�
 - `PATCH /api/share/{name}` (소유자 전용, admin break-glass 허용): 파일 재업로드 없이 제목/설명/공개범위/팀을 수정한다. 제목/설명만 바꾸면 BoI HTML Profile을 재주입하고 지식 카드를 그 자리에서 재생성한다. visibility/team이 바뀌면 저장 HTML+카드를 새 스코프 경로로 이동하고(옛 파일/카드는 삭제) 새 `boi_id`/`acl_policy`/owner 규칙으로 프로필/카드를 재생성한다. 이 API로는 소유자가 절대 바뀌지 않는다. 잘못된 조합(알 수 없는 visibility, 비멤버 팀, 목적지 충돌)은 400/409, 비소유자는 403.
 - `POST /api/share/{name}/transfer` body `{new_owner_employee_id}` (현재 소유자 또는 `boi.admin`): 소유권을 이전한다. 레지스트리 레코드의 `owner_employee_id`가 바뀌고 `transfers` 이력 `{from, to, by, at}`이 append된다(이력은 덮어쓰지 않고 계속 쌓인다). private 스코프 공유는 새 소유자의 private 폴더로 파일이 물리적으로 이동한다(경로↔ACL 규칙). team/public 공유는 경로는 그대로지만 프로필/카드의 owner 필드와 레지스트리 owner가 바뀐다. 이전 즉시 옛 소유자는 소유자 권한을 잃는다(PATCH/삭제/재이전 403, 재업로드는 타인 이름처럼 409).
 - 두 API 모두 업로드/삭제와 같은 move/delete/재생성 패턴을 재사용한다 — 새로운 저장/ACL 로직을 만들지 않는다.
+- MCP parity: `html_share_update`(PATCH 프록시)와 `html_share_transfer`(transfer 프록시)가 위 두 API를 그대로 노출한다. 둘 다 `user_confirmed=true` 없이는 호출되지 않는다.
 
 # 금지사항
 

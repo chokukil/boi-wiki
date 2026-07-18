@@ -60,7 +60,8 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
 To publish a self-contained HTML document (any general document: report, dashboard, guide) to a wiki shortlink, follow `harness/html-share-harness.md` (wiki copy: `data/boi/public/harness/html-share-harness.md`).
 
 - Use MCP `html_share_preview` first (non-mutating), then `html_share_publish` only with explicit `user_confirmed=true`.
-- Use `shortlink_check`/`shortlink_list` for name availability and existing links; `shortlink_register` (user-confirmed) creates doc-kind shortlinks for existing BoI documents.
+- Use `shortlink_check`/`shortlink_list` for name availability and existing links; `shortlink_register` (user-confirmed) creates doc-kind shortlinks for existing BoI documents or url-kind shortlinks for allowlisted internal URLs (`target_kind: "url"`, `BOI_SHARE_URL_ALLOWED_HOSTS`).
+- Use `html_share_update` (user-confirmed) to change title/description/visibility without re-uploading the file, and `html_share_transfer` (user-confirmed) to reassign ownership.
 - The server injects the BoI HTML Profile (JSON-LD) and generates the knowledge card automatically; do not hand-author either.
 
 ## SOP Work

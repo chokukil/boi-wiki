@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import html as html_module
 import json
+import os
 import re
 import threading
 from datetime import date, datetime, timedelta, timezone
@@ -27,6 +28,20 @@ import yaml
 from .okf import HTML_PROFILE_SCRIPT_RE, split_frontmatter
 
 KST = timezone(timedelta(hours=9))
+
+# --- §10 P2-18: 텔레메트리 보존 정책 --------------------------------------------
+TELEMETRY_RETENTION_DAYS_ENV = "BOI_TELEMETRY_RETENTION_DAYS"
+TELEMETRY_RETENTION_DAYS_DEFAULT = 90
+_EVENTS_FILENAME_RE = re.compile(r"^events-(\d{8})\.jsonl$")
+
+
+def telemetry_retention_days() -> int:
+    """env를 매번 새로 읽는다 — 테스트가 monkeypatch.setenv로 보존 기간을 바꿀 수 있게 한다."""
+    try:
+        value = int(os.getenv(TELEMETRY_RETENTION_DAYS_ENV, "") or TELEMETRY_RETENTION_DAYS_DEFAULT)
+    except (TypeError, ValueError):
+        return TELEMETRY_RETENTION_DAYS_DEFAULT
+    return value if value > 0 else TELEMETRY_RETENTION_DAYS_DEFAULT
 
 # --- 텔레메트리 루프 ---------------------------------------------------------
 
@@ -57,6 +72,10 @@ class TelemetryStore:
         self.root = Path(root)
         self._lock = threading.Lock()
         self._counters: dict[str, Any] | None = None
+        # §10 P2-18: 마커 속성 — 이 프로세스(인스턴스)에서 마지막으로 보존 정책 정리를
+        # 수행한 날짜(YYYYMMDD). 같은 날 여러 번 record()가 호출돼도 디렉토리를 다시
+        # 스캔하지 않는다.
+        self._last_pruned_day: str = ""
 
     def _counters_path(self) -> Path:
         return self.root / "counters.json"
@@ -134,10 +153,43 @@ class TelemetryStore:
             if boi_id:
                 self._bump(counters["memories"], boi_id, "recalls", ts)
 
+    def _prune_old_events_locked(self, now: datetime) -> None:
+        """오래된 `events-*.jsonl`을 보존기간 밖이면 삭제한다 (§10 P2-18).
+
+        `self._lock` 보유 상태에서 호출되어야 한다. 프로세스(인스턴스)당 하루 한 번만
+        실제로 디렉토리를 스캔한다(마커 속성 `_last_pruned_day`). 텔레메트리 불변식대로
+        어떤 예외도 밖으로 던지지 않는다 — 실패해도 record()가 계속 진행되어야 한다.
+        """
+        today_key = now.strftime("%Y%m%d")
+        if self._last_pruned_day == today_key:
+            return
+        self._last_pruned_day = today_key
+        try:
+            if not self.root.exists():
+                return
+            cutoff = now.date() - timedelta(days=telemetry_retention_days())
+            for path in self.root.glob("events-*.jsonl"):
+                match = _EVENTS_FILENAME_RE.match(path.name)
+                if not match:
+                    continue
+                try:
+                    file_date = datetime.strptime(match.group(1), "%Y%m%d").date()
+                except ValueError:
+                    continue
+                if file_date < cutoff:
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+        except Exception:
+            pass
+
     def record(self, kind: str, **fields: Any) -> bool:
         """이벤트 1건을 JSONL에 적재하고 카운터를 증분한다. 실패 시 False만 반환한다."""
         try:
             now = _now()
+            with self._lock:
+                self._prune_old_events_locked(now)
             row: dict[str, Any] = {"kind": str(kind), "ts": now.isoformat()}
             for key, value in fields.items():
                 if value is None or value == "":
@@ -227,6 +279,35 @@ class TelemetryStore:
     def memory_recall_count(self, boi_id: str) -> int:
         entry = (self._snapshot().get("memories") or {}).get(str(boi_id))
         return int((entry or {}).get("recalls") or 0) if isinstance(entry, dict) else 0
+
+    # --- §10 P2-16: 업로드 quota의 일일 한도 카운트 ---------------------------
+    # 별도 ledger 파일 대신 기존 텔레메트리 이벤트("share_upload" kind)를 재사용한다
+    # — 오늘 날짜의 events-*.jsonl 한 파일만 읽으면 돼서 무겁지 않고, 실패 허용
+    # 원칙과 append-only 로그 패턴을 그대로 따른다.
+
+    def share_uploads_today(self, employee_id: str) -> int:
+        try:
+            now = _now()
+            events_path = self.root / f"events-{now.strftime('%Y%m%d')}.jsonl"
+            if not events_path.exists():
+                return 0
+            count = 0
+            for line in events_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("kind") or "") != "share_upload":
+                    continue
+                if str(row.get("employee_id") or "") == str(employee_id):
+                    count += 1
+            return count
+        except Exception:
+            return 0
 
     # --- 피드백 코멘트 표면화 (§10 P0-2) --------------------------------------
     # counters.json/events-*.jsonl과 별개로, "수정 필요"/"도움됨" 코멘트만

@@ -97,8 +97,10 @@ Pet UI가 보내는 `current_url`, `page_title`, `selected_text`는 힌트다. �
 - `promotion_submit`
 - `html_share_publish`
 - `shortlink_register`
+- `html_share_update`
+- `html_share_transfer`
 
-Agent는 확인 없이 source file, body, promotion, action execution, Event Type draft 생성/반영, HTML 공유 게시, 단축주소 등록을 변경하지 않는다. HTML 공유는 `html_share_preview`로 먼저 확인하고, 게시 계약은 [HTML Share Harness](/public/harness/html-share-harness.md)를 따른다. Manual handoff completion은 기존 action log를 수정하지 않고 append-only completion row로 남긴다. 신규 Event Type은 `event_type_draft_create`로 draft와 catalog patch proposal을 만든 뒤 `event_type_draft_validate`를 거치고, 별도 확인과 `boi.promoter` 권한이 있을 때만 `event_type_draft_apply`로 catalog에 반영한다.
+Agent는 확인 없이 source file, body, promotion, action execution, Event Type draft 생성/반영, HTML 공유 게시/메타데이터 수정/소유권 이전, 단축주소 등록을 변경하지 않는다. HTML 공유는 `html_share_preview`로 먼저 확인하고, 게시·수정·이전 계약은 [HTML Share Harness](/public/harness/html-share-harness.md)를 따른다. `html_share_update`(`PATCH /api/share/{name}` 프록시)는 재업로드 없이 제목/설명/공개범위만 바꾸고, `html_share_transfer`(`POST /api/share/{name}/transfer` 프록시)는 소유권을 지명 이전하거나 admin이 회수한다 — 둘 다 `user_confirmed=true` 없이는 호출되지 않는다. Manual handoff completion은 기존 action log를 수정하지 않고 append-only completion row로 남긴다. 신규 Event Type은 `event_type_draft_create`로 draft와 catalog patch proposal을 만든 뒤 `event_type_draft_validate`를 거치고, 별도 확인과 `boi.promoter` 권한이 있을 때만 `event_type_draft_apply`로 catalog에 반영한다.
 
 ## ACL and RBAC Guardrail
 

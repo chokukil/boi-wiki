@@ -1,7 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
-harness_version: "0.3.0"
+harness_version: "0.4.0"
 type: boi/reference
 title: BoI Agent Harness Overview
 description: SOP, Action, Web validated edit 작업을 모든 agent가 같은 방식으로 수행하기 위한 public harness 진입점
@@ -58,6 +58,10 @@ Codex skill은 얇은 bootstrap으로 유지하고, 상세 절차는 BoI Wiki MC
 1. `tests/harness_evals/` 골든 태스크 회귀를 실행한다. `scripts/run_harness_evals.sh`가 `BOI_HARNESS_EVAL_RECORD=1`을 설정해 repo root에서 실행해주는 wrapper이며(§10 P1-11), exit code를 그대로 전달한다. `scripts/check_local_full_readiness.py --harness-evals`로 실행 중인 배포의 readiness 점검에 같은 결과를 포함시킬 수 있다.
 2. 하네스 규칙별로 제거해도 eval이 통과하는지 ablation으로 확인한다. `scripts/run_harness_ablation.py`가 `harness/ablation-flags.yaml`에 등록된 플래그를 하나씩 `HARNESS_ABLATE` 환경변수로 켜서 eval suite를 반복 실행하고, ablation 후에도 계속 통과하는 규칙을 "load-bearing 후보 아님 — 검토 필요"로 보고한다(§10 P1-12, advisory tool — exit code는 항상 0).
 3. 더 이상 load-bearing이 아닌 규칙은 제거하고 제거 근거(eval 결과)를 CHANGELOG에 기록한다.
+
+# LLM 골든 태스크 eval (옵트인, §10 P2-20)
+
+`tests/harness_evals/`는 LLM을 호출하지 않는 결정적 suite이고 `harness_eval_status` 회귀 게이트다. `tests/harness_evals_llm/`은 별도 디렉터리로, 실제 composer LLM에게 저작 태스크(공유 HTML 본문에서 제목/설명/태그 초안 작성)를 수행시키고 결과를 채점하는 옵트인 suite다. 기본 실행은 항상 SKIP되며, `BOI_HARNESS_LLM_EVALS=1`과 composer LLM 엔드포인트(`BOI_AGENT_COMPOSER_BASE_URL`/`BOI_AGENT_COMPOSER_MODEL`)가 함께 설정됐을 때만 실행된다. 채점은 `tests/harness_evals_llm/grading_llm.py`(단일 평가자)가 한국어 출력·길이 범위·태그 8개 이하·비밀 값 패턴 없음을 확인하며, 결정적 suite의 상태에는 절대 포함되지 않는다.
 
 # Citations
 

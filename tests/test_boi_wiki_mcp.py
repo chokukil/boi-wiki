@@ -33,7 +33,7 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 136
+    assert body["capabilities"]["tools"] == 138
     assert body["capabilities"]["tools"] == len(body["capability_lists"]["tools"])
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
@@ -83,6 +83,8 @@ def test_boi_wiki_mcp_health(mcp_module):
         "harness_acceptance",
         "html_share_publish",
         "html_share_preview",
+        "html_share_update",
+        "html_share_transfer",
         "shortlink_check",
         "shortlink_list",
         "shortlink_register",
@@ -265,6 +267,8 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert "action_skills_list" in tool_names
     assert "html_share_publish" in tool_names
     assert "html_share_preview" in tool_names
+    assert "html_share_update" in tool_names
+    assert "html_share_transfer" in tool_names
     assert "shortlink_check" in tool_names
     assert "shortlink_list" in tool_names
     assert "shortlink_register" in tool_names
@@ -1108,8 +1112,13 @@ def test_boi_wiki_mcp_html_share_tools_delegate_and_require_confirmation(mcp_mod
         calls.append({"method": "post", "path": path, **kwargs})
         return {"ok": True, "path": path}
 
+    async def fake_api_patch(path, **kwargs):
+        calls.append({"method": "patch", "path": path, **kwargs})
+        return {"ok": True, "path": path}
+
     monkeypatch.setattr(mcp_module, "api_get", fake_api_get)
     monkeypatch.setattr(mcp_module, "api_post", fake_api_post)
+    monkeypatch.setattr(mcp_module, "api_patch", fake_api_patch)
 
     sample_html = "<html><head></head><body>공유 HTML 문서</body></html>"
 
@@ -1119,6 +1128,10 @@ def test_boi_wiki_mcp_html_share_tools_delegate_and_require_confirmation(mcp_mod
         asyncio.run(mcp_module.html_share_publish(name="mcp-share", user_confirmed=True))
     with pytest.raises(RuntimeError, match="user_confirmed=true"):
         asyncio.run(mcp_module.shortlink_register(name="go-doc", target_boi_id="boi:public:harness:overview"))
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.html_share_update(name="mcp-share", title="x"))
+    with pytest.raises(RuntimeError, match="user_confirmed=true"):
+        asyncio.run(mcp_module.html_share_transfer(name="mcp-share", new_owner_employee_id="100002"))
 
     published = asyncio.run(
         mcp_module.html_share_publish(
@@ -1140,12 +1153,32 @@ def test_boi_wiki_mcp_html_share_tools_delegate_and_require_confirmation(mcp_mod
             user_confirmed=True,
         )
     )
+    url_registered = asyncio.run(
+        mcp_module.shortlink_register(
+            name="go-url",
+            target_kind="url",
+            target_url="http://localhost/internal-tool",
+            employee_id="100001",
+            user_confirmed=True,
+        )
+    )
+    updated = asyncio.run(
+        mcp_module.html_share_update(name="mcp-share", title="새 제목", employee_id="100001", user_confirmed=True)
+    )
+    transferred = asyncio.run(
+        mcp_module.html_share_transfer(
+            name="mcp-share", new_owner_employee_id="100002", employee_id="100001", user_confirmed=True
+        )
+    )
 
     assert published["path"] == "/api/share/html"
     assert preview["path"] == "/api/share/preview"
     assert availability["path"] == "/api/share/names/mcp-share/availability"
     assert listing["mine"] == [] and listing["public"] == []
     assert registered["path"] == "/api/share/links"
+    assert url_registered["path"] == "/api/share/links"
+    assert updated["path"] == "/api/share/mcp-share"
+    assert transferred["path"] == "/api/share/mcp-share/transfer"
     assert [item["path"] for item in calls] == [
         "/api/share/html",
         "/api/share/preview",
@@ -1153,12 +1186,19 @@ def test_boi_wiki_mcp_html_share_tools_delegate_and_require_confirmation(mcp_mod
         "/api/share/mine",
         "/api/share/list",
         "/api/share/links",
+        "/api/share/links",
+        "/api/share/mcp-share",
+        "/api/share/mcp-share/transfer",
     ]
     decoded = base64_module.b64decode(calls[0]["payload"]["content_base64"]).decode("utf-8")
     assert decoded == sample_html
     assert calls[0]["payload"]["name"] == "mcp-share"
-    assert calls[-1]["payload"]["user_confirmed"] is True
-    assert calls[-1]["payload"]["target_boi_id"] == "boi:public:harness:overview"
+    assert calls[5]["payload"]["user_confirmed"] is True
+    assert calls[5]["payload"]["target_boi_id"] == "boi:public:harness:overview"
+    assert calls[6]["payload"]["target_kind"] == "url"
+    assert calls[6]["payload"]["target_url"] == "http://localhost/internal-tool"
+    assert calls[7]["payload"]["title"] == "새 제목"
+    assert calls[8]["payload"]["new_owner_employee_id"] == "100002"
 
 
 def test_boi_wiki_mcp_agent_capabilities_delegate_to_boi_api(mcp_module, monkeypatch):

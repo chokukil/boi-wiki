@@ -109,12 +109,14 @@ def test_boi_wiki_mcp_manual_explains_client_registration_and_browser_troublesho
     assert "Streamable HTTP" in text
     assert "resources: 0" in text
     assert "resource_templates: 11" in text
-    assert "tools: 136" in text
+    assert "tools: 138" in text
     assert "source_apply" in text
     assert "doc_body_apply" in text
     assert "harness_acceptance" in text
     assert "html_share_publish" in text
     assert "html_share_preview" in text
+    assert "html_share_update" in text
+    assert "html_share_transfer" in text
     assert "shortlink_check" in text
     assert "shortlink_list" in text
     assert "shortlink_register" in text
