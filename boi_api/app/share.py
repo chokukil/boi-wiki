@@ -416,6 +416,18 @@ def ensure_utf8_meta_charset(html_text: str) -> str:
     return '<meta charset="utf-8">\n' + text
 
 
+def original_upload_ref_from_card(card_metadata: dict[str, Any]) -> tuple[str, str]:
+    """지식 카드 frontmatter의 upload source_ref에서 (원본 파일명, 원본 sha256)을 꺼낸다.
+
+    PATCH(§10 P1-6)/소유권 이전(§10 P1-7)이 프로필·카드를 재생성할 때 최초 업로드
+    당시의 provenance(파일명/sha256)를 그대로 보존하기 위해 재사용한다.
+    """
+    for ref in (card_metadata or {}).get("source_refs") or []:
+        if isinstance(ref, dict) and str(ref.get("type") or "") == "upload":
+            return str(ref.get("ref") or ""), str(ref.get("sha256") or "")
+    return "", ""
+
+
 def can_read_share(record: dict[str, Any], *, employee_id: str, teams: list[str]) -> bool:
     visibility = str(record.get("visibility") or "public")
     if visibility == "public":

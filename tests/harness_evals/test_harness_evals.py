@@ -87,3 +87,15 @@ def test_eval_b_knowledge_card_contract(boi_app_module):
 def test_eval_c_harness_doc_integrity():
     failures = grading.grade_harness_meta(REPO_ROOT, REPO_ROOT / "data" / "boi")
     assert not failures, "\n".join(failures)
+
+
+def test_eval_d_external_reference_warning_check():
+    # §10 P1-12 ablation flag "external-ref-warning-check"의 대상 — okf lint가 외부
+    # http(s) <script src>/<link href> 참조를 사내망 warning으로 탐지하는 능력 자체를
+    # 채점한다(업로드 플로우와 무관한 순수 함수라 golden fixture를 재사용하지 않는다).
+    sample_with_external_ref = (
+        '<!doctype html><html><head><script src="https://cdn.example.com/lib.js"></script></head>'
+        "<body>external ref sample</body></html>"
+    )
+    failures = grading.grade_external_reference_warning(sample_with_external_ref)
+    assert not failures, "\n".join(failures)

@@ -30,7 +30,13 @@ KST = timezone(timedelta(hours=9))
 
 # --- 텔레메트리 루프 ---------------------------------------------------------
 
-TELEMETRY_COUNTER_FIELDS = ("views", "clicks", "feedback_helpful", "feedback_needs_fix")
+TELEMETRY_COUNTER_FIELDS = ("views", "viewer_views", "raw_views", "feedback_helpful", "feedback_needs_fix")
+# 채널별 클릭 필드 (§10 P1-8): viewer 뷰어 페이지 렌더와 doc/url kind의 즉시 redirect는
+# 둘 다 "/{name}"을 방문한 단일 클릭이므로 viewer_views에 합산한다. raw 채널(/r/{name}
+# 원본 서빙)만 별도로 raw_views에 적립해, viewer 방문 1회가 viewer+iframe raw로 2배
+# 집계되던 문제(계획서 §10 P1-8 근거)를 없앤다. 노출(UI/`/api/share/*` 목록/promotion)은
+# 항상 viewer_views만 쓴다 — raw_views는 `/api/telemetry/usage` 상세 조회에만 노출한다.
+_SHORTLINK_CLICK_CHANNEL_FIELD = {"raw": "raw_views"}
 # 코멘트 있는 피드백만 담는 별도 append-only 로그 (§10 P0-2 피드백 표면화).
 FEEDBACK_COMMENTS_FILENAME = "feedback-comments.jsonl"
 
@@ -76,6 +82,18 @@ class TelemetryStore:
         entry[field] = int(entry.get(field) or 0) + 1
         entry["last_seen"] = ts
 
+    @staticmethod
+    def _migrate_legacy_clicks(section: dict[str, Any], key: str) -> None:
+        """구 스키마(§10 P1-8 이전 "clicks" 단일 합산)를 처음 새 채널 이벤트가 닿을 때
+        물리적으로 viewer_views로 옮긴다. 값을 그대로 유지한 채 한 번만 변환하고,
+        이후에는 채널별로 정상 분리 적립된다. 아예 새 이벤트가 다시 오지 않는 legacy
+        항목은 _stats()의 읽기 시점 관대한 매핑이 대신 처리한다."""
+        entry = section.get(key)
+        if not isinstance(entry, dict):
+            return
+        if "viewer_views" not in entry and "raw_views" not in entry and "clicks" in entry:
+            entry["viewer_views"] = int(entry.pop("clicks") or 0)
+
     def _apply_locked(self, counters: dict[str, Any], kind: str, row: dict[str, Any]) -> None:
         ts = str(row.get("ts") or "")
         docs = counters["docs"]
@@ -86,13 +104,19 @@ class TelemetryStore:
             if boi_id:
                 self._bump(docs, boi_id, "views", ts)
         elif kind == "shortlink_click":
+            # channel: viewer(뷰어 페이지) | raw(/r/ 원본 서빙) | redirect(doc/url kind 302).
+            # redirect는 viewer와 같은 "/{name} 방문 1회"이므로 viewer_views에 합산한다.
+            channel = str(row.get("channel") or "viewer")
+            field = _SHORTLINK_CLICK_CHANNEL_FIELD.get(channel, "viewer_views")
             name = str(row.get("name") or "")
             if name:
-                self._bump(shortlinks, name, "clicks", ts)
-            # 단축주소가 BoI를 가리키면 대상 문서에도 클릭을 적립해
-            # promotion 추천(usage = views + clicks)의 입력이 된다.
+                self._migrate_legacy_clicks(shortlinks, name)
+                self._bump(shortlinks, name, field, ts)
+            # 단축주소가 BoI를 가리키면 대상 문서(지식 카드)에도 같은 채널로 적립해
+            # promotion 추천(usage = views + viewer_views)의 입력이 된다.
             if target.startswith("boi:"):
-                self._bump(docs, target, "clicks", ts)
+                self._migrate_legacy_clicks(docs, target)
+                self._bump(docs, target, field, ts)
         elif kind in {"doc_feedback", "share_feedback"}:
             field = "feedback_helpful" if row.get("helpful") else "feedback_needs_fix"
             if kind == "doc_feedback":
@@ -143,12 +167,29 @@ class TelemetryStore:
 
     @staticmethod
     def _stats(entry: dict[str, Any]) -> dict[str, Any]:
-        stats = {field: int(entry.get(field) or 0) for field in TELEMETRY_COUNTER_FIELDS}
+        # 관대한 마이그레이션(§10 P1-8): 채널 분리 이전에는 "clicks" 하나로만 합산됐다.
+        # viewer_views/raw_views 키가 아예 없는 legacy 항목은 옛 합산 클릭수를
+        # viewer_views로 간주한다(raw_views=0) — 노출 기준이 viewer이므로 과거 조회수가
+        # 갑자기 0으로 보이는 회귀를 막는다. 새 스키마 항목은 그대로 읽는다.
+        has_split_schema = "viewer_views" in entry or "raw_views" in entry
+        if has_split_schema:
+            viewer_views = int(entry.get("viewer_views") or 0)
+            raw_views = int(entry.get("raw_views") or 0)
+        else:
+            viewer_views = int(entry.get("clicks") or 0)
+            raw_views = 0
+        stats = {
+            "views": int(entry.get("views") or 0),
+            "viewer_views": viewer_views,
+            "raw_views": raw_views,
+            "feedback_helpful": int(entry.get("feedback_helpful") or 0),
+            "feedback_needs_fix": int(entry.get("feedback_needs_fix") or 0),
+        }
         stats["last_seen"] = str(entry.get("last_seen") or "")
         return stats
 
     def usage_counts(self) -> dict[str, dict[str, Any]]:
-        """{boi_id 또는 단축주소 이름 → {views, clicks, feedback_helpful, feedback_needs_fix, last_seen}}"""
+        """{boi_id 또는 단축주소 이름 → {views, viewer_views, raw_views, feedback_helpful, feedback_needs_fix, last_seen}}"""
         snapshot = self._snapshot()
         merged: dict[str, dict[str, Any]] = {}
         for boi_id, entry in (snapshot.get("docs") or {}).items():
@@ -162,8 +203,9 @@ class TelemetryStore:
         return self._stats(entry if isinstance(entry, dict) else {})
 
     def shortlink_views(self, name: str) -> int:
+        """노출용 조회수 — 항상 viewer 채널 기준이다(§10 P1-8, raw iframe 재요청은 제외)."""
         entry = (self._snapshot().get("shortlinks") or {}).get(str(name))
-        return int((entry or {}).get("clicks") or 0) if isinstance(entry, dict) else 0
+        return self._stats(entry if isinstance(entry, dict) else {})["viewer_views"]
 
     def doc_feedback_counts(self, boi_id: str) -> dict[str, int]:
         stats = self.doc_usage(boi_id)
@@ -578,7 +620,9 @@ def promotion_candidates(
         if not boi_id:
             continue
         stats = usage_counts.get(boi_id) or {}
-        usage = int(stats.get("views") or 0) + int(stats.get("clicks") or 0)
+        # usage는 viewer 채널 기준(§10 P1-8) — raw_views(원본 iframe 재요청)는 같은 방문의
+        # 중복 신호라 promotion 우선순위 계산에서 제외한다.
+        usage = int(stats.get("views") or 0) + int(stats.get("viewer_views") or 0)
         if usage <= 0:
             continue
         candidates.append(
@@ -587,7 +631,7 @@ def promotion_candidates(
                 "title": str(metadata.get("title") or boi_id),
                 "visibility": visibility,
                 "usage": usage,
-                "reason": f"조회 {int(stats.get('views') or 0)}회 · 단축주소 클릭 {int(stats.get('clicks') or 0)}회",
+                "reason": f"조회 {int(stats.get('views') or 0)}회 · 단축주소 조회 {int(stats.get('viewer_views') or 0)}회",
             }
         )
     candidates.sort(key=lambda item: (-int(item["usage"]), str(item["boi_id"])))
@@ -668,6 +712,11 @@ def analysis_tags(analysis: dict[str, Any]) -> list[str]:
     for term in analysis.get("matched_terms") or []:
         if term not in tags:
             tags.append(str(term))
+    # §10 P1-9: composer LLM이 성공하면 ai_tags가 채워진다 — 결정적 태그 뒤에 병합한다.
+    for term in analysis.get("ai_tags") or []:
+        term = str(term or "").strip()
+        if term and term not in tags:
+            tags.append(term)
     return tags[:ANALYSIS_MAX_TAGS]
 
 
@@ -681,6 +730,14 @@ def render_analysis_section(analysis: dict[str, Any]) -> str:
         f"- 자동 태그: {', '.join(analysis_tags(analysis))}",
         "",
     ]
+    # §10 P1-9: composer LLM enrich 성공 시에만 채워진다 — 실패/비활성 시 이 절은 생략되고
+    # 결정적 분석(목차/발췌/태그)만 유지된다.
+    ai_summary = _markdown_safe(str(analysis.get("ai_summary") or "").strip())
+    if ai_summary:
+        lines.append("## 요약(AI)")
+        lines.append("")
+        lines.append(ai_summary)
+        lines.append("")
     headings = analysis.get("headings") or []
     if headings:
         lines.append("## 추출 목차")

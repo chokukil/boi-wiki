@@ -13,6 +13,16 @@
 
 ## 2026-07-18
 
+### `html-share-harness` 1.2.0 — PATCH(메타데이터 수정) + 소유권 이전 계약 추가
+
+- 변경: `PATCH /api/share/{name}`(제목/설명/공개범위 수정, 프로필+카드 재생성, visibility/team 변경 시 파일 이동)과 `POST /api/share/{name}/transfer`(소유권 지명 이전 또는 admin 회수, `transfers` 이력 append, private 스코프 파일의 소유자 폴더 재배치)를 하네스 계약에 추가한다.
+- 근거(evidence): 제목/설명/공개범위만 바꾸려 해도 파일 재업로드가 필요했다(§10 P1-6). go-link 설계 원칙(소유자 이전, 퇴사자 orphan 회수) 중 회수만 admin delete로 존재했고 지명 이전·회수 API 자체가 없어 퇴사자 공유를 넘겨받을 경로가 없었다(§10 P1-7).
+
+### `overview` 0.3.0 — Load-bearing 재검증 도구화 (eval wrapper + ablation runner)
+
+- 변경: `harness/README.md`(및 서빙 사본)의 "Load-bearing 재검증" 절에 `scripts/run_harness_evals.sh`(BOI_HARNESS_EVAL_RECORD=1 wrapper)와 `scripts/run_harness_ablation.py`(harness/ablation-flags.yaml 기반 ablation 러너) 사용법을 추가한다.
+- 근거(evidence): acceptance의 `harness_eval_status`가 실배포에서 항상 `not_recorded`였다 — 기록 주체(BOI_HARNESS_EVAL_RECORD=1로 실행해주는 도구)가 없었기 때문이다. load-bearing 재검증도 절차만 문서에 있었고 "제거해도 통과하는 규칙"을 찾아주는 도구가 없어 재검증이 실제로 실행되지 않았다(계획서 §10 P1-11/P1-12).
+
 ### `html-share-harness` 1.1.0 — `/r/` 헤더 보강 (frame-ancestors + Referrer-Policy)
 
 - 변경: `/r/{name}` 응답 CSP에 `frame-ancestors 'self'`를 병기하고 `Referrer-Policy: no-referrer`를 추가한다. 기존 `sandbox allow-scripts` + `X-Content-Type-Options: nosniff` + `Cross-Origin-Resource-Policy: same-site` 3종 헤더는 그대로 유지한다.

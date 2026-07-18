@@ -57,6 +57,12 @@ Every stored HTML gets exactly one `<script type="application/ld+json" id="boi-p
 - Lint enforces card↔HTML integrity: missing card or sha256 mismatch is an error ("html artifact sha256 mismatch with knowledge card").
 - Re-upload regenerates the card (created timestamp preserved from the registry). Delete removes the card with the HTML.
 
+## Metadata Patch (title/description/visibility) and Ownership Transfer
+
+- `PATCH /api/share/{name}` (owner only, admin break-glass allowed): change title/description/visibility/team without re-uploading the file. Title/description changes re-inject the BoI HTML Profile and regenerate the knowledge card in place. Visibility/team changes move the stored HTML + card to the new scope path (old files removed) and regenerate the profile/card with the new `boi_id`/`acl_policy`/owner rules. Owner never changes through this endpoint. 400/409 with Korean messages on invalid combos (unknown visibility, non-member team, destination collision); 403 for non-owner.
+- `POST /api/share/{name}/transfer` body `{new_owner_employee_id}` (current owner or `boi.admin`): reassigns ownership. The registry record's `owner_employee_id` changes and a `transfers` entry `{from, to, by, at}` is appended (history preserved, never overwritten). Private-scope shares physically move to the new owner's private folder (path↔ACL rule); team/public shares keep their path but the profile/card owner field and registry owner change. The old owner immediately loses owner privileges (403 on PATCH/delete/transfer, 409 on re-upload as if it were someone else's name).
+- Both endpoints reuse the same move/delete/regenerate patterns as upload and delete — no new storage or ACL logic.
+
 ## Prohibited
 
 - External http(s) `<script src=`/`<link href=` references (lint warning; will break on the intranet — inline instead).

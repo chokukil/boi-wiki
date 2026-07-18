@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def fetch_json(url: str, timeout: float) -> dict[str, Any]:
@@ -30,12 +34,45 @@ def nested_get(payload: dict[str, Any], path: str) -> Any:
     return current
 
 
+def run_harness_eval_suite() -> dict[str, Any]:
+    """§10 P1-11: `scripts/run_harness_evals.sh`를 실행해 골든 태스크 회귀를 재검증한다.
+
+    이 readiness 체크와 같은 스타일로 (ok, 요약 메시지, 실패 시 tail 로그) 반환한다.
+    실행 자체가 안 된다면(스크립트 부재/권한 등) 그것도 실패로 취급한다.
+    """
+    script_path = REPO_ROOT / "scripts" / "run_harness_evals.sh"
+    if not script_path.exists():
+        return {"ok": False, "summary": f"harness eval runner missing: {script_path}"}
+    try:
+        result = subprocess.run(
+            ["bash", str(script_path)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"ok": False, "summary": f"harness eval runner failed to start: {exc}"}
+    output = (result.stdout or "") + (result.stderr or "")
+    tail = "\n".join(output.strip().splitlines()[-15:])
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "summary": tail or f"exit code {result.returncode}",
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check BoI Wiki local-full runtime readiness.")
     parser.add_argument("--base-url", default="http://localhost:28000", help="BoI Wiki base URL.")
     parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds.")
     parser.add_argument("--profile", default="local-full", help="Expected deployment profile.")
     parser.add_argument("--json", action="store_true", help="Print full runtime config JSON.")
+    parser.add_argument(
+        "--harness-evals",
+        action="store_true",
+        help="Also run scripts/run_harness_evals.sh (tests/harness_evals golden-task regression) and fold the result into the readiness summary (§10 P1-11).",
+    )
     args = parser.parse_args()
 
     url = args.base_url.rstrip("/") + "/api/runtime/config"
@@ -83,6 +120,13 @@ def main() -> int:
             if pattern in registration_js:
                 failures.append(f"registration.js contains stale auto-apply pattern: {pattern}")
 
+    harness_evals: dict[str, Any] | None = None
+    if args.harness_evals:
+        harness_evals = run_harness_eval_suite()
+        body["harness_evals"] = harness_evals
+        if not harness_evals["ok"]:
+            failures.append(f"harness eval suite failed (scripts/run_harness_evals.sh): {harness_evals['summary']}")
+
     if args.json:
         print(json.dumps(body, ensure_ascii=False, indent=2))
     elif failures:
@@ -101,6 +145,8 @@ def main() -> int:
             f"timeout={nested_get(body, 'boi_agent.llm_concurrency.queue_timeout_seconds')}s"
         )
         print(f"- event broker: {nested_get(body, 'event_broker.mode')} {nested_get(body, 'event_broker.topic')}")
+        if harness_evals is not None:
+            print(f"- harness evals: OK ({harness_evals['summary'].splitlines()[-1] if harness_evals['summary'] else 'passed'})")
     return 1 if failures else 0
 
 

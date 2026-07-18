@@ -1,0 +1,28 @@
+# §10 P1-12: 하네스 규칙별 ablation(제거) 재검증 플래그 레지스트리.
+#
+# scripts/run_harness_ablation.py가 이 파일을 읽어 각 플래그를 HARNESS_ABLATE 환경변수로
+# 하나씩 설정하고 `tests/harness_evals`를 재실행한다. HARNESS_ABLATE는 오직 이 러너
+# 전용이다 — 일반 pytest/CI 실행에서는 절대 설정하지 않는다(tests/harness_evals/grading.py
+# 참고). 새 하네스 규칙을 추가할 때 ablation으로 재검증하고 싶다면 여기에 항목을 추가하고
+# grading.py의 해당 채점 함수가 그 플래그를 확인해 assertion을 건너뛰게 만든다.
+flags:
+  - name: frame-ancestors-check
+    description: >-
+      /r/{name} 응답 CSP의 frame-ancestors 'self' 값 검증을 건너뛴다
+      (harness/CHANGELOG.md html-share-harness 1.1.0, 계획서 §10 P0-5 근거).
+    disables: raw CSP frame-ancestors assertion in grading.grade_html_share
+  - name: referrer-policy-check
+    description: >-
+      /r/{name} 응답의 Referrer-Policy: no-referrer 헤더 검증을 건너뛴다
+      (harness/CHANGELOG.md html-share-harness 1.1.0, 계획서 §10 P0-5 근거).
+    disables: raw Referrer-Policy header assertion in grading.grade_html_share
+  - name: external-ref-warning-check
+    description: >-
+      외부 http(s) <script src>/<link href> 참조에 대한 사내망 경고(okf.HTML_EXTERNAL_REF_RE)
+      검증을 건너뛴다 (harness/CHANGELOG.md html-share-harness 1.0.0 근거).
+    disables: grading.grade_external_reference_warning
+  - name: card-sections-check
+    description: >-
+      지식 카드 본문의 필수 섹션(# Summary / # 링크 / # 출처 / # Citations) 존재 검증을
+      건너뛴다 (계획서 §4.1 지식 카드 계약 근거).
+    disables: CARD_REQUIRED_SECTIONS loop in grading.grade_okf_doc

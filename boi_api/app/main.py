@@ -24050,6 +24050,96 @@ def work_context_recommended_steps(
     return steps[:5]
 
 
+# --- §10 P1-10: WorkContextPack에 공유 HTML 연계 ------------------------------
+# 공유 HTML 지식 카드는 검색(ontology_search)에는 잡히지만 업무 맥락 팩에는 노출 경로가
+# 없었다. SOP 제목/이벤트 라벨/공개 사전 용어로 만든 키워드 집합과 카드의 title/tags를
+# 결정적으로 교집합해 최대 5건을 노출한다. 접근 가능한 문서만 후보가 되도록
+# accessible_docs()의 ACL 필터링을 그대로 재사용한다 (내러티브 파이프라인은 건드리지 않는다).
+
+WORK_CONTEXT_RELATED_SHARES_LIMIT = 5
+
+
+def work_context_related_share_keywords(*, sop_ref: str, event_type: str, employee_id: str) -> list[str]:
+    keywords: list[str] = []
+    sop_title = ""
+    if sop_ref:
+        sop_doc = find_doc_by_id(sop_ref, employee_id)
+        if sop_doc:
+            sop_title = str((sop_doc.get("metadata") or {}).get("title") or "")
+    if sop_title:
+        keywords.append(sop_title)
+    event_label_text = event_label(event_type) if event_type else ""
+    if event_label_text:
+        keywords.append(event_label_text)
+    if event_type and event_type != event_label_text:
+        keywords.append(event_type)
+    haystack = " ".join([sop_title, event_label_text]).lower()
+    if haystack.strip():
+        try:
+            for term in public_dictionary_titles(employee_id):
+                term = str(term or "").strip()
+                if term and term.lower() in haystack and term not in keywords:
+                    keywords.append(term)
+        except Exception:
+            pass
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for keyword in keywords:
+        key = keyword.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(keyword.strip())
+    return deduped
+
+
+def work_context_related_shares(
+    employee_id: str, *, sop_ref: str, event_type: str, limit: int = WORK_CONTEXT_RELATED_SHARES_LIMIT
+) -> list[dict[str, Any]]:
+    """SOP/이벤트/사전 키워드로 관련 공유 HTML 지식 카드를 찾아 work_context evidence로 노출한다.
+
+    accessible_docs()가 이미 호출자의 ACL로 필터링하므로 읽을 수 없는 카드는 후보에도
+    오르지 않는다. 매칭은 완전히 결정적이다 (키워드가 카드 title 또는 tags에 등장하는지).
+    """
+    keywords = work_context_related_share_keywords(sop_ref=sop_ref, event_type=event_type, employee_id=employee_id)
+    if not keywords:
+        return []
+    try:
+        docs = accessible_docs(employee_id)
+    except Exception:
+        return []
+    candidates: list[dict[str, Any]] = []
+    for doc in docs:
+        metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+        if str(metadata.get("type") or "") != "boi/html-document":
+            continue
+        boi_id = str(metadata.get("boi_id") or "")
+        parts = boi_id.split(":")
+        if len(parts) < 2 or parts[-2] != "html":
+            continue
+        name = parts[-1]
+        title = str(metadata.get("title") or name)
+        tag_lookup = {str(tag).strip().lower() for tag in (metadata.get("tags") or []) if str(tag or "").strip()}
+        title_lower = title.lower()
+        matched = [keyword for keyword in keywords if keyword.lower() in title_lower or keyword.lower() in tag_lookup]
+        if not matched:
+            continue
+        candidates.append(
+            {
+                "name": name,
+                "title": title,
+                "url": app_url(f"/{name}", employee_id),
+                "updated_at": str(metadata.get("timestamp") or ""),
+                "matched_terms": matched,
+            }
+        )
+    # 안정적 3단 정렬: name asc -> updated_at desc -> matched_terms count desc (마지막 sort가 1순위).
+    candidates.sort(key=lambda item: str(item.get("name") or ""))
+    candidates.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    candidates.sort(key=lambda item: len(item["matched_terms"]), reverse=True)
+    return candidates[: max(0, int(limit))]
+
+
 def work_context_pack(
     employee_id: str,
     *,
@@ -24145,6 +24235,10 @@ def work_context_pack(
     )
     display = agent_inbox_display(task, employee_id, str(task.get("status") or "")) if task else {}
     draft_completion_note = work_context_draft_completion_note(stage_history_summary, similar_case_summaries, recommended)
+    try:
+        related_shares = work_context_related_shares(employee_id, sop_ref=sop_ref, event_type=event_type)
+    except Exception:
+        related_shares = []
     workflow_manual_handoffs = page_context.get("manual_handoffs") or []
     workflow_manual_details = page_context.get("manual_action_details") if isinstance(page_context.get("manual_action_details"), dict) else {}
     result = {
@@ -24189,6 +24283,7 @@ def work_context_pack(
             for action_key in workflow_manual_handoffs[:12]
         ],
         "required_evidence": required_evidence,
+        "related_shares": related_shares,
         "similar_cases": similar_cases[:8],
         "stage_history_summary": stage_history_summary,
         "evidence_summary": evidence_summary,
@@ -32486,7 +32581,13 @@ def record_doc_view_telemetry(doc: dict[str, Any], employee_id: str) -> None:
         pass
 
 
-def record_shortlink_click_telemetry(record: dict[str, Any], employee_id: str, surface: str) -> None:
+def record_shortlink_click_telemetry(record: dict[str, Any], employee_id: str, channel: str) -> None:
+    """channel: viewer(뷰어 페이지 렌더) | raw(/r/ 원본 서빙) | redirect(doc/url kind 302).
+
+    §10 P1-8: 이전에는 viewer 방문 1회가 viewer+iframe raw 요청으로 2 클릭 집계되어
+    조회수가 2배로 보였다. loops.TelemetryStore가 채널별로 viewer_views/raw_views를
+    분리 적립하고, 노출(shortlink_view_count)은 항상 viewer 기준으로 통일한다.
+    """
     try:
         USAGE_TELEMETRY.record(
             "shortlink_click",
@@ -32494,7 +32595,7 @@ def record_shortlink_click_telemetry(record: dict[str, Any], employee_id: str, s
             target_kind=str(record.get("target_kind") or ""),
             target=str(record.get("target") or ""),
             employee_id=employee_id,
-            surface=surface,
+            channel=channel,
         )
     except Exception:
         pass
@@ -32524,6 +32625,128 @@ def share_html_analysis(html_text: str, employee_id: str) -> dict[str, Any] | No
         return wiki_loops.analyze_html_content(html_text, public_dictionary_titles(employee_id))
     except Exception:
         return None
+
+
+# --- §10 P1-9: LLM enrich 훅 (env-gated, 기존 composer LLM 재사용) -------------
+# 결정적 분석(share_html_analysis) 이후, composer LLM이 켜져 있으면(BOI_AGENT_COMPOSER_LLM_ENABLED)
+# 그 결과를 근거로 짧은 한국어 요약(<=3문장)과 최대 5개 태그를 요청해 업그레이드한다.
+# 새 env/클라이언트를 만들지 않고 Native Agent composer가 쓰는 BOI_AGENT_COMPOSER_* 설정을
+# 그대로 재사용한다. 실패(비활성/timeout/응답 JSON 오류 등 어떤 사유든)는 결정적 결과를
+# 그대로 유지하고 원인을 component_errors에 담아 보고한다 (Agent의 실패 보고 관례와 동일).
+
+SHARE_ENRICH_LLM_COMPONENT = "share_enrich_llm"
+SHARE_ENRICH_LLM_MAX_TAGS = 5
+
+
+def share_enrich_llm_component_error(status: str, message: str) -> dict[str, Any]:
+    return {
+        "component": SHARE_ENRICH_LLM_COMPONENT,
+        "status": status,
+        "message": text_excerpt(message, 500),
+        "recoverable": True,
+    }
+
+
+def boi_share_enrich_llm_request_body(analysis: dict[str, Any], title: str) -> dict[str, Any]:
+    headings = [str(item.get("text") or "") for item in (analysis.get("headings") or [])[:10] if item]
+    user_payload = {
+        "document_title": title,
+        "extracted_headings": headings,
+        "extracted_excerpt": text_excerpt(str(analysis.get("excerpt") or ""), 1500),
+    }
+    return {
+        "model": BOI_AGENT_COMPOSER_MODEL,
+        "temperature": 0,
+        "max_tokens": max(256, min(BOI_AGENT_COMPOSER_MAX_TOKENS, 512)),
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "boi_share_enrich",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["summary"],
+                },
+            },
+        },
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "JSON만 출력하세요. 제공된 문서 제목/목차/발췌만 근거로 한국어 요약(summary)을 "
+                    "최대 3문장으로 작성하고, 문서를 대표하는 태그를 최대 5개(tags 문자열 배열)로 뽑으세요. "
+                    "근거에 없는 내용을 만들지 마세요."
+                ),
+            },
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+        ],
+    }
+
+
+def parse_share_enrich_llm_response(raw: Any) -> dict[str, Any] | None:
+    for text in iter_langflow_text_candidates(raw):
+        parsed = parse_langflow_json_text(text)
+        if not isinstance(parsed, dict):
+            continue
+        summary = str(parsed.get("summary") or "").strip()
+        if not summary:
+            continue
+        tags = [str(tag).strip() for tag in (parsed.get("tags") or []) if str(tag or "").strip()]
+        return {"summary": summary, "tags": tags[:SHARE_ENRICH_LLM_MAX_TAGS]}
+    return None
+
+
+def call_share_enrich_llm(analysis: dict[str, Any], title: str) -> dict[str, Any]:
+    """기존 composer LLM 설정을 재사용해 요약/태그를 업그레이드한다.
+
+    composer가 비활성(BOI_AGENT_COMPOSER_LLM_ENABLED=False)이면 곧바로 실패해
+    호출자가 결정적 결과를 그대로 유지하게 한다. 타임아웃/HTTP 오류/JSON 파싱 실패도
+    전부 NativeAgentRuntimeUnavailable로 통일해 던진다.
+    """
+    if not BOI_AGENT_COMPOSER_LLM_ENABLED:
+        raise NativeAgentRuntimeUnavailable("share enrich LLM summary is not configured (composer disabled)")
+    if not BOI_AGENT_COMPOSER_BASE_URL or not BOI_AGENT_COMPOSER_MODEL:
+        raise NativeAgentRuntimeUnavailable("share enrich LLM summary base URL/model is missing")
+    url = BOI_AGENT_COMPOSER_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if BOI_AGENT_COMPOSER_API_KEY:
+        headers["Authorization"] = f"Bearer {BOI_AGENT_COMPOSER_API_KEY}"
+    body = boi_share_enrich_llm_request_body(analysis, title)
+    try:
+        with boi_agent_llm_slot("share_enrich"):
+            with httpx.Client(timeout=BOI_AGENT_COMPOSER_TIMEOUT_SECONDS) as client:
+                response = client.post(url, headers=headers, json=body)
+                response.raise_for_status()
+                raw = response.json()
+    except Exception as exc:
+        raise NativeAgentRuntimeUnavailable(f"share enrich LLM call failed: {exc}") from exc
+    parsed = parse_share_enrich_llm_response(raw)
+    if parsed is None:
+        raise NativeAgentRuntimeUnavailable("share enrich LLM returned invalid JSON")
+    return parsed
+
+
+def apply_share_enrich_llm_hook(analysis: dict[str, Any], title: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """analysis에 ai_summary/ai_tags를 추가 시도한다. 실패해도 원본 analysis를 그대로 반환한다.
+
+    반환: (analysis, component_errors). component_errors는 비활성/실패 원인을 담으며
+    빈 리스트면 LLM enrich가 성공했다는 뜻이다 (§10 P1-9).
+    """
+    if not BOI_AGENT_COMPOSER_LLM_ENABLED:
+        return analysis, [
+            share_enrich_llm_component_error(
+                "disabled", "composer LLM(BOI_AGENT_COMPOSER_LLM_ENABLED)이 꺼져 있어 결정적 분석만 사용합니다."
+            )
+        ]
+    try:
+        llm_result = call_share_enrich_llm(analysis, title)
+    except Exception as exc:
+        return analysis, [share_enrich_llm_component_error("failed", str(exc))]
+    enriched = {**analysis, "ai_summary": llm_result["summary"], "ai_tags": llm_result["tags"]}
+    return enriched, []
 
 
 def share_items_for(employee_id: str, *, mine: bool) -> list[dict[str, Any]]:
@@ -32976,6 +33199,290 @@ async def api_share_delete(name: str, employee_id: str = Depends(current_employe
     return {"ok": True, "name": normalized, "status": "tombstone"}
 
 
+# --- §10 P1-6/P1-7: 메타데이터 PATCH + 소유권 이전 --------------------------
+# 둘 다 "파일을 다시 업로드하지 않고 프로필/카드를 재생성"하는 같은 재게시 패턴을
+# 공유한다. PATCH는 owner_employee_id를 절대 바꾸지 않고, transfer는 owner만 바꾼다
+# (title/description/visibility/team은 그대로 유지).
+
+
+def _share_republish_files(
+    record: dict[str, Any],
+    *,
+    new_visibility: str,
+    new_team_id: str,
+    new_owner_employee_id: str,
+    new_title: str,
+    new_description: str,
+    employee_id: str,
+    commit_reason: str,
+) -> dict[str, Any]:
+    """PATCH/transfer 공통 재게시 로직 — 업로드의 move+write 패턴을 재사용한다.
+
+    새 boi_id/acl_policy/owner 규칙으로 프로필+카드를 재생성하고, 저장 경로가
+    바뀌면(스코프 변경 또는 private 소유자 변경) 새 위치에 쓰고 옛 파일/카드를
+    삭제한다. 업로드 provenance(원본 파일명/sha256)는 기존 카드에서 그대로 재사용한다.
+    """
+    normalized = html_share.normalize_share_name(str(record.get("name") or ""))
+    old_path = html_share.storage_path_for_record(DATA_ROOT, record)
+    if not old_path.exists():
+        raise HTTPException(status_code=404, detail="공유 HTML 파일을 찾을 수 없습니다.")
+    old_card_path = old_path.with_suffix(".md")
+    card_metadata_before: dict[str, Any] = {}
+    if old_card_path.exists():
+        parsed_before, _card_body = split_frontmatter(old_card_path.read_text(encoding="utf-8"))
+        card_metadata_before = parsed_before if isinstance(parsed_before, dict) else {}
+    original_filename, original_sha256 = html_share.original_upload_ref_from_card(card_metadata_before)
+
+    try:
+        new_path = html_share.html_storage_path(
+            DATA_ROOT, new_visibility, normalized, employee_id=new_owner_employee_id, team_id=new_team_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="새 저장 경로를 계산할 수 없습니다.") from exc
+
+    moved = new_path != old_path
+    if moved and new_path.exists():
+        raise HTTPException(status_code=409, detail="이미 해당 위치에 파일이 존재합니다.")
+
+    original_html_text = old_path.read_text(encoding="utf-8", errors="replace")
+    now = now_iso()
+    owner_label = share_owner_label({"owner_employee_id": new_owner_employee_id})
+    # 경로↔ACL 규칙: private 스코프의 owner는 반드시 경로의 사번과 같아야 한다.
+    owner_field = new_owner_employee_id if new_visibility == "private" else owner_label
+    boi_id = html_share.share_boi_id(new_visibility, normalized, employee_id=new_owner_employee_id, team_id=new_team_id)
+    profile = html_share.build_html_profile_jsonld(
+        name=normalized,
+        title=new_title,
+        description=new_description,
+        visibility=new_visibility,
+        team_id=new_team_id,
+        owner=owner_field,
+        owner_employee_id=new_owner_employee_id,
+        reviewer=owner_label,
+        timestamp=now,
+        original_filename=original_filename,
+        original_sha256=original_sha256,
+    )
+    new_html_text = html_share.inject_html_profile(original_html_text, profile)
+    stored_bytes = new_html_text.encode("utf-8")
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    new_path.write_bytes(stored_bytes)
+    stored_sha256 = hashlib.sha256(stored_bytes).hexdigest()
+    data_root_resolved = Path(DATA_ROOT).resolve()
+    html_repo_path = "data/boi/" + str(new_path.relative_to(data_root_resolved)).replace("\\", "/")
+    new_card_path = new_path.with_suffix(".md")
+    created_at = str(record.get("created_at") or now)
+    # 결정적 자동 분석은 원본(프로필 주입 전) 텍스트 기준으로 다시 계산한다 (업로드와 동일).
+    analysis = share_html_analysis(original_html_text, employee_id)
+    new_card_path.write_text(
+        html_share.build_knowledge_card_markdown(
+            name=normalized,
+            title=new_title,
+            description=new_description,
+            visibility=new_visibility,
+            team_id=new_team_id,
+            owner=owner_field,
+            owner_label=owner_label,
+            owner_employee_id=new_owner_employee_id,
+            created_at=created_at,
+            updated_at=now,
+            original_filename=original_filename,
+            original_sha256=original_sha256,
+            stored_sha256=stored_sha256,
+            html_repo_path=html_repo_path,
+            analysis=analysis,
+        ),
+        encoding="utf-8",
+    )
+    html_commit = git_commit_for_path(new_path, commit_reason)
+    card_commit = git_commit_for_path(new_card_path, f"{commit_reason} (card)")
+    if moved:
+        try:
+            old_path.unlink()
+            git_commit_for_path(old_path, f"share: remove old path for /{normalized}")
+        except OSError:
+            pass
+        try:
+            if old_card_path.exists():
+                old_card_path.unlink()
+                git_commit_for_path(old_card_path, f"share: remove old knowledge card for /{normalized}")
+        except OSError:
+            pass
+    invalidate_doc_caches()
+    return {
+        "path": new_path,
+        "card_path": new_card_path,
+        "boi_id": boi_id,
+        "moved": moved,
+        "commit": {"html": html_commit.get("status"), "card": card_commit.get("status")},
+    }
+
+
+class SharePatchRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    visibility: str | None = None
+    team_id: str | None = None
+
+
+@app.patch("/api/share/{name}")
+async def api_share_patch(
+    name: str, req: SharePatchRequest, employee_id: str = Depends(current_employee)
+) -> dict[str, Any]:
+    """§10 P1-6: 파일 재업로드 없이 제목/설명/공개범위만 수정한다 (owner 전용, admin break-glass 허용).
+
+    title/description만 바꾸면 프로필/카드만 재생성한다. visibility/team이 바뀌면
+    파일을 새 스코프 경로로 옮기고(옛 파일/카드 삭제) 새 boi_id/acl_policy로 프로필/카드를
+    재생성한다. 소유권은 이 API로 바뀌지 않는다 — 이전은 POST .../transfer 전용(§10 P1-7).
+    """
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("target_kind") or "") != "html" or str(record.get("status") or "") != "active":
+        raise HTTPException(status_code=404, detail="수정할 공유를 찾을 수 없습니다.")
+    owner_employee_id = str(record.get("owner_employee_id") or "")
+    if owner_employee_id != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="본인이 등록한 공유만 수정할 수 있습니다.")
+
+    current_visibility = str(record.get("visibility") or "public")
+    current_team_id = str(record.get("team_id") or "")
+    new_title = (str(record.get("title") or normalized) if req.title is None else req.title).strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="제목은 비워둘 수 없습니다.")
+    new_description = (str(record.get("description") or "") if req.description is None else req.description).strip()
+    new_visibility = current_visibility if req.visibility is None else str(req.visibility).strip().lower()
+    if new_visibility not in {"public", "team", "private"}:
+        raise HTTPException(status_code=400, detail="visibility는 public, team, private 중 하나여야 합니다.")
+    if new_visibility == "team":
+        new_team_id = (req.team_id or "").strip() or current_team_id or DEFAULT_TEAM_ID
+        if new_team_id not in teams_for(employee_id) and "boi.admin" not in roles_for(employee_id):
+            raise HTTPException(status_code=403, detail=f"'{new_team_id}' 팀 멤버만 해당 팀 범위로 지정할 수 있습니다.")
+    else:
+        new_team_id = ""
+
+    result = _share_republish_files(
+        record,
+        new_visibility=new_visibility,
+        new_team_id=new_team_id,
+        new_owner_employee_id=owner_employee_id,
+        new_title=new_title,
+        new_description=new_description,
+        employee_id=employee_id,
+        commit_reason=f"share: patch metadata for /{normalized}",
+    )
+    now = now_iso()
+    updated_record = html_share.build_shortlink_record(
+        name=normalized,
+        target_kind="html",
+        target=result["boi_id"],
+        owner_employee_id=owner_employee_id,
+        visibility=new_visibility,
+        team_id=new_team_id,
+        title=new_title,
+        description=new_description,
+        now=now,
+        created_at=str(record.get("created_at") or now),
+    )
+    if record.get("transfers"):
+        updated_record["transfers"] = record["transfers"]
+    html_share.registry_upsert(SHORTLINK_REGISTRY_PATH, updated_record)
+    registry_commit = git_commit_for_path(SHORTLINK_REGISTRY_PATH, f"share: registry update for /{normalized} (patch)")
+    data_root_resolved = Path(DATA_ROOT).resolve()
+    return {
+        "ok": True,
+        "name": normalized,
+        "url": f"/{normalized}",
+        "raw_url": f"/r/{normalized}",
+        "boi_id": result["boi_id"],
+        "card_uri": "/" + str(result["card_path"].relative_to(data_root_resolved)).replace("\\", "/"),
+        "owner_employee_id": owner_employee_id,
+        "visibility": new_visibility,
+        "team_id": new_team_id,
+        "title": new_title,
+        "description": new_description,
+        "status": "updated",
+        "commit": {**result["commit"], "registry": registry_commit.get("status")},
+    }
+
+
+class ShareTransferRequest(BaseModel):
+    new_owner_employee_id: str
+
+
+@app.post("/api/share/{name}/transfer")
+async def api_share_transfer(
+    name: str, req: ShareTransferRequest, employee_id: str = Depends(current_employee)
+) -> dict[str, Any]:
+    """§10 P1-7: 소유권을 지명 이전하거나(현재 owner) 관리자가 회수한다(퇴사자 등).
+
+    private 스코프는 새 소유자의 private 폴더로 파일이 이동한다(경로↔ACL 규칙).
+    team/public은 파일 경로는 그대로지만 프로필/카드의 owner와 레지스트리
+    owner_employee_id가 바뀐다. 레지스트리 레코드에 transfers 이력을 append한다.
+    """
+    normalized = html_share.normalize_share_name(name)
+    record = html_share.registry_find(shortlink_records(), normalized)
+    if record is None or str(record.get("target_kind") or "") != "html" or str(record.get("status") or "") != "active":
+        raise HTTPException(status_code=404, detail="이전할 공유를 찾을 수 없습니다.")
+    current_owner = str(record.get("owner_employee_id") or "")
+    if current_owner != employee_id and "boi.admin" not in roles_for(employee_id):
+        raise HTTPException(status_code=403, detail="본인이 등록한 공유 또는 boi.admin만 소유권을 이전할 수 있습니다.")
+    new_owner = str(req.new_owner_employee_id or "").strip()
+    if not new_owner:
+        raise HTTPException(status_code=400, detail="new_owner_employee_id가 필요합니다.")
+    if new_owner == current_owner:
+        raise HTTPException(status_code=400, detail="이미 해당 사번이 소유자입니다.")
+
+    visibility = str(record.get("visibility") or "public")
+    team_id = str(record.get("team_id") or "")
+    title = str(record.get("title") or normalized)
+    description = str(record.get("description") or "")
+
+    result = _share_republish_files(
+        record,
+        new_visibility=visibility,
+        new_team_id=team_id,
+        new_owner_employee_id=new_owner,
+        new_title=title,
+        new_description=description,
+        employee_id=employee_id,
+        commit_reason=f"share: transfer /{normalized} ownership to {new_owner}",
+    )
+    now = now_iso()
+    transfers = list(record.get("transfers") or [])
+    transfers.append({"from": current_owner, "to": new_owner, "by": employee_id, "at": now})
+    updated_record = html_share.build_shortlink_record(
+        name=normalized,
+        target_kind="html",
+        target=result["boi_id"],
+        owner_employee_id=new_owner,
+        visibility=visibility,
+        team_id=team_id,
+        title=title,
+        description=description,
+        now=now,
+        created_at=str(record.get("created_at") or now),
+    )
+    updated_record["transfers"] = transfers
+    html_share.registry_upsert(SHORTLINK_REGISTRY_PATH, updated_record)
+    registry_commit = git_commit_for_path(SHORTLINK_REGISTRY_PATH, f"share: transfer /{normalized} ownership")
+    data_root_resolved = Path(DATA_ROOT).resolve()
+    return {
+        "ok": True,
+        "name": normalized,
+        "url": f"/{normalized}",
+        "raw_url": f"/r/{normalized}",
+        "boi_id": result["boi_id"],
+        "card_uri": "/" + str(result["card_path"].relative_to(data_root_resolved)).replace("\\", "/"),
+        "owner_employee_id": new_owner,
+        "visibility": visibility,
+        "team_id": team_id,
+        "title": title,
+        "description": description,
+        "status": "updated",
+        "transfers": transfers,
+        "commit": {**result["commit"], "registry": registry_commit.get("status")},
+    }
+
+
 # --- Phase 3: 텔레메트리/피드백/가드닝/enrich 라우트 (계획서 §4.6) -------------
 
 
@@ -33010,7 +33517,8 @@ async def api_telemetry_usage(
         items.append({"key": key, "kind": kind, **stats})
     items.sort(
         key=lambda item: (
-            -(int(item.get("views") or 0) + int(item.get("clicks") or 0)),
+            # §10 P1-8: raw_views(원본 iframe 재요청)는 노출/랭킹에서 제외 — viewer 기준.
+            -(int(item.get("views") or 0) + int(item.get("viewer_views") or 0)),
             str(item.get("key") or ""),
         )
     )
@@ -33122,10 +33630,13 @@ async def api_share_feedback_comments(
 
 @app.post("/api/share/{name}/enrich")
 async def api_share_enrich(name: str, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    """지식 카드의 `# 자동 분석` 섹션/tags를 다시 계산한다 (결정적, LLM 없음).
+    """지식 카드의 `# 자동 분석` 섹션/tags를 다시 계산한다 (결정적 추출이 기본).
 
     소유자 또는 서비스 토큰(admin 역할로 해석) 호출만 허용 — 비동기 파이프라인이
     html.share.published.v1 이벤트를 받아 재-enrich하는 경로가 후자다.
+    composer LLM이 켜져 있으면(§10 P1-9) 결정적 분석 위에 짧은 한국어 요약과 태그를
+    추가로 시도한다. 실패하면(비활성/timeout/JSON 오류 등 무엇이든) 결정적 결과를
+    그대로 유지하고 원인을 component_errors로 보고한다.
     """
     normalized = html_share.normalize_share_name(name)
     record = html_share.registry_find(shortlink_records(), normalized)
@@ -33143,6 +33654,7 @@ async def api_share_enrich(name: str, employee_id: str = Depends(current_employe
     analysis = share_html_analysis(file_path.read_text(encoding="utf-8", errors="replace"), employee_id)
     if analysis is None:
         raise HTTPException(status_code=500, detail="자동 분석에 실패했습니다. 잠시 후 다시 시도해주세요.")
+    analysis, component_errors = apply_share_enrich_llm_hook(analysis, str(record.get("title") or normalized))
     card_text = card_path.read_text(encoding="utf-8")
     updated_text = wiki_loops.upsert_card_analysis(card_text, analysis)
     changed = updated_text != card_text
@@ -33162,7 +33674,9 @@ async def api_share_enrich(name: str, employee_id: str = Depends(current_employe
             "table_count": analysis.get("table_count"),
             "script_count": analysis.get("script_count"),
             "tags": wiki_loops.analysis_tags(analysis),
+            "ai_summary": analysis.get("ai_summary") or "",
         },
+        "component_errors": component_errors,
     }
 
 
@@ -33511,10 +34025,10 @@ async def shortlink_viewer_page(request: Request, name: str, employee_id: str = 
     if str(record.get("status") or "") == "tombstone":
         return share_missing_response(request, employee_id, normalized, gone=True)
     if str(record.get("target_kind") or "") == "doc":
-        record_shortlink_click_telemetry(record, employee_id, "viewer")
+        record_shortlink_click_telemetry(record, employee_id, "redirect")
         return RedirectResponse(doc_url_for_ref(str(record.get("target") or ""), employee_id), status_code=302)
     if str(record.get("target_kind") or "") == "url":
-        record_shortlink_click_telemetry(record, employee_id, "viewer")
+        record_shortlink_click_telemetry(record, employee_id, "redirect")
         return RedirectResponse(str(record.get("target") or "/share"), status_code=302)
     if not html_share.can_read_share(record, employee_id=employee_id, teams=teams_for(employee_id)):
         # 접근 불가와 미등록을 같은 404로 응답해 존재 여부 노출을 피한다.

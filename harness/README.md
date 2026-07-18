@@ -10,7 +10,7 @@ Use these documents before creating or changing curated BoI Wiki knowledge:
 - `action-authoring-harness.md`: create executable API/Webhook/MCP/Langflow/manual/event-broker/BoI-writer action packages.
 - `data-lake-query-harness.md`: use optional Data Lake artifacts and structured demo sources through BoI API/MCP without making MinIO or PostgreSQL core dependencies.
 - `data-lake-artifact-harness.md`: store file evidence as Data Lake artifacts and pass only URL/profile/sample metadata into BoI/LLM context.
-- `html-share-harness.md`: publish self-contained HTML documents to shortlinks with an embedded BoI HTML Profile, an auto-generated knowledge card, and preview-confirm-publish write boundaries.
+- `html-share-harness.md`: publish self-contained HTML documents to shortlinks with an embedded BoI HTML Profile, an auto-generated knowledge card, and preview-confirm-publish write boundaries; also covers metadata-only PATCH and ownership transfer (§10 P1-6/P1-7).
 
 The BoI Wiki copies live under `data/boi/public/harness/` so Langflow, Codex, Claude, and other agents can lazy-load the same rules through the wiki or BoI Wiki MCP. Codex skills should stay thin and bootstrap agents into MCP/harness resources instead of duplicating the full rules.
 
@@ -34,6 +34,25 @@ The BoI Wiki copies live under `data/boi/public/harness/` so Langflow, Codex, Cl
 1. `tests/harness_evals/`를 실행해 골든 태스크 회귀가 전부 통과하는지 확인한다
    (`python3 -m pytest tests/harness_evals -q`). eval 상태를 acceptance `Meta` 버킷에 기록하려면
    `BOI_HARNESS_EVAL_RECORD=1`로 실행한다 — 기본값은 기록하지 않아 CI/임시 환경 실행이
-   `data/harness-evals/status.json`을 더럽히지 않는다.
+   `data/harness-evals/status.json`을 더럽히지 않는다. `scripts/run_harness_evals.sh`가 이 환경변수를
+   설정해 repo root에서 실행해주는 wrapper다(§10 P1-11) — exit code를 그대로 전달하므로 CI 게이트로
+   그대로 쓸 수 있다:
+
+   ```bash
+   bash scripts/run_harness_evals.sh
+   ```
+
+   `scripts/check_local_full_readiness.py --harness-evals`로 실행 중인 배포의 readiness 점검에
+   같은 eval 실행 결과를 포함시킬 수 있다 — 실배포에서 acceptance의 harness_eval_status가
+   `not_recorded`로만 남던 문제의 실제 기록 주체다.
 2. 하네스 규칙별로 해당 규칙을 제거한 상태에서도 eval이 통과하는지 ablation으로 확인한다.
+   `scripts/run_harness_ablation.py`가 `harness/ablation-flags.yaml`에 등록된 플래그를 하나씩
+   `HARNESS_ABLATE` 환경변수로 설정해 eval suite를 반복 실행하고, ablation 후에도 계속 통과하는
+   규칙(= 제거해도 어떤 golden task도 실패시키지 못하는 규칙)을 "load-bearing 후보 아님 — 검토
+   필요"로 보고한다(§10 P1-12, advisory tool — exit code는 항상 0):
+
+   ```bash
+   python3 scripts/run_harness_ablation.py                                   # 등록된 모든 플래그
+   python3 scripts/run_harness_ablation.py --flags frame-ancestors-check
+   ```
 3. 더 이상 load-bearing이 아닌 규칙은 제거하고, 제거 근거(eval 결과)를 CHANGELOG에 기록한다.

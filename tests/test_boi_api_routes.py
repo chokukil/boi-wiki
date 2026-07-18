@@ -14433,6 +14433,87 @@ def test_work_context_pack_includes_trace_history_and_low_sample_patterns(boi_ap
     assert not any(step.get("label") == "Trend 확인 근거 확보" for step in compact["recommended_next_steps"])
 
 
+def test_work_context_pack_related_shares_matches_sop_keyword_and_respects_acl(boi_app_module):
+    # §10 P1-10: 공유 HTML 지식 카드가 SOP/사전 키워드로 work_context_pack의
+    # related_shares에 노출되어야 하고, 접근 불가능한 타인의 private 공유는 절대
+    # 노출되면 안 된다.
+    client = TestClient(boi_app_module.app)
+    boi_app_module.BOI_AUTO_COMMIT = False
+
+    sop_doc = boi_app_module.write_boi(
+        {
+            "okf_version": "0.1",
+            "boi_profile_version": "0.1",
+            "type": "boi/sop",
+            "title": "Etch 설비 이상 대응 SOP",
+            "description": "work_context_pack related_shares 테스트용 SOP",
+            "tags": ["SOP", "Etch"],
+            "timestamp": boi_app_module.now_iso(),
+            "boi_id": "boi:public:sop:work-context-etch-sop",
+            "visibility": "public",
+            "classification": "internal",
+            "owner": "aix-tf",
+            "acl_policy": "acl:public",
+            "status": "reviewed",
+            "review": {"reviewer": "tf-lead", "review_status": "reviewed"},
+            "source_refs": [{"type": "test", "ref": "tests/test_boi_api_routes.py"}],
+        },
+        "# Summary\n\nEtch 설비 이상 대응 SOP 본문입니다.\n",
+    )
+    assert sop_doc
+
+    etch_html = (
+        "<!doctype html>\n<html lang=\"ko\">\n"
+        "<head><meta charset=\"utf-8\"><title>Etch 공정 주간 대시보드</title></head>\n"
+        "<body><h1>Etch 공정 요약</h1><p>이번 주 Etch 장비 상태를 정리했습니다.</p></body>\n"
+        "</html>\n"
+    )
+    uploaded = client.post(
+        "/api/share/html?employee_id=100001",
+        data={
+            "title": "Etch 주간 대시보드",
+            "description": "related_shares 테스트",
+            "visibility": "public",
+            "name": "work-context-etch-share",
+        },
+        files={"file": ("etch.html", etch_html.encode("utf-8"), "text/html")},
+    )
+    assert uploaded.status_code == 200
+
+    # 타인(100002)의 private 공유는 매칭 키워드가 있어도 100001의 팩에는 노출되지 않는다.
+    private_uploaded = client.post(
+        "/api/share/html?employee_id=100002",
+        data={
+            "title": "Etch 개인 메모",
+            "description": "private share must never leak",
+            "visibility": "private",
+            "name": "work-context-etch-private",
+        },
+        files={"file": ("etch-private.html", etch_html.encode("utf-8"), "text/html")},
+    )
+    assert private_uploaded.status_code == 200
+
+    response = client.get("/api/context/work?employee_id=100001&sop_ref=boi:public:sop:work-context-etch-sop")
+    assert response.status_code == 200
+    body = response.json()
+    related = body["related_shares"]
+    names = [item["name"] for item in related]
+    assert "work-context-etch-share" in names
+    assert "work-context-etch-private" not in names
+    assert len(related) <= 5
+
+    match = next(item for item in related if item["name"] == "work-context-etch-share")
+    assert "Etch" in match["matched_terms"]
+    assert match["title"] == "Etch 주간 대시보드"
+    assert match["url"].startswith("/work-context-etch-share")
+    assert match["updated_at"]
+
+    # SOP/이벤트와 무관한 키워드만 있으면 related_shares는 비어 있다.
+    unrelated = client.get("/api/context/work?employee_id=100001")
+    assert unrelated.status_code == 200
+    assert unrelated.json()["related_shares"] == []
+
+
 def test_stage_history_summary_keeps_focused_action_and_dedupes_event_lifecycle(boi_app_module):
     trace_context = {
         "events": [

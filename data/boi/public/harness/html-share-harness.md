@@ -1,7 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
-harness_version: "1.1.0"
+harness_version: "1.2.0"
 type: boi/harness
 title: HTML Share Harness
 description: self-contained HTML 문서를 단축주소로 게시할 때의 BoI HTML Profile, 지식 카드, 이름/스코프/tombstone, preview→확인→publish 계약
@@ -76,6 +76,12 @@ self-contained HTML 문서(보고서, 대시보드, 가이드 등 무엇이든)�
 - 검색, 링크 그래프, 신선도, promotion 루프에는 카드가 들어가고, 카드가 HTML을 대표한다.
 - lint가 카드↔HTML 무결성을 강제한다: 카드 누락 또는 sha256 불일치는 오류다.
 - 재업로드 시 카드가 재생성되고(최초 생성 시각은 레지스트리에서 보존), 삭제 시 카드도 함께 삭제된다.
+
+# 메타데이터 수정과 소유권 이전 (§10 P1-6/P1-7)
+
+- `PATCH /api/share/{name}` (소유자 전용, admin break-glass 허용): 파일 재업로드 없이 제목/설명/공개범위/팀을 수정한다. 제목/설명만 바꾸면 BoI HTML Profile을 재주입하고 지식 카드를 그 자리에서 재생성한다. visibility/team이 바뀌면 저장 HTML+카드를 새 스코프 경로로 이동하고(옛 파일/카드는 삭제) 새 `boi_id`/`acl_policy`/owner 규칙으로 프로필/카드를 재생성한다. 이 API로는 소유자가 절대 바뀌지 않는다. 잘못된 조합(알 수 없는 visibility, 비멤버 팀, 목적지 충돌)은 400/409, 비소유자는 403.
+- `POST /api/share/{name}/transfer` body `{new_owner_employee_id}` (현재 소유자 또는 `boi.admin`): 소유권을 이전한다. 레지스트리 레코드의 `owner_employee_id`가 바뀌고 `transfers` 이력 `{from, to, by, at}`이 append된다(이력은 덮어쓰지 않고 계속 쌓인다). private 스코프 공유는 새 소유자의 private 폴더로 파일이 물리적으로 이동한다(경로↔ACL 규칙). team/public 공유는 경로는 그대로지만 프로필/카드의 owner 필드와 레지스트리 owner가 바뀐다. 이전 즉시 옛 소유자는 소유자 권한을 잃는다(PATCH/삭제/재이전 403, 재업로드는 타인 이름처럼 409).
+- 두 API 모두 업로드/삭제와 같은 move/delete/재생성 패턴을 재사용한다 — 새로운 저장/ACL 로직을 만들지 않는다.
 
 # 금지사항
 

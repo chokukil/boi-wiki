@@ -8,11 +8,13 @@ MCP 도구)와 결과물을 채점하는 이 모듈을 분리해 자기평가 �
 테스트는 이 목록이 비어 있는지만 단언하고, 채점 로직을 테스트 파일에 두지 않는다.
 """
 
+import os
 from pathlib import Path
 from typing import Mapping
 
 from boi_api.app import harness_meta
 from boi_api.app.okf import (
+    HTML_EXTERNAL_REF_RE,
     file_sha256,
     lint_html_file,
     lint_markdown_file,
@@ -22,13 +24,20 @@ from boi_api.app.okf import (
     split_frontmatter,
 )
 
-# 계획서 §4.3(원본 3종) + §10 P0-5(frame-ancestors/Referrer-Policy 보강)에서
-# 확정된 raw 서빙 보안 헤더 (정확히 이 값이어야 한다).
+# §10 P1-12: HARNESS_ABLATE(콤마 구분 플래그 목록)가 설정된 채점 함수는 해당 규칙의
+# assertion을 건너뛴다. 이 환경변수는 scripts/run_harness_ablation.py 전용이다 —
+# load-bearing 재검증(harness/README.md) 외의 일반 pytest/CI 실행에서는 절대 설정하지
+# 않는다. 플래그 목록/설명의 SSOT는 harness/ablation-flags.yaml이다.
+def ablated_flags_from_env() -> frozenset[str]:
+    raw = os.getenv("HARNESS_ABLATE", "")
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
+# 계획서 §4.3(원본 3종)에서 확정된, ablation 대상이 아닌 raw 서빙 보안 헤더
+# (sandbox allow-scripts는 CSP 문자열 안에서 별도로 항상 검증한다).
 RAW_SECURITY_HEADERS = {
-    "content-security-policy": "sandbox allow-scripts; frame-ancestors 'self'",
     "x-content-type-options": "nosniff",
     "cross-origin-resource-policy": "same-site",
-    "referrer-policy": "no-referrer",
 }
 CARD_REQUIRED_SECTIONS = ("# Summary", "# 링크", "# 출처", "# Citations")
 
@@ -71,11 +80,38 @@ def grade_html_share(
     if "allow-same-origin" in viewer_html:
         failures.append("viewer must never grant allow-same-origin (업로드 HTML의 세션 탈취 경로)")
     normalized_headers = {str(key).lower(): str(value) for key, value in raw_headers.items()}
+    ablated = ablated_flags_from_env()
+    csp = normalized_headers.get("content-security-policy") or ""
+    if "sandbox allow-scripts" not in csp:
+        failures.append(f"raw content-security-policy must include 'sandbox allow-scripts', got {csp!r}")
+    if "allow-same-origin" in csp:
+        failures.append("raw content-security-policy must never include allow-same-origin (§7 Q3)")
+    # §10 P0-5 / ablation flag: frame-ancestors-check
+    if "frame-ancestors-check" not in ablated and "frame-ancestors 'self'" not in csp:
+        failures.append(f"raw content-security-policy must include frame-ancestors 'self' (§10 P0-5), got {csp!r}")
     for header, expected in RAW_SECURITY_HEADERS.items():
         actual = normalized_headers.get(header)
         if actual != expected:
             failures.append(f"raw response header {header} must be {expected!r}, got {actual!r}")
+    # §10 P0-5 / ablation flag: referrer-policy-check
+    if "referrer-policy-check" not in ablated:
+        actual = normalized_headers.get("referrer-policy")
+        if actual != "no-referrer":
+            failures.append(f"raw response header referrer-policy must be 'no-referrer' (§10 P0-5), got {actual!r}")
     return failures
+
+
+def grade_external_reference_warning(html_text: str) -> list[str]:
+    """외부 http(s) <script src>/<link href> 참조는 사내망 경고(okf lint)로 이어져야 한다.
+
+    ablation flag: external-ref-warning-check. 업로드/저장 플로우 전체를 거치지 않고
+    okf.HTML_EXTERNAL_REF_RE 자체의 탐지 능력을 직접 채점하는 순수 함수다.
+    """
+    if "external-ref-warning-check" in ablated_flags_from_env():
+        return []
+    if not HTML_EXTERNAL_REF_RE.search(html_text):
+        return ["expected an external http(s) <script src>/<link href> reference to trigger the intranet warning, found none"]
+    return []
 
 
 def grade_confirmed_write_refusal(refusal: BaseException | None) -> list[str]:
@@ -109,9 +145,11 @@ def grade_okf_doc(*, card_path: Path, data_root: Path, html_path: Path) -> list[
     review = metadata.get("review")
     if not isinstance(review, dict) or not review.get("reviewer"):
         failures.append("knowledge card must carry a review block with a reviewer")
-    for section in CARD_REQUIRED_SECTIONS:
-        if section not in body:
-            failures.append(f"knowledge card body is missing required section: {section}")
+    # ablation flag: card-sections-check
+    if "card-sections-check" not in ablated_flags_from_env():
+        for section in CARD_REQUIRED_SECTIONS:
+            if section not in body:
+                failures.append(f"knowledge card body is missing required section: {section}")
     return failures
 
 

@@ -29,6 +29,12 @@
     .share-table { width:100%; border-collapse:collapse; font-size:13px; }
     .share-table th, .share-table td { text-align:left; padding:8px 10px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
     .share-table td .muted { display:block; font-size:12px; }
+    .share-edit-form { display:none; gap:8px; margin-top:8px; padding:10px; border:1px solid #dbe3ef; border-radius:8px; background:#f8fafc; }
+    .share-edit-form.open { display:grid; }
+    .share-edit-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:700; color:#334155; }
+    .share-edit-form input, .share-edit-form select, .share-edit-form textarea { border:1px solid #dbe3ef; border-radius:6px; padding:7px; font:inherit; background:#fff; }
+    .share-edit-form-actions { display:flex; align-items:center; gap:8px; }
+    .share-edit-status { font-size:12px; }
     @media (max-width: 960px) { .share-upload-layout { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -117,8 +123,58 @@
             <td>{{ item.views }}회</td>
             <td>도움됨 {{ item.feedback.helpful }} · 수정필요 {{ item.feedback.needs_fix }}</td>
             <td>{{ item.updated_at }}</td>
-            <td><button type="button" class="inline-button" data-share-delete="{{ item.name }}">삭제</button></td>
+            <td>
+              {% if item.target_kind == "html" %}
+              <button type="button" class="inline-button" data-share-edit-toggle="{{ item.name }}">편집</button>
+              {% endif %}
+              <button type="button" class="inline-button" data-share-delete="{{ item.name }}">삭제</button>
+            </td>
           </tr>
+          {% if item.target_kind == "html" %}
+          <tr class="share-edit-row" data-share-edit-row="{{ item.name }}">
+            <td colspan="6">
+              <form
+                class="share-edit-form"
+                data-share-edit-form="{{ item.name }}"
+                data-patch-url="/api/share/{{ item.name }}"
+                data-title="{{ item.title }}"
+                data-description="{{ item.description }}"
+                data-visibility="{{ item.visibility }}"
+                data-team-id="{{ item.team_id }}"
+              >
+                <label>
+                  제목
+                  <input name="title" required />
+                </label>
+                <label>
+                  설명
+                  <textarea name="description" rows="2"></textarea>
+                </label>
+                <label>
+                  공개 범위
+                  <select name="visibility" class="share-edit-visibility">
+                    <option value="public">public — 전사 공유</option>
+                    <option value="team">team — 팀 공유</option>
+                    <option value="private">private — 나만 보기</option>
+                  </select>
+                </label>
+                <label class="share-edit-team-row" hidden>
+                  팀 선택
+                  <select name="team_id">
+                    {% for team in teams %}
+                    <option value="{{ team }}">{{ team }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <div class="share-edit-form-actions">
+                  <button type="submit">저장</button>
+                  <button type="button" data-share-edit-cancel="{{ item.name }}">취소</button>
+                  <span class="share-edit-status" aria-live="polite"></span>
+                </div>
+              </form>
+            </td>
+          </tr>
+          {% endif %}
           {% endfor %}
         </tbody>
       </table>
@@ -306,6 +362,85 @@
           });
         })
         .catch(function () { button.disabled = false; });
+    });
+  });
+
+  // 편집(§10 P1-6): 인라인 폼을 토글하고 PATCH 결과는 textContent로만 반영한다.
+  document.querySelectorAll("[data-share-edit-toggle]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var name = button.getAttribute("data-share-edit-toggle");
+      var row = document.querySelector('[data-share-edit-row="' + name + '"]');
+      var form = row ? row.querySelector("[data-share-edit-form]") : null;
+      if (!form) { return; }
+      var isOpen = form.classList.contains("open");
+      document.querySelectorAll(".share-edit-form.open").forEach(function (openForm) {
+        openForm.classList.remove("open");
+      });
+      if (isOpen) { return; }
+      form.querySelector('[name="title"]').value = form.getAttribute("data-title") || "";
+      form.querySelector('[name="description"]').value = form.getAttribute("data-description") || "";
+      var visibilitySelect = form.querySelector('[name="visibility"]');
+      visibilitySelect.value = form.getAttribute("data-visibility") || "public";
+      var teamRow = form.querySelector(".share-edit-team-row");
+      var teamSelect = form.querySelector('[name="team_id"]');
+      teamRow.hidden = visibilitySelect.value !== "team";
+      if (teamSelect.querySelector('option[value="' + (form.getAttribute("data-team-id") || "") + '"]')) {
+        teamSelect.value = form.getAttribute("data-team-id") || "";
+      }
+      form.classList.add("open");
+    });
+  });
+
+  document.querySelectorAll("[data-share-edit-cancel]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var name = button.getAttribute("data-share-edit-cancel");
+      var row = document.querySelector('[data-share-edit-row="' + name + '"]');
+      var form = row ? row.querySelector("[data-share-edit-form]") : null;
+      if (form) { form.classList.remove("open"); }
+    });
+  });
+
+  document.querySelectorAll("[data-share-edit-form] .share-edit-visibility").forEach(function (select) {
+    select.addEventListener("change", function () {
+      var form = select.closest("[data-share-edit-form]");
+      var teamRow = form.querySelector(".share-edit-team-row");
+      teamRow.hidden = select.value !== "team";
+    });
+  });
+
+  document.querySelectorAll("[data-share-edit-form]").forEach(function (form) {
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var status = form.querySelector(".share-edit-status");
+      status.textContent = "저장 중...";
+      var patchUrl = form.getAttribute("data-patch-url");
+      var visibility = form.querySelector('[name="visibility"]').value;
+      var payload = {
+        title: form.querySelector('[name="title"]').value,
+        description: form.querySelector('[name="description"]').value,
+        visibility: visibility,
+      };
+      if (visibility === "team") {
+        payload.team_id = form.querySelector('[name="team_id"]').value;
+      }
+      fetch(withEmployee(patchUrl), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
+        .then(function (result) {
+          if (result.status === 200 && result.data && result.data.ok) {
+            status.textContent = "저장되었습니다";
+            window.setTimeout(function () { location.reload(); }, 600);
+            return;
+          }
+          var detail = result.data && result.data.detail;
+          status.textContent = typeof detail === "string" ? detail : "저장에 실패했습니다.";
+        })
+        .catch(function () {
+          status.textContent = "저장 요청에 실패했습니다. 네트워크 상태를 확인해주세요.";
+        });
     });
   });
 })();

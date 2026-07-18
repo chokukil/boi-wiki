@@ -184,6 +184,76 @@ def test_enrich_endpoint_rewrites_analysis_section_with_owner_acl(boi_app_module
     assert repeat.json()["updated"] is False
 
 
+def test_enrich_llm_hook_disabled_by_default_keeps_deterministic_result(boi_app_module):
+    # §10 P1-9: 기본 테스트 환경에서는 composer LLM이 꺼져 있어야 한다 — 결정적 결과가
+    # 그대로 유지되고 component_errors에 disabled 원인이 보고된다.
+    client = make_client(boi_app_module)
+    assert not boi_app_module.BOI_AGENT_COMPOSER_LLM_ENABLED
+
+    assert upload_html(client, "100002", name="loop-enrich-llm-default").status_code == 200
+    enriched = client.post("/api/share/loop-enrich-llm-default/enrich?employee_id=100002")
+    assert enriched.status_code == 200
+    payload = enriched.json()
+    assert payload["analysis"]["ai_summary"] == ""
+    assert payload["component_errors"]
+    assert payload["component_errors"][0]["component"] == "share_enrich_llm"
+    assert payload["component_errors"][0]["status"] == "disabled"
+
+    card = boi_app_module.DATA_ROOT / "public" / "html" / "loop-enrich-llm-default.md"
+    assert "요약(AI)" not in card.read_text(encoding="utf-8")
+
+
+def test_enrich_llm_hook_success_writes_ai_summary_and_merges_tags(boi_app_module, monkeypatch):
+    # composer LLM 호출을 canned summary/tags로 monkeypatch한다 (실제 네트워크 호출 없음).
+    client = make_client(boi_app_module)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+    monkeypatch.setattr(
+        boi_app_module,
+        "call_share_enrich_llm",
+        lambda analysis, title: {"summary": "이 문서는 Etch 설비 주간 지표를 요약합니다.", "tags": ["주간리포트", "Etch"]},
+    )
+
+    assert upload_html(client, "100002", name="loop-enrich-llm-success").status_code == 200
+    enriched = client.post("/api/share/loop-enrich-llm-success/enrich?employee_id=100002")
+    assert enriched.status_code == 200
+    payload = enriched.json()
+    assert payload["component_errors"] == []
+    assert payload["analysis"]["ai_summary"] == "이 문서는 Etch 설비 주간 지표를 요약합니다."
+    assert "주간리포트" in payload["analysis"]["tags"]
+
+    card = boi_app_module.DATA_ROOT / "public" / "html" / "loop-enrich-llm-success.md"
+    card_text = card.read_text(encoding="utf-8")
+    assert "## 요약(AI)" in card_text
+    assert "이 문서는 Etch 설비 주간 지표를 요약합니다." in card_text
+    metadata, _body = split_frontmatter(card_text)
+    assert "주간리포트" in metadata["tags"]
+
+
+def test_enrich_llm_hook_failure_preserves_deterministic_result(boi_app_module, monkeypatch):
+    # LLM 호출이 실패해도(비활성/timeout/JSON 오류 등) 결정적 결과가 유지되고 원인이 보고된다.
+    client = make_client(boi_app_module)
+    monkeypatch.setattr(boi_app_module, "BOI_AGENT_COMPOSER_LLM_ENABLED", True)
+
+    def failing_llm_call(analysis, title):
+        raise boi_app_module.NativeAgentRuntimeUnavailable("share enrich LLM call failed: simulated timeout")
+
+    monkeypatch.setattr(boi_app_module, "call_share_enrich_llm", failing_llm_call)
+
+    assert upload_html(client, "100002", name="loop-enrich-llm-failure").status_code == 200
+    enriched = client.post("/api/share/loop-enrich-llm-failure/enrich?employee_id=100002")
+    assert enriched.status_code == 200
+    payload = enriched.json()
+    assert payload["ok"] is True
+    assert payload["analysis"]["ai_summary"] == ""
+    assert payload["analysis"]["tags"][:2] == ["HTML", "Share"]
+    assert payload["component_errors"]
+    assert payload["component_errors"][0]["status"] == "failed"
+    assert "simulated timeout" in payload["component_errors"][0]["message"]
+
+    card = boi_app_module.DATA_ROOT / "public" / "html" / "loop-enrich-llm-failure.md"
+    assert "요약(AI)" not in card.read_text(encoding="utf-8")
+
+
 # --- 텔레메트리 루프 ---------------------------------------------------------
 
 
@@ -199,9 +269,13 @@ def test_viewer_raw_and_doc_views_increment_counters(boi_app_module):
 
     assert (boi_app_module.TELEMETRY_ROOT / "counters.json").exists()
     usage = boi_app_module.USAGE_TELEMETRY.usage_counts()
-    assert usage["loop-telemetry-share"]["clicks"] == 2
-    # html 단축주소 클릭은 대상 지식 카드 boi_id에도 적립된다.
-    assert usage["boi:public:html:loop-telemetry-share"]["clicks"] == 2
+    # §10 P1-8: viewer 방문 1회 + raw(iframe) 요청 1회는 각각의 채널로 분리 집계된다
+    # (예전에는 둘 다 "clicks"에 합산되어 조회수가 2배로 보였다).
+    assert usage["loop-telemetry-share"]["viewer_views"] == 1
+    assert usage["loop-telemetry-share"]["raw_views"] == 1
+    # html 단축주소 클릭은 대상 지식 카드 boi_id에도 같은 채널로 적립된다.
+    assert usage["boi:public:html:loop-telemetry-share"]["viewer_views"] == 1
+    assert usage["boi:public:html:loop-telemetry-share"]["raw_views"] == 1
 
     doc_page = client.get("/docs/boi:public:harness:overview?employee_id=100001")
     assert doc_page.status_code == 200
@@ -210,12 +284,40 @@ def test_viewer_raw_and_doc_views_increment_counters(boi_app_module):
 
     mine = client.get("/api/share/mine?employee_id=100001")
     item = next(entry for entry in mine.json()["items"] if entry["name"] == "loop-telemetry-share")
-    assert item["views"] == 2
+    # 노출되는 조회수는 viewer 기준 1회뿐이다 (raw는 노출에서 제외).
+    assert item["views"] == 1
 
     events_files = list(boi_app_module.TELEMETRY_ROOT.glob("events-*.jsonl"))
     assert events_files
     kinds = {json.loads(line)["kind"] for line in events_files[0].read_text(encoding="utf-8").splitlines() if line.strip()}
     assert {"shortlink_click", "doc_view"} <= kinds
+
+
+def test_telemetry_store_migrates_legacy_combined_clicks_to_viewer_views(tmp_path):
+    # §10 P1-8: 채널 분리 이전 counters.json은 "clicks"로만 합산되어 있었다. 관대한
+    # 마이그레이션이 이 값을 viewer_views로 간주해 조회수가 갑자기 0으로 보이는
+    # 회귀를 막아야 한다(raw_views는 정보가 없으므로 0).
+    root = tmp_path / "telemetry"
+    root.mkdir(parents=True)
+    legacy_counters = {
+        "docs": {"boi:public:html:legacy-share": {"clicks": 4, "last_seen": "2026-06-01T00:00:00+09:00"}},
+        "shortlinks": {"legacy-share": {"clicks": 4, "last_seen": "2026-06-01T00:00:00+09:00"}},
+        "memories": {},
+    }
+    (root / "counters.json").write_text(json.dumps(legacy_counters, ensure_ascii=False), encoding="utf-8")
+
+    store = loops_module.TelemetryStore(root)
+    usage = store.usage_counts()
+    assert usage["legacy-share"]["viewer_views"] == 4
+    assert usage["legacy-share"]["raw_views"] == 0
+    assert usage["boi:public:html:legacy-share"]["viewer_views"] == 4
+    assert store.shortlink_views("legacy-share") == 4
+
+    # 새 이벤트가 기록되면 채널별로 정상 분리 적립된다 (legacy 값은 유지).
+    assert store.record("shortlink_click", name="legacy-share", target="boi:public:html:legacy-share", channel="raw")
+    usage_after = store.usage_counts()
+    assert usage_after["legacy-share"]["viewer_views"] == 4
+    assert usage_after["legacy-share"]["raw_views"] == 1
 
 
 def test_usage_api_filters_by_read_access(boi_app_module):

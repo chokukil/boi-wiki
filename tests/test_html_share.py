@@ -495,3 +495,218 @@ def test_doc_shortlink_registration_policy(boi_app_module):
     )
     assert taken.status_code == 409
     assert taken.json()["detail"]["suggested_names"]
+
+
+# --- §10 P1-6: PATCH /api/share/{name} (메타데이터만 수정) --------------------
+
+
+def test_patch_title_only_reinjects_profile_and_regenerates_card(boi_app_module):
+    from boi_api.app.okf import lint_data_root, split_frontmatter
+
+    client = make_client(boi_app_module)
+    assert upload_html(client, "100001", name="patch-title-share", title="원래 제목", description="원래 설명").status_code == 200
+
+    forbidden = client.patch(
+        "/api/share/patch-title-share?employee_id=100003", json={"title": "다른 사람 제목"}
+    )
+    assert forbidden.status_code == 403
+
+    patched = client.patch(
+        "/api/share/patch-title-share?employee_id=100001", json={"title": "새 제목"}
+    )
+    assert patched.status_code == 200
+    body = patched.json()
+    assert body["ok"] is True
+    assert body["title"] == "새 제목"
+    assert body["description"] == "원래 설명"
+    assert body["visibility"] == "public"
+    assert body["status"] == "updated"
+
+    stored = boi_app_module.DATA_ROOT / "public" / "html" / "patch-title-share.html"
+    stored_text = stored.read_text(encoding="utf-8")
+    assert stored_text.count('id="boi-profile"') == 1
+    profile = share_module.extract_html_profile(stored_text)
+    assert profile["boiProfile"]["title"] == "새 제목"
+
+    card = stored.with_suffix(".md")
+    metadata, _body = split_frontmatter(card.read_text(encoding="utf-8"))
+    assert metadata["title"] == "새 제목"
+
+    availability = client.get("/api/share/names/patch-title-share/availability?employee_id=100001")
+    assert availability.json()["status"] == "owned_by_me"
+
+    registry = share_module.registry_load(boi_app_module.SHORTLINK_REGISTRY_PATH)
+    record = share_module.registry_find(registry, "patch-title-share")
+    assert record["title"] == "새 제목"
+
+    result = lint_data_root(boi_app_module.DATA_ROOT.parent, strict_links=True)
+    card_errors = [error for error in result.errors if "patch-title-share" in error]
+    assert card_errors == []
+
+
+def test_patch_visibility_move_public_to_team_and_acl_enforced(boi_app_module):
+    client = make_client(boi_app_module)
+    assert upload_html(client, "100002", name="patch-visibility-share", visibility="public").status_code == 200
+    old_path = boi_app_module.DATA_ROOT / "public" / "html" / "patch-visibility-share.html"
+    assert old_path.exists()
+
+    patched = client.patch(
+        "/api/share/patch-visibility-share?employee_id=100002",
+        json={"visibility": "team", "team_id": "aix-tf"},
+    )
+    assert patched.status_code == 200
+    body = patched.json()
+    assert body["visibility"] == "team"
+    assert body["team_id"] == "aix-tf"
+    assert body["boi_id"] == "boi:team:aix-tf:html:patch-visibility-share"
+
+    # 옛 public 경로의 파일/카드는 사라진다.
+    assert not old_path.exists()
+    assert not old_path.with_suffix(".md").exists()
+
+    new_path = boi_app_module.DATA_ROOT / "team" / "aix-tf" / "html" / "patch-visibility-share.html"
+    assert new_path.exists()
+    assert new_path.with_suffix(".md").exists()
+
+    # ACL: aix-tf 팀원(100001)은 읽을 수 있고, platform 전용(100003)은 불가.
+    assert client.get("/r/patch-visibility-share?employee_id=100001").status_code == 200
+    assert client.get("/patch-visibility-share?employee_id=100001").status_code == 200
+    assert client.get("/r/patch-visibility-share?employee_id=100003").status_code == 404
+    assert client.get("/patch-visibility-share?employee_id=100003").status_code == 404
+
+    # 팀 멤버가 아니면 team으로 변경할 수 없다.
+    assert upload_html(client, "100003", name="patch-visibility-other", visibility="public").status_code == 200
+    non_member = client.patch(
+        "/api/share/patch-visibility-other?employee_id=100003",
+        json={"visibility": "team", "team_id": "aix-tf"},
+    )
+    assert non_member.status_code == 403
+
+    invalid = client.patch(
+        "/api/share/patch-visibility-share?employee_id=100002", json={"visibility": "not-a-scope"}
+    )
+    assert invalid.status_code == 400
+
+
+def test_patch_rejects_unknown_and_non_html_shares(boi_app_module):
+    client = make_client(boi_app_module)
+
+    missing = client.patch("/api/share/never-registered-patch?employee_id=100001", json={"title": "x"})
+    assert missing.status_code == 404
+
+    registered = client.post(
+        "/api/share/links?employee_id=100001",
+        json={"name": "patch-doc-kind", "target_boi_id": "boi:public:harness:overview"},
+    )
+    assert registered.status_code == 200
+    non_html = client.patch("/api/share/patch-doc-kind?employee_id=100001", json={"title": "x"})
+    assert non_html.status_code == 404
+
+
+# --- §10 P1-7: 소유권 이전·회수 ------------------------------------------------
+
+
+def test_transfer_ownership_new_owner_can_manage_old_owner_forbidden(boi_app_module):
+    client = make_client(boi_app_module)
+    assert upload_html(client, "100002", name="transfer-public-share", visibility="public").status_code == 200
+
+    forbidden = client.post(
+        "/api/share/transfer-public-share/transfer?employee_id=100003",
+        json={"new_owner_employee_id": "100003"},
+    )
+    assert forbidden.status_code == 403
+
+    transferred = client.post(
+        "/api/share/transfer-public-share/transfer?employee_id=100002",
+        json={"new_owner_employee_id": "100003"},
+    )
+    assert transferred.status_code == 200
+    body = transferred.json()
+    assert body["ok"] is True
+    assert body["owner_employee_id"] == "100003"
+    assert len(body["transfers"]) == 1
+    transfer_entry = body["transfers"][0]
+    assert transfer_entry["from"] == "100002"
+    assert transfer_entry["to"] == "100003"
+    assert transfer_entry["by"] == "100002"
+    assert transfer_entry["at"]
+
+    registry = share_module.registry_load(boi_app_module.SHORTLINK_REGISTRY_PATH)
+    record = share_module.registry_find(registry, "transfer-public-share")
+    assert record["owner_employee_id"] == "100003"
+    assert record["transfers"][0]["from"] == "100002"
+    assert record["transfers"][0]["to"] == "100003"
+
+    # 새 소유자는 이제 PATCH/재업로드가 가능하다.
+    new_owner_patch = client.patch(
+        "/api/share/transfer-public-share?employee_id=100003", json={"title": "새 소유자 제목"}
+    )
+    assert new_owner_patch.status_code == 200
+
+    reupload = upload_html(client, "100003", name="transfer-public-share", title="재업로드")
+    assert reupload.status_code == 200
+    assert reupload.json()["status"] == "updated"
+
+    # 옛 소유자는 더 이상 소유자가 아니므로 PATCH/삭제/재이전이 거부된다.
+    old_owner_patch = client.patch(
+        "/api/share/transfer-public-share?employee_id=100002", json={"title": "옛 소유자 시도"}
+    )
+    assert old_owner_patch.status_code == 403
+    old_owner_delete = client.delete("/api/share/transfer-public-share?employee_id=100002")
+    assert old_owner_delete.status_code == 403
+    old_owner_reupload = upload_html(client, "100002", name="transfer-public-share")
+    assert old_owner_reupload.status_code == 409
+    assert old_owner_reupload.json()["detail"]["status"] == "taken"
+
+
+def test_transfer_admin_reclaim_relocates_private_file(boi_app_module):
+    client = make_client(boi_app_module)
+    assert upload_html(client, "100002", name="transfer-private-share", visibility="private").status_code == 200
+    old_path = boi_app_module.DATA_ROOT / "private" / "100002" / "html" / "transfer-private-share.html"
+    assert old_path.exists()
+
+    # 100001은 boi.admin 역할을 가진 서비스/관리자 사번(테스트 fixtures 기준)이다.
+    reclaimed = client.post(
+        "/api/share/transfer-private-share/transfer?employee_id=100001",
+        json={"new_owner_employee_id": "100003"},
+    )
+    assert reclaimed.status_code == 200
+    body = reclaimed.json()
+    assert body["owner_employee_id"] == "100003"
+    assert body["boi_id"] == "boi:private:100003:html:transfer-private-share"
+
+    assert not old_path.exists()
+    new_path = boi_app_module.DATA_ROOT / "private" / "100003" / "html" / "transfer-private-share.html"
+    assert new_path.exists()
+    assert new_path.with_suffix(".md").exists()
+
+    stored_text = new_path.read_text(encoding="utf-8")
+    profile = share_module.extract_html_profile(stored_text)
+    assert profile["boiProfile"]["owner"] == "100003"
+    assert profile["boiProfile"]["acl_policy"] == "acl:private:100003"
+
+    # 원래 소유자는 더 이상 읽을 수 없다 (private ACL이 새 소유자로 넘어갔다).
+    assert client.get("/r/transfer-private-share?employee_id=100002").status_code == 404
+    assert client.get("/r/transfer-private-share?employee_id=100003").status_code == 200
+
+
+def test_transfer_rejects_missing_and_same_owner(boi_app_module):
+    client = make_client(boi_app_module)
+    assert upload_html(client, "100002", name="transfer-validation-share").status_code == 200
+
+    missing_field = client.post(
+        "/api/share/transfer-validation-share/transfer?employee_id=100002", json={"new_owner_employee_id": ""}
+    )
+    assert missing_field.status_code == 400
+
+    same_owner = client.post(
+        "/api/share/transfer-validation-share/transfer?employee_id=100002",
+        json={"new_owner_employee_id": "100002"},
+    )
+    assert same_owner.status_code == 400
+
+    missing_share = client.post(
+        "/api/share/never-registered-transfer/transfer?employee_id=100002",
+        json={"new_owner_employee_id": "100003"},
+    )
+    assert missing_share.status_code == 404

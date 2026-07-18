@@ -1,7 +1,7 @@
 ---
 okf_version: "0.1"
 boi_profile_version: "0.1"
-harness_version: "0.2.0"
+harness_version: "0.3.0"
 type: boi/reference
 title: BoI Agent Harness Overview
 description: SOP, Action, Web validated edit 작업을 모든 agent가 같은 방식으로 수행하기 위한 public harness 진입점
@@ -53,7 +53,11 @@ Codex skill은 얇은 bootstrap으로 유지하고, 상세 절차는 BoI Wiki MC
 
 # Load-bearing 재검증
 
-모델 세대 교체 시 하네스는 다음 절차로 얇게 유지한다. ① `tests/harness_evals/` 골든 태스크 회귀를 실행한다. ② 하네스 규칙별로 제거해도 eval이 통과하는지 ablation으로 확인한다. ③ 더 이상 load-bearing이 아닌 규칙은 제거하고 제거 근거를 CHANGELOG에 기록한다. 하네스는 얇을수록 좋다.
+모델 세대 교체 시 하네스는 다음 절차로 얇게 유지한다. 하네스는 얇을수록 좋다.
+
+1. `tests/harness_evals/` 골든 태스크 회귀를 실행한다. `scripts/run_harness_evals.sh`가 `BOI_HARNESS_EVAL_RECORD=1`을 설정해 repo root에서 실행해주는 wrapper이며(§10 P1-11), exit code를 그대로 전달한다. `scripts/check_local_full_readiness.py --harness-evals`로 실행 중인 배포의 readiness 점검에 같은 결과를 포함시킬 수 있다.
+2. 하네스 규칙별로 제거해도 eval이 통과하는지 ablation으로 확인한다. `scripts/run_harness_ablation.py`가 `harness/ablation-flags.yaml`에 등록된 플래그를 하나씩 `HARNESS_ABLATE` 환경변수로 켜서 eval suite를 반복 실행하고, ablation 후에도 계속 통과하는 규칙을 "load-bearing 후보 아님 — 검토 필요"로 보고한다(§10 P1-12, advisory tool — exit code는 항상 0).
+3. 더 이상 load-bearing이 아닌 규칙은 제거하고 제거 근거(eval 결과)를 CHANGELOG에 기록한다.
 
 # Citations
 
