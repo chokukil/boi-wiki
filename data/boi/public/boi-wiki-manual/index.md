@@ -13,6 +13,7 @@ flowchart LR
 # 일반 구성원
 
 - [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)
+- [SOP 담당자 Internal Alpha Preview 사용 안내](/docs/boi:public:boi-wiki-manual:agent:sop-owner-internal-alpha-guide)
 - [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide)
 - [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)
 - [자료 보관함과 업무 근거](/docs/boi:public:boi-wiki-manual:data-lake:data-lake-artifact-lifecycle)
@@ -37,6 +38,7 @@ flowchart LR
 # 운영자와 플랫폼 담당자
 
 - [운영 Runbook](/docs/boi:public:boi-wiki-manual:operations:operator-runbook)
+- [SOP Internal Alpha Preview 진행자 Setup 및 Runbook](/docs/boi:public:boi-wiki-manual:operations:sop-demo-facilitator-runbook)
 - [업무 실행 품질과 Harness 개선 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:harness-observability-and-improvement)
 - [BoI Harness와 Loop 운영 가이드](/docs/boi:public:boi-wiki-manual:operations:boi-harness-and-loop-operations)
 - [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)
