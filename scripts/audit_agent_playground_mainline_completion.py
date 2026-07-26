@@ -680,7 +680,17 @@ def main() -> int:
         "validation-wiki",
         "wiki_guides_are_oidc_http_200_pet_free_and_mobile",
         bool(wiki_docs.get("ok"))
-        and len(documents) == 2
+        and {str(item.get("key") or "") for item in documents}
+        == {
+            "onboarding",
+            "langflow-setup",
+            "my-flow-deploy",
+            "shared-assets",
+            "action-wiki",
+            "troubleshooting",
+            "operator",
+            "hub-boundary",
+        }
         and all(
             item.get("status") == 200
             and item.get("pet_dom_count") == 0
