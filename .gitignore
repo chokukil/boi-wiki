@@ -33,5 +33,6 @@ kafka-data/
 
 captures/tmp/
 artifacts/tmp/
+artifacts/agent-playground-current/
 artifacts/agent-playground-handoff/
 outputs/

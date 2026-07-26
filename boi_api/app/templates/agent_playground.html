@@ -149,7 +149,9 @@
       <p class="agent-playground-onboarding-error" data-onboarding-error hidden></p>
     </section>
 
-    <section class="agent-playground-workbench" data-workbench-only hidden>
+    <details class="agent-playground-workbench agent-playground-connection-settings" data-workbench-only hidden>
+      <summary><strong>연결 설정</strong><span>Endpoint·API Key 교체·BoI Credential 관리</span></summary>
+      <div class="agent-playground-connection-settings-body">
       <header class="agent-playground-workbench-head">
         <div>
           <p class="eyebrow">Endpoint connection</p>
@@ -190,19 +192,20 @@
           </div>
         </div>
       </div>
-    </section>
+      </div>
+    </details>
 
     <nav class="agent-playground-actions" data-workbench-only hidden aria-label="Agent 개발 단계">
-      <a class="agent-playground-action primary" data-workbench-create aria-disabled="true">
+      <button type="button" class="agent-playground-action primary" data-workbench-step="create" aria-current="step">
         <span>1</span><strong>Langflow에서 만들기</strong><small>개인 프로젝트에서 Flow와 Agent를 편집합니다.</small>
-      </a>
-      <button type="button" class="agent-playground-action" data-workbench-test disabled>
+      </button>
+      <button type="button" class="agent-playground-action" data-workbench-step="test" data-workbench-test>
         <span>2</span><strong>Playground 테스트</strong><small>Wiki·Ontology 근거와 저장 결과를 확인합니다.</small>
       </button>
-      <a class="agent-playground-action" href="{{ agent_hub_url }}" target="_blank" rel="noopener">
+      <button type="button" class="agent-playground-action" data-workbench-step="hub" data-workbench-hub>
         <span>3</span><strong>Agent Hub에서 가져오기·배포</strong><small>다른 사람이 만든 Flow·Component도 내 endpoint로 배포합니다.</small>
-      </a>
-      <button type="button" class="agent-playground-action" data-workbench-action disabled>
+      </button>
+      <button type="button" class="agent-playground-action" data-workbench-step="action" data-workbench-action>
         <span>4</span><strong>Action 연결</strong><small>업무 계약은 유지하고 이 Flow를 실행 connector로 연결합니다.</small>
       </button>
     </nav>
@@ -224,7 +227,7 @@
 
     <section class="agent-playground-layout" data-workbench-only hidden>
       <div class="agent-playground-main">
-        <section class="agent-playground-panel">
+        <section class="agent-playground-panel" data-workbench-panel="create">
           <header>
             <div><p class="eyebrow">Endpoint → Project → Flow</p><h3>Flow 선택과 배포 재발견</h3></div>
             <button type="button" data-refresh-flows disabled>새 Flow 찾기</button>
@@ -250,7 +253,7 @@
           </div>
         </section>
 
-        <section class="agent-playground-panel agent-playground-hub-panel" data-hub-import-panel>
+        <section class="agent-playground-panel agent-playground-hub-panel" data-hub-import-panel data-workbench-panel="hub" hidden>
           <header>
             <div>
               <p class="eyebrow">Approved Agent Hub assets</p>
@@ -258,7 +261,7 @@
             </div>
             <a href="{{ agent_hub_url }}" target="_blank" rel="noopener">Agent Hub 전체 보기</a>
           </header>
-          <p>승인된 자산을 선택한 뒤 Agent Hub에서 현재 endpoint/project로 배포합니다. Component는 작업 중 Flow에 추가하고, Action 등록은 완성된 exact Flow 단위로 진행합니다.</p>
+          <p>승인된 자산을 선택한 뒤 Agent Hub에서 현재 endpoint/project로 배포합니다. Component는 배포만으로 실행되지 않으며, 연결 상태와 runtime 실행 증거를 별도로 확인합니다.</p>
           <form class="agent-playground-hub-search" data-hub-search-form>
             <label>자산 검색
               <input type="search" name="search" placeholder="Flow, Component, 태그 검색" />
@@ -295,9 +298,16 @@
           </div>
           <output data-hub-adoption-output>Endpoint와 Project를 고른 뒤 자산을 선택하세요.</output>
           <div class="agent-playground-hub-candidates" data-hub-candidates></div>
+          <div class="agent-playground-component-legend" data-component-status-legend aria-label="Component 상태 기준">
+            <span>배포됨</span>
+            <span>연결 필요</span>
+            <span>연결됨</span>
+            <span>실행 검증됨</span>
+          </div>
+          <div class="agent-playground-component-status" data-component-status></div>
         </section>
 
-        <section class="agent-playground-panel" data-flow-panel>
+        <section class="agent-playground-panel" data-flow-panel data-workbench-panel="create test hub action">
           <header>
             <div><p class="eyebrow">선택한 Flow</p><h3 data-selected-flow-name>Flow를 선택하세요</h3></div>
             <span class="agent-playground-chip" data-selected-flow-status>discovered</span>
@@ -310,26 +320,43 @@
             </dl>
           </details>
           <div class="agent-playground-form-actions">
-            <button type="button" data-download-artifact disabled>Agent Hub 자산 내려받기</button>
-            <button type="button" data-record-deployment disabled>이 Flow를 배포 결과로 연결</button>
-            <button type="button" class="primary" data-validate-flow disabled>Flow 전체 검증</button>
-            <button type="button" data-create-action disabled>Action 연결</button>
+            <button type="button" data-download-artifact data-step-action="hub" disabled>Agent Hub 자산 내려받기</button>
+            <button type="button" class="primary" data-record-deployment data-step-action="hub" disabled>이 Flow를 배포 결과로 연결</button>
+            <button type="button" class="primary" data-validate-flow data-step-action="test" disabled>Flow 전체 검증</button>
+            <button type="button" class="primary" data-create-action data-step-action="action" disabled>Action 등록 초안 만들기</button>
             <a data-open-action-draft hidden>Action 등록 초안 열기</a>
           </div>
+          <fieldset class="agent-playground-action-scope" data-action-scope data-step-action="action" hidden>
+            <legend>누가 이 Action을 사용할까요?</legend>
+            <label><input type="radio" name="action_scope" value="private" checked /> 나만 사용</label>
+            <label><input type="radio" name="action_scope" value="team" /> 팀에서 사용</label>
+            <label data-action-team-wrap hidden>공유 팀
+              <select data-action-team><option value="">팀을 선택하세요</option></select>
+            </label>
+            <p>팀 Action도 Langflow 연결 키는 endpoint 소유자의 서버 저장값을 사용하고, Wiki 권한과 개인 초안 소유자는 실제 호출자 기준입니다.</p>
+          </fieldset>
           <p class="agent-playground-form-note">Action은 API·MCP·Webhook·Manual·Event Broker·BoI Writer·Langflow를 같은 계약으로 다룹니다. 이 화면에서는 선택한 exact Flow만 Langflow connector binding으로 붙이며, Action의 업무 입출력 계약과 승인 정책은 connector와 분리해 저장합니다.</p>
           <p class="agent-playground-form-note">배포 상태와 검증 상태는 분리됩니다. Agent Hub 배포 후 같은 endpoint/project에서 exact Flow를 찾고 검증해야 합니다.</p>
         </section>
 
-        <section class="agent-playground-panel" data-test-panel>
+        <section class="agent-playground-panel" data-test-panel data-workbench-panel="test" hidden>
           <header>
             <div><p class="eyebrow">Runtime test</p><h3>일반 질문·SOP Task Context 확인</h3></div>
             <span class="agent-playground-chip">기본 preview</span>
           </header>
+          <p class="agent-playground-retrieval-default" data-retrieval-default>
+            <strong>기본 지식 경로 · Task Context + Ontology</strong>
+            <span>검증된 관계와 provenance를 먼저 사용하고, 관계 근거가 없을 때만 권한 내 Wiki 문서로 보완합니다.</span>
+          </p>
           <form data-test-form>
             <label>질문<textarea name="question" rows="3" required>관련 Wiki 문서와 검증된 Ontology 관계를 근거와 함께 정리해줘.</textarea></label>
             <label>업무 맥락<textarea name="business_context" rows="2" placeholder="선택 입력"></textarea></label>
             <div class="agent-playground-test-options">
-              <label>Task ref<input name="task_ref" placeholder="SOP Task에서 호출할 때 전달" /></label>
+              <label>내 Task 선택
+                <select name="task_ref" data-task-select>
+                  <option value="">일반 Wiki 질문 · Task 없음</option>
+                </select>
+              </label>
               <label>현재 Wiki ref<input name="page_ref" placeholder="일반 Wiki 문맥에서 선택" /></label>
               <label>저장 방식
                 <select name="save_mode">
@@ -340,9 +367,10 @@
               <label>초안 제목<input name="title" value="Agent Playground 테스트 초안" /></label>
             </div>
             <details class="agent-playground-task-anchor">
-              <summary>SOP Task anchor 확인</summary>
-              <p class="agent-playground-form-note">SOP Task에서 Action을 호출할 때 BoI가 ACL 확인 후 전달하는 맥락입니다. 일반 Wiki 실행에서는 비워 둡니다.</p>
+              <summary>개발 검증용 수동 anchor</summary>
+              <p class="agent-playground-form-note">실제 실행은 위의 ACL 확인된 내 Task를 사용합니다. 아래 값은 synthetic/manual 개발 검증에서만 사용하며 서버 해석값을 덮어쓰지 않습니다.</p>
               <div class="agent-playground-test-options">
+                <label>Task ref<input name="manual_task_ref" placeholder="task:…" /></label>
                 <label>SOP ref<input name="sop_ref" placeholder="boi:public:sop:…" /></label>
                 <label>SOP stage<input name="sop_stage" placeholder="analyze" /></label>
                 <label>Event ref<input name="event_ref" placeholder="event:…" /></label>
@@ -367,7 +395,7 @@
       </div>
 
       <aside class="agent-playground-side">
-        <section class="agent-playground-panel">
+        <section class="agent-playground-panel" data-workbench-panel="create test hub action">
           <header><div><p class="eyebrow">고정 계약</p><h3>BoI Wiki Agent Loop 1.1</h3></div></header>
           <ol class="agent-playground-loop">
             <li><span>1</span><div><strong>Wiki·Ontology 가져오기</strong><p>Task/SOP 여부를 자동 판별하고 ACL 내 근거만 사용</p></div></li>

@@ -21,6 +21,8 @@
   const hubBeginButton = root.querySelector("[data-hub-adoption-begin]");
   const hubDiscoverButton = root.querySelector("[data-hub-adoption-discover]");
   const hubDeployLink = root.querySelector("[data-hub-deploy-link]");
+  const componentStatusRoot = root.querySelector("[data-component-status]");
+  const taskSelect = root.querySelector("[data-task-select]");
   const app = {
     state: null,
     endpointId: "",
@@ -34,6 +36,9 @@
     hubSelected: new Map(),
     hubAdoption: null,
     hubCandidates: [],
+    tasks: [],
+    tasksLoaded: false,
+    activeStep: "create",
   };
 
   const withIdentity = (path) => {
@@ -92,7 +97,35 @@
     (app.state && app.state.endpoints || []).find((item) => item.endpoint_id === app.endpointId) || null
   );
 
-  const escapeText = (value) => String(value == null ? "" : value);
+  const escapeText = (value) => String(value == null ? "" : value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+  const setWorkbenchStep = (step, { scroll = false } = {}) => {
+    const allowed = new Set(["create", "test", "hub", "action"]);
+    app.activeStep = allowed.has(step) ? step : "create";
+    root.querySelectorAll("[data-workbench-step]").forEach((button) => {
+      const active = button.dataset.workbenchStep === app.activeStep;
+      button.classList.toggle("primary", active);
+      if (active) button.setAttribute("aria-current", "step");
+      else button.removeAttribute("aria-current");
+    });
+    root.querySelectorAll("[data-workbench-panel]").forEach((panel) => {
+      const steps = String(panel.dataset.workbenchPanel || "").split(/\s+/).filter(Boolean);
+      panel.hidden = !steps.includes(app.activeStep);
+    });
+    root.querySelectorAll("[data-step-action]").forEach((action) => {
+      action.hidden = action.dataset.stepAction !== app.activeStep;
+    });
+    if (app.activeStep === "test") loadTasks();
+    if (scroll) {
+      const first = root.querySelector(`[data-workbench-panel~="${app.activeStep}"]:not([hidden])`);
+      if (first) first.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const selectedSetup = () => (
     (app.state && app.state.endpoint_setups && app.state.endpoint_setups[app.endpointId]) || null
@@ -258,6 +291,79 @@
     });
   };
 
+  const componentStatus = (asset, flow) => {
+    const componentId = String(asset.asset_id || "");
+    if ((flow.executed_component_ids || []).includes(componentId)) return "실행 검증됨";
+    if ((flow.connected_component_ids || []).includes(componentId)) return "연결됨";
+    const graphItem = ((flow.component_graph || {}).items || [])
+      .find((item) => String(item.asset_id || "") === componentId);
+    if (graphItem && graphItem.deployed) return "연결 필요";
+    return "배포됨";
+  };
+
+  const renderComponentStatus = () => {
+    componentStatusRoot.replaceChildren();
+    const flow = app.flow || {};
+    const components = (flow.source_assets || []).filter((asset) => asset && asset.type === "py");
+    if (!components.length) return;
+    const heading = document.createElement("strong");
+    heading.textContent = "Component 실행 상태";
+    componentStatusRoot.append(heading);
+    components.forEach((asset) => {
+      const row = document.createElement("article");
+      const copy = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = asset.title || asset.asset_id;
+      const state = document.createElement("span");
+      const status = componentStatus(asset, flow);
+      state.textContent = status;
+      state.dataset.state = status === "실행 검증됨"
+        ? "executed"
+        : status === "연결됨"
+          ? "connected"
+          : status === "연결 필요"
+            ? "required"
+            : "deployed";
+      copy.append(name, state);
+      const action = document.createElement("button");
+      action.type = "button";
+      action.textContent = "Agent 자리에 연결";
+      action.disabled = !["배포됨", "연결 필요"].includes(status) || !flow.adoption_id;
+      action.addEventListener("click", async () => {
+        action.disabled = true;
+        try {
+          const result = await request(
+            `/api/agent-playground/agent-hub/adoptions/${encodeURIComponent(flow.adoption_id)}/compose`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                flow_id: flow.flow_id,
+                component_asset_id: asset.asset_id,
+                replace_agent_slot: true,
+              }),
+            },
+          );
+          if (result.status === "manual_required") {
+            hubAdoptionOutput.textContent = `자동 연결 불가 · ${result.reason} · Langflow Canvas에서 포트를 확인하세요.`;
+            if (result.langflow_canvas_url) window.open(result.langflow_canvas_url, "_blank", "noopener");
+            showToast("Component 포트가 명확하지 않아 자동 연결하지 않았습니다.", "error");
+          } else {
+            hubAdoptionOutput.textContent = `연결 완료 · checksum ${result.live_checksum}`;
+            showToast("Component를 agent_slot 실행 경로에 연결했습니다. 이제 runtime 검증이 필요합니다.", "success");
+          }
+          await loadState();
+          await loadFlows();
+        } catch (error) {
+          showToast(`Component 연결 실패: ${error.message}`, "error");
+        } finally {
+          renderComponentStatus();
+        }
+      });
+      row.append(copy, action);
+      componentStatusRoot.append(row);
+    });
+  };
+
   const renderHubImport = () => {
     const editable = Boolean((app.state && app.state.capabilities || {}).can_edit);
     const canBegin = editable && app.endpointId && app.projectId && app.hubSelected.size > 0;
@@ -287,6 +393,52 @@
     }
     renderHubSelected();
     renderHubCandidates();
+    renderComponentStatus();
+  };
+
+  const loadTasks = async () => {
+    if (app.tasksLoaded || !taskSelect) return;
+    app.tasksLoaded = true;
+    const current = taskSelect.value;
+    taskSelect.innerHTML = '<option value="">내 Task를 불러오는 중…</option>';
+    try {
+      const payload = await request("/api/agents/boi-wiki/inbox?status=open&limit=50");
+      const rows = [...(payload.items || [])];
+      (payload.groups || []).forEach((group) => {
+        (group.items || []).forEach((item) => rows.push(item));
+      });
+      const seen = new Set();
+      app.tasks = rows.filter((item) => {
+        const taskRef = String(item.task_ref || item.task_id || "");
+        if (!taskRef || seen.has(taskRef)) return false;
+        seen.add(taskRef);
+        return true;
+      });
+      taskSelect.innerHTML = '<option value="">일반 Wiki 질문 · Task 없음</option>';
+      app.tasks.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.task_ref || item.task_id;
+        const display = item.display || {};
+        const brief = item.brief || item.item_brief || {};
+        option.textContent = (
+          brief.event_or_stage
+          || display.title
+          || item.summary
+          || option.value
+        );
+        taskSelect.append(option);
+      });
+      taskSelect.value = current;
+    } catch (error) {
+      taskSelect.innerHTML = '<option value="">Task 조회 실패 · 일반 질문으로 실행</option>';
+      showToast(`내 Task 조회 실패: ${error.message}`, "error");
+    }
+  };
+
+  const selectedTaskRef = (data = null) => {
+    const selected = String((data ? data.get("task_ref") : taskSelect && taskSelect.value) || "").trim();
+    const manual = String((data ? data.get("manual_task_ref") : root.querySelector("[name='manual_task_ref']")?.value) || "").trim();
+    return selected || manual;
   };
 
   const searchHubAssets = async () => {
@@ -494,7 +646,16 @@
     if (!app.hubAdoption) app.hubAdoption = matchingHubAdoption();
     if (app.hubAdoption) app.hubCandidates = app.hubAdoption.candidates || [];
     renderHubImport();
+    const teamSelect = root.querySelector("[data-action-team]");
+    teamSelect.innerHTML = '<option value="">팀을 선택하세요</option>';
+    (app.state.identity.teams || []).forEach((team) => {
+      const option = document.createElement("option");
+      option.value = team;
+      option.textContent = team;
+      teamSelect.append(option);
+    });
     if (app.endpointId && !selectedOnboarding().required) await loadProjects(false);
+    setWorkbenchStep(app.activeStep);
   };
 
   const selectEndpoint = async (endpointId) => {
@@ -640,7 +801,6 @@
     );
     const endpoint = selectedEndpoint();
     const open = root.querySelector("[data-open-langflow]");
-    const createAction = root.querySelector("[data-workbench-create]");
     if (flow && endpoint) {
       const browserBase = (
         (app.state.onboarding || {}).langflow_external_url
@@ -652,20 +812,12 @@
       open.target = "_blank";
       open.rel = "noopener";
       open.removeAttribute("aria-disabled");
-      createAction.href = open.href;
-      createAction.target = "_blank";
-      createAction.rel = "noopener";
-      createAction.removeAttribute("aria-disabled");
     } else {
       open.removeAttribute("href");
       open.setAttribute("aria-disabled", "true");
-      createAction.removeAttribute("href");
-      createAction.setAttribute("aria-disabled", "true");
     }
-    root.querySelector("[data-workbench-test]").disabled = !ready;
-    root.querySelector("[data-workbench-action]").disabled = (
-      !ready || flow.validation_status !== "action_ready" || !flow.deployment_id
-    );
+    renderComponentStatus();
+    setWorkbenchStep(app.activeStep);
   };
 
   const deepField = (value, name) => {
@@ -881,11 +1033,17 @@
     app.flowFilter = event.currentTarget.value || "";
     renderFlows();
   });
-  root.querySelector("[data-workbench-test]").addEventListener("click", () => {
-    root.querySelector("[data-test-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
+  root.querySelectorAll("[data-workbench-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setWorkbenchStep(button.dataset.workbenchStep, { scroll: true });
+    });
   });
-  root.querySelector("[data-workbench-action]").addEventListener("click", () => {
-    root.querySelector("[data-create-action]").click();
+  root.querySelectorAll("[name='action_scope']").forEach((radio) => {
+    radio.addEventListener("change", () => {
+      root.querySelector("[data-action-team-wrap]").hidden = (
+        root.querySelector("[name='action_scope']:checked").value !== "team"
+      );
+    });
   });
 
   root.querySelector("[data-test-unsaved]").addEventListener("click", async () => {
@@ -1011,7 +1169,11 @@
 
   root.querySelector("[data-validate-flow]").addEventListener("click", async (event) => {
     if (!app.flow) return;
-    const taskRef = root.querySelector("[data-test-form] [name='task_ref']").value;
+    const taskRef = selectedTaskRef();
+    if (!taskRef) {
+      showToast("Flow 전체 검증에는 ACL로 확인된 실제 내 Task를 선택해야 합니다.", "error");
+      return;
+    }
     const button = event.currentTarget;
     button.disabled = true;
     try {
@@ -1052,7 +1214,7 @@
           project_id: app.projectId,
           question: data.get("question"),
           business_context: data.get("business_context"),
-          task_ref: data.get("task_ref"),
+          task_ref: selectedTaskRef(data),
           page_ref: data.get("page_ref"),
           sop_ref: data.get("sop_ref"),
           sop_stage: data.get("sop_stage"),
@@ -1079,10 +1241,19 @@
 
   root.querySelector("[data-create-action]").addEventListener("click", async () => {
     if (!app.flow || !app.flow.deployment_id) return;
+    const scope = root.querySelector("[name='action_scope']:checked").value;
+    const teamId = scope === "team" ? root.querySelector("[data-action-team]").value : "";
+    if (scope === "team" && !teamId) {
+      showToast("팀에서 사용할 Action은 HCP 팀을 선택해야 합니다.", "error");
+      return;
+    }
     try {
       const payload = await request(
         `/api/agent-playground/deployments/${encodeURIComponent(app.flow.deployment_id)}/action-draft`,
-        { method: "POST", body: "{}" },
+        {
+          method: "POST",
+          body: JSON.stringify({ scope, team_id: teamId }),
+        },
       );
       showToast(`Action 등록 초안 ${payload.draft.draft_id}을 만들었습니다.`, "success");
       const actionDraftLink = root.querySelector("[data-open-action-draft]");

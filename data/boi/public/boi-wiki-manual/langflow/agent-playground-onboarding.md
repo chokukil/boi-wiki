@@ -21,7 +21,7 @@ source_refs:
   - type: repo
     ref: langflow/compatibility-manifest.json
 review:
-  reviewer: platform-lead
+  reviewer: tf-lead
   review_status: reviewed
 ---
 
@@ -95,18 +95,23 @@ Agent Hub 자산의 제작자와 Action 사용자는 같을 필요가 없다. �
 
 1. Agent Hub에서 사용할 Flow 또는 component를 선택한다.
 2. 배포 대상은 내가 Playground에 연결한 Langflow endpoint와 `boi-{사번}` 프로젝트로 지정한다.
-3. component를 배포했다면 Langflow에서 그 component를 사용해 Flow를 구성한다.
+3. component를 배포했다면 Playground에서 상태를 확인한다.
+   - `배포됨`: endpoint에는 있지만 Flow 실행 경로와의 연결은 확인 전
+   - `연결 필요`: Flow에 미연결 노드로 존재
+   - `연결됨`: `boi.agent-slot.v1` 규약에 따라 `agent_slot` 실행 경로에 연결
+   - `실행 검증됨`: 실제 runtime 결과에 component ID provenance가 존재
 4. Playground에서 `새 Flow 찾기`를 눌러 배포된 exact Flow를 연결한다.
-5. Flow가 `BoIWikiKnowledge → 사용자 Agent·custom component 구성 → BoIWikiSave`의 입출력 계약을 유지하는지 검증한다.
-6. build, 실제 실행, SOP Task Context, Wiki·Ontology 근거, 저장 격리 검증을 모두 통과한 Flow만 Action으로 연결한다.
+5. `boi.agent-slot.v1`의 단일 `agent_context → agent_result` 포트와 정확히 일치하면 `Agent 자리에 연결`을 사용할 수 있다. 포트가 여러 개이거나 타입이 불명확하면 자동 연결하지 않고 Langflow Canvas에서 직접 연결한다.
+6. Flow가 `BoIWikiKnowledge → 사용자 Agent·custom component 구성 → BoIWikiSave`의 입출력 계약을 유지하는지 검증한다.
+7. build, 실제 실행, Task Context, Wiki·Ontology 근거, 저장 격리 검증을 모두 통과한 Flow만 Action으로 연결한다.
 
 중간의 Agent 영역은 `BoIAgentSlot`이나 예제 모델 하나로 제한하지 않는다. Agent Hub의 여러 custom component를 조합해도 된다. 다만 Wiki facade와 `boi_contract` 입출력, secret scan, 실제 runtime 결과는 유지해야 한다. 완성되지 않은 Flow는 `내 작업 중 Flow`로 남고 Action 연결 버튼이 열리지 않는다.
 
-이미 팀 Langflow endpoint에 배포된 Flow를 그대로 공유 Action으로 사용하는 경우에는 개인 API Key를 전달하지 않는다. 해당 endpoint는 운영자가 팀 소유 연결로 한 번 등록하고 HCP 사용 권한을 부여해야 한다. 런타임은 팀 endpoint의 호출 key를 사용하되 Wiki 조회와 개인 초안은 Action을 실행한 사용자의 단기 run token으로 처리한다.
+이번 버전은 팀 endpoint를 만들지 않는다. 팀 Action도 등록자의 개인 endpoint 연결을 서버에서 참조한다. 다른 팀원에게 API Key를 보여주지 않으며, Wiki 조회와 개인 초안은 Action을 실제 실행한 사람의 HCP 권한과 단기 run token으로 처리한다.
 
 # Action으로 연결하기
 
-Flow가 `action_ready`가 되면 `Action 연결`을 누른다.
+Flow가 `action_ready`가 되면 `Action 연결`을 누르고 `나만 사용` 또는 내가 속한 HCP 팀의 `팀에서 사용`을 선택한다.
 
 BoI Action은 Langflow 전용 기능이 아니다. 업무 목적, 입력·출력, 근거, 위험도와 승인 정책은
 connector-neutral Action 계약으로 저장된다. API, MCP, Webhook, Manual, Event Broker,
@@ -119,11 +124,12 @@ BoI Writer, Langflow 중 실행 방식만 connector binding으로 따로 붙는�
 4. publish-request를 명시적으로 요청한다.
 5. 운영 승인 후 BoI Wiki의 일반 화면이나 SOP Task에서 Action을 사용한다.
 
-Action 실행 시 Langflow 호출 권한은 endpoint 소유자의 연결을 사용하지만 Wiki 조회와 개인 초안 권한은 Action을 누른 사용자의 권한을 따른다.
+Action 실행 시 Langflow 호출 권한은 endpoint 소유자의 연결을 사용하지만 Wiki 조회와 개인 초안 권한은 Action을 누른 사용자의 권한을 따른다. 실행 token은 caller, Action, deployment, endpoint, project, exact Flow, trace, execution ID와 capability에 묶이므로 다른 실행에서 재사용할 수 없다.
 
 # Wiki와 Ontology 활용
 
-- 일반 질문은 문서 검색과 연결된 Ontology 관계를 함께 사용한다.
+- 지식 조회의 기본은 Task Context와 Ontology를 결합한 hybrid retrieval이다. 내부 MCP 호환 호출명은 사용자 기능이나 별도 단순 검색으로 노출하지 않는다.
+- 일반 질문도 Ontology와 semantic·lexical 근거를 함께 평가하고, graph 관계가 없을 때만 ACL 내 문서 근거로 대체한다.
 - SOP Task에서 실행하면 Task, SOP, Stage, Event, Action, 선행 결과, 필요 근거와 부족 근거가 함께 전달된다.
 - SOP가 없는 업무에는 존재하지 않는 SOP 맥락을 만들지 않는다.
 - Ontology provenance가 없으면 해당 관계를 사실 근거로 사용하지 않는다.
@@ -140,6 +146,8 @@ Action 실행 시 Langflow 호출 권한은 endpoint 소유자의 연결을 사�
 | 버전 불일치 | Langflow가 지원 범위 `>=1.11.0,<1.12.0`인지 확인한다. |
 | bundle 확인 실패 | 운영자에게 read-only custom component mount 상태를 요청한다. |
 | preview 실패 | 표시된 단계의 오류를 확인하고 `자동 준비`를 다시 실행한다. |
+| Component 연결 필요 | `boi.agent-slot.v1` 규약이면 자동 연결하고, 아니면 Langflow Canvas에서 포트를 직접 연결한다. |
+| Flow drift | live checksum이 달라진 Flow는 다시 전체 검증하기 전까지 Action 생성·실행이 차단된다. |
 
 # 공유하면 안 되는 값
 

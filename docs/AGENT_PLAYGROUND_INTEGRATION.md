@@ -100,19 +100,22 @@ endpoint API Key는 AES-GCM으로 암호화한다. 응답에는 `has_api_key`와
 `BOI_RUNTIME_ROOT/agent-playground/credentials.sqlite3`에 저장한다.
 
 - PAT: 원문 미저장, 만료 없음 기본, scope·역할 snapshot, 폐기·회전
-- run token: caller·Action·Flow·trace·scope·TTL 귀속, 트랜잭션으로 한 번만 소비
+- run token: caller·Action·deployment·endpoint·project·Flow·trace·execution ID·
+  capability·scope·TTL 귀속, 정상 실행 동안 여러 Wiki 호출 허용 후 종료 시 소비
 
 독립 `/api/v2/tokens`는 POST/GET/DELETE를 제공한다. `/mcp/v2` facade는 다음 네 도구만
 노출한다.
 
-- `boi_search`
+- `boi_search` (호환용 내부 이름, Task Context·Ontology-first hybrid retrieval)
 - `boi_get`
 - `boi_plan(capability_id=knowledge.draft)`
 - `boi_confirm`
 
-MCP는 bearer를 내부 BoI API로 전달하며 `employee_id`를 받지 않는다. 내부 Wiki adapter는
-main의 `accessible_docs`, `ontology_search_payload`, SOP/Task context와 `write_boi`를
-사용한다. preview는 변경하지 않고 `private_draft`만 caller 개인 Wiki에 저장한다.
+MCP는 bearer와 exact audience를 내부 BoI API로 전달하며 `employee_id`를 받지 않는다.
+내부 Wiki adapter는 main의 실제 `work_context_pack`, `ontology_search_payload`, typed
+workflow·responsibility·lineage·impact 관계와 `write_boi`를 사용한다. 공개 UX에는
+`boi_search`를 별도 단순 검색 기능으로 노출하지 않는다. graph가 없을 때만 ACL 내 문서를
+fallback으로 사용한다. preview는 변경하지 않고 `private_draft`만 caller 개인 Wiki에 저장한다.
 
 ## 기준 Flow와 실제 모델
 
@@ -142,11 +145,13 @@ Langflow 표준 variable/credential로 주입하며 Flow JSON과 bundle에는 �
 1. Agent Hub의 승인 Flow 또는 `.py` component를 선택한다.
 2. 사용자의 endpoint/API Key와 `boi-{employee_id}` project로 배포한다.
 3. Playground가 같은 endpoint/project의 public API에서 exact Flow ID를 다시 찾는다.
-4. source author, asset checksum, component 계약, runtime, Wiki/Ontology 근거를 검증한다.
-5. `action_ready`인 exact Flow만 Action draft로 연결한다.
+4. component가 미연결 노드인지 확인한다. `boi.agent-slot.v1`에 정확히 맞을 때만 공개
+   Flow PATCH API로 `agent_slot`을 교체하고, 이전 graph snapshot을 보관한다.
+5. source author, live checksum, component 실행 provenance, runtime, Wiki/Ontology 근거를 검증한다.
+6. `action_ready`인 exact Flow만 Action draft로 연결한다.
 
-검증에서는 `100001` 작성·승인 자산을 `100002`가 채택해 exact Flow
-`afb92757-dac4-4427-aa15-1adb21a09780`로 배포하고 Action draft까지 연결했다.
+component 배포, graph 연결, runtime 실행은 서로 다른 상태다. 미연결 component나 실행
+provenance가 없는 component는 `action_ready`가 될 수 없다.
 
 ## connector-neutral Action
 
@@ -162,32 +167,15 @@ Playground가 만든 draft만 선택한 exact Flow에 대한 Langflow binding을
 
 Action Gateway는 endpoint owner의 암호화된 Langflow API Key로 `/api/v1/run/{flow_id}`를
 호출한다. Wiki 조회·저장은 caller에 묶인 짧은 run token으로 수행하므로 공유 Action에서도
-배포자 권한으로 상승하지 않는다.
+배포자 권한으로 상승하지 않는다. Action은 기본 private이며, team scope는 등록자와 호출자의
+HCP team membership을 매 실행마다 확인한다. 팀 endpoint는 이번 범위에 없다.
 
-## 실제 완료 증거
+## 현재 감사 상태
 
-2026-07-26 standalone Playwright는 실제 Agent Hub UI, Langflow 화면, OIDC, BoI Wiki와
-Action UI로 다음을 완료했다.
-
-```text
-canonical:
-Agent Hub asset d345c5e7-c2b0-4116-aa00-d5e9bad143e5
-→ Flow 73ad7fff-c624-47af-9b57-56d3ab895336
-→ checksum 680fe5f4942ec8f8b8641d8d5b0a02cc81202352581961f132388326f8893f8d
-→ draft action-registration-20260726175415-c3aed475
-→ validate → publish-request → exact Action → 일반/SOP/private draft
-
-model Agent:
-Agent Hub asset 8ada6718-f852-4f15-9312-5f186d32d293
-→ Flow ec3bc2d9-3c27-424c-812c-98c1f25ae54e
-→ LM Studio Gemma 실제 추론
-→ exact Action → 일반/SOP/private draft
-```
-
-일반 실행은 source reference 6개와 Ontology 관계 40개를 반환했다. SOP 실행은
-Task/SOP/Stage/Event/Action/선행 결과/필요·부족 근거를 보존했다. preview는 Wiki를
-바꾸지 않고 private draft는 `100002`에게만 생성됐다. `100003` Action 실행은 403이다.
-최종 브라우저 runner의 unexpected HTTP/page/console 오류는 0건이다.
+`d85c44a6`에서 만든 기존 완료 감사와 handoff는 `superseded / not ready`다. HCP 즉시
+축소, run-token audience 오용, 실제 Task 복원, typed Ontology, component 실행 경로,
+live checksum drift, 다른 팀 호출자의 개인 초안 소유권을 포함한 새 Playwright E2E가
+모두 통과한 뒤에만 새 완료 증거를 기록한다.
 
 ## 회귀와 handoff
 
