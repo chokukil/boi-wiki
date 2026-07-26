@@ -92,11 +92,13 @@ async function visibleStepState() {
       return !element.hidden && style.display !== "none" && style.visibility !== "hidden";
     };
     const steps = [...document.querySelectorAll("[data-workbench-step]")];
+    const primaryActions = steps.filter(
+      (element) => visible(element) && element.classList.contains("active"),
+    ).length;
     return {
       steps: steps.length,
-      active_actions: steps.filter(
-        (element) => visible(element) && element.classList.contains("active"),
-      ).length,
+      primary_actions: primaryActions,
+      active_actions: primaryActions,
       next_action_count: [...document.querySelectorAll("[data-next-action] button.primary")]
         .filter(visible).length,
       active_step:
@@ -170,7 +172,7 @@ try {
     "desktop create-stage evidence must capture the create stage",
   );
   assert(
-    result.desktop.active_actions === 1,
+    result.desktop.primary_actions === 1,
     "desktop workbench must emphasize exactly one stage",
   );
   assert(
@@ -255,7 +257,7 @@ try {
   };
   assert(result.mobile.steps === 4, "mobile workbench must expose four stages");
   assert(
-    result.mobile.active_actions === 1,
+    result.mobile.primary_actions === 1,
     "mobile workbench must emphasize exactly one stage",
   );
   assert(
