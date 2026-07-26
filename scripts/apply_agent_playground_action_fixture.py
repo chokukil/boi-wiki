@@ -154,6 +154,13 @@ def apply_fixture(
         raise RuntimeError("Playground deployment is linked to a different Action draft")
     if str(deployment.get("status") or "") != "action_linked":
         raise RuntimeError("Playground deployment is not action_linked")
+    live_checksum = str(deployment.get("live_checksum") or "")
+    if str(deployment.get("checksum_state") or "") != "matched":
+        raise RuntimeError("Playground deployment live checksum is not verified")
+    if not CHECKSUM.fullmatch(live_checksum):
+        raise RuntimeError("Playground deployment live checksum is invalid")
+    if live_checksum != reference["artifact_checksum"]:
+        raise RuntimeError("Playground deployment live checksum has drifted")
 
     patch = draft.get("catalog_patch_proposal") if isinstance(draft.get("catalog_patch_proposal"), dict) else {}
     action_key = str(patch.get("action_key") or request.get("action_key") or "")
@@ -184,6 +191,14 @@ def apply_fixture(
         },
         "risk_level": str(request.get("risk_level") or "low"),
         "approval_required": bool(request.get("approval_required")),
+        "scope": str(request.get("scope") or draft.get("scope") or "private"),
+        "team_id": (
+            str(request.get("folder") or draft.get("folder") or "").split("/")[1]
+            if str(request.get("scope") or draft.get("scope") or "") == "team"
+            and len(str(request.get("folder") or draft.get("folder") or "").split("/")) >= 2
+            else ""
+        ),
+        "owner_employee_id": employee_id,
         "validation_provenance": {
             "draft_id": draft_id,
             "validated_by": str(validation.get("validated_by") or employee_id),

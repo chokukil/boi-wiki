@@ -110,6 +110,7 @@ from .agent_playground import (
     PlaygroundFlowTestRequest,
     PlaygroundFlowValidationRequest,
     PlaygroundHubAdoptionBeginRequest,
+    PlaygroundHubAdoptionComposeRequest,
     PlaygroundHubAdoptionConfirmRequest,
     PlaygroundRotateCredentialRequest,
     SECRET_PATTERNS as AGENT_PLAYGROUND_SECRET_PATTERNS,
@@ -3824,6 +3825,39 @@ def accessible_docs(employee_id: str) -> list[dict[str, Any]]:
     return docs
 
 
+def agent_playground_permission_excluded_count(query: str, employee_id: str) -> int:
+    """Count matching documents hidden by ACL without disclosing their identity."""
+    normalized_terms = {
+        term.casefold()
+        for term in re.findall(r"[\w가-힣-]{2,}", str(query or ""))
+        if term.casefold() not in {"wiki", "boi", "agent", "task", "sop"}
+    }
+    if not normalized_terms:
+        return 0
+    # Populate the shared parsed-document cache through the same public path used
+    # by search, then inspect only aggregate ACL outcomes. No hidden reference,
+    # title, snippet, or ontology edge leaves this function.
+    visible_docs = accessible_docs(employee_id)
+    visible_paths = {str(doc.get("path") or "") for doc in visible_docs}
+    excluded = 0
+    for doc in _DOCS_CACHE.get("docs") or []:
+        if not isinstance(doc, dict) or not feature_visible_doc(doc):
+            continue
+        if str(doc.get("path") or "") in visible_paths:
+            continue
+        metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+        searchable = " ".join(
+            [
+                str(metadata.get("title") or ""),
+                str(metadata.get("description") or ""),
+                str(doc.get("body") or ""),
+            ]
+        ).casefold()
+        if any(term in searchable for term in normalized_terms):
+            excluded += 1
+    return min(excluded, 999)
+
+
 def metadata_sort_value(value: Any) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
@@ -5650,14 +5684,11 @@ def identity_for_employee(employee_id: str) -> AuthIdentity:
 def credential_identity_for_employee(employee_id: str) -> AuthIdentity:
     """Resolve current credential authority without trusting a client identity field."""
 
-    cached = _IDENTITY_CACHE.get(employee_id)
-    if cached is not None:
-        return cached
     if auth_mode() == "dev":
         return dev_identity(employee_id)
     if not hcp_authorization_configured():
         raise AuthError(503, "HCP authorization is required for durable Playground credentials")
-    permissions = hcp_permissions(employee_id)
+    permissions = hcp_permissions(employee_id, force_refresh=True)
     return AuthIdentity(
         employee_id=employee_id,
         display_name=name_for_employee(employee_id),
@@ -7222,6 +7253,24 @@ def action_catalog_detail_payload(action_key: str, employee_id: str) -> dict[str
             },
         },
     }
+
+
+def action_catalog_item_visible(action: dict[str, Any], identity: AuthIdentity) -> bool:
+    scope = str(action.get("scope") or "public")
+    if identity.is_admin:
+        return True
+    if scope == "private":
+        return str(
+            action.get("owner_employee_id")
+            or action.get("employee_id")
+            or ""
+        ) == identity.employee_id
+    if scope == "team":
+        return bool(
+            str(action.get("team_id") or "")
+            and str(action.get("team_id") or "") in identity.teams
+        )
+    return True
 
 
 def target_dir_for(metadata: dict[str, Any]) -> Path:
@@ -32427,11 +32476,15 @@ async def actions_page(
 @app.get("/api/actions/catalog/{action_key:path}")
 async def api_action_catalog_detail(
     action_key: str,
-    employee_id: str = Depends(current_employee),
+    identity: AuthIdentity = Depends(current_identity),
 ) -> dict[str, Any]:
+    decoded = unquote(action_key)
+    raw_action = action_catalog_by_key().get(decoded)
+    if raw_action is None or not action_catalog_item_visible(raw_action, identity):
+        raise HTTPException(status_code=404, detail="Action을 찾을 수 없습니다.")
     return {
         "ok": True,
-        "action": action_catalog_detail_payload(unquote(action_key), employee_id),
+        "action": action_catalog_detail_payload(decoded, identity.employee_id),
     }
 
 
@@ -32439,9 +32492,13 @@ async def api_action_catalog_detail(
 async def api_action_catalog_preview(
     action_key: str,
     request: Request,
-    employee_id: str = Depends(current_employee),
+    identity: AuthIdentity = Depends(current_identity),
 ) -> dict[str, Any]:
-    detail = action_catalog_detail_payload(unquote(action_key), employee_id)
+    decoded = unquote(action_key)
+    raw_action = action_catalog_by_key().get(decoded)
+    if raw_action is None or not action_catalog_item_visible(raw_action, identity):
+        raise HTTPException(status_code=404, detail="Action을 찾을 수 없습니다.")
+    detail = action_catalog_detail_payload(decoded, identity.employee_id)
     raw = await request.json()
     payload = (
         raw.get("payload")
@@ -32575,8 +32632,15 @@ async def workflow_definitions_page(
 
 
 @app.get("/api/actions/catalog")
-async def api_action_catalog(event_type: str = "") -> dict[str, Any]:
-    actions = load_action_catalog()
+async def api_action_catalog(
+    event_type: str = "",
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    actions = [
+        action
+        for action in load_action_catalog()
+        if action_catalog_item_visible(action, identity)
+    ]
     if event_type:
         actions = [a for a in actions if event_type in (a.get("event_types") or [])]
     return {"count": len(actions), "items": actions}
@@ -32616,8 +32680,23 @@ async def api_action_logs(
     )
 
 
-async def invoke_action_gateway(req: ActionInvokeRequest, employee_id: str) -> dict[str, Any]:
-    require_employee_role(employee_id, "boi.action_invoker")
+async def invoke_action_gateway(
+    req: ActionInvokeRequest,
+    employee_id: str,
+    identity: AuthIdentity | None = None,
+) -> dict[str, Any]:
+    try:
+        # Session identity may be intentionally cached for screen rendering.
+        # Every Action start re-resolves the durable identity so HCP role
+        # reductions and account deactivation take effect immediately.
+        current = credential_identity_for_employee(employee_id)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if not (current.is_admin or "boi.action_invoker" in current.roles):
+        raise HTTPException(status_code=403, detail="required role: boi.action_invoker")
+    action = action_catalog_by_key().get(req.action_key)
+    if action is None or not action_catalog_item_visible(action, current):
+        raise HTTPException(status_code=404, detail="Action을 찾을 수 없습니다.")
     require_employee_binding_or_admin_override(
         employee_id,
         req.employee_id,
@@ -32626,7 +32705,7 @@ async def invoke_action_gateway(req: ActionInvokeRequest, employee_id: str) -> d
         reason=req.admin_override_reason,
     )
     payload = req.model_dump(exclude={"admin_override_reason"})
-    payload["employee_id"] = req.employee_id if req.employee_id and "boi.admin" in roles_for(employee_id) else employee_id
+    payload["employee_id"] = req.employee_id if req.employee_id and current.is_admin else employee_id
     async with httpx.AsyncClient(timeout=ACTION_INVOKE_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             f"{ACTION_GATEWAY_URL.rstrip('/')}/api/actions/invoke",
@@ -32643,8 +32722,11 @@ async def invoke_action_gateway(req: ActionInvokeRequest, employee_id: str) -> d
 
 
 @app.post("/api/actions/invoke")
-async def api_action_invoke(req: ActionInvokeRequest, employee_id: str = Depends(current_employee)) -> dict[str, Any]:
-    return await invoke_action_gateway(req, employee_id)
+async def api_action_invoke(
+    req: ActionInvokeRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return await invoke_action_gateway(req, identity.employee_id, identity)
 
 
 @app.get("/api/users")
@@ -32699,18 +32781,58 @@ def api_agent_playground_token_delete(
     }
 
 
-def agent_playground_bearer_authentication(authorization: str | None) -> Any:
+def agent_playground_request_audience(
+    x_boi_action_key: str = Header(default="", alias="X-BOI-Action-Key"),
+    x_boi_deployment_id: str = Header(default="", alias="X-BOI-Deployment-ID"),
+    x_boi_endpoint_id: str = Header(default="", alias="X-BOI-Endpoint-ID"),
+    x_boi_project_id: str = Header(default="", alias="X-BOI-Project-ID"),
+    x_boi_flow_id: str = Header(default="", alias="X-BOI-Flow-ID"),
+    x_boi_trace_id: str = Header(default="", alias="X-BOI-Trace-ID"),
+    x_boi_execution_id: str = Header(default="", alias="X-BOI-Execution-ID"),
+) -> dict[str, str]:
+    return {
+        "action_key": x_boi_action_key,
+        "deployment_id": x_boi_deployment_id,
+        "endpoint_id": x_boi_endpoint_id,
+        "project_id": x_boi_project_id,
+        "flow_id": x_boi_flow_id,
+        "trace_id": x_boi_trace_id,
+        "execution_id": x_boi_execution_id,
+    }
+
+
+def agent_playground_bearer_authentication(
+    authorization: str | None,
+    *,
+    audience: dict[str, str] | None = None,
+    capability: str = "",
+) -> Any:
     scheme, _, raw_token = str(authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not raw_token.strip():
         raise HTTPException(status_code=401, detail="BoI PAT or Action run token is required")
     token = raw_token.strip()
-    authentication = (
-        AGENT_PLAYGROUND_CREDENTIALS.authenticate_run_token(token)
-        if token.startswith("boi_run_")
-        else AGENT_PLAYGROUND_CREDENTIALS.authenticate(token)
-    )
+    try:
+        authentication = (
+            AGENT_PLAYGROUND_CREDENTIALS.authenticate_run_token(token)
+            if token.startswith("boi_run_")
+            else AGENT_PLAYGROUND_CREDENTIALS.authenticate(token)
+        )
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if authentication is None:
         raise HTTPException(status_code=401, detail="invalid, expired, revoked, or consumed credential")
+    if authentication.kind == "run_token":
+        supplied = audience or {}
+        authentication.require_audience(
+            action_key=str(supplied.get("action_key") or ""),
+            deployment_id=str(supplied.get("deployment_id") or ""),
+            endpoint_id=str(supplied.get("endpoint_id") or ""),
+            project_id=str(supplied.get("project_id") or ""),
+            flow_id=str(supplied.get("flow_id") or ""),
+            trace_id=str(supplied.get("trace_id") or ""),
+            execution_id=str(supplied.get("execution_id") or ""),
+            capability=capability,
+        )
     return authentication
 
 
@@ -32745,6 +32867,306 @@ def agent_playground_public_evidence(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def agent_playground_typed_relationships(
+    employee_id: str,
+    *,
+    source_ref: str,
+    view: str,
+    limit: int,
+) -> dict[str, Any]:
+    if view not in {"workflow", "responsibility", "lineage", "impact"}:
+        return {"nodes": [], "edges": [], "resolved_source_id": source_ref}
+    task_context: dict[str, Any] = {}
+    if source_ref.startswith(("task:", "act-")):
+        try:
+            task_context = work_context_pack(
+                employee_id,
+                task_id=source_ref,
+                narrative_async_generate=False,
+            )
+        except HTTPException:
+            task_context = {}
+    task = task_context.get("task") if isinstance(task_context.get("task"), dict) else {}
+    stage = (
+        task_context.get("sop_stage")
+        if isinstance(task_context.get("sop_stage"), dict)
+        else {}
+    )
+    event_type = str(task.get("event_type") or "")
+    definition = workflow_definition_for_event_type(event_type) if event_type else None
+    if definition is None:
+        normalized_source = source_ref.strip("/")
+        for candidate in load_workflow_definition_catalog():
+            candidate_refs = {
+                str(candidate.get("workflow_definition_key") or ""),
+                str(candidate.get("workflow_key") or ""),
+                str(candidate.get("primary_sop_ref") or ""),
+                *normalize_registry_list(candidate.get("sop_refs")),
+            }
+            if source_ref in candidate_refs or normalized_source in {
+                value.strip("/") for value in candidate_refs if value
+            }:
+                definition = candidate
+                break
+    if definition is None:
+        return {"nodes": [], "edges": [], "resolved_source_id": source_ref}
+
+    workflow_key = str(
+        definition.get("workflow_definition_key")
+        or definition.get("workflow_key")
+        or "workflow"
+    )
+    workflow_node = f"workflow:{workflow_key}"
+    nodes: dict[str, dict[str, Any]] = {
+        workflow_node: {
+            "concept_id": workflow_node,
+            "title": str(definition.get("title") or workflow_key),
+            "kind": "workflow",
+        }
+    }
+    edges: list[dict[str, Any]] = []
+
+    def add_edge(
+        source: str,
+        target: str,
+        relation: str,
+        *,
+        provenance: str,
+        source_refs: list[str],
+        source_title: str = "",
+        target_title: str = "",
+        source_kind: str = "",
+        target_kind: str = "",
+    ) -> None:
+        if len(edges) >= max(1, min(limit, 300)):
+            return
+        nodes.setdefault(
+            source,
+            {
+                "concept_id": source,
+                "title": source_title or source,
+                "kind": source_kind or source.split(":", 1)[0],
+            },
+        )
+        nodes.setdefault(
+            target,
+            {
+                "concept_id": target,
+                "title": target_title or target,
+                "kind": target_kind or target.split(":", 1)[0],
+            },
+        )
+        refs = list(dict.fromkeys(str(item) for item in source_refs if str(item).strip()))
+        if not provenance or not refs:
+            return
+        edges.append(
+            {
+                "edge_id": hashlib.sha256(
+                    f"{source}|{relation}|{target}|{provenance}".encode("utf-8")
+                ).hexdigest()[:24],
+                "source_id": source,
+                "target_id": target,
+                "relation": relation,
+                "user_label": relation,
+                "payload": {
+                    "provenance": provenance,
+                    "source_refs": refs,
+                    "metadata": {
+                        "registry_key": workflow_key,
+                        "view": view,
+                    },
+                },
+            }
+        )
+
+    workflow_ref = f"workflow-registry:{workflow_key}"
+    stages = [
+        item
+        for item in definition.get("stage_display") or []
+        if isinstance(item, dict)
+    ]
+    contracts = [
+        item
+        for item in definition.get("event_contracts") or []
+        if isinstance(item, dict)
+    ]
+    actions = action_catalog_by_key()
+
+    if view == "workflow":
+        for stage_item in stages:
+            stage_id = str(stage_item.get("stage_id") or "")
+            if not stage_id:
+                continue
+            stage_node = f"stage:{workflow_key}:{stage_id}"
+            add_edge(
+                workflow_node,
+                stage_node,
+                "has_stage",
+                provenance=workflow_ref,
+                source_refs=[workflow_ref, str(definition.get("primary_sop_ref") or "")],
+                target_title=str(stage_item.get("label") or stage_id),
+                target_kind="stage",
+            )
+        for contract in contracts:
+            contract_event = str(contract.get("event_type") or "")
+            if not contract_event:
+                continue
+            event = get_event_type(contract_event) or {}
+            stage_id = str(
+                contract.get("sop_stage_id")
+                or event.get("sop_stage_id")
+                or ""
+            )
+            source = f"stage:{workflow_key}:{stage_id}" if stage_id else workflow_node
+            event_node = f"event:{contract_event}"
+            add_edge(
+                source,
+                event_node,
+                "receives_event",
+                provenance=f"event-catalog:{contract_event}",
+                source_refs=[workflow_ref, f"event-catalog:{contract_event}"],
+                target_title=str(event.get("name_ko") or contract_event),
+                target_kind="event",
+            )
+            for action_key_value in normalize_registry_list(event.get("recommended_actions")):
+                action = actions.get(action_key_value) or {}
+                add_edge(
+                    event_node,
+                    f"action:{action_key_value}",
+                    "routes_to_action",
+                    provenance=f"event-catalog:{contract_event}",
+                    source_refs=[
+                        f"event-catalog:{contract_event}",
+                        f"action-catalog:{action_key_value}",
+                    ],
+                    target_title=str(action.get("name_ko") or action_key_value),
+                    target_kind="action",
+                )
+    elif view == "responsibility":
+        for action_key_value in normalize_registry_list(definition.get("action_refs")):
+            action = actions.get(action_key_value) or {}
+            action_node = f"action:{action_key_value}"
+            owner = str(action.get("owner") or definition.get("owner") or "").strip()
+            if owner:
+                add_edge(
+                    action_node,
+                    f"owner:{owner}",
+                    "owned_by",
+                    provenance=f"action-catalog:{action_key_value}",
+                    source_refs=[f"action-catalog:{action_key_value}"],
+                    source_title=str(action.get("name_ko") or action_key_value),
+                    target_title=owner,
+                    source_kind="action",
+                    target_kind="responsibility",
+                )
+        policy = (
+            definition.get("rbac_policy")
+            if isinstance(definition.get("rbac_policy"), dict)
+            else {}
+        )
+        for policy_key, relation in {
+            "read_role": "requires_read_role",
+            "run_role": "requires_run_role",
+            "invoke_role": "requires_invoke_role",
+        }.items():
+            role = str(policy.get(policy_key) or "")
+            if role:
+                add_edge(
+                    workflow_node,
+                    f"role:{role}",
+                    relation,
+                    provenance=workflow_ref,
+                    source_refs=[workflow_ref],
+                    target_title=role,
+                    target_kind="role",
+                )
+    elif view == "lineage":
+        trace = (
+            task_context.get("trace_context")
+            if isinstance(task_context.get("trace_context"), dict)
+            else {}
+        )
+        ordered: list[tuple[str, str, str]] = []
+        for item in trace.get("events") or []:
+            if isinstance(item, dict) and item.get("event_id"):
+                ordered.append(
+                    (
+                        str(item.get("logged_at") or ""),
+                        f"event-instance:{item['event_id']}",
+                        f"event-log:{item['event_id']}",
+                    )
+                )
+        for item in trace.get("actions") or []:
+            if isinstance(item, dict) and item.get("request_id"):
+                ordered.append(
+                    (
+                        str(item.get("logged_at") or ""),
+                        f"action-instance:{item['request_id']}",
+                        f"action-log:{item['request_id']}",
+                    )
+                )
+        for item in trace.get("generated_bois") or []:
+            if isinstance(item, dict) and item.get("boi_id"):
+                ordered.append(
+                    (
+                        str(item.get("timestamp") or ""),
+                        f"boi:{item['boi_id']}",
+                        str(item["boi_id"]),
+                    )
+                )
+        ordered.sort()
+        for previous, current in zip(ordered, ordered[1:]):
+            add_edge(
+                previous[1],
+                current[1],
+                "precedes",
+                provenance=previous[2],
+                source_refs=[previous[2], current[2]],
+            )
+    elif view == "impact":
+        emitted = normalize_registry_list(definition.get("emitted_events"))
+        for emitted_event in emitted:
+            add_edge(
+                workflow_node,
+                f"event:{emitted_event}",
+                "may_emit",
+                provenance=workflow_ref,
+                source_refs=[workflow_ref, f"event-catalog:{emitted_event}"],
+                target_title=event_label(emitted_event),
+                target_kind="event",
+            )
+        for output in normalize_registry_list(definition.get("work_boi_outputs")):
+            add_edge(
+                workflow_node,
+                f"boi-output:{output}",
+                "produces_boi",
+                provenance=workflow_ref,
+                source_refs=[workflow_ref],
+                target_title=output,
+                target_kind="boi_output",
+            )
+        for action_key_value in normalize_registry_list(definition.get("action_refs")):
+            action = actions.get(action_key_value) or {}
+            doc_ref = str(action.get("doc_ref") or "")
+            if doc_ref:
+                add_edge(
+                    f"action:{action_key_value}",
+                    f"document:{doc_ref}",
+                    "updates_or_uses_document",
+                    provenance=f"action-catalog:{action_key_value}",
+                    source_refs=[f"action-catalog:{action_key_value}", doc_ref],
+                    source_title=str(action.get("name_ko") or action_key_value),
+                    target_title=doc_ref,
+                    source_kind="action",
+                    target_kind="document",
+                )
+    return {
+        "resolved_source_id": workflow_node,
+        "nodes": list(nodes.values())[: max(1, min(limit, 300))],
+        "edges": edges,
+    }
+
+
 def agent_playground_graph_payload(
     employee_id: str,
     *,
@@ -32753,6 +33175,22 @@ def agent_playground_graph_payload(
     depth: int,
     limit: int,
 ) -> dict[str, Any]:
+    typed = agent_playground_typed_relationships(
+        employee_id,
+        source_ref=source_ref,
+        view=view,
+        limit=limit,
+    )
+    if typed.get("edges"):
+        return {
+            "ok": True,
+            "view": view,
+            "source_ref": source_ref,
+            "resolved_source_id": typed.get("resolved_source_id") or source_ref,
+            "nodes": typed.get("nodes") or [],
+            "edges": typed.get("edges") or [],
+            "ontology_status": "grounded_typed_relationships",
+        }
     docs = accessible_docs(employee_id)
     graph = okf_graph_for_docs(docs, employee_id)
     requested_seed = str(source_ref or "").strip()
@@ -32831,7 +33269,11 @@ def agent_playground_graph_payload(
         "resolved_source_id": seed,
         "nodes": nodes,
         "edges": edges,
-        "ontology_status": "grounded" if edges else "document_fallback",
+        "ontology_status": (
+            "grounded_document_relationships"
+            if edges
+            else "grounded_document_fallback"
+        ),
     }
 
 
@@ -32843,17 +33285,52 @@ def internal_agent_playground_wiki_search(
     target_ref: str = Query(default="", max_length=1000),
     page_ref: str = Query(default="", max_length=1000),
     task_ref: str = Query(default="", max_length=1000),
+    trace_id: str = Query(default="", max_length=1000),
+    event_id: str = Query(default="", max_length=1000),
+    action_key: str = Query(default="", max_length=1000),
     limit: int = Query(default=8, ge=1, le=300),
     depth: int = Query(default=2, ge=1, le=6),
     authorization: str | None = Header(default=None),
+    audience: dict[str, str] = Depends(agent_playground_request_audience),
     _: None = Depends(require_service_token),
 ) -> dict[str, Any]:
-    authentication = agent_playground_bearer_authentication(authorization)
+    authentication = agent_playground_bearer_authentication(
+        authorization,
+        audience=audience,
+        capability="boi.search",
+    )
     authentication.require_scope("boi.read")
+    context_pack: dict[str, Any] = {}
+    resolved_task_ref = task_ref
+    if task_ref and not task_ref.startswith("task:"):
+        resolved_task_ref = resolve_agent_inbox_task_ref(
+            authentication.identity.employee_id,
+            task_ref,
+        )
+    # An Action execution always has a trace, but a trace alone is not a Task
+    # anchor. Only an ACL-checked Task reference may activate Task/SOP context;
+    # otherwise ordinary Wiki questions must stay in knowledge_lookup.
+    if task_ref:
+        context_pack = work_context_pack(
+            authentication.identity.employee_id,
+            task_id=resolved_task_ref,
+            trace_id=trace_id,
+            event_id=event_id,
+            action_key=action_key,
+            current_url=page_ref,
+            narrative_async_generate=False,
+        )
+        resolved_task = (
+            context_pack.get("task")
+            if isinstance(context_pack.get("task"), dict)
+            else {}
+        )
+        if task_ref and not str(resolved_task.get("task_id") or ""):
+            raise HTTPException(status_code=404, detail="Task anchor is not accessible")
     if view != "ranked":
         return agent_playground_graph_payload(
             authentication.identity.employee_id,
-            source_ref=source_ref or target_ref or task_ref or page_ref,
+            source_ref=source_ref or target_ref or resolved_task_ref or page_ref,
             view=view,
             depth=depth,
             limit=limit,
@@ -32873,15 +33350,55 @@ def internal_agent_playground_wiki_search(
         for item in ontology.get("best_matches") or []
         if isinstance(item, dict)
     ]
+    resolved_task = (
+        context_pack.get("task")
+        if isinstance(context_pack.get("task"), dict)
+        else {}
+    )
+    resolved_stage = (
+        context_pack.get("sop_stage")
+        if isinstance(context_pack.get("sop_stage"), dict)
+        else {}
+    )
+    if resolved_task:
+        context_profile = (
+            "sop_task_execution"
+            if any(
+                str(resolved_stage.get(key) or "")
+                for key in ("sop_ref", "sop_stage_id", "workflow_definition_key")
+            )
+            else "task_execution"
+        )
+    elif page_ref:
+        context_profile = "wiki_context"
+    else:
+        context_profile = "knowledge_lookup"
+    if context_pack:
+        context_pack = {
+            **context_pack,
+            "context_profile": context_profile,
+        }
+    permission_excluded_count = agent_playground_permission_excluded_count(
+        q,
+        authentication.identity.employee_id,
+    )
     return {
         "ok": True,
         "query": q,
+        "retrieval_strategy": (
+            "task_context_ontology_hybrid"
+            if context_pack
+            else "ontology_hybrid"
+        ),
         "items": items[:limit],
         "count": min(len(items), limit),
         "ontology_terms": ontology.get("used_dictionary_terms") or [],
         "task_ref": task_ref,
         "page_ref": page_ref,
-        "excluded_count": 0,
+        "context_profile": context_profile,
+        "context_pack": context_pack,
+        "permission_excluded_count": permission_excluded_count,
+        "excluded_count": permission_excluded_count,
         "grounding_status": "grounded" if items else "no_accessible_evidence",
     }
 
@@ -32890,9 +33407,14 @@ def internal_agent_playground_wiki_search(
 def internal_agent_playground_wiki_get(
     ref: str = Query(min_length=1, max_length=1000),
     authorization: str | None = Header(default=None),
+    audience: dict[str, str] = Depends(agent_playground_request_audience),
     _: None = Depends(require_service_token),
 ) -> dict[str, Any]:
-    authentication = agent_playground_bearer_authentication(authorization)
+    authentication = agent_playground_bearer_authentication(
+        authorization,
+        audience=audience,
+        capability="boi.get",
+    )
     authentication.require_scope("boi.read")
     employee_id = authentication.identity.employee_id
     doc = find_doc_by_id(ref, employee_id)
@@ -32958,9 +33480,14 @@ def write_agent_playground_json(path: Path, payload: dict[str, Any]) -> None:
 def internal_agent_playground_wiki_plan(
     req: AgentPlaygroundWikiPlanRequest,
     authorization: str | None = Header(default=None),
+    audience: dict[str, str] = Depends(agent_playground_request_audience),
     _: None = Depends(require_service_token),
 ) -> dict[str, Any]:
-    authentication = agent_playground_bearer_authentication(authorization)
+    authentication = agent_playground_bearer_authentication(
+        authorization,
+        audience=audience,
+        capability="knowledge.draft",
+    )
     authentication.require_scope("boi.draft")
     if req.capability_id != "knowledge.draft":
         raise HTTPException(status_code=422, detail="only knowledge.draft is supported")
@@ -32993,9 +33520,14 @@ def internal_agent_playground_wiki_confirm(
     plan_id: str,
     req: AgentPlaygroundWikiConfirmRequest,
     authorization: str | None = Header(default=None),
+    audience: dict[str, str] = Depends(agent_playground_request_audience),
     _: None = Depends(require_service_token),
 ) -> dict[str, Any]:
-    authentication = agent_playground_bearer_authentication(authorization)
+    authentication = agent_playground_bearer_authentication(
+        authorization,
+        audience=audience,
+        capability="knowledge.draft",
+    )
     authentication.require_scope("boi.draft")
     path = agent_playground_wiki_plan_path(plan_id)
     if not path.exists():
@@ -33193,6 +33725,15 @@ def api_agent_playground_agent_hub_adoption_confirm(
     return AGENT_PLAYGROUND_SERVICE.confirm_hub_adoption(identity, adoption_id, req)
 
 
+@app.post("/api/agent-playground/agent-hub/adoptions/{adoption_id}/compose")
+def api_agent_playground_agent_hub_adoption_compose(
+    adoption_id: str,
+    req: PlaygroundHubAdoptionComposeRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.compose_hub_adoption(identity, adoption_id, req)
+
+
 @app.post("/api/agent-playground/bootstrap")
 def api_agent_playground_bootstrap(
     req: PlaygroundBootstrapRequest,
@@ -33260,12 +33801,24 @@ def api_agent_playground_deployment_detail(
     }
 
 
+class AgentPlaygroundActionDraftRequest(BaseModel):
+    scope: Literal["private", "team"] = "private"
+    team_id: str = Field(default="", max_length=200)
+
+
 @app.post("/api/agent-playground/deployments/{deployment_id}/action-draft")
 def api_agent_playground_action_draft(
     deployment_id: str,
+    req: AgentPlaygroundActionDraftRequest | None = None,
     identity: AuthIdentity = Depends(current_identity),
 ) -> dict[str, Any]:
-    payload = AGENT_PLAYGROUND_SERVICE.action_draft_payload(identity, deployment_id)
+    action_request = req or AgentPlaygroundActionDraftRequest()
+    payload = AGENT_PLAYGROUND_SERVICE.action_draft_payload(
+        identity,
+        deployment_id,
+        scope=action_request.scope,
+        team_id=action_request.team_id,
+    )
     draft = create_registration_draft(RegistrationDraftRequest(**payload), identity.employee_id)
     AGENT_PLAYGROUND_SERVICE.record_action_draft(identity, deployment_id, draft)
     connector = payload.get("connector_config") if isinstance(payload.get("connector_config"), dict) else {}
@@ -33298,8 +33851,40 @@ class AgentPlaygroundExecutionRequest(BaseModel):
     deployment_id: str = Field(min_length=1, max_length=500)
     flow_id: str = Field(min_length=1, max_length=500)
     trace_id: str = Field(min_length=1, max_length=500)
+    execution_id: str = Field(min_length=1, max_length=500)
+    task_anchor: dict[str, Any] = Field(default_factory=dict)
     save_mode: Literal["preview", "private_draft"] = "preview"
     body: dict[str, Any] = Field(default_factory=dict)
+
+
+def agent_playground_execution_input(
+    body: dict[str, Any],
+    *,
+    trace_id: str,
+    execution_id: str,
+    task_anchor: dict[str, Any],
+) -> str:
+    raw_input = str(body.get("input_value") or "")
+    parsed_input: dict[str, Any] = {}
+    if raw_input.lstrip().startswith("{"):
+        try:
+            candidate = json.loads(raw_input)
+        except json.JSONDecodeError:
+            candidate = None
+        if isinstance(candidate, dict):
+            parsed_input = candidate
+    if not parsed_input:
+        parsed_input = {"question": raw_input}
+    return json.dumps(
+        {
+            **parsed_input,
+            "trace_id": trace_id,
+            "execution_id": execution_id,
+            "task_anchor": task_anchor,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
 
 
 @app.post("/internal/agent-playground/langflow-executions")
@@ -33307,19 +33892,43 @@ async def internal_agent_playground_langflow_execution(
     req: AgentPlaygroundExecutionRequest,
     _: None = Depends(require_service_token),
 ) -> dict[str, Any]:
-    identity = identity_for_employee(req.caller_employee_id)
+    try:
+        identity = credential_identity_for_employee(req.caller_employee_id)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not (identity.is_admin or "boi.action_invoker" in identity.roles):
         raise HTTPException(status_code=403, detail="boi.action_invoker is required")
-    connection = AGENT_PLAYGROUND_SERVICE.execution_connection(req.deployment_id, req.flow_id)
+    connection = AGENT_PLAYGROUND_SERVICE.execution_connection(
+        req.deployment_id,
+        req.flow_id,
+        action_key=req.action_key,
+    )
     scopes = ["boi.read", "boi.draft"] if req.save_mode == "private_draft" else ["boi.read"]
+    capabilities = ["boi.search", "boi.get"]
+    if req.save_mode == "private_draft":
+        capabilities.append("knowledge.draft")
     run_token = AGENT_PLAYGROUND_CREDENTIALS.create_run_token(
         identity,
         action_key=req.action_key,
+        deployment_id=req.deployment_id,
+        endpoint_id=connection["endpoint_id"],
+        project_id=connection["project_id"],
         flow_id=req.flow_id,
         trace_id=req.trace_id,
+        execution_id=req.execution_id,
+        allowed_capabilities=capabilities,
         scopes=scopes,
         ttl_seconds=180,
     )
+    audience_headers = {
+        "X-LANGFLOW-GLOBAL-VAR-BOI_ACTION_KEY": req.action_key,
+        "X-LANGFLOW-GLOBAL-VAR-BOI_DEPLOYMENT_ID": req.deployment_id,
+        "X-LANGFLOW-GLOBAL-VAR-BOI_ENDPOINT_ID": connection["endpoint_id"],
+        "X-LANGFLOW-GLOBAL-VAR-BOI_PROJECT_ID": connection["project_id"],
+        "X-LANGFLOW-GLOBAL-VAR-BOI_FLOW_ID": req.flow_id,
+        "X-LANGFLOW-GLOBAL-VAR-BOI_TRACE_ID": req.trace_id,
+        "X-LANGFLOW-GLOBAL-VAR-BOI_EXECUTION_ID": req.execution_id,
+    }
     try:
         try:
             async with httpx.AsyncClient(timeout=180) as client:
@@ -33329,8 +33938,17 @@ async def internal_agent_playground_langflow_execution(
                         "Content-Type": "application/json",
                         "x-api-key": connection["api_key"],
                         "X-LANGFLOW-GLOBAL-VAR-BOI_RUN_TOKEN": str(run_token["token"]),
+                        **audience_headers,
                     },
-                    json=req.body,
+                    json={
+                        **req.body,
+                        "input_value": agent_playground_execution_input(
+                            req.body,
+                            trace_id=req.trace_id,
+                            execution_id=req.execution_id,
+                            task_anchor=req.task_anchor,
+                        ),
+                    },
                 )
         except httpx.HTTPError as exc:
             raise HTTPException(
@@ -33349,6 +33967,9 @@ async def internal_agent_playground_langflow_execution(
             "status_code": response.status_code,
             "deployment_id": req.deployment_id,
             "flow_id": req.flow_id,
+            "execution_id": req.execution_id,
+            "registered_checksum": connection["registered_checksum"],
+            "live_checksum": connection["live_checksum"],
             "body": response_body,
         }
     finally:

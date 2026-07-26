@@ -227,6 +227,9 @@ def test_agent_playground_facades_keep_identity_and_secrets_out_of_canvas_inputs
     assert 'name = "BoIWikiKnowledge"' in knowledge
     assert '"boi_search"' in knowledge
     assert '"boi_get"' in knowledge
+    assert "resolved_task_seed" in knowledge
+    assert '"task_ref": task_ref or str(resolved_task.get("task_id") or "")' in knowledge
+    assert '"resolved_task_id": str(resolved_task.get("task_id") or "")' in knowledge
     assert "unwrap_secret_value" in knowledge
     assert 'name = "BoIWikiSave"' in save
     assert '"boi_plan"' in save

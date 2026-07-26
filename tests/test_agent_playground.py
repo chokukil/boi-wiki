@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import json
@@ -22,6 +23,7 @@ from boi_api.app.agent_playground import (
     PlaygroundFlowTestRequest,
     PlaygroundFlowValidationRequest,
     PlaygroundHubAdoptionBeginRequest,
+    PlaygroundHubAdoptionComposeRequest,
     PlaygroundHubAdoptionConfirmRequest,
     SecretCipher,
     normalize_langflow_endpoint,
@@ -187,6 +189,37 @@ def test_other_authors_approved_agent_hub_flow_and_components_are_adopted_by_exa
             "tags": ["custom"],
             "is_standard": False,
             "status": "approved",
+            "component_contract": {
+                "schema_version": "boi.agent-slot.v1",
+                "inputs": ["agent_context"],
+                "outputs": ["agent_result"],
+            },
+            "author": {
+                "employee_id": "100001",
+                "name": "Other Author",
+                "team": "platform",
+                "org": "AIX",
+            },
+            "updated_at": "2026-07-26T00:00:00Z",
+        },
+        "33333333-3333-3333-3333-333333333333": {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "title": "Ambiguous Multi Port Tool",
+            "type": "py",
+            "description": "A component that must be connected manually",
+            "category": "tool",
+            "version": "1.0.0",
+            "min_langflow_ver": "1.11.0",
+            "max_langflow_ver": "1.11.9",
+            "tested_versions": ["1.11.0"],
+            "tags": ["custom"],
+            "is_standard": False,
+            "status": "approved",
+            "component_contract": {
+                "schema_version": "vendor.multi-port.v1",
+                "inputs": ["query", "context"],
+                "outputs": ["answer", "debug"],
+            },
             "author": {
                 "employee_id": "100001",
                 "name": "Other Author",
@@ -196,6 +229,7 @@ def test_other_authors_approved_agent_hub_flow_and_components_are_adopted_by_exa
             "updated_at": "2026-07-26T00:00:00Z",
         },
     }
+    patch_calls: list[str] = []
 
     def hub_request(path, *, params=None, expected=None):
         if path.startswith("/api/v1/components/"):
@@ -242,6 +276,12 @@ def test_other_authors_approved_agent_hub_flow_and_components_are_adopted_by_exa
         if path.startswith("/api/v1/flows/") and method == "GET":
             flow_id = path.rsplit("/", 1)[-1]
             return response(dict(next(item for item in flows if item["id"] == flow_id)))
+        if path.startswith("/api/v1/flows/") and method == "PATCH":
+            patch_calls.append(path)
+            flow_id = path.rsplit("/", 1)[-1]
+            target = next(item for item in flows if item["id"] == flow_id)
+            target.update(copy.deepcopy(kwargs["json"]))
+            return response(dict(target))
         raise AssertionError(f"unexpected Langflow call: {method} {path}")
 
     monkeypatch.setattr(service, "_agent_hub_request", hub_request)
@@ -268,22 +308,49 @@ def test_other_authors_approved_agent_hub_flow_and_components_are_adopted_by_exa
     assert started["snapshot"]["flow_ids"] == ["flow-existing"]
     assert {item["author"]["employee_id"] for item in started["source_assets"]} == {"100001"}
 
-    flows.append(
+    imported = json.loads(
+        (ROOT / "langflow" / "flows" / "boi_wiki_agent_loop.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    imported.update(
         {
             "id": "flow-imported-exact",
             "name": "Other Author Grounded Flow",
             "endpoint_name": "other-author-grounded-flow",
             "folder_id": project["id"],
+            "project_id": project["id"],
+        }
+    )
+    imported["data"]["nodes"].append(
+        {
+            "id": "OtherAuthorRichTool-flow-imported-exact",
+            "type": "genericNode",
             "data": {
-                "nodes": [
-                    "BoIWikiKnowledge",
-                    "OtherAuthorRichTool",
-                    "BoIWikiSave",
-                ],
-                "edges": [],
+                "type": "OtherAuthorRichTool",
+                "display_name": "Other Author Rich Tool",
+                "node": {
+                    "name": "OtherAuthorRichTool",
+                    "display_name": "Other Author Rich Tool",
+                    "metadata": {},
+                    "template": {
+                        "agent_context": {
+                            "name": "agent_context",
+                            "input_types": ["Data", "JSON"],
+                            "type": "other",
+                        }
+                    },
+                    "outputs": [
+                        {
+                            "name": "agent_result",
+                            "types": ["Data", "JSON"],
+                        }
+                    ],
+                },
             },
         }
     )
+    flows.append(imported)
     discovered = service.discover_hub_adoption(developer, started["adoption_id"])
     assert discovered["candidates"] == [
         {
@@ -308,6 +375,42 @@ def test_other_authors_approved_agent_hub_flow_and_components_are_adopted_by_exa
     assert deployment["validation_profile"] == "boi_knowledge_draft"
     assert {item["asset_id"] for item in deployment["source_assets"]} == set(assets)
     assert {item["author"]["employee_id"] for item in deployment["source_assets"]} == {"100001"}
+    before_compose = service._graph_health(imported)
+    assert "OtherAuthorRichTool-flow-imported-exact" in before_compose["disconnected_nodes"]
+
+    manual = service.compose_hub_adoption(
+        developer,
+        started["adoption_id"],
+        PlaygroundHubAdoptionComposeRequest(
+            flow_id="flow-imported-exact",
+            component_asset_id="33333333-3333-3333-3333-333333333333",
+            replace_agent_slot=True,
+        ),
+    )
+    assert manual["status"] == "manual_required"
+    assert manual["reason"] == "component_contract_incompatible"
+    assert manual["actual_contract"]["inputs"] == ["query", "context"]
+    assert patch_calls == []
+
+    composed = service.compose_hub_adoption(
+        developer,
+        started["adoption_id"],
+        PlaygroundHubAdoptionComposeRequest(
+            flow_id="flow-imported-exact",
+            component_asset_id="22222222-2222-2222-2222-222222222222",
+            replace_agent_slot=True,
+        ),
+    )
+    assert composed["status"] == "connected", composed
+    assert composed["previous_checksum"] != composed["live_checksum"]
+    assert composed["graph_health"]["end_to_end_reachable"] is True
+    assert composed["graph_health"]["connected_component_ids"] == [
+        "22222222-2222-2222-2222-222222222222"
+    ]
+    assert patch_calls == ["/api/v1/flows/flow-imported-exact"]
+    assert "BoIAgentSlot-boi-wiki-agent-loop" not in {
+        node["id"] for node in imported["data"]["nodes"]
+    }
 
     record = service._read("100002")
     stored = next(
@@ -1023,13 +1126,13 @@ def test_each_discovered_flow_is_validated_independently_and_incompatible_flow_i
                     "task_context": {
                         "profile": "sop_task_execution",
                         "task_ref": run_input.get("task_ref", ""),
-                        "sop_ref": run_input.get("sop_ref", ""),
-                        "sop_stage": run_input.get("sop_stage", ""),
-                        "event_ref": run_input.get("event_ref", ""),
-                        "action_ref": run_input.get("action_ref", ""),
-                        "prior_results": run_input.get("prior_results", []),
-                        "required_evidence": run_input.get("required_evidence", []),
-                        "missing_evidence": run_input.get("missing_evidence", []),
+                        "sop_ref": "boi:public:sop:equipment-abnormal-response",
+                        "sop_stage": "analyze",
+                        "event_ref": "evt:root-cause",
+                        "action_ref": "langflow.equipment.stage_analysis",
+                        "prior_results": [{"source_id": "action:trend"}],
+                        "required_evidence": ["trend_history", "raw_data"],
+                        "missing_evidence": ["raw_data"],
                     },
                 },
             )
@@ -1085,6 +1188,17 @@ def test_each_discovered_flow_is_validated_independently_and_incompatible_flow_i
                 deployment_ids[flow_id],
                 {"draft_id": "draft-canonical", "status": "draft"},
             )
+            revalidated = service.validate_flow(
+                developer,
+                flow_id,
+                PlaygroundFlowValidationRequest(
+                    endpoint_id=endpoint_id,
+                    project_id="project-100002",
+                    task_ref="task:test",
+                ),
+            )
+            assert revalidated["validation_status"] == "action_linked"
+            assert revalidated["ok"] is True
             service.test_flow(
                 developer,
                 flow_id,
@@ -1116,6 +1230,126 @@ def test_each_discovered_flow_is_validated_independently_and_incompatible_flow_i
     with pytest.raises(HTTPException) as denied:
         service.action_draft_payload(developer, deployment_ids["flow-incompatible"])
     assert denied.value.status_code == 409
+
+
+def test_live_flow_drift_merge_does_not_erase_concurrent_action_draft(tmp_path, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "dev")
+    monkeypatch.setenv("BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY", "test-playground-encryption")
+    developer = principal(
+        "100002",
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+    )
+    pats = PlaygroundCredentialService(
+        tmp_path / "runtime",
+        hash_secret="test-pat-secret",
+        identity_provider=lambda _employee_id: developer,
+    )
+    store = pats.store
+    service = AgentPlaygroundService(tmp_path / "runtime", ROOT, pats)
+    endpoint_id = "ep-race"
+    project_id = "project-race"
+    flow_id = "flow-race"
+    deployment_id = "hub-race"
+    service._write(
+        developer.employee_id,
+        {
+            "employee_id": developer.employee_id,
+            "endpoints": [
+                {
+                    "endpoint_id": endpoint_id,
+                    "name": "Race endpoint",
+                    "base_url": "http://langflow.example:7860",
+                    "endpoint": "http://langflow.example:7860",
+                    "api_key_encrypted": service.cipher.encrypt(
+                        "lf-key-race",
+                        owner=developer.employee_id,
+                    ),
+                    "api_key_fingerprint": "race",
+                    "status": "connected",
+                    "active": True,
+                }
+            ],
+            "default_endpoint_id": endpoint_id,
+            "flow_registry": [
+                {
+                    "endpoint_id": endpoint_id,
+                    "project_id": project_id,
+                    "flow_id": flow_id,
+                    "artifact_version": "1.1.0",
+                    "artifact_checksum": "registered-checksum",
+                    "validation_status": "action_ready",
+                    "deployment_id": deployment_id,
+                }
+            ],
+            "deployments": [
+                {
+                    "deployment_id": deployment_id,
+                    "endpoint_id": endpoint_id,
+                    "project_id": project_id,
+                    "flow_id": flow_id,
+                    "asset_version": "1.1.0",
+                    "artifact_checksum": "registered-checksum",
+                    "status": "action_ready",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "projects",
+        lambda *_args, **_kwargs: {
+            "projects": [{"id": project_id, "name": "boi-100002"}]
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "_flows",
+        lambda *_args, **_kwargs: [
+            {
+                "id": flow_id,
+                "name": "Race Flow",
+                "folder_id": project_id,
+            }
+        ],
+    )
+    draft_recorded = False
+
+    def live_flow_with_concurrent_draft(*_args, **_kwargs):
+        nonlocal draft_recorded
+        if not draft_recorded:
+            draft_recorded = True
+            service.record_action_draft(
+                developer,
+                deployment_id,
+                {"draft_id": "draft-written-during-live-read", "status": "draft"},
+            )
+        return {
+            "id": flow_id,
+            "name": "Race Flow",
+            "folder_id": project_id,
+            "data": {"nodes": [], "edges": []},
+        }
+
+    monkeypatch.setattr(service.langflow, "flow", live_flow_with_concurrent_draft)
+
+    response = service.flows(developer, endpoint_id, project_id)
+
+    assert response["flows"][0]["checksum_state"] == "drifted"
+    persisted = service._read(developer.employee_id)
+    deployment = next(
+        item
+        for item in persisted["deployments"]
+        if item["deployment_id"] == deployment_id
+    )
+    registry = next(
+        item
+        for item in persisted["flow_registry"]
+        if item["flow_id"] == flow_id
+    )
+    assert deployment["action_draft_id"] == "draft-written-during-live-read"
+    assert registry["action_draft_id"] == "draft-written-during-live-read"
+    assert deployment["status"] == "blocked"
+    assert registry["validation_status"] == "blocked"
 
 
 def test_model_runtime_contract_accepts_save_facade_nested_agent_provenance():
@@ -1268,6 +1502,31 @@ def test_generic_agent_hub_flow_uses_dynamic_action_contract(tmp_path, monkeypat
     assert draft["connector_binding"]["kind"] == "langflow"
     assert draft["connector_binding"]["execution_mode"] == "gateway"
     assert draft["risk_level"] == "medium"
+    team_draft = service.action_draft_payload(
+        developer,
+        deployment["deployment_id"],
+        scope="team",
+        team_id="platform",
+    )
+    assert team_draft["scope"] == "team"
+    assert team_draft["folder"] == "team/platform/action-drafts"
+    with pytest.raises(HTTPException) as wrong_team:
+        service.action_draft_payload(
+            developer,
+            deployment["deployment_id"],
+            scope="team",
+            team_id="aix-tf",
+        )
+    assert wrong_team.value.status_code == 403
+
+    flow["description"] = "Drift after Action registration"
+    with pytest.raises(HTTPException) as drifted:
+        service.action_draft_payload(developer, deployment["deployment_id"])
+    assert drifted.value.status_code == 409
+    assert drifted.value.detail["code"] == "flow_checksum_drift"
+    stored_after_drift = service.deployment(developer, deployment["deployment_id"])
+    assert stored_after_drift["status"] == "blocked"
+    assert stored_after_drift["checksum_state"] == "drifted"
     assert draft["approval_required"] is True
     assert "save_mode" not in draft["input_schema"]
 

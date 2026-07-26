@@ -23,12 +23,28 @@ _request_bearer: contextvars.ContextVar[str] = contextvars.ContextVar(
     "boi_mcp_v2_bearer",
     default="",
 )
+_request_audience: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar(
+    "boi_mcp_v2_audience",
+    default={},
+)
+AUDIENCE_HEADERS = (
+    "X-BOI-Action-Key",
+    "X-BOI-Deployment-ID",
+    "X-BOI-Endpoint-ID",
+    "X-BOI-Project-ID",
+    "X-BOI-Flow-ID",
+    "X-BOI-Trace-ID",
+    "X-BOI-Execution-ID",
+)
 
 
 MCP_V2_TOOLS = [
     {
         "name": "boi_search",
-        "description": "Search ACL-visible BoI Wiki and grounded Ontology relations.",
+        "description": (
+            "Compatibility facade for ACL-visible Task Context and Ontology-first "
+            "hybrid retrieval, with Wiki documents used as grounded fallback."
+        ),
     },
     {
         "name": "boi_get",
@@ -54,6 +70,7 @@ def _headers() -> dict[str, str]:
     headers = {"x-service-token": SERVICE_TOKEN}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    headers.update(_request_audience.get())
     return headers
 
 
@@ -99,12 +116,15 @@ async def boi_search(
     limit: int = 8,
     page_ref: str = "",
     task_ref: str = "",
+    trace_id: str = "",
+    event_id: str = "",
+    action_key: str = "",
     view: str = "ranked",
     source_ref: str = "",
     target_ref: str = "",
     depth: int = 2,
 ) -> dict[str, Any]:
-    """Search Wiki evidence or inspect grounded Ontology relationships."""
+    """Resolve Task Context and Ontology-first evidence with Wiki fallback."""
 
     supported_views = {
         "ranked",
@@ -131,6 +151,9 @@ async def boi_search(
             "target_ref": target_ref,
             "page_ref": page_ref,
             "task_ref": task_ref,
+            "trace_id": trace_id,
+            "event_id": event_id,
+            "action_key": action_key,
             "limit": max(1, min(int(limit), 300)),
             "depth": max(1, min(int(depth), 6)),
             "include_history": include_history,
@@ -217,7 +240,15 @@ class McpV2AuthContextMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                 )
         context_token = _request_bearer.set(token)
+        audience_token = _request_audience.set(
+            {
+                header: value
+                for header in AUDIENCE_HEADERS
+                if (value := request.headers.get(header))
+            }
+        )
         try:
             return await call_next(request)
         finally:
+            _request_audience.reset(audience_token)
             _request_bearer.reset(context_token)

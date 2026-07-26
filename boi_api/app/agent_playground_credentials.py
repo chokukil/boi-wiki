@@ -15,7 +15,7 @@ from typing import Callable, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from .auth import AuthIdentity
+from .auth import AuthError, AuthIdentity
 
 
 def now_iso() -> str:
@@ -47,12 +47,71 @@ class CredentialAuthentication:
     scopes: tuple[str, ...]
     kind: Literal["pat", "run_token"]
     action_key: str = ""
+    deployment_id: str = ""
+    endpoint_id: str = ""
+    project_id: str = ""
     flow_id: str = ""
     trace_id: str = ""
+    execution_id: str = ""
+    allowed_capabilities: tuple[str, ...] = ()
 
     def require_scope(self, scope: str) -> None:
         if scope not in self.scopes:
             raise HTTPException(status_code=403, detail=f"credential scope missing: {scope}")
+
+    def require_audience(
+        self,
+        *,
+        action_key: str,
+        deployment_id: str,
+        endpoint_id: str,
+        project_id: str,
+        flow_id: str,
+        trace_id: str,
+        execution_id: str,
+        capability: str,
+    ) -> None:
+        if self.kind != "run_token":
+            return
+        expected = {
+            "action_key": self.action_key,
+            "deployment_id": self.deployment_id,
+            "endpoint_id": self.endpoint_id,
+            "project_id": self.project_id,
+            "flow_id": self.flow_id,
+            "trace_id": self.trace_id,
+            "execution_id": self.execution_id,
+        }
+        received = {
+            "action_key": str(action_key or ""),
+            "deployment_id": str(deployment_id or ""),
+            "endpoint_id": str(endpoint_id or ""),
+            "project_id": str(project_id or ""),
+            "flow_id": str(flow_id or ""),
+            "trace_id": str(trace_id or ""),
+            "execution_id": str(execution_id or ""),
+        }
+        mismatch = [
+            key
+            for key, stored_value in expected.items()
+            if not stored_value or received[key] != stored_value
+        ]
+        if mismatch:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "run_token_audience_mismatch",
+                    "fields": mismatch,
+                },
+            )
+        if capability not in self.allowed_capabilities:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "run_token_capability_mismatch",
+                    "capability": capability,
+                },
+            )
 
 
 class SQLiteCredentialRepository:
@@ -87,8 +146,13 @@ class SQLiteCredentialRepository:
                     issued_teams_json TEXT NOT NULL,
                     display_name TEXT NOT NULL DEFAULT '',
                     action_key TEXT NOT NULL DEFAULT '',
+                    deployment_id TEXT NOT NULL DEFAULT '',
+                    endpoint_id TEXT NOT NULL DEFAULT '',
+                    project_id TEXT NOT NULL DEFAULT '',
                     flow_id TEXT NOT NULL DEFAULT '',
                     trace_id TEXT NOT NULL DEFAULT '',
+                    execution_id TEXT NOT NULL DEFAULT '',
+                    allowed_capabilities_json TEXT NOT NULL DEFAULT '[]',
                     issued_at TEXT NOT NULL,
                     expires_at TEXT,
                     last_used_at TEXT NOT NULL DEFAULT '',
@@ -102,6 +166,21 @@ class SQLiteCredentialRepository:
                     ON playground_credentials(token_kind, expires_at);
                 """
             )
+            existing_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(playground_credentials)").fetchall()
+            }
+            for name, definition in {
+                "deployment_id": "TEXT NOT NULL DEFAULT ''",
+                "endpoint_id": "TEXT NOT NULL DEFAULT ''",
+                "project_id": "TEXT NOT NULL DEFAULT ''",
+                "execution_id": "TEXT NOT NULL DEFAULT ''",
+                "allowed_capabilities_json": "TEXT NOT NULL DEFAULT '[]'",
+            }.items():
+                if name not in existing_columns:
+                    connection.execute(
+                        f"ALTER TABLE playground_credentials ADD COLUMN {name} {definition}"
+                    )
         try:
             os.chmod(self.path, 0o600)
         except OSError:
@@ -115,6 +194,9 @@ class SQLiteCredentialRepository:
         value["scopes"] = json.loads(str(value.pop("scopes_json") or "[]"))
         value["issued_roles"] = json.loads(str(value.pop("issued_roles_json") or "[]"))
         value["issued_teams"] = json.loads(str(value.pop("issued_teams_json") or "[]"))
+        value["allowed_capabilities"] = json.loads(
+            str(value.pop("allowed_capabilities_json") or "[]")
+        )
         return value
 
     def put(self, collection: str, token_id: str, record: dict[str, object]) -> dict[str, object]:
@@ -130,8 +212,16 @@ class SQLiteCredentialRepository:
             "issued_teams_json": json.dumps(record.get("issued_teams") or [], ensure_ascii=False),
             "display_name": str(record.get("display_name") or ""),
             "action_key": str(record.get("action_key") or ""),
+            "deployment_id": str(record.get("deployment_id") or ""),
+            "endpoint_id": str(record.get("endpoint_id") or ""),
+            "project_id": str(record.get("project_id") or ""),
             "flow_id": str(record.get("flow_id") or ""),
             "trace_id": str(record.get("trace_id") or ""),
+            "execution_id": str(record.get("execution_id") or ""),
+            "allowed_capabilities_json": json.dumps(
+                record.get("allowed_capabilities") or [],
+                ensure_ascii=False,
+            ),
             "issued_at": str(record.get("issued_at") or now_iso()),
             "expires_at": record.get("expires_at"),
             "last_used_at": str(record.get("last_used_at") or ""),
@@ -146,12 +236,16 @@ class SQLiteCredentialRepository:
                 INSERT INTO playground_credentials (
                     token_id, token_kind, employee_id, name, token_hash,
                     scopes_json, issued_roles_json, issued_teams_json, display_name,
-                    action_key, flow_id, trace_id, issued_at, expires_at,
+                    action_key, deployment_id, endpoint_id, project_id,
+                    flow_id, trace_id, execution_id, allowed_capabilities_json,
+                    issued_at, expires_at,
                     last_used_at, revoked_at, consumed_at, updated_at
                 ) VALUES (
                     :token_id, :token_kind, :employee_id, :name, :token_hash,
                     :scopes_json, :issued_roles_json, :issued_teams_json, :display_name,
-                    :action_key, :flow_id, :trace_id, :issued_at, :expires_at,
+                    :action_key, :deployment_id, :endpoint_id, :project_id,
+                    :flow_id, :trace_id, :execution_id, :allowed_capabilities_json,
+                    :issued_at, :expires_at,
                     :last_used_at, :revoked_at, :consumed_at, :updated_at
                 )
                 ON CONFLICT(token_id) DO UPDATE SET
@@ -162,8 +256,13 @@ class SQLiteCredentialRepository:
                     issued_teams_json=excluded.issued_teams_json,
                     display_name=excluded.display_name,
                     action_key=excluded.action_key,
+                    deployment_id=excluded.deployment_id,
+                    endpoint_id=excluded.endpoint_id,
+                    project_id=excluded.project_id,
                     flow_id=excluded.flow_id,
                     trace_id=excluded.trace_id,
+                    execution_id=excluded.execution_id,
+                    allowed_capabilities_json=excluded.allowed_capabilities_json,
                     expires_at=excluded.expires_at,
                     last_used_at=excluded.last_used_at,
                     revoked_at=excluded.revoked_at,
@@ -310,6 +409,8 @@ class PlaygroundCredentialService:
         if self.identity_provider:
             try:
                 return self.identity_provider(str(record.get("employee_id") or ""))
+            except AuthError:
+                raise
             except Exception:
                 return None
         return AuthIdentity(
@@ -356,6 +457,12 @@ class PlaygroundCredentialService:
             roles=[role for role in current.roles if role in issued_roles],
             auth_source=kind,
         )
+        current_scopes = set(self._allowed_scopes(identity))
+        effective_scopes = tuple(
+            str(value)
+            for value in record.get("scopes") or []
+            if str(value) in current_scopes
+        )
         if kind == "pat":
             record["last_used_at"] = now_iso()
             record["updated_at"] = now_iso()
@@ -363,11 +470,18 @@ class PlaygroundCredentialService:
         return CredentialAuthentication(
             identity=identity,
             token_id=str(record["token_id"]),
-            scopes=tuple(str(value) for value in record.get("scopes") or []),
+            scopes=effective_scopes,
             kind=kind,
             action_key=str(record.get("action_key") or ""),
+            deployment_id=str(record.get("deployment_id") or ""),
+            endpoint_id=str(record.get("endpoint_id") or ""),
+            project_id=str(record.get("project_id") or ""),
             flow_id=str(record.get("flow_id") or ""),
             trace_id=str(record.get("trace_id") or ""),
+            execution_id=str(record.get("execution_id") or ""),
+            allowed_capabilities=tuple(
+                str(value) for value in record.get("allowed_capabilities") or []
+            ),
         )
 
     def authenticate(self, raw_token: str) -> CredentialAuthentication | None:
@@ -383,8 +497,13 @@ class PlaygroundCredentialService:
         identity: AuthIdentity,
         *,
         action_key: str,
+        deployment_id: str = "",
+        endpoint_id: str = "",
+        project_id: str = "",
         flow_id: str,
         trace_id: str,
+        execution_id: str = "",
+        allowed_capabilities: list[str] | None = None,
         scopes: list[str],
         ttl_seconds: int = 180,
     ) -> dict[str, object]:
@@ -406,8 +525,15 @@ class PlaygroundCredentialService:
             "issued_teams": list(identity.teams),
             "display_name": identity.display_name,
             "action_key": str(action_key or ""),
+            "deployment_id": str(deployment_id or ""),
+            "endpoint_id": str(endpoint_id or ""),
+            "project_id": str(project_id or ""),
             "flow_id": str(flow_id or ""),
             "trace_id": str(trace_id or ""),
+            "execution_id": str(execution_id or ""),
+            "allowed_capabilities": sorted(
+                set(allowed_capabilities or ["boi.search", "boi.get"])
+            ),
             "issued_at": issued_at.isoformat(),
             "expires_at": (
                 issued_at + timedelta(seconds=max(30, min(int(ttl_seconds), 600)))
@@ -423,8 +549,13 @@ class PlaygroundCredentialService:
             "token_id": token_id,
             "expires_at": record["expires_at"],
             "action_key": record["action_key"],
+            "deployment_id": record["deployment_id"],
+            "endpoint_id": record["endpoint_id"],
+            "project_id": record["project_id"],
             "flow_id": record["flow_id"],
             "trace_id": record["trace_id"],
+            "execution_id": record["execution_id"],
+            "allowed_capabilities": record["allowed_capabilities"],
             "scopes": resolved_scopes,
         }
 

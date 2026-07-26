@@ -68,14 +68,17 @@ class BoIWikiSave(Component):
         Output(name="message", display_name="최종 출력", method="build_message"),
     ]
 
-    async def _credential(self) -> str:
+    def _request_variables(self) -> dict[str, Any]:
         try:
             graph = getattr(self, "graph", None)
             context = getattr(graph, "context", {}) if graph else {}
             request_variables = context.get("request_variables") if isinstance(context, dict) else {}
-            run_token = str((request_variables or {}).get("BOI_RUN_TOKEN") or "").strip()
         except Exception:
-            run_token = ""
+            request_variables = {}
+        return request_variables if isinstance(request_variables, dict) else {}
+
+    async def _credential(self) -> str:
+        run_token = str(self._request_variables().get("BOI_RUN_TOKEN") or "").strip()
         if run_token:
             return run_token
         try:
@@ -87,12 +90,28 @@ class BoIWikiSave(Component):
             return str(raw_value).strip()
         raise ValueError("BoI 지식 연결이 없습니다. Agent Playground 온보딩을 먼저 완료하세요.")
 
+    async def _mcp_headers(self) -> dict[str, str]:
+        headers = {"Authorization": f"Bearer {await self._credential()}"}
+        variables = self._request_variables()
+        for variable, header in {
+            "BOI_ACTION_KEY": "X-BOI-Action-Key",
+            "BOI_DEPLOYMENT_ID": "X-BOI-Deployment-ID",
+            "BOI_ENDPOINT_ID": "X-BOI-Endpoint-ID",
+            "BOI_PROJECT_ID": "X-BOI-Project-ID",
+            "BOI_FLOW_ID": "X-BOI-Flow-ID",
+            "BOI_TRACE_ID": "X-BOI-Trace-ID",
+            "BOI_EXECUTION_ID": "X-BOI-Execution-ID",
+        }.items():
+            value = str(variables.get(variable) or "").strip()
+            if value:
+                headers[header] = value
+        return headers
+
     async def _call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        token = await self._credential()
         endpoint = os.getenv("BOI_WIKI_MCP_URL", "http://boi-wiki-mcp:8200/mcp/v2")
         async with streamablehttp_client(
             endpoint,
-            headers={"Authorization": f"Bearer {token}"},
+            headers=await self._mcp_headers(),
         ) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
@@ -160,11 +179,10 @@ class BoIWikiSave(Component):
             self._boi_save_cache_key = cache_key
             self._boi_save_cache = dict(candidate)
             return candidate
-        token = await self._credential()
         endpoint = os.getenv("BOI_WIKI_MCP_URL", "http://boi-wiki-mcp:8200/mcp/v2")
         async with streamablehttp_client(
             endpoint,
-            headers={"Authorization": f"Bearer {token}"},
+            headers=await self._mcp_headers(),
         ) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()

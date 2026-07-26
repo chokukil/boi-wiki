@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -80,6 +81,129 @@ def test_hcp_failure_is_closed_outside_dev(monkeypatch):
         auth.hcp_permissions("100002")
 
     assert exc.value.status_code == 503
+
+
+def test_force_refresh_bypasses_stale_hcp_identity_cache(monkeypatch):
+    auth._HCP_CACHE.clear()
+    monkeypatch.setenv("BOI_AUTH_MODE", "keycloak")
+    monkeypatch.setenv("HCP_AUTHZ_URL", "http://mock-hcp/permissions")
+    responses = [
+        {
+            "employee_id": "100002",
+            "allowed": True,
+            "teams": ["aix-tf"],
+            "roles": ["boi.viewer", "boi.editor", "boi.action_invoker"],
+        },
+        {
+            "employee_id": "100002",
+            "allowed": True,
+            "teams": ["aix-tf"],
+            "roles": ["boi.viewer"],
+        },
+    ]
+
+    class Response:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.body
+
+    monkeypatch.setattr(
+        auth.httpx,
+        "get",
+        lambda *args, **kwargs: Response(responses.pop(0)),
+    )
+
+    initial = auth.hcp_permissions("100002")
+    cached = auth.hcp_permissions("100002")
+    refreshed = auth.hcp_permissions("100002", force_refresh=True)
+
+    assert initial == cached
+    assert "boi.action_invoker" in initial["roles"]
+    assert refreshed["roles"] == ["boi.viewer"]
+
+
+def test_durable_playground_identity_ignores_login_identity_cache(
+    boi_app_module,
+    monkeypatch,
+):
+    boi_app_module._IDENTITY_CACHE["100002"] = auth.AuthIdentity(
+        employee_id="100002",
+        display_name="Stale Session",
+        teams=["aix-tf"],
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+        auth_source="stale_session",
+    )
+    monkeypatch.setattr(boi_app_module, "auth_mode", lambda: "keycloak")
+    monkeypatch.setattr(
+        boi_app_module,
+        "hcp_authorization_configured",
+        lambda: True,
+    )
+    calls = []
+
+    def permissions(employee_id, bearer_token=None, *, force_refresh=False):
+        calls.append(force_refresh)
+        return {
+            "employee_id": employee_id,
+            "allowed": True,
+            "teams": ["aix-tf"],
+            "roles": ["boi.viewer"],
+        }
+
+    monkeypatch.setattr(boi_app_module, "hcp_permissions", permissions)
+    current = boi_app_module.credential_identity_for_employee("100002")
+
+    assert calls == [True]
+    assert current.roles == ["boi.viewer"]
+    assert current.auth_source == "hcp_credential_refresh"
+
+
+def test_action_start_rechecks_hcp_instead_of_trusting_session_identity(
+    boi_app_module,
+    monkeypatch,
+):
+    stale_session = auth.AuthIdentity(
+        employee_id="100002",
+        display_name="Stale session",
+        teams=["aix-tf"],
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+        auth_source="keycloak_session",
+    )
+    refreshes: list[str] = []
+
+    def refreshed(employee_id: str):
+        refreshes.append(employee_id)
+        return auth.AuthIdentity(
+            employee_id=employee_id,
+            display_name="Refreshed viewer",
+            teams=["aix-tf"],
+            roles=["boi.viewer"],
+            auth_source="hcp_credential_refresh",
+        )
+
+    monkeypatch.setattr(boi_app_module, "credential_identity_for_employee", refreshed)
+    request = boi_app_module.ActionInvokeRequest(
+        action_key="team.shared.action",
+        employee_id="100002",
+        payload={},
+    )
+
+    with pytest.raises(boi_app_module.HTTPException) as exc:
+        asyncio.run(
+            boi_app_module.invoke_action_gateway(
+                request,
+                "100002",
+                stale_session,
+            )
+        )
+
+    assert exc.value.status_code == 403
+    assert refreshes == ["100002"]
 
 
 def test_keycloak_and_mock_hcp_identity_contracts_do_not_drift():

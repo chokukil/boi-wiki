@@ -86,6 +86,8 @@ def validation_state(tmp_path: Path, *, draft_checksum: str | None = None) -> tu
                 "flow_id": "flow-validation",
                 "asset_version": "1.1.0",
                 "artifact_checksum": checksum,
+                "live_checksum": checksum,
+                "checksum_state": "matched",
                 "status": "action_linked",
                 "action_draft_id": draft_id,
             }
@@ -149,6 +151,25 @@ def test_validation_operator_rejects_checksum_mismatch_without_catalog_write(tmp
     runtime_root, catalog_root, draft_id = validation_state(tmp_path, draft_checksum="b" * 64)
 
     with pytest.raises(RuntimeError, match="do not match"):
+        apply_fixture(
+            runtime_root=runtime_root,
+            catalog_root=catalog_root,
+            employee_id="100002",
+            draft_id=draft_id,
+        )
+
+    assert not catalog_root.exists()
+
+
+def test_validation_operator_rejects_unverified_or_drifted_live_checksum(tmp_path):
+    runtime_root, catalog_root, draft_id = validation_state(tmp_path)
+    user_path = runtime_root / "agent-playground" / "users" / "100002.json"
+    user = json.loads(user_path.read_text(encoding="utf-8"))
+    user["deployments"][0]["checksum_state"] = "drifted"
+    user["deployments"][0]["live_checksum"] = "b" * 64
+    user_path.write_text(json.dumps(user), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="live checksum is not verified"):
         apply_fixture(
             runtime_root=runtime_root,
             catalog_root=catalog_root,

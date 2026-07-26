@@ -1046,6 +1046,22 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                                 ),
                             }
                             request_payload = req.payload if isinstance(req.payload, dict) else {}
+                            execution_id = f"boi-exec-{uuid.uuid4().hex}"
+                            task_anchor = {
+                                "task_id": str(
+                                    request_payload.get("task_id")
+                                    or request_payload.get("task_ref")
+                                    or ""
+                                ),
+                                "trace_id": str(req.event.get("trace_id") or request_id),
+                                "event_id": str(req.event.get("event_id") or ""),
+                                "action_key": str(action.get("action_key") or ""),
+                                "current_wiki_ref": str(
+                                    request_payload.get("page_ref")
+                                    or request_payload.get("current_wiki_ref")
+                                    or ""
+                                ),
+                            }
                             if isinstance(body, dict):
                                 body["input_value"] = json.dumps(
                                     {
@@ -1066,6 +1082,8 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                                     "deployment_id": deployment_id,
                                     "flow_id": flow_target,
                                     "trace_id": str(req.event.get("trace_id") or request_id),
+                                    "execution_id": execution_id,
+                                    "task_anchor": task_anchor,
                                     "save_mode": str(request_payload.get("save_mode") or "preview"),
                                     "body": body,
                                 },

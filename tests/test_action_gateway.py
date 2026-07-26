@@ -552,6 +552,14 @@ def test_agent_playground_langflow_action_uses_secret_free_boi_execution_proxy(t
     assert execution["json"]["deployment_id"] == "hub-deployment-100002"
     assert execution["json"]["flow_id"] == "flow-user-100002"
     assert execution["json"]["trace_id"] == "trace-agent-playground"
+    assert execution["json"]["execution_id"].startswith("boi-exec-")
+    assert execution["json"]["task_anchor"] == {
+        "task_id": "",
+        "trace_id": "trace-agent-playground",
+        "event_id": "evt-agent-playground",
+        "action_key": "agent-playground.100002.boi-wiki-agent-loop",
+        "current_wiki_ref": "",
+    }
     assert execution["json"]["save_mode"] == "private_draft"
     serialized = json.dumps({"requests": FakePlaygroundLangflowAsyncClient.requests, "result": result})
     assert "user-langflow-api-key" not in serialized

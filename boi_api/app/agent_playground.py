@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -237,6 +239,12 @@ class PlaygroundHubAdoptionConfirmRequest(BaseModel):
     flow_id: str = Field(min_length=1, max_length=500)
 
 
+class PlaygroundHubAdoptionComposeRequest(BaseModel):
+    flow_id: str = Field(min_length=1, max_length=500)
+    component_asset_id: str = Field(min_length=1, max_length=500)
+    replace_agent_slot: Literal[True] = True
+
+
 class PlaygroundFlowValidationRequest(BaseModel):
     endpoint_id: str = Field(min_length=1, max_length=100)
     project_id: str = Field(min_length=1, max_length=500)
@@ -415,6 +423,37 @@ class LangflowPublicApiV1:
             raise HTTPException(status_code=502, detail="Langflow Flow API returned an invalid response")
         return payload
 
+    def update_flow(
+        self,
+        endpoint: str,
+        api_key: str,
+        flow_id: str,
+        flow: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = self._transport(
+            "PATCH",
+            endpoint,
+            f"/api/v1/flows/{flow_id}",
+            api_key,
+            expected={200},
+            json={
+                key: flow[key]
+                for key in (
+                    "name",
+                    "description",
+                    "endpoint_name",
+                    "data",
+                    "folder_id",
+                    "project_id",
+                )
+                if key in flow
+            },
+            timeout=120,
+        ).json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=502, detail="Langflow Flow update returned an invalid response")
+        return payload
+
     def create_flow(
         self,
         endpoint: str,
@@ -452,17 +491,21 @@ class LangflowPublicApiV1:
         *,
         input_value: str,
         run_token: str = "",
+        audience: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        request_headers: dict[str, str] = {}
+        if run_token:
+            request_headers["X-LANGFLOW-GLOBAL-VAR-BOI_RUN_TOKEN"] = run_token
+        for key, value in (audience or {}).items():
+            normalized = str(value or "").strip()
+            if normalized:
+                request_headers[f"X-LANGFLOW-GLOBAL-VAR-{key}"] = normalized
         payload = self._transport(
             "POST",
             endpoint,
             self.RUN_PATH.format(flow_id=flow_id),
             api_key,
-            headers=(
-                {"X-LANGFLOW-GLOBAL-VAR-BOI_RUN_TOKEN": run_token}
-                if run_token
-                else {}
-            ),
+            headers=request_headers,
             json={"input_value": input_value, "input_type": "chat", "output_type": "chat"},
             timeout=180,
         ).json()
@@ -1018,6 +1061,25 @@ class AgentPlaygroundService:
             },
             "updated_at": str(item.get("updated_at") or ""),
         }
+        component_contract = (
+            item.get("component_contract")
+            if isinstance(item.get("component_contract"), dict)
+            else {}
+        )
+        if component_contract:
+            safe["component_contract"] = {
+                "schema_version": str(
+                    component_contract.get("schema_version")
+                    or component_contract.get("contract_id")
+                    or ""
+                ),
+                "inputs": [
+                    str(value) for value in component_contract.get("inputs") or []
+                ],
+                "outputs": [
+                    str(value) for value in component_contract.get("outputs") or []
+                ],
+            }
         safe["metadata_checksum"] = hashlib.sha256(
             json.dumps(
                 safe,
@@ -1453,6 +1515,7 @@ class AgentPlaygroundService:
             "action_linked": 6,
         }
         items = []
+        drift_updates: list[dict[str, str]] = []
         for item in live:
             folder_id = str(item.get("folder_id") or item.get("project_id") or "")
             if folder_id != project_id:
@@ -1500,6 +1563,71 @@ class AgentPlaygroundService:
                 or deployment.get("status")
                 or "discovered"
             )
+            try:
+                flow_detail = self.langflow.flow(endpoint, api_key, flow_id)
+                live_checksum = self._runtime_flow_checksum(flow_detail)
+                graph_health = self._graph_health(flow_detail)
+                source_assets = list(
+                    deployment.get("source_assets")
+                    or registry.get("source_assets")
+                    or []
+                )
+                component_graph = self._adopted_component_graph_state(
+                    flow_detail,
+                    source_assets,
+                )
+                registered_checksum = str(
+                    registry.get("artifact_checksum")
+                    or deployment_checksum
+                )
+                checksum_state = (
+                    "matched"
+                    if registered_checksum and live_checksum == registered_checksum
+                    else "drifted"
+                    if registered_checksum
+                    else "unknown"
+                )
+            except HTTPException:
+                live_checksum = ""
+                graph_health = {
+                    "end_to_end_reachable": False,
+                    "connected_component_ids": [],
+                    "disconnected_nodes": [],
+                }
+                source_assets = list(
+                    deployment.get("source_assets")
+                    or registry.get("source_assets")
+                    or []
+                )
+                component_graph = {
+                    "items": [],
+                    "all_deployed": False,
+                    "all_connected": False,
+                    "disconnected_component_ids": [],
+                    "missing_component_ids": [
+                        str(asset.get("asset_id") or "")
+                        for asset in source_assets
+                        if isinstance(asset, dict)
+                        and str(asset.get("type") or "") == "py"
+                    ],
+                }
+                checksum_state = "unknown"
+            if checksum_state == "drifted":
+                validation_status = "blocked"
+                for stored in (registry, deployment):
+                    if stored:
+                        stored["validation_status" if stored is registry else "status"] = "blocked"
+                        stored["checksum_state"] = "drifted"
+                        stored["live_checksum"] = live_checksum
+                        stored["failure_reason"] = "flow_checksum_drift"
+                drift_updates.append(
+                    {
+                        "endpoint_id": endpoint_id,
+                        "project_id": project_id,
+                        "flow_id": flow_id,
+                        "live_checksum": live_checksum,
+                    }
+                )
             items.append(
                 {
                     "flow_id": flow_id,
@@ -1518,14 +1646,63 @@ class AgentPlaygroundService:
                         registry.get("artifact_checksum")
                         or deployment_checksum
                     ),
+                    "live_checksum": live_checksum,
+                    "checksum_state": checksum_state,
+                    "graph_health": graph_health,
+                    "connected_component_ids": graph_health.get(
+                        "connected_component_ids"
+                    ) or [],
+                    "disconnected_nodes": graph_health.get("disconnected_nodes") or [],
+                    "component_graph": component_graph,
+                    "executed_component_ids": list(
+                        registry.get("executed_component_ids")
+                        or deployment.get("executed_component_ids")
+                        or []
+                    ),
+                    "source_assets": source_assets,
+                    "adoption_id": str(
+                        deployment.get("adoption_id")
+                        or registry.get("adoption_id")
+                        or ""
+                    ),
                     "deployment_id": str(
                         registry.get("deployment_id")
                         or deployment.get("deployment_id")
                         or ""
                     ),
+                    "action_draft_id": str(
+                        registry.get("action_draft_id")
+                        or deployment.get("action_draft_id")
+                        or ""
+                    ),
                     "flow_url": f"{endpoint}/flow/{flow_id}",
                 }
             )
+        if drift_updates:
+            with self._lock:
+                current = self._read(principal.employee_id)
+                for update in drift_updates:
+                    for collection_name in ("flow_registry", "deployments"):
+                        for stored in current.get(collection_name) or []:
+                            if (
+                                not isinstance(stored, dict)
+                                or str(stored.get("endpoint_id") or "")
+                                != update["endpoint_id"]
+                                or str(stored.get("project_id") or "")
+                                != update["project_id"]
+                                or str(stored.get("flow_id") or "")
+                                != update["flow_id"]
+                            ):
+                                continue
+                            stored[
+                                "validation_status"
+                                if collection_name == "flow_registry"
+                                else "status"
+                            ] = "blocked"
+                            stored["checksum_state"] = "drifted"
+                            stored["live_checksum"] = update["live_checksum"]
+                            stored["failure_reason"] = "flow_checksum_drift"
+                self._write(principal.employee_id, current)
         items.sort(key=lambda item: (str(item.get("name") or "").lower(), str(item.get("flow_id") or "")))
         return {
             "ok": True,
@@ -1878,6 +2055,530 @@ class AgentPlaygroundService:
             "source_assets": source_assets,
         }
 
+    @staticmethod
+    def _node_id(node: Any) -> str:
+        return str(node.get("id") or "") if isinstance(node, dict) else str(node or "")
+
+    @staticmethod
+    def _node_component_identity(node: dict[str, Any]) -> set[str]:
+        data = node.get("data") if isinstance(node.get("data"), dict) else {}
+        component = data.get("node") if isinstance(data.get("node"), dict) else {}
+        values = {
+            node.get("id"),
+            node.get("type"),
+            data.get("type"),
+            data.get("display_name"),
+            component.get("name"),
+            component.get("display_name"),
+        }
+        return {str(value).strip() for value in values if str(value or "").strip()}
+
+    @staticmethod
+    def _component_contract(asset: dict[str, Any]) -> dict[str, Any]:
+        metadata = asset.get("metadata") if isinstance(asset.get("metadata"), dict) else {}
+        contract = (
+            asset.get("component_contract")
+            if isinstance(asset.get("component_contract"), dict)
+            else metadata.get("component_contract")
+            if isinstance(metadata.get("component_contract"), dict)
+            else {}
+        )
+        contract_id = str(
+            contract.get("schema_version")
+            or contract.get("contract_id")
+            or asset.get("component_contract_id")
+            or ""
+        )
+        return {
+            "contract_id": contract_id,
+            "inputs": [str(value) for value in contract.get("inputs") or []],
+            "outputs": [str(value) for value in contract.get("outputs") or []],
+        }
+
+    @staticmethod
+    def _node_component_contract(node: dict[str, Any]) -> dict[str, Any]:
+        data = node.get("data") if isinstance(node.get("data"), dict) else {}
+        component = data.get("node") if isinstance(data.get("node"), dict) else {}
+        metadata = (
+            component.get("metadata")
+            if isinstance(component.get("metadata"), dict)
+            else {}
+        )
+        for candidate in (
+            data.get("component_contract"),
+            metadata.get("component_contract"),
+        ):
+            if isinstance(candidate, dict):
+                return {
+                    "contract_id": str(
+                        candidate.get("schema_version")
+                        or candidate.get("contract_id")
+                        or ""
+                    ),
+                    "inputs": [
+                        str(value) for value in candidate.get("inputs") or []
+                    ],
+                    "outputs": [
+                        str(value) for value in candidate.get("outputs") or []
+                    ],
+                }
+        template = (
+            component.get("template")
+            if isinstance(component.get("template"), dict)
+            else {}
+        )
+        source = ""
+        for key in ("code", "_code", "component_code"):
+            field = template.get(key)
+            if isinstance(field, dict) and isinstance(field.get("value"), str):
+                source = str(field["value"])
+                break
+        if not source:
+            return {"contract_id": "", "inputs": [], "outputs": []}
+        try:
+            module = ast.parse(source)
+        except SyntaxError:
+            return {"contract_id": "", "inputs": [], "outputs": []}
+        for class_node in (
+            item for item in module.body if isinstance(item, ast.ClassDef)
+        ):
+            for statement in class_node.body:
+                if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                    continue
+                targets = (
+                    statement.targets
+                    if isinstance(statement, ast.Assign)
+                    else [statement.target]
+                )
+                if not any(
+                    isinstance(target, ast.Name)
+                    and target.id in {"component_contract", "COMPONENT_CONTRACT"}
+                    for target in targets
+                ):
+                    continue
+                try:
+                    value = ast.literal_eval(statement.value)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(value, dict):
+                    return {
+                        "contract_id": str(
+                            value.get("schema_version")
+                            or value.get("contract_id")
+                            or ""
+                        ),
+                        "inputs": [
+                            str(item) for item in value.get("inputs") or []
+                        ],
+                        "outputs": [
+                            str(item) for item in value.get("outputs") or []
+                        ],
+                    }
+        return {"contract_id": "", "inputs": [], "outputs": []}
+
+    @classmethod
+    def _graph_health(cls, flow: dict[str, Any]) -> dict[str, Any]:
+        data = flow.get("data") if isinstance(flow.get("data"), dict) else {}
+        nodes = [item for item in data.get("nodes") or [] if isinstance(item, dict)]
+        edges = [item for item in data.get("edges") or [] if isinstance(item, dict)]
+        node_ids = {cls._node_id(node) for node in nodes if cls._node_id(node)}
+        adjacency: dict[str, set[str]] = {node_id: set() for node_id in node_ids}
+        reverse: dict[str, set[str]] = {node_id: set() for node_id in node_ids}
+        for edge in edges:
+            source = str(edge.get("source") or "")
+            target = str(edge.get("target") or "")
+            if source in node_ids and target in node_ids:
+                adjacency[source].add(target)
+                reverse[target].add(source)
+        starts = {
+            cls._node_id(node)
+            for node in nodes
+            if any("ChatInput" in value or value == "Chat Input" for value in cls._node_component_identity(node))
+        }
+        ends = {
+            cls._node_id(node)
+            for node in nodes
+            if any("ChatOutput" in value or value == "Chat Output" for value in cls._node_component_identity(node))
+        }
+
+        def walk(seeds: set[str], graph: dict[str, set[str]]) -> set[str]:
+            visited: set[str] = set()
+            pending = list(seeds)
+            while pending:
+                current = pending.pop()
+                if current in visited:
+                    continue
+                visited.add(current)
+                pending.extend(graph.get(current) or [])
+            return visited
+
+        forward = walk(starts, adjacency)
+        backward = walk(ends, reverse)
+        execution_path = forward & backward
+        disconnected = sorted(node_ids - execution_path)
+        connected_component_ids: list[str] = []
+        for node in nodes:
+            if cls._node_id(node) not in execution_path:
+                continue
+            data_value = node.get("data") if isinstance(node.get("data"), dict) else {}
+            component = (
+                data_value.get("node")
+                if isinstance(data_value.get("node"), dict)
+                else {}
+            )
+            metadata = (
+                component.get("metadata")
+                if isinstance(component.get("metadata"), dict)
+                else {}
+            )
+            component_id = str(
+                metadata.get("component_asset_id")
+                or data_value.get("component_asset_id")
+                or ""
+            )
+            if component_id:
+                connected_component_ids.append(component_id)
+        return {
+            "end_to_end_reachable": bool(starts and ends and ends.intersection(forward)),
+            "start_nodes": sorted(starts),
+            "output_nodes": sorted(ends),
+            "execution_path_nodes": sorted(execution_path),
+            "connected_component_ids": sorted(set(connected_component_ids)),
+            "disconnected_nodes": disconnected,
+        }
+
+    @staticmethod
+    def _edge_handles(
+        *,
+        source_id: str,
+        source_type: str,
+        source_name: str,
+        source_types: list[str],
+        target_id: str,
+        target_name: str,
+        target_types: list[str],
+    ) -> dict[str, Any]:
+        source_handle = {
+            "dataType": source_type,
+            "id": source_id,
+            "name": source_name,
+            "output_types": source_types,
+        }
+        target_handle = {
+            "fieldName": target_name,
+            "id": target_id,
+            "inputTypes": target_types,
+            "type": "other",
+        }
+
+        def encoded(value: dict[str, Any]) -> str:
+            return json.dumps(
+                value,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).replace('"', "œ")
+
+        source_encoded = encoded(source_handle)
+        target_encoded = encoded(target_handle)
+        return {
+            "animated": False,
+            "className": "",
+            "data": {
+                "sourceHandle": source_handle,
+                "targetHandle": target_handle,
+            },
+            "id": (
+                f"reactflow__edge-{source_id}{source_encoded}-"
+                f"{target_id}{target_encoded}"
+            ),
+            "selected": False,
+            "source": source_id,
+            "sourceHandle": source_encoded,
+            "target": target_id,
+            "targetHandle": target_encoded,
+        }
+
+    def compose_hub_adoption(
+        self,
+        principal: AuthIdentity,
+        adoption_id: str,
+        request: PlaygroundHubAdoptionComposeRequest,
+    ) -> dict[str, Any]:
+        require_role(principal, "boi.editor")
+        record = self._read(principal.employee_id)
+        adoption = self._hub_adoption(record, adoption_id)
+        if str(adoption.get("flow_id") or "") != request.flow_id:
+            raise HTTPException(status_code=409, detail="adoption and Flow ID do not match")
+        asset = next(
+            (
+                item
+                for item in adoption.get("source_assets") or []
+                if isinstance(item, dict)
+                and str(item.get("asset_id") or "") == request.component_asset_id
+            ),
+            None,
+        )
+        if asset is None or str(asset.get("type") or "") != "py":
+            raise HTTPException(status_code=404, detail="component asset is not part of this adoption")
+        connection, _, api_key = self._live_flow(
+            principal,
+            str(adoption.get("endpoint_id") or ""),
+            str(adoption.get("project_id") or ""),
+            request.flow_id,
+        )
+        endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
+        flow = self.langflow.flow(endpoint, api_key, request.flow_id)
+        before_checksum = self._runtime_flow_checksum(flow)
+        catalog_contract = self._component_contract(asset)
+        required_contract = {
+            "contract_id": "boi.agent-slot.v1",
+            "inputs": ["agent_context"],
+            "outputs": ["agent_result"],
+        }
+        if catalog_contract["contract_id"] and catalog_contract != required_contract:
+            return {
+                "ok": False,
+                "status": "manual_required",
+                "reason": "component_contract_incompatible",
+                "required_contract": required_contract,
+                "actual_contract": catalog_contract,
+                "contract_source": "agent_hub_catalog",
+                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+            }
+        data = copy.deepcopy(flow.get("data") if isinstance(flow.get("data"), dict) else {})
+        nodes = [item for item in data.get("nodes") or [] if isinstance(item, dict)]
+        edges = [item for item in data.get("edges") or [] if isinstance(item, dict)]
+        slot_nodes = [
+            node
+            for node in nodes
+            if any(
+                value.startswith("BoIAgentSlot") or value == "agent_slot"
+                for value in self._node_component_identity(node)
+            )
+        ]
+        title_key = re.sub(r"[^a-z0-9]+", "", str(asset.get("title") or "").lower())
+        component_nodes = []
+        for node in nodes:
+            identities = self._node_component_identity(node)
+            normalized = {
+                re.sub(r"[^a-z0-9]+", "", value.lower())
+                for value in identities
+            }
+            if title_key and any(
+                title_key in value or value in title_key
+                for value in normalized
+                if value
+            ):
+                component_nodes.append(node)
+        if not component_nodes:
+            component_nodes = [
+                node
+                for node in nodes
+                if self._node_component_contract(node) == required_contract
+            ]
+        if len(slot_nodes) != 1 or len(component_nodes) != 1:
+            return {
+                "ok": False,
+                "status": "manual_required",
+                "reason": (
+                    "agent_slot_not_unique"
+                    if len(slot_nodes) != 1
+                    else "component_node_not_unique"
+                ),
+                "slot_count": len(slot_nodes),
+                "component_node_count": len(component_nodes),
+                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+            }
+        slot = slot_nodes[0]
+        component = component_nodes[0]
+        deployed_contract = self._node_component_contract(component)
+        contract = (
+            catalog_contract
+            if catalog_contract["contract_id"]
+            else deployed_contract
+        )
+        if (
+            contract["contract_id"] != "boi.agent-slot.v1"
+            or contract["inputs"] != ["agent_context"]
+            or contract["outputs"] != ["agent_result"]
+        ):
+            return {
+                "ok": False,
+                "status": "manual_required",
+                "reason": "component_contract_incompatible",
+                "required_contract": required_contract,
+                "actual_contract": contract,
+                "contract_source": (
+                    "agent_hub_catalog"
+                    if catalog_contract["contract_id"]
+                    else "deployed_component_source"
+                    if deployed_contract["contract_id"]
+                    else "missing"
+                ),
+                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+            }
+        slot_id = self._node_id(slot)
+        component_id = self._node_id(component)
+        inbound = [edge for edge in edges if str(edge.get("target") or "") == slot_id]
+        outbound = [edge for edge in edges if str(edge.get("source") or "") == slot_id]
+        if len(inbound) != 1 or len(outbound) != 1:
+            return {
+                "ok": False,
+                "status": "manual_required",
+                "reason": "agent_slot_edge_ambiguous",
+                "inbound_edge_count": len(inbound),
+                "outbound_edge_count": len(outbound),
+                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+            }
+        component_data = component.get("data") if isinstance(component.get("data"), dict) else {}
+        component_node = (
+            component_data.get("node")
+            if isinstance(component_data.get("node"), dict)
+            else {}
+        )
+        template = (
+            component_node.get("template")
+            if isinstance(component_node.get("template"), dict)
+            else {}
+        )
+        outputs = [
+            item
+            for item in component_node.get("outputs") or []
+            if isinstance(item, dict)
+        ]
+        input_spec = template.get("agent_context") if isinstance(template.get("agent_context"), dict) else {}
+        output_spec = next(
+            (item for item in outputs if str(item.get("name") or "") == "agent_result"),
+            None,
+        )
+        if not input_spec or output_spec is None:
+            return {
+                "ok": False,
+                "status": "manual_required",
+                "reason": "component_ports_do_not_match_contract",
+                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+            }
+        component_node.setdefault("metadata", {})["component_asset_id"] = request.component_asset_id
+        component_node["metadata"]["component_contract"] = "boi.agent-slot.v1"
+        component_data["component_asset_id"] = request.component_asset_id
+        provenance_input = template.get("component_asset_id")
+        if isinstance(provenance_input, dict):
+            provenance_input["value"] = request.component_asset_id
+        source_to_component = self._edge_handles(
+            source_id=str(inbound[0].get("source") or ""),
+            source_type=str(
+                ((inbound[0].get("data") or {}).get("sourceHandle") or {}).get("dataType")
+                or ""
+            ),
+            source_name=str(
+                ((inbound[0].get("data") or {}).get("sourceHandle") or {}).get("name")
+                or "knowledge"
+            ),
+            source_types=list(
+                ((inbound[0].get("data") or {}).get("sourceHandle") or {}).get("output_types")
+                or ["Data", "JSON"]
+            ),
+            target_id=component_id,
+            target_name="agent_context",
+            target_types=list(input_spec.get("input_types") or ["Data", "JSON"]),
+        )
+        component_to_target = self._edge_handles(
+            source_id=component_id,
+            source_type=str(component_data.get("type") or component_node.get("name") or "Component"),
+            source_name="agent_result",
+            source_types=list(output_spec.get("types") or ["Data", "JSON"]),
+            target_id=str(outbound[0].get("target") or ""),
+            target_name=str(
+                ((outbound[0].get("data") or {}).get("targetHandle") or {}).get("fieldName")
+                or "agent_result"
+            ),
+            target_types=list(
+                ((outbound[0].get("data") or {}).get("targetHandle") or {}).get("inputTypes")
+                or ["Data", "JSON"]
+            ),
+        )
+        data["nodes"] = [node for node in nodes if self._node_id(node) != slot_id]
+        data["edges"] = [
+            edge
+            for edge in edges
+            if str(edge.get("source") or "") != slot_id
+            and str(edge.get("target") or "") != slot_id
+            and str(edge.get("source") or "") != component_id
+            and str(edge.get("target") or "") != component_id
+        ] + [source_to_component, component_to_target]
+        snapshot_id = f"flow-snapshot-{uuid.uuid4().hex[:16]}"
+        updated = self.langflow.update_flow(
+            endpoint,
+            api_key,
+            request.flow_id,
+            {**flow, "data": data},
+        )
+        after_checksum = self._runtime_flow_checksum(updated)
+        graph_health = self._graph_health(updated)
+        if not graph_health["end_to_end_reachable"] or request.component_asset_id not in graph_health["connected_component_ids"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "component_composition_graph_invalid",
+                    "graph_health": graph_health,
+                },
+            )
+        with self._lock:
+            current = self._read(principal.employee_id)
+            current.setdefault("composition_snapshots", []).append(
+                {
+                    "snapshot_id": snapshot_id,
+                    "adoption_id": adoption_id,
+                    "flow_id": request.flow_id,
+                    "checksum": before_checksum,
+                    "flow": flow,
+                    "created_at": now_iso(),
+                }
+            )
+            current_adoption = self._hub_adoption(current, adoption_id)
+            current_adoption.update(
+                {
+                    "composition_status": "connected",
+                    "connected_component_ids": [request.component_asset_id],
+                    "runtime_checksum": after_checksum,
+                    "rollback_snapshot_id": snapshot_id,
+                    "composed_at": now_iso(),
+                }
+            )
+            for deployment in current.get("deployments") or []:
+                if (
+                    isinstance(deployment, dict)
+                    and str(deployment.get("deployment_id") or "")
+                    == str(current_adoption.get("deployment_id") or "")
+                ):
+                    deployment["artifact_checksum"] = after_checksum
+                    deployment["runtime_checksum"] = after_checksum
+                    deployment["live_checksum"] = after_checksum
+                    deployment["checksum_state"] = "matched"
+                    deployment["status"] = "discovered"
+                    deployment["connected_component_ids"] = [request.component_asset_id]
+                    deployment["graph_health"] = graph_health
+            self._write(principal.employee_id, current)
+        return {
+            "ok": True,
+            "status": "connected",
+            "previous_checksum": before_checksum,
+            "live_checksum": after_checksum,
+            "connected_nodes": {
+                "removed_agent_slot": slot_id,
+                "component": component_id,
+            },
+            "connected_edges": [
+                source_to_component["id"],
+                component_to_target["id"],
+            ],
+            "graph_health": graph_health,
+            "rollback_snapshot": {
+                "snapshot_id": snapshot_id,
+                "checksum": before_checksum,
+            },
+        }
+
     def _live_flow(
         self,
         principal: AuthIdentity,
@@ -2015,6 +2716,7 @@ class AgentPlaygroundService:
         payload: PlaygroundFlowTestRequest,
         *,
         run_token: str = "",
+        audience: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         input_value = json.dumps(
             {
@@ -2042,6 +2744,7 @@ class AgentPlaygroundService:
             flow_ref,
             input_value=input_value,
             run_token=run_token,
+            audience=audience,
         )
         serialized = json.dumps(result, ensure_ascii=False, default=str)
         if any(pattern.search(serialized) for pattern in SECRET_PATTERNS):
@@ -2391,14 +3094,15 @@ class AgentPlaygroundService:
             # Informational evidence can use the Agent Hub container-facing host
             # while runtime invocation remains bound to the selected connection.
             normalize_langflow_endpoint(request.agent_hub_flow_url)
-        checksum = request.artifact_checksum or (
-            self._canonical_checksum()
-            if str(flow.get("name") or "") == CANONICAL_FLOW_NAME
-            or str(flow.get("endpoint_name") or "") == CANONICAL_FLOW_ENDPOINT
-            else hashlib.sha256(
-                json.dumps(flow, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
-            ).hexdigest()
-        )
+        try:
+            live_flow = self.langflow.flow(
+                connection_endpoint,
+                self._api_key(record, request.endpoint_id),
+                request.flow_id,
+            )
+        except HTTPException:
+            live_flow = flow
+        checksum = self._runtime_flow_checksum(live_flow)
         deployment_id = f"hub-{uuid.uuid4().hex[:16]}"
         deployment = {
             "deployment_id": deployment_id,
@@ -2620,12 +3324,27 @@ class AgentPlaygroundService:
             for pattern in SECRET_PATTERNS
             if pattern.search(serialized)
         ]
+        structured_graph = any(
+            isinstance(node, dict)
+            for node in flow_data.get("nodes") or []
+        )
+        graph_health = (
+            AgentPlaygroundService._graph_health(flow)
+            if structured_graph
+            else {
+                "end_to_end_reachable": True,
+                "execution_path_nodes": [],
+                "connected_component_ids": [],
+                "disconnected_nodes": [],
+            }
+        )
         return {
             "ok": (
                 not missing_components
                 and not present_forbidden
                 and not secret_matches
                 and all(contract_fields.values())
+                and graph_health["end_to_end_reachable"]
             ),
             "validation_profile": validation_profile,
             "components": {
@@ -2645,6 +3364,7 @@ class AgentPlaygroundService:
                 "ok": not secret_matches,
                 "matched_patterns": secret_matches,
             },
+            "graph_health": graph_health,
             "input_contract": expected_inputs,
             "output_contract": expected_outputs,
             "agent_kind": (
@@ -2653,6 +3373,111 @@ class AgentPlaygroundService:
                 else declared_agent_kind or "contract_agent"
             ),
         }
+
+    @classmethod
+    def _adopted_component_graph_state(
+        cls,
+        flow: dict[str, Any],
+        source_assets: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        data = flow.get("data") if isinstance(flow.get("data"), dict) else {}
+        nodes = [item for item in data.get("nodes") or [] if isinstance(item, dict)]
+        health = cls._graph_health(flow)
+        execution_path = set(health.get("execution_path_nodes") or [])
+        component_assets = [
+            asset
+            for asset in source_assets
+            if isinstance(asset, dict) and str(asset.get("type") or "") == "py"
+        ]
+        items: list[dict[str, Any]] = []
+        for asset in component_assets:
+            asset_id = str(asset.get("asset_id") or "")
+            title_key = re.sub(
+                r"[^a-z0-9]+",
+                "",
+                str(asset.get("title") or "").lower(),
+            )
+            matches = []
+            for node in nodes:
+                identities = cls._node_component_identity(node)
+                normalized = {
+                    re.sub(r"[^a-z0-9]+", "", value.lower())
+                    for value in identities
+                }
+                data_value = node.get("data") if isinstance(node.get("data"), dict) else {}
+                component = (
+                    data_value.get("node")
+                    if isinstance(data_value.get("node"), dict)
+                    else {}
+                )
+                metadata = (
+                    component.get("metadata")
+                    if isinstance(component.get("metadata"), dict)
+                    else {}
+                )
+                if (
+                    str(metadata.get("component_asset_id") or "") == asset_id
+                    or (
+                        title_key
+                        and any(
+                            title_key in value or value in title_key
+                            for value in normalized
+                            if value
+                        )
+                    )
+                ):
+                    matches.append(node)
+            if not matches and len(component_assets) == 1:
+                contract_matches = [
+                    node
+                    for node in nodes
+                    if cls._node_component_contract(node).get("contract_id")
+                    == "boi.agent-slot.v1"
+                ]
+                if len(contract_matches) == 1:
+                    matches = contract_matches
+            node_ids = [cls._node_id(node) for node in matches]
+            connected = [node_id for node_id in node_ids if node_id in execution_path]
+            items.append(
+                {
+                    "asset_id": asset_id,
+                    "title": str(asset.get("title") or ""),
+                    "node_ids": node_ids,
+                    "deployed": bool(node_ids),
+                    "connected": len(connected) == 1 and len(node_ids) == 1,
+                    "connected_node_ids": connected,
+                }
+            )
+        return {
+            "items": items,
+            "all_deployed": all(item["deployed"] for item in items),
+            "all_connected": all(item["connected"] for item in items),
+            "disconnected_component_ids": [
+                item["asset_id"]
+                for item in items
+                if item["deployed"] and not item["connected"]
+            ],
+            "missing_component_ids": [
+                item["asset_id"] for item in items if not item["deployed"]
+            ],
+        }
+
+    @staticmethod
+    def _executed_component_ids(result: Any) -> list[str]:
+        collected: set[str] = set()
+        if isinstance(result, dict):
+            for key, value in result.items():
+                if key in {"component_asset_id", "executed_component_id"} and isinstance(value, str):
+                    if value:
+                        collected.add(value)
+                elif key == "executed_component_ids" and isinstance(value, list):
+                    collected.update(str(item) for item in value if str(item))
+                else:
+                    collected.update(AgentPlaygroundService._executed_component_ids(value))
+        elif isinstance(result, list):
+            for value in result:
+                collected.update(AgentPlaygroundService._executed_component_ids(value))
+        return sorted(collected)
 
     @staticmethod
     def _generic_runtime_contract(result: dict[str, Any]) -> dict[str, Any]:
@@ -2813,13 +3638,22 @@ class AgentPlaygroundService:
         except HTTPException:
             flow = listed_flow
         structural = self._flow_contract(flow, validation_profile)
-        checksum = request.artifact_checksum or (
-            self._canonical_checksum()
-            if str(flow.get("name") or listed_flow.get("name") or "") == CANONICAL_FLOW_NAME
-            else hashlib.sha256(
-                json.dumps(flow, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
-            ).hexdigest()
-        )
+        checksum = self._runtime_flow_checksum(flow)
+        source_assets = [
+            item
+            for item in exact_deployment.get("source_assets") or []
+            if isinstance(item, dict)
+        ]
+        component_graph = self._adopted_component_graph_state(flow, source_assets)
+        structural["component_graph"] = component_graph
+        if (
+            component_graph["items"]
+            and (
+                not component_graph["all_deployed"]
+                or not component_graph["all_connected"]
+            )
+        ):
+            structural["ok"] = False
         history = [
             {
                 "stage": "discovered",
@@ -2838,15 +3672,8 @@ class AgentPlaygroundService:
         failure_reason = ""
         runtime_result: dict[str, Any] = {}
         task_result: dict[str, Any] = {}
+        executed_component_ids: list[str] = []
         if structural["ok"]:
-            history.append(
-                {
-                    "stage": "build_validated",
-                    "status": "passed",
-                    "checked_at": now_iso(),
-                    "details": {"flow_loaded": True, "components_resolved": True},
-                }
-            )
             preview = PlaygroundFlowTestRequest(
                 endpoint_id=request.endpoint_id,
                 project_id=request.project_id,
@@ -2855,6 +3682,35 @@ class AgentPlaygroundService:
                 title="Flow 검증 미리보기",
             )
             runtime_result = self._run(endpoint, api_key, flow_id, preview)
+            executed_component_ids = self._executed_component_ids(runtime_result)
+            expected_component_ids = [
+                str(item.get("asset_id") or "")
+                for item in component_graph["items"]
+                if item.get("connected")
+            ]
+            component_execution_ok = all(
+                component_id in executed_component_ids
+                for component_id in expected_component_ids
+            )
+            history.append(
+                {
+                    "stage": "build_validated",
+                    "status": (
+                        "passed"
+                        if structural["graph_health"]["end_to_end_reachable"]
+                        and component_execution_ok
+                        else "failed"
+                    ),
+                    "checked_at": now_iso(),
+                    "details": {
+                        "actual_run_completed": True,
+                        "graph_health": structural["graph_health"],
+                        "expected_component_ids": expected_component_ids,
+                        "executed_component_ids": executed_component_ids,
+                        "component_execution_proven": component_execution_ok,
+                    },
+                }
+            )
             runtime_contract = (
                 self._generic_runtime_contract(runtime_result)
                 if validation_profile == "generic_action"
@@ -2865,6 +3721,9 @@ class AgentPlaygroundService:
                 if structural.get("agent_kind") == "openai_compatible_model"
                 else {"ok": True, "fields": {}}
             )
+            if not component_execution_ok:
+                runtime_contract["ok"] = False
+                runtime_contract["component_execution_proven"] = False
             history.append(
                 {
                     "stage": "runtime_validated",
@@ -2906,51 +3765,77 @@ class AgentPlaygroundService:
                     }
                 )
             elif runtime_contract["ok"] and model_runtime_contract["ok"]:
-                task_ref = request.task_ref or "task://agent-playground/validation"
-                task_payload = PlaygroundFlowTestRequest(
-                    endpoint_id=request.endpoint_id,
-                    project_id=request.project_id,
-                    question="이 Task의 SOP 단계, 선행 결과, 필요한 근거와 부족한 근거를 정리해줘.",
-                    business_context="Agent Playground Flow별 SOP Task Context 검증",
-                    task_ref=task_ref,
-                    context_id=f"validation-{uuid.uuid4().hex[:12]}",
-                    sop_ref="boi:public:sop:equipment-abnormal-response",
-                    sop_stage="analyze",
-                    event_ref="event:root_cause.analysis.requested.v1",
-                    action_ref="action:langflow.equipment.stage_analysis",
-                    prior_results=[
+                task_ref = request.task_ref
+                if not task_ref:
+                    failure_reason = "actual Task anchor is required for Task validation"
+                    history.append(
                         {
-                            "ref": "action:sop.equipment.request_trend_history",
-                            "status": "completed",
-                            "summary": "Trend History 근거 확보",
+                            "stage": "task_validated",
+                            "status": "failed",
+                            "checked_at": now_iso(),
+                            "details": {
+                                "actual_task_anchor": False,
+                                "synthetic_task_anchor_allowed": False,
+                            },
                         }
-                    ],
-                    required_evidence=["trend_history", "raw_data", "alarm_context"],
-                    missing_evidence=["raw_data"],
-                    save_mode="preview",
-                    title="SOP Task Context 검증",
-                )
-                validation_trace = f"flow-validation-{uuid.uuid4().hex}"
-                run_token = self.pat_service.create_run_token(
-                    principal,
-                    action_key=f"agent-playground.validation.{flow_id}",
-                    flow_id=flow_id,
-                    trace_id=validation_trace,
-                    scopes=["boi.read"],
-                    ttl_seconds=180,
-                )
-                try:
-                    task_result = self._run(
-                        endpoint,
-                        api_key,
-                        flow_id,
-                        task_payload,
-                        run_token=str(run_token["token"]),
                     )
-                finally:
-                    self.pat_service.consume_run_token(str(run_token["token_id"]))
-                task_contract = self._runtime_contract(task_result)
-                task_payload_result = self._contract_payload(task_result)
+                    task_ref = ""
+                if not task_ref:
+                    task_payload = None
+                else:
+                    task_payload = PlaygroundFlowTestRequest(
+                        endpoint_id=request.endpoint_id,
+                        project_id=request.project_id,
+                        question="이 Task의 실제 SOP 단계, 선행 결과, 필요한 근거와 부족한 근거를 정리해줘.",
+                        business_context="Agent Playground 실제 Task Context 검증",
+                        task_ref=task_ref,
+                        save_mode="preview",
+                        title="실제 Task Context 검증",
+                    )
+                if task_payload is None:
+                    task_result = {}
+                else:
+                    validation_trace = f"flow-validation-{uuid.uuid4().hex}"
+                    validation_execution_id = f"boi-validation-{uuid.uuid4().hex}"
+                    validation_deployment_id = f"validation:{request.endpoint_id}:{flow_id}"
+                    run_token = self.pat_service.create_run_token(
+                        principal,
+                        action_key=f"agent-playground.validation.{flow_id}",
+                        deployment_id=validation_deployment_id,
+                        endpoint_id=request.endpoint_id,
+                        project_id=request.project_id,
+                        flow_id=flow_id,
+                        trace_id=validation_trace,
+                        execution_id=validation_execution_id,
+                        allowed_capabilities=["boi.search", "boi.get"],
+                        scopes=["boi.read"],
+                        ttl_seconds=180,
+                    )
+                    try:
+                        task_result = self._run(
+                            endpoint,
+                            api_key,
+                            flow_id,
+                            task_payload,
+                            run_token=str(run_token["token"]),
+                            audience={
+                                "BOI_ACTION_KEY": f"agent-playground.validation.{flow_id}",
+                                "BOI_DEPLOYMENT_ID": validation_deployment_id,
+                                "BOI_ENDPOINT_ID": request.endpoint_id,
+                                "BOI_PROJECT_ID": request.project_id,
+                                "BOI_FLOW_ID": flow_id,
+                                "BOI_TRACE_ID": validation_trace,
+                                "BOI_EXECUTION_ID": validation_execution_id,
+                            },
+                        )
+                    finally:
+                        self.pat_service.consume_run_token(str(run_token["token_id"]))
+                if task_payload is None:
+                    task_contract = {"ok": False, "fields": {"source_references": False}}
+                    task_payload_result = {}
+                else:
+                    task_contract = self._runtime_contract(task_result)
+                    task_payload_result = self._contract_payload(task_result)
                 task_context = (
                     task_payload_result.get("task_context")
                     if isinstance(task_payload_result.get("task_context"), dict)
@@ -2959,14 +3844,17 @@ class AgentPlaygroundService:
                 ontology_relationships = task_payload_result.get("ontology_relationships")
                 task_fields = {
                     "task_context": task_context.get("profile") == "sop_task_execution",
-                    "task_ref": task_context.get("task_ref") == task_payload.task_ref,
-                    "sop_ref": task_context.get("sop_ref") == task_payload.sop_ref,
-                    "sop_stage": task_context.get("sop_stage") == task_payload.sop_stage,
-                    "event_ref": task_context.get("event_ref") == task_payload.event_ref,
-                    "action_ref": task_context.get("action_ref") == task_payload.action_ref,
-                    "prior_results": task_context.get("prior_results") == task_payload.prior_results,
-                    "required_evidence": task_context.get("required_evidence") == task_payload.required_evidence,
-                    "missing_evidence": task_context.get("missing_evidence") == task_payload.missing_evidence,
+                    "task_ref": (
+                        task_payload is not None
+                        and task_context.get("task_ref") == task_payload.task_ref
+                    ),
+                    "sop_ref": bool(task_context.get("sop_ref")),
+                    "sop_stage": bool(task_context.get("sop_stage")),
+                    "event_ref": bool(task_context.get("event_ref")),
+                    "action_ref": bool(task_context.get("action_ref")),
+                    "prior_results": isinstance(task_context.get("prior_results"), list),
+                    "required_evidence": bool(task_context.get("required_evidence")),
+                    "missing_evidence": isinstance(task_context.get("missing_evidence"), list),
                     "ontology": isinstance(ontology_relationships, list) and bool(ontology_relationships),
                     "source_references": bool(task_contract["fields"]["source_references"]),
                 }
@@ -2992,6 +3880,9 @@ class AgentPlaygroundService:
                     failure_reason = "SOP Task Context, Ontology, or grounding contract is incomplete"
             else:
                 failure_reason = (
+                    "connected Agent Hub component has no runtime execution provenance"
+                    if not component_execution_ok
+                    else
                     "runtime output does not prove real model inference"
                     if structural.get("agent_kind") == "openai_compatible_model"
                     and not model_runtime_contract["ok"]
@@ -3014,6 +3905,12 @@ class AgentPlaygroundService:
                     if not passed
                 )
                 failure_reason = f"Flow manifest contract mismatch: {failed_fields}"
+            elif structural["component_graph"]["disconnected_component_ids"]:
+                failure_reason = "disconnected_component"
+            elif structural["component_graph"]["missing_component_ids"]:
+                failure_reason = "agent_hub_component_not_deployed"
+            elif not structural["graph_health"]["end_to_end_reachable"]:
+                failure_reason = "flow_execution_path_is_disconnected"
             else:
                 failure_reason = "secret scan failed"
         if validation_status == "blocked":
@@ -3027,6 +3924,35 @@ class AgentPlaygroundService:
             )
         with self._lock:
             record = self._read(principal.employee_id)
+            linked_deployment = next(
+                (
+                    deployment
+                    for deployment in record.get("deployments") or []
+                    if isinstance(deployment, dict)
+                    and str(deployment.get("endpoint_id") or "") == request.endpoint_id
+                    and str(deployment.get("project_id") or "") == request.project_id
+                    and str(deployment.get("flow_id") or "") == flow_id
+                ),
+                None,
+            )
+            effective_validation_status = validation_status
+            if (
+                validation_status == "action_ready"
+                and isinstance(linked_deployment, dict)
+                and str(linked_deployment.get("action_draft_id") or "")
+            ):
+                effective_validation_status = "action_linked"
+                history.append(
+                    {
+                        "stage": "action_linked",
+                        "status": "passed",
+                        "checked_at": now_iso(),
+                        "details": {
+                            "draft_id": str(linked_deployment.get("action_draft_id") or ""),
+                            "preserved_after_revalidation": True,
+                        },
+                    }
+                )
             registry_item = self._upsert_flow_registry(
                 record,
                 {
@@ -3037,10 +3963,20 @@ class AgentPlaygroundService:
                     "endpoint_name": str(flow.get("endpoint_name") or listed_flow.get("endpoint_name") or ""),
                     "artifact_version": artifact_version,
                     "artifact_checksum": checksum,
+                    "live_checksum": checksum,
+                    "checksum_state": "matched",
+                    "graph_health": structural["graph_health"],
+                    "connected_component_ids": structural["graph_health"].get(
+                        "connected_component_ids"
+                    ) or [],
+                    "disconnected_nodes": structural["graph_health"].get(
+                        "disconnected_nodes"
+                    ) or [],
+                    "executed_component_ids": executed_component_ids,
                     "validation_profile": validation_profile,
                     "input_contract": structural["input_contract"],
                     "output_contract": structural["output_contract"],
-                    "validation_status": validation_status,
+                    "validation_status": effective_validation_status,
                     "validation_history": history,
                     "failure_reason": failure_reason,
                     "validated_at": now_iso(),
@@ -3053,23 +3989,29 @@ class AgentPlaygroundService:
                     and str(deployment.get("project_id") or "") == request.project_id
                     and str(deployment.get("flow_id") or "") == flow_id
                 ):
-                    deployment["status"] = validation_status
+                    deployment["status"] = effective_validation_status
                     deployment["validation_profile"] = validation_profile
                     deployment["input_contract"] = structural["input_contract"]
                     deployment["output_contract"] = structural["output_contract"]
                     deployment["artifact_checksum"] = checksum
+                    deployment["live_checksum"] = checksum
+                    deployment["checksum_state"] = "matched"
+                    deployment["graph_health"] = structural["graph_health"]
+                    deployment["executed_component_ids"] = executed_component_ids
                     deployment["validated_at"] = now_iso()
                     if failure_reason:
                         deployment["failure_reason"] = failure_reason
+                    else:
+                        deployment.pop("failure_reason", None)
             self._write(principal.employee_id, record)
         return {
-            "ok": validation_status == "action_ready",
+            "ok": effective_validation_status in {"action_ready", "action_linked"},
             "endpoint_id": request.endpoint_id,
             "project_id": request.project_id,
             "flow_id": flow_id,
             "artifact_version": artifact_version,
             "artifact_checksum": checksum,
-            "validation_status": validation_status,
+            "validation_status": effective_validation_status,
             "validation_profile": validation_profile,
             "failure_reason": failure_reason,
             "history": history,
@@ -3086,8 +4028,23 @@ class AgentPlaygroundService:
                 return item
         raise HTTPException(status_code=404, detail="deployment not found")
 
-    def action_draft_payload(self, principal: AuthIdentity, deployment_id: str) -> dict[str, Any]:
+    def action_draft_payload(
+        self,
+        principal: AuthIdentity,
+        deployment_id: str,
+        *,
+        scope: Literal["private", "team"] = "private",
+        team_id: str = "",
+    ) -> dict[str, Any]:
         require_role(principal, "boi.editor", "boi.action_invoker")
+        if scope == "team":
+            if not team_id:
+                raise HTTPException(status_code=422, detail="team_id is required for team Action")
+            if team_id not in principal.teams:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Action owner is not a member of the selected HCP team",
+                )
         deployment = self.deployment(principal, deployment_id)
         if str(deployment.get("status") or "") != "action_ready":
             raise HTTPException(
@@ -3099,6 +4056,10 @@ class AgentPlaygroundService:
                     "failure_reason": str(deployment.get("failure_reason") or ""),
                 },
             )
+        self.execution_connection(
+            deployment_id,
+            str(deployment.get("flow_id") or ""),
+        )
         source_assets = [
             item
             for item in deployment.get("source_assets") or []
@@ -3298,7 +4259,12 @@ class AgentPlaygroundService:
         }
         return {
             "entry_kind": "action",
-            "scope": "private",
+            "scope": scope,
+            "folder": (
+                f"team/{team_id}/action-drafts"
+                if scope == "team"
+                else f"private/{principal.employee_id}/action-drafts"
+            ),
             "title": profile_contract["title"],
             "business_goal": profile_contract["business_goal"],
             "description": profile_contract["description"],
@@ -3346,6 +4312,7 @@ class AgentPlaygroundService:
                     validation_profile == "generic_action"
                 ),
             },
+            "team_id": team_id if scope == "team" else "",
             "action_key": f"agent-playground.{principal.employee_id}.{action_slug}.{deployment['flow_id']}",
             "risk_level": profile_contract["risk_level"],
             "approval_required": profile_contract["approval_required"],
@@ -3598,33 +4565,42 @@ class AgentPlaygroundService:
         }
 
     def record_action_draft(self, principal: AuthIdentity, deployment_id: str, draft: dict[str, Any]) -> None:
-        record = self._read(principal.employee_id)
         deployment = self.deployment(principal, deployment_id)
         draft_id = str(draft.get("draft_id") or "")
-        record["action"] = {
-            "status": str(draft.get("status") or "draft"),
-            "draft_id": draft_id,
-            "draft_url": f"/actions/drafts/{draft_id}" if draft_id else "",
-            "deployment_id": deployment_id,
-            "linked_at": now_iso(),
-        }
-        for item in record.get("deployments") or []:
-            if isinstance(item, dict) and str(item.get("deployment_id") or "") == deployment_id:
-                item["status"] = "action_linked"
-                item["action_draft_id"] = draft_id
-                item["action_draft_status"] = str(draft.get("status") or "draft")
-                item["action_linked_at"] = now_iso()
-        for item in record.get("flow_registry") or []:
-            if (
-                isinstance(item, dict)
-                and str(item.get("endpoint_id") or "") == str(deployment.get("endpoint_id") or "")
-                and str(item.get("project_id") or "") == str(deployment.get("project_id") or "")
-                and str(item.get("flow_id") or "") == str(deployment.get("flow_id") or "")
-            ):
-                item["validation_status"] = "action_linked"
-                item["action_draft_id"] = draft_id
-                item["action_draft_status"] = str(draft.get("status") or "draft")
-        self._write(principal.employee_id, record)
+        with self._lock:
+            record = self._read(principal.employee_id)
+            record["action"] = {
+                "status": str(draft.get("status") or "draft"),
+                "draft_id": draft_id,
+                "draft_url": f"/actions/drafts/{draft_id}" if draft_id else "",
+                "deployment_id": deployment_id,
+                "action_key": str(
+                    (
+                        draft.get("request")
+                        if isinstance(draft.get("request"), dict)
+                        else {}
+                    ).get("action_key")
+                    or ""
+                ),
+                "linked_at": now_iso(),
+            }
+            for item in record.get("deployments") or []:
+                if isinstance(item, dict) and str(item.get("deployment_id") or "") == deployment_id:
+                    item["status"] = "action_linked"
+                    item["action_draft_id"] = draft_id
+                    item["action_draft_status"] = str(draft.get("status") or "draft")
+                    item["action_linked_at"] = now_iso()
+            for item in record.get("flow_registry") or []:
+                if (
+                    isinstance(item, dict)
+                    and str(item.get("endpoint_id") or "") == str(deployment.get("endpoint_id") or "")
+                    and str(item.get("project_id") or "") == str(deployment.get("project_id") or "")
+                    and str(item.get("flow_id") or "") == str(deployment.get("flow_id") or "")
+                ):
+                    item["validation_status"] = "action_linked"
+                    item["action_draft_id"] = draft_id
+                    item["action_draft_status"] = str(draft.get("status") or "draft")
+            self._write(principal.employee_id, record)
 
     def sync_action_draft_status(self, employee_id: str, draft: dict[str, Any]) -> None:
         """Mirror registration state only when its immutable deployment reference matches."""
@@ -3662,6 +4638,11 @@ class AgentPlaygroundService:
             for connector_key, deployment_key in exact_fields.items()
         ):
             raise HTTPException(status_code=409, detail="Action draft deployment reference does not match")
+        self.execution_connection(
+            deployment_id,
+            flow_id,
+            action_key=str(request.get("action_key") or ""),
+        )
         status = str(draft.get("status") or "draft")
         validation = draft.get("validation") if isinstance(draft.get("validation"), dict) else {}
         action = record.get("action") if isinstance(record.get("action"), dict) else {}
@@ -3687,7 +4668,13 @@ class AgentPlaygroundService:
                     item["validation_status"] = "action_linked"
         self._write(employee_id, record)
 
-    def execution_connection(self, deployment_id: str, flow_id: str) -> dict[str, str]:
+    def execution_connection(
+        self,
+        deployment_id: str,
+        flow_id: str,
+        *,
+        action_key: str = "",
+    ) -> dict[str, str]:
         """Resolve the Action owner's endpoint without trusting caller-supplied ownership."""
 
         users_root = self.root / "users"
@@ -3713,13 +4700,63 @@ class AgentPlaygroundService:
                 raise HTTPException(status_code=409, detail="deployment is not ready for Action execution")
             endpoint_id = str(deployment.get("endpoint_id") or "")
             connection = self._endpoint(record, endpoint_id)
+            recorded_action = (
+                record.get("action")
+                if isinstance(record.get("action"), dict)
+                and str(record["action"].get("deployment_id") or "") == deployment_id
+                else {}
+            )
+            recorded_action_key = str(recorded_action.get("action_key") or "")
+            if (
+                recorded_action_key
+                and action_key
+                and recorded_action_key != str(action_key or "")
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Action key does not match the deployment registration",
+                )
+            endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
+            api_key = self._api_key(record, endpoint_id)
+            live_flow = self.langflow.flow(endpoint, api_key, flow_id)
+            live_checksum = self._runtime_flow_checksum(live_flow)
+            registered_checksum = str(deployment.get("artifact_checksum") or "")
+            if not registered_checksum or live_checksum != registered_checksum:
+                deployment["status"] = "blocked"
+                deployment["checksum_state"] = "drifted"
+                deployment["live_checksum"] = live_checksum
+                deployment["failure_reason"] = "flow_checksum_drift"
+                deployment["drift_detected_at"] = now_iso()
+                for registry_item in record.get("flow_registry") or []:
+                    if (
+                        isinstance(registry_item, dict)
+                        and str(registry_item.get("endpoint_id") or "") == endpoint_id
+                        and str(registry_item.get("project_id") or "")
+                        == str(deployment.get("project_id") or "")
+                        and str(registry_item.get("flow_id") or "") == flow_id
+                    ):
+                        registry_item["validation_status"] = "blocked"
+                        registry_item["checksum_state"] = "drifted"
+                        registry_item["live_checksum"] = live_checksum
+                        registry_item["failure_reason"] = "flow_checksum_drift"
+                self._write(str(record.get("employee_id") or ""), record)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "flow_checksum_drift",
+                        "registered_checksum": registered_checksum,
+                        "live_checksum": live_checksum,
+                    },
+                )
             return {
-                "endpoint": str(connection.get("base_url") or connection.get("endpoint") or ""),
-                "api_key": self._api_key(record, endpoint_id),
+                "endpoint": endpoint,
+                "api_key": api_key,
                 "langflow_user_id": str(connection.get("langflow_user_id") or ""),
                 "owner_employee_id": str(record.get("employee_id") or ""),
                 "endpoint_id": endpoint_id,
                 "project_id": str(deployment.get("project_id") or ""),
+                "registered_checksum": registered_checksum,
+                "live_checksum": live_checksum,
             }
         raise HTTPException(status_code=404, detail="Agent Playground deployment not found")
 

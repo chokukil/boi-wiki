@@ -503,14 +503,19 @@ def normalize_hcp_permissions(employee_id: str, raw: Any) -> dict[str, Any]:
     }
 
 
-def hcp_permissions(employee_id: str, bearer_token: str | None = None) -> dict[str, Any]:
+def hcp_permissions(
+    employee_id: str,
+    bearer_token: str | None = None,
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
     url = env_first("HCP_AUTHZ_URL", "KEYCLOAK_HCP_API_URL")
     if not url:
         return {}
     ttl = int(os.getenv("HCP_AUTHZ_CACHE_TTL_SECONDS", "60"))
     now = time.time()
     cached = _HCP_CACHE.get(employee_id)
-    if cached and cached[0] > now:
+    if not force_refresh and cached and cached[0] > now:
         return cached[1]
     headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token else {}
     timeout = float(os.getenv("HCP_AUTHZ_TIMEOUT_SECONDS", "2"))
