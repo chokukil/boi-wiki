@@ -55,6 +55,7 @@ const result = {
   ready: {},
   idempotency: {},
   console_errors: [],
+  ignored_console_errors: [],
   page_errors: [],
   http_errors: [],
 };
@@ -75,6 +76,18 @@ async function screenshot(page, name) {
 function diagnostics(page, scope) {
   page.on("console", (message) => {
     const text = message.text();
+    if (
+      scope === "langflow-key"
+      && message.type() === "error"
+      && text === "Duplicate request: /api/v1/projects/"
+    ) {
+      result.ignored_console_errors.push({
+        scope,
+        text,
+        reason: "known Langflow 1.11 settings UI duplicate-request guard",
+      });
+      return;
+    }
     if (
       message.type() === "error" &&
       !text.includes("favicon") &&
