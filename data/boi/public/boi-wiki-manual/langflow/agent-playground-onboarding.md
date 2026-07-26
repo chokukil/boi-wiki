@@ -25,136 +25,55 @@ review:
   review_status: reviewed
 ---
 
-# 무엇을 준비하는가
+# 3분 빠른 시작
 
-Agent Playground는 내 사번에 연결된 Langflow 프로젝트에서 Flow를 만들고 시험하는 개인 개발 공간이다. 충분히 검증한 Flow는 Agent Hub로 배포하고, 배포된 정확한 Flow를 BoI Action으로 연결한다.
+Agent Playground는 내 사번의 Langflow 프로젝트에서 Flow를 만들고 시험하는 개인 개발 공간이다. 검증을 마친 Flow는 기존 Agent Hub UI에서 배포하고, Playground가 배포 결과를 다시 찾아 BoI Action으로 연결한다.
 
-Langflow와 Agent Hub는 BoI가 수정하지 않는다. Playground는 각 제품이 제공하는 API Key, Flow JSON, custom component, 공개 API만 사용한다.
+1. `/playground`를 열어 현재 SSO 사용자를 확인한다.
+2. `Langflow 설정에서 키 발급`으로 개인 API Key를 만든다.
+3. Playground에서 연결을 시험하고 `내 개발 공간 자동 준비`를 실행한다.
+4. `Langflow에서 만들기`에서 Agent를 편집한다.
+5. `Playground 테스트`에서 업무 맥락, Ontology 관계, Wiki 근거와 저장 결과를 확인한다.
+6. `Agent Hub`에서 내 Flow를 배포하거나 승인된 공유 자산을 가져온다.
+7. 배포 Flow를 다시 찾아 검증한 뒤 `Action 연결`을 진행한다.
 
-# 두 키를 구분한다
+Langflow와 Agent Hub는 BoI가 수정하지 않는다. Playground는 공개 API와 기존 UI만 사용한다.
 
-| 구분 | 누가 만드는가 | 어디에 쓰는가 |
+# 어떤 경로로 시작할까
+
+## 내 Flow를 배포한다
+
+내 프로젝트에서 만든 Flow를 충분히 시험한 뒤 Agent Hub에 올린다.
+
+[내 Flow를 Agent Hub에 배포하기](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-my-flow-deploy)
+
+## 공유 Flow·Component를 활용한다
+
+다른 직원이 만든 승인 Flow나 Component를 내 프로젝트에 배포하고 실제 실행 경로에 연결한다.
+
+[Agent Hub 공유 자산 활용하기](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-shared-assets)
+
+# 처음 연결하는 경우
+
+두 키의 역할이 다르다.
+
+| 구분 | 준비 방법 | 사용 위치 |
 |---|---|---|
-| Langflow 연결 키 | 사용자가 Langflow `설정 → API Keys`에서 발급 | Playground endpoint 연결, Agent Hub endpoint 등록 |
-| BoI 지식 연결 | Playground가 자동 발급 | Langflow 안에서 Wiki·Ontology 조회와 개인 초안 저장 |
+| Langflow 연결 키 | Langflow 표준 설정에서 사용자가 발급 | Playground와 Agent Hub에 각각 한 번 입력 |
+| BoI 지식 연결 | Playground가 자동 준비 | Langflow 안에서 Wiki·Ontology 조회와 개인 초안 저장 |
 
-Langflow 연결 키는 저장 후 다시 보이지 않는다. BoI 지식 연결의 PAT도 화면, Flow JSON, Agent Hub에 노출되지 않는다.
+[Langflow 처음 연결하기](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-langflow-setup)
 
-# 처음 시작하기
+# Action과 Wiki에서 사용하기
 
-## 1. 내 개발 공간 확인
+Action은 Langflow 전용 기능이 아니다. 업무 목적과 입력·출력·근거·승인 정책은 공통 Action 계약으로 유지하고, 이 Flow를 실행하는 연결만 Langflow binding으로 둔다.
 
-`Agent Playground`를 열면 현재 SSO 사용자와 권한을 먼저 확인한다. 주소나 입력값에 포함된 사번은 소유권 기준으로 사용하지 않는다.
+지식 조회는 업무 Context와 Ontology를 우선 사용한다. 관계 근거가 없을 때만 권한 내 Wiki 문서로 보완한다. 저장 기본값은 미리보기이며, 사용자가 직접 선택한 경우에만 내 개인 초안을 만든다.
 
-## 2. Langflow 연결 키 발급
+[Action으로 연결하고 Wiki에서 실행하기](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-action-wiki)
 
-1. `Langflow 설정에서 키 발급`을 누른다.
-2. Langflow의 `API Keys` 화면에서 이름을 `BoI Agent Playground`로 입력한다.
-3. 새 키를 발급하고, 표시되는 값을 한 번만 복사한다.
-4. Playground로 돌아와 `방금 발급한 API Key`에 붙여 넣는다.
-5. `연결 시험`에서 Langflow 1.11과 내 사번 사용자가 확인되는지 본다.
-6. `확인하고 저장`을 누른다.
+# 문제가 생겼다면
 
-브라우저에서 여는 `/builder` 주소와 Agent Hub가 호출하는 host-root API 주소는 다를 수 있다. Playground에 미리 채워진 주소를 임의로 바꾸기 전에 운영자에게 확인한다.
+[Agent Playground 문제 해결](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-troubleshooting)
 
-## 3. BoI 지식 연결 자동 준비
-
-`내 개발 공간 자동 준비`를 누르면 다음 항목이 순서대로 만들어진다.
-
-- `boi-{사번}` 개인 프로젝트
-- 만료 없는 개인 BoI PAT
-- Langflow `BOI_WIKI_PAT` Credential Variable
-- read-only 방식으로 설치된 BoI component bundle 확인
-- `BoI Wiki Agent Loop` 기준 Flow
-- Wiki를 변경하지 않는 preview smoke
-
-중간에 실패해도 같은 버튼을 다시 누르면 실패한 단계부터 이어진다. 프로젝트, PAT, Flow를 매번 새로 만들지 않는다.
-
-## 4. 첫 Flow 확인
-
-preview가 통과하면 `Playground 시작`을 누른다. 이후 작업은 다음 네 단계로 진행한다.
-
-`Langflow에서 만들기 → Playground 테스트 → Agent Hub 배포 → Action 연결`
-
-# Agent Hub로 배포하기
-
-1. Playground에서 Flow 자산을 내려받는다.
-2. Agent Hub에서 Flow JSON 또는 component 자산을 업로드한다.
-3. endpoint 별칭과 Langflow host-root URL을 입력한다.
-4. 앞에서 발급한 Langflow 연결 키를 Agent Hub에도 한 번 입력한다.
-5. 연결 시험 후 `boi-{사번}` 프로젝트를 선택한다.
-6. Flow를 배포한다.
-7. Playground로 돌아와 같은 endpoint와 project에서 `새 Flow 찾기`를 누른다.
-8. 새 exact Flow ID를 선택하고 전체 검증을 실행한다.
-
-BoI와 Agent Hub는 저장된 API Key를 서로 읽지 않는다. 같은 키를 양쪽에 한 번씩 입력하는 것이 정상 절차다.
-
-## 다른 사람이 만든 Agent Hub 자산 사용하기
-
-Agent Hub 자산의 제작자와 Action 사용자는 같을 필요가 없다. 다른 직원이나 팀이 만든 Flow·custom component도 Agent Hub에서 선택해 내 `boi-{사번}` 프로젝트로 배포할 수 있다.
-
-1. Agent Hub에서 사용할 Flow 또는 component를 선택한다.
-2. 배포 대상은 내가 Playground에 연결한 Langflow endpoint와 `boi-{사번}` 프로젝트로 지정한다.
-3. component를 배포했다면 Playground에서 상태를 확인한다.
-   - `배포됨`: endpoint에는 있지만 Flow 실행 경로와의 연결은 확인 전
-   - `연결 필요`: Flow에 미연결 노드로 존재
-   - `연결됨`: `boi.agent-slot.v1` 규약에 따라 `agent_slot` 실행 경로에 연결
-   - `실행 검증됨`: 실제 runtime 결과에 component ID provenance가 존재
-4. Playground에서 `새 Flow 찾기`를 눌러 배포된 exact Flow를 연결한다.
-5. `boi.agent-slot.v1`의 단일 `agent_context → agent_result` 포트와 정확히 일치하면 `Agent 자리에 연결`을 사용할 수 있다. 포트가 여러 개이거나 타입이 불명확하면 자동 연결하지 않고 Langflow Canvas에서 직접 연결한다.
-6. Flow가 `BoIWikiKnowledge → 사용자 Agent·custom component 구성 → BoIWikiSave`의 입출력 계약을 유지하는지 검증한다.
-7. build, 실제 실행, Task Context, Wiki·Ontology 근거, 저장 격리 검증을 모두 통과한 Flow만 Action으로 연결한다.
-
-중간의 Agent 영역은 `BoIAgentSlot`이나 예제 모델 하나로 제한하지 않는다. Agent Hub의 여러 custom component를 조합해도 된다. 다만 Wiki facade와 `boi_contract` 입출력, secret scan, 실제 runtime 결과는 유지해야 한다. 완성되지 않은 Flow는 `내 작업 중 Flow`로 남고 Action 연결 버튼이 열리지 않는다.
-
-이번 버전은 팀 endpoint를 만들지 않는다. 팀 Action도 등록자의 개인 endpoint 연결을 서버에서 참조한다. 다른 팀원에게 API Key를 보여주지 않으며, Wiki 조회와 개인 초안은 Action을 실제 실행한 사람의 HCP 권한과 단기 run token으로 처리한다.
-
-# Action으로 연결하기
-
-Flow가 `action_ready`가 되면 `Action 연결`을 누르고 `나만 사용` 또는 내가 속한 HCP 팀의 `팀에서 사용`을 선택한다.
-
-BoI Action은 Langflow 전용 기능이 아니다. 업무 목적, 입력·출력, 근거, 위험도와 승인 정책은
-connector-neutral Action 계약으로 저장된다. API, MCP, Webhook, Manual, Event Broker,
-BoI Writer, Langflow 중 실행 방식만 connector binding으로 따로 붙는다. Playground에서
-만든 초안은 현재 선택한 exact Flow를 실행해야 하므로 그 binding만 Langflow인 것이다.
-
-1. Action 등록 초안을 연다.
-2. Action 계약과 `실행 연결: Langflow`를 구분해 확인한다.
-3. validate 결과를 확인한다.
-4. publish-request를 명시적으로 요청한다.
-5. 운영 승인 후 BoI Wiki의 일반 화면이나 SOP Task에서 Action을 사용한다.
-
-Action 실행 시 Langflow 호출 권한은 endpoint 소유자의 연결을 사용하지만 Wiki 조회와 개인 초안 권한은 Action을 누른 사용자의 권한을 따른다. 실행 token은 caller, Action, deployment, endpoint, project, exact Flow, trace, execution ID와 capability에 묶이므로 다른 실행에서 재사용할 수 없다.
-
-# Wiki와 Ontology 활용
-
-- 지식 조회의 기본은 Task Context와 Ontology를 결합한 hybrid retrieval이다. 내부 MCP 호환 호출명은 사용자 기능이나 별도 단순 검색으로 노출하지 않는다.
-- 일반 질문도 Ontology와 semantic·lexical 근거를 함께 평가하고, graph 관계가 없을 때만 ACL 내 문서 근거로 대체한다.
-- SOP Task에서 실행하면 Task, SOP, Stage, Event, Action, 선행 결과, 필요 근거와 부족 근거가 함께 전달된다.
-- SOP가 없는 업무에는 존재하지 않는 SOP 맥락을 만들지 않는다.
-- Ontology provenance가 없으면 해당 관계를 사실 근거로 사용하지 않는다.
-- graph 근거가 없으면 문서 근거로 대체하고 이를 결과에 표시한다.
-
-저장 기본값은 `preview`다. `private_draft`를 직접 선택한 경우에만 내 개인 Wiki 초안이 만들어진다.
-
-# 오류 복구
-
-| 표시 | 확인할 내용 |
-|---|---|
-| API Key 오류 | Langflow에서 키를 다시 발급하고 endpoint의 Key만 교체한다. |
-| 사용자 불일치 | 다른 사번이 발급한 키를 사용하지 않았는지 확인한다. |
-| 버전 불일치 | Langflow가 지원 범위 `>=1.11.0,<1.12.0`인지 확인한다. |
-| bundle 확인 실패 | 운영자에게 read-only custom component mount 상태를 요청한다. |
-| preview 실패 | 표시된 단계의 오류를 확인하고 `자동 준비`를 다시 실행한다. |
-| Component 연결 필요 | `boi.agent-slot.v1` 규약이면 자동 연결하고, 아니면 Langflow Canvas에서 포트를 직접 연결한다. |
-| Flow drift | live checksum이 달라진 Flow는 다시 전체 검증하기 전까지 Action 생성·실행이 차단된다. |
-
-# 공유하면 안 되는 값
-
-- Langflow API Key 원문
-- `BOI_WIKI_PAT`
-- `boi_run_*` 실행 token
-- 모델 API Key
-- API Key가 포함된 네트워크 payload나 화면 캡처
-
-키를 잘못 공유했다면 endpoint 수정에서 새 Langflow 키로 교체하고, `고급 연결 관리`에서 BoI 지식 연결도 회전한다.
+API Key, `BOI_WIKI_PAT`, 실행 token과 모델 Key는 문서·화면·스크린샷에 남기지 않는다.

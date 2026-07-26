@@ -10,7 +10,13 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
 
 const boiUrl = process.env.BOI_URL || "http://localhost:28005";
 const employeeId = process.env.BOI_EMPLOYEE_ID || "100002";
-const password = process.env.BOI_SSO_PASSWORD || "";
+const identityFile =
+  process.env.AGENT_HUB_IDENTITY_FILE
+  || "/tmp/boi-ap-agent-hub-sso-users.json";
+const identities = JSON.parse(await fs.readFile(identityFile, "utf8"));
+const password =
+  process.env.BOI_SSO_PASSWORD
+  || String(identities[employeeId] || "");
 const evidenceDir =
   process.env.PLAYWRIGHT_EVIDENCE_DIR
   || "artifacts/agent-playground-wiki-onboarding";
@@ -21,11 +27,46 @@ const docs = [
       "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-onboarding",
     heading: "Agent Playground 시작 가이드",
     expected: [
-      "Langflow 연결 키 발급",
-      "BoI 지식 연결 자동 준비",
+      "3분 빠른 시작",
+      "Langflow 처음 연결하기",
       "Agent Hub",
       "Action",
     ],
+  },
+  {
+    key: "langflow-setup",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-langflow-setup",
+    heading: "Langflow 처음 연결하기",
+    expected: ["Settings → API Keys", "BOI_WIKI_PAT", "자동 준비"],
+  },
+  {
+    key: "my-flow-deploy",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-my-flow-deploy",
+    heading: "내 Flow를 Agent Hub에 배포하기",
+    expected: ["연결 시험", "boi-{사번}", "배포 결과 확인", "checksum"],
+  },
+  {
+    key: "shared-assets",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-shared-assets",
+    heading: "Agent Hub 공유 자산 활용하기",
+    expected: ["배포됨", "연결 필요", "실행 검증됨", "boi.agent-slot.v1"],
+  },
+  {
+    key: "action-wiki",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-action-wiki",
+    heading: "Action으로 연결하고 Wiki에서 실행하기",
+    expected: ["Ontology", "connector_binding", "SOP Task", "개인 초안"],
+  },
+  {
+    key: "troubleshooting",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-troubleshooting",
+    heading: "Agent Playground 문제 해결",
+    expected: ["API Key 오류", "Agent Hub 배포 오류", "Flow 변경 감지"],
   },
   {
     key: "operator",
@@ -39,9 +80,16 @@ const docs = [
       "rollback",
     ],
   },
+  {
+    key: "hub-boundary",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:operations:agent-hub-integration-boundary",
+    heading: "Agent Hub 연동 경계와 운영 책임",
+    expected: ["Agent Hub는 BoI 개발 영역이 아니다", "금지하는 연동", "읽기 전용"],
+  },
 ];
 
-if (!password) throw new Error("BOI_SSO_PASSWORD is required");
+if (!password) throw new Error(`${employeeId} validation password is unavailable`);
 await fs.mkdir(evidenceDir, { recursive: true });
 
 const result = {

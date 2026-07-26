@@ -639,6 +639,28 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
     assert state["wiki"]["pat_expires_at"] is None
     assert state["onboarding"]["required"] is False
     assert state["onboarding"]["status"] == "ready"
+    assert state["journey"]["current_stage"] == "create"
+    assert state["journey"]["next_action"]["id"] == "open_langflow"
+    assert state["journey"]["completed_stages"] == ["onboarding", "create"]
+    assert state["hub_onboarding"] == {
+        "required": True,
+        "status": "not_started",
+        "next_action": "open_agent_hub",
+        "message": "첫 배포 전에 endpoint 연결과 프로젝트 선택을 안내합니다.",
+    }
+    journey_record = service._read("100003")
+    journey_record.setdefault("flow_registry", []).append(
+        {
+            "endpoint_id": state["default_endpoint_id"],
+            "project_id": state["project"]["id"],
+            "flow_id": state["flow"]["id"],
+            "validation_status": "action_ready",
+        },
+    )
+    service._write("100003", journey_record)
+    ready_for_hub = service.state(viewer)
+    assert ready_for_hub["journey"]["current_stage"] == "hub"
+    assert ready_for_hub["journey"]["next_action"]["id"] == "open_agent_hub"
     assert state["endpoint_setups"][state["default_endpoint_id"]]["smoke"]["status"] == "passed"
     assert state["endpoint_setups"][state["default_endpoint_id"]]["bundle"] == {
         "version": "1.1.0",
@@ -1622,3 +1644,42 @@ def test_flow_contract_uses_canvas_node_identity_not_stale_serialized_metadata()
     )
     assert contract["ok"] is False
     assert contract["components"]["missing"] == ["BoIWikiSave"]
+
+
+def test_component_asset_matching_prefers_the_most_specific_node_identity():
+    nodes = [
+        {
+            "id": "built-in-slot",
+            "data": {
+                "type": "BoIAgentSlot",
+                "display_name": "Agent Slot",
+                "node": {
+                    "name": "BoIAgentSlot",
+                    "display_name": "Agent Slot",
+                },
+            },
+        },
+        {
+            "id": "incompatible-slot",
+            "data": {
+                "type": "IncompatibleAgentSlot",
+                "display_name": "Incompatible Agent Slot",
+                "node": {
+                    "name": "IncompatibleAgentSlot",
+                    "display_name": "Incompatible Agent Slot",
+                },
+            },
+        },
+    ]
+
+    matches = AgentPlaygroundService._component_nodes_for_asset(
+        nodes,
+        asset_title="Incompatible Agent Slot 20260727",
+        required_contract={
+            "contract_id": "boi.agent-slot.v1",
+            "inputs": ["agent_context"],
+            "outputs": ["agent_result"],
+        },
+    )
+
+    assert [item["id"] for item in matches] == ["incompatible-slot"]

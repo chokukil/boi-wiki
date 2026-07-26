@@ -23,6 +23,12 @@
   const hubDeployLink = root.querySelector("[data-hub-deploy-link]");
   const componentStatusRoot = root.querySelector("[data-component-status]");
   const taskSelect = root.querySelector("[data-task-select]");
+  const nextActionRoot = root.querySelector("[data-next-action]");
+  const nextActionButton = root.querySelector("[data-next-action-button]");
+  const hubOnboardingRoot = root.querySelector("[data-hub-onboarding]");
+  const hubOwnOpen = root.querySelector("[data-hub-own-open]");
+  const hubOwnDownload = root.querySelector("[data-hub-own-download]");
+  const hubOwnRefresh = root.querySelector("[data-hub-own-refresh]");
   const app = {
     state: null,
     endpointId: "",
@@ -39,6 +45,9 @@
     tasks: [],
     tasksLoaded: false,
     activeStep: "create",
+    journeyInitialized: false,
+    hubMode: "own",
+    ownFlowSnapshot: new Set(),
   };
 
   const withIdentity = (path) => {
@@ -83,6 +92,14 @@
     action_ready: "Action 준비",
     action_linked: "Action 연결",
     blocked: "차단됨",
+    drifted: "변경되어 재검증 필요",
+  };
+
+  const stageLabel = {
+    create: "1 · 만들기",
+    test: "2 · 테스트",
+    hub: "3 · Agent Hub",
+    action: "4 · Action 연결",
   };
 
   const setStatus = (name, status, detail) => {
@@ -109,7 +126,7 @@
     app.activeStep = allowed.has(step) ? step : "create";
     root.querySelectorAll("[data-workbench-step]").forEach((button) => {
       const active = button.dataset.workbenchStep === app.activeStep;
-      button.classList.toggle("primary", active);
+      button.classList.toggle("active", active);
       if (active) button.setAttribute("aria-current", "step");
       else button.removeAttribute("aria-current");
     });
@@ -121,6 +138,7 @@
       action.hidden = action.dataset.stepAction !== app.activeStep;
     });
     if (app.activeStep === "test") loadTasks();
+    if (app.state) renderJourney();
     if (scroll) {
       const first = root.querySelector(`[data-workbench-panel~="${app.activeStep}"]:not([hidden])`);
       if (first) first.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -140,6 +158,114 @@
       steps: [],
       next_action: "open_langflow_settings",
     };
+  };
+
+  const selectedHubOnboarding = () => {
+    const deployments = (app.state && app.state.deployments) || [];
+    const selectedDeployments = deployments.filter((item) => (
+      item.endpoint_id === app.endpointId
+      && (!app.projectId || item.project_id === app.projectId)
+    ));
+    if (selectedDeployments.length) {
+      return {
+        required: false,
+        status: "complete",
+        next_action: "review_deployment",
+        message: "Agent Hub 배포 Flow를 이 프로젝트에서 확인했습니다.",
+      };
+    }
+    const pending = matchingHubAdoption();
+    if (pending) {
+      return {
+        required: true,
+        status: "in_progress",
+        next_action: "discover_deployment",
+        message: "Agent Hub 배포를 마친 뒤 배포 결과를 확인하세요.",
+      };
+    }
+    return (app.state && app.state.hub_onboarding) || {
+      required: true,
+      status: "not_started",
+      next_action: "open_agent_hub",
+      message: "첫 배포 전에 endpoint와 개인 프로젝트 연결을 안내합니다.",
+    };
+  };
+
+  const renderJourney = () => {
+    if (!app.state) return;
+    const endpoint = selectedEndpoint();
+    const project = app.projects.find((item) => item.id === app.projectId)
+      || ((selectedSetup() || {}).project || {});
+    root.querySelector("[data-context-endpoint]").textContent = endpoint
+      ? `${endpoint.name || "내 Langflow"} · ${endpoint.version || "확인 중"}`
+      : "연결 필요";
+    root.querySelector("[data-context-project]").textContent = project.name || `boi-${employeeId}`;
+    root.querySelector("[data-context-stage]").textContent = stageLabel[app.activeStep] || "온보딩";
+
+    const journey = app.state.journey || {};
+    const suggested = journey.next_action || {};
+    const stageActions = {
+      create: {
+        id: "open_langflow",
+        stage: "create",
+        label: "Langflow에서 만들기",
+        description: "개인 프로젝트에서 Flow와 Agent를 편집하세요.",
+      },
+      test: {
+        id: "validate_flow",
+        stage: "test",
+        label: "Flow 검증하기",
+        description: "업무 맥락·Ontology·Wiki 근거와 저장 결과를 확인하세요.",
+      },
+      hub: {
+        id: "open_agent_hub",
+        stage: "hub",
+        label: app.hubMode === "shared" ? "공유 자산 가져오기" : "Agent Hub에 배포",
+        description: app.hubMode === "shared"
+          ? "승인된 Flow·Component를 내 프로젝트에서 검증하세요."
+          : "테스트를 마친 내 Flow를 Agent Hub 기존 UI에서 배포하세요.",
+      },
+      action: {
+        id: "create_action",
+        stage: "action",
+        label: "Action으로 연결",
+        description: "검증된 Flow를 connector-neutral Action 실행 연결로 등록하세요.",
+      },
+    };
+    const next = stageActions[app.activeStep] || suggested;
+    const guideByStage = {
+      create: "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-langflow-setup",
+      test: "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-action-wiki",
+      hub: app.hubMode === "shared"
+        ? "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-shared-assets"
+        : "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-my-flow-deploy",
+      action: "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-action-wiki",
+    };
+    root.querySelector("[data-journey-summary]").textContent = next.description
+      || "개인 Langflow에서 만들고, 검증한 뒤, Agent Hub와 BoI Action으로 연결합니다.";
+    root.querySelector("[data-next-action-step]").textContent = stageLabel[next.stage] || "다음 할 일";
+    root.querySelector("[data-next-action-label]").textContent = next.label || "내 Flow 만들기";
+    root.querySelector("[data-next-action-description]").textContent = next.description
+      || "개인 Langflow 프로젝트에서 Flow를 편집하세요.";
+    nextActionButton.dataset.actionId = next.id || "open_langflow";
+    nextActionButton.dataset.targetStep = next.stage || app.activeStep;
+    nextActionButton.textContent = next.label || "계속";
+    root.querySelector("[data-next-action-guide]").href = guideByStage[app.activeStep]
+      || "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-onboarding";
+
+    const hub = selectedHubOnboarding();
+    hubOnboardingRoot.dataset.state = hub.status || "not_started";
+    hubOnboardingRoot.querySelector("[data-hub-onboarding-title]").textContent = hub.required
+      ? "Agent Hub에 내 Langflow를 한 번 연결하세요"
+      : "Agent Hub 배포 연결이 확인됐습니다";
+    hubOnboardingRoot.querySelector("[data-hub-onboarding-message]").textContent = hub.message || "";
+    const registration = (app.state.agent_hub || {}).manual_registration || {};
+    hubOnboardingRoot.querySelector("[data-hub-endpoint-guide]").textContent = registration.endpoint
+      ? `${endpoint.name || "내 Langflow"}의 배포용 URL 사용`
+      : "Playground endpoint를 먼저 선택하세요";
+    hubOnboardingRoot.querySelector("[data-hub-project-guide]").textContent = registration.project
+      ? `${registration.project} 프로젝트 선택`
+      : `boi-${employeeId} 프로젝트 선택`;
   };
 
   const assetKindLabel = (asset) => asset.type === "json" ? "Flow" : "Component";
@@ -364,6 +490,17 @@
     });
   };
 
+  const renderHubMode = () => {
+    root.querySelectorAll("[data-hub-mode]").forEach((button) => {
+      const active = button.dataset.hubMode === app.hubMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    root.querySelectorAll("[data-hub-mode-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.hubModePanel !== app.hubMode;
+    });
+  };
+
   const renderHubImport = () => {
     const editable = Boolean((app.state && app.state.capabilities || {}).can_edit);
     const canBegin = editable && app.endpointId && app.projectId && app.hubSelected.size > 0;
@@ -385,12 +522,27 @@
       hubAdoptionOutput.textContent = "Endpoint와 Project를 고른 뒤 승인 자산을 선택하세요.";
     } else if (app.hubAdoption) {
       const count = (app.hubAdoption.source_assets || []).length;
-      hubAdoptionOutput.textContent = `배포 전 Flow 목록을 기억했습니다 · 자산 ${count}개 · Agent Hub 배포 후 결과 찾기를 누르세요.`;
+      hubAdoptionOutput.textContent = `배포 준비 완료 · 자산 ${count}개 · Agent Hub 배포 후 결과를 확인하세요.`;
     } else if (app.hubSelected.size) {
-      hubAdoptionOutput.textContent = "선택한 자산을 고정하려면 먼저 배포 전 Flow 목록을 기억하세요.";
+      hubAdoptionOutput.textContent = "선택한 자산의 작성자·버전과 현재 Flow 상태를 배포 준비에서 고정합니다.";
     } else {
       hubAdoptionOutput.textContent = "Agent Hub에서 승인된 Flow 또는 Component를 검색해 선택하세요.";
     }
+    root.querySelector("[data-hub-own-flow]").textContent = app.flow
+      ? app.flow.name || "선택한 Flow"
+      : "먼저 Flow를 선택하세요";
+    const ownReady = Boolean(app.flow && app.endpointId && app.projectId);
+    hubOwnDownload.disabled = !ownReady;
+    hubOwnRefresh.disabled = !app.endpointId || !app.projectId;
+    if (ownReady) {
+      hubOwnOpen.href = (app.state.onboarding || {}).agent_hub_url || root.dataset.agentHubUrl || "";
+      hubOwnOpen.removeAttribute("aria-disabled");
+    } else {
+      hubOwnOpen.removeAttribute("href");
+      hubOwnOpen.setAttribute("aria-disabled", "true");
+    }
+    renderHubMode();
+    renderJourney();
     renderHubSelected();
     renderHubCandidates();
     renderComponentStatus();
@@ -528,7 +680,6 @@
       openLangflow.removeAttribute("href");
       openLangflow.setAttribute("aria-disabled", "true");
     }
-    root.querySelector("[data-onboarding-agent-hub]").href = (app.state.onboarding || {}).agent_hub_url || root.dataset.agentHubUrl || "#";
     const error = root.querySelector("[data-onboarding-error]");
     error.hidden = onboarding.status !== "error";
     error.textContent = onboarding.last_error ? `준비를 이어가지 못했습니다: ${onboarding.last_error}` : "";
@@ -640,6 +791,14 @@
       app.endpointId = app.state.default_endpoint_id || (app.state.endpoints[0] || {}).endpoint_id || "";
     }
     if (!selectedEndpoint()) app.endpointId = "";
+    if (!app.journeyInitialized) {
+      const suggested = ((app.state.journey || {}).next_action || {}).stage
+        || (app.state.journey || {}).current_stage;
+      if (["create", "test", "hub", "action"].includes(suggested)) {
+        app.activeStep = suggested;
+      }
+      app.journeyInitialized = true;
+    }
     renderEndpointList();
     renderEndpointSummary();
     renderOnboarding();
@@ -656,6 +815,7 @@
     });
     if (app.endpointId && !selectedOnboarding().required) await loadProjects(false);
     setWorkbenchStep(app.activeStep);
+    renderJourney();
   };
 
   const selectEndpoint = async (endpointId) => {
@@ -669,6 +829,7 @@
     renderOnboarding();
     renderHubImport();
     if (!selectedOnboarding().required) await loadProjects(true);
+    renderJourney();
   };
 
   const loadProjects = async (selectPersonal = false) => {
@@ -700,6 +861,7 @@
       if (app.hubAdoption) app.hubCandidates = app.hubAdoption.candidates || [];
       renderHubImport();
       if (app.projectId) await loadFlows();
+      renderJourney();
     } catch (error) {
       projectSelect.innerHTML = '<option value="">조회 실패</option>';
       setStatus("project", "error", error.message);
@@ -719,12 +881,19 @@
       return;
     }
     const canonicalName = (app.state.canonical_asset || {}).name || "BoI Wiki Agent Loop";
+    const isHistory = (flow) => (
+      flow.validation_status === "blocked"
+      || flow.checksum_state === "drifted"
+      || flow.validation_status === "drifted"
+    );
+    const current = filtered.filter((flow) => !isHistory(flow));
+    const history = filtered.filter(isHistory);
     const groups = [
-      ["내 기준 Flow", filtered.filter((flow) => flow.name === canonicalName)],
-      ["Agent Hub에서 가져온 Flow", filtered.filter((flow) => flow.name !== canonicalName && flow.deployment_id)],
-      ["내 작업 중 Flow", filtered.filter((flow) => flow.name !== canonicalName && !flow.deployment_id)],
+      ["내 기준 Flow", current.filter((flow) => flow.name === canonicalName)],
+      ["Agent Hub에서 가져온 Flow", current.filter((flow) => flow.name !== canonicalName && flow.deployment_id)],
+      ["최근 작업", current.filter((flow) => flow.name !== canonicalName && !flow.deployment_id)],
     ];
-    groups.forEach(([title, flows]) => {
+    const appendFlowGroup = (parent, title, flows) => {
       if (!flows.length) return;
       const section = document.createElement("section");
       section.className = "agent-playground-flow-group";
@@ -735,12 +904,16 @@
         const button = document.createElement("button");
         button.type = "button";
         button.className = "agent-playground-flow-item";
+        button.dataset.flowId = flow.flow_id;
         button.dataset.active = app.flow && app.flow.flow_id === flow.flow_id ? "true" : "false";
         const label = document.createElement("span");
-        label.innerHTML = `<strong>${escapeText(flow.name || flow.flow_id)}</strong><small>${escapeText(flow.flow_id)}</small>`;
+        label.innerHTML = `<strong>${escapeText(flow.name || "이름 없는 Flow")}</strong><small>${flow.deployment_id ? "Agent Hub 배포 Flow" : "내 프로젝트 Flow"}</small>`;
         const status = document.createElement("em");
-        status.textContent = statusLabel[flow.validation_status] || flow.validation_status || "발견됨";
-        status.dataset.state = flow.validation_status || "discovered";
+        const displayStatus = flow.checksum_state === "drifted"
+          ? "drifted"
+          : flow.validation_status || "discovered";
+        status.textContent = statusLabel[displayStatus] || displayStatus;
+        status.dataset.state = displayStatus;
         button.append(label, status);
         button.addEventListener("click", () => {
           app.flow = flow;
@@ -749,8 +922,19 @@
         });
         section.append(button);
       });
-      flowList.append(section);
-    });
+      parent.append(section);
+    };
+    groups.forEach(([title, flows]) => appendFlowGroup(flowList, title, flows));
+    if (history.length) {
+      const historyDetails = document.createElement("details");
+      historyDetails.className = "agent-playground-flow-history";
+      historyDetails.open = Boolean(query);
+      const summary = document.createElement("summary");
+      summary.textContent = `문제 있는 Flow와 기록 · ${history.length}개`;
+      historyDetails.append(summary);
+      appendFlowGroup(historyDetails, "재검증 또는 정리가 필요한 Flow", history);
+      flowList.append(historyDetails);
+    }
   };
 
   const loadFlows = async () => {
@@ -777,12 +961,20 @@
     root.querySelector("[data-selected-flow-name]").textContent = flow ? flow.name || flow.flow_id : "Flow를 선택하세요";
     root.querySelector("[data-selected-flow-id]").textContent = flow ? flow.flow_id : "—";
     root.querySelector("[data-selected-flow-checksum]").textContent = flow && flow.artifact_checksum ? flow.artifact_checksum : "검증 전";
-    root.querySelector("[data-selected-flow-status]").textContent = flow ? flow.validation_status || "discovered" : "discovered";
+    const selectedStatus = flow
+      ? (flow.checksum_state === "drifted" ? "drifted" : flow.validation_status || "discovered")
+      : "discovered";
+    const selectedStatusChip = root.querySelector("[data-selected-flow-status]");
+    selectedStatusChip.dataset.state = selectedStatus;
+    selectedStatusChip.textContent = statusLabel[selectedStatus] || selectedStatus;
     const ready = Boolean(flow);
     root.querySelector("[data-download-artifact]").disabled = !ready;
     root.querySelector("[data-record-deployment]").disabled = !ready || !(app.state.capabilities || {}).can_edit;
     root.querySelector("[data-validate-flow]").disabled = !ready || !(app.state.capabilities || {}).can_edit || !flow.deployment_id;
-    root.querySelector("[data-create-action]").disabled = !ready || flow.validation_status !== "action_ready" || !flow.deployment_id;
+    const createActionButton = root.querySelector("[data-create-action]");
+    createActionButton.disabled = !ready || flow.validation_status !== "action_ready" || !flow.deployment_id;
+    createActionButton.dataset.deploymentId = flow && flow.deployment_id ? flow.deployment_id : "";
+    createActionButton.dataset.flowId = flow && flow.flow_id ? flow.flow_id : "";
     const actionDraftLink = root.querySelector("[data-open-action-draft]");
     const actionDraftId = flow && flow.action_draft_id ? flow.action_draft_id : "";
     if (actionDraftId) {
@@ -801,14 +993,16 @@
     );
     const endpoint = selectedEndpoint();
     const open = root.querySelector("[data-open-langflow]");
-    if (flow && endpoint) {
+    if (endpoint && app.projectId) {
       const browserBase = (
         (app.state.onboarding || {}).langflow_external_url
         || endpoint.base_url
         || endpoint.endpoint
         || ""
       ).replace(/\/$/, "");
-      open.href = `${browserBase}/flow/${encodeURIComponent(flow.flow_id)}`;
+      open.href = flow
+        ? `${browserBase}/flow/${encodeURIComponent(flow.flow_id)}/folder/${encodeURIComponent(app.projectId)}`
+        : `${browserBase}/all/folder/${encodeURIComponent(app.projectId)}`;
       open.target = "_blank";
       open.rel = "noopener";
       open.removeAttribute("aria-disabled");
@@ -817,6 +1011,7 @@
       open.setAttribute("aria-disabled", "true");
     }
     renderComponentStatus();
+    renderHubImport();
     setWorkbenchStep(app.activeStep);
   };
 
@@ -843,11 +1038,14 @@
     const grounding = deepField(result, "grounding_status") || "응답 계약에서 확인되지 않음";
     const draft = deepField(result, "draft_reference") || "";
     const missing = taskContext.missing_evidence || [];
+    const ontologyRows = Array.isArray(ontology) ? ontology : [];
+    const ontologyTypes = [...new Set(ontologyRows.map((item) => item && (item.type || item.relation_type)).filter(Boolean))];
+    const provenanced = ontologyRows.filter((item) => item && item.provenance).length;
     summary.innerHTML = `
-      <article><span>Context</span><strong>${escapeText(taskContext.profile || deepField(result, "context_profile") || "일반 실행")}</strong><p>${escapeText(taskContext.task_ref || "Task ref 없음")}</p></article>
-      <article><span>Ontology</span><strong>${Array.isArray(ontology) ? ontology.length : 0}개 관계</strong><p>provenance 확인 관계만 포함</p></article>
+      <article><span>업무 맥락</span><strong>${escapeText(taskContext.profile || deepField(result, "context_profile") || "일반 지식 조회")}</strong><p>${escapeText(taskContext.task_ref || "일반 Wiki 질문")}</p></article>
+      <article><span>Ontology 관계</span><strong>${ontologyRows.length}개 관계</strong><p>${ontologyRows.length ? `${escapeText(ontologyTypes.join(", ") || "typed relation")} · provenance ${provenanced}개` : "관계 없음 · 문서 근거로 보완"}</p></article>
       <article><span>문서 근거</span><strong>${Array.isArray(sources) ? sources.length : 0}개</strong><p>${escapeText(grounding)}</p></article>
-      <article><span>부족 근거·저장</span><strong>${Array.isArray(missing) ? missing.length : 0}개 부족</strong><p>${draft ? `개인 초안 ${escapeText(draft)}` : "Wiki 변경 없음"}</p></article>
+      <article><span>부족 근거와 저장</span><strong>${Array.isArray(missing) ? missing.length : 0}개 부족</strong><p>${draft ? `내 초안 ${escapeText(draft)}` : "미리보기 · Wiki 변경 없음"}</p></article>
     `;
   };
 
@@ -1038,6 +1236,60 @@
       setWorkbenchStep(button.dataset.workbenchStep, { scroll: true });
     });
   });
+  root.querySelectorAll("[data-hub-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.hubMode = button.dataset.hubMode || "own";
+      renderHubMode();
+      if (app.hubMode === "shared" && !app.hubAssets.length) searchHubAssets();
+    });
+  });
+  nextActionButton.addEventListener("click", () => {
+    const actionId = nextActionButton.dataset.actionId || "";
+    const targetStep = nextActionButton.dataset.targetStep || app.activeStep;
+    if (actionId === "open_langflow") {
+      const open = root.querySelector("[data-open-langflow]");
+      if (open.href) {
+        window.open(open.href, "_blank", "noopener");
+        return;
+      }
+    }
+    if (actionId === "open_action_draft") {
+      const draft = root.querySelector("[data-open-action-draft]");
+      if (!draft.hidden && draft.href) {
+        window.location.href = draft.href;
+        return;
+      }
+    }
+    if (actionId === "open_agent_hub" && app.activeStep === "hub" && hubOwnOpen.href) {
+      hubOwnOpen.click();
+      return;
+    }
+    if (["create", "test", "hub", "action"].includes(targetStep)) {
+      setWorkbenchStep(targetStep, { scroll: true });
+    }
+  });
+  hubOwnDownload.addEventListener("click", () => {
+    root.querySelector("[data-download-artifact]").click();
+  });
+  hubOwnOpen.addEventListener("click", () => {
+    app.ownFlowSnapshot = new Set(app.flows.map((flow) => flow.flow_id));
+    showToast("현재 Flow 목록을 기준으로 기록했습니다. Agent Hub 배포 후 결과를 확인하세요.", "success");
+  });
+  hubOwnRefresh.addEventListener("click", async () => {
+    const before = new Set(app.ownFlowSnapshot);
+    await loadFlows();
+    const candidates = app.flows.filter((flow) => !before.has(flow.flow_id));
+    if (candidates.length === 1) {
+      app.flow = candidates[0];
+      renderFlows();
+      renderSelectedFlow();
+      showToast("Agent Hub에서 배포된 새 Flow를 찾았습니다. 배포 결과로 연결하세요.", "success");
+    } else if (candidates.length > 1) {
+      showToast(`${candidates.length}개 새 Flow를 찾았습니다. 배포한 Flow를 선택하세요.`, "success");
+    } else {
+      showToast("새 Flow를 아직 찾지 못했습니다. Agent Hub 배포를 마친 뒤 다시 확인하세요.", "error");
+    }
+  });
   root.querySelectorAll("[name='action_scope']").forEach((radio) => {
     radio.addEventListener("change", () => {
       root.querySelector("[data-action-team-wrap]").hidden = (
@@ -1187,7 +1439,7 @@
           task_ref: taskRef,
         }),
       });
-      showToast(payload.ok ? "Flow가 action_ready 검증을 통과했습니다." : `Flow가 차단되었습니다: ${payload.failure_reason}`, payload.ok ? "success" : "error");
+      showToast(payload.ok ? "Flow 검증을 통과해 Action 연결 준비가 됐습니다." : `Flow가 차단되었습니다: ${payload.failure_reason}`, payload.ok ? "success" : "error");
       renderResult(payload.task || payload.runtime || {});
       root.querySelector("[data-test-output]").textContent = JSON.stringify(payload, null, 2);
       await loadState();
@@ -1239,8 +1491,13 @@
     }
   });
 
-  root.querySelector("[data-create-action]").addEventListener("click", async () => {
-    if (!app.flow || !app.flow.deployment_id) return;
+  root.querySelector("[data-create-action]").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const deploymentId = String(button.dataset.deploymentId || "");
+    if (!deploymentId) {
+      showToast("선택한 exact Flow의 배포 참조를 다시 확인하세요.", "error");
+      return;
+    }
     const scope = root.querySelector("[name='action_scope']:checked").value;
     const teamId = scope === "team" ? root.querySelector("[data-action-team]").value : "";
     if (scope === "team" && !teamId) {
@@ -1249,7 +1506,7 @@
     }
     try {
       const payload = await request(
-        `/api/agent-playground/deployments/${encodeURIComponent(app.flow.deployment_id)}/action-draft`,
+        `/api/agent-playground/deployments/${encodeURIComponent(deploymentId)}/action-draft`,
         {
           method: "POST",
           body: JSON.stringify({ scope, team_id: teamId }),

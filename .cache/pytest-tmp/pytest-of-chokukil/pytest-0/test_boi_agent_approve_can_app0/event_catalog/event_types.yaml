@@ -1,8 +1,0 @@
-event_types:
-- event_type: pytest.agent.apply.requested.v1
-  name_ko: Agent 적용 이벤트
-  description: Agent approve로 catalog에 반영되는 이벤트
-  owner: '100001'
-  status: draft
-  workflow_stage: Agent 적용
-  topic: boi.events

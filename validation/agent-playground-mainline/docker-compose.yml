@@ -12,6 +12,12 @@ services:
         find /content -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +;
         cp -a /source/. /content/;
         test -f /content/public/boi-wiki-manual/langflow/agent-playground-onboarding.md;
+        test -f /content/public/boi-wiki-manual/langflow/agent-playground-langflow-setup.md;
+        test -f /content/public/boi-wiki-manual/langflow/agent-playground-my-flow-deploy.md;
+        test -f /content/public/boi-wiki-manual/langflow/agent-playground-shared-assets.md;
+        test -f /content/public/boi-wiki-manual/langflow/agent-playground-action-wiki.md;
+        test -f /content/public/boi-wiki-manual/langflow/agent-playground-troubleshooting.md;
+        test -f /content/public/boi-wiki-manual/operations/agent-hub-integration-boundary.md;
         test -f /content/public/boi-wiki-manual/operations/agent-playground-operator-runbook.md
     volumes:
       - ../../data/boi:/source:ro
@@ -65,7 +71,7 @@ services:
       BOI_AGENT_PLAYGROUND_TOKEN_HASH_SECRET: mainline-validation-token-hash-secret-change-me
       BOI_AGENT_PLAYGROUND_ALLOWED_LANGFLOW_HOSTS: localhost,host.docker.internal
       LANGFLOW_EXTERNAL_URL: http://localhost:7867
-      LANGFLOW_DEPLOY_URL: http://host.docker.internal:7867
+      LANGFLOW_DEPLOY_URL: http://localhost:7867
       AGENT_HUB_EXTERNAL_URL: http://localhost:18080/AgentHub.html
       AGENT_HUB_API_URL: http://host.docker.internal:18001
       BOI_WIKI_MCP_EXTERNAL_URL: http://localhost:18205
@@ -73,8 +79,8 @@ services:
       ACTION_GATEWAY_URL: http://action-gateway:8100
       SERVICE_TOKEN: mainline-validation-service-token
       KEYCLOAK_INTERNAL_URL: http://host.docker.internal:18082
-      KEYCLOAK_EXTERNAL_SERVER_URL: http://host.docker.internal:18082
-      KEYCLOAK_ISSUER_URL: http://host.docker.internal:18082
+      KEYCLOAK_EXTERNAL_SERVER_URL: http://localhost:18082
+      KEYCLOAK_ISSUER_URL: http://localhost:18082
       KEYCLOAK_REALM: boi-validation
       KEYCLOAK_CLIENT_ID: boi-wiki
       KEYCLOAK_CLIENT_SECRET: validation-boi-wiki-client-secret
@@ -103,6 +109,36 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+
+  langflow-loopback:
+    image: alpine/socat:1.8.0.0
+    network_mode: "service:boi-api"
+    command:
+      - TCP-LISTEN:7867,bind=127.0.0.1,fork,reuseaddr
+      - TCP:boi-agent-playground-mainline-langflow:7860
+    depends_on:
+      boi-api:
+        condition: service_healthy
+
+  recovery-gate-loopback:
+    image: alpine/socat:1.8.0.0
+    network_mode: "service:boi-api"
+    command:
+      - TCP-LISTEN:17866,bind=127.0.0.1,fork,reuseaddr
+      - TCP:${BOI_VALIDATION_HOST_GATEWAY:-192.168.65.254}:17866
+    depends_on:
+      boi-api:
+        condition: service_healthy
+
+  unsupported-gate-loopback:
+    image: alpine/socat:1.8.0.0
+    network_mode: "service:boi-api"
+    command:
+      - TCP-LISTEN:17865,bind=127.0.0.1,fork,reuseaddr
+      - TCP:${BOI_VALIDATION_HOST_GATEWAY:-192.168.65.254}:17865
+    depends_on:
+      boi-api:
+        condition: service_healthy
 
   event-broker:
     image: redpandadata/redpanda:v25.1.1

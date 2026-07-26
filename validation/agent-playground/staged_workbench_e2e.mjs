@@ -94,9 +94,11 @@ async function visibleStepState() {
     const steps = [...document.querySelectorAll("[data-workbench-step]")];
     return {
       steps: steps.length,
-      primary_actions: steps.filter(
-        (element) => visible(element) && element.classList.contains("primary"),
+      active_actions: steps.filter(
+        (element) => visible(element) && element.classList.contains("active"),
       ).length,
+      next_action_count: [...document.querySelectorAll("[data-next-action] button.primary")]
+        .filter(visible).length,
       active_step:
         steps.find((element) => element.getAttribute("aria-current") === "step")
           ?.dataset.workbenchStep || "",
@@ -159,12 +161,21 @@ try {
     );
   }
   await root.locator("[data-workbench-step]").first().waitFor({ state: "visible" });
+  await root.locator('[data-workbench-step="create"]').click();
 
   result.desktop = await visibleStepState();
   assert(result.desktop.steps === 4, "desktop workbench must expose four stages");
   assert(
-    result.desktop.primary_actions === 1,
+    result.desktop.active_step === "create",
+    "desktop create-stage evidence must capture the create stage",
+  );
+  assert(
+    result.desktop.active_actions === 1,
     "desktop workbench must emphasize exactly one stage",
+  );
+  assert(
+    result.desktop.next_action_count === 1,
+    "desktop workbench must expose exactly one primary next action",
   );
   await capture("01-desktop-create-stage");
 
@@ -202,6 +213,16 @@ try {
   await capture("02-desktop-test-ontology-default");
 
   await root.locator('[data-workbench-step="hub"]').click();
+  const hubModes = await root.locator("[data-hub-mode]").allTextContents();
+  assert(
+    hubModes.some((value) => value.includes("내 Flow 배포하기"))
+      && hubModes.some((value) => value.includes("공유 자산 가져오기")),
+    "Agent Hub own/shared journeys are not separated",
+  );
+  assert(
+    await root.locator("[data-hub-onboarding]").isVisible(),
+    "Agent Hub first-deployment guide is missing",
+  );
   const componentStatuses = await root
     .locator("[data-component-status-legend] span")
     .allTextContents();
@@ -222,8 +243,12 @@ try {
   };
   assert(result.mobile.steps === 4, "mobile workbench must expose four stages");
   assert(
-    result.mobile.primary_actions === 1,
+    result.mobile.active_actions === 1,
     "mobile workbench must emphasize exactly one stage",
+  );
+  assert(
+    result.mobile.next_action_count === 1,
+    "mobile workbench must expose exactly one primary next action",
   );
   assert(
     result.mobile.body_width <= result.mobile.viewport_width,

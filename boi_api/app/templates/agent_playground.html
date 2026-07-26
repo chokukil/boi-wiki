@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('agent_playground.js') }}" defer></script>
 </head>
-<body>
+<body class="agent-playground-page">
   {% include "_app_shell.html" %}
   <main
     class="agent-playground"
@@ -15,16 +15,22 @@
     data-employee-id="{{ employee_id }}"
     data-agent-hub-url="{{ agent_hub_url }}"
   >
-    <section class="agent-playground-hero">
+    <section class="agent-playground-hero agent-playground-context">
       <div>
         <p class="eyebrow">내 Agent 개발 공간</p>
         <h2>Agent Playground</h2>
-        <p>개인 Langflow에서 Flow를 검증하고 Agent Hub로 배포한 뒤, exact Flow를 BoI Action으로 연결합니다.</p>
+        <p data-journey-summary>개인 Langflow에서 만들고, 검증한 뒤, Agent Hub와 BoI Action으로 연결합니다.</p>
       </div>
+      <dl class="agent-playground-context-facts" data-workbench-only hidden>
+        <div><dt>Langflow</dt><dd data-context-endpoint>연결 확인 중</dd></div>
+        <div><dt>내 프로젝트</dt><dd data-context-project>선택 전</dd></div>
+        <div><dt>현재 단계</dt><dd data-context-stage>준비 중</dd></div>
+      </dl>
       <div class="agent-playground-identity">
         <span>현재 사용자</span>
         <strong>{{ employee_id }}</strong>
         <small data-auth-source>SSO 준비 상태 확인 중</small>
+        <a href="/docs/boi:public:boi-wiki-manual:langflow:agent-playground-onboarding">사용 가이드</a>
         <button type="button" data-reopen-onboarding hidden>설정 가이드 다시 보기</button>
       </div>
     </section>
@@ -141,7 +147,7 @@
         </div>
         <div class="agent-playground-form-actions">
           <a data-onboarding-open-langflow target="_blank" rel="noopener">개인 Langflow 프로젝트 열기</a>
-          <a data-onboarding-agent-hub target="_blank" rel="noopener">Agent Hub 배포 안내</a>
+          <a href="/docs/boi:public:boi-wiki-manual:langflow:agent-playground-my-flow-deploy">Agent Hub 배포 안내</a>
           <button type="button" class="primary" data-onboarding-finish>Playground 시작</button>
         </div>
       </div>
@@ -195,8 +201,18 @@
       </div>
     </details>
 
+    <section class="agent-playground-next-action" data-workbench-only data-next-action hidden>
+      <div>
+        <span data-next-action-step>다음 할 일</span>
+        <strong data-next-action-label>내 Flow 만들기</strong>
+        <p data-next-action-description>개인 Langflow 프로젝트에서 Flow를 편집하세요.</p>
+        <a data-next-action-guide href="/docs/boi:public:boi-wiki-manual:langflow:agent-playground-onboarding">Wiki 가이드 보기</a>
+      </div>
+      <button type="button" class="primary" data-next-action-button>계속</button>
+    </section>
+
     <nav class="agent-playground-actions" data-workbench-only hidden aria-label="Agent 개발 단계">
-      <button type="button" class="agent-playground-action primary" data-workbench-step="create" aria-current="step">
+      <button type="button" class="agent-playground-action active" data-workbench-step="create" aria-current="step">
         <span>1</span><strong>Langflow에서 만들기</strong><small>개인 프로젝트에서 Flow와 Agent를 편집합니다.</small>
       </button>
       <button type="button" class="agent-playground-action" data-workbench-step="test" data-workbench-test>
@@ -210,27 +226,30 @@
       </button>
     </nav>
 
-    <section class="agent-playground-status-grid" data-workbench-only hidden aria-label="현재 선택 상태">
-      <article class="agent-playground-status-card" data-status-card="connection">
-        <span>Langflow 1.11</span><strong data-status-value>선택 필요</strong><p data-status-detail>endpoint를 선택하세요.</p>
-      </article>
-      <article class="agent-playground-status-card" data-status-card="project">
-        <span>개인 프로젝트</span><strong data-status-value>선택 필요</strong><p data-status-detail>endpoint의 프로젝트를 조회합니다.</p>
-      </article>
-      <article class="agent-playground-status-card" data-status-card="flow">
-        <span>Flow 검증</span><strong data-status-value>선택 필요</strong><p data-status-detail>Flow별 상태를 독립적으로 표시합니다.</p>
-      </article>
-      <article class="agent-playground-status-card" data-status-card="action">
-        <span>BoI Action</span><strong data-status-value>준비 전</strong><p data-status-detail>action_ready Flow만 연결할 수 있습니다.</p>
-      </article>
-    </section>
+    <details class="agent-playground-status-overview" data-workbench-only hidden>
+      <summary><strong>전체 준비 상태</strong><span>연결·프로젝트·Flow·Action 상태 보기</span></summary>
+      <section class="agent-playground-status-grid" aria-label="현재 선택 상태">
+        <article class="agent-playground-status-card" data-status-card="connection">
+          <span>Langflow</span><strong data-status-value>선택 필요</strong><p data-status-detail>연결을 선택하세요.</p>
+        </article>
+        <article class="agent-playground-status-card" data-status-card="project">
+          <span>내 프로젝트</span><strong data-status-value>선택 필요</strong><p data-status-detail>프로젝트를 조회합니다.</p>
+        </article>
+        <article class="agent-playground-status-card" data-status-card="flow">
+          <span>Flow 검증</span><strong data-status-value>선택 필요</strong><p data-status-detail>Flow별 상태를 표시합니다.</p>
+        </article>
+        <article class="agent-playground-status-card" data-status-card="action">
+          <span>BoI Action</span><strong data-status-value>준비 전</strong><p data-status-detail>검증을 마친 Flow만 연결할 수 있습니다.</p>
+        </article>
+      </section>
+    </details>
 
     <section class="agent-playground-layout" data-workbench-only hidden>
       <div class="agent-playground-main">
         <section class="agent-playground-panel" data-workbench-panel="create">
           <header>
-            <div><p class="eyebrow">Endpoint → Project → Flow</p><h3>Flow 선택과 배포 재발견</h3></div>
-            <button type="button" data-refresh-flows disabled>새 Flow 찾기</button>
+            <div><p class="eyebrow">내 Langflow 프로젝트</p><h3>Flow 만들기</h3></div>
+            <button type="button" data-refresh-flows disabled>Flow 새로고침</button>
           </header>
           <div class="agent-playground-selectors">
             <label>Endpoint
@@ -243,7 +262,6 @@
           <div class="agent-playground-form-actions">
             <button type="button" data-bootstrap disabled><code>boi-{{ employee_id }}</code>와 기준 Flow 준비</button>
             <a data-open-langflow aria-disabled="true">Langflow에서 만들기</a>
-            <a href="{{ agent_hub_url }}" target="_blank" rel="noopener">Agent Hub에서 배포</a>
           </div>
           <label class="agent-playground-flow-search">Flow 찾기
             <input type="search" data-flow-filter placeholder="이름 또는 상태로 검색" />
@@ -256,61 +274,101 @@
         <section class="agent-playground-panel agent-playground-hub-panel" data-hub-import-panel data-workbench-panel="hub" hidden>
           <header>
             <div>
-              <p class="eyebrow">Approved Agent Hub assets</p>
-              <h3>다른 사람이 만든 Flow·Component 가져오기</h3>
+              <p class="eyebrow">배포·공유 자산</p>
+              <h3>Agent Hub 활용</h3>
             </div>
-            <a href="{{ agent_hub_url }}" target="_blank" rel="noopener">Agent Hub 전체 보기</a>
+            <a href="/docs/boi:public:boi-wiki-manual:langflow:agent-playground-my-flow-deploy">배포 가이드</a>
           </header>
-          <p>승인된 자산을 선택한 뒤 Agent Hub에서 현재 endpoint/project로 배포합니다. Component는 배포만으로 실행되지 않으며, 연결 상태와 runtime 실행 증거를 별도로 확인합니다.</p>
-          <form class="agent-playground-hub-search" data-hub-search-form>
-            <label>자산 검색
-              <input type="search" name="search" placeholder="Flow, Component, 태그 검색" />
-            </label>
-            <label>종류
-              <select name="asset_type">
-                <option value="">Flow와 Component</option>
-                <option value="json">Flow</option>
-                <option value="py">Component</option>
-              </select>
-            </label>
-            <button type="submit">승인 자산 찾기</button>
-          </form>
-          <div class="agent-playground-hub-selected" data-hub-selected>
-            <span>선택한 자산</span>
-            <p>아직 선택한 자산이 없습니다.</p>
-          </div>
-          <div class="agent-playground-hub-assets" data-hub-assets>
-            <p class="agent-playground-empty">검색하면 Agent Hub의 승인된 자산만 표시됩니다.</p>
-          </div>
-          <div class="agent-playground-hub-adoption">
-            <label>BoI 연결 수준
-              <select data-hub-validation-profile>
-                <option value="boi_knowledge_draft">Wiki·Ontology 조회와 개인 초안</option>
-                <option value="boi_knowledge">Wiki·Ontology 조회</option>
-                <option value="generic_action">일반 Action 계약</option>
-              </select>
-            </label>
-            <div class="agent-playground-form-actions">
-              <button type="button" data-hub-adoption-begin disabled>배포 전 Flow 목록 기억</button>
-              <a data-hub-deploy-link href="{{ agent_hub_url }}" target="_blank" rel="noopener" aria-disabled="true">선택 자산을 Agent Hub에서 배포</a>
-              <button type="button" data-hub-adoption-discover disabled>배포 결과 찾기</button>
+          <section class="agent-playground-hub-onboarding" data-hub-onboarding>
+            <div>
+              <span>첫 배포 안내</span>
+              <strong data-hub-onboarding-title>Agent Hub에 내 Langflow를 한 번 연결하세요</strong>
+              <p data-hub-onboarding-message>Playground와 Agent Hub는 Key를 공유하지 않습니다. 같은 개인 Key를 Agent Hub에 직접 한 번 등록합니다.</p>
             </div>
+            <ol>
+              <li><span>1</span><p><strong>Endpoint 등록</strong><small data-hub-endpoint-guide>내 Langflow URL 확인 중</small></p></li>
+              <li><span>2</span><p><strong>연결 시험</strong><small>Agent Hub 화면에서 Langflow 1.11 연결 확인</small></p></li>
+              <li><span>3</span><p><strong>내 프로젝트 선택</strong><small data-hub-project-guide>개인 프로젝트 확인 중</small></p></li>
+            </ol>
+            <a href="/docs/boi:public:boi-wiki-manual:operations:agent-hub-integration-boundary">Agent Hub 비수정 연동 원칙 보기</a>
+          </section>
+
+          <div class="agent-playground-hub-modes" role="tablist" aria-label="Agent Hub 사용 방법">
+            <button type="button" class="active" data-hub-mode="own" role="tab" aria-selected="true">
+              <strong>내 Flow 배포하기</strong><small>완성한 Flow를 Agent Hub로 전달합니다.</small>
+            </button>
+            <button type="button" data-hub-mode="shared" role="tab" aria-selected="false">
+              <strong>공유 자산 가져오기</strong><small>승인된 Flow·Component를 내 프로젝트에서 사용합니다.</small>
+            </button>
           </div>
-          <output data-hub-adoption-output>Endpoint와 Project를 고른 뒤 자산을 선택하세요.</output>
-          <div class="agent-playground-hub-candidates" data-hub-candidates></div>
-          <div class="agent-playground-component-legend" data-component-status-legend aria-label="Component 상태 기준">
-            <span>배포됨</span>
-            <span>연결 필요</span>
-            <span>연결됨</span>
-            <span>실행 검증됨</span>
-          </div>
-          <div class="agent-playground-component-status" data-component-status></div>
+
+          <section class="agent-playground-hub-mode-panel" data-hub-mode-panel="own">
+            <div class="agent-playground-hub-own-summary">
+              <span>배포할 Flow</span>
+              <strong data-hub-own-flow>먼저 Flow를 선택하세요</strong>
+              <p>Playground에서 충분히 시험한 자산만 내려받아 Agent Hub 기존 UI에서 배포합니다.</p>
+            </div>
+            <div class="agent-playground-form-actions">
+              <button type="button" data-hub-own-download disabled>배포 자산 내려받기</button>
+              <a data-hub-own-open href="{{ agent_hub_url }}" target="_blank" rel="noopener" aria-disabled="true">Agent Hub에서 배포</a>
+              <button type="button" data-hub-own-refresh disabled>배포 결과 확인</button>
+            </div>
+            <p class="agent-playground-form-note">Agent Hub 배포 후 같은 프로젝트에서 새 Flow를 찾고 선택하면 exact Flow로 연결할 수 있습니다.</p>
+          </section>
+
+          <section class="agent-playground-hub-mode-panel" data-hub-mode-panel="shared" hidden>
+            <p>승인된 자산을 Agent Hub 기존 UI에서 내 endpoint/project로 배포합니다. Component는 실제 실행 경로 연결과 runtime 증거까지 확인해야 합니다.</p>
+            <form class="agent-playground-hub-search" data-hub-search-form>
+              <label>자산 검색
+                <input type="search" name="search" placeholder="Flow, Component, 태그 검색" />
+              </label>
+              <label>종류
+                <select name="asset_type">
+                  <option value="">Flow와 Component</option>
+                  <option value="json">Flow</option>
+                  <option value="py">Component</option>
+                </select>
+              </label>
+              <button type="submit">승인 자산 찾기</button>
+            </form>
+            <div class="agent-playground-hub-selected" data-hub-selected>
+              <span>선택한 자산</span>
+              <p>아직 선택한 자산이 없습니다.</p>
+            </div>
+            <div class="agent-playground-hub-assets" data-hub-assets>
+              <p class="agent-playground-empty">검색하면 Agent Hub의 승인된 자산만 표시됩니다.</p>
+            </div>
+            <details class="agent-playground-technical-details agent-playground-hub-contract">
+              <summary>고급 검증 계약</summary>
+              <label>필요한 BoI 기능
+                <select data-hub-validation-profile>
+                  <option value="boi_knowledge_draft">Wiki·Ontology 조회와 개인 초안</option>
+                  <option value="boi_knowledge">Wiki·Ontology 조회</option>
+                  <option value="generic_action">일반 Action 계약</option>
+                </select>
+              </label>
+            </details>
+            <div class="agent-playground-form-actions">
+              <button type="button" data-hub-adoption-begin disabled>배포 준비</button>
+              <a data-hub-deploy-link href="{{ agent_hub_url }}" target="_blank" rel="noopener" aria-disabled="true">Agent Hub에서 배포</a>
+              <button type="button" data-hub-adoption-discover disabled>배포 결과 확인</button>
+            </div>
+            <output data-hub-adoption-output>Endpoint와 Project를 고른 뒤 자산을 선택하세요.</output>
+            <div class="agent-playground-hub-candidates" data-hub-candidates></div>
+            <div class="agent-playground-component-legend" data-component-status-legend aria-label="Component 상태 기준">
+              <span>배포됨</span>
+              <span>연결 필요</span>
+              <span>연결됨</span>
+              <span>실행 검증됨</span>
+            </div>
+            <div class="agent-playground-component-status" data-component-status></div>
+          </section>
         </section>
 
         <section class="agent-playground-panel" data-flow-panel data-workbench-panel="create test hub action">
           <header>
             <div><p class="eyebrow">선택한 Flow</p><h3 data-selected-flow-name>Flow를 선택하세요</h3></div>
-            <span class="agent-playground-chip" data-selected-flow-status>discovered</span>
+            <span class="agent-playground-chip" data-selected-flow-status data-state="discovered">발견됨</span>
           </header>
           <details class="agent-playground-technical-details">
             <summary>기술 세부정보</summary>
@@ -321,9 +379,9 @@
           </details>
           <div class="agent-playground-form-actions">
             <button type="button" data-download-artifact data-step-action="hub" disabled>Agent Hub 자산 내려받기</button>
-            <button type="button" class="primary" data-record-deployment data-step-action="hub" disabled>이 Flow를 배포 결과로 연결</button>
-            <button type="button" class="primary" data-validate-flow data-step-action="test" disabled>Flow 전체 검증</button>
-            <button type="button" class="primary" data-create-action data-step-action="action" disabled>Action 등록 초안 만들기</button>
+            <button type="button" data-record-deployment data-step-action="hub" disabled>이 Flow를 배포 결과로 연결</button>
+            <button type="button" data-validate-flow data-step-action="test" disabled>Flow 전체 검증</button>
+            <button type="button" data-create-action data-step-action="action" disabled>Action 등록 초안 만들기</button>
             <a data-open-action-draft hidden>Action 등록 초안 열기</a>
           </div>
           <fieldset class="agent-playground-action-scope" data-action-scope data-step-action="action" hidden>
@@ -382,7 +440,7 @@
                 <label>부족 근거<input name="missing_evidence" placeholder="raw_data" /></label>
               </div>
             </details>
-            <button type="submit" class="primary" disabled>선택 Flow 테스트</button>
+            <button type="submit" disabled>선택 Flow 테스트</button>
           </form>
           <div class="agent-playground-result" data-result-summary>
             <p class="agent-playground-empty">실행 후 Task/SOP Context, Ontology 관계, 문서 근거, 부족 근거, 저장 상태를 먼저 보여줍니다.</p>
@@ -395,14 +453,14 @@
       </div>
 
       <aside class="agent-playground-side">
-        <section class="agent-playground-panel" data-workbench-panel="create test hub action">
-          <header><div><p class="eyebrow">고정 계약</p><h3>BoI Wiki Agent Loop 1.1</h3></div></header>
+        <details class="agent-playground-panel agent-playground-contract" data-workbench-panel="create test hub action">
+          <summary><strong>Wiki·Ontology 활용 흐름</strong><span>기준 Flow 계약 보기</span></summary>
           <ol class="agent-playground-loop">
-            <li><span>1</span><div><strong>Wiki·Ontology 가져오기</strong><p>Task/SOP 여부를 자동 판별하고 ACL 내 근거만 사용</p></div></li>
-            <li><span>2</span><div><strong>agent_slot 교체</strong><p>Agent만 바꿔도 Context·근거·저장 계약 유지</p></div></li>
-            <li><span>3</span><div><strong>개인 초안 저장</strong><p>기본 preview, 명시한 경우만 private draft</p></div></li>
+            <li><span>1</span><div><strong>업무 맥락과 지식 가져오기</strong><p>Task/SOP를 판별하고 Ontology 관계를 우선 사용</p></div></li>
+            <li><span>2</span><div><strong>Agent 교체·조합</strong><p>Agent만 바꿔도 Context·근거·저장 계약 유지</p></div></li>
+            <li><span>3</span><div><strong>내 초안으로 저장</strong><p>기본은 미리보기, 직접 선택한 경우만 개인 초안 생성</p></div></li>
           </ol>
-        </section>
+        </details>
 
         <details class="agent-playground-panel agent-playground-advanced">
           <summary>고급 연결 관리</summary>

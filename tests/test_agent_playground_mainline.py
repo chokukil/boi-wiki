@@ -528,11 +528,23 @@ def test_playground_and_manual_pages_hide_pet_assets(boi_app_module):
             "?employee_id=100002"
         ),
         client.get(
+            "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-my-flow-deploy"
+            "?employee_id=100002"
+        ),
+        client.get(
+            "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-shared-assets"
+            "?employee_id=100002"
+        ),
+        client.get(
             "/docs/boi:public:boi-wiki-manual:operations:agent-playground-operator-runbook"
             "?employee_id=100002"
         ),
+        client.get(
+            "/docs/boi:public:boi-wiki-manual:operations:agent-hub-integration-boundary"
+            "?employee_id=100002"
+        ),
     ]
-    assert [page.status_code for page in pages] == [200, 200, 200]
+    assert [page.status_code for page in pages] == [200, 200, 200, 200, 200, 200]
     for page in pages:
         assert "pet_agent.js" not in page.text
         assert "boi-pet-agent" not in page.text
@@ -541,6 +553,9 @@ def test_playground_and_manual_pages_hide_pet_assets(boi_app_module):
     assert playground.count("data-workbench-step=") == 4
     assert "data-task-select" in playground
     assert "data-action-scope" in playground
+    assert "내 Flow 배포하기" in playground
+    assert "공유 자산 가져오기" in playground
+    assert "data-next-action" in playground
     assert "boi_search" not in playground
     assert "Ontology" in playground
     assert "boi_search" not in pages[1].text

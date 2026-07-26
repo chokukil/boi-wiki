@@ -97,24 +97,30 @@ def main() -> int:
     playground_js = (
         ROOT / "boi_api" / "app" / "static" / "agent_playground.js"
     ).read_text(encoding="utf-8")
+    playground_source = (
+        ROOT / "boi_api" / "app" / "agent_playground.py"
+    ).read_text(encoding="utf-8")
+    agent_hub_client = playground_source.split(
+        "    def _agent_hub_request(", 1
+    )[1].split("    @staticmethod", 1)[0]
+    validation_hub_compose = (
+        ROOT / "validation" / "agent-hub" / "docker-compose.yml"
+    ).read_text(encoding="utf-8")
+    validation_mainline_compose = (
+        ROOT / "validation" / "agent-playground-mainline" / "docker-compose.yml"
+    ).read_text(encoding="utf-8")
+    guide_paths = (
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-onboarding.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-langflow-setup.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-my-flow-deploy.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-shared-assets.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-action-wiki.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-troubleshooting.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-playground-operator-runbook.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-hub-integration-boundary.md",
+    )
     docs = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (
-            ROOT
-            / "data"
-            / "boi"
-            / "public"
-            / "boi-wiki-manual"
-            / "langflow"
-            / "agent-playground-onboarding.md",
-            ROOT
-            / "data"
-            / "boi"
-            / "public"
-            / "boi-wiki-manual"
-            / "operations"
-            / "agent-playground-operator-runbook.md",
-        )
+        path.read_text(encoding="utf-8") for path in guide_paths
     )
     pet_surface = (playground_html + playground_js + docs).lower()
 
@@ -145,6 +151,31 @@ def main() -> int:
                 for marker in ("pet_agent.js", "pet-agent", "pet agent", "boi-agent-root")
             ),
             "html/js/wiki guides",
+        ),
+        check(
+            "agent_hub_catalog_client_is_get_only",
+            "httpx.get(" in agent_hub_client
+            and not any(
+                marker in agent_hub_client
+                for marker in ("httpx.post(", "httpx.put(", "httpx.patch(", "httpx.delete(")
+            ),
+            "approved catalog list/detail only",
+        ),
+        check(
+            "agent_hub_guides_complete",
+            all(path.exists() for path in guide_paths)
+            and "Agent Hub는 BoI 개발 영역이 아니다" in docs,
+            [str(path.relative_to(ROOT)) for path in guide_paths],
+        ),
+        check(
+            "browser_visible_sso_uses_localhost",
+            "KEYCLOAK_URL: http://localhost:18082" in validation_hub_compose
+            and "KC_HOSTNAME: http://localhost:18082" in validation_hub_compose
+            and "KEYCLOAK_EXTERNAL_SERVER_URL: http://localhost:18082"
+            in validation_mainline_compose
+            and "KEYCLOAK_ISSUER_URL: http://localhost:18082"
+            in validation_mainline_compose,
+            "localhost:18082",
         ),
     ]
     if AGENT_HUB_ROOT.exists():

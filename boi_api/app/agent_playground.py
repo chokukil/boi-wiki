@@ -2177,6 +2177,40 @@ class AgentPlaygroundService:
         return {"contract_id": "", "inputs": [], "outputs": []}
 
     @classmethod
+    def _component_nodes_for_asset(
+        cls,
+        nodes: list[dict[str, Any]],
+        *,
+        asset_title: str,
+        required_contract: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        title_key = re.sub(r"[^a-z0-9]+", "", asset_title.lower())
+        matches: list[tuple[int, dict[str, Any]]] = []
+        for node in nodes:
+            normalized = {
+                re.sub(r"[^a-z0-9]+", "", value.lower())
+                for value in cls._node_component_identity(node)
+            }
+            match_lengths = [
+                len(value)
+                for value in normalized
+                if value and title_key and (title_key in value or value in title_key)
+            ]
+            if match_lengths:
+                matches.append((max(match_lengths), node))
+        if matches:
+            # Agent Hub titles commonly append a version or validation run ID.
+            # Prefer the most specific identity so "Incompatible Agent Slot
+            # 20260727" does not also select the shorter built-in Agent Slot.
+            best_match_length = max(score for score, _ in matches)
+            return [node for score, node in matches if score == best_match_length]
+        return [
+            node
+            for node in nodes
+            if cls._node_component_contract(node) == required_contract
+        ]
+
+    @classmethod
     def _graph_health(cls, flow: dict[str, Any]) -> dict[str, Any]:
         data = flow.get("data") if isinstance(flow.get("data"), dict) else {}
         nodes = [item for item in data.get("nodes") or [] if isinstance(item, dict)]
@@ -2356,26 +2390,11 @@ class AgentPlaygroundService:
                 for value in self._node_component_identity(node)
             )
         ]
-        title_key = re.sub(r"[^a-z0-9]+", "", str(asset.get("title") or "").lower())
-        component_nodes = []
-        for node in nodes:
-            identities = self._node_component_identity(node)
-            normalized = {
-                re.sub(r"[^a-z0-9]+", "", value.lower())
-                for value in identities
-            }
-            if title_key and any(
-                title_key in value or value in title_key
-                for value in normalized
-                if value
-            ):
-                component_nodes.append(node)
-        if not component_nodes:
-            component_nodes = [
-                node
-                for node in nodes
-                if self._node_component_contract(node) == required_contract
-            ]
+        component_nodes = self._component_nodes_for_asset(
+            nodes,
+            asset_title=str(asset.get("title") or ""),
+            required_contract=required_contract,
+        )
         if len(slot_nodes) != 1 or len(component_nodes) != 1:
             return {
                 "ok": False,
@@ -4476,6 +4495,149 @@ class AgentPlaygroundService:
             or connection.get("endpoint")
             or ""
         ).rstrip("/")
+        selected_project_id = str((project or {}).get("id") or "")
+        selected_endpoint_deployments = [
+            item
+            for item in deployments
+            if str(item.get("endpoint_id") or "") == default_endpoint_id
+            and (
+                not selected_project_id
+                or str(item.get("project_id") or "") == selected_project_id
+            )
+        ]
+        selected_hub_adoptions = [
+            item
+            for item in hub_adoptions
+            if str(item.get("endpoint_id") or "") == default_endpoint_id
+            and (
+                not selected_project_id
+                or str(item.get("project_id") or "") == selected_project_id
+            )
+        ]
+        pending_hub_adoption = next(
+            (
+                item
+                for item in reversed(selected_hub_adoptions)
+                if str(item.get("status") or "") != "confirmed"
+            ),
+            None,
+        )
+        if selected_endpoint_deployments:
+            hub_onboarding = {
+                "required": False,
+                "status": "complete",
+                "next_action": "review_deployment",
+                "message": "Agent Hub 배포 Flow를 이 프로젝트에서 확인했습니다.",
+                "deployment_id": str(
+                    selected_endpoint_deployments[-1].get("deployment_id") or ""
+                ),
+            }
+        elif pending_hub_adoption:
+            hub_onboarding = {
+                "required": True,
+                "status": "in_progress",
+                "next_action": "discover_deployment",
+                "message": "Agent Hub 배포를 마친 뒤 결과를 확인하세요.",
+                "adoption_id": str(pending_hub_adoption.get("adoption_id") or ""),
+            }
+        else:
+            hub_onboarding = {
+                "required": True,
+                "status": "not_started",
+                "next_action": "open_agent_hub",
+                "message": "첫 배포 전에 endpoint 연결과 프로젝트 선택을 안내합니다.",
+            }
+
+        flow_registry = [
+            item for item in record.get("flow_registry") or [] if isinstance(item, dict)
+        ]
+        selected_registry = [
+            item
+            for item in flow_registry
+            if (
+                not default_endpoint_id
+                or str(item.get("endpoint_id") or "") == default_endpoint_id
+            )
+            and (
+                not selected_project_id
+                or str(item.get("project_id") or "") == selected_project_id
+            )
+        ]
+        verified_flow = next(
+            (
+                item
+                for item in reversed(selected_registry)
+                if str(item.get("validation_status") or "")
+                in {"action_ready", "action_linked"}
+            ),
+            None,
+        )
+        action_status = str((action or {}).get("status") or "not_connected")
+        completed_stages: list[str] = []
+        if not onboarding.get("required"):
+            completed_stages.append("onboarding")
+        if project and flow:
+            completed_stages.append("create")
+        if verified_flow:
+            completed_stages.append("test")
+        if selected_endpoint_deployments:
+            completed_stages.append("hub")
+        if action_status not in {"", "not_connected"}:
+            completed_stages.append("action")
+
+        blockers: list[str] = []
+        if onboarding.get("required"):
+            blockers.append(str(onboarding.get("last_error") or onboarding.get("message") or "온보딩 필요"))
+        if connection and str(connection.get("status") or "") != "connected":
+            blockers.append(str(connection.get("last_error") or "Langflow 연결 확인 필요"))
+        if action_status not in {"", "not_connected"}:
+            current_stage = "action"
+            next_action = {
+                "id": "open_action_draft",
+                "stage": "action",
+                "label": "Action 등록 상태 확인",
+                "description": "등록 초안과 publish-request 상태를 확인하세요.",
+            }
+        elif verified_flow and selected_endpoint_deployments:
+            current_stage = "action"
+            next_action = {
+                "id": "create_action",
+                "stage": "action",
+                "label": "Action으로 연결",
+                "description": "검증된 Flow를 connector-neutral Action에 연결하세요.",
+            }
+        elif selected_endpoint_deployments:
+            current_stage = "test"
+            next_action = {
+                "id": "validate_flow",
+                "stage": "test",
+                "label": "배포 Flow 검증",
+                "description": "업무 맥락·Ontology·Wiki 근거와 저장 동작을 확인하세요.",
+            }
+        elif verified_flow:
+            current_stage = "hub"
+            next_action = {
+                "id": "open_agent_hub",
+                "stage": "hub",
+                "label": "Agent Hub에서 배포",
+                "description": "검증한 Flow를 기존 Agent Hub UI에서 개인 프로젝트로 배포하세요.",
+            }
+        elif not onboarding.get("required") and project and flow:
+            current_stage = "create"
+            next_action = {
+                "id": "open_langflow",
+                "stage": "create",
+                "label": "Langflow에서 Flow 만들기",
+                "description": "개인 프로젝트에서 Agent를 편집하고 충분히 시험하세요.",
+            }
+        else:
+            current_stage = "onboarding"
+            next_action = {
+                "id": str(onboarding.get("next_action") or "open_langflow_settings"),
+                "stage": "onboarding",
+                "label": "Agent 개발 공간 준비",
+                "description": "개인 Langflow 연결과 기준 Flow 준비를 완료하세요.",
+            }
         return {
             "ok": True,
             "identity": {
@@ -4510,9 +4672,16 @@ class AgentPlaygroundService:
             },
             "project": project,
             "flow": flow,
-            "flows": [item for item in record.get("flow_registry") or [] if isinstance(item, dict)],
+            "flows": flow_registry,
             "deployments": deployments,
             "hub_adoptions": hub_adoptions,
+            "journey": {
+                "current_stage": current_stage,
+                "next_action": next_action,
+                "blockers": blockers,
+                "completed_stages": completed_stages,
+            },
+            "hub_onboarding": hub_onboarding,
             "wiki": {
                 "status": "connected" if selected_credential else "not_connected",
                 "credential_variable": BOI_PAT_VARIABLE_NAME if selected_credential else "",

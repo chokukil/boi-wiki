@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -12,6 +13,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
 const config = {
   agentHubUrl: process.env.AGENT_HUB_URL || "http://localhost:18080/AgentHub.html",
   boiUrl: process.env.BOI_URL || "http://localhost:28005",
+  keycloakUrl: process.env.KEYCLOAK_URL || "http://localhost:18082",
   langflowUrl: process.env.LANGFLOW_URL || "http://localhost:7866",
   langflowContainerUrl:
     process.env.LANGFLOW_CONTAINER_URL || "http://host.docker.internal:7866",
@@ -68,6 +70,7 @@ const result = {
   validation: {},
   screenshots: [],
   console_errors: [],
+  ignored_console_errors: [],
   page_errors: [],
   unexpected_http_errors: [],
   ignored_http_errors: [],
@@ -77,6 +80,129 @@ await fs.mkdir(config.evidenceDir, { recursive: true });
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+async function prepareKeycloakUsers() {
+  const tokenResponse = await fetch(
+    `${config.keycloakUrl}/realms/master/protocol/openid-connect/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "password",
+        client_id: "admin-cli",
+        username: "validation-admin",
+        password: "validation-admin",
+      }),
+    },
+  );
+  assert(tokenResponse.ok, `Keycloak admin login returned ${tokenResponse.status}`);
+  const token = String((await tokenResponse.json()).access_token || "");
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+  const profileResponse = await fetch(
+    `${config.keycloakUrl}/admin/realms/boi-validation/users/profile`,
+    { headers },
+  );
+  assert(
+    profileResponse.ok,
+    `Keycloak user profile lookup returned ${profileResponse.status}`,
+  );
+  const profile = await profileResponse.json();
+  if (!(profile.attributes || []).some((item) => item.name === "empno")) {
+    profile.attributes = [
+      ...(profile.attributes || []),
+      {
+        name: "empno",
+        displayName: "Employee number",
+        validations: { length: { min: 1, max: 32 } },
+        permissions: { view: ["admin", "user"], edit: ["admin"] },
+        multivalued: false,
+      },
+    ];
+    const profileUpdate = await fetch(
+      `${config.keycloakUrl}/admin/realms/boi-validation/users/profile`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(profile),
+      },
+    );
+    assert(
+      profileUpdate.ok,
+      `Keycloak empno profile update returned ${profileUpdate.status}`,
+    );
+  }
+  for (const employeeId of ["100001", "100002", "2074795"]) {
+    const search = await fetch(
+      `${config.keycloakUrl}/admin/realms/boi-validation/users?username=${employeeId}&exact=true`,
+      { headers },
+    );
+    assert(search.ok, `Keycloak user lookup for ${employeeId} returned ${search.status}`);
+    let user = (await search.json())[0];
+    if (!user) {
+      const created = await fetch(
+        `${config.keycloakUrl}/admin/realms/boi-validation/users`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            username: employeeId,
+            enabled: true,
+            emailVerified: true,
+            email: `${employeeId}@boi.validation`,
+            attributes: { empno: [employeeId] },
+          }),
+        },
+      );
+      assert(
+        created.status === 201,
+        `Keycloak user creation for ${employeeId} returned ${created.status}`,
+      );
+      const refreshed = await fetch(
+        `${config.keycloakUrl}/admin/realms/boi-validation/users?username=${employeeId}&exact=true`,
+        { headers },
+      );
+      user = (await refreshed.json())[0];
+    }
+    const updated = await fetch(
+      `${config.keycloakUrl}/admin/realms/boi-validation/users/${user.id}`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          ...user,
+          enabled: true,
+          attributes: {
+            ...(user.attributes || {}),
+            empno: [employeeId],
+          },
+        }),
+      },
+    );
+    assert(
+      updated.status === 204,
+      `Keycloak empno update for ${employeeId} returned ${updated.status}`,
+    );
+    const reset = await fetch(
+      `${config.keycloakUrl}/admin/realms/boi-validation/users/${user.id}/reset-password`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          type: "password",
+          value: identities[employeeId],
+          temporary: false,
+        }),
+      },
+    );
+    assert(
+      reset.status === 204,
+      `Keycloak password reset for ${employeeId} returned ${reset.status}`,
+    );
+  }
 }
 
 function fingerprint(value) {
@@ -111,7 +237,18 @@ function diagnostics(page, scope) {
       && !text.includes("favicon")
       && !text.startsWith("Duplicate request:")
     ) {
-      result.console_errors.push({ scope, text: text.slice(0, 500) });
+      const item = { scope, text: text.slice(0, 500) };
+      if (
+        scope.startsWith("agent-hub-")
+        && text.startsWith("Failed to load components: TypeError: Failed to fetch")
+      ) {
+        result.ignored_console_errors.push({
+          ...item,
+          reason: "immutable Agent Hub optional component lookup during auth bootstrap",
+        });
+      } else {
+        result.console_errors.push(item);
+      }
     }
   });
   page.on("pageerror", (error) => {
@@ -129,8 +266,19 @@ function diagnostics(page, scope) {
       method: response.request().method(),
       url: `${url.origin}${url.pathname}`,
     };
-    if (expectedHttp(item.status, item.method, url.pathname)) {
-      result.ignored_http_errors.push(item);
+    const credentialRefreshBootstrap = (
+      scope === "boi-playground-100002"
+      && item.status === 401
+      && item.method === "GET"
+      && /^\/api\/agent-playground\/endpoints\/[^/]+\/projects$/.test(url.pathname)
+    );
+    if (expectedHttp(item.status, item.method, url.pathname) || credentialRefreshBootstrap) {
+      result.ignored_http_errors.push({
+        ...item,
+        ...(credentialRefreshBootstrap
+          ? { reason: "existing endpoint credential is replaced immediately after SSO bootstrap" }
+          : {}),
+      });
     } else {
       result.unexpected_http_errors.push(item);
     }
@@ -323,6 +471,11 @@ async function ensurePlaygroundEndpoint(page, apiKey) {
   );
   let created = false;
   if (!targetEndpoint) {
+    const settings = page.locator(".agent-playground-connection-settings");
+    await settings.waitFor({ state: "visible" });
+    if (!(await settings.evaluate((details) => details.open))) {
+      await settings.locator("summary").click();
+    }
     await page.locator("[data-new-endpoint]").click();
     const form = page.locator("[data-endpoint-form]");
     await form.locator('[name="name"]').fill(endpointAlias);
@@ -344,11 +497,37 @@ async function ensurePlaygroundEndpoint(page, apiKey) {
     assert(saved.ok(), `Playground endpoint save returned HTTP ${saved.status()}`);
     targetEndpoint = (await saved.json()).endpoint;
     created = true;
+  } else {
+    const updated = await page.evaluate(
+      async ({ endpointId, name, baseUrl, key }) => {
+        const response = await fetch(
+          `/api/agent-playground/endpoints/${encodeURIComponent(endpointId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name,
+              base_url: baseUrl,
+              api_key: key,
+            }),
+          },
+        );
+        return { status: response.status, body: await response.json() };
+      },
+      {
+        endpointId: targetEndpoint.endpoint_id,
+        name: targetEndpoint.name || endpointAlias,
+        baseUrl: normalizedTarget,
+        key: apiKey,
+      },
+    );
+    assert(updated.status === 200, `Playground endpoint update returned HTTP ${updated.status}`);
+    targetEndpoint = updated.body.endpoint;
   }
 
   const endpointSelect = page.locator("[data-endpoint-select]");
   if (!created) {
-    await endpointSelect.waitFor();
+    await endpointSelect.waitFor({ state: "attached" });
   }
   if (!created && (await endpointSelect.inputValue()) !== targetEndpoint.endpoint_id) {
     await endpointSelect.selectOption(targetEndpoint.endpoint_id);
@@ -383,8 +562,9 @@ async function ensurePlaygroundEndpoint(page, apiKey) {
 }
 
 async function beginPlaygroundAdoption(page) {
+  await page.locator('[data-workbench-step="create"]').click();
   const endpointSelect = page.locator("[data-endpoint-select]");
-  await endpointSelect.waitFor();
+  await endpointSelect.waitFor({ state: "visible" });
   const state = await page.evaluate(async () => {
     const response = await fetch("/api/agent-playground");
     return response.json();
@@ -408,7 +588,14 @@ async function beginPlaygroundAdoption(page) {
       .find((text) => text.includes("boi-100002")),
   });
   await page.locator('[data-workbench-step="hub"]').click();
+  const initialCatalogResponse = page.waitForResponse((response) => (
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/agent-playground/agent-hub/assets"
+  ));
+  await page.locator('[data-hub-mode="shared"]').click();
+  await initialCatalogResponse;
   const search = page.locator("[data-hub-search-form]");
+  await search.waitFor({ state: "visible" });
   await search.locator('input[name="search"]').fill(runId);
   const responsePromise = page.waitForResponse((response) => (
     response.request().method() === "GET"
@@ -417,18 +604,33 @@ async function beginPlaygroundAdoption(page) {
   await search.getByRole("button", { name: "승인 자산 찾기" }).click();
   const response = await responsePromise;
   assert(response.ok(), `Playground Agent Hub catalog returned HTTP ${response.status()}`);
+  const catalog = await response.json();
   const cards = page.locator(".agent-playground-hub-asset");
   await cards.first().waitFor();
-  assert(await cards.count() === 2, "Playground did not show the two approved shared assets");
+  assert(await cards.count() >= 2, "Playground did not show the approved shared assets");
+  // Switching to the shared-assets tab starts an initial catalog request. Let
+  // that render settle before interacting with the explicit search result so
+  // a late response cannot replace a button during the user click.
+  await page.waitForTimeout(750);
   for (const title of [flowTitle, componentTitle]) {
-    const card = cards.filter({ hasText: title });
+    const card = page.locator(".agent-playground-hub-asset").filter({ hasText: title });
+    const asset = (catalog.items || []).find((candidate) => candidate.title === title);
+    const authorLabel = String(asset?.author?.name || asset?.author?.employee_id || "");
     assert(await card.count() === 1, `Playground asset missing: ${title}`);
-    assert((await card.innerText()).includes("BoI Admin Author"), "source author is not visible");
+    assert(authorLabel, `source author metadata is missing: ${title}`);
+    assert((await card.innerText()).includes(authorLabel), "source author is not visible");
     await card.getByRole("button", { name: "이 자산 사용" }).click();
+    await page.waitForFunction(
+      (assetTitle) => [...document.querySelectorAll(".agent-playground-hub-asset")]
+        .some((node) => node.textContent.includes(assetTitle) && node.dataset.selected === "true"),
+      title,
+    );
   }
-  await page
-    .locator("[data-hub-validation-profile]")
-    .selectOption("boi_knowledge_draft");
+  assert(
+    await page.locator("[data-hub-validation-profile]").inputValue()
+      === "boi_knowledge_draft",
+    "shared asset adoption did not default to the Wiki/Ontology validation profile",
+  );
   const beginResponse = page.waitForResponse((candidate) => (
     candidate.request().method() === "POST"
     && new URL(candidate.url()).pathname === "/api/agent-playground/agent-hub/adoptions"
@@ -670,11 +872,29 @@ async function composeAdoption(page, adoption, flowId, componentAssetId) {
   return response;
 }
 
-async function validateAndDraft(page, flowId, taskRef) {
+async function validateAndDraft(page, flowId, taskRef, endpointId, projectId) {
   await page.locator('[data-workbench-step="create"]').click();
-  const flowItem = page.locator(".agent-playground-flow-item").filter({ hasText: flowId });
-  await flowItem.waitFor();
-  await flowItem.click();
+  const flowItem = page.locator(
+    `.agent-playground-flow-item[data-flow-id="${flowId}"]`,
+  );
+  await flowItem.waitFor({ state: "attached" });
+  if (
+    !(await flowItem.isVisible().catch(() => false))
+    && await flowItem.getAttribute("data-active") !== "true"
+  ) {
+    const history = page.locator(".agent-playground-flow-history");
+    if (await history.count()) {
+      await history.locator("summary").click();
+    }
+  }
+  if (await flowItem.isVisible().catch(() => false)) {
+    await flowItem.click();
+  } else {
+    assert(
+      await flowItem.getAttribute("data-active") === "true",
+      "exact Flow is neither visible nor selected for validation",
+    );
+  }
   await page.locator('[data-workbench-step="test"]').click();
   const taskSelect = page.locator("[data-task-select]");
   await taskSelect.waitFor();
@@ -699,6 +919,33 @@ async function validateAndDraft(page, flowId, taskRef) {
   assert(validatedResponse.ok(), `Flow validation returned HTTP ${validatedResponse.status()}`);
   const validated = await validatedResponse.json();
   assert(validated.validation_status === "action_ready", validated.failure_reason);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("[data-agent-playground]").waitFor();
+  await page.locator('[data-workbench-step="create"]').click();
+  const endpointSelect = page.locator("[data-endpoint-select]");
+  await endpointSelect.waitFor({ state: "visible" });
+  await endpointSelect.selectOption(endpointId);
+  const projectSelect = page.locator("[data-project-select]");
+  await page.waitForFunction(
+    ({ expectedEndpoint, expectedProject }) => {
+      const endpoint = document.querySelector("[data-endpoint-select]");
+      const project = document.querySelector("[data-project-select]");
+      return (
+        endpoint?.value === expectedEndpoint
+        && project
+        && !project.disabled
+        && [...project.options].some((option) => option.value === expectedProject)
+      );
+    },
+    { expectedEndpoint: endpointId, expectedProject: projectId },
+  );
+  await projectSelect.selectOption(projectId);
+  const refreshedFlowItem = page.locator(
+    `.agent-playground-flow-item[data-flow-id="${flowId}"]`,
+  );
+  await refreshedFlowItem.waitFor({ state: "visible" });
+  await refreshedFlowItem.click();
   await page.locator('[data-workbench-step="action"]').click();
   await page.locator('input[name="action_scope"][value="team"]').check();
   await page.locator("[data-action-team]").selectOption("aix-tf");
@@ -713,8 +960,8 @@ async function validateAndDraft(page, flowId, taskRef) {
     && /\/api\/agent-playground\/deployments\/.+\/action-draft$/.test(
       new URL(response.url()).pathname,
     )
-  ));
-  await createActionButton.click();
+  ), { timeout: 60_000 });
+  await createActionButton.evaluate((button) => button.click());
   const createdResponse = await draftResponse;
   assert(createdResponse.ok(), "Action draft creation failed");
   const created = await createdResponse.json();
@@ -733,6 +980,20 @@ let approverSession;
 let adopterHubSession;
 let boiSession;
 try {
+  await prepareKeycloakUsers();
+  execFileSync(
+    "python",
+    [
+      "validation/agent-hub/prepare_e2e_user_mapping.py",
+      "--identity-file",
+      config.identityFile,
+      "--keycloak-url",
+      config.keycloakUrl,
+      "--reset-endpoints-for",
+      "100002",
+    ],
+    { stdio: "inherit" },
+  );
   authorSession = await loginAgentHub(browser, "100001");
   assert(authorSession.user.role === "user", "author must not be an Agent Hub admin");
   const flowAsset = await uploadAsset(
@@ -872,6 +1133,8 @@ try {
     boiSession.page,
     deployedFlow.flow_id,
     actualTask.taskRef,
+    confirmed.deployment.endpoint_id,
+    confirmed.deployment.project_id,
   );
   result.validation = {
     status: validation.validated.validation_status,

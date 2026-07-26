@@ -14,8 +14,14 @@ Langflow 1.11, Keycloak, Mock HCP와 실제로 연결한다. Agent Hub는 Flow·
 - BoI SSO: `http://localhost:28005`
 - Action Gateway / Wiki MCP: `http://localhost:18105`, `http://localhost:18205`
 - Langflow 1.11: `http://localhost:7867`
-- Agent Hub 등록 URL: `http://host.docker.internal:7867`
+- Agent Hub 등록 URL: `http://localhost:7867`
 - LM Studio: `http://host.docker.internal:1236`
+
+브라우저에 반환되는 Keycloak authorization·issuer URL은 `http://localhost:18082`다.
+Agent Hub backend는 소스 수정 없이 같은 localhost URL을 사용한다. 검증 compose의
+loopback forwarder가 backend network namespace의 `localhost:18082`와
+`localhost:7867`을 각각 Keycloak과 공식 Langflow container로 전달한다.
+`host.docker.internal`은 LM Studio 같은 서버 내부 연결에만 사용한다.
 
 ```bash
 export AGENT_HUB_SOURCE_DIR=/home/chokukil/agent-hub-pr25-validation
@@ -34,6 +40,10 @@ git -C "$AGENT_HUB_SOURCE_DIR" diff --quiet
 
 Keycloak 사용자는 고정 `sub`를 사용한다. 임시 비밀번호와 raw API Key는 실행 중에만
 주입하고 저장소·스크린샷·handoff에 넣지 않는다.
+
+`prepare_e2e_user_mapping.py`는 재생성된 validation Keycloak의 실제 `sub`를 격리
+Agent Hub DB의 E2E 사용자 데이터에 맞추는 검증 전용 fixture다. Agent Hub source,
+schema, migration은 변경하지 않으며 BoI API와 운영 런타임에서는 호출하지 않는다.
 
 ## 실제 브라우저 runner
 

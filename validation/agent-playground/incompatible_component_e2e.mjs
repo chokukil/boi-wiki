@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import crypto from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -13,7 +14,14 @@ const config = {
   agentHubUrl:
     process.env.AGENT_HUB_URL || "http://localhost:18080/AgentHub.html",
   langflowContainerUrl:
-    process.env.LANGFLOW_CONTAINER_URL || "http://host.docker.internal:7867",
+    process.env.LANGFLOW_CONTAINER_URL || "http://localhost:7867",
+  langflowUrl: process.env.LANGFLOW_URL || "http://localhost:7867",
+  langflowIdentityFile:
+    process.env.LANGFLOW_IDENTITY_FILE
+    || "/tmp/boi-ap-ux-final-langflow-users-20260727.json",
+  incompatibleComponentFile:
+    process.env.INCOMPATIBLE_COMPONENT_FILE
+    || "validation/agent-playground/assets/incompatible_agent_slot.py",
   identityFile:
     process.env.AGENT_HUB_IDENTITY_FILE
     || "/tmp/boi-ap-agent-hub-sso-users.json",
@@ -26,14 +34,28 @@ const config = {
 };
 
 const identities = JSON.parse(await fs.readFile(config.identityFile, "utf8"));
+const langflowIdentities = JSON.parse(
+  await fs.readFile(config.langflowIdentityFile, "utf8"),
+);
+const langflowAccount = langflowIdentities.users?.["100002"];
 const team = JSON.parse(await fs.readFile(config.teamResult, "utf8"));
 const endpointId = String(team.operator?.deployment_reference?.endpoint_connection_id || "");
 const projectId = String(team.operator?.deployment_reference?.project_id || "");
 const activeFlowId = String(team.operator?.deployment_reference?.flow_id || "");
-if (!identities["100002"] || !endpointId || !projectId || !activeFlowId) {
+if (
+  !identities["100001"]
+  || !identities["100002"]
+  || !identities["2074795"]
+  || !langflowAccount?.api_key
+  || !endpointId
+  || !projectId
+  || !activeFlowId
+) {
   throw new Error("incompatible component fixture is incomplete");
 }
 await fs.mkdir(config.evidenceDir, { recursive: true });
+const runId = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+const componentTitle = `Incompatible Agent Slot ${runId}`;
 
 const result = {
   ok: false,
@@ -42,6 +64,7 @@ const result = {
   compose: {},
   page_errors: [],
   console_errors: [],
+  ignored_console_errors: [],
   unexpected_http_errors: [],
 };
 
@@ -61,7 +84,15 @@ function diagnostics(page, scope) {
       && !text.includes("favicon")
       && !text.startsWith("Duplicate request:")
     ) {
-      result.console_errors.push({ scope, text });
+      if (text.startsWith("Failed to load components: TypeError: Failed to fetch")) {
+        result.ignored_console_errors.push({
+          scope,
+          text,
+          reason: "immutable Agent Hub optional component lookup during auth bootstrap",
+        });
+      } else {
+        result.console_errors.push({ scope, text });
+      }
     }
   });
   page.on("response", (response) => {
@@ -105,10 +136,10 @@ async function loginBoi(browser) {
   return { context, page };
 }
 
-async function loginAgentHub(browser) {
+async function loginAgentHub(browser, employeeId) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
-  diagnostics(page, "agent-hub-100002");
+  diagnostics(page, `agent-hub-${employeeId}`);
   await page.goto(config.agentHubUrl, { waitUntil: "domcontentloaded" });
   const username = page.locator("#username");
   await Promise.race([
@@ -120,15 +151,21 @@ async function loginAgentHub(browser) {
     ).catch(() => null),
   ]);
   if (await username.isVisible().catch(() => false)) {
-    await username.fill("100002");
-    await page.locator("#password").fill(identities["100002"]);
+    await username.fill(employeeId);
+    await page.locator("#password").fill(identities[employeeId]);
     await Promise.all([
       page.waitForURL((url) => url.origin === new URL(config.agentHubUrl).origin),
       page.locator("#kc-login").click(),
     ]);
   }
   await page.waitForFunction(() => Boolean(localStorage.getItem("agenthub_token")));
-  return { context, page };
+  const me = await page.evaluate(async () => {
+    const response = await fetch("/api/v1/users/me");
+    return { status: response.status, body: await response.json() };
+  });
+  assert(me.status === 200, `Agent Hub login failed for ${employeeId}`);
+  assert(me.body.employee_id === employeeId, `Agent Hub principal mismatch for ${employeeId}`);
+  return { context, page, user: me.body };
 }
 
 async function sessionFetch(page, url, options = {}) {
@@ -141,41 +178,120 @@ async function sessionFetch(page, url, options = {}) {
   }, { url, options });
 }
 
+async function langflowJson(method, pathname, body) {
+  const response = await fetch(`${config.langflowUrl}${pathname}`, {
+    method,
+    headers: {
+      "x-api-key": langflowAccount.api_key,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const payload = await response.json().catch(() => ({}));
+  assert(response.ok, `Langflow ${method} ${pathname} returned ${response.status}`);
+  return payload;
+}
+
+async function createIsolatedTargetFlow() {
+  const flows = await langflowJson("GET", "/api/v1/flows/");
+  const canonical = flows.find(
+    (flow) => (
+      flow.name === "BoI Wiki Agent Loop"
+      && String(flow.folder_id || flow.project_id || "") === projectId
+    ),
+  );
+  assert(canonical?.id, "canonical Flow is missing from boi-100002");
+  const source = await langflowJson(
+    "GET",
+    `/api/v1/flows/${encodeURIComponent(canonical.id)}`,
+  );
+  const created = await langflowJson("POST", "/api/v1/flows/", {
+    name: `BoI Wiki Agent Loop - Component Contract Guard ${runId}`,
+    description: "Validation-only clean target for an incompatible Agent Hub component.",
+    endpoint_name: `boi-wiki-component-guard-${runId.toLowerCase()}`,
+    data: structuredClone(source.data || {}),
+    webhook: false,
+    access_type: "PRIVATE",
+    tags: ["boi", "agent-playground", "validation", "component-contract"],
+    folder_id: projectId,
+    project_id: projectId,
+  });
+  assert(created?.id, "isolated target Flow creation failed");
+  return created;
+}
+
+async function uploadAsset(page) {
+  await page.getByRole("button", { name: /제출|Upload/i }).first().click();
+  const modal = page.locator(".modal");
+  await modal.waitFor();
+  const chooserPromise = page.waitForEvent("filechooser");
+  await modal.locator(".dropzone").click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles(path.resolve(config.incompatibleComponentFile));
+  await modal.getByRole("button", { name: /다음|Next/i }).click();
+  const fields = modal.locator("input.input");
+  await fields.nth(0).fill(componentTitle);
+  await fields.nth(1).fill(
+    "boi.agent-slot.v1과 맞지 않아 자동 연결이 차단되어야 하는 검증 컴포넌트입니다.",
+  );
+  await modal.locator("textarea").fill(
+    [
+      "## 검증 목적",
+      "",
+      "- Agent Hub 소스 변경 없이 공유 컴포넌트를 실제 배포합니다.",
+      "- boi.agent-slot.v2 계약이므로 Playground 자동 연결은 허용되지 않습니다.",
+      "- 수동 연결 안내와 정확한 차단 사유가 남아야 합니다.",
+    ].join("\n"),
+  );
+  await modal.getByRole("button", { name: /다음|Next/i }).click();
+  const selects = modal.locator("select.select");
+  await selects.nth(0).selectOption("1.9.1");
+  await selects.nth(1).selectOption({ index: 0 });
+  const responsePromise = page.waitForResponse((response) => (
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/v1/components"
+  ));
+  await modal.getByRole("button", { name: /제출하기|Submit/i }).click();
+  const response = await responsePromise;
+  assert(response.status() === 201, `Agent Hub upload returned ${response.status()}`);
+  return response.json();
+}
+
+async function approveAsset(page) {
+  await page.goto(`${config.agentHubUrl}#/admin`, { waitUntil: "domcontentloaded" });
+  const row = page.locator(".sub-row").filter({ hasText: componentTitle });
+  await row.waitFor();
+  await row.locator('input[type="checkbox"]').click();
+  const responsePromise = page.waitForResponse((response) => (
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/v1/admin/review/bulk"
+  ));
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: /일괄 승인 \(1\)/ }).click();
+  const response = await responsePromise;
+  assert(response.ok(), `Agent Hub approval returned ${response.status()}`);
+}
+
 const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
 let boiSession;
 let hubSession;
+let authorSession;
+let approverSession;
 try {
-  boiSession = await loginBoi(browser);
-  const flowsResponse = await sessionFetch(
-    boiSession.page,
-    `/api/agent-playground/endpoints/${encodeURIComponent(endpointId)}`
-      + `/projects/${encodeURIComponent(projectId)}/flows`,
-  );
-  assert(flowsResponse.status === 200, "Playground live Flow list failed");
-  const target = (flowsResponse.body.flows || []).find(
-    (flow) => (
-      flow.flow_id !== activeFlowId
-      && String(flow.name || "").startsWith("BoI Wiki Agent Loop Mainline")
-      && String(flow.name || "").includes("retry1")
-      && !String(flow.name || "").includes("Incompatible")
-    ),
-  );
-  assert(target?.flow_id && target?.name, "isolated target Flow for incompatible component is missing");
+  const target = await createIsolatedTargetFlow();
 
-  const assetsResponse = await sessionFetch(
-    boiSession.page,
-    "/api/agent-playground/agent-hub/assets?asset_type=py&limit=100",
-  );
-  assert(assetsResponse.status === 200, "Agent Hub approved component search failed");
-  const asset = (assetsResponse.body.items || []).find(
-    (item) => (
-      item.type === "py"
-      && item.status === "approved"
-      && item.author?.employee_id === "100001"
-      && /T01\d+Z$/.test(String(item.title || ""))
-    ),
-  );
-  assert(asset?.asset_id, "approved incompatible component is missing");
+  authorSession = await loginAgentHub(browser, "100001");
+  const asset = await uploadAsset(authorSession.page);
+  await authorSession.context.close();
+  authorSession = null;
+
+  approverSession = await loginAgentHub(browser, "2074795");
+  assert(approverSession.user.role === "admin", "Agent Hub reviewer is not an admin");
+  await approveAsset(approverSession.page);
+  await approverSession.context.close();
+  approverSession = null;
+
+  boiSession = await loginBoi(browser);
   const adoptionResponse = await sessionFetch(
     boiSession.page,
     "/api/agent-playground/agent-hub/adoptions",
@@ -185,17 +301,20 @@ try {
       body: JSON.stringify({
         endpoint_id: endpointId,
         project_id: projectId,
-        asset_ids: [asset.asset_id],
+        asset_ids: [asset.id],
         validation_profile: "generic_action",
       }),
     },
   );
-  assert(adoptionResponse.status === 200, "incompatible adoption begin failed");
+  assert(
+    adoptionResponse.status === 200,
+    `incompatible adoption begin failed: ${JSON.stringify(adoptionResponse.body)}`,
+  );
   const adoption = adoptionResponse.body.adoption;
 
-  hubSession = await loginAgentHub(browser);
+  hubSession = await loginAgentHub(browser, "100002");
   await hubSession.page.goto(
-    `${config.agentHubUrl}#/component/${asset.asset_id}`,
+    `${config.agentHubUrl}#/component/${asset.id}`,
     { waitUntil: "domcontentloaded" },
   );
   await hubSession.page.getByRole("button", { name: "배포", exact: true }).waitFor();
@@ -228,13 +347,13 @@ try {
   const deployResponsePromise = hubSession.page.waitForResponse((response) => (
     response.request().method() === "POST"
     && new URL(response.url()).pathname
-      === `/api/v1/deploy/components/${asset.asset_id}`
+      === `/api/v1/deploy/components/${asset.id}`
   ));
   await modal.getByRole("button", { name: "배포", exact: true }).last().click();
   const deployResponse = await deployResponsePromise;
   assert(deployResponse.ok(), `Agent Hub incompatible deployment returned ${deployResponse.status()}`);
   const deployed = await deployResponse.json();
-  assert(deployed.flow_id === target.flow_id, "incompatible component target Flow changed");
+  assert(deployed.flow_id === target.id, "incompatible component target Flow changed");
   await modal.getByText("배포 완료!").waitFor();
   await hubSession.page.screenshot({
     path: path.join(config.evidenceDir, "01-incompatible-component-deployed.png"),
@@ -248,7 +367,7 @@ try {
   );
   assert(discovered.status === 200, "incompatible component discovery failed");
   assert(
-    (discovered.body.candidates || []).some((item) => item.flow_id === target.flow_id),
+    (discovered.body.candidates || []).some((item) => item.flow_id === target.id),
     "modified target Flow was not rediscovered",
   );
   const confirmed = await sessionFetch(
@@ -257,7 +376,7 @@ try {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ flow_id: target.flow_id }),
+      body: JSON.stringify({ flow_id: target.id }),
     },
   );
   assert(confirmed.status === 200, "incompatible exact Flow confirmation failed");
@@ -269,8 +388,8 @@ try {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        flow_id: target.flow_id,
-        component_asset_id: asset.asset_id,
+        flow_id: target.id,
+        component_asset_id: asset.id,
         replace_agent_slot: true,
       }),
     },
@@ -287,18 +406,18 @@ try {
       + `/projects/${encodeURIComponent(projectId)}/flows`,
   );
   const targetAfter = (flowsAfter.body.flows || []).find(
-    (flow) => flow.flow_id === target.flow_id,
+    (flow) => flow.flow_id === target.id,
   );
   assert(targetAfter?.live_checksum === checksumBefore, "manual-required compose changed the Flow");
 
   result.asset = {
-    asset_id: asset.asset_id,
-    title: asset.title,
-    author_employee_id: asset.author?.employee_id,
+    asset_id: asset.id,
+    title: asset.title || componentTitle,
+    author_employee_id: "100001",
     contract: compose.body.actual_contract,
   };
   result.deployment = {
-    flow_id: target.flow_id,
+    flow_id: target.id,
     checksum: checksumBefore,
   };
   result.compose = {
@@ -319,6 +438,8 @@ try {
   );
   assert(result.ok, "incompatible component evidence is incomplete");
 } finally {
+  await authorSession?.context.close().catch(() => {});
+  await approverSession?.context.close().catch(() => {});
   await boiSession?.context.close().catch(() => {});
   await hubSession?.context.close().catch(() => {});
   await browser.close();

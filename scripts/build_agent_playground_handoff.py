@@ -417,21 +417,16 @@ def main() -> int:
         ROOT / "validation" / "agent-hub" / "CORPORATE_SSO_HANDOFF.md",
     ):
         copy_file(path, output / "delivery" / path.relative_to(ROOT))
+    wiki_root = ROOT / "data" / "boi" / "public" / "boi-wiki-manual"
     for path in (
-        ROOT
-        / "data"
-        / "boi"
-        / "public"
-        / "boi-wiki-manual"
-        / "langflow"
-        / "agent-playground-onboarding.md",
-        ROOT
-        / "data"
-        / "boi"
-        / "public"
-        / "boi-wiki-manual"
-        / "operations"
-        / "agent-playground-operator-runbook.md",
+        wiki_root / "langflow" / "agent-playground-onboarding.md",
+        wiki_root / "langflow" / "agent-playground-langflow-setup.md",
+        wiki_root / "langflow" / "agent-playground-my-flow-deploy.md",
+        wiki_root / "langflow" / "agent-playground-shared-assets.md",
+        wiki_root / "langflow" / "agent-playground-action-wiki.md",
+        wiki_root / "langflow" / "agent-playground-troubleshooting.md",
+        wiki_root / "operations" / "agent-playground-operator-runbook.md",
+        wiki_root / "operations" / "agent-hub-integration-boundary.md",
     ):
         copy_file(path, output / "delivery" / "wiki" / path.name)
     build_bundle(output / "delivery" / "boi-langflow-1.11-bundle.zip")

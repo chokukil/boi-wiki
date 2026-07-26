@@ -37,6 +37,13 @@ def validation_state() -> dict[str, Any]:
     return dict(state)
 
 
+@app.post("/__validation/reset")
+def reset_validation_state() -> dict[str, Any]:
+    state["run_attempts"] = 0
+    state["injected_failures"] = 0
+    return dict(state)
+
+
 @app.api_route(
     "/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

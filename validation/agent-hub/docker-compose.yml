@@ -21,7 +21,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://agenthub:agenthub-validation@db:5432/agenthub
       DEV_MODE: "false"
-      KEYCLOAK_URL: http://host.docker.internal:18082
+      KEYCLOAK_URL: http://localhost:18082
       KEYCLOAK_REALM: boi-validation
       KEYCLOAK_CLIENT_ID: agent-hub
       KEYCLOAK_CLIENT_SECRET: ""
@@ -35,6 +35,31 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+    networks:
+      - default
+      - langflow-validation
+
+  keycloak-loopback:
+    image: alpine/socat:1.8.0.0
+    network_mode: "service:backend"
+    command:
+      - TCP-LISTEN:18082,bind=127.0.0.1,fork,reuseaddr
+      - TCP:keycloak:8080
+    depends_on:
+      backend:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+
+  langflow-loopback:
+    image: alpine/socat:1.8.0.0
+    network_mode: "service:backend"
+    command:
+      - TCP-LISTEN:7867,bind=127.0.0.1,fork,reuseaddr
+      - TCP:boi-agent-playground-mainline-langflow:7860
+    depends_on:
+      backend:
+        condition: service_started
 
   db:
     image: postgres:15-alpine
@@ -60,7 +85,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: validation-admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: validation-admin
-      KC_HOSTNAME: http://host.docker.internal:18082
+      KC_HOSTNAME: http://localhost:18082
       KC_HTTP_ENABLED: "true"
     volumes:
       - ./keycloak-realm.json:/opt/keycloak/data/import/boi-validation-realm.json:ro
@@ -100,3 +125,8 @@ services:
 volumes:
   pgdata:
   uploads:
+
+networks:
+  langflow-validation:
+    external: true
+    name: ${BOI_AGENT_PLAYGROUND_VALIDATION_NETWORK:-boi-langflow-111-validation-net}

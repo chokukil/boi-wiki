@@ -13,18 +13,27 @@ const config = {
   boiUrl: process.env.BOI_URL || "http://localhost:28005",
   ssoPassword: process.env.BOI_SSO_PASSWORD || "",
   employeeId: process.env.BOI_EMPLOYEE_ID || "100002",
+  identityFile:
+    process.env.AGENT_HUB_IDENTITY_FILE
+    || "/tmp/boi-ap-agent-hub-sso-users.json",
   primaryUrl: process.env.PRIMARY_LANGFLOW_URL || "http://localhost:7864",
   recoveryUrl: process.env.RECOVERY_LANGFLOW_URL || "http://localhost:17866",
   unsupportedUrl: process.env.UNSUPPORTED_LANGFLOW_URL || "http://localhost:17865",
   credentialFile: process.env.VALIDATION_USER_CREDENTIAL_FILE || "/tmp/boi-ap-negative-users.json",
+  primaryIdentityFile:
+    process.env.LANGFLOW_IDENTITY_FILE
+    || "/tmp/boi-ap-ux-final-langflow-users-20260727.json",
   evidenceDir:
     process.env.PLAYWRIGHT_EVIDENCE_DIR ||
     "artifacts/agent-playground-negative-recovery",
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || "",
 };
 
-if (!config.ssoPassword) throw new Error("BOI_SSO_PASSWORD is required");
+const ssoIdentities = JSON.parse(await fs.readFile(config.identityFile, "utf8"));
+const ssoPassword = config.ssoPassword || String(ssoIdentities[config.employeeId] || "");
+if (!ssoPassword) throw new Error("BoI SSO validation password is required");
 const validationUsers = JSON.parse(await fs.readFile(config.credentialFile, "utf8"));
+const primaryIdentities = JSON.parse(await fs.readFile(config.primaryIdentityFile, "utf8"));
 const runId = process.env.PLAYWRIGHT_RUN_ID || new Date().toISOString().replace(/\W/g, "");
 const result = {
   ok: false,
@@ -43,6 +52,12 @@ const result = {
 };
 
 await fs.mkdir(config.evidenceDir, { recursive: true });
+const recoveryReset = await fetch(`${config.recoveryUrl}/__validation/reset`, {
+  method: "POST",
+});
+if (!recoveryReset.ok) {
+  throw new Error(`recovery validation gate reset returned HTTP ${recoveryReset.status}`);
+}
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -126,7 +141,7 @@ async function loginBoi(page) {
   };
   assert(result.oidc.state && result.oidc.nonce && result.oidc.pkce_s256, "OIDC+PKCE evidence is incomplete");
   await page.locator("#username").fill(config.employeeId);
-  await page.locator("#password").fill(config.ssoPassword);
+  await page.locator("#password").fill(ssoPassword);
   await Promise.all([
     page.waitForURL((url) => url.origin === new URL(config.boiUrl).origin),
     page.locator("#kc-login").click(),
@@ -241,7 +256,16 @@ async function ensurePrimaryReady(page) {
   return endpointId;
 }
 
+async function openConnectionSettings(page) {
+  const settings = page.locator(".agent-playground-connection-settings");
+  await settings.waitFor({ state: "visible" });
+  if (!(await settings.evaluate((details) => details.open))) {
+    await settings.locator("summary").click();
+  }
+}
+
 async function testUnsaved(page, { name, url, key, expectedStatus, screenshotName }) {
+  await openConnectionSettings(page);
   await page.locator("[data-new-endpoint]").click();
   const form = page.locator("[data-endpoint-form]");
   await form.locator('[name="name"]').fill(name);
@@ -265,6 +289,7 @@ async function testUnsaved(page, { name, url, key, expectedStatus, screenshotNam
 }
 
 async function addRecoveryEndpoint(page, apiKey) {
+  await openConnectionSettings(page);
   await page.locator("[data-new-endpoint]").click();
   const form = page.locator("[data-endpoint-form]");
   await form.locator('[name="name"]').fill("Recovery Langflow 1.11");
@@ -289,6 +314,23 @@ async function addRecoveryEndpoint(page, apiKey) {
   return payload.endpoint.endpoint_id;
 }
 
+async function removeStaleRecoveryEndpoints(page) {
+  const state = await apiState(page);
+  const target = config.recoveryUrl.replace(/\/+$/, "");
+  for (const endpoint of state.body.endpoints || []) {
+    if (String(endpoint.base_url || "").replace(/\/+$/, "") !== target) continue;
+    const removed = await page.evaluate(async (endpointId) => {
+      const response = await fetch(
+        `/api/agent-playground/endpoints/${encodeURIComponent(endpointId)}`,
+        { method: "DELETE" },
+      );
+      return { status: response.status, body: await response.json() };
+    }, endpoint.endpoint_id);
+    assert(removed.status === 200, `stale recovery endpoint removal returned HTTP ${removed.status}`);
+    assert(!removed.body.deactivated, "stale recovery endpoint is still referenced by a deployment");
+  }
+}
+
 async function langflowCounts(baseUrl, apiKey) {
   const headers = { "x-api-key": apiKey };
   const [projectsResponse, variablesResponse, flowsResponse] = await Promise.all([
@@ -311,6 +353,41 @@ async function langflowCounts(baseUrl, apiKey) {
     credentials: variables.filter((item) => item.name === "BOI_WIKI_PAT").length,
     canonical_flows: flows.filter((item) => item.name === "BoI Wiki Agent Loop").length,
   };
+}
+
+async function resetRecoveryLangflowAssets(baseUrl, apiKey) {
+  const headers = { "x-api-key": apiKey };
+  const targets = [
+    {
+      collection: "/api/v1/flows/",
+      matches: (item) => item.name === "BoI Wiki Agent Loop",
+      remove: (item) => `/api/v1/flows/${encodeURIComponent(item.id)}`,
+    },
+    {
+      collection: "/api/v1/variables/",
+      matches: (item) => item.name === "BOI_WIKI_PAT",
+      remove: (item) => `/api/v1/variables/${encodeURIComponent(item.id)}`,
+    },
+    {
+      collection: "/api/v1/projects/",
+      matches: (item) => item.name === `boi-${config.employeeId}`,
+      remove: (item) => `/api/v1/projects/${encodeURIComponent(item.id)}`,
+    },
+  ];
+  for (const target of targets) {
+    const response = await fetch(`${baseUrl}${target.collection}`, { headers });
+    assert(response.ok, `recovery reset lookup returned HTTP ${response.status}`);
+    for (const item of (await response.json()).filter(target.matches)) {
+      const removed = await fetch(`${baseUrl}${target.remove(item)}`, {
+        method: "DELETE",
+        headers,
+      });
+      assert(
+        [200, 202, 204, 404].includes(removed.status),
+        `recovery reset delete returned HTTP ${removed.status}`,
+      );
+    }
+  }
 }
 
 async function patSnapshot(page) {
@@ -348,16 +425,15 @@ try {
   const primaryEndpointId = await ensurePrimaryReady(page);
   await screenshot(page, "01-primary-endpoint-ready");
 
-  const otherUserKey = await createLangflowKey(
-    browser,
-    validationUsers.other_user,
-    `Cross user validation ${runId}`,
-  );
+  const otherUserKey = String(primaryIdentities.users?.["100003"]?.api_key || "");
+  assert(otherUserKey.length >= 16, "primary Langflow 100003 API Key is unavailable");
   const recoveryKey = await createLangflowKey(
     browser,
     validationUsers.recovery_user,
     `Recovery endpoint validation ${runId}`,
   );
+  await resetRecoveryLangflowAssets(validationUsers.recovery_user.url, recoveryKey);
+  await removeStaleRecoveryEndpoints(page);
 
   const beforeNegative = await apiState(page);
   const endpointCountBefore = beforeNegative.body.endpoints.length;

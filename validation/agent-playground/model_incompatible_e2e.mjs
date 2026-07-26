@@ -13,10 +13,14 @@ const config = {
   boiUrl: process.env.BOI_URL || "http://localhost:28005",
   employeeId: process.env.BOI_EMPLOYEE_ID || "100002",
   ssoPassword: process.env.BOI_SSO_PASSWORD || "",
+  identityFile:
+    process.env.AGENT_HUB_IDENTITY_FILE
+    || "/tmp/boi-ap-agent-hub-sso-users.json",
   langflowUrl: process.env.LANGFLOW_URL || "http://localhost:7867",
   langflowCredentialFile:
     process.env.LANGFLOW_CREDENTIAL_FILE
     || "/tmp/boi-mainline-secrets/agenthub-key.json",
+  langflowIdentityFile: process.env.LANGFLOW_IDENTITY_FILE || "",
   projectId: process.env.LANGFLOW_PROJECT_ID || "",
   evidenceDir:
     process.env.PLAYWRIGHT_EVIDENCE_DIR
@@ -114,13 +118,49 @@ async function api(page, method, pathname, body) {
   );
 }
 
-const credentials = JSON.parse(
-  await fs.readFile(config.langflowCredentialFile, "utf8"),
+async function createActualTask(page, runId) {
+  const traceId = `trace-model-agent-${runId}`;
+  const eventId = `evt-model-agent-${runId}`;
+  const response = await api(page, "POST", "/api/actions/invoke", {
+    action_key: "manual.equipment.review_root_cause",
+    event: {
+      event_id: eventId,
+      event_type: "root_cause.analysis.requested.v1",
+      trace_id: traceId,
+    },
+    payload: {
+      title: "Model Agent SOP context validation",
+      equipment_id: "EQ-AP-MODEL-AGENT",
+      owner: "100002",
+    },
+    dry_run: false,
+  });
+  assert(response.status === 200, `actual Task creation returned HTTP ${response.status}`);
+  assert(response.body.status === "manual_required", "actual Task was not recorded");
+  return {
+    task_ref: `task:${response.body.request_id}`,
+    trace_id: traceId,
+    event_id: eventId,
+  };
+}
+
+const credentialsDocument = JSON.parse(
+  await fs.readFile(
+    config.langflowIdentityFile || config.langflowCredentialFile,
+    "utf8",
+  ),
 );
+const credentials = (
+  credentialsDocument.users?.[config.employeeId]
+  || credentialsDocument.recovery_user
+  || credentialsDocument
+);
+const ssoIdentities = JSON.parse(await fs.readFile(config.identityFile, "utf8"));
+const ssoPassword = config.ssoPassword || String(ssoIdentities[config.employeeId] || "");
 const apiKey = String(credentials.api_key || "");
 assert(apiKey.length >= 16, "Langflow validation API Key is unavailable");
 assert(config.projectId, "LANGFLOW_PROJECT_ID is required");
-assert(config.ssoPassword, "BOI_SSO_PASSWORD is required");
+assert(ssoPassword, "BoI SSO validation password is required");
 
 const runId =
   process.env.PLAYWRIGHT_RUN_ID
@@ -191,7 +231,7 @@ try {
   };
   assert(Object.values(result.oidc).every(Boolean), "OIDC+PKCE evidence is incomplete");
   await page.locator("#username").fill(config.employeeId);
-  await page.locator("#password").fill(config.ssoPassword);
+  await page.locator("#password").fill(ssoPassword);
   await page.locator("#kc-login").click();
   await page.waitForURL((url) => url.origin === new URL(config.boiUrl).origin);
   await page.locator("[data-agent-playground]").waitFor();
@@ -242,10 +282,12 @@ try {
   });
   assert(incompatibleDeployment.status === 200, "incompatible Flow deployment record failed");
 
+  await page.locator('[data-workbench-step="create"]').click();
   const filter = page.locator("[data-flow-filter]");
   await filter.fill("Model Agent Example");
   await page.getByText("BoI Wiki Agent Loop - Model Agent Example", { exact: true }).waitFor();
   await screenshot("01-model-flow-rediscovered");
+  const actualTask = await createActualTask(page, runId);
 
   const modelValidation = await api(
     page,
@@ -257,7 +299,7 @@ try {
       artifact_version: "1.1.0-model-agent",
       artifact_checksum: sha256(modelArtifact),
       question: "Agent Playground와 BoI Wiki 연계 근거를 실제 모델로 정리해줘.",
-      task_ref: "task://agent-playground/model-validation",
+      task_ref: actualTask.task_ref,
     },
   );
   assert(modelValidation.status === 200, `model validation returned HTTP ${modelValidation.status}`);
@@ -278,6 +320,7 @@ try {
     artifact_checksum: modelValidation.body.artifact_checksum,
     model_inference: runtimeStage.details.model_inference,
     task_validation: taskStage.status,
+    task_anchor: actualTask,
   };
 
   await filter.fill("Incompatible");

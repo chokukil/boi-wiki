@@ -13,16 +13,35 @@ const config = {
   boiUrl: process.env.BOI_URL || "http://localhost:28005",
   langflowUrl: process.env.LANGFLOW_URL || "http://localhost:7867",
   langflowEndpoint:
-    process.env.LANGFLOW_ENDPOINT_URL || "http://host.docker.internal:7867",
+    process.env.LANGFLOW_ENDPOINT_URL || "http://localhost:7867",
   employeeId: process.env.BOI_EMPLOYEE_ID || "100002",
   ssoPassword: process.env.BOI_SSO_PASSWORD || "",
   langflowPassword: process.env.LANGFLOW_PASSWORD || "",
+  agentHubIdentityFile:
+    process.env.AGENT_HUB_IDENTITY_FILE
+    || "/tmp/boi-ap-agent-hub-sso-users.json",
+  langflowIdentityFile:
+    process.env.LANGFLOW_IDENTITY_FILE
+    || "/tmp/boi-ap-ux-final-langflow-users-20260727.json",
   endpointName: process.env.BOI_ENDPOINT_NAME || "내 Langflow 1.11",
   evidenceDir:
     process.env.PLAYWRIGHT_EVIDENCE_DIR ||
     "artifacts/agent-playground-onboarding-browser",
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || "",
 };
+
+const [agentHubIdentities, langflowIdentities] = await Promise.all([
+  fs.readFile(config.agentHubIdentityFile, "utf8")
+    .then((value) => JSON.parse(value))
+    .catch(() => ({})),
+  fs.readFile(config.langflowIdentityFile, "utf8")
+    .then((value) => JSON.parse(value))
+    .catch(() => ({})),
+]);
+config.ssoPassword ||= String(agentHubIdentities[config.employeeId] || "");
+config.langflowPassword ||= String(
+  langflowIdentities.users?.[config.employeeId]?.password || "",
+);
 
 for (const name of ["ssoPassword", "langflowPassword"]) {
   if (!config[name]) throw new Error(`${name} is required`);

@@ -158,6 +158,9 @@ def test_langflow_111_validation_stack_is_isolated_and_user_key_based():
 def test_agent_hub_validation_stack_includes_employee_scoped_mock_hcp():
     compose = yaml.safe_load(Path("validation/agent-hub/docker-compose.yml").read_text(encoding="utf-8"))
     service = compose["services"]["mock-hcp"]
+    backend = compose["services"]["backend"]
+    keycloak = compose["services"]["keycloak"]
+    loopback = compose["services"]["keycloak-loopback"]
 
     assert service["ports"] == ["18083:8080"]
     assert "./mock_hcp.py:/app/mock_hcp.py:ro" in service["volumes"]
@@ -179,6 +182,23 @@ def test_agent_hub_validation_stack_includes_employee_scoped_mock_hcp():
     ]
     assert module.PRINCIPALS["100003"]["roles"] == ["boi.viewer"]
     assert module.PRINCIPALS["100002"]["projects"] == ["boi-100002"]
+    assert backend["environment"]["KEYCLOAK_URL"] == "http://localhost:18082"
+    assert keycloak["environment"]["KC_HOSTNAME"] == "http://localhost:18082"
+    assert loopback["network_mode"] == "service:backend"
+    assert "TCP-LISTEN:18082" in loopback["command"][0]
+
+
+def test_mainline_validation_uses_browser_visible_localhost_sso_urls():
+    compose = yaml.safe_load(
+        Path("validation/agent-playground-mainline/docker-compose.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    environment = compose["services"]["boi-api"]["environment"]
+
+    assert environment["KEYCLOAK_EXTERNAL_SERVER_URL"] == "http://localhost:18082"
+    assert environment["KEYCLOAK_ISSUER_URL"] == "http://localhost:18082"
+    assert environment["KEYCLOAK_INTERNAL_URL"] == "http://host.docker.internal:18082"
 
 
 def test_boi_wiki_agent_loop_artifact_matches_generator_contract_and_is_secret_free():

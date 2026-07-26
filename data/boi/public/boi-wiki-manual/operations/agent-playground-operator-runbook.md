@@ -81,6 +81,23 @@ BoI 서비스가 Langflow DB에 직접 접속하는 구성은 허용하지 않�
 
 Agent Hub PR #25는 입력 URL의 path를 제거하므로 `/builder`가 포함된 브라우저 주소를 endpoint로 등록하지 않는다.
 
+SSO도 브라우저 공개 URL과 컨테이너 내부 URL을 분리한다.
+
+| 용도 | 로컬 검증값 |
+|---|---|
+| Playground | `http://localhost:28005/playground` |
+| Agent Hub | `http://localhost:18080` |
+| Agent Hub에 등록할 검증 Langflow | `http://localhost:7867` |
+| Keycloak browser·issuer | `http://localhost:18082` |
+| 컨테이너 내부 Keycloak | 서버 전용 주소 |
+
+브라우저 redirect, discovery issuer와 HTML에는 `host.docker.internal`을 노출하지 않는다. 이 값은 컨테이너가 host 서비스를 호출하는 내부 연결에만 사용할 수 있다.
+
+로컬 검증 compose는 BoI API와 Agent Hub backend의 network namespace에 read-only
+runtime용 loopback forwarder를 둔다. 따라서 두 UI 모두 `http://localhost:7867`을
+사용하면서 공식 Langflow container를 호출한다. 이 forwarder는 검증 wrapper일 뿐
+Agent Hub나 Langflow 소스 변경이 아니다.
+
 # Secret 관리
 
 - Langflow API Key는 BoI 전용 암호화 키로 암호화한다.
@@ -95,6 +112,8 @@ Agent Hub PR #25는 입력 URL의 path를 제거하므로 `/builder`가 포함�
 # Agent Hub와 Action 검증
 
 Agent Hub checkout은 지정 SHA를 유지하고 diff가 없어야 한다.
+
+상세 허용·금지 계약은 [Agent Hub 연동 경계와 운영 책임](/docs/boi:public:boi-wiki-manual:operations:agent-hub-integration-boundary)을 따른다. BoI backend의 Agent Hub 호출은 승인 catalog 목록·상세 `GET`만 허용하며, 배포와 상태 변경은 기존 Agent Hub UI에서 사용자가 수행한다.
 
 자산 작성자, Hub 자산 소유자, Langflow endpoint 소유자, Action 호출자는 서로 다른 주체일 수 있다.
 권한과 비밀값은 다음 경계를 넘겨 섞지 않는다.
