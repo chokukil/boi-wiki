@@ -22,12 +22,17 @@ DEFAULT_PERMISSIONS: dict[str, dict[str, Any]] = {
     },
     "100002": {
         "teams": ["aix-tf"],
-        "roles": ["boi.viewer", "boi.editor", "boi.workflow_runner"],
+        "roles": [
+            "boi.viewer",
+            "boi.editor",
+            "boi.workflow_runner",
+            "boi.action_invoker",
+        ],
         "projects": ["boi-wiki"],
     },
     "100003": {
         "teams": ["platform"],
-        "roles": ["boi.viewer", "boi.editor", "boi.workflow_runner"],
+        "roles": ["boi.viewer"],
         "projects": ["boi-wiki"],
     },
 }

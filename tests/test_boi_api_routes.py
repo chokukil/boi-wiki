@@ -7526,33 +7526,27 @@ def test_agent_builder_sandbox_and_report_evidence_contracts(boi_app_module, mon
     assert attach_response.json()["attachment"]["report_id"] == "report-001"
 
 
-def test_agent_builder_page_exposes_gems_style_builder(boi_app_module):
+def test_agent_builder_page_exposes_agent_playground(boi_app_module):
     client = TestClient(boi_app_module.app)
 
-    response = client.get("/agents/builder?employee_id=100001")
-    script = (boi_app_module.APP_DIR / "static" / "agent_builder.js").read_text(encoding="utf-8")
-    style = (boi_app_module.APP_DIR / "static" / "style.css").read_text(encoding="utf-8")
+    legacy = client.get("/agents/builder?employee_id=100001", follow_redirects=False)
+    response = client.get("/playground?employee_id=100001", follow_redirects=False)
+    script = (boi_app_module.APP_DIR / "static" / "agent_playground.js").read_text(encoding="utf-8")
 
+    assert legacy.status_code == 307
+    assert legacy.headers["location"] == "/playground?employee_id=100001"
     assert response.status_code == 200
-    assert "/static/agent_builder.js?v=" in response.text
-    assert "프롬프트와 선택 자료만으로 업무 Agent를 만들고" in response.text
-    assert "GPT-5.5/Agents SDK 테스트" in response.text
-    assert 'data-agent-builder-form' in response.text
-    assert 'data-agent-builder-sandbox-form' in response.text
-    assert 'data-ops-url=""' in response.text
-    assert "BoI Operations Center" not in response.text
-    assert 'href="/ops?employee_id=100001"' not in response.text
-    assert "MCP 서버" in response.text
-    assert "Skill" in response.text
-    assert "Git repo" in response.text
-    assert "바로 테스트" in response.text
-    assert "저장/배포" in response.text
-    assert "Sandbox 테스트" in response.text
-    assert "/api/agents/drafts" in script
-    assert "/api/agents/sandbox/jobs" in script
-    assert "user_confirmed: true" in script
-    assert ".agent-builder-layout" in style
-    assert ".agent-builder-result-card" in style
+    assert "/static/agent_playground.js?v=" in response.text
+    assert "Agent Playground" in response.text
+    assert "Langflow에서 만들기" in response.text
+    assert "일반 질문·SOP Task Context 확인" in response.text
+    assert "Agent Hub에서 배포" in response.text
+    assert "Action 연결" in response.text
+    assert "고급 연결 관리" in response.text
+    assert "boi_pat_" not in response.text
+    assert "boi_run_" not in response.text
+    assert "/api/agent-playground" in script
+    assert "/api/v2/helper-drafts/" not in script
 
 
 def test_reporting_agents_and_facade_contracts(boi_app_module, monkeypatch, tmp_path):
@@ -9803,10 +9797,15 @@ def test_keycloak_external_server_url_is_used_for_browser_redirect(boi_app_modul
     monkeypatch.setenv("KEYCLOAK_CLIENT_ID", "boi-wiki")
     monkeypatch.setenv("KEYCLOAK_REDIRECT_URI", "http://localhost:8000/auth/callback")
 
-    url = auth.keycloak_authorization_url(state="state-1", code_challenge="challenge-1")
+    url = auth.keycloak_authorization_url(
+        state="state-1",
+        code_challenge="challenge-1",
+        nonce="nonce-1",
+    )
 
     assert url.startswith("http://localhost:8088/realms/boi-dev/protocol/openid-connect/auth?")
     assert "client_id=boi-wiki" in url
+    assert "nonce=nonce-1" in url
 
 
 def test_service_token_delegates_employee_identity_in_sso_mode(boi_app_module, monkeypatch):
@@ -10235,12 +10234,12 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
         assert "/static/mermaid_render.js?v=" in response.text
         if active_nav == "advanced":
             assert "권한 관리" in response.text
-            assert "Agent Builder" in response.text
+            assert "Agent Playground" in response.text
             assert "Kafka" in response.text
             assert "BoI Wiki API" in response.text
             assert "BoI Wiki MCP" in response.text
         else:
-            assert "Agent Builder" not in response.text
+            assert 'data-subnav-id="agent_playground"' not in response.text
             assert "Kafka UI" not in response.text
             assert "MCP Status" not in response.text
         assert "DEV" in response.text
@@ -10263,10 +10262,13 @@ def test_app_shell_renders_consistent_global_nav_and_dev_auth_state(boi_app_modu
     assert "Source Wiki 생성 이력/검증 장부" in guide.text
 
     agent_builder = client.get("/agents/builder?employee_id=100001", follow_redirects=False)
-    assert agent_builder.status_code == 200
-    assert "Agent Builder" in agent_builder.text
-    assert "GPT-5.5/Agents SDK 테스트" in agent_builder.text
-    assert "/api/agents/drafts?employee_id=100001" in agent_builder.text
+    assert agent_builder.status_code == 307
+    assert agent_builder.headers["location"] == "/playground?employee_id=100001"
+    agent_playground = client.get("/playground?employee_id=100001", follow_redirects=False)
+    assert agent_playground.status_code == 200
+    assert "Agent Playground" in agent_playground.text
+    assert "Langflow에서 만들기" in agent_playground.text
+    assert "/api/agents/drafts?employee_id=100001" not in agent_playground.text
 
 
 def test_app_shell_infers_same_host_tool_urls_for_external_host(boi_app_module, monkeypatch):
@@ -10319,13 +10321,18 @@ def test_app_shell_uses_configured_external_tool_urls(boi_app_module, monkeypatc
 
     response = client.get("/?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
     advanced = client.get("/permissions?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
-    builder = client.get("/agents/builder?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
+    builder = client.get("/playground?employee_id=100001", headers={"host": "boi-wiki.example:28000"})
+    playground_state = client.get("/api/agent-playground?employee_id=100001")
 
     assert response.status_code == 200
     assert advanced.status_code == 200
     assert builder.status_code == 200
+    assert playground_state.status_code == 200
     assert "http://langflow.example:27860" not in advanced.text
-    assert "http://langflow.example:27860" in builder.text
+    assert (
+        playground_state.json()["onboarding"]["langflow_external_url"]
+        == "http://langflow.example:27860"
+    )
     assert "http://kafka-ui.example:28081" in advanced.text
     assert "http://boi-wiki-mcp.example:28200" in advanced.text
     assert "http://localhost:7860" not in advanced.text

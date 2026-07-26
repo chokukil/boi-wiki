@@ -1,0 +1,30 @@
+actions:
+  - action_key: agent-playground.100002.boi-wiki-agent-loop
+    name_ko: BoI Wiki Agent Loop validation
+    description: Agent Playground to Action Gateway end-to-end validation fixture.
+    type: langflow_run
+    connector_kind: langflow
+    connection_source: agent_playground
+    enabled: true
+    auto_dispatch: false
+    dry_run: false
+    event_types: ["agent.playground.requested.v1"]
+    flow_id: fixture-flow-id
+    endpoint_name: boi-wiki-agent-loop
+    connector_config:
+      connection_source: agent_playground
+      endpoint_connection_id: fixture-endpoint-id
+      deployment_id: fixture-deployment-id
+      project_id: fixture-project-id
+      flow_id: fixture-flow-id
+      endpoint_name: boi-wiki-agent-loop
+      endpoint: /api/v1/run/fixture-flow-id
+      artifact_version: "1.1.0"
+      artifact_checksum: fixture-checksum
+      default_mode: preview
+    body:
+      input_value: '{"question":"${payload.question}","business_context":"${payload.business_context}","save_mode":"${payload.save_mode}","title":"${payload.title}","trace_id":"${event.trace_id}"}'
+      input_type: chat
+      output_type: chat
+    risk_level: low
+    approval_required: false

@@ -1862,7 +1862,8 @@
     payload.entry_kind = form.dataset.entryKind || payload.entry_kind;
     if (payload.entry_kind === "action") {
       payload.connector_kind = connectorKind || payload.connector_kind || payload.execution_kind;
-      payload.execution_kind = payload.connector_kind;
+      payload.execution_mode = "gateway";
+      delete payload.execution_kind;
     }
     if (payload.event_mode === "schedule") updateScheduleBuilder();
     payload.approval_required = Boolean(payload.approval_required);

@@ -1,0 +1,63 @@
+{
+  "schema_version": "boi-langflow-external-runtime-v1",
+  "runtime_ownership": "external_unmodified",
+  "supported_versions": {
+    "minimum": "1.11.0",
+    "maximum_exclusive": "1.12.0"
+  },
+  "validated_image": "langflowai/langflow:1.11.0@sha256:f7de8256fdbba725d7765bcff9d984ad272e0f726daabf2d7e3c3b0fa8dc31bf",
+  "public_api_contract": [
+    "GET /health",
+    "GET /api/v1/version",
+    "GET /api/v1/users/whoami",
+    "GET /api/v1/all",
+    "GET|POST /api/v1/projects/",
+    "GET|POST /api/v1/flows/",
+    "GET /api/v1/flows/{flow_id}",
+    "GET|POST|PATCH /api/v1/variables/",
+    "POST /api/v1/run/{flow_id}"
+  ],
+  "extension_contract": {
+    "environment_variable": "LANGFLOW_COMPONENTS_PATH",
+    "container_path": "/app/custom_components",
+    "mount_mode": "read_only",
+    "bundle_version": "1.1.0",
+    "component_namespace": "BoI"
+  },
+  "model_agent_runtime": {
+    "provider_protocol": "openai-compatible",
+    "validated_provider": "LM Studio",
+    "base_url_variable": "BOI_LLM_BASE_URL",
+    "model_variable": "BOI_AGENT_EXAMPLE_MODEL",
+    "credential_variable": "BOI_LLM_API_KEY",
+    "validated_base_url": "http://host.docker.internal:1236/v1",
+    "validated_model": "google/gemma-4-26b-a4b-qat",
+    "requires_real_inference_trace": true,
+    "preserves_contract_fields": [
+      "source_references",
+      "ontology_relationships",
+      "task_context",
+      "grounding_status"
+    ]
+  },
+  "logging_contract": {
+    "format": "json",
+    "trace_locals": false,
+    "redacted_keys": [
+      "authorization",
+      "api_key",
+      "boi_wiki_pat",
+      "boi_run_token"
+    ]
+  },
+  "forbidden_integrations": [
+    "langflow_source_patch",
+    "langflow_ui_patch",
+    "langflow_api_route_patch",
+    "langflow_database_direct_access",
+    "site_packages_override",
+    "core_component_override",
+    "runtime_monkey_patch"
+  ],
+  "stable_run_api": "/api/v1/run/{flow_id}"
+}

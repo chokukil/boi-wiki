@@ -14,6 +14,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "langflow" / "flows" / "boi_reference_flow.manifest.json"
 DEFAULT_ENDPOINT_NAME = "boi-reference-flow"
 BOI_AGENT_FLOW_NAME = "BoI Agent Flow"
+BOI_WIKI_AGENT_LOOP_NAME = "BoI Wiki Agent Loop"
+BOI_WIKI_AGENT_LOOP_ENDPOINT = "boi-wiki-agent-loop"
+BOI_WIKI_AGENT_LOOP_VERSION = "1.1.0"
+BOI_WIKI_AGENT_LOOP_ARTIFACT = ROOT / "langflow" / "flows" / "boi_wiki_agent_loop.json"
+BOI_MODEL_AGENT_LOOP_NAME = "BoI Wiki Agent Loop - Model Agent Example"
+BOI_MODEL_AGENT_LOOP_ENDPOINT = "boi-wiki-agent-loop-model-agent"
+BOI_MODEL_AGENT_LOOP_ARTIFACT = ROOT / "langflow" / "flows" / "boi_wiki_agent_loop_model_agent.json"
 DEFAULT_BOI_AGENT_ENDPOINT_NAME = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
 DEFAULT_BOI_AGENT_LLM_MODEL = os.getenv("BOI_AGENT_LLM_MODEL") or os.getenv("BOI_LLM_MODEL") or "google/gemma-4-26b-a4b-qat"
 BOI_AGENT_ALLOWED_TOOLS = [
@@ -40,6 +47,10 @@ BOI_COMPONENT_KEYS = {
     "universal_agent": "ext:boi:BoIUniversalSimulatorAgent@extra",
     "agent_result": "ext:boi:BoIAgentResultComposer@extra",
     "agent_tools": "ext:boi:BoIAgentTools@extra",
+    "knowledge": "ext:boi:BoIWikiKnowledge@extra",
+    "save": "ext:boi:BoIWikiSave@extra",
+    "agent_slot": "ext:boi:BoIAgentSlot@extra",
+    "model_agent": "ext:boi:BoIModelAgent@extra",
 }
 
 
@@ -761,6 +772,302 @@ def create_universal_agent_simulator_flow(
     return response.json()
 
 
+def canonical_loop_contract() -> dict[str, Any]:
+    return {
+        "name": BOI_WIKI_AGENT_LOOP_NAME,
+        "endpoint_name": BOI_WIKI_AGENT_LOOP_ENDPOINT,
+        "version": BOI_WIKI_AGENT_LOOP_VERSION,
+        "nodes": ["Chat Input", "BoIWikiKnowledge", "agent_slot", "BoIWikiSave", "Chat Output"],
+        "default_save_mode": "preview",
+        "credential_variables": ["BOI_WIKI_PAT"],
+        "request_variables": ["BOI_RUN_TOKEN"],
+        "context_profiles": [
+            "sop_task_execution",
+            "task_execution",
+            "wiki_context",
+            "knowledge_lookup",
+        ],
+        "inputs": [
+            "question",
+            "business_context",
+            "task_ref",
+            "page_ref",
+            "context_id",
+            "sop_ref",
+            "sop_stage",
+            "event_ref",
+            "action_ref",
+            "prior_results",
+            "required_evidence",
+            "missing_evidence",
+            "save_mode",
+            "title",
+        ],
+        "outputs": [
+            "answer",
+            "task_context",
+            "source_references",
+            "ontology_relationships",
+            "grounding_status",
+            "draft_reference",
+            "wiki_url",
+            "provenance",
+        ],
+    }
+
+
+def canonical_loop_contract_sha256() -> str:
+    import hashlib
+
+    serialized = json.dumps(canonical_loop_contract(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def model_agent_loop_contract() -> dict[str, Any]:
+    return {
+        **canonical_loop_contract(),
+        "name": BOI_MODEL_AGENT_LOOP_NAME,
+        "endpoint_name": BOI_MODEL_AGENT_LOOP_ENDPOINT,
+        "nodes": ["Chat Input", "BoIWikiKnowledge", "model_agent", "BoIWikiSave", "Chat Output"],
+        "agent_kind": "openai_compatible_model",
+        "model_variables": [
+            "BOI_LLM_BASE_URL",
+            "BOI_AGENT_EXAMPLE_MODEL",
+            "BOI_LLM_API_KEY",
+        ],
+        "required_runtime_evidence": ["model_trace.real_inference"],
+    }
+
+
+def model_agent_loop_contract_sha256() -> str:
+    import hashlib
+
+    serialized = json.dumps(
+        model_agent_loop_contract(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def create_boi_wiki_agent_loop_flow(
+    client: httpx.Client,
+    langflow_url: str,
+    headers: dict[str, str],
+    base_flow: dict[str, Any],
+    *,
+    project_id: str = "",
+) -> dict[str, Any]:
+    components = get_components(client, langflow_url, headers)
+    base_data = compact_base_flow(base_flow)
+    chat_input = json.loads(json.dumps(find_node(base_data, "BoI Event Input"), ensure_ascii=False))
+    chat_output = json.loads(json.dumps(find_node(base_data, "BoI Draft Output"), ensure_ascii=False))
+    for node, node_id, display_name, position in (
+        (chat_input, "ChatInput-boi-wiki-agent-loop", "Chat Input", {"x": 0, "y": 160}),
+        (chat_output, "ChatOutput-boi-wiki-agent-loop", "Chat Output", {"x": 1680, "y": 160}),
+    ):
+        node["id"] = node_id
+        node["data"]["id"] = node_id
+        node["data"]["display_name"] = display_name
+        node["data"]["node"]["id"] = node_id
+        node["position"] = position
+        node["positionAbsolute"] = dict(position)
+    output_template = ((chat_output.get("data") or {}).get("node") or {}).get("template") or {}
+    if "should_store_message" in output_template:
+        # Langflow 1.11's persisted ChatOutput round-trip keeps the visible text
+        # but drops custom Message.data fields. The Action contract needs those
+        # source/provenance fields in the synchronous /run response.
+        output_template["should_store_message"]["value"] = False
+
+    knowledge = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["knowledge"],
+        "BoIWikiKnowledge-boi-wiki-agent-loop",
+        400,
+        160,
+        {"business_context": "", "limit": 6},
+    )
+    agent_slot = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["agent_slot"],
+        "BoIAgentSlot-boi-wiki-agent-loop",
+        820,
+        160,
+    )
+    agent_slot["data"]["display_name"] = "agent_slot"
+    save = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["save"],
+        "BoIWikiSave-boi-wiki-agent-loop",
+        1240,
+        160,
+        {
+            "title": "Agent Playground 개인 초안",
+            "save_mode": "preview",
+            "flow_id": BOI_WIKI_AGENT_LOOP_ENDPOINT,
+        },
+    )
+    data = {
+        "nodes": [chat_input, knowledge, agent_slot, save, chat_output],
+        "edges": [
+            create_edge(chat_input, knowledge, "question"),
+            create_edge(knowledge, agent_slot, "knowledge", source_output_name="knowledge"),
+            create_edge(agent_slot, save, "agent_result", source_output_name="agent_result"),
+            create_edge(save, chat_output, "input_value", source_output_name="message"),
+        ],
+        "viewport": {"x": 30, "y": 180, "zoom": 0.72},
+        "boi_contract": canonical_loop_contract(),
+        "boi_contract_sha256": canonical_loop_contract_sha256(),
+    }
+    flow_payload: dict[str, Any] = {
+        "name": BOI_WIKI_AGENT_LOOP_NAME,
+        "description": (
+            "BoI Agent Playground canonical loop. Read ACL-visible Wiki evidence, replace only agent_slot, "
+            "and preview or save a private draft while preserving source references."
+        ),
+        "endpoint_name": BOI_WIKI_AGENT_LOOP_ENDPOINT,
+        "data": data,
+        "webhook": False,
+        "access_type": "PRIVATE",
+        "tags": ["boi", "agent-playground", "wiki-loop", BOI_WIKI_AGENT_LOOP_VERSION],
+    }
+    if project_id:
+        flow_payload.update({"folder_id": project_id, "project_id": project_id})
+    response = client.post(
+        f"{langflow_url}/api/v1/flows/",
+        headers=headers,
+        json=flow_payload,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def create_boi_model_agent_loop_flow(
+    client: httpx.Client,
+    langflow_url: str,
+    headers: dict[str, str],
+    base_flow: dict[str, Any],
+    *,
+    project_id: str = "",
+) -> dict[str, Any]:
+    components = get_components(client, langflow_url, headers)
+    base_data = compact_base_flow(base_flow)
+    chat_input = json.loads(json.dumps(find_node(base_data, "BoI Event Input"), ensure_ascii=False))
+    chat_output = json.loads(json.dumps(find_node(base_data, "BoI Draft Output"), ensure_ascii=False))
+    for node, node_id, display_name, position in (
+        (chat_input, "ChatInput-boi-model-agent-loop", "Chat Input", {"x": 0, "y": 160}),
+        (chat_output, "ChatOutput-boi-model-agent-loop", "Chat Output", {"x": 1680, "y": 160}),
+    ):
+        node["id"] = node_id
+        node["data"]["id"] = node_id
+        node["data"]["display_name"] = display_name
+        node["data"]["node"]["id"] = node_id
+        node["position"] = position
+        node["positionAbsolute"] = dict(position)
+    output_template = ((chat_output.get("data") or {}).get("node") or {}).get("template") or {}
+    if "should_store_message" in output_template:
+        output_template["should_store_message"]["value"] = False
+
+    knowledge = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["knowledge"],
+        "BoIWikiKnowledge-boi-model-agent-loop",
+        400,
+        160,
+        {"business_context": "", "limit": 6},
+    )
+    model_agent = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["model_agent"],
+        "BoIModelAgent-boi-model-agent-loop",
+        820,
+        160,
+    )
+    model_agent["data"]["display_name"] = "model_agent"
+    save = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["save"],
+        "BoIWikiSave-boi-model-agent-loop",
+        1240,
+        160,
+        {
+            "title": "Agent Playground 모델 Agent 개인 초안",
+            "save_mode": "preview",
+            "flow_id": BOI_MODEL_AGENT_LOOP_ENDPOINT,
+        },
+    )
+    data = {
+        "nodes": [chat_input, knowledge, model_agent, save, chat_output],
+        "edges": [
+            create_edge(chat_input, knowledge, "question"),
+            create_edge(knowledge, model_agent, "knowledge", source_output_name="knowledge"),
+            create_edge(model_agent, save, "agent_result", source_output_name="agent_result"),
+            create_edge(save, chat_output, "input_value", source_output_name="message"),
+        ],
+        "viewport": {"x": 30, "y": 180, "zoom": 0.72},
+        "boi_contract": model_agent_loop_contract(),
+        "boi_contract_sha256": model_agent_loop_contract_sha256(),
+    }
+    flow_payload: dict[str, Any] = {
+        "name": BOI_MODEL_AGENT_LOOP_NAME,
+        "description": (
+            "BoI Agent Playground model-backed example. It performs real OpenAI-compatible "
+            "inference while preserving Wiki, Ontology, Task, and save provenance."
+        ),
+        "endpoint_name": BOI_MODEL_AGENT_LOOP_ENDPOINT,
+        "data": data,
+        "webhook": False,
+        "access_type": "PRIVATE",
+        "tags": ["boi", "agent-playground", "wiki-loop", "model-agent", BOI_WIKI_AGENT_LOOP_VERSION],
+    }
+    if project_id:
+        flow_payload.update({"folder_id": project_id, "project_id": project_id})
+    response = client.post(
+        f"{langflow_url}/api/v1/flows/",
+        headers=headers,
+        json=flow_payload,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def write_canonical_artifact(flow: dict[str, Any], path: Path = BOI_WIKI_AGENT_LOOP_ARTIFACT) -> None:
+    exported = {
+        key: flow.get(key)
+        for key in ("name", "description", "endpoint_name", "data", "webhook", "access_type", "tags")
+        if key in flow
+    }
+    exported["name"] = BOI_WIKI_AGENT_LOOP_NAME
+    exported["endpoint_name"] = BOI_WIKI_AGENT_LOOP_ENDPOINT
+    exported.setdefault("webhook", False)
+    exported.setdefault("access_type", "PRIVATE")
+    exported.setdefault("tags", ["boi", "agent-playground", "wiki-loop", BOI_WIKI_AGENT_LOOP_VERSION])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(exported, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_model_agent_artifact(
+    flow: dict[str, Any],
+    path: Path = BOI_MODEL_AGENT_LOOP_ARTIFACT,
+) -> None:
+    exported = {
+        key: flow.get(key)
+        for key in ("name", "description", "endpoint_name", "data", "webhook", "access_type", "tags")
+        if key in flow
+    }
+    exported["name"] = BOI_MODEL_AGENT_LOOP_NAME
+    exported["endpoint_name"] = BOI_MODEL_AGENT_LOOP_ENDPOINT
+    exported.setdefault("webhook", False)
+    exported.setdefault("access_type", "PRIVATE")
+    exported.setdefault(
+        "tags",
+        ["boi", "agent-playground", "wiki-loop", "model-agent", BOI_WIKI_AGENT_LOOP_VERSION],
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(exported, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def smoke_input_for_endpoint(endpoint_name: str) -> str:
     if str(endpoint_name) == DEFAULT_BOI_AGENT_ENDPOINT_NAME or "boi-agent" in str(endpoint_name):
         return json.dumps(
@@ -857,9 +1164,34 @@ def main() -> None:
     parser.add_argument("--langflow-api-key", default=os.getenv("LANGFLOW_API_KEY", "dev-langflow-key-change-me"))
     parser.add_argument("--auth-mode", choices=["auto-login", "api-key"], default=os.getenv("LANGFLOW_AUTH_MODE", "auto-login"))
     parser.add_argument("--timeout", type=float, default=float(os.getenv("LANGFLOW_SETUP_TIMEOUT", "180")))
+    parser.add_argument(
+        "--project-id",
+        default=os.getenv("LANGFLOW_PROJECT_ID", ""),
+        help="Create canonical/model reference Flow inside this Langflow project.",
+    )
     parser.add_argument("--skip-custom-components", action="store_true")
     parser.add_argument("--skip-smoke", action="store_true")
     parser.add_argument("--summary", action="store_true")
+    parser.add_argument(
+        "--canonical-only",
+        action="store_true",
+        help="Only generate/install the BoI Wiki Agent Loop.",
+    )
+    parser.add_argument(
+        "--model-agent-only",
+        action="store_true",
+        help="Only generate/install the model-backed BoI Wiki Agent Loop example.",
+    )
+    parser.add_argument(
+        "--write-canonical-artifact",
+        action="store_true",
+        help="Write boi_wiki_agent_loop.json from this generator.",
+    )
+    parser.add_argument(
+        "--write-model-agent-artifact",
+        action="store_true",
+        help="Write boi_wiki_agent_loop_model_agent.json from this generator.",
+    )
     args = parser.parse_args()
 
     manifest = load_manifest(Path(args.manifest))
@@ -870,17 +1202,94 @@ def main() -> None:
     with httpx.Client(timeout=args.timeout) as client:
         headers = get_auth_headers(client, langflow_url, args.langflow_api_key, args.auth_mode)
         base_flow = json.loads(flow_file.read_text(encoding="utf-8"))
+        if args.model_agent_only:
+            deleted = delete_flows_by_name(client, langflow_url, headers, {BOI_MODEL_AGENT_LOOP_NAME})
+            flow = create_boi_model_agent_loop_flow(
+                client,
+                langflow_url,
+                headers,
+                base_flow,
+                project_id=args.project_id,
+            )
+            if args.write_model_agent_artifact:
+                write_model_agent_artifact(flow)
+            result = {
+                "ok": True,
+                "langflow_url": langflow_url,
+                "deleted_flow_ids": deleted,
+                "boi_model_agent_loop_flow": {
+                    "id": flow.get("id"),
+                    "name": flow.get("name"),
+                    "endpoint_name": flow.get("endpoint_name"),
+                    "nodes": len((flow.get("data") or {}).get("nodes") or []),
+                    "edges": len((flow.get("data") or {}).get("edges") or []),
+                    "contract_sha256": model_agent_loop_contract_sha256(),
+                },
+            }
+            if not args.skip_smoke:
+                result["smoke"] = smoke_run(
+                    client,
+                    langflow_url,
+                    headers,
+                    str(
+                        flow.get("endpoint_name")
+                        or flow.get("id")
+                        or BOI_MODEL_AGENT_LOOP_ENDPOINT
+                    ),
+                )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
+        if args.canonical_only:
+            deleted = delete_flows_by_name(client, langflow_url, headers, {BOI_WIKI_AGENT_LOOP_NAME})
+            flow = create_boi_wiki_agent_loop_flow(
+                client,
+                langflow_url,
+                headers,
+                base_flow,
+                project_id=args.project_id,
+            )
+            if args.write_canonical_artifact:
+                write_canonical_artifact(flow)
+            result = {
+                "ok": True,
+                "langflow_url": langflow_url,
+                "deleted_flow_ids": deleted,
+                "boi_wiki_agent_loop_flow": {
+                    "id": flow.get("id"),
+                    "name": flow.get("name"),
+                    "endpoint_name": flow.get("endpoint_name"),
+                    "nodes": len((flow.get("data") or {}).get("nodes") or []),
+                    "edges": len((flow.get("data") or {}).get("edges") or []),
+                    "contract_sha256": canonical_loop_contract_sha256(),
+                },
+            }
+            if not args.skip_smoke:
+                result["smoke"] = smoke_run(
+                    client,
+                    langflow_url,
+                    headers,
+                    str(flow.get("endpoint_name") or flow.get("id") or BOI_WIKI_AGENT_LOOP_ENDPOINT),
+                )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
         deleted = delete_flows_by_name(
             client,
             langflow_url,
             headers,
-            {"BoI Reference Flow", "BoI Equipment Stage Analysis Flow", "BoI Universal Action Simulator Flow", BOI_AGENT_FLOW_NAME},
+            {
+                "BoI Reference Flow",
+                "BoI Equipment Stage Analysis Flow",
+                "BoI Universal Action Simulator Flow",
+                BOI_AGENT_FLOW_NAME,
+                BOI_WIKI_AGENT_LOOP_NAME,
+            },
         )
         smoke_target = endpoint_name
         custom_flow = None
         stage_flow = None
         simulator_flow = None
         boi_agent_flow = None
+        wiki_agent_loop_flow = None
         if not args.skip_custom_components:
             custom_flow = create_component_reference_flow(
                 client,
@@ -925,6 +1334,14 @@ def main() -> None:
                 headers,
                 base_flow,
             )
+            wiki_agent_loop_flow = create_boi_wiki_agent_loop_flow(
+                client,
+                langflow_url,
+                headers,
+                base_flow,
+            )
+            if args.write_canonical_artifact:
+                write_canonical_artifact(wiki_agent_loop_flow)
             smoke_target = custom_flow.get("id") or custom_flow.get("endpoint_name") or smoke_target
         else:
             upload_result = upload_flow(client, langflow_url, headers, flow_file)
@@ -973,6 +1390,16 @@ def main() -> None:
             }
             if boi_agent_flow
             else None,
+            "boi_wiki_agent_loop_flow": {
+                "id": wiki_agent_loop_flow.get("id"),
+                "name": wiki_agent_loop_flow.get("name"),
+                "endpoint_name": wiki_agent_loop_flow.get("endpoint_name"),
+                "nodes": len((wiki_agent_loop_flow.get("data") or {}).get("nodes") or []),
+                "edges": len((wiki_agent_loop_flow.get("data") or {}).get("edges") or []),
+                "contract_sha256": canonical_loop_contract_sha256(),
+            }
+            if wiki_agent_loop_flow
+            else None,
         }
         if not args.skip_smoke:
             result["smoke"] = smoke_run(client, langflow_url, headers, smoke_target)
@@ -997,6 +1424,15 @@ def main() -> None:
                     headers,
                     boi_agent_flow.get("endpoint_name") or boi_agent_flow.get("id") or DEFAULT_BOI_AGENT_ENDPOINT_NAME,
                 )
+            if wiki_agent_loop_flow:
+                result["boi_wiki_agent_loop_smoke"] = smoke_run(
+                    client,
+                    langflow_url,
+                    headers,
+                    wiki_agent_loop_flow.get("endpoint_name")
+                    or wiki_agent_loop_flow.get("id")
+                    or BOI_WIKI_AGENT_LOOP_ENDPOINT,
+                )
         if args.summary:
             result = {
                 "ok": result["ok"],
@@ -1006,10 +1442,12 @@ def main() -> None:
                 "equipment_stage_flow": result["equipment_stage_flow"],
                 "universal_simulator_flow": result["universal_simulator_flow"],
                 "boi_agent_flow": result["boi_agent_flow"],
+                "boi_wiki_agent_loop_flow": result["boi_wiki_agent_loop_flow"],
                 "smoke": summarize_run(result.get("smoke")),
                 "stage_smoke": summarize_run(result.get("stage_smoke")),
                 "simulator_smoke": summarize_run(result.get("simulator_smoke")),
                 "boi_agent_smoke": summarize_run(result.get("boi_agent_smoke")),
+                "boi_wiki_agent_loop_smoke": summarize_run(result.get("boi_wiki_agent_loop_smoke")),
             }
 
     print(json.dumps(result, ensure_ascii=False, indent=2))

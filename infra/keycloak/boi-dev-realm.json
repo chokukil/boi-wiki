@@ -26,10 +26,35 @@
       "publicClient": false,
       "secret": "dev-boi-wiki-client-secret",
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": true,
-      "redirectUris": ["http://localhost:8000/auth/callback"],
-      "webOrigins": ["http://localhost:8000"],
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:8000/*##http://localhost:28002/*##http://wiki.skhynix.com/*",
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://localhost:8000/auth/callback",
+        "http://localhost:28002/auth/callback",
+        "http://wiki.skhynix.com/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8000",
+        "http://localhost:28002",
+        "http://wiki.skhynix.com"
+      ],
       "protocolMappers": [
+        {
+          "name": "empno",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "empno",
+            "claim.name": "empno",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
         {
           "name": "employee_id",
           "protocol": "openid-connect",
@@ -107,16 +132,9 @@
       "email": "100001@dev.local",
       "firstName": "AIX TF",
       "lastName": "User 100001",
-      "attributes": {"employee_id": ["100001"]},
+      "attributes": {"employee_id": ["100001"], "empno": ["100001"]},
       "groups": ["aix-tf", "platform"],
-      "realmRoles": [
-        "boi.viewer",
-        "boi.editor",
-        "boi.promoter",
-        "boi.workflow_runner",
-        "boi.action_invoker",
-        "boi.admin"
-      ],
+      "realmRoles": ["boi.viewer"],
       "credentials": [{"type": "password", "value": "password", "temporary": false}]
     },
     {
@@ -125,9 +143,9 @@
       "email": "100002@dev.local",
       "firstName": "AIX TF",
       "lastName": "User 100002",
-      "attributes": {"employee_id": ["100002"]},
+      "attributes": {"employee_id": ["100002"], "empno": ["100002"]},
       "groups": ["aix-tf"],
-      "realmRoles": ["boi.viewer", "boi.editor", "boi.workflow_runner"],
+      "realmRoles": ["boi.viewer"],
       "credentials": [{"type": "password", "value": "password", "temporary": false}]
     },
     {
@@ -136,9 +154,9 @@
       "email": "100003@dev.local",
       "firstName": "Platform",
       "lastName": "User 100003",
-      "attributes": {"employee_id": ["100003"]},
+      "attributes": {"employee_id": ["100003"], "empno": ["100003"]},
       "groups": ["platform"],
-      "realmRoles": ["boi.viewer", "boi.editor", "boi.workflow_runner"],
+      "realmRoles": ["boi.viewer"],
       "credentials": [{"type": "password", "value": "password", "temporary": false}]
     }
   ]

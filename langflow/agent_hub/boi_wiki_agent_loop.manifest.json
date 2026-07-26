@@ -1,0 +1,65 @@
+{
+  "schema_version": "boi-agent-hub-validation-v2",
+  "name": "BoI Wiki Agent Loop",
+  "endpoint_name": "boi-wiki-agent-loop",
+  "version": "1.1.0",
+  "langflow": {
+    "minimum": "1.11.0",
+    "maximum_exclusive": "1.12.0",
+    "run_api": "/api/v1/run/{flow_id}"
+  },
+  "components": [
+    "BoIWikiKnowledge",
+    "BoIAgentSlot",
+    "BoIWikiSave"
+  ],
+  "credential_variables": [
+    "BOI_WIKI_PAT"
+  ],
+  "request_variables": [
+    "BOI_RUN_TOKEN"
+  ],
+  "inputs": [
+    "question",
+    "business_context",
+    "task_ref",
+    "page_ref",
+    "context_id",
+    "sop_ref",
+    "sop_stage",
+    "event_ref",
+    "action_ref",
+    "prior_results",
+    "required_evidence",
+    "missing_evidence",
+    "save_mode",
+    "title"
+  ],
+  "outputs": [
+    "answer",
+    "task_context",
+    "source_references",
+    "ontology_relationships",
+    "grounding_status",
+    "draft_reference",
+    "wiki_url",
+    "provenance"
+  ],
+  "defaults": {
+    "save_mode": "preview"
+  },
+  "context_profiles": [
+    "sop_task_execution",
+    "task_execution",
+    "wiki_context",
+    "knowledge_lookup"
+  ],
+  "secret_policy": {
+    "raw_credentials_in_export": false,
+    "agent_hub_receives_boi_pat": false
+  },
+  "representative_selection": {
+    "managed_by": "agent-hub-owner",
+    "api_required": false
+  }
+}

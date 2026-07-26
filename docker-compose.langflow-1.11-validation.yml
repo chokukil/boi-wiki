@@ -1,0 +1,72 @@
+name: boi-agent-playground-mainline-langflow
+
+services:
+  langflow-111-postgres:
+    image: postgres:16-alpine
+    container_name: boi-agent-playground-mainline-langflow-postgres
+    environment:
+      POSTGRES_USER: ${LANGFLOW_111_POSTGRES_USER:-langflow}
+      POSTGRES_PASSWORD: ${LANGFLOW_111_POSTGRES_PASSWORD:-langflow-111-validation}
+      POSTGRES_DB: ${LANGFLOW_111_POSTGRES_DB:-langflow}
+    ports:
+      - "${LANGFLOW_111_POSTGRES_PORT:-15437}:5432"
+    volumes:
+      - langflow-111-validation-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${LANGFLOW_111_POSTGRES_USER:-langflow} -d ${LANGFLOW_111_POSTGRES_DB:-langflow}
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [validation]
+
+  langflow-111:
+    image: ${LANGFLOW_111_IMAGE:-langflowai/langflow:1.11.0@sha256:f7de8256fdbba725d7765bcff9d984ad272e0f726daabf2d7e3c3b0fa8dc31bf}
+    container_name: boi-agent-playground-mainline-langflow
+    command: ["langflow", "run", "--workers", "1"]
+    depends_on:
+      langflow-111-postgres:
+        condition: service_healthy
+    ports:
+      - "${LANGFLOW_111_PORT:-7867}:7860"
+    environment:
+      LANGFLOW_DATABASE_URL: postgresql://${LANGFLOW_111_POSTGRES_USER:-langflow}:${LANGFLOW_111_POSTGRES_PASSWORD:-langflow-111-validation}@boi-agent-playground-mainline-langflow-postgres:5432/${LANGFLOW_111_POSTGRES_DB:-langflow}
+      LANGFLOW_CONFIG_DIR: /tmp/langflow
+      LANGFLOW_COMPONENTS_PATH: /app/custom_components
+      LANGFLOW_LOG_ENV: container
+      LANGFLOW_LOG_TRACE_LOCALS: "false"
+      LANGFLOW_LOG_REDACT_KEYS: authorization,api_key,pat,token,service_token
+      LANGFLOW_WORKERS: "1"
+      LANGFLOW_AUTO_LOGIN: "False"
+      LANGFLOW_SKIP_AUTH_AUTO_LOGIN: "false"
+      LANGFLOW_ENABLE_SIGNUP: "true"
+      LANGFLOW_NEW_USER_IS_ACTIVE: "true"
+      LANGFLOW_SUPERUSER: ${LANGFLOW_111_SUPERUSER:-boi-platform-admin}
+      LANGFLOW_SUPERUSER_PASSWORD: ${LANGFLOW_111_SUPERUSER_PASSWORD:-BoiValidation-111!ChangeMe}
+      LANGFLOW_SECRET_KEY: ${LANGFLOW_111_SECRET_KEY:-dCSh9p786MVwOiVFqXENGNK0xbVE0dnBdUByDty7BZA=}
+      BOI_API_URL: ${BOI_API_URL:-http://boi-api:8000}
+      BOI_WIKI_MCP_URL: ${BOI_WIKI_MCP_URL:-http://host.docker.internal:18205/mcp/v2}
+      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:28005}
+      BOI_LLM_BASE_URL: ${BOI_LLM_BASE_URL:-http://host.docker.internal:1236/v1}
+      BOI_LLM_MODEL: ${BOI_LLM_MODEL:-google/gemma-4-26b-a4b-qat}
+      BOI_AGENT_EXAMPLE_MODEL: ${BOI_AGENT_EXAMPLE_MODEL:-google/gemma-4-26b-a4b-qat}
+      BOI_LLM_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
+      OPENAI_API_BASE: ${BOI_LLM_BASE_URL:-http://host.docker.internal:1236/v1}
+      OPENAI_API_BASE_URL: ${BOI_LLM_BASE_URL:-http://host.docker.internal:1236/v1}
+      OPENAI_API_KEY: ${BOI_LLM_API_KEY:-not-needed}
+    volumes:
+      - ./langflow/custom_components:/app/custom_components:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - validation
+
+volumes:
+  langflow-111-validation-postgres-data:
+    name: boi-agent-playground-mainline-langflow-postgres-data
+
+networks:
+  validation:
+    external: true
+    name: ${BOI_AGENT_PLAYGROUND_VALIDATION_NETWORK:-boi-langflow-111-validation-net}

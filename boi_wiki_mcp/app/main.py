@@ -1,6 +1,7 @@
 import inspect
 import json
 import os
+from contextlib import asynccontextmanager
 from html import escape
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -16,6 +17,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.responses import JSONResponse
+
+from .v2 import MCP_V2_TOOLS, McpV2AuthContextMiddleware, create_mcp_v2
 
 BOI_API_URL = os.getenv("BOI_API_URL", "http://boi-api:8000").rstrip("/")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "dev-service-token-change-me")
@@ -4875,3 +4878,22 @@ app.add_route("/status", status_page, methods=["GET"])
 app.add_route("/status.json", status_json, methods=["GET"])
 app.add_route("/health", health, methods=["GET"])
 app.add_route("/api/mcp/call", mcp_bridge_call, methods=["POST"])
+
+# Keep the existing connector-neutral MCP surface while adding the small
+# PAT/run-token facade used by Langflow components.
+mcp_v2 = create_mcp_v2()
+_mcp_v2_app = mcp_v2.streamable_http_app()
+_legacy_mcp_lifespan = app.router.lifespan_context
+_playground_mcp_lifespan = _mcp_v2_app.router.lifespan_context
+
+
+@asynccontextmanager
+async def combined_mcp_lifespan(starlette_app):
+    async with _legacy_mcp_lifespan(starlette_app):
+        async with _playground_mcp_lifespan(_mcp_v2_app):
+            yield
+
+
+app.router.lifespan_context = combined_mcp_lifespan
+app.router.routes.extend(_mcp_v2_app.router.routes)
+app.add_middleware(McpV2AuthContextMiddleware)

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Action 등록 검토 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('registration_draft_review.js') }}" defer></script>
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main
+    class="page-content action-draft-review"
+    data-action-draft-review
+    data-draft-id="{{ draft_id }}"
+    data-validate-url="/api/registration/drafts/{{ draft_id | urlencode }}/validate"
+    data-publish-url="/api/registration/drafts/{{ draft_id | urlencode }}/publish"
+  >
+    <section class="action-draft-review-hero">
+      <div>
+        <p class="eyebrow">Action contract → Connector binding</p>
+        <h2>Action 등록 초안 검토</h2>
+        {% if is_agent_playground %}
+          <p>업무 계약은 connector와 분리해 유지하고, Playground에서 검증한 exact Flow를 Langflow 실행 연결로 사용합니다.</p>
+        {% else %}
+          <p>업무 목적·입출력·위험·승인 계약과 실제 실행 connector를 구분해 검토합니다.</p>
+        {% endif %}
+      </div>
+      <div class="action-draft-review-state">
+        <span>현재 상태</span>
+        <strong data-draft-status>{{ draft.status }}</strong>
+        <small>{{ draft_id }}</small>
+      </div>
+    </section>
+
+    <section class="action-draft-review-grid">
+      <article class="panel">
+        <p class="eyebrow">Action</p>
+        <h3>{{ draft.catalog_patch_proposal.action_key }}</h3>
+        <p>{{ draft.request.business_goal }}</p>
+        <dl class="agent-playground-flow-identity">
+          <div><dt>소유자</dt><dd>{{ draft.created_by }}</dd></div>
+          <div><dt>실행 계층</dt><dd>{{ draft.request.execution_mode or "gateway" }}</dd></div>
+          <div><dt>실행 연결</dt><dd>{{ draft.request.connector_kind }}</dd></div>
+          <div><dt>기본 정책</dt><dd>{{ connector.default_mode or draft.request.risk_level or "검토 필요" }}</dd></div>
+          <div><dt>Catalog 반영</dt><dd data-catalog-applied>{{ "완료" if draft.catalog_applied else "아직 반영하지 않음" }}</dd></div>
+        </dl>
+      </article>
+
+      <article class="panel">
+        {% if is_agent_playground %}
+          <p class="eyebrow">Langflow connector binding</p>
+          <h3>배포 Flow 식별자</h3>
+          <dl class="agent-playground-flow-identity action-draft-reference">
+            <div><dt>Endpoint connection</dt><dd>{{ connector.endpoint_connection_id }}</dd></div>
+            <div><dt>Deployment</dt><dd>{{ connector.deployment_id }}</dd></div>
+            <div><dt>Project</dt><dd>{{ connector.project_id }}</dd></div>
+            <div><dt>Flow ID</dt><dd>{{ connector.flow_id }}</dd></div>
+            <div><dt>Artifact version</dt><dd>{{ connector.artifact_version }}</dd></div>
+            <div><dt>Checksum</dt><dd>{{ connector.artifact_checksum }}</dd></div>
+          </dl>
+        {% else %}
+          <p class="eyebrow">Replaceable connector binding</p>
+          <h3>{{ draft.request.connector_kind }} 실행 연결</h3>
+          <dl class="agent-playground-flow-identity">
+            <div><dt>Adapter</dt><dd>{{ connector_binding.adapter or ("action_gateway." ~ draft.request.connector_kind) }}</dd></div>
+            <div><dt>설정 필드</dt><dd>{{ connector.keys() | list | join(", ") if connector else "등록 검토에서 입력" }}</dd></div>
+            <div><dt>Secret 표시</dt><dd>원문을 표시하지 않음</dd></div>
+          </dl>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="panel action-draft-review-validation">
+      <header>
+        <div>
+          <p class="eyebrow">Validate → Publish request</p>
+          <h3>등록 검증</h3>
+        </div>
+        <span class="agent-playground-chip" data-validation-state>
+          {{ "통과" if draft.validation.valid else "검증 전" }}
+        </span>
+      </header>
+      <p data-validation-detail>
+        {% if draft.validation.valid %}
+          {{ draft.validation.checks | join(", ") }}
+        {% else %}
+          schema, dedupe, RBAC, secret scan을 확인해야 합니다.
+        {% endif %}
+      </p>
+      <div class="agent-playground-form-actions">
+        <button type="button" data-validate-draft>초안 검증</button>
+        <button
+          type="button"
+          class="primary"
+          data-publish-draft
+          {% if not draft.validation.valid or draft.status == "publish_requested" %}disabled{% endif %}
+        >게시 요청</button>
+        <a href="/playground">Agent Playground로 돌아가기</a>
+      </div>
+      <output class="action-draft-review-output" data-draft-output aria-live="polite"></output>
+      <p class="agent-playground-form-note">게시 요청은 운영 catalog를 직접 변경하지 않습니다. 실제 반영은 별도 승인 절차에서 처리합니다.</p>
+    </section>
+  </main>
+</body>
+</html>

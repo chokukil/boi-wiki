@@ -298,21 +298,29 @@ def identity_from_session_token(token: str) -> AuthIdentity:
         claims = jwt.decode(token, session_secret(), algorithms=["HS256"])
     except Exception as exc:
         raise AuthError(401, f"invalid BoI session: {exc}") from exc
+    employee_id = str(claims.get("employee_id") or claims.get("sub") or "")
+    if not employee_id:
+        raise AuthError(401, "invalid BoI session: employee id is missing")
+    session_teams = [str(item) for item in claims.get("teams", [])]
+    session_roles = [str(item) for item in claims.get("roles", [])]
+    permissions = hcp_permissions(employee_id) if hcp_authorization_configured() else {}
     identity = AuthIdentity(
-        employee_id=str(claims.get("employee_id") or claims.get("sub") or ""),
-        display_name=str(claims.get("name") or claims.get("employee_id") or ""),
+        employee_id=employee_id,
+        display_name=str(claims.get("name") or employee_id),
         email=str(claims.get("email") or ""),
-        teams=[str(item) for item in claims.get("teams", [])],
-        roles=[str(item) for item in claims.get("roles", [])],
+        teams=unique([*session_teams, *[str(item) for item in permissions.get("teams", [])]]),
+        roles=(
+            hcp_authoritative_roles(permissions)
+            if hcp_authorization_configured()
+            else unique(session_roles)
+        ),
         auth_source=str(claims.get("auth_source") or "session"),
     )
-    if not identity.employee_id:
-        raise AuthError(401, "invalid BoI session: employee id is missing")
     allowed_employee_check(identity)
     return identity
 
 
-def create_oidc_state(next_url: str = "/") -> tuple[str, str, str]:
+def create_oidc_state(next_url: str = "/") -> tuple[str, str, str, str]:
     state = secrets.token_urlsafe(24)
     nonce = secrets.token_urlsafe(24)
     code_verifier = secrets.token_urlsafe(64)
@@ -326,7 +334,7 @@ def create_oidc_state(next_url: str = "/") -> tuple[str, str, str]:
         "exp": int(time.time()) + 600,
     }
     state_token = jwt.encode(payload, session_secret(), algorithm="HS256")
-    return state_token, state, challenge
+    return state_token, state, challenge, nonce
 
 
 def decode_oidc_state(token: str) -> dict[str, Any]:
@@ -339,13 +347,14 @@ def decode_oidc_state(token: str) -> dict[str, Any]:
     return payload
 
 
-def keycloak_authorization_url(*, state: str, code_challenge: str) -> str:
+def keycloak_authorization_url(*, state: str, code_challenge: str, nonce: str) -> str:
     params = {
         "client_id": oidc_client_id(),
         "redirect_uri": keycloak_redirect_uri(),
         "response_type": "code",
         "scope": "openid profile email",
         "state": state,
+        "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
@@ -523,6 +532,19 @@ def hcp_permissions(employee_id: str, bearer_token: str | None = None) -> dict[s
     return data
 
 
+def hcp_authorization_configured() -> bool:
+    """Return whether HCP is the authoritative source for business roles."""
+
+    return bool(env_first("HCP_AUTHZ_URL", "KEYCLOAK_HCP_API_URL"))
+
+
+def hcp_authoritative_roles(permissions: dict[str, Any]) -> list[str]:
+    roles = [str(item) for item in permissions.get("roles", []) if str(item or "").strip()]
+    # Every authenticated employee keeps the baseline read role. HCP must
+    # explicitly grant every elevated business capability.
+    return unique(["boi.viewer", *roles])
+
+
 def identity_from_claims(claims: dict[str, Any], auth_source: str, bearer_token: str | None = None) -> AuthIdentity:
     employee_claim = env_first("BOI_EMPLOYEE_CLAIM", "KEYCLOAK_EMPLOYEE_CLAIM", default="employee_id")
     employee_id = str(
@@ -534,10 +556,14 @@ def identity_from_claims(claims: dict[str, Any], auth_source: str, bearer_token:
     if not employee_id:
         raise AuthError(401, "employee id claim is missing")
     teams = claim_values(claims, "BOI_TEAMS_CLAIM", "groups")
-    roles = claim_values(claims, "BOI_ROLES_CLAIM", "realm_access.roles")
+    token_roles = claim_values(claims, "BOI_ROLES_CLAIM", "realm_access.roles")
     permissions = hcp_permissions(employee_id, bearer_token=bearer_token)
     teams = unique([*teams, *[str(item) for item in permissions.get("teams", [])]])
-    roles = unique([*roles, *[str(item) for item in permissions.get("roles", [])]])
+    roles = (
+        hcp_authoritative_roles(permissions)
+        if hcp_authorization_configured()
+        else unique(token_roles)
+    )
     display_name = str(claims.get("name") or claims.get("preferred_username") or employee_id)
     email = str(claims.get("email") or "")
     identity = AuthIdentity(

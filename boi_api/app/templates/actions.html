@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Action 카탈로그 · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  {% if view != "history" %}<script src="{{ asset_url('action_catalog.js') }}" defer></script>{% endif %}
 </head>
 <body>
 {% include "_app_shell.html" %}
@@ -191,37 +192,52 @@
   </form>
 </section>
 
-<section class="grid">
-  {% for a in actions %}
-  <article class="card">
-    <div class="badges">
-      <span class="badge">{{ a.risk_level or 'risk' }}</span>
-      {% if a.approval_required %}<span class="badge warning">승인 필요</span>{% endif %}
-      <span class="badge">{{ a.type or 'action' }}</span>
-      {% if a.connector_kind %}<span class="badge">{{ a.connector_kind }}</span>{% endif %}
-      {% if a.execution_mode == 'human' %}<span class="badge manual">수동 조치</span>{% endif %}
+<main class="action-catalog-layout" data-action-catalog data-employee-id="{{ employee_id }}">
+  <section class="panel action-catalog-list" aria-label="Action 목록">
+    <div class="pagination-bar">
+      <div>
+        <h2>Action {{ actions|length }}개</h2>
+        <p>업무에서 실행하거나 요청할 수 있는 일을 선택하세요.</p>
+      </div>
     </div>
-    <h3>{{ a.name_ko or a.action_key }}</h3>
-    <p><code>{{ a.action_key }}</code></p>
-    <p>{{ a.description }}</p>
-    <p><strong>연결 Event:</strong> {{ (a.event_types or []) | join(', ') }}</p>
-    <p><strong>Owner:</strong> {{ a.owner }}</p>
-    {% if a.doc_url %}
-    <p><strong>명세:</strong> <a href="{{ a.doc_url }}">{{ a.doc_ref }}</a>{% if a.doc_uri %} <code>{{ a.doc_uri }}</code>{% endif %}</p>
-    {% endif %}
-    {% if a.requires_manual_action %}
-    <p><strong>필요 수동 조치:</strong> <code>{{ a.requires_manual_action }}</code></p>
-    {% endif %}
-    {% if a.execution_mode == 'human' %}
-    <p><strong>실행 방식:</strong> 담당자 판단/승인/완료 확인으로 기록됩니다.</p>
-    {% endif %}
-    <p><strong>SOP 연결:</strong> <a href="/sops/new?employee_id={{ employee_id }}&focus=action&action_key={{ a.action_key | urlencode }}">SOP 추가에서 연결</a></p>
-    <pre>curl -X POST "{{ action_invoke_url }}" \
+    <div class="action-catalog-rows">
+      {% for a in actions %}
+      <button class="action-catalog-row" type="button" data-action-open="{{ a.action_key }}">
+        <span class="action-catalog-row-heading">
+          <strong>{{ a.name_ko or a.action_key }}</strong>
+          <span class="badge">{{ a.connector_kind or a.type or 'action' }}</span>
+          {% if a.approval_required %}<span class="badge warning">확인 필요</span>{% endif %}
+        </span>
+        <span>{{ a.description }}</span>
+        <span class="action-catalog-usage">
+          {% if a.usage_count %}업무 흐름 {{ a.usage_count }}곳에서 사용 중{% else %}아직 연결된 업무 흐름 없음{% endif %}
+        </span>
+      </button>
+      <div class="action-catalog-row-links">
+        {% if a.doc_url %}
+        <a href="{{ a.doc_url }}">명세 보기 · {{ a.doc_ref }}</a>
+        {% endif %}
+        <details class="technical-details">
+          <summary>API 호출 예시</summary>
+          <pre>curl -X POST "{{ action_invoke_url }}" \
   -H "Content-Type: application/json" \
-  -d '{"action_key":"{{ a.action_key }}","payload":{"equipment_id":"EQP-001","lot_id":"LOT-001","owner":"100001"},"dry_run":true}'</pre>
-  </article>
-  {% endfor %}
-</section>
+  -d '{"action_key":"{{ a.action_key }}","payload":{},"dry_run":true}'</pre>
+        </details>
+      </div>
+      {% else %}
+      <div class="empty-state"><strong>조건에 맞는 Action이 없습니다.</strong></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="panel action-detail-panel" data-action-detail-panel aria-live="polite">
+    <div class="action-detail-empty" data-action-detail-empty>
+      <strong>Action을 선택하세요.</strong>
+      <p>어떤 업무에서 쓰는지, 무엇을 입력하고 어떤 결과를 받는지 확인할 수 있습니다.</p>
+    </div>
+    <div data-action-detail-content hidden></div>
+  </aside>
+</main>
 {% endif %}
 </body>
 </html>

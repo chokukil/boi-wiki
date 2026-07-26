@@ -1,0 +1,158 @@
+name: boi-agent-playground-mainline
+
+services:
+  content-init:
+    image: alpine:3.20
+    network_mode: none
+    command:
+      - sh
+      - -eu
+      - -c
+      - >-
+        find /content -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +;
+        cp -a /source/. /content/;
+        test -f /content/public/boi-wiki-manual/langflow/agent-playground-onboarding.md;
+        test -f /content/public/boi-wiki-manual/operations/agent-playground-operator-runbook.md
+    volumes:
+      - ../../data/boi:/source:ro
+      - content:/content
+
+  catalog-init:
+    image: alpine:3.20
+    network_mode: none
+    command:
+      - sh
+      - -eu
+      - -c
+      - >-
+        find /catalog -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +;
+        cp -a /source/. /catalog/
+    volumes:
+      - ../../data/action_catalog:/source:ro
+      - action-catalog:/catalog
+
+  boi-api:
+    build:
+      context: ../../boi_api
+      args:
+        BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-53912644-agent-playground-mainline}
+    ports:
+      - "28005:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      BOI_CONTENT_ROOT: /content
+      DATA_ROOT: /content
+      BOI_CONTENT_SAFE_DIRECTORY: /content
+      BOI_RUNTIME_ROOT: /runtime
+      BOI_REPO_ROOT: /workspace
+      EVENTS_ROOT: /runtime/events
+      ACTION_LOG_ROOT: /runtime/actions
+      EVENT_CATALOG_ROOT: /workspace/data/event_catalog
+      ACTION_CATALOG_ROOT: /action_catalog
+      WORKFLOW_CATALOG_ROOT: /workspace/data/workflow_catalog
+      EVENT_SKILL_CATALOG_ROOT: /workspace/data/event_skill_catalog
+      ACTION_SKILL_CATALOG_ROOT: /workspace/data/action_skill_catalog
+      AGENT_CATALOG_ROOT: /workspace/data/agent_catalog
+      BOI_AUTO_COMMIT: "false"
+      BOI_AUTO_PUSH: "false"
+      BOI_PET_AGENT_ENABLED: "false"
+      BOI_AUTH_MODE: keycloak
+      BOI_EXTERNAL_URL: http://localhost:28005
+      BOI_SESSION_SECRET: mainline-validation-session-secret-change-me
+      BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY: mainline-validation-encryption-key-change-me
+      BOI_AGENT_PLAYGROUND_TOKEN_HASH_SECRET: mainline-validation-token-hash-secret-change-me
+      BOI_AGENT_PLAYGROUND_ALLOWED_LANGFLOW_HOSTS: localhost,host.docker.internal
+      LANGFLOW_EXTERNAL_URL: http://localhost:7867
+      LANGFLOW_DEPLOY_URL: http://host.docker.internal:7867
+      AGENT_HUB_EXTERNAL_URL: http://localhost:18080/AgentHub.html
+      AGENT_HUB_API_URL: http://host.docker.internal:18001
+      BOI_WIKI_MCP_EXTERNAL_URL: http://localhost:18205
+      ACTION_GATEWAY_EXTERNAL_URL: http://localhost:18105
+      ACTION_GATEWAY_URL: http://action-gateway:8100
+      SERVICE_TOKEN: mainline-validation-service-token
+      KEYCLOAK_INTERNAL_URL: http://host.docker.internal:18082
+      KEYCLOAK_EXTERNAL_SERVER_URL: http://host.docker.internal:18082
+      KEYCLOAK_ISSUER_URL: http://host.docker.internal:18082
+      KEYCLOAK_REALM: boi-validation
+      KEYCLOAK_CLIENT_ID: boi-wiki
+      KEYCLOAK_CLIENT_SECRET: validation-boi-wiki-client-secret
+      KEYCLOAK_REDIRECT_URI: http://localhost:28005/auth/callback
+      KEYCLOAK_EMPLOYEE_CLAIM: empno
+      HCP_AUTHZ_URL: http://host.docker.internal:18083/permissions
+      HCP_AUTHZ_CACHE_TTL_SECONDS: "1"
+      BOI_LLM_BASE_URL: http://host.docker.internal:1236/v1
+      BOI_LLM_MODEL: google/gemma-4-26b-a4b-qat
+      BOI_LLM_API_KEY: not-needed
+    volumes:
+      - content:/content
+      - runtime:/runtime
+      - action-catalog:/action_catalog
+      - ../..:/workspace:ro
+    depends_on:
+      content-init:
+        condition: service_completed_successfully
+      catalog-init:
+        condition: service_completed_successfully
+    networks: [mainline]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  action-gateway:
+    build:
+      context: ../../action_gateway
+    ports:
+      - "18105:8100"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SERVICE_TOKEN: mainline-validation-service-token
+      BOI_API_URL: http://boi-api:8000
+      BOI_API_SERVICE_TOKEN: mainline-validation-service-token
+      ACTION_CATALOG_ROOT: /action_catalog
+      ACTION_LOG_ROOT: /runtime/actions
+      LANGFLOW_URL: http://host.docker.internal:7867
+      LANGFLOW_AUTH_MODE: api-key
+      BOI_WIKI_MCP_URL: http://boi-wiki-mcp:8200/mcp/v2
+      ALLOWED_ACTION_HOSTS: boi-api,boi-wiki-mcp,host.docker.internal,localhost,127.0.0.1
+    volumes:
+      - ../..:/workspace:ro
+      - runtime:/runtime
+      - action-catalog:/action_catalog
+    depends_on:
+      boi-api:
+        condition: service_healthy
+    networks: [mainline]
+
+  boi-wiki-mcp:
+    build:
+      context: ../../boi_wiki_mcp
+    ports:
+      - "18205:8200"
+    environment:
+      BOI_API_URL: http://boi-api:8000
+      SERVICE_TOKEN: mainline-validation-service-token
+      MCP_V2_REQUIRE_PAT: "true"
+      BOI_WIKI_MCP_EXTERNAL_URL: http://localhost:18205
+      MCP_ALLOWED_HOSTS: localhost:18205,host.docker.internal:18205,boi-wiki-mcp:8200
+      MCP_ALLOWED_ORIGINS: http://localhost:18205,http://host.docker.internal:18205
+    depends_on:
+      boi-api:
+        condition: service_healthy
+    networks: [mainline]
+
+volumes:
+  content:
+    name: boi-agent-playground-mainline-content
+  runtime:
+    name: boi-agent-playground-mainline-runtime
+  action-catalog:
+    name: boi-agent-playground-mainline-action-catalog
+
+networks:
+  mainline:
+    external: true
+    name: ${BOI_AGENT_PLAYGROUND_VALIDATION_NETWORK:-boi-langflow-111-validation-net}

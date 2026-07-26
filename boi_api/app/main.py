@@ -86,6 +86,9 @@ from .auth import (
     decode_oidc_state,
     dev_identity,
     exchange_keycloak_code,
+    hcp_authoritative_roles,
+    hcp_authorization_configured,
+    hcp_permissions,
     has_role,
     identity_from_claims,
     keycloak_authorization_url,
@@ -95,6 +98,25 @@ from .auth import (
     resolve_identity,
     service_identity,
     teams_for_employee,
+)
+from .agent_playground import (
+    AgentPlaygroundService,
+    PlaygroundBootstrapRequest,
+    PlaygroundConnectRequest,
+    PlaygroundDeploymentRequest,
+    PlaygroundEndpointCreateRequest,
+    PlaygroundEndpointTestRequest,
+    PlaygroundEndpointUpdateRequest,
+    PlaygroundFlowTestRequest,
+    PlaygroundFlowValidationRequest,
+    PlaygroundHubAdoptionBeginRequest,
+    PlaygroundHubAdoptionConfirmRequest,
+    PlaygroundRotateCredentialRequest,
+    SECRET_PATTERNS as AGENT_PLAYGROUND_SECRET_PATTERNS,
+)
+from .agent_playground_credentials import (
+    PlaygroundCredentialService,
+    TokenCreateRequest,
 )
 
 KST = timezone(timedelta(hours=9))
@@ -146,6 +168,7 @@ def inherit_llm_env_value(raw_value: str | None, fallback: str, *, secret: bool 
 
 
 APP_DIR = Path(__file__).resolve().parent
+REPO_ROOT = Path(os.getenv("BOI_REPO_ROOT") or str(APP_DIR.parents[1]))
 DEPLOY_PROFILE = os.getenv("DEPLOY_PROFILE", "local-full")
 KAFKA_MODE = os.getenv("KAFKA_MODE", "local").strip().lower()
 LANGFLOW_MODE = os.getenv("LANGFLOW_MODE", "local").strip().lower()
@@ -677,6 +700,39 @@ BUILTIN_EVENT_TYPES: list[dict[str, Any]] = [
 
 app = FastAPI(title="BoI Wiki", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+
+
+@app.middleware("http")
+async def keycloak_browser_login_redirect(request: Request, call_next: Callable[..., Any]) -> Response:
+    response = await call_next(request)
+    accepts_html = "text/html" in str(request.headers.get("accept") or "").lower()
+    excluded = (
+        request.url.path.startswith("/auth/")
+        or request.url.path.startswith("/api/")
+        or request.url.path.startswith("/internal/")
+        or request.url.path.startswith("/static/")
+        or request.url.path in {"/health", "/health/ready", "/favicon.ico"}
+    )
+    if (
+        response.status_code == 401
+        and auth_mode() == "keycloak"
+        and request.method == "GET"
+        and accepts_html
+        and not excluded
+    ):
+        next_url = request.url.path
+        if request.url.query:
+            next_url = f"{next_url}?{request.url.query}"
+        return RedirectResponse(
+            f"/auth/login?{urlencode({'next': safe_next_url(next_url)})}",
+            status_code=302,
+        )
+    return response
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
 
@@ -5591,6 +5647,27 @@ def identity_for_employee(employee_id: str) -> AuthIdentity:
     return _IDENTITY_CACHE.get(employee_id) or dev_identity(employee_id)
 
 
+def credential_identity_for_employee(employee_id: str) -> AuthIdentity:
+    """Resolve current credential authority without trusting a client identity field."""
+
+    cached = _IDENTITY_CACHE.get(employee_id)
+    if cached is not None:
+        return cached
+    if auth_mode() == "dev":
+        return dev_identity(employee_id)
+    if not hcp_authorization_configured():
+        raise AuthError(503, "HCP authorization is required for durable Playground credentials")
+    permissions = hcp_permissions(employee_id)
+    return AuthIdentity(
+        employee_id=employee_id,
+        display_name=name_for_employee(employee_id),
+        email="",
+        teams=[str(value) for value in permissions.get("teams") or []],
+        roles=hcp_authoritative_roles(permissions),
+        auth_source="hcp_credential_refresh",
+    )
+
+
 def app_url(path: str, employee_id: str, **params: str) -> str:
     query = {"employee_id": employee_id}
     query.update({key: value for key, value in params.items() if value})
@@ -5637,7 +5714,7 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
         ],
         "advanced": [
             {"id": "permissions", "label": "권한 관리", "href": app_url("/permissions", employee_id)},
-            {"id": "agent_builder", "label": "Agent Builder", "href": app_url("/agents/builder", employee_id)},
+            {"id": "agent_playground", "label": "Agent Playground", "href": app_url("/playground", employee_id)},
             {"id": "kafka", "label": "Kafka", "href": kafka_ui_public_base_url(request) or "#", "external": True},
             {"id": "api_docs", "label": "BoI Wiki API", "href": "/docs", "external": True},
             {"id": "mcp", "label": "BoI Wiki MCP", "href": mcp_public_base_url(request) or "#", "external": True},
@@ -5682,8 +5759,8 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
                 return "action_history"
             return "action_catalog"
         if active_nav == "advanced":
-            if path.startswith("/agents/builder"):
-                return "agent_builder"
+            if path.startswith("/playground") or path.startswith("/agents/builder"):
+                return "agent_playground"
             if path.startswith("/docs"):
                 return "api_docs"
             return "permissions"
@@ -7034,6 +7111,117 @@ def actions_for_template(
             item["doc_uri"] = action_doc_uri(item, employee_id, doc_lookup=doc_lookup)
         items.append(item)
     return items
+
+
+def action_workflow_usage_index(employee_id: str) -> dict[str, list[dict[str, Any]]]:
+    usage: dict[str, list[dict[str, Any]]] = {}
+    for workflow in load_workflow_definition_catalog():
+        refs = {str(item) for item in workflow.get("action_refs") or [] if str(item).strip()}
+        for stage in workflow.get("stages") or workflow.get("stage_display") or []:
+            if not isinstance(stage, dict):
+                continue
+            for field in ("action_refs", "automated_actions", "manual_actions"):
+                refs.update(str(item) for item in stage.get(field) or [] if str(item).strip())
+        workflow_key = str(workflow.get("workflow_definition_key") or "")
+        sop_refs = [str(item) for item in workflow.get("sop_refs") or [] if str(item).strip()]
+        primary_sop = str(workflow.get("primary_sop_ref") or "")
+        if primary_sop and primary_sop not in sop_refs:
+            sop_refs.insert(0, primary_sop)
+        row = {
+            "workflow_key": workflow_key,
+            "title": str(workflow.get("title") or workflow_key),
+            "url": app_url("/workflows/definitions", employee_id, q=workflow_key),
+            "sops": [
+                {"ref": ref, "url": doc_url_for_ref(ref, employee_id)}
+                for ref in sop_refs
+            ],
+        }
+        for action_key in refs:
+            usage.setdefault(action_key, []).append(row)
+    return usage
+
+
+def action_payload_fields(action: dict[str, Any]) -> list[dict[str, Any]]:
+    schema = action.get("input_schema") if isinstance(action.get("input_schema"), dict) else {}
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    required = {str(item) for item in schema.get("required") or []}
+    fields: dict[str, dict[str, Any]] = {
+        str(name): {
+            "name": str(name),
+            "label": str(spec.get("title") or name) if isinstance(spec, dict) else str(name),
+            "type": str(spec.get("type") or "string") if isinstance(spec, dict) else "string",
+            "required": str(name) in required,
+        }
+        for name, spec in properties.items()
+    }
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for nested in value.values():
+                visit(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                visit(nested)
+        elif isinstance(value, str):
+            for name in re.findall(r"\$\{payload\.([A-Za-z_][A-Za-z0-9_]*)\}", value):
+                fields.setdefault(
+                    name,
+                    {
+                        "name": name,
+                        "label": name.replace("_", " "),
+                        "type": "string",
+                        "required": False,
+                    },
+                )
+
+    for field in ("body", "arguments", "payload_mapping"):
+        visit(action.get(field))
+    return list(fields.values())[:30]
+
+
+def action_catalog_detail_payload(action_key: str, employee_id: str) -> dict[str, Any]:
+    action = next(
+        (
+            item
+            for item in load_action_catalog()
+            if str(item.get("action_key") or "") == action_key
+        ),
+        None,
+    )
+    if not action:
+        raise HTTPException(status_code=404, detail="Action을 찾을 수 없습니다.")
+    usage = action_workflow_usage_index(employee_id).get(action_key, [])
+    fields = action_payload_fields(action)
+    doc_ref = str(action.get("doc_ref") or "")
+    return {
+        "action_key": action_key,
+        "title": str(action.get("name_ko") or action_key),
+        "description": str(action.get("description") or ""),
+        "risk_level": str(action.get("risk_level") or "low"),
+        "approval_required": bool(action.get("approval_required")),
+        "connector_kind": str(action.get("connector_kind") or action.get("type") or ""),
+        "execution_mode": str(action.get("execution_mode") or "gateway"),
+        "enabled": bool(action.get("enabled", True)),
+        "event_types": [str(item) for item in action.get("event_types") or []],
+        "workflow_usage": usage,
+        "usage_count": len(usage),
+        "input_fields": fields,
+        "doc_ref": doc_ref,
+        "doc_url": doc_url_for_ref(doc_ref, employee_id) if doc_ref else "",
+        "api_example": {
+            "method": "POST",
+            "url": "<BOI_BASE_URL>/api/actions/invoke",
+            "authorization": "Bearer <BOI_PAT>",
+            "payload": {
+                "action_key": action_key,
+                "payload": {
+                    field["name"]: f"<{field['name'].upper()}>"
+                    for field in fields
+                },
+                "dry_run": True,
+            },
+        },
+    }
 
 
 def target_dir_for(metadata: dict[str, Any]) -> Path:
@@ -8501,9 +8689,12 @@ class RegistrationDraftRequest(BaseModel):
     payload_fields: list[str] = Field(default_factory=list)
     input_fields: list[str] = Field(default_factory=list)
     output_fields: list[str] = Field(default_factory=list)
+    execution_mode: str = "gateway"
     execution_kind: str = ""
     connector_kind: str = ""
     connector_config: dict[str, Any] = Field(default_factory=dict)
+    action_contract: dict[str, Any] = Field(default_factory=dict)
+    connector_binding: dict[str, Any] = Field(default_factory=dict)
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
     sample_payload: dict[str, Any] = Field(default_factory=dict)
@@ -10066,8 +10257,11 @@ async def auth_login(next: str = "/") -> RedirectResponse:
     if auth_mode() != "keycloak":
         return RedirectResponse(safe_next_url(next), status_code=302)
     try:
-        state_token, state, challenge = create_oidc_state(safe_next_url(next))
-        redirect = RedirectResponse(keycloak_authorization_url(state=state, code_challenge=challenge), status_code=302)
+        state_token, state, challenge, nonce = create_oidc_state(safe_next_url(next))
+        redirect = RedirectResponse(
+            keycloak_authorization_url(state=state, code_challenge=challenge, nonce=nonce),
+            status_code=302,
+        )
         redirect.set_cookie(
             OIDC_STATE_COOKIE_NAME,
             state_token,
@@ -13576,6 +13770,52 @@ def registration_terms(req: RegistrationDraftRequest) -> list[str]:
     return [str(term).strip() for term in terms if str(term or "").strip()]
 
 
+def registration_action_contract(
+    req: RegistrationDraftRequest,
+    action_key: str,
+) -> dict[str, Any]:
+    """Build the connector-neutral business contract for an Action."""
+
+    supplied = dict(req.action_contract) if isinstance(req.action_contract, dict) else {}
+    return {
+        **supplied,
+        "schema_version": "boi.action-contract.v1",
+        "action_key": action_key,
+        "title": req.title,
+        "business_goal": req.business_goal,
+        "inputs": {
+            "fields": list(req.input_fields),
+            "schema": dict(req.input_schema),
+            "sample": dict(req.sample_payload),
+        },
+        "outputs": {
+            "fields": list(req.output_fields),
+            "schema": dict(req.output_schema),
+            "result_mapping": dict(req.result_mapping),
+        },
+        "policy": {
+            "risk_level": req.risk_level or "medium",
+            "approval_required": bool(req.approval_required),
+            **dict(req.risk_policy),
+        },
+    }
+
+
+def registration_connector_binding(req: RegistrationDraftRequest) -> dict[str, Any]:
+    """Build the replaceable runtime binding without changing the Action contract."""
+
+    connector_kind = req.connector_kind or req.execution_kind or "manual"
+    supplied = dict(req.connector_binding) if isinstance(req.connector_binding, dict) else {}
+    return {
+        **supplied,
+        "schema_version": "boi.connector-binding.v1",
+        "kind": connector_kind,
+        "adapter": str(supplied.get("adapter") or f"action_gateway.{connector_kind}"),
+        "execution_mode": req.execution_mode or "gateway",
+        "config": dict(req.connector_config),
+    }
+
+
 def registration_catalog_patch(req: RegistrationDraftRequest, draft_id: str) -> dict[str, Any]:
     connector_kind = req.connector_kind or req.execution_kind or "manual"
     base = {
@@ -13605,12 +13845,14 @@ def registration_catalog_patch(req: RegistrationDraftRequest, draft_id: str) -> 
             "recommended_actions": req.linked_action_keys,
         }
     action_key = req.action_key or f"draft.{registration_slug(req.title, 'action')}"
-    return {
+    patch = {
         **base,
         "action_key": action_key,
         "connector_kind": connector_kind,
-        "execution_kind": req.execution_kind or connector_kind,
+        "execution_mode": req.execution_mode or "gateway",
         "connector_config": req.connector_config,
+        "action_contract": registration_action_contract(req, action_key),
+        "connector_binding": registration_connector_binding(req),
         "input_schema": req.input_schema,
         "output_schema": req.output_schema,
         "sample_payload": req.sample_payload,
@@ -13622,6 +13864,9 @@ def registration_catalog_patch(req: RegistrationDraftRequest, draft_id: str) -> 
         "risk_level": req.risk_level or "medium",
         "approval_required": bool(req.approval_required),
     }
+    if req.execution_kind:
+        patch["legacy_execution_kind"] = req.execution_kind
+    return patch
 
 
 def registration_dedupe_candidates(req: RegistrationDraftRequest, employee_id: str) -> dict[str, Any]:
@@ -13686,7 +13931,19 @@ def registration_draft_body(req: RegistrationDraftRequest) -> str:
             lines.append(f"- Output: {', '.join(req.output_fields)}")
     if req.entry_kind == "action":
         connector_kind = req.connector_kind or req.execution_kind or "manual"
-        lines.extend(["", "## Connector", "", f"- Connector kind: `{connector_kind}`"])
+        lines.extend(
+            [
+                "",
+                "## Action Contract",
+                "",
+                f"- Execution mode: `{req.execution_mode or 'gateway'}`",
+                "- Business inputs and outputs are independent of the connector binding.",
+                "",
+                "## Connector Binding",
+                "",
+                f"- Connector kind: `{connector_kind}`",
+            ]
+        )
         if req.connector_config:
             lines.append("- Connector config:")
             for key, value in req.connector_config.items():
@@ -13699,6 +13956,14 @@ def create_registration_draft(req: RegistrationDraftRequest, employee_id: str) -
     folder = normalize_folder(req.folder) or registration_default_folder(req.entry_kind, req.scope, employee_id)
     req = req.model_copy(update={"folder": folder}) if hasattr(req, "model_copy") else req.copy(update={"folder": folder})
     draft_id = f"{req.entry_kind}-registration-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    if req.entry_kind == "action":
+        action_key = req.action_key or f"draft.{registration_slug(req.title, 'action')}"
+        update = {
+            "execution_mode": req.execution_mode or "gateway",
+            "action_contract": registration_action_contract(req, action_key),
+            "connector_binding": registration_connector_binding(req),
+        }
+        req = req.model_copy(update=update) if hasattr(req, "model_copy") else req.copy(update=update)
     boi_type = {
         "sop": "boi/sop-draft",
         "event": "boi/event-type-draft",
@@ -13779,8 +14044,18 @@ def validate_registration_draft(draft: dict[str, Any], employee_id: str) -> dict
     if draft.get("entry_kind") == "action":
         connector_kind = str(req.get("connector_kind") or req.get("execution_kind") or "").strip()
         connector_config = req.get("connector_config") if isinstance(req.get("connector_config"), dict) else {}
+        action_contract = req.get("action_contract") if isinstance(req.get("action_contract"), dict) else {}
+        connector_binding = req.get("connector_binding") if isinstance(req.get("connector_binding"), dict) else {}
         if not connector_kind:
             errors.append("Action draft requires connector_kind")
+        if str(req.get("execution_mode") or "gateway") != "gateway":
+            errors.append("Action draft execution_mode must be gateway")
+        if str(action_contract.get("schema_version") or "") != "boi.action-contract.v1":
+            errors.append("Action draft requires connector-neutral boi.action-contract.v1")
+        if str(connector_binding.get("kind") or "") != connector_kind:
+            errors.append("connector_binding.kind must match connector_kind")
+        if str(connector_binding.get("execution_mode") or "") != "gateway":
+            errors.append("connector_binding.execution_mode must be gateway")
         required_by_connector = {
             "api": ["method", "endpoint"],
             "mcp": ["server", "tool"],
@@ -14031,7 +14306,7 @@ def registration_plan_payload(req: RegistrationPlanRequest, employee_id: str) ->
         draft_payload.update(
             {
                 "connector_kind": connector_kind,
-                "execution_kind": connector_kind,
+                "execution_mode": "gateway",
                 "input_fields": input_fields or ["업무 대상", "요청 사유"],
                 "output_fields": ["처리 결과", "근거 링크"],
                 "linked_event_types": [str(top_event.get("event_type"))] if top_event.get("event_type") else [],
@@ -17270,6 +17545,15 @@ async def api_registration_draft_create(req: RegistrationDraftRequest, employee_
     return {"ok": True, "draft": draft}
 
 
+def sync_agent_playground_registration_draft(draft: dict[str, Any]) -> None:
+    service = globals().get("AGENT_PLAYGROUND_SERVICE")
+    if service is None or not hasattr(service, "sync_action_draft_status"):
+        return
+    employee_id = str(draft.get("created_by") or draft.get("employee_id") or "")
+    if employee_id:
+        service.sync_action_draft_status(employee_id, draft)
+
+
 @app.get("/api/registration/drafts")
 async def api_registration_drafts(
     employee_id: str = Depends(current_employee),
@@ -17288,6 +17572,7 @@ async def api_registration_draft_validate(draft_id: str, employee_id: str = Depe
     draft = read_registration_draft(draft_id, employee_id)
     draft = validate_registration_draft(draft, employee_id)
     write_registration_draft(draft)
+    sync_agent_playground_registration_draft(draft)
     append_rbac_audit(employee_id, "registration_draft_validate", {"draft_id": draft_id, "validation": draft.get("validation")})
     return {"ok": True, "draft": draft}
 
@@ -17315,6 +17600,7 @@ async def api_registration_draft_publish(
     draft["publish_note"] = req.note
     draft["catalog_applied"] = False
     write_registration_draft(draft)
+    sync_agent_playground_registration_draft(draft)
     append_rbac_audit(
         employee_id,
         "registration_draft_publish",
@@ -31480,6 +31766,44 @@ async def action_new_page(request: Request, employee_id: str = Depends(current_e
     return RedirectResponse(app_url("/sops/new", employee_id, focus="action"), status_code=303)
 
 
+@app.get("/actions/drafts/{draft_id}", response_class=HTMLResponse)
+async def action_registration_draft_review_page(
+    request: Request,
+    draft_id: str,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    draft = read_registration_draft(draft_id, employee_id)
+    if str(draft.get("entry_kind") or "") != "action":
+        raise HTTPException(status_code=404, detail="Action registration draft not found")
+    request_payload = draft.get("request") if isinstance(draft.get("request"), dict) else {}
+    connector = request_payload.get("connector_config") if isinstance(request_payload.get("connector_config"), dict) else {}
+    connector_binding = (
+        request_payload.get("connector_binding")
+        if isinstance(request_payload.get("connector_binding"), dict)
+        else {}
+    )
+    is_agent_playground = str(connector.get("connection_source") or "") == "agent_playground"
+    return templates.TemplateResponse(
+        "registration_draft_review.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="actions",
+                title="Action 등록 검토",
+                description="connector-neutral Action 계약과 실행 binding을 검증하고 게시 요청으로 전환합니다.",
+            ),
+            "draft": draft,
+            "connector": connector,
+            "connector_binding": connector_binding,
+            "is_agent_playground": is_agent_playground,
+            "draft_id": draft_id,
+        },
+    )
+
+
 @app.get("/event-types", response_class=HTMLResponse)
 async def event_types_page(
     request: Request,
@@ -32033,6 +32357,12 @@ async def actions_page(
         {"label": "Request", "value": request_id, "param": "request_id"},
     ] if view == "history" else []
     active_history_filters = [item for item in active_history_filters if item.get("value")]
+    usage_index = action_workflow_usage_index(employee_id)
+    action_items = actions_for_template(actions, employee_id, doc_lookup=doc_lookup)
+    for item in action_items:
+        usages = usage_index.get(str(item.get("action_key") or ""), [])
+        item["workflow_usage"] = usages
+        item["usage_count"] = len(usages)
     return templates.TemplateResponse(
         "actions.html",
         {
@@ -32063,7 +32393,7 @@ async def actions_page(
             "offset": offset,
             "view": view,
             "event_types": load_event_types(),
-            "actions": actions_for_template(actions, employee_id, doc_lookup=doc_lookup),
+            "actions": action_items,
             "action_logs": action_history.get("items", []),
             "action_history": action_history,
             "action_status_options": [
@@ -32094,14 +32424,72 @@ async def actions_page(
     )
 
 
-@app.get("/agents/builder", response_class=HTMLResponse)
-async def agent_builder_page(
+@app.get("/api/actions/catalog/{action_key:path}")
+async def api_action_catalog_detail(
+    action_key: str,
+    employee_id: str = Depends(current_employee),
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "action": action_catalog_detail_payload(unquote(action_key), employee_id),
+    }
+
+
+@app.post("/api/actions/catalog/{action_key:path}/preview")
+async def api_action_catalog_preview(
+    action_key: str,
     request: Request,
     employee_id: str = Depends(current_employee),
-) -> Any:
-    langflow_url = langflow_public_base_url(request)
+) -> dict[str, Any]:
+    detail = action_catalog_detail_payload(unquote(action_key), employee_id)
+    raw = await request.json()
+    payload = (
+        raw.get("payload")
+        if isinstance(raw, dict) and isinstance(raw.get("payload"), dict)
+        else {}
+    )
+    required = [
+        str(item["name"])
+        for item in detail.get("input_fields") or []
+        if item.get("required")
+    ]
+    missing = [name for name in required if payload.get(name) in (None, "")]
+    return {
+        "ok": not missing,
+        "state": "ready" if not missing else "needs_input",
+        "action_key": detail["action_key"],
+        "dry_run": True,
+        "payload": payload,
+        "missing_inputs": missing,
+        "message": (
+            "시험 요청을 실행할 준비가 되었습니다."
+            if not missing
+            else "필수 입력을 확인해주세요."
+        ),
+    }
+
+
+@app.get("/agents/builder")
+async def agent_builder_legacy_redirect(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+) -> RedirectResponse:
+    query = {
+        key: value
+        for key, value in request.query_params.items()
+        if key != "employee_id"
+    }
+    return RedirectResponse(app_url("/playground", employee_id, **query), status_code=307)
+
+
+@app.get("/playground", response_class=HTMLResponse)
+async def agent_playground_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+) -> HTMLResponse:
+    require_employee_role(employee_id, "boi.viewer")
     return templates.TemplateResponse(
-        "agent_builder.html",
+        "agent_playground.html",
         {
             "request": request,
             "employee_id": employee_id,
@@ -32109,24 +32497,11 @@ async def agent_builder_page(
                 request,
                 employee_id,
                 active_nav="advanced",
-                title="Agent Builder",
-                description="프롬프트, 파일, URL, MCP, Skill로 업무 Agent를 만들고 GPT-5.5/Agents SDK/Sandbox로 바로 검증합니다.",
+                title="Agent Playground",
+                description="개인 Langflow 프로젝트에서 만들고 시험한 뒤 Agent Hub와 BoI Action으로 연결합니다.",
+                hide_pet_agent=True,
             ),
-            "agent_draft_url": app_url("/api/agents/drafts", employee_id),
-            "sandbox_job_url": app_url("/api/agents/sandbox/jobs", employee_id),
-            "openai_health_url": app_url("/api/runtime/openai-health", employee_id),
-            "ops_url": app_url("/ops", employee_id) if BOI_OPS_CENTER_ENABLED else "",
-            "ops_center_enabled": BOI_OPS_CENTER_ENABLED,
-            "workflow_definition_url": app_url("/workflows/definitions", employee_id),
-            "action_url": app_url("/actions", employee_id),
-            "event_catalog_url": app_url("/event-types", employee_id),
-            "api_docs_url": "/docs",
-            "langflow_url": langflow_url or "",
-            "mcp_url": mcp_public_base_url(request) or "",
-            "kafka_url": kafka_ui_public_base_url(request) or "",
-            "agent_runtime": BOI_AGENT_RUNTIME,
-            "agent_model": OPENAI_API_MODEL,
-            "sandbox_enabled": BOI_AGENT_SANDBOX_ENABLED,
+            "agent_hub_url": os.getenv("AGENT_HUB_EXTERNAL_URL", "http://localhost:3000"),
         },
     )
 
@@ -32278,3 +32653,703 @@ async def users() -> dict[str, Any]:
         "auth_mode": auth_mode(),
         "users": [{"employee_id": k, "name": USER_NAMES.get(k), "teams": v} for k, v in USER_TEAMS.items()],
     }
+
+
+AGENT_PLAYGROUND_CREDENTIALS = PlaygroundCredentialService(
+    BOI_RUNTIME_ROOT,
+    identity_provider=credential_identity_for_employee,
+)
+AGENT_PLAYGROUND_SERVICE = AgentPlaygroundService(
+    BOI_RUNTIME_ROOT,
+    REPO_ROOT,
+    AGENT_PLAYGROUND_CREDENTIALS,
+)
+app.state.agent_playground_credentials = AGENT_PLAYGROUND_CREDENTIALS
+app.state.agent_playground_service = AGENT_PLAYGROUND_SERVICE
+
+
+@app.post("/api/v2/tokens")
+def api_agent_playground_token_create(
+    req: TokenCreateRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "token": AGENT_PLAYGROUND_CREDENTIALS.create(identity, req),
+    }
+
+
+@app.get("/api/v2/tokens")
+def api_agent_playground_tokens(
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    items = AGENT_PLAYGROUND_CREDENTIALS.list(identity)
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@app.delete("/api/v2/tokens/{token_id}")
+def api_agent_playground_token_delete(
+    token_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "revoked": AGENT_PLAYGROUND_CREDENTIALS.revoke(identity, token_id),
+        "token_id": token_id,
+    }
+
+
+def agent_playground_bearer_authentication(authorization: str | None) -> Any:
+    scheme, _, raw_token = str(authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not raw_token.strip():
+        raise HTTPException(status_code=401, detail="BoI PAT or Action run token is required")
+    token = raw_token.strip()
+    authentication = (
+        AGENT_PLAYGROUND_CREDENTIALS.authenticate_run_token(token)
+        if token.startswith("boi_run_")
+        else AGENT_PLAYGROUND_CREDENTIALS.authenticate(token)
+    )
+    if authentication is None:
+        raise HTTPException(status_code=401, detail="invalid, expired, revoked, or consumed credential")
+    return authentication
+
+
+def agent_playground_public_evidence(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    ref = str(
+        item.get("boi_id")
+        or item.get("doc_ref")
+        or item.get("workflow_definition_key")
+        or item.get("event_type")
+        or item.get("action_key")
+        or item.get("term")
+        or item.get("uri")
+        or ""
+    )
+    return {
+        "evidence_id": ref,
+        "ref": ref,
+        "kind": str(item.get("kind") or "document"),
+        "title": str(item.get("title") or item.get("name") or ref),
+        "summary": str(item.get("description") or metadata.get("description") or "")[:2000],
+        "url": str(item.get("url") or ""),
+        "source": "boi_wiki",
+        "authority": str(metadata.get("status") or item.get("status") or "accessible"),
+        "score": float(item.get("score") or 0),
+        "metadata": {
+            "boi_id": str(item.get("boi_id") or metadata.get("boi_id") or ""),
+            "uri": str(item.get("uri") or ""),
+            "type": str(item.get("type") or metadata.get("type") or ""),
+            "visibility": str(item.get("visibility") or metadata.get("visibility") or ""),
+        },
+    }
+
+
+def agent_playground_graph_payload(
+    employee_id: str,
+    *,
+    source_ref: str,
+    view: str,
+    depth: int,
+    limit: int,
+) -> dict[str, Any]:
+    docs = accessible_docs(employee_id)
+    graph = okf_graph_for_docs(docs, employee_id)
+    requested_seed = str(source_ref or "").strip()
+    seed = requested_seed
+    if requested_seed:
+        seed_doc = next(
+            (
+                doc
+                for doc in docs
+                if requested_seed
+                in {
+                    stable_doc_ref(doc),
+                    str((doc.get("metadata") or {}).get("boi_id") or ""),
+                    str(doc.get("uri") or ""),
+                    str(doc.get("uri") or "").lstrip("/"),
+                    okf_concept_id_for_doc(doc),
+                }
+            ),
+            None,
+        )
+        if seed_doc is not None:
+            seed = okf_concept_id_for_doc(seed_doc)
+    edges: list[dict[str, Any]] = []
+    connected_nodes: set[str] = {seed} if seed else set()
+    remaining = list(graph.get("edges") or [])
+    for _ in range(max(1, min(depth, 6))):
+        added: set[str] = set()
+        for raw in remaining:
+            source = str(raw.get("source") or "")
+            target = str(raw.get("target") or "")
+            href = str(raw.get("href") or "")
+            if seed and connected_nodes and source not in connected_nodes and target not in connected_nodes:
+                if seed not in {source, target, href}:
+                    continue
+            source_refs = [value for value in (source, href) if value]
+            edges.append(
+                {
+                    "edge_id": hashlib.sha256(
+                        f"{source}|{target}|{href}|{raw.get('label')}".encode("utf-8")
+                    ).hexdigest()[:24],
+                    "source_id": source,
+                    "target_id": target,
+                    "relation": str(raw.get("label") or "references"),
+                    "user_label": str(raw.get("label") or "references"),
+                    "payload": {
+                        "provenance": "okf_markdown_link",
+                        "source_refs": source_refs,
+                        "metadata": {
+                            "source_ref": source,
+                            "href": href,
+                            "view": view,
+                        },
+                    },
+                }
+            )
+            added.update(value for value in (source, target) if value)
+            if len(edges) >= max(1, min(limit, 300)):
+                break
+        connected_nodes.update(added)
+        if not added or len(edges) >= max(1, min(limit, 300)):
+            break
+    node_lookup = {
+        str(node.get("concept_id") or ""): node
+        for node in graph.get("nodes") or []
+        if isinstance(node, dict)
+    }
+    nodes = [
+        node_lookup[node_id]
+        for node_id in connected_nodes
+        if node_id in node_lookup
+    ][: max(1, min(limit, 300))]
+    return {
+        "ok": True,
+        "view": view,
+        "source_ref": requested_seed,
+        "resolved_source_id": seed,
+        "nodes": nodes,
+        "edges": edges,
+        "ontology_status": "grounded" if edges else "document_fallback",
+    }
+
+
+@app.get("/internal/agent-playground/wiki/search")
+def internal_agent_playground_wiki_search(
+    q: str = Query(default="", max_length=4000),
+    view: str = Query(default="ranked", max_length=40),
+    source_ref: str = Query(default="", max_length=1000),
+    target_ref: str = Query(default="", max_length=1000),
+    page_ref: str = Query(default="", max_length=1000),
+    task_ref: str = Query(default="", max_length=1000),
+    limit: int = Query(default=8, ge=1, le=300),
+    depth: int = Query(default=2, ge=1, le=6),
+    authorization: str | None = Header(default=None),
+    _: None = Depends(require_service_token),
+) -> dict[str, Any]:
+    authentication = agent_playground_bearer_authentication(authorization)
+    authentication.require_scope("boi.read")
+    if view != "ranked":
+        return agent_playground_graph_payload(
+            authentication.identity.employee_id,
+            source_ref=source_ref or target_ref or task_ref or page_ref,
+            view=view,
+            depth=depth,
+            limit=limit,
+        )
+    if not q.strip():
+        raise HTTPException(status_code=422, detail="q is required for ranked search")
+    ontology = ontology_search_payload(
+        q,
+        authentication.identity.employee_id,
+        scope="all",
+        limit=min(limit, 20),
+        current_url=page_ref,
+        view="compact",
+    )
+    items = [
+        agent_playground_public_evidence(item)
+        for item in ontology.get("best_matches") or []
+        if isinstance(item, dict)
+    ]
+    return {
+        "ok": True,
+        "query": q,
+        "items": items[:limit],
+        "count": min(len(items), limit),
+        "ontology_terms": ontology.get("used_dictionary_terms") or [],
+        "task_ref": task_ref,
+        "page_ref": page_ref,
+        "excluded_count": 0,
+        "grounding_status": "grounded" if items else "no_accessible_evidence",
+    }
+
+
+@app.get("/internal/agent-playground/wiki/get")
+def internal_agent_playground_wiki_get(
+    ref: str = Query(min_length=1, max_length=1000),
+    authorization: str | None = Header(default=None),
+    _: None = Depends(require_service_token),
+) -> dict[str, Any]:
+    authentication = agent_playground_bearer_authentication(authorization)
+    authentication.require_scope("boi.read")
+    employee_id = authentication.identity.employee_id
+    doc = find_doc_by_id(ref, employee_id)
+    if doc is None:
+        normalized = ref.strip("/")
+        doc = next(
+            (
+                item
+                for item in accessible_docs(employee_id)
+                if normalized
+                in {
+                    str(item.get("uri") or "").strip("/"),
+                    str((item.get("metadata") or {}).get("boi_id") or ""),
+                }
+            ),
+            None,
+        )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="BoI reference is not accessible")
+    metadata = doc.get("metadata") or {}
+    return {
+        "ok": True,
+        "ref": stable_doc_ref(doc),
+        "item": {
+            "evidence_id": stable_doc_ref(doc),
+            "title": str(metadata.get("title") or stable_doc_ref(doc)),
+            "summary": str(metadata.get("description") or ""),
+            "body": str(doc.get("body") or ""),
+            "url": doc_url_for_ref(stable_doc_ref(doc), employee_id),
+            "metadata": metadata,
+        },
+    }
+
+
+class AgentPlaygroundWikiPlanRequest(BaseModel):
+    capability_id: str = Field(min_length=1, max_length=120)
+    goal: str = Field(min_length=1, max_length=12000)
+    page_ref: str = Field(default="", max_length=1000)
+    task_ref: str = Field(default="", max_length=1000)
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentPlaygroundWikiConfirmRequest(BaseModel):
+    reason: str = Field(default="User confirmed private draft", max_length=1000)
+
+
+def agent_playground_wiki_plan_path(plan_id: str) -> Path:
+    return BOI_RUNTIME_ROOT / "agent-playground" / "wiki-plans" / f"{safe_filename(plan_id)}.json"
+
+
+def write_agent_playground_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+
+
+@app.post("/internal/agent-playground/wiki/plans")
+def internal_agent_playground_wiki_plan(
+    req: AgentPlaygroundWikiPlanRequest,
+    authorization: str | None = Header(default=None),
+    _: None = Depends(require_service_token),
+) -> dict[str, Any]:
+    authentication = agent_playground_bearer_authentication(authorization)
+    authentication.require_scope("boi.draft")
+    if req.capability_id != "knowledge.draft":
+        raise HTTPException(status_code=422, detail="only knowledge.draft is supported")
+    plan_id = f"boi_knowledge_draft_{uuid.uuid4().hex}"
+    plan = {
+        "plan_id": plan_id,
+        "capability_id": req.capability_id,
+        "employee_id": authentication.identity.employee_id,
+        "goal": req.goal,
+        "page_ref": req.page_ref,
+        "task_ref": req.task_ref,
+        "input": req.input,
+        "status": "preview",
+        "created_at": now_iso(),
+        "confirmed_at": "",
+    }
+    path = agent_playground_wiki_plan_path(plan_id)
+    write_agent_playground_json(path, plan)
+    return {
+        "ok": True,
+        "plan_id": plan_id,
+        "status": "preview",
+        "production_changed": False,
+        "draft_reference": plan_id,
+    }
+
+
+@app.post("/internal/agent-playground/wiki/plans/{plan_id}/confirm")
+def internal_agent_playground_wiki_confirm(
+    plan_id: str,
+    req: AgentPlaygroundWikiConfirmRequest,
+    authorization: str | None = Header(default=None),
+    _: None = Depends(require_service_token),
+) -> dict[str, Any]:
+    authentication = agent_playground_bearer_authentication(authorization)
+    authentication.require_scope("boi.draft")
+    path = agent_playground_wiki_plan_path(plan_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="knowledge draft plan not found")
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    if str(plan.get("employee_id") or "") != authentication.identity.employee_id:
+        raise HTTPException(status_code=403, detail="knowledge draft plan belongs to another employee")
+    if plan.get("confirmed_at"):
+        return {
+            "ok": True,
+            "plan_id": plan_id,
+            "status": "saved",
+            "domain_ref": str(plan.get("domain_ref") or ""),
+            "wiki_url": str(plan.get("wiki_url") or ""),
+            "idempotent": True,
+        }
+    payload = plan.get("input") if isinstance(plan.get("input"), dict) else {}
+    title = str(payload.get("title") or "Agent Playground 개인 초안")[:200]
+    body = str(payload.get("body") or plan.get("goal") or "")
+    source_refs = [
+        item
+        for item in payload.get("source_refs") or []
+        if isinstance(item, dict)
+    ][:100]
+    metadata = make_metadata(
+        boi_type="boi/agent-draft",
+        title=title,
+        description=str(payload.get("summary") or body[:500]),
+        owner=authentication.identity.employee_id,
+        visibility="private",
+        source_refs=source_refs,
+        status="draft",
+        tags=["Agent Playground", "Private Draft"],
+    )
+    metadata["agent_playground_provenance"] = payload.get("provenance") or {}
+    metadata["ontology_relationships"] = payload.get("ontology_relationships") or []
+    metadata["task_context"] = payload.get("task_context") or {}
+    doc = write_boi(metadata, body)
+    reference = str((doc.get("metadata") or {}).get("boi_id") or "")
+    plan.update(
+        {
+            "status": "saved",
+            "confirmed_at": now_iso(),
+            "confirmation_reason": req.reason,
+            "domain_ref": reference,
+            "wiki_url": doc_url_for_ref(reference, authentication.identity.employee_id),
+        }
+    )
+    write_agent_playground_json(path, plan)
+    return {
+        "ok": True,
+        "plan_id": plan_id,
+        "status": "saved",
+        "domain_ref": reference,
+        "wiki_url": plan["wiki_url"],
+        "production_changed": True,
+    }
+
+
+@app.get("/api/agent-playground")
+def api_agent_playground(identity: AuthIdentity = Depends(current_identity)) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.state(identity)
+
+
+@app.post("/api/agent-playground/connect")
+def api_agent_playground_connect(
+    req: PlaygroundConnectRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.connect(identity, req)
+
+
+@app.get("/api/agent-playground/endpoints")
+def api_agent_playground_endpoints(
+    live: bool = Query(default=False),
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.endpoints(identity, live=live)
+
+
+@app.post("/api/agent-playground/endpoints")
+def api_agent_playground_endpoint_create(
+    req: PlaygroundEndpointCreateRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.create_endpoint(identity, req)
+
+
+@app.patch("/api/agent-playground/endpoints/{endpoint_id}")
+def api_agent_playground_endpoint_update(
+    endpoint_id: str,
+    req: PlaygroundEndpointUpdateRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.update_endpoint(identity, endpoint_id, req)
+
+
+@app.delete("/api/agent-playground/endpoints/{endpoint_id}")
+def api_agent_playground_endpoint_delete(
+    endpoint_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.delete_endpoint(identity, endpoint_id)
+
+
+@app.post("/api/agent-playground/endpoints/test")
+def api_agent_playground_endpoint_test_unsaved(
+    req: PlaygroundEndpointTestRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.test_unsaved_endpoint(identity, req)
+
+
+@app.post("/api/agent-playground/endpoints/{endpoint_id}/test")
+def api_agent_playground_endpoint_test(
+    endpoint_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.test_endpoint(identity, endpoint_id)
+
+
+@app.get("/api/agent-playground/endpoints/{endpoint_id}/projects")
+def api_agent_playground_projects(
+    endpoint_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.projects(identity, endpoint_id)
+
+
+@app.get("/api/agent-playground/endpoints/{endpoint_id}/projects/{project_id}/flows")
+def api_agent_playground_project_flows(
+    endpoint_id: str,
+    project_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.flows(identity, endpoint_id, project_id)
+
+
+@app.get("/api/agent-playground/flows")
+def api_agent_playground_flows(
+    endpoint_id: str = Query(min_length=1),
+    project_id: str = Query(min_length=1),
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.flows(identity, endpoint_id, project_id)
+
+
+@app.get("/api/agent-playground/agent-hub/assets")
+def api_agent_playground_agent_hub_assets(
+    search: str = Query(default="", max_length=200),
+    asset_type: str = Query(default="", max_length=20),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.agent_hub_assets(
+        identity,
+        search=search,
+        asset_type=asset_type,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/api/agent-playground/agent-hub/assets/{asset_id}")
+def api_agent_playground_agent_hub_asset(
+    asset_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.agent_hub_asset(identity, asset_id)
+
+
+@app.post("/api/agent-playground/agent-hub/adoptions")
+def api_agent_playground_agent_hub_adoption_begin(
+    req: PlaygroundHubAdoptionBeginRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.begin_hub_adoption(identity, req)
+
+
+@app.post("/api/agent-playground/agent-hub/adoptions/{adoption_id}/discover")
+def api_agent_playground_agent_hub_adoption_discover(
+    adoption_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.discover_hub_adoption(identity, adoption_id)
+
+
+@app.post("/api/agent-playground/agent-hub/adoptions/{adoption_id}/confirm")
+def api_agent_playground_agent_hub_adoption_confirm(
+    adoption_id: str,
+    req: PlaygroundHubAdoptionConfirmRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.confirm_hub_adoption(identity, adoption_id, req)
+
+
+@app.post("/api/agent-playground/bootstrap")
+def api_agent_playground_bootstrap(
+    req: PlaygroundBootstrapRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.bootstrap(identity, req)
+
+
+@app.post("/api/agent-playground/flows/{flow_id}/test")
+def api_agent_playground_flow_test(
+    flow_id: str,
+    req: PlaygroundFlowTestRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.test_flow(identity, flow_id, req)
+
+
+@app.post("/api/agent-playground/flows/{flow_id}/validate")
+def api_agent_playground_flow_validate(
+    flow_id: str,
+    req: PlaygroundFlowValidationRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.validate_flow(identity, flow_id, req)
+
+
+@app.get("/api/agent-playground/flows/{flow_id}/artifact")
+def api_agent_playground_flow_artifact(
+    flow_id: str,
+    endpoint_id: str = Query(default=""),
+    project_id: str = Query(default=""),
+    identity: AuthIdentity = Depends(current_identity),
+) -> Response:
+    bundle = AGENT_PLAYGROUND_SERVICE.artifact_bundle(
+        identity,
+        flow_id,
+        endpoint_id=endpoint_id,
+        project_id=project_id,
+    )
+    return Response(
+        content=bundle,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="boi-agent-flow-{flow_id}-1.1.0.zip"'
+        },
+    )
+
+
+@app.post("/api/agent-playground/deployments")
+def api_agent_playground_deployment(
+    req: PlaygroundDeploymentRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.record_deployment(identity, req)
+
+
+@app.get("/api/agent-playground/deployments/{deployment_id}")
+def api_agent_playground_deployment_detail(
+    deployment_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "deployment": AGENT_PLAYGROUND_SERVICE.deployment(identity, deployment_id),
+    }
+
+
+@app.post("/api/agent-playground/deployments/{deployment_id}/action-draft")
+def api_agent_playground_action_draft(
+    deployment_id: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    payload = AGENT_PLAYGROUND_SERVICE.action_draft_payload(identity, deployment_id)
+    draft = create_registration_draft(RegistrationDraftRequest(**payload), identity.employee_id)
+    AGENT_PLAYGROUND_SERVICE.record_action_draft(identity, deployment_id, draft)
+    connector = payload.get("connector_config") if isinstance(payload.get("connector_config"), dict) else {}
+    return {
+        "ok": True,
+        "draft": draft,
+        "draft_url": f"/actions/drafts/{quote(str(draft.get('draft_id') or ''), safe='')}",
+        "deployment_reference": {
+            "endpoint_connection_id": str(connector.get("endpoint_connection_id") or ""),
+            "deployment_id": str(connector.get("deployment_id") or ""),
+            "project_id": str(connector.get("project_id") or ""),
+            "flow_id": str(connector.get("flow_id") or ""),
+            "artifact_version": str(connector.get("artifact_version") or ""),
+            "artifact_checksum": str(connector.get("artifact_checksum") or ""),
+        },
+    }
+
+
+@app.post("/api/agent-playground/rotate-credential")
+def api_agent_playground_rotate_credential(
+    req: PlaygroundRotateCredentialRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.rotate_credential(identity, req)
+
+
+class AgentPlaygroundExecutionRequest(BaseModel):
+    caller_employee_id: str = Field(min_length=1, max_length=100)
+    action_key: str = Field(min_length=1, max_length=500)
+    deployment_id: str = Field(min_length=1, max_length=500)
+    flow_id: str = Field(min_length=1, max_length=500)
+    trace_id: str = Field(min_length=1, max_length=500)
+    save_mode: Literal["preview", "private_draft"] = "preview"
+    body: dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/internal/agent-playground/langflow-executions")
+async def internal_agent_playground_langflow_execution(
+    req: AgentPlaygroundExecutionRequest,
+    _: None = Depends(require_service_token),
+) -> dict[str, Any]:
+    identity = identity_for_employee(req.caller_employee_id)
+    if not (identity.is_admin or "boi.action_invoker" in identity.roles):
+        raise HTTPException(status_code=403, detail="boi.action_invoker is required")
+    connection = AGENT_PLAYGROUND_SERVICE.execution_connection(req.deployment_id, req.flow_id)
+    scopes = ["boi.read", "boi.draft"] if req.save_mode == "private_draft" else ["boi.read"]
+    run_token = AGENT_PLAYGROUND_CREDENTIALS.create_run_token(
+        identity,
+        action_key=req.action_key,
+        flow_id=req.flow_id,
+        trace_id=req.trace_id,
+        scopes=scopes,
+        ttl_seconds=180,
+    )
+    try:
+        try:
+            async with httpx.AsyncClient(timeout=180) as client:
+                response = await client.post(
+                    f"{connection['endpoint'].rstrip('/')}/api/v1/run/{quote(req.flow_id, safe='')}",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": connection["api_key"],
+                        "X-LANGFLOW-GLOBAL-VAR-BOI_RUN_TOKEN": str(run_token["token"]),
+                    },
+                    json=req.body,
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Agent Playground Langflow execution failed: {type(exc).__name__}",
+            ) from exc
+        try:
+            response_body: Any = response.json()
+        except ValueError:
+            response_body = response.text[:2000]
+        serialized = json.dumps(response_body, ensure_ascii=False, default=str)
+        if any(pattern.search(serialized) for pattern in AGENT_PLAYGROUND_SECRET_PATTERNS):
+            raise HTTPException(status_code=502, detail="secret-like value detected in Langflow output")
+        return {
+            "ok": response.status_code < 400,
+            "status_code": response.status_code,
+            "deployment_id": req.deployment_id,
+            "flow_id": req.flow_id,
+            "body": response_body,
+        }
+    finally:
+        AGENT_PLAYGROUND_CREDENTIALS.consume_run_token(str(run_token["token_id"]))

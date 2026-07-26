@@ -43,6 +43,15 @@ ALLOWED_HOSTS = {
 FIRST_CLASS_ACTION_TYPES = {"boi_materialize", "boi_materializer", "event_publish", "boi_event"}
 HTTP_ACTION_TYPES = {"http", "api", "api_call", "webhook", "http_webhook", "internal_webhook", "langflow_webhook"}
 LANGFLOW_RUN_ACTION_TYPES = {"langflow_run", "langflow_flow"}
+CONNECTOR_RUNTIME_TYPES = {
+    "api": "api",
+    "webhook": "webhook",
+    "mcp": "mcp_tool",
+    "manual": "manual_task",
+    "event_broker": "event_publish",
+    "boi_writer": "boi_materialize",
+    "langflow": "langflow_run",
+}
 
 app = FastAPI(title="BoI Action Gateway", version="0.4.0")
 
@@ -57,6 +66,36 @@ def truthy_value(value: Any) -> bool:
 
 def now_iso() -> str:
     return datetime.now(KST).replace(microsecond=0).isoformat()
+
+
+def normalize_connector_action(action: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a connector-neutral Action contract into a gateway adapter input.
+
+    Flat catalog fields remain authoritative for backward compatibility. New
+    Action drafts may carry a replaceable ``connector_binding`` without making
+    the business Action contract depend on Langflow or another protocol.
+    """
+
+    normalized = dict(action)
+    binding = action.get("connector_binding") if isinstance(action.get("connector_binding"), dict) else {}
+    binding_config = binding.get("config") if isinstance(binding.get("config"), dict) else {}
+    legacy_config = action.get("connector_config") if isinstance(action.get("connector_config"), dict) else {}
+    connector_kind = str(
+        action.get("connector_kind")
+        or binding.get("kind")
+        or ""
+    ).strip()
+    connector_config = {**binding_config, **legacy_config}
+    if connector_kind:
+        normalized["connector_kind"] = connector_kind
+    normalized["connector_config"] = connector_config
+    for key, value in connector_config.items():
+        normalized.setdefault(str(key), value)
+    if connector_kind in {"api", "webhook"} and not normalized.get("url"):
+        normalized["url"] = connector_config.get("url") or connector_config.get("endpoint")
+    if not str(normalized.get("type") or "").strip():
+        normalized["type"] = CONNECTOR_RUNTIME_TYPES.get(connector_kind, "")
+    return normalized
 
 
 def ensure_dirs() -> None:
@@ -448,10 +487,16 @@ def is_unresolved_flow_ref(value: str) -> bool:
     return not normalized or normalized.startswith("${") or normalized.startswith("replace-with")
 
 
-async def langflow_auth_headers(client: httpx.AsyncClient) -> dict[str, str]:
-    if LANGFLOW_AUTH_MODE == "api-key":
-        return {"x-api-key": LANGFLOW_API_KEY}
-    resp = await client.get(f"{LANGFLOW_URL.rstrip('/')}/api/v1/auto_login")
+async def langflow_auth_headers(
+    client: httpx.AsyncClient,
+    *,
+    base_url: str = LANGFLOW_URL,
+    api_key: str = LANGFLOW_API_KEY,
+    auth_mode: str = LANGFLOW_AUTH_MODE,
+) -> dict[str, str]:
+    if auth_mode == "api-key":
+        return {"x-api-key": api_key}
+    resp = await client.get(f"{base_url.rstrip('/')}/api/v1/auto_login")
     resp.raise_for_status()
     token = (resp.json() or {}).get("access_token")
     if not token:
@@ -476,17 +521,34 @@ def langflow_flow_matches(flow: dict[str, Any], action: dict[str, Any], wanted_n
     return True
 
 
-async def resolve_langflow_run_target(client: httpx.AsyncClient, action: dict[str, Any], context: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, str]]:
-    explicit_flow_id = render_template(str(action.get("flow_id") or ""), context)
-    explicit_endpoint = render_template(str(action.get("endpoint_name") or action.get("flow_endpoint_name") or ""), context)
-    auth_headers = await langflow_auth_headers(client)
+async def resolve_langflow_run_target(
+    client: httpx.AsyncClient,
+    action: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    base_url: str = LANGFLOW_URL,
+    api_key: str = LANGFLOW_API_KEY,
+    auth_mode: str = LANGFLOW_AUTH_MODE,
+) -> tuple[str, dict[str, Any], dict[str, str]]:
+    connector_config = action.get("connector_config") if isinstance(action.get("connector_config"), dict) else {}
+    explicit_flow_id = render_template(str(action.get("flow_id") or connector_config.get("flow_id") or ""), context)
+    explicit_endpoint = render_template(
+        str(
+            action.get("endpoint_name")
+            or action.get("flow_endpoint_name")
+            or connector_config.get("endpoint_name")
+            or ""
+        ),
+        context,
+    )
+    auth_headers = await langflow_auth_headers(client, base_url=base_url, api_key=api_key, auth_mode=auth_mode)
     if not is_unresolved_flow_ref(explicit_flow_id):
         return explicit_flow_id, {"id": explicit_flow_id}, auth_headers
     if explicit_endpoint and not is_unresolved_flow_ref(explicit_endpoint) and not action.get("resolve_latest", False):
         return explicit_endpoint, {"endpoint_name": explicit_endpoint}, auth_headers
 
     wanted_name = render_template(str(action.get("flow_name") or "BoI Reference Flow"), context)
-    resp = await client.get(f"{LANGFLOW_URL.rstrip('/')}/api/v1/flows/", headers=auth_headers)
+    resp = await client.get(f"{base_url.rstrip('/')}/api/v1/flows/", headers=auth_headers)
     resp.raise_for_status()
     flows = resp.json()
     if not isinstance(flows, list):
@@ -736,6 +798,7 @@ async def logs(limit: int = 200, action_key: str = "", trace_id: str = "") -> di
 
 
 async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str, Any]:
+    action = normalize_connector_action(action)
     request_id = req.idempotency_key or f"act-{datetime.now(KST).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     action_type = str(action.get("type", "mock_api"))
 
@@ -929,12 +992,12 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                 async with httpx.AsyncClient(timeout=max(langflow_timeout_seconds, 1)) as client:
                     async def perform_langflow_request() -> tuple[Any, Any]:
                         nonlocal flow_target, flow_info
-                        flow_target, flow_info, auth_headers = await resolve_langflow_run_target(client, action, context)
-                        url = render_template(str(action.get("url", "")), context) or f"{LANGFLOW_URL.rstrip('/')}/api/v1/run/{flow_target}"
-                        if not host_allowed(url):
-                            raise HTTPException(status_code=400, detail=f"Langflow URL is not allowlisted: {url}")
-                        headers = {"Content-Type": "application/json", **auth_headers}
-                        headers.update(render_template(action.get("headers") or {}, context))
+                        connector_config = action.get("connector_config") if isinstance(action.get("connector_config"), dict) else {}
+                        connection_source = str(
+                            action.get("connection_source")
+                            or connector_config.get("connection_source")
+                            or ""
+                        )
                         body = render_template(
                             action.get("body")
                             or {
@@ -948,6 +1011,110 @@ async def invoke_action(action: dict[str, Any], req: InvokeRequest) -> dict[str,
                             prefix = simulation_agent_prompt_prefix(simulation_agent)
                             if prefix:
                                 body["input_value"] = prefix + str(body.get("input_value") or "")
+                        if connection_source == "agent_playground":
+                            deployment_id = str(
+                                action.get("deployment_id")
+                                or connector_config.get("deployment_id")
+                                or ""
+                            )
+                            if not deployment_id:
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail="Agent Playground Action requires an immutable deployment reference",
+                                )
+                            flow_target = render_template(
+                                str(
+                                    action.get("flow_id")
+                                    or connector_config.get("flow_id")
+                                    or action.get("endpoint_name")
+                                    or connector_config.get("endpoint_name")
+                                    or ""
+                                ),
+                                context,
+                            )
+                            if is_unresolved_flow_ref(flow_target):
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail="Agent Playground Action requires an explicit Flow ID or endpoint name",
+                                )
+                            flow_info = {
+                                "id": flow_target,
+                                "endpoint_name": str(
+                                    action.get("endpoint_name")
+                                    or connector_config.get("endpoint_name")
+                                    or flow_target
+                                ),
+                            }
+                            request_payload = req.payload if isinstance(req.payload, dict) else {}
+                            if isinstance(body, dict):
+                                body["input_value"] = json.dumps(
+                                    {
+                                        **request_payload,
+                                        "trace_id": str(req.event.get("trace_id") or request_id),
+                                    },
+                                    ensure_ascii=False,
+                                    default=str,
+                                )
+                                body["input_type"] = "chat"
+                                body["output_type"] = "chat"
+                            proxy_response = await client.post(
+                                f"{BOI_API_URL.rstrip('/')}/internal/agent-playground/langflow-executions",
+                                headers={"x-service-token": SERVICE_TOKEN},
+                                json={
+                                    "caller_employee_id": req.employee_id,
+                                    "action_key": str(action.get("action_key") or ""),
+                                    "deployment_id": deployment_id,
+                                    "flow_id": flow_target,
+                                    "trace_id": str(req.event.get("trace_id") or request_id),
+                                    "save_mode": str(request_payload.get("save_mode") or "preview"),
+                                    "body": body,
+                                },
+                            )
+                            if proxy_response.status_code >= 400:
+                                try:
+                                    proxy_error: Any = proxy_response.json()
+                                except ValueError:
+                                    proxy_error = proxy_response.text[:1000]
+                                detail = (
+                                    proxy_error.get("detail")
+                                    if isinstance(proxy_error, dict)
+                                    else proxy_error
+                                )
+                                raise HTTPException(
+                                    status_code=proxy_response.status_code,
+                                    detail=detail or "Agent Playground execution was rejected",
+                                )
+                            proxy_payload = proxy_response.json()
+                            proxied_status = int(proxy_payload.get("status_code") or 502)
+                            return (
+                                httpx.Response(
+                                    status_code=proxied_status,
+                                    request=httpx.Request("POST", f"{BOI_API_URL.rstrip('/')}/internal/agent-playground/langflow-executions"),
+                                ),
+                                proxy_payload.get("body"),
+                            )
+                        base_url = LANGFLOW_URL.rstrip("/")
+                        api_key = LANGFLOW_API_KEY
+                        auth_mode = LANGFLOW_AUTH_MODE
+                        flow_target, flow_info, auth_headers = await resolve_langflow_run_target(
+                            client,
+                            action,
+                            context,
+                            base_url=base_url,
+                            api_key=api_key,
+                            auth_mode=auth_mode,
+                        )
+                        configured_url = render_template(
+                            str(action.get("url") or connector_config.get("endpoint") or ""),
+                            context,
+                        )
+                        if configured_url.startswith("/"):
+                            configured_url = f"{base_url.rstrip('/')}{configured_url}"
+                        url = configured_url or f"{base_url.rstrip('/')}/api/v1/run/{flow_target}"
+                        if not host_allowed(url):
+                            raise HTTPException(status_code=400, detail=f"Langflow URL is not allowlisted: {url}")
+                        headers = {"Content-Type": "application/json", **auth_headers}
+                        headers.update(render_template(action.get("headers") or {}, context))
                         resp = await client.request("POST", url, headers=headers, json=body)
                         try:
                             resp_body: Any = resp.json()

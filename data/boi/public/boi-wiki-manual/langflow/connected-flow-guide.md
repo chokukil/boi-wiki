@@ -27,6 +27,8 @@ review:
 
 Langflow flow는 canvas에 노드가 존재하는 것만으로 완료가 아니다. 입력, BoI context, harness/wiki reader, LLM, output 또는 writer/action invoker가 실제 edge로 연결되어 실행 결과가 action log에 남아야 한다.
 
+개인 Flow를 처음 준비하고 Agent Hub로 배포하려면 [Agent Playground 시작 가이드](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-onboarding)를 먼저 따른다. BoI는 Langflow 소스나 화면을 수정하지 않고 공개 API, Flow JSON, Credential Variable과 read-only custom component bundle만 사용한다.
+
 # Required Patterns
 
 | Flow type | Required connected path |
@@ -107,5 +109,6 @@ Langflow may show update-available badges for base UI components after an image 
 
 # Citations
 
+- [Agent Playground 시작 가이드](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-onboarding)
 - [Langflow Stage Analysis Action](/public/actions/langflow/stage-analysis.md)
 - [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)

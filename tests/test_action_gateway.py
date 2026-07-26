@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
+import json
 import sys
 from pathlib import Path
 
@@ -90,6 +92,50 @@ def test_fallback_action_summary_truncates_at_word_boundary_with_ellipsis(tmp_pa
     assert len(summary) <= 503
     assert summary.endswith("...")
     assert not summary.endswith(" ...")
+
+
+def test_connector_neutral_action_binding_selects_each_gateway_adapter(tmp_path, monkeypatch):
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    expected_types = {
+        "api": "api",
+        "mcp": "mcp_tool",
+        "webhook": "webhook",
+        "manual": "manual_task",
+        "event_broker": "event_publish",
+        "boi_writer": "boi_materialize",
+        "langflow": "langflow_run",
+    }
+
+    for connector_kind, runtime_type in expected_types.items():
+        normalized = gateway.normalize_connector_action(
+            {
+                "action_key": f"neutral.{connector_kind}",
+                "action_contract": {
+                    "schema_version": "boi.action-contract.v1",
+                    "inputs": {"fields": ["request"]},
+                    "outputs": {"fields": ["result"]},
+                },
+                "connector_binding": {
+                    "schema_version": "boi.connector-binding.v1",
+                    "kind": connector_kind,
+                    "execution_mode": "gateway",
+                    "config": {"marker": connector_kind},
+                },
+            }
+        )
+        assert normalized["connector_kind"] == connector_kind
+        assert normalized["type"] == runtime_type
+        assert normalized["marker"] == connector_kind
+
+    api = gateway.normalize_connector_action(
+        {
+            "connector_binding": {
+                "kind": "api",
+                "config": {"method": "POST", "endpoint": "http://boi-api:8000/example"},
+            }
+        }
+    )
+    assert api["url"] == "http://boi-api:8000/example"
 
 
 class FakeHttpResponse:
@@ -390,6 +436,126 @@ class FakeDispatchAsyncClient:
                 }
             )
         return FakeHttpResponse(body={"ok": True, "status": "invoked"})
+
+
+class FakePlaygroundLangflowAsyncClient:
+    requests: list[dict] = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def get(self, url, headers=None):
+        self.requests.append({"method": "GET", "url": url, "headers": headers or {}})
+        if "/internal/agent-playground/langflow-connections/" in url:
+            return FakeHttpResponse(
+                body={
+                    "endpoint": "http://langflow-user.example:7860",
+                    "api_key": "user-langflow-api-key",
+                    "langflow_user_id": "lf-user-100002",
+                }
+            )
+        return FakeHttpResponse(status_code=404, body={"detail": "not found"})
+
+    async def post(self, url, headers=None, json=None):
+        self.requests.append({"method": "POST", "url": url, "headers": headers or {}, "json": json or {}})
+        if url.endswith("/internal/agent-playground/langflow-executions"):
+            return FakeHttpResponse(
+                body={
+                    "ok": True,
+                    "status_code": 200,
+                    "flow_id": "flow-user-100002",
+                    "body": {
+                        "session_id": "flow-user-100002",
+                        "outputs": [
+                            {
+                                "outputs": [
+                                    {
+                                        "results": {
+                                            "message": {
+                                                "text": "개인 Wiki 근거를 확인했습니다.",
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                    },
+                }
+            )
+        return FakeHttpResponse(status_code=404, body={"detail": "not found"})
+
+    async def request(self, method, url, headers=None, json=None):
+        self.requests.append({"method": method, "url": url, "headers": headers or {}, "json": json or {}})
+        return FakeHttpResponse(
+            body={
+                "session_id": "flow-user-100002",
+                "outputs": [{"outputs": [{"results": {"message": {"text": "개인 Wiki 근거를 확인했습니다."}}}]}],
+            }
+        )
+
+    async def delete(self, url, headers=None):
+        self.requests.append({"method": "DELETE", "url": url, "headers": headers or {}})
+        return FakeHttpResponse(body={"ok": True, "status": "consumed"})
+
+
+def test_agent_playground_langflow_action_uses_secret_free_boi_execution_proxy(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "ACTION_ALLOWED_HOSTS",
+        "boi-api,langflow-user.example,localhost,127.0.0.1",
+    )
+    gateway = load_gateway_module(tmp_path, monkeypatch)
+    FakePlaygroundLangflowAsyncClient.requests = []
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", FakePlaygroundLangflowAsyncClient)
+    request = gateway.InvokeRequest(
+        action_key="agent-playground.100002.boi-wiki-agent-loop",
+        employee_id="100002",
+        event={
+            "event_id": "evt-agent-playground",
+            "event_type": "agent.playground.requested.v1",
+            "trace_id": "trace-agent-playground",
+        },
+        payload={
+            "question": "내 Wiki 근거를 확인해줘",
+            "save_mode": "private_draft",
+        },
+    )
+    action = {
+        "action_key": request.action_key,
+        "type": "langflow_run",
+        "enabled": True,
+        "dry_run": False,
+        "flow_id": "flow-user-100002",
+        "connector_config": {
+            "connection_source": "agent_playground",
+            "deployment_id": "hub-deployment-100002",
+            "flow_id": "flow-user-100002",
+            "endpoint": "/api/v1/run/flow-user-100002",
+        },
+    }
+
+    result = asyncio.run(gateway.invoke_action(action, request))
+
+    assert result["status"] == "langflow_invoked"
+    execution = next(
+        item for item in FakePlaygroundLangflowAsyncClient.requests
+        if item["url"].endswith("/internal/agent-playground/langflow-executions")
+    )
+    assert execution["headers"]["x-service-token"] == "test-service-token"
+    assert execution["json"]["caller_employee_id"] == "100002"
+    assert execution["json"]["deployment_id"] == "hub-deployment-100002"
+    assert execution["json"]["flow_id"] == "flow-user-100002"
+    assert execution["json"]["trace_id"] == "trace-agent-playground"
+    assert execution["json"]["save_mode"] == "private_draft"
+    serialized = json.dumps({"requests": FakePlaygroundLangflowAsyncClient.requests, "result": result})
+    assert "user-langflow-api-key" not in serialized
+    assert "boi_run_" not in serialized
 
 
 def test_langflow_reference_action_is_enabled_for_real_dispatch():

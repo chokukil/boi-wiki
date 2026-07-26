@@ -1,0 +1,1249 @@
+{
+  "name": "BoI Wiki Agent Loop - Model Agent Example",
+  "description": "BoI Agent Playground model-backed example. It performs real OpenAI-compatible inference while preserving Wiki, Ontology, Task, and save provenance.",
+  "endpoint_name": "boi-wiki-agent-loop-model-agent",
+  "data": {
+    "nodes": [
+      {
+        "data": {
+          "description": "Get chat inputs from the Playground.",
+          "display_name": "Chat Input",
+          "id": "ChatInput-boi-model-agent-loop",
+          "node": {
+            "base_classes": [
+              "Message"
+            ],
+            "beta": false,
+            "conditional_paths": [],
+            "custom_fields": {},
+            "description": "Get chat inputs from the Playground.",
+            "display_name": "BoI Event Input",
+            "documentation": "",
+            "edited": false,
+            "field_order": [
+              "input_value",
+              "store_message",
+              "sender",
+              "sender_name",
+              "session_id",
+              "files"
+            ],
+            "frozen": false,
+            "icon": "MessagesSquare",
+            "legacy": false,
+            "lf_version": "1.4.2",
+            "metadata": {},
+            "output_types": [],
+            "outputs": [
+              {
+                "allows_loop": false,
+                "cache": true,
+                "display_name": "Chat Message",
+                "group_outputs": false,
+                "method": "message_response",
+                "name": "message",
+                "selected": "Message",
+                "tool_mode": true,
+                "types": [
+                  "Message"
+                ],
+                "value": "__UNDEFINED__"
+              }
+            ],
+            "pinned": false,
+            "template": {
+              "_type": "Component",
+              "code": {
+                "advanced": true,
+                "dynamic": true,
+                "fileTypes": [],
+                "file_path": "",
+                "info": "",
+                "list": false,
+                "load_from_db": false,
+                "multiline": true,
+                "name": "code",
+                "password": false,
+                "placeholder": "",
+                "required": true,
+                "show": true,
+                "title_case": false,
+                "type": "code",
+                "value": "from langflow.base.data.utils import IMG_FILE_TYPES, TEXT_FILE_TYPES\nfrom langflow.base.io.chat import ChatComponent\nfrom langflow.inputs.inputs import BoolInput\nfrom langflow.io import (\n    DropdownInput,\n    FileInput,\n    MessageTextInput,\n    MultilineInput,\n    Output,\n)\nfrom langflow.schema.message import Message\nfrom langflow.utils.constants import (\n    MESSAGE_SENDER_AI,\n    MESSAGE_SENDER_NAME_USER,\n    MESSAGE_SENDER_USER,\n)\n\n\nclass ChatInput(ChatComponent):\n    display_name = \"Chat Input\"\n    description = \"Get chat inputs from the Playground.\"\n    documentation: str = \"https://docs.langflow.org/components-io#chat-input\"\n    icon = \"MessagesSquare\"\n    name = \"ChatInput\"\n    minimized = True\n\n    inputs = [\n        MultilineInput(\n            name=\"input_value\",\n            display_name=\"Input Text\",\n            value=\"\",\n            info=\"Message to be passed as input.\",\n            input_types=[],\n        ),\n        BoolInput(\n            name=\"should_store_message\",\n            display_name=\"Store Messages\",\n            info=\"Store the message in the history.\",\n            value=True,\n            advanced=True,\n        ),\n        DropdownInput(\n            name=\"sender\",\n            display_name=\"Sender Type\",\n            options=[MESSAGE_SENDER_AI, MESSAGE_SENDER_USER],\n            value=MESSAGE_SENDER_USER,\n            info=\"Type of sender.\",\n            advanced=True,\n        ),\n        MessageTextInput(\n            name=\"sender_name\",\n            display_name=\"Sender Name\",\n            info=\"Name of the sender.\",\n            value=MESSAGE_SENDER_NAME_USER,\n            advanced=True,\n        ),\n        MessageTextInput(\n            name=\"session_id\",\n            display_name=\"Session ID\",\n            info=\"The session ID of the chat. If empty, the current session ID parameter will be used.\",\n            advanced=True,\n        ),\n        FileInput(\n            name=\"files\",\n            display_name=\"Files\",\n            file_types=TEXT_FILE_TYPES + IMG_FILE_TYPES,\n            info=\"Files to be sent with the message.\",\n            advanced=True,\n            is_list=True,\n            temp_file=True,\n        ),\n    ]\n    outputs = [\n        Output(display_name=\"Chat Message\", name=\"message\", method=\"message_response\"),\n    ]\n\n    async def message_response(self) -> Message:\n        # Ensure files is a list and filter out empty/None values\n        files = self.files if self.files else []\n        if files and not isinstance(files, list):\n            files = [files]\n        files = [f for f in files if f is not None and f != \"\"]\n\n        message = await Message.create(\n            text=self.input_value,\n            sender=self.sender,\n            sender_name=self.sender_name,\n            session_id=self.session_id,\n            files=files,\n        )\n        if self.session_id and isinstance(message, Message) and self.should_store_message:\n            stored_message = await self.send_message(\n                message,\n            )\n            self.message.value = stored_message\n            message = stored_message\n\n        self.status = message\n        return message\n"
+              },
+              "files": {
+                "advanced": true,
+                "display_name": "Files",
+                "dynamic": false,
+                "fileTypes": [
+                  "csv",
+                  "json",
+                  "pdf",
+                  "txt",
+                  "md",
+                  "mdx",
+                  "yaml",
+                  "yml",
+                  "xml",
+                  "html",
+                  "htm",
+                  "docx",
+                  "py",
+                  "sh",
+                  "sql",
+                  "js",
+                  "ts",
+                  "tsx",
+                  "jpg",
+                  "jpeg",
+                  "png",
+                  "bmp",
+                  "image"
+                ],
+                "file_path": "",
+                "info": "Files to be sent with the message.",
+                "list": true,
+                "name": "files",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "temp_file": true,
+                "title_case": false,
+                "trace_as_metadata": true,
+                "type": "file",
+                "value": ""
+              },
+              "input_value": {
+                "advanced": false,
+                "display_name": "Input Text",
+                "dynamic": false,
+                "info": "Message to be passed as input.",
+                "input_types": [],
+                "list": false,
+                "load_from_db": false,
+                "multiline": true,
+                "name": "input_value",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": "Hello"
+              },
+              "sender": {
+                "advanced": true,
+                "display_name": "Sender Type",
+                "dynamic": false,
+                "info": "Type of sender.",
+                "name": "sender",
+                "options": [
+                  "Machine",
+                  "User"
+                ],
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": "User"
+              },
+              "sender_name": {
+                "advanced": true,
+                "display_name": "Sender Name",
+                "dynamic": false,
+                "info": "Name of the sender.",
+                "input_types": [
+                  "Message"
+                ],
+                "list": false,
+                "load_from_db": false,
+                "name": "sender_name",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": "User"
+              },
+              "session_id": {
+                "advanced": true,
+                "display_name": "Session ID",
+                "dynamic": false,
+                "info": "The session ID of the chat. If empty, the current session ID parameter will be used.",
+                "input_types": [
+                  "Message"
+                ],
+                "list": false,
+                "load_from_db": false,
+                "name": "session_id",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": ""
+              },
+              "should_store_message": {
+                "_input_type": "BoolInput",
+                "advanced": true,
+                "display_name": "Store Messages",
+                "dynamic": false,
+                "info": "Store the message in the history.",
+                "list": false,
+                "name": "should_store_message",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "trace_as_metadata": true,
+                "type": "bool",
+                "value": true
+              }
+            },
+            "id": "ChatInput-boi-model-agent-loop"
+          },
+          "selected_output": "message",
+          "type": "ChatInput"
+        },
+        "dragging": false,
+        "height": 234,
+        "id": "ChatInput-boi-model-agent-loop",
+        "measured": {
+          "height": 234,
+          "width": 320
+        },
+        "position": {
+          "x": 0,
+          "y": 160
+        },
+        "positionAbsolute": {
+          "x": 0,
+          "y": 160
+        },
+        "selected": false,
+        "type": "genericNode",
+        "width": 320
+      },
+      {
+        "id": "BoIWikiKnowledge-boi-model-agent-loop",
+        "type": "genericNode",
+        "position": {
+          "x": 400,
+          "y": 160
+        },
+        "positionAbsolute": {
+          "x": 400,
+          "y": 160
+        },
+        "dragging": false,
+        "selected": false,
+        "measured": {
+          "width": 320,
+          "height": 260
+        },
+        "width": 320,
+        "height": 260,
+        "data": {
+          "id": "BoIWikiKnowledge-boi-model-agent-loop",
+          "type": "ext:boi:BoIWikiKnowledge@extra",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "business_context": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "multiline": true,
+                "ai_enabled": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "business_context",
+                "value": "",
+                "display_name": "업무 맥락",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "copy_field": false,
+                "password": false,
+                "type": "str",
+                "_input_type": "MultilineInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "from __future__ import annotations\n\nimport json\nimport os\nfrom typing import Any\n\nfrom mcp import ClientSession\nfrom mcp.client.streamable_http import streamablehttp_client\n\nfrom lfx.custom import Component\nfrom lfx.io import IntInput, MessageInput, MultilineInput, Output\nfrom lfx.schema import Data\nfrom lfx.schema.message import Message\nfrom lfx.utils.secrets import unwrap_secret_value\n\n\ndef _decode_tool_result(result: Any) -> dict[str, Any]:\n    structured = getattr(result, \"structuredContent\", None) or getattr(result, \"structured_content\", None)\n    if isinstance(structured, dict):\n        return structured\n    for item in getattr(result, \"content\", []) or []:\n        text = getattr(item, \"text\", \"\")\n        if not text:\n            continue\n        try:\n            decoded = json.loads(text)\n        except json.JSONDecodeError:\n            continue\n        if isinstance(decoded, dict):\n            return decoded\n    return {}\n\n\nclass BoIWikiKnowledge(Component):\n    display_name = \"Wiki에서 지식 가져오기\"\n    description = \"Task·SOP 맥락을 자동 판별하고 ACL 내 Wiki 문서와 검증된 Ontology 관계를 함께 가져옵니다.\"\n    icon = \"book-open\"\n    name = \"BoIWikiKnowledge\"\n\n    inputs = [\n        MessageInput(name=\"question\", display_name=\"질문\", required=True),\n        MultilineInput(name=\"business_context\", display_name=\"업무 맥락\", required=False),\n        IntInput(name=\"limit\", display_name=\"검색 개수\", value=6, advanced=True),\n    ]\n    outputs = [\n        Output(name=\"knowledge\", display_name=\"근거가 포함된 지식\", method=\"load_knowledge\"),\n        Output(name=\"agent_context\", display_name=\"Agent 문맥\", method=\"build_agent_context\"),\n    ]\n\n    async def _credential(self) -> str:\n        try:\n            graph = getattr(self, \"graph\", None)\n            context = getattr(graph, \"context\", {}) if graph else {}\n            request_variables = context.get(\"request_variables\") if isinstance(context, dict) else {}\n            run_token = str((request_variables or {}).get(\"BOI_RUN_TOKEN\") or \"\").strip()\n        except Exception:\n            run_token = \"\"\n        if run_token:\n            return run_token\n        try:\n            value = await self.get_variables(\"BOI_WIKI_PAT\", \"value\")\n        except (TypeError, ValueError):\n            value = \"\"\n        raw_value = unwrap_secret_value(value)\n        if str(raw_value or \"\").strip():\n            return str(raw_value).strip()\n        raise ValueError(\"BoI 지식 연결이 없습니다. Agent Playground 온보딩을 먼저 완료하세요.\")\n\n    def _request_payload(self) -> dict[str, Any]:\n        value = self.question\n        if hasattr(value, \"text\"):\n            value = value.text\n        text = str(value or \"\").strip()\n        if not text:\n            return {}\n        try:\n            decoded = json.loads(text)\n        except json.JSONDecodeError:\n            return {\"question\": text}\n        if not isinstance(decoded, dict):\n            return {\"question\": text}\n        return decoded\n\n    @staticmethod\n    def _profile(request: dict[str, Any], business_context: str) -> str:\n        task_ref = str(request.get(\"task_ref\") or \"\").strip()\n        page_ref = str(request.get(\"page_ref\") or \"\").strip()\n        explicit_sop = any(\n            str(request.get(key) or \"\").strip()\n            for key in (\"sop_ref\", \"sop_stage\", \"stage_ref\", \"event_ref\", \"action_ref\")\n        )\n        combined = \" \".join(\n            [\n                business_context,\n                str(request.get(\"question\") or \"\"),\n                str(request.get(\"task_type\") or \"\"),\n            ]\n        ).lower()\n        if task_ref and (explicit_sop or \"sop\" in combined or \"표준작업\" in combined):\n            return \"sop_task_execution\"\n        if task_ref:\n            return \"task_execution\"\n        if page_ref or str(request.get(\"context_id\") or \"\").strip():\n            return \"wiki_context\"\n        return \"knowledge_lookup\"\n\n    @staticmethod\n    def _grounded_edges(graph: dict[str, Any], *, view: str, seed: str) -> list[dict[str, Any]]:\n        grounded: list[dict[str, Any]] = []\n        for edge in graph.get(\"edges\") or []:\n            if not isinstance(edge, dict):\n                continue\n            payload = edge.get(\"payload\") if isinstance(edge.get(\"payload\"), dict) else {}\n            provenance = str(payload.get(\"provenance\") or \"\")\n            metadata = payload.get(\"metadata\") if isinstance(payload.get(\"metadata\"), dict) else {}\n            source_refs = [\n                str(item)\n                for item in payload.get(\"source_refs\") or []\n                if str(item).strip()\n            ]\n            if metadata.get(\"source_ref\"):\n                source_refs.append(str(metadata[\"source_ref\"]))\n            source_refs = list(dict.fromkeys(source_refs))\n            if provenance in {\"\", \"inferred\", \"ambiguous\"} or not source_refs:\n                continue\n            grounded.append(\n                {\n                    \"edge_id\": str(edge.get(\"edge_id\") or \"\"),\n                    \"source_id\": str(edge.get(\"source_id\") or \"\"),\n                    \"target_id\": str(edge.get(\"target_id\") or \"\"),\n                    \"relation\": str(edge.get(\"user_label\") or payload.get(\"user_label\") or edge.get(\"relation\") or \"\"),\n                    \"provenance\": provenance,\n                    \"source_refs\": source_refs,\n                    \"view\": view,\n                    \"seed\": seed,\n                }\n            )\n        return grounded\n\n    async def _payload(self) -> dict[str, Any]:\n        request = self._request_payload()\n        cache_key = json.dumps(request, ensure_ascii=False, sort_keys=True, default=str)\n        if (\n            getattr(self, \"_boi_payload_cache_key\", \"\") == cache_key\n            and isinstance(getattr(self, \"_boi_payload_cache\", None), dict)\n        ):\n            return dict(self._boi_payload_cache)\n        question = str(request.get(\"question\") or \"\").strip()\n        if not question:\n            raise ValueError(\"질문이 필요합니다.\")\n        business_context = str(request.get(\"business_context\") or self.business_context or \"\").strip()\n        task_ref = str(request.get(\"task_ref\") or \"\").strip()\n        page_ref = str(request.get(\"page_ref\") or \"\").strip()\n        context_id = str(request.get(\"context_id\") or \"\").strip()\n        profile = self._profile(request, business_context)\n        token = await self._credential()\n        endpoint = os.getenv(\"BOI_WIKI_MCP_URL\", \"http://boi-wiki-mcp:8200/mcp/v2\")\n        graph_results: list[dict[str, Any]] = []\n        graph_errors: list[dict[str, str]] = []\n        details: list[dict[str, Any]] = []\n        context_pack: dict[str, Any] = {}\n        async with streamablehttp_client(\n            endpoint,\n            headers={\"Authorization\": f\"Bearer {token}\"},\n        ) as (read_stream, write_stream, _):\n            async with ClientSession(read_stream, write_stream) as session:\n                await session.initialize()\n\n                async def call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:\n                    return _decode_tool_result(await session.call_tool(tool_name, arguments))\n\n                if context_id:\n                    try:\n                        context_pack = await call(\"boi_context\", {\"context_id\": context_id})\n                    except Exception as exc:\n                        graph_errors.append({\"view\": \"context\", \"reason\": type(exc).__name__})\n                search = await call(\n                    \"boi_search\",\n                    {\n                        \"query\": question,\n                        \"include_history\": True,\n                        \"include_drafts\": False,\n                        \"limit\": max(1, min(int(self.limit or 6), 12)),\n                        \"page_ref\": page_ref,\n                        \"task_ref\": task_ref,\n                        \"view\": \"ranked\",\n                    },\n                )\n                items = [item for item in search.get(\"items\") or [] if isinstance(item, dict)]\n                seeds = list(\n                    dict.fromkeys(\n                        [\n                            *([task_ref] if task_ref else []),\n                            *[\n                                str(item.get(\"evidence_id\") or item.get(\"ref\") or \"\")\n                                for item in items\n                                if str(item.get(\"evidence_id\") or item.get(\"ref\") or \"\")\n                            ],\n                        ]\n                    )\n                )[:3]\n                views = {\n                    \"sop_task_execution\": [\"workflow\", \"responsibility\", \"lineage\", \"impact\"],\n                    \"task_execution\": [\"responsibility\", \"lineage\", \"impact\"],\n                    \"wiki_context\": [\"neighbors\", \"lineage\"],\n                    \"knowledge_lookup\": [\"neighbors\"],\n                }[profile]\n                for seed_index, seed in enumerate(seeds):\n                    selected_views = views if seed_index == 0 else views[:1]\n                    for view in selected_views:\n                        try:\n                            graph = await call(\n                                \"boi_search\",\n                                {\n                                    \"query\": question,\n                                    \"view\": view,\n                                    \"source_ref\": seed,\n                                    \"depth\": 2,\n                                    \"limit\": 40,\n                                },\n                            )\n                            graph_results.append({\"seed\": seed, \"view\": view, **graph})\n                        except Exception as exc:\n                            graph_errors.append({\"seed\": seed, \"view\": view, \"reason\": type(exc).__name__})\n                for item in items[:4]:\n                    ref = str(item.get(\"evidence_id\") or item.get(\"ref\") or \"\").strip()\n                    if not ref:\n                        continue\n                    try:\n                        details.append(await call(\"boi_get\", {\"ref\": ref}))\n                    except Exception:\n                        continue\n        source_references = [\n            {\n                \"ref\": str(item.get(\"evidence_id\") or item.get(\"ref\") or \"\"),\n                \"title\": str(item.get(\"title\") or \"\"),\n                \"url\": str(item.get(\"url\") or \"\"),\n                \"source\": str(item.get(\"source\") or item.get(\"authority\") or \"\"),\n            }\n            for item in items\n        ]\n        ontology_relationships: list[dict[str, Any]] = []\n        for graph in graph_results:\n            ontology_relationships.extend(\n                self._grounded_edges(\n                    graph,\n                    view=str(graph.get(\"view\") or \"\"),\n                    seed=str(graph.get(\"seed\") or \"\"),\n                )\n            )\n        ontology_relationships = list(\n            {\n                (\n                    item[\"source_id\"],\n                    item[\"relation\"],\n                    item[\"target_id\"],\n                    tuple(item[\"source_refs\"]),\n                ): item\n                for item in ontology_relationships\n            }.values()\n        )[:40]\n        denied_count = int(search.get(\"excluded_count\") or search.get(\"permission_excluded_count\") or 0)\n        if items and ontology_relationships:\n            grounding_status = \"grounded_with_ontology\"\n        elif items:\n            grounding_status = \"grounded_document_fallback\"\n        elif ontology_relationships:\n            grounding_status = \"grounded_ontology_only\"\n        else:\n            grounding_status = \"no_accessible_evidence\"\n        task_context = {\n            \"profile\": profile,\n            \"task_ref\": task_ref,\n            \"page_ref\": page_ref,\n            \"context_id\": context_id,\n            \"sop_ref\": str(request.get(\"sop_ref\") or \"\"),\n            \"sop_stage\": str(request.get(\"sop_stage\") or request.get(\"stage_ref\") or \"\"),\n            \"event_ref\": str(request.get(\"event_ref\") or \"\"),\n            \"action_ref\": str(request.get(\"action_ref\") or \"\"),\n            \"prior_results\": request.get(\"prior_results\") or [],\n            \"required_evidence\": request.get(\"required_evidence\") or [],\n            \"missing_evidence\": request.get(\"missing_evidence\") or [],\n        }\n        if profile != \"sop_task_execution\":\n            task_context[\"sop_ref\"] = \"\"\n            task_context[\"sop_stage\"] = \"\"\n            task_context[\"event_ref\"] = \"\"\n            task_context[\"action_ref\"] = \"\"\n        context_lines = [\n            f\"Context profile: {profile}\",\n            f\"질문: {question}\",\n            f\"업무 맥락: {business_context}\",\n            \"\",\n            \"BoI Wiki 근거:\",\n        ]\n        for index, item in enumerate(items, start=1):\n            context_lines.append(\n                f\"{index}. {item.get('title') or item.get('evidence_id')} — \"\n                f\"{item.get('summary') or item.get('description') or item.get('text') or ''}\"\n            )\n        if ontology_relationships:\n            context_lines.extend([\"\", \"검증된 Ontology 관계:\"])\n            for relation in ontology_relationships[:12]:\n                context_lines.append(\n                    f\"- {relation['source_id']} — {relation['relation']} → {relation['target_id']} \"\n                    f\"(근거: {', '.join(relation['source_refs'])})\"\n                )\n        elif graph_results:\n            context_lines.extend([\"\", \"검증 가능한 provenance가 없어 문서 근거로 대체했습니다.\"])\n        payload = {\n            \"question\": question,\n            \"business_context\": business_context,\n            \"context_profile\": profile,\n            \"task_context\": task_context,\n            \"save_mode\": \"private_draft\" if request.get(\"save_mode\") == \"private_draft\" else \"preview\",\n            \"title\": str(request.get(\"title\") or \"Agent Playground 개인 초안\").strip(),\n            \"trace_id\": str(request.get(\"trace_id\") or \"\").strip(),\n            \"context\": \"\\n\".join(context_lines).strip(),\n            \"document_ids\": [item[\"ref\"] for item in source_references if item[\"ref\"]],\n            \"source_references\": source_references,\n            \"ontology_relationships\": ontology_relationships,\n            \"grounding_status\": grounding_status,\n            \"permission_excluded_count\": denied_count,\n            \"search\": {\n                \"mode\": search.get(\"mode\"),\n                \"degraded\": search.get(\"degraded\") or [],\n                \"index_manifest\": search.get(\"index_manifest\") or {},\n            },\n            \"ontology\": {\n                \"attempted\": bool(graph_results or graph_errors),\n                \"grounded_relationship_count\": len(ontology_relationships),\n                \"degraded\": graph_errors,\n                \"document_fallback\": bool(items and not ontology_relationships),\n            },\n            \"context_pack\": context_pack,\n            \"details\": details,\n            \"provenance\": {\n                \"document_refs\": [item[\"ref\"] for item in source_references if item[\"ref\"]],\n                \"ontology_source_refs\": list(\n                    dict.fromkeys(\n                        ref\n                        for relation in ontology_relationships\n                        for ref in relation[\"source_refs\"]\n                    )\n                ),\n            },\n        }\n        self._boi_payload_cache_key = cache_key\n        self._boi_payload_cache = dict(payload)\n        return payload\n\n    async def load_knowledge(self) -> Data:\n        return Data(data=await self._payload())\n\n    async def build_agent_context(self) -> Message:\n        payload = await self._payload()\n        return Message(text=payload[\"context\"], data=payload)\n",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "limit": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "limit",
+                "value": 6,
+                "display_name": "검색 개수",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "type": "int",
+                "_input_type": "IntInput"
+              },
+              "question": {
+                "trace_as_input": true,
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "question",
+                "value": "",
+                "display_name": "질문",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "MessageInput"
+              }
+            },
+            "description": "Task·SOP 맥락을 자동 판별하고 ACL 내 Wiki 문서와 검증된 Ontology 관계를 함께 가져옵니다.",
+            "icon": "book-open",
+            "base_classes": [
+              "JSON",
+              "Message"
+            ],
+            "display_name": "Wiki에서 지식 가져오기",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "knowledge",
+                "display_name": "근거가 포함된 지식",
+                "method": "load_knowledge",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "allows_loop": false,
+                "group_outputs": false,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "Message"
+                ],
+                "selected": "Message",
+                "name": "agent_context",
+                "display_name": "Agent 문맥",
+                "method": "build_agent_context",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "allows_loop": false,
+                "group_outputs": false,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "question",
+              "business_context",
+              "limit"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": false,
+            "metadata": {
+              "module": "_lfx_ext.extra.boi.boi_wiki_knowledge",
+              "code_hash": "57343c63cf09",
+              "dependencies": {
+                "total_dependencies": 2,
+                "dependencies": [
+                  {
+                    "name": "mcp",
+                    "version": "1.28.1"
+                  },
+                  {
+                    "name": "lfx",
+                    "version": "1.11.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "extension": "boi",
+            "bundle": "boi",
+            "extension_version": "0.0.0",
+            "namespaced_id": "ext:boi:BoIWikiKnowledge@extra",
+            "name": "BoIWikiKnowledge",
+            "id": "BoIWikiKnowledge-boi-model-agent-loop"
+          },
+          "display_name": "Wiki에서 지식 가져오기",
+          "description": "Task·SOP 맥락을 자동 판별하고 ACL 내 Wiki 문서와 검증된 Ontology 관계를 함께 가져옵니다.",
+          "selected_output": "knowledge",
+          "showNode": true
+        }
+      },
+      {
+        "id": "BoIModelAgent-boi-model-agent-loop",
+        "type": "genericNode",
+        "position": {
+          "x": 820,
+          "y": 160
+        },
+        "positionAbsolute": {
+          "x": 820,
+          "y": 160
+        },
+        "dragging": false,
+        "selected": false,
+        "measured": {
+          "width": 320,
+          "height": 260
+        },
+        "width": 320,
+        "height": 260,
+        "data": {
+          "id": "BoIModelAgent-boi-model-agent-loop",
+          "type": "ext:boi:BoIModelAgent@extra",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "knowledge": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "knowledge",
+                "value": "",
+                "display_name": "Wiki 근거",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "from __future__ import annotations\n\nimport json\nimport os\nimport time\nfrom typing import Any\n\nimport httpx\n\nfrom lfx.custom import Component\nfrom lfx.io import DataInput, MultilineInput, Output\nfrom lfx.schema import Data\nfrom lfx.utils.secrets import unwrap_secret_value\n\n\nclass BoIModelAgent(Component):\n    display_name = \"실제 모델 Agent 예제\"\n    description = (\n        \"OpenAI-compatible 모델을 실제 호출하고 Wiki·Ontology·Task provenance를 \"\n        \"손실 없이 다음 단계로 전달합니다.\"\n    )\n    icon = \"brain\"\n    name = \"BoIModelAgent\"\n\n    inputs = [\n        DataInput(name=\"knowledge\", display_name=\"Wiki 근거\", required=True),\n        MultilineInput(\n            name=\"instructions\",\n            display_name=\"Agent 지시\",\n            value=(\n                \"제공된 근거만 사용해 사용자의 질문에 답하세요. 근거가 부족하면 부족한 점을 \"\n                \"명시하고, source reference 식별자는 답변에서 임의로 바꾸지 마세요.\"\n            ),\n            advanced=True,\n        ),\n    ]\n    outputs = [Output(name=\"agent_result\", display_name=\"실제 모델 Agent 결과\", method=\"run_agent\")]\n\n    async def _variable(self, name: str) -> str:\n        try:\n            value = await self.get_variables(name, \"value\")\n        except (TypeError, ValueError):\n            value = \"\"\n        return str(unwrap_secret_value(value) or \"\").strip()\n\n    async def _configuration(self) -> tuple[str, str, str]:\n        base_url = (\n            await self._variable(\"BOI_LLM_BASE_URL\")\n            or os.getenv(\"BOI_LLM_BASE_URL\", \"\")\n        ).strip()\n        model = (\n            await self._variable(\"BOI_AGENT_EXAMPLE_MODEL\")\n            or os.getenv(\"BOI_AGENT_EXAMPLE_MODEL\", \"\")\n            or os.getenv(\"BOI_LLM_MODEL\", \"\")\n            or \"google/gemma-4-26b-a4b-qat\"\n        ).strip()\n        api_key = (\n            await self._variable(\"BOI_LLM_API_KEY\")\n            or os.getenv(\"BOI_LLM_API_KEY\", \"\")\n        ).strip()\n        if not base_url:\n            raise ValueError(\n                \"BOI_LLM_BASE_URL이 없습니다. Langflow Credential/Global Variable로 모델 연결을 준비하세요.\"\n            )\n        return base_url.rstrip(\"/\"), model, api_key\n\n    @staticmethod\n    def _chat_completions_url(base_url: str) -> str:\n        if base_url.endswith(\"/v1\"):\n            return f\"{base_url}/chat/completions\"\n        return f\"{base_url}/v1/chat/completions\"\n\n    async def run_agent(self) -> Data:\n        payload: dict[str, Any] = dict(getattr(self.knowledge, \"data\", {}) or {})\n        base_url, model, api_key = await self._configuration()\n        question = str(payload.get(\"question\") or \"\").strip()\n        context = str(payload.get(\"context\") or \"\").strip()\n        source_references = [\n            item for item in payload.get(\"source_references\") or [] if isinstance(item, dict)\n        ]\n        ontology_relationships = [\n            item\n            for item in payload.get(\"ontology_relationships\") or []\n            if isinstance(item, dict)\n        ]\n        prompt_context = {\n            \"question\": question,\n            \"business_context\": payload.get(\"business_context\") or \"\",\n            \"context_profile\": payload.get(\"context_profile\") or \"knowledge_lookup\",\n            \"task_context\": (\n                payload.get(\"task_context\")\n                if isinstance(payload.get(\"task_context\"), dict)\n                else {}\n            ),\n            \"grounding_status\": payload.get(\"grounding_status\") or \"no_accessible_evidence\",\n            \"wiki_context\": context,\n            \"source_references\": source_references,\n            \"ontology_relationships\": ontology_relationships,\n        }\n        headers = {\"Content-Type\": \"application/json\"}\n        if api_key and api_key not in {\"not-needed\", \"none\"}:\n            headers[\"Authorization\"] = f\"Bearer {api_key}\"\n        request_body = {\n            \"model\": model,\n            \"messages\": [\n                {\"role\": \"system\", \"content\": str(self.instructions or \"\").strip()},\n                {\n                    \"role\": \"user\",\n                    \"content\": json.dumps(prompt_context, ensure_ascii=False, default=str),\n                },\n            ],\n            \"temperature\": 0.1,\n        }\n        started = time.monotonic()\n        async with httpx.AsyncClient(timeout=180) as client:\n            response = await client.post(\n                self._chat_completions_url(base_url),\n                headers=headers,\n                json=request_body,\n            )\n        response.raise_for_status()\n        decoded = response.json()\n        choices = decoded.get(\"choices\") if isinstance(decoded, dict) else []\n        first = choices[0] if isinstance(choices, list) and choices else {}\n        message = first.get(\"message\") if isinstance(first, dict) else {}\n        answer = str((message or {}).get(\"content\") or \"\").strip()\n        if not answer:\n            raise ValueError(\"OpenAI-compatible model response did not include message.content\")\n        elapsed_ms = round((time.monotonic() - started) * 1000, 1)\n        provenance = (\n            dict(payload.get(\"provenance\"))\n            if isinstance(payload.get(\"provenance\"), dict)\n            else {}\n        )\n        model_trace = {\n            \"provider\": \"openai-compatible\",\n            \"model\": str(decoded.get(\"model\") or model),\n            \"response_id\": str(decoded.get(\"id\") or \"\"),\n            \"latency_ms\": elapsed_ms,\n            \"usage\": decoded.get(\"usage\") if isinstance(decoded.get(\"usage\"), dict) else {},\n            \"real_inference\": True,\n        }\n        provenance[\"model_agent\"] = model_trace\n        return Data(\n            data={\n                \"answer\": answer,\n                \"question\": question,\n                \"business_context\": payload.get(\"business_context\") or \"\",\n                \"save_mode\": payload.get(\"save_mode\") or \"preview\",\n                \"title\": payload.get(\"title\") or \"Agent Playground 개인 초안\",\n                \"trace_id\": payload.get(\"trace_id\") or \"\",\n                \"context_profile\": payload.get(\"context_profile\") or \"knowledge_lookup\",\n                \"task_context\": (\n                    payload.get(\"task_context\")\n                    if isinstance(payload.get(\"task_context\"), dict)\n                    else {}\n                ),\n                \"source_references\": source_references,\n                \"ontology_relationships\": ontology_relationships,\n                \"grounding_status\": payload.get(\"grounding_status\") or \"no_accessible_evidence\",\n                \"permission_excluded_count\": int(payload.get(\"permission_excluded_count\") or 0),\n                \"provenance\": provenance,\n                \"agent_slot\": self.__class__.__name__,\n                \"model_trace\": model_trace,\n            }\n        )\n",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "instructions": {
+                "tool_mode": false,
+                "trace_as_input": true,
+                "multiline": true,
+                "ai_enabled": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "instructions",
+                "value": "제공된 근거만 사용해 사용자의 질문에 답하세요. 근거가 부족하면 부족한 점을 명시하고, source reference 식별자는 답변에서 임의로 바꾸지 마세요.",
+                "display_name": "Agent 지시",
+                "advanced": true,
+                "api_editable": false,
+                "input_types": [
+                  "Message"
+                ],
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "copy_field": false,
+                "password": false,
+                "type": "str",
+                "_input_type": "MultilineInput"
+              }
+            },
+            "description": "OpenAI-compatible 모델을 실제 호출하고 Wiki·Ontology·Task provenance를 손실 없이 다음 단계로 전달합니다.",
+            "icon": "brain",
+            "base_classes": [
+              "JSON"
+            ],
+            "display_name": "실제 모델 Agent 예제",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "agent_result",
+                "display_name": "실제 모델 Agent 결과",
+                "method": "run_agent",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "allows_loop": false,
+                "group_outputs": false,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "knowledge",
+              "instructions"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": false,
+            "metadata": {
+              "module": "_lfx_ext.extra.boi.boi_model_agent",
+              "code_hash": "1170c4165388",
+              "dependencies": {
+                "total_dependencies": 2,
+                "dependencies": [
+                  {
+                    "name": "httpx",
+                    "version": "0.28.1"
+                  },
+                  {
+                    "name": "lfx",
+                    "version": "1.11.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "extension": "boi",
+            "bundle": "boi",
+            "extension_version": "0.0.0",
+            "namespaced_id": "ext:boi:BoIModelAgent@extra",
+            "name": "BoIModelAgent",
+            "id": "BoIModelAgent-boi-model-agent-loop"
+          },
+          "display_name": "model_agent",
+          "description": "OpenAI-compatible 모델을 실제 호출하고 Wiki·Ontology·Task provenance를 손실 없이 다음 단계로 전달합니다.",
+          "selected_output": "agent_result",
+          "showNode": true
+        }
+      },
+      {
+        "id": "BoIWikiSave-boi-model-agent-loop",
+        "type": "genericNode",
+        "position": {
+          "x": 1240,
+          "y": 160
+        },
+        "positionAbsolute": {
+          "x": 1240,
+          "y": 160
+        },
+        "dragging": false,
+        "selected": false,
+        "measured": {
+          "width": 320,
+          "height": 260
+        },
+        "width": 320,
+        "height": 260,
+        "data": {
+          "id": "BoIWikiSave-boi-model-agent-loop",
+          "type": "ext:boi:BoIWikiSave@extra",
+          "node": {
+            "template": {
+              "_type": "Component",
+              "agent_result": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "list": false,
+                "list_add_label": "Add More",
+                "trace_as_input": true,
+                "override_skip": false,
+                "required": true,
+                "placeholder": "",
+                "show": true,
+                "name": "agent_result",
+                "value": "",
+                "display_name": "Agent 결과",
+                "advanced": false,
+                "api_editable": false,
+                "input_types": [
+                  "Data",
+                  "JSON"
+                ],
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "other",
+                "_input_type": "JSONInput"
+              },
+              "code": {
+                "type": "code",
+                "required": true,
+                "placeholder": "",
+                "list": false,
+                "show": true,
+                "multiline": true,
+                "value": "from __future__ import annotations\n\nimport json\nimport os\nimport re\nfrom datetime import datetime, timezone\nfrom typing import Any\n\nfrom mcp import ClientSession\nfrom mcp.client.streamable_http import streamablehttp_client\n\nfrom lfx.custom import Component\nfrom lfx.io import DataInput, DropdownInput, Output, StrInput\nfrom lfx.schema import Data\nfrom lfx.schema.message import Message\nfrom lfx.utils.secrets import unwrap_secret_value\n\n\nSECRET_VALUE = re.compile(r\"(?:boi_(?:pat|run)_[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]{16,})\")\n\n\ndef _decode_tool_result(result: Any) -> dict[str, Any]:\n    structured = getattr(result, \"structuredContent\", None) or getattr(result, \"structured_content\", None)\n    if isinstance(structured, dict):\n        return structured\n    for item in getattr(result, \"content\", []) or []:\n        text = getattr(item, \"text\", \"\")\n        if not text:\n            continue\n        try:\n            decoded = json.loads(text)\n        except json.JSONDecodeError:\n            continue\n        if isinstance(decoded, dict):\n            return decoded\n    return {}\n\n\ndef _redact(value: Any) -> Any:\n    if isinstance(value, str):\n        return SECRET_VALUE.sub(\"[REDACTED]\", value)\n    if isinstance(value, dict):\n        return {str(key): _redact(item) for key, item in value.items() if str(key).lower() not in {\"api_key\", \"pat\", \"token\", \"service_token\"}}\n    if isinstance(value, list):\n        return [_redact(item) for item in value]\n    return value\n\n\nclass BoIWikiSave(Component):\n    display_name = \"Wiki에 지식 저장하기\"\n    description = \"Agent 결과를 미리 보거나 현재 사용자의 private Wiki 초안으로만 저장합니다.\"\n    icon = \"save\"\n    name = \"BoIWikiSave\"\n\n    inputs = [\n        DataInput(name=\"agent_result\", display_name=\"Agent 결과\", required=True),\n        StrInput(name=\"title\", display_name=\"제목\", value=\"Agent Playground 개인 초안\"),\n        DropdownInput(\n            name=\"save_mode\",\n            display_name=\"저장 방식\",\n            options=[\"preview\", \"private_draft\"],\n            value=\"preview\",\n        ),\n        StrInput(name=\"flow_id\", display_name=\"Flow ID\", value=\"boi-wiki-agent-loop\", advanced=True),\n    ]\n    outputs = [\n        Output(name=\"save_result\", display_name=\"저장 결과\", method=\"save\"),\n        Output(name=\"message\", display_name=\"최종 출력\", method=\"build_message\"),\n    ]\n\n    async def _credential(self) -> str:\n        try:\n            graph = getattr(self, \"graph\", None)\n            context = getattr(graph, \"context\", {}) if graph else {}\n            request_variables = context.get(\"request_variables\") if isinstance(context, dict) else {}\n            run_token = str((request_variables or {}).get(\"BOI_RUN_TOKEN\") or \"\").strip()\n        except Exception:\n            run_token = \"\"\n        if run_token:\n            return run_token\n        try:\n            value = await self.get_variables(\"BOI_WIKI_PAT\", \"value\")\n        except (TypeError, ValueError):\n            value = \"\"\n        raw_value = unwrap_secret_value(value)\n        if str(raw_value or \"\").strip():\n            return str(raw_value).strip()\n        raise ValueError(\"BoI 지식 연결이 없습니다. Agent Playground 온보딩을 먼저 완료하세요.\")\n\n    async def _call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:\n        token = await self._credential()\n        endpoint = os.getenv(\"BOI_WIKI_MCP_URL\", \"http://boi-wiki-mcp:8200/mcp/v2\")\n        async with streamablehttp_client(\n            endpoint,\n            headers={\"Authorization\": f\"Bearer {token}\"},\n        ) as (read_stream, write_stream, _):\n            async with ClientSession(read_stream, write_stream) as session:\n                await session.initialize()\n                result = await session.call_tool(tool_name, arguments)\n        return _decode_tool_result(result)\n\n    def _agent_payload(self) -> dict[str, Any]:\n        return _redact(dict(getattr(self.agent_result, \"data\", {}) or {}))\n\n    async def _result(self) -> dict[str, Any]:\n        payload = self._agent_payload()\n        cache_key = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)\n        if (\n            getattr(self, \"_boi_save_cache_key\", \"\") == cache_key\n            and isinstance(getattr(self, \"_boi_save_cache\", None), dict)\n        ):\n            return dict(self._boi_save_cache)\n        sources = [item for item in payload.get(\"source_references\") or [] if isinstance(item, dict)]\n        ontology_relationships = [\n            item\n            for item in payload.get(\"ontology_relationships\") or []\n            if isinstance(item, dict)\n        ]\n        requested_mode = \"private_draft\" if payload.get(\"save_mode\") == \"private_draft\" else \"preview\"\n        requested_title = str(payload.get(\"title\") or self.title or \"Agent Playground 개인 초안\").strip()\n        agent_provenance = (\n            payload.get(\"provenance\")\n            if isinstance(payload.get(\"provenance\"), dict)\n            else {}\n        )\n        model_trace = (\n            agent_provenance.get(\"model_agent\")\n            if isinstance(agent_provenance.get(\"model_agent\"), dict)\n            else payload.get(\"model_trace\")\n            if isinstance(payload.get(\"model_trace\"), dict)\n            else {}\n        )\n        trace = {\n            \"flow_id\": str(self.flow_id or \"boi-wiki-agent-loop\"),\n            \"trace_id\": str(payload.get(\"trace_id\") or \"\"),\n            \"generated_at\": datetime.now(timezone.utc).isoformat(),\n            \"source_references\": sources,\n            \"ontology_relationships\": ontology_relationships,\n            \"knowledge_provenance\": agent_provenance,\n            \"task_context\": payload.get(\"task_context\") if isinstance(payload.get(\"task_context\"), dict) else {},\n            \"agent_slot\": payload.get(\"agent_slot\") or \"\",\n        }\n        if model_trace:\n            trace[\"model_agent\"] = model_trace\n        candidate = {\n            \"status\": \"preview\",\n            \"mode\": \"preview\",\n            \"title\": requested_title,\n            \"answer\": str(payload.get(\"answer\") or \"\"),\n            \"source_references\": sources,\n            \"ontology_relationships\": ontology_relationships,\n            \"task_context\": payload.get(\"task_context\") if isinstance(payload.get(\"task_context\"), dict) else {},\n            \"grounding_status\": payload.get(\"grounding_status\") or \"unknown\",\n            \"draft_reference\": \"\",\n            \"wiki_url\": \"\",\n            \"provenance\": trace,\n            \"production_changed\": False,\n        }\n        if requested_mode != \"private_draft\":\n            self._boi_save_cache_key = cache_key\n            self._boi_save_cache = dict(candidate)\n            return candidate\n        token = await self._credential()\n        endpoint = os.getenv(\"BOI_WIKI_MCP_URL\", \"http://boi-wiki-mcp:8200/mcp/v2\")\n        async with streamablehttp_client(\n            endpoint,\n            headers={\"Authorization\": f\"Bearer {token}\"},\n        ) as (read_stream, write_stream, _):\n            async with ClientSession(read_stream, write_stream) as session:\n                await session.initialize()\n\n                async def call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:\n                    return _decode_tool_result(await session.call_tool(tool_name, arguments))\n\n                plan = await call(\n                    \"boi_plan\",\n                    {\n                        \"capability_id\": \"knowledge.draft\",\n                        \"goal\": f\"{candidate['title']}\\n\\n{candidate['answer']}\",\n                        \"page_ref\": \"/playground\",\n                        \"input\": {\n                            \"structured_private_draft\": True,\n                            \"title\": candidate[\"title\"],\n                            \"body\": candidate[\"answer\"],\n                            \"summary\": candidate[\"answer\"][:500],\n                            \"source_refs\": sources,\n                            \"ontology_relationships\": ontology_relationships,\n                            \"task_context\": candidate[\"task_context\"],\n                            \"visibility\": \"private\",\n                            \"provenance\": trace,\n                        },\n                    },\n                )\n                plan_id = str(plan.get(\"plan_id\") or plan.get(\"plan_ref\") or \"\")\n                if not plan_id:\n                    for item in plan.get(\"offers\") or []:\n                        if isinstance(item, dict) and item.get(\"plan_id\"):\n                            plan_id = str(item[\"plan_id\"])\n                            break\n                if not plan_id:\n                    raise ValueError(\"BoI knowledge.draft plan did not return a plan_id\")\n                confirmed = await call(\n                    \"boi_confirm\",\n                    {\n                        \"plan_id\": plan_id,\n                        \"reason\": \"Agent Playground에서 private_draft 저장 방식을 명시적으로 선택했습니다.\",\n                    },\n                )\n        draft_reference = str(\n            confirmed.get(\"domain_ref\")\n            or confirmed.get(\"artifact_id\")\n            or confirmed.get(\"candidate_id\")\n            or plan.get(\"draft_reference\")\n            or plan_id\n        )\n        result = _redact(\n            {\n                **candidate,\n                \"status\": \"saved\",\n                \"mode\": \"private_draft\",\n                \"draft_reference\": draft_reference,\n                \"wiki_url\": str(\n                    confirmed.get(\"wiki_url\")\n                    or confirmed.get(\"url\")\n                    or plan.get(\"wiki_url\")\n                    or \"\"\n                ),\n                \"provenance\": {**trace, \"plan_id\": plan_id},\n                \"production_changed\": True,\n                \"confirmation\": confirmed,\n            }\n        )\n        self._boi_save_cache_key = cache_key\n        self._boi_save_cache = dict(result)\n        return result\n\n    async def save(self) -> Data:\n        return Data(data=await self._result())\n\n    async def build_message(self) -> Message:\n        result = await self._result()\n        text = str(result.get(\"answer\") or \"\")\n        if result.get(\"mode\") == \"private_draft\":\n            text += f\"\\n\\n개인 Wiki 초안: {result.get('draft_reference') or '저장됨'}\"\n        else:\n            text += \"\\n\\n미리보기만 수행했습니다. Wiki는 변경하지 않았습니다.\"\n        return Message(text=text.strip(), data=result)\n",
+                "fileTypes": [],
+                "file_path": "",
+                "password": false,
+                "name": "code",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": true,
+                "info": "",
+                "load_from_db": false,
+                "title_case": false
+              },
+              "flow_id": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "flow_id",
+                "value": "boi-wiki-agent-loop-model-agent",
+                "display_name": "Flow ID",
+                "advanced": true,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              },
+              "save_mode": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "options": [
+                  "preview",
+                  "private_draft"
+                ],
+                "options_metadata": [],
+                "combobox": false,
+                "dialog_inputs": {},
+                "toggle": false,
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "save_mode",
+                "value": "preview",
+                "display_name": "저장 방식",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": true,
+                "external_options": {},
+                "type": "str",
+                "_input_type": "DropdownInput"
+              },
+              "title": {
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "load_from_db": false,
+                "list": false,
+                "list_add_label": "Add More",
+                "override_skip": false,
+                "required": false,
+                "placeholder": "",
+                "show": true,
+                "name": "title",
+                "value": "Agent Playground 모델 Agent 개인 초안",
+                "display_name": "제목",
+                "advanced": false,
+                "api_editable": false,
+                "dynamic": false,
+                "info": "",
+                "title_case": false,
+                "track_in_telemetry": false,
+                "type": "str",
+                "_input_type": "StrInput"
+              }
+            },
+            "description": "Agent 결과를 미리 보거나 현재 사용자의 private Wiki 초안으로만 저장합니다.",
+            "icon": "save",
+            "base_classes": [
+              "JSON",
+              "Message"
+            ],
+            "display_name": "Wiki에 지식 저장하기",
+            "documentation": "",
+            "minimized": false,
+            "custom_fields": {},
+            "output_types": [],
+            "pinned": false,
+            "conditional_paths": [],
+            "frozen": false,
+            "outputs": [
+              {
+                "types": [
+                  "JSON"
+                ],
+                "selected": "JSON",
+                "name": "save_result",
+                "display_name": "저장 결과",
+                "method": "save",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "allows_loop": false,
+                "group_outputs": false,
+                "tool_mode": true
+              },
+              {
+                "types": [
+                  "Message"
+                ],
+                "selected": "Message",
+                "name": "message",
+                "display_name": "최종 출력",
+                "method": "build_message",
+                "value": "__UNDEFINED__",
+                "cache": true,
+                "allows_loop": false,
+                "group_outputs": false,
+                "tool_mode": true
+              }
+            ],
+            "field_order": [
+              "agent_result",
+              "title",
+              "save_mode",
+              "flow_id"
+            ],
+            "beta": false,
+            "legacy": false,
+            "edited": false,
+            "metadata": {
+              "module": "_lfx_ext.extra.boi.boi_wiki_save",
+              "code_hash": "2bba573c39b7",
+              "dependencies": {
+                "total_dependencies": 2,
+                "dependencies": [
+                  {
+                    "name": "mcp",
+                    "version": "1.28.1"
+                  },
+                  {
+                    "name": "lfx",
+                    "version": "1.11.0"
+                  }
+                ]
+              }
+            },
+            "tool_mode": false,
+            "extension": "boi",
+            "bundle": "boi",
+            "extension_version": "0.0.0",
+            "namespaced_id": "ext:boi:BoIWikiSave@extra",
+            "name": "BoIWikiSave",
+            "id": "BoIWikiSave-boi-model-agent-loop"
+          },
+          "display_name": "Wiki에 지식 저장하기",
+          "description": "Agent 결과를 미리 보거나 현재 사용자의 private Wiki 초안으로만 저장합니다.",
+          "selected_output": "save_result",
+          "showNode": true
+        }
+      },
+      {
+        "data": {
+          "id": "ChatOutput-boi-model-agent-loop",
+          "node": {
+            "base_classes": [
+              "Message"
+            ],
+            "beta": false,
+            "conditional_paths": [],
+            "custom_fields": {},
+            "description": "Display a chat message in the Playground.",
+            "display_name": "BoI Draft Output",
+            "documentation": "",
+            "edited": false,
+            "field_order": [
+              "input_value",
+              "should_store_message",
+              "sender",
+              "sender_name",
+              "session_id",
+              "data_template",
+              "background_color",
+              "chat_icon",
+              "text_color"
+            ],
+            "frozen": false,
+            "icon": "MessagesSquare",
+            "legacy": false,
+            "lf_version": "1.4.2",
+            "metadata": {},
+            "output_types": [],
+            "outputs": [
+              {
+                "allows_loop": false,
+                "cache": true,
+                "display_name": "Output Message",
+                "group_outputs": false,
+                "method": "message_response",
+                "name": "message",
+                "selected": "Message",
+                "tool_mode": true,
+                "types": [
+                  "Message"
+                ],
+                "value": "__UNDEFINED__"
+              }
+            ],
+            "pinned": false,
+            "template": {
+              "_type": "Component",
+              "code": {
+                "advanced": true,
+                "dynamic": true,
+                "fileTypes": [],
+                "file_path": "",
+                "info": "",
+                "list": false,
+                "load_from_db": false,
+                "multiline": true,
+                "name": "code",
+                "password": false,
+                "placeholder": "",
+                "required": true,
+                "show": true,
+                "title_case": false,
+                "type": "code",
+                "value": "from collections.abc import Generator\nfrom typing import Any\n\nimport orjson\nfrom fastapi.encoders import jsonable_encoder\n\nfrom langflow.base.io.chat import ChatComponent\nfrom langflow.helpers.data import safe_convert\nfrom langflow.inputs.inputs import BoolInput, DropdownInput, HandleInput, MessageTextInput\nfrom langflow.schema.data import Data\nfrom langflow.schema.dataframe import DataFrame\nfrom langflow.schema.message import Message\nfrom langflow.schema.properties import Source\nfrom langflow.template.field.base import Output\nfrom langflow.utils.constants import (\n    MESSAGE_SENDER_AI,\n    MESSAGE_SENDER_NAME_AI,\n    MESSAGE_SENDER_USER,\n)\n\n\nclass ChatOutput(ChatComponent):\n    display_name = \"Chat Output\"\n    description = \"Display a chat message in the Playground.\"\n    documentation: str = \"https://docs.langflow.org/components-io#chat-output\"\n    icon = \"MessagesSquare\"\n    name = \"ChatOutput\"\n    minimized = True\n\n    inputs = [\n        HandleInput(\n            name=\"input_value\",\n            display_name=\"Inputs\",\n            info=\"Message to be passed as output.\",\n            input_types=[\"Data\", \"DataFrame\", \"Message\"],\n            required=True,\n        ),\n        BoolInput(\n            name=\"should_store_message\",\n            display_name=\"Store Messages\",\n            info=\"Store the message in the history.\",\n            value=True,\n            advanced=True,\n        ),\n        DropdownInput(\n            name=\"sender\",\n            display_name=\"Sender Type\",\n            options=[MESSAGE_SENDER_AI, MESSAGE_SENDER_USER],\n            value=MESSAGE_SENDER_AI,\n            advanced=True,\n            info=\"Type of sender.\",\n        ),\n        MessageTextInput(\n            name=\"sender_name\",\n            display_name=\"Sender Name\",\n            info=\"Name of the sender.\",\n            value=MESSAGE_SENDER_NAME_AI,\n            advanced=True,\n        ),\n        MessageTextInput(\n            name=\"session_id\",\n            display_name=\"Session ID\",\n            info=\"The session ID of the chat. If empty, the current session ID parameter will be used.\",\n            advanced=True,\n        ),\n        MessageTextInput(\n            name=\"data_template\",\n            display_name=\"Data Template\",\n            value=\"{text}\",\n            advanced=True,\n            info=\"Template to convert Data to Text. If left empty, it will be dynamically set to the Data's text key.\",\n        ),\n    ]\n    outputs = [\n        Output(\n            display_name=\"Output Message\",\n            name=\"message\",\n            method=\"message_response\",\n        ),\n    ]\n\n    def _build_source(self, id_: str | None, display_name: str | None, source: str | None) -> Source:\n        source_dict = {}\n        if id_:\n            source_dict[\"id\"] = id_\n        if display_name:\n            source_dict[\"display_name\"] = display_name\n        if source:\n            # Handle case where source is a ChatOpenAI object\n            if hasattr(source, \"model_name\"):\n                source_dict[\"source\"] = source.model_name\n            elif hasattr(source, \"model\"):\n                source_dict[\"source\"] = str(source.model)\n            else:\n                source_dict[\"source\"] = str(source)\n        return Source(**source_dict)\n\n    async def message_response(self) -> Message:\n        # First convert the input to string if needed\n        text = self.convert_to_string()\n\n        # Get source properties\n        source, _icon, display_name, source_id = self.get_properties_from_source_component()\n\n        # Create or use existing Message object\n        if isinstance(self.input_value, Message):\n            message = self.input_value\n            # Update message properties\n            message.text = text\n        else:\n            message = Message(text=text)\n\n        # Set message properties\n        message.sender = self.sender\n        message.sender_name = self.sender_name\n        message.session_id = self.session_id\n        message.flow_id = self.graph.flow_id if hasattr(self, \"graph\") else None\n        message.properties.source = self._build_source(source_id, display_name, source)\n\n        # Store message if needed\n        if self.session_id and self.should_store_message:\n            stored_message = await self.send_message(message)\n            self.message.value = stored_message\n            message = stored_message\n\n        self.status = message\n        return message\n\n    def _serialize_data(self, data: Data) -> str:\n        \"\"\"Serialize Data object to JSON string.\"\"\"\n        # Convert data.data to JSON-serializable format\n        serializable_data = jsonable_encoder(data.data)\n        # Serialize with orjson, enabling pretty printing with indentation\n        json_bytes = orjson.dumps(serializable_data, option=orjson.OPT_INDENT_2)\n        # Convert bytes to string and wrap in Markdown code blocks\n        return \"```json\\n\" + json_bytes.decode(\"utf-8\") + \"\\n```\"\n\n    def _validate_input(self) -> None:\n        \"\"\"Validate the input data and raise ValueError if invalid.\"\"\"\n        if self.input_value is None:\n            msg = \"Input data cannot be None\"\n            raise ValueError(msg)\n        if isinstance(self.input_value, list) and not all(\n            isinstance(item, Message | Data | DataFrame | str) for item in self.input_value\n        ):\n            invalid_types = [\n                type(item).__name__\n                for item in self.input_value\n                if not isinstance(item, Message | Data | DataFrame | str)\n            ]\n            msg = f\"Expected Data or DataFrame or Message or str, got {invalid_types}\"\n            raise TypeError(msg)\n        if not isinstance(\n            self.input_value,\n            Message | Data | DataFrame | str | list | Generator | type(None),\n        ):\n            type_name = type(self.input_value).__name__\n            msg = f\"Expected Data or DataFrame or Message or str, Generator or None, got {type_name}\"\n            raise TypeError(msg)\n\n    def convert_to_string(self) -> str | Generator[Any, None, None]:\n        \"\"\"Convert input data to string with proper error handling.\"\"\"\n        self._validate_input()\n        if isinstance(self.input_value, list):\n            clean_data: bool = getattr(self, \"clean_data\", False)\n            return \"\\n\".join([safe_convert(item, clean_data=clean_data) for item in self.input_value])\n        if isinstance(self.input_value, Generator):\n            return self.input_value\n        return safe_convert(self.input_value)\n"
+              },
+              "data_template": {
+                "_input_type": "MessageTextInput",
+                "advanced": true,
+                "display_name": "Data Template",
+                "dynamic": false,
+                "info": "Template to convert Data to Text. If left empty, it will be dynamically set to the Data's text key.",
+                "input_types": [
+                  "Message"
+                ],
+                "list": false,
+                "load_from_db": false,
+                "name": "data_template",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "tool_mode": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": "{text}"
+              },
+              "input_value": {
+                "_input_type": "MessageInput",
+                "advanced": false,
+                "display_name": "Inputs",
+                "dynamic": false,
+                "info": "Message to be passed as output.",
+                "input_types": [
+                  "Data",
+                  "DataFrame",
+                  "Message"
+                ],
+                "list": false,
+                "load_from_db": false,
+                "name": "input_value",
+                "placeholder": "",
+                "required": true,
+                "show": true,
+                "title_case": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": ""
+              },
+              "sender": {
+                "_input_type": "DropdownInput",
+                "advanced": true,
+                "combobox": false,
+                "display_name": "Sender Type",
+                "dynamic": false,
+                "info": "Type of sender.",
+                "name": "sender",
+                "options": [
+                  "Machine",
+                  "User"
+                ],
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "tool_mode": false,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": "Machine"
+              },
+              "sender_name": {
+                "_input_type": "MessageTextInput",
+                "advanced": true,
+                "display_name": "Sender Name",
+                "dynamic": false,
+                "info": "Name of the sender.",
+                "input_types": [
+                  "Message"
+                ],
+                "list": false,
+                "load_from_db": false,
+                "name": "sender_name",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "tool_mode": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": "AI"
+              },
+              "session_id": {
+                "_input_type": "MessageTextInput",
+                "advanced": true,
+                "display_name": "Session ID",
+                "dynamic": false,
+                "info": "The session ID of the chat. If empty, the current session ID parameter will be used.",
+                "input_types": [
+                  "Message"
+                ],
+                "list": false,
+                "load_from_db": false,
+                "name": "session_id",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "tool_mode": false,
+                "trace_as_input": true,
+                "trace_as_metadata": true,
+                "type": "str",
+                "value": ""
+              },
+              "should_store_message": {
+                "_input_type": "BoolInput",
+                "advanced": true,
+                "display_name": "Store Messages",
+                "dynamic": false,
+                "info": "Store the message in the history.",
+                "list": false,
+                "name": "should_store_message",
+                "placeholder": "",
+                "required": false,
+                "show": true,
+                "title_case": false,
+                "trace_as_metadata": true,
+                "type": "bool",
+                "value": false
+              }
+            },
+            "tool_mode": false,
+            "id": "ChatOutput-boi-model-agent-loop"
+          },
+          "type": "ChatOutput",
+          "display_name": "Chat Output"
+        },
+        "dragging": false,
+        "height": 234,
+        "id": "ChatOutput-boi-model-agent-loop",
+        "measured": {
+          "height": 234,
+          "width": 320
+        },
+        "position": {
+          "x": 1680,
+          "y": 160
+        },
+        "positionAbsolute": {
+          "x": 1680,
+          "y": 160
+        },
+        "selected": false,
+        "type": "genericNode",
+        "width": 320
+      }
+    ],
+    "edges": [
+      {
+        "animated": false,
+        "className": "",
+        "data": {
+          "sourceHandle": {
+            "dataType": "ChatInput",
+            "id": "ChatInput-boi-model-agent-loop",
+            "name": "message",
+            "output_types": [
+              "Message"
+            ]
+          },
+          "targetHandle": {
+            "fieldName": "question",
+            "id": "BoIWikiKnowledge-boi-model-agent-loop",
+            "inputTypes": [
+              "Message"
+            ],
+            "type": "str"
+          }
+        },
+        "id": "reactflow__edge-ChatInput-boi-model-agent-loop{œdataTypeœ:œChatInputœ,œidœ:œChatInput-boi-model-agent-loopœ,œnameœ:œmessageœ,œoutput_typesœ:[œMessageœ]}-BoIWikiKnowledge-boi-model-agent-loop{œfieldNameœ:œquestionœ,œidœ:œBoIWikiKnowledge-boi-model-agent-loopœ,œinputTypesœ:[œMessageœ],œtypeœ:œstrœ}",
+        "selected": false,
+        "source": "ChatInput-boi-model-agent-loop",
+        "sourceHandle": "{œdataTypeœ:œChatInputœ,œidœ:œChatInput-boi-model-agent-loopœ,œnameœ:œmessageœ,œoutput_typesœ:[œMessageœ]}",
+        "target": "BoIWikiKnowledge-boi-model-agent-loop",
+        "targetHandle": "{œfieldNameœ:œquestionœ,œidœ:œBoIWikiKnowledge-boi-model-agent-loopœ,œinputTypesœ:[œMessageœ],œtypeœ:œstrœ}"
+      },
+      {
+        "animated": false,
+        "className": "",
+        "data": {
+          "sourceHandle": {
+            "dataType": "ext:boi:BoIWikiKnowledge@extra",
+            "id": "BoIWikiKnowledge-boi-model-agent-loop",
+            "name": "knowledge",
+            "output_types": [
+              "JSON"
+            ]
+          },
+          "targetHandle": {
+            "fieldName": "knowledge",
+            "id": "BoIModelAgent-boi-model-agent-loop",
+            "inputTypes": [
+              "Data",
+              "JSON"
+            ],
+            "type": "other"
+          }
+        },
+        "id": "reactflow__edge-BoIWikiKnowledge-boi-model-agent-loop{œdataTypeœ:œext:boi:BoIWikiKnowledge@extraœ,œidœ:œBoIWikiKnowledge-boi-model-agent-loopœ,œnameœ:œknowledgeœ,œoutput_typesœ:[œJSONœ]}-BoIModelAgent-boi-model-agent-loop{œfieldNameœ:œknowledgeœ,œidœ:œBoIModelAgent-boi-model-agent-loopœ,œinputTypesœ:[œDataœ,œJSONœ],œtypeœ:œotherœ}",
+        "selected": false,
+        "source": "BoIWikiKnowledge-boi-model-agent-loop",
+        "sourceHandle": "{œdataTypeœ:œext:boi:BoIWikiKnowledge@extraœ,œidœ:œBoIWikiKnowledge-boi-model-agent-loopœ,œnameœ:œknowledgeœ,œoutput_typesœ:[œJSONœ]}",
+        "target": "BoIModelAgent-boi-model-agent-loop",
+        "targetHandle": "{œfieldNameœ:œknowledgeœ,œidœ:œBoIModelAgent-boi-model-agent-loopœ,œinputTypesœ:[œDataœ,œJSONœ],œtypeœ:œotherœ}"
+      },
+      {
+        "animated": false,
+        "className": "",
+        "data": {
+          "sourceHandle": {
+            "dataType": "ext:boi:BoIModelAgent@extra",
+            "id": "BoIModelAgent-boi-model-agent-loop",
+            "name": "agent_result",
+            "output_types": [
+              "JSON"
+            ]
+          },
+          "targetHandle": {
+            "fieldName": "agent_result",
+            "id": "BoIWikiSave-boi-model-agent-loop",
+            "inputTypes": [
+              "Data",
+              "JSON"
+            ],
+            "type": "other"
+          }
+        },
+        "id": "reactflow__edge-BoIModelAgent-boi-model-agent-loop{œdataTypeœ:œext:boi:BoIModelAgent@extraœ,œidœ:œBoIModelAgent-boi-model-agent-loopœ,œnameœ:œagent_resultœ,œoutput_typesœ:[œJSONœ]}-BoIWikiSave-boi-model-agent-loop{œfieldNameœ:œagent_resultœ,œidœ:œBoIWikiSave-boi-model-agent-loopœ,œinputTypesœ:[œDataœ,œJSONœ],œtypeœ:œotherœ}",
+        "selected": false,
+        "source": "BoIModelAgent-boi-model-agent-loop",
+        "sourceHandle": "{œdataTypeœ:œext:boi:BoIModelAgent@extraœ,œidœ:œBoIModelAgent-boi-model-agent-loopœ,œnameœ:œagent_resultœ,œoutput_typesœ:[œJSONœ]}",
+        "target": "BoIWikiSave-boi-model-agent-loop",
+        "targetHandle": "{œfieldNameœ:œagent_resultœ,œidœ:œBoIWikiSave-boi-model-agent-loopœ,œinputTypesœ:[œDataœ,œJSONœ],œtypeœ:œotherœ}"
+      },
+      {
+        "animated": false,
+        "className": "",
+        "data": {
+          "sourceHandle": {
+            "dataType": "ext:boi:BoIWikiSave@extra",
+            "id": "BoIWikiSave-boi-model-agent-loop",
+            "name": "message",
+            "output_types": [
+              "Message"
+            ]
+          },
+          "targetHandle": {
+            "fieldName": "input_value",
+            "id": "ChatOutput-boi-model-agent-loop",
+            "inputTypes": [
+              "Data",
+              "DataFrame",
+              "Message"
+            ],
+            "type": "str"
+          }
+        },
+        "id": "reactflow__edge-BoIWikiSave-boi-model-agent-loop{œdataTypeœ:œext:boi:BoIWikiSave@extraœ,œidœ:œBoIWikiSave-boi-model-agent-loopœ,œnameœ:œmessageœ,œoutput_typesœ:[œMessageœ]}-ChatOutput-boi-model-agent-loop{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-boi-model-agent-loopœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œstrœ}",
+        "selected": false,
+        "source": "BoIWikiSave-boi-model-agent-loop",
+        "sourceHandle": "{œdataTypeœ:œext:boi:BoIWikiSave@extraœ,œidœ:œBoIWikiSave-boi-model-agent-loopœ,œnameœ:œmessageœ,œoutput_typesœ:[œMessageœ]}",
+        "target": "ChatOutput-boi-model-agent-loop",
+        "targetHandle": "{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-boi-model-agent-loopœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œstrœ}"
+      }
+    ],
+    "viewport": {
+      "x": 30,
+      "y": 180,
+      "zoom": 0.72
+    },
+    "boi_contract": {
+      "name": "BoI Wiki Agent Loop - Model Agent Example",
+      "endpoint_name": "boi-wiki-agent-loop-model-agent",
+      "version": "1.1.0",
+      "nodes": [
+        "Chat Input",
+        "BoIWikiKnowledge",
+        "model_agent",
+        "BoIWikiSave",
+        "Chat Output"
+      ],
+      "default_save_mode": "preview",
+      "credential_variables": [
+        "BOI_WIKI_PAT"
+      ],
+      "request_variables": [
+        "BOI_RUN_TOKEN"
+      ],
+      "context_profiles": [
+        "sop_task_execution",
+        "task_execution",
+        "wiki_context",
+        "knowledge_lookup"
+      ],
+      "inputs": [
+        "question",
+        "business_context",
+        "task_ref",
+        "page_ref",
+        "context_id",
+        "sop_ref",
+        "sop_stage",
+        "event_ref",
+        "action_ref",
+        "prior_results",
+        "required_evidence",
+        "missing_evidence",
+        "save_mode",
+        "title"
+      ],
+      "outputs": [
+        "answer",
+        "task_context",
+        "source_references",
+        "ontology_relationships",
+        "grounding_status",
+        "draft_reference",
+        "wiki_url",
+        "provenance"
+      ],
+      "agent_kind": "openai_compatible_model",
+      "model_variables": [
+        "BOI_LLM_BASE_URL",
+        "BOI_AGENT_EXAMPLE_MODEL",
+        "BOI_LLM_API_KEY"
+      ],
+      "required_runtime_evidence": [
+        "model_trace.real_inference"
+      ]
+    },
+    "boi_contract_sha256": "929dc03a266f2f3860f170efcbe7bfc01a712ba515ef1e6e8844c1c4dc51f028"
+  },
+  "webhook": false,
+  "access_type": "PRIVATE",
+  "tags": [
+    "boi",
+    "agent-playground",
+    "wiki-loop",
+    "model-agent",
+    "1.1.0"
+  ]
+}

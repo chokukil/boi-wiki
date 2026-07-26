@@ -42,6 +42,14 @@ The router does not know or care whether the target is Langflow, API, Webhook, B
 
 Action Gateway is the protocol abstraction layer. It validates action catalog entries, enforces host allowlists and approval rules, invokes connectors, and writes action logs.
 
+The Action business contract and runtime binding are separate:
+
+- `action_contract`: business goal, inputs, outputs, evidence, risk, and approval policy
+- `execution_mode=gateway`: the common runtime boundary
+- `connector_binding`: the replaceable API, MCP, Webhook, Manual, Event Broker, BoI Writer, or Langflow adapter
+
+Agent Playground creates a Langflow binding because its deployment unit is a Langflow Flow. It does not turn the shared Action schema, catalog, registration UI, or Gateway into a Langflow-only path.
+
 Supported v0.4 connector action types:
 
 | Type | Description |
@@ -103,4 +111,3 @@ equipment.alarm.raised.v1
 ## 8. Migration Principle
 
 When a new invocation method appears, add a new connector type or bridge inside Action Gateway. Do not change the Event Broker, Event Router, BoI Wiki, or SOP model.
-

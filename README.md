@@ -157,6 +157,10 @@ python scripts/check_pilot_external_services.py --langflow --run-langflow-endpoi
 
 Kafka/Langflow 설정은 `.env`로만 주입합니다. 코드나 tracked 문서에 사내 host, password, token을 고정하지 않습니다. Langflow Universal Simulator는 실제 의사결정 근거 생성기가 아니라 실행 전 확인, PoC, 외부 시스템이 없는 local demo용 dry-run 경로입니다. Inbox 검증 보고서는 실제 Event/Action/BoI/Data Lake/과거 사례 근거를 우선 사용하고, simulator 결과를 보여줄 때는 `시뮬레이션 결과`로 분리합니다.
 
+개인 Langflow 1.11 프로젝트에서 Wiki 지식을 읽고 개인 초안으로 저장한 뒤 Agent Hub와
+BoI Action으로 연결하는 개발·검증 절차는
+[`docs/AGENT_PLAYGROUND_INTEGRATION.md`](docs/AGENT_PLAYGROUND_INTEGRATION.md)를 참고합니다.
+
 ### 자동 게시/반영
 
 Public/Team/Private 문서 변경은 Pilot 기준에서 검증 후 즉시 반영됩니다. Web/API/Agent가 ACL/RBAC, OKF/Profile validation, secret scan을 통과한 뒤 파일을 쓰고, cache/index를 무효화하며, `BOI_AUTO_COMMIT=true`이면 commit합니다. `BOI_AUTO_PUSH=true`이면 `BOI_CONTENT_GIT_REMOTE`/`BOI_CONTENT_GIT_BRANCH`로 push까지 수행합니다.
