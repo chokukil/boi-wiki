@@ -36,7 +36,10 @@ const identities = JSON.parse(await fs.readFile(config.identityFile, "utf8"));
 const langflowIdentities = JSON.parse(
   await fs.readFile(config.langflowIdentityFile, "utf8"),
 );
-const langflowAccount = langflowIdentities.recovery_user;
+const langflowAccount = (
+  langflowIdentities.recovery_user
+  || langflowIdentities.users?.["100002"]
+);
 if (
   !identities["100001"]
   || !identities["100002"]
@@ -61,6 +64,7 @@ const result = {
   langflow_key: {},
   agent_hub_deploy: {},
   playground_adoption: {},
+  composition: {},
   validation: {},
   screenshots: [],
   console_errors: [],
@@ -403,6 +407,7 @@ async function beginPlaygroundAdoption(page) {
     label: (await projectSelect.locator("option").allTextContents())
       .find((text) => text.includes("boi-100002")),
   });
+  await page.locator('[data-workbench-step="hub"]').click();
   const search = page.locator("[data-hub-search-form]");
   await search.locator('input[name="search"]').fill(runId);
   const responsePromise = page.waitForResponse((response) => (
@@ -564,10 +569,127 @@ async function finishPlaygroundAdoption(page, adoption, expectedFlowId) {
   return confirmed;
 }
 
-async function validateAndDraft(page, flowId) {
+async function createActualTask(page) {
+  const traceId = `trace-cross-author-${runId}`;
+  const eventId = `evt-cross-author-${runId}`;
+  const response = await page.evaluate(async ({ traceId, eventId }) => {
+    const result = await fetch("/api/actions/invoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action_key: "manual.equipment.review_root_cause",
+        event: {
+          event_id: eventId,
+          event_type: "root_cause.analysis.requested.v1",
+          trace_id: traceId,
+        },
+        payload: {
+          title: "Cross-author component composition Task",
+          equipment_id: "EQ-AP-CROSS-AUTHOR",
+          owner: "100002",
+        },
+        dry_run: false,
+      }),
+    });
+    return { status: result.status, body: await result.json() };
+  }, { traceId, eventId });
+  assert(response.status === 200, `actual Task creation returned HTTP ${response.status}`);
+  assert(response.body.status === "manual_required", "actual Task was not recorded");
+  return {
+    taskRef: `task:${response.body.request_id}`,
+    traceId,
+    eventId,
+  };
+}
+
+async function validateDisconnected(page, confirmed, taskRef) {
+  const deployment = confirmed.deployment;
+  const response = await page.evaluate(async ({ flowId, deployment, taskRef }) => {
+    const request = await fetch(
+      `/api/agent-playground/flows/${encodeURIComponent(flowId)}/validate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          endpoint_id: deployment.endpoint_id,
+          project_id: deployment.project_id,
+          artifact_version: deployment.asset_version || "1.1.0",
+          artifact_checksum: deployment.artifact_checksum,
+          task_ref: taskRef,
+        }),
+      },
+    );
+    return { status: request.status, body: await request.json() };
+  }, { flowId: deployment.flow_id, deployment, taskRef });
+  assert(response.status === 200, "disconnected Flow validation request failed");
+  assert(response.body.validation_status === "blocked", "disconnected component was not blocked");
+  assert(
+    response.body.failure_reason === "disconnected_component",
+    `unexpected disconnected failure: ${response.body.failure_reason}`,
+  );
+  return response.body;
+}
+
+async function composeAdoption(page, adoption, flowId, componentAssetId) {
+  const response = await page.evaluate(
+    async ({ adoptionId, flowId, componentAssetId }) => {
+      const request = await fetch(
+        `/api/agent-playground/agent-hub/adoptions/${encodeURIComponent(adoptionId)}/compose`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            flow_id: flowId,
+            component_asset_id: componentAssetId,
+            replace_agent_slot: true,
+          }),
+        },
+      );
+      return { status: request.status, body: await request.json() };
+    },
+    {
+      adoptionId: adoption.adoption_id,
+      flowId,
+      componentAssetId,
+    },
+  );
+  assert(response.status === 200, `component compose returned HTTP ${response.status}`);
+  assert(response.body.status === "connected", `component compose failed: ${response.body.reason}`);
+  assert(
+    response.body.previous_checksum !== response.body.live_checksum,
+    "component composition did not create a new exact checksum revision",
+  );
+  assert(
+    response.body.graph_health?.end_to_end_reachable,
+    "composed Flow has no Chat Input to Chat Output path",
+  );
+  assert(
+    response.body.graph_health?.connected_component_ids?.includes(componentAssetId),
+    "composed component is not on the execution path",
+  );
+  return response;
+}
+
+async function validateAndDraft(page, flowId, taskRef) {
+  await page.locator('[data-workbench-step="create"]').click();
   const flowItem = page.locator(".agent-playground-flow-item").filter({ hasText: flowId });
   await flowItem.waitFor();
   await flowItem.click();
+  await page.locator('[data-workbench-step="test"]').click();
+  const taskSelect = page.locator("[data-task-select]");
+  await taskSelect.waitFor();
+  const listed = await page.waitForFunction(
+    (expected) => [...(document.querySelector("[data-task-select]")?.options || [])]
+      .some((option) => option.value === expected),
+    taskRef,
+    { timeout: 5_000 },
+  ).then(() => true).catch(() => false);
+  if (listed) {
+    await taskSelect.selectOption(taskRef);
+  } else {
+    await page.locator(".agent-playground-task-anchor summary").click();
+    await page.locator("[name='manual_task_ref']").fill(taskRef);
+  }
   const validationResponse = page.waitForResponse((response) => (
     response.request().method() === "POST"
     && new URL(response.url()).pathname === `/api/agent-playground/flows/${flowId}/validate`
@@ -577,6 +699,9 @@ async function validateAndDraft(page, flowId) {
   assert(validatedResponse.ok(), `Flow validation returned HTTP ${validatedResponse.status()}`);
   const validated = await validatedResponse.json();
   assert(validated.validation_status === "action_ready", validated.failure_reason);
+  await page.locator('[data-workbench-step="action"]').click();
+  await page.locator('input[name="action_scope"][value="team"]').check();
+  await page.locator("[data-action-team]").selectOption("aix-tf");
   const createActionButton = page.locator("[data-create-action]");
   await createActionButton.waitFor({ state: "visible" });
   await page.waitForFunction(() => {
@@ -715,9 +840,38 @@ try {
     checksum: confirmed.deployment.artifact_checksum,
     origin: confirmed.deployment.origin,
   };
+  const actualTask = await createActualTask(boiSession.page);
+  const disconnected = await validateDisconnected(
+    boiSession.page,
+    confirmed,
+    actualTask.taskRef,
+  );
+  const composed = await composeAdoption(
+    boiSession.page,
+    adoption,
+    deployedFlow.flow_id,
+    componentAsset.id,
+  );
+  result.composition = {
+    disconnected: {
+      validation_status: disconnected.validation_status,
+      failure_reason: disconnected.failure_reason,
+    },
+    compose: {
+      public_patch_status: composed.status,
+      previous_checksum: composed.body.previous_checksum,
+      live_checksum: composed.body.live_checksum,
+      end_to_end_reachable: composed.body.graph_health.end_to_end_reachable,
+      connected_component_ids:
+        composed.body.graph_health.connected_component_ids,
+      rollback_snapshot: composed.body.rollback_snapshot,
+    },
+    task: actualTask,
+  };
   const validation = await validateAndDraft(
     boiSession.page,
     deployedFlow.flow_id,
+    actualTask.taskRef,
   );
   result.validation = {
     status: validation.validated.validation_status,
@@ -725,6 +879,10 @@ try {
     exact_flow_id: validation.validated.flow_id,
     checksum: validation.validated.artifact_checksum,
     action_draft_id: validation.draft.draft.draft_id,
+    executed_component_ids:
+      validation.validated.registry?.executed_component_ids
+      || validation.validated.runtime?.executed_component_ids
+      || [],
     draft_flow_id:
       validation.draft.deployment_reference?.flow_id
       || validation.draft.draft?.request?.connector_config?.flow_id
@@ -733,6 +891,10 @@ try {
   assert(
     result.validation.draft_flow_id === deployedFlow.flow_id,
     "Action draft does not reference the exact deployed Flow",
+  );
+  assert(
+    result.validation.executed_component_ids.includes(componentAsset.id),
+    "runtime validation did not prove the adopted component executed",
   );
 
   result.ok = (

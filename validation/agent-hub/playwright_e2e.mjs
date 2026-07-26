@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -54,6 +55,7 @@ const config = {
     process.env.BOI_ACTION_KEY || "",
   boiFlowId:
     process.env.BOI_FLOW_ID || "",
+  keycloakUrl: process.env.KEYCLOAK_URL || "http://localhost:18082",
   validationRuntimeRoot:
     process.env.BOI_VALIDATION_RUNTIME_ROOT || "/tmp/boi-agent-playground-validation/runtime",
   validationCatalogRoot:
@@ -303,6 +305,49 @@ async function loginBoi(page, targetUrl, username = config.agentHubUsername) {
   };
   if (username === config.agentHubUsername) result.boi_sso = ssoEvidence;
   else result.boi_sso_viewer = ssoEvidence;
+}
+
+async function resetViewerPassword() {
+  const password = crypto.randomBytes(24).toString("base64url");
+  const tokenResponse = await fetch(
+    `${config.keycloakUrl}/realms/master/protocol/openid-connect/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "password",
+        client_id: "admin-cli",
+        username: "validation-admin",
+        password: "validation-admin",
+      }),
+    },
+  );
+  assert(tokenResponse.ok, `Keycloak admin login returned ${tokenResponse.status}`);
+  const adminToken = (await tokenResponse.json()).access_token;
+  const usersResponse = await fetch(
+    `${config.keycloakUrl}/admin/realms/boi-validation/users?username=100003&exact=true`,
+    { headers: { Authorization: `Bearer ${adminToken}` } },
+  );
+  assert(usersResponse.ok, `Keycloak viewer lookup returned ${usersResponse.status}`);
+  const user = (await usersResponse.json())[0];
+  assert(user?.id, "Keycloak 100003 fixture is missing");
+  const resetResponse = await fetch(
+    `${config.keycloakUrl}/admin/realms/boi-validation/users/${user.id}/reset-password`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "password",
+        value: password,
+        temporary: false,
+      }),
+    },
+  );
+  assert(resetResponse.status === 204, `Keycloak viewer reset returned ${resetResponse.status}`);
+  return password;
 }
 
 async function uploadFlow(page) {
@@ -586,6 +631,13 @@ async function verifyLangflowCanvas(browser, flowId, flowUrl) {
 }
 
 async function ensurePlaygroundEndpoint(root) {
+  await root.locator('[data-workbench-step="create"]').click();
+  const connectionSettings = root.locator(
+    "details.agent-playground-connection-settings[data-workbench-only]",
+  );
+  if (!(await connectionSettings.evaluate((element) => element.open))) {
+    await connectionSettings.locator("summary").click();
+  }
   await root.locator("[data-endpoint-list] .agent-playground-limit").waitFor({
     state: "attached",
     timeout: 30_000,
@@ -595,7 +647,9 @@ async function ensurePlaygroundEndpoint(root) {
   const existingByUrl = endpointItems.filter({ hasText: config.langflowEndpointForPlayground });
   const existing = (await existingByAlias.count()) ? existingByAlias : existingByUrl;
   if (await existing.count()) {
-    await existing.last().click();
+    if ((await existing.last().getAttribute("data-active")) !== "true") {
+      await existing.last().click();
+    }
     await root.locator("[data-endpoint-summary]").getByRole("button", { name: "수정" }).click();
   } else {
     await root.locator("[data-new-endpoint]").click();
@@ -714,22 +768,31 @@ async function verifyPlayground(browser, flowId) {
   await screenshot(page, "06-playground-rediscovered-desktop");
   await screenshot(page, "06b-playground-rediscovered-viewport", { fullPage: false });
 
+  await root.locator('[data-workbench-step="hub"]').click();
   const recordButton = root.locator("[data-record-deployment]");
   if (await recordButton.isEnabled()) {
     await recordButton.click();
     await root.locator("[data-playground-toast]").getByText(/exact ID로 연결/).waitFor({ timeout: 30_000 });
   }
 
-  const taskDetails = root.locator(".agent-playground-task-anchor");
-  await taskDetails.locator("summary").click();
-  await root.locator('[name="task_ref"]').fill("task:100002:playwright-sop-validation");
-  await root.locator('[name="sop_ref"]').fill("boi:public:sop:direct-development-e2e-workflow");
-  await root.locator('[name="sop_stage"]').fill("result_check");
-  await root.locator('[name="event_ref"]').fill(`event:playwright:${runId}`);
-  await root.locator('[name="action_ref"]').fill("direct_development.fab_trend_compare.simulate");
-  await root.locator('[name="prior_results"]').fill("trend_history 검증 완료\nraw_data 샘플 확인");
-  await root.locator('[name="required_evidence"]').fill("trend_history, raw_data");
-  await root.locator('[name="missing_evidence"]').fill("equipment_log");
+  await root.locator('[data-workbench-step="test"]').click();
+  const taskSelect = root.locator("[data-task-select]");
+  await taskSelect.waitFor({ state: "visible" });
+  await root.page().waitForFunction(
+    () => (document.querySelector("[data-task-select]")?.options?.length || 0) > 1,
+    null,
+    { timeout: 30_000 },
+  );
+  const selectedTaskRef = await taskSelect.locator("option").nth(1).getAttribute("value");
+  assert(
+    Boolean(String(selectedTaskRef || "").trim()),
+    "ACL-checked Task selector did not provide an actual Task anchor",
+  );
+  await taskSelect.selectOption(String(selectedTaskRef));
+  result.playground.task_anchor = {
+    source: "acl_inbox_selector",
+    task_ref: selectedTaskRef,
+  };
 
   const validateButton = root.locator("[data-validate-flow]");
   await validateButton.waitFor({ state: "visible" });
@@ -750,6 +813,30 @@ async function verifyPlayground(browser, flowId) {
   ).trim();
   await screenshot(page, "07-playground-flow-validation");
 
+  const testResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname.endsWith(`/flows/${flowId}/test`),
+    { timeout: 240_000 },
+  );
+  await root.locator("[data-test-form]").getByRole("button", { name: "선택 Flow 테스트" }).click();
+  const runtimeResponse = await testResponse;
+  assert(runtimeResponse.ok(), `Playground runtime test failed with HTTP ${runtimeResponse.status()}`);
+  const runtimePayload = await runtimeResponse.json();
+  const runtimeText = JSON.stringify(runtimePayload);
+  assert(runtimeText.includes("source_references"), "Runtime result did not include source references");
+  assert(runtimeText.includes("ontology"), "Runtime result did not include ontology evidence");
+  result.playground.runtime = {
+    ok: true,
+    has_source_references: true,
+    has_ontology: true,
+    save_mode: "preview",
+  };
+  await root.locator("[data-playground-toast]").getByText(/runtime 테스트를 마쳤습니다/).waitFor({
+    timeout: 90_000,
+  });
+
+  await root.locator('[data-workbench-step="action"]').click();
   const createAction = root.locator("[data-create-action]");
   await root.page().waitForFunction(
     () => !document.querySelector("[data-create-action]")?.disabled,
@@ -778,28 +865,6 @@ async function verifyPlayground(browser, flowId) {
   );
   await root.locator("[data-playground-toast]").getByText(/Action 등록 초안/).waitFor({ timeout: 30_000 });
 
-  const testResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname.endsWith(`/flows/${flowId}/test`),
-    { timeout: 240_000 },
-  );
-  await root.locator("[data-test-form]").getByRole("button", { name: "선택 Flow 테스트" }).click();
-  const runtimeResponse = await testResponse;
-  assert(runtimeResponse.ok(), `Playground runtime test failed with HTTP ${runtimeResponse.status()}`);
-  const runtimePayload = await runtimeResponse.json();
-  const runtimeText = JSON.stringify(runtimePayload);
-  assert(runtimeText.includes("source_references"), "Runtime result did not include source references");
-  assert(runtimeText.includes("ontology"), "Runtime result did not include ontology evidence");
-  result.playground.runtime = {
-    ok: true,
-    has_source_references: true,
-    has_ontology: true,
-    save_mode: "preview",
-  };
-  await root.locator("[data-playground-toast]").getByText(/runtime 테스트를 마쳤습니다/).waitFor({
-    timeout: 90_000,
-  });
   await screenshot(page, "08-playground-runtime-and-action");
   await screenshot(page, "08b-playground-runtime-viewport", { fullPage: false });
 
@@ -1027,16 +1092,28 @@ async function verifyBoiActionCatalog(browser) {
     const input = form.locator(`[name="${name}"]`);
     if (await input.count()) await input.fill(value);
   };
+  const inboxPayload = await page.evaluate(async () => {
+    const response = await fetch("/api/inbox?limit=50");
+    return {
+      status: response.status,
+      body: await response.json().catch(() => ({})),
+    };
+  });
+  assert(inboxPayload.status === 200, `BoI Task inbox returned HTTP ${inboxPayload.status}`);
+  const actualTaskRef = (inboxPayload.body.items || [])
+    .map((item) => String(item.task_id || ""))
+    .find((value) => value.startsWith("task:"));
+  assert(actualTaskRef, "No ACL-checked Task anchor is available for Action validation");
   await fillIfPresent("question", "SOP Task 수행에 필요한 Wiki 및 Ontology 근거를 정리해줘");
-  await fillIfPresent("business_context", "설비 이상 대응 결과 검증 Task");
-  await fillIfPresent("task_ref", "task:100002:playwright-sop-validation");
-  await fillIfPresent("sop_ref", "boi:public:sop:direct-development-e2e-workflow");
-  await fillIfPresent("sop_stage", "result_check");
-  await fillIfPresent("event_ref", `event:playwright:${runId}`);
-  await fillIfPresent("action_ref", config.boiActionKey);
-  await fillIfPresent("prior_results", "trend_history 검증 완료, raw_data 샘플 확인");
-  await fillIfPresent("required_evidence", "trend_history, raw_data");
-  await fillIfPresent("missing_evidence", "equipment_log");
+  await fillIfPresent("business_context", "선택한 실제 Task를 서버 권위 Context로 해석");
+  await fillIfPresent("task_ref", actualTaskRef);
+  await fillIfPresent("sop_ref", "");
+  await fillIfPresent("sop_stage", "");
+  await fillIfPresent("event_ref", "");
+  await fillIfPresent("action_ref", "");
+  await fillIfPresent("prior_results", "");
+  await fillIfPresent("required_evidence", "");
+  await fillIfPresent("missing_evidence", "");
   await fillIfPresent("save_mode", "preview");
   await fillIfPresent("title", "Playwright SOP Task Action");
   const sopPayload = await invokeActual("sop_task");
@@ -1052,6 +1129,20 @@ async function verifyBoiActionCatalog(browser) {
   const generalSummary = safeExecutionSummary(generalPayload);
   const sopSummary = safeExecutionSummary(sopPayload);
   const privateDraftSummary = safeExecutionSummary(privateDraftPayload);
+  assert(
+    generalSummary.task_context.profile === "knowledge_lookup"
+      && !generalSummary.task_context.sop_ref,
+    "general Action execution created a false SOP context",
+  );
+  assert(
+    sopSummary.task_context.profile === "sop_task_execution"
+      && sopSummary.task_context.task_ref === actualTaskRef
+      && sopSummary.task_context.sop_ref
+      && sopSummary.task_context.sop_stage
+      && sopSummary.task_context.event_ref
+      && sopSummary.task_context.action_ref,
+    "actual SOP Task Context was not preserved",
+  );
   assert(Array.isArray(sopSummary.task_context.prior_results), "SOP prior_results is not an array");
   assert(Array.isArray(sopSummary.task_context.required_evidence), "SOP required_evidence is not an array");
   assert(Array.isArray(sopSummary.task_context.missing_evidence), "SOP missing_evidence is not an array");
@@ -1100,43 +1191,61 @@ async function verifyViewerActionDenial(browser) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await attachDiagnostics(page, "boi-action-viewer");
+  config.boiViewerPassword = await resetViewerPassword();
   await loginBoi(page, config.boiActionUrl, "100003");
 
   const catalog = page.locator("[data-action-catalog]");
   await catalog.waitFor({ timeout: 30_000 });
   const actionButton = catalog.locator(`[data-action-open="${config.boiActionKey}"]`);
   await actionButton.waitFor({ state: "visible", timeout: 30_000 });
+  const detailResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname.endsWith(
+        `/api/actions/catalog/${config.boiActionKey}`,
+      ),
+  );
   await actionButton.click();
+  const detailResponse = await detailResponsePromise;
   const detail = catalog.locator("[data-action-detail-content]");
   const form = detail.locator("[data-action-preview-form]");
-  await form.waitFor({ timeout: 30_000 });
-  await form.locator('[name="question"]').fill("조회 전용 사용자의 Action 실행 권한 확인");
-  await form.locator('[name="save_mode"]').fill("private_draft");
-  await form.locator('[name="title"]').fill("Viewer denial check");
-
-  const invokeResponsePromise = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname.endsWith("/api/actions/invoke"),
-  );
-  page.once("dialog", (dialog) => dialog.accept());
-  await form.getByRole("button", { name: "실제 실행" }).click();
-  const invokeResponse = await invokeResponsePromise;
-  assert(invokeResponse.status() === 403, `Viewer Action denial returned HTTP ${invokeResponse.status()}`);
-  const invokePayload = await invokeResponse.json();
+  if (detailResponse.status() === 404) {
+    await detail.getByText("Action 정보를 불러오지 못했습니다.").waitFor();
+  } else {
+    assert(detailResponse.ok(), `Viewer Action detail returned HTTP ${detailResponse.status()}`);
+    await form.waitFor({ timeout: 30_000 });
+  }
+  const invoke = await page.evaluate(async ({ actionKey }) => {
+    const response = await fetch("/api/actions/invoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action_key: actionKey,
+        payload: {
+          question: "조회 전용 사용자의 Action 실행 권한 확인",
+          save_mode: "private_draft",
+          title: "Viewer denial check",
+        },
+        dry_run: false,
+      }),
+    });
+    return {
+      status: response.status,
+      body: await response.json().catch(() => ({})),
+    };
+  }, { actionKey: config.boiActionKey });
+  assert(invoke.status === 403, `Viewer Action denial returned HTTP ${invoke.status}`);
+  const invokePayload = invoke.body;
   assert(
-    String(invokePayload.detail || "").includes("boi.action_invoker"),
+    JSON.stringify(invokePayload.detail || "").includes("boi.action_invoker"),
     "Viewer Action denial did not identify the missing execution role",
   );
-  await detail
-    .locator("[data-action-preview-result]")
-    .getByText(/boi\.action_invoker/)
-    .waitFor({ timeout: 30_000 });
   const identityText = await page.locator(".identity-strip").innerText();
   assert(identityText.includes("100003"), "Viewer browser did not resolve employee 100003");
   result.boi_action.viewer_denial = {
     employee_id: "100003",
-    status: invokeResponse.status(),
+    status: invoke.status,
+    catalog_detail_status: detailResponse.status(),
     save_mode: "private_draft",
     reason: "missing boi.action_invoker",
   };
@@ -1211,7 +1320,10 @@ try {
         item.url.includes("/api/agent-playground")) ||
       (item.scope === "boi-action-viewer" &&
         item.status === 403 &&
-        item.url.endsWith("/api/actions/invoke"));
+        item.url.endsWith("/api/actions/invoke")) ||
+      (item.scope === "boi-action-viewer" &&
+        item.status === 404 &&
+        item.url.includes("/api/actions/catalog/"));
     result.expected_http_errors = result.http_errors.filter(expectedHttpError);
     result.unexpected_http_errors = result.http_errors.filter((item) => !expectedHttpError(item));
     assert(
@@ -1269,7 +1381,10 @@ try {
       item.url.includes("/api/agent-playground")) ||
     (item.scope === "boi-action-viewer" &&
       item.status === 403 &&
-      item.url.endsWith("/api/actions/invoke"));
+      item.url.endsWith("/api/actions/invoke")) ||
+    (item.scope === "boi-action-viewer" &&
+      item.status === 404 &&
+      item.url.includes("/api/actions/catalog/"));
   result.expected_http_errors = result.http_errors.filter(expectedHttpError);
   result.unexpected_http_errors = result.http_errors.filter((item) => !expectedHttpError(item));
   assert(

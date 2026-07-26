@@ -163,6 +163,18 @@ def main() -> int:
         / "exact-action-chain-operator.json"
     )
     validation_summary = read_json(handoff / "validation-summary.json")
+    hardening = read_json(
+        handoff / "browser" / "security-context-hardening" / "result.json"
+    )
+    composition = read_json(
+        handoff / "browser" / "component-composition-drift" / "result.json"
+    )
+    team_sharing = read_json(
+        handoff / "browser" / "team-action-sharing" / "result.json"
+    )
+    workbench = read_json(
+        handoff / "browser" / "staged-workbench" / "result.json"
+    )
 
     checks: list[dict[str, Any]] = []
 
@@ -186,9 +198,9 @@ def main() -> int:
     )
     add(
         "mainline-1",
-        "single_cherry_pick_commit",
-        len(feature.get("commits") or []) == 1
-        and feature.get("head") == (feature.get("commits") or [""])[0],
+        "reviewable_mainline_followup_commits",
+        len(feature.get("commits") or []) >= 2
+        and feature.get("head") == (feature.get("commits") or [""])[-1],
         feature.get("commits"),
     )
     add(
@@ -357,6 +369,79 @@ def main() -> int:
         and "consume_run_token" in main_source,
         "endpoint owner key is resolved server-side; caller run token is consumed",
     )
+    add(
+        "hardening-authz",
+        "hcp_role_reduction_disable_and_outage_fail_closed",
+        nested(hardening, "hcp", "role_reduction", "request", "employee_id")
+        == "100002"
+        and nested(hardening, "hcp", "role_reduction", "response", "status")
+        == 403
+        and nested(hardening, "hcp", "account_disabled", "response", "status")
+        == 403
+        and nested(hardening, "hcp", "outage", "response", "status") == 503
+        and nested(hardening, "hcp", "cache_bypassed") is True,
+        hardening.get("hcp"),
+    )
+    run_audience = hardening.get("run_token_audience") or {}
+    add(
+        "hardening-token",
+        "run_token_exact_audience_multi_call_then_consume",
+        run_audience.get("same_execution_statuses") == [200, 200, 200, 200]
+        and all(
+            nested(run_audience, "mismatches", field, "status") == 403
+            for field in (
+                "action_key",
+                "deployment_id",
+                "endpoint_id",
+                "project_id",
+                "flow_id",
+                "trace_id",
+                "execution_id",
+                "capability",
+            )
+        )
+        and nested(run_audience, "after_execution", "status") == 401,
+        run_audience,
+    )
+    task_context = hardening.get("task_context") or {}
+    add(
+        "hardening-context",
+        "actual_task_context_is_server_resolved_and_fake_anchors_rejected",
+        str(nested(task_context, "request", "task_ref") or "").startswith("task:")
+        and nested(task_context, "response", "context_profile")
+        == "sop_task_execution"
+        and all(
+            nested(task_context, "response", "context_pack", key)
+            for key in ("task", "sop_stage", "trace_context")
+        )
+        and nested(task_context, "semantic_assertions", "server_resolved") is True
+        and nested(task_context, "negative", "missing_task_status") == 404
+        and nested(task_context, "negative", "inaccessible_task_status") in {403, 404}
+        and nested(task_context, "ordinary_question", "context_profile")
+        == "knowledge_lookup",
+        task_context,
+    )
+    typed = hardening.get("typed_ontology") or {}
+    relation_sets = typed.get("relation_sets") or {}
+    add(
+        "hardening-context",
+        "typed_ontology_provenance_fallback_and_acl_aggregate",
+        all(relation_sets.get(view) for view in ("workflow", "responsibility", "lineage", "impact"))
+        and len(
+            {
+                tuple(sorted(relation_sets.get(view) or []))
+                for view in ("workflow", "responsibility", "lineage", "impact")
+            }
+        )
+        >= 3
+        and typed.get("all_edges_have_provenance") is True
+        and typed.get("markdown_links_not_typed_workflow") is True
+        and nested(typed, "fallback", "ontology_status")
+        == "grounded_document_fallback"
+        and nested(typed, "acl_exclusion", "count", default=0) > 0
+        and not nested(typed, "acl_exclusion", "leaked_ids", default=[]),
+        typed,
+    )
 
     add(
         "mainline-3",
@@ -468,6 +553,45 @@ def main() -> int:
             "adoption": cross_author.get("playground_adoption"),
         },
     )
+    add(
+        "validation-agent-hub",
+        "component_is_connected_to_execution_path_and_proven_at_runtime",
+        nested(composition, "disconnected", "validation_status") == "blocked"
+        and nested(composition, "disconnected", "failure_reason")
+        == "disconnected_component"
+        and nested(composition, "compose", "public_patch_status") in {200, 201}
+        and nested(composition, "compose", "previous_checksum")
+        != nested(composition, "compose", "live_checksum")
+        and nested(composition, "compose", "end_to_end_reachable") is True
+        and nested(composition, "runtime", "status") == 200
+        and nested(composition, "runtime", "component_id")
+        in nested(composition, "runtime", "executed_component_ids", default=[]),
+        composition,
+    )
+    add(
+        "validation-agent-hub",
+        "incompatible_component_requires_manual_canvas_without_patch",
+        nested(composition, "incompatible", "status") == "manual_required"
+        and nested(composition, "incompatible", "patch_request_count") == 0
+        and bool(nested(composition, "incompatible", "reason"))
+        and bool(nested(composition, "incompatible", "canvas_url")),
+        composition.get("incompatible"),
+    )
+    add(
+        "validation-flow",
+        "live_checksum_drift_blocks_draft_operator_and_execution",
+        nested(composition, "drift", "registered_checksum")
+        != nested(composition, "drift", "live_checksum")
+        and nested(composition, "drift", "flow_status") == "blocked"
+        and nested(composition, "drift", "draft_status") == 409
+        and nested(composition, "drift", "operator_status") == "rejected"
+        and nested(composition, "drift", "execution_status") == 409
+        and nested(composition, "revalidation", "same_exact_reference") is True,
+        {
+            "drift": composition.get("drift"),
+            "revalidation": composition.get("revalidation"),
+        },
+    )
     expected_connectors = {
         "api",
         "mcp",
@@ -477,6 +601,11 @@ def main() -> int:
         "boi_writer",
         "langflow",
     }
+    gateway_invocations = {
+        str(item.get("connector_kind") or ""): item
+        for item in action_abstraction.get("gateway_invocations") or []
+        if isinstance(item, dict) and item.get("connector_kind")
+    }
     add(
         "validation-action",
         "action_contract_remains_connector_neutral",
@@ -484,9 +613,67 @@ def main() -> int:
         and nested(action_abstraction, "generic_action", "contract_schema")
         == "boi.action-contract.v1"
         and nested(action_abstraction, "generic_action", "execution_mode") == "gateway"
-        and set(action_abstraction.get("supported_connector_regression") or [])
-        == expected_connectors,
+        and set(gateway_invocations) == expected_connectors
+        and all(
+            gateway_invocations[connector].get("called") is True
+            and int(gateway_invocations[connector].get("http_status") or 0)
+            in {200, 202}
+            for connector in expected_connectors
+        ),
         action_abstraction,
+    )
+    add(
+        "validation-action",
+        "team_action_uses_owner_endpoint_but_caller_wiki_acl",
+        nested(team_sharing, "action", "scope") == "team"
+        and nested(team_sharing, "action", "team_id")
+        in nested(team_sharing, "caller", "teams", default=[])
+        and nested(team_sharing, "endpoint_owner", "employee_id") == "100002"
+        and nested(team_sharing, "caller", "employee_id") == "100001"
+        and nested(team_sharing, "action", "status") == "langflow_invoked"
+        and nested(
+            team_sharing,
+            "action",
+            "general_execution",
+            "task_context",
+            "profile",
+        )
+        == "knowledge_lookup"
+        and not nested(
+            team_sharing,
+            "action",
+            "general_execution",
+            "task_context",
+            "sop_ref",
+        )
+        and nested(
+            team_sharing,
+            "action",
+            "sop_execution",
+            "task_context",
+            "profile",
+        )
+        == "sop_task_execution"
+        and all(
+            nested(
+                team_sharing,
+                "action",
+                "sop_execution",
+                "task_context",
+                field,
+            )
+            for field in (
+                "task_ref",
+                "sop_ref",
+                "sop_stage",
+                "event_ref",
+                "action_ref",
+            )
+        )
+        and nested(team_sharing, "private_draft", "owner_employee_id") == "100001"
+        and nested(team_sharing, "viewer", "employee_id") == "100003"
+        and nested(team_sharing, "viewer", "execution_status") == 403,
+        team_sharing,
     )
     documents = wiki_docs.get("documents") or []
     add(
@@ -641,6 +828,10 @@ def main() -> int:
         "canonical": canonical,
         "model": model,
         "incompatible": incompatible,
+        "hardening": hardening,
+        "composition": composition,
+        "team_sharing": team_sharing,
+        "workbench": workbench,
     }
     collected_errors = {
         name: browser_errors(payload) for name, payload in browser_payloads.items()
@@ -650,6 +841,25 @@ def main() -> int:
         "all_browser_runs_have_zero_unexpected_errors",
         all(not any(errors.values()) for errors in collected_errors.values()),
         collected_errors,
+    )
+    add(
+        "validation-browser",
+        "desktop_and_mobile_show_one_primary_staged_workbench",
+        bool(workbench.get("ok"))
+        and nested(workbench, "desktop", "steps") == 4
+        and nested(workbench, "desktop", "primary_actions") == 1
+        and nested(workbench, "mobile", "viewport_width") == 390
+        and nested(workbench, "mobile", "steps") == 4
+        and nested(workbench, "mobile", "primary_actions") == 1
+        and nested(workbench, "task_selector", "uses_acl_inbox") is True
+        and nested(workbench, "component_statuses") == [
+            "배포됨",
+            "연결 필요",
+            "연결됨",
+            "실행 검증됨",
+        ]
+        and not any(browser_errors(workbench).values()),
+        workbench,
     )
     add(
         "validation-langflow",
@@ -715,6 +925,10 @@ def main() -> int:
         "regression/incompatible-flow-validation.json",
         "browser/canonical-exact-e2e/playwright-result.json",
         "browser/model-agent-exact-e2e/playwright-result.json",
+        "browser/security-context-hardening/result.json",
+        "browser/component-composition-drift/result.json",
+        "browser/team-action-sharing/result.json",
+        "browser/staged-workbench/result.json",
     ]
     missing_files = [name for name in required_files if not (handoff / name).is_file()]
     add(

@@ -83,6 +83,8 @@ services:
       - "18083:8080"
     volumes:
       - ./mock_hcp.py:/app/mock_hcp.py:ro
+    environment:
+      BOI_MOCK_HCP_CONTROL_TOKEN: boi-hcp-validation-control
     healthcheck:
       test:
         - CMD

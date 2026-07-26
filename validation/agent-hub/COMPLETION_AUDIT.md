@@ -1,4 +1,9 @@
-# `origin/main` 기반 Agent Playground 완료 감사
+# `origin/main` 기반 Agent Playground 완료 감사 — SUPERSEDED / NOT READY
+
+> 이 문서의 과거 PASS 및 45/45 판정은 현재 사내 적용 근거가 아니다.
+> HCP 즉시 재확인, run-token exact audience, 실제 Task Context, typed Ontology,
+> component 실행 경로, live checksum drift, 팀 공유 caller ACL을 보완한 뒤 새 감사로
+> 교체한다. 아래 내용은 과거 기준선 비교용으로만 보존한다.
 
 감사 기준일: 2026-07-26
 

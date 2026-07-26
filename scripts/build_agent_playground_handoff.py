@@ -197,6 +197,10 @@ def main() -> int:
     parser.add_argument("--cross-author-dir", default="")
     parser.add_argument("--action-abstraction-dir", default="")
     parser.add_argument("--wiki-docs-dir", default="")
+    parser.add_argument("--security-hardening-dir", default="")
+    parser.add_argument("--component-composition-dir", default="")
+    parser.add_argument("--team-action-dir", default="")
+    parser.add_argument("--staged-workbench-dir", default="")
     parser.add_argument("--runtime-root", type=Path, required=True)
     parser.add_argument(
         "--langflow-regression-evidence",
@@ -260,6 +264,26 @@ def main() -> int:
             args.source_evidence_root / args.wiki_docs_dir,
             browser_root / "wiki-onboarding-docs",
         )
+    if args.security_hardening_dir:
+        copy_tree(
+            args.source_evidence_root / args.security_hardening_dir,
+            browser_root / "security-context-hardening",
+        )
+    if args.component_composition_dir:
+        copy_tree(
+            args.source_evidence_root / args.component_composition_dir,
+            browser_root / "component-composition-drift",
+        )
+    if args.team_action_dir:
+        copy_tree(
+            args.source_evidence_root / args.team_action_dir,
+            browser_root / "team-action-sharing",
+        )
+    if args.staged_workbench_dir:
+        copy_tree(
+            args.source_evidence_root / args.staged_workbench_dir,
+            browser_root / "staged-workbench",
+        )
 
     canonical = read_json(
         browser_root / "canonical-exact-e2e" / "playwright-result.json"
@@ -304,6 +328,26 @@ def main() -> int:
         if args.wiki_docs_dir
         else {}
     )
+    hardening = (
+        read_json(browser_root / "security-context-hardening" / "result.json")
+        if args.security_hardening_dir
+        else {}
+    )
+    composition = (
+        read_json(browser_root / "component-composition-drift" / "result.json")
+        if args.component_composition_dir
+        else {}
+    )
+    team_action = (
+        read_json(browser_root / "team-action-sharing" / "result.json")
+        if args.team_action_dir
+        else {}
+    )
+    staged_workbench = (
+        read_json(browser_root / "staged-workbench" / "result.json")
+        if args.staged_workbench_dir
+        else {}
+    )
     model_passed = bool(model.get("passed") or model.get("ok"))
     if not all((fresh.get("ok"), canonical.get("passed"), model_passed)):
         raise RuntimeError("one or more required browser evidence chains did not pass")
@@ -315,6 +359,14 @@ def main() -> int:
         raise RuntimeError("connector-neutral Action browser evidence did not pass")
     if args.wiki_docs_dir and not wiki_docs.get("ok"):
         raise RuntimeError("Wiki onboarding document browser evidence did not pass")
+    for label, configured, payload in (
+        ("security hardening", args.security_hardening_dir, hardening),
+        ("component composition", args.component_composition_dir, composition),
+        ("team Action", args.team_action_dir, team_action),
+        ("staged Workbench", args.staged_workbench_dir, staged_workbench),
+    ):
+        if configured and not payload.get("ok"):
+            raise RuntimeError(f"{label} browser evidence did not pass")
 
     canonical_flow_id = str(
         canonical.get("agent_hub", {}).get("deployment", {}).get("flow_id") or ""
@@ -331,6 +383,10 @@ def main() -> int:
         "cross_author_adoption": cross_author,
         "action_abstraction": action_abstraction,
         "wiki_onboarding_docs": wiki_docs,
+        "security_context_hardening": hardening,
+        "component_composition_drift": composition,
+        "team_action_sharing": team_action,
+        "staged_workbench": staged_workbench,
         "canonical": safe_browser_summary(canonical),
         "model_agent": (
             safe_browser_summary(model)

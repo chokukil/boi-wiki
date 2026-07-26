@@ -6,15 +6,19 @@ Langflow's public custom-component API without a BoI or Langflow source patch.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from langflow.custom import Component
-from langflow.io import MultilineInput, Output
+from langflow.io import DataInput, Output, StrInput
 from langflow.schema import Data
 
 
 class EvidencePrioritySelector(Component):
+    component_contract = {
+        "schema_version": "boi.agent-slot.v1",
+        "inputs": ["agent_context"],
+        "outputs": ["agent_result"],
+    }
     display_name = "Evidence Priority Selector"
     description = (
         "Ranks document and ontology evidence while preserving provenance. "
@@ -24,18 +28,24 @@ class EvidencePrioritySelector(Component):
     name = "EvidencePrioritySelector"
 
     inputs = [
-        MultilineInput(
-            name="evidence_json",
-            display_name="Evidence JSON",
-            info="JSON array of evidence objects.",
+        DataInput(
+            name="agent_context",
+            display_name="Agent Context",
+            info="BoI Wiki source references, Ontology provenance, and Task Context.",
             required=True,
+        ),
+        StrInput(
+            name="component_asset_id",
+            display_name="Component Asset ID",
+            value="",
+            advanced=True,
         ),
     ]
     outputs = [
         Output(
-            name="ranked_evidence",
-            display_name="Ranked Evidence",
-            method="rank_evidence",
+            name="agent_result",
+            display_name="Agent Result",
+            method="build_agent_result",
         ),
     ]
 
@@ -60,44 +70,52 @@ class EvidencePrioritySelector(Component):
         )
         return has_provenance, confidence_value, identity
 
-    def rank_evidence(self) -> Data:
-        try:
-            value = json.loads(self.evidence_json or "[]")
-        except json.JSONDecodeError as exc:
-            return Data(
-                data={
-                    "ranked_evidence": [],
-                    "grounding_status": "invalid_evidence_json",
-                    "error": str(exc),
-                }
-            )
+    def build_agent_result(self) -> Data:
+        source = self.agent_context
+        payload = (
+            dict(source.data)
+            if isinstance(source, Data)
+            else dict(source)
+            if isinstance(source, dict)
+            else {}
+        )
         rows = [
             dict(item)
-            for item in value
+            for item in payload.get("source_references") or []
             if isinstance(item, dict)
-        ] if isinstance(value, list) else []
+        ]
         ranked = sorted(rows, key=self._score, reverse=True)
+        asset_id = str(self.component_asset_id or "").strip()
+        executed = [
+            str(item)
+            for item in payload.get("executed_component_ids") or []
+            if str(item)
+        ]
+        if asset_id:
+            executed.append(asset_id)
+        provenance = (
+            dict(payload.get("provenance"))
+            if isinstance(payload.get("provenance"), dict)
+            else {}
+        )
+        provenance["agent_component"] = {
+            "contract": "boi.agent-slot.v1",
+            "component_asset_id": asset_id,
+            "source_reference_count": len(ranked),
+        }
         return Data(
             data={
-                "ranked_evidence": ranked,
-                "grounding_status": (
-                    "ranked_with_provenance"
-                    if any(self._score(item)[0] for item in ranked)
-                    else "ranked_without_provenance"
+                **payload,
+                "answer": str(
+                    payload.get("answer")
+                    or payload.get("context")
+                    or "근거 우선순위를 반영했습니다."
                 ),
                 "source_references": [
-                    str(
-                        item.get("source_ref")
-                        or item.get("document_id")
-                        or item.get("id")
-                        or ""
-                    )
-                    for item in ranked
-                    if (
-                        item.get("source_ref")
-                        or item.get("document_id")
-                        or item.get("id")
-                    )
+                    item for item in ranked
                 ],
+                "provenance": provenance,
+                "component_asset_id": asset_id,
+                "executed_component_ids": list(dict.fromkeys(executed)),
             }
         )
