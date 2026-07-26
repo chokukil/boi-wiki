@@ -179,6 +179,13 @@ try {
   );
   await capture("01-desktop-create-stage");
 
+  const inboxResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET"
+      && url.pathname === "/api/agents/boi-wiki/inbox"
+    );
+  }, { timeout: 30_000 }).catch(() => null);
   await root.locator('[data-workbench-step="test"]').click();
   await root.locator("[data-retrieval-default]").waitFor({ state: "visible" });
   const retrievalText = (
@@ -203,7 +210,12 @@ try {
     internal_facade_hidden: true,
   };
   await root.locator("[data-task-select]").waitFor();
-  await page.waitForTimeout(500);
+  const inbox = await inboxResponse;
+  if (inbox) result.task_selector.inbox_status = inbox.status();
+  await page.waitForFunction(() => {
+    const option = document.querySelector("[data-task-select] option");
+    return option && !String(option.textContent || "").includes("불러오는 중");
+  });
   result.task_selector = {
     ...result.task_selector,
     uses_acl_inbox: result.task_selector.inbox_status === 200,
