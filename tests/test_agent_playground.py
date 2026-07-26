@@ -612,9 +612,13 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
                 "name": "BoI Wiki Agent Loop",
                 "endpoint_name": "boi-wiki-agent-loop",
                 "folder_id": "project-100003",
+                "description": str(kwargs["json"].get("description") or ""),
+                "data": copy.deepcopy(kwargs["json"]["data"]),
             }
             flows.append(flow)
             return response(flow, 201)
+        if path == "/api/v1/flows/flow-100003" and method == "GET":
+            return response(copy.deepcopy(flows[0]))
         if path == "/api/v1/run/flow-100003" and method == "POST":
             body = kwargs["json"]
             assert '"save_mode": "preview"' in body["input_value"]
@@ -648,6 +652,22 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
         "next_action": "open_agent_hub",
         "message": "첫 배포 전에 endpoint 연결과 프로젝트 선택을 안내합니다.",
     }
+    rerun = service.bootstrap(viewer, PlaygroundBootstrapRequest())["state"]
+    assert rerun["project"]["id"] == state["project"]["id"]
+    assert rerun["flow"]["id"] == state["flow"]["id"]
+    listed = service.flows(
+        viewer,
+        state["default_endpoint_id"],
+        state["project"]["id"],
+    )["flows"]
+    assert len(listed) == 1
+    assert listed[0]["validation_status"] == "runtime_validated"
+    assert listed[0]["checksum_state"] == "matched"
+    rerun_record = service._read("100003")
+    assert listed[0]["live_checksum"] == (
+        rerun_record["endpoint_setups"][state["default_endpoint_id"]]
+        ["canonical_flow"]["validated_checksum"]
+    )
     journey_record = service._read("100003")
     journey_record.setdefault("flow_registry", []).append(
         {

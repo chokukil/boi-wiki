@@ -250,18 +250,43 @@ async function completeOnboarding(page, apiKey) {
   assert(rerun.status === 200, `idempotent bootstrap returned HTTP ${rerun.status}`);
   const after = await page.evaluate(async () => (await fetch("/api/agent-playground")).json());
   const afterSetup = after.endpoint_setups?.[endpointId] || {};
+  const liveFlows = await page.evaluate(async ({ endpointId: selectedEndpoint, projectId }) => {
+    const response = await fetch(
+      `/api/agent-playground/endpoints/${encodeURIComponent(selectedEndpoint)}`
+      + `/projects/${encodeURIComponent(projectId)}/flows`,
+    );
+    return { status: response.status, body: await response.json() };
+  }, { endpointId, projectId: before.project_id });
+  assert(liveFlows.status === 200, `live Flow refresh returned HTTP ${liveFlows.status}`);
+  const canonical = (liveFlows.body.flows || []).find(
+    (item) => item.flow_id === before.flow_id,
+  );
   result.idempotency = {
     bootstrap_status: rerun.status,
     same_project:
       before.project_id === (afterSetup.project?.id || afterSetup.project_id),
     same_flow:
       before.flow_id === (afterSetup.canonical_flow?.id || afterSetup.flow_id),
+    checksum_state: canonical?.checksum_state || "",
+    validation_status: canonical?.validation_status || "",
   };
   assert(result.idempotency.same_project, "bootstrap duplicated the project");
   assert(result.idempotency.same_flow, "bootstrap duplicated the canonical Flow");
+  assert(
+    result.idempotency.checksum_state === "matched",
+    "idempotent bootstrap marked the canonical Flow as checksum drift",
+  );
+  assert(
+    result.idempotency.validation_status !== "blocked",
+    "idempotent bootstrap moved the canonical Flow into blocked history",
+  );
 
   await root.locator("[data-onboarding-finish]").click();
   await root.locator("[data-workbench-only]").first().waitFor({ state: "visible" });
+  assert(
+    await root.locator(".agent-playground-flow-history").count() === 0,
+    "fresh canonical Flow is incorrectly shown as a problematic history item",
+  );
   await screenshot(page, "05-boi-workbench-ready");
 }
 

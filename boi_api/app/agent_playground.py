@@ -1577,7 +1577,9 @@ class AgentPlaygroundService:
                     source_assets,
                 )
                 registered_checksum = str(
-                    registry.get("artifact_checksum")
+                    registry.get("validated_checksum")
+                    or deployment.get("validated_checksum")
+                    or registry.get("artifact_checksum")
                     or deployment_checksum
                 )
                 checksum_state = (
@@ -2572,11 +2574,31 @@ class AgentPlaygroundService:
                 ):
                     deployment["artifact_checksum"] = after_checksum
                     deployment["runtime_checksum"] = after_checksum
+                    deployment["validated_checksum"] = after_checksum
                     deployment["live_checksum"] = after_checksum
                     deployment["checksum_state"] = "matched"
                     deployment["status"] = "discovered"
                     deployment["connected_component_ids"] = [request.component_asset_id]
                     deployment["graph_health"] = graph_health
+            for registry_item in current.get("flow_registry") or []:
+                if (
+                    isinstance(registry_item, dict)
+                    and str(registry_item.get("endpoint_id") or "")
+                    == str(current_adoption.get("endpoint_id") or "")
+                    and str(registry_item.get("project_id") or "")
+                    == str(current_adoption.get("project_id") or "")
+                    and str(registry_item.get("flow_id") or "") == request.flow_id
+                ):
+                    registry_item["artifact_checksum"] = after_checksum
+                    registry_item["validated_checksum"] = after_checksum
+                    registry_item["live_checksum"] = after_checksum
+                    registry_item["checksum_state"] = "matched"
+                    registry_item["validation_status"] = "discovered"
+                    registry_item["connected_component_ids"] = [
+                        request.component_asset_id
+                    ]
+                    registry_item["graph_health"] = graph_health
+                    registry_item.pop("failure_reason", None)
             self._write(principal.employee_id, current)
         return {
             "ok": True,
@@ -2902,12 +2924,22 @@ class AgentPlaygroundService:
                     )
                     smoke_result = self._run(endpoint, api_key, flow_ref, smoke_request)
                 canonical_checksum = self._canonical_checksum()
+                canonical_live_flow = self.langflow.flow(
+                    endpoint,
+                    api_key,
+                    str(flow.get("id") or flow_ref),
+                )
+                canonical_live_checksum = self._runtime_flow_checksum(
+                    canonical_live_flow
+                )
                 canonical_flow = {
                     "id": str(flow.get("id") or ""),
                     "name": str(flow.get("name") or CANONICAL_FLOW_NAME),
                     "endpoint_name": str(flow.get("endpoint_name") or CANONICAL_FLOW_ENDPOINT),
                     "version": CANONICAL_FLOW_VERSION,
                     "checksum": canonical_checksum,
+                    "validated_checksum": canonical_live_checksum,
+                    "live_checksum": canonical_live_checksum,
                     "flow_url": f"{endpoint}/flow/{flow_ref}",
                     "endpoint_id": endpoint_id,
                     "project_id": project_record["id"],
@@ -2952,6 +2984,9 @@ class AgentPlaygroundService:
                         "endpoint_name": canonical_flow["endpoint_name"],
                         "artifact_version": CANONICAL_FLOW_VERSION,
                         "artifact_checksum": canonical_checksum,
+                        "validated_checksum": canonical_live_checksum,
+                        "live_checksum": canonical_live_checksum,
+                        "checksum_state": "matched",
                         "validation_status": "runtime_validated",
                         "validation_history": [
                             {
@@ -3135,6 +3170,9 @@ class AgentPlaygroundService:
             "endpoint_name": request.endpoint_name or str(flow.get("endpoint_name") or ""),
             "asset_version": request.asset_version,
             "artifact_checksum": checksum,
+            "validated_checksum": checksum,
+            "live_checksum": checksum,
+            "checksum_state": "matched",
             "agent_hub_asset_id": request.agent_hub_asset_id,
             "agent_hub_endpoint_id": request.agent_hub_endpoint_id,
             "agent_hub_deployment_id": request.agent_hub_deployment_id,
@@ -3152,6 +3190,9 @@ class AgentPlaygroundService:
                 "endpoint_name": str(flow.get("endpoint_name") or ""),
                 "artifact_version": request.asset_version,
                 "artifact_checksum": checksum,
+                "validated_checksum": checksum,
+                "live_checksum": checksum,
+                "checksum_state": "matched",
                 "deployment_id": deployment_id,
                 "validation_status": "discovered",
                 "last_seen_at": now_iso(),
@@ -3982,6 +4023,7 @@ class AgentPlaygroundService:
                     "endpoint_name": str(flow.get("endpoint_name") or listed_flow.get("endpoint_name") or ""),
                     "artifact_version": artifact_version,
                     "artifact_checksum": checksum,
+                    "validated_checksum": checksum,
                     "live_checksum": checksum,
                     "checksum_state": "matched",
                     "graph_health": structural["graph_health"],
@@ -4013,6 +4055,7 @@ class AgentPlaygroundService:
                     deployment["input_contract"] = structural["input_contract"]
                     deployment["output_contract"] = structural["output_contract"]
                     deployment["artifact_checksum"] = checksum
+                    deployment["validated_checksum"] = checksum
                     deployment["live_checksum"] = checksum
                     deployment["checksum_state"] = "matched"
                     deployment["graph_health"] = structural["graph_health"]
@@ -4889,7 +4932,11 @@ class AgentPlaygroundService:
             api_key = self._api_key(record, endpoint_id)
             live_flow = self.langflow.flow(endpoint, api_key, flow_id)
             live_checksum = self._runtime_flow_checksum(live_flow)
-            registered_checksum = str(deployment.get("artifact_checksum") or "")
+            registered_checksum = str(
+                deployment.get("validated_checksum")
+                or deployment.get("artifact_checksum")
+                or ""
+            )
             if not registered_checksum or live_checksum != registered_checksum:
                 deployment["status"] = "blocked"
                 deployment["checksum_state"] = "drifted"
