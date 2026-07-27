@@ -30,6 +30,7 @@
     "name": "BoI Universal Simulation MCP",
     "endpoint_name": "boi-universal-simulation-mcp",
     "version": "1.0.0",
+    "artifact_sha256": "280f734239728b8ba50baefee3443482763cabe627d67d5fd35812e7662dd8bd",
     "tool_name": "boi_universal_simulate",
     "transport": "streamable_http",
     "authentication": "apikey",

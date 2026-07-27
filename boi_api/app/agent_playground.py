@@ -3176,6 +3176,72 @@ class AgentPlaygroundService:
             ),
         )
 
+    def _configure_project_mcp_tool(
+        self,
+        endpoint: str,
+        api_key: str,
+        project_id: str,
+        flow_id: str,
+        *,
+        enabled: bool,
+        action_name: str,
+        action_description: str,
+    ) -> dict[str, Any]:
+        """Configure one public Langflow MCP tool without ambiguous duplicates.
+
+        Langflow 1.11 makes colliding action names unique only in ``list_tools``
+        (``name``, ``name_1``, ...), while ``call_tool(name)`` resolves the
+        unsuffixed name independently.  Leaving an older revision enabled can
+        therefore execute a different Flow than the exact Flow selected in the
+        Playground.  Keep unrelated tools intact, but disable older revisions
+        that claim the same action name whenever this exact Flow is enabled.
+        """
+
+        current = self.langflow.project_mcp(endpoint, api_key, project_id)
+        settings: list[dict[str, Any]] = []
+        selected: dict[str, Any] | None = None
+        for raw in current.get("tools") or []:
+            if not isinstance(raw, dict):
+                continue
+            item = {
+                key: raw.get(key)
+                for key in (
+                    "id",
+                    "mcp_enabled",
+                    "action_name",
+                    "action_description",
+                    "name",
+                    "description",
+                )
+                if key in raw
+            }
+            item_id = str(item.get("id") or "")
+            if item_id == flow_id:
+                selected = item
+            elif (
+                enabled
+                and str(item.get("action_name") or "") == action_name
+            ):
+                item["mcp_enabled"] = False
+            settings.append(item)
+        if selected is None:
+            selected = {"id": flow_id}
+            settings.append(selected)
+        selected.update(
+            {
+                "mcp_enabled": enabled,
+                "action_name": action_name,
+                "action_description": action_description,
+            }
+        )
+        return self.langflow.update_project_mcp(
+            endpoint,
+            api_key,
+            project_id,
+            settings=settings,
+            auth_type="apikey",
+        )
+
     @staticmethod
     def _flow_reinstall_required(exc: Exception) -> bool:
         detail = getattr(exc, "detail", exc)
@@ -3435,6 +3501,15 @@ class AgentPlaygroundService:
                     or recommended_flow_live.get("endpoint_name")
                     or UNIVERSAL_MCP_FLOW_ENDPOINT
                 )
+                self._configure_project_mcp_tool(
+                    endpoint,
+                    api_key,
+                    project_record["id"],
+                    str(recommended_flow_live.get("id") or ""),
+                    enabled=True,
+                    action_name=UNIVERSAL_MCP_TOOL_NAME,
+                    action_description=UNIVERSAL_MCP_TOOL_DESCRIPTION,
+                )
                 recommended_smoke_request = PlaygroundFlowTestRequest(
                     endpoint_id=endpoint_id,
                     project_id=project_record["id"],
@@ -3465,6 +3540,15 @@ class AgentPlaygroundService:
                         recommended_flow_live.get("id")
                         or recommended_flow_live.get("endpoint_name")
                         or UNIVERSAL_MCP_FLOW_ENDPOINT
+                    )
+                    self._configure_project_mcp_tool(
+                        endpoint,
+                        api_key,
+                        project_record["id"],
+                        str(recommended_flow_live.get("id") or ""),
+                        enabled=True,
+                        action_name=UNIVERSAL_MCP_TOOL_NAME,
+                        action_description=UNIVERSAL_MCP_TOOL_DESCRIPTION,
                     )
                     recommended_smoke_result = self._run(
                         endpoint,
@@ -3848,47 +3932,14 @@ class AgentPlaygroundService:
             flow_id,
         )
         endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
-        current = self.langflow.project_mcp(endpoint, api_key, project_id)
-        settings = [
-            {
-                key: item.get(key)
-                for key in (
-                    "id",
-                    "mcp_enabled",
-                    "action_name",
-                    "action_description",
-                    "name",
-                    "description",
-                )
-                if key in item
-            }
-            for item in current.get("tools") or []
-            if isinstance(item, dict)
-        ]
-        selected = next(
-            (item for item in settings if str(item.get("id") or "") == flow_id),
-            None,
-        )
-        if selected is None:
-            selected = {
-                "id": flow_id,
-                "name": str(live_flow.get("name") or ""),
-                "description": str(live_flow.get("description") or ""),
-            }
-            settings.append(selected)
-        selected.update(
-            {
-                "mcp_enabled": request.enabled,
-                "action_name": request.action_name,
-                "action_description": request.action_description,
-            }
-        )
-        self.langflow.update_project_mcp(
+        self._configure_project_mcp_tool(
             endpoint,
             api_key,
             project_id,
-            settings=settings,
-            auth_type=request.auth_type,
+            flow_id,
+            enabled=request.enabled,
+            action_name=request.action_name,
+            action_description=request.action_description,
         )
         with self._lock:
             record = self._read(principal.employee_id)
@@ -3971,12 +4022,66 @@ class AgentPlaygroundService:
         request: PlaygroundMCPTestRequest,
     ) -> dict[str, Any]:
         require_role(principal, "boi.viewer")
-        connection, _, api_key = self._live_flow(
+        connection, live_flow, api_key = self._live_flow(
             principal,
             endpoint_id,
             project_id,
             flow_id,
         )
+        live_checksum = self._runtime_flow_checksum(live_flow)
+        record = self._read(principal.employee_id)
+        registry_item = next(
+            (
+                item
+                for item in record.get("flow_registry") or []
+                if isinstance(item, dict)
+                and str(item.get("endpoint_id") or "") == endpoint_id
+                and str(item.get("project_id") or "") == project_id
+                and str(item.get("flow_id") or "") == flow_id
+            ),
+            None,
+        )
+        registered_checksum = str(
+            (registry_item or {}).get("validated_checksum")
+            or (registry_item or {}).get("artifact_checksum")
+            or ""
+        )
+        if registered_checksum and registered_checksum != live_checksum:
+            with self._lock:
+                current = self._read(principal.employee_id)
+                for collection_name in ("flow_registry", "deployments"):
+                    for item in current.get(collection_name) or []:
+                        if (
+                            not isinstance(item, dict)
+                            or str(item.get("endpoint_id") or "") != endpoint_id
+                            or str(item.get("project_id") or "") != project_id
+                            or str(item.get("flow_id") or "") != flow_id
+                        ):
+                            continue
+                        item[
+                            "validation_status"
+                            if collection_name == "flow_registry"
+                            else "status"
+                        ] = "blocked"
+                        item["checksum_state"] = "drifted"
+                        item["live_checksum"] = live_checksum
+                        item["failure_reason"] = "flow_checksum_drift"
+                        if collection_name == "flow_registry":
+                            item["mcp_status"] = "blocked"
+                self._write(principal.employee_id, current)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "flow_checksum_drift",
+                    "message": (
+                        "Flow가 검증 이후 변경되어 MCP 호출을 차단했습니다. "
+                        "Flow를 다시 검증해 주세요."
+                    ),
+                    "flow_id": flow_id,
+                    "registered_checksum": registered_checksum,
+                    "live_checksum": live_checksum,
+                },
+            )
         endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
         settings = self.mcp_settings(
             principal,

@@ -350,6 +350,10 @@ class BoIUniversalSimulationMCPAgent(Component):
                 "simulation": True,
                 "simulation_label": "SIMULATED",
                 "real_system_connected": False,
+                "real_system_called": False,
+                "simulation_notice": (
+                    "실제 사내 시스템을 호출하지 않은 근거 기반 시뮬레이션입니다."
+                ),
                 "answer": answer,
                 "simulation_result": simulation,
                 "coverage_report": coverage,

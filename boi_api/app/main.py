@@ -33445,10 +33445,7 @@ def internal_agent_playground_wiki_search(
     if resolved_task:
         context_profile = (
             "sop_task_execution"
-            if any(
-                str(resolved_stage.get(key) or "")
-                for key in ("sop_ref", "sop_stage_id", "workflow_definition_key")
-            )
+            if str(resolved_stage.get("sop_ref") or "")
             else "task_execution"
         )
     elif page_ref:

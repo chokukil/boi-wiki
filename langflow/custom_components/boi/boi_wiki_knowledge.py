@@ -15,6 +15,16 @@ from lfx.utils.secrets import unwrap_secret_value
 
 
 def _decode_tool_result(result: Any) -> dict[str, Any]:
+    if bool(
+        getattr(result, "isError", False)
+        or getattr(result, "is_error", False)
+    ):
+        detail = " ".join(
+            str(getattr(item, "text", "") or "").strip()
+            for item in getattr(result, "content", []) or []
+            if str(getattr(item, "text", "") or "").strip()
+        )
+        raise RuntimeError(detail or "BoI Wiki MCP tool call failed")
     structured = getattr(result, "structuredContent", None) or getattr(result, "structured_content", None)
     if isinstance(structured, dict):
         return structured
@@ -109,14 +119,7 @@ class BoIWikiKnowledge(Component):
             str(request.get(key) or "").strip()
             for key in ("sop_ref", "sop_stage", "stage_ref", "event_ref", "action_ref")
         )
-        combined = " ".join(
-            [
-                business_context,
-                str(request.get("question") or ""),
-                str(request.get("task_type") or ""),
-            ]
-        ).lower()
-        if task_ref and (explicit_sop or "sop" in combined or "표준작업" in combined):
+        if task_ref and explicit_sop:
             return "sop_task_execution"
         if task_ref:
             return "task_execution"

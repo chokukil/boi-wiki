@@ -25,6 +25,9 @@ BOI_UNIVERSAL_MCP_FLOW_NAME = "BoI Universal Simulation MCP"
 BOI_UNIVERSAL_MCP_FLOW_ENDPOINT = "boi-universal-simulation-mcp"
 BOI_UNIVERSAL_MCP_FLOW_VERSION = "1.0.0"
 BOI_UNIVERSAL_MCP_TOOL_NAME = "boi_universal_simulate"
+BOI_UNIVERSAL_MCP_ARTIFACT_SHA256 = (
+    "280f734239728b8ba50baefee3443482763cabe627d67d5fd35812e7662dd8bd"
+)
 BOI_UNIVERSAL_MCP_ARTIFACT = (
     ROOT / "langflow" / "flows" / "boi_universal_simulation_mcp.json"
 )

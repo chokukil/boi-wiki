@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -17,9 +18,20 @@ from lfx.utils.secrets import unwrap_secret_value
 
 
 SECRET_VALUE = re.compile(r"(?:boi_(?:pat|run)_[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]{16,})")
+MACHINE_RESULT_PREFIX = "BOI_RESULT_JSON_B64:"
 
 
 def _decode_tool_result(result: Any) -> dict[str, Any]:
+    if bool(
+        getattr(result, "isError", False)
+        or getattr(result, "is_error", False)
+    ):
+        detail = " ".join(
+            str(getattr(item, "text", "") or "").strip()
+            for item in getattr(result, "content", []) or []
+            if str(getattr(item, "text", "") or "").strip()
+        )
+        raise RuntimeError(detail or "BoI Wiki MCP tool call failed")
     structured = getattr(result, "structuredContent", None) or getattr(result, "structured_content", None)
     if isinstance(structured, dict):
         return structured
@@ -128,6 +140,81 @@ class BoIWikiSave(Component):
     def _agent_payload(self) -> dict[str, Any]:
         return _redact(dict(getattr(self.agent_result, "data", {}) or {}))
 
+    @staticmethod
+    def _machine_result(result: dict[str, Any]) -> str:
+        """Encode the safe result contract in Chat Output for Langflow MCP clients.
+
+        Langflow's project MCP transport currently serializes the final Message
+        text, not Message.data.  Keep the human-readable Markdown unchanged and
+        add a hidden, versioned payload that clients can decode without exposing
+        credentials or relying on Markdown scraping.
+        """
+
+        contract = _redact(
+            {
+                "schema_version": "boi.universal-simulation.result.v1",
+                "status": result.get("status") or "preview",
+                "mode": result.get("mode") or "preview",
+                "simulation": bool(result.get("simulation")),
+                "simulation_label": result.get("simulation_label") or "",
+                "simulation_notice": result.get("simulation_notice") or "",
+                "real_system_called": bool(result.get("real_system_called")),
+                "simulation_result": (
+                    result.get("simulation_result")
+                    if isinstance(result.get("simulation_result"), dict)
+                    else {}
+                ),
+                "coverage_report": (
+                    result.get("coverage_report")
+                    if isinstance(result.get("coverage_report"), dict)
+                    else {}
+                ),
+                "limitations": result.get("limitations") or [],
+                "next_steps": result.get("next_steps") or [],
+                "task_context": (
+                    result.get("task_context")
+                    if isinstance(result.get("task_context"), dict)
+                    else {}
+                ),
+                "source_references": result.get("source_references") or [],
+                "ontology_relationships": result.get("ontology_relationships")
+                or [],
+                "grounding_status": result.get("grounding_status") or "unknown",
+                "permission_excluded_count": int(
+                    result.get("permission_excluded_count") or 0
+                ),
+                "model_trace": (
+                    result.get("model_trace")
+                    if isinstance(result.get("model_trace"), dict)
+                    else {}
+                ),
+                "draft_reference": result.get("draft_reference") or "",
+                "wiki_url": result.get("wiki_url") or "",
+                "production_changed": bool(result.get("production_changed")),
+                "write_blocked": bool(result.get("write_blocked")),
+                "write_blocked_reason": result.get("write_blocked_reason") or "",
+                "provenance": (
+                    result.get("provenance")
+                    if isinstance(result.get("provenance"), dict)
+                    else {}
+                ),
+            }
+        )
+        encoded = base64.b64encode(
+            json.dumps(
+                contract,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+                default=str,
+            ).encode("utf-8")
+        ).decode("ascii")
+        # Langflow 1.11 project MCP normalizes hidden Markdown metadata to the
+        # space-delimited HTML comment form below.  Emit that canonical form
+        # directly so /run and streamable MCP carry the same contract without
+        # showing a long machine payload to first-time Canvas users.
+        return f"<!-- {MACHINE_RESULT_PREFIX[:-1]} {encoded} -->"
+
     async def _result(self) -> dict[str, Any]:
         payload = self._agent_payload()
         request_variables = self._request_variables()
@@ -191,6 +278,13 @@ class BoIWikiSave(Component):
             "grounding_status": payload.get("grounding_status") or "unknown",
             "simulation": bool(payload.get("simulation")),
             "simulation_label": str(payload.get("simulation_label") or ""),
+            "simulation_notice": str(payload.get("simulation_notice") or ""),
+            "real_system_called": bool(payload.get("real_system_called")),
+            "simulation_result": (
+                payload.get("simulation_result")
+                if isinstance(payload.get("simulation_result"), dict)
+                else {}
+            ),
             "coverage_report": (
                 payload.get("coverage_report")
                 if isinstance(payload.get("coverage_report"), dict)
@@ -201,6 +295,14 @@ class BoIWikiSave(Component):
                 for item in payload.get("limitations") or []
                 if str(item)
             ],
+            "next_steps": [
+                str(item)
+                for item in payload.get("next_steps") or []
+                if str(item)
+            ],
+            "permission_excluded_count": int(
+                payload.get("permission_excluded_count") or 0
+            ),
             "model_trace": model_trace,
             "draft_reference": "",
             "wiki_url": "",
@@ -309,4 +411,5 @@ class BoIWikiSave(Component):
             )
         else:
             text += "\n\n미리보기만 수행했습니다. Wiki는 변경하지 않았습니다."
+        text += f"\n\n{self._machine_result(result)}"
         return Message(text=text.strip(), data=result)
