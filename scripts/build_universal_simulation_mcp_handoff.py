@@ -232,17 +232,44 @@ def main() -> int:
     )
 
     commit = args.feature_commit or feature["head"]
+    if commit != feature["head"] and not feature["head"].startswith(commit):
+        raise RuntimeError(
+            f"feature commit {commit} does not match clean HEAD {feature['head']}"
+        )
+    commit_rows = subprocess.check_output(
+        [
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x09%s",
+            "origin/main..HEAD",
+        ],
+        cwd=ROOT,
+        text=True,
+    ).splitlines()
+    if not commit_rows:
+        raise RuntimeError("no Agent Playground commits found after origin/main")
+    commit_steps = [
+        f"{index}. `{row.split(chr(9), 1)[0]}` — "
+        f"{row.split(chr(9), 1)[1] if chr(9) in row else ''}"
+        for index, row in enumerate(commit_rows, start=1)
+    ]
+    next_step = len(commit_steps) + 1
     (output / "CHERRY_PICK_ORDER.md").write_text(
         "\n".join(
             [
                 "# Universal Simulation MCP 사내 적용 순서",
                 "",
-                f"1. `{commit}`을 `origin/main` 기반 사내 브랜치에 cherry-pick한다.",
-                "2. 공식 Langflow 1.11 이미지는 수정하지 않고 BoI bundle을 read-only mount한다.",
-                "3. `boi-wiki` Keycloak client와 `empno` claim, callback/origin을 사내 값으로 등록한다.",
-                "4. Playground에서 Langflow API Key를 연결하고 자동 bootstrap을 실행한다.",
-                "5. 수정 없는 Agent Hub UI에서 대표 Flow를 개인 프로젝트에 배포한다.",
-                "6. exact Flow 재발견, MCP preview, Action 일반/SOP/private draft 검증을 재실행한다.",
+                "아래 커밋을 표시된 순서대로 `origin/main` 기반 사내 브랜치에 cherry-pick한다.",
+                "마지막 커밋만 단독 cherry-pick하면 앞선 Playground 기반이 포함되지 않는다.",
+                "",
+                *commit_steps,
+                "",
+                f"{next_step}. 공식 Langflow 1.11 이미지는 수정하지 않고 BoI bundle을 read-only mount한다.",
+                f"{next_step + 1}. `boi-wiki` Keycloak client와 `empno` claim, callback/origin을 사내 값으로 등록한다.",
+                f"{next_step + 2}. Playground에서 Langflow API Key를 연결하고 자동 bootstrap을 실행한다.",
+                f"{next_step + 3}. 수정 없는 Agent Hub UI에서 대표 Flow를 개인 프로젝트에 배포한다.",
+                f"{next_step + 4}. exact Flow 재발견, MCP preview, Action 일반/SOP/private draft 검증을 재실행한다.",
                 "",
                 "Agent Hub 소스·DB schema·API는 cherry-pick하거나 수정하지 않는다.",
             ]
