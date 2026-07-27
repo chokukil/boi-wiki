@@ -57,6 +57,8 @@
     ownFlowSnapshot: new Set(),
     deepLink,
     deepLinkApplied: false,
+    mcp: null,
+    mcpLoadingFor: "",
   };
 
   const withIdentity = (path) => {
@@ -102,6 +104,8 @@
     action_linked: "Action 연결",
     blocked: "차단됨",
     drifted: "변경되어 재검증 필요",
+    mcp_ready: "MCP 도구 사용 가능",
+    mcp_unavailable: "MCP 준비 안 됨",
   };
 
   const stageLabel = {
@@ -157,6 +161,23 @@
   const selectedSetup = () => (
     (app.state && app.state.endpoint_setups && app.state.endpoint_setups[app.endpointId]) || null
   );
+
+  const selectedFlowArtifactVersion = () => {
+    if (!app.flow) return "";
+    const direct = app.flow.artifact_version || app.flow.asset_version || app.flow.version;
+    if (direct) return String(direct);
+    const recommended = (app.state && app.state.recommended_asset) || {};
+    if (
+      app.flow.name === recommended.name
+      || app.flow.endpoint_name === recommended.endpoint_name
+    ) return String(recommended.version || "1.0.0");
+    const canonical = (app.state && app.state.canonical_asset) || {};
+    if (
+      app.flow.name === canonical.name
+      || app.flow.endpoint_name === canonical.endpoint_name
+    ) return String(canonical.version || "1.1.0");
+    return "1.0.0";
+  };
 
   const selectedOnboarding = () => {
     const setup = selectedSetup();
@@ -676,14 +697,14 @@
       : "저장 후에는 다시 표시하지 않습니다";
 
     const setup = selectedSetup() || {};
-    const canonical = setup.canonical_flow || {};
-    root.querySelector("[data-onboarding-flow-name]").textContent = canonical.name || "BoI Wiki Agent Loop";
-    root.querySelector("[data-onboarding-flow-detail]").textContent = canonical.id
-      ? `preview 통과 · ${canonical.version || "1.1.0"}`
-      : "기준 Flow 확인 중";
+    const recommended = setup.recommended_flow || setup.canonical_flow || {};
+    root.querySelector("[data-onboarding-flow-name]").textContent = recommended.name || "BoI Universal Simulation MCP";
+    root.querySelector("[data-onboarding-flow-detail]").textContent = recommended.id
+      ? `Wiki·Ontology + Gemma preview 통과 · ${recommended.version || "1.0.0"}`
+      : "추천 Flow 확인 중";
     const openLangflow = root.querySelector("[data-onboarding-open-langflow]");
-    if (canonical.flow_url) {
-      openLangflow.href = canonical.flow_url;
+    if (recommended.flow_url) {
+      openLangflow.href = recommended.flow_url;
       openLangflow.removeAttribute("aria-disabled");
     } else {
       openLangflow.removeAttribute("href");
@@ -904,6 +925,7 @@
       return;
     }
     const canonicalName = (app.state.canonical_asset || {}).name || "BoI Wiki Agent Loop";
+    const recommendedName = (app.state.recommended_asset || {}).name || "BoI Universal Simulation MCP";
     const isHistory = (flow) => (
       flow.validation_status === "blocked"
       || flow.checksum_state === "drifted"
@@ -912,9 +934,10 @@
     const current = filtered.filter((flow) => !isHistory(flow));
     const history = filtered.filter(isHistory);
     const groups = [
-      ["내 기준 Flow", current.filter((flow) => flow.name === canonicalName)],
-      ["Agent Hub에서 가져온 Flow", current.filter((flow) => flow.name !== canonicalName && flow.deployment_id)],
-      ["최근 작업", current.filter((flow) => flow.name !== canonicalName && !flow.deployment_id)],
+      ["처음 시작하기 · 추천 Flow", current.filter((flow) => flow.name === recommendedName)],
+      ["고급 템플릿", current.filter((flow) => flow.name === canonicalName)],
+      ["Agent Hub에서 가져온 Flow", current.filter((flow) => ![canonicalName, recommendedName].includes(flow.name) && flow.deployment_id)],
+      ["최근 작업", current.filter((flow) => ![canonicalName, recommendedName].includes(flow.name) && !flow.deployment_id)],
     ];
     const appendFlowGroup = (parent, title, flows) => {
       if (!flows.length) return;
@@ -943,6 +966,7 @@
         button.append(label, status);
         button.addEventListener("click", () => {
           app.flow = flow;
+          app.mcp = null;
           renderFlows();
           renderSelectedFlow();
         });
@@ -984,6 +1008,11 @@
           app.flow && app.flow.flow_id === app.deepLink.flowId,
         );
       }
+      if (!app.flow && !app.deepLink.flowId) {
+        const setup = selectedSetup() || {};
+        const recommendedId = String((setup.recommended_flow || {}).id || "");
+        app.flow = app.flows.find((flow) => flow.flow_id === recommendedId) || null;
+      }
       renderFlows();
       renderSelectedFlow();
     } catch (error) {
@@ -991,6 +1020,71 @@
       showToast(`Flow 조회 실패: ${error.message}`, "error");
     } finally {
       root.querySelector("[data-refresh-flows]").disabled = false;
+    }
+  };
+
+  const isRepresentativeFlow = (flow = app.flow) => {
+    const asset = (app.state && app.state.recommended_asset) || {};
+    return Boolean(
+      flow
+      && (
+        flow.endpoint_name === (asset.endpoint_name || "boi-universal-simulation-mcp")
+        || flow.name === (asset.name || "BoI Universal Simulation MCP")
+      )
+    );
+  };
+
+  const renderMcpStatus = () => {
+    const representative = isRepresentativeFlow();
+    const tools = (app.mcp && app.mcp.tools) || [];
+    const selected = app.flow
+      ? tools.find((item) => item.flow_id === app.flow.flow_id)
+      : null;
+    const ready = Boolean(
+      representative
+      && selected
+      && selected.mcp_enabled
+      && (app.mcp.auth || {}).type === "apikey"
+    );
+    root.querySelector("[data-mcp-status]").textContent = ready
+      ? "MCP 도구 사용 가능"
+      : representative
+        ? "MCP 준비 안 됨"
+        : "대표 Flow에서 사용";
+    root.querySelector("[data-mcp-detail]").textContent = ready
+      ? `${selected.tool_name} · 외부 호출은 미리보기만 수행합니다.`
+      : representative
+        ? "API Key 인증을 켠 뒤 실제 list_tools와 tool call을 확인합니다."
+        : "BoI Universal Simulation MCP Flow를 선택하면 활성화됩니다.";
+    root.querySelector("[data-enable-mcp]").disabled = !representative || !(app.state.capabilities || {}).can_edit;
+    root.querySelector("[data-test-mcp]").disabled = !ready;
+    root.querySelector("[data-mcp-client-example]").textContent = app.mcp
+      ? JSON.stringify(app.mcp.client_example || {}, null, 2)
+      : "대표 Flow를 선택하세요.";
+  };
+
+  const loadMcpStatus = async () => {
+    if (!app.flow || !app.endpointId || !app.projectId || !isRepresentativeFlow()) {
+      app.mcp = null;
+      app.mcpLoadingFor = "";
+      renderMcpStatus();
+      return;
+    }
+    const identity = `${app.endpointId}:${app.projectId}:${app.flow.flow_id}`;
+    if (app.mcpLoadingFor === identity) return;
+    app.mcpLoadingFor = identity;
+    try {
+      app.mcp = await request(
+        `/api/agent-playground/endpoints/${encodeURIComponent(app.endpointId)}`
+        + `/projects/${encodeURIComponent(app.projectId)}/mcp`
+        + `?flow_id=${encodeURIComponent(app.flow.flow_id)}`,
+      );
+    } catch (error) {
+      app.mcp = null;
+      root.querySelector("[data-mcp-output]").textContent = error.message;
+    } finally {
+      app.mcpLoadingFor = "";
+      renderMcpStatus();
     }
   };
 
@@ -1039,6 +1133,24 @@
     const selectedStatusChip = root.querySelector("[data-selected-flow-status]");
     selectedStatusChip.dataset.state = selectedStatus;
     selectedStatusChip.textContent = statusLabel[selectedStatus] || selectedStatus;
+    root.querySelector("[data-agent-replace-status]").textContent = (
+      flow && isRepresentativeFlow(flow)
+        ? "Agent 교체 가능"
+        : "Agent 계약 확인 필요"
+    );
+    root.querySelector("[data-deployment-reverify-status]").textContent = (
+      !flow || !flow.deployment_id
+        ? "Agent Hub 배포 전"
+        : flow.checksum_state === "drifted"
+          || !["action_ready", "action_linked"].includes(flow.validation_status)
+          ? "배포 후 재검증 필요"
+          : "배포 Flow 검증 완료"
+    );
+    root.querySelector("[data-action-ready-status]").textContent = (
+      flow && ["action_ready", "action_linked"].includes(flow.validation_status)
+        ? "Action 연결 가능"
+        : "Action 검증 필요"
+    );
     const ready = Boolean(flow);
     root.querySelector("[data-download-artifact]").disabled = !ready;
     root.querySelector("[data-record-deployment]").disabled = !ready || !(app.state.capabilities || {}).can_edit;
@@ -1084,6 +1196,8 @@
     }
     renderComponentStatus();
     renderHubImport();
+    renderMcpStatus();
+    void loadMcpStatus();
     setWorkbenchStep(app.activeStep);
   };
 
@@ -1121,6 +1235,69 @@
     `;
   };
 
+  const selectRecommendedFlow = async () => {
+    const setup = selectedSetup() || {};
+    const recommended = setup.recommended_flow || {};
+    if (!recommended.id) throw new Error("추천 Flow 준비가 끝나지 않았습니다.");
+    if (!app.projectId) {
+      app.projectId = recommended.project_id || (setup.project || {}).id || "";
+    }
+    if (!app.flows.length && app.projectId) await loadFlows();
+    app.flow = app.flows.find((item) => item.flow_id === recommended.id) || {
+      flow_id: recommended.id,
+      name: recommended.name,
+      endpoint_name: recommended.endpoint_name,
+      validation_status: "runtime_validated",
+    };
+    app.mcp = null;
+    renderFlows();
+    renderSelectedFlow();
+    return app.flow;
+  };
+
+  const enableRepresentativeMcp = async () => {
+    if (!app.flow || !isRepresentativeFlow()) {
+      await selectRecommendedFlow();
+    }
+    app.mcp = await request(
+      `/api/agent-playground/endpoints/${encodeURIComponent(app.endpointId)}`
+      + `/projects/${encodeURIComponent(app.projectId)}`
+      + `/flows/${encodeURIComponent(app.flow.flow_id)}/mcp`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: true,
+          action_name: "boi_universal_simulate",
+          action_description: "Wiki·Ontology와 선택한 Task 맥락을 사용해 실제 시스템을 호출하지 않는 업무 처리 시뮬레이션과 근거가 포함된 초안 후보를 만듭니다.",
+          auth_type: "apikey",
+        }),
+      },
+    );
+    renderMcpStatus();
+    return app.mcp;
+  };
+
+  const testRepresentativeMcp = async () => {
+    if (!app.flow || !isRepresentativeFlow()) {
+      await selectRecommendedFlow();
+    }
+    if (!app.mcp || app.mcp.status !== "available") {
+      await enableRepresentativeMcp();
+    }
+    return request(
+      `/api/agent-playground/endpoints/${encodeURIComponent(app.endpointId)}`
+      + `/projects/${encodeURIComponent(app.projectId)}`
+      + `/flows/${encodeURIComponent(app.flow.flow_id)}/mcp/test`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          question: "현재 업무에 필요한 Wiki·Ontology 근거와 예상 처리 결과를 시뮬레이션해줘.",
+          task_ref: "",
+        }),
+      },
+    );
+  };
+
   root.querySelector("[data-reopen-onboarding]").addEventListener("click", () => {
     app.guideForced = true;
     renderOnboarding();
@@ -1132,6 +1309,63 @@
     renderOnboarding();
     if (app.endpointId) await loadProjects(true);
     root.querySelector(".agent-playground-actions").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  root.querySelector("[data-onboarding-sample-run]").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const output = root.querySelector("[data-onboarding-first-run-output]");
+    button.disabled = true;
+    output.textContent = "Wiki·Ontology 근거를 준비하고 Gemma 시뮬레이션을 실행하는 중입니다.";
+    try {
+      await selectRecommendedFlow();
+      const payload = await request(
+        `/api/agent-playground/flows/${encodeURIComponent(app.flow.flow_id)}/test`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            endpoint_id: app.endpointId,
+            project_id: app.projectId,
+            question: "이 업무 요청을 처리하기 전에 확인할 근거와 예상 결과를 시뮬레이션해줘.",
+            save_mode: "preview",
+            title: "Universal Simulation MCP 샘플",
+          }),
+        },
+      );
+      renderResult(payload.result);
+      root.querySelector("[data-test-output]").textContent = JSON.stringify(payload.result, null, 2);
+      output.textContent = "SIMULATED 결과가 준비됐습니다. Wiki는 변경되지 않았습니다.";
+      showToast("샘플 시뮬레이션을 완료했습니다.", "success");
+    } catch (error) {
+      output.textContent = error.message;
+      showToast(`샘플 실행 실패: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  root.querySelector("[data-onboarding-open-result]").addEventListener("click", async () => {
+    app.guideForced = false;
+    setWorkbenchStep("test");
+    renderOnboarding();
+    if (app.endpointId) await loadProjects(true);
+    root.querySelector("[data-result-summary]").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+
+  root.querySelector("[data-onboarding-enable-mcp]").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const output = root.querySelector("[data-onboarding-first-run-output]");
+    button.disabled = true;
+    output.textContent = "Langflow MCP 설정과 실제 도구 목록을 확인하는 중입니다.";
+    try {
+      const payload = await testRepresentativeMcp();
+      output.textContent = `${payload.tool_name} MCP 도구 호출 성공 · 외부 호출은 preview-only`;
+      showToast("MCP 도구를 실제 streamable HTTP로 확인했습니다.", "success");
+    } catch (error) {
+      output.textContent = error.message;
+      showToast(`MCP 확인 실패: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+    }
   });
 
   const onboardingConnectionForm = root.querySelector("[data-onboarding-connection-form]");
@@ -1479,7 +1713,7 @@
           project_id: app.projectId,
           flow_id: app.flow.flow_id,
           endpoint_name: app.flow.endpoint_name || "",
-          asset_version: (app.state.canonical_asset || {}).version || "1.1.0",
+          asset_version: selectedFlowArtifactVersion(),
           artifact_checksum: app.flow.artifact_checksum || "",
         }),
       });
@@ -1506,7 +1740,7 @@
         body: JSON.stringify({
           endpoint_id: app.endpointId,
           project_id: app.projectId,
-          artifact_version: (app.state.canonical_asset || {}).version || "1.1.0",
+          artifact_version: selectedFlowArtifactVersion(),
           artifact_checksum: app.flow.artifact_checksum || "",
           task_ref: taskRef,
         }),
@@ -1560,6 +1794,44 @@
       showToast(`Flow 테스트 실패: ${error.message}`, "error");
     } finally {
       button.disabled = false;
+    }
+  });
+
+  root.querySelector("[data-enable-mcp]").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const output = root.querySelector("[data-mcp-output]");
+    button.disabled = true;
+    output.textContent = "MCP API Key 인증과 대표 도구를 준비하는 중입니다.";
+    try {
+      const payload = await enableRepresentativeMcp();
+      output.textContent = `${(payload.tools || [])[0]?.tool_name || "boi_universal_simulate"} · MCP 도구 사용 가능`;
+      showToast("대표 Flow를 MCP 도구로 준비했습니다.", "success");
+    } catch (error) {
+      output.textContent = error.message;
+      showToast(`MCP 준비 실패: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+      renderMcpStatus();
+    }
+  });
+
+  root.querySelector("[data-test-mcp]").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const output = root.querySelector("[data-mcp-output]");
+    button.disabled = true;
+    output.textContent = "list_tools와 실제 boi_universal_simulate 호출을 확인하는 중입니다.";
+    try {
+      const payload = await testRepresentativeMcp();
+      output.textContent = `${payload.tool_name} 호출 성공 · preview-only · Wiki 변경 없음`;
+      root.querySelector("[data-test-output]").textContent = JSON.stringify(payload.result, null, 2);
+      showToast("실제 Langflow MCP 호출을 통과했습니다.", "success");
+      await loadFlows();
+    } catch (error) {
+      output.textContent = error.message;
+      showToast(`MCP 호출 실패: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+      renderMcpStatus();
     }
   });
 

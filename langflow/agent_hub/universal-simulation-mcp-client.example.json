@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "boi-universal-simulation": {
+      "type": "streamable-http",
+      "url": "${LANGFLOW_BASE_URL}/api/v1/mcp/project/${PROJECT_ID}/streamable",
+      "headers": {
+        "x-api-key": "${LANGFLOW_API_KEY}"
+      }
+    }
+  }
+}

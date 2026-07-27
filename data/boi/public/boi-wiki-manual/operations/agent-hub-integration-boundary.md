@@ -46,6 +46,7 @@ Agent Hub는 BoI 개발 영역이 아니다. 지정된 Agent Hub 버전을 외�
 - BoI backend의 Agent Hub POST·PATCH·PUT·DELETE 요청
 - 대표 Flow·대표 모달 제어 API 추가
 - Agent Hub patch나 commit을 BoI handoff에 포함
+- BoI 대표 MCP Flow를 위해 Agent Hub API나 배포 modal을 변경
 
 # 책임 분리
 
@@ -69,3 +70,14 @@ wrapper에만 있으며 Agent Hub 소스·DB schema·API를 변경하지 않는�
 검증 checkout은 SHA `7ca556b7885f316eedd757a7190b748bb7e0f7e5`와 clean diff를 확인한다. Agent Hub 계약이 바뀌면 Agent Hub를 패치하지 않고 BoI adapter와 문서를 새 계약에 맞춰 회귀 검증한다.
 
 대표 Flow 선정과 대표 모달 노출은 Agent Hub 담당자에게 검증 증거를 전달한 뒤 구두로 요청한다.
+
+# Universal Simulation MCP 전달 경계
+
+BoI는 secret-free Flow JSON, read-only Component bundle, compatibility manifest, checksum,
+MCP client 예시와 E2E 증거만 전달한다. Agent Hub UI에서는 기존 endpoint/API Key 등록,
+연결 시험, 프로젝트 선택과 배포만 수행한다.
+
+대표 Flow가 제공하는 MCP endpoint는 Langflow 프로젝트의 공개 streamable HTTP 계약이다.
+Agent Hub는 MCP runtime proxy가 아니며 Action 실행 경로에도 들어가지 않는다. 외부 MCP는
+preview-only이고 여러 사용자의 Wiki 권한과 개인 저장은 BoI Action의 caller-bound run token으로
+처리한다.

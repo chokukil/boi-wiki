@@ -1,0 +1,13 @@
+{
+  "natural_language": {
+    "input_value": "{\"question\":\"이 요청을 처리하기 전에 확인할 업무 근거와 예상 결과를 시뮬레이션해줘.\",\"save_mode\":\"preview\"}"
+  },
+  "sop_task": {
+    "input_value": "{\"question\":\"선택한 Task의 현재 단계, 선행 결과, 필요한 근거와 다음 처리 후보를 정리해줘.\",\"task_ref\":\"${BOI_TASK_REF}\",\"save_mode\":\"preview\"}"
+  },
+  "notes": [
+    "외부 MCP 호출은 preview만 수행합니다.",
+    "private_draft는 BoI Action 또는 Playground가 호출자별 run token을 전달한 실행에서만 허용됩니다.",
+    "API Key, BoI PAT, run token 값을 Flow JSON이나 요청 본문에 기록하지 않습니다."
+  ]
+}
