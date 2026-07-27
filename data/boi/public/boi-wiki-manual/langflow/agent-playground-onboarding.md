@@ -39,6 +39,11 @@ Agent Playground는 내 사번의 Langflow 프로젝트에서 Flow를 만들고 
 
 Langflow와 Agent Hub는 BoI가 수정하지 않는다. Playground는 공개 API와 기존 UI만 사용한다.
 
+Action 연결을 마치면 Action 카탈로그 상세에서 연결된 Flow 구조를 바로 확인할 수 있다.
+Flow 소유자는 같은 화면에서 선택한 endpoint·project·Flow가 열린 Playground로 이동하거나
+외부 Langflow Canvas를 열 수 있다. 공유 Action 사용자는 실행 구조만 읽을 수 있고 다른
+사용자의 개인 개발 공간으로 이동하지 않는다.
+
 # 어떤 경로로 시작할까
 
 ## 내 Flow를 배포한다

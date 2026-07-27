@@ -7542,6 +7542,9 @@ def test_agent_builder_page_exposes_agent_playground(boi_app_module):
     assert "일반 질문·SOP Task Context 확인" in response.text
     assert "Agent Hub에서 배포" in response.text
     assert "Action 연결" in response.text
+    assert "실제 Langflow graph에서 확인한 Component 실행 경로" in script
+    assert "data-selected-flow-pipeline" in response.text
+    assert "data-selected-flow-actions" in response.text
     assert "고급 연결 관리" in response.text
     assert "Action 실행 시 Wiki 권한" in response.text
     assert "실행한 사용자의 권한을 자동 적용" in response.text
@@ -7553,6 +7556,71 @@ def test_agent_builder_page_exposes_agent_playground(boi_app_module):
     assert "boi_run_" not in response.text
     assert "/api/agent-playground" in script
     assert "/api/v2/helper-drafts/" not in script
+
+
+def test_action_catalog_flow_api_uses_safe_role_aware_playground_view(
+    boi_app_module,
+    monkeypatch,
+):
+    client = TestClient(boi_app_module.app)
+    action = {
+        "action_key": "agent-playground.team.grounded",
+        "name_ko": "근거 기반 분석",
+        "scope": "public",
+        "connector_kind": "langflow",
+        "connector_binding": {
+            "kind": "langflow",
+            "config": {
+                "connection_source": "agent_playground",
+                "flow_display_snapshot": {
+                    "name": "BoI Wiki Agent Loop",
+                    "nodes": [{"role": "knowledge"}],
+                },
+            },
+        },
+    }
+    flow_view = {
+        "available": True,
+        "flow": {
+            "name": "BoI Wiki Agent Loop",
+            "nodes": [
+                {
+                    "node_key": "safe-node",
+                    "label": "Wiki·Ontology 지식",
+                    "component_kind": "BoIWikiKnowledge",
+                    "role": "knowledge",
+                    "on_execution_path": True,
+                }
+            ],
+        },
+        "links": {"playground": "", "langflow": ""},
+        "technical": {},
+    }
+    monkeypatch.setattr(
+        boi_app_module,
+        "action_catalog_by_key",
+        lambda: {action["action_key"]: action},
+    )
+    monkeypatch.setattr(
+        boi_app_module.AGENT_PLAYGROUND_SERVICE,
+        "action_flow_view",
+        lambda identity, selected: flow_view,
+    )
+
+    response = client.get(
+        "/api/actions/catalog/agent-playground.team.grounded/flow"
+        "?employee_id=100001"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["flow_view"] == flow_view
+    script = (
+        boi_app_module.APP_DIR / "static" / "action_catalog.js"
+    ).read_text(encoding="utf-8")
+    assert "이 Action이 실행하는 Flow" in script
+    assert "/flow?employee_id=" in script
+    assert "Playground에서 열기" in script
+    assert "Langflow Canvas 열기" in script
 
 
 def test_reporting_agents_and_facade_contracts(boi_app_module, monkeypatch, tmp_path):

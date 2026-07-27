@@ -80,6 +80,193 @@ def test_secret_cipher_is_owner_bound():
         cipher.decrypt(encrypted, owner="100002")
 
 
+def test_flow_display_snapshot_is_secret_free_and_follows_graph_order():
+    def node(node_id: str, component_name: str, display_name: str) -> dict:
+        return {
+            "id": node_id,
+            "data": {
+                "type": component_name,
+                "display_name": display_name,
+                "node": {
+                    "name": component_name,
+                    "display_name": display_name,
+                    "template": {
+                        "code": {
+                            "value": "secret source must never be returned"
+                        }
+                    },
+                },
+            },
+        }
+
+    flow = {
+        "name": "Grounded Action Flow",
+        "description": "Uses boi_pat_0123456789abcdef_abcdefghijklmnopqrstuvwxyz",
+        "endpoint_name": "grounded-action",
+        "data": {
+            # Deliberately not serialized in execution order.
+            "nodes": [
+                node("output", "ChatOutput", "Chat Output"),
+                node("agent", "Agent", "Model Agent"),
+                node("input", "ChatInput", "Chat Input"),
+                node("knowledge", "BoIWikiKnowledge", "Wiki·Ontology 지식"),
+            ],
+            "edges": [
+                {"source": "knowledge", "target": "agent"},
+                {"source": "input", "target": "knowledge"},
+                {"source": "agent", "target": "output"},
+            ],
+        },
+    }
+
+    snapshot = AgentPlaygroundService.flow_display_snapshot(flow)
+
+    assert snapshot["description"] == "[비밀값 제거됨]"
+    assert [item["role"] for item in snapshot["nodes"]] == [
+        "input",
+        "knowledge",
+        "agent",
+        "output",
+    ]
+    assert snapshot["end_to_end_reachable"] is True
+    serialized = json.dumps(snapshot, ensure_ascii=False)
+    assert "secret source" not in serialized
+    assert "boi_pat_" not in serialized
+    assert "template" not in serialized
+
+
+def test_action_flow_view_hides_personal_links_from_shared_viewer(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("BOI_AUTH_MODE", "dev")
+    monkeypatch.setenv(
+        "BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY",
+        "test-playground-encryption",
+    )
+    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://localhost:7867")
+    owner = principal(
+        "100002",
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+    )
+    teammate = principal(
+        "100001",
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+    )
+    credentials = PlaygroundCredentialService(
+        tmp_path / "runtime",
+        hash_secret="test-pat-secret",
+        identity_provider=lambda employee_id: owner,
+    )
+    service = AgentPlaygroundService(tmp_path / "runtime", ROOT, credentials)
+    flow = {
+        "id": "flow-shared",
+        "name": "Team Grounded Flow",
+        "description": "Ontology grounded team Action",
+        "endpoint_name": "team-grounded-flow",
+        "folder_id": "project-100002",
+        "data": {
+            "nodes": [
+                {
+                    "id": "input",
+                    "data": {
+                        "type": "ChatInput",
+                        "display_name": "Chat Input",
+                        "node": {"name": "ChatInput"},
+                    },
+                },
+                {
+                    "id": "output",
+                    "data": {
+                        "type": "ChatOutput",
+                        "display_name": "Chat Output",
+                        "node": {"name": "ChatOutput"},
+                    },
+                },
+            ],
+            "edges": [{"source": "input", "target": "output"}],
+        },
+    }
+    checksum = service._runtime_flow_checksum(flow)
+    endpoint_id = "ep-owner"
+    deployment_id = "hub-shared"
+    service._write(
+        owner.employee_id,
+        {
+            "employee_id": owner.employee_id,
+            "endpoints": [
+                {
+                    "endpoint_id": endpoint_id,
+                    "name": "Owner Langflow",
+                    "base_url": "http://langflow.example",
+                    "endpoint": "http://langflow.example",
+                    "api_key_encrypted": service.cipher.encrypt(
+                        "lf-owner-key",
+                        owner=owner.employee_id,
+                    ),
+                    "active": True,
+                }
+            ],
+            "endpoint_setups": {
+                endpoint_id: {
+                    "project": {
+                        "id": "project-100002",
+                        "name": "boi-100002",
+                    }
+                }
+            },
+            "deployments": [
+                {
+                    "deployment_id": deployment_id,
+                    "endpoint_id": endpoint_id,
+                    "project_id": "project-100002",
+                    "flow_id": flow["id"],
+                    "flow_name": flow["name"],
+                    "asset_version": "1.1.0",
+                    "artifact_checksum": checksum,
+                    "validated_checksum": checksum,
+                    "checksum_state": "matched",
+                    "status": "action_linked",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(service.langflow, "flow", lambda endpoint, api_key, flow_id: flow)
+    snapshot = service.flow_display_snapshot(flow)
+    action = {
+        "action_key": "team.grounded",
+        "connector_kind": "langflow",
+        "owner_employee_id": owner.employee_id,
+        "connector_binding": {
+            "kind": "langflow",
+            "deployment_reference": {
+                "endpoint_connection_id": endpoint_id,
+                "deployment_id": deployment_id,
+                "project_id": "project-100002",
+                "flow_id": flow["id"],
+                "artifact_version": "1.1.0",
+                "artifact_checksum": checksum,
+            },
+            "config": {
+                "connection_source": "agent_playground",
+                "flow_display_snapshot": snapshot,
+            },
+        },
+    }
+
+    owner_view = service.action_flow_view(owner, action)
+    shared_view = service.action_flow_view(teammate, action)
+
+    assert owner_view["flow"]["name"] == "Team Grounded Flow"
+    assert owner_view["links"]["playground"].startswith("/playground?")
+    assert owner_view["links"]["langflow"].startswith("http://localhost:7867/")
+    assert owner_view["technical"]["flow_id"] == flow["id"]
+    assert shared_view["owner_label"] == "공유된 Action Flow"
+    assert shared_view["links"] == {"playground": "", "langflow": ""}
+    assert shared_view["technical"] == {}
+    assert json.dumps(shared_view, ensure_ascii=False).find("lf-owner-key") == -1
+
+
 def test_permanent_pat_and_single_execution_run_token(tmp_path):
     current = principal(
         "100002",

@@ -370,6 +370,14 @@
             <div><p class="eyebrow">선택한 Flow</p><h3 data-selected-flow-name>Flow를 선택하세요</h3></div>
             <span class="agent-playground-chip" data-selected-flow-status data-state="discovered">발견됨</span>
           </header>
+          <p class="agent-playground-flow-description" data-selected-flow-description>Flow를 선택하면 실제 Component 실행 경로와 연결된 Action을 보여줍니다.</p>
+          <div class="agent-playground-flow-pipeline" data-selected-flow-pipeline>
+            <p class="agent-playground-empty">표시할 Flow 실행 경로가 없습니다.</p>
+          </div>
+          <section class="agent-playground-linked-actions" data-selected-flow-actions hidden>
+            <h4>이 Flow로 연결된 Action</h4>
+            <div data-selected-flow-action-list></div>
+          </section>
           <details class="agent-playground-technical-details">
             <summary>기술 세부정보</summary>
             <dl class="agent-playground-flow-identity">

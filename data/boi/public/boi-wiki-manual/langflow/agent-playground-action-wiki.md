@@ -55,3 +55,21 @@ Action 계약은 API, MCP, Webhook, Manual, Event Broker, BoI Writer와 Langflow
 - Wiki 읽기와 개인 초안은 Action을 누른 사용자의 권한을 사용한다.
 
 저장 기본값은 `미리보기`다. `내 Wiki 개인 초안`을 직접 선택한 경우에만 호출자 개인 공간에 초안을 만든다.
+
+# Action에 연결된 Flow를 확인한다
+
+Action 카탈로그에서 Langflow로 실행되는 Action을 선택하면 `이 Action이 실행하는 Flow`가 먼저 보인다.
+`Flow 보기`를 누르면 BoI 안에서 다음 정보를 읽기 전용으로 확인할 수 있다.
+
+- Flow 이름과 개인 프로젝트
+- 실제 실행 경로에 포함된 Component 순서
+- Wiki·Ontology 지식 Component 사용 여부
+- 마지막 검증 결과와 배포 후 변경 여부
+
+Flow를 만든 사람 또는 편집 권한이 있는 소유자에게만 `Playground에서 열기`와
+`Langflow Canvas 열기`를 제공한다. 팀에 공유된 Action을 실행하는 사용자는 Flow 구조를 볼
+수 있지만, 다른 직원의 개인 Langflow 프로젝트나 연결 Key에는 접근할 수 없다.
+
+Agent Hub는 Flow를 배포하고 공유 자산을 가져오는 곳이다. 이미 Action으로 등록된 Flow를
+확인하기 위한 기본 이동 위치는 Agent Hub가 아니라 Action 상세와 Agent Playground다.
+Langflow Canvas는 실제 graph를 편집해야 할 때만 연다.

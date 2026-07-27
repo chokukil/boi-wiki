@@ -29,6 +29,13 @@
   const hubOwnOpen = root.querySelector("[data-hub-own-open]");
   const hubOwnDownload = root.querySelector("[data-hub-own-download]");
   const hubOwnRefresh = root.querySelector("[data-hub-own-refresh]");
+  const initialParams = new URLSearchParams(window.location.search);
+  const deepLink = {
+    stage: initialParams.get("stage") || "",
+    endpointId: initialParams.get("endpoint_id") || "",
+    projectId: initialParams.get("project_id") || "",
+    flowId: initialParams.get("flow_id") || "",
+  };
   const app = {
     state: null,
     endpointId: "",
@@ -48,6 +55,8 @@
     journeyInitialized: false,
     hubMode: "own",
     ownFlowSnapshot: new Set(),
+    deepLink,
+    deepLinkApplied: false,
   };
 
   const withIdentity = (path) => {
@@ -788,13 +797,20 @@
     app.state = await request("/api/agent-playground");
     root.querySelector("[data-auth-source]").textContent = `${app.state.identity.auth_source} · ${app.state.identity.display_name}`;
     if (!app.endpointId) {
-      app.endpointId = app.state.default_endpoint_id || (app.state.endpoints[0] || {}).endpoint_id || "";
+      const deepLinkedEndpoint = !app.deepLinkApplied && (app.state.endpoints || [])
+        .find((endpoint) => endpoint.endpoint_id === app.deepLink.endpointId);
+      app.endpointId = (deepLinkedEndpoint && deepLinkedEndpoint.endpoint_id)
+        || app.state.default_endpoint_id
+        || (app.state.endpoints[0] || {}).endpoint_id
+        || "";
     }
     if (!selectedEndpoint()) app.endpointId = "";
     if (!app.journeyInitialized) {
       const suggested = ((app.state.journey || {}).next_action || {}).stage
         || (app.state.journey || {}).current_stage;
-      if (["create", "test", "hub", "action"].includes(suggested)) {
+      if (["create", "test", "hub", "action"].includes(app.deepLink.stage)) {
+        app.activeStep = app.deepLink.stage;
+      } else if (["create", "test", "hub", "action"].includes(suggested)) {
         app.activeStep = suggested;
       }
       app.journeyInitialized = true;
@@ -851,7 +867,14 @@
       const setup = selectedSetup();
       const known = setup && setup.project ? setup.project.id : "";
       const selectedProjectStillExists = app.projects.some((project) => project.id === app.projectId);
-      if (selectPersonal || !selectedProjectStillExists) {
+      const deepLinkedProject = !app.deepLinkApplied && (
+        app.deepLink.endpointId === app.endpointId
+        && app.projects.find((project) => project.id === app.deepLink.projectId)
+      );
+      if (deepLinkedProject) {
+        app.projectId = deepLinkedProject.id;
+        app.flow = null;
+      } else if (selectPersonal || !selectedProjectStillExists) {
         app.projectId = (personal && personal.id) || known || "";
         app.flow = null;
       }
@@ -907,7 +930,10 @@
         button.dataset.flowId = flow.flow_id;
         button.dataset.active = app.flow && app.flow.flow_id === flow.flow_id ? "true" : "false";
         const label = document.createElement("span");
-        label.innerHTML = `<strong>${escapeText(flow.name || "이름 없는 Flow")}</strong><small>${flow.deployment_id ? "Agent Hub 배포 Flow" : "내 프로젝트 Flow"}</small>`;
+        const linkedAction = (flow.linked_actions || [])[0];
+        const flowKind = flow.deployment_id ? "Agent Hub 배포 Flow" : "내 프로젝트 Flow";
+        const actionLabel = linkedAction ? ` · Action 연결됨: ${linkedAction.title}` : "";
+        label.innerHTML = `<strong>${escapeText(flow.name || "이름 없는 Flow")}</strong><small>${escapeText(flowKind + actionLabel)}</small>`;
         const status = document.createElement("em");
         const displayStatus = flow.checksum_state === "drifted"
           ? "drifted"
@@ -946,6 +972,18 @@
       );
       app.flows = payload.flows || [];
       if (app.flow) app.flow = app.flows.find((flow) => flow.flow_id === app.flow.flow_id) || null;
+      if (
+        !app.deepLinkApplied
+        &&
+        app.deepLink.flowId
+        && app.deepLink.endpointId === app.endpointId
+        && app.deepLink.projectId === app.projectId
+      ) {
+        app.flow = app.flows.find((flow) => flow.flow_id === app.deepLink.flowId) || app.flow;
+        app.deepLinkApplied = Boolean(
+          app.flow && app.flow.flow_id === app.deepLink.flowId,
+        );
+      }
       renderFlows();
       renderSelectedFlow();
     } catch (error) {
@@ -958,7 +996,41 @@
 
   const renderSelectedFlow = () => {
     const flow = app.flow;
+    const flowSummary = flow && flow.flow_summary ? flow.flow_summary : {};
     root.querySelector("[data-selected-flow-name]").textContent = flow ? flow.name || flow.flow_id : "Flow를 선택하세요";
+    root.querySelector("[data-selected-flow-description]").textContent = flow
+      ? flowSummary.description || "실제 Langflow graph에서 확인한 Component 실행 경로입니다."
+      : "Flow를 선택하면 실제 Component 실행 경로와 연결된 Action을 보여줍니다.";
+    const pipeline = root.querySelector("[data-selected-flow-pipeline]");
+    pipeline.replaceChildren();
+    const nodes = (flowSummary.nodes || []).filter((node) => node.on_execution_path);
+    if (nodes.length) {
+      const list = document.createElement("ol");
+      nodes.forEach((node) => {
+        const item = document.createElement("li");
+        item.dataset.role = node.role || "component";
+        const title = document.createElement("strong");
+        title.textContent = node.label || node.component_kind || "Component";
+        const kind = document.createElement("small");
+        kind.textContent = node.component_kind || "";
+        item.append(title, kind);
+        list.append(item);
+      });
+      pipeline.append(list);
+    } else {
+      pipeline.innerHTML = '<p class="agent-playground-empty">표시할 Flow 실행 경로가 없습니다.</p>';
+    }
+    const actionSection = root.querySelector("[data-selected-flow-actions]");
+    const actionList = root.querySelector("[data-selected-flow-action-list]");
+    const linkedActions = flow ? flow.linked_actions || [] : [];
+    actionSection.hidden = !linkedActions.length;
+    actionList.replaceChildren();
+    linkedActions.forEach((action) => {
+      const link = document.createElement("a");
+      link.href = action.url;
+      link.textContent = `${action.title} · ${action.status === "published" ? "카탈로그 등록됨" : action.status}`;
+      actionList.append(link);
+    });
     root.querySelector("[data-selected-flow-id]").textContent = flow ? flow.flow_id : "—";
     root.querySelector("[data-selected-flow-checksum]").textContent = flow && flow.artifact_checksum ? flow.artifact_checksum : "검증 전";
     const selectedStatus = flow

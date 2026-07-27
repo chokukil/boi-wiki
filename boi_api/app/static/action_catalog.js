@@ -13,6 +13,7 @@
   const render = (action) => {
     const fields = action.input_fields || [];
     const usage = action.workflow_usage || [];
+    const flowReference = action.flow_reference_summary || null;
     detail.innerHTML = `
       <header class="action-detail-header">
         <div>
@@ -23,6 +24,20 @@
         <h2>${escapeHtml(action.title)}</h2>
         <p>${escapeHtml(action.description)}</p>
       </header>
+      ${flowReference ? `
+      <section class="action-detail-section action-flow-reference">
+        <div class="action-flow-reference-heading">
+          <div>
+            <span class="badge status">Langflow Flow</span>
+            ${flowReference.uses_boi_knowledge ? '<span class="badge">Wiki·Ontology</span>' : ''}
+            <h3>이 Action이 실행하는 Flow</h3>
+            <strong>${escapeHtml(flowReference.name)}</strong>
+            ${flowReference.project_name ? `<p>${escapeHtml(flowReference.project_name)} 프로젝트</p>` : ''}
+          </div>
+          <button class="button secondary" type="button" data-action-flow-load>Flow 보기</button>
+        </div>
+        <div class="action-flow-live-view" data-action-flow-view hidden></div>
+      </section>` : ''}
       <section class="action-detail-section">
         <h3>사용 중인 업무 흐름</h3>
         ${usage.length ? `<ul>${usage.map((item) => `<li><a href="${escapeHtml(item.url)}">${escapeHtml(item.title)}</a>${item.sops?.length ? ` · SOP ${item.sops.length}개` : ''}</li>`).join("")}</ul>` : '<p class="muted">아직 연결된 업무 흐름이 없습니다.</p>'}
@@ -48,6 +63,84 @@
       </details>`;
     detail.hidden = false;
     empty.hidden = true;
+
+    const flowButton = detail.querySelector("[data-action-flow-load]");
+    const flowRoot = detail.querySelector("[data-action-flow-view]");
+    flowButton?.addEventListener("click", async () => {
+      if (!flowRoot) return;
+      if (flowRoot.dataset.loaded === "true") {
+        flowRoot.hidden = !flowRoot.hidden;
+        flowButton.textContent = flowRoot.hidden ? "Flow 보기" : "Flow 접기";
+        return;
+      }
+      flowButton.disabled = true;
+      flowRoot.hidden = false;
+      flowRoot.innerHTML = '<p class="muted">현재 Flow 구조와 검증 상태를 확인하고 있습니다.</p>';
+      try {
+        const response = await fetch(
+          `/api/actions/catalog/${encodeURIComponent(action.action_key)}/flow?employee_id=${encodeURIComponent(employeeId)}`,
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          const detailMessage = typeof payload.detail === "string"
+            ? payload.detail
+            : payload.detail && typeof payload.detail.message === "string"
+            ? payload.detail.message
+            : "Flow 정보를 불러오지 못했습니다.";
+          throw new Error(detailMessage);
+        }
+        const view = payload.flow_view || {};
+        const flow = view.flow || {};
+        const nodes = (flow.nodes || []).filter((node) => node.on_execution_path);
+        const status = view.checksum_state === "drifted"
+          ? "변경되어 재검증 필요"
+          : view.live_state === "available"
+          ? "현재 Flow 확인됨"
+          : "마지막 검증 정보";
+        const nodeMarkup = nodes.length
+          ? `<ol class="action-flow-pipeline">${nodes.map((node) => `
+              <li data-role="${escapeHtml(node.role || "component")}">
+                <span>${escapeHtml(node.label || node.component_kind || "Component")}</span>
+                <small>${escapeHtml(node.component_kind || "")}</small>
+              </li>`).join("")}</ol>`
+          : '<p class="muted">표시할 실행 경로가 없습니다.</p>';
+        const links = view.links || {};
+        const linkMarkup = `
+          <div class="button-row action-flow-links">
+            ${links.playground ? `<a class="button secondary" href="${escapeHtml(links.playground)}">Playground에서 열기</a>` : ''}
+            ${links.langflow ? `<a class="button secondary" href="${escapeHtml(links.langflow)}" target="_blank" rel="noopener">Langflow Canvas 열기</a>` : ''}
+          </div>`;
+        const technical = view.technical || {};
+        const technicalMarkup = Object.keys(technical).length
+          ? `<details class="technical-details">
+              <summary>기술 세부정보</summary>
+              <dl>
+                <div><dt>Flow ID</dt><dd><code>${escapeHtml(technical.flow_id || "")}</code></dd></div>
+                <div><dt>Version</dt><dd>${escapeHtml(technical.artifact_version || "")}</dd></div>
+                <div><dt>Checksum</dt><dd><code>${escapeHtml(technical.artifact_checksum || "")}</code></dd></div>
+              </dl>
+            </details>`
+          : "";
+        flowRoot.innerHTML = `
+          <div class="action-flow-live-heading">
+            <div>
+              <strong>${escapeHtml(flow.name || flowReference.name)}</strong>
+              <p>${escapeHtml(flow.description || "등록된 Action의 실제 실행 경로입니다.")}</p>
+            </div>
+            <span class="badge ${view.checksum_state === "drifted" ? "warning" : "status"}">${escapeHtml(status)}</span>
+          </div>
+          <p class="action-flow-meta">${escapeHtml(view.owner_label || "")} · ${escapeHtml(view.project_name || "")} · Component ${Number(flow.node_count || 0)}개</p>
+          ${nodeMarkup}
+          ${linkMarkup}
+          ${technicalMarkup}`;
+        flowRoot.dataset.loaded = "true";
+        flowButton.textContent = "Flow 접기";
+        flowButton.disabled = false;
+      } catch (error) {
+        flowRoot.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+        flowButton.disabled = false;
+      }
+    });
 
     const form = detail.querySelector("[data-action-preview-form]");
     const output = detail.querySelector("[data-action-preview-result]");
@@ -102,6 +195,9 @@
     activeButton?.classList.remove("active");
     activeButton = button;
     button.classList.add("active");
+    const location = new URL(window.location.href);
+    location.searchParams.set("action_key", button.dataset.actionOpen);
+    window.history.replaceState({}, "", `${location.pathname}${location.search}`);
     empty.hidden = true;
     detail.hidden = false;
     detail.innerHTML = '<p class="muted">Action 연결을 확인하고 있습니다.</p>';
@@ -113,4 +209,11 @@
     }
     render(payload.action);
   });
+
+  const initialActionKey = new URLSearchParams(window.location.search).get("action_key") || "";
+  if (initialActionKey) {
+    const initialButton = [...root.querySelectorAll("[data-action-open]")]
+      .find((button) => button.dataset.actionOpen === initialActionKey);
+    initialButton?.click();
+  }
 })();

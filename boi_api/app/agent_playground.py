@@ -14,7 +14,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import httpx
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -1567,6 +1567,7 @@ class AgentPlaygroundService:
                 flow_detail = self.langflow.flow(endpoint, api_key, flow_id)
                 live_checksum = self._runtime_flow_checksum(flow_detail)
                 graph_health = self._graph_health(flow_detail)
+                flow_summary = self.flow_display_snapshot(flow_detail)
                 source_assets = list(
                     deployment.get("source_assets")
                     or registry.get("source_assets")
@@ -1591,6 +1592,17 @@ class AgentPlaygroundService:
                 )
             except HTTPException:
                 live_checksum = ""
+                flow_summary = {
+                    "name": str(item.get("name") or ""),
+                    "description": "",
+                    "endpoint_name": str(item.get("endpoint_name") or ""),
+                    "node_count": 0,
+                    "edge_count": 0,
+                    "nodes": [],
+                    "edges": [],
+                    "end_to_end_reachable": False,
+                    "connected_component_ids": [],
+                }
                 graph_health = {
                     "end_to_end_reachable": False,
                     "connected_component_ids": [],
@@ -1677,7 +1689,22 @@ class AgentPlaygroundService:
                         or deployment.get("action_draft_id")
                         or ""
                     ),
+                    "action_key": str(
+                        registry.get("action_key")
+                        or deployment.get("action_key")
+                        or ""
+                    ),
+                    "action_draft_status": str(
+                        registry.get("action_draft_status")
+                        or deployment.get("action_draft_status")
+                        or ""
+                    ),
+                    "action_catalog_applied": bool(
+                        registry.get("action_catalog_applied")
+                        or deployment.get("action_catalog_applied")
+                    ),
                     "flow_url": f"{endpoint}/flow/{flow_id}",
+                    "flow_summary": flow_summary,
                 }
             )
         if drift_updates:
@@ -2281,6 +2308,170 @@ class AgentPlaygroundService:
             "execution_path_nodes": sorted(execution_path),
             "connected_component_ids": sorted(set(connected_component_ids)),
             "disconnected_nodes": disconnected,
+        }
+
+    @classmethod
+    def flow_display_snapshot(cls, flow: dict[str, Any]) -> dict[str, Any]:
+        """Return a secret-free, read-only Flow graph for BoI user interfaces."""
+
+        data = flow.get("data") if isinstance(flow.get("data"), dict) else {}
+        raw_nodes = [
+            item for item in data.get("nodes") or [] if isinstance(item, dict)
+        ][:80]
+        raw_edges = [
+            item for item in data.get("edges") or [] if isinstance(item, dict)
+        ][:160]
+        health = cls._graph_health(flow)
+        execution_path = {
+            str(item) for item in health.get("execution_path_nodes") or []
+        }
+
+        def safe_text(value: Any, *, limit: int = 160) -> str:
+            text = re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+            return (
+                "[비밀값 제거됨]"
+                if any(pattern.search(text) for pattern in SECRET_PATTERNS)
+                else text
+            )
+
+        nodes: list[dict[str, Any]] = []
+        node_ids: set[str] = set()
+        for node in raw_nodes:
+            node_id = cls._node_id(node)
+            if not node_id:
+                continue
+            node_ids.add(node_id)
+            node_key = hashlib.sha256(node_id.encode("utf-8")).hexdigest()[:12]
+            node_data = (
+                node.get("data") if isinstance(node.get("data"), dict) else {}
+            )
+            component = (
+                node_data.get("node")
+                if isinstance(node_data.get("node"), dict)
+                else {}
+            )
+            metadata = (
+                component.get("metadata")
+                if isinstance(component.get("metadata"), dict)
+                else {}
+            )
+            label = safe_text(
+                node_data.get("display_name")
+                or component.get("display_name")
+                or component.get("name")
+                or node_data.get("type")
+                or node_id
+            )
+            component_kind = safe_text(
+                component.get("name")
+                or node_data.get("type")
+                or node.get("type")
+                or "component"
+            )
+            identities = " ".join(cls._node_component_identity(node)).lower()
+            role = (
+                "input"
+                if "chatinput" in identities or "chat input" in identities
+                else "output"
+                if "chatoutput" in identities or "chat output" in identities
+                else "knowledge"
+                if "boiwikiknowledge" in identities
+                else "save"
+                if "boiwikisave" in identities
+                else "agent"
+                if "agent" in identities
+                else "component"
+            )
+            nodes.append(
+                {
+                    "node_key": node_key,
+                    "label": label,
+                    "component_kind": component_kind,
+                    "component_id": safe_text(
+                        metadata.get("component_asset_id")
+                        or node_data.get("component_asset_id")
+                        or "",
+                        limit=120,
+                    ),
+                    "role": role,
+                    "on_execution_path": node_id in execution_path,
+                }
+            )
+
+        node_key_by_id = {
+            cls._node_id(node): hashlib.sha256(
+                cls._node_id(node).encode("utf-8")
+            ).hexdigest()[:12]
+            for node in raw_nodes
+            if cls._node_id(node) in node_ids
+        }
+        edges = [
+            {
+                "source": node_key_by_id[source],
+                "target": node_key_by_id[target],
+            }
+            for edge in raw_edges
+            if (source := str(edge.get("source") or "")) in node_key_by_id
+            and (target := str(edge.get("target") or "")) in node_key_by_id
+        ]
+        # Langflow does not promise that graph nodes are serialized in execution
+        # order.  Use a stable topological order for the read-only UI and fall
+        # back to the source order for disconnected or cyclic nodes.
+        order_index = {
+            str(node.get("node_key") or ""): index
+            for index, node in enumerate(nodes)
+        }
+        outgoing: dict[str, list[str]] = {
+            str(node.get("node_key") or ""): [] for node in nodes
+        }
+        indegree: dict[str, int] = {
+            str(node.get("node_key") or ""): 0 for node in nodes
+        }
+        for edge in edges:
+            source = str(edge.get("source") or "")
+            target = str(edge.get("target") or "")
+            if source in outgoing and target in indegree:
+                outgoing[source].append(target)
+                indegree[target] += 1
+        ready = sorted(
+            (key for key, degree in indegree.items() if degree == 0),
+            key=lambda key: order_index.get(key, len(order_index)),
+        )
+        ordered_keys: list[str] = []
+        while ready:
+            current = ready.pop(0)
+            ordered_keys.append(current)
+            for target in sorted(
+                outgoing.get(current) or [],
+                key=lambda key: order_index.get(key, len(order_index)),
+            ):
+                indegree[target] -= 1
+                if indegree[target] == 0:
+                    ready.append(target)
+                    ready.sort(key=lambda key: order_index.get(key, len(order_index)))
+        ordered_key_set = set(ordered_keys)
+        ordered_keys.extend(
+            key
+            for key in order_index
+            if key not in ordered_key_set
+        )
+        node_by_key = {
+            str(node.get("node_key") or ""): node for node in nodes
+        }
+        nodes = [node_by_key[key] for key in ordered_keys if key in node_by_key]
+        return {
+            "name": safe_text(flow.get("name") or "Langflow Flow"),
+            "description": safe_text(flow.get("description") or "", limit=500),
+            "endpoint_name": safe_text(flow.get("endpoint_name") or "", limit=120),
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "nodes": nodes,
+            "edges": edges,
+            "end_to_end_reachable": bool(health.get("end_to_end_reachable")),
+            "connected_component_ids": [
+                safe_text(item, limit=120)
+                for item in health.get("connected_component_ids") or []
+            ][:40],
         }
 
     @staticmethod
@@ -4118,10 +4309,34 @@ class AgentPlaygroundService:
                     "failure_reason": str(deployment.get("failure_reason") or ""),
                 },
             )
-        self.execution_connection(
+        execution = self.execution_connection(
             deployment_id,
             str(deployment.get("flow_id") or ""),
         )
+        live_flow = self.langflow.flow(
+            execution["endpoint"],
+            execution["api_key"],
+            str(deployment.get("flow_id") or ""),
+        )
+        flow_display_snapshot = {
+            **self.flow_display_snapshot(live_flow),
+            "project_name": str(
+                (
+                    self._read(principal.employee_id)
+                    .get("endpoint_setups", {})
+                    .get(str(deployment.get("endpoint_id") or ""), {})
+                    .get("project", {})
+                    .get("name")
+                )
+                or f"{PROJECT_PREFIX}{principal.employee_id}"
+            ),
+            "source_origin": str(
+                deployment.get("origin") or "agent_playground"
+            ),
+            "validation_status": str(deployment.get("status") or ""),
+            "checksum_state": str(deployment.get("checksum_state") or "matched"),
+            "validated_at": str(deployment.get("validated_at") or ""),
+        }
         source_assets = [
             item
             for item in deployment.get("source_assets") or []
@@ -4289,6 +4504,7 @@ class AgentPlaygroundService:
             "source_assets": current_sources,
             "source_origin": str(deployment.get("origin") or "agent_playground"),
             "validation_profile": validation_profile,
+            "flow_display_snapshot": flow_display_snapshot,
         }
         action_contract = {
             "schema_version": "boi.action-contract.v1",
@@ -4975,6 +5191,238 @@ class AgentPlaygroundService:
                 "live_checksum": live_checksum,
             }
         raise HTTPException(status_code=404, detail="Agent Playground deployment not found")
+
+    def action_flow_view(
+        self,
+        principal: AuthIdentity,
+        action: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve a catalog Action to a sanitized live Langflow Flow view."""
+
+        require_role(principal, "boi.viewer")
+        binding = (
+            action.get("connector_binding")
+            if isinstance(action.get("connector_binding"), dict)
+            else {}
+        )
+        connector = (
+            binding.get("config")
+            if isinstance(binding.get("config"), dict)
+            else action.get("connector_config")
+            if isinstance(action.get("connector_config"), dict)
+            else {}
+        )
+        reference = (
+            binding.get("deployment_reference")
+            if isinstance(binding.get("deployment_reference"), dict)
+            else connector
+        )
+        if (
+            str(action.get("connector_kind") or binding.get("kind") or "")
+            != "langflow"
+            or str(connector.get("connection_source") or "") != "agent_playground"
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="이 Action에는 표시할 Agent Playground Flow가 없습니다.",
+            )
+        deployment_id = str(reference.get("deployment_id") or "")
+        flow_id = str(reference.get("flow_id") or "")
+        if not deployment_id or not flow_id:
+            raise HTTPException(status_code=409, detail="Action Flow reference is incomplete")
+
+        owner_hint = str(action.get("owner_employee_id") or "")
+        paths: list[Path] = []
+        if owner_hint and self._path(owner_hint).exists():
+            paths.append(self._path(owner_hint))
+        users_root = self.root / "users"
+        for path in sorted(users_root.glob("*.json")) if users_root.exists() else []:
+            if path not in paths:
+                paths.append(path)
+
+        record: dict[str, Any] | None = None
+        deployment: dict[str, Any] | None = None
+        for path in paths:
+            try:
+                candidate = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            matched = next(
+                (
+                    item
+                    for item in candidate.get("deployments") or []
+                    if isinstance(item, dict)
+                    and str(item.get("deployment_id") or "") == deployment_id
+                ),
+                None,
+            )
+            if matched is not None:
+                record = candidate
+                deployment = matched
+                break
+        if record is None or deployment is None:
+            raise HTTPException(status_code=404, detail="연결된 Flow 배포를 찾을 수 없습니다.")
+
+        exact_fields = {
+            "endpoint_connection_id": "endpoint_id",
+            "deployment_id": "deployment_id",
+            "project_id": "project_id",
+            "flow_id": "flow_id",
+            "artifact_version": "asset_version",
+            "artifact_checksum": "artifact_checksum",
+        }
+        if any(
+            str(reference.get(reference_key) or "")
+            != str(deployment.get(deployment_key) or "")
+            for reference_key, deployment_key in exact_fields.items()
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Action과 Flow 배포 참조가 일치하지 않습니다.",
+            )
+
+        owner_employee_id = str(record.get("employee_id") or "")
+        endpoint_id = str(deployment.get("endpoint_id") or "")
+        project_id = str(deployment.get("project_id") or "")
+        stored_snapshot = (
+            connector.get("flow_display_snapshot")
+            if isinstance(connector.get("flow_display_snapshot"), dict)
+            else {}
+        )
+        snapshot = {
+            "name": str(
+                stored_snapshot.get("name")
+                or deployment.get("flow_name")
+                or "Langflow Flow"
+            ),
+            "description": str(stored_snapshot.get("description") or ""),
+            "endpoint_name": str(stored_snapshot.get("endpoint_name") or ""),
+            "node_count": int(stored_snapshot.get("node_count") or 0),
+            "edge_count": int(stored_snapshot.get("edge_count") or 0),
+            "nodes": list(stored_snapshot.get("nodes") or []),
+            "edges": list(stored_snapshot.get("edges") or []),
+            "end_to_end_reachable": bool(
+                stored_snapshot.get("end_to_end_reachable")
+            ),
+            "connected_component_ids": list(
+                stored_snapshot.get("connected_component_ids") or []
+            ),
+        }
+        live_state = "unavailable"
+        live_checksum = ""
+        try:
+            connection = self._endpoint(record, endpoint_id)
+            endpoint = str(
+                connection.get("base_url") or connection.get("endpoint") or ""
+            )
+            api_key = self._api_key(record, endpoint_id)
+            live_flow = self.langflow.flow(endpoint, api_key, flow_id)
+            snapshot = self.flow_display_snapshot(live_flow)
+            live_checksum = self._runtime_flow_checksum(live_flow)
+            live_state = "available"
+        except HTTPException:
+            pass
+
+        registered_checksum = str(
+            deployment.get("validated_checksum")
+            or deployment.get("artifact_checksum")
+            or reference.get("artifact_checksum")
+            or ""
+        )
+        checksum_state = (
+            "matched"
+            if live_checksum and registered_checksum == live_checksum
+            else "drifted"
+            if live_checksum and registered_checksum
+            else str(deployment.get("checksum_state") or "unknown")
+        )
+        setups = (
+            record.get("endpoint_setups")
+            if isinstance(record.get("endpoint_setups"), dict)
+            else {}
+        )
+        setup = (
+            setups.get(endpoint_id)
+            if isinstance(setups.get(endpoint_id), dict)
+            else {}
+        )
+        project = (
+            setup.get("project")
+            if isinstance(setup.get("project"), dict)
+            else {}
+        )
+        project_name = str(
+            stored_snapshot.get("project_name")
+            or project.get("name")
+            or f"{PROJECT_PREFIX}{owner_employee_id}"
+        )
+        can_manage = bool(
+            principal.employee_id == owner_employee_id
+            and (principal.is_admin or "boi.editor" in principal.roles)
+        )
+        links = {"playground": "", "langflow": ""}
+        technical: dict[str, str] = {}
+        if can_manage:
+            links["playground"] = "/playground?" + urlencode(
+                {
+                    "stage": "create",
+                    "endpoint_id": endpoint_id,
+                    "project_id": project_id,
+                    "flow_id": flow_id,
+                }
+            )
+            external_url = str(os.getenv("LANGFLOW_EXTERNAL_URL") or "").rstrip("/")
+            if external_url.startswith(("http://", "https://")):
+                links["langflow"] = (
+                    f"{external_url}/flow/{flow_id}/folder/{project_id}"
+                )
+            technical = {
+                "deployment_id": deployment_id,
+                "project_id": project_id,
+                "flow_id": flow_id,
+                "artifact_version": str(
+                    deployment.get("asset_version")
+                    or reference.get("artifact_version")
+                    or ""
+                ),
+                "artifact_checksum": registered_checksum,
+                "live_checksum": live_checksum,
+            }
+        return {
+            "available": True,
+            "action_key": str(action.get("action_key") or ""),
+            "flow": snapshot,
+            "project_name": project_name,
+            "source_origin": str(
+                stored_snapshot.get("source_origin")
+                or deployment.get("origin")
+                or connector.get("source_origin")
+                or "agent_playground"
+            ),
+            "validation_status": (
+                "blocked"
+                if checksum_state == "drifted"
+                else str(deployment.get("status") or "action_linked")
+            ),
+            "checksum_state": checksum_state,
+            "live_state": live_state,
+            "validated_at": str(
+                stored_snapshot.get("validated_at")
+                or deployment.get("validated_at")
+                or ""
+            ),
+            "owner_label": (
+                "내 Flow"
+                if principal.employee_id == owner_employee_id
+                else "공유된 Action Flow"
+            ),
+            "permissions": {
+                "can_open_playground": can_manage,
+                "can_open_langflow": bool(can_manage and links["langflow"]),
+            },
+            "links": links,
+            "technical": technical,
+        }
 
     def artifact_bundle(
         self,

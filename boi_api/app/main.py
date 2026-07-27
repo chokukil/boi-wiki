@@ -7210,6 +7210,54 @@ def action_payload_fields(action: dict[str, Any]) -> list[dict[str, Any]]:
     return list(fields.values())[:30]
 
 
+def action_flow_reference_summary(action: dict[str, Any]) -> dict[str, Any] | None:
+    binding = (
+        action.get("connector_binding")
+        if isinstance(action.get("connector_binding"), dict)
+        else {}
+    )
+    connector = (
+        binding.get("config")
+        if isinstance(binding.get("config"), dict)
+        else action.get("connector_config")
+        if isinstance(action.get("connector_config"), dict)
+        else {}
+    )
+    if (
+        str(action.get("connector_kind") or binding.get("kind") or "")
+        != "langflow"
+        or str(connector.get("connection_source") or "") != "agent_playground"
+    ):
+        return None
+    snapshot = (
+        connector.get("flow_display_snapshot")
+        if isinstance(connector.get("flow_display_snapshot"), dict)
+        else {}
+    )
+    return {
+        "name": str(
+            snapshot.get("name")
+            or action.get("name_ko")
+            or "Langflow Flow"
+        ).removesuffix(" Action"),
+        "description": str(snapshot.get("description") or ""),
+        "project_name": str(snapshot.get("project_name") or ""),
+        "source_origin": str(
+            snapshot.get("source_origin")
+            or connector.get("source_origin")
+            or "agent_playground"
+        ),
+        "validation_status": str(snapshot.get("validation_status") or "action_linked"),
+        "checksum_state": str(snapshot.get("checksum_state") or "matched"),
+        "node_count": int(snapshot.get("node_count") or 0),
+        "uses_boi_knowledge": any(
+            str(node.get("role") or "") == "knowledge"
+            for node in snapshot.get("nodes") or []
+            if isinstance(node, dict)
+        ),
+    }
+
+
 def action_catalog_detail_payload(action_key: str, employee_id: str) -> dict[str, Any]:
     action = next(
         (
@@ -7237,6 +7285,7 @@ def action_catalog_detail_payload(action_key: str, employee_id: str) -> dict[str
         "workflow_usage": usage,
         "usage_count": len(usage),
         "input_fields": fields,
+        "flow_reference_summary": action_flow_reference_summary(action),
         "doc_ref": doc_ref,
         "doc_url": doc_url_for_ref(doc_ref, employee_id) if doc_ref else "",
         "api_example": {
@@ -32347,6 +32396,7 @@ async def api_universal_simulation_agent(req: SimulationAgentRequest) -> dict[st
 async def actions_page(
     request: Request,
     employee_id: str = Depends(current_employee),
+    identity: AuthIdentity = Depends(current_identity),
     event_type: str = "",
     action_key: str = "",
     view: str = "",
@@ -32361,11 +32411,22 @@ async def actions_page(
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> HTMLResponse:
-    actions = load_action_catalog()
+    actions = [
+        action
+        for action in load_action_catalog()
+        if action_catalog_item_visible(action, identity)
+    ]
     if event_type:
         actions = [a for a in actions if event_type in (a.get("event_types") or [])]
     if action_key:
         actions = [a for a in actions if a.get("action_key") == action_key]
+    if connector_kind and view != "history":
+        actions = [
+            action
+            for action in actions
+            if str(action.get("connector_kind") or action.get("type") or "")
+            == connector_kind
+        ]
     doc_lookup = build_doc_lookup(accessible_docs(employee_id))
     action_history = filter_action_logs_payload(
         employee_id=employee_id,
@@ -32412,6 +32473,7 @@ async def actions_page(
         usages = usage_index.get(str(item.get("action_key") or ""), [])
         item["workflow_usage"] = usages
         item["usage_count"] = len(usages)
+        item["flow_reference_summary"] = action_flow_reference_summary(item)
     return templates.TemplateResponse(
         "actions.html",
         {
@@ -32471,6 +32533,24 @@ async def actions_page(
             "action_invoke_url": f"{boi_public_base_url(request)}/api/actions/invoke?employee_id={quote(employee_id)}",
         },
     )
+
+
+@app.get("/api/actions/catalog/{action_key:path}/flow")
+async def api_action_catalog_flow(
+    action_key: str,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    decoded = unquote(action_key)
+    raw_action = action_catalog_by_key().get(decoded)
+    if raw_action is None or not action_catalog_item_visible(raw_action, identity):
+        raise HTTPException(status_code=404, detail="Action을 찾을 수 없습니다.")
+    return {
+        "ok": True,
+        "flow_view": AGENT_PLAYGROUND_SERVICE.action_flow_view(
+            identity,
+            raw_action,
+        ),
+    }
 
 
 @app.get("/api/actions/catalog/{action_key:path}")
@@ -33663,7 +33743,32 @@ def api_agent_playground_project_flows(
     project_id: str,
     identity: AuthIdentity = Depends(current_identity),
 ) -> dict[str, Any]:
-    return AGENT_PLAYGROUND_SERVICE.flows(identity, endpoint_id, project_id)
+    payload = AGENT_PLAYGROUND_SERVICE.flows(identity, endpoint_id, project_id)
+    catalog = action_catalog_by_key()
+    for flow in payload.get("flows") or []:
+        if not isinstance(flow, dict):
+            continue
+        action_key = str(flow.get("action_key") or "")
+        action = catalog.get(action_key) if action_key else None
+        flow["linked_actions"] = (
+            [
+                {
+                    "action_key": action_key,
+                    "title": str(action.get("name_ko") or action_key),
+                    "scope": str(action.get("scope") or "public"),
+                    "status": (
+                        "published"
+                        if flow.get("action_catalog_applied")
+                        else str(flow.get("action_draft_status") or "draft")
+                    ),
+                    "url": app_url("/actions", identity.employee_id, action_key=action_key),
+                }
+            ]
+            if isinstance(action, dict)
+            and action_catalog_item_visible(action, identity)
+            else []
+        )
+    return payload
 
 
 @app.get("/api/agent-playground/flows")
@@ -33672,7 +33777,7 @@ def api_agent_playground_flows(
     project_id: str = Query(min_length=1),
     identity: AuthIdentity = Depends(current_identity),
 ) -> dict[str, Any]:
-    return AGENT_PLAYGROUND_SERVICE.flows(identity, endpoint_id, project_id)
+    return api_agent_playground_project_flows(endpoint_id, project_id, identity)
 
 
 @app.get("/api/agent-playground/agent-hub/assets")
