@@ -775,10 +775,17 @@ async function verifyPlayground(browser, flowId) {
       response.request().method() === "POST" &&
       new URL(response.url()).pathname.endsWith("/api/agent-playground/rotate-credential"),
   );
+  page.once("dialog", async (dialog) => {
+    assert(
+      dialog.message().includes("기존 키는 즉시 폐기"),
+      `Unexpected credential reissue confirmation: ${dialog.message()}`,
+    );
+    await dialog.accept();
+  });
   await advanced.locator("[data-rotate-credential]").click();
   const rotated = await rotateResponse;
   assert(rotated.ok(), `BoI knowledge credential rotation returned HTTP ${rotated.status()}`);
-  await root.locator("[data-playground-toast]").getByText(/BoI PAT를 원자적으로 교체/).waitFor({
+  await root.locator("[data-playground-toast]").getByText(/BoI 지식 연결 키를 새로 발급/).waitFor({
     timeout: 30_000,
   });
   result.playground.credential_rotation = "passed";

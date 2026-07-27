@@ -1525,15 +1525,19 @@
 
   root.querySelector("[data-rotate-credential]").addEventListener("click", async () => {
     if (!app.endpointId) return;
+    const confirmed = window.confirm(
+      "BoI 지식 연결 키를 새로 발급할까요?\n\n기존 키는 즉시 폐기되며 Langflow의 BOI_WIKI_PAT가 새 키로 교체됩니다.",
+    );
+    if (!confirmed) return;
     try {
       await request("/api/agent-playground/rotate-credential", {
         method: "POST",
-        body: JSON.stringify({ endpoint_id: app.endpointId, reason: "Agent Playground UI rotation" }),
+        body: JSON.stringify({ endpoint_id: app.endpointId, reason: "Agent Playground UI credential reissue" }),
       });
-      showToast("선택 endpoint의 BoI PAT를 원자적으로 교체했습니다.", "success");
+      showToast("BoI 지식 연결 키를 새로 발급하고 Langflow 연결을 갱신했습니다.", "success");
       await loadState();
     } catch (error) {
-      showToast(`BoI 지식 연결 회전 실패: ${error.message}`, "error");
+      showToast(`BoI 지식 연결 키 재발급 실패: ${error.message}`, "error");
     }
   });
 

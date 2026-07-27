@@ -468,12 +468,18 @@
             <dl>
               <div><dt>선택 endpoint</dt><dd data-advanced-endpoint>연결 전</dd></div>
               <div><dt>Langflow user</dt><dd data-advanced-user>연결 전</dd></div>
-              <div><dt>BoI Credential</dt><dd><code>BOI_WIKI_PAT</code> 원문 비노출</dd></div>
-              <div><dt>Action 권한</dt><dd>호출자별 1회성 실행 token 우선</dd></div>
+              <div><dt>BoI 지식 연결</dt><dd><code>BOI_WIKI_PAT</code> 저장됨 · 원문 비노출</dd></div>
+              <div>
+                <dt>Action 실행 시 Wiki 권한</dt>
+                <dd>
+                  <strong>실행한 사용자의 권한을 자동 적용</strong>
+                  <span class="agent-playground-advanced-help">Langflow 연결에는 endpoint 소유자의 키를 사용하고, Wiki 조회와 개인 초안은 실제 실행자의 단기 권한으로 처리합니다.</span>
+                </dd>
+              </div>
             </dl>
             <div class="agent-playground-form-actions">
               <button type="button" data-test-saved disabled>선택 endpoint 다시 시험</button>
-              <button type="button" data-rotate-credential disabled>BoI 지식 연결 회전</button>
+              <button type="button" data-rotate-credential disabled>BoI 지식 연결 키 재발급</button>
               <button type="button" class="danger" data-deactivate-endpoint disabled>연결 해제</button>
             </div>
           </div>

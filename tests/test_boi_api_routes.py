@@ -7543,6 +7543,12 @@ def test_agent_builder_page_exposes_agent_playground(boi_app_module):
     assert "Agent Hub에서 배포" in response.text
     assert "Action 연결" in response.text
     assert "고급 연결 관리" in response.text
+    assert "Action 실행 시 Wiki 권한" in response.text
+    assert "실행한 사용자의 권한을 자동 적용" in response.text
+    assert "BoI 지식 연결 키 재발급" in response.text
+    assert "BoI 지식 연결 키를 새로 발급할까요?" in script
+    assert "호출자별 1회성 실행 token 우선" not in response.text
+    assert "BoI 지식 연결 회전" not in response.text
     assert "boi_pat_" not in response.text
     assert "boi_run_" not in response.text
     assert "/api/agent-playground" in script

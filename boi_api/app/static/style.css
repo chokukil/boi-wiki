@@ -1352,6 +1352,8 @@ body:has(.ops-react-page) .boi-agent-panel { display:none !important; }
 .agent-playground-advanced dl > div { display:grid; gap:2px; padding:8px; border-radius:8px; background:#f8fafc; }
 .agent-playground-advanced dt { color:#64748b; font-size:10px; font-weight:900; }
 .agent-playground-advanced dd { margin:0; font-size:12px; overflow-wrap:anywhere; }
+.agent-playground-advanced dd strong { display:block; color:#0f172a; }
+.agent-playground-advanced-help { display:block; margin-top:4px; color:#64748b; line-height:1.5; }
 .agent-playground-toast { position:fixed; right:20px; bottom:20px; z-index:100; max-width:min(440px,calc(100vw - 40px)); padding:12px 14px; border-radius:10px; background:#0f172a; color:#fff; box-shadow:0 16px 40px rgba(15,23,42,.28); font-size:13px; }
 .agent-playground-toast[data-state="success"] { background:#166534; }
 .agent-playground-toast[data-state="error"] { background:#991b1b; }
