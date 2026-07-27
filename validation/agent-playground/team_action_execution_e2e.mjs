@@ -29,10 +29,24 @@ const config = {
 };
 
 const identities = JSON.parse(await fs.readFile(config.identityFile, "utf8"));
-const cross = JSON.parse(await fs.readFile(config.crossAuthorResult, "utf8"));
-const draftId = String(cross.validation?.action_draft_id || "");
-const expectedFlowId = String(cross.validation?.exact_flow_id || "");
-const expectedChecksum = String(cross.validation?.checksum || "");
+const cross = await fs.readFile(config.crossAuthorResult, "utf8")
+  .then((value) => JSON.parse(value))
+  .catch(() => ({}));
+const draftId = String(
+  process.env.TEAM_ACTION_DRAFT_ID
+  || cross.validation?.action_draft_id
+  || "",
+);
+const expectedFlowId = String(
+  process.env.TEAM_ACTION_FLOW_ID
+  || cross.validation?.exact_flow_id
+  || "",
+);
+const expectedChecksum = String(
+  process.env.TEAM_ACTION_CHECKSUM
+  || cross.validation?.checksum
+  || "",
+);
 if (!identities["100001"] || !identities["100002"] || !draftId || !expectedFlowId) {
   throw new Error("cross-author or OIDC validation fixture is incomplete");
 }

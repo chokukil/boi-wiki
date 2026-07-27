@@ -35,4 +35,5 @@ captures/tmp/
 artifacts/tmp/
 artifacts/agent-playground-current/
 artifacts/agent-playground-handoff/
+validation/agent-playground-mainline/artifacts/
 outputs/

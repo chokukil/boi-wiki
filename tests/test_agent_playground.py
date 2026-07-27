@@ -25,9 +25,13 @@ from boi_api.app.agent_playground import (
     PlaygroundHubAdoptionBeginRequest,
     PlaygroundHubAdoptionComposeRequest,
     PlaygroundHubAdoptionConfirmRequest,
+    PlaygroundMCPTestRequest,
+    PlaygroundMCPUpdateRequest,
     SecretCipher,
     normalize_langflow_endpoint,
+    public_langflow_endpoint,
     require_langflow_111,
+    runtime_langflow_endpoint,
 )
 from boi_api.app.agent_playground_credentials import (
     PlaygroundCredentialService,
@@ -68,6 +72,20 @@ def test_langflow_111_version_and_endpoint_contract():
     with pytest.raises(HTTPException) as beta:
         require_langflow_111("1.12.0")
     assert beta.value.status_code == 409
+
+
+def test_public_and_runtime_langflow_urls_are_separated(monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "dev")
+    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://localhost:7867")
+    monkeypatch.setenv("LANGFLOW_DEPLOY_URL", "http://host.docker.internal:7867")
+    assert (
+        public_langflow_endpoint("http://host.docker.internal:7867")
+        == "http://localhost:7867"
+    )
+    assert (
+        runtime_langflow_endpoint("http://localhost:7867")
+        == "http://host.docker.internal:7867"
+    )
 
 
 def test_secret_cipher_is_owner_bound():
@@ -773,11 +791,12 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
         if path == "/api/v1/all" and method == "GET":
             return response(
                 {
-                    "custom_components": [
-                        "BoIWikiKnowledge",
-                        "BoIWikiSave",
-                        "BoIModelAgent",
-                    ]
+                        "custom_components": [
+                            "BoIWikiKnowledge",
+                            "BoIWikiSave",
+                            "BoIModelAgent",
+                            "BoIUniversalSimulationMCPAgent",
+                        ]
                 }
             )
         if path == "/api/v1/variables/" and method == "GET":
@@ -794,22 +813,24 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
             assert kwargs["json"]["folder_id"] == "project-100003"
             assert kwargs["json"]["project_id"] == "project-100003"
             assert isinstance(kwargs["json"]["data"], dict)
+            is_universal = kwargs["json"]["name"] == "BoI Universal Simulation MCP"
             flow = {
-                "id": "flow-100003",
-                "name": "BoI Wiki Agent Loop",
-                "endpoint_name": "boi-wiki-agent-loop",
+                "id": "flow-universal-100003" if is_universal else "flow-100003",
+                "name": kwargs["json"]["name"],
+                "endpoint_name": kwargs["json"].get("endpoint_name") or "boi-wiki-agent-loop",
                 "folder_id": "project-100003",
                 "description": str(kwargs["json"].get("description") or ""),
                 "data": copy.deepcopy(kwargs["json"]["data"]),
             }
             flows.append(flow)
             return response(flow, 201)
-        if path == "/api/v1/flows/flow-100003" and method == "GET":
-            return response(copy.deepcopy(flows[0]))
-        if path == "/api/v1/run/flow-100003" and method == "POST":
+        if path.startswith("/api/v1/flows/") and method == "GET":
+            flow_id = path.rsplit("/", 1)[-1]
+            return response(copy.deepcopy(next(item for item in flows if item["id"] == flow_id)))
+        if path.startswith("/api/v1/run/") and method == "POST":
             body = kwargs["json"]
             assert '"save_mode": "preview"' in body["input_value"]
-            return response({"session_id": "flow-100003", "outputs": []})
+            return response({"session_id": path.rsplit("/", 1)[-1], "outputs": []})
         raise AssertionError(f"unexpected Langflow call: {method} {path}")
 
     monkeypatch.setattr(service, "_request", fake_request)
@@ -847,11 +868,16 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
         state["default_endpoint_id"],
         state["project"]["id"],
     )["flows"]
-    assert len(listed) == 1
-    assert listed[0]["validation_status"] == "runtime_validated"
-    assert listed[0]["checksum_state"] == "matched"
+    assert len(listed) == 2
+    canonical_item = next(item for item in listed if item["flow_id"] == "flow-100003")
+    recommended_item = next(
+        item for item in listed if item["flow_id"] == "flow-universal-100003"
+    )
+    assert canonical_item["validation_status"] == "runtime_validated"
+    assert canonical_item["checksum_state"] == "matched"
+    assert recommended_item["mcp_tool"] == "boi_universal_simulate"
     rerun_record = service._read("100003")
-    assert listed[0]["live_checksum"] == (
+    assert canonical_item["live_checksum"] == (
         rerun_record["endpoint_setups"][state["default_endpoint_id"]]
         ["canonical_flow"]["validated_checksum"]
     )
@@ -870,13 +896,14 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
     assert ready_for_hub["journey"]["next_action"]["id"] == "open_agent_hub"
     assert state["endpoint_setups"][state["default_endpoint_id"]]["smoke"]["status"] == "passed"
     assert state["endpoint_setups"][state["default_endpoint_id"]]["bundle"] == {
-        "version": "1.1.0",
+        "version": "1.2.0",
         "mode": "read_only_extension",
         "verified": True,
         "components": {
             "BoIWikiKnowledge": True,
             "BoIWikiSave": True,
             "BoIModelAgent": True,
+            "BoIUniversalSimulationMCPAgent": True,
         },
     }
     token = store.get("tokens", service._read("100003")["wiki_credential"]["token_id"])
@@ -938,11 +965,12 @@ def test_canonical_bundle_uses_checksum_identity_when_agent_hub_renames_flow(tmp
         if path == "/api/v1/all" and method == "GET":
             return response(
                 {
-                    "custom_components": [
-                        "BoIWikiKnowledge",
-                        "BoIWikiSave",
-                        "BoIModelAgent",
-                    ]
+                        "custom_components": [
+                            "BoIWikiKnowledge",
+                            "BoIWikiSave",
+                            "BoIModelAgent",
+                            "BoIUniversalSimulationMCPAgent",
+                        ]
                 }
             )
         if path == "/api/v1/variables/" and method == "GET":
@@ -952,18 +980,21 @@ def test_canonical_bundle_uses_checksum_identity_when_agent_hub_renames_flow(tmp
         if path == "/api/v1/flows/" and method == "GET":
             return response(flows)
         if path == "/api/v1/flows/" and method == "POST":
+            is_universal = kwargs["json"]["name"] == "BoI Universal Simulation MCP"
             flow = {
-                "id": "flow-100003",
-                "name": "BoI Wiki Agent Loop",
-                "endpoint_name": "boi-wiki-agent-loop",
+                "id": "flow-universal-100003" if is_universal else "flow-100003",
+                "name": kwargs["json"]["name"],
+                "endpoint_name": kwargs["json"].get("endpoint_name") or "boi-wiki-agent-loop",
                 "folder_id": "project-100003",
+                "data": copy.deepcopy(kwargs["json"].get("data") or {}),
             }
             flows.append(flow)
             return response(flow, 201)
-        if path == "/api/v1/run/flow-100003" and method == "POST":
-            return response({"session_id": "flow-100003", "outputs": []})
-        if path == "/api/v1/flows/flow-100003" and method == "GET":
-            return response(flows[0])
+        if path.startswith("/api/v1/run/") and method == "POST":
+            return response({"session_id": path.rsplit("/", 1)[-1], "outputs": []})
+        if path.startswith("/api/v1/flows/") and method == "GET":
+            flow_id = path.rsplit("/", 1)[-1]
+            return response(next(item for item in flows if item["id"] == flow_id))
         raise AssertionError(f"unexpected Langflow call: {method} {path}")
 
     monkeypatch.setattr(service, "_request", fake_request)
@@ -1890,3 +1921,233 @@ def test_component_asset_matching_prefers_the_most_specific_node_identity():
     )
 
     assert [item["id"] for item in matches] == ["incompatible-slot"]
+
+
+def test_universal_simulation_mcp_artifact_has_guided_canvas_and_contract():
+    artifact_path = (
+        ROOT / "langflow" / "flows" / "boi_universal_simulation_mcp.json"
+    )
+    flow = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert flow["name"] == "BoI Universal Simulation MCP"
+    assert flow["endpoint_name"] == "boi-universal-simulation-mcp"
+    assert flow["mcp_enabled"] is True
+    assert flow["action_name"] == "boi_universal_simulate"
+
+    nodes = flow["data"]["nodes"]
+    execution_nodes = [
+        item for item in nodes if not str(item.get("id") or "").startswith("Note-")
+    ]
+    notes = [
+        item for item in nodes if str(item.get("id") or "").startswith("Note-")
+    ]
+    assert [item["position"]["x"] for item in execution_nodes] == [
+        80,
+        500,
+        940,
+        1380,
+        1820,
+    ]
+    assert {item["position"]["y"] for item in execution_nodes} == {420}
+    assert len(notes) == 5
+    assert {item["position"]["y"] for item in notes} == {20}
+    note_text = json.dumps(notes, ensure_ascii=False)
+    for heading in (
+        "여기서 시작하세요",
+        "Wiki와 Ontology가 맥락을 준비합니다",
+        "이 Agent만 교체할 수 있습니다",
+        "저장 전 반드시 확인합니다",
+        "두 가지 방법으로 사용할 수 있습니다",
+    ):
+        assert heading in note_text
+    assert len(flow["data"]["edges"]) == 4
+    assert flow["data"]["viewport"]["zoom"] == 0.6
+    assert (
+        flow["data"]["boi_contract"]["write_policy"]
+        == "action_token_required"
+    )
+    assert AgentPlaygroundService._flow_contract(
+        flow,
+        "boi_knowledge_draft",
+    )["ok"] is True
+    assert not any(
+        pattern.search(artifact_path.read_text(encoding="utf-8"))
+        for pattern in (
+            re.compile(r"boi_pat_"),
+            re.compile(r"boi_run_"),
+            re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+        )
+    )
+
+
+def test_project_mcp_settings_and_streamable_call_are_secret_free(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("BOI_AUTH_MODE", "dev")
+    monkeypatch.setenv("BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY", "test-key")
+    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://localhost:7867")
+    monkeypatch.setenv("LANGFLOW_DEPLOY_URL", "http://host.docker.internal:7867")
+    identity = principal(
+        "100002",
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+    )
+    credentials = PlaygroundCredentialService(
+        tmp_path / "runtime",
+        hash_secret="test-pat-secret",
+        identity_provider=lambda _employee_id: identity,
+    )
+    service = AgentPlaygroundService(tmp_path / "runtime", ROOT, credentials)
+    endpoint_id = "ep-mcp"
+    project_id = "project-100002"
+    flow_id = "flow-universal"
+    service._write(
+        identity.employee_id,
+        {
+            "employee_id": identity.employee_id,
+            "endpoints": [
+                {
+                    "endpoint_id": endpoint_id,
+                    "name": "MCP Langflow",
+                    "base_url": "http://langflow.example:7867",
+                    "endpoint": "http://langflow.example:7867",
+                    "api_key_encrypted": service.cipher.encrypt(
+                        "lf-secret-key",
+                        owner=identity.employee_id,
+                    ),
+                    "active": True,
+                    "status": "connected",
+                }
+            ],
+            "default_endpoint_id": endpoint_id,
+            "flow_registry": [
+                {
+                    "endpoint_id": endpoint_id,
+                    "project_id": project_id,
+                    "flow_id": flow_id,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "projects",
+        lambda *_args, **_kwargs: {
+            "projects": [{"id": project_id, "name": "boi-100002"}]
+        },
+    )
+    live_flow = {
+        "id": flow_id,
+        "name": "BoI Universal Simulation MCP",
+        "endpoint_name": "boi-universal-simulation-mcp",
+        "folder_id": project_id,
+    }
+    monkeypatch.setattr(service, "_flows", lambda *_args: [live_flow])
+    mcp_payload = {
+        "tools": [
+            {
+                "id": flow_id,
+                "mcp_enabled": True,
+                "action_name": "boi_universal_simulate",
+                "action_description": "preview",
+                "name": live_flow["name"],
+            }
+        ],
+        "auth_settings": {"auth_type": "apikey"},
+    }
+    monkeypatch.setattr(
+        service.langflow,
+        "project_mcp",
+        lambda *_args, **_kwargs: copy.deepcopy(mcp_payload),
+    )
+    updated: dict = {}
+
+    def fake_update(*_args, **kwargs):
+        updated.update(kwargs)
+        return copy.deepcopy(mcp_payload)
+
+    monkeypatch.setattr(service.langflow, "update_project_mcp", fake_update)
+
+    async def fake_call(_url, api_key, *, tool_name, arguments):
+        assert api_key == "lf-secret-key"
+        assert tool_name == "boi_universal_simulate"
+        assert '"save_mode": "preview"' in arguments["input_value"]
+        return {
+            "tools": [
+                {
+                    "name": tool_name,
+                    "description": "preview",
+                    "input_schema": {"type": "object"},
+                }
+            ],
+            "call": {"content": [{"type": "text", "text": "SIMULATED"}]},
+        }
+
+    monkeypatch.setattr(service, "_call_mcp_tool", fake_call)
+    settings = service.mcp_settings(identity, endpoint_id, project_id)
+    assert settings["status"] == "available"
+    assert settings["auth"]["credential"] == "${LANGFLOW_API_KEY}"
+    assert settings["streamable_url"].startswith("http://localhost:7867/")
+    assert "host.docker.internal" not in json.dumps(settings)
+    assert "lf-secret-key" not in json.dumps(settings)
+
+    service.update_mcp_settings(
+        identity,
+        endpoint_id,
+        project_id,
+        flow_id,
+        PlaygroundMCPUpdateRequest(),
+    )
+    assert updated["auth_type"] == "apikey"
+    result = service.test_mcp(
+        identity,
+        endpoint_id,
+        project_id,
+        flow_id,
+        PlaygroundMCPTestRequest(question="시뮬레이션"),
+    )
+    assert result["tool_name"] == "boi_universal_simulate"
+    assert result["save_mode"] == "preview"
+    assert result["write_allowed"] is False
+
+    async def fake_blocked_call(_url, api_key, *, tool_name, arguments):
+        assert api_key == "lf-secret-key"
+        assert tool_name == "boi_universal_simulate"
+        assert '"save_mode": "private_draft"' in arguments["input_value"]
+        return {
+            "tools": [
+                {
+                    "name": tool_name,
+                    "description": "preview",
+                    "input_schema": {"type": "object"},
+                }
+            ],
+            "call": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "save_mode": "preview",
+                                "write_blocked": True,
+                                "write_blocked_reason": "action_run_token_required",
+                            }
+                        ),
+                    }
+                ]
+            },
+        }
+
+    monkeypatch.setattr(service, "_call_mcp_tool", fake_blocked_call)
+    blocked = service.test_mcp(
+        identity,
+        endpoint_id,
+        project_id,
+        flow_id,
+        PlaygroundMCPTestRequest(
+            question="저장까지 해줘",
+            save_mode="private_draft",
+        ),
+    )
+    assert blocked["save_mode"] == "private_draft"
+    assert blocked["write_allowed"] is False
+    assert blocked["write_blocked"] is True

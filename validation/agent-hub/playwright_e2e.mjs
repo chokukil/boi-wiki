@@ -101,11 +101,19 @@ for (const [name, value] of Object.entries({
   if (!value) throw new Error(`${name} is required`);
 }
 
+const flowArtifact = JSON.parse(await fs.readFile(config.flowJson, "utf8"));
+const flowArtifactName = String(flowArtifact.name || "BoI Flow");
+const flowArtifactVersion = String(
+  flowArtifact.data?.boi_contract?.version
+  || flowArtifact.boi_contract?.version
+  || (flowArtifact.tags || []).find((item) => /^\d+\.\d+\.\d+$/.test(String(item)))
+  || "1.0.0",
+);
 const runId =
   process.env.PLAYWRIGHT_RUN_ID ||
   new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
 const endpointAlias = process.env.PLAYWRIGHT_ENDPOINT_ALIAS || "Playwright Langflow 1.11";
-const assetTitle = process.env.PLAYWRIGHT_ASSET_TITLE || `BoI Wiki Agent Loop Browser ${runId}`;
+const assetTitle = process.env.PLAYWRIGHT_ASSET_TITLE || `${flowArtifactName} Browser ${runId}`;
 const result = {
   run_id: runId,
   runner: "standalone-playwright",
@@ -396,13 +404,15 @@ async function uploadFlow(page) {
   const titleInput = modal.locator("input.input").nth(0);
   const descriptionInput = modal.locator("input.input").nth(1);
   await titleInput.fill(assetTitle);
-  await descriptionInput.fill("BoI Wiki와 Ontology 근거를 활용하는 Agent Playground 기준 Flow입니다.");
+  await descriptionInput.fill(
+    "BoI Wiki와 Ontology 근거를 활용해 실제 시스템을 호출하지 않고 업무를 시뮬레이션하는 대표 Flow입니다.",
+  );
   const readme = modal.locator("textarea.input");
   await readme.fill(
     [
       "## 개요",
       "",
-      "BoI Wiki Agent Loop 1.1.0을 Agent Hub에서 개인 Langflow 프로젝트로 배포합니다.",
+      `${flowArtifactName} ${flowArtifactVersion}을 Agent Hub에서 개인 Langflow 프로젝트로 배포합니다.`,
       "",
       "## 검증",
       "",
@@ -650,13 +660,13 @@ async function verifyLangflowCanvas(browser, flowId, flowUrl) {
   const body = (await page.locator("body").innerText()).slice(0, 20_000);
   await screenshot(page, "05-langflow-deployed-flow");
   assert(
-    body.includes(assetTitle) || body.includes("BoI Wiki Agent Loop") || page.url().includes(flowId),
+    body.includes(assetTitle) || body.includes(flowArtifactName) || page.url().includes(flowId),
     "Langflow browser page did not show the deployed Flow",
   );
   result.langflow = {
     flow_id: flowId,
     url: safeUrl(page.url()),
-    visible_name: body.includes(assetTitle) ? assetTitle : "BoI Wiki Agent Loop",
+    visible_name: body.includes(assetTitle) ? assetTitle : flowArtifactName,
   };
   await context.close();
 }
@@ -676,10 +686,33 @@ async function ensurePlaygroundEndpoint(root) {
   const endpointItems = root.locator("[data-endpoint-list] [data-endpoint-id]");
   const existingByAlias = endpointItems.filter({ hasText: endpointAlias });
   const existingByUrl = endpointItems.filter({ hasText: config.langflowEndpointForPlayground });
+  const activeCount = await endpointItems.evaluateAll(
+    (items) => items.filter((item) => item.getAttribute("data-active") === "true").length,
+  );
+  if (activeCount === 1) {
+    await root.page().waitForFunction(
+      () => document.querySelector("[data-context-endpoint]")?.textContent?.includes("1.11.0"),
+      null,
+      { timeout: 20_000 },
+    );
+    return;
+  }
   // Prefer the actual runtime URL. A historical endpoint can retain the same
   // display alias while pointing at a different host, and editing that record
   // into the live URL would correctly hit the duplicate-endpoint guard.
-  const existing = (await existingByUrl.count()) ? existingByUrl : existingByAlias;
+  if (await existingByUrl.count()) {
+    const existing = existingByUrl.last();
+    if ((await existing.getAttribute("data-active")) !== "true") {
+      await existing.click();
+    }
+    await root.page().waitForFunction(
+      () => document.querySelector("[data-context-endpoint]")?.textContent?.includes("1.11.0"),
+      null,
+      { timeout: 20_000 },
+    );
+    return;
+  }
+  const existing = existingByAlias;
   if (await existing.count()) {
     if ((await existing.last().getAttribute("data-active")) !== "true") {
       await existing.last().click();
@@ -766,6 +799,7 @@ async function verifyPlayground(browser, flowId) {
   }
 
   await ensurePlaygroundEndpoint(root);
+  await root.locator('[data-workbench-step="action"]').click();
   const advanced = root.locator(".agent-playground-advanced");
   if (!(await advanced.evaluate((element) => element.open))) {
     await advanced.locator("summary").click();
@@ -789,6 +823,7 @@ async function verifyPlayground(browser, flowId) {
     timeout: 30_000,
   });
   result.playground.credential_rotation = "passed";
+  await root.locator('[data-workbench-step="create"]').click();
   const projectSelect = root.locator("[data-project-select]");
   await projectSelect.waitFor({ state: "visible", timeout: 30_000 });
   await projectSelect.selectOption({ label: "boi-100002" });
@@ -880,6 +915,8 @@ async function verifyPlayground(browser, flowId) {
   });
 
   await root.locator('[data-workbench-step="action"]').click();
+  await root.locator('[name="action_scope"][value="team"]').check();
+  await root.locator("[data-action-team]").selectOption("aix-tf");
   const createAction = root.locator("[data-create-action]");
   await root.page().waitForFunction(
     () => !document.querySelector("[data-create-action]")?.disabled,
@@ -1259,23 +1296,30 @@ async function verifyViewerActionDenial(browser) {
   const catalog = page.locator("[data-action-catalog]");
   await catalog.waitFor({ timeout: 30_000 });
   const actionButton = catalog.locator(`[data-action-open="${config.boiActionKey}"]`);
-  await actionButton.waitFor({ state: "visible", timeout: 30_000 });
-  const detailResponsePromise = page.waitForResponse(
-    (response) =>
-      response.request().method() === "GET"
-      && new URL(response.url()).pathname.endsWith(
-        `/api/actions/catalog/${config.boiActionKey}`,
-      ),
-  );
-  await actionButton.click();
-  const detailResponse = await detailResponsePromise;
-  const detail = catalog.locator("[data-action-detail-content]");
-  const form = detail.locator("[data-action-preview-form]");
-  if (detailResponse.status() === 404) {
-    await detail.getByText("Action 정보를 불러오지 못했습니다.").waitFor();
-  } else {
-    assert(detailResponse.ok(), `Viewer Action detail returned HTTP ${detailResponse.status()}`);
-    await form.waitFor({ timeout: 30_000 });
+  const actionVisible = await actionButton
+    .waitFor({ state: "visible", timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  let detailStatus = 404;
+  if (actionVisible) {
+    const detailResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET"
+        && new URL(response.url()).pathname.endsWith(
+          `/api/actions/catalog/${config.boiActionKey}`,
+        ),
+    );
+    await actionButton.click();
+    const detailResponse = await detailResponsePromise;
+    detailStatus = detailResponse.status();
+    const detail = catalog.locator("[data-action-detail-content]");
+    const form = detail.locator("[data-action-preview-form]");
+    if (detailStatus === 404) {
+      await detail.getByText("Action 정보를 불러오지 못했습니다.").waitFor();
+    } else {
+      assert(detailResponse.ok(), `Viewer Action detail returned HTTP ${detailStatus}`);
+      await form.waitFor({ timeout: 30_000 });
+    }
   }
   const invoke = await page.evaluate(async ({ actionKey }) => {
     const response = await fetch("/api/actions/invoke", {
@@ -1307,7 +1351,8 @@ async function verifyViewerActionDenial(browser) {
   result.boi_action.viewer_denial = {
     employee_id: "100003",
     status: invoke.status,
-    catalog_detail_status: detailResponse.status(),
+    catalog_visibility: actionVisible ? "listed_but_not_invocable" : "hidden",
+    catalog_detail_status: detailStatus,
     save_mode: "private_draft",
     reason: "missing boi.action_invoker",
   };

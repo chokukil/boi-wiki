@@ -17,6 +17,13 @@ services:
         test -f /content/public/boi-wiki-manual/langflow/agent-playground-shared-assets.md;
         test -f /content/public/boi-wiki-manual/langflow/agent-playground-action-wiki.md;
         test -f /content/public/boi-wiki-manual/langflow/agent-playground-troubleshooting.md;
+        test -f /content/public/boi-wiki-manual/langflow/universal-simulation-mcp-quickstart.md;
+        test -f /content/public/boi-wiki-manual/langflow/universal-simulation-mcp-canvas.md;
+        test -f /content/public/boi-wiki-manual/langflow/universal-simulation-mcp-connect.md;
+        test -f /content/public/boi-wiki-manual/langflow/universal-simulation-mcp-agent-hub.md;
+        test -f /content/public/boi-wiki-manual/langflow/universal-simulation-mcp-component.md;
+        test -f /content/public/boi-wiki-manual/langflow/universal-simulation-mcp-permissions.md;
+        test -f /content/public/boi-wiki-manual/langflow/universal-simulation-mcp-troubleshooting.md;
         test -f /content/public/boi-wiki-manual/operations/agent-hub-integration-boundary.md;
         test -f /content/public/boi-wiki-manual/operations/agent-playground-operator-runbook.md
     volumes:
@@ -71,7 +78,7 @@ services:
       BOI_AGENT_PLAYGROUND_TOKEN_HASH_SECRET: mainline-validation-token-hash-secret-change-me
       BOI_AGENT_PLAYGROUND_ALLOWED_LANGFLOW_HOSTS: localhost,host.docker.internal
       LANGFLOW_EXTERNAL_URL: http://localhost:7867
-      LANGFLOW_DEPLOY_URL: http://localhost:7867
+      LANGFLOW_DEPLOY_URL: http://host.docker.internal:7867
       AGENT_HUB_EXTERNAL_URL: http://localhost:18080/AgentHub.html
       AGENT_HUB_API_URL: http://host.docker.internal:18001
       BOI_WIKI_MCP_EXTERNAL_URL: http://localhost:18205

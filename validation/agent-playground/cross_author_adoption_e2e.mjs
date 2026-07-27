@@ -15,6 +15,10 @@ const config = {
   boiUrl: process.env.BOI_URL || "http://localhost:28005",
   keycloakUrl: process.env.KEYCLOAK_URL || "http://localhost:18082",
   langflowUrl: process.env.LANGFLOW_URL || "http://localhost:7866",
+  langflowPlaygroundUrl:
+    process.env.LANGFLOW_PLAYGROUND_URL
+    || process.env.LANGFLOW_URL
+    || "http://localhost:7866",
   langflowContainerUrl:
     process.env.LANGFLOW_CONTAINER_URL || "http://host.docker.internal:7866",
   identityFile:
@@ -54,8 +58,13 @@ if (
 const runId =
   process.env.PLAYWRIGHT_RUN_ID
   || new Date().toISOString().replace(/\W/g, "").slice(0, 15);
-const flowTitle = `Shared BoI Wiki Agent Loop ${runId}`;
-const componentTitle = `Shared Evidence Priority Selector ${runId}`;
+const sharedFlowArtifact = JSON.parse(await fs.readFile(config.flowFile, "utf8"));
+const flowTitle = `Shared ${sharedFlowArtifact.name || "BoI Flow"} ${runId}`;
+const componentTitle = `${
+  path.basename(config.componentFile).includes("shared_gemma")
+    ? "Shared Gemma Simulation Agent"
+    : "Shared Agent Component"
+} ${runId}`;
 const endpointAlias = `Cross-author Langflow ${runId}`;
 
 const result = {
@@ -461,14 +470,17 @@ async function loginBoi(browser) {
 }
 
 async function ensurePlaygroundEndpoint(page, apiKey) {
-  const normalizedTarget = config.langflowContainerUrl.replace(/\/+$/, "");
+  const normalizedTarget = config.langflowPlaygroundUrl.replace(/\/+$/, "");
   let state = await page.evaluate(async () => {
     const response = await fetch("/api/agent-playground");
     return response.json();
   });
-  let targetEndpoint = (state.endpoints || []).find(
+  const matchingEndpoints = (state.endpoints || []).filter(
     (endpoint) => String(endpoint.base_url || "").replace(/\/+$/, "") === normalizedTarget,
   );
+  let targetEndpoint = (state.endpoints || []).find(
+    (endpoint) => endpoint.endpoint_id === state.default_endpoint_id,
+  ) || matchingEndpoints[0];
   let created = false;
   if (!targetEndpoint) {
     const settings = page.locator(".agent-playground-connection-settings");
@@ -521,7 +533,10 @@ async function ensurePlaygroundEndpoint(page, apiKey) {
         key: apiKey,
       },
     );
-    assert(updated.status === 200, `Playground endpoint update returned HTTP ${updated.status}`);
+    assert(
+      updated.status === 200,
+      `Playground endpoint ${targetEndpoint.endpoint_id} update returned HTTP ${updated.status}: ${JSON.stringify(updated.body)}`,
+    );
     targetEndpoint = updated.body.endpoint;
   }
 
@@ -569,8 +584,10 @@ async function beginPlaygroundAdoption(page) {
     const response = await fetch("/api/agent-playground");
     return response.json();
   });
-  const normalizedTarget = config.langflowContainerUrl.replace(/\/+$/, "");
-  const targetEndpoint = (state.endpoints || []).find((endpoint) => (
+  const normalizedTarget = config.langflowPlaygroundUrl.replace(/\/+$/, "");
+  const targetEndpoint = (state.endpoints || []).find(
+    (endpoint) => endpoint.endpoint_id === state.default_endpoint_id,
+  ) || (state.endpoints || []).find((endpoint) => (
     String(endpoint.base_url || endpoint.endpoint || "").replace(/\/+$/, "") === normalizedTarget
   ));
   assert(targetEndpoint, `Playground endpoint ${normalizedTarget} is missing`);
