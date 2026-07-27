@@ -387,7 +387,7 @@ def main() -> int:
                 and regressions["universal-simulation-artifact.json"].get("overlaps") == []
             ),
             "5개 실행 노드와 5개 안내 Note, 4개 edge가 지정 위치에 있고 겹침이 없다.",
-            ["regression/universal-simulation-artifact.json", "evidence/onboarding-mcp/03-langflow-canvas.png"],
+            ["regression/universal-simulation-artifact.json", "evidence/agent-hub-action/05-langflow-deployed-flow.png"],
         ),
         check(
             4,
