@@ -271,6 +271,14 @@ async function verifyMcpApi(page, current) {
   assert(payload.status === "available", "MCP state is not available");
   assert(payload.auth.type === "apikey", "MCP auth is not apikey");
   assert(payload.auth.credential === "${LANGFLOW_API_KEY}", "MCP response leaked or changed credential placeholder");
+  assert(
+    payload.streamable_url.startsWith("http://localhost:7867/"),
+    "browser-facing MCP URL is not the configured external Langflow URL",
+  );
+  assert(
+    !payload.streamable_url.includes("host.docker.internal"),
+    "browser-facing MCP URL exposes a container-only hostname",
+  );
   assert(payload.tools.length === 1, "representative MCP tool is not exposed exactly once");
   assert(payload.tools[0].tool_name === "boi_universal_simulate", "unexpected MCP tool name");
   assert(!JSON.stringify(payload).includes("boi_pat_"), "MCP response contains a PAT");
@@ -317,6 +325,7 @@ async function verifyMcpApi(page, current) {
     auth_type: payload.auth.type,
     tool_name: payload.tools[0].tool_name,
     transport: payload.client_example.transport,
+    streamable_url: payload.streamable_url,
     schema_input: "input_value",
     forced_private_draft: "blocked",
   };
@@ -418,8 +427,14 @@ try {
   await verifyFirstRun(page);
   const refreshed = await state(page);
   await verifyMcpApi(page, refreshed);
+  await page.locator("[data-onboarding-finish]").click();
+  await page.locator("[data-agent-replace-status]").filter({
+    hasText: "Agent 교체 가능",
+  }).waitFor({ state: "visible", timeout: 30_000 });
   const html = await page.locator("body").innerText();
   assert(!html.includes("host.docker.internal"), "Playground exposes a container-only hostname");
+  assert(html.includes("Agent 교체 가능"), "representative Flow does not expose the Agent replacement state");
+  assert(html.includes("Agent Hub 배포 전") || html.includes("배포 Flow 검증 완료"), "deployment readiness state is missing");
   await context.storageState({ path: storageStatePath });
   const setup = refreshed.endpoint_setups[refreshed.default_endpoint_id];
   await verifyCanvas(browser, setup.recommended_flow.id, setup.project.id);
