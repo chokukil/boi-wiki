@@ -822,9 +822,40 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
                 "folder_id": "project-100003",
                 "description": str(kwargs["json"].get("description") or ""),
                 "data": copy.deepcopy(kwargs["json"]["data"]),
+                "mcp_enabled": bool(kwargs["json"].get("mcp_enabled")),
+                "action_name": str(kwargs["json"].get("action_name") or ""),
+                "action_description": str(
+                    kwargs["json"].get("action_description") or ""
+                ),
             }
             flows.append(flow)
             return response(flow, 201)
+        if path == "/api/v1/mcp/project/project-100003" and method == "GET":
+            return response(
+                {
+                    "tools": [
+                        {
+                            "id": item["id"],
+                            "name": item["name"],
+                            "mcp_enabled": item.get("mcp_enabled", False),
+                            "action_name": item.get("action_name", ""),
+                            "action_description": item.get(
+                                "action_description",
+                                "",
+                            ),
+                        }
+                        for item in flows
+                    ],
+                    "auth_settings": {"auth_type": "apikey"},
+                }
+            )
+        if path == "/api/v1/mcp/project/project-100003" and method == "PATCH":
+            return response(
+                {
+                    "tools": kwargs["json"]["settings"],
+                    "auth_settings": kwargs["json"]["auth_settings"],
+                }
+            )
         if path.startswith("/api/v1/flows/") and method == "GET":
             flow_id = path.rsplit("/", 1)[-1]
             return response(copy.deepcopy(next(item for item in flows if item["id"] == flow_id)))
@@ -988,9 +1019,40 @@ def test_canonical_bundle_uses_checksum_identity_when_agent_hub_renames_flow(tmp
                 "endpoint_name": kwargs["json"].get("endpoint_name") or "boi-wiki-agent-loop",
                 "folder_id": "project-100003",
                 "data": copy.deepcopy(kwargs["json"].get("data") or {}),
+                "mcp_enabled": bool(kwargs["json"].get("mcp_enabled")),
+                "action_name": str(kwargs["json"].get("action_name") or ""),
+                "action_description": str(
+                    kwargs["json"].get("action_description") or ""
+                ),
             }
             flows.append(flow)
             return response(flow, 201)
+        if path == "/api/v1/mcp/project/project-100003" and method == "GET":
+            return response(
+                {
+                    "tools": [
+                        {
+                            "id": item["id"],
+                            "name": item["name"],
+                            "mcp_enabled": item.get("mcp_enabled", False),
+                            "action_name": item.get("action_name", ""),
+                            "action_description": item.get(
+                                "action_description",
+                                "",
+                            ),
+                        }
+                        for item in flows
+                    ],
+                    "auth_settings": {"auth_type": "apikey"},
+                }
+            )
+        if path == "/api/v1/mcp/project/project-100003" and method == "PATCH":
+            return response(
+                {
+                    "tools": kwargs["json"]["settings"],
+                    "auth_settings": kwargs["json"]["auth_settings"],
+                }
+            )
         if path.startswith("/api/v1/run/") and method == "POST":
             return response({"session_id": path.rsplit("/", 1)[-1], "outputs": []})
         if path.startswith("/api/v1/flows/") and method == "GET":
@@ -1925,9 +1987,14 @@ def test_component_asset_matching_prefers_the_most_specific_node_identity():
 
 
 def test_universal_simulation_mcp_artifact_has_guided_canvas_and_contract():
+    from scripts.verify_universal_simulation_mcp_artifact import verify
+
     artifact_path = (
         ROOT / "langflow" / "flows" / "boi_universal_simulation_mcp.json"
     )
+    verification = verify(artifact_path)
+    assert verification["ok"] is True
+    assert verification["overlaps"] == []
     flow = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert flow["name"] == "BoI Universal Simulation MCP"
     assert flow["endpoint_name"] == "boi-universal-simulation-mcp"
@@ -2046,6 +2113,13 @@ def test_project_mcp_settings_and_streamable_call_are_secret_free(
     mcp_payload = {
         "tools": [
             {
+                "id": "flow-universal-old",
+                "mcp_enabled": True,
+                "action_name": "boi_universal_simulate",
+                "action_description": "stale representative revision",
+                "name": "BoI Universal Simulation MCP (old)",
+            },
+            {
                 "id": flow_id,
                 "mcp_enabled": True,
                 "action_name": "boi_universal_simulate",
@@ -2099,6 +2173,17 @@ def test_project_mcp_settings_and_streamable_call_are_secret_free(
         PlaygroundMCPUpdateRequest(),
     )
     assert updated["auth_type"] == "apikey"
+    duplicate = next(
+        item
+        for item in updated["settings"]
+        if item["id"] == "flow-universal-old"
+    )
+    selected = next(
+        item for item in updated["settings"] if item["id"] == flow_id
+    )
+    assert duplicate["mcp_enabled"] is False
+    assert selected["mcp_enabled"] is True
+    assert selected["action_name"] == "boi_universal_simulate"
     result = service.test_mcp(
         identity,
         endpoint_id,
@@ -2152,3 +2237,21 @@ def test_project_mcp_settings_and_streamable_call_are_secret_free(
     assert blocked["save_mode"] == "private_draft"
     assert blocked["write_allowed"] is False
     assert blocked["write_blocked"] is True
+
+    stored = service._read(identity.employee_id)
+    stored["flow_registry"][0]["validated_checksum"] = "registered-before-drift"
+    stored["flow_registry"][0]["artifact_checksum"] = "registered-before-drift"
+    service._write(identity.employee_id, stored)
+    with pytest.raises(HTTPException) as drifted:
+        service.test_mcp(
+            identity,
+            endpoint_id,
+            project_id,
+            flow_id,
+            PlaygroundMCPTestRequest(question="drifted Flow MCP 검증"),
+        )
+    assert drifted.value.status_code == 409
+    assert drifted.value.detail["code"] == "flow_checksum_drift"
+    after_drift = service._read(identity.employee_id)["flow_registry"][0]
+    assert after_drift["validation_status"] == "blocked"
+    assert after_drift["mcp_status"] == "blocked"

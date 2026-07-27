@@ -473,6 +473,53 @@ def test_wiki_search_resolves_real_task_context_and_distinct_typed_relationships
     assert ordinary.json()["retrieval_strategy"] == "ontology_hybrid"
     assert ordinary.json()["context_pack"] == {}
 
+    ad_hoc_trace_id = "trace-agent-playground-ad-hoc-task"
+    ad_hoc_event_id = "evt-agent-playground-ad-hoc-task"
+    ad_hoc_request_id = "act-agent-playground-ad-hoc-task"
+    boi_app_module.append_event_log(
+        status="processed",
+        event={
+            "event_id": ad_hoc_event_id,
+            "event_type": "timeseries.forecast.requested.v1",
+            "trace_id": ad_hoc_trace_id,
+            "payload": {"series": [1, 2, 3], "horizon": 2, "frequency": "D"},
+        },
+    )
+    boi_app_module.append_action_log_row(
+        {
+            "request_id": ad_hoc_request_id,
+            "employee_id": "100002",
+            "trace_id": ad_hoc_trace_id,
+            "event_id": ad_hoc_event_id,
+            "event_type": "timeseries.forecast.requested.v1",
+            "action_key": "mcp.timesfm.forecast",
+            "status": "manual_required",
+            "summary": "SOP 없는 ad-hoc Task 검증",
+            "logged_at": boi_app_module.now_iso(),
+        }
+    )
+    ad_hoc = client.get(
+        "/internal/agent-playground/wiki/search",
+        headers=headers,
+        params={
+            "q": "이 예측 Task에 필요한 근거를 정리해줘",
+            "task_ref": f"task:{ad_hoc_request_id}",
+            "trace_id": ad_hoc_trace_id,
+            "event_id": ad_hoc_event_id,
+            "action_key": "mcp.timesfm.forecast",
+        },
+    )
+    assert ad_hoc.status_code == 200
+    ad_hoc_body = ad_hoc.json()
+    assert ad_hoc_body["context_profile"] == "task_execution"
+    assert ad_hoc_body["context_pack"]["task"]["task_id"] == (
+        f"task:{ad_hoc_request_id}"
+    )
+    assert ad_hoc_body["context_pack"]["sop_stage"]["sop_ref"] == ""
+    assert ad_hoc_body["context_pack"]["sop_stage"][
+        "workflow_definition_key"
+    ] == "timeseries-forecast"
+
 
 def test_wiki_search_reports_only_aggregate_acl_exclusion(boi_app_module):
     hidden_root = boi_app_module.DATA_ROOT / "private" / "100001"

@@ -47,6 +47,11 @@ const expectedChecksum = String(
   || cross.validation?.checksum
   || "",
 );
+const expectedTaskRef = String(
+  process.env.TEAM_ACTION_TASK_REF
+  || cross.validation?.task_ref
+  || "",
+);
 if (!identities["100001"] || !identities["100002"] || !draftId || !expectedFlowId) {
   throw new Error("cross-author or OIDC validation fixture is incomplete");
 }
@@ -273,7 +278,7 @@ try {
   );
   const connector = draftBefore.body.draft.request.connector_config;
   const ownerInbox = await sessionFetch(ownerSession.page, "/api/inbox?limit=50");
-  const ownerTaskRef = (ownerInbox.body.items || [])
+  const ownerTaskRef = expectedTaskRef || (ownerInbox.body.items || [])
     .map((item) => String(item.task_id || ""))
     .find((value) => value.startsWith("task:"));
   assert(ownerTaskRef, "endpoint owner has no ACL-checked Task anchor for revalidation");

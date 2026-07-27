@@ -250,12 +250,19 @@ def test_agent_playground_facades_keep_identity_and_secrets_out_of_canvas_inputs
     assert "resolved_task_seed" in knowledge
     assert '"task_ref": task_ref or str(resolved_task.get("task_id") or "")' in knowledge
     assert '"resolved_task_id": str(resolved_task.get("task_id") or "")' in knowledge
+    assert 'getattr(result, "isError", False)' in knowledge
+    assert '"sop" in combined' not in knowledge
+    assert '"표준작업" in combined' not in knowledge
     assert "unwrap_secret_value" in knowledge
     assert 'name = "BoIWikiSave"' in save
     assert '"boi_plan"' in save
     assert '"boi_confirm"' in save
     assert '"knowledge.draft"' in save
     assert '"private_draft"' in save
+    assert 'getattr(result, "isError", False)' in save
+    assert "BOI_RESULT_JSON_B64" in save
+    assert "<!-- {MACHINE_RESULT_PREFIX[:-1]}" in save
+    assert "boi.universal-simulation.result.v1" in save
     assert "unwrap_secret_value" in save
     assert 'name = "BoIAgentSlot"' in slot
     assert "source_references" in slot

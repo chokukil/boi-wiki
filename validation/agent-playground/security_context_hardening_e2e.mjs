@@ -82,15 +82,34 @@ async function login(context, employeeId) {
     }
   });
   page.on("pageerror", (error) => result.page_errors.push(String(error).slice(0, 500)));
-  await page.goto(`${config.boiUrl}/playground`, { waitUntil: "domcontentloaded" });
-  if (page.url().includes("/protocol/openid-connect/")) {
-    const authorization = new URL(page.url());
+  const navigation = await page.goto(`${config.boiUrl}/playground`, {
+    waitUntil: "domcontentloaded",
+  });
+  let authorizationUrl = "";
+  let redirectedRequest = navigation?.request() || null;
+  while (redirectedRequest) {
+    if (redirectedRequest.url().includes("/protocol/openid-connect/auth")) {
+      authorizationUrl = redirectedRequest.url();
+      break;
+    }
+    redirectedRequest = redirectedRequest.redirectedFrom();
+  }
+  const username = page.locator("#username");
+  await Promise.race([
+    username.waitFor({ state: "visible", timeout: 30_000 }).catch(() => null),
+    page.locator("[data-agent-playground]").waitFor({
+      state: "visible",
+      timeout: 30_000,
+    }).catch(() => null),
+  ]);
+  if (await username.isVisible().catch(() => false)) {
+    const authorization = new URL(authorizationUrl || page.url());
     result.oidc = {
       state: Boolean(authorization.searchParams.get("state")),
       nonce: Boolean(authorization.searchParams.get("nonce")),
       pkce_s256: authorization.searchParams.get("code_challenge_method") === "S256",
     };
-    await page.locator("#username").fill(employeeId);
+    await username.fill(employeeId);
     await page.locator("#password").fill(String(identities[employeeId]));
     await Promise.all([
       page.waitForURL((url) => url.origin === new URL(config.boiUrl).origin),

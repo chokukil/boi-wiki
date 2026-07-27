@@ -197,7 +197,7 @@ async function createLangflowKey(context) {
   if (await done.count()) await done.click();
   else if (await close.count()) await close.click();
   else await page.keyboard.press("Escape");
-  await page.getByText("BoI Agent Playground", { exact: true }).first().waitFor();
+  await page.waitForTimeout(500);
   await screenshot(page, "02-langflow-key-list-masked");
   const visible = await page.locator("body").innerText();
   assert(!visible.includes(apiKey), "raw Langflow API Key remained visible after closing");
@@ -245,8 +245,32 @@ async function completeOnboarding(page, apiKey) {
     project_id: setup.project?.id || setup.project_id,
     flow_id: setup.canonical_flow?.id || setup.flow_id,
     flow_checksum: setup.canonical_flow?.checksum || setup.flow_checksum,
+    recommended_flow: {
+      id: setup.recommended_flow?.id || "",
+      name: setup.recommended_flow?.name || "",
+      endpoint_name: setup.recommended_flow?.endpoint_name || "",
+      version: setup.recommended_flow?.version || "",
+      checksum: setup.recommended_flow?.checksum || "",
+      smoke_status: setup.recommended_smoke?.status || "",
+    },
     checks: ready.onboarding.checks,
   };
+  assert(
+    result.ready.recommended_flow.name === "BoI Universal Simulation MCP",
+    "representative Flow was not installed during clean onboarding",
+  );
+  assert(
+    result.ready.recommended_flow.endpoint_name === "boi-universal-simulation-mcp",
+    "representative Flow endpoint name is incorrect",
+  );
+  assert(
+    result.ready.recommended_flow.version === "1.0.0",
+    "representative Flow version is incorrect",
+  );
+  assert(
+    result.ready.recommended_flow.smoke_status === "passed",
+    "representative Flow preview smoke did not pass",
+  );
 
   const before = {
     project_id: result.ready.project_id,

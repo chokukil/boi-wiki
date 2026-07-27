@@ -320,6 +320,25 @@ async function verifyMcpApi(page, current) {
     Object.prototype.hasOwnProperty.call(inputSchema.properties || {}, "input_value"),
     "MCP tool schema does not expose the natural-language input_value",
   );
+  const resultText = JSON.stringify(blocked.result || {});
+  const contractMatch = resultText.match(
+    /BOI_RESULT_JSON_B64(?::|\s)+([A-Za-z0-9+/=]+)/,
+  );
+  assert(contractMatch, "MCP transport dropped the structured result contract");
+  const resultContract = JSON.parse(
+    Buffer.from(contractMatch[1], "base64").toString("utf8"),
+  );
+  assert(
+    resultContract.schema_version === "boi.universal-simulation.result.v1",
+    "MCP structured result schema changed",
+  );
+  assert(resultContract.simulation_label === "SIMULATED", "MCP result is not simulated");
+  assert(resultContract.real_system_called === false, "MCP result claimed a real system call");
+  assert(
+    resultContract.model_trace?.real_inference === true
+      && /gemma/i.test(String(resultContract.model_trace?.model || "")),
+    "MCP result has no actual Gemma trace",
+  );
   evidence.mcp = {
     status: payload.status,
     auth_type: payload.auth.type,
@@ -327,6 +346,9 @@ async function verifyMcpApi(page, current) {
     transport: payload.client_example.transport,
     streamable_url: payload.streamable_url,
     schema_input: "input_value",
+    result_schema_version: resultContract.schema_version,
+    model: resultContract.model_trace.model,
+    model_response_id: resultContract.model_trace.response_id,
     forced_private_draft: "blocked",
   };
 }

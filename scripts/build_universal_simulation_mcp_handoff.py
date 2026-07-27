@@ -106,6 +106,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--evidence-root", type=Path, required=True)
+    parser.add_argument("--onboarding-evidence", type=Path, required=True)
     parser.add_argument(
         "--agent-hub-checkout",
         type=Path,
@@ -119,43 +120,30 @@ def main() -> int:
         raise RuntimeError(f"output must be empty: {output}")
     output.mkdir(parents=True, exist_ok=True)
     evidence_root = args.evidence_root.resolve()
-
-    evidence_dirs = {
-        "onboarding-mcp-canvas": "browser-final",
-        "agent-hub-action": "agent-hub-action",
-        "team-action": "team-action",
-        "cross-author-component": "cross-author-component",
-        "cross-team-action": "cross-team-action",
-        "incompatible-component": "incompatible-component",
-        "checksum-drift": "checksum-drift",
-        "action-connectors": "action-abstraction",
-    }
-    for target_name, source_name in evidence_dirs.items():
-        copy_tree(
-            evidence_root / source_name,
-            output / "evidence" / target_name,
-        )
+    onboarding_evidence = args.onboarding_evidence.resolve()
+    copy_tree(onboarding_evidence, output / "evidence/onboarding-mcp")
+    copy_tree(evidence_root, output / "evidence/agent-hub-action")
 
     required_results = {
-        "onboarding": output / "evidence/onboarding-mcp-canvas/result.json",
+        "onboarding": output / "evidence/onboarding-mcp/fresh-onboarding-result.json",
         "agent_hub": output / "evidence/agent-hub-action/playwright-result.json",
-        "team_action": output / "evidence/team-action/result.json",
-        "cross_author": output / "evidence/cross-author-component/cross-author-adoption-result.json",
-        "cross_team": output / "evidence/cross-team-action/result.json",
-        "incompatible": output / "evidence/incompatible-component/result.json",
-        "drift": output / "evidence/checksum-drift/result.json",
-        "action_connectors": output / "evidence/action-connectors/action-abstraction-result.json",
+        "exact_chain": output / "evidence/agent-hub-action/exact-chain/result.json",
+        "team_action": output / "evidence/agent-hub-action/team-action-v2/result.json",
+        "cross_author": output / "evidence/agent-hub-action/shared-component/cross-author-adoption-result.json",
+        "drift": output / "evidence/agent-hub-action/exact-drift/result.json",
+        "action_connectors": output / "evidence/agent-hub-action/connector-neutral-action-v2/action-abstraction-result.json",
+        "security_context": output / "evidence/agent-hub-action/security-context-v2/result.json",
     }
     results = {name: read_json(path) for name, path in required_results.items()}
     pass_fields = {
         "onboarding": "ok",
         "agent_hub": "passed",
+        "exact_chain": "ok",
         "team_action": "ok",
         "cross_author": "ok",
-        "cross_team": "ok",
-        "incompatible": "ok",
         "drift": "ok",
         "action_connectors": "ok",
+        "security_context": "ok",
     }
     failed = [
         name
@@ -190,11 +178,14 @@ def main() -> int:
 
     regression_dir = evidence_root / "regression"
     for name in (
-        "pytest-full-final.txt",
-        "langflow-patch-regression.json",
-        "langflow-static-boundary.json",
+        "pytest-full-final.log",
+        "pytest-full-final-exit.json",
+        "langflow-1.10-clean-import.json",
+        "langflow-source-boundary.json",
         "langflow-bundle-boundary.json",
         "langflow-migration-rollback.json",
+        "legacy-universal-simulator.json",
+        "secret-scan.json",
     ):
         copy_file(regression_dir / name, output / "regression" / name)
 
@@ -239,7 +230,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    exact_chain = results["agent_hub"].get("exact_chain") or {}
+    exact_chain = results["exact_chain"]
     summary = {
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -251,12 +242,23 @@ def main() -> int:
             "artifact_sha256": source_state["langflow_artifact_sha256"],
         },
         "exact_chain": exact_chain,
-        "model_runtime": results["onboarding"].get("representative_flow", {}).get("runtime"),
-        "mcp": results["onboarding"].get("mcp"),
+        "clean_onboarding": results["onboarding"],
+        "model_runtime": exact_chain.get("run_api", {}).get("model_trace"),
+        "mcp": exact_chain.get("mcp"),
         "cross_author_component": results["cross_author"].get("validation"),
         "drift": results["drift"].get("drift"),
-        "drift_recovery": results["drift"].get("revalidation"),
+        "drift_recovery": results["drift"].get("recovery"),
         "team_private_draft": results["team_action"].get("private_draft"),
+        "security_context": {
+            key: results["security_context"].get(key)
+            for key in (
+                "hcp",
+                "run_token_audience",
+                "task_context",
+                "typed_ontology",
+                "oidc",
+            )
+        },
         "connector_neutral_actions": results["action_connectors"].get(
             "gateway_invocations"
         ),
